@@ -19,12 +19,12 @@ without a new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 96 |
-| The Hobbit Eternal (HOC) | 74 |
-| Marvel Super Heroes (MSH) | 195 |
-| **Total remaining** | **365** |
+| The Hobbit (HOB) | 90 |
+| The Hobbit Eternal (HOC) | 70 |
+| Marvel Super Heroes (MSH) | 189 |
+| **Total remaining** | **349** |
 
-All **365** remaining cards have at least one identified constructor gap.
+All **349** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
@@ -59,7 +59,8 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
   `wasObjectOfThisTrigger`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
   `wasObjectSince`,
-  `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`.
+  `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`,
+  `wasPaidWithManaFrom`.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `turnStart`,
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
@@ -96,7 +97,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`.
 - **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
-  `greatestPower`.
+  `greatestPower`, `count`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -165,6 +166,41 @@ creature-not-artifact, missing opponent draw, each-player draw, lasting
 (not this-turn) reduction, creature spells, artifact permanents, target
 player, greatest mana value among creatures, or literal `Value.nat` stay
 uncompiled. Uncompiled chapter actions produce no `SagaDef`.
+`Selector.inHand` leftovers compile discard-a-card costs (`Cost.discard
+.inHand`, not discard-this); drawing then optionally putting a land from
+hand onto the battlefield tapped; drawing then bottoming a card from hand
+if you don't control a legendary creature; revealing a target player's hand
+then they discard; and exiling your hand, drawing that many, and playing
+those cards until the end of your next turn. Discard-this, your-hand reveal,
+top-of-library exile, or discard-or-pay stay uncompiled.
+Computed `Value` leftovers compile printed X / that-many / greatest-power
+amounts onto existing engine constructors (Treasures equal to opponents'
+artifacts via `Value.count`, amass equal to a creature's power, draw per
+discarded this turn, draw equal to sacrificed power, extra counters on
+permanents you control, mana equal to this creature's power, equipped combat
+Treasures, and related). Literal Nat bounds, Army-only trample, this-only
+extra counters, pump without trample, or `forEachVariable` Treasure-per-
+artifact stay uncompiled.
+Azog leftover binds the up-to-one other target creature, then its controller,
+then destroys that creature; the captured player amasses Goblins equal to
+its power, and if that player is you, draw. Determining the controller after
+destroy (when the object is no longer controlled) stays uncompiled.
+Rhovanion Rampager leftover binds another creature you control, then
+sacrifices it, then puts +1/+1 counters on this equal to that creature's
+power (`Value.greatestPower` of the bound object). The power is taken from
+the bind action, before sacrifice. A literal Nat count, looking up power
+of the sacrificed object after it is sacrificed, or the old optional-
+sacrifice-then-if-happened spelling stays uncompiled. `CardAction.putCounter`
+takes a `Value` count.
+`Selector.wasPaidWithManaFrom` is a spell or activated ability paid with mana
+from the selected source (Smaug: Treasure; the source is an ability if it
+was on the stack, or a card if it was a mana ability or a spell action).
+Omitting it, or Food not Treasure, stays uncompiled.
+Settle the Wreckage leftover is exile attacking creatures a target player
+controls, then that player may (`playerSelectAction` 0–1) search up to
+`Value.count` of those exiled objects of basic lands onto the battlefield
+tapped. A non-optional search, a must-search `range 1 1`, or a land count
+that is not 0 through the exiled objects stays uncompiled.
 `Trigger.leaveGraveyard` is whenever a matching card leaves a graveyard
 (Along the Crooked Way: creature cards in your graveyard, then amass
 Goblins). Other leave-graveyard selectors stay uncompiled. Enter return of
@@ -199,18 +235,18 @@ complete.
 
 - **`topNOfLibrary`** (26 cards) — The top N cards of a library (only topOfLibrary for N=1 exists)
   - Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Doom Reigns Supreme; Dáin's Company; Earth's Mightiest Heroes; Elven Chorus; Black Widow, Super Spy; … (16 more)
-- **`countOf`** (27 cards) — Numeric value derived from a count or characteristic
+- **`countOf`** (27 cards) — Constructor is now `Value.count`; remaining cards need leftovers besides Smaug’s opponent-artifact Treasures
   - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Desert Were-Worm; Dragon's Desire; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Ori, Plate Stacker; … (16 more)
-- **`inHand`** (26 cards) — An object in a hand
-  - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Cloak and Dagger, Entwined; Elven Passage; Errand-Rider of Gondor; Gandalf, Party Guest; Glamdring; Great Gilded Boat; H.E.R.B.I.E. Scout Unit; … (16 more)
+- **`inHand`** (19 cards) — Constructor exists; remaining cards need leftovers besides discard-a-card, put-from-hand, reveal-hand, and exile-hand-then-play
+  - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Cloak and Dagger, Entwined; Elven Passage; Gandalf, Party Guest; Glamdring; Last March of the Ents; M.O.D.O.K.; Minas Tirith Garrison; … (9 more)
 - **`manaValue`** (24 cards) — Mana-value comparisons
   - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Dancing from Dark to Dawn; Evil's Thrall; Gandalf, Party Guest; Glamdring; Gollum, Riddle Master; … (15 more)
 - **`eachPlayer`** (22 cards) — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
   - Avengers: Under Siege; Balin, Loremaster; Bilbo's Burglaring; Celebrate the Mountain-king; Crossbones, Malicious Mercenary; Doom Reigns Supreme; Dáin of the Ancient Halls; Gandalf, Goblins' Bane; Gollum, Riddle Master; … (13 more)
 - **`color`** (14 cards) — Objects of a color / colorless
   - Aragorn, the Uniter; Baron Helmut Zemo; Castle Doom; Doctor Doom; Dáin Ironfoot; Goblin Cratermaker; Invisible Woman, Sue Storm; Iron Hills Blacksmith; Necklace of Girion; Robot Domination; … (4 more)
-- **`inExile`** (15 cards) — An object in exile (wasCreatedByAction only covers this action's exile)
-  - An Unexpected Party; Baron Helmut Zemo; Call Forth the Tempest; Doom Reigns Supreme; Gandalf, Goblins' Bane; Glamdring, Foe-hammer; Glóin the Mighty; Great Ugly-Looking Goblin; Gríma, Saruman's Footman; My Precious; Black Widow, Super Spy; … (4 more)
+- **`inExile`** (14 cards) — Constructor exists; remaining cards need leftovers besides wasCreatedByAction / Hex Magic's exile-hand-then-play
+  - An Unexpected Party; Baron Helmut Zemo; Black Widow, Super Spy; Call Forth the Tempest; Doom Reigns Supreme; Gandalf, Goblins' Bane; Glamdring, Foe-hammer; Glóin the Mighty; Great Ugly-Looking Goblin; Gríma, Saruman's Footman; … (4 more)
 - **`attackingAlone`** (8 cards) — A creature attacking alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
 - **`powerAtMost`** (8 cards) — Power at most N (only powerAtLeast exists)
@@ -576,9 +612,9 @@ inductives (not a missing leftover for an expressible spelling).
   control; gain 1 life *for each permanent destroyed this way*.
   `CardAction.eventAmount` / `Selector.countOf` are missing.
 - **Black Widow, Super Spy** — Combat-damage exile from the top until a
-  nonland, then an optional +1/+1 or cast-the-exiled-card. Needs
-  `Selector.topNOfLibrary` / exile-until and `Selector.inExile` for the
-  leftover nonland.
+  nonland, then an optional +1/+1 or cast-the-exiled-card. `Selector.inExile`
+  exists; the leftover still needs `Selector.topNOfLibrary` / exile-until
+  for the remaining nonland.
 - **Captain Mar-Vell, Space-Born** — As long as an opponent has cast a spell
   this turn, you may cast spells as though they had flash.
   `ContinuousEffect.gainAbilityIf` / “as though they had flash” is missing
@@ -630,7 +666,7 @@ face (`alternative` is the Adventure face). Those are listed under
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards from the previous untagged set are omitted here.
 
-### The Hobbit (HOB) (96 cards)
+### The Hobbit (HOB) (90 cards)
 
 **An Unexpected Party** (`anUnexpectedParty`)
 
@@ -639,10 +675,6 @@ Converted cards from the previous untagged set are omitted here.
 - `TraditionalCardDefinition.asEntersChoice` — As-this-enters replacement/choice on the face
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
-
-**Azog, Moria's Ruin** (`azogMoriaSRuin`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Balin, Loremaster** (`balinLoremaster`)
 
@@ -983,10 +1015,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.gainAbilityIf` — Matching spells have flash / cost less with a 'first this turn' condition
 - `Condition.firstThisTurn` — The first matching event this turn
 
-**Rhovanion Rampager** (`rhovanionRampager`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
-
 **Riddles in the Dark** (`riddlesInTheDark`)
 
 - `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
@@ -1009,10 +1037,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
 - `CardAction.exileThenReturn` — Exile then return at a later trigger (end step / leaves)
 
-**Settle the Wreckage** (`settleTheWreckage`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
-
 **Silvan Reveler** (`silvanReveler`)
 
 - `Ability.activateFromZone` — Activated ability that functions in the graveyard (or another non-battlefield zone)
@@ -1023,10 +1047,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-
-**Smaug, Wicked Worm** (`smaugWickedWorm`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Sound the Trumpets** (`soundTheTrumpets`)
 
@@ -1125,18 +1145,10 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.keywordFlashback` — Flashback with a cost
 - `Ability.activateFromZone` — Ability that functions from the graveyard
 
-**Tom, Bert, and William** (`tomBertAndWilliam`)
-
-- `Selector.inHand` — A card in hand for Cost.discard
-
 **Troll Negotiations** (`trollNegotiations`)
 
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-
-**Uncover the Moon-Letters** (`uncoverTheMoonLetters`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Wizard's Staff** (`wizardSStaff`)
 
@@ -1153,7 +1165,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inHand` — A card in hand for Cost.discard
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 
-### The Hobbit Eternal (HOC) (74 cards)
+### The Hobbit Eternal (HOC) (70 cards)
 
 **Andúril, Narsil Reforged** (`andurilNarsilReforged`)
 
@@ -1290,10 +1302,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `CardAction.addManaPer` — Add mana for each matching object
 
-**Errand-Rider of Gondor** (`errandRiderOfGondor`)
-
-- `Selector.inHand` — An object in a hand
-
 **Fiend Hunter** (`fiendHunter`)
 
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
@@ -1415,10 +1423,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step
 
-**Orcish Siegemaster** (`orcishSiegemaster`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
-
 **Ori, Plate Stacker** (`oriPlateStacker`)
 
 - `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
@@ -1471,10 +1475,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 
-**Smaug the Impenetrable** (`smaugTheImpenetrable`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
-
 **Smite the Deathless** (`smiteTheDeathless`)
 
 - `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
@@ -1497,10 +1497,6 @@ Converted cards from the previous untagged set are omitted here.
 **The One Ring** (`theOneRing`)
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-
-**The Reaver Cleaver** (`theReaverCleaver`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **The Shire** (`theShire`)
 
@@ -1548,7 +1544,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.controlCount` — Controller controls N or more matching objects
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (gainSubtype only adds)
 
-### Marvel Super Heroes (MSH) (196 cards)
+### Marvel Super Heroes (MSH) (189 cards)
 
 **A.I.M. Scientists** (`aIMScientists`)
 
@@ -1802,10 +1798,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
-**Doc Samson, Super Psychiatrist** (`docSamsonSuperPsychiatrist`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
-
 **Doctor Doom** (`doctorDoom`)
 
 - `Selector.color` — Objects of a color / colorless
@@ -1868,10 +1860,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
 
-**H.E.R.B.I.E. Scout Unit** (`hERBIEScoutUnit`)
-
-- `Selector.inHand` — An object in a hand
-
 **HULK SMASH!** (`hULKSMASH`)
 
 - `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
@@ -1924,10 +1912,6 @@ Converted cards from the previous untagged set are omitted here.
 **Heroic Feast** (`heroicFeast`)
 
 - `Trigger.gainLife` — Whenever the selected player gains life
-
-**Hex Magic** (`hexMagic`)
-
-- `Selector.inHand` — An object in a hand
 
 **Hulk, Gamma Goliath** (`hulkGammaGoliath`)
 
@@ -2024,10 +2008,6 @@ Converted cards from the previous untagged set are omitted here.
 - `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
 - `CardAction.transform` — Transform this permanent
 
-**Klaw, Sonic Subjugator** (`klawSonicSubjugator`)
-
-- `Selector.inHand` — An object in a hand
-
 **Knight of Wundagore** (`knightOfWundagore`)
 
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
@@ -2072,10 +2052,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `CardAction.removeCounter` — Remove counters from the selected object
-
-**Misty Knight, Hero for Hire** (`mistyKnightHeroForHire`)
-
-- `Selector.inHand` — A card in hand for Cost.discard
 
 **Mjölnir, Hammer of Thor** (`mjLnirHammerOfThor`)
 
@@ -2441,10 +2417,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `ContinuousEffect.handSize` — Set / remove maximum hand size
-
-**The Unbeatable Squirrel Girl** (`theUnbeatableSquirrelGirl`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **The Vision** (`theVision`)
 

@@ -201,6 +201,8 @@ inductive Value where
   | greatestToughness : Selector → Value
   /-- The greatest power among selected objects (CR 208). -/
   | greatestPower : Selector → Value
+  /-- The number of selected objects. -/
+  | count : Selector → Value
 deriving Repr, Inhabited, BEq
 
 /-- How many objects a `.targets` selector may choose. -/
@@ -308,6 +310,10 @@ inductive Selector where
   | variable : Nat → Selector
   /-- The top card of the selected player's library (CR 401). -/
   | topOfLibrary : Selector → Selector
+  /-- A spell or activated ability that was paid with mana from the selected
+  source. The source is an ability if it was on the stack, or a card if it
+  was a mana ability or a spell action. -/
+  | wasPaidWithManaFrom : Selector → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
@@ -392,7 +398,7 @@ instance : ToString Value where
     | .nat n => toString n
     | .int n => toString n
     | .x => "X"
-    | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => "X"
+    | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ | .count _ => "X"
 
 instance (n : Nat) : OfNat Value n where
   ofNat := .nat n
@@ -403,6 +409,8 @@ instance (n : Nat) : OfNat Value n where
 #guard toString (Value.greatestManaValue .this) == "X"
 #guard toString (Value.greatestToughness .this) == "X"
 #guard toString (Value.greatestPower .this) == "X"
+#guard toString (Value.count .this) == "X"
+#guard Value.count .this != Value.x
 #guard (1 : Value) == Value.nat 1
 #guard Value.x != Value.nat 1
 
