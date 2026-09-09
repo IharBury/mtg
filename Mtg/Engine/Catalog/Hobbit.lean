@@ -2810,10 +2810,10 @@ def rhovanionRampager : CardDef :=
     .ability
       (.triggered
         (.attack .this .all)
-        (.sequence [
-          .optional
-            (.actionId 1
-              (.sacrifice
+        (.optional
+          (.sequence [
+            .actionId 1
+              (.defineVariable 1
                 (.selected
                   (.controller .this)
                   (.range 1 1)
@@ -2821,10 +2821,12 @@ def rhovanionRampager : CardDef :=
                     .not .this,
                     .permanent,
                     .cardType .creature,
-                    .controlled (.controller .this)])))),
-          .if
-            (.happened (.actionWithId 1) .gameStart)
-            [.putCounter (.source .this) .plusOnePlusOne 1]])),
+                    .controlled (.controller .this)]))),
+            .sacrifice (.wasObjectOfAction 1),
+            .putCounter
+              (.source .this)
+              .plusOnePlusOne
+              (Value.greatestPower (.wasObjectOfAction 1))]))),
     .ability
       (.triggered
         (.die .this)

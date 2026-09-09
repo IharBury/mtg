@@ -724,8 +724,9 @@ inductive CardAction where
   | optionalPayFor : Selector → List Cost → List CardAction → CardAction
   /-- The selected player discards that many cards. -/
   | discard : Selector → Value → CardAction
-  /-- Put that many counters of the given kind on the selected object. -/
-  | putCounter : Selector → CounterKind → Nat → CardAction
+  /-- Put that many counters of the given kind on the selected object. The
+  count may be a printed number or a computed value. -/
+  | putCounter : Selector → CounterKind → Value → CardAction
   /-- Exile the selected object. -/
   | exile : Selector → CardAction
   /-- Exchange control of the selected objects. -/
@@ -1469,7 +1470,7 @@ def leftoverPlusOneVigilance? : CardAction → Option Nat
         s.sameController && s.types.eqTypes [.creature]
       | none => false
     let kws := grantedKeywords effects
-    if youControlCreature && kws.vigilance then some n else none
+    if youControlCreature && kws.vigilance then valToNat? n else none
   | _ => none
 
 /-- Become a creature of the given subtype with P/T equal to lands you
@@ -1600,12 +1601,12 @@ def leftoverHealThenKeepReplaced? : List CardAction → Bool
 listed subtypes. -/
 def leftoverPlusOneOnTarget? : CardAction → Option Effect
   | .putCounter sel .plusOnePlusOne n =>
-    match sel.among? with
-    | some among =>
+    match valToNat? n, sel.among? with
+    | some n, some among =>
       if among.shape.sameController && among.shape.types.eqTypes [.creature] then
         some (Effect.plusOneOnTarget n among.includedSubtypes.toArray)
       else none
-    | none => none
+    | _, _ => none
   | _ => none
 
 /-- Set another creature you control's base P/T equal to this source. -/
@@ -1702,9 +1703,9 @@ def leftoverOwnerPutsLibraryThenConnive? : CardAction → Bool
 def leftoverPlusOneOnEachOtherSubtype? : CardAction → Option Effect
   | .putCounter sel .plusOnePlusOne n =>
     if sel.among?.isNone then
-      match sel.shape.anotherSubtypeYouControl with
-      | some st => some (Effect.plusOneOnEachOtherSubtype st n)
-      | none => none
+      match sel.shape.anotherSubtypeYouControl, valToNat? n with
+      | some st, some n => some (Effect.plusOneOnEachOtherSubtype st n)
+      | _, _ => none
     else none
   | _ => none
 
@@ -2442,14 +2443,20 @@ def leftoverPumpByGreatestPower? : List ContinuousEffect → Bool
   | _ => false
 
 /-- You may sacrifice another creature. If you do, put +1/+1 counters on
-this equal to that creature's power. -/
+this equal to that creature's power. The creature is bound first so its
+power is determined before sacrifice. -/
 def leftoverAttackMaySacAnotherPlusOneEqualPower? : CardAction → Bool
-  | .sequence [
-      .optional (.actionId id (.sacrifice (.selected _ r among))),
-      .if (.happened (.actionWithId id') _) [.putCounter sel .plusOnePlusOne _]
-    ] =>
-    id == id' && leftoverOneOrUpToOne r && among.shape.anotherCreatureYouControl &&
-      leftoverThis sel
+  | .optional (.sequence [
+      .actionId id (.defineVariable _ sel),
+      .sacrifice sacrificed,
+      .putCounter dest .plusOnePlusOne n
+    ]) =>
+    leftoverThis dest && leftoverWasObjectOfAction? sacrificed id &&
+      leftoverPowerOfActionObject? id n &&
+      match sel with
+      | .selected _ r among =>
+        leftoverOneOrUpToOne r && among.shape.anotherCreatureYouControl
+      | _ => false
   | _ => false
 
 /-- Create that many Treasure tokens (a computed count). -/
@@ -3230,7 +3237,9 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     | some n => Effect.drawThenDiscard n
                     | none => continuousEffect none [] asAbility
                   | .putCounter (.source .this) .plusOnePlusOne n =>
-                    Effect.putPlusOnePlusOneOnSource n
+                    match valToNat? n with
+                    | some n => Effect.putPlusOnePlusOneOnSource n
+                    | none => continuousEffect none [] asAbility
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
                   | .exile _ => continuousEffect none [] asAbility
                   | .exchangeControl _ => Effect.exchangeControlSharingType
@@ -9758,15 +9767,17 @@ end TraditionalCardDefinition
         .power 1, .toughness 1]]) ==
     Effect.createTokensEqualSubtype .squirrel11green "Squirrel"
 
--- Rhovanion Rampager: attack, may sac another, +1/+1 equal to its power.
+-- Rhovanion Rampager: bind another creature, then sac it; +1/+1 equal to
+-- its power (determined before sacrifice). Power after sacrifice stays
+-- uncompiled.
 #guard
   match
     (Ability.triggered
       (.attack .this .all)
-      (.sequence [
-        .optional
-          (.actionId 1
-            (.sacrifice
+      (.optional
+        (.sequence [
+          .actionId 1
+            (.defineVariable 1
               (.selected
                 (.controller .this)
                 (.range 1 1)
@@ -9774,12 +9785,74 @@ end TraditionalCardDefinition
                   .not .this,
                   .permanent,
                   .cardType .creature,
-                  .controlled (.controller .this)])))),
-        .if
-          (.happened (.actionWithId 1) .gameStart)
-          [.putCounter (.source .this) .plusOnePlusOne 1]])).toTriggeredAbility? with
+                  .controlled (.controller .this)]))),
+          .sacrifice (.wasObjectOfAction 1),
+          .putCounter
+            (.source .this)
+            .plusOnePlusOne
+            (Value.greatestPower (.wasObjectOfAction 1))]))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackMaySacAnotherPlusOneEqualPower
   | none => false
+
+#guard
+  (Ability.triggered
+    (.attack .this .all)
+    (.optional
+      (.sequence [
+        .actionId 1
+          (.defineVariable 1
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [
+                .not .this,
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)]))),
+        .sacrifice (.wasObjectOfAction 1),
+        .putCounter (.source .this) .plusOnePlusOne 1]))).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.attack .this .all)
+    (.sequence [
+      .optional
+        (.actionId 1
+          (.sacrifice
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [
+                .not .this,
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)])))),
+      .if
+        (.happened (.actionWithId 1) .gameStart)
+        [.putCounter
+          (.source .this)
+          .plusOnePlusOne
+          (Value.greatestPower (.wasObjectOfAction 1))]])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.attack .this .all)
+    (.optional
+      (.sequence [
+        .actionId 1
+          (.sacrifice
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [
+                .not .this,
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)]))),
+        .putCounter
+          (.source .this)
+          .plusOnePlusOne
+          (Value.greatestPower (.wasObjectOfAction 1))]))).toTriggeredAbility?.isNone
 
 #guard
   match

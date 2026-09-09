@@ -185,6 +185,13 @@ Azog leftover binds the up-to-one other target creature, then its controller,
 then destroys that creature; the captured player amasses Goblins equal to
 its power, and if that player is you, draw. Determining the controller after
 destroy (when the object is no longer controlled) stays uncompiled.
+Rhovanion Rampager leftover binds another creature you control, then
+sacrifices it, then puts +1/+1 counters on this equal to that creature's
+power (`Value.greatestPower` of the bound object). The power is taken from
+the bind action, before sacrifice. A literal Nat count, looking up power
+of the sacrificed object after it is sacrificed, or the old optional-
+sacrifice-then-if-happened spelling stays uncompiled. `CardAction.putCounter`
+takes a `Value` count.
 `Selector.wasPaidWithManaFrom` is a spell or activated ability paid with mana
 from the selected source (Smaug: Treasure; the source is an ability if it
 was on the stack, or a card if it was a mana ability or a spell action).
