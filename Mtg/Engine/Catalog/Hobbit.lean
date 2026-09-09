@@ -2389,13 +2389,32 @@ def dainsCompany : CardDef :=
     (triggeredAbilities := #[.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"]])
 
 def smaugWickedWorm : CardDef :=
-  legendaryCreature "Smaug, Wicked Worm" (ManaCost.ofGenericAndColors 3 [.black, .red])
-    #["Dragon"] 5 5
+  (TraditionalCardDefinition.card [
+    .name "Smaug, Wicked Worm",
+    .manaCost [.generic 3, .mono .black, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dragon,
+    .power 5,
+    .toughness 5,
+    .ability (.keyword .flying),
+    .ability
+      (.triggered
+        (.enter .this)
+        (.forEachVariable 1
+          (.intersection [
+            .permanent,
+            .cardType .artifact,
+            .controlled (.opponent (.controller .this))])
+          [.createTokens (.controller .this) 1 PredefinedToken.treasureToken [.tapped]])),
+    .ability
+      (.triggered
+        (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
+        (.sequence [
+          .draw (.controller .this) 1,
+          .loseLife (.controller .this) 1]))
+  ]).toCardDef
     (oracleText := "Flying\nWhen Smaug enters, create X tapped Treasure tokens, where X is the number of artifacts your opponents control.\nWhenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[
-      .onEnterCreateTappedTreasuresEqualOppArtifacts,
-      .onCastWithTreasureDrawLoseLife])
 
 def glamdringFoeHammer : CardDef :=
   equipment "Glamdring, Foe-hammer" (ManaCost.ofGeneric 2)
@@ -2408,9 +2427,28 @@ def glamdringFoeHammer : CardDef :=
       (Effect.millThenPutAllInstantsOrSorceries 6)))
 
 def settleTheWreckage : CardDef :=
-  instant "Settle the Wreckage" (ManaCost.ofGenericAndColors 2 [.white, .white])
-    "Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle."
-    (some (Effect.exileAttackersSearchBasics))
+  (TraditionalCardDefinition.card [
+    .name "Settle the Wreckage",
+    .manaCost [.generic 2, .mono .white, .mono .white],
+    .type .instant,
+    .actions [
+      .actionId 1
+        (.exile
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .attacking .all,
+            .controlled (.target 1 .player)])),
+      .searchLibraryThenShuffle
+        (.target 1 .player)
+        [.putOntoBattlefieldInState
+          (.selected
+            (.target 1 .player)
+            (.range 1 1)
+            (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
+          [.tapped]]]
+  ]).toCardDef
+    (oracleText := "Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle.")
 
 def ironHillsBlacksmith : CardDef :=
   creature "Iron Hills Blacksmith" (ManaCost.ofGenericAndColor 1 .white)
@@ -2476,8 +2514,37 @@ def alongTheCrookedWay : CardDef :=
     (oracleText := "When this enchantment enters, return target creature card from your graveyard to your hand.\nWhenever a creature card leaves your graveyard, amass Goblins 1.\n{1}{B}: Goblins and Orcs you control gain menace until end of turn.")
 
 def azogMoriaSRuin : CardDef :=
-  legendaryCreature "Azog, Moria's Ruin" (ManaCost.ofGenericAndColor 2 .black) #["Goblin", "Soldier"] 1 3 (oracleText := "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)")
-    (triggeredAbilities := #[.onEnterDestroyOtherAmassControllerPower])
+  (TraditionalCardDefinition.card [
+    .name "Azog, Moria's Ruin",
+    .manaCost [.generic 2, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .goblin,
+    .subtype .soldier,
+    .power 1,
+    .toughness 3,
+    .ability
+      (.triggered
+        (.enter .this)
+        (.sequence [
+          .actionId 1
+            (.destroy
+              (.targets 1 (.range 0 1)
+                (.intersection [
+                  .not .this,
+                  .permanent,
+                  .cardType .creature]))),
+          .keyword
+            (.controller (.wasObjectOfAction 1))
+            (.amass .goblin (Value.greatestPower (.wasObjectOfAction 1))),
+          .if
+            (.any
+              (.intersection [
+                .wasObjectOfAction 1,
+                .controlled (.controller .this)]))
+            [.draw (.controller .this) 1]]))
+  ]).toCardDef
+    (oracleText := "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)")
 
 def balinLoremaster : CardDef :=
   legendaryCreature "Balin, Loremaster" (ManaCost.ofGenericAndColors 3 [.red, .red]) #["Dwarf", "Bard"] 4 4 (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nWhenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent.")
@@ -2721,9 +2788,39 @@ def radagastOfRhosgobel : CardDef :=
   { c with firstCreatureCostsLess := 2, firstCreatureHasFlash := true }
 
 def rhovanionRampager : CardDef :=
-  creature "Rhovanion Rampager" (ManaCost.ofGenericAndColor 2 .black) #["Wolf"] 3 2 (oracleText := "Whenever this creature attacks, you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power.\nWhen this creature dies, amass Goblins X, where X is this creature's power. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
-    (triggeredAbilities := #[.onAttackMaySacAnotherPlusOneEqualPower,
-      .onDiesAmassGoblinsEqualPower])
+  (TraditionalCardDefinition.card [
+    .name "Rhovanion Rampager",
+    .manaCost [.generic 2, .mono .black],
+    .type .creature,
+    .subtype .wolf,
+    .power 3,
+    .toughness 2,
+    .ability
+      (.triggered
+        (.attack .this .all)
+        (.sequence [
+          .optional
+            (.actionId 1
+              (.sacrifice
+                (.selected
+                  (.controller .this)
+                  (.range 1 1)
+                  (.intersection [
+                    .not .this,
+                    .permanent,
+                    .cardType .creature,
+                    .controlled (.controller .this)])))),
+          .if
+            (.happened (.actionWithId 1) .gameStart)
+            [.putCounter (.source .this) .plusOnePlusOne 1]])),
+    .ability
+      (.triggered
+        (.die .this)
+        (.keyword
+          (.controller .this)
+          (.amass .goblin (Value.greatestPower .this))))
+  ]).toCardDef
+    (oracleText := "Whenever this creature attacks, you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power.\nWhen this creature dies, amass Goblins X, where X is this creature's power. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
 
 def riddlesInTheDark : CardDef :=
   instant "Riddles in the Dark" (ManaCost.ofGenericAndColor 2 .blue) "Look at the top four cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard." (some (Effect.riddlesInTheDark))
@@ -2892,15 +2989,49 @@ def throughTheForestGate : CardDef :=
   sorcery "Through the Forest Gate" (ManaCost.ofGenericAndColors 6 [.green, .green]) "Look at the top twenty cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle. You gain 8 life." (some (Effect.lookAtTopLandsGainLife 20 8))
 
 def tomBertAndWilliam : CardDef :=
-  legendaryCreature "Tom, Bert, and William" (ManaCost.ofGenericAndColors 3 [.black, .green]) #["Troll"] 5 5 (oracleText := "{1}, Sacrifice another creature: Draw cards equal to the sacrificed creature's power, then discard a card.\nWhen Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact. (They're no longer a creature.)")
-    (activatedAbilities := #[
-      activated (Effect.drawEqualSacrificedPowerThenDiscard) (ManaCost.ofGeneric 1)
-        (sacrificeAnotherSubtype := some "creature")])
-    (triggeredAbilities := #[.onDiesReturnAsArtifact])
+  (TraditionalCardDefinition.card [
+    .name "Tom, Bert, and William",
+    .manaCost [.generic 3, .mono .black, .mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .troll,
+    .power 5,
+    .toughness 5,
+    .ability
+      (.activated
+        [.mana [.generic 1],
+          .sacrificeCount
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])
+            1]
+        (.sequence [
+          .draw (.controller .this) Value.x,
+          .discard (.controller .this) 1])),
+    .ability (.triggered (.die .this) (.putOntoBattlefield .this))
+  ]).toCardDef
+    (oracleText := "{1}, Sacrifice another creature: Draw cards equal to the sacrificed creature's power, then discard a card.\nWhen Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact. (They're no longer a creature.)")
 
 def uncoverTheMoonLetters : CardDef :=
-  enchantment "Uncover the Moon-Letters" (ManaCost.ofGenericAndColor 3 .blue) "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
-    (triggeredAbilities := #[.onCastNoncreatureMayDrawXDiscard2])
+  (TraditionalCardDefinition.card [
+    .name "Uncover the Moon-Letters",
+    .manaCost [.generic 3, .mono .blue],
+    .type .enchantment,
+    .ability
+      (.triggered
+        (.castSpell
+          (.intersection [
+            .spell,
+            .not (.cardType .creature),
+            .controlled (.controller .this)]))
+        (.optional
+          (.sequence [
+            .draw (.controller .this) Value.x,
+            .discard (.controller .this) 2])))
+  ]).toCardDef
+    (oracleText := "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards.")
 
 def wizardSStaff : CardDef :=
   equipment "Wizard's Staff" (ManaCost.ofGenericAndColor 1 .blue) "Equipped creature has prowess. (Whenever its controller casts a noncreature spell, that creature gets +1/+1 until end of turn.)\nIf a triggered ability of equipped creature triggers, that ability triggers an additional time.\nEquip Wizard {1}\nEquip {3}"
@@ -3505,5 +3636,17 @@ def hobbitCards : Array CardDef := #[
     adv.name == "Silvan Rally" &&
       adv.spellEffect == some (Effect.millThenPutLands 4 2)
   | none => false
+#guard azogMoriaSRuin.triggeredAbilities == #[.onEnterDestroyOtherAmassControllerPower]
+#guard smaugWickedWorm.keywords.flying
+#guard smaugWickedWorm.triggeredAbilities ==
+  #[.onEnterCreateTappedTreasuresEqualOppArtifacts, .onCastWithTreasureDrawLoseLife]
+#guard settleTheWreckage.spellEffect == some (Effect.exileAttackersSearchBasics)
+#guard rhovanionRampager.triggeredAbilities ==
+  #[.onAttackMaySacAnotherPlusOneEqualPower, .onDiesAmassGoblinsEqualPower]
+#guard tomBertAndWilliam.activatedAbilities[0]!.effect ==
+  Effect.drawEqualSacrificedPowerThenDiscard
+#guard tomBertAndWilliam.activatedAbilities[0]!.cost.sacrificeAnotherSubtype == some "creature"
+#guard tomBertAndWilliam.triggeredAbilities == #[.onDiesReturnAsArtifact]
+#guard uncoverTheMoonLetters.triggeredAbilities == #[.onCastNoncreatureMayDrawXDiscard2]
 
 end Mtg.Engine.Catalog
