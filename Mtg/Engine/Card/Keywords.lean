@@ -196,8 +196,14 @@ inductive Value where
   | nat : Nat → Value
   /-- A printed integer amount. -/
   | int : Int → Value
+  /-- The value of X (CR 107.3). -/
+  | x : Value
   /-- The greatest mana value among selected objects (CR 202.3). -/
   | greatestManaValue : Selector → Value
+  /-- The greatest toughness among selected objects (CR 208). -/
+  | greatestToughness : Selector → Value
+  /-- The greatest power among selected objects (CR 208). -/
+  | greatestPower : Selector → Value
 deriving Repr, Inhabited, BEq
 
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
@@ -374,7 +380,20 @@ instance : ToString Value where
   toString
     | .nat n => toString n
     | .int n => toString n
-    | .greatestManaValue _ => "X"
+    | .x => "X"
+    | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => "X"
+
+instance (n : Nat) : OfNat Value n where
+  ofNat := .nat n
+
+#guard toString (Value.nat 3) == "3"
+#guard toString (Value.int (-2)) == "-2"
+#guard toString Value.x == "X"
+#guard toString (Value.greatestManaValue .this) == "X"
+#guard toString (Value.greatestToughness .this) == "X"
+#guard toString (Value.greatestPower .this) == "X"
+#guard (1 : Value) == Value.nat 1
+#guard Value.x != Value.nat 1
 
 end Value
 
