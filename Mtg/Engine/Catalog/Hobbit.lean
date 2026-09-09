@@ -2401,12 +2401,15 @@ def smaugWickedWorm : CardDef :=
     .ability
       (.triggered
         (.enter .this)
-        (.forEachVariable 1
-          (.intersection [
-            .permanent,
-            .cardType .artifact,
-            .controlled (.opponent (.controller .this))])
-          [.createTokens (.controller .this) 1 PredefinedToken.treasureToken [.tapped]])),
+        (.createTokens
+          (.controller .this)
+          (Value.count
+            (.intersection [
+              .permanent,
+              .cardType .artifact,
+              .controlled (.opponent (.controller .this))]))
+          PredefinedToken.treasureToken
+          [.tapped])),
     .ability
       (.triggered
         (.castSpell (.intersection [.spell, .controlled (.controller .this)]))

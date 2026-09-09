@@ -854,13 +854,13 @@ end PredefinedToken
 def valToInt? : Value → Option Int
   | .int p => some p
   | .nat p => some (Int.ofNat p)
-  | .x | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
+  | .x | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ | .count _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
   | .nat n => some n
   | .int n => if n ≥ 0 then some n.toNat else none
-  | .x | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
+  | .x | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ | .count _ => none
 
 namespace ContinuousEffect
 
@@ -2316,10 +2316,10 @@ def leftoverEnterDestroyOtherAmassControllerPower? : CardAction → Bool
 def leftoverOppArtifacts? (s : Selector) : Bool :=
   s.shape.opponentControls && s.shape.types.eqTypes [.artifact]
 
-/-- Create a tapped Treasure for each artifact opponents control. -/
+/-- Create that many tapped Treasures, where the count is opponent artifacts. -/
 def leftoverEnterCreateTappedTreasuresEqualOppArtifacts? : CardAction → Bool
-  | .forEachVariable _ among [.createTokens who n parts states] =>
-    leftoverYou who && n == 1 && leftoverTokenKind? parts == some .treasure &&
+  | .createTokens who (.count among) parts states =>
+    leftoverYou who && leftoverTokenKind? parts == some .treasure &&
       leftoverTappedOnly states && leftoverOppArtifacts? among
   | _ => false
 
@@ -2920,6 +2920,10 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
 /-- Enters-the-battlefield actions that compile to a named trigger. -/
 def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
   | .createTokens who n parts states =>
+    if leftoverEnterCreateTappedTreasuresEqualOppArtifacts?
+        (.createTokens who n parts states) then
+      some TriggeredAbility.onEnterCreateTappedTreasuresEqualOppArtifacts
+    else
     match valToNat? n with
     | some n =>
       if leftoverYou who then
@@ -3022,8 +3026,6 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
         some (TriggeredAbility.onEnter Effect.enterRevealDiscardFromHand)
       else if leftoverEnterDestroyOtherAmassControllerPower? action then
         some TriggeredAbility.onEnterDestroyOtherAmassControllerPower
-      else if leftoverEnterCreateTappedTreasuresEqualOppArtifacts? action then
-        some TriggeredAbility.onEnterCreateTappedTreasuresEqualOppArtifacts
       else none
 
 /-- Enters-the-battlefield library searches. -/
@@ -3646,9 +3648,6 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       (.forEachVariable n among actions) =>
     if CardAction.leftoverEachPlayerSacrificesCreature? (.forEachVariable n among actions) then
       some TriggeredAbility.onEnterEachPlayerSacrificesCreature
-    else if CardAction.leftoverEnterCreateTappedTreasuresEqualOppArtifacts?
-        (.forEachVariable n among actions) then
-      some TriggeredAbility.onEnterCreateTappedTreasuresEqualOppArtifacts
     else none
   | .triggered (.enter .this)
       (.sequence [
@@ -4604,6 +4603,7 @@ end TraditionalCardDefinition
 #guard (valToNat? Value.x).isNone
 #guard (valToNat? (Value.greatestPower .this)).isNone
 #guard (valToNat? (Value.greatestToughness .this)).isNone
+#guard (valToNat? (Value.count .this)).isNone
 #guard Range.range Value.x 1 != Range.range 0 1
 #guard Range.any != Range.range 0 0
 #guard Range.from Value.x != Range.from 1
@@ -9695,19 +9695,35 @@ end TraditionalCardDefinition
     (.damage .all .this)
     (.createTokens (.controller .this) 1 PredefinedToken.treasureToken)).toTriggeredAbility?.isNone
 
--- Smaug, Wicked Worm: tapped Treasures per opponent artifact; treasure-cast loot.
+-- Smaug, Wicked Worm: tapped Treasures equal to opponent artifacts; treasure-cast loot.
 #guard
   match
     (Ability.triggered
       (.enter .this)
-      (.forEachVariable 1
-        (.intersection [
-          .permanent,
-          .cardType .artifact,
-          .controlled (.opponent (.controller .this))])
-        [.createTokens (.controller .this) 1 PredefinedToken.treasureToken [.tapped]])).toTriggeredAbility? with
+      (.createTokens
+        (.controller .this)
+        (Value.count
+          (.intersection [
+            .permanent,
+            .cardType .artifact,
+            .controlled (.opponent (.controller .this))]))
+        PredefinedToken.treasureToken
+        [.tapped])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterCreateTappedTreasuresEqualOppArtifacts
   | none => false
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.createTokens
+      (.controller .this)
+      (Value.count
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.opponent (.controller .this))]))
+      PredefinedToken.treasureToken
+      [.tapped])).toTriggeredAbility?.isNone
 
 #guard
   (Ability.triggered
@@ -9715,7 +9731,7 @@ end TraditionalCardDefinition
     (.forEachVariable 1
       (.intersection [
         .permanent,
-        .cardType .creature,
+        .cardType .artifact,
         .controlled (.opponent (.controller .this))])
       [.createTokens (.controller .this) 1 PredefinedToken.treasureToken [.tapped]])).toTriggeredAbility?.isNone
 

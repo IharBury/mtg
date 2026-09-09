@@ -96,7 +96,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`.
 - **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
-  `greatestPower`.
+  `greatestPower`, `count`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -174,11 +174,12 @@ those cards until the end of your next turn. Discard-this, your-hand reveal,
 top-of-library exile, or discard-or-pay stay uncompiled.
 Computed `Value` leftovers compile printed X / that-many / greatest-power
 amounts onto existing engine constructors (Treasures equal to opponents'
-artifacts, amass equal to a creature's power, draw per discarded this turn,
-draw equal to sacrificed power, extra counters on permanents you control,
-mana equal to this creature's power, equipped combat Treasures, and
-related). Literal Nat bounds, Army-only trample, this-only extra counters,
-or pump without trample stay uncompiled.
+artifacts via `Value.count`, amass equal to a creature's power, draw per
+discarded this turn, draw equal to sacrificed power, extra counters on
+permanents you control, mana equal to this creature's power, equipped combat
+Treasures, and related). Literal Nat bounds, Army-only trample, this-only
+extra counters, pump without trample, or `forEachVariable` Treasure-per-
+artifact stay uncompiled.
 `Trigger.leaveGraveyard` is whenever a matching card leaves a graveyard
 (Along the Crooked Way: creature cards in your graveyard, then amass
 Goblins). Other leave-graveyard selectors stay uncompiled. Enter return of
@@ -213,7 +214,7 @@ complete.
 
 - **`topNOfLibrary`** (26 cards) — The top N cards of a library (only topOfLibrary for N=1 exists)
   - Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Doom Reigns Supreme; Dáin's Company; Earth's Mightiest Heroes; Elven Chorus; Black Widow, Super Spy; … (16 more)
-- **`countOf`** (27 cards) — Numeric value derived from a count or characteristic
+- **`countOf`** (27 cards) — Constructor is now `Value.count`; remaining cards need leftovers besides Smaug’s opponent-artifact Treasures
   - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Desert Were-Worm; Dragon's Desire; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Ori, Plate Stacker; … (16 more)
 - **`inHand`** (19 cards) — Constructor exists; remaining cards need leftovers besides discard-a-card, put-from-hand, reveal-hand, and exile-hand-then-play
   - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Cloak and Dagger, Entwined; Elven Passage; Gandalf, Party Guest; Glamdring; Last March of the Ents; M.O.D.O.K.; Minas Tirith Garrison; … (9 more)
