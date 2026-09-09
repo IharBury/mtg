@@ -205,7 +205,12 @@ deriving Repr, Inhabited, BEq
 
 /-- How many objects a `.targets` selector may choose. -/
 inductive Range where
+  /-- Inclusive lower and upper bounds. -/
   | range : Value → Value → Range
+  /-- Any number of objects (0 to unbounded). -/
+  | any : Range
+  /-- At least this many objects (unbounded high bound). -/
+  | from : Value → Range
 deriving Repr, Inhabited, BEq
 
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
@@ -403,6 +408,12 @@ namespace Range
 
 #guard Range.range 0 1 == .range (Value.nat 0) (Value.nat 1)
 #guard Range.range Value.x 1 != Range.range 0 1
+#guard Range.any == .any
+#guard Range.any != Range.range 0 0
+#guard Range.from 1 == .from (Value.nat 1)
+#guard Range.from Value.x != Range.from 1
+#guard Range.from 1 != Range.range 1 1
+#guard Range.from 0 != Range.any
 
 end Range
 
