@@ -14,7 +14,7 @@ New cards may be written as a `TraditionalCardDefinition` (a list of
 Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
 of the Great Shelf, Vow to Erebor, and Bilbo Baggins, Burglar keep their
 printed characteristics as parts; `parseOracleParts` reads the Oracle
-text into the rest.
+text into the rest, using the card name for references to itself.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -37,7 +37,7 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card <|
     .subtype .scout,
     .power 1,
     .toughness 1
-  ] ++ parseOracleParts bofurReliableGuardianOracle
+  ] ++ parseOracleParts (name := "Bofur, Reliable Guardian") bofurReliableGuardianOracle
 
 def bofurReliableGuardianCard : CardDef :=
   bofurReliableGuardian.toCardDef
@@ -85,7 +85,7 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card <|
     .subtype .citizen,
     .power 2,
     .toughness 2
-  ] ++ parseOracleParts dwarvenProvisionerOracle
+  ] ++ parseOracleParts (name := "Dwarven Provisioner") dwarvenProvisionerOracle
 
 def dwarvenProvisionerCard : CardDef :=
   dwarvenProvisioner.toCardDef
@@ -122,7 +122,7 @@ def velvetwingButterflies : TraditionalCardDefinition := .card <|
     .subtype .insect,
     .power 2,
     .toughness 2
-  ] ++ parseOracleParts velvetwingButterfliesOracle
+  ] ++ parseOracleParts (name := "Velvetwing Butterflies") velvetwingButterfliesOracle
 
 def velvetwingButterfliesCard : CardDef :=
   velvetwingButterflies.toCardDef
@@ -153,7 +153,7 @@ def magnificentEnd : TraditionalCardDefinition := .card <|
     .name "Magnificent End",
     .manaCost [.generic 4, .mono .white],
     .type .instant
-  ] ++ parseOracleParts magnificentEndOracle
+  ] ++ parseOracleParts (name := "Magnificent End") magnificentEndOracle
 
 def magnificentEndCard : CardDef :=
   magnificentEnd.toCardDef
@@ -192,7 +192,7 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card <|
     .subtype .soldier,
     .power 2,
     .toughness 5
-  ] ++ parseOracleParts eagleOfTheGreatShelfOracle
+  ] ++ parseOracleParts (name := "Eagle of the Great Shelf") eagleOfTheGreatShelfOracle
 
 def eagleOfTheGreatShelfCard : CardDef :=
   eagleOfTheGreatShelf.toCardDef
@@ -231,7 +231,7 @@ def vowToErebor : TraditionalCardDefinition := .card <|
     .name "Vow to Erebor",
     .manaCost [.generic 1, .mono .white],
     .type .instant
-  ] ++ parseOracleParts vowToEreborOracle
+  ] ++ parseOracleParts (name := "Vow to Erebor") vowToEreborOracle
 
 def vowToEreborCard : CardDef :=
   vowToErebor.toCardDef
@@ -279,7 +279,7 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card <|
     .subtype .rogue,
     .power 2,
     .toughness 1
-  ] ++ parseOracleParts bilboBagginsBurglarOracle
+  ] ++ parseOracleParts (name := "Bilbo Baggins, Burglar") bilboBagginsBurglarOracle
 
 def bilboBagginsBurglarCard : CardDef :=
   bilboBagginsBurglar.toCardDef
