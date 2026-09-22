@@ -424,7 +424,7 @@ def thranduilsDecreeCard : CardDef :=
           .continuous
             [.canCastWithoutPayingManaCost (.controller .this) (.wasCreatedByAction 2)]
             .endOfGame]]
-      .endOfGame]]]
+      .endOfGame]]
 
 def bilboLuckwearer : TraditionalCardDefinition := .card [
   .name "Bilbo, Luckwearer",
