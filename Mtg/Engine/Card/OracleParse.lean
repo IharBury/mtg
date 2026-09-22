@@ -1,0 +1,386 @@
+import Mtg.Engine.Card.Definition
+
+/-!
+# Oracle text to card parts
+
+`parseOracleParts` reads printed Oracle text into as many `CardPart`s as
+it can. Unrecognized lines are skipped, so a card can be parsed before
+the grammar covers every ability.
+
+Currently recognized:
+
+- comma-separated keyword lines (`Lifelink`, `Flying, deathtouch`),
+  including a trailing reminder parenthetical
+- Gatherer `//ADV//` Adventure faces: `Name {cost}`, a type line, then
+  rules text
+- mana symbols `{N}`, `{W}` `{U}` `{B}` `{R}` `{G}`, `{C}`, `{X}`, `{S}`,
+  and hybrid `{W/U}`
+- `Target <permanent type or …> [you control] gains <keywords> until end of turn.`
+-/
+
+namespace Mtg.Engine
+
+namespace OracleParts
+
+def lowerAscii : String → String := CardDef.lowerAscii
+
+def stripReminderParenthetical : String → String := CardDef.stripReminderParenthetical
+
+def stripTrailingPeriod (s : String) : String :=
+  let s := s.trimAscii.copy
+  if s.endsWith "." then (s.dropEnd 1).trimAscii.copy else s
+
+def natOfDigits? (s : String) : Option Nat :=
+  let cs := s.toList
+  if cs.isEmpty || !cs.all Char.isDigit then none
+  else some (cs.foldl (fun n c => n * 10 + (c.toNat - '0'.toNat)) 0)
+
+def colorOfLetter? (s : String) : Option Color :=
+  match lowerAscii s with
+  | "w" => some .white
+  | "u" => some .blue
+  | "b" => some .black
+  | "r" => some .red
+  | "g" => some .green
+  | _ => none
+
+def parseOneSymbol (s : String) : Option ManaSymbol :=
+  let s := s.trimAscii.copy
+  match natOfDigits? s with
+  | some n => some (.generic n)
+  | none =>
+    match lowerAscii s with
+    | "x" => some .x
+    | "c" => some .colorless
+    | "s" => some .snow
+    | _ =>
+      match colorOfLetter? s with
+      | some c => some (.colored c)
+      | none =>
+        match s.splitOn "/" with
+        | [a, b] =>
+          match colorOfLetter? a, colorOfLetter? b with
+          | some ca, some cb => some (.hybrid ca cb)
+          | _, _ => none
+        | _ => none
+
+/-- Mana symbols in `s`, which may be a whole cost such as `{1}{W}`.
+Text other than symbols and spaces makes the parse fail. -/
+def parseManaSymbols (s : String) : Option (List ManaSymbol) :=
+  go s.toList [] [] false
+where
+  go : List Char → List ManaSymbol → List Char → Bool → Option (List ManaSymbol)
+    | [], acc, _, false => some acc.reverse
+    | [], _, _, true => none
+    | ' ' :: rest, acc, body, false => go rest acc body false
+    | '{' :: rest, acc, _, false => go rest acc [] true
+    | '}' :: rest, acc, body, true =>
+      match parseOneSymbol (String.ofList body.reverse) with
+      | none => none
+      | some sym => go rest (sym :: acc) [] false
+    | c :: rest, acc, body, true => go rest acc (c :: body) true
+    | _ :: _, _, _, false => none
+
+def keywordOfOracle? (s : String) : Option Keyword :=
+  match lowerAscii (s.trimAscii.copy) with
+  | "flash" => some .flash
+  | "haste" => some .haste
+  | "vigilance" => some .vigilance
+  | "flying" => some .flying
+  | "menace" => some .menace
+  | "hexproof" => some .hexproof
+  | "indestructible" => some .indestructible
+  | "reach" => some .reach
+  | "trample" => some .trample
+  | "deathtouch" => some .deathtouch
+  | "defender" => some .defender
+  | "lifelink" => some .lifelink
+  | "first strike" => some .firstStrike
+  | "islandwalk" => some .islandwalk
+  | "storied" => some .storied
+  | "double strike" => some .doubleStrike
+  | "prowess" => some .prowess
+  | "ascend" => some .ascend
+  | "shadow" => some .shadow
+  | "changeling" => some .changeling
+  | _ => none
+
+/-- A line that is only modeled keywords, e.g. `Lifelink` or `Flying, deathtouch`. -/
+def keywordParts? (line : String) : Option (List CardPart) :=
+  let cleaned := stripTrailingPeriod (stripReminderParenthetical line)
+  if cleaned.isEmpty then none
+  else
+    let tokens :=
+      cleaned.splitOn "," |>.map (·.trimAscii.copy) |>.filter (· != "")
+    match tokens.foldl (fun acc t =>
+      match acc, keywordOfOracle? t with
+      | some parts, some k => some (parts ++ [CardPart.ability (.keyword k)])
+      | _, _ => none) (some []) with
+    | some [] => none
+    | parts => parts
+
+def supertypeOfOracle? (s : String) : Option CardSupertype :=
+  match lowerAscii s with
+  | "basic" => some .basic
+  | "legendary" => some .legendary
+  | "ongoing" => some .ongoing
+  | "snow" => some .snow
+  | "world" => some .world
+  | _ => none
+
+def cardTypes : List CardType := [
+  .artifact, .battle, .creature, .enchantment, .instant, .land,
+  .planeswalker, .sorcery, .kindred, .dungeon, .plane, .phenomenon,
+  .vanguard, .scheme, .conspiracy
+]
+
+def typeOfOracle? (s : String) : Option CardType :=
+  let s := lowerAscii s
+  cardTypes.find? (fun t => lowerAscii t.englishName == s)
+
+def cardSubtypes : List CardSubtype := [
+  .adventure, .advisor, .alien, .ape, .arcane, .archer, .army, .artificer,
+  .assassin, .aura, .avatar, .barbarian, .bard, .bat, .bear, .beast,
+  .berserker, .bird, .cat, .centaur, .citizen, .cleric, .clue, .demigod,
+  .detective, .dinosaur, .doctor, .dog, .dragon, .druid, .dwarf, .elemental,
+  .elephant, .elf, .elk, .equipment, .eternal, .food, .forest, .frog, .gamma,
+  .gate, .giant, .goblin, .god, .halfling, .hero, .horror, .horse, .human,
+  .infinity, .inhuman, .insect, .island, .knight, .kree, .mercenary, .merfolk,
+  .minotaur, .mountain, .mutant, .nightmare, .ninja, .noble, .ogre, .orc,
+  .peasant, .performer, .pilot, .pirate, .plains, .plan, .rabbit, .ranger,
+  .robot, .rogue, .saga, .samurai, .scientist, .scout, .shaman, .shapeshifter,
+  .skrull, .snake, .soldier, .sorcerer, .spider, .spirit, .spy, .squirrel,
+  .stone, .swamp, .troll, .treasure, .vampire, .vehicle, .villain, .warlock,
+  .warrior, .whale, .wizard, .wolf, .wraith, .wurm, .zombie
+]
+
+def subtypeOfOracle? (s : String) : Option CardSubtype :=
+  let s := lowerAscii s
+  cardSubtypes.find? (fun st => lowerAscii (toString st) == s)
+
+def partOfTypeWord? (w : String) : Option CardPart :=
+  match supertypeOfOracle? w with
+  | some s => some (.supertype s)
+  | none =>
+    match typeOfOracle? w with
+    | some t => some (.type t)
+    | none =>
+      match subtypeOfOracle? w with
+      | some st => some (.subtype st)
+      | none => none
+
+def isCardTypePart : CardPart → Bool
+  | .type _ => true
+  | _ => false
+
+/-- A type line such as `Instant — Adventure` or `Legendary Creature — Dwarf Scout`.
+Every word must be a supertype, card type, or subtype, and at least one word
+must be a card type. -/
+def parseTypeLine (line : String) : List CardPart :=
+  let line := stripReminderParenthetical line
+  let words := (line.splitOn "—").flatMap fun side =>
+    let side := side.trimAscii.copy
+    side.splitOn " " |>.filterMap fun w =>
+      let w := w.trimAscii.copy
+      if w.isEmpty then none else some w
+  if words.isEmpty then []
+  else
+    let parsed := words.map partOfTypeWord?
+    if parsed.any (·.isNone) then []
+    else
+      let parts := parsed.filterMap (fun x => x)
+      if parts.any isCardTypePart then parts else []
+
+/-- Split `Concerted Care {1}{W}` into the name and the brace text. -/
+def splitNameCost (line : String) : String × String :=
+  match line.splitOn "{" with
+  | [] => (line.trimAscii.copy, "")
+  | name :: rest =>
+    if rest.isEmpty then (name.trimAscii.copy, "")
+    else (name.trimAscii.copy, "{" ++ String.intercalate "{" rest)
+
+def parseNameAndCost (line : String) : List CardPart :=
+  let line := stripReminderParenthetical line
+  let (name, costText) := splitNameCost line
+  let nameParts : List CardPart := if name.isEmpty then [] else [.name name]
+  if costText.isEmpty then nameParts
+  else
+    match parseManaSymbols costText with
+    | some syms =>
+      if syms.isEmpty then nameParts else nameParts ++ [.manaCost syms]
+    | none => nameParts
+
+def selectorOfTypes : List CardType → Selector
+  | [t] => .cardType t
+  | ts => .union (ts.map fun t => .cardType t)
+
+/-- Permanent card types joined by `or`, e.g. `artifact or creature`. -/
+def typesInPhrase (s : String) : Option (List CardType) :=
+  let parts := s.splitOn " or " |>.map (·.trimAscii.copy) |>.filter (· != "")
+  let types := parts.map typeOfOracle?
+  if parts.isEmpty || types.any (·.isNone) then none
+  else
+    let ts := types.filterMap (fun x => x)
+    if ts.all CardType.isPermanentType then some ts else none
+
+/-- `target artifact or creature you control` as a battlefield selector. -/
+def parseTargetPhrase (s : String) : Option Selector :=
+  let s := lowerAscii (s.trimAscii.copy)
+  let lead := "target "
+  if !s.startsWith lead then none
+  else
+    let rest := (s.drop lead.length).trimAscii.copy
+    let youControl := " you control"
+    let (obj, controlled) :=
+      if rest.endsWith youControl then
+        ((rest.dropEnd youControl.length).trimAscii.copy, true)
+      else
+        (rest, false)
+    match typesInPhrase obj with
+    | none => none
+    | some ts =>
+      let tail : List Selector :=
+        if controlled then [.controlled (.controller .this)] else []
+      some (.intersection ([.permanent, selectorOfTypes ts] ++ tail))
+
+/-- Keywords in `hexproof and indestructible` or `haste, flying, and trample`. -/
+def parseKeywordPhrase (s : String) : Option (List Keyword) :=
+  let s := lowerAscii (s.trimAscii.copy)
+  let commaParts := s.splitOn ", " |>.map (·.trimAscii.copy) |>.filter (· != "")
+  let tokens := commaParts.flatMap fun part =>
+    let part :=
+      if part.startsWith "and " then (part.drop "and ".length).trimAscii.copy else part
+    part.splitOn " and " |>.map (·.trimAscii.copy) |>.filter (· != "")
+  if tokens.isEmpty then none
+  else
+    let kws := tokens.map keywordOfOracle?
+    if kws.any (·.isNone) then none else some (kws.filterMap (fun x => x))
+
+def gainEffects (n : Nat) (sel : Selector) (kws : List Keyword) : List ContinuousEffect :=
+  match kws with
+  | [] => []
+  | k :: rest =>
+    .gainAbility (.target n sel) (.keyword k) ::
+      rest.map (fun k => .gainAbility (.targetReference n) (.keyword k))
+
+/-- `Target … gains … until end of turn.` The target number is `n`. -/
+def parseGainsUntilEndOfTurn (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let suffix := "until end of turn"
+  if !s.endsWith suffix then none
+  else
+    let body := (s.dropEnd suffix.length).trimAscii.copy
+    match body.splitOn " gains " with
+    | [who, gained] =>
+      match parseTargetPhrase who, parseKeywordPhrase gained with
+      | some sel, some kws =>
+        some (.continuous (gainEffects n sel kws) .endOfTurn, n + 1)
+      | _, _ => none
+    | _ => none
+
+def sentences (text : String) : List String :=
+  (stripReminderParenthetical text).splitOn ". "
+    |>.map stripTrailingPeriod
+    |>.filter (· != "")
+
+def actionsFromText (text : String) (n : Nat) : Option (List CardAction × Nat) :=
+  let rec go (ss : List String) (n : Nat) (acc : List CardAction) : List CardAction × Nat :=
+    match ss with
+    | [] => (acc, n)
+    | s :: rest =>
+      match parseGainsUntilEndOfTurn s n with
+      | some (a, n') => go rest n' (acc ++ [a])
+      | none => go rest n acc
+  let (actions, n') := go (sentences text) n []
+  if actions.isEmpty then none else some (actions, n')
+
+/-- Split off a Gatherer `//ADV//` Adventure section. A marker that shares
+its line with the Adventure name keeps that name. -/
+def splitAdventure (lines : List String) : List String × List String :=
+  go lines []
+where
+  go : List String → List String → List String × List String
+    | [], acc => (acc.reverse, [])
+    | line :: rest, acc =>
+      if line == "//ADV//" then (acc.reverse, rest)
+      else if line.startsWith "//ADV//" then
+        let restLine := (line.drop "//ADV//".length).trimAscii.copy
+        let adv := if restLine.isEmpty then rest else restLine :: rest
+        (acc.reverse, adv)
+      else
+        go rest (line :: acc)
+
+def parseMainLines (lines : List String) (n : Nat) : List CardPart × Nat :=
+  match lines with
+  | [] => ([], n)
+  | line :: rest =>
+    let (parts, n') :=
+      match keywordParts? line with
+      | some parts => (parts, n)
+      | none =>
+        match actionsFromText line n with
+        | some (actions, n') => ([CardPart.actions actions], n')
+        | none => ([], n)
+    let (more, n'') := parseMainLines rest n'
+    (parts ++ more, n'')
+
+def parseAdventure (lines : List String) (n : Nat) : Option (List CardPart) :=
+  match lines with
+  | [] => none
+  | nameLine :: rest =>
+    let nameParts := parseNameAndCost nameLine
+    let (typeParts, effectLines) :=
+      match rest with
+      | line :: more =>
+        let parsed := parseTypeLine line
+        if parsed.isEmpty then ([], rest) else (parsed, more)
+      | [] => ([], [])
+    let actionParts : List CardPart :=
+      match actionsFromText (String.intercalate " " effectLines) n with
+      | some (actions, _) => [.actions actions]
+      | none => []
+    let parts := nameParts ++ typeParts ++ actionParts
+    if parts.isEmpty then none else some parts
+
+end OracleParts
+
+open OracleParts
+
+/-- Parse printed Oracle text into `CardPart`s. Keyword lines, Gatherer
+`//ADV//` Adventure faces, and “gains … until end of turn” effects are
+read into parts. Lines the grammar does not cover are omitted. -/
+def parseOracleParts (text : String) : List CardPart :=
+  let lines :=
+    text.splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
+  let (main, adv) := splitAdventure lines
+  let (mainParts, n) := parseMainLines main 1
+  match parseAdventure adv n with
+  | some alt => mainParts ++ [.alternative alt]
+  | none => mainParts
+
+#guard parseOracleParts "Lifelink" == [.ability (.keyword .lifelink)]
+#guard parseOracleParts "Flying, deathtouch" ==
+  [.ability (.keyword .flying), .ability (.keyword .deathtouch)]
+#guard parseOracleParts
+  "Reach (This creature can block creatures with flying.)" ==
+  [.ability (.keyword .reach)]
+#guard parseOracleParts "Whenever this creature attacks, draw a card." == []
+#guard parseOracleParts
+  "Target creature you control gains hexproof until end of turn." ==
+  [.actions [
+    .continuous
+      [.gainAbility
+        (.target 1 (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)]))
+        (.keyword .hexproof)]
+      .endOfTurn]]
+#guard parseOracleParts "//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure" ==
+  [.alternative [
+    .name "Spew Flame",
+    .manaCost [.generic 4, .mono .red],
+    .type .sorcery,
+    .subtype .adventure]]
+
+end Mtg.Engine
