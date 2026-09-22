@@ -596,6 +596,9 @@ inductive Ability where
   | abilityId : Nat → Ability → Ability
   | triggered : Trigger → CardAction → Ability
   | static : ContinuousEffect → Ability
+  /-- A static ability that functions while this spell is on the stack
+  (CR 604.2), e.g. a cost reduction. -/
+  | stackStatic : ContinuousEffect → Ability
 deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
@@ -3974,6 +3977,7 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
   | .static e => applyContinuousEffect b e
+  | .stackStatic e => applyContinuousEffect b e
 
 def apply (b : CardFace) : CardPart → CardFace
   | .name n => { b with name := n }
@@ -4180,7 +4184,7 @@ end TraditionalCardDefinition
     .manaCost [.generic 4, .mono .white],
     .type .instant,
     .ability (
-      .static
+      .stackStatic
         (.if
           (.targetsIncludeAny
             .this

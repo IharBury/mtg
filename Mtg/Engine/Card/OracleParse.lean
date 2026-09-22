@@ -18,6 +18,8 @@ Currently recognized:
 - `Target <permanent type or …> [you control] gains <keywords> until end of turn.`
 - `{cost}: <permanents> [you control] get +N/+N until end of turn.`
 - `Tap one or two target <permanents>.`
+- `This spell costs {N} less to cast if it targets a tapped creature.`
+- `<name> deals N damage to target <permanent type>.`
 -/
 
 namespace Mtg.Engine
@@ -342,6 +344,31 @@ def parseActivatedAbility (line : String) : Option CardPart :=
     | _, _ => none
   | _ => none
 
+/-- `This spell costs {3} less to cast if it targets a tapped creature.`
+The reduction is a static ability that functions on the stack (CR 604.2). -/
+def parseStackCostReduction (line : String) : Option CardPart :=
+  let s := lowerAscii (stripTrailingPeriod (stripReminderParenthetical line))
+  let lead := "this spell costs "
+  let tail := " less to cast if it targets a tapped creature"
+  if !s.startsWith lead || !s.endsWith tail then none
+  else
+    let mid := ((s.drop lead.length).dropEnd tail.length).trimAscii.copy
+    match parseManaSymbols mid with
+    | some syms =>
+      if syms.isEmpty then none
+      else
+        some (.ability (
+          .stackStatic
+            (.if
+              (.targetsIncludeAny
+                .this
+                (.intersection [
+                  .permanent,
+                  .cardType .creature,
+                  .tapped]))
+              [.reduceCost .this [.mana syms]])))
+    | none => none
+
 def englishSmall? (s : String) : Option Nat :=
   match lowerAscii (s.trimAscii.copy) with
   | "one" => some 1
@@ -385,6 +412,21 @@ def parseTap (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
       | _, _ => none
     | _ => none
 
+/-- `<name> deals 5 damage to target creature.` The target number is `n`. -/
+def parseDealDamage (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  match s.splitOn " deals " with
+  | [_, rest] =>
+    match rest.splitOn " damage to target " with
+    | [amt, obj] =>
+      match natOfDigits? (amt.trimAscii.copy), typesInPhrase obj with
+      | some amount, some ts =>
+        let sel := .intersection [.permanent, selectorOfTypes ts]
+        some (.dealDamage .this (.target n sel) (.nat amount), n + 1)
+      | _, _ => none
+    | _ => none
+  | _ => none
+
 /-- `Target … gains … until end of turn.` The target number is `n`. -/
 def parseGainsUntilEndOfTurn (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
@@ -415,7 +457,10 @@ def actionsFromText (text : String) (n : Nat) : Option (List CardAction × Nat) 
       | none =>
         match parseTap s n with
         | some (a, n') => go rest n' (acc ++ [a])
-        | none => go rest n acc
+        | none =>
+          match parseDealDamage s n with
+          | some (a, n') => go rest n' (acc ++ [a])
+          | none => go rest n acc
   let (actions, n') := go (sentences text) n []
   if actions.isEmpty then none else some (actions, n')
 
@@ -446,9 +491,12 @@ def parseMainLines (lines : List String) (n : Nat) : List CardPart × Nat :=
         match parseActivatedAbility line with
         | some part => ([part], n)
         | none =>
-          match actionsFromText line n with
-          | some (actions, n') => ([CardPart.actions actions], n')
-          | none => ([], n)
+          match parseStackCostReduction line with
+          | some part => ([part], n)
+          | none =>
+            match actionsFromText line n with
+            | some (actions, n') => ([CardPart.actions actions], n')
+            | none => ([], n)
     let (more, n'') := parseMainLines rest n'
     (parts ++ more, n'')
 
@@ -475,9 +523,11 @@ end OracleParts
 open OracleParts
 
 /-- Parse printed Oracle text into `CardPart`s. Keyword lines, Gatherer
-`//ADV//` Adventure faces, “gains … until end of turn” effects, and
-`{cost}: … get +P/+T until end of turn` abilities, and
-`Tap one or two target creatures` effects are read into parts.
+`//ADV//` Adventure faces, “gains … until end of turn” effects,
+`{cost}: … get +P/+T until end of turn` abilities,
+`Tap one or two target creatures` effects, stack cost reductions
+(`This spell costs {N} less … if it targets a tapped creature`), and
+`<name> deals N damage to target creature` effects are read into parts.
 Lines the grammar does not cover are omitted. -/
 def parseOracleParts (text : String) : List CardPart :=
   let lines :=
@@ -527,5 +577,23 @@ def parseOracleParts (text : String) : List CardPart :=
     .manaCost [.generic 4, .mono .red],
     .type .sorcery,
     .subtype .adventure]]
+#guard parseOracleParts
+  "This spell costs {3} less to cast if it targets a tapped creature." ==
+  [.ability (
+    .stackStatic
+      (.if
+        (.targetsIncludeAny
+          .this
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .tapped]))
+        [.reduceCost .this [.mana [.generic 3]]]))]
+#guard parseOracleParts "Magnificent End deals 5 damage to target creature." ==
+  [.actions [
+    .dealDamage
+      .this
+      (.target 1 (.intersection [.permanent, .cardType .creature]))
+      (.nat 5)]]
 
 end Mtg.Engine

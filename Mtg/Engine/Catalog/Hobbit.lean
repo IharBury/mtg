@@ -12,9 +12,9 @@ lands that are also in the core catalog.
 
 New cards may be written as a `TraditionalCardDefinition` (a list of
 `CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian,
-Dwarven Provisioner, and Velvetwing Butterflies keep their printed
-characteristics as parts; `parseOracleParts` reads the Oracle text into
-the rest.
+Dwarven Provisioner, Velvetwing Butterflies, and Magnificent End keep
+their printed characteristics as parts; `parseOracleParts` reads the
+Oracle text into the rest.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -144,12 +144,27 @@ def velvetwingButterfliesCard : CardDef :=
     .actions [
       .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature]))]]]
 
-def magnificentEnd : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Magnificent End. -/
+def magnificentEndOracle : String :=
+  "This spell costs {3} less to cast if it targets a tapped creature.\nMagnificent End deals 5 damage to target creature."
+
+def magnificentEnd : TraditionalCardDefinition := .card <|
+  [
+    .name "Magnificent End",
+    .manaCost [.generic 4, .mono .white],
+    .type .instant
+  ] ++ parseOracleParts magnificentEndOracle
+
+def magnificentEndCard : CardDef :=
+  magnificentEnd.toCardDef
+    (oracleText := magnificentEndOracle)
+
+#guard magnificentEnd == .card [
   .name "Magnificent End",
   .manaCost [.generic 4, .mono .white],
   .type .instant,
   .ability (
-    .static
+    .stackStatic
       (.if
         (.targetsIncludeAny
           .this
@@ -163,10 +178,6 @@ def magnificentEnd : TraditionalCardDefinition := .card [
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
       (.nat 5)]]
-
-def magnificentEndCard : CardDef :=
-  magnificentEnd.toCardDef
-    (oracleText := "This spell costs {3} less to cast if it targets a tapped creature.\nMagnificent End deals 5 damage to target creature.")
 
 def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
   .name "Eagle of the Great Shelf",
