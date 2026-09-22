@@ -3,9 +3,9 @@ import Mtg.Engine.Card.Definition
 /-!
 # Oracle text to card parts
 
-`parseOracleParts` reads printed Oracle text into as many `CardPart`s as
-it can. Unrecognized lines are skipped, so a card can be parsed before
-the grammar covers every ability.
+`parseOracleParts` reads printed Oracle text into `CardPart`s.
+The parse fails when any part of the text is not recognized, so a card
+is not compiled with some of its Oracle text missing.
 
 Currently recognized:
 
@@ -31,7 +31,7 @@ Currently recognized:
 - `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
 - `Whenever you draw a card, put a +1/+1 counter on this creature.`
 - `Scry N.`
-- `Choose one —` followed by `•` modes, when every mode is recognized:
+- `Choose one —` followed by `•` modes:
   - `Counter target spell unless its controller pays {cost}.`
   - `Draw <count> cards, then discard <count> card(s).`
 -/
@@ -222,16 +222,18 @@ def splitNameCost (line : String) : String × String :=
     if rest.isEmpty then (name.trimAscii.copy, "")
     else (name.trimAscii.copy, "{" ++ String.intercalate "{" rest)
 
-def parseNameAndCost (line : String) : List CardPart :=
+/-- `Concerted Care {1}{W}` as a name and mana cost.
+A brace cost that is not mana symbols makes the parse fail. -/
+def parseNameAndCost (line : String) : Option (List CardPart) :=
   let line := stripReminderParenthetical line
   let (name, costText) := splitNameCost line
-  let nameParts : List CardPart := if name.isEmpty then [] else [.name name]
-  if costText.isEmpty then nameParts
+  if name.isEmpty then none
+  else if costText.isEmpty then some [.name name]
   else
     match parseManaSymbols costText with
     | some syms =>
-      if syms.isEmpty then nameParts else nameParts ++ [.manaCost syms]
-    | none => nameParts
+      if syms.isEmpty then none else some [.name name, .manaCost syms]
+    | none => none
 
 def selectorOfTypes : List CardType → Selector
   | [t] => .cardType t
@@ -759,14 +761,12 @@ def stripModeBullet (line : String) : Option String :=
 def isChooseOneHeader (line : String) : Bool :=
   lowerAscii (stripTrailingPeriod (stripReminderParenthetical line)) == "choose one —"
 
-/-- A “Choose one” spell. An unrecognized mode omits the whole modal, so the
-printed choice is not compiled with a mode missing. -/
-def chooseOneParts (modes : List CardAction) (ok : Bool) : List CardPart :=
-  if !ok then []
-  else
-    match modes with
-    | [] => []
-    | modes => [.actions [.chooseMode modes]]
+/-- Parts for a “Choose one” spell with at least one parsed mode.
+No modes makes the parse fail rather than dropping the printed choice. -/
+def chooseOneParts (modes : List CardAction) : Option (List CardPart) :=
+  match modes with
+  | [] => none
+  | modes => some [.actions [.chooseMode modes]]
 
 /-- `Scry 2.` Does not choose a target, so the target number stays `n`. -/
 def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -785,11 +785,19 @@ def sentences (text : String) : List String :=
     |>.map stripTrailingPeriod
     |>.filter (· != "")
 
+/-- Rules text of `line` after a reminder parenthetical is removed.
+Empty when the line is only a reminder. -/
+def rulesText (line : String) : String :=
+  stripTrailingPeriod (stripReminderParenthetical line)
+
+/-- Every sentence of `text` must parse. An unrecognized sentence fails
+the text. No sentences (reminder-only or empty text) succeeds with no actions. -/
 def actionsFromText (cardName : String) (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
-  let rec go (ss : List String) (n : Nat) (acc : List CardAction) : List CardAction × Nat :=
+  let rec go (ss : List String) (n : Nat) (acc : List CardAction) :
+      Option (List CardAction × Nat) :=
     match ss with
-    | [] => (acc, n)
+    | [] => some (acc, n)
     | s :: rest =>
       match parseGainsUntilEndOfTurn s n with
       | some (a, n') => go rest n' (acc ++ [a])
@@ -811,9 +819,8 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
                 | none =>
                   match parseScry s n with
                   | some (a, n') => go rest n' (acc ++ [a])
-                  | none => go rest n acc
-  let (actions, n') := go (sentences text) n []
-  if actions.isEmpty then none else some (actions, n')
+                  | none => none
+  go (sentences text) n []
 
 /-- Split off a Gatherer `//ADV//` Adventure section. A marker that shares
 its line with the Adventure name keeps that name. -/
@@ -831,90 +838,116 @@ where
       else
         go rest (line :: acc)
 
-def parseOneLine (cardName : String) (line : String) (n : Nat) : List CardPart × Nat :=
-  match keywordParts? line with
-  | some parts => (parts, n)
-  | none =>
-    match parseActivatedAbility line with
-    | some part => ([part], n)
+/-- One non-empty Oracle line. A reminder-only line contributes no parts.
+Anything else that the grammar does not cover fails. -/
+def parseOneLine (cardName : String) (line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  if (rulesText line).isEmpty then some ([], n)
+  else
+    match keywordParts? line with
+    | some parts => some (parts, n)
     | none =>
-      match parseStackCostReduction line with
-      | some part => ([part], n)
+      match parseActivatedAbility line with
+      | some part => some ([part], n)
       | none =>
-        match parseAttackTriggered line with
-        | some part => ([part], n)
+        match parseStackCostReduction line with
+        | some part => some ([part], n)
         | none =>
-          match parseEnterDraw cardName line with
-          | some part => ([part], n)
+          match parseAttackTriggered line with
+          | some part => some ([part], n)
           | none =>
-            match parseDrawSecondPlusOne line with
-            | some part => ([part], n)
+            match parseEnterDraw cardName line with
+            | some part => some ([part], n)
             | none =>
-              match parseYouDrawPlusOne line with
-              | some part => ([part], n)
+              match parseDrawSecondPlusOne line with
+              | some part => some ([part], n)
               | none =>
-                match actionsFromText cardName line n with
-                | some (actions, n') => ([.actions actions], n')
-                | none => ([], n)
+                match parseYouDrawPlusOne line with
+                | some part => some ([part], n)
+                | none =>
+                  match actionsFromText cardName line n with
+                  | some (actions, n') =>
+                    if actions.isEmpty then none else some ([.actions actions], n')
+                  | none => none
 
-/-- `collecting` reads the `•` modes after `Choose one —`. `n0` is the target
-number at the start of that modal, restored when a mode does not parse. -/
+/-- `collecting` reads the `•` modes after `Choose one —`.
+An unrecognized mode or line fails the parse. -/
 def parseMainLines (cardName : String) (lines : List String) (n : Nat) :
-    List CardPart × Nat :=
-  go lines n false [] true n
+    Option (List CardPart × Nat) :=
+  go lines n false []
 where
-  go : List String → Nat → Bool → List CardAction → Bool → Nat → List CardPart × Nat
-    | [], n, collecting, acc, ok, n0 =>
-      if collecting then (chooseOneParts acc ok, if ok then n else n0) else ([], n)
-    | line :: rest, n, true, acc, ok, n0 =>
+  go : List String → Nat → Bool → List CardAction → Option (List CardPart × Nat)
+    | [], n, collecting, acc =>
+      if collecting then
+        match chooseOneParts acc with
+        | some parts => some (parts, n)
+        | none => none
+      else some ([], n)
+    | line :: rest, n, true, acc =>
       match stripModeBullet line with
       | some text =>
         match parseModeAction text n with
-        | some (action, n') => go rest n' true (acc ++ [action]) ok n0
-        | none => go rest n0 true acc false n0
+        | some (action, n') => go rest n' true (acc ++ [action])
+        | none => none
       | none =>
-        let head := chooseOneParts acc ok
-        let nNow := if ok then n else n0
-        if isChooseOneHeader line then
-          let (more, nMore) := go rest nNow true [] true nNow
-          (head ++ more, nMore)
-        else
-          let (here, nHere) := parseOneLine cardName line nNow
-          let (more, nMore) := go rest nHere false [] true nHere
-          (head ++ here ++ more, nMore)
-    | line :: rest, n, false, _, _, _ =>
+        match chooseOneParts acc with
+        | none => none
+        | some head =>
+          if isChooseOneHeader line then
+            match go rest n true [] with
+            | none => none
+            | some (more, nMore) => some (head ++ more, nMore)
+          else
+            match parseOneLine cardName line n with
+            | none => none
+            | some (here, nHere) =>
+              match go rest nHere false [] with
+              | none => none
+              | some (more, nMore) => some (head ++ here ++ more, nMore)
+    | line :: rest, n, false, _ =>
       if isChooseOneHeader line then
-        go rest n true [] true n
+        go rest n true []
       else
-        let (here, nHere) := parseOneLine cardName line n
-        let (more, nMore) := go rest nHere false [] true nHere
-        (here ++ more, nMore)
+        match parseOneLine cardName line n with
+        | none => none
+        | some (here, nHere) =>
+          match go rest nHere false [] with
+          | none => none
+          | some (more, nMore) => some (here ++ more, nMore)
 
 def nameOfParts (parts : List CardPart) : Option String :=
   parts.findSome? fun
     | .name n => some n
     | _ => none
 
+/-- A Gatherer Adventure face: `Name {cost}`, a type line, then rules text.
+A missing name or cost, a line that is not a type line, or effect text the
+grammar does not cover makes the parse fail. No effect lines is a face
+with no spell effect. -/
 def parseAdventure (cardName : String) (lines : List String) (n : Nat) :
     Option (List CardPart) :=
   match lines with
   | [] => none
   | nameLine :: rest =>
-    let nameParts := parseNameAndCost nameLine
-    let (typeParts, effectLines) :=
+    match parseNameAndCost nameLine with
+    | none => none
+    | some nameParts =>
       match rest with
-      | line :: more =>
-        let parsed := parseTypeLine line
-        if parsed.isEmpty then ([], rest) else (parsed, more)
-      | [] => ([], [])
-    -- An Adventure face refers to itself by its own name.
-    let faceName := nameOfParts nameParts |>.getD cardName
-    let actionParts : List CardPart :=
-      match actionsFromText faceName (String.intercalate " " effectLines) n with
-      | some (actions, _) => [.actions actions]
-      | none => []
-    let parts := nameParts ++ typeParts ++ actionParts
-    if parts.isEmpty then none else some parts
+      | [] => some nameParts
+      | typeLine :: effectLines =>
+        let typeParts := parseTypeLine typeLine
+        if typeParts.isEmpty then none
+        else
+          -- An Adventure face refers to itself by its own name.
+          let faceName := nameOfParts nameParts |>.getD cardName
+          match effectLines with
+          | [] => some (nameParts ++ typeParts)
+          | _ =>
+            match actionsFromText faceName (String.intercalate " " effectLines) n with
+            | some (actions, _) =>
+              if actions.isEmpty then none
+              else some (nameParts ++ typeParts ++ [.actions actions])
+            | none => none
 
 end OracleParts
 
@@ -940,76 +973,82 @@ triggers,
 `Choose one —` modals whose `•` modes are
 `Counter target spell unless its controller pays {cost}` or
 `Draw <count> cards, then discard <count> card(s)` are read into parts.
-A modal with a mode the grammar does not cover is omitted.
 `name` is the card being parsed. Text that uses that name, or the short name
 before a comma, means this card, as do `this` and `this <type>`.
-Lines the grammar does not cover are omitted. -/
-def parseOracleParts (name : String) (text : String) : List CardPart :=
+Returns `none` when a line, sentence, mode, or Adventure face is not
+recognized. Reminder parentheticals are not rules text. Empty text is
+`some []`. -/
+def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   let lines :=
     text.splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
   let (main, adv) := splitAdventure lines
-  let (mainParts, n) := parseMainLines name main 1
-  match parseAdventure name adv n with
-  | some alt => mainParts ++ [.alternative alt]
-  | none => mainParts
+  match parseMainLines name main 1 with
+  | none => none
+  | some (mainParts, n) =>
+    match adv with
+    | [] => some mainParts
+    | _ =>
+      match parseAdventure name adv n with
+      | none => none
+      | some alt => some (mainParts ++ [.alternative alt])
 
-#guard parseOracleParts (name := "") "Lifelink" == [.ability (.keyword .lifelink)]
+#guard parseOracleParts (name := "") "Lifelink" == some [.ability (.keyword .lifelink)]
 #guard parseOracleParts (name := "") "Flying, deathtouch" ==
-  [.ability (.keyword .flying), .ability (.keyword .deathtouch)]
+  some [.ability (.keyword .flying), .ability (.keyword .deathtouch)]
 #guard parseOracleParts (name := "")
   "Reach (This creature can block creatures with flying.)" ==
-  [.ability (.keyword .reach)]
-#guard parseOracleParts (name := "") "Whenever this creature attacks, draw a card." == []
-#guard parseOracleParts (name := "") "When another creature enters, draw a card." == []
-#guard parseOracleParts (name := "") "When Bilbo Baggins enters, draw a card." == []
-#guard parseOracleParts (name := "Gandalf") "When Bilbo Baggins enters, draw a card." == []
-#guard parseOracleParts (name := "Bilbo") "When Bilbo Baggins enters, draw a card." == []
+  some [.ability (.keyword .reach)]
+#guard parseOracleParts (name := "") "Whenever this creature attacks, draw a card." == none
+#guard parseOracleParts (name := "") "When another creature enters, draw a card." == none
+#guard parseOracleParts (name := "") "When Bilbo Baggins enters, draw a card." == none
+#guard parseOracleParts (name := "Gandalf") "When Bilbo Baggins enters, draw a card." == none
+#guard parseOracleParts (name := "Bilbo") "When Bilbo Baggins enters, draw a card." == none
 #guard parseOracleParts (name := "Bilbo Baggins, Burglar")
     "When Bilbo Baggins enters, draw a card." ==
-  [.ability (.triggered (.enter .this) (.draw (.controller .this) 1))]
+  some [.ability (.triggered (.enter .this) (.draw (.controller .this) 1))]
 #guard parseOracleParts (name := "Bilbo Baggins, Burglar")
     "When Bilbo Baggins, Burglar enters, draw a card." ==
-  [.ability (.triggered (.enter .this) (.draw (.controller .this) 1))]
+  some [.ability (.triggered (.enter .this) (.draw (.controller .this) 1))]
 #guard parseOracleParts (name := "") "When this creature enters, draw two cards." ==
-  [.ability (.triggered (.enter .this) (.draw (.controller .this) 2))]
+  some [.ability (.triggered (.enter .this) (.draw (.controller .this) 2))]
 #guard parseOracleParts (name := "")
-  "Whenever you draw your second card each turn, draw a card." == []
+  "Whenever you draw your second card each turn, draw a card." == none
 #guard parseOracleParts (name := "")
-  "Whenever you draw your second card each turn, put a +1/+1 counter on target creature." == []
+  "Whenever you draw your second card each turn, put a +1/+1 counter on target creature." == none
 #guard parseOracleParts (name := "Lakeshore Apothecary")
   "Whenever you draw your second card each turn, put a +1/+1 counter on this creature." ==
-  [.ability (
+  some [.ability (
     .triggered
       (.ordinal 2 .turnStart (.draw (.controller .this) .all))
       (.putCounter (.source .this) .plusOnePlusOne 1))]
 #guard parseOracleParts (name := "")
-  "Whenever you draw a card, draw a card." == []
+  "Whenever you draw a card, draw a card." == none
 #guard parseOracleParts (name := "")
-  "Whenever you draw a card, put a +1/+1 counter on target creature." == []
+  "Whenever you draw a card, put a +1/+1 counter on target creature." == none
 #guard parseOracleParts (name := "")
-  "Whenever you draw a card, if you control another Hero, put a +1/+1 counter on this creature." == []
+  "Whenever you draw a card, if you control another Hero, put a +1/+1 counter on this creature." == none
 #guard parseOracleParts (name := "Ravenhill Flock")
   "Whenever you draw a card, put a +1/+1 counter on this creature." ==
-  [.ability (
+  some [.ability (
     .triggered
       (.draw (.controller .this) .all)
       (.putCounter (.source .this) .plusOnePlusOne 1))]
 #guard parseOracleParts (name := "Ravenhill Flock")
   "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature." ==
-  [
+  some [
     .ability (.keyword .flying),
     .ability (
       .triggered
         (.draw (.controller .this) .all)
         (.putCounter (.source .this) .plusOnePlusOne 1))]
 #guard parseOracleParts (name := "") "Scry 2." ==
-  [.actions [.scry (.controller .this) 2]]
+  some [.actions [.scry (.controller .this) 2]]
 #guard parseOracleParts (name := "")
   "Scry 2. (Then exile this card. You may cast the creature later from exile.)" ==
-  [.actions [.scry (.controller .this) 2]]
+  some [.actions [.scry (.controller .this) 2]]
 #guard parseOracleParts (name := "")
   "Target creature you control gains hexproof until end of turn." ==
-  [.actions [
+  some [.actions [
     .continuous
       [.gainAbility
         (.target 1 (.intersection [
@@ -1020,7 +1059,7 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
       .endOfTurn]]
 #guard parseOracleParts (name := "")
   "{3}{W}: Creatures you control get +1/+1 until end of turn." ==
-  [.ability (
+  some [.ability (
     .activated
       [.mana [.generic 3, .mono .white]]
       (.continuous
@@ -1031,17 +1070,17 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
             .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
         .endOfTurn))]
 #guard parseOracleParts (name := "") "Tap one or two target creatures." ==
-  [.actions [
+  some [.actions [
     .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature]))]]
 #guard parseOracleParts (name := "") "//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure" ==
-  [.alternative [
+  some [.alternative [
     .name "Spew Flame",
     .manaCost [.generic 4, .mono .red],
     .type .sorcery,
     .subtype .adventure]]
 #guard parseOracleParts (name := "")
   "This spell costs {3} less to cast if it targets a tapped creature." ==
-  [.ability (
+  some [.ability (
     .stackStatic
       (.if
         (.targetsIncludeAny
@@ -1051,24 +1090,24 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
             .cardType .creature,
             .tapped]))
         [.reduceCost .this [.mana [.generic 3]]]))]
-#guard parseOracleParts (name := "") "Magnificent End deals 5 damage to target creature." == []
-#guard parseOracleParts (name := "Shock") "Magnificent End deals 5 damage to target creature." == []
+#guard parseOracleParts (name := "") "Magnificent End deals 5 damage to target creature." == none
+#guard parseOracleParts (name := "Shock") "Magnificent End deals 5 damage to target creature." == none
 #guard parseOracleParts (name := "Magnificent End")
     "Magnificent End deals 5 damage to target creature." ==
-  [.actions [
+  some [.actions [
     .dealDamage
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
       (.nat 5)]]
 #guard parseOracleParts (name := "") "This spell deals 5 damage to target creature." ==
-  [.actions [
+  some [.actions [
     .dealDamage
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
       (.nat 5)]]
 #guard parseOracleParts (name := "Smaug, the Great Calamity")
     "//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature." ==
-  [.alternative [
+  some [.alternative [
     .name "Spew Flame",
     .manaCost [.generic 4, .mono .red],
     .type .sorcery,
@@ -1080,7 +1119,7 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
         (.nat 5)]]]
 #guard parseOracleParts (name := "")
   "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." ==
-  [
+  some [
     .ability (.keyword .flying),
     .ability (
       .triggered
@@ -1097,7 +1136,7 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
             (Value.int 1)]
           .endOfTurn))]
 #guard parseOracleParts (name := "") "Untap target creature you control." ==
-  [.actions [
+  some [.actions [
     .untap
       (.target
         1
@@ -1107,7 +1146,7 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
           .controlled (.controller .this)]))]]
 #guard parseOracleParts (name := "")
   "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it." ==
-  [.actions [
+  some [.actions [
     .untap
       (.target
         1
@@ -1132,7 +1171,7 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
         ]]]
 #guard parseOracleParts (name := "Confusticate and Bebother")
   "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card." ==
-  [.actions [
+  some [.actions [
     .chooseMode [
       .preventable (.controller (.targetReference 1)) [.mana [.generic 4]]
         (.counter (.target 1 .spell)),
@@ -1140,8 +1179,20 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
         .draw (.controller .this) 2,
         .discard (.controller .this) 1]]]]
 #guard parseOracleParts (name := "")
-  "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Gain control of target creature." == []
+  "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Gain control of target creature." == none
 #guard parseOracleParts (name := "")
-  "Counter target spell unless its controller pays {4}." == []
+  "Counter target spell unless its controller pays {4}." == none
+#guard parseOracleParts (name := "") "" == some []
+#guard parseOracleParts (name := "") "(This is reminder text.)" == some []
+#guard parseOracleParts (name := "") "Lifelink\nDraw a card." == none
+#guard parseOracleParts (name := "") "Scry 2. Draw a card." == none
+#guard parseOracleParts (name := "")
+  "Untap target creature you control. Draw a card." == none
+#guard parseOracleParts (name := "")
+  "Flying\n//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nDraw a card." == none
+#guard parseOracleParts (name := "") "//ADV//\nSpew Flame {Z}\nSorcery — Adventure" == none
+#guard parseOracleParts (name := "") "//ADV//\nSpew Flame {4}{R}\nNot a type" == none
+#guard parseOracleParts (name := "")
+  "Choose one —\n• Gain control of target creature.\n• Draw two cards, then discard a card." == none
 
 end Mtg.Engine

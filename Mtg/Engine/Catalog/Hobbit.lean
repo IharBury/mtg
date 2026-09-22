@@ -16,7 +16,8 @@ of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
 Lakeshore Apothecary, Confusticate and Bebother, and Ravenhill Flock
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
-name for references to itself.
+name for references to itself. These cards' text is fully recognized;
+an unrecognized part fails the parse.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -39,7 +40,7 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card <|
     .subtype .scout,
     .power 1,
     .toughness 1
-  ] ++ parseOracleParts (name := "Bofur, Reliable Guardian") bofurReliableGuardianOracle
+  ] ++ (parseOracleParts (name := "Bofur, Reliable Guardian") bofurReliableGuardianOracle).get!
 
 def bofurReliableGuardianCard : CardDef :=
   bofurReliableGuardian.toCardDef
@@ -87,7 +88,7 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card <|
     .subtype .citizen,
     .power 2,
     .toughness 2
-  ] ++ parseOracleParts (name := "Dwarven Provisioner") dwarvenProvisionerOracle
+  ] ++ (parseOracleParts (name := "Dwarven Provisioner") dwarvenProvisionerOracle).get!
 
 def dwarvenProvisionerCard : CardDef :=
   dwarvenProvisioner.toCardDef
@@ -124,7 +125,7 @@ def velvetwingButterflies : TraditionalCardDefinition := .card <|
     .subtype .insect,
     .power 2,
     .toughness 2
-  ] ++ parseOracleParts (name := "Velvetwing Butterflies") velvetwingButterfliesOracle
+  ] ++ (parseOracleParts (name := "Velvetwing Butterflies") velvetwingButterfliesOracle).get!
 
 def velvetwingButterfliesCard : CardDef :=
   velvetwingButterflies.toCardDef
@@ -155,7 +156,7 @@ def magnificentEnd : TraditionalCardDefinition := .card <|
     .name "Magnificent End",
     .manaCost [.generic 4, .mono .white],
     .type .instant
-  ] ++ parseOracleParts (name := "Magnificent End") magnificentEndOracle
+  ] ++ (parseOracleParts (name := "Magnificent End") magnificentEndOracle).get!
 
 def magnificentEndCard : CardDef :=
   magnificentEnd.toCardDef
@@ -194,7 +195,7 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card <|
     .subtype .soldier,
     .power 2,
     .toughness 5
-  ] ++ parseOracleParts (name := "Eagle of the Great Shelf") eagleOfTheGreatShelfOracle
+  ] ++ (parseOracleParts (name := "Eagle of the Great Shelf") eagleOfTheGreatShelfOracle).get!
 
 def eagleOfTheGreatShelfCard : CardDef :=
   eagleOfTheGreatShelf.toCardDef
@@ -233,7 +234,7 @@ def vowToErebor : TraditionalCardDefinition := .card <|
     .name "Vow to Erebor",
     .manaCost [.generic 1, .mono .white],
     .type .instant
-  ] ++ parseOracleParts (name := "Vow to Erebor") vowToEreborOracle
+  ] ++ (parseOracleParts (name := "Vow to Erebor") vowToEreborOracle).get!
 
 def vowToEreborCard : CardDef :=
   vowToErebor.toCardDef
@@ -281,7 +282,7 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card <|
     .subtype .rogue,
     .power 2,
     .toughness 1
-  ] ++ parseOracleParts (name := "Bilbo Baggins, Burglar") bilboBagginsBurglarOracle
+  ] ++ (parseOracleParts (name := "Bilbo Baggins, Burglar") bilboBagginsBurglarOracle).get!
 
 def bilboBagginsBurglarCard : CardDef :=
   bilboBagginsBurglar.toCardDef
@@ -317,7 +318,7 @@ def lakeshoreApothecary : TraditionalCardDefinition := .card <|
     .subtype .cleric,
     .power 1,
     .toughness 2
-  ] ++ parseOracleParts (name := "Lakeshore Apothecary") lakeshoreApothecaryOracle
+  ] ++ (parseOracleParts (name := "Lakeshore Apothecary") lakeshoreApothecaryOracle).get!
 
 def lakeshoreApothecaryCard : CardDef :=
   lakeshoreApothecary.toCardDef
@@ -346,7 +347,7 @@ def confusticateAndBebother : TraditionalCardDefinition := .card <|
     .name "Confusticate and Bebother",
     .manaCost [.generic 2, .mono .blue],
     .type .instant
-  ] ++ parseOracleParts (name := "Confusticate and Bebother") confusticateAndBebotherOracle
+  ] ++ (parseOracleParts (name := "Confusticate and Bebother") confusticateAndBebotherOracle).get!
 
 def confusticateAndBebotherCard : CardDef :=
   confusticateAndBebother.toCardDef
@@ -376,7 +377,7 @@ def ravenhillFlock : TraditionalCardDefinition := .card <|
     .subtype .bird,
     .power 1,
     .toughness 2
-  ] ++ parseOracleParts (name := "Ravenhill Flock") ravenhillFlockOracle
+  ] ++ (parseOracleParts (name := "Ravenhill Flock") ravenhillFlockOracle).get!
 
 def ravenhillFlockCard : CardDef :=
   ravenhillFlock.toCardDef
