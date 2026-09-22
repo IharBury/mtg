@@ -14,7 +14,7 @@ New cards may be written as a `TraditionalCardDefinition` (a list of
 Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
 of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
 Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock,
-Thranduil's Decree, and Bilbo, Luckwearer keep their printed
+Thranduil's Decree, Bilbo, Luckwearer, and Uneasy Partings keep their printed
 characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -476,12 +476,27 @@ def bilboLuckwearerCard : CardDef :=
           (.intersection [.permanent, .not .land])
           [.shareCardType])]]]
 
-def uneasyPartings : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Uneasy Partings. -/
+def uneasyPartingsOracle : String :=
+  "This spell costs {1} less to cast if it targets an attacking nontoken creature.\nTarget creature's owner puts it on their choice of the top or bottom of their library."
+
+def uneasyPartings : TraditionalCardDefinition := .card <|
+  [
+    .name "Uneasy Partings",
+    .manaCost [.generic 3, .mono .blue],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Uneasy Partings") uneasyPartingsOracle).get!
+
+def uneasyPartingsCard : CardDef :=
+  uneasyPartings.toCardDef
+    (oracleText := uneasyPartingsOracle)
+
+#guard uneasyPartings == .card [
   .name "Uneasy Partings",
   .manaCost [.generic 3, .mono .blue],
   .type .instant,
   .ability (
-    .static
+    .stackStatic
       (.if
         (.targetsIncludeAny
           .this
@@ -493,14 +508,9 @@ def uneasyPartings : TraditionalCardDefinition := .card [
         [.reduceCost .this [.mana [.generic 1]]])),
   .actions [
     .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
-    [.putOnTopOfLibrary (.target 1 (.intersection [.permanent, .cardType .creature])),
-       .putOnBottomOfLibrary (.targetReference 1)]
-      ]
-]
-
-def uneasyPartingsCard : CardDef :=
-  uneasyPartings.toCardDef
-    (oracleText := "This spell costs {1} less to cast if it targets an attacking nontoken creature.\nTarget creature's owner puts it on their choice of the top or bottom of their library.")
+      [.putOnTopOfLibrary
+        (.target 1 (.intersection [.permanent, .cardType .creature])),
+        .putOnBottomOfLibrary (.targetReference 1)]]]
 
 def frontPorchSentries : TraditionalCardDefinition := .card [
   .name "Front Porch Sentries",

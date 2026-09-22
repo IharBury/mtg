@@ -4426,7 +4426,7 @@ end TraditionalCardDefinition
 #guard
   (TraditionalCardDefinition.card [
     .ability (
-      .static
+      .stackStatic
         (.if
           (.targetsIncludeAny
             .this
