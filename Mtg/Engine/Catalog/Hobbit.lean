@@ -11,8 +11,9 @@ reconstruct it. `CardDef.matchesOracleText` checks that mechanically.
 lands that are also in the core catalog.
 
 New cards may be written as a `TraditionalCardDefinition` (a list of
-`CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian is
-the first card in that style.
+`CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian
+keeps its printed characteristics as parts; `parseOracleParts` reads the
+Oracle text into the rest.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -21,7 +22,27 @@ namespace Mtg.Engine.Catalog
 
 open Mtg.Engine
 
-def bofurReliableGuardian : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Bofur, Reliable Guardian // Concerted Care. -/
+def bofurReliableGuardianOracle : String :=
+  "Lifelink\n//ADV//\nConcerted Care {1}{W}\nInstant — Adventure\nTarget artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)"
+
+def bofurReliableGuardian : TraditionalCardDefinition := .card <|
+  [
+    .name "Bofur, Reliable Guardian",
+    .manaCost [.mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .scout,
+    .power 1,
+    .toughness 1
+  ] ++ parseOracleParts bofurReliableGuardianOracle
+
+def bofurReliableGuardianCard : CardDef :=
+  bofurReliableGuardian.toCardDef
+    (oracleText := bofurReliableGuardianOracle)
+
+#guard bofurReliableGuardian == .card [
   .name "Bofur, Reliable Guardian",
   .manaCost [.mono .white],
   .type .creature,
@@ -48,12 +69,7 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
                 .controlled (.controller .this)]))
             (.keyword .hexproof),
           .gainAbility (.targetReference 1) (.keyword .indestructible)]
-        .endOfTurn]]
-]
-
-def bofurReliableGuardianCard : CardDef :=
-  bofurReliableGuardian.toCardDef
-    (oracleText := "Lifelink\n//ADV//\nConcerted Care {1}{W}\nInstant — Adventure\nTarget artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)")
+        .endOfTurn]]]
 
 def dwarvenProvisioner : TraditionalCardDefinition := .card [
   .name "Dwarven Provisioner",

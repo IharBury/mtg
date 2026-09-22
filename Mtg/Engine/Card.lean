@@ -19,6 +19,7 @@ import Mtg.Engine.Card.TriggeredAbility
 import Mtg.Engine.Card.Saga
 import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Card.Definition
+import Mtg.Engine.Card.OracleParse
 import Mtg.Engine.Card.Guards
 
 /-!
@@ -49,5 +50,6 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `Saga`: printed Sagas (CR 714).
 - `CardDef`: the printed card definition and `AdventureFace`.
 - `Definition`: part-based `TraditionalCardDefinition` that compiles to `CardDef`.
+- `OracleParse`: `parseOracleParts`, Oracle text read into `CardPart`s.
 - `Guards`: cross-abstraction `#guard` regression tests.
 -/
