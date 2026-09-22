@@ -30,6 +30,9 @@ Currently recognized:
   The entering object is `this`, `this <type>`, the card's name, or that short name
 - `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
 - `Scry N.`
+- `Choose one —` followed by `•` modes, when every mode is recognized:
+  - `Counter target spell unless its controller pays {cost}.`
+  - `Draw <count> cards, then discard <count> card(s).`
 -/
 
 namespace Mtg.Engine
@@ -675,6 +678,80 @@ def parseDrawSecondPlusOne (line : String) : Option CardPart :=
           action))
     | none => none
 
+/-- `Counter target spell unless its controller pays {4}.`
+The target number is `n`. -/
+def parseCounterUnlessPays (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "counter target "
+  let mid := " unless its controller pays "
+  if !s.startsWith lead then none
+  else
+    let body := (s.drop lead.length).trimAscii.copy
+    match body.splitOn mid with
+    | [obj, costText] =>
+      if obj != "spell" then none
+      else
+        match parseManaSymbols costText with
+        | some syms =>
+          if syms.isEmpty then none
+          else
+            some (
+              .preventable
+                (.controller (.targetReference n))
+                [.mana syms]
+                (.counter (.target n .spell)),
+              n + 1)
+        | none => none
+    | _ => none
+
+/-- `Draw two cards, then discard a card.` Does not choose a target. -/
+def parseDrawThenDiscard (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "draw "
+  match s.splitOn ", then discard " with
+  | [drawPart, discardPart] =>
+    if !drawPart.startsWith lead then none
+    else
+      match
+        parseCardCount (drawPart.drop lead.length).trimAscii.copy,
+        parseCardCount discardPart with
+      | some d, some c =>
+        some (
+          .sequence [
+            .draw (.controller .this) (Value.nat d),
+            .discard (.controller .this) (Value.nat c)],
+          n)
+      | _, _ => none
+  | _ => none
+
+/-- One printed mode of a “Choose one” spell. -/
+def parseModeAction (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  match parseCounterUnlessPays sentence n with
+  | some result => some result
+  | none => parseDrawThenDiscard sentence n
+
+/-- The text of a `•` mode line, without the bullet. -/
+def stripModeBullet (line : String) : Option String :=
+  let line := line.trimAscii.copy
+  let bullet := "•"
+  if line.startsWith bullet then
+    some (line.drop bullet.length).trimAscii.copy
+  else
+    none
+
+/-- `Choose one —` (CR 700.2). -/
+def isChooseOneHeader (line : String) : Bool :=
+  lowerAscii (stripTrailingPeriod (stripReminderParenthetical line)) == "choose one —"
+
+/-- A “Choose one” spell. An unrecognized mode omits the whole modal, so the
+printed choice is not compiled with a mode missing. -/
+def chooseOneParts (modes : List CardAction) (ok : Bool) : List CardPart :=
+  if !ok then []
+  else
+    match modes with
+    | [] => []
+    | modes => [.actions [.chooseMode modes]]
+
 /-- `Scry 2.` Does not choose a target, so the target number stays `n`. -/
 def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
@@ -738,35 +815,61 @@ where
       else
         go rest (line :: acc)
 
-def parseMainLines (cardName : String) (lines : List String) (n : Nat) :
-    List CardPart × Nat :=
-  match lines with
-  | [] => ([], n)
-  | line :: rest =>
-    let (parts, n') :=
-      match keywordParts? line with
-      | some parts => (parts, n)
+def parseOneLine (cardName : String) (line : String) (n : Nat) : List CardPart × Nat :=
+  match keywordParts? line with
+  | some parts => (parts, n)
+  | none =>
+    match parseActivatedAbility line with
+    | some part => ([part], n)
+    | none =>
+      match parseStackCostReduction line with
+      | some part => ([part], n)
       | none =>
-        match parseActivatedAbility line with
+        match parseAttackTriggered line with
         | some part => ([part], n)
         | none =>
-        match parseStackCostReduction line with
-        | some part => ([part], n)
-        | none =>
-          match parseAttackTriggered line with
+          match parseEnterDraw cardName line with
           | some part => ([part], n)
           | none =>
-            match parseEnterDraw cardName line with
+            match parseDrawSecondPlusOne line with
             | some part => ([part], n)
             | none =>
-              match parseDrawSecondPlusOne line with
-              | some part => ([part], n)
-              | none =>
-                match actionsFromText cardName line n with
-                | some (actions, n') => ([CardPart.actions actions], n')
-                | none => ([], n)
-    let (more, n'') := parseMainLines cardName rest n'
-    (parts ++ more, n'')
+              match actionsFromText cardName line n with
+              | some (actions, n') => ([.actions actions], n')
+              | none => ([], n)
+
+/-- `collecting` reads the `•` modes after `Choose one —`. `n0` is the target
+number at the start of that modal, restored when a mode does not parse. -/
+def parseMainLines (cardName : String) (lines : List String) (n : Nat) :
+    List CardPart × Nat :=
+  go lines n false [] true n
+where
+  go : List String → Nat → Bool → List CardAction → Bool → Nat → List CardPart × Nat
+    | [], n, collecting, acc, ok, n0 =>
+      if collecting then (chooseOneParts acc ok, if ok then n else n0) else ([], n)
+    | line :: rest, n, true, acc, ok, n0 =>
+      match stripModeBullet line with
+      | some text =>
+        match parseModeAction text n with
+        | some (action, n') => go rest n' true (acc ++ [action]) ok n0
+        | none => go rest n0 true acc false n0
+      | none =>
+        let head := chooseOneParts acc ok
+        let nNow := if ok then n else n0
+        if isChooseOneHeader line then
+          let (more, nMore) := go rest nNow true [] true nNow
+          (head ++ more, nMore)
+        else
+          let (here, nHere) := parseOneLine cardName line nNow
+          let (more, nMore) := go rest nHere false [] true nHere
+          (head ++ here ++ more, nMore)
+    | line :: rest, n, false, _, _, _ =>
+      if isChooseOneHeader line then
+        go rest n true [] true n
+      else
+        let (here, nHere) := parseOneLine cardName line n
+        let (more, nMore) := go rest nHere false [] true nHere
+        (here ++ more, nMore)
 
 def nameOfParts (parts : List CardPart) : Option String :=
   parts.findSome? fun
@@ -811,8 +914,12 @@ stack cost reductions
 other creature you control` triggers,
 `When <this card> enters, draw a card` triggers,
 `Whenever you draw your second card each turn, put a +1/+1 counter on this creature`
-triggers, and
-`Scry N` effects are read into parts.
+triggers,
+`Scry N` effects, and
+`Choose one —` modals whose `•` modes are
+`Counter target spell unless its controller pays {cost}` or
+`Draw <count> cards, then discard <count> card(s)` are read into parts.
+A modal with a mode the grammar does not cover is omitted.
 `name` is the card being parsed. Text that uses that name, or the short name
 before a comma, means this card, as do `this` and `this <type>`.
 Lines the grammar does not cover are omitted. -/
@@ -982,5 +1089,18 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
                   .controlled (.controller .this)]))
               (.targetReference 1))
         ]]]
+#guard parseOracleParts (name := "Confusticate and Bebother")
+  "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card." ==
+  [.actions [
+    .chooseMode [
+      .preventable (.controller (.targetReference 1)) [.mana [.generic 4]]
+        (.counter (.target 1 .spell)),
+      .sequence [
+        .draw (.controller .this) 2,
+        .discard (.controller .this) 1]]]]
+#guard parseOracleParts (name := "")
+  "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Gain control of target creature." == []
+#guard parseOracleParts (name := "")
+  "Counter target spell unless its controller pays {4}." == []
 
 end Mtg.Engine
