@@ -11,9 +11,10 @@ reconstruct it. `CardDef.matchesOracleText` checks that mechanically.
 lands that are also in the core catalog.
 
 New cards may be written as a `TraditionalCardDefinition` (a list of
-`CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian and
-Dwarven Provisioner keep their printed characteristics as parts;
-`parseOracleParts` reads the Oracle text into the rest.
+`CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian,
+Dwarven Provisioner, and Velvetwing Butterflies keep their printed
+characteristics as parts; `parseOracleParts` reads the Oracle text into
+the rest.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -109,7 +110,25 @@ def dwarvenProvisionerCard : CardDef :=
             .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
         .endOfTurn))]
 
-def velvetwingButterflies : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Velvetwing Butterflies // Gaze in Wonder. -/
+def velvetwingButterfliesOracle : String :=
+  "Flying\n//ADV//\nGaze in Wonder {1}{W}\nInstant — Adventure\nTap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)"
+
+def velvetwingButterflies : TraditionalCardDefinition := .card <|
+  [
+    .name "Velvetwing Butterflies",
+    .manaCost [.generic 2, .mono .white],
+    .type .creature,
+    .subtype .insect,
+    .power 2,
+    .toughness 2
+  ] ++ parseOracleParts velvetwingButterfliesOracle
+
+def velvetwingButterfliesCard : CardDef :=
+  velvetwingButterflies.toCardDef
+    (oracleText := velvetwingButterfliesOracle)
+
+#guard velvetwingButterflies == .card [
   .name "Velvetwing Butterflies",
   .manaCost [.generic 2, .mono .white],
   .type .creature,
@@ -124,10 +143,6 @@ def velvetwingButterflies : TraditionalCardDefinition := .card [
     .subtype .adventure,
     .actions [
       .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature]))]]]
-
-def velvetwingButterfliesCard : CardDef :=
-  velvetwingButterflies.toCardDef
-    (oracleText := "Flying\n//ADV//\nGaze in Wonder {1}{W}\nInstant — Adventure\nTap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)")
 
 def magnificentEnd : TraditionalCardDefinition := .card [
   .name "Magnificent End",
