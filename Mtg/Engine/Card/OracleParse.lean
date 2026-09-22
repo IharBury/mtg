@@ -17,6 +17,7 @@ Currently recognized:
   and hybrid `{W/U}`
 - `Target <permanent type or …> [you control] gains <keywords> until end of turn.`
 - `{cost}: <permanents> [you control] get +N/+N until end of turn.`
+- `Tap one or two target <permanents>.`
 -/
 
 namespace Mtg.Engine
@@ -341,6 +342,49 @@ def parseActivatedAbility (line : String) : Option CardPart :=
     | _, _ => none
   | _ => none
 
+def englishSmall? (s : String) : Option Nat :=
+  match lowerAscii (s.trimAscii.copy) with
+  | "one" => some 1
+  | "two" => some 2
+  | "three" => some 3
+  | "four" => some 4
+  | "five" => some 5
+  | "six" => some 6
+  | "seven" => some 7
+  | "eight" => some 8
+  | "nine" => some 9
+  | "ten" => some 10
+  | _ => natOfDigits? s
+
+/-- `one`, `two`, or `one or two`. -/
+def parseCountRange (s : String) : Option Range :=
+  match s.trimAscii.copy.splitOn " or " with
+  | [a, b] =>
+    match englishSmall? a, englishSmall? b with
+    | some lo, some hi => some (.range (Value.nat lo) (Value.nat hi))
+    | _, _ => none
+  | [a] =>
+    match englishSmall? a with
+    | some n => some (.range (Value.nat n) (Value.nat n))
+    | none => none
+  | _ => none
+
+/-- `Tap one or two target creatures.` The target number is `n`. -/
+def parseTap (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "tap "
+  if !s.startsWith lead then none
+  else
+    let rest := (s.drop lead.length).trimAscii.copy
+    match rest.splitOn " target " with
+    | [countText, obj] =>
+      match parseCountRange countText, typesInPhrase obj with
+      | some r, some ts =>
+        let sel := .intersection [.permanent, selectorOfTypes ts]
+        some (.tap (.targets n r sel), n + 1)
+      | _, _ => none
+    | _ => none
+
 /-- `Target … gains … until end of turn.` The target number is `n`. -/
 def parseGainsUntilEndOfTurn (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
@@ -368,7 +412,10 @@ def actionsFromText (text : String) (n : Nat) : Option (List CardAction × Nat) 
     | s :: rest =>
       match parseGainsUntilEndOfTurn s n with
       | some (a, n') => go rest n' (acc ++ [a])
-      | none => go rest n acc
+      | none =>
+        match parseTap s n with
+        | some (a, n') => go rest n' (acc ++ [a])
+        | none => go rest n acc
   let (actions, n') := go (sentences text) n []
   if actions.isEmpty then none else some (actions, n')
 
@@ -429,7 +476,8 @@ open OracleParts
 
 /-- Parse printed Oracle text into `CardPart`s. Keyword lines, Gatherer
 `//ADV//` Adventure faces, “gains … until end of turn” effects, and
-`{cost}: … get +P/+T until end of turn` abilities are read into parts.
+`{cost}: … get +P/+T until end of turn` abilities, and
+`Tap one or two target creatures` effects are read into parts.
 Lines the grammar does not cover are omitted. -/
 def parseOracleParts (text : String) : List CardPart :=
   let lines :=
@@ -470,6 +518,9 @@ def parseOracleParts (text : String) : List CardPart :=
             .cardType .creature,
             .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
         .endOfTurn))]
+#guard parseOracleParts "Tap one or two target creatures." ==
+  [.actions [
+    .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature]))]]
 #guard parseOracleParts "//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure" ==
   [.alternative [
     .name "Spew Flame",
