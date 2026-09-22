@@ -348,11 +348,11 @@ def parseActivatedAbility (line : String) : Option CardPart :=
 The reduction is a static ability that functions on the stack (CR 604.2). -/
 def parseStackCostReduction (line : String) : Option CardPart :=
   let s := lowerAscii (stripTrailingPeriod (stripReminderParenthetical line))
-  let prefix := "this spell costs "
-  let suffix := " less to cast if it targets a tapped creature"
-  if !s.startsWith prefix || !s.endsWith suffix then none
+  let lead := "this spell costs "
+  let tail := " less to cast if it targets a tapped creature"
+  if !s.startsWith lead || !s.endsWith tail then none
   else
-    let mid := ((s.drop prefix.length).dropEnd suffix.length).trimAscii.copy
+    let mid := ((s.drop lead.length).dropEnd tail.length).trimAscii.copy
     match parseManaSymbols mid with
     | some syms =>
       if syms.isEmpty then none
