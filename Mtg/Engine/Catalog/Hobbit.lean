@@ -11,9 +11,9 @@ lands that are also in the core catalog.
 
 New cards may be written as a `TraditionalCardDefinition` (a list of
 `CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian,
-Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, and Eagle
-of the Great Shelf keep their printed characteristics as parts;
-`parseOracleParts` reads the Oracle text into the rest.
+Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
+of the Great Shelf, and Vow to Erebor keep their printed characteristics
+as parts; `parseOracleParts` reads the Oracle text into the rest.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -221,7 +221,22 @@ def eagleOfTheGreatShelfCard : CardDef :=
           (Value.int 1)]
         .endOfTurn))]
 
-def vowToErebor : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Vow to Erebor. -/
+def vowToEreborOracle : String :=
+  "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
+
+def vowToErebor : TraditionalCardDefinition := .card <|
+  [
+    .name "Vow to Erebor",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant
+  ] ++ parseOracleParts vowToEreborOracle
+
+def vowToEreborCard : CardDef :=
+  vowToErebor.toCardDef
+    (oracleText := vowToEreborOracle)
+
+#guard vowToErebor == .card [
   .name "Vow to Erebor",
   .manaCost [.generic 1, .mono .white],
   .type .instant,
@@ -248,10 +263,6 @@ def vowToErebor : TraditionalCardDefinition := .card [
                   .controlled (.controller .this)]))
               (.targetReference 1))
         ]]]
-
-def vowToEreborCard : CardDef :=
-  vowToErebor.toCardDef
-    (oracleText := "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it.")
 
 def bilboBagginsBurglar : TraditionalCardDefinition := .card [
   .name "Bilbo Baggins, Burglar",

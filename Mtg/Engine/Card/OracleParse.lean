@@ -18,6 +18,9 @@ Currently recognized:
 - `Target <permanent type or …> [you control] gains <keywords> until end of turn.`
 - `{cost}: <permanents> [you control] get +N/+N until end of turn.`
 - `Tap one or two target <permanents>.`
+- `Untap target <permanents> [you control].`
+- `It gets +P/+T until end of turn.` (the previous target)
+- `If it's a <subtype>, you may attach a/an <subtype> you control to it.`
 - `This spell costs {N} less to cast if it targets a tapped creature.`
 - `<name> deals N damage to target <permanent type>.`
 - `Whenever this creature attacks, it gets +P/+T until end of turn for each other creature you control.`
@@ -456,6 +459,82 @@ def parseTap (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
       | _, _ => none
     | _ => none
 
+/-- `Untap target <permanents> [you control].` The target number is `n`. -/
+def parseUntap (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "untap "
+  if !s.startsWith lead then none
+  else
+    match parseTargetPhrase (s.drop lead.length).trimAscii.copy with
+    | some sel => some (.untap (.target n sel), n + 1)
+    | none => none
+
+/-- `It gets +P/+T until end of turn.` refers to the last target (`n - 1`). -/
+def parseItGetsUntilEndOfTurn (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  if n <= 1 then none
+  else
+    let s := lowerAscii (stripTrailingPeriod sentence)
+    let lead := "it gets "
+    let suffix := " until end of turn"
+    if !s.startsWith lead || !s.endsWith suffix then none
+    else
+      let pt := ((s.drop lead.length).dropEnd suffix.length).trimAscii.copy
+      match parsePowerToughness pt with
+      | some (p, t) =>
+        some (
+          .continuous
+            [.addPowerToughness (.targetReference (n - 1)) (Value.int p) (Value.int t)]
+            .endOfTurn,
+          n)
+      | none => none
+
+/-- Drop a leading `a` / `an`. -/
+def dropArticle? (s : String) : Option String :=
+  let s := s.trimAscii.copy
+  let sl := lowerAscii s
+  if sl.startsWith "an " then some (s.drop 3).trimAscii.copy
+  else if sl.startsWith "a " then some (s.drop 2).trimAscii.copy
+  else none
+
+/-- `If it's a Dwarf, you may attach an Equipment you control to it.`
+The previous target (`n - 1`) is the host. -/
+def parseIfItsSubtypeMayAttach (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  if n <= 1 then none
+  else
+    let s := lowerAscii (stripTrailingPeriod sentence)
+    let lead := "if it's "
+    let mid := ", you may attach "
+    let tail := " you control to it"
+    if !s.startsWith lead || !s.endsWith tail then none
+    else
+      let body := ((s.drop lead.length).dropEnd tail.length).trimAscii.copy
+      match body.splitOn mid with
+      | [hostArt, attachArt] =>
+        match dropArticle? hostArt, dropArticle? attachArt with
+        | some hostName, some attachName =>
+          match subtypeOfOracle? hostName, subtypeOfOracle? attachName with
+          | some hostSt, some attachSt =>
+            let host := Selector.targetReference (n - 1)
+            some (
+              .if
+                (.anySubtype host hostSt)
+                [
+                  .optional
+                    (.attach
+                      (.selected
+                        (.controller .this)
+                        (.range 1 1)
+                        (.intersection [
+                          .permanent,
+                          .subtype attachSt,
+                          .controlled (.controller .this)]))
+                      host)
+                ],
+              n)
+          | _, _ => none
+        | _, _ => none
+      | _ => none
+
 /-- `<name> deals 5 damage to target creature.` The target number is `n`. -/
 def parseDealDamage (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
@@ -502,9 +581,18 @@ def actionsFromText (text : String) (n : Nat) : Option (List CardAction × Nat) 
         match parseTap s n with
         | some (a, n') => go rest n' (acc ++ [a])
         | none =>
-          match parseDealDamage s n with
+          match parseUntap s n with
           | some (a, n') => go rest n' (acc ++ [a])
-          | none => go rest n acc
+          | none =>
+            match parseItGetsUntilEndOfTurn s n with
+            | some (a, n') => go rest n' (acc ++ [a])
+            | none =>
+              match parseIfItsSubtypeMayAttach s n with
+              | some (a, n') => go rest n' (acc ++ [a])
+              | none =>
+                match parseDealDamage s n with
+                | some (a, n') => go rest n' (acc ++ [a])
+                | none => go rest n acc
   let (actions, n') := go (sentences text) n []
   if actions.isEmpty then none else some (actions, n')
 
@@ -572,7 +660,10 @@ open OracleParts
 /-- Parse printed Oracle text into `CardPart`s. Keyword lines, Gatherer
 `//ADV//` Adventure faces, “gains … until end of turn” effects,
 `{cost}: … get +P/+T until end of turn` abilities,
-`Tap one or two target creatures` effects, stack cost reductions
+`Tap one or two target creatures` effects,
+`Untap target creature you control` plus a following `It gets +P/+T`
+and optional `If it's a <subtype>, you may attach …` clause,
+stack cost reductions
 (`This spell costs {N} less … if it targets a tapped creature`),
 `<name> deals N damage to target creature` effects, and
 `Whenever this creature attacks, it gets +P/+T until end of turn for each
@@ -662,5 +753,39 @@ def parseOracleParts (text : String) : List CardPart :=
             (Value.int 1)
             (Value.int 1)]
           .endOfTurn))]
+#guard parseOracleParts "Untap target creature you control." ==
+  [.actions [
+    .untap
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)]))]]
+#guard parseOracleParts
+  "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it." ==
+  [.actions [
+    .untap
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])),
+    .continuous [.addPowerToughness (.targetReference 1) (Value.int 2) (Value.int 2)] .endOfTurn,
+    .if
+        (.anySubtype (.targetReference 1) .dwarf)
+        [
+          .optional
+            (.attach
+              (.selected
+                (.controller .this)
+                (.range 1 1)
+                (.intersection [
+                  .permanent,
+                  .subtype .equipment,
+                  .controlled (.controller .this)]))
+              (.targetReference 1))
+        ]]]
 
 end Mtg.Engine
