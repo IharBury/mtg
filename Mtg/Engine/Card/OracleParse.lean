@@ -24,6 +24,8 @@ Currently recognized:
 - `This spell costs {N} less to cast if it targets a tapped creature.`
 - `<name> deals N damage to target <permanent type>.`
 - `Whenever this creature attacks, it gets +P/+T until end of turn for each other creature you control.`
+- `When <this or a name> enters, draw a card.` / `draw N cards.`
+- `Scry N.`
 -/
 
 namespace Mtg.Engine
@@ -565,6 +567,70 @@ def parseGainsUntilEndOfTurn (sentence : String) (n : Nat) : Option (CardAction 
       | _, _ => none
     | _ => none
 
+/-- `a card`, `one card`, or `two cards` as how many cards are drawn. -/
+def parseCardCount (s : String) : Option Nat :=
+  let s := lowerAscii (s.trimAscii.copy)
+  if s == "a card" then some 1
+  else
+    let counted :=
+      if s.endsWith " cards" then
+        some ((s.dropEnd " cards".length).trimAscii.copy, true)
+      else if s.endsWith " card" then
+        some ((s.dropEnd " card".length).trimAscii.copy, false)
+      else
+        none
+    match counted with
+    | none => none
+    | some (countText, plural) =>
+      match englishSmall? countText with
+      | some n =>
+        if n == 0 then none
+        else if n == 1 then
+          if plural then none else some n
+        else if plural then some n else none
+      | none => none
+
+/-- The entering object is this card, not another object or a set of objects. -/
+def isThisEntering (subject : String) : Bool :=
+  let s := lowerAscii (subject.trimAscii.copy)
+  !s.isEmpty &&
+    !s.startsWith "another " &&
+    !s.startsWith "each " &&
+    !s.startsWith "any " &&
+    !s.startsWith "a " &&
+    !s.startsWith "an " &&
+    !s.startsWith "one or more" &&
+    (s.splitOn " or ").length == 1 &&
+    (s.splitOn " you control").length == 1
+
+/-- `When Bilbo Baggins enters, draw a card.` The subject is this object. -/
+def parseEnterDraw (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let lead := "when "
+  if !s.startsWith lead then none
+  else
+    match (s.drop lead.length).splitOn " enters, " with
+    | [subject, effect] =>
+      if !isThisEntering subject || !effect.startsWith "draw " then none
+      else
+        match parseCardCount (effect.drop "draw ".length) with
+        | some n =>
+          some (.ability (.triggered (.enter .this) (.draw (.controller .this) n)))
+        | none => none
+    | _ => none
+
+/-- `Scry 2.` Does not choose a target, so the target number stays `n`. -/
+def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "scry "
+  if !s.startsWith lead then none
+  else
+    match englishSmall? (s.drop lead.length) with
+    | some k =>
+      if k == 0 then none else some (.scry (.controller .this) k, n)
+    | none => none
+
 def sentences (text : String) : List String :=
   (stripReminderParenthetical text).splitOn ". "
     |>.map stripTrailingPeriod
@@ -592,7 +658,10 @@ def actionsFromText (text : String) (n : Nat) : Option (List CardAction × Nat) 
               | none =>
                 match parseDealDamage s n with
                 | some (a, n') => go rest n' (acc ++ [a])
-                | none => go rest n acc
+                | none =>
+                  match parseScry s n with
+                  | some (a, n') => go rest n' (acc ++ [a])
+                  | none => go rest n acc
   let (actions, n') := go (sentences text) n []
   if actions.isEmpty then none else some (actions, n')
 
@@ -629,9 +698,12 @@ def parseMainLines (lines : List String) (n : Nat) : List CardPart × Nat :=
           match parseAttackTriggered line with
           | some part => ([part], n)
           | none =>
-            match actionsFromText line n with
-            | some (actions, n') => ([CardPart.actions actions], n')
-            | none => ([], n)
+            match parseEnterDraw line with
+            | some part => ([part], n)
+            | none =>
+              match actionsFromText line n with
+              | some (actions, n') => ([CardPart.actions actions], n')
+              | none => ([], n)
     let (more, n'') := parseMainLines rest n'
     (parts ++ more, n'')
 
@@ -665,9 +737,11 @@ open OracleParts
 and optional `If it's a <subtype>, you may attach …` clause,
 stack cost reductions
 (`This spell costs {N} less … if it targets a tapped creature`),
-`<name> deals N damage to target creature` effects, and
+`<name> deals N damage to target creature` effects,
 `Whenever this creature attacks, it gets +P/+T until end of turn for each
-other creature you control` triggers are read into parts.
+other creature you control` triggers,
+`When <this or a name> enters, draw a card` triggers, and
+`Scry N` effects are read into parts.
 Lines the grammar does not cover are omitted. -/
 def parseOracleParts (text : String) : List CardPart :=
   let lines :=
@@ -685,6 +759,16 @@ def parseOracleParts (text : String) : List CardPart :=
   "Reach (This creature can block creatures with flying.)" ==
   [.ability (.keyword .reach)]
 #guard parseOracleParts "Whenever this creature attacks, draw a card." == []
+#guard parseOracleParts "When another creature enters, draw a card." == []
+#guard parseOracleParts "When Bilbo Baggins enters, draw a card." ==
+  [.ability (.triggered (.enter .this) (.draw (.controller .this) 1))]
+#guard parseOracleParts "When this creature enters, draw two cards." ==
+  [.ability (.triggered (.enter .this) (.draw (.controller .this) 2))]
+#guard parseOracleParts "Scry 2." ==
+  [.actions [.scry (.controller .this) 2]]
+#guard parseOracleParts
+  "Scry 2. (Then exile this card. You may cast the creature later from exile.)" ==
+  [.actions [.scry (.controller .this) 2]]
 #guard parseOracleParts
   "Target creature you control gains hexproof until end of turn." ==
   [.actions [

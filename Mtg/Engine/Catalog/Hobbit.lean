@@ -12,8 +12,9 @@ lands that are also in the core catalog.
 New cards may be written as a `TraditionalCardDefinition` (a list of
 `CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian,
 Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
-of the Great Shelf, and Vow to Erebor keep their printed characteristics
-as parts; `parseOracleParts` reads the Oracle text into the rest.
+of the Great Shelf, Vow to Erebor, and Bilbo Baggins, Burglar keep their
+printed characteristics as parts; `parseOracleParts` reads the Oracle
+text into the rest.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -264,7 +265,27 @@ def vowToEreborCard : CardDef :=
               (.targetReference 1))
         ]]]
 
-def bilboBagginsBurglar : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Bilbo Baggins, Burglar // Take a Glance. -/
+def bilboBagginsBurglarOracle : String :=
+  "When Bilbo Baggins enters, draw a card.\n//ADV//\nTake a Glance {U}\nSorcery — Adventure\nScry 2. (Then exile this card. You may cast the creature later from exile.)"
+
+def bilboBagginsBurglar : TraditionalCardDefinition := .card <|
+  [
+    .name "Bilbo Baggins, Burglar",
+    .manaCost [.generic 2, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .rogue,
+    .power 2,
+    .toughness 1
+  ] ++ parseOracleParts bilboBagginsBurglarOracle
+
+def bilboBagginsBurglarCard : CardDef :=
+  bilboBagginsBurglar.toCardDef
+    (oracleText := bilboBagginsBurglarOracle)
+
+#guard bilboBagginsBurglar == .card [
   .name "Bilbo Baggins, Burglar",
   .manaCost [.generic 2, .mono .blue],
   .type .creature,
@@ -279,12 +300,7 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card [
     .manaCost [.mono .blue],
     .type .sorcery,
     .subtype .adventure,
-    .actions [.scry (.controller .this) 2]]
-]
-
-def bilboBagginsBurglarCard : CardDef :=
-  bilboBagginsBurglar.toCardDef
-    (oracleText := "When Bilbo Baggins enters, draw a card.\n//ADV//\nTake a Glance {U}\nSorcery — Adventure\nScry 2. (Then exile this card. You may cast the creature later from exile.)")
+    .actions [.scry (.controller .this) 2]]]
 
 def lakeshoreApothecary : TraditionalCardDefinition := .card [
   .name "Lakeshore Apothecary",
