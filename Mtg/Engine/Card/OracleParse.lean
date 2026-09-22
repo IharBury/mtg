@@ -29,6 +29,7 @@ Currently recognized:
 - `When <this card> enters, draw a card.` / `draw N cards.`
   The entering object is `this`, `this <type>`, the card's name, or that short name
 - `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
+- `Whenever you draw a card, put a +1/+1 counter on this creature.`
 - `Scry N.`
 - `Choose one —` followed by `•` modes, when every mode is recognized:
   - `Counter target spell unless its controller pays {cost}.`
@@ -678,6 +679,21 @@ def parseDrawSecondPlusOne (line : String) : Option CardPart :=
           action))
     | none => none
 
+/-- `Whenever you draw a card, put a +1/+1 counter on this creature.` -/
+def parseYouDrawPlusOne (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let lead := "whenever you draw a card, "
+  if !s.startsWith lead then none
+  else
+    match parsePutPlusOneOnThis (s.drop lead.length).trimAscii.copy with
+    | some action =>
+      some (.ability (
+        .triggered
+          (.draw (.controller .this) .all)
+          action))
+    | none => none
+
 /-- `Counter target spell unless its controller pays {4}.`
 The target number is `n`. -/
 def parseCounterUnlessPays (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -834,9 +850,12 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) : List CardPart �
             match parseDrawSecondPlusOne line with
             | some part => ([part], n)
             | none =>
-              match actionsFromText cardName line n with
-              | some (actions, n') => ([.actions actions], n')
-              | none => ([], n)
+              match parseYouDrawPlusOne line with
+              | some part => ([part], n)
+              | none =>
+                match actionsFromText cardName line n with
+                | some (actions, n') => ([.actions actions], n')
+                | none => ([], n)
 
 /-- `collecting` reads the `•` modes after `Choose one —`. `n0` is the target
 number at the start of that modal, restored when a mode does not parse. -/
@@ -915,6 +934,8 @@ other creature you control` triggers,
 `When <this card> enters, draw a card` triggers,
 `Whenever you draw your second card each turn, put a +1/+1 counter on this creature`
 triggers,
+`Whenever you draw a card, put a +1/+1 counter on this creature`
+triggers,
 `Scry N` effects, and
 `Choose one —` modals whose `•` modes are
 `Counter target spell unless its controller pays {cost}` or
@@ -961,6 +982,26 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
     .triggered
       (.ordinal 2 .turnStart (.draw (.controller .this) .all))
       (.putCounter (.source .this) .plusOnePlusOne 1))]
+#guard parseOracleParts (name := "")
+  "Whenever you draw a card, draw a card." == []
+#guard parseOracleParts (name := "")
+  "Whenever you draw a card, put a +1/+1 counter on target creature." == []
+#guard parseOracleParts (name := "")
+  "Whenever you draw a card, if you control another Hero, put a +1/+1 counter on this creature." == []
+#guard parseOracleParts (name := "Ravenhill Flock")
+  "Whenever you draw a card, put a +1/+1 counter on this creature." ==
+  [.ability (
+    .triggered
+      (.draw (.controller .this) .all)
+      (.putCounter (.source .this) .plusOnePlusOne 1))]
+#guard parseOracleParts (name := "Ravenhill Flock")
+  "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature." ==
+  [
+    .ability (.keyword .flying),
+    .ability (
+      .triggered
+        (.draw (.controller .this) .all)
+        (.putCounter (.source .this) .plusOnePlusOne 1))]
 #guard parseOracleParts (name := "") "Scry 2." ==
   [.actions [.scry (.controller .this) 2]]
 #guard parseOracleParts (name := "")

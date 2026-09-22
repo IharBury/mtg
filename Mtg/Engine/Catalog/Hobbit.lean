@@ -13,8 +13,8 @@ New cards may be written as a `TraditionalCardDefinition` (a list of
 `CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian,
 Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
 of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
-Lakeshore Apothecary, and Confusticate and Bebother keep their printed
-characteristics as parts;
+Lakeshore Apothecary, Confusticate and Bebother, and Ravenhill Flock
+keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself.
 
@@ -364,7 +364,25 @@ def confusticateAndBebotherCard : CardDef :=
         .draw (.controller .this) 2,
         .discard (.controller .this) 1]]]]
 
-def ravenhillFlock : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Ravenhill Flock. -/
+def ravenhillFlockOracle : String :=
+  "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature."
+
+def ravenhillFlock : TraditionalCardDefinition := .card <|
+  [
+    .name "Ravenhill Flock",
+    .manaCost [.generic 3, .mono .blue],
+    .type .creature,
+    .subtype .bird,
+    .power 1,
+    .toughness 2
+  ] ++ parseOracleParts (name := "Ravenhill Flock") ravenhillFlockOracle
+
+def ravenhillFlockCard : CardDef :=
+  ravenhillFlock.toCardDef
+    (oracleText := ravenhillFlockOracle)
+
+#guard ravenhillFlock == .card [
   .name "Ravenhill Flock",
   .manaCost [.generic 3, .mono .blue],
   .type .creature,
@@ -375,12 +393,7 @@ def ravenhillFlock : TraditionalCardDefinition := .card [
   .ability (
     .triggered
       (.draw (.controller .this) .all)
-      (.putCounter (.source .this) .plusOnePlusOne 1))
-]
-
-def ravenhillFlockCard : CardDef :=
-  ravenhillFlock.toCardDef
-    (oracleText := "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature.")
+      (.putCounter (.source .this) .plusOnePlusOne 1))]
 
 def thranduilsDecree : TraditionalCardDefinition := .card [
   .name "Thranduil's Decree",
