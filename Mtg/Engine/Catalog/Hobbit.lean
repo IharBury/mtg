@@ -12,8 +12,9 @@ lands that are also in the core catalog.
 New cards may be written as a `TraditionalCardDefinition` (a list of
 `CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian,
 Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
-of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar, and
-Lakeshore Apothecary keep their printed characteristics as parts;
+of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
+Lakeshore Apothecary, and Confusticate and Bebother keep their printed
+characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself.
 
@@ -336,20 +337,32 @@ def lakeshoreApothecaryCard : CardDef :=
       (.ordinal 2 .turnStart (.draw (.controller .this) .all))
       (.putCounter (.source .this) .plusOnePlusOne 1))]
 
-def confusticateAndBebother : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Confusticate and Bebother. -/
+def confusticateAndBebotherOracle : String :=
+  "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card."
+
+def confusticateAndBebother : TraditionalCardDefinition := .card <|
+  [
+    .name "Confusticate and Bebother",
+    .manaCost [.generic 2, .mono .blue],
+    .type .instant
+  ] ++ parseOracleParts (name := "Confusticate and Bebother") confusticateAndBebotherOracle
+
+def confusticateAndBebotherCard : CardDef :=
+  confusticateAndBebother.toCardDef
+    (oracleText := confusticateAndBebotherOracle)
+
+#guard confusticateAndBebother == .card [
   .name "Confusticate and Bebother",
   .manaCost [.generic 2, .mono .blue],
   .type .instant,
   .actions [
     .chooseMode [
-      .preventable (.controller (.targetReference 1)) [.mana [.generic 4]] (.counter (.target 1 .spell)),
+      .preventable (.controller (.targetReference 1)) [.mana [.generic 4]]
+        (.counter (.target 1 .spell)),
       .sequence [
         .draw (.controller .this) 2,
         .discard (.controller .this) 1]]]]
-
-def confusticateAndBebotherCard : CardDef :=
-  confusticateAndBebother.toCardDef
-    (oracleText := "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card.")
 
 def ravenhillFlock : TraditionalCardDefinition := .card [
   .name "Ravenhill Flock",
