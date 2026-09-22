@@ -20,6 +20,7 @@ Currently recognized:
 - `Tap one or two target <permanents>.`
 - `This spell costs {N} less to cast if it targets a tapped creature.`
 - `<name> deals N damage to target <permanent type>.`
+- `Whenever this creature attacks, it gets +P/+T until end of turn for each other creature you control.`
 -/
 
 namespace Mtg.Engine
@@ -293,30 +294,55 @@ def parsePowerToughness (s : String) : Option (Int × Int) :=
     | _, _ => none
   | _ => none
 
-/-- `creatures you control` as a battlefield selector. A trailing `s` on a
-card type is the plural (`creatures`). -/
+/-- `creatures you control` or `other creature you control` as a battlefield
+selector. A trailing `s` on a card type is the plural (`creatures`). -/
 def parseControlledPhrase (s : String) : Option Selector :=
   let s := lowerAscii (s.trimAscii.copy)
   let youControl := " you control"
-  let (obj, controlled) :=
+  let (obj0, controlled) :=
     if s.endsWith youControl then
       ((s.dropEnd youControl.length).trimAscii.copy, true)
     else
       (s, false)
+  let otherLead := "other "
+  let (obj, other) :=
+    if obj0.startsWith otherLead then
+      ((obj0.drop otherLead.length).trimAscii.copy, true)
+    else
+      (obj0, false)
   match typesInPhrase obj with
   | none => none
   | some ts =>
+    let head : List Selector :=
+      (if other then [.not .this] else []) ++ [.permanent, selectorOfTypes ts]
     let tail : List Selector :=
       if controlled then [.controlled (.controller .this)] else []
-    some (.intersection ([.permanent, selectorOfTypes ts] ++ tail))
+    some (.intersection (head ++ tail))
 
-/-- `<objects> get +P/+T until end of turn.` -/
+/-- `it` / `this creature`, or a controlled-permanent phrase. -/
+def parsePumpWho (s : String) : Option Selector :=
+  match lowerAscii (s.trimAscii.copy) with
+  | "it" | "this" | "this creature" => some (.source .this)
+  | _ => parseControlledPhrase s
+
+/-- `<objects> get +P/+T until end of turn [for each <objects>].` -/
 def parsePumpUntilEndOfTurn (sentence : String) : Option CardAction :=
   let s := lowerAscii (stripTrailingPeriod sentence)
+  let forEachMark := " until end of turn for each "
   let suffix := "until end of turn"
-  if !s.endsWith suffix then none
+  let (body, among?) :=
+    match s.splitOn forEachMark with
+    | [pre, among] =>
+      let among := among.trimAscii.copy
+      if among.isEmpty then (pre.trimAscii.copy, none)
+      else (pre.trimAscii.copy, some among)
+    | _ =>
+      if s.endsWith suffix then
+        ((s.dropEnd suffix.length).trimAscii.copy, none)
+      else
+        ("", none)
+  if body.isEmpty && among?.isNone && !s.endsWith suffix then none
   else
-    let body := (s.dropEnd suffix.length).trimAscii.copy
     let pieces :=
       match body.splitOn " gets " with
       | [who, pt] => some (who, pt)
@@ -327,10 +353,28 @@ def parsePumpUntilEndOfTurn (sentence : String) : Option CardAction :=
     match pieces with
     | none => none
     | some (who, pt) =>
-      match parseControlledPhrase who, parsePowerToughness pt with
-      | some sel, some (p, t) =>
+      match parsePumpWho who, parsePowerToughness pt, among? with
+      | some sel, some (p, t), none =>
         some (.continuous [.addPowerToughness sel (Value.int p) (Value.int t)] .endOfTurn)
-      | _, _ => none
+      | some sel, some (p, t), some amongText =>
+        match parseControlledPhrase amongText with
+        | some among =>
+          some (.continuous
+            [.addPowerToughnessPer sel among (Value.int p) (Value.int t)] .endOfTurn)
+        | none => none
+      | _, _, _ => none
+
+/-- `Whenever this creature attacks, it gets +1/+1 until end of turn for each
+other creature you control.` -/
+def parseAttackTriggered (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let lead := "whenever this creature attacks, "
+  if !s.startsWith lead then none
+  else
+    match parsePumpUntilEndOfTurn (line.drop lead.length).trimAscii.copy with
+    | some action => some (.ability (.triggered (.attack .this .all) action))
+    | none => none
 
 /-- `{3}{W}: Creatures you control get +1/+1 until end of turn.` -/
 def parseActivatedAbility (line : String) : Option CardPart :=
@@ -491,7 +535,10 @@ def parseMainLines (lines : List String) (n : Nat) : List CardPart × Nat :=
         match parseActivatedAbility line with
         | some part => ([part], n)
         | none =>
-          match parseStackCostReduction line with
+        match parseStackCostReduction line with
+        | some part => ([part], n)
+        | none =>
+          match parseAttackTriggered line with
           | some part => ([part], n)
           | none =>
             match actionsFromText line n with
@@ -526,8 +573,10 @@ open OracleParts
 `//ADV//` Adventure faces, “gains … until end of turn” effects,
 `{cost}: … get +P/+T until end of turn` abilities,
 `Tap one or two target creatures` effects, stack cost reductions
-(`This spell costs {N} less … if it targets a tapped creature`), and
-`<name> deals N damage to target creature` effects are read into parts.
+(`This spell costs {N} less … if it targets a tapped creature`),
+`<name> deals N damage to target creature` effects, and
+`Whenever this creature attacks, it gets +P/+T until end of turn for each
+other creature you control` triggers are read into parts.
 Lines the grammar does not cover are omitted. -/
 def parseOracleParts (text : String) : List CardPart :=
   let lines :=
@@ -595,5 +644,23 @@ def parseOracleParts (text : String) : List CardPart :=
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
       (.nat 5)]]
+#guard parseOracleParts
+  "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." ==
+  [
+    .ability (.keyword .flying),
+    .ability (
+      .triggered
+        (.attack .this .all)
+        (.continuous
+          [.addPowerToughnessPer
+            (.source .this)
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])
+            (Value.int 1)
+            (Value.int 1)]
+          .endOfTurn))]
 
 end Mtg.Engine

@@ -767,6 +767,7 @@ def supportedOracleFailures : List String :=
 #guard gollumSilentSlinkerCard.keywords.menace
 #guard bofurReliableGuardianCard.matchesOracleText
 #guard magnificentEndCard.matchesOracleText
+#guard eagleOfTheGreatShelfCard.matchesOracleText
 #guard lakeshoreApothecaryCard.matchesOracleText
 #guard confusticateAndBebotherCard.matchesOracleText
 #guard ravenhillFlockCard.matchesOracleText
