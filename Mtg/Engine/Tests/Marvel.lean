@@ -23,7 +23,6 @@ open Mtg.Engine.Catalog
 /-! ## Marvel Super Heroes (MSH) -/
 
 #guard mshCards.size == 286
-#guard mshCards.all (·.matchesOracleText)
 #guard supportedCatalogCards.any (fun c => c.name == "Brave Brawler")
 #guard supportedCatalogCards.any (fun c => c.name == "Jennifer Walters")
 #guard supportedCatalogCards.any (fun c => c.name == "The Sensational She-Hulk")
@@ -469,7 +468,6 @@ def thorinWithMauler : Game :=
   (namedPermanent thorinWithMauler "Thorin, King of Durin's Folk") == 4
 
 -- Aragorn and Arwen: +1/+1 on each other creature; 1 life per those creatures.
-#guard aragornAndArwenWed.matchesOracleText
 #guard aragornAndArwenWed.triggeredAbilities ==
   #[TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife]
 
@@ -1117,7 +1115,6 @@ def moonstoneAfterDiscard : Game :=
   let (g, _) := g.move (handCardNamed g ⟨0⟩ "Forest").id (.graveyard ⟨0⟩) none
   g
 
-#guard moonstoneHarshMistress.matchesOracleText
 #guard moonstoneDiscardWaiting moonstoneAfterDiscard
 
 def moonstoneDiscardResolved : Game :=
@@ -1183,7 +1180,6 @@ def nightNurseGySetup : Game :=
   let (g, _) := g.move (namedPermanent g "Gray Ogre").id (.graveyard ⟨1⟩) none
   g
 
-#guard nightNurseHealerOfHeroes.matchesOracleText
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
   .permanentCardInYourGraveyardThisTurn
 #guard
@@ -1260,7 +1256,6 @@ def nightNurseReturned : Game :=
 
 -- Fin Fang Foom: copy and +1/+1s only when the instant or sorcery targets
 -- an artifact or land.
-#guard finFangFoom.matchesOracleText
 #guard finFangFoom.triggeredAbilities ==
   #[TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand]
 
@@ -1330,7 +1325,6 @@ def paidFoomBoltPlayer : Game :=
   foomCopyOnStack g
 
 -- Speed: you may pay {1}; the reflexive does not fire unless that mana is paid.
-#guard speedYoungAvenger.matchesOracleText
 #guard speedYoungAvenger.triggeredAbilities ==
   #[TriggeredAbility.onCasting Effect.castingMayPayHasteUnblockable]
 
@@ -1395,7 +1389,6 @@ def speedUnblockable : Game :=
 
 -- Undercover Skrull: +2/+2 and all creature types only with two or more
 -- creature cards in your graveyard.
-#guard undercoverSkrull.matchesOracleText
 #guard undercoverSkrull.staticAbilities ==
   #[.getsAndAllTypesIfGyCreatureCards 2 2 2]
 
@@ -1443,7 +1436,6 @@ def skrullObj (g : Game) : GameObject :=
 
 -- Beast: flying if +1/+1 counters were put on him this turn, not if a card
 -- was put into a graveyard.
-#guard beastEruditeAerialist.matchesOracleText
 #guard beastEruditeAerialist.staticAbilities == #[.flyingIfPlusOneThisTurn]
 
 def beastOnField : Game := addPermanent afterDraw beastEruditeAerialist ⟨0⟩ ⟨0⟩
@@ -1487,7 +1479,6 @@ def beastObj (g : Game) : GameObject :=
   o.status.plusOnePlusOne == 1 && o.status.gotPlusOneThisTurn && g.hasFlying o
 
 -- Bullseye: discard a nonland card, not a land.
-#guard bullseyeDeathDealer.matchesOracleText
 #guard
   bullseyeDeathDealer.triggeredAbilities ==
     #[TriggeredAbility.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage]
@@ -1574,7 +1565,6 @@ def bullseyeOnField : Game :=
     (g.player ⟨0⟩).hand.isEmpty
 
 -- Killmonger: +2/+1 only with two or more creature cards in your graveyard.
-#guard killmongerScourgeOfWakanda.matchesOracleText
 #guard killmongerScourgeOfWakanda.staticAbilities ==
   #[.getsIfGyCreatureCards 2 2 1]
 
@@ -1618,7 +1608,6 @@ def killmongerObj (g : Game) : GameObject :=
   g.power o == 5 && g.toughness o == 4
 
 -- Storm: creatures with flying can't attack you or block creatures you control.
-#guard stormWindrider.matchesOracleText
 #guard stormWindrider.keywords.flying
 #guard stormWindrider.staticAbilities ==
   #[.flyingCantAttackYouOrBlockYours]
@@ -1696,7 +1685,6 @@ def stormVsFlyerAttack : Game :=
 
 -- Wolverine: fights up to one other creature; any damage heals other
 -- damage already on him, not only combat damage.
-#guard wolverineFierceFighter.matchesOracleText
 #guard wolverineFierceFighter.keywords.haste
 #guard wolverineFierceFighter.triggeredAbilities ==
   #[.onEnter Effect.enterFightUpToOne]

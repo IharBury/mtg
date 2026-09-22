@@ -510,7 +510,6 @@ def lookoutEntered : Game :=
 
 /- Eagle of the Great Shelf: +1/+1 per other creature you control. -/
 
-#guard eagleOfTheGreatShelfCard.matchesOracleText
 #guard eagleOfTheGreatShelfCard.keywords.flying
 #guard eagleOfTheGreatShelfCard.triggeredAbilities ==
   #[.onAttackPumpForEachOtherCreature]

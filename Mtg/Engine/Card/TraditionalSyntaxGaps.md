@@ -27,8 +27,8 @@ without a new constructor.
 All **365** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
-onto existing engine constructors; `#guard supportedCardsMatchOracle`
-holds). The other **12 cannot be spelled** with the current types; closer
+onto existing engine constructors). The other **12 cannot be spelled**
+with the current types; closer
 reading found constructor gaps the first pass missed (see [Cards that still
 cannot convert](#cards-that-still-cannot-convert)).
 

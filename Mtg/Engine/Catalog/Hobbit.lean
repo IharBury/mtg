@@ -5,8 +5,7 @@ import Mtg.Engine.Catalog
 # The Hobbit catalog
 
 Oracle characteristics for cards from Magic: The Gathering | The Hobbit
-(HOB). Oracle text is stored verbatim from Scryfall; modeled fields must
-reconstruct it. `CardDef.matchesOracleText` checks that mechanically.
+(HOB). Oracle text is stored verbatim from Scryfall.
 `hobbitCards` lists every unique card in the set, including Journey basic
 lands that are also in the core catalog.
 

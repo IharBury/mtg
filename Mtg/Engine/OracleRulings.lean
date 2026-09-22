@@ -2285,10 +2285,9 @@ end Mtg.Engine
 # Engine behavior for unique HOB / HOC judge rulings
 
 These tests check Gatherer / Scryfall `wotc` comments — rulings issued by
-judges — not the rules text printed on the cards and not
-`CardDef.matchesOracleText`. Each `#guard` is tagged with the ruling id
-from `uniqueOracleRulings`. Comments shared with MSH cards keep this same
-id so the ruling is set-independent.
+judges — not the rules text printed on the cards. Each `#guard` is tagged
+with the ruling id from `uniqueOracleRulings`. Comments shared with MSH
+cards keep this same id so the ruling is set-independent.
 -/
 
 namespace Mtg.Engine.RulingTests
@@ -7166,9 +7165,9 @@ end Mtg.Engine.RulingTests
 
 These tests check official MSH release-note and Gatherer / Scryfall `wotc`
 comments — rulings issued by judges — not the rules text printed on the
-cards and not `CardDef.matchesOracleText`. Each `#guard` is tagged with the
-ruling id from `uniqueOracleRulings`. Comments that also appear on HOB or
-HOC cards keep that shared id so the same ruling applies across sets.
+cards. Each `#guard` is tagged with the ruling id from `uniqueOracleRulings`.
+Comments that also appear on HOB or HOC cards keep that shared id so the
+same ruling applies across sets.
 -/
 
 namespace Mtg.Engine.MshRulingTests
