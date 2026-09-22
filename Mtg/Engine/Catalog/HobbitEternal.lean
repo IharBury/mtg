@@ -26,9 +26,31 @@ def fiendHunter : CardDef :=
     (triggeredAbilities := #[.onEnterMayExileAnotherCreature, .onLeaveReturnExiled])
 
 def errandRiderOfGondor : CardDef :=
-  creature "Errand-Rider of Gondor" (ManaCost.ofGenericAndColor 2 .white) #["Human", "Soldier"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Errand-Rider of Gondor",
+    .manaCost [.generic 2, .mono .white],
+    .type .creature,
+    .subtype .human,
+    .subtype .soldier,
+    .power 3,
+    .toughness 2,
+    .ability
+      (.triggered
+        (.enter .this)
+        (.sequence [
+          .draw (.controller .this) 1,
+          .ifElse
+            (.any
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .supertype .legendary,
+                .controlled (.controller .this)]))
+            []
+            [.putOnBottomOfLibrary
+              (.selected (.controller .this) (.range 1 1) .inHand)]]))
+  ]).toCardDef
     (oracleText := "When this creature enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library.")
-    (triggeredAbilities := #[.onEnterDrawThenBottomIfNoLegendary])
 
 def landrovalHorizonWitness : CardDef :=
   (TraditionalCardDefinition.card [
@@ -607,11 +629,39 @@ def guttersnipe : CardDef :=
     (oracleText := "Whenever you cast an instant or sorcery spell, this creature deals 2 damage to each opponent.")
 
 def orcishSiegemaster : CardDef :=
-  creature "Orcish Siegemaster" (ManaCost.ofGenericAndColor 2 .red) #["Orc", "Soldier"] 0 5
+  (TraditionalCardDefinition.card [
+    .name "Orcish Siegemaster",
+    .manaCost [.generic 2, .mono .red],
+    .type .creature,
+    .subtype .orc,
+    .subtype .soldier,
+    .power 0,
+    .toughness 5,
+    .ability (.keyword .trample),
+    .ability
+      (.static
+        (.gainAbility
+          (.intersection [
+            .not .this,
+            .permanent,
+            .union [.subtype .orc, .subtype .goblin],
+            .controlled (.controller .this)])
+          (.keyword .trample))),
+    .ability
+      (.triggered
+        (.attack .this .all)
+        (.continuous
+          [.addPowerToughness
+            .this
+            (.greatestPower
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)]))
+            0]
+          .endOfTurn))
+  ]).toCardDef
     (oracleText := "Trample\nOther Orcs and Goblins you control have trample.\nWhenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control.")
-    (keywords := Keyword.trample)
-    (staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]])
-    (triggeredAbilities := #[.onAttackPumpByGreatestPower])
 
 def fireOfOrthanc : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1329,9 +1379,23 @@ def sauronTheDarkLord : CardDef :=
       .onRingTemptsMayDiscardDraw 4])
 
 def smaugTheImpenetrable : CardDef :=
-  legendaryCreature "Smaug the Impenetrable" (ManaCost.ofGenericAndColors 5 [.black, .red]) #["Dragon"] 8 7 (oracleText := "Flying, indestructible, haste\nWhenever Smaug is dealt noncombat damage, create that many Treasure tokens.")
-    (keywords := Keywords.mergeAll #[Keyword.flying, Keyword.indestructible, Keyword.haste])
-    (triggeredAbilities := #[.onDealtNoncombatDamageCreateTreasures])
+  (TraditionalCardDefinition.card [
+    .name "Smaug the Impenetrable",
+    .manaCost [.generic 5, .mono .black, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dragon,
+    .power 8,
+    .toughness 7,
+    .ability (.keyword .flying),
+    .ability (.keyword .indestructible),
+    .ability (.keyword .haste),
+    .ability
+      (.triggered
+        (.damage .all .this)
+        (.createTokens (.controller .this) Value.x PredefinedToken.treasureToken))
+  ]).toCardDef
+    (oracleText := "Flying, indestructible, haste\nWhenever Smaug is dealt noncombat damage, create that many Treasure tokens.")
 
 def theBlackGate : CardDef :=
   legendaryLand "The Black Gate" "As The Black Gate enters, you may pay 3 life. If you don't, it enters tapped.\n{T}: Add {B}.\n{1}{B}, {T}: Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn."
@@ -1350,11 +1414,24 @@ def theOneRing : CardDef :=
       .onYourUpkeepLoseLifePerBurden])
 
 def theReaverCleaver : CardDef :=
-  artifact "The Reaver Cleaver" (ManaCost.ofGenericAndColor 2 .red) "Equipped creature gets +1/+1 and has trample and \"Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens.\"\nEquip {3}"
-    (subtypes := #["Equipment"])
-    (supertypes := #[.legendary])
-    (staticAbilities := #[.equippedGetsTrampleAndCombatTreasures 1 1])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
+  (TraditionalCardDefinition.card [
+    .name "The Reaver Cleaver",
+    .manaCost [.generic 2, .mono .red],
+    .type .artifact,
+    .supertype .legendary,
+    .subtype .equipment,
+    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 1) (Value.int 1))),
+    .ability (.static (.gainAbility (.hostOf .this) (.keyword .trample))),
+    .ability
+      (.static
+        (.gainAbility
+          (.hostOf .this)
+          (.triggered
+            (.combatDamage .this .player)
+            (.createTokens (.controller .this) Value.x PredefinedToken.treasureToken)))),
+    .ability (.keywordWithCost .equip [.mana [.generic 3]])
+  ]).toCardDef
+    (oracleText := "Equipped creature gets +1/+1 and has trample and \"Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens.\"\nEquip {3}")
 
 def thorinCompanySLeader : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1696,6 +1773,15 @@ def hobbitEternalCards : Array CardDef := #[
 #guard callForthTheTempest.spellEffect == some (Effect.damageOppCreaturesEqualOtherSpellsMv)
 #guard galadrielSDismissal.spellEffect == some (Effect.phaseOutKicker)
 #guard theReaverCleaver.staticAbilities == #[.equippedGetsTrampleAndCombatTreasures 1 1]
+#guard theReaverCleaver.activatedAbilities.size == 1
+#guard errandRiderOfGondor.triggeredAbilities == #[.onEnterDrawThenBottomIfNoLegendary]
+#guard orcishSiegemaster.keywords.trample
+#guard orcishSiegemaster.staticAbilities == #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
+#guard orcishSiegemaster.triggeredAbilities == #[.onAttackPumpByGreatestPower]
+#guard smaugTheImpenetrable.keywords.flying
+#guard smaugTheImpenetrable.keywords.indestructible
+#guard smaugTheImpenetrable.keywords.haste
+#guard smaugTheImpenetrable.triggeredAbilities == #[.onDealtNoncombatDamageCreateTreasures]
 #guard mountDoom.activatedAbilities.size == 2
 #guard mountDoom.activatedAbilities[1]!.cost.sacrificeLegendaryArtifact
 

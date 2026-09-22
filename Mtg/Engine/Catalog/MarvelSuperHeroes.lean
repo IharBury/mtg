@@ -1212,9 +1212,25 @@ def kingpinSEnforcers : CardDef :=
     (oracleText := "Lifelink\n{2}{B}, Sacrifice an artifact or creature: Draw a card.")
 
 def klawSonicSubjugator : CardDef :=
-  legendaryCreature "Klaw, Sonic Subjugator" (ManaCost.ofGenericAndColor 2 .black) #["Human", "Rogue", "Villain"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Klaw, Sonic Subjugator",
+    .manaCost [.generic 2, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .rogue,
+    .subtype .villain,
+    .power 2,
+    .toughness 2,
+    .ability
+      (.triggered
+        (.enter .this)
+        (.sequence [
+          .reveal
+            (.intersection [.inHand, .controlled (.target 1 .player)]),
+          .discard (.target 1 .player) 1]))
+  ]).toCardDef
     (oracleText := "Sonic Attack — When Klaw enters, target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card.")
-    (triggeredAbilities := #[.onEnter Effect.enterRevealDiscardFromHand])
 
 def madameMasque : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1668,10 +1684,20 @@ def hawkeyeSBow : CardDef :=
     (staticAbilities := #[StaticAbility.equippedCreatureGetsAndHas 1 0 Keyword.reach])
 
 def hexMagic : CardDef :=
-  card "Hex Magic" #[.sorcery] (ManaCost.ofGenericAndColor 2 .red)
-    (subtypes := #["Arcane"])
+  (TraditionalCardDefinition.card [
+    .name "Hex Magic",
+    .manaCost [.generic 2, .mono .red],
+    .type .sorcery,
+    .subtype .arcane,
+    .actions [
+      .actionId 1
+        (.exile (.intersection [.inHand, .owner (.controller .this)])),
+      .draw (.controller .this) Value.x,
+      .continuous
+        [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+        (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]
+  ]).toCardDef
     (oracleText := "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way.")
-    (spellEffect := some (Effect.exileHandDrawPlayUntilNext))
 
 def hireACrew : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1835,10 +1861,22 @@ def machinesmithAutomaton : CardDef :=
     (oracleText := "Trample\nWhenever another artifact you control enters, put a +1/+1 counter on this creature.")
 
 def mistyKnightHeroForHire : CardDef :=
-  legendaryCreature "Misty Knight, Hero for Hire" (ManaCost.ofGenericAndColor 1 .red) #["Human", "Detective", "Hero"] 3 1
+  (TraditionalCardDefinition.card [
+    .name "Misty Knight, Hero for Hire",
+    .manaCost [.generic 1, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .detective,
+    .subtype .hero,
+    .power 3,
+    .toughness 1,
+    .ability
+      (.activated
+        [.mana [.generic 2], .tapSymbol, .discard .inHand]
+        (.draw (.controller .this) Value.x))
+  ]).toCardDef
     (oracleText := "{2}, {T}, Discard a card: Draw a card for each card you've discarded this turn.")
-    (activatedAbilities := #[activated (Effect.drawPerDiscardedThisTurn)
-      (ManaCost.ofGeneric 2) (tap := true) (discardACard := true)])
 
 def mjLnirHammerOfThor : CardDef :=
   artifact "Mjölnir, Hammer of Thor" (ManaCost.ofGenericAndColor 3 .red)
@@ -2068,10 +2106,30 @@ def claimTheKingdom : CardDef :=
     (triggeredAbilities := #[.onLandYouControlEntersPlusOneAndPlan, .onFourthPlanIndestructible])
 
 def docSamsonSuperPsychiatrist : CardDef :=
-  legendaryCreature "Doc Samson, Super Psychiatrist" (ManaCost.ofGenericAndColor 4 .green) #["Gamma", "Doctor", "Hero"] 3 6
+  (TraditionalCardDefinition.card [
+    .name "Doc Samson, Super Psychiatrist",
+    .manaCost [.generic 4, .mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .gamma,
+    .subtype .doctor,
+    .subtype .hero,
+    .power 3,
+    .toughness 6,
+    .ability
+      (.static
+        (.replace
+          (.putCountersSimultaneously
+            (.intersection [.permanent, .controlled (.controller .this)])
+            .plusOnePlusOne)
+          [])),
+    .ability
+      (.activated
+        [.tapSymbol]
+        (.addManaAnyColorEqualToPower
+          (.controller .this) (.controller .this) .this))
+  ]).toCardDef
     (oracleText := "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead.\n{T}: Add X mana of any one color, where X is Doc Samson's power.")
-    (staticAbilities := #[StaticAbility.extraCounterOnPermanents])
-    (activatedAbilities := #[activated (Effect.addAnyColorEqualToSourcePower) (ManaCost.empty) (tap := true)])
 
 def earthSMightiestHeroes : CardDef :=
   sorcery "Earth's Mightiest Heroes" (ManaCost.ofGenericAndColors 4 [.green, .green])
@@ -2337,10 +2395,35 @@ def trainingRegimen : CardDef :=
     (staticAbilities := #[StaticAbility.creaturesWithPlusOneHave Keyword.trample])
 
 def theUnbeatableSquirrelGirl : CardDef :=
-  legendaryCreature "The Unbeatable Squirrel Girl" (ManaCost.ofGenericAndColors 1 [.green, .green, .green]) #["Squirrel", "Human", "Hero"] 4 4
+  (TraditionalCardDefinition.card [
+    .name "The Unbeatable Squirrel Girl",
+    .manaCost [.generic 1, .mono .green, .mono .green, .mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .squirrel,
+    .subtype .human,
+    .subtype .hero,
+    .power 4,
+    .toughness 4,
+    .ability
+      (.triggered
+        (.or (.enter .this) (.attack .this .all))
+        (.createTokens (.controller .this) 1 [
+          .type .creature, .subtype .squirrel, .colorIndicator [.green],
+          .power 1, .toughness 1])),
+    .ability
+      (.activated
+        [.mana [.generic 1, .mono .green, .mono .green, .mono .green]]
+        (.forEachVariable 1
+          (.intersection [
+            .permanent,
+            .subtype .squirrel,
+            .controlled (.controller .this)])
+          [.createTokens (.controller .this) 1 [
+            .type .creature, .subtype .squirrel, .colorIndicator [.green],
+            .power 1, .toughness 1]]))
+  ]).toCardDef
     (oracleText := "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token.\nI LOVE Squirrels! — {1}{G}{G}{G}: Create X 1/1 green Squirrel creature tokens, where X is the number of Squirrels you control.")
-    (triggeredAbilities := #[.onEnterOrAttack Effect.enterOrAttackCreateSquirrel])
-    (activatedAbilities := #[activated (Effect.createTokensEqualSubtype .squirrel11green "Squirrel") (ManaCost.ofGenericAndColors 1 [.green, .green, .green])])
 
 def undercoverSkrull : CardDef :=
   (TraditionalCardDefinition.card [
@@ -3060,10 +3143,30 @@ def dependableQuinjet : CardDef :=
     (activatedAbilities := #[activated (Effect.addAnyColor) (ManaCost.empty) (tap := true)])
 
 def hERBIEScoutUnit : CardDef :=
-  artifactCreature "H.E.R.B.I.E. Scout Unit" (ManaCost.ofGeneric 4) #["Robot", "Scout"] 2 1
+  (TraditionalCardDefinition.card [
+    .name "H.E.R.B.I.E. Scout Unit",
+    .manaCost [.generic 4],
+    .type .artifact,
+    .type .creature,
+    .subtype .robot,
+    .subtype .scout,
+    .power 2,
+    .toughness 1,
+    .ability (.keyword .flying),
+    .ability
+      (.triggered
+        (.enter .this)
+        (.sequence [
+          .draw (.controller .this) 1,
+          .optional
+            (.putOntoBattlefieldInState
+              (.selected
+                (.controller .this)
+                (.range 0 1)
+                (.intersection [.inHand, .cardType .land]))
+              [.tapped])]))
+  ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onEnterDrawMayPutLandTapped])
 
 def ironManArmor : CardDef :=
   artifact "Iron Man Armor" (ManaCost.ofGeneric 3)
@@ -3812,5 +3915,19 @@ def mshCards : Array CardDef :=
 #guard thorOdinson.keywords.flying
 #guard thorOdinson.keywords.vigilance
 #guard thorOdinson.keywords.prowess
+#guard klawSonicSubjugator.triggeredAbilities ==
+  #[.onEnter Effect.enterRevealDiscardFromHand]
+#guard hexMagic.spellEffect == some (Effect.exileHandDrawPlayUntilNext)
+#guard mistyKnightHeroForHire.activatedAbilities[0]!.cost.discardACard
+#guard mistyKnightHeroForHire.activatedAbilities[0]!.effect == Effect.drawPerDiscardedThisTurn
+#guard docSamsonSuperPsychiatrist.staticAbilities == #[.extraCounterOnPermanents]
+#guard docSamsonSuperPsychiatrist.activatedAbilities[0]!.effect ==
+  Effect.addAnyColorEqualToSourcePower
+#guard theUnbeatableSquirrelGirl.triggeredAbilities ==
+  #[.onEnterOrAttack Effect.enterOrAttackCreateSquirrel]
+#guard theUnbeatableSquirrelGirl.activatedAbilities[0]!.effect ==
+  Effect.createTokensEqualSubtype .squirrel11green "Squirrel"
+#guard hERBIEScoutUnit.keywords.flying
+#guard hERBIEScoutUnit.triggeredAbilities == #[.onEnterDrawMayPutLandTapped]
 
 end Mtg.Engine.Catalog
