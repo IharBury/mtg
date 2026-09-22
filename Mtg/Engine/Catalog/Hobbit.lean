@@ -12,9 +12,10 @@ lands that are also in the core catalog.
 New cards may be written as a `TraditionalCardDefinition` (a list of
 `CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian,
 Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
-of the Great Shelf, Vow to Erebor, and Bilbo Baggins, Burglar keep their
-printed characteristics as parts; `parseOracleParts` reads the Oracle
-text into the rest, using the card name for references to itself.
+of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar, and
+Lakeshore Apothecary keep their printed characteristics as parts;
+`parseOracleParts` reads the Oracle text into the rest, using the card
+name for references to itself.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -302,7 +303,26 @@ def bilboBagginsBurglarCard : CardDef :=
     .subtype .adventure,
     .actions [.scry (.controller .this) 2]]]
 
-def lakeshoreApothecary : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Lakeshore Apothecary. -/
+def lakeshoreApothecaryOracle : String :=
+  "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature."
+
+def lakeshoreApothecary : TraditionalCardDefinition := .card <|
+  [
+    .name "Lakeshore Apothecary",
+    .manaCost [.generic 1, .mono .blue],
+    .type .creature,
+    .subtype .human,
+    .subtype .cleric,
+    .power 1,
+    .toughness 2
+  ] ++ parseOracleParts (name := "Lakeshore Apothecary") lakeshoreApothecaryOracle
+
+def lakeshoreApothecaryCard : CardDef :=
+  lakeshoreApothecary.toCardDef
+    (oracleText := lakeshoreApothecaryOracle)
+
+#guard lakeshoreApothecary == .card [
   .name "Lakeshore Apothecary",
   .manaCost [.generic 1, .mono .blue],
   .type .creature,
@@ -315,10 +335,6 @@ def lakeshoreApothecary : TraditionalCardDefinition := .card [
     .triggered
       (.ordinal 2 .turnStart (.draw (.controller .this) .all))
       (.putCounter (.source .this) .plusOnePlusOne 1))]
-
-def lakeshoreApothecaryCard : CardDef :=
-  lakeshoreApothecary.toCardDef
-    (oracleText := "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature.")
 
 def confusticateAndBebother : TraditionalCardDefinition := .card [
   .name "Confusticate and Bebother",

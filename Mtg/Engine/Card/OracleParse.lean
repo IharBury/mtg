@@ -28,6 +28,7 @@ Currently recognized:
 - `Whenever this creature attacks, it gets +P/+T until end of turn for each other creature you control.`
 - `When <this card> enters, draw a card.` / `draw N cards.`
   The entering object is `this`, `this <type>`, the card's name, or that short name
+- `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
 - `Scry N.`
 -/
 
@@ -645,6 +646,35 @@ def parseEnterDraw (cardName : String) (line : String) : Option CardPart :=
         | none => none
     | _ => none
 
+/-- `put a +1/+1 counter on this creature`. `this`, `this creature`, and `it`
+are the source of this ability. -/
+def parsePutPlusOneOnThis (sentence : String) : Option CardAction :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "put a +1/+1 counter on "
+  if !s.startsWith lead then none
+  else
+    match parsePumpWho (s.drop lead.length).trimAscii.copy with
+    | some sel =>
+      if sel == .source .this then
+        some (.putCounter (.source .this) .plusOnePlusOne 1)
+      else none
+    | none => none
+
+/-- `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.` -/
+def parseDrawSecondPlusOne (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let lead := "whenever you draw your second card each turn, "
+  if !s.startsWith lead then none
+  else
+    match parsePutPlusOneOnThis (s.drop lead.length).trimAscii.copy with
+    | some action =>
+      some (.ability (
+        .triggered
+          (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+          action))
+    | none => none
+
 /-- `Scry 2.` Does not choose a target, so the target number stays `n`. -/
 def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
@@ -729,9 +759,12 @@ def parseMainLines (cardName : String) (lines : List String) (n : Nat) :
             match parseEnterDraw cardName line with
             | some part => ([part], n)
             | none =>
-              match actionsFromText cardName line n with
-              | some (actions, n') => ([CardPart.actions actions], n')
-              | none => ([], n)
+              match parseDrawSecondPlusOne line with
+              | some part => ([part], n)
+              | none =>
+                match actionsFromText cardName line n with
+                | some (actions, n') => ([CardPart.actions actions], n')
+                | none => ([], n)
     let (more, n'') := parseMainLines cardName rest n'
     (parts ++ more, n'')
 
@@ -776,7 +809,9 @@ stack cost reductions
 `<this card> deals N damage to target creature` effects,
 `Whenever this creature attacks, it gets +P/+T until end of turn for each
 other creature you control` triggers,
-`When <this card> enters, draw a card` triggers, and
+`When <this card> enters, draw a card` triggers,
+`Whenever you draw your second card each turn, put a +1/+1 counter on this creature`
+triggers, and
 `Scry N` effects are read into parts.
 `name` is the card being parsed. Text that uses that name, or the short name
 before a comma, means this card, as do `this` and `this <type>`.
@@ -809,6 +844,16 @@ def parseOracleParts (name : String) (text : String) : List CardPart :=
   [.ability (.triggered (.enter .this) (.draw (.controller .this) 1))]
 #guard parseOracleParts (name := "") "When this creature enters, draw two cards." ==
   [.ability (.triggered (.enter .this) (.draw (.controller .this) 2))]
+#guard parseOracleParts (name := "")
+  "Whenever you draw your second card each turn, draw a card." == []
+#guard parseOracleParts (name := "")
+  "Whenever you draw your second card each turn, put a +1/+1 counter on target creature." == []
+#guard parseOracleParts (name := "Lakeshore Apothecary")
+  "Whenever you draw your second card each turn, put a +1/+1 counter on this creature." ==
+  [.ability (
+    .triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.putCounter (.source .this) .plusOnePlusOne 1))]
 #guard parseOracleParts (name := "") "Scry 2." ==
   [.actions [.scry (.controller .this) 2]]
 #guard parseOracleParts (name := "")
