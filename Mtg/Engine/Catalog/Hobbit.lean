@@ -42,6 +42,55 @@ def bofurReliableGuardianCard : CardDef :=
   bofurReliableGuardian.toCardDef
     (oracleText := bofurReliableGuardianOracle)
 
+#guard parseOracleParts bofurReliableGuardianOracle == [
+  .ability (.keyword .lifelink),
+  .alternative [
+    .name "Concerted Care",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant,
+    .subtype .adventure,
+    .actions [
+      .continuous
+        [
+          .gainAbility
+            (.target
+              1
+              (.intersection [
+                .permanent,
+                .union [.cardType .artifact, .cardType .creature],
+                .controlled (.controller .this)]))
+            (.keyword .hexproof),
+          .gainAbility (.targetReference 1) (.keyword .indestructible)]
+        .endOfTurn]]]
+#guard bofurReliableGuardian == .card [
+  .name "Bofur, Reliable Guardian",
+  .manaCost [.mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .scout,
+  .power 1,
+  .toughness 1,
+  .ability (.keyword .lifelink),
+  .alternative [
+    .name "Concerted Care",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant,
+    .subtype .adventure,
+    .actions [
+      .continuous
+        [
+          .gainAbility
+            (.target
+              1
+              (.intersection [
+                .permanent,
+                .union [.cardType .artifact, .cardType .creature],
+                .controlled (.controller .this)]))
+            (.keyword .hexproof),
+          .gainAbility (.targetReference 1) (.keyword .indestructible)]
+        .endOfTurn]]]
+
 def dwarvenProvisioner : TraditionalCardDefinition := .card [
   .name "Dwarven Provisioner",
   .manaCost [.generic 1, .mono .white],
@@ -3095,54 +3144,6 @@ def hobbitCards : Array CardDef := #[
   wizardSStaff
 ]
 
-#guard parseOracleParts bofurReliableGuardianOracle == [
-  .ability (.keyword .lifelink),
-  .alternative [
-    .name "Concerted Care",
-    .manaCost [.generic 1, .mono .white],
-    .type .instant,
-    .subtype .adventure,
-    .actions [
-      .continuous
-        [
-          .gainAbility
-            (.target
-              1
-              (.intersection [
-                .permanent,
-                .union [.cardType .artifact, .cardType .creature],
-                .controlled (.controller .this)]))
-            (.keyword .hexproof),
-          .gainAbility (.targetReference 1) (.keyword .indestructible)]
-        .endOfTurn]]]
-#guard bofurReliableGuardian == .card [
-  .name "Bofur, Reliable Guardian",
-  .manaCost [.mono .white],
-  .type .creature,
-  .supertype .legendary,
-  .subtype .dwarf,
-  .subtype .scout,
-  .power 1,
-  .toughness 1,
-  .ability (.keyword .lifelink),
-  .alternative [
-    .name "Concerted Care",
-    .manaCost [.generic 1, .mono .white],
-    .type .instant,
-    .subtype .adventure,
-    .actions [
-      .continuous
-        [
-          .gainAbility
-            (.target
-              1
-              (.intersection [
-                .permanent,
-                .union [.cardType .artifact, .cardType .creature],
-                .controlled (.controller .this)]))
-            (.keyword .hexproof),
-          .gainAbility (.targetReference 1) (.keyword .indestructible)]
-        .endOfTurn]]]
 #guard bofurReliableGuardianCard.colors.isMonocolored
 #guard bofurReliableGuardianCard.isCreature
 #guard bofurReliableGuardianCard.hasSupertype .legendary
