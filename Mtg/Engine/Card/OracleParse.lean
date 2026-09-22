@@ -16,6 +16,7 @@ Currently recognized:
 - mana symbols `{N}`, `{W}` `{U}` `{B}` `{R}` `{G}`, `{C}`, `{X}`, `{S}`,
   and hybrid `{W/U}`
 - `Target <permanent type or …> [you control] gains <keywords> until end of turn.`
+- `{cost}: <permanents> [you control] get +N/+N until end of turn.`
 -/
 
 namespace Mtg.Engine
@@ -136,7 +137,12 @@ def cardTypes : List CardType := [
 
 def typeOfOracle? (s : String) : Option CardType :=
   let s := lowerAscii s
-  cardTypes.find? (fun t => lowerAscii t.englishName == s)
+  let named := fun (name : String) =>
+    cardTypes.find? (fun t => lowerAscii t.englishName == name)
+  match named s with
+  | some t => some t
+  | none =>
+    if s.endsWith "s" && s.length > 1 then named (s.dropEnd 1).trimAscii.copy else none
 
 def cardSubtypes : List CardSubtype := [
   .adventure, .advisor, .alien, .ape, .arcane, .archer, .army, .artificer,
@@ -263,6 +269,78 @@ def gainEffects (n : Nat) (sel : Selector) (kws : List Keyword) : List Continuou
     .gainAbility (.target n sel) (.keyword k) ::
       rest.map (fun k => .gainAbility (.targetReference n) (.keyword k))
 
+def parseSignedInt (s : String) : Option Int :=
+  let s := s.trimAscii.copy
+  let (neg, digits) :=
+    if s.startsWith "+" then (false, (s.drop 1).trimAscii.copy)
+    else if s.startsWith "-" then (true, (s.drop 1).trimAscii.copy)
+    else (false, s)
+  match natOfDigits? digits with
+  | none => none
+  | some n =>
+    let i : Int := n
+    some (if neg then -i else i)
+
+/-- A printed power and toughness change, such as `+1/+1`. -/
+def parsePowerToughness (s : String) : Option (Int × Int) :=
+  match s.trimAscii.copy.splitOn "/" with
+  | [p, t] =>
+    match parseSignedInt p, parseSignedInt t with
+    | some p, some t => some (p, t)
+    | _, _ => none
+  | _ => none
+
+/-- `creatures you control` as a battlefield selector. A trailing `s` on a
+card type is the plural (`creatures`). -/
+def parseControlledPhrase (s : String) : Option Selector :=
+  let s := lowerAscii (s.trimAscii.copy)
+  let youControl := " you control"
+  let (obj, controlled) :=
+    if s.endsWith youControl then
+      ((s.dropEnd youControl.length).trimAscii.copy, true)
+    else
+      (s, false)
+  match typesInPhrase obj with
+  | none => none
+  | some ts =>
+    let tail : List Selector :=
+      if controlled then [.controlled (.controller .this)] else []
+    some (.intersection ([.permanent, selectorOfTypes ts] ++ tail))
+
+/-- `<objects> get +P/+T until end of turn.` -/
+def parsePumpUntilEndOfTurn (sentence : String) : Option CardAction :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let suffix := "until end of turn"
+  if !s.endsWith suffix then none
+  else
+    let body := (s.dropEnd suffix.length).trimAscii.copy
+    let pieces :=
+      match body.splitOn " gets " with
+      | [who, pt] => some (who, pt)
+      | _ =>
+        match body.splitOn " get " with
+        | [who, pt] => some (who, pt)
+        | _ => none
+    match pieces with
+    | none => none
+    | some (who, pt) =>
+      match parseControlledPhrase who, parsePowerToughness pt with
+      | some sel, some (p, t) =>
+        some (.continuous [.addPowerToughness sel (Value.int p) (Value.int t)] .endOfTurn)
+      | _, _ => none
+
+/-- `{3}{W}: Creatures you control get +1/+1 until end of turn.` -/
+def parseActivatedAbility (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  match line.splitOn ": " with
+  | [costText, effect] =>
+    match parseManaSymbols costText, parsePumpUntilEndOfTurn effect with
+    | some syms, some action =>
+      if syms.isEmpty then none
+      else some (.ability (.activated [.mana syms] action))
+    | _, _ => none
+  | _ => none
+
 /-- `Target … gains … until end of turn.` The target number is `n`. -/
 def parseGainsUntilEndOfTurn (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
@@ -318,9 +396,12 @@ def parseMainLines (lines : List String) (n : Nat) : List CardPart × Nat :=
       match keywordParts? line with
       | some parts => (parts, n)
       | none =>
-        match actionsFromText line n with
-        | some (actions, n') => ([CardPart.actions actions], n')
-        | none => ([], n)
+        match parseActivatedAbility line with
+        | some part => ([part], n)
+        | none =>
+          match actionsFromText line n with
+          | some (actions, n') => ([CardPart.actions actions], n')
+          | none => ([], n)
     let (more, n'') := parseMainLines rest n'
     (parts ++ more, n'')
 
@@ -347,8 +428,9 @@ end OracleParts
 open OracleParts
 
 /-- Parse printed Oracle text into `CardPart`s. Keyword lines, Gatherer
-`//ADV//` Adventure faces, and “gains … until end of turn” effects are
-read into parts. Lines the grammar does not cover are omitted. -/
+`//ADV//` Adventure faces, “gains … until end of turn” effects, and
+`{cost}: … get +P/+T until end of turn` abilities are read into parts.
+Lines the grammar does not cover are omitted. -/
 def parseOracleParts (text : String) : List CardPart :=
   let lines :=
     text.splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
@@ -376,6 +458,18 @@ def parseOracleParts (text : String) : List CardPart :=
           .controlled (.controller .this)]))
         (.keyword .hexproof)]
       .endOfTurn]]
+#guard parseOracleParts
+  "{3}{W}: Creatures you control get +1/+1 until end of turn." ==
+  [.ability (
+    .activated
+      [.mana [.generic 3, .mono .white]]
+      (.continuous
+        [.addPowerToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
+        .endOfTurn))]
 #guard parseOracleParts "//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure" ==
   [.alternative [
     .name "Spew Flame",

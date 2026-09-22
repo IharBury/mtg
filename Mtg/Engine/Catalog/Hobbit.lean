@@ -11,9 +11,9 @@ reconstruct it. `CardDef.matchesOracleText` checks that mechanically.
 lands that are also in the core catalog.
 
 New cards may be written as a `TraditionalCardDefinition` (a list of
-`CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian
-keeps its printed characteristics as parts; `parseOracleParts` reads the
-Oracle text into the rest.
+`CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian and
+Dwarven Provisioner keep their printed characteristics as parts;
+`parseOracleParts` reads the Oracle text into the rest.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -71,7 +71,26 @@ def bofurReliableGuardianCard : CardDef :=
           .gainAbility (.targetReference 1) (.keyword .indestructible)]
         .endOfTurn]]]
 
-def dwarvenProvisioner : TraditionalCardDefinition := .card [
+/-- Oracle text for Dwarven Provisioner. -/
+def dwarvenProvisionerOracle : String :=
+  "{3}{W}: Creatures you control get +1/+1 until end of turn."
+
+def dwarvenProvisioner : TraditionalCardDefinition := .card <|
+  [
+    .name "Dwarven Provisioner",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .subtype .dwarf,
+    .subtype .citizen,
+    .power 2,
+    .toughness 2
+  ] ++ parseOracleParts dwarvenProvisionerOracle
+
+def dwarvenProvisionerCard : CardDef :=
+  dwarvenProvisioner.toCardDef
+    (oracleText := dwarvenProvisionerOracle)
+
+#guard dwarvenProvisioner == .card [
   .name "Dwarven Provisioner",
   .manaCost [.generic 1, .mono .white],
   .type .creature,
@@ -88,12 +107,7 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card [
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
-        .endOfTurn))
-]
-
-def dwarvenProvisionerCard : CardDef :=
-  dwarvenProvisioner.toCardDef
-    (oracleText := "{3}{W}: Creatures you control get +1/+1 until end of turn.")
+        .endOfTurn))]
 
 def velvetwingButterflies : TraditionalCardDefinition := .card [
   .name "Velvetwing Butterflies",
