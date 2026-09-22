@@ -2307,6 +2307,15 @@ def leftoverEnterMaySacOrDiscardNonlandThenDamage? : CardAction → Bool
       Selector.leftoverAnyTarget? dest
   | _ => false
 
+/-- Source gets +1/+1 until end of turn for each other creature you control. -/
+def leftoverPumpForEachOtherCreature? : List ContinuousEffect → Bool
+  | [.addPowerToughnessPer who among vp vt] =>
+    (who == .source .this || who == .this) &&
+      among.shape.anotherCreatureYouControl &&
+      valToInt? vp == some 1 &&
+      valToInt? vt == some 1
+  | _ => false
+
 /-- Other permanents you control of a subtype get +P/+T per matching object. -/
 def leftoverOtherSubtypeGetPowerPerArtifactToken?
     (who among : Selector) (vp vt : Value) : Option String :=
@@ -3129,6 +3138,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.attack .this .all) (.continuous effects _duration) =>
     if CardAction.leftoverSetOtherBasePT? effects then
       some TriggeredAbility.onAttackSetOtherBasePT
+    else if CardAction.leftoverPumpForEachOtherCreature? effects then
+      some TriggeredAbility.onAttackPumpForEachOtherCreature
     else
       match CardAction.leftoverPumpAndGrantKeywords? (.continuous effects .endOfTurn) with
       | some (2, 0, kws) =>
@@ -3139,16 +3150,13 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
           else none
         | none => none
       | _ =>
-        match ContinuousEffect.addedPT? effects with
-        | some (1, 1) => some TriggeredAbility.onAttackPumpForEachOtherCreature
-        | _ =>
-          let kws := CardAction.grantedKeywords effects
-          match ContinuousEffect.targetingSelector? effects with
-          | some sel =>
-            if kws != Keywords.none && sel.targetingShape.attackingCreature then
-              some (TriggeredAbility.onAttackTargetGainsKeywords kws)
-            else none
-          | none => none
+        let kws := CardAction.grantedKeywords effects
+        match ContinuousEffect.targetingSelector? effects with
+        | some sel =>
+          if kws != Keywords.none && sel.targetingShape.attackingCreature then
+            some (TriggeredAbility.onAttackTargetGainsKeywords kws)
+          else none
+        | none => none
   | .triggered (.attack .this .all) (.if (.any among) [.gainLife _ (.nat n)]) =>
     if among.shape.ferocious then
       some (TriggeredAbility.onAttackFerociousGainLife n)
@@ -4200,14 +4208,30 @@ end TraditionalCardDefinition
         (.nat 5)]
   ]).toCardDef.costReductionIfTargetTapped == 3
 
--- Eagle of the Great Shelf: whenever this attacks, +1/+1 (per other creature leftover).
+-- Eagle of the Great Shelf: whenever this attacks, +1/+1 for each other creature.
 #guard
   match
     (Ability.triggered
       (.attack .this .all)
-      (.continuous [.addPowerToughness (.source .this) (Value.int 1) (Value.int 1)] .endOfTurn)).toTriggeredAbility? with
+      (.continuous
+        [.addPowerToughnessPer
+          (.source .this)
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          (Value.int 1)
+          (Value.int 1)]
+        .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackPumpForEachOtherCreature
   | none => false
+
+-- A flat +1/+1 is not +1/+1 for each other creature.
+#guard
+  (Ability.triggered
+    (.attack .this .all)
+    (.continuous [.addPowerToughness (.source .this) (Value.int 1) (Value.int 1)] .endOfTurn)).toTriggeredAbility?.isNone
 
 -- Vow to Erebor: untap target creature you control, +2/+2, maybe attach if Dwarf.
 #guard Selector.toTargetKind

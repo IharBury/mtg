@@ -12,9 +12,9 @@ lands that are also in the core catalog.
 
 New cards may be written as a `TraditionalCardDefinition` (a list of
 `CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian,
-Dwarven Provisioner, Velvetwing Butterflies, and Magnificent End keep
-their printed characteristics as parts; `parseOracleParts` reads the
-Oracle text into the rest.
+Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, and Eagle
+of the Great Shelf keep their printed characteristics as parts;
+`parseOracleParts` reads the Oracle text into the rest.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -179,7 +179,26 @@ def magnificentEndCard : CardDef :=
       (.target 1 (.intersection [.permanent, .cardType .creature]))
       (.nat 5)]]
 
-def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Eagle of the Great Shelf. -/
+def eagleOfTheGreatShelfOracle : String :=
+  "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control."
+
+def eagleOfTheGreatShelf : TraditionalCardDefinition := .card <|
+  [
+    .name "Eagle of the Great Shelf",
+    .manaCost [.generic 4, .mono .white],
+    .type .creature,
+    .subtype .bird,
+    .subtype .soldier,
+    .power 2,
+    .toughness 5
+  ] ++ parseOracleParts eagleOfTheGreatShelfOracle
+
+def eagleOfTheGreatShelfCard : CardDef :=
+  eagleOfTheGreatShelf.toCardDef
+    (oracleText := eagleOfTheGreatShelfOracle)
+
+#guard eagleOfTheGreatShelf == .card [
   .name "Eagle of the Great Shelf",
   .manaCost [.generic 4, .mono .white],
   .type .creature,
@@ -191,12 +210,17 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
   .ability (
     .triggered
       (.attack .this .all)
-      (.continuous [.addPowerToughness (.source .this) (Value.int 1) (Value.int 1)] .endOfTurn))
-]
-
-def eagleOfTheGreatShelfCard : CardDef :=
-  eagleOfTheGreatShelf.toCardDef
-    (oracleText := "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control.")
+      (.continuous
+        [.addPowerToughnessPer
+          (.source .this)
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          (Value.int 1)
+          (Value.int 1)]
+        .endOfTurn))]
 
 def vowToErebor : TraditionalCardDefinition := .card [
   .name "Vow to Erebor",
