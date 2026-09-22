@@ -13,8 +13,9 @@ New cards may be written as a `TraditionalCardDefinition` (a list of
 `CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian,
 Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
 of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
-Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock, and
-Thranduil's Decree keep their printed characteristics as parts;
+Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock,
+Thranduil's Decree, and Bilbo, Luckwearer keep their printed
+characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -426,7 +427,27 @@ def thranduilsDecreeCard : CardDef :=
             .endOfGame]]
       .endOfGame]]
 
-def bilboLuckwearer : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Bilbo, Luckwearer // Burglar's Plot. -/
+def bilboLuckwearerOracle : String :=
+  "Bilbo can't be blocked.\nWhenever Bilbo deals combat damage to a player, draw a card, then discard a card.\n//ADV//\nBurglar's Plot {4}{U}\nSorcery — Adventure\nExchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)"
+
+def bilboLuckwearer : TraditionalCardDefinition := .card <|
+  [
+    .name "Bilbo, Luckwearer",
+    .manaCost [.generic 1, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .rogue,
+    .power 1,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Bilbo, Luckwearer") bilboLuckwearerOracle).get!
+
+def bilboLuckwearerCard : CardDef :=
+  bilboLuckwearer.toCardDef
+    (oracleText := bilboLuckwearerOracle)
+
+#guard bilboLuckwearer == .card [
   .name "Bilbo, Luckwearer",
   .manaCost [.generic 1, .mono .blue],
   .type .creature,
@@ -454,10 +475,6 @@ def bilboLuckwearer : TraditionalCardDefinition := .card [
           (.range 2 2)
           (.intersection [.permanent, .not .land])
           [.shareCardType])]]]
-
-def bilboLuckwearerCard : CardDef :=
-  bilboLuckwearer.toCardDef
-    (oracleText := "Bilbo can't be blocked.\nWhenever Bilbo deals combat damage to a player, draw a card, then discard a card.\n//ADV//\nBurglar's Plot {4}{U}\nSorcery — Adventure\nExchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)")
 
 def uneasyPartings : TraditionalCardDefinition := .card [
   .name "Uneasy Partings",

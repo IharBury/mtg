@@ -35,6 +35,11 @@ Currently recognized:
   - `Counter target spell unless its controller pays {cost}.`
   - `Draw <count> cards, then discard <count> card(s).`
 - `Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled.`
+- `<this card> can't be blocked.`
+  The subject is `this`, `this <type>`, the card's name, or the short name
+  before a comma
+- `Whenever <this card> deals combat damage to a player, draw <count> cards, then discard <count> card(s).`
+- `Exchange control of <count> target nonland permanents that share a card type.`
 -/
 
 namespace Mtg.Engine
@@ -769,6 +774,67 @@ def chooseOneParts (modes : List CardAction) : Option (List CardPart) :=
   | [] => none
   | modes => some [.actions [.chooseMode modes]]
 
+/-- `<this card> can't be blocked.` The subject must be this card. -/
+def parseCantBeBlocked (cardName : String) (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let tail := " can't be blocked"
+  if !s.endsWith tail then none
+  else
+    let subject := (s.dropEnd tail.length).trimAscii.copy
+    if subject.isEmpty || !refersToSelf cardName subject then none
+    else some (.ability (.static (.forbid (.block .any .this))))
+
+/-- `Whenever <this card> deals combat damage to a player, draw a card, then
+discard a card.` The subject must be this card. The effect is the same
+draw-then-discard grammar as a modal spell. -/
+def parseCombatDamageLoot (cardName : String) (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let lead := "whenever "
+  let mid := " deals combat damage to a player, "
+  if !s.startsWith lead then none
+  else
+    match (s.drop lead.length).trimAscii.copy.splitOn mid with
+    | [subject, effect] =>
+      if subject.isEmpty || !refersToSelf cardName subject then none
+      else
+        match parseDrawThenDiscard effect 1 with
+        | some (action, _) =>
+          some (.ability (.triggered (.combatDamage .this .player) action))
+        | none => none
+    | _ => none
+
+/-- `Exchange control of two target nonland permanents that share a card type.`
+The target number is `n`. The noun stays plural, as in the printed template
+for a set of permanents. -/
+def parseExchangeControlSharingCardType (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "exchange control of "
+  let tail := " that share a card type"
+  if !s.startsWith lead || !s.endsWith tail then none
+  else
+    let mid := ((s.drop lead.length).dropEnd tail.length).trimAscii.copy
+    match mid.splitOn " target " with
+    | [countText, obj] =>
+      if obj != "nonland permanents" then none
+      else
+        match parseCountRange countText with
+        | some r =>
+          if r == .range 1 1 then none
+          else
+            some (
+              .exchangeControl
+                (.targetSet
+                  n
+                  r
+                  (.intersection [.permanent, .not .land])
+                  [.shareCardType]),
+              n + 1)
+        | none => none
+    | _ => none
+
 /-- `Scry 2.` Does not choose a target, so the target number stays `n`. -/
 def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
@@ -858,7 +924,10 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
                 | none =>
                   match parseScry s n with
                   | some (a, n') => go rest n' (acc ++ [a])
-                  | none => none
+                  | none =>
+                    match parseExchangeControlSharingCardType s n with
+                    | some (a, n') => go rest n' (acc ++ [a])
+                    | none => none
   match parseCounterExilePermanentMayCast text n with
   | some parsed => some parsed
   | none => go (sentences text) n []
@@ -906,10 +975,17 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
                 match parseYouDrawPlusOne line with
                 | some part => some ([part], n)
                 | none =>
-                  match actionsFromText cardName line n with
-                  | some (actions, n') =>
-                    if actions.isEmpty then none else some ([.actions actions], n')
-                  | none => none
+                  match parseCantBeBlocked cardName line with
+                  | some part => some ([part], n)
+                  | none =>
+                    match parseCombatDamageLoot cardName line with
+                    | some part => some ([part], n)
+                    | none =>
+                      match actionsFromText cardName line n with
+                      | some (actions, n') =>
+                        if actions.isEmpty then none
+                        else some ([.actions actions], n')
+                      | none => none
 
 /-- `collecting` reads the `•` modes after `Choose one —`.
 An unrecognized mode or line fails the parse. -/
@@ -1013,10 +1089,14 @@ triggers,
 `Scry N` effects,
 `Choose one —` modals whose `•` modes are
 `Counter target spell unless its controller pays {cost}` or
-`Draw <count> cards, then discard <count> card(s)`, and
+`Draw <count> cards, then discard <count> card(s)`,
 `Counter target spell. If a permanent spell is countered this way, exile it
 instead of putting it into its owner's graveyard. You may cast that card
-without paying its mana cost for as long as it remains exiled`
+without paying its mana cost for as long as it remains exiled`,
+`<this card> can't be blocked`,
+`Whenever <this card> deals combat damage to a player, draw <count> cards,
+then discard <count> card(s)`, and
+`Exchange control of <count> target nonland permanents that share a card type`
 are read into parts.
 `name` is the card being parsed. Text that uses that name, or the short name
 before a comma, means this card, as do `this` and `this <type>`.
@@ -1254,5 +1334,59 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "") "Counter target spell." == none
 #guard parseOracleParts (name := "Thranduil's Decree")
   "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. Draw a card." == none
+#guard parseOracleParts (name := "Bilbo, Luckwearer") "Bilbo can't be blocked." ==
+  some [.ability (.static (.forbid (.block .any .this)))]
+#guard parseOracleParts (name := "") "This creature can't be blocked." ==
+  some [.ability (.static (.forbid (.block .any .this)))]
+#guard parseOracleParts (name := "Gandalf") "Bilbo can't be blocked." == none
+#guard parseOracleParts (name := "Bilbo, Luckwearer")
+  "Bilbo can't be blocked by Goblins." == none
+#guard parseOracleParts (name := "Bilbo, Luckwearer")
+  "Whenever Bilbo deals combat damage to a player, draw a card, then discard a card." ==
+  some [.ability (
+    .triggered
+      (.combatDamage .this .player)
+      (.sequence [
+        .draw (.controller .this) 1,
+        .discard (.controller .this) 1]))]
+#guard parseOracleParts (name := "Gandalf")
+  "Whenever Bilbo deals combat damage to a player, draw a card, then discard a card." == none
+#guard parseOracleParts (name := "Bilbo, Luckwearer")
+  "Whenever Bilbo deals combat damage to a player, draw a card." == none
+#guard parseOracleParts (name := "")
+  "Exchange control of two target nonland permanents that share a card type." ==
+  some [.actions [
+    .exchangeControl
+      (.targetSet
+        1
+        (.range 2 2)
+        (.intersection [.permanent, .not .land])
+        [.shareCardType])]]
+#guard parseOracleParts (name := "")
+  "Exchange control of one target nonland permanent that share a card type." == none
+#guard parseOracleParts (name := "")
+  "Exchange control of two target creatures that share a card type." == none
+#guard parseOracleParts (name := "Bilbo, Luckwearer")
+  "Bilbo can't be blocked.\nWhenever Bilbo deals combat damage to a player, draw a card, then discard a card.\n//ADV//\nBurglar's Plot {4}{U}\nSorcery — Adventure\nExchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)" ==
+  some [
+    .ability (.static (.forbid (.block .any .this))),
+    .ability (
+      .triggered
+        (.combatDamage .this .player)
+        (.sequence [
+          .draw (.controller .this) 1,
+          .discard (.controller .this) 1])),
+    .alternative [
+      .name "Burglar's Plot",
+      .manaCost [.generic 4, .mono .blue],
+      .type .sorcery,
+      .subtype .adventure,
+      .actions [
+        .exchangeControl
+          (.targetSet
+            1
+            (.range 2 2)
+            (.intersection [.permanent, .not .land])
+            [.shareCardType])]]]
 
 end Mtg.Engine
