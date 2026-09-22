@@ -13,8 +13,8 @@ New cards may be written as a `TraditionalCardDefinition` (a list of
 `CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian,
 Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
 of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
-Lakeshore Apothecary, Confusticate and Bebother, and Ravenhill Flock
-keep their printed characteristics as parts;
+Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock, and
+Thranduil's Decree keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -396,7 +396,22 @@ def ravenhillFlockCard : CardDef :=
       (.draw (.controller .this) .all)
       (.putCounter (.source .this) .plusOnePlusOne 1))]
 
-def thranduilsDecree : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Thranduil's Decree. -/
+def thranduilsDecreeOracle : String :=
+  "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled."
+
+def thranduilsDecree : TraditionalCardDefinition := .card <|
+  [
+    .name "Thranduil's Decree",
+    .manaCost [.generic 4, .mono .blue, .mono .blue],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Thranduil's Decree") thranduilsDecreeOracle).get!
+
+def thranduilsDecreeCard : CardDef :=
+  thranduilsDecree.toCardDef
+    (oracleText := thranduilsDecreeOracle)
+
+#guard thranduilsDecree == .card [
   .name "Thranduil's Decree",
   .manaCost [.generic 4, .mono .blue, .mono .blue],
   .type .instant,
@@ -409,11 +424,7 @@ def thranduilsDecree : TraditionalCardDefinition := .card [
           .continuous
             [.canCastWithoutPayingManaCost (.controller .this) (.wasCreatedByAction 2)]
             .endOfGame]]
-      .endOfGame]]
-
-def thranduilsDecreeCard : CardDef :=
-  thranduilsDecree.toCardDef
-    (oracleText := "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled.")
+      .endOfGame]]]
 
 def bilboLuckwearer : TraditionalCardDefinition := .card [
   .name "Bilbo, Luckwearer",

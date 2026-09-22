@@ -34,6 +34,7 @@ Currently recognized:
 - `Choose one —` followed by `•` modes:
   - `Counter target spell unless its controller pays {cost}.`
   - `Draw <count> cards, then discard <count> card(s).`
+- `Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled.`
 -/
 
 namespace Mtg.Engine
@@ -790,6 +791,44 @@ Empty when the line is only a reminder. -/
 def rulesText (line : String) : String :=
   stripTrailingPeriod (stripReminderParenthetical line)
 
+/-- `Counter target spell. If a permanent spell is countered this way, exile
+it instead of putting it into its owner's graveyard. You may cast that card
+without paying its mana cost for as long as it remains exiled.`
+The counter and its target are numbered `n`. The exile that replaces the
+graveyard is `n + 1`, and the free cast refers to that exiled card. -/
+def parseCounterExilePermanentMayCast (text : String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match sentences text with
+  | [counter, exile, cast] =>
+    if lowerAscii counter != "counter target spell" then none
+    else if lowerAscii exile !=
+        "if a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard" then
+      none
+    else if lowerAscii cast !=
+        "you may cast that card without paying its mana cost for as long as it remains exiled" then
+      none
+    else
+      let exileId := n + 1
+      some (
+        [
+          .actionId n (.counter (.target n .spell)),
+          .continuous
+            [.replace
+              (.putToGraveyard
+                (.intersection [.wasObjectOfAction n, .permanentSpell]))
+              [
+                .actionId exileId (.exile (.replacingObject)),
+                .continuous
+                  [.canCastWithoutPayingManaCost
+                    (.controller .this)
+                    (.wasCreatedByAction exileId)]
+                  .endOfGame
+              ]]
+            .endOfGame
+        ],
+        exileId)
+  | _ => none
+
 /-- Every sentence of `text` must parse. An unrecognized sentence fails
 the text. No sentences (reminder-only or empty text) succeeds with no actions. -/
 def actionsFromText (cardName : String) (text : String) (n : Nat) :
@@ -820,7 +859,9 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
                   match parseScry s n with
                   | some (a, n') => go rest n' (acc ++ [a])
                   | none => none
-  go (sentences text) n []
+  match parseCounterExilePermanentMayCast text n with
+  | some parsed => some parsed
+  | none => go (sentences text) n []
 
 /-- Split off a Gatherer `//ADV//` Adventure section. A marker that shares
 its line with the Adventure name keeps that name. -/
@@ -969,10 +1010,14 @@ other creature you control` triggers,
 triggers,
 `Whenever you draw a card, put a +1/+1 counter on this creature`
 triggers,
-`Scry N` effects, and
+`Scry N` effects,
 `Choose one —` modals whose `•` modes are
 `Counter target spell unless its controller pays {cost}` or
-`Draw <count> cards, then discard <count> card(s)` are read into parts.
+`Draw <count> cards, then discard <count> card(s)`, and
+`Counter target spell. If a permanent spell is countered this way, exile it
+instead of putting it into its owner's graveyard. You may cast that card
+without paying its mana cost for as long as it remains exiled`
+are read into parts.
 `name` is the card being parsed. Text that uses that name, or the short name
 before a comma, means this card, as do `this` and `this <type>`.
 Returns `none` when a line, sentence, mode, or Adventure face is not
@@ -1194,5 +1239,20 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "") "//ADV//\nSpew Flame {4}{R}\nNot a type" == none
 #guard parseOracleParts (name := "")
   "Choose one —\n• Gain control of target creature.\n• Draw two cards, then discard a card." == none
+#guard parseOracleParts (name := "Thranduil's Decree")
+  "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled." ==
+  some [.actions [
+    .actionId 1 (.counter (.target 1 .spell)),
+    .continuous
+      [.replace
+        (.putToGraveyard (.intersection [.wasObjectOfAction 1, .permanentSpell]))
+        [.actionId 2 (.exile (.replacingObject)),
+          .continuous
+            [.canCastWithoutPayingManaCost (.controller .this) (.wasCreatedByAction 2)]
+            .endOfGame]]
+      .endOfGame]]
+#guard parseOracleParts (name := "") "Counter target spell." == none
+#guard parseOracleParts (name := "Thranduil's Decree")
+  "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. Draw a card." == none
 
 end Mtg.Engine
