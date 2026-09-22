@@ -22,6 +22,7 @@ Currently recognized:
 - `It gets +P/+T until end of turn.` (the previous target)
 - `If it's a <subtype>, you may attach a/an <subtype> you control to it.`
 - `This spell costs {N} less to cast if it targets a tapped creature.`
+- `This spell costs {N} less to cast if it targets an attacking nontoken creature.`
 - `<this card> deals N damage to target <permanent type>.`
   The source is `this`, `this <type>`, the card's name, or the short name
   before a comma (`Bilbo Baggins` for `Bilbo Baggins, Burglar`, CR 201.5)
@@ -40,6 +41,7 @@ Currently recognized:
   before a comma
 - `Whenever <this card> deals combat damage to a player, draw <count> cards, then discard <count> card(s).`
 - `Exchange control of <count> target nonland permanents that share a card type.`
+- `Target <permanent type>'s owner puts it on their choice of the top or bottom of their library.`
 -/
 
 namespace Mtg.Engine
@@ -409,30 +411,42 @@ def parseActivatedAbility (line : String) : Option CardPart :=
     | _, _ => none
   | _ => none
 
+/-- The creature named by a stack cost reduction: `a tapped creature` or
+`an attacking nontoken creature`. -/
+def costReductionTarget? (s : String) : Option Selector :=
+  match lowerAscii (s.trimAscii.copy) with
+  | "a tapped creature" =>
+    some (.intersection [.permanent, .cardType .creature, .tapped])
+  | "an attacking nontoken creature" =>
+    some (.intersection [
+      .permanent,
+      .cardType .creature,
+      .attacking .all,
+      .not .token])
+  | _ => none
+
 /-- `This spell costs {3} less to cast if it targets a tapped creature.`
+Also `… an attacking nontoken creature.`
 The reduction is a static ability that functions on the stack (CR 604.2). -/
 def parseStackCostReduction (line : String) : Option CardPart :=
   let s := lowerAscii (stripTrailingPeriod (stripReminderParenthetical line))
   let lead := "this spell costs "
-  let tail := " less to cast if it targets a tapped creature"
-  if !s.startsWith lead || !s.endsWith tail then none
+  let midMark := " less to cast if it targets "
+  if !s.startsWith lead then none
   else
-    let mid := ((s.drop lead.length).dropEnd tail.length).trimAscii.copy
-    match parseManaSymbols mid with
-    | some syms =>
-      if syms.isEmpty then none
-      else
-        some (.ability (
-          .stackStatic
-            (.if
-              (.targetsIncludeAny
-                .this
-                (.intersection [
-                  .permanent,
-                  .cardType .creature,
-                  .tapped]))
-              [.reduceCost .this [.mana syms]])))
-    | none => none
+    match (s.drop lead.length).trimAscii.copy.splitOn midMark with
+    | [costText, targetText] =>
+      match parseManaSymbols costText, costReductionTarget? targetText with
+      | some syms, some among =>
+        if syms.isEmpty then none
+        else
+          some (.ability (
+            .stackStatic
+              (.if
+                (.targetsIncludeAny .this among)
+                [.reduceCost .this [.mana syms]])))
+      | _, _ => none
+    | _ => none
 
 def englishSmall? (s : String) : Option Nat :=
   match lowerAscii (s.trimAscii.copy) with
@@ -835,6 +849,27 @@ def parseExchangeControlSharingCardType (sentence : String) (n : Nat) :
         | none => none
     | _ => none
 
+/-- `Target creature's owner puts it on their choice of the top or bottom of their library.`
+The target number is `n`. That creature's owner chooses which library position. -/
+def parseOwnerPutsTopOrBottom (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "target "
+  let tail := "'s owner puts it on their choice of the top or bottom of their library"
+  if !s.startsWith lead || !s.endsWith tail then none
+  else
+    let obj := ((s.drop lead.length).dropEnd tail.length).trimAscii.copy
+    match typesInPhrase obj with
+    | some ts =>
+      let sel := .intersection [.permanent, selectorOfTypes ts]
+      some (
+        .playerSelectAction
+          (.owner (.targetReference n))
+          (.range 1 1)
+          [.putOnTopOfLibrary (.target n sel),
+            .putOnBottomOfLibrary (.targetReference n)],
+        n + 1)
+    | none => none
+
 /-- `Scry 2.` Does not choose a target, so the target number stays `n`. -/
 def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
@@ -925,9 +960,12 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
                   match parseScry s n with
                   | some (a, n') => go rest n' (acc ++ [a])
                   | none =>
-                    match parseExchangeControlSharingCardType s n with
+                    match parseOwnerPutsTopOrBottom s n with
                     | some (a, n') => go rest n' (acc ++ [a])
-                    | none => none
+                    | none =>
+                      match parseExchangeControlSharingCardType s n with
+                      | some (a, n') => go rest n' (acc ++ [a])
+                      | none => none
   match parseCounterExilePermanentMayCast text n with
   | some parsed => some parsed
   | none => go (sentences text) n []
@@ -1077,7 +1115,8 @@ open OracleParts
 `Untap target creature you control` plus a following `It gets +P/+T`
 and optional `If it's a <subtype>, you may attach …` clause,
 stack cost reductions
-(`This spell costs {N} less … if it targets a tapped creature`),
+(`This spell costs {N} less … if it targets a tapped creature` or
+`an attacking nontoken creature`),
 `<this card> deals N damage to target creature` effects,
 `Whenever this creature attacks, it gets +P/+T until end of turn for each
 other creature you control` triggers,
@@ -1096,7 +1135,8 @@ without paying its mana cost for as long as it remains exiled`,
 `<this card> can't be blocked`,
 `Whenever <this card> deals combat damage to a player, draw <count> cards,
 then discard <count> card(s)`, and
-`Exchange control of <count> target nonland permanents that share a card type`
+`Exchange control of <count> target nonland permanents that share a card type`, and
+`Target <permanent type>'s owner puts it on their choice of the top or bottom of their library`
 are read into parts.
 `name` is the card being parsed. Text that uses that name, or the short name
 before a comma, means this card, as do `this` and `this <type>`.
@@ -1215,6 +1255,21 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
             .cardType .creature,
             .tapped]))
         [.reduceCost .this [.mana [.generic 3]]]))]
+#guard parseOracleParts (name := "")
+  "This spell costs {1} less to cast if it targets an attacking nontoken creature." ==
+  some [.ability (
+    .stackStatic
+      (.if
+        (.targetsIncludeAny
+          .this
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .attacking .all,
+            .not .token]))
+        [.reduceCost .this [.mana [.generic 1]]]))]
+#guard parseOracleParts (name := "")
+  "This spell costs {1} less to cast if it targets an attacking creature." == none
 #guard parseOracleParts (name := "") "Magnificent End deals 5 damage to target creature." == none
 #guard parseOracleParts (name := "Shock") "Magnificent End deals 5 damage to target creature." == none
 #guard parseOracleParts (name := "Magnificent End")
@@ -1388,5 +1443,35 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
             (.range 2 2)
             (.intersection [.permanent, .not .land])
             [.shareCardType])]]]
+#guard parseOracleParts (name := "")
+  "Target creature's owner puts it on their choice of the top or bottom of their library." ==
+  some [.actions [
+    .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
+      [.putOnTopOfLibrary
+        (.target 1 (.intersection [.permanent, .cardType .creature])),
+        .putOnBottomOfLibrary (.targetReference 1)]]]
+#guard parseOracleParts (name := "")
+  "Target spell's owner puts it on their choice of the top or bottom of their library." == none
+#guard parseOracleParts (name := "")
+  "Target creature's owner puts it on top of their library." == none
+#guard parseOracleParts (name := "Uneasy Partings")
+  "This spell costs {1} less to cast if it targets an attacking nontoken creature.\nTarget creature's owner puts it on their choice of the top or bottom of their library." ==
+  some [
+    .ability (
+      .stackStatic
+        (.if
+          (.targetsIncludeAny
+            .this
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .attacking .all,
+              .not .token]))
+          [.reduceCost .this [.mana [.generic 1]]])),
+    .actions [
+      .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
+        [.putOnTopOfLibrary
+          (.target 1 (.intersection [.permanent, .cardType .creature])),
+          .putOnBottomOfLibrary (.targetReference 1)]]]
 
 end Mtg.Engine
