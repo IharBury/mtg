@@ -31,7 +31,7 @@ Currently recognized:
   The entering object is `this`, `this <type>`, the card's name, or that short name
 - `When <this card> dies, target <permanent type or …> an opponent controls gets P/T until end of turn.`
   The dying object is `this`, `this <type>`, the card's name, or that short name.
-  `P/T` is a signed change such as `-1/-1`
+  `P/T` is a signed change such as -1 / -1
 - `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
 - `Whenever you draw a card, put a +1/+1 counter on this creature.`
 - `Scry N.`
@@ -692,7 +692,7 @@ def parseOppControlledTarget (s : String) : Option Selector :=
         .controlled (.opponent (.controller .this))])
 
 /-- `target <permanents> an opponent controls gets P/T until end of turn.`
-The target number is `n`. `P/T` may be negative, as in `-1/-1`. -/
+The target number is `n`. `P/T` may be negative, as in -1 / -1. -/
 def parseOppGetsUntilEndOfTurn (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
   let suffix := " until end of turn"
@@ -718,7 +718,7 @@ def parseOppGetsUntilEndOfTurn (sentence : String) (n : Nat) : Option (CardActio
           n + 1)
       | _, _ => none
 
-/-- `When this creature dies, target creature an opponent controls gets -1/-1 until end of turn.`
+/-- `When this creature dies, target creature an opponent controls gets -1 / -1 until end of turn.`
 The dying object is this card. The target number is `n`. -/
 def parseDiesOppGets (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
