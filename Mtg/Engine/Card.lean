@@ -50,6 +50,6 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `Saga`: printed Sagas (CR 714).
 - `CardDef`: the printed card definition and `AdventureFace`.
 - `Definition`: part-based `TraditionalCardDefinition` that compiles to `CardDef`.
-- `OracleParse`: `parseOracleParts`, Oracle text read into `CardPart`s.
+- `OracleParse`: `parseOracleParts`, Oracle text of a named card read into `CardPart`s.
 - `Guards`: cross-abstraction `#guard` regression tests.
 -/

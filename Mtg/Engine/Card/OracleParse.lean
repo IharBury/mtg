@@ -22,8 +22,13 @@ Currently recognized:
 - `It gets +P/+T until end of turn.` (the previous target)
 - `If it's a <subtype>, you may attach a/an <subtype> you control to it.`
 - `This spell costs {N} less to cast if it targets a tapped creature.`
-- `<name> deals N damage to target <permanent type>.`
+- `<this card> deals N damage to target <permanent type>.`
+  The source is `this`, `this <type>`, the card's name, or the short name
+  before a comma (`Bilbo Baggins` for `Bilbo Baggins, Burglar`, CR 201.5)
 - `Whenever this creature attacks, it gets +P/+T until end of turn for each other creature you control.`
+- `When <this card> enters, draw a card.` / `draw N cards.`
+  The entering object is `this`, `this <type>`, the card's name, or that short name
+- `Scry N.`
 -/
 
 namespace Mtg.Engine
@@ -535,19 +540,53 @@ def parseIfItsSubtypeMayAttach (sentence : String) (n : Nat) : Option (CardActio
         | _, _ => none
       | _ => none
 
-/-- `<name> deals 5 damage to target creature.` The target number is `n`. -/
-def parseDealDamage (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+/-- `this` or `this <type>`, such as `this creature` or `this spell`. -/
+def isGenericSelf (subject : String) : Bool :=
+  let s := lowerAscii (subject.trimAscii.copy)
+  if s == "this" then true
+  else if !s.startsWith "this " then false
+  else
+    let rest := (s.drop "this ".length).trimAscii.copy
+    if (rest.splitOn " ").length != 1 then false
+    else
+      (typeOfOracle? rest).isSome || (subtypeOfOracle? rest).isSome ||
+        rest == "permanent" || rest == "spell"
+
+/-- The printed name, plus the short name before a comma.
+`Bilbo Baggins, Burglar` refers to itself as `Bilbo Baggins` (CR 201.5). -/
+def selfNames (cardName : String) : List String :=
+  let name := lowerAscii (cardName.trimAscii.copy)
+  if name.isEmpty then []
+  else
+    let short :=
+      match name.splitOn "," with
+      | head :: _ => head.trimAscii.copy
+      | [] => name
+    if short.isEmpty || short == name then [name] else [name, short]
+
+/-- `subject` is this card: a generic `this` phrase, or one of `cardName`'s
+self-names. -/
+def refersToSelf (cardName subject : String) : Bool :=
+  let subject := lowerAscii (subject.trimAscii.copy)
+  isGenericSelf subject || (selfNames cardName).contains subject
+
+/-- `<this card> deals 5 damage to target creature.` The source must be this
+card. The target number is `n`. -/
+def parseDealDamage (cardName : String) (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
   match s.splitOn " deals " with
-  | [_, rest] =>
-    match rest.splitOn " damage to target " with
-    | [amt, obj] =>
-      match natOfDigits? (amt.trimAscii.copy), typesInPhrase obj with
-      | some amount, some ts =>
-        let sel := .intersection [.permanent, selectorOfTypes ts]
-        some (.dealDamage .this (.target n sel) (.nat amount), n + 1)
-      | _, _ => none
-    | _ => none
+  | [who, rest] =>
+    if !refersToSelf cardName who then none
+    else
+      match rest.splitOn " damage to target " with
+      | [amt, obj] =>
+        match natOfDigits? (amt.trimAscii.copy), typesInPhrase obj with
+        | some amount, some ts =>
+          let sel := .intersection [.permanent, selectorOfTypes ts]
+          some (.dealDamage .this (.target n sel) (.nat amount), n + 1)
+        | _, _ => none
+      | _ => none
   | _ => none
 
 /-- `Target … gains … until end of turn.` The target number is `n`. -/
@@ -565,12 +604,66 @@ def parseGainsUntilEndOfTurn (sentence : String) (n : Nat) : Option (CardAction 
       | _, _ => none
     | _ => none
 
+/-- `a card`, `one card`, or `two cards` as how many cards are drawn. -/
+def parseCardCount (s : String) : Option Nat :=
+  let s := lowerAscii (s.trimAscii.copy)
+  if s == "a card" then some 1
+  else
+    let counted :=
+      if s.endsWith " cards" then
+        some ((s.dropEnd " cards".length).trimAscii.copy, true)
+      else if s.endsWith " card" then
+        some ((s.dropEnd " card".length).trimAscii.copy, false)
+      else
+        none
+    match counted with
+    | none => none
+    | some (countText, plural) =>
+      match englishSmall? countText with
+      | some n =>
+        if n == 0 then none
+        else if n == 1 then
+          if plural then none else some n
+        else if plural then some n else none
+      | none => none
+
+/-- `When Bilbo Baggins enters, draw a card.` The subject is this card. -/
+def parseEnterDraw (cardName : String) (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let lead := "when "
+  if !s.startsWith lead then none
+  else
+    match (s.drop lead.length).trimAscii.copy.splitOn " enters, " with
+    | [subject, effect] =>
+      if !refersToSelf cardName subject || !effect.startsWith "draw " then none
+      else
+        match parseCardCount (effect.drop "draw ".length).trimAscii.copy with
+        | some n =>
+          some (.ability
+            (.triggered (.enter .this) (.draw (.controller .this) (Value.nat n))))
+        | none => none
+    | _ => none
+
+/-- `Scry 2.` Does not choose a target, so the target number stays `n`. -/
+def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "scry "
+  if !s.startsWith lead then none
+  else
+    match englishSmall? (s.drop lead.length).trimAscii.copy with
+    | some k =>
+      if k == 0 then none
+      else some (.scry (.controller .this) (Value.nat k), n)
+    | none => none
+
 def sentences (text : String) : List String :=
   (stripReminderParenthetical text).splitOn ". "
     |>.map stripTrailingPeriod
     |>.filter (· != "")
 
-def actionsFromText (text : String) (n : Nat) : Option (List CardAction × Nat) :=
+def actionsFromText (cardName : String) (text : String) (n : Nat) :
+    Option (List CardAction × Nat) :=
   let rec go (ss : List String) (n : Nat) (acc : List CardAction) : List CardAction × Nat :=
     match ss with
     | [] => (acc, n)
@@ -590,9 +683,12 @@ def actionsFromText (text : String) (n : Nat) : Option (List CardAction × Nat) 
               match parseIfItsSubtypeMayAttach s n with
               | some (a, n') => go rest n' (acc ++ [a])
               | none =>
-                match parseDealDamage s n with
+                match parseDealDamage cardName s n with
                 | some (a, n') => go rest n' (acc ++ [a])
-                | none => go rest n acc
+                | none =>
+                  match parseScry s n with
+                  | some (a, n') => go rest n' (acc ++ [a])
+                  | none => go rest n acc
   let (actions, n') := go (sentences text) n []
   if actions.isEmpty then none else some (actions, n')
 
@@ -612,7 +708,8 @@ where
       else
         go rest (line :: acc)
 
-def parseMainLines (lines : List String) (n : Nat) : List CardPart × Nat :=
+def parseMainLines (cardName : String) (lines : List String) (n : Nat) :
+    List CardPart × Nat :=
   match lines with
   | [] => ([], n)
   | line :: rest =>
@@ -629,13 +726,22 @@ def parseMainLines (lines : List String) (n : Nat) : List CardPart × Nat :=
           match parseAttackTriggered line with
           | some part => ([part], n)
           | none =>
-            match actionsFromText line n with
-            | some (actions, n') => ([CardPart.actions actions], n')
-            | none => ([], n)
-    let (more, n'') := parseMainLines rest n'
+            match parseEnterDraw cardName line with
+            | some part => ([part], n)
+            | none =>
+              match actionsFromText cardName line n with
+              | some (actions, n') => ([CardPart.actions actions], n')
+              | none => ([], n)
+    let (more, n'') := parseMainLines cardName rest n'
     (parts ++ more, n'')
 
-def parseAdventure (lines : List String) (n : Nat) : Option (List CardPart) :=
+def nameOfParts (parts : List CardPart) : Option String :=
+  parts.findSome? fun
+    | .name n => some n
+    | _ => none
+
+def parseAdventure (cardName : String) (lines : List String) (n : Nat) :
+    Option (List CardPart) :=
   match lines with
   | [] => none
   | nameLine :: rest =>
@@ -646,8 +752,10 @@ def parseAdventure (lines : List String) (n : Nat) : Option (List CardPart) :=
         let parsed := parseTypeLine line
         if parsed.isEmpty then ([], rest) else (parsed, more)
       | [] => ([], [])
+    -- An Adventure face refers to itself by its own name.
+    let faceName := nameOfParts nameParts |>.getD cardName
     let actionParts : List CardPart :=
-      match actionsFromText (String.intercalate " " effectLines) n with
+      match actionsFromText faceName (String.intercalate " " effectLines) n with
       | some (actions, _) => [.actions actions]
       | none => []
     let parts := nameParts ++ typeParts ++ actionParts
@@ -665,27 +773,48 @@ open OracleParts
 and optional `If it's a <subtype>, you may attach …` clause,
 stack cost reductions
 (`This spell costs {N} less … if it targets a tapped creature`),
-`<name> deals N damage to target creature` effects, and
+`<this card> deals N damage to target creature` effects,
 `Whenever this creature attacks, it gets +P/+T until end of turn for each
-other creature you control` triggers are read into parts.
+other creature you control` triggers,
+`When <this card> enters, draw a card` triggers, and
+`Scry N` effects are read into parts.
+`name` is the card being parsed. Text that uses that name, or the short name
+before a comma, means this card, as do `this` and `this <type>`.
 Lines the grammar does not cover are omitted. -/
-def parseOracleParts (text : String) : List CardPart :=
+def parseOracleParts (name : String) (text : String) : List CardPart :=
   let lines :=
     text.splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
   let (main, adv) := splitAdventure lines
-  let (mainParts, n) := parseMainLines main 1
-  match parseAdventure adv n with
+  let (mainParts, n) := parseMainLines name main 1
+  match parseAdventure name adv n with
   | some alt => mainParts ++ [.alternative alt]
   | none => mainParts
 
-#guard parseOracleParts "Lifelink" == [.ability (.keyword .lifelink)]
-#guard parseOracleParts "Flying, deathtouch" ==
+#guard parseOracleParts (name := "") "Lifelink" == [.ability (.keyword .lifelink)]
+#guard parseOracleParts (name := "") "Flying, deathtouch" ==
   [.ability (.keyword .flying), .ability (.keyword .deathtouch)]
-#guard parseOracleParts
+#guard parseOracleParts (name := "")
   "Reach (This creature can block creatures with flying.)" ==
   [.ability (.keyword .reach)]
-#guard parseOracleParts "Whenever this creature attacks, draw a card." == []
-#guard parseOracleParts
+#guard parseOracleParts (name := "") "Whenever this creature attacks, draw a card." == []
+#guard parseOracleParts (name := "") "When another creature enters, draw a card." == []
+#guard parseOracleParts (name := "") "When Bilbo Baggins enters, draw a card." == []
+#guard parseOracleParts (name := "Gandalf") "When Bilbo Baggins enters, draw a card." == []
+#guard parseOracleParts (name := "Bilbo") "When Bilbo Baggins enters, draw a card." == []
+#guard parseOracleParts (name := "Bilbo Baggins, Burglar")
+    "When Bilbo Baggins enters, draw a card." ==
+  [.ability (.triggered (.enter .this) (.draw (.controller .this) 1))]
+#guard parseOracleParts (name := "Bilbo Baggins, Burglar")
+    "When Bilbo Baggins, Burglar enters, draw a card." ==
+  [.ability (.triggered (.enter .this) (.draw (.controller .this) 1))]
+#guard parseOracleParts (name := "") "When this creature enters, draw two cards." ==
+  [.ability (.triggered (.enter .this) (.draw (.controller .this) 2))]
+#guard parseOracleParts (name := "") "Scry 2." ==
+  [.actions [.scry (.controller .this) 2]]
+#guard parseOracleParts (name := "")
+  "Scry 2. (Then exile this card. You may cast the creature later from exile.)" ==
+  [.actions [.scry (.controller .this) 2]]
+#guard parseOracleParts (name := "")
   "Target creature you control gains hexproof until end of turn." ==
   [.actions [
     .continuous
@@ -696,7 +825,7 @@ def parseOracleParts (text : String) : List CardPart :=
           .controlled (.controller .this)]))
         (.keyword .hexproof)]
       .endOfTurn]]
-#guard parseOracleParts
+#guard parseOracleParts (name := "")
   "{3}{W}: Creatures you control get +1/+1 until end of turn." ==
   [.ability (
     .activated
@@ -708,16 +837,16 @@ def parseOracleParts (text : String) : List CardPart :=
             .cardType .creature,
             .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
         .endOfTurn))]
-#guard parseOracleParts "Tap one or two target creatures." ==
+#guard parseOracleParts (name := "") "Tap one or two target creatures." ==
   [.actions [
     .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature]))]]
-#guard parseOracleParts "//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure" ==
+#guard parseOracleParts (name := "") "//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure" ==
   [.alternative [
     .name "Spew Flame",
     .manaCost [.generic 4, .mono .red],
     .type .sorcery,
     .subtype .adventure]]
-#guard parseOracleParts
+#guard parseOracleParts (name := "")
   "This spell costs {3} less to cast if it targets a tapped creature." ==
   [.ability (
     .stackStatic
@@ -729,13 +858,34 @@ def parseOracleParts (text : String) : List CardPart :=
             .cardType .creature,
             .tapped]))
         [.reduceCost .this [.mana [.generic 3]]]))]
-#guard parseOracleParts "Magnificent End deals 5 damage to target creature." ==
+#guard parseOracleParts (name := "") "Magnificent End deals 5 damage to target creature." == []
+#guard parseOracleParts (name := "Shock") "Magnificent End deals 5 damage to target creature." == []
+#guard parseOracleParts (name := "Magnificent End")
+    "Magnificent End deals 5 damage to target creature." ==
   [.actions [
     .dealDamage
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
       (.nat 5)]]
-#guard parseOracleParts
+#guard parseOracleParts (name := "") "This spell deals 5 damage to target creature." ==
+  [.actions [
+    .dealDamage
+      .this
+      (.target 1 (.intersection [.permanent, .cardType .creature]))
+      (.nat 5)]]
+#guard parseOracleParts (name := "Smaug, the Great Calamity")
+    "//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature." ==
+  [.alternative [
+    .name "Spew Flame",
+    .manaCost [.generic 4, .mono .red],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [
+      .dealDamage
+        .this
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.nat 5)]]]
+#guard parseOracleParts (name := "")
   "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." ==
   [
     .ability (.keyword .flying),
@@ -753,7 +903,7 @@ def parseOracleParts (text : String) : List CardPart :=
             (Value.int 1)
             (Value.int 1)]
           .endOfTurn))]
-#guard parseOracleParts "Untap target creature you control." ==
+#guard parseOracleParts (name := "") "Untap target creature you control." ==
   [.actions [
     .untap
       (.target
@@ -762,7 +912,7 @@ def parseOracleParts (text : String) : List CardPart :=
           .permanent,
           .cardType .creature,
           .controlled (.controller .this)]))]]
-#guard parseOracleParts
+#guard parseOracleParts (name := "")
   "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it." ==
   [.actions [
     .untap
