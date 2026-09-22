@@ -610,13 +610,14 @@ def parseEnterDraw (line : String) : Option CardPart :=
   let lead := "when "
   if !s.startsWith lead then none
   else
-    match (s.drop lead.length).splitOn " enters, " with
+    match (s.drop lead.length).trimAscii.copy.splitOn " enters, " with
     | [subject, effect] =>
       if !isThisEntering subject || !effect.startsWith "draw " then none
       else
-        match parseCardCount (effect.drop "draw ".length) with
+        match parseCardCount (effect.drop "draw ".length).trimAscii.copy with
         | some n =>
-          some (.ability (.triggered (.enter .this) (.draw (.controller .this) n)))
+          some (.ability
+            (.triggered (.enter .this) (.draw (.controller .this) (Value.nat n))))
         | none => none
     | _ => none
 
@@ -626,9 +627,10 @@ def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let lead := "scry "
   if !s.startsWith lead then none
   else
-    match englishSmall? (s.drop lead.length) with
+    match englishSmall? (s.drop lead.length).trimAscii.copy with
     | some k =>
-      if k == 0 then none else some (.scry (.controller .this) k, n)
+      if k == 0 then none
+      else some (.scry (.controller .this) (Value.nat k), n)
     | none => none
 
 def sentences (text : String) : List String :=
