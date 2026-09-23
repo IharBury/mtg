@@ -960,7 +960,7 @@ def parseOtherCreaturesDieScry (line : String) (n : Nat) : Option (CardPart × N
   let mid := " die, "
   if !s.startsWith lead then none
   else
-    match (s.drop lead.length).splitOn mid with
+    match (s.drop lead.length).trimAscii.copy.splitOn mid with
     | [who, effect] =>
       if who != "other creatures" then none
       else
