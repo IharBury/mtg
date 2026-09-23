@@ -32,6 +32,8 @@ Currently recognized:
 - `When <this card> dies, target <permanent type or …> an opponent controls gets P/T until end of turn.`
   The dying object is `this`, `this <type>`, the card's name, or that short name.
   `P/T` is a signed change such as -1 / -1
+- `Whenever one or more other creatures die, scry N.`
+  Those creatures die at the same time (CR 603.2c).
 - `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
 - `Whenever you draw a card, put a +1/+1 counter on this creature.`
 - `Scry N.`
@@ -948,6 +950,28 @@ def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
       else some (.scry (.controller .this) (Value.nat k), n)
     | none => none
 
+/-- `Whenever one or more other creatures die, scry 1.`
+Those creatures die together, so this is one trigger (CR 603.2c).
+The effect is `Scry N`. -/
+def parseOtherCreaturesDieScry (line : String) (n : Nat) : Option (CardPart × Nat) :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let lead := "whenever one or more "
+  let mid := " die, "
+  if !s.startsWith lead then none
+  else
+    match (s.drop lead.length).trimAscii.copy.splitOn mid with
+    | [who, effect] =>
+      if who != "other creatures" then none
+      else
+        match parseControlledPhrase who, parseScry effect n with
+        | some among, some (action, n') =>
+          some (
+            .ability (.triggered (.dieSimultaneously among []) action),
+            n')
+        | _, _ => none
+    | _ => none
+
 def sentences (text : String) : List String :=
   (stripReminderParenthetical text).splitOn ". "
     |>.map stripTrailingPeriod
@@ -1076,23 +1100,26 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
               match parseDiesOppGets cardName line n with
               | some (part, n') => some ([part], n')
               | none =>
-                match parseDrawSecondPlusOne line with
-                | some part => some ([part], n)
+                match parseOtherCreaturesDieScry line n with
+                | some (part, n') => some ([part], n')
                 | none =>
-                  match parseYouDrawPlusOne line with
+                  match parseDrawSecondPlusOne line with
                   | some part => some ([part], n)
                   | none =>
-                    match parseCantBeBlocked cardName line with
+                    match parseYouDrawPlusOne line with
                     | some part => some ([part], n)
                     | none =>
-                      match parseCombatDamageLoot cardName line with
+                      match parseCantBeBlocked cardName line with
                       | some part => some ([part], n)
                       | none =>
-                        match actionsFromText cardName line n with
-                        | some (actions, n') =>
-                          if actions.isEmpty then none
-                          else some ([.actions actions], n')
-                        | none => none
+                        match parseCombatDamageLoot cardName line with
+                        | some part => some ([part], n)
+                        | none =>
+                          match actionsFromText cardName line n with
+                          | some (actions, n') =>
+                            if actions.isEmpty then none
+                            else some ([.actions actions], n')
+                          | none => none
 
 /-- `collecting` reads the `•` modes after `Choose one —`.
 An unrecognized mode or line fails the parse. -/
@@ -1192,6 +1219,7 @@ other creature you control` triggers,
 `When <this card> enters, draw a card` triggers,
 `When <this card> dies, target <permanents> an opponent controls gets P/T until end of turn`
 triggers,
+`Whenever one or more other creatures die, scry N` triggers,
 `Whenever you draw your second card each turn, put a +1/+1 counter on this creature`
 triggers,
 `Whenever you draw a card, put a +1/+1 counter on this creature`
@@ -1575,6 +1603,46 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "When this creature dies, target creature an opponent controls gets -1/-1." == none
 #guard parseOracleParts (name := "")
   "When this creature dies, draw a card." == none
+#guard parseOracleParts (name := "")
+  "Whenever one or more other creatures die, scry 1." ==
+  some [.ability (
+    .triggered
+      (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
+      (.scry (.controller .this) 1))]
+#guard parseOracleParts (name := "Great Fierce Bee")
+  "Whenever one or more other creatures die, scry 1. (Look at the top card of your library. You may put that card on the bottom.)" ==
+  some [.ability (
+    .triggered
+      (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
+      (.scry (.controller .this) 1))]
+#guard parseOracleParts (name := "")
+  "Whenever one or more other creatures die, scry 2." ==
+  some [.ability (
+    .triggered
+      (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
+      (.scry (.controller .this) 2))]
+#guard parseOracleParts (name := "Great Fierce Bee")
+  "Flying\nWhenever one or more other creatures die, scry 1. (Look at the top card of your library. You may put that card on the bottom.)" ==
+  some [
+    .ability (.keyword .flying),
+    .ability (
+      .triggered
+        (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
+        (.scry (.controller .this) 1))]
+#guard parseOracleParts (name := "")
+  "Whenever one or more creatures die, scry 1." == none
+#guard parseOracleParts (name := "")
+  "Whenever one or more other creatures you control die, scry 1." == none
+#guard parseOracleParts (name := "")
+  "When one or more other creatures die, scry 1." == none
+#guard parseOracleParts (name := "")
+  "Whenever another creature dies, scry 1." == none
+#guard parseOracleParts (name := "")
+  "Whenever one or more other creatures die, draw a card." == none
+#guard parseOracleParts (name := "")
+  "Whenever one or more other creatures die, scry 0." == none
+#guard parseOracleParts (name := "")
+  "Whenever one or more other creatures die." == none
 #guard parseOracleParts (name := "")
   "Target spell's owner puts it on their choice of the top or bottom of their library." == none
 #guard parseOracleParts (name := "")

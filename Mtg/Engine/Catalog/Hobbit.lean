@@ -14,8 +14,8 @@ New cards may be written as a `TraditionalCardDefinition` (a list of
 Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
 of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
 Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock,
-Thranduil's Decree, Bilbo, Luckwearer, Uneasy Partings, and Front Porch
-Sentries keep their printed characteristics as parts;
+Thranduil's Decree, Bilbo, Luckwearer, Uneasy Partings, Front Porch
+Sentries, and Great Fierce Bee keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -552,7 +552,25 @@ def frontPorchSentriesCard : CardDef :=
               .controlled (.opponent (.controller .this))])) (Value.int (-1)) (Value.int (-1))]
         .endOfTurn))]
 
-def greatFierceBee : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Great Fierce Bee. -/
+def greatFierceBeeOracle : String :=
+  "Flying\nWhenever one or more other creatures die, scry 1. (Look at the top card of your library. You may put that card on the bottom.)"
+
+def greatFierceBee : TraditionalCardDefinition := .card <|
+  [
+    .name "Great Fierce Bee",
+    .manaCost [.generic 2, .mono .black],
+    .type .creature,
+    .subtype .insect,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Great Fierce Bee") greatFierceBeeOracle).get!
+
+def greatFierceBeeCard : CardDef :=
+  greatFierceBee.toCardDef
+    (oracleText := greatFierceBeeOracle)
+
+#guard greatFierceBee == .card [
   .name "Great Fierce Bee",
   .manaCost [.generic 2, .mono .black],
   .type .creature,
@@ -563,12 +581,7 @@ def greatFierceBee : TraditionalCardDefinition := .card [
   .ability (
     .triggered
       (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
-      (.scry (.controller .this) 1))
-]
-
-def greatFierceBeeCard : CardDef :=
-  greatFierceBee.toCardDef
-    (oracleText := "Flying\nWhenever one or more other creatures die, scry 1. (Look at the top card of your library. You may put that card on the bottom.)")
+      (.scry (.controller .this) 1))]
 
 def stirUpTrouble : TraditionalCardDefinition := .card [
   .name "Stir Up Trouble",
