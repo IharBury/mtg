@@ -20,8 +20,8 @@ Ravening Warg, Gollum, Silent Slinker, Bilbo's Deadly Slice,
 Dreaded Bat-Cloud, Crude Bent Blade, Gollum the Abandoned, Gnashing of
 Teeth, Reverent Howl, Stony-Voiced Goblins, Smaug, the Great Calamity,
 Gandalf, Spark Starter, Ragged Short Spear, Snowslope Hunter,
-Guardian of the Halls, Quarrel, Galion, Elvenking's Butler, and
-Warg Tactics keep their printed
+Guardian of the Halls, Quarrel, Galion, Elvenking's Butler,
+Warg Tactics, and Beorn's Hospitality keep their printed
 characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -1291,7 +1291,22 @@ def wargTacticsCard : CardDef :=
           .endOfTurn]]]
 ]
 
-def beornsHospitality : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Beorn's Hospitality. -/
+def beornsHospitalityOracle : String :=
+  "Landfall — Whenever a land you control enters, put a +1/+1 counter on target creature you control.\n{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\" (This effect doesn't end.)"
+
+def beornsHospitality : TraditionalCardDefinition := .card <|
+  [
+    .name "Beorn's Hospitality",
+    .manaCost [.generic 1, .mono .green],
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "Beorn's Hospitality") beornsHospitalityOracle).get!
+
+def beornsHospitalityCard : CardDef :=
+  beornsHospitality.toCardDef
+    (oracleText := beornsHospitalityOracle)
+
+#guard beornsHospitality == .card [
   .name "Beorn's Hospitality",
   .manaCost [.generic 1, .mono .green],
   .type .enchantment,
@@ -1317,18 +1332,17 @@ def beornsHospitality : TraditionalCardDefinition := .card [
       (.continuous
         [.gainType .this .creature,
           .gainSubtype .this .bear,
-          .setPowerToughnessEqualToCount
+          .gainAbility
             .this
-            (.intersection [
-              .permanent,
-              .cardType .land,
-              .controlled (.controller .this)])]
+            (.static
+              (.setPowerToughnessEqualToCount
+                .this
+                (.intersection [
+                  .permanent,
+                  .cardType .land,
+                  .controlled (.controller .this)])))]
         .endOfGame))
 ]
-
-def beornsHospitalityCard : CardDef :=
-  beornsHospitality.toCardDef
-    (oracleText := "Landfall — Whenever a land you control enters, put a +1/+1 counter on target creature you control.\n{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\" (This effect doesn't end.)")
 
 def woodlandWeavemaster : TraditionalCardDefinition := .card [
   .name "Woodland Weavemaster",
