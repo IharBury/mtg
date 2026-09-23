@@ -40,8 +40,9 @@ Currently recognized:
   before a comma (`Bilbo Baggins` for `Bilbo Baggins, Burglar`, CR 201.5)
 - `Whenever this creature attacks, it gets +P/+T until end of turn for each other creature you control.`
 - `Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain N life.`
-  The ability word has no rules meaning (CR 207.2c). The “while” clause is an
-  intervening-if condition (CR 603.4). The word may be omitted.
+  The ability word has no rules meaning (CR 207.2c). The “while” clause is
+  part of the trigger condition (CR 603.2) and is not checked again on
+  resolution. The word may be omitted.
 - `When <this card> enters, draw a card.` / `draw N cards.`
   The entering object is `this`, `this <type>`, the card's name, or that short name
 - `When <this card> dies, target <permanent type or …> an opponent controls gets P/T until end of turn.`
@@ -1261,8 +1262,9 @@ def parseAdditionalCostSacrificeOrPay (line : String) : Option CardPart :=
 
 /-- `Ferocious — Whenever this creature attacks while you control a creature
 with power 4 or greater, you gain 2 life.`
-`Ferocious` is an ability word (CR 207.2c). The “while” clause is checked
-when the ability would trigger (CR 603.4). -/
+`Ferocious` is an ability word (CR 207.2c). The “while” clause is part of
+the trigger condition (CR 603.2): it is checked when this creature attacks,
+and it is not checked again when the ability resolves. -/
 def parseFerociousAttackGainLife (line : String) : Option CardPart :=
   let line := stripTrailingPeriod (stripReminderParenthetical line)
   let s := lowerAscii line
@@ -1277,16 +1279,15 @@ def parseFerociousAttackGainLife (line : String) : Option CardPart :=
     match parseYouGainLife (s.drop lead.length).trimAscii.copy 0 with
     | some (.gainLife _ k, _) =>
       some (.ability (
-        .triggered
+        .triggeredWhile
           (.attack .this .all)
-          (.if
-            (.any
-              (.intersection [
-                .permanent,
-                .cardType .creature,
-                .controlled (.controller .this),
-                .powerAtLeast (Value.int 4)]))
-            [.gainLife (.controller .this) k])))
+          (.any
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this),
+              .powerAtLeast (Value.int 4)]))
+          (.gainLife (.controller .this) k)))
     | _ => none
 
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
@@ -1962,16 +1963,15 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "Ravening Warg")
   "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life." ==
   some [.ability (
-    .triggered
+    .triggeredWhile
       (.attack .this .all)
-      (.if
-        (.any
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this),
-            .powerAtLeast (Value.int 4)]))
-        [.gainLife (.controller .this) 2]))]
+      (.any
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast (Value.int 4)]))
+      (.gainLife (.controller .this) 2))]
 #guard parseOracleParts (name := "Ravening Warg")
   "Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life." ==
   parseOracleParts (name := "Ravening Warg")

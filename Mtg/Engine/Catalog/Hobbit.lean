@@ -678,16 +678,15 @@ def raveningWargCard : CardDef :=
   .toughness 2,
   .ability (.keyword .deathtouch),
   .ability (
-    .triggered
+    .triggeredWhile
       (.attack .this .all)
-      (.if
-        (.any
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this),
-            .powerAtLeast (Value.int 4)]))
-        [.gainLife (.controller .this) 2]))]
+      (.any
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast (Value.int 4)]))
+      (.gainLife (.controller .this) 2))]
 
 /-- Gatherer Oracle text for Gollum, Silent Slinker // Meager Meal. -/
 def gollumSilentSlinkerOracle : String :=
@@ -1611,16 +1610,15 @@ def nighthowlPursuer : CardDef :=
     .toughness 1,
     .ability (.keyword .menace),
     .ability (
-      .triggered
+      .triggeredWhile
         (.attack .this .all)
-        (.if
-          (.any
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this),
-              .powerAtLeast (Value.int 4)]))
-          [.continuous [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)] .endOfTurn]))
+        (.any
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .powerAtLeast (Value.int 4)]))
+        (.continuous [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)] .endOfTurn))
   ]).toCardDef
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn.")
 
@@ -1633,26 +1631,24 @@ def wargling : CardDef :=
     .power 2,
     .toughness 2,
     .ability (
-      .triggered
+      .triggeredWhile
         (.attack .this .all)
-        (.if
-          (.any
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this),
-              .powerAtLeast (Value.int 4)]))
+        (.any
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .powerAtLeast (Value.int 4)]))
+        (.continuous
           [
-            .continuous
-              [
-                .addPowerToughness (.source .this) (Value.int 1) (Value.int 0),
-                .gainAbility
-                  (.intersection [
-                    .permanent,
-                    .cardType .creature,
-                    .controlled (.controller .this)])
-                  (.keyword .trample)]
-              .endOfTurn]))
+            .addPowerToughness (.source .this) (Value.int 1) (Value.int 0),
+            .gainAbility
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)])
+              (.keyword .trample)]
+          .endOfTurn))
   ]).toCardDef
     (oracleText := "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures you control gain trample.")
 
@@ -1665,23 +1661,21 @@ def wilderlandScrounger : CardDef :=
     .power 3,
     .toughness 6,
     .ability (
-      .triggered
+      .triggeredWhile
         (.attack .this .all)
-        (.if
-          (.any
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this),
-              .powerAtLeast (Value.int 4)]))
-          [
-            .putCounter
-              (.intersection [
-                .permanent,
-                .cardType .creature,
-                .controlled (.controller .this)])
-              .plusOnePlusOne
-              1]))
+        (.any
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .powerAtLeast (Value.int 4)]))
+        (.putCounter
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          .plusOnePlusOne
+          1))
   ]).toCardDef
     (oracleText := "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, put a +1/+1 counter on each creature you control.")
 
@@ -1718,7 +1712,7 @@ def theChiefWarg : CardDef :=
     .toughness 3,
     .ability (.keyword .menace),
     .ability (
-      .triggered
+      .triggeredWhile
         (.attackSimultaneously
           (.intersection [
             .permanent,
@@ -1726,17 +1720,15 @@ def theChiefWarg : CardDef :=
             .controlled (.controller .this)])
           .all
           [])
-        (.if
-          (.any
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this),
-              .powerAtLeast (Value.int 4)]))
-          [
-            .sequence [
-              .draw (.controller .this) 1,
-              .loseLife (.controller .this) 1]]))
+        (.any
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .powerAtLeast (Value.int 4)]))
+        (.sequence [
+          .draw (.controller .this) 1,
+          .loseLife (.controller .this) 1]))
   ]).toCardDef
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever you attack while you control a creature with power 4 or greater, you draw a card and lose 1 life.")
 
