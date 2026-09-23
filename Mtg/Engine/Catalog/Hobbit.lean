@@ -16,8 +16,9 @@ of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
 Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock,
 Thranduil's Decree, Bilbo, Luckwearer, Uneasy Partings, Front Porch
 Sentries, Great Fierce Bee, Stir Up Trouble, Desolation Prowler,
-Ravening Warg, Gollum, Silent Slinker, Bilbo's Deadly Slice, and
-Dreaded Bat-Cloud keep their printed characteristics as parts;
+Ravening Warg, Gollum, Silent Slinker, Bilbo's Deadly Slice,
+Dreaded Bat-Cloud, and Crude Bent Blade keep their printed
+characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -785,7 +786,23 @@ def dreadedBatCloudCard : CardDef :=
   .ability (.keyword .flying),
   .ability (.keyword .deathtouch)]
 
-def crudeBentBlade : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Crude Bent Blade. -/
+def crudeBentBladeOracle : String :=
+  "When this Equipment enters, target opponent sacrifices a creature of their choice.\nEquipped creature gets +2/+1.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)"
+
+def crudeBentBlade : TraditionalCardDefinition := .card <|
+  [
+    .name "Crude Bent Blade",
+    .manaCost [.generic 2, .mono .black],
+    .type .artifact,
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "Crude Bent Blade") crudeBentBladeOracle).get!
+
+def crudeBentBladeCard : CardDef :=
+  crudeBentBlade.toCardDef
+    (oracleText := crudeBentBladeOracle)
+
+#guard crudeBentBlade == .card [
   .name "Crude Bent Blade",
   .manaCost [.generic 2, .mono .black],
   .type .artifact,
@@ -804,10 +821,6 @@ def crudeBentBlade : TraditionalCardDefinition := .card [
   .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 1))),
   .ability (.keywordWithCost .equip [.mana [.generic 2]])
 ]
-
-def crudeBentBladeCard : CardDef :=
-  crudeBentBlade.toCardDef
-    (oracleText := "When this Equipment enters, target opponent sacrifices a creature of their choice.\nEquipped creature gets +2/+1.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)")
 
 def gollumTheAbandoned : TraditionalCardDefinition := .card [
   .name "Gollum the Abandoned",
