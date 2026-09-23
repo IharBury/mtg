@@ -17,20 +17,31 @@ Currently recognized:
   and hybrid `{W/U}`
 - `Target <permanent type or …> [you control] gains <keywords> until end of turn.`
 - `{cost}: <permanents> [you control] get +N/+N until end of turn.`
+- `Pay N life: <permanents or this creature> get +P/+T until end of turn.`
+  A following `Activate only once each turn` limits that ability (CR 602.5).
 - `Tap one or two target <permanents>.`
 - `Untap target <permanents> [you control].`
 - `It gets +P/+T until end of turn.` (the previous target)
 - `If it's a <subtype>, you may attach a/an <subtype> you control to it.`
 - `This spell costs {N} less to cast if it targets a tapped creature.`
 - `This spell costs {N} less to cast if it targets an attacking nontoken creature.`
+- `This spell costs {N} less to cast if a creature died this turn.`
+  The reduction functions while the spell is cast (CR 113.6b / 601.2f).
 - `As an additional cost to cast this spell, sacrifice an <permanent type or …> or pay {N}.`
   The sacrifice and that much generic mana are alternatives (CR 601.2b).
   This functions while the spell is on the stack (CR 113.6 / 604.2).
 - `Destroy target <permanent type or …>.`
+- `Put a +1/+1 counter on up to one target <permanent type>.`
+  Up to one target means zero or one (CR 115.1).
+- `Target player gains N life.`
+- `You gain N life.`
 - `<this card> deals N damage to target <permanent type>.`
   The source is `this`, `this <type>`, the card's name, or the short name
   before a comma (`Bilbo Baggins` for `Bilbo Baggins, Burglar`, CR 201.5)
 - `Whenever this creature attacks, it gets +P/+T until end of turn for each other creature you control.`
+- `Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain N life.`
+  The ability word has no rules meaning (CR 207.2c). The “while” clause is an
+  intervening-if condition (CR 603.4). The word may be omitted.
 - `When <this card> enters, draw a card.` / `draw N cards.`
   The entering object is `this`, `this <type>`, the card's name, or that short name
 - `When <this card> dies, target <permanent type or …> an opponent controls gets P/T until end of turn.`
@@ -408,16 +419,66 @@ def parseAttackTriggered (line : String) : Option CardPart :=
     | some action => some (.ability (.triggered (.attack .this .all) action))
     | none => none
 
-/-- `{3}{W}: Creatures you control get +1/+1 until end of turn.` -/
-def parseActivatedAbility (line : String) : Option CardPart :=
+/-- `Pay 2 life` (CR 118.3). The amount is a printed number. -/
+def parsePayLife (s : String) : Option Nat :=
+  let s := lowerAscii (s.trimAscii.copy)
+  let lead := "pay "
+  let tail := " life"
+  if !s.startsWith lead || !s.endsWith tail then none
+  else
+    match natOfDigits? ((s.drop lead.length).dropEnd tail.length).trimAscii.copy with
+    | some n => if n == 0 then none else some n
+    | none => none
+
+/-- A pump effect, optionally followed by `Activate only once each turn.` -/
+def parseActivatedEffect (effect : String) : Option (CardAction × Bool) :=
+  let sentences :=
+    (stripReminderParenthetical effect).splitOn ". "
+      |>.map stripTrailingPeriod
+      |>.filter (· != "")
+  let pump? (effect : String) (once : Bool) : Option (CardAction × Bool) :=
+    match parsePumpUntilEndOfTurn effect with
+    | some action => some (action, once)
+    | none => none
+  match sentences with
+  | [effect] => pump? effect false
+  | [effect, restrict] =>
+    if lowerAscii restrict != "activate only once each turn" then none
+    else pump? effect true
+  | _ => none
+
+/-- Wrap `action` as an activated ability. `once` is “only once each turn”
+(CR 602.5), tracked by ability number `n`. -/
+def activatedWithCost (n : Nat) (costs : List Cost) (action : CardAction) (once : Bool) :
+    CardPart × Nat :=
+  if once then
+    (.ability
+      (.abilityId n
+        (.activatedIf
+          (.didNotHappen (.abilityWithIdActivated n) .turnStart)
+          costs
+          action)),
+     n + 1)
+  else
+    (.ability (.activated costs action), n)
+
+/-- `{3}{W}: Creatures you control get +1/+1 until end of turn.`
+Also `Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn.` -/
+def parseActivatedAbility (line : String) (n : Nat) : Option (CardPart × Nat) :=
   let line := stripTrailingPeriod (stripReminderParenthetical line)
   match line.splitOn ": " with
   | [costText, effect] =>
-    match parseManaSymbols costText, parsePumpUntilEndOfTurn effect with
-    | some syms, some action =>
-      if syms.isEmpty then none
-      else some (.ability (.activated [.mana syms] action))
-    | _, _ => none
+    match parseActivatedEffect effect with
+    | none => none
+    | some (action, once) =>
+      match parseManaSymbols costText with
+      | some syms =>
+        if syms.isEmpty then none
+        else some (activatedWithCost n [.mana syms] action once)
+      | none =>
+        match parsePayLife costText with
+        | some life => some (activatedWithCost n [.life life] action once)
+        | none => none
   | _ => none
 
 /-- The creature named by a stack cost reduction: `a tapped creature` or
@@ -455,6 +516,30 @@ def parseStackCostReduction (line : String) : Option CardPart :=
                 (.targetsIncludeAny .this among)
                 [.reduceCost .this [.mana syms]])))
       | _, _ => none
+    | _ => none
+
+/-- `This spell costs {3} less to cast if a creature died this turn.`
+The reduction functions while the spell is being cast (CR 113.6b / 601.2f). -/
+def parseCreatureDiedCostReduction (line : String) : Option CardPart :=
+  let s := lowerAscii (stripTrailingPeriod (stripReminderParenthetical line))
+  let lead := "this spell costs "
+  let midMark := " less to cast if "
+  if !s.startsWith lead then none
+  else
+    match (s.drop lead.length).trimAscii.copy.splitOn midMark with
+    | [costText, cond] =>
+      if cond != "a creature died this turn" then none
+      else
+        match parseManaSymbols costText with
+        | some syms =>
+          if syms.isEmpty then none
+          else
+            some (.ability (
+              .static
+                (.if
+                  (.happened (.die (.cardType .creature)) .turnStart)
+                  [.reduceCost .this [.mana syms]])))
+        | none => none
     | _ => none
 
 def englishSmall? (s : String) : Option Nat :=
@@ -955,6 +1040,49 @@ def parseDestroy (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
         n + 1)
     | none => none
 
+/-- `Put a +1/+1 counter on up to one target creature.`
+Up to one target is zero or one (CR 115.1). The targets are numbered `n`. -/
+def parsePutPlusOneUpToOne (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "put a +1/+1 counter on up to one target "
+  if !s.startsWith lead then none
+  else
+    match typesInPhrase (s.drop lead.length).trimAscii.copy with
+    | some ts =>
+      some (
+        .putCounter
+          (.targets n (.range 0 1) (.intersection [.permanent, selectorOfTypes ts]))
+          .plusOnePlusOne
+          1,
+        n + 1)
+    | none => none
+
+/-- `Target player gains 2 life.` The player is target `n`. -/
+def parseTargetPlayerGainsLife (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "target player gains "
+  let tail := " life"
+  if !s.startsWith lead || !s.endsWith tail then none
+  else
+    match englishSmall? ((s.drop lead.length).dropEnd tail.length).trimAscii.copy with
+    | some k =>
+      if k == 0 then none
+      else some (.gainLife (.target n .player) (Value.nat k), n + 1)
+    | none => none
+
+/-- `You gain 2 life.` Does not choose a target, so the target number stays `n`. -/
+def parseYouGainLife (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "you gain "
+  let tail := " life"
+  if !s.startsWith lead || !s.endsWith tail then none
+  else
+    match englishSmall? ((s.drop lead.length).dropEnd tail.length).trimAscii.copy with
+    | some k =>
+      if k == 0 then none
+      else some (.gainLife (.controller .this) (Value.nat k), n)
+    | none => none
+
 /-- `Scry 2.` Does not choose a target, so the target number stays `n`. -/
 def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
@@ -1067,15 +1195,24 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
                   match parseDestroy s n with
                   | some (a, n') => go rest n' (acc ++ [a])
                   | none =>
-                    match parseScry s n with
+                    match parsePutPlusOneUpToOne s n with
                     | some (a, n') => go rest n' (acc ++ [a])
                     | none =>
-                      match parseOwnerPutsTopOrBottom s n with
+                      match parseTargetPlayerGainsLife s n with
                       | some (a, n') => go rest n' (acc ++ [a])
                       | none =>
-                        match parseExchangeControlSharingCardType s n with
+                        match parseYouGainLife s n with
                         | some (a, n') => go rest n' (acc ++ [a])
-                        | none => none
+                        | none =>
+                          match parseScry s n with
+                          | some (a, n') => go rest n' (acc ++ [a])
+                          | none =>
+                            match parseOwnerPutsTopOrBottom s n with
+                            | some (a, n') => go rest n' (acc ++ [a])
+                            | none =>
+                              match parseExchangeControlSharingCardType s n with
+                              | some (a, n') => go rest n' (acc ++ [a])
+                              | none => none
   match parseCounterExilePermanentMayCast text n with
   | some parsed => some parsed
   | none => go (sentences text) n []
@@ -1122,6 +1259,36 @@ def parseAdditionalCostSacrificeOrPay (line : String) : Option CardPart :=
       | none => none
     | _ => none
 
+/-- `Ferocious — Whenever this creature attacks while you control a creature
+with power 4 or greater, you gain 2 life.`
+`Ferocious` is an ability word (CR 207.2c). The “while” clause is checked
+when the ability would trigger (CR 603.4). -/
+def parseFerociousAttackGainLife (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let s :=
+    match s.splitOn "—" with
+    | [word, rest] =>
+      if word.trimAscii.copy == "ferocious" then rest.trimAscii.copy else s
+    | _ => s
+  let lead := "whenever this creature attacks while you control a creature with power 4 or greater, "
+  if !s.startsWith lead then none
+  else
+    match parseYouGainLife (s.drop lead.length).trimAscii.copy 0 with
+    | some (.gainLife _ k, _) =>
+      some (.ability (
+        .triggered
+          (.attack .this .all)
+          (.if
+            (.any
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this),
+                .powerAtLeast (Value.int 4)]))
+            [.gainLife (.controller .this) k])))
+    | _ => none
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails. -/
 def parseOneLine (cardName : String) (line : String) (n : Nat) :
@@ -1131,44 +1298,50 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     match keywordParts? line with
     | some parts => some (parts, n)
     | none =>
-      match parseActivatedAbility line with
-      | some part => some ([part], n)
+      match parseActivatedAbility line n with
+      | some (part, n') => some ([part], n')
       | none =>
         match parseStackCostReduction line with
         | some part => some ([part], n)
         | none =>
-          match parseAttackTriggered line with
+          match parseCreatureDiedCostReduction line with
           | some part => some ([part], n)
           | none =>
-            match parseEnterDraw cardName line with
+            match parseAttackTriggered line with
             | some part => some ([part], n)
             | none =>
-              match parseDiesOppGets cardName line n with
-              | some (part, n') => some ([part], n')
+              match parseFerociousAttackGainLife line with
+              | some part => some ([part], n)
               | none =>
-                match parseOtherCreaturesDieScry line n with
-                | some (part, n') => some ([part], n')
+                match parseEnterDraw cardName line with
+                | some part => some ([part], n)
                 | none =>
-                  match parseDrawSecondPlusOne line with
-                  | some part => some ([part], n)
+                  match parseDiesOppGets cardName line n with
+                  | some (part, n') => some ([part], n')
                   | none =>
-                    match parseYouDrawPlusOne line with
-                    | some part => some ([part], n)
+                    match parseOtherCreaturesDieScry line n with
+                    | some (part, n') => some ([part], n')
                     | none =>
-                      match parseCantBeBlocked cardName line with
+                      match parseDrawSecondPlusOne line with
                       | some part => some ([part], n)
                       | none =>
-                        match parseCombatDamageLoot cardName line with
+                        match parseYouDrawPlusOne line with
                         | some part => some ([part], n)
                         | none =>
-                          match parseAdditionalCostSacrificeOrPay line with
+                          match parseCantBeBlocked cardName line with
                           | some part => some ([part], n)
                           | none =>
-                            match actionsFromText cardName line n with
-                            | some (actions, n') =>
-                              if actions.isEmpty then none
-                              else some ([.actions actions], n')
-                            | none => none
+                            match parseCombatDamageLoot cardName line with
+                            | some part => some ([part], n)
+                            | none =>
+                              match parseAdditionalCostSacrificeOrPay line with
+                              | some part => some ([part], n)
+                              | none =>
+                                match actionsFromText cardName line n with
+                                | some (actions, n') =>
+                                  if actions.isEmpty then none
+                                  else some ([.actions actions], n')
+                                | none => none
 
 /-- `collecting` reads the `•` modes after `Choose one —`.
 An unrecognized mode or line fails the parse. -/
@@ -1256,18 +1429,24 @@ open OracleParts
 /-- Parse printed Oracle text into `CardPart`s. Keyword lines, Gatherer
 `//ADV//` Adventure faces, “gains … until end of turn” effects,
 `{cost}: … get +P/+T until end of turn` abilities,
+`Pay N life: … get +P/+T until end of turn` abilities, including
+`Activate only once each turn`,
 `Tap one or two target creatures` effects,
 `Untap target creature you control` plus a following `It gets +P/+T`
 and optional `If it's a <subtype>, you may attach …` clause,
 stack cost reductions
-(`This spell costs {N} less … if it targets a tapped creature` or
-`an attacking nontoken creature`),
+(`This spell costs {N} less … if it targets a tapped creature`,
+`an attacking nontoken creature`, or `if a creature died this turn`),
 `As an additional cost to cast this spell, sacrifice an <permanent type or …>
 or pay {N}` (a static ability of the spell on the stack),
 `Destroy target <permanent type or …>` effects,
+`Put a +1/+1 counter on up to one target <permanent type>` effects,
+`Target player gains N life` and `You gain N life` effects,
 `<this card> deals N damage to target creature` effects,
 `Whenever this creature attacks, it gets +P/+T until end of turn for each
 other creature you control` triggers,
+`Ferocious — Whenever this creature attacks while you control a creature with
+power 4 or greater, you gain N life` triggers,
 `When <this card> enters, draw a card` triggers,
 `When <this card> dies, target <permanents> an opponent controls gets P/T until end of turn`
 triggers,
@@ -1757,5 +1936,95 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .actions [
       .destroy
         (.target 1 (.intersection [.permanent, .cardType .creature]))]]
+#guard parseOracleParts (name := "Desolation Prowler")
+  "Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn." ==
+  some [.ability (
+    .abilityId 1
+      (.activatedIf
+        (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
+        [.life 2]
+        (.continuous
+          [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)]
+          .endOfTurn)))]
+#guard parseOracleParts (name := "")
+  "Pay 2 life: This creature gets +2/+2 until end of turn." ==
+  some [.ability (
+    .activated
+      [.life 2]
+      (.continuous
+        [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)]
+        .endOfTurn))]
+#guard parseOracleParts (name := "")
+  "Pay 2 life: This creature gets +2/+2 until end of turn. Activate only twice each turn." == none
+#guard parseOracleParts (name := "")
+  "Pay 0 life: This creature gets +2/+2 until end of turn." == none
+#guard parseOracleParts (name := "") "Pay 2 life: Draw a card." == none
+#guard parseOracleParts (name := "Ravening Warg")
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life." ==
+  some [.ability (
+    .triggered
+      (.attack .this .all)
+      (.if
+        (.any
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .powerAtLeast (Value.int 4)]))
+        [.gainLife (.controller .this) 2]))]
+#guard parseOracleParts (name := "Ravening Warg")
+  "Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life." ==
+  parseOracleParts (name := "Ravening Warg")
+    "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life."
+#guard parseOracleParts (name := "")
+  "Whenever this creature attacks while you control a creature with power 3 or greater, you gain 2 life." == none
+#guard parseOracleParts (name := "")
+  "Landfall — Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life." == none
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever this creature attacks, you gain 2 life." == none
+#guard parseOracleParts (name := "")
+  "Put a +1/+1 counter on up to one target creature. Target player gains 2 life." ==
+  some [.actions [
+    .putCounter
+      (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
+      .plusOnePlusOne
+      1,
+    .gainLife (.target 2 .player) 2]]
+#guard parseOracleParts (name := "") "Put a +1/+1 counter on target creature." == none
+#guard parseOracleParts (name := "")
+  "Put two +1/+1 counters on up to one target creature." == none
+#guard parseOracleParts (name := "") "Target opponent gains 2 life." == none
+#guard parseOracleParts (name := "") "You gain 0 life." == none
+#guard parseOracleParts (name := "") "You gain 2 life." ==
+  some [.actions [.gainLife (.controller .this) 2]]
+#guard parseOracleParts (name := "Gollum, Silent Slinker")
+  "Menace (This creature can't be blocked except by two or more creatures.)\n//ADV//\nMeager Meal {B}\nSorcery — Adventure\nPut a +1/+1 counter on up to one target creature. Target player gains 2 life. (Then exile this card. You may cast the creature later from exile.)" ==
+  some [
+    .ability (.keyword .menace),
+    .alternative [
+      .name "Meager Meal",
+      .manaCost [.mono .black],
+      .type .sorcery,
+      .subtype .adventure,
+      .actions [
+        .putCounter
+          (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
+          .plusOnePlusOne
+          1,
+        .gainLife (.target 2 .player) 2]]]
+#guard parseOracleParts (name := "Dreaded Bat-Cloud")
+  "This spell costs {3} less to cast if a creature died this turn.\nFlying, deathtouch" ==
+  some [
+    .ability (
+      .static
+        (.if
+          (.happened (.die (.cardType .creature)) .turnStart)
+          [.reduceCost .this [.mana [.generic 3]]])),
+    .ability (.keyword .flying),
+    .ability (.keyword .deathtouch)]
+#guard parseOracleParts (name := "")
+  "This spell costs {3} less to cast if a creature you control died this turn." == none
+#guard parseOracleParts (name := "")
+  "This spell costs {3} less to cast if two creatures died this turn." == none
 
 end Mtg.Engine
