@@ -17,7 +17,7 @@ Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock,
 Thranduil's Decree, Bilbo, Luckwearer, Uneasy Partings, Front Porch
 Sentries, Great Fierce Bee, Stir Up Trouble, Desolation Prowler,
 Ravening Warg, Gollum, Silent Slinker, Bilbo's Deadly Slice,
-Dreaded Bat-Cloud, and Crude Bent Blade keep their printed
+Dreaded Bat-Cloud, Crude Bent Blade, and Gollum the Abandoned keep their printed
 characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -822,7 +822,27 @@ def crudeBentBladeCard : CardDef :=
   .ability (.keywordWithCost .equip [.mana [.generic 2]])
 ]
 
-def gollumTheAbandoned : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Gollum the Abandoned. -/
+def gollumTheAbandonedOracle : String :=
+  "Gollum can't block.\nWhen Gollum enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life.\n{2}, Sacrifice an artifact or creature: Return this card from your graveyard to your hand. Activate only as a sorcery."
+
+def gollumTheAbandoned : TraditionalCardDefinition := .card <|
+  [
+    .name "Gollum the Abandoned",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .horror,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Gollum the Abandoned") gollumTheAbandonedOracle).get!
+
+def gollumTheAbandonedCard : CardDef :=
+  gollumTheAbandoned.toCardDef
+    (oracleText := gollumTheAbandonedOracle)
+
+#guard gollumTheAbandoned == .card [
   .name "Gollum the Abandoned",
   .manaCost [.generic 1, .mono .black],
   .type .creature,
@@ -837,10 +857,11 @@ def gollumTheAbandoned : TraditionalCardDefinition := .card [
       (.enter .this)
       (.sequence [
         .exile
-          (.targets 1 (.range 0 1) (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
+          (.targets 1 (.range 0 1)
+            (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
         .loseLife (.opponent (.controller .this)) 2])),
   .ability (
-    .activatedIf
+    .graveyardActivatedIf
       (.timeToCastSorcery (.controller .this))
       [.mana [.generic 2],
         .sacrificeCount
@@ -850,10 +871,6 @@ def gollumTheAbandoned : TraditionalCardDefinition := .card [
           1]
       (.returnToHand (.intersection [.inGraveyard, .source .this])))
 ]
-
-def gollumTheAbandonedCard : CardDef :=
-  gollumTheAbandoned.toCardDef
-    (oracleText := "Gollum can't block.\nWhen Gollum enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life.\n{2}, Sacrifice an artifact or creature: Return this card from your graveyard to your hand. Activate only as a sorcery.")
 
 def gnashingOfTeeth : TraditionalCardDefinition := .card [
   .name "Gnashing of Teeth",
