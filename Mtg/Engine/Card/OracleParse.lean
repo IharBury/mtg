@@ -29,6 +29,9 @@ Currently recognized:
 - `Whenever this creature attacks, it gets +P/+T until end of turn for each other creature you control.`
 - `When <this card> enters, draw a card.` / `draw N cards.`
   The entering object is `this`, `this <type>`, the card's name, or that short name
+- `When <this card> dies, target <permanent type or …> an opponent controls gets P/T until end of turn.`
+  The dying object is `this`, `this <type>`, the card's name, or that short name.
+  `P/T` is a signed change such as -1 / -1
 - `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
 - `Whenever you draw a card, put a +1/+1 counter on this creature.`
 - `Scry N.`
@@ -672,6 +675,69 @@ def parseEnterDraw (cardName : String) (line : String) : Option CardPart :=
         | none => none
     | _ => none
 
+/-- `target creature an opponent controls` as the objects a target matches. -/
+def parseOppControlledTarget (s : String) : Option Selector :=
+  let s := lowerAscii (s.trimAscii.copy)
+  let lead := "target "
+  let tail := " an opponent controls"
+  if !s.startsWith lead || !s.endsWith tail then none
+  else
+    let obj := ((s.drop lead.length).dropEnd tail.length).trimAscii.copy
+    match typesInPhrase obj with
+    | none => none
+    | some ts =>
+      some (.intersection [
+        .permanent,
+        selectorOfTypes ts,
+        .controlled (.opponent (.controller .this))])
+
+/-- `target <permanents> an opponent controls gets P/T until end of turn.`
+The target number is `n`. `P/T` may be negative, as in -1 / -1. -/
+def parseOppGetsUntilEndOfTurn (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let suffix := " until end of turn"
+  if !s.endsWith suffix then none
+  else
+    let body := (s.dropEnd suffix.length).trimAscii.copy
+    let pieces :=
+      match body.splitOn " gets " with
+      | [who, pt] => some (who, pt)
+      | _ =>
+        match body.splitOn " get " with
+        | [who, pt] => some (who, pt)
+        | _ => none
+    match pieces with
+    | none => none
+    | some (who, pt) =>
+      match parseOppControlledTarget who, parsePowerToughness pt with
+      | some sel, some (p, t) =>
+        some (
+          .continuous
+            [.addPowerToughness (.target n sel) (Value.int p) (Value.int t)]
+            .endOfTurn,
+          n + 1)
+      | _, _ => none
+
+/-- `When this creature dies, target creature an opponent controls gets -1 / -1 until end of turn.`
+The dying object is this card. The target number is `n`. -/
+def parseDiesOppGets (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let lead := "when "
+  let mid := " dies, "
+  if !s.startsWith lead then none
+  else
+    match (s.drop lead.length).trimAscii.copy.splitOn mid with
+    | [subject, effect] =>
+      if subject.isEmpty || !refersToSelf cardName subject then none
+      else
+        match parseOppGetsUntilEndOfTurn effect n with
+        | some (action, n') =>
+          some (.ability (.triggered (.die .this) action), n')
+        | none => none
+    | _ => none
+
 /-- `put a +1/+1 counter on this creature`. `this`, `this creature`, and `it`
 are the source of this ability. -/
 def parsePutPlusOneOnThis (sentence : String) : Option CardAction :=
@@ -1007,23 +1073,26 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
             match parseEnterDraw cardName line with
             | some part => some ([part], n)
             | none =>
-              match parseDrawSecondPlusOne line with
-              | some part => some ([part], n)
+              match parseDiesOppGets cardName line n with
+              | some (part, n') => some ([part], n')
               | none =>
-                match parseYouDrawPlusOne line with
+                match parseDrawSecondPlusOne line with
                 | some part => some ([part], n)
                 | none =>
-                  match parseCantBeBlocked cardName line with
+                  match parseYouDrawPlusOne line with
                   | some part => some ([part], n)
                   | none =>
-                    match parseCombatDamageLoot cardName line with
+                    match parseCantBeBlocked cardName line with
                     | some part => some ([part], n)
                     | none =>
-                      match actionsFromText cardName line n with
-                      | some (actions, n') =>
-                        if actions.isEmpty then none
-                        else some ([.actions actions], n')
-                      | none => none
+                      match parseCombatDamageLoot cardName line with
+                      | some part => some ([part], n)
+                      | none =>
+                        match actionsFromText cardName line n with
+                        | some (actions, n') =>
+                          if actions.isEmpty then none
+                          else some ([.actions actions], n')
+                        | none => none
 
 /-- `collecting` reads the `•` modes after `Choose one —`.
 An unrecognized mode or line fails the parse. -/
@@ -1121,6 +1190,8 @@ stack cost reductions
 `Whenever this creature attacks, it gets +P/+T until end of turn for each
 other creature you control` triggers,
 `When <this card> enters, draw a card` triggers,
+`When <this card> dies, target <permanents> an opponent controls gets P/T until end of turn`
+triggers,
 `Whenever you draw your second card each turn, put a +1/+1 counter on this creature`
 triggers,
 `Whenever you draw a card, put a +1/+1 counter on this creature`
@@ -1450,6 +1521,60 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       [.putOnTopOfLibrary
         (.target 1 (.intersection [.permanent, .cardType .creature])),
         .putOnBottomOfLibrary (.targetReference 1)]]]
+#guard parseOracleParts (name := "")
+  "When this creature dies, target creature an opponent controls gets -1/-1 until end of turn." ==
+  some [.ability (
+    .triggered
+      (.die .this)
+      (.continuous
+        [.addPowerToughness
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))])) (Value.int (-1)) (Value.int (-1))]
+        .endOfTurn))]
+#guard parseOracleParts (name := "Front Porch Sentries")
+  "When Front Porch Sentries dies, target creature an opponent controls gets -1/-1 until end of turn." ==
+  some [.ability (
+    .triggered
+      (.die .this)
+      (.continuous
+        [.addPowerToughness
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))])) (Value.int (-1)) (Value.int (-1))]
+        .endOfTurn))]
+#guard parseOracleParts (name := "")
+  "When this creature dies, target creature an opponent controls gets +1/+1 until end of turn." ==
+  some [.ability (
+    .triggered
+      (.die .this)
+      (.continuous
+        [.addPowerToughness
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))])) (Value.int 1) (Value.int 1)]
+        .endOfTurn))]
+#guard parseOracleParts (name := "Gandalf")
+  "When Front Porch Sentries dies, target creature an opponent controls gets -1/-1 until end of turn." == none
+#guard parseOracleParts (name := "")
+  "When another creature dies, target creature an opponent controls gets -1/-1 until end of turn." == none
+#guard parseOracleParts (name := "")
+  "Whenever this creature dies, target creature an opponent controls gets -1/-1 until end of turn." == none
+#guard parseOracleParts (name := "")
+  "When this creature dies, target creature you control gets -1/-1 until end of turn." == none
+#guard parseOracleParts (name := "")
+  "When this creature dies, target creature an opponent controls gets -1/-1." == none
+#guard parseOracleParts (name := "")
+  "When this creature dies, draw a card." == none
 #guard parseOracleParts (name := "")
   "Target spell's owner puts it on their choice of the top or bottom of their library." == none
 #guard parseOracleParts (name := "")

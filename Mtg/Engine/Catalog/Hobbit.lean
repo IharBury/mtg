@@ -14,8 +14,8 @@ New cards may be written as a `TraditionalCardDefinition` (a list of
 Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
 of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
 Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock,
-Thranduil's Decree, Bilbo, Luckwearer, and Uneasy Partings keep their printed
-characteristics as parts;
+Thranduil's Decree, Bilbo, Luckwearer, Uneasy Partings, and Front Porch
+Sentries keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -512,7 +512,26 @@ def uneasyPartingsCard : CardDef :=
         (.target 1 (.intersection [.permanent, .cardType .creature])),
         .putOnBottomOfLibrary (.targetReference 1)]]]
 
-def frontPorchSentries : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Front Porch Sentries. -/
+def frontPorchSentriesOracle : String :=
+  "When this creature dies, target creature an opponent controls gets -1/-1 until end of turn."
+
+def frontPorchSentries : TraditionalCardDefinition := .card <|
+  [
+    .name "Front Porch Sentries",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .soldier,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Front Porch Sentries") frontPorchSentriesOracle).get!
+
+def frontPorchSentriesCard : CardDef :=
+  frontPorchSentries.toCardDef
+    (oracleText := frontPorchSentriesOracle)
+
+#guard frontPorchSentries == .card [
   .name "Front Porch Sentries",
   .manaCost [.generic 1, .mono .black],
   .type .creature,
@@ -531,12 +550,7 @@ def frontPorchSentries : TraditionalCardDefinition := .card [
               .permanent,
               .cardType .creature,
               .controlled (.opponent (.controller .this))])) (Value.int (-1)) (Value.int (-1))]
-        .endOfTurn))
-]
-
-def frontPorchSentriesCard : CardDef :=
-  frontPorchSentries.toCardDef
-    (oracleText := "When this creature dies, target creature an opponent controls gets -1/-1 until end of turn.")
+        .endOfTurn))]
 
 def greatFierceBee : TraditionalCardDefinition := .card [
   .name "Great Fierce Bee",
