@@ -603,7 +603,7 @@ def stirUpTroubleCard : CardDef :=
   .name "Stir Up Trouble",
   .manaCost [.mono .black],
   .type .sorcery,
-  .ability (.static (
+  .ability (.stackStatic (
     .additionalCost .this
       [.or [
         .sacrificeCount

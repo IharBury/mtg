@@ -4488,6 +4488,7 @@ end TraditionalCardDefinition
   | none => false
 
 -- Stir Up Trouble: sacrifice an artifact or creature or pay {4}; destroy.
+-- The additional cost functions while the spell is on the stack (CR 113.6 / 604.2).
 #guard
   let action : CardAction :=
     .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))
@@ -4495,7 +4496,7 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability (.static (
+    .ability (.stackStatic (
       .additionalCost .this
         [.or [
           .sacrificeCount
@@ -4510,7 +4511,7 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability (.static (
+    .ability (.stackStatic (
       .additionalCost .this
         [.or [
           .sacrificeCount

@@ -25,6 +25,7 @@ Currently recognized:
 - `This spell costs {N} less to cast if it targets an attacking nontoken creature.`
 - `As an additional cost to cast this spell, sacrifice an <permanent type or …> or pay {N}.`
   The sacrifice and that much generic mana are alternatives (CR 601.2b).
+  This functions while the spell is on the stack (CR 113.6 / 604.2).
 - `Destroy target <permanent type or …>.`
 - `<this card> deals N damage to target <permanent type>.`
   The source is `this`, `this <type>`, the card's name, or the short name
@@ -1096,7 +1097,8 @@ where
         go rest (line :: acc)
 
 /-- `As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}.`
-The sacrifice and the generic mana are alternatives announced at CR 601.2b. -/
+The sacrifice and the generic mana are alternatives announced at CR 601.2b.
+The ability functions while this spell is on the stack (CR 113.6 / 604.2). -/
 def parseAdditionalCostSacrificeOrPay (line : String) : Option CardPart :=
   let s := lowerAscii (stripTrailingPeriod (stripReminderParenthetical line))
   let lead := "as an additional cost to cast this spell, sacrifice "
@@ -1109,7 +1111,7 @@ def parseAdditionalCostSacrificeOrPay (line : String) : Option CardPart :=
       | some obj =>
         match typesInPhrase obj, parseManaSymbols costText with
         | some ts, some [.generic n] =>
-          some (.ability (.static (
+          some (.ability (.stackStatic (
             .additionalCost .this
               [.or [
                 .sacrificeCount
@@ -1261,7 +1263,7 @@ stack cost reductions
 (`This spell costs {N} less … if it targets a tapped creature` or
 `an attacking nontoken creature`),
 `As an additional cost to cast this spell, sacrifice an <permanent type or …>
-or pay {N}`,
+or pay {N}` (a static ability of the spell on the stack),
 `Destroy target <permanent type or …>` effects,
 `<this card> deals N damage to target creature` effects,
 `Whenever this creature attacks, it gets +P/+T until end of turn for each
@@ -1723,7 +1725,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "") "Destroy target creature with flying." == none
 #guard parseOracleParts (name := "")
   "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}." ==
-  some [.ability (.static (
+  some [.ability (.stackStatic (
     .additionalCost .this
       [.or [
         .sacrificeCount
@@ -1743,7 +1745,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "Stir Up Trouble")
   "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}.\nDestroy target creature." ==
   some [
-    .ability (.static (
+    .ability (.stackStatic (
       .additionalCost .this
         [.or [
           .sacrificeCount
