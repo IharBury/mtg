@@ -595,6 +595,12 @@ inductive Ability where
   /-- Number this ability so later clauses can refer to it. -/
   | abilityId : Nat → Ability → Ability
   | triggered : Trigger → CardAction → Ability
+  /-- Fires for the trigger only while the condition holds. The condition is
+  checked when the trigger event occurs (CR 603.2). It is not an intervening
+  “if” (CR 603.4 / 608.2a), so it is not checked again when the ability
+  resolves. Printed “while …” uses this; `CardAction.if` is the resolution
+  check. -/
+  | triggeredWhile : Trigger → Condition → CardAction → Ability
   | static : ContinuousEffect → Ability
   /-- A static ability that functions while this spell is on the stack
   (CR 604.2), e.g. a cost reduction. -/
@@ -3157,11 +3163,11 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
             some (TriggeredAbility.onAttackTargetGainsKeywords kws)
           else none
         | none => none
-  | .triggered (.attack .this .all) (.if (.any among) [.gainLife _ (.nat n)]) =>
+  | .triggeredWhile (.attack .this .all) (.any among) (.gainLife _ (.nat n)) =>
     if among.shape.ferocious then
       some (TriggeredAbility.onAttackFerociousGainLife n)
     else none
-  | .triggered (.attack .this .all) (.if (.any among) [.continuous effects _]) =>
+  | .triggeredWhile (.attack .this .all) (.any among) (.continuous effects _) =>
     if among.shape.ferocious then
       match CardAction.leftoverSourceGetsAndTeamTrample? effects with
       | some p => some (TriggeredAbility.onAttackFerociousSourceGetsAndTeamTrample p)
@@ -3170,7 +3176,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         | some (p, t) => some (TriggeredAbility.onAttackFerociousSourceGets p t)
         | none => none
     else none
-  | .triggered (.attack .this .all) (.if (.any among) [.putCounter sel .plusOnePlusOne 1]) =>
+  | .triggeredWhile (.attack .this .all) (.any among) (.putCounter sel .plusOnePlusOne 1) =>
     if among.shape.ferocious &&
         sel.shape.sameController && sel.shape.types.eqTypes [.creature] then
       some TriggeredAbility.onAttackFerociousPlusOneEach
@@ -3502,8 +3508,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       match action with
       | .keyword who k => leftoverKeywordTriggered? (.attack .this .all) who k
       | _ => none
-  | .triggered (.attackSimultaneously among dest _)
-      (.if (.any ferociousSel) [action]) =>
+  | .triggeredWhile (.attackSimultaneously among dest _) (.any ferociousSel) action =>
     if dest == .all && among.shape.sameController && ferociousSel.shape.ferocious then
       match CardAction.leftoverDrawLoseLifeSelf? action with
       | some (1, 1) => some TriggeredAbility.onYouAttackFerociousDrawLoseLife
@@ -3982,6 +3987,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | none => applyAbility b a
   | .triggered w action =>
     match (Ability.triggered w action).toTriggeredAbility? with
+    | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
+    | none => b
+  | .triggeredWhile w cond action =>
+    match (Ability.triggeredWhile w cond action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
   | .static e => applyContinuousEffect b e
@@ -4596,7 +4605,8 @@ end TraditionalCardDefinition
     ab.effect == Effect.sourceGets 2 2 && ab.cost.payLife == 2 && ab.onceEachTurn
   | none => false
 
--- Ravening Warg: Ferocious attack, gain 2 life.
+-- Ravening Warg: “while you control a creature with power 4 or greater”
+-- is checked when the ability would trigger, not again on resolution.
 #guard Selector.shape
   (.intersection [
     .permanent,
@@ -4606,18 +4616,29 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.triggered
+    (Ability.triggeredWhile
       (.attack .this .all)
-      (.if
-        (.any
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this),
-            .powerAtLeast (Value.int 4)]))
-        [.gainLife (.controller .this) 2])).toTriggeredAbility? with
+      (.any
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast (Value.int 4)]))
+      (.gainLife (.controller .this) 2)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackFerociousGainLife 2
   | none => false
+
+#guard
+  (Ability.triggered
+    (.attack .this .all)
+    (.if
+      (.any
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast (Value.int 4)]))
+      [.gainLife (.controller .this) 2])).toTriggeredAbility?.isNone
 
 -- Meager Meal: +1/+1 on up to one target creature; target player gains 2 life.
 #guard
@@ -5962,16 +5983,15 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.triggered
+    (Ability.triggeredWhile
       (.attack .this .all)
-      (.if
-        (.any
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this),
-            .powerAtLeast (Value.int 4)]))
-        [.continuous [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)] .endOfTurn])).toTriggeredAbility? with
+      (.any
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast (Value.int 4)]))
+      (.continuous [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)] .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackFerociousSourceGets 2 2
   | none => false
 
@@ -6457,26 +6477,24 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.triggered
+    (Ability.triggeredWhile
       (.attack .this .all)
-      (.if
-        (.any
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this),
-            .powerAtLeast (Value.int 4)]))
+      (.any
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast (Value.int 4)]))
+      (.continuous
         [
-          .continuous
-            [
-              .addPowerToughness (.source .this) (Value.int 1) (Value.int 0),
-              .gainAbility
-                (.intersection [
-                  .permanent,
-                  .cardType .creature,
-                  .controlled (.controller .this)])
-                (.keyword .trample)]
-            .endOfTurn])).toTriggeredAbility? with
+          .addPowerToughness (.source .this) (Value.int 1) (Value.int 0),
+          .gainAbility
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])
+            (.keyword .trample)]
+        .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackFerociousSourceGetsAndTeamTrample 1
   | none => false
 

@@ -76,6 +76,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters).
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
   `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`, `abilityId`, `triggered`,
+  `triggeredWhile` (condition checked when the trigger event occurs, not on resolution),
   `static`.
 - **ContinuousEffect** — `gainAbility`, `addPowerToughness`, `if`,
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
