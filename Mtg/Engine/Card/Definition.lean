@@ -592,6 +592,9 @@ inductive Ability where
   | activated : List Cost → CardAction → Ability
   /-- An activated ability that may be used only when the condition holds. -/
   | activatedIf : Condition → List Cost → CardAction → Ability
+  /-- An activated ability that functions while this card is in a graveyard
+  (CR 113.6) and may be used only when the condition holds. -/
+  | graveyardActivatedIf : Condition → List Cost → CardAction → Ability
   /-- Number this ability so later clauses can refer to it. -/
   | abilityId : Nat → Ability → Ability
   | triggered : Trigger → CardAction → Ability
@@ -3044,6 +3047,36 @@ def activatedAbility (costs : List Cost) (action : CardAction)
     onceEachTurn
     activateFromHand := Cost.discardsThis costs }
 
+/-- Compile a conditional activated ability. `fromGraveyard` means it
+functions while this card is in a graveyard (CR 113.6). -/
+def compileConditional (cond : Condition) (costs : List Cost) (action : CardAction)
+    (fromGraveyard : Bool) : Option ActivatedAbility :=
+  match cond with
+  | .countAtLeast among n =>
+    if CardAction.leftoverYourGyCreatures? among && n == 2 then
+      some { activatedAbility costs action with
+        onlyIfGyCreaturesAtLeast := 2
+        activateFromGraveyard := fromGraveyard }
+    else none
+  | .didNotHappen (.abilityWithIdActivated _) .turnStart =>
+    some { activatedAbility costs action true with
+      activateFromGraveyard := fromGraveyard }
+  | .timeToCastSorcery _ =>
+    some { activatedAbility costs action with
+      onlyAsSorcery := true
+      equipSubtype := CardAction.leftoverEquipSubtype? action
+      activateFromGraveyard := fromGraveyard }
+  | .and (.turn _) (.didNotHappen (.abilityWithIdActivated _) .turnStart) =>
+    some { activatedAbility costs action true with
+      onlyDuringYourTurn := true
+      activateFromGraveyard := fromGraveyard }
+  | .turn _ =>
+    some { activatedAbility costs action with
+      onlyDuringYourTurn := true
+      activateFromGraveyard := fromGraveyard }
+  | .any _ | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
+  | .didNotHappen _ _ | .and _ _ => none
+
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost .equip costs =>
     some {
@@ -3061,28 +3094,10 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       cost := { mana := Cost.manaCost costs, discardSource := true }
       effect := Effect.searchLandTypeToHand (Keyword.typecyclingPhrase supertypes types subtypes)
       activateFromHand := true }
-  | .activatedIf (.countAtLeast among n) costs action =>
-    if CardAction.leftoverYourGyCreatures? among && n == 2 then
-      some { activatedAbility costs action with onlyIfGyCreaturesAtLeast := 2 }
-    else none
   | .activated costs action => some (activatedAbility costs action)
-  | .activatedIf (.didNotHappen (.abilityWithIdActivated _) .turnStart) costs action =>
-    some (activatedAbility costs action true)
-  | .activatedIf (.timeToCastSorcery _) costs
-      action@(.returnToHand (.intersection [.inGraveyard, .source .this])) =>
-    some { activatedAbility costs action with
-      onlyAsSorcery := true
-      activateFromGraveyard := true }
-  | .activatedIf (.timeToCastSorcery _) costs action =>
-    some { activatedAbility costs action with
-      onlyAsSorcery := true
-      equipSubtype := CardAction.leftoverEquipSubtype? action }
-  | .activatedIf
-      (.and (.turn _) (.didNotHappen (.abilityWithIdActivated _) .turnStart))
-      costs action =>
-    some { activatedAbility costs action true with onlyDuringYourTurn := true }
-  | .activatedIf (.turn _) costs action =>
-    some { activatedAbility costs action with onlyDuringYourTurn := true }
+  | .activatedIf cond costs action => compileConditional cond costs action false
+  | .graveyardActivatedIf cond costs action =>
+    compileConditional cond costs action true
   | .abilityId _ inner => toActivatedAbility? inner
   | _ => none
 
@@ -3979,6 +3994,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
               b.activatedAbilities.push (Ability.activatedAbility costs action) }
   | .activatedIf cond costs action =>
     match (Ability.activatedIf cond costs action).toActivatedAbility? with
+    | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
+    | none => b
+  | .graveyardActivatedIf cond costs action =>
+    match (Ability.graveyardActivatedIf cond costs action).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
   | .abilityId n a =>
@@ -4914,24 +4933,33 @@ end TraditionalCardDefinition
   | some ab => ab == TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2
   | none => false
 
+-- Returning this card from a graveyard functions there (CR 113.6).
+-- `graveyardActivatedIf` records that zone.
 #guard
+  let costs : List Cost :=
+    [.mana [.generic 2],
+      .sacrificeCount
+        (.intersection [
+          .permanent,
+          .union [.cardType .artifact, .cardType .creature]])
+        1]
+  let action : CardAction :=
+    .returnToHand (.intersection [.inGraveyard, .source .this])
   match
+    (Ability.graveyardActivatedIf
+      (.timeToCastSorcery (.controller .this)) costs action).toActivatedAbility?,
     (Ability.activatedIf
-      (.timeToCastSorcery (.controller .this))
-      [.mana [.generic 2],
-        .sacrificeCount
-          (.intersection [
-            .permanent,
-            .union [.cardType .artifact, .cardType .creature]])
-          1]
-      (.returnToHand (.intersection [.inGraveyard, .source .this]))).toActivatedAbility? with
-  | some ab =>
-    ab.onlyAsSorcery &&
-      ab.activateFromGraveyard &&
-      ab.effect == Effect.returnFromGraveyardToHand &&
-      ab.cost.mana == ManaCost.ofGeneric 2 &&
-      ab.cost.sacrificeAnotherCreatureOrArtifact
-  | none => false
+      (.timeToCastSorcery (.controller .this)) costs action).toActivatedAbility? with
+  | some gy, some battlefield =>
+    gy.onlyAsSorcery &&
+      gy.activateFromGraveyard &&
+      gy.effect == Effect.returnFromGraveyardToHand &&
+      gy.cost.mana == ManaCost.ofGeneric 2 &&
+      gy.cost.sacrificeAnotherCreatureOrArtifact &&
+      battlefield.onlyAsSorcery &&
+      !battlefield.activateFromGraveyard &&
+      battlefield.effect == gy.effect
+  | _, _ => false
 
 -- Gnashing of Teeth / Reverent Howl modes.
 #guard

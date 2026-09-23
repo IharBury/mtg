@@ -66,6 +66,12 @@ Currently recognized:
 - `<this card> can't be blocked.`
   The subject is `this`, `this <type>`, the card's name, or the short name
   before a comma
+- `<this card> can't block.`
+  The subject is the same as for “can't be blocked”
+- `When <this card> enters, exile up to one target card from an opponent's graveyard. Each opponent loses N life.`
+- `{cost}, Sacrifice an <permanent type or …>: Return this card from your graveyard to your hand. Activate only as a sorcery.`
+  Returning this card from a graveyard functions while the card is in that
+  graveyard (CR 113.6), so the ability is `graveyardActivatedIf`
 - `Whenever <this card> deals combat damage to a player, draw <count> cards, then discard <count> card(s).`
 - `Exchange control of <count> target nonland permanents that share a card type.`
 - `Target <permanent type>'s owner puts it on their choice of the top or bottom of their library.`
@@ -680,8 +686,10 @@ def isGenericSelf (subject : String) : Bool :=
       (typeOfOracle? rest).isSome || (subtypeOfOracle? rest).isSome ||
         rest == "permanent" || rest == "spell"
 
-/-- The printed name, plus the short name before a comma.
-`Bilbo Baggins, Burglar` refers to itself as `Bilbo Baggins` (CR 201.5). -/
+/-- The printed name, the short name before a comma (CR 201.5), and that
+name's first word when it is not an article. `Bilbo Baggins, Burglar` refers
+to itself as `Bilbo Baggins` or `Bilbo`. `Gollum the Abandoned` refers to
+itself as `Gollum`. -/
 def selfNames (cardName : String) : List String :=
   let name := lowerAscii (cardName.trimAscii.copy)
   if name.isEmpty then []
@@ -690,7 +698,17 @@ def selfNames (cardName : String) : List String :=
       match name.splitOn "," with
       | head :: _ => head.trimAscii.copy
       | [] => name
-    if short.isEmpty || short == name then [name] else [name, short]
+    let firstWord :=
+      match short.splitOn " " with
+      | w :: _ => w.trimAscii.copy
+      | [] => ""
+    let names :=
+      if short.isEmpty || short == name then [name] else [name, short]
+    if firstWord.isEmpty || firstWord == name || firstWord == short ||
+        firstWord == "the" || firstWord == "a" || firstWord == "an" then
+      names
+    else
+      names ++ [firstWord]
 
 /-- `subject` is this card: a generic `this` phrase, or one of `cardName`'s
 self-names. -/
@@ -962,6 +980,18 @@ def parseCantBeBlocked (cardName : String) (line : String) : Option CardPart :=
     let subject := (s.dropEnd tail.length).trimAscii.copy
     if subject.isEmpty || !refersToSelf cardName subject then none
     else some (.ability (.static (.forbid (.block .any .this))))
+
+/-- `<this card> can't block.` The subject must be this card. This functions
+on the battlefield (CR 604.2 / 509.1b), so it is `static`. -/
+def parseCantBlock (cardName : String) (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let tail := " can't block"
+  if !s.endsWith tail then none
+  else
+    let subject := (s.dropEnd tail.length).trimAscii.copy
+    if subject.isEmpty || !refersToSelf cardName subject then none
+    else some (.ability (.static (.forbid (.block .this .any))))
 
 /-- `Whenever <this card> deals combat damage to a player, draw a card, then
 discard a card.` The subject must be this card. The effect is the same
@@ -1363,6 +1393,117 @@ def parseEquip (line : String) : Option CardPart :=
       else some (.ability (.keywordWithCost .equip [.mana syms]))
     | none => none
 
+/-- `Each opponent loses 2 life.` The amount is a printed number. -/
+def parseEachOpponentLosesLife (sentence : String) : Option Nat :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "each opponent loses "
+  let tail := " life"
+  if !s.startsWith lead || !s.endsWith tail then none
+  else
+    match englishSmall? ((s.drop lead.length).dropEnd tail.length).trimAscii.copy with
+    | some k => if k == 0 then none else some k
+    | none => none
+
+/-- `When <this card> enters, exile up to one target card from an opponent's graveyard. Each opponent loses N life.`
+Up to one target is zero or one (CR 115.1). That target is numbered `n`. -/
+def parseEnterExileOppGyLoseLife (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match sentences (stripReminderParenthetical line) with
+  | [enter, lose] =>
+    let enter := lowerAscii enter
+    let lead := "when "
+    if !enter.startsWith lead then none
+    else
+      match (enter.drop lead.length).trimAscii.copy.splitOn " enters, " with
+      | [subject, effect] =>
+        if subject.isEmpty || !refersToSelf cardName subject then none
+        else if effect !=
+            "exile up to one target card from an opponent's graveyard" then none
+        else
+          match parseEachOpponentLosesLife lose with
+          | some k =>
+            some (
+              .ability (
+                .triggered
+                  (.enter .this)
+                  (.sequence [
+                    .exile
+                      (.targets n (.range 0 1)
+                        (.intersection [
+                          .inGraveyard,
+                          .owner (.opponent (.controller .this))])),
+                    .loseLife (.opponent (.controller .this)) (Value.nat k)])),
+              n + 1)
+          | none => none
+      | _ => none
+  | _ => none
+
+/-- `Sacrifice an artifact or creature` as sacrificing one matching permanent. -/
+def parseSacrificeAn (s : String) : Option Cost :=
+  let s := lowerAscii (s.trimAscii.copy)
+  let lead := "sacrifice "
+  if !s.startsWith lead then none
+  else
+    match dropArticle? (s.drop lead.length).trimAscii.copy with
+    | some obj =>
+      match typesInPhrase obj with
+      | some ts =>
+        some (.sacrificeCount (.intersection [.permanent, selectorOfTypes ts]) 1)
+      | none => none
+    | none => none
+
+/-- One printed cost: mana symbols, or sacrificing one permanent of the
+named types. -/
+def parsePrintedCost (s : String) : Option Cost :=
+  match parseManaSymbols s with
+  | some syms => if syms.isEmpty then none else some (.mana syms)
+  | none => parseSacrificeAn s
+
+/-- Costs separated by commas, such as `{2}, Sacrifice an artifact or creature`. -/
+def parsePrintedCosts (s : String) : Option (List Cost) :=
+  let parts := s.splitOn ", " |>.map (·.trimAscii.copy) |>.filter (· != "")
+  if parts.isEmpty then none
+  else
+    match parts.foldl (fun acc part =>
+      match acc, parsePrintedCost part with
+      | some costs, some c => some (costs ++ [c])
+      | _, _ => none) (some []) with
+    | some [] => none
+    | costs => costs
+
+def returnThisFromGraveyardToHand : CardAction :=
+  .returnToHand (.intersection [.inGraveyard, .source .this])
+
+def parseReturnThisFromGraveyard (sentence : String) : Option CardAction :=
+  if lowerAscii (stripTrailingPeriod sentence) ==
+      "return this card from your graveyard to your hand" then
+    some returnThisFromGraveyardToHand
+  else
+    none
+
+/-- `{2}, Sacrifice an artifact or creature: Return this card from your graveyard to your hand. Activate only as a sorcery.`
+The effect moves this card out of the graveyard, so the ability functions
+there (CR 113.6). “Activate only as a sorcery” is the condition
+(CR 307.1 / 117.1a). The ability is `graveyardActivatedIf`. -/
+def parseGraveyardReturn (line : String) : Option CardPart :=
+  let line := stripReminderParenthetical line
+  match line.splitOn ": " with
+  | [costText, effect] =>
+    match sentences effect with
+    | [ret, restrict] =>
+      if lowerAscii restrict != "activate only as a sorcery" then none
+      else
+        match parsePrintedCosts costText, parseReturnThisFromGraveyard ret with
+        | some costs, some action =>
+          some (.ability (
+            .graveyardActivatedIf
+              (.timeToCastSorcery (.controller .this))
+              costs
+              action))
+        | _, _ => none
+    | _ => none
+  | _ => none
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails. -/
 def parseOneLine (cardName : String) (line : String) (n : Nat) :
@@ -1375,56 +1516,65 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
       match parseActivatedAbility line n with
       | some (part, n') => some ([part], n')
       | none =>
-        match parseStackCostReduction line with
+        match parseGraveyardReturn line with
         | some part => some ([part], n)
         | none =>
-          match parseCreatureDiedCostReduction line with
-          | some part => some ([part], n)
+          match parseEnterExileOppGyLoseLife cardName line n with
+          | some (part, n') => some ([part], n')
           | none =>
-            match parseAttackTriggered line with
+            match parseStackCostReduction line with
             | some part => some ([part], n)
             | none =>
-              match parseFerociousAttackGainLife line with
+              match parseCreatureDiedCostReduction line with
               | some part => some ([part], n)
               | none =>
-                match parseEnterDraw cardName line with
+                match parseAttackTriggered line with
                 | some part => some ([part], n)
                 | none =>
-                  match parseEnterTargetOpponentSacrifices cardName line n with
-                  | some (part, n') => some ([part], n')
+                  match parseFerociousAttackGainLife line with
+                  | some part => some ([part], n)
                   | none =>
-                    match parseDiesOppGets cardName line n with
-                    | some (part, n') => some ([part], n')
+                    match parseEnterDraw cardName line with
+                    | some part => some ([part], n)
                     | none =>
-                      match parseOtherCreaturesDieScry line n with
+                      match parseEnterTargetOpponentSacrifices cardName line n with
                       | some (part, n') => some ([part], n')
                       | none =>
-                        match parseDrawSecondPlusOne line with
-                        | some part => some ([part], n)
+                        match parseDiesOppGets cardName line n with
+                        | some (part, n') => some ([part], n')
                         | none =>
-                          match parseYouDrawPlusOne line with
-                          | some part => some ([part], n)
+                          match parseOtherCreaturesDieScry line n with
+                          | some (part, n') => some ([part], n')
                           | none =>
-                            match parseCantBeBlocked cardName line with
+                            match parseDrawSecondPlusOne line with
                             | some part => some ([part], n)
                             | none =>
-                              match parseCombatDamageLoot cardName line with
+                              match parseYouDrawPlusOne line with
                               | some part => some ([part], n)
                               | none =>
-                                match parseAdditionalCostSacrificeOrPay line with
+                                match parseCantBeBlocked cardName line with
                                 | some part => some ([part], n)
                                 | none =>
-                                  match parseEquippedGets line with
+                                  match parseCantBlock cardName line with
                                   | some part => some ([part], n)
                                   | none =>
-                                    match parseEquip line with
+                                    match parseCombatDamageLoot cardName line with
                                     | some part => some ([part], n)
                                     | none =>
-                                      match actionsFromText cardName line n with
-                                      | some (actions, n') =>
-                                        if actions.isEmpty then none
-                                        else some ([.actions actions], n')
-                                      | none => none
+                                      match parseAdditionalCostSacrificeOrPay line with
+                                      | some part => some ([part], n)
+                                      | none =>
+                                        match parseEquippedGets line with
+                                        | some part => some ([part], n)
+                                        | none =>
+                                          match parseEquip line with
+                                          | some part => some ([part], n)
+                                          | none =>
+                                            match actionsFromText cardName line n with
+                                            | some (actions, n') =>
+                                              if actions.isEmpty then none
+                                              else some ([.actions actions], n')
+                                            | none => none
 
 /-- `collecting` reads the `•` modes after `Choose one —`.
 An unrecognized mode or line fails the parse. -/
@@ -1550,13 +1700,19 @@ triggers,
 instead of putting it into its owner's graveyard. You may cast that card
 without paying its mana cost for as long as it remains exiled`,
 `<this card> can't be blocked`,
+`<this card> can't block`,
+`When <this card> enters, exile up to one target card from an opponent's graveyard. Each opponent loses N life`,
+`{cost}, Sacrifice an <permanent type or …>: Return this card from your graveyard to your hand. Activate only as a sorcery`
+(`graveyardActivatedIf`: the ability functions while this card is in a graveyard),
 `Whenever <this card> deals combat damage to a player, draw <count> cards,
 then discard <count> card(s)`, and
 `Exchange control of <count> target nonland permanents that share a card type`, and
 `Target <permanent type>'s owner puts it on their choice of the top or bottom of their library`
 are read into parts.
-`name` is the card being parsed. Text that uses that name, or the short name
-before a comma, means this card, as do `this` and `this <type>`.
+`name` is the card being parsed. Text that uses that name, the short name
+before a comma (CR 201.5), or that name's first word when it is not an
+article, means this card, as do `this` and `this <type>`.
+`Gollum the Abandoned` refers to itself as `Gollum`.
 Returns `none` when a line, sentence, mode, or Adventure face is not
 recognized. Reminder parentheticals are not rules text. Empty text is
 `some []`. -/
@@ -2173,5 +2329,81 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
               .controlled (.targetReference 1)])))),
     .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 1))),
     .ability (.keywordWithCost .equip [.mana [.generic 2]])]
+
+#guard parseOracleParts (name := "Gollum the Abandoned") "Gollum can't block." ==
+  some [.ability (.static (.forbid (.block .this .any)))]
+#guard parseOracleParts (name := "Gollum the Abandoned") "When Gollum enters, draw a card." ==
+  some [.ability (.triggered (.enter .this) (.draw (.controller .this) 1))]
+#guard parseOracleParts (name := "Gandalf") "Gollum can't block." == none
+#guard parseOracleParts (name := "Gandalf") "When Gollum enters, draw a card." == none
+#guard parseOracleParts (name := "") "This creature can't block." ==
+  some [.ability (.static (.forbid (.block .this .any)))]
+#guard parseOracleParts (name := "") "This creature can't block unless you control a Goblin." ==
+  none
+#guard parseOracleParts (name := "Gollum the Abandoned")
+  "When Gollum enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life." ==
+  some [.ability (
+    .triggered
+      (.enter .this)
+      (.sequence [
+        .exile
+          (.targets 1 (.range 0 1)
+            (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
+        .loseLife (.opponent (.controller .this)) 2]))]
+#guard parseOracleParts (name := "")
+  "When this creature enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life." ==
+  some [.ability (
+    .triggered
+      (.enter .this)
+      (.sequence [
+        .exile
+          (.targets 1 (.range 0 1)
+            (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
+        .loseLife (.opponent (.controller .this)) 2]))]
+#guard parseOracleParts (name := "Gollum the Abandoned")
+  "When Bilbo enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life." ==
+  none
+#guard parseOracleParts (name := "")
+  "When this creature enters, exile up to one target creature card from an opponent's graveyard. Each opponent loses 2 life." ==
+  none
+#guard parseOracleParts (name := "")
+  "{2}, Sacrifice an artifact or creature: Return this card from your graveyard to your hand. Activate only as a sorcery." ==
+  some [.ability (
+    .graveyardActivatedIf
+      (.timeToCastSorcery (.controller .this))
+      [.mana [.generic 2],
+        .sacrificeCount
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])
+          1]
+      (.returnToHand (.intersection [.inGraveyard, .source .this])))]
+#guard parseOracleParts (name := "")
+  "{2}, Sacrifice an artifact or creature: Return this card from your graveyard to your hand." ==
+  none
+#guard parseOracleParts (name := "")
+  "{2}: Return this card from your graveyard to the battlefield." == none
+#guard parseOracleParts (name := "Gollum the Abandoned")
+  "Gollum can't block.\nWhen Gollum enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life.\n{2}, Sacrifice an artifact or creature: Return this card from your graveyard to your hand. Activate only as a sorcery." ==
+  some [
+    .ability (.static (.forbid (.block .this .any))),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .exile
+            (.targets 1 (.range 0 1)
+              (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
+          .loseLife (.opponent (.controller .this)) 2])),
+    .ability (
+      .graveyardActivatedIf
+        (.timeToCastSorcery (.controller .this))
+        [.mana [.generic 2],
+          .sacrificeCount
+            (.intersection [
+              .permanent,
+              .union [.cardType .artifact, .cardType .creature]])
+            1]
+        (.returnToHand (.intersection [.inGraveyard, .source .this])))]
 
 end Mtg.Engine
