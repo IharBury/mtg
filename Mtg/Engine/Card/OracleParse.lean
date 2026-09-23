@@ -26,7 +26,7 @@ Currently recognized:
 - `This spell costs {N} less to cast if it targets a tapped creature.`
 - `This spell costs {N} less to cast if it targets an attacking nontoken creature.`
 - `This spell costs {N} less to cast if a creature died this turn.`
-  The reduction functions while the spell is cast (CR 113.6b / 601.2f).
+  The reduction is a static ability that functions on the stack (CR 604.2).
 - `As an additional cost to cast this spell, sacrifice an <permanent type or …> or pay {N}.`
   The sacrifice and that much generic mana are alternatives (CR 601.2b).
   This functions while the spell is on the stack (CR 113.6 / 604.2).
@@ -519,7 +519,7 @@ def parseStackCostReduction (line : String) : Option CardPart :=
     | _ => none
 
 /-- `This spell costs {3} less to cast if a creature died this turn.`
-The reduction functions while the spell is being cast (CR 113.6b / 601.2f). -/
+The reduction is a static ability that functions on the stack (CR 604.2). -/
 def parseCreatureDiedCostReduction (line : String) : Option CardPart :=
   let s := lowerAscii (stripTrailingPeriod (stripReminderParenthetical line))
   let lead := "this spell costs "
@@ -535,7 +535,7 @@ def parseCreatureDiedCostReduction (line : String) : Option CardPart :=
           if syms.isEmpty then none
           else
             some (.ability (
-              .static
+              .stackStatic
                 (.if
                   (.happened (.die (.cardType .creature)) .turnStart)
                   [.reduceCost .this [.mana syms]])))
@@ -2016,7 +2016,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "This spell costs {3} less to cast if a creature died this turn.\nFlying, deathtouch" ==
   some [
     .ability (
-      .static
+      .stackStatic
         (.if
           (.happened (.die (.cardType .creature)) .turnStart)
           [.reduceCost .this [.mana [.generic 3]]])),

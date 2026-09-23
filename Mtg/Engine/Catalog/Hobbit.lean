@@ -779,7 +779,7 @@ def dreadedBatCloudCard : CardDef :=
   .power 4,
   .toughness 2,
   .ability (
-    .static
+    .stackStatic
       (.if
         (.happened (.die (.cardType .creature)) .turnStart)
         [.reduceCost .this [.mana [.generic 3]]])),
