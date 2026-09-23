@@ -17,7 +17,9 @@ Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock,
 Thranduil's Decree, Bilbo, Luckwearer, Uneasy Partings, Front Porch
 Sentries, Great Fierce Bee, Stir Up Trouble, Desolation Prowler,
 Ravening Warg, Gollum, Silent Slinker, Bilbo's Deadly Slice,
-Dreaded Bat-Cloud, Crude Bent Blade, and Gollum the Abandoned keep their printed
+Dreaded Bat-Cloud, Crude Bent Blade, Gollum the Abandoned, Gnashing of
+Teeth, Reverent Howl, Stony-Voiced Goblins, Smaug, the Great Calamity,
+Gandalf, Spark Starter, and Ragged Short Spear keep their printed
 characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -872,7 +874,22 @@ def gollumTheAbandonedCard : CardDef :=
       (.returnToHand (.intersection [.inGraveyard, .source .this])))
 ]
 
-def gnashingOfTeeth : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Gnashing of Teeth. -/
+def gnashingOfTeethOracle : String :=
+  "Choose one —\n• Target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead.\n• Creatures target player controls get -1/-1 until end of turn."
+
+def gnashingOfTeeth : TraditionalCardDefinition := .card <|
+  [
+    .name "Gnashing of Teeth",
+    .manaCost [.generic 1, .mono .black, .mono .black],
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Gnashing of Teeth") gnashingOfTeethOracle).get!
+
+def gnashingOfTeethCard : CardDef :=
+  gnashingOfTeeth.toCardDef
+    (oracleText := gnashingOfTeethOracle)
+
+#guard gnashingOfTeeth == .card [
   .name "Gnashing of Teeth",
   .manaCost [.generic 1, .mono .black, .mono .black],
   .type .sorcery,
@@ -880,25 +897,38 @@ def gnashingOfTeeth : TraditionalCardDefinition := .card [
     .chooseMode [
       .continuous
         [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)) (Value.int (-5)),
-          .replace
-            (.putToGraveyard (.targetReference 1))
-            [.exile (.replacingObject)]]
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (Value.int (-5)) (Value.int (-5)),
+         .replace
+           (.putToGraveyard (.targetReference 1))
+           [.exile (.replacingObject)]]
         .endOfTurn,
       .continuous
         [.addPowerToughness
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 2 .player)]) (Value.int (-1)) (Value.int (-1))]
+            .controlled (.target 2 .player)])
+          (Value.int (-1)) (Value.int (-1))]
         .endOfTurn]]
 ]
 
-def gnashingOfTeethCard : CardDef :=
-  gnashingOfTeeth.toCardDef
-    (oracleText := "Choose one —\n• Target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead.\n• Creatures target player controls get -1/-1 until end of turn.")
+/-- Gatherer Oracle text for Reverent Howl. -/
+def reverentHowlOracle : String :=
+  "Choose one —\n• Target player draws two cards and loses 2 life.\n• Target creature gets +2/+2 and gains lifelink until end of turn."
 
-def reverentHowl : TraditionalCardDefinition := .card [
+def reverentHowl : TraditionalCardDefinition := .card <|
+  [
+    .name "Reverent Howl",
+    .manaCost [.generic 2, .mono .black],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Reverent Howl") reverentHowlOracle).get!
+
+def reverentHowlCard : CardDef :=
+  reverentHowl.toCardDef
+    (oracleText := reverentHowlOracle)
+
+#guard reverentHowl == .card [
   .name "Reverent Howl",
   .manaCost [.generic 2, .mono .black],
   .type .instant,
@@ -909,16 +939,32 @@ def reverentHowl : TraditionalCardDefinition := .card [
         .loseLife (.targetReference 1) 2],
       .continuous
         [.addPowerToughness
-          (.target 2 (.intersection [.permanent, .cardType .creature])) (Value.int 2) (Value.int 2),
-          .gainAbility (.targetReference 2) (.keyword .lifelink)]
+          (.target 2 (.intersection [.permanent, .cardType .creature]))
+          (Value.int 2) (Value.int 2),
+         .gainAbility (.targetReference 2) (.keyword .lifelink)]
         .endOfTurn]]
 ]
 
-def reverentHowlCard : CardDef :=
-  reverentHowl.toCardDef
-    (oracleText := "Choose one —\n• Target player draws two cards and loses 2 life.\n• Target creature gets +2/+2 and gains lifelink until end of turn.")
+/-- Gatherer Oracle text for Stony-Voiced Goblins. -/
+def stonyVoicedGoblinsOracle : String :=
+  "When this creature enters, each opponent discards a card."
 
-def stonyVoicedGoblins : TraditionalCardDefinition := .card [
+def stonyVoicedGoblins : TraditionalCardDefinition := .card <|
+  [
+    .name "Stony-Voiced Goblins",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .bard,
+    .power 1,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Stony-Voiced Goblins") stonyVoicedGoblinsOracle).get!
+
+def stonyVoicedGoblinsCard : CardDef :=
+  stonyVoicedGoblins.toCardDef
+    (oracleText := stonyVoicedGoblinsOracle)
+
+#guard stonyVoicedGoblins == .card [
   .name "Stony-Voiced Goblins",
   .manaCost [.generic 1, .mono .black],
   .type .creature,
@@ -932,11 +978,26 @@ def stonyVoicedGoblins : TraditionalCardDefinition := .card [
       (.discard (.opponent (.controller .this)) 1))
 ]
 
-def stonyVoicedGoblinsCard : CardDef :=
-  stonyVoicedGoblins.toCardDef
-    (oracleText := "When this creature enters, each opponent discards a card.")
+/-- Gatherer Oracle text for Smaug, the Great Calamity // Spew Flame. -/
+def smaugTheGreatCalamityOracle : String :=
+  "Flying\n//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)"
 
-def smaugTheGreatCalamity : TraditionalCardDefinition := .card [
+def smaugTheGreatCalamity : TraditionalCardDefinition := .card <|
+  [
+    .name "Smaug, the Great Calamity",
+    .manaCost [.generic 5, .mono .red, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dragon,
+    .power 5,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Smaug, the Great Calamity") smaugTheGreatCalamityOracle).get!
+
+def smaugTheGreatCalamityCard : CardDef :=
+  smaugTheGreatCalamity.toCardDef
+    (oracleText := smaugTheGreatCalamityOracle)
+
+#guard smaugTheGreatCalamity == .card [
   .name "Smaug, the Great Calamity",
   .manaCost [.generic 5, .mono .red, .mono .red],
   .type .creature,
@@ -957,11 +1018,27 @@ def smaugTheGreatCalamity : TraditionalCardDefinition := .card [
         (.nat 5)]]
 ]
 
-def smaugTheGreatCalamityCard : CardDef :=
-  smaugTheGreatCalamity.toCardDef
-    (oracleText := "Flying\n//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)")
+/-- Gatherer Oracle text for Gandalf, Spark Starter. -/
+def gandalfSparkStarterOracle : String :=
+  "Reach\nWhen Gandalf enters, he deals 3 damage divided as you choose among one, two, or three targets."
 
-def gandalfSparkStarter : TraditionalCardDefinition := .card [
+def gandalfSparkStarter : TraditionalCardDefinition := .card <|
+  [
+    .name "Gandalf, Spark Starter",
+    .manaCost [.generic 4, .mono .red, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .avatar,
+    .subtype .wizard,
+    .power 4,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Gandalf, Spark Starter") gandalfSparkStarterOracle).get!
+
+def gandalfSparkStarterCard : CardDef :=
+  gandalfSparkStarter.toCardDef
+    (oracleText := gandalfSparkStarterOracle)
+
+#guard gandalfSparkStarter == .card [
   .name "Gandalf, Spark Starter",
   .manaCost [.generic 4, .mono .red, .mono .red],
   .type .creature,
@@ -981,11 +1058,23 @@ def gandalfSparkStarter : TraditionalCardDefinition := .card [
         3))
 ]
 
-def gandalfSparkStarterCard : CardDef :=
-  gandalfSparkStarter.toCardDef
-    (oracleText := "Reach\nWhen Gandalf enters, he deals 3 damage divided as you choose among one, two, or three targets.")
+/-- Gatherer Oracle text for Ragged Short Spear. -/
+def raggedShortSpearOracle : String :=
+  "When this Equipment enters, you may discard a card. If you do, draw two cards.\nEquipped creature gets +2/+0.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
 
-def raggedShortSpear : TraditionalCardDefinition := .card [
+def raggedShortSpear : TraditionalCardDefinition := .card <|
+  [
+    .name "Ragged Short Spear",
+    .manaCost [.generic 1, .mono .red],
+    .type .artifact,
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "Ragged Short Spear") raggedShortSpearOracle).get!
+
+def raggedShortSpearCard : CardDef :=
+  raggedShortSpear.toCardDef
+    (oracleText := raggedShortSpearOracle)
+
+#guard raggedShortSpear == .card [
   .name "Ragged Short Spear",
   .manaCost [.generic 1, .mono .red],
   .type .artifact,
@@ -1000,10 +1089,6 @@ def raggedShortSpear : TraditionalCardDefinition := .card [
   .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 0))),
   .ability (.keywordWithCost .equip [.mana [.generic 3]])
 ]
-
-def raggedShortSpearCard : CardDef :=
-  raggedShortSpear.toCardDef
-    (oracleText := "When this Equipment enters, you may discard a card. If you do, draw two cards.\nEquipped creature gets +2/+0.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)")
 
 def snowslopeHunter : TraditionalCardDefinition := .card [
   .name "Snowslope Hunter",
