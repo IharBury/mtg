@@ -19,6 +19,12 @@ Currently recognized:
 - `{cost}: <permanents> [you control] get +N/+N until end of turn.`
 - `Pay N life: <permanents or this creature> get +P/+T until end of turn.`
   A following `Activate only once each turn` limits that ability (CR 602.5).
+- `{cost}: Put <count> +1/+1 counters on this creature.`
+  One counter is `a` or `one` with the singular noun; more than one uses the plural.
+- `Sacrifice another <permanent type or …>: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn.`
+  `another` excludes this object. The activation limit is that timing restriction
+  (CR 602.5). The exiled card may be played until the end of your next turn
+  (CR 611.2a).
 - `Tap one or two target <permanents>.`
 - `Untap target <permanents> [you control].`
 - `It gets +P/+T until end of turn.` (the previous target)
@@ -30,7 +36,7 @@ Currently recognized:
 - `As an additional cost to cast this spell, sacrifice an <permanent type or …> or pay {N}.`
   The sacrifice and that much generic mana are alternatives (CR 601.2b).
   This functions while the spell is on the stack (CR 113.6 / 604.2).
-- `Destroy target <permanent type or …>.`
+- `Destroy target <permanent type or …> [with <keyword>].`
 - `Put a +1/+1 counter on up to one target <permanent type>.`
   Up to one target means zero or one (CR 115.1).
 - `Target player gains N life.`
@@ -75,6 +81,10 @@ Currently recognized:
 - `<permanent types> target player controls get +P/+T until end of turn.`
   `P/T` may be negative, as in -1 / -1
 - `Target player draws <count> cards and loses N life.`
+- `Target <permanent> you control deals damage equal to its power to target <permanent> an opponent controls.`
+- `Whenever <this card> attacks, choose up to one other target <permanent type> you control. Its base power and toughness become equal to <this card>'s power and toughness until end of turn.`
+  The attacker is `this`, `this <type>`, the card's name, or the short name
+  before a comma. Up to one target means zero or one (CR 115.1).
 - `Choose one —` followed by `•` modes:
   - `Counter target spell unless its controller pays {cost}.`
   - `Draw <count> cards, then discard <count> card(s).`
@@ -83,6 +93,8 @@ Currently recognized:
   - `Target creature gets +P/+T until end of turn. If that creature would die this turn, exile it instead.`
   - `<permanent types> target player controls get +P/+T until end of turn.`
   - `Target player draws <count> cards and loses N life.`
+  - `Destroy target <permanent type or …> [with <keyword>].`
+  - `Put a +1/+1 counter on target <permanent> [you control]. It gains <keywords> until end of turn.`
 - `Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled.`
 - `<this card> can't be blocked.`
   The subject is `this`, `this <type>`, the card's name, or the short name
@@ -489,54 +501,172 @@ def parsePayLife (s : String) : Option Nat :=
     | some n => if n == 0 then none else some n
     | none => none
 
-/-- A pump effect, optionally followed by `Activate only once each turn.` -/
-def parseActivatedEffect (effect : String) : Option (CardAction × Bool) :=
-  let sentences :=
-    (stripReminderParenthetical effect).splitOn ". "
-      |>.map stripTrailingPeriod
-      |>.filter (· != "")
-  let pump? (effect : String) (once : Bool) : Option (CardAction × Bool) :=
-    match parsePumpUntilEndOfTurn effect with
-    | some action => some (action, once)
+/-- How many +1/+1 counters a printed `a` / `one` / `three` names.
+Zero is not a count. -/
+def counterCount? (s : String) : Option Nat :=
+  match norm s with
+  | "a" | "one" => some 1
+  | "two" => some 2
+  | "three" => some 3
+  | "four" => some 4
+  | "five" => some 5
+  | "six" => some 6
+  | "seven" => some 7
+  | "eight" => some 8
+  | "nine" => some 9
+  | "ten" => some 10
+  | _ =>
+    match natOfDigits? (norm s) with
+    | some n => if n == 0 then none else some n
     | none => none
-  match sentences with
-  | [effect] => pump? effect false
-  | [effect, restrict] =>
-    if lowerAscii restrict != "activate only once each turn" then none
-    else pump? effect true
+
+/-- `Put a +1/+1 counter on this creature` or
+`Put three +1/+1 counters on this creature`.
+One counter uses the singular noun; more than one uses the plural.
+`this`, `this creature`, and `it` are the source of this ability. -/
+def parsePutCountersOnThis (sentence : String) : Option CardAction :=
+  match after? (normSentence sentence) "put " with
+  | none => none
+  | some rest =>
+    let parsed :=
+      match rest.splitOn " +1/+1 counters on " with
+      | [countText, who] => some (countText, true, who)
+      | _ =>
+        match rest.splitOn " +1/+1 counter on " with
+        | [countText, who] => some (countText, false, who)
+        | _ => none
+    match parsed with
+    | none => none
+    | some (countText, plural, who) =>
+      match counterCount? countText, parsePumpWho who with
+      | some n, some sel =>
+        if sel != .source .this || (n == 1) == plural then none
+        else some (.putCounter (.source .this) .plusOnePlusOne n)
+      | _, _ => none
+
+/-- Exile the top card of your library; you may play that card until the end
+of your next turn. The exile is action `n`. -/
+def exileTopPlayUntilEndOfNextTurn (n : Nat) : CardAction :=
+  .sequence [
+    .actionId n (.exile (.topOfLibrary (.controller .this))),
+    .continuous
+      [.canPlay (.controller .this) (.wasCreatedByAction n)]
+      (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]
+
+/-- `Exile the top card of your library. You may play it until the end of your next turn.` -/
+def parseExileTopMayPlay (ss : List String) (n : Nat) : Option (CardAction × Nat) :=
+  match ss with
+  | [exile, play] =>
+    if normSentence exile != "exile the top card of your library" then none
+    else if normSentence play !=
+        "you may play it until the end of your next turn" then none
+    else some (exileTopPlayUntilEndOfNextTurn n, n + 1)
   | _ => none
 
-/-- Wrap `action` as an activated ability. `once` is “only once each turn”
-(CR 602.5), tracked by ability number `n`. -/
-def activatedWithCost (n : Nat) (costs : List Cost) (action : CardAction) (once : Bool) :
-    CardPart × Nat :=
-  if once then
-    (.ability
-      (.abilityId n
-        (.activatedIf
-          (.didNotHappen (.abilityWithIdActivated n) .turnStart)
-          costs
-          action)),
-     n + 1)
-  else
-    (.ability (.activated costs action), n)
+/-- A printed limit on when an activated ability may be activated (CR 602.5). -/
+inductive ActivateLimit where
+  | unlimited
+  | onceEachTurn
+  | duringYourTurn
+  | duringYourTurnOnce
 
-/-- Mana cost, or a life payment when the text is not mana symbols.
-An empty brace list fails rather than falling through to life. -/
+def parseActivateLimit (s : String) : ActivateLimit :=
+  match normSentence s with
+  | "activate only once each turn" => .onceEachTurn
+  | "activate only during your turn" => .duringYourTurn
+  | "activate only during your turn and only once each turn" => .duringYourTurnOnce
+  | _ => .unlimited
+
+/-- Drop a trailing activation limit. A sentence that is not a limit stays
+part of the effect. -/
+def splitActivateLimit : List String → List String × ActivateLimit
+  | [] => ([], .unlimited)
+  | [s] =>
+    match parseActivateLimit s with
+    | .unlimited => ([s], .unlimited)
+    | lim => ([], lim)
+  | s :: rest =>
+    let (body, lim) := splitActivateLimit rest
+    (s :: body, lim)
+
+/-- `Sacrifice another creature or artifact`: one other permanent of those
+types. `another` excludes this object. -/
+def parseSacrificeAnother (s : String) : Option Cost :=
+  match after? (norm s) "sacrifice another " with
+  | some obj =>
+    (typesInPhrase obj).map fun ts =>
+      .sacrificeCount
+        (.intersection [.not .this, .permanent, selectorOfTypes ts])
+        1
+  | none => none
+
+/-- A pump, counters on this creature, or exiling the top card to play later,
+optionally followed by an activation limit. -/
+def parseActivatedEffect (effect : String) (n : Nat) :
+    Option (CardAction × ActivateLimit × Nat) :=
+  let (body, limit) := splitActivateLimit (sentences effect)
+  match body with
+  | [one] =>
+    match parsePumpUntilEndOfTurn one <|> parsePutCountersOnThis one with
+    | some action => some (action, limit, n)
+    | none => none
+  | _ =>
+    match parseExileTopMayPlay body n with
+    | some (action, n') => some (action, limit, n')
+    | none => none
+
+/-- Wrap `action` as an activated ability.
+`once each turn` is tracked by ability number `n` (CR 602.5).
+`nAfter` is the next number after effects inside `action`. -/
+def activatedWithCost (n : Nat) (costs : List Cost) (action : CardAction)
+    (limit : ActivateLimit) (nAfter : Nat) : CardPart × Nat :=
+  let next :=
+    match limit with
+    | .onceEachTurn | .duringYourTurnOnce => max nAfter (n + 1)
+    | .duringYourTurn | .unlimited => nAfter
+  let part :=
+    match limit with
+    | .unlimited => .ability (.activated costs action)
+    | .onceEachTurn =>
+      .ability
+        (.abilityId n
+          (.activatedIf
+            (.didNotHappen (.abilityWithIdActivated n) .turnStart)
+            costs
+            action))
+    | .duringYourTurn =>
+      .ability (.activatedIf (.turn (.controller .this)) costs action)
+    | .duringYourTurnOnce =>
+      .ability
+        (.abilityId n
+          (.activatedIf
+            (.and
+              (.turn (.controller .this))
+              (.didNotHappen (.abilityWithIdActivated n) .turnStart))
+            costs
+            action))
+  (part, next)
+
+/-- Mana cost, a life payment, or sacrificing another permanent.
+An empty brace list fails rather than falling through. -/
 def parseActivationCost (costText : String) : Option (List Cost) :=
   match parseManaSymbols costText with
   | some syms => if syms.isEmpty then none else some [.mana syms]
-  | none => (parsePayLife costText).map fun life => [.life life]
+  | none =>
+    match parsePayLife costText with
+    | some life => some [.life life]
+    | none => (parseSacrificeAnother costText).map fun c => [c]
 
 /-- `{3}{W}: Creatures you control get +1/+1 until end of turn.`
-Also `Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn.` -/
+Also `Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn.`
+And `Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn.` -/
 def parseActivatedAbility (line : String) (n : Nat) : Option (CardPart × Nat) :=
   let line := stripTrailingPeriod (stripReminderParenthetical line)
   match line.splitOn ": " with
   | [costText, effect] =>
-    match parseActivatedEffect effect, parseActivationCost costText with
-    | some (action, once), some costs =>
-      some (activatedWithCost n costs action once)
+    match parseActivatedEffect effect n, parseActivationCost costText with
+    | some (action, limit, n'), some costs =>
+      some (activatedWithCost n costs action limit n')
     | _, _ => none
   | _ => none
 
@@ -1129,6 +1259,81 @@ def parsePumpExileIfDies (text : String) (n : Nat) : Option (CardAction × Nat) 
       | _ => none
   | _ => none
 
+/-- `Target creature you control deals damage equal to its power to target creature an opponent controls.`
+The source is target `n`; the recipient is target `n + 1`. -/
+def parseDealsDamageEqualToPower (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  match (normSentence sentence).splitOn " deals damage equal to its power to " with
+  | [src, dest] =>
+    if !(norm src).endsWith " you control" then none
+    else
+      match parseTargetPhrase src, parseOppControlledTarget dest with
+      | some srcSel, some destSel =>
+        some (
+          .dealDamageEqualToPower
+            (.target n srcSel)
+            (.target (n + 1) destSel),
+          n + 2)
+      | _, _ => none
+  | _ => none
+
+/-- `Put a +1/+1 counter on target creature you control.`
+The target is numbered `n`. -/
+def parsePutPlusOneOnTarget (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  match after? (normSentence sentence) "put a +1/+1 counter on " with
+  | some who =>
+    (parseTargetPhrase who).map fun sel =>
+      (.putCounter (.target n sel) .plusOnePlusOne 1, n + 1)
+  | none => none
+
+/-- `It gains trample and hexproof until end of turn.`
+The keywords are gained by the target already numbered `targetId`. -/
+def parseItGainsKeywords (sentence : String) (targetId : Nat) : Option CardAction :=
+  match between? (normSentence sentence) "it gains " " until end of turn" with
+  | some gained =>
+    (parseKeywordPhrase gained).map fun kws =>
+      .continuous
+        (kws.map fun k => .gainAbility (.targetReference targetId) (.keyword k))
+        .endOfTurn
+  | none => none
+
+/-- `Put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn.`
+The counter and the keywords share target `n`. -/
+def parsePutPlusOneThenGains (text : String) (n : Nat) : Option (CardAction × Nat) :=
+  match sentences text with
+  | [put, gains] =>
+    match parsePutPlusOneOnTarget put n, parseItGainsKeywords gains n with
+    | some (putAction, n'), some gain =>
+      some (.sequence [putAction, gain], n')
+    | _, _ => none
+  | _ => none
+
+/-- `Destroy target creature` or `Destroy target creature with flying.`
+The target number is `n`. `with` names one keyword the permanent must have. -/
+def parseDestroy (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  match after? (normSentence sentence) "destroy target " with
+  | none => none
+  | some rest =>
+    let (obj, kw?) :=
+      match rest.splitOn " with " with
+      | [obj, kwText] =>
+        match keywordOfOracle? kwText with
+        | some k => (obj, some k)
+        | none => ("", none)
+      | _ => (rest, none)
+    match typesInPhrase obj with
+    | some ts =>
+      let tail : List Selector :=
+        match kw? with
+        | some k => [.keyword k]
+        | none => []
+      some (
+        .destroy
+          (.target n (.intersection ([.permanent, selectorOfTypes ts] ++ tail))),
+        n + 1)
+    | none => none
+
 /-- One printed mode of a “Choose one” spell. The first success wins. -/
 def parseModeAction (text : String) (n : Nat) : Option (CardAction × Nat) :=
   parseCounterUnlessPays text n <|>
@@ -1136,7 +1341,9 @@ def parseModeAction (text : String) (n : Nat) : Option (CardAction × Nat) :=
     parsePumpExileIfDies text n <|>
     parseTargetPlayerDrawsLosesLife text n <|>
     parseTargetGetsUntilEndOfTurn text n <|>
-    parseTargetPlayerControlsGet text n
+    parseTargetPlayerControlsGet text n <|>
+    parseDestroy text n <|>
+    parsePutPlusOneThenGains text n
 
 /-- The text of a `•` mode line, without the bullet. -/
 def stripModeBullet (line : String) : Option String :=
@@ -1246,19 +1453,6 @@ def parseOwnerPutsTopOrBottom (sentence : String) (n : Nat) : Option (CardAction
         n + 1)
     | none => none
 
-/-- `Destroy target creature.` The target number is `n`. -/
-def parseDestroy (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
-  let s := lowerAscii (stripTrailingPeriod sentence)
-  let lead := "destroy target "
-  if !s.startsWith lead then none
-  else
-    match typesInPhrase (s.drop lead.length).trimAscii.copy with
-    | some ts =>
-      some (
-        .destroy (.target n (.intersection [.permanent, selectorOfTypes ts])),
-        n + 1)
-    | none => none
-
 /-- `Put a +1/+1 counter on up to one target creature.`
 Up to one target is zero or one (CR 115.1). The targets are numbered `n`. -/
 def parsePutPlusOneUpToOne (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -1361,6 +1555,7 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
     parseItGetsUntilEndOfTurn sentence n <|>
     parseIfItsSubtypeMayAttach sentence n <|>
     parseDealDamage cardName sentence n <|>
+    parseDealsDamageEqualToPower sentence n <|>
     parseDestroy sentence n <|>
     parsePutPlusOneUpToOne sentence n <|>
     parseTargetPlayerGainsLife sentence n <|>
@@ -1374,7 +1569,7 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
 
 /-- Every sentence of `text` must parse. An unrecognized sentence fails
 the text. No sentences (reminder-only or empty text) succeeds with no actions.
-Two multi-sentence templates are tried before the sentence split. -/
+Multi-sentence templates are tried before the sentence split. -/
 def actionsFromText (cardName : String) (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   let rec go (ss : List String) (n : Nat) (acc : List CardAction) :
@@ -1387,6 +1582,7 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
       | none => none
   parseCounterExilePermanentMayCast text n <|>
     ((parsePumpExileIfDies text n).map fun (action, n') => ([action], n')) <|>
+    ((parsePutPlusOneThenGains text n).map fun (action, n') => ([action], n')) <|>
     go (sentences text) n []
 
 /-- Split off a Gatherer `//ADV//` Adventure section. A marker that shares
@@ -1569,7 +1765,7 @@ named types. -/
 def parsePrintedCost (s : String) : Option Cost :=
   match parseManaSymbols s with
   | some syms => if syms.isEmpty then none else some (.mana syms)
-  | none => parseSacrificeAn s
+  | none => parseSacrificeAn s <|> parseSacrificeAnother s
 
 /-- Costs separated by commas, such as `{2}, Sacrifice an artifact or creature`.
 One unrecognized cost fails the list. -/
@@ -1707,6 +1903,61 @@ def parseEnterMayDiscardDraw (cardName : String) (line : String) (n : Nat) :
     | none => none
   | _ => none
 
+/-- `Galion's` or `this creature's` names this card. -/
+def possessiveSelf (cardName whose : String) : Bool :=
+  match before? (norm whose) "'s" with
+  | some name => refersToSelf cardName name
+  | none => false
+
+/-- `up to one other target creature you control` as zero or one other
+permanent of those types you control (CR 115.1). -/
+def parseUpToOneOtherYouControl (s : String) : Option Selector :=
+  match between? (norm s) "up to one other target " " you control" with
+  | some obj =>
+    (typesInPhrase obj).map fun ts =>
+      .intersection [
+        .not .this,
+        .permanent,
+        selectorOfTypes ts,
+        .controlled (.controller .this)]
+  | none => none
+
+/-- `Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn.`
+The attacker is this card. The chosen creature is target `n`. -/
+def parseAttackSetBasePT (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match sentences (stripReminderParenthetical line) with
+  | [attack, become] =>
+    match after? (norm attack) "whenever " with
+    | none => none
+    | some rest =>
+      match rest.splitOn " attacks, " with
+      | [subject, effect] =>
+        if !refersToSelf cardName subject then none
+        else
+          match (after? effect "choose ").bind parseUpToOneOtherYouControl with
+          | none => none
+          | some among =>
+            match between? (normSentence become)
+                "its base power and toughness become equal to "
+                " power and toughness until end of turn" with
+            | some whose =>
+              if !possessiveSelf cardName whose then none
+              else
+                some (
+                  .ability (
+                    .triggered
+                      (.attack .this .all)
+                      (.continuous
+                        [.setBasePowerToughnessFrom
+                          (.targets n (.range 0 1) among)
+                          (.source .this)]
+                        .endOfTurn)),
+                  n + 1)
+            | none => none
+      | _ => none
+  | _ => none
+
 /-- One card part that does not advance the target number. -/
 def sole (part? : Option CardPart) (n : Nat) : Option (List CardPart × Nat) :=
   part?.map fun part => ([part], n)
@@ -1736,6 +1987,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseStackCostReduction line) n <|>
     sole (parseCreatureDiedCostReduction line) n <|>
     sole (parseAttackTriggered line) n <|>
+    carry (parseAttackSetBasePT cardName line n) <|>
     sole (parseFerociousAttackGainLife line) n <|>
     sole (parseEnterDraw cardName line) n <|>
     sole (parseEnterEachOpponentDiscards cardName line) n <|>
@@ -1843,6 +2095,8 @@ open OracleParts
 `{cost}: … get +P/+T until end of turn` abilities,
 `Pay N life: … get +P/+T until end of turn` abilities, including
 `Activate only once each turn`,
+`{cost}: Put <count> +1/+1 counters on this creature`,
+`Sacrifice another <permanent type or …>: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn`,
 `Tap one or two target creatures` effects,
 `Untap target creature you control` plus a following `It gets +P/+T`
 and optional `If it's a <subtype>, you may attach …` clause,
@@ -1851,14 +2105,17 @@ stack cost reductions
 `an attacking nontoken creature`, or `if a creature died this turn`),
 `As an additional cost to cast this spell, sacrifice an <permanent type or …>
 or pay {N}` (a static ability of the spell on the stack),
-`Destroy target <permanent type or …>` effects,
+`Destroy target <permanent type or …> [with <keyword>]` effects,
 `Put a +1/+1 counter on up to one target <permanent type>` effects,
 `Target player gains N life` and `You gain N life` effects,
 `<this card> deals N damage to target creature` effects,
+`Target <permanent> you control deals damage equal to its power to target <permanent> an opponent controls`,
 `Whenever this creature attacks, it gets +P/+T until end of turn for each
 other creature you control` triggers,
 `Ferocious — Whenever this creature attacks while you control a creature with
 power 4 or greater, you gain N life` triggers,
+`Whenever <this card> attacks, choose up to one other target <permanent type> you control. Its base power and toughness become equal to <this card>'s power and toughness until end of turn`
+triggers,
 `When <this card> enters, draw a card` triggers,
 `When <this card> dies, target <permanents> an opponent controls gets P/T until end of turn`
 triggers,
@@ -1886,7 +2143,9 @@ triggers,
 `Target player draws <count> cards and loses N life` effects,
 `Choose one —` modals whose `•` modes are those effects or
 `Counter target spell unless its controller pays {cost}` or
-`Draw <count> cards, then discard <count> card(s)`,
+`Draw <count> cards, then discard <count> card(s)` or
+`Destroy target <permanent type or …> [with <keyword>]` or
+`Put a +1/+1 counter on target <permanent> [you control]. It gains <keywords> until end of turn`,
 `Counter target spell. If a permanent spell is countered this way, exile it
 instead of putting it into its owner's graveyard. You may cast that card
 without paying its mana cost for as long as it remains exiled`,
@@ -2336,7 +2595,16 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   some [.actions [
     .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))]]
 #guard parseOracleParts (name := "") "Destroy target spell." == none
-#guard parseOracleParts (name := "") "Destroy target creature with flying." == none
+#guard parseOracleParts (name := "") "Destroy target creature with flying." ==
+  some [.actions [
+    .destroy
+      (.target 1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .keyword .flying]))]]
+#guard parseOracleParts (name := "") "Destroy target creature with power 4 or greater." == none
+#guard parseOracleParts (name := "") "Destroy target creature with haste and flying." == none
 #guard parseOracleParts (name := "")
   "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}." ==
   some [.ability (.stackStatic (
@@ -2764,5 +3032,117 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
           .this
           (.target 1 (.intersection [.permanent, .cardType .creature]))
           (.nat 5)]]]
+
+#guard parseOracleParts (name := "")
+  "{5}{G}{G}: Put three +1/+1 counters on this creature." ==
+  some [.ability (
+    .activated
+      [.mana [.generic 5, .mono .green, .mono .green]]
+      (.putCounter (.source .this) .plusOnePlusOne 3))]
+#guard parseOracleParts (name := "")
+  "{1}: Put a +1/+1 counter on this creature." ==
+  some [.ability (
+    .activated [.mana [.generic 1]] (.putCounter (.source .this) .plusOnePlusOne 1))]
+#guard parseOracleParts (name := "")
+  "{1}: Put three +1/+1 counter on this creature." == none
+#guard parseOracleParts (name := "")
+  "{1}: Put a +1/+1 counters on this creature." == none
+#guard parseOracleParts (name := "")
+  "{1}: Put three +1/+1 counters on target creature." == none
+#guard parseOracleParts (name := "")
+  "Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn." ==
+  some [.ability (
+    .abilityId 1
+      (.activatedIf
+        (.and
+          (.turn (.controller .this))
+          (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
+        [.sacrificeCount
+          (.intersection [
+            .not .this,
+            .permanent,
+            .union [.cardType .creature, .cardType .artifact]])
+          1]
+        (.sequence [
+          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .continuous
+            [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+            (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])))]
+#guard parseOracleParts (name := "")
+  "Sacrifice a creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn." ==
+  none
+#guard parseOracleParts (name := "")
+  "Sacrifice another creature or artifact: Exile the top card of your library. You may play it until end of turn. Activate only during your turn and only once each turn." ==
+  none
+#guard parseOracleParts (name := "")
+  "Target creature you control deals damage equal to its power to target creature an opponent controls." ==
+  some [.actions [
+    .dealDamageEqualToPower
+      (.target 1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)]))
+      (.target 2
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.opponent (.controller .this))]))]]
+#guard parseOracleParts (name := "")
+  "Target creature deals damage equal to its power to target creature an opponent controls." ==
+  none
+#guard parseOracleParts (name := "Galion, Elvenking's Butler")
+  "Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn." ==
+  some [.ability (
+    .triggered
+      (.attack .this .all)
+      (.continuous
+        [.setBasePowerToughnessFrom
+          (.targets 1 (.range 0 1)
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          (.source .this)]
+        .endOfTurn))]
+#guard parseOracleParts (name := "Galion, Elvenking's Butler")
+  "Whenever this creature attacks, choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn." ==
+  parseOracleParts (name := "Galion, Elvenking's Butler")
+    "Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn."
+#guard parseOracleParts (name := "Gandalf")
+  "Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn." ==
+  none
+#guard parseOracleParts (name := "Galion, Elvenking's Butler")
+  "Whenever Galion attacks, choose up to one target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn." ==
+  none
+#guard parseOracleParts (name := "")
+  "Choose one —\n• Destroy target creature with flying.\n• Put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)" ==
+  some [.actions [
+    .chooseMode [
+      .destroy
+        (.target 1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .keyword .flying])),
+      .sequence [
+        .putCounter
+          (.target 2
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          .plusOnePlusOne
+          1,
+        .continuous
+          [.gainAbility (.targetReference 2) (.keyword .trample),
+            .gainAbility (.targetReference 2) (.keyword .hexproof)]
+          .endOfTurn]]]]
+#guard parseOracleParts (name := "")
+  "Put a +1/+1 counter on target creature you control. It gets trample until end of turn." ==
+  none
+#guard parseOracleParts (name := "")
+  "Choose one —\n• Put a +1/+1 counter on target creature you control." == none
 
 end Mtg.Engine

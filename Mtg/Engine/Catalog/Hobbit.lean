@@ -19,7 +19,9 @@ Sentries, Great Fierce Bee, Stir Up Trouble, Desolation Prowler,
 Ravening Warg, Gollum, Silent Slinker, Bilbo's Deadly Slice,
 Dreaded Bat-Cloud, Crude Bent Blade, Gollum the Abandoned, Gnashing of
 Teeth, Reverent Howl, Stony-Voiced Goblins, Smaug, the Great Calamity,
-Gandalf, Spark Starter, and Ragged Short Spear keep their printed
+Gandalf, Spark Starter, Ragged Short Spear, Snowslope Hunter,
+Guardian of the Halls, Quarrel, Galion, Elvenking's Butler, and
+Warg Tactics keep their printed
 characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -1090,7 +1092,26 @@ def raggedShortSpearCard : CardDef :=
   .ability (.keywordWithCost .equip [.mana [.generic 3]])
 ]
 
-def snowslopeHunter : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Snowslope Hunter. -/
+def snowslopeHunterOracle : String :=
+  "Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn."
+
+def snowslopeHunter : TraditionalCardDefinition := .card <|
+  [
+    .name "Snowslope Hunter",
+    .manaCost [.generic 2, .mono .red],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .ranger,
+    .power 2,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Snowslope Hunter") snowslopeHunterOracle).get!
+
+def snowslopeHunterCard : CardDef :=
+  snowslopeHunter.toCardDef
+    (oracleText := snowslopeHunterOracle)
+
+#guard snowslopeHunter == .card [
   .name "Snowslope Hunter",
   .manaCost [.generic 2, .mono .red],
   .type .creature,
@@ -1108,7 +1129,7 @@ def snowslopeHunter : TraditionalCardDefinition := .card [
           (.intersection [
             .not .this,
             .permanent,
-            .union [.cardType .artifact, .cardType .creature]])
+            .union [.cardType .creature, .cardType .artifact]])
           1]
         (.sequence [
           .actionId 1 (.exile (.topOfLibrary (.controller .this))),
@@ -1117,11 +1138,26 @@ def snowslopeHunter : TraditionalCardDefinition := .card [
             (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])))
 ]
 
-def snowslopeHunterCard : CardDef :=
-  snowslopeHunter.toCardDef
-    (oracleText := "Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn.")
+/-- Gatherer Oracle text for Guardian of the Halls. -/
+def guardianOfTheHallsOracle : String :=
+  "Trample\n{5}{G}{G}: Put three +1/+1 counters on this creature."
 
-def guardianOfTheHalls : TraditionalCardDefinition := .card [
+def guardianOfTheHalls : TraditionalCardDefinition := .card <|
+  [
+    .name "Guardian of the Halls",
+    .manaCost [.generic 1, .mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .soldier,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Guardian of the Halls") guardianOfTheHallsOracle).get!
+
+def guardianOfTheHallsCard : CardDef :=
+  guardianOfTheHalls.toCardDef
+    (oracleText := guardianOfTheHallsOracle)
+
+#guard guardianOfTheHalls == .card [
   .name "Guardian of the Halls",
   .manaCost [.generic 1, .mono .green],
   .type .creature,
@@ -1136,35 +1172,60 @@ def guardianOfTheHalls : TraditionalCardDefinition := .card [
       (.putCounter (.source .this) .plusOnePlusOne 3))
 ]
 
-def guardianOfTheHallsCard : CardDef :=
-  guardianOfTheHalls.toCardDef
-    (oracleText := "Trample\n{5}{G}{G}: Put three +1/+1 counters on this creature.")
+/-- Gatherer Oracle text for Quarrel. -/
+def quarrelOracle : String :=
+  "Target creature you control deals damage equal to its power to target creature an opponent controls."
 
-def quarrel : TraditionalCardDefinition := .card [
+def quarrel : TraditionalCardDefinition := .card <|
+  [
+    .name "Quarrel",
+    .manaCost [.generic 1, .mono .green],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Quarrel") quarrelOracle).get!
+
+def quarrelCard : CardDef :=
+  quarrel.toCardDef
+    (oracleText := quarrelOracle)
+
+#guard quarrel == .card [
   .name "Quarrel",
   .manaCost [.generic 1, .mono .green],
   .type .instant,
   .actions [
     .dealDamageEqualToPower
-      (.target
-        1
+      (.target 1
         (.intersection [
           .permanent,
           .cardType .creature,
           .controlled (.controller .this)]))
-      (.target
-        2
+      (.target 2
         (.intersection [
           .permanent,
           .cardType .creature,
           .controlled (.opponent (.controller .this))]))]
 ]
 
-def quarrelCard : CardDef :=
-  quarrel.toCardDef
-    (oracleText := "Target creature you control deals damage equal to its power to target creature an opponent controls.")
+/-- Gatherer Oracle text for Galion, Elvenking's Butler. -/
+def galionElvenkingsButlerOracle : String :=
+  "Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn."
 
-def galionElvenkingsButler : TraditionalCardDefinition := .card [
+def galionElvenkingsButler : TraditionalCardDefinition := .card <|
+  [
+    .name "Galion, Elvenking's Butler",
+    .manaCost [.generic 2, .mono .green, .mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .elf,
+    .subtype .advisor,
+    .power 4,
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Galion, Elvenking's Butler") galionElvenkingsButlerOracle).get!
+
+def galionElvenkingsButlerCard : CardDef :=
+  galionElvenkingsButler.toCardDef
+    (oracleText := galionElvenkingsButlerOracle)
+
+#guard galionElvenkingsButler == .card [
   .name "Galion, Elvenking's Butler",
   .manaCost [.generic 2, .mono .green, .mono .green],
   .type .creature,
@@ -1178,9 +1239,7 @@ def galionElvenkingsButler : TraditionalCardDefinition := .card [
       (.attack .this .all)
       (.continuous
         [.setBasePowerToughnessFrom
-          (.targets
-            1
-            (.range 0 1)
+          (.targets 1 (.range 0 1)
             (.intersection [
               .not .this,
               .permanent,
@@ -1190,27 +1249,36 @@ def galionElvenkingsButler : TraditionalCardDefinition := .card [
         .endOfTurn))
 ]
 
-def galionElvenkingsButlerCard : CardDef :=
-  galionElvenkingsButler.toCardDef
-    (oracleText := "Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn.")
+/-- Gatherer Oracle text for Warg Tactics. -/
+def wargTacticsOracle : String :=
+  "Choose one —\n• Destroy target creature with flying.\n• Put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)"
 
-def wargTactics : TraditionalCardDefinition := .card [
+def wargTactics : TraditionalCardDefinition := .card <|
+  [
+    .name "Warg Tactics",
+    .manaCost [.generic 1, .mono .green],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Warg Tactics") wargTacticsOracle).get!
+
+def wargTacticsCard : CardDef :=
+  wargTactics.toCardDef
+    (oracleText := wargTacticsOracle)
+
+#guard wargTactics == .card [
   .name "Warg Tactics",
   .manaCost [.generic 1, .mono .green],
   .type .instant,
   .actions [
     .chooseMode [
       .destroy
-        (.target
-          1
+        (.target 1
           (.intersection [
             .permanent,
             .cardType .creature,
             .keyword .flying])),
       .sequence [
         .putCounter
-          (.target
-            2
+          (.target 2
             (.intersection [
               .permanent,
               .cardType .creature,
@@ -1222,10 +1290,6 @@ def wargTactics : TraditionalCardDefinition := .card [
             .gainAbility (.targetReference 2) (.keyword .hexproof)]
           .endOfTurn]]]
 ]
-
-def wargTacticsCard : CardDef :=
-  wargTactics.toCardDef
-    (oracleText := "Choose one —\n• Destroy target creature with flying.\n• Put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)")
 
 def beornsHospitality : TraditionalCardDefinition := .card [
   .name "Beorn's Hospitality",
