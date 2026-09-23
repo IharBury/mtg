@@ -4704,6 +4704,7 @@ end TraditionalCardDefinition
           .controlled (.controller .this)])))
 
 -- Dreaded Bat-Cloud: {3} less if a creature died this turn.
+-- The reduction functions while the spell is on the stack (CR 604.2).
 #guard
   let s : Selector.Shape := { Selector.shape (.cardType .creature) with diedThisTurn := true }
   s.diedThisTurnCreature
@@ -4711,7 +4712,7 @@ end TraditionalCardDefinition
 #guard
   (TraditionalCardDefinition.card [
     .ability (
-      .static
+      .stackStatic
         (.if
           (.happened (.die (.cardType .creature)) .turnStart)
           [.reduceCost .this [.mana [.generic 3]]]))

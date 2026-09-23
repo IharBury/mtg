@@ -15,8 +15,9 @@ Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
 of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
 Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock,
 Thranduil's Decree, Bilbo, Luckwearer, Uneasy Partings, Front Porch
-Sentries, Great Fierce Bee, and Stir Up Trouble keep their printed
-characteristics as parts;
+Sentries, Great Fierce Bee, Stir Up Trouble, Desolation Prowler,
+Ravening Warg, Gollum, Silent Slinker, Bilbo's Deadly Slice, and
+Dreaded Bat-Cloud keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -616,7 +617,25 @@ def stirUpTroubleCard : CardDef :=
     .destroy
       (.target 1 (.intersection [.permanent, .cardType .creature]))]]
 
-def desolationProwler : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Desolation Prowler. -/
+def desolationProwlerOracle : String :=
+  "Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn."
+
+def desolationProwler : TraditionalCardDefinition := .card <|
+  [
+    .name "Desolation Prowler",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .subtype .wolf,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Desolation Prowler") desolationProwlerOracle).get!
+
+def desolationProwlerCard : CardDef :=
+  desolationProwler.toCardDef
+    (oracleText := desolationProwlerOracle)
+
+#guard desolationProwler == .card [
   .name "Desolation Prowler",
   .manaCost [.generic 1, .mono .black],
   .type .creature,
@@ -628,14 +647,29 @@ def desolationProwler : TraditionalCardDefinition := .card [
       (.activatedIf
         (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
         [.life 2]
-        (.continuous [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)] .endOfTurn)))
-]
+        (.continuous
+          [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)]
+          .endOfTurn)))]
 
-def desolationProwlerCard : CardDef :=
-  desolationProwler.toCardDef
-    (oracleText := "Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn.")
+/-- Gatherer Oracle text for Ravening Warg. -/
+def raveningWargOracle : String :=
+  "Deathtouch\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life."
 
-def raveningWarg : TraditionalCardDefinition := .card [
+def raveningWarg : TraditionalCardDefinition := .card <|
+  [
+    .name "Ravening Warg",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .subtype .wolf,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Ravening Warg") raveningWargOracle).get!
+
+def raveningWargCard : CardDef :=
+  raveningWarg.toCardDef
+    (oracleText := raveningWargOracle)
+
+#guard raveningWarg == .card [
   .name "Ravening Warg",
   .manaCost [.generic 1, .mono .black],
   .type .creature,
@@ -653,14 +687,29 @@ def raveningWarg : TraditionalCardDefinition := .card [
             .cardType .creature,
             .controlled (.controller .this),
             .powerAtLeast (Value.int 4)]))
-        [.gainLife (.controller .this) 2]))
-]
+        [.gainLife (.controller .this) 2]))]
 
-def raveningWargCard : CardDef :=
-  raveningWarg.toCardDef
-    (oracleText := "Deathtouch\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life.")
+/-- Gatherer Oracle text for Gollum, Silent Slinker // Meager Meal. -/
+def gollumSilentSlinkerOracle : String :=
+  "Menace (This creature can't be blocked except by two or more creatures.)\n//ADV//\nMeager Meal {B}\nSorcery — Adventure\nPut a +1/+1 counter on up to one target creature. Target player gains 2 life. (Then exile this card. You may cast the creature later from exile.)"
 
-def gollumSilentSlinker : TraditionalCardDefinition := .card [
+def gollumSilentSlinker : TraditionalCardDefinition := .card <|
+  [
+    .name "Gollum, Silent Slinker",
+    .manaCost [.generic 3, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .horror,
+    .power 4,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Gollum, Silent Slinker") gollumSilentSlinkerOracle).get!
+
+def gollumSilentSlinkerCard : CardDef :=
+  gollumSilentSlinker.toCardDef
+    (oracleText := gollumSilentSlinkerOracle)
+
+#guard gollumSilentSlinker == .card [
   .name "Gollum, Silent Slinker",
   .manaCost [.generic 3, .mono .black],
   .type .creature,
@@ -680,26 +729,49 @@ def gollumSilentSlinker : TraditionalCardDefinition := .card [
         (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
         .plusOnePlusOne
         1,
-      .gainLife (.target 2 .player) 2]]
-]
+      .gainLife (.target 2 .player) 2]]]
 
-def gollumSilentSlinkerCard : CardDef :=
-  gollumSilentSlinker.toCardDef
-    (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\n//ADV//\nMeager Meal {B}\nSorcery — Adventure\nPut a +1/+1 counter on up to one target creature. Target player gains 2 life. (Then exile this card. You may cast the creature later from exile.)")
+/-- Gatherer Oracle text for Bilbo's Deadly Slice. -/
+def bilbosDeadlySliceOracle : String :=
+  "Destroy target creature."
 
-def bilbosDeadlySlice : TraditionalCardDefinition := .card [
+def bilbosDeadlySlice : TraditionalCardDefinition := .card <|
+  [
+    .name "Bilbo's Deadly Slice",
+    .manaCost [.generic 1, .mono .black, .mono .black],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Bilbo's Deadly Slice") bilbosDeadlySliceOracle).get!
+
+def bilbosDeadlySliceCard : CardDef :=
+  bilbosDeadlySlice.toCardDef
+    (oracleText := bilbosDeadlySliceOracle)
+
+#guard bilbosDeadlySlice == .card [
   .name "Bilbo's Deadly Slice",
   .manaCost [.generic 1, .mono .black, .mono .black],
   .type .instant,
   .actions [
-    .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))]
-]
+    .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))]]
 
-def bilbosDeadlySliceCard : CardDef :=
-  bilbosDeadlySlice.toCardDef
-    (oracleText := "Destroy target creature.")
+/-- Gatherer Oracle text for Dreaded Bat-Cloud. -/
+def dreadedBatCloudOracle : String :=
+  "This spell costs {3} less to cast if a creature died this turn.\nFlying, deathtouch"
 
-def dreadedBatCloud : TraditionalCardDefinition := .card [
+def dreadedBatCloud : TraditionalCardDefinition := .card <|
+  [
+    .name "Dreaded Bat-Cloud",
+    .manaCost [.generic 4, .mono .black],
+    .type .creature,
+    .subtype .bat,
+    .power 4,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Dreaded Bat-Cloud") dreadedBatCloudOracle).get!
+
+def dreadedBatCloudCard : CardDef :=
+  dreadedBatCloud.toCardDef
+    (oracleText := dreadedBatCloudOracle)
+
+#guard dreadedBatCloud == .card [
   .name "Dreaded Bat-Cloud",
   .manaCost [.generic 4, .mono .black],
   .type .creature,
@@ -707,17 +779,12 @@ def dreadedBatCloud : TraditionalCardDefinition := .card [
   .power 4,
   .toughness 2,
   .ability (
-    .static
+    .stackStatic
       (.if
         (.happened (.die (.cardType .creature)) .turnStart)
         [.reduceCost .this [.mana [.generic 3]]])),
   .ability (.keyword .flying),
-  .ability (.keyword .deathtouch)
-]
-
-def dreadedBatCloudCard : CardDef :=
-  dreadedBatCloud.toCardDef
-    (oracleText := "This spell costs {3} less to cast if a creature died this turn.\nFlying, deathtouch")
+  .ability (.keyword .deathtouch)]
 
 def crudeBentBlade : TraditionalCardDefinition := .card [
   .name "Crude Bent Blade",
