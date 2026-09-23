@@ -1436,8 +1436,8 @@ def leftoverPlusOneVigilance? : CardAction → Option Nat
     if youControlCreature && kws.vigilance then some n else none
   | _ => none
 
-/-- Become a creature of the given subtype with P/T equal to lands you
-control. -/
+/-- Become a creature of the given subtype and gain a static ability whose
+power and toughness are each equal to the number of lands you control. -/
 def leftoverBecomeSubtypeWithLandsPT? : CardAction → Option String
   | .continuous effects _ =>
     let subtype :=
@@ -1448,12 +1448,14 @@ def leftoverBecomeSubtypeWithLandsPT? : CardAction → Option String
       effects.any fun
         | .gainType _ .creature => true
         | _ => false
-    let landsPT :=
+    let grantsLandsPT :=
       effects.any fun
-        | .setPowerToughnessEqualToCount _ among =>
-          among.shape.landYouControl
+        | .gainAbility who (.static (.setPowerToughnessEqualToCount self among)) =>
+          (who == .this || who == .source .this) &&
+            (self == .this || self == .source .this) &&
+            among.shape.landYouControl
         | _ => false
-    if becomesCreature && landsPT then subtype else none
+    if becomesCreature && grantsLandsPT then subtype else none
   | _ => none
 
 /-- Spend this mana only on Elf spells and activated abilities of Elf
@@ -5276,7 +5278,7 @@ end TraditionalCardDefinition
   CardAction.leftoverModes? action ==
     some #[Effect.destroyCreatureWithFlying, Effect.plusOnePlusOneTrampleHexproof]
 
--- Beorn's Hospitality: landfall +1/+1; become a Bear with lands P/T.
+-- Beorn's Hospitality: landfall +1/+1; become a Bear and gain the lands P/T static ability.
 #guard Selector.shape
   (.intersection [
     .permanent,
@@ -5308,12 +5310,15 @@ end TraditionalCardDefinition
     .continuous
       [.gainType .this .creature,
         .gainSubtype .this .bear,
-        .setPowerToughnessEqualToCount
+        .gainAbility
           .this
-          (.intersection [
-            .permanent,
-            .cardType .land,
-            .controlled (.controller .this)])]
+          (.static
+            (.setPowerToughnessEqualToCount
+              .this
+              (.intersection [
+                .permanent,
+                .cardType .land,
+                .controlled (.controller .this)])))]
       .endOfGame
   action.toAbilityEffect == Effect.becomeSubtypeWithLandsPT "Bear"
 

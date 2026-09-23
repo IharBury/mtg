@@ -25,6 +25,12 @@ Currently recognized:
   `another` excludes this object. The activation limit is that timing restriction
   (CR 602.5). The exiled card may be played until the end of your next turn
   (CR 611.2a).
+- `{cost}: <this> becomes a <subtype> creature in addition to its other types and gains "<static>".`
+  `<this>` is `this`, `this <type>`, the card's name, or the short name before a comma.
+  No duration is printed, so the effect lasts until the end of the game (CR 611.2a).
+  The quoted text is a static ability this object gains. The static ability recognized
+  here is `This creature's power and toughness are each equal to the number of lands you control`
+  (CR 208.2a / 604.3). A reminder such as `(This effect doesn't end.)` is not rules text.
 - `Tap one or two target <permanents>.`
 - `Untap target <permanents> [you control].`
 - `It gets +P/+T until end of turn.` (the previous target)
@@ -49,6 +55,8 @@ Currently recognized:
   The ability word has no rules meaning (CR 207.2c). The “while” clause is
   part of the trigger condition (CR 603.2) and is not checked again on
   resolution. The word may be omitted.
+- `Landfall — Whenever a land you control enters, put a +1/+1 counter on target <permanent type> you control.`
+  `Landfall` is an ability word (CR 207.2c) and may be omitted.
 - `When <this card> enters, draw a card.` / `draw N cards.`
   The entering object is `this`, `this <type>`, the card's name, or that short name
 - `When <this card> dies, target <permanent type or …> an opponent controls gets P/T until end of turn.`
@@ -612,21 +620,6 @@ def parseSacrificeAnother (s : String) : Option Cost :=
         1
   | none => none
 
-/-- A pump, counters on this creature, or exiling the top card to play later,
-optionally followed by an activation limit. -/
-def parseActivatedEffect (effect : String) (n : Nat) :
-    Option (CardAction × ActivateLimit × Nat) :=
-  let (body, limit) := splitActivateLimit (sentences effect)
-  match body with
-  | [one] =>
-    match parsePumpUntilEndOfTurn one <|> parsePutCountersOnThis one with
-    | some action => some (action, limit, n)
-    | none => none
-  | _ =>
-    match parseExileTopMayPlay body n with
-    | some (action, n') => some (action, limit, n')
-    | none => none
-
 /-- Wrap `action` as an activated ability.
 `once each turn` is tracked by ability number `n` (CR 602.5).
 `nAfter` is the next number after effects inside `action`. -/
@@ -668,18 +661,6 @@ def parseActivationCost (costText : String) : Option (List Cost) :=
     match parsePayLife costText with
     | some life => some [.life life]
     | none => (parseSacrificeAnother costText).map fun c => [c]
-
-/-- `{3}{W}: Creatures you control get +1/+1 until end of turn.`
-Also `Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn.`
-And `Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn.` -/
-def parseActivatedAbility (line : String) (n : Nat) : Option (CardPart × Nat) :=
-  match split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": " with
-  | some (costText, effect) =>
-    match parseActivatedEffect effect n, parseActivationCost costText with
-    | some (action, limit, n'), some costs =>
-      some (activatedWithCost n costs action limit n')
-    | _, _ => none
-  | none => none
 
 /-- The creature named by a stack cost reduction: `a tapped creature` or
 `an attacking nontoken creature`. -/
@@ -873,6 +854,80 @@ def selfNames (cardName : String) : List String :=
 self-names. -/
 def refersToSelf (cardName subject : String) : Bool :=
   isGenericSelf subject || (selfNames cardName).contains (norm subject)
+
+/-- Lands this object's controller controls. -/
+def landsYouControl : Selector :=
+  permanentWith [.land] [.controlled (.controller .this)]
+
+/-- `This creature's power and toughness are each equal to the number of lands you control.`
+A characteristic-defining ability (CR 208.2a / 604.3), granted as a static
+ability rather than applied as a direct power and toughness change. -/
+def parsePowerToughnessEqualLands (text : String) : Option Ability :=
+  if normSentence text ==
+      "this creature's power and toughness are each equal to the number of lands you control" then
+    some (.static (.setPowerToughnessEqualToCount .this landsYouControl))
+  else none
+
+/-- `a Bear creature in addition to its other types` as that creature subtype. -/
+def parseAddedCreatureSubtype (s : String) : Option CardSubtype :=
+  (before? (norm s) " creature in addition to its other types").bind dropArticle?
+    |>.bind subtypeOfOracle?
+
+/-- `<this> becomes a Bear creature in addition to its other types and gains "…"`.
+The subject is this card. No duration is printed, so the effect lasts until
+the end of the game (CR 611.2a). The quotation is a static ability this
+object gains. -/
+def parseBecomeAndGainStatic (cardName : String) (sentence : String) : Option CardAction :=
+  match split2? (normSentence sentence) " becomes " with
+  | none => none
+  | some (subject, rest) =>
+    if !refersToSelf cardName subject then none
+    else
+      match split2? rest " and gains \"" with
+      | none => none
+      | some (become, quoted) =>
+        match before? quoted "\"" with
+        | none => none
+        | some abilityText =>
+          match parseAddedCreatureSubtype become, parsePowerToughnessEqualLands abilityText with
+          | some st, some ab =>
+            some (.continuous
+              [.gainType .this .creature,
+                .gainSubtype .this st,
+                .gainAbility .this ab]
+              .endOfGame)
+          | _, _ => none
+
+/-- A pump, counters on this creature, becoming a creature that gains a
+static ability, or exiling the top card to play later, optionally followed
+by an activation limit. -/
+def parseActivatedEffect (cardName : String) (effect : String) (n : Nat) :
+    Option (CardAction × ActivateLimit × Nat) :=
+  let (body, limit) := splitActivateLimit (sentences effect)
+  match body with
+  | [one] =>
+    match parsePumpUntilEndOfTurn one <|> parsePutCountersOnThis one <|>
+        parseBecomeAndGainStatic cardName one with
+    | some action => some (action, limit, n)
+    | none => none
+  | _ =>
+    match parseExileTopMayPlay body n with
+    | some (action, n') => some (action, limit, n')
+    | none => none
+
+/-- `{3}{W}: Creatures you control get +1/+1 until end of turn.`
+Also `Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn.`
+And `Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn.`
+And `{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains "…"`. -/
+def parseActivatedAbility (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": " with
+  | some (costText, effect) =>
+    match parseActivatedEffect cardName effect n, parseActivationCost costText with
+    | some (action, limit, n'), some costs =>
+      some (activatedWithCost n costs action limit n')
+    | _, _ => none
+  | none => none
 
 /-- Effect of `when <this card> <mid> <effect>`.
 `mid` is the clause boundary, such as ` enters, ` or ` dies, `. -/
@@ -1468,6 +1523,26 @@ def parseFerociousAttackGainLife (line : String) : Option CardPart :=
         (.gainLife (.controller .this) k)))
   | _ => none
 
+/-- `Landfall — Whenever a land you control enters, put a +1/+1 counter on target creature you control.`
+`Landfall` is an ability word (CR 207.2c) and may be omitted. The target is `n`. -/
+def parseLandYouControlEntersPlusOne (line : String) (n : Nat) : Option (CardPart × Nat) :=
+  let s := withoutAbilityWord (normLine line) "landfall"
+  match after? s "whenever a land you control enters, " with
+  | none => none
+  | some effect =>
+    match between? effect "put a +1/+1 counter on target " " you control" with
+    | none => none
+    | some obj =>
+      (typesInPhrase obj).map fun ts =>
+        (.ability (
+          .triggered
+            (.enter landsYouControl)
+            (.putCounter
+              (.target n (permanentWith ts [.controlled (.controller .this)]))
+              .plusOnePlusOne
+              1)),
+          n + 1)
+
 /-- `When this Equipment enters, target opponent sacrifices a creature of their choice.`
 The entering object is this card. The opponent is target `n` and chooses which
 creature to sacrifice (CR 701.17a). -/
@@ -1764,7 +1839,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
   if (rulesText line).isEmpty then some ([], n)
   else
     (keywordParts? line).map (·, n) <|>
-    carry (parseActivatedAbility line n) <|>
+    carry (parseActivatedAbility cardName line n) <|>
     sole (parseGraveyardReturn line) n <|>
     carry (parseEnterExileOppGyLoseLife cardName line n) <|>
     sole (parseStackCostReduction line) n <|>
@@ -1772,6 +1847,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseAttackTriggered line) n <|>
     carry (parseAttackSetBasePT cardName line n) <|>
     sole (parseFerociousAttackGainLife line) n <|>
+    carry (parseLandYouControlEntersPlusOne line n) <|>
     sole (parseEnterDraw cardName line) n <|>
     sole (parseEnterEachOpponentDiscards cardName line) n <|>
     carry (parseEnterDividedDamage cardName line n) <|>
@@ -2860,5 +2936,75 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   none
 #guard parseOracleParts (name := "")
   "Choose one —\n• Put a +1/+1 counter on target creature you control." == none
+#guard parseOracleParts (name := "Beorn's Hospitality")
+  "Landfall — Whenever a land you control enters, put a +1/+1 counter on target creature you control.\n{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\" (This effect doesn't end.)" ==
+  some [
+    .ability (
+      .triggered
+        (.enter
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)]))
+        (.putCounter
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          .plusOnePlusOne
+          1)),
+    .ability (
+      .activated
+        [.mana [.generic 5, .mono .green, .mono .green]]
+        (.continuous
+          [.gainType .this .creature,
+            .gainSubtype .this .bear,
+            .gainAbility
+              .this
+              (.static
+                (.setPowerToughnessEqualToCount
+                  .this
+                  (.intersection [
+                    .permanent,
+                    .cardType .land,
+                    .controlled (.controller .this)])))]
+          .endOfGame))]
+#guard parseOracleParts (name := "")
+  "Whenever a land you control enters, put a +1/+1 counter on target creature you control." ==
+  parseOracleParts (name := "")
+    "Landfall — Whenever a land you control enters, put a +1/+1 counter on target creature you control."
+#guard parseOracleParts (name := "")
+  "{1}{G}: This enchantment becomes an Elf creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\"" ==
+  some [.ability (
+    .activated
+      [.mana [.generic 1, .mono .green]]
+      (.continuous
+        [.gainType .this .creature,
+          .gainSubtype .this .elf,
+          .gainAbility
+            .this
+            (.static
+              (.setPowerToughnessEqualToCount
+                .this
+                (.intersection [
+                  .permanent,
+                  .cardType .land,
+                  .controlled (.controller .this)])))]
+        .endOfGame))]
+#guard parseOracleParts (name := "")
+  "Landfall — Whenever a land enters, put a +1/+1 counter on target creature you control." == none
+#guard parseOracleParts (name := "")
+  "Whenever a land you control enters, put a +1/+1 counter on target creature." == none
+#guard parseOracleParts (name := "Gandalf")
+  "{5}{G}{G}: Beorn's Hospitality becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\"" ==
+  none
+#guard parseOracleParts (name := "")
+  "{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and its power and toughness are each equal to the number of lands you control." ==
+  none
+#guard parseOracleParts (name := "")
+  "{1}{G}: This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\" until end of turn." ==
+  none
 
 end Mtg.Engine
