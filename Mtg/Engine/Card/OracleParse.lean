@@ -23,6 +23,10 @@ Currently recognized:
 - `If it's a <subtype>, you may attach a/an <subtype> you control to it.`
 - `This spell costs {N} less to cast if it targets a tapped creature.`
 - `This spell costs {N} less to cast if it targets an attacking nontoken creature.`
+- `As an additional cost to cast this spell, sacrifice an <permanent type or …> or pay {N}.`
+  The sacrifice and that much generic mana are alternatives (CR 601.2b).
+  This functions while the spell is on the stack (CR 113.6 / 604.2).
+- `Destroy target <permanent type or …>.`
 - `<this card> deals N damage to target <permanent type>.`
   The source is `this`, `this <type>`, the card's name, or the short name
   before a comma (`Bilbo Baggins` for `Bilbo Baggins, Burglar`, CR 201.5)
@@ -938,6 +942,19 @@ def parseOwnerPutsTopOrBottom (sentence : String) (n : Nat) : Option (CardAction
         n + 1)
     | none => none
 
+/-- `Destroy target creature.` The target number is `n`. -/
+def parseDestroy (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := lowerAscii (stripTrailingPeriod sentence)
+  let lead := "destroy target "
+  if !s.startsWith lead then none
+  else
+    match typesInPhrase (s.drop lead.length).trimAscii.copy with
+    | some ts =>
+      some (
+        .destroy (.target n (.intersection [.permanent, selectorOfTypes ts])),
+        n + 1)
+    | none => none
+
 /-- `Scry 2.` Does not choose a target, so the target number stays `n`. -/
 def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := lowerAscii (stripTrailingPeriod sentence)
@@ -1047,15 +1064,18 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
                 match parseDealDamage cardName s n with
                 | some (a, n') => go rest n' (acc ++ [a])
                 | none =>
-                  match parseScry s n with
+                  match parseDestroy s n with
                   | some (a, n') => go rest n' (acc ++ [a])
                   | none =>
-                    match parseOwnerPutsTopOrBottom s n with
+                    match parseScry s n with
                     | some (a, n') => go rest n' (acc ++ [a])
                     | none =>
-                      match parseExchangeControlSharingCardType s n with
+                      match parseOwnerPutsTopOrBottom s n with
                       | some (a, n') => go rest n' (acc ++ [a])
-                      | none => none
+                      | none =>
+                        match parseExchangeControlSharingCardType s n with
+                        | some (a, n') => go rest n' (acc ++ [a])
+                        | none => none
   match parseCounterExilePermanentMayCast text n with
   | some parsed => some parsed
   | none => go (sentences text) n []
@@ -1075,6 +1095,32 @@ where
         (acc.reverse, adv)
       else
         go rest (line :: acc)
+
+/-- `As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}.`
+The sacrifice and the generic mana are alternatives announced at CR 601.2b.
+The ability functions while this spell is on the stack (CR 113.6 / 604.2). -/
+def parseAdditionalCostSacrificeOrPay (line : String) : Option CardPart :=
+  let s := lowerAscii (stripTrailingPeriod (stripReminderParenthetical line))
+  let lead := "as an additional cost to cast this spell, sacrifice "
+  let mid := " or pay "
+  if !s.startsWith lead then none
+  else
+    match (s.drop lead.length).trimAscii.copy.splitOn mid with
+    | [obj, costText] =>
+      match dropArticle? obj with
+      | some obj =>
+        match typesInPhrase obj, parseManaSymbols costText with
+        | some ts, some [.generic n] =>
+          some (.ability (.stackStatic (
+            .additionalCost .this
+              [.or [
+                .sacrificeCount
+                  (.intersection [.permanent, selectorOfTypes ts])
+                  1,
+                .mana [.generic n]]])))
+        | _, _ => none
+      | none => none
+    | _ => none
 
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails. -/
@@ -1115,11 +1161,14 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
                         match parseCombatDamageLoot cardName line with
                         | some part => some ([part], n)
                         | none =>
-                          match actionsFromText cardName line n with
-                          | some (actions, n') =>
-                            if actions.isEmpty then none
-                            else some ([.actions actions], n')
-                          | none => none
+                          match parseAdditionalCostSacrificeOrPay line with
+                          | some part => some ([part], n)
+                          | none =>
+                            match actionsFromText cardName line n with
+                            | some (actions, n') =>
+                              if actions.isEmpty then none
+                              else some ([.actions actions], n')
+                            | none => none
 
 /-- `collecting` reads the `•` modes after `Choose one —`.
 An unrecognized mode or line fails the parse. -/
@@ -1213,6 +1262,9 @@ and optional `If it's a <subtype>, you may attach …` clause,
 stack cost reductions
 (`This spell costs {N} less … if it targets a tapped creature` or
 `an attacking nontoken creature`),
+`As an additional cost to cast this spell, sacrifice an <permanent type or …>
+or pay {N}` (a static ability of the spell on the stack),
+`Destroy target <permanent type or …>` effects,
 `<this card> deals N damage to target creature` effects,
 `Whenever this creature attacks, it gets +P/+T until end of turn for each
 other creature you control` triggers,
@@ -1666,5 +1718,44 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         [.putOnTopOfLibrary
           (.target 1 (.intersection [.permanent, .cardType .creature])),
           .putOnBottomOfLibrary (.targetReference 1)]]]
+#guard parseOracleParts (name := "") "Destroy target creature." ==
+  some [.actions [
+    .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))]]
+#guard parseOracleParts (name := "") "Destroy target spell." == none
+#guard parseOracleParts (name := "") "Destroy target creature with flying." == none
+#guard parseOracleParts (name := "")
+  "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}." ==
+  some [.ability (.stackStatic (
+    .additionalCost .this
+      [.or [
+        .sacrificeCount
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])
+          1,
+        .mana [.generic 4]]]))]
+#guard parseOracleParts (name := "")
+  "As an additional cost to cast this spell, sacrifice an artifact or creature." == none
+#guard parseOracleParts (name := "")
+  "As an additional cost to cast this spell, sacrifice artifact or creature or pay {4}." == none
+#guard parseOracleParts (name := "")
+  "As an additional cost to cast this spell, discard a card or pay {4}." == none
+#guard parseOracleParts (name := "")
+  "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}{B}." == none
+#guard parseOracleParts (name := "Stir Up Trouble")
+  "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}.\nDestroy target creature." ==
+  some [
+    .ability (.stackStatic (
+      .additionalCost .this
+        [.or [
+          .sacrificeCount
+            (.intersection [
+              .permanent,
+              .union [.cardType .artifact, .cardType .creature]])
+            1,
+          .mana [.generic 4]]])),
+    .actions [
+      .destroy
+        (.target 1 (.intersection [.permanent, .cardType .creature]))]]
 
 end Mtg.Engine

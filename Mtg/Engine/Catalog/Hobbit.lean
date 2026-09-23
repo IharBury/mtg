@@ -15,7 +15,8 @@ Dwarven Provisioner, Velvetwing Butterflies, Magnificent End, Eagle
 of the Great Shelf, Vow to Erebor, Bilbo Baggins, Burglar,
 Lakeshore Apothecary, Confusticate and Bebother, Ravenhill Flock,
 Thranduil's Decree, Bilbo, Luckwearer, Uneasy Partings, Front Porch
-Sentries, and Great Fierce Bee keep their printed characteristics as parts;
+Sentries, Great Fierce Bee, and Stir Up Trouble keep their printed
+characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -583,27 +584,37 @@ def greatFierceBeeCard : CardDef :=
       (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
       (.scry (.controller .this) 1))]
 
-def stirUpTrouble : TraditionalCardDefinition := .card [
-  .name "Stir Up Trouble",
-  .manaCost [.mono .black],
-  .type .sorcery,
-  .ability (.static (
-  .additionalCost .this
-    [.or [
-      .sacrificeCount
-        (.intersection [
-          .permanent,
-          .union [.cardType .artifact, .cardType .creature]])
-        1,
-      .mana [.generic 4]]])),
-  .actions [
-    .destroy
-      (.target 1 (.intersection [.permanent, .cardType .creature]))]
-]
+/-- Gatherer Oracle text for Stir Up Trouble. -/
+def stirUpTroubleOracle : String :=
+  "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}.\nDestroy target creature."
+
+def stirUpTrouble : TraditionalCardDefinition := .card <|
+  [
+    .name "Stir Up Trouble",
+    .manaCost [.mono .black],
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Stir Up Trouble") stirUpTroubleOracle).get!
 
 def stirUpTroubleCard : CardDef :=
   stirUpTrouble.toCardDef
-    (oracleText := "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}.\nDestroy target creature.")
+    (oracleText := stirUpTroubleOracle)
+
+#guard stirUpTrouble == .card [
+  .name "Stir Up Trouble",
+  .manaCost [.mono .black],
+  .type .sorcery,
+  .ability (.stackStatic (
+    .additionalCost .this
+      [.or [
+        .sacrificeCount
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])
+          1,
+        .mana [.generic 4]]])),
+  .actions [
+    .destroy
+      (.target 1 (.intersection [.permanent, .cardType .creature]))]]
 
 def desolationProwler : TraditionalCardDefinition := .card [
   .name "Desolation Prowler",
