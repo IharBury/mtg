@@ -52,6 +52,12 @@ Currently recognized:
   Those creatures die at the same time (CR 603.2c).
 - `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
 - `Whenever you draw a card, put a +1/+1 counter on this creature.`
+- `When <this card> enters, target opponent sacrifices a creature of their choice.`
+  The entering object is `this`, `this <type>`, the card's name, or that short name.
+  The opponent chooses which creature to sacrifice (CR 701.17a)
+- `Equipped creature gets +P/+T.`
+- `Equip {cost}`
+  A trailing reminder parenthetical is not rules text (CR 207.2)
 - `Scry N.`
 - `Choose one —` followed by `•` modes:
   - `Counter target spell unless its controller pays {cost}.`
@@ -1290,6 +1296,73 @@ def parseFerociousAttackGainLife (line : String) : Option CardPart :=
           (.gainLife (.controller .this) k)))
     | _ => none
 
+/-- `When this Equipment enters, target opponent sacrifices a creature of their choice.`
+The entering object is this card. The opponent is target `n` and chooses which
+creature to sacrifice (CR 701.17a). -/
+def parseEnterTargetOpponentSacrifices (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let s := lowerAscii line
+  let lead := "when "
+  if !s.startsWith lead then none
+  else
+    match (s.drop lead.length).trimAscii.copy.splitOn " enters, " with
+    | [subject, effect] =>
+      if !refersToSelf cardName subject then none
+      else
+        let effectLead := "target opponent sacrifices "
+        let tail := " of their choice"
+        if !effect.startsWith effectLead || !effect.endsWith tail then none
+        else
+          let obj :=
+            ((effect.drop effectLead.length).dropEnd tail.length).trimAscii.copy
+          match dropArticle? obj with
+          | some named =>
+            if named != "creature" then none
+            else
+              some (
+                .ability (
+                  .triggered
+                    (.enter .this)
+                    (.sacrifice
+                      (.selected
+                        (.target n (.opponent (.controller .this)))
+                        (.range 1 1)
+                        (.intersection [
+                          .permanent,
+                          .cardType .creature,
+                          .controlled (.targetReference n)])))),
+                n + 1)
+          | none => none
+    | _ => none
+
+/-- `Equipped creature gets +2/+1.` The bonus is a static ability of the
+Equipment (CR 604.1 / 301.5). -/
+def parseEquippedGets (line : String) : Option CardPart :=
+  let s := lowerAscii (stripTrailingPeriod (stripReminderParenthetical line))
+  let lead := "equipped creature gets "
+  if !s.startsWith lead then none
+  else
+    match parsePowerToughness (s.drop lead.length).trimAscii.copy with
+    | some (p, t) =>
+      some (.ability
+        (.static (.addPowerToughness (.hostOf .this) (Value.int p) (Value.int t))))
+    | none => none
+
+/-- `Equip {2}.` Reminder text such as
+`({2}: Attach to target creature you control. Equip only as a sorcery.)`
+is not rules text (CR 207.2 / 702.6). -/
+def parseEquip (line : String) : Option CardPart :=
+  let s := lowerAscii (stripTrailingPeriod (stripReminderParenthetical line))
+  let lead := "equip "
+  if !s.startsWith lead then none
+  else
+    match parseManaSymbols (s.drop lead.length).trimAscii.copy with
+    | some syms =>
+      if syms.isEmpty then none
+      else some (.ability (.keywordWithCost .equip [.mana syms]))
+    | none => none
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails. -/
 def parseOneLine (cardName : String) (line : String) (n : Nat) :
@@ -1317,32 +1390,41 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
                 match parseEnterDraw cardName line with
                 | some part => some ([part], n)
                 | none =>
-                  match parseDiesOppGets cardName line n with
+                  match parseEnterTargetOpponentSacrifices cardName line n with
                   | some (part, n') => some ([part], n')
                   | none =>
-                    match parseOtherCreaturesDieScry line n with
+                    match parseDiesOppGets cardName line n with
                     | some (part, n') => some ([part], n')
                     | none =>
-                      match parseDrawSecondPlusOne line with
-                      | some part => some ([part], n)
+                      match parseOtherCreaturesDieScry line n with
+                      | some (part, n') => some ([part], n')
                       | none =>
-                        match parseYouDrawPlusOne line with
+                        match parseDrawSecondPlusOne line with
                         | some part => some ([part], n)
                         | none =>
-                          match parseCantBeBlocked cardName line with
+                          match parseYouDrawPlusOne line with
                           | some part => some ([part], n)
                           | none =>
-                            match parseCombatDamageLoot cardName line with
+                            match parseCantBeBlocked cardName line with
                             | some part => some ([part], n)
                             | none =>
-                              match parseAdditionalCostSacrificeOrPay line with
+                              match parseCombatDamageLoot cardName line with
                               | some part => some ([part], n)
                               | none =>
-                                match actionsFromText cardName line n with
-                                | some (actions, n') =>
-                                  if actions.isEmpty then none
-                                  else some ([.actions actions], n')
-                                | none => none
+                                match parseAdditionalCostSacrificeOrPay line with
+                                | some part => some ([part], n)
+                                | none =>
+                                  match parseEquippedGets line with
+                                  | some part => some ([part], n)
+                                  | none =>
+                                    match parseEquip line with
+                                    | some part => some ([part], n)
+                                    | none =>
+                                      match actionsFromText cardName line n with
+                                      | some (actions, n') =>
+                                        if actions.isEmpty then none
+                                        else some ([.actions actions], n')
+                                      | none => none
 
 /-- `collecting` reads the `•` modes after `Choose one —`.
 An unrecognized mode or line fails the parse. -/
@@ -1456,6 +1538,10 @@ triggers,
 triggers,
 `Whenever you draw a card, put a +1/+1 counter on this creature`
 triggers,
+`When <this card> enters, target opponent sacrifices a creature of their choice`
+triggers,
+`Equipped creature gets +P/+T` static abilities,
+`Equip {cost}` abilities,
 `Scry N` effects,
 `Choose one —` modals whose `•` modes are
 `Counter target spell unless its controller pays {cost}` or
@@ -2026,5 +2112,66 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "This spell costs {3} less to cast if a creature you control died this turn." == none
 #guard parseOracleParts (name := "")
   "This spell costs {3} less to cast if two creatures died this turn." == none
+#guard parseOracleParts (name := "")
+  "When this Equipment enters, target opponent sacrifices a creature of their choice." ==
+  some [.ability (
+    .triggered
+      (.enter .this)
+      (.sacrifice
+        (.selected
+          (.target 1 (.opponent (.controller .this)))
+          (.range 1 1)
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.targetReference 1)]))))]
+#guard parseOracleParts (name := "Crude Bent Blade")
+  "When Crude Bent Blade enters, target opponent sacrifices a creature of their choice." ==
+  some [.ability (
+    .triggered
+      (.enter .this)
+      (.sacrifice
+        (.selected
+          (.target 1 (.opponent (.controller .this)))
+          (.range 1 1)
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.targetReference 1)]))))]
+#guard parseOracleParts (name := "Gandalf")
+  "When Crude Bent Blade enters, target opponent sacrifices a creature of their choice." == none
+#guard parseOracleParts (name := "")
+  "When this Equipment enters, target opponent sacrifices a creature." == none
+#guard parseOracleParts (name := "")
+  "When another Equipment enters, target opponent sacrifices a creature of their choice." == none
+#guard parseOracleParts (name := "")
+  "When this Equipment enters, target opponent sacrifices an artifact of their choice." == none
+#guard parseOracleParts (name := "") "Equipped creature gets +2/+1." ==
+  some [.ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 1)))]
+#guard parseOracleParts (name := "") "Equipped creature gets +2/+1 until end of turn." == none
+#guard parseOracleParts (name := "") "Equipped creature gets +2/+1 and has flying." == none
+#guard parseOracleParts (name := "") "Equip {2}" ==
+  some [.ability (.keywordWithCost .equip [.mana [.generic 2]])]
+#guard parseOracleParts (name := "")
+  "Equip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)" ==
+  some [.ability (.keywordWithCost .equip [.mana [.generic 2]])]
+#guard parseOracleParts (name := "") "Equip" == none
+#guard parseOracleParts (name := "") "Equip {2}: Draw a card." == none
+#guard parseOracleParts (name := "Crude Bent Blade")
+  "When this Equipment enters, target opponent sacrifices a creature of their choice.\nEquipped creature gets +2/+1.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)" ==
+  some [
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sacrifice
+          (.selected
+            (.target 1 (.opponent (.controller .this)))
+            (.range 1 1)
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.targetReference 1)])))),
+    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 1))),
+    .ability (.keywordWithCost .equip [.mana [.generic 2]])]
 
 end Mtg.Engine
