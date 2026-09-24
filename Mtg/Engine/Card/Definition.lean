@@ -640,9 +640,10 @@ inductive ContinuousEffect where
   /-- The selected object has all subtypes of the given card type
   (CR 205.3 / 702.72). -/
   | gainAllSubtypes : Selector → CardType → ContinuousEffect
-  /-- The selected object's power and toughness are each equal to the
-  number of objects matching the second selector. -/
-  | setPowerToughnessEqualToCount : Selector → Selector → ContinuousEffect
+  /-- The selected object's power becomes the given value. -/
+  | setPower : Selector → Value → ContinuousEffect
+  /-- The selected object's toughness becomes the given value. -/
+  | setToughness : Selector → Value → ContinuousEffect
   /-- The selected objects get the given power and toughness for each
   object matching the second selector. -/
   | addPowerToughnessPer : Selector → Selector → Value → Value → ContinuousEffect
@@ -823,13 +824,37 @@ end PredefinedToken
 def valToInt? : Value → Option Int
   | .int p => some p
   | .nat p => some (Int.ofNat p)
-  | .x | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
+  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
   | .nat n => some n
   | .int n => if n ≥ 0 then some n.toNat else none
-  | .x | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
+  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
+
+/-- This object, or the source of this ability (CR 113.7). -/
+def isThisOrItsSource : Selector → Bool
+  | .this | .source .this => true
+  | _ => false
+
+/-- The number of lands this object's controller controls. -/
+def isLandsYouControlCount : Value → Bool
+  | .count among => among.shape.landYouControl
+  | _ => false
+
+/-- `setPower` when `power` is true, otherwise `setToughness`, of this object
+to the number of lands you control. -/
+def setsCharacteristicToLandsYouControl (power : Bool) : ContinuousEffect → Bool
+  | .setPower who v => power && isThisOrItsSource who && isLandsYouControlCount v
+  | .setToughness who v => !power && isThisOrItsSource who && isLandsYouControlCount v
+  | _ => false
+
+/-- A gained static ability that sets power or toughness to the number of
+lands you control. -/
+def grantsLandsCharacteristic (power : Bool) : ContinuousEffect → Bool
+  | .gainAbility who (.static e) =>
+    isThisOrItsSource who && setsCharacteristicToLandsYouControl power e
+  | _ => false
 
 namespace ContinuousEffect
 
@@ -848,7 +873,7 @@ def selector : ContinuousEffect → Selector
   | .gainType who _ => who
   | .gainSubtype who _ => who
   | .gainAllSubtypes who _ => who
-  | .setPowerToughnessEqualToCount who _ => who
+  | .setPower who _ | .setToughness who _ => who
   | .addPowerToughnessPer who _ _ _ => who
   | .increaseLandPlayLimit who _ => who
 
@@ -871,7 +896,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .gainType _ _ :: _ => none
   | .gainSubtype _ _ :: _ => none
   | .gainAllSubtypes _ _ :: _ => none
-  | .setPowerToughnessEqualToCount _ _ :: _ => none
+  | .setPower _ _ :: _ | .setToughness _ _ :: _ => none
   | .addPowerToughnessPer _ _ _ _ :: _ => none
   | .increaseLandPlayLimit _ _ :: _ => none
 
@@ -1432,7 +1457,7 @@ def leftoverPlusOneVigilance? : CardAction → Option Nat
     if youControlCreature && kws.vigilance then some n else none
   | _ => none
 
-/-- Become a creature of the given subtype and gain a static ability whose
+/-- Become a creature of the given subtype and gain static abilities whose
 power and toughness are each equal to the number of lands you control. -/
 def leftoverBecomeSubtypeWithLandsPT? : CardAction → Option String
   | .continuous effects _ =>
@@ -1445,12 +1470,8 @@ def leftoverBecomeSubtypeWithLandsPT? : CardAction → Option String
         | .gainType _ .creature => true
         | _ => false
     let grantsLandsPT :=
-      effects.any fun
-        | .gainAbility who (.static (.setPowerToughnessEqualToCount self among)) =>
-          (who == .this || who == .source .this) &&
-            (self == .this || self == .source .this) &&
-            among.shape.landYouControl
-        | _ => false
+      effects.any (grantsLandsCharacteristic true) &&
+        effects.any (grantsLandsCharacteristic false)
     if becomesCreature && grantsLandsPT then subtype else none
   | _ => none
 
@@ -3920,12 +3941,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainType _ _ => b
   | .gainSubtype _ _ => b
   | .gainAllSubtypes _ _ => b
-  | .setPowerToughnessEqualToCount who among =>
-    if (who == .this || who == .source .this) && among.shape.landYouControl then
-      { b with
-        staticAbilities :=
-          b.staticAbilities.push .powerToughnessEqualLandsYouControl }
-    else b
+  | .setPower _ _ | .setToughness _ _ => b
   | .addPowerToughnessPer who among p t =>
     match CardAction.leftoverOtherSubtypeGetPowerPerArtifactToken? who among p t with
     | some st =>
@@ -4033,8 +4049,22 @@ def apply (b : CardFace) : CardPart → CardFace
         | [a] => some a
         | as => some (.sequence as) }
 
+/-- A static ability that sets power or toughness to the number of lands
+you control. -/
+def partSetsLandsCharacteristic (power : Bool) : CardPart → Bool
+  | .ability (.static e) | .ability (.stackStatic e) =>
+    setsCharacteristicToLandsYouControl power e
+  | _ => false
+
 def ofParts (parts : List CardPart) : CardFace :=
-  parts.foldl apply {}
+  let b := parts.foldl apply {}
+  if parts.any (partSetsLandsCharacteristic true) &&
+      parts.any (partSetsLandsCharacteristic false) then
+    { b with
+      staticAbilities :=
+        b.staticAbilities.push .powerToughnessEqualLandsYouControl }
+  else
+    b
 
 def toAdventure (b : CardFace) : AdventureFace := {
   name := b.name
@@ -4309,6 +4339,7 @@ end TraditionalCardDefinition
 #guard (valToNat? Value.x).isNone
 #guard (valToNat? (Value.greatestPower .this)).isNone
 #guard (valToNat? (Value.greatestToughness .this)).isNone
+#guard (valToNat? (Value.count .this)).isNone
 #guard Range.range Value.x 1 != Range.range 0 1
 #guard Range.any != Range.range 0 0
 #guard Range.from Value.x != Range.from 1
@@ -5307,12 +5338,23 @@ end TraditionalCardDefinition
         .gainAbility
           .this
           (.static
-            (.setPowerToughnessEqualToCount
+            (.setPower
               .this
-              (.intersection [
-                .permanent,
-                .cardType .land,
-                .controlled (.controller .this)])))]
+              (.count
+                (.intersection [
+                  .permanent,
+                  .cardType .land,
+                  .controlled (.controller .this)])))),
+        .gainAbility
+          .this
+          (.static
+            (.setToughness
+              .this
+              (.count
+                (.intersection [
+                  .permanent,
+                  .cardType .land,
+                  .controlled (.controller .this)]))))]
       .endOfGame
   action.toAbilityEffect == Effect.becomeSubtypeWithLandsPT "Bear"
 
@@ -5401,13 +5443,36 @@ end TraditionalCardDefinition
   (TraditionalCardDefinition.card [
     .ability
       (.static
-        (.setPowerToughnessEqualToCount
+        (.setPower
           .this
-          (.intersection [
-            .permanent,
-            .cardType .land,
-            .controlled (.controller .this)])))
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)])))),
+    .ability
+      (.static
+        (.setToughness
+          .this
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)]))))
   ]).toCardDef.staticAbilities == #[.powerToughnessEqualLandsYouControl]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.setPower
+          .this
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)]))))
+  ]).toCardDef.staticAbilities == #[]
 
 #guard
   let action : CardAction :=
