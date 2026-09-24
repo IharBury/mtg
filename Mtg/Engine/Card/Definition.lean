@@ -628,9 +628,10 @@ inductive ContinuousEffect where
   | canCastWithoutPayingManaCost : Selector → Selector → ContinuousEffect
   /-- The selected player may play the selected card. -/
   | canPlay : Selector → Selector → ContinuousEffect
-  /-- The first object's base power and toughness become those of the
-  second object. -/
-  | setBasePowerToughnessFrom : Selector → Selector → ContinuousEffect
+  /-- The selected object's base power becomes the given value. -/
+  | setBasePower : Selector → Value → ContinuousEffect
+  /-- The selected object's base toughness becomes the given value. -/
+  | setBaseToughness : Selector → Value → ContinuousEffect
   /-- The selected object gains the given card type in addition to its
   other types (CR 205.1 / 613.1). -/
   | gainType : Selector → CardType → ContinuousEffect
@@ -824,13 +825,15 @@ end PredefinedToken
 def valToInt? : Value → Option Int
   | .int p => some p
   | .nat p => some (Int.ofNat p)
-  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
+  | .x | .count _ | .power _ | .toughness _ | .greatestManaValue _
+  | .greatestToughness _ | .greatestPower _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
   | .nat n => some n
   | .int n => if n ≥ 0 then some n.toNat else none
-  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
+  | .x | .count _ | .power _ | .toughness _ | .greatestManaValue _
+  | .greatestToughness _ | .greatestPower _ => none
 
 /-- This object, or the source of this ability (CR 113.7). -/
 def isThisOrItsSource : Selector → Bool
@@ -869,7 +872,7 @@ def selector : ContinuousEffect → Selector
   | .forbid _ => .this
   | .canCastWithoutPayingManaCost _ who => who
   | .canPlay _ card => card
-  | .setBasePowerToughnessFrom who _ => who
+  | .setBasePower who _ | .setBaseToughness who _ => who
   | .gainType who _ => who
   | .gainSubtype who _ => who
   | .gainAllSubtypes who _ => who
@@ -892,7 +895,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .forbid _ :: _ => none
   | .canCastWithoutPayingManaCost _ _ :: _ => none
   | .canPlay _ _ :: _ => none
-  | .setBasePowerToughnessFrom _ _ :: _ => none
+  | .setBasePower _ _ :: _ | .setBaseToughness _ _ :: _ => none
   | .gainType _ _ :: _ => none
   | .gainSubtype _ _ :: _ => none
   | .gainAllSubtypes _ _ :: _ => none
@@ -1591,12 +1594,15 @@ def leftoverPlusOneOnTarget? : CardAction → Option Effect
     | none => none
   | _ => none
 
-/-- Set another creature you control's base P/T equal to this source. -/
+/-- Set another creature you control's base power and toughness equal to
+this source's power and toughness. -/
 def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
-  | [.setBasePowerToughnessFrom who (.source .this)] =>
-    match who with
-    | .targets _ (.range 0 1) among => among.shape.anotherCreatureYouControl
-    | _ => false
+  | [.setBasePower who (Value.power (.source .this)),
+     .setBaseToughness who' (Value.toughness (.source .this))] =>
+    who == who' &&
+      (match who with
+        | .targets _ (.range 0 1) among => among.shape.anotherCreatureYouControl
+        | _ => false)
   | _ => false
 
 /-- Nested search actions: put a basic land onto the battlefield tapped,
@@ -3937,7 +3943,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
   | .canPlay _ _ => b
-  | .setBasePowerToughnessFrom _ _ => b
+  | .setBasePower _ _ | .setBaseToughness _ _ => b
   | .gainType _ _ => b
   | .gainSubtype _ _ => b
   | .gainAllSubtypes _ _ => b
@@ -4340,6 +4346,8 @@ end TraditionalCardDefinition
 #guard (valToNat? (Value.greatestPower .this)).isNone
 #guard (valToNat? (Value.greatestToughness .this)).isNone
 #guard (valToNat? (Value.count .this)).isNone
+#guard (valToNat? (Value.power .this)).isNone
+#guard (valToNat? (Value.toughness .this)).isNone
 #guard Range.range Value.x 1 != Range.range 0 1
 #guard Range.any != Range.range 0 0
 #guard Range.from Value.x != Range.from 1
@@ -5219,7 +5227,7 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.attack .this .all)
       (.continuous
-        [.setBasePowerToughnessFrom
+        [.setBasePower
           (.targets
             1
             (.range 0 1)
@@ -5228,10 +5236,39 @@ end TraditionalCardDefinition
               .permanent,
               .cardType .creature,
               .controlled (.controller .this)]))
-          (.source .this)]
+          (Value.power (.source .this)),
+         .setBaseToughness
+          (.targets
+            1
+            (.range 0 1)
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          (Value.toughness (.source .this))]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackSetOtherBasePT
   | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.attack .this .all)
+      (.continuous
+        [.setBasePower
+          (.targets
+            1
+            (.range 0 1)
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          (Value.power (.source .this))]
+        .endOfTurn)).toTriggeredAbility? with
+  | some _ => false
+  | none => true
 
 -- Warg Tactics: destroy a flyer, or +1/+1, trample, and hexproof.
 #guard Selector.shape
