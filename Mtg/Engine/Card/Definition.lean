@@ -5247,7 +5247,7 @@ end TraditionalCardDefinition
       .permanent,
       .cardType .creature,
       .controlled (.controller .this)]
-  let who := .targets 1 (.range 0 1) among
+  let who : Selector := .targets 1 (.range 0 1) among
   match
     (Ability.triggered
       (.attack .this .all)
