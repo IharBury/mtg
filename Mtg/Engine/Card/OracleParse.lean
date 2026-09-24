@@ -57,6 +57,20 @@ Currently recognized:
   resolution. The word may be omitted.
 - `Landfall — Whenever a land you control enters, put a +1/+1 counter on target <permanent type> you control.`
   `Landfall` is an ability word (CR 207.2c) and may be omitted.
+- `Landfall — Whenever a land you control enters, this creature gets +P/+T until end of turn.`
+  `Landfall` may be omitted. The bonus is on this creature and lasts until end of turn.
+- `Whenever another Elf you control enters, this creature gets +1/+1 until end of turn.`
+  `another` excludes this object.
+- `{T}: Add X mana of any one color, where X is <this>'s power. Spend this mana only to cast Elf spells and activate abilities of Elf sources.`
+  `<this>` is `this creature` or the card's name. The tap symbol is the cost (CR 107.5).
+  That mana can be spent only on Elf spells and activated abilities of Elf sources.
+- `<this>'s power and toughness are each equal to the number of lands you control.`
+  A characteristic-defining ability (CR 208.2a / 604.3). `<this>` is `this creature`
+  or the card's name.
+- `You may play an additional land this turn.`
+- `When <this card> enters, search your library for a Forest card, put that card onto the battlefield, then shuffle.`
+  The entering object is `this`, `this <type>`, the card's name, or the short name
+  before a comma.
 - `When <this card> enters, draw a card.` / `draw N cards.`
   The entering object is `this`, `this <type>`, the card's name, or that short name
 - `When <this card> dies, target <permanent type or …> an opponent controls gets P/T until end of turn.`
@@ -1412,6 +1426,17 @@ def parseCounterExilePermanentMayCast (text : String) (n : Nat) :
         exileId)
   | _ => none
 
+/-- `You may play an additional land this turn.` One extra land play, until end of turn
+(CR 305.2b). -/
+def parseAdditionalLand (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  if sentenceIs sentence "you may play an additional land this turn" then
+    some (
+      .continuous
+        [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]
+        .endOfTurn,
+      n)
+  else none
+
 /-- One sentence. The first parser that accepts it wins. -/
 def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   parseGainsUntilEndOfTurn sentence n <|>
@@ -1425,6 +1450,7 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
     parsePutPlusOneUpToOne sentence n <|>
     parseTargetPlayerGainsLife sentence n <|>
     parseYouGainLife sentence n <|>
+    parseAdditionalLand sentence n <|>
     parseScry sentence n <|>
     parseOwnerPutsTopOrBottom sentence n <|>
     parseExchangeControlSharingCardType sentence n <|>
@@ -1730,6 +1756,107 @@ def parseAttackSetBasePT (cardName : String) (line : String) (n : Nat) :
                   n + 1)
   | _ => none
 
+/-- This creature gets +P/+T until end of turn. -/
+def sourceGetsUntilEnd? (action : CardAction) : Option (Int × Int) :=
+  match action with
+  | .continuous effects .endOfTurn => CardAction.leftoverSourcePump? effects
+  | _ => none
+
+/-- `Whenever another Elf you control enters, this creature gets +1/+1 until end of turn.`
+`another` excludes this object. -/
+def parseAnotherElfEntersGets (line : String) : Option CardPart :=
+  (after? (normLine line) "whenever another elf you control enters, ").bind
+      parsePumpUntilEndOfTurn |>.bind fun action =>
+    match sourceGetsUntilEnd? action with
+    | some (1, 1) =>
+      some (.ability (
+        .triggered
+          (.enter
+            (.intersection [
+              .not .this,
+              .permanent,
+              .subtype .elf,
+              youControl]))
+          action))
+    | _ => none
+
+/-- `Landfall — Whenever a land you control enters, this creature gets +P/+T until end of turn.`
+`Landfall` is an ability word (CR 207.2c) and may be omitted. -/
+def parseLandYouControlEntersSourceGets (line : String) : Option CardPart :=
+  let s := withoutAbilityWord (normLine line) "landfall"
+  (after? s "whenever a land you control enters, ").bind parsePumpUntilEndOfTurn |>.bind
+    fun action =>
+      match sourceGetsUntilEnd? action with
+      | some _ => some (.ability (.triggered (.enter landsYouControl) action))
+      | none => none
+
+/-- `{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources.`
+The tap symbol is the cost. X is this creature's power. The produced mana is
+action `n`. -/
+def parseTapAddAnyColorEqualToPower (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": ").bind
+    fun (costText, effect) =>
+      if norm costText != "{t}" then none
+      else
+        match sentences effect with
+        | [add, spend] =>
+          let whose? :=
+            (after? (normSentence add) "add x mana of any one color, where x is ").bind
+              (before? · " power")
+          let spendOk :=
+            sentenceIs spend
+              "spend this mana only to cast elf spells and activate abilities of elf sources"
+          match whose? with
+          | some whose =>
+            if possessiveSelf cardName whose && spendOk then
+              some (
+                .ability (
+                  .activated
+                    [.tapSymbol]
+                    (.sequence [
+                      .actionId n
+                        (.addManaOfOneColor
+                          (.controller .this)
+                          ManaSymbol.anyColor
+                          (.greatestPower .this)),
+                      .continuous
+                        [.forbid
+                          (.spendManaCreatedByAction n
+                            (.not
+                              (.or
+                                (.castSpell (.subtype .elf))
+                                (.activateAbility (.subtype .elf)))))]
+                        .endOfTurn])),
+                n + 1)
+            else none
+          | none => none
+        | _ => none
+
+/-- `<this>'s power and toughness are each equal to the number of lands you control.`
+A characteristic-defining ability (CR 208.2a / 604.3). -/
+def parseLandsCharacteristic (cardName : String) (line : String) : Option (List CardPart) :=
+  (before? (normLine line)
+      " power and toughness are each equal to the number of lands you control").bind fun whose =>
+    if possessiveSelf cardName whose then
+      some (powerToughnessEqualLandsAbilities.map fun a => .ability a)
+    else none
+
+/-- `When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle.`
+The entering object is this card. -/
+def parseEnterSearchForest (cardName : String) (line : String) : Option CardPart :=
+  onSelfTrigger cardName line " enters, " (.enter .this) fun effect =>
+    if sentenceIs effect
+        "search your library for a forest card, put that card onto the battlefield, then shuffle" then
+      some (.searchLibraryThenShuffle
+        (.controller .this)
+        [.putOntoBattlefield
+          (.selected
+            (.controller .this)
+            (.range 1 1)
+            (.intersection [.inLibrary, .subtype .forest]))])
+    else none
+
 /-- One card part that does not advance the target number. -/
 def sole (part? : Option CardPart) (n : Nat) : Option (List CardPart × Nat) :=
   part?.map fun part => ([part], n)
@@ -1752,6 +1879,11 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
   else
     (keywordParts? line).map (·, n) <|>
     carry (parseActivatedAbility cardName line n) <|>
+    carry (parseTapAddAnyColorEqualToPower cardName line n) <|>
+    sole (parseAnotherElfEntersGets line) n <|>
+    sole (parseLandYouControlEntersSourceGets line) n <|>
+    (parseLandsCharacteristic cardName line).map (·, n) <|>
+    sole (parseEnterSearchForest cardName line) n <|>
     sole (parseGraveyardReturn line) n <|>
     carry (parseEnterExileOppGyLoseLife cardName line n) <|>
     sole (parseStackCostReduction line) n <|>
@@ -2982,5 +3114,142 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "") "When this creature enters, draw one cards." == none
 #guard parseOracleParts (name := "")
   "Sacrifice a creature: This creature gets +1/+1 until end of turn." == none
+#guard parseOracleParts (name := "") "Reach, trample, haste" ==
+  some [
+    .ability (.keyword .reach),
+    .ability (.keyword .trample),
+    .ability (.keyword .haste)]
+#guard parseOracleParts (name := "") "Reach, deathtouch" ==
+  some [.ability (.keyword .reach), .ability (.keyword .deathtouch)]
+#guard parseOracleParts (name := "")
+  "Whenever another Elf you control enters, this creature gets +1/+1 until end of turn." ==
+  some [.ability (
+    .triggered
+      (.enter
+        (.intersection [
+          .not .this,
+          .permanent,
+          .subtype .elf,
+          .controlled (.controller .this)]))
+      (.continuous
+        [.addPower (.source .this) (Value.int 1),
+         .addToughness (.source .this) (Value.int 1)]
+        .endOfTurn))]
+#guard parseOracleParts (name := "")
+  "Whenever another Bear you control enters, this creature gets +1/+1 until end of turn." == none
+#guard parseOracleParts (name := "")
+  "Whenever another Elf you control enters, this creature gets +2/+2 until end of turn." == none
+#guard parseOracleParts (name := "")
+  "Landfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn." ==
+  some [.ability (
+    .triggered
+      (.enter
+        (.intersection [
+          .permanent,
+          .cardType .land,
+          .controlled (.controller .this)]))
+      (.continuous
+        [.addPower (.source .this) (Value.int 1),
+         .addToughness (.source .this) (Value.int 1)]
+        .endOfTurn))]
+#guard parseOracleParts (name := "")
+  "Whenever a land you control enters, this creature gets +1/+1 until end of turn." ==
+  parseOracleParts (name := "")
+    "Landfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn."
+#guard parseOracleParts (name := "")
+  "Landfall — Whenever a land you control enters, creatures you control get +1/+1 until end of turn." ==
+  none
+#guard parseOracleParts (name := "Woodland Weavemaster")
+  "{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources." ==
+  some [.ability (
+    .activated
+      [.tapSymbol]
+      (.sequence [
+        .actionId 1
+          (.addManaOfOneColor
+            (.controller .this)
+            ManaSymbol.anyColor
+            (.greatestPower .this)),
+        .continuous
+          [.forbid
+            (.spendManaCreatedByAction 1
+              (.not
+                (.or
+                  (.castSpell (.subtype .elf))
+                  (.activateAbility (.subtype .elf)))))]
+          .endOfTurn]))]
+#guard parseOracleParts (name := "Woodland Weavemaster")
+  "{T}: Add X mana of any one color, where X is Woodland Weavemaster's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources." ==
+  parseOracleParts (name := "Woodland Weavemaster")
+    "{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."
+#guard parseOracleParts (name := "Gandalf")
+  "{T}: Add X mana of any one color, where X is Woodland Weavemaster's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources." ==
+  none
+#guard parseOracleParts (name := "Mirkwood Pathmaker")
+  "Mirkwood Pathmaker's power and toughness are each equal to the number of lands you control." ==
+  some [
+    .ability (
+      .static
+        (.setPower
+          .this
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)])))),
+    .ability (
+      .static
+        (.setToughness
+          .this
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)]))))]
+#guard parseOracleParts (name := "")
+  "This creature's power and toughness are each equal to the number of lands you control." ==
+  parseOracleParts (name := "Mirkwood Pathmaker")
+    "Mirkwood Pathmaker's power and toughness are each equal to the number of lands you control."
+#guard parseOracleParts (name := "Gandalf")
+  "Mirkwood Pathmaker's power and toughness are each equal to the number of lands you control." ==
+  none
+#guard parseOracleParts (name := "") "You may play an additional land this turn." ==
+  some [.actions [
+    .continuous
+      [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]
+      .endOfTurn]]
+#guard parseOracleParts (name := "") "You may play two additional lands this turn." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle." ==
+  some [.ability (
+    .triggered
+      (.enter .this)
+      (.searchLibraryThenShuffle
+        (.controller .this)
+        [.putOntoBattlefield
+          (.selected
+            (.controller .this)
+            (.range 1 1)
+            (.intersection [.inLibrary, .subtype .forest]))]))]
+#guard parseOracleParts (name := "Wood Elves")
+  "When Wood Elves enters, search your library for a Forest card, put that card onto the battlefield, then shuffle." ==
+  parseOracleParts (name := "")
+    "When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."
+#guard parseOracleParts (name := "")
+  "When this creature enters, search your library for an Island card, put that card onto the battlefield, then shuffle." ==
+  none
+#guard parseOracleParts (name := "")
+  "Trample\n//ADV//\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)" ==
+  some [
+    .ability (.keyword .trample),
+    .alternative [
+      .name "Till and Tend",
+      .manaCost [.generic 1, .mono .green],
+      .type .sorcery,
+      .subtype .adventure,
+      .actions [
+        .continuous
+          [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]
+          .endOfTurn]]]
 
 end Mtg.Engine
