@@ -42,7 +42,8 @@ Currently recognized:
 - `As an additional cost to cast this spell, sacrifice an <permanent type or …> or pay {N}.`
   The sacrifice and that much generic mana are alternatives (CR 601.2b).
   This functions while the spell is on the stack (CR 113.6 / 604.2).
-- `Destroy target <permanent type or …> [with <keyword>].`
+- `Destroy target <permanent type or …> [with <keyword> | with power N or greater].`
+  `N` is a positive printed number. The permanent must have at least that much power.
 - `Put a +1/+1 counter on up to one target <permanent type>.`
   Up to one target means zero or one (CR 115.1).
 - `Target player gains N life.`
@@ -58,6 +59,19 @@ Currently recognized:
   resolution. The word may be omitted.
 - `Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +P/+T until end of turn.`
   The same ability word and “while” clause. The bonus is on this creature.
+- `Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +P/+0 and creatures you control gain trample.`
+  The same ability word and “while” clause. The bonus and trample both last
+  until end of turn. Toughness is unchanged, and the power bonus is not zero.
+- `Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, put a +1/+1 counter on each creature you control.`
+  The same ability word and “while” clause. One counter goes on each of those creatures.
+- `Ferocious — Whenever you attack while you control a creature with power 4 or greater, you draw a card and lose 1 life.`
+  The ability word may be omitted. “Whenever you attack” is one trigger when
+  creatures you control attack at the same time (CR 508.3 / 603.2d). The
+  “while” clause is part of that trigger condition.
+- `Ferocious — At the beginning of combat on your turn, if you control a creature with power 4 or greater, put a +1/+1 counter on this creature.`
+  The ability word may be omitted. Beginning of combat is CR 507.1. The “if”
+  is an intervening if (CR 603.4): it is checked when combat begins and again
+  when the ability resolves.
 - `Landfall — Whenever a land you control enters, put a +1/+1 counter on target <permanent type> you control.`
   `Landfall` is an ability word (CR 207.2c) and may be omitted.
 - `Landfall — Whenever a land you control enters, this creature gets +P/+T until end of turn.`
@@ -76,6 +90,11 @@ Currently recognized:
   before a comma.
 - `When <this card> enters, draw a card.` / `draw N cards.`
   The entering object is `this`, `this <type>`, the card's name, or that short name
+- `When <this card> enters, put a +1/+1 counter on target <permanent type>.`
+  The entering object is the same. The counter goes on that target.
+- `When <this card> enters, recruit.`
+  Recruit is a keyword action of this card's controller. A trailing reminder
+  parenthetical is not rules text (CR 207.2).
 - `When <this card> dies, target <permanent type or …> an opponent controls gets P/T until end of turn.`
   The dying object is `this`, `this <type>`, the card's name, or that short name.
   `P/T` is a signed change such as -1 / -1
@@ -118,12 +137,18 @@ Currently recognized:
   - `Target creature gets +P/+T until end of turn. If that creature would die this turn, exile it instead.`
   - `<permanent types> target player controls get +P/+T until end of turn.`
   - `Target player draws <count> cards and loses N life.`
-  - `Destroy target <permanent type or …> [with <keyword>].`
+  - `Destroy target <permanent type or …> [with <keyword> | with power N or greater].`
+  - `Destroy target <permanent type or …>. You gain N life.`
+  - `<permanents> you control get +P/+T until end of turn.`
+  - `Until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible.`
+    A trailing reminder parenthetical is not rules text (CR 207.2).
   - `Put a +1/+1 counter on target <permanent> [you control]. It gains <keywords> until end of turn.`
 - `Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled.`
 - `<this card> can't be blocked.`
   The subject is `this`, `this <type>`, the card's name, or the short name
   before a comma
+- `<this card> can't be blocked by tokens.`
+  The subject is the same. Tokens cannot be declared as blockers for it.
 - `<this card> can't block.`
   The subject is the same as for “can't be blocked”
 - `When <this card> enters, exile up to one target card from an opponent's graveyard. Each opponent loses N life.`
@@ -1387,21 +1412,60 @@ def parsePutPlusOneThenGains (text : String) (n : Nat) : Option (CardAction × N
     | _, _ => none
   | _ => none
 
-/-- `Destroy target creature` or `Destroy target creature with flying.`
-The target number is `n`. `with` names one keyword the permanent must have. -/
+/-- `Destroy target creature`, `Destroy target creature with flying`, or
+`Destroy target creature with power 4 or greater.`
+The target number is `n`. `with` names one keyword the permanent must have,
+or `power N or greater`. `N` is a positive printed number. -/
 def parseDestroy (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   (after? (normSentence sentence) "destroy target ").bind fun rest =>
-    let parsed :=
-      match split2? rest " with " with
-      | none => some (rest, none)
-      | some (obj, kwText) => (keywordOfOracle? kwText).map fun k => (obj, some k)
-    parsed.bind fun (obj, kw?) =>
-      (typesInPhrase obj).map fun ts =>
-        let tail : List Selector :=
-          match kw? with
-          | some k => [.keyword k]
-          | none => []
-        (.destroy (.target n (permanentWith ts tail)), n + 1)
+    let destroyed (ts : List CardType) (tail : List Selector) : CardAction × Nat :=
+      (.destroy (.target n (permanentWith ts tail)), n + 1)
+    let withPower :=
+      (split2? rest " with power ").bind fun (obj, powerText) =>
+        (before? powerText " or greater").bind positiveCount |>.bind fun p =>
+          (typesInPhrase obj).map fun ts =>
+            destroyed ts [.powerAtLeast (Value.int (p : Int))]
+    let withKeyword :=
+      (split2? rest " with ").bind fun (obj, kwText) =>
+        (keywordOfOracle? kwText).bind fun k =>
+          (typesInPhrase obj).map fun ts => destroyed ts [.keyword k]
+    let plain :=
+      (typesInPhrase rest).map fun ts => destroyed ts []
+    withPower <|> withKeyword <|> plain
+
+/-- `Destroy target artifact or enchantment. You gain 2 life.`
+The destroy chooses target `n`. Gaining life does not. `N` is a positive count. -/
+def parseDestroyThenGainLife (text : String) (n : Nat) : Option (CardAction × Nat) :=
+  match sentences text with
+  | [destroy, gain] =>
+    match parseDestroy destroy n, lifeAmount? (normSentence gain) "you gain " with
+    | some (destroyed, n'), some k =>
+      some (.sequence [destroyed, .gainLife (.controller .this) (Value.nat k)], n')
+    | _, _ => none
+  | _ => none
+
+/-- `Until end of turn, target creature becomes an artifact in addition to its
+other types and gains indestructible.`
+The target is `n`. The type and indestructible both last until end of turn.
+A reminder parenthetical is not rules text (CR 207.2). -/
+def parseBecomeArtifactIndestructible (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  (after? (normLine sentence) "until end of turn, ").bind fun rest =>
+    (split2? rest " becomes ").bind fun (who, become) =>
+      (split2? become " and gains ").bind fun (typeText, gained) =>
+        if typeText != "an artifact in addition to its other types" then none
+        else
+          match parseTargetPhrase who, parseKeywordPhrase gained with
+          | some sel, some [.indestructible] =>
+            if sel != permanentWith [.creature] then none
+            else
+              some (
+                .continuous
+                  [.gainType (.target n sel) .artifact,
+                    .gainAbility (.targetReference n) (.keyword .indestructible)]
+                .endOfTurn,
+                n + 1)
+          | _, _ => none
 
 /-- One printed mode of a “Choose one” spell. The first success wins. -/
 def parseModeAction (text : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -1411,8 +1475,11 @@ def parseModeAction (text : String) (n : Nat) : Option (CardAction × Nat) :=
     parseTargetPlayerDrawsLosesLife text n <|>
     parseTargetGetsUntilEndOfTurn text n <|>
     parseTargetPlayerControlsGet text n <|>
+    parseDestroyThenGainLife text n <|>
+    parseBecomeArtifactIndestructible text n <|>
     parseDestroy text n <|>
-    parsePutPlusOneThenGains text n
+    parsePutPlusOneThenGains text n <|>
+    (parsePumpUntilEndOfTurn text).map (·, n)
 
 /-- The text of a `•` mode line, without the bullet. -/
 def stripModeBullet (line : String) : Option String :=
@@ -1434,6 +1501,10 @@ def staticCant (cardName line tail : String) (restriction : Trigger) : Option Ca
   (before? (normLine line) tail).bind fun subject =>
     if subject.isEmpty || !refersToSelf cardName subject then none
     else some (.ability (.static (.forbid restriction)))
+
+/-- `<this card> can't be blocked by tokens.` The subject must be this card. -/
+def parseCantBeBlockedByTokens (cardName : String) (line : String) : Option CardPart :=
+  staticCant cardName line " can't be blocked by tokens" (.block .token .this)
 
 /-- `<this card> can't be blocked.` The subject must be this card. -/
 def parseCantBeBlocked (cardName : String) (line : String) : Option CardPart :=
@@ -1665,32 +1736,109 @@ def withoutAbilityWord (s word : String) : String :=
   | some (w, rest) => if w == word then rest else s
   | none => s
 
-/-- `Ferocious — Whenever this creature attacks while you control a creature
-with power 4 or greater, you gain 2 life.`
-Also `… this creature gets +P/+T until end of turn.`
-`Ferocious` is an ability word (CR 207.2c). The “while” clause is part of
-the trigger condition (CR 603.2): it is checked when this creature attacks,
-and it is not checked again when the ability resolves. -/
-def parseFerociousAttackGainLife (line : String) : Option CardPart :=
-  let s := withoutAbilityWord (normLine line) "ferocious"
-  let lead := "whenever this creature attacks while you control a creature with power 4 or greater, "
-  let ferociousSel :=
-    permanentWith [.creature] [youControl, .powerAtLeast (Value.int 4)]
-  let triggered (action : CardAction) : CardPart :=
-    .ability (.triggeredWhile (.attack .this .all) (.any ferociousSel) action)
-  match after? s lead with
+/-- Creatures this object's controller controls. -/
+def creaturesYouControl : Selector :=
+  permanentWith [.creature] [youControl]
+
+/-- A creature you control with power 4 or greater. -/
+def ferociousCreature : Selector :=
+  permanentWith [.creature] [youControl, .powerAtLeast (Value.int 4)]
+
+/-- `until end of turn, this creature gets +P/+0 and creatures you control gain trample.`
+The bonus and trample both last until end of turn. A zero power, or any
+toughness change, is a different ability. -/
+def parseSourceGetsAndTeamTrample (effect : String) : Option CardAction :=
+  (after? (norm effect) "until end of turn, ").bind fun rest =>
+    (split2? rest " and creatures you control gain ").bind fun (pump, gained) =>
+      (splitGetsOnly? pump).bind fun (who, ptText) =>
+        if parsePumpWho who != some (.source .this) then none
+        else
+          match parsePowerToughness ptText, parseKeywordPhrase gained with
+          | some (p, 0), some [.trample] =>
+            if p == 0 then none
+            else
+              some (.continuous
+                [.addPower (.source .this) (Value.int p),
+                  .gainAbility creaturesYouControl (.keyword .trample)]
+                .endOfTurn)
+          | _, _ => none
+
+/-- `Put a +1/+1 counter on each creature you control.`
+One counter uses the singular noun. `each` is every creature you control. -/
+def parsePutPlusOneOnEachYouControl (sentence : String) : Option CardAction :=
+  match (after? (normSentence sentence) "put ").bind
+      (split2? · " +1/+1 counter on each ") with
+  | some (countText, who) =>
+    match nounCount? countText false, parseControlledPhrase who with
+    | some 1, some sel =>
+      if sel == creaturesYouControl then
+        some (.putCounter creaturesYouControl .plusOnePlusOne 1)
+      else none
+    | _, _ => none
   | none => none
-  | some effect =>
-    match parseYouGainLife effect 0 with
-    | some (.gainLife _ k, _) =>
-      some (triggered (.gainLife (.controller .this) k))
-    | _ =>
-      match parsePumpUntilEndOfTurn effect with
-      | some action =>
-        match sourceGetsUntilEnd? action with
-        | some _ => some (triggered action)
-        | none => none
-      | none => none
+
+/-- `You draw a card and lose 1 life.` One card and 1 life. -/
+def parseYouDrawCardLoseLife (sentence : String) : Option CardAction :=
+  match (after? (normSentence sentence) "you draw ").bind (split2? · " and lose ") with
+  | some (drawText, lifeText) =>
+    match parseCardCount drawText, lifeAmount? ("lose " ++ lifeText) "lose " with
+    | some 1, some 1 =>
+      some (.sequence [
+        .draw (.controller .this) 1,
+        .loseLife (.controller .this) 1])
+    | _, _ => none
+  | none => none
+
+/-- `Ferocious — Whenever this creature attacks while you control a creature
+with power 4 or greater, <effect>.`
+`Ferocious` is an ability word (CR 207.2c) and may be omitted. The “while”
+clause is part of the trigger condition (CR 603.2): it is checked when this
+creature attacks, and it is not checked again when the ability resolves.
+The effect is gaining life, this creature getting +P/+T until end of turn,
+this creature getting +P/+0 and your creatures gaining trample until end of
+turn, or a +1/+1 counter on each creature you control. -/
+def parseFerociousThisAttacks (line : String) : Option CardPart :=
+  let s := withoutAbilityWord (normLine line) "ferocious"
+  let lead :=
+    "whenever this creature attacks while you control a creature with power 4 or greater, "
+  (after? s lead).bind fun effect =>
+    let gainLife :=
+      match parseYouGainLife effect 0 with
+      | some (.gainLife _ k, _) => some (.gainLife (.controller .this) k)
+      | _ => none
+    let pump :=
+      (parsePumpUntilEndOfTurn effect).bind fun action =>
+        (sourceGetsUntilEnd? action).map fun _ => action
+    (gainLife <|> pump <|>
+        parseSourceGetsAndTeamTrample effect <|>
+        parsePutPlusOneOnEachYouControl effect).map fun action =>
+      .ability (.triggeredWhile (.attack .this .all) (.any ferociousCreature) action)
+
+/-- `Ferocious — Whenever you attack while you control a creature with power
+4 or greater, you draw a card and lose 1 life.`
+`Ferocious` may be omitted (CR 207.2c). “Whenever you attack” is one trigger
+when creatures you control attack at the same time (CR 508.3 / 603.2d). -/
+def parseFerociousYouAttack (line : String) : Option CardPart :=
+  let s := withoutAbilityWord (normLine line) "ferocious"
+  let lead :=
+    "whenever you attack while you control a creature with power 4 or greater, "
+  (after? s lead).bind parseYouDrawCardLoseLife |>.map fun action =>
+    .ability (.triggeredWhile
+      (.attackSimultaneously creaturesYouControl .all [])
+      (.any ferociousCreature)
+      action)
+
+/-- `Ferocious — At the beginning of combat on your turn, if you control a
+creature with power 4 or greater, put a +1/+1 counter on this creature.`
+`Ferocious` may be omitted (CR 207.2c). Beginning of combat is CR 507.1.
+The “if” is an intervening if (CR 603.4). -/
+def parseFerociousBeginCombat (line : String) : Option CardPart :=
+  let s := withoutAbilityWord (normLine line) "ferocious"
+  let lead :=
+    "at the beginning of combat on your turn, if you control a creature with power 4 or greater, "
+  (after? s lead).bind parsePutPlusOneOnThis |>.map fun action =>
+    .ability (.triggered (.combatStart (.controller .this))
+      (.if (.any ferociousCreature) [action]))
 
 /-- `Landfall — Whenever a land you control enters, <effect>.`
 `Landfall` is an ability word (CR 207.2c) and may be omitted.
@@ -2110,6 +2258,19 @@ def parseEnterUntapPlusOneIfSubtype (cardName line : String) (n : Nat) :
              n + 1)
   | _ => none
 
+/-- `When <this card> enters, recruit.`
+Recruit is a keyword action of this card's controller. A reminder
+parenthetical is not rules text (CR 207.2). -/
+def parseEnterRecruit (cardName : String) (line : String) : Option CardPart :=
+  onSelfTrigger cardName line " enters, " (.enter .this) fun effect =>
+    if effect == "recruit" then some (.keyword (.controller .this) .recruit) else none
+
+/-- `When <this card> enters, put a +1/+1 counter on target <permanent>.`
+The entering object is this card. The target is `n`. -/
+def parseEnterPutPlusOneOnTarget (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  onSelfTriggerN cardName line " enters, " (.enter .this) (parsePutPlusOneOnTarget · n)
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails.
 The first parser that accepts the line wins. -/
@@ -2132,9 +2293,13 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseCostReduction line) n <|>
     sole (parseAttackTriggered line) n <|>
     carry (parseAttackSetBasePT cardName line n) <|>
-    sole (parseFerociousAttackGainLife line) n <|>
+    sole (parseFerociousThisAttacks line) n <|>
+    sole (parseFerociousYouAttack line) n <|>
+    sole (parseFerociousBeginCombat line) n <|>
     sole (parseEnterYouGainLife cardName line) n <|>
     carry (parseEnterUntapPlusOneIfSubtype cardName line n) <|>
+    sole (parseEnterRecruit cardName line) n <|>
+    carry (parseEnterPutPlusOneOnTarget cardName line n) <|>
     sole (parseEnterDraw cardName line) n <|>
     sole (parseEnterEachOpponentDiscards cardName line) n <|>
     carry (parseEnterDividedDamage cardName line n) <|>
@@ -2144,6 +2309,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     carry (parseOtherCreaturesDieScry line n) <|>
     sole (parseDrawSecondPlusOne line) n <|>
     sole (parseYouDrawPlusOne line) n <|>
+    sole (parseCantBeBlockedByTokens cardName line) n <|>
     sole (parseCantBeBlocked cardName line) n <|>
     sole (parseCantBlock cardName line) n <|>
     sole (parseCombatDamageLoot cardName line) n <|>
@@ -2684,7 +2850,17 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
           .permanent,
           .cardType .creature,
           .keyword .flying]))]]
-#guard parseOracleParts (name := "") "Destroy target creature with power 4 or greater." == none
+#guard parseOracleParts (name := "") "Destroy target creature with power 4 or greater." ==
+  some [.actions [
+    .destroy
+      (.target 1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .powerAtLeast (Value.int 4)]))]]
+#guard parseOracleParts (name := "") "Destroy target creature with power 0 or greater." == none
+#guard parseOracleParts (name := "") "Destroy target creature with power 4 or less." == none
+#guard parseOracleParts (name := "") "Destroy target creature with power 4." == none
 #guard parseOracleParts (name := "") "Destroy target creature with haste and flying." == none
 #guard parseOracleParts (name := "")
   "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}." ==
@@ -3594,5 +3770,153 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, creatures you control get +2/+2 until end of turn." ==
   none
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures you control gain trample." ==
+  some [.ability (.triggeredWhile (.attack .this .all)
+    (.any (.intersection [
+      .permanent, .cardType .creature, .controlled (.controller .this),
+      .powerAtLeast (Value.int 4)]))
+    (.continuous
+      [.addPower (.source .this) (Value.int 1),
+        .gainAbility
+          (.intersection [
+            .permanent, .cardType .creature, .controlled (.controller .this)])
+          (.keyword .trample)]
+      .endOfTurn))]
+#guard parseOracleParts (name := "")
+  "Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures you control gain trample." ==
+  parseOracleParts (name := "")
+    "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures you control gain trample."
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +0/+0 and creatures you control gain trample." ==
+  none
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+1 and creatures you control gain trample." ==
+  none
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures you control gain haste." ==
+  none
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, put a +1/+1 counter on each creature you control." ==
+  some [.ability (.triggeredWhile (.attack .this .all)
+    (.any (.intersection [
+      .permanent, .cardType .creature, .controlled (.controller .this),
+      .powerAtLeast (Value.int 4)]))
+    (.putCounter
+      (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this)])
+      .plusOnePlusOne
+      1))]
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, put two +1/+1 counters on each creature you control." ==
+  none
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever you attack while you control a creature with power 4 or greater, you draw a card and lose 1 life." ==
+  some [.ability (.triggeredWhile
+    (.attackSimultaneously
+      (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this)])
+      .all
+      [])
+    (.any (.intersection [
+      .permanent, .cardType .creature, .controlled (.controller .this),
+      .powerAtLeast (Value.int 4)]))
+    (.sequence [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1]))]
+#guard parseOracleParts (name := "")
+  "Whenever you attack while you control a creature with power 4 or greater, you draw a card and lose 1 life." ==
+  parseOracleParts (name := "")
+    "Ferocious — Whenever you attack while you control a creature with power 4 or greater, you draw a card and lose 1 life."
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever you attack while you control a creature with power 4 or greater, you draw two cards and lose 1 life." ==
+  none
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever you attack while you control a creature with power 4 or greater, you gain 2 life." ==
+  none
+#guard parseOracleParts (name := "")
+  "Ferocious — At the beginning of combat on your turn, if you control a creature with power 4 or greater, put a +1/+1 counter on this creature." ==
+  some [.ability (.triggered
+    (.combatStart (.controller .this))
+    (.if
+      (.any (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this),
+        .powerAtLeast (Value.int 4)]))
+      [.putCounter (.source .this) .plusOnePlusOne 1]))]
+#guard parseOracleParts (name := "")
+  "At the beginning of combat on your turn, if you control a creature with power 4 or greater, put a +1/+1 counter on this creature." ==
+  parseOracleParts (name := "")
+    "Ferocious — At the beginning of combat on your turn, if you control a creature with power 4 or greater, put a +1/+1 counter on this creature."
+#guard parseOracleParts (name := "")
+  "Ferocious — At the beginning of combat on your turn, put a +1/+1 counter on this creature." ==
+  none
+#guard parseOracleParts (name := "")
+  "Choose one —\n• Creatures you control get +2/+1 until end of turn.\n• Destroy target artifact or enchantment. You gain 2 life." ==
+  some [.actions [.chooseMode [
+    .continuous
+      [.addPower
+        (.intersection [
+          .permanent, .cardType .creature, .controlled (.controller .this)])
+        (Value.int 2),
+       .addToughness
+        (.intersection [
+          .permanent, .cardType .creature, .controlled (.controller .this)])
+        (Value.int 1)]
+      .endOfTurn,
+    .sequence [
+      .destroy
+        (.target 1
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .enchantment]])),
+      .gainLife (.controller .this) 2]]]]
+#guard parseOracleParts (name := "")
+  "Choose one —\n• Destroy target creature with power 4 or greater.\n• Until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible. (Damage and effects that say \"destroy\" don't destroy it.)" ==
+  some [.actions [.chooseMode [
+    .destroy
+      (.target 1
+        (.intersection [
+          .permanent, .cardType .creature, .powerAtLeast (Value.int 4)])),
+    .continuous
+      [.gainType
+        (.target 2 (.intersection [.permanent, .cardType .creature]))
+        .artifact,
+       .gainAbility (.targetReference 2) (.keyword .indestructible)]
+      .endOfTurn]]]
+#guard parseOracleParts (name := "")
+  "Until end of turn, target artifact becomes an artifact in addition to its other types and gains indestructible." ==
+  none
+#guard parseOracleParts (name := "") "This creature can't be blocked by tokens." ==
+  some [.ability (.static (.forbid (.block .token .this)))]
+#guard parseOracleParts (name := "Duskwatch Hunter")
+  "Duskwatch Hunter can't be blocked by tokens." ==
+  parseOracleParts (name := "") "This creature can't be blocked by tokens."
+#guard parseOracleParts (name := "") "This creature can't be blocked by Goblins." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, put a +1/+1 counter on target creature." ==
+  some [.ability (.triggered (.enter .this)
+    (.putCounter
+      (.target 1 (.intersection [.permanent, .cardType .creature]))
+      .plusOnePlusOne
+      1))]
+#guard parseOracleParts (name := "")
+  "When this creature enters, put a +1/+1 counter on target Elf." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)" ==
+  some [.ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))]
+#guard parseOracleParts (name := "Patient Instructor")
+  "When Patient Instructor enters, recruit." ==
+  parseOracleParts (name := "") "When this creature enters, recruit."
+#guard parseOracleParts (name := "Gandalf") "When Patient Instructor enters, recruit." == none
+#guard parseOracleParts (name := "")
+  "Vigilance\nWhen this creature enters, recruit." ==
+  some [
+    .ability (.keyword .vigilance),
+    .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))]
+#guard parseOracleParts (name := "")
+  "Flying\nWhen this creature enters, recruit." ==
+  some [
+    .ability (.keyword .flying),
+    .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))]
 
 end Mtg.Engine
