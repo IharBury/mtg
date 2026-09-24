@@ -1034,6 +1034,19 @@ def bolgEreborsReckoning : CardDef :=
     (triggeredAbilities := #[.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)])
 
 def thorinKingOfDurinsFolk : CardDef :=
+  let otherDwarves : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .subtype .dwarf,
+      .controlled (.controller .this)]
+  let artifactTokens : Selector :=
+    .intersection [
+      .permanent,
+      .token,
+      .cardType .artifact,
+      .controlled (.controller .this)]
   (TraditionalCardDefinition.card [
     .name "Thorin, King of Durin's Folk",
     .manaCost [.generic 3, .mono .red, .mono .white],
@@ -1047,28 +1060,11 @@ def thorinKingOfDurinsFolk : CardDef :=
       (.triggered
         (.or
           (.enter .this)
-          (.enter
-            (.intersection [
-              .not .this,
-              .permanent,
-              .cardType .creature,
-              .subtype .dwarf,
-              .controlled (.controller .this)])))
+          (.enter otherDwarves))
         (.createTokens (.controller .this) 1 PredefinedToken.treasureToken)),
     .ability
       (.static
-        (.addPowerToughnessPer
-          (.intersection [
-            .not .this,
-            .permanent,
-            .cardType .creature,
-            .subtype .dwarf,
-            .controlled (.controller .this)])
-          (.intersection [
-            .permanent,
-            .token,
-            .cardType .artifact,
-            .controlled (.controller .this)]) (Value.int 1) (Value.int 0)))
+        (.addPower otherDwarves (Value.count artifactTokens)))
   ]).toCardDef
     (oracleText := "Whenever Thorin or another Dwarf you control enters, create a Treasure token.\nOther Dwarves you control get +1/+0 for each artifact token you control.")
 
