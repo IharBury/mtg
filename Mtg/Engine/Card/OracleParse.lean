@@ -198,6 +198,27 @@ Currently recognized:
 - `This spell can't be countered.`
   Countering this spell is forbidden. The ability functions while this spell
   is on the stack (CR 113.6b).
+- `Whenever you cast a noncreature spell, amass <subtype>s N.`
+  Amass is a keyword action of this card's controller (CR 701.45). The
+  subtype is printed in the plural (`Goblins`). `N` is a positive count.
+  A trailing reminder parenthetical is not rules text (CR 207.2).
+- `When <this card> enters, amass <subtype>s N.`
+  The entering object is `this`, `this <type>`, the card's name, or the short
+  name before a comma. Amass is the same keyword action.
+- `When <this card> dies, amass <subtype>s N.`
+  The dying object is the same. Amass is the same keyword action.
+- `Whenever you attack, amass <subtype>s N.`
+  “Whenever you attack” is one trigger when creatures you control attack at
+  the same time (CR 508.3 / 603.2d).
+- `You may cast this spell as though it had flash if you control a <subtype>.`
+  The permission is checked as you begin to cast this spell (CR 601.3 / 702.8).
+- `<permanents> get +P/+T.`
+  No duration is printed, so this is a static ability (CR 604.2 / 613.4c).
+  A zero bonus is omitted. `+0/+0` is not an effect. `until end of turn` is a
+  different ability.
+- `Whenever <this card> enters or attacks, recruit.`
+  Recruit is a keyword action of this card's controller. A trailing reminder
+  parenthetical is not rules text (CR 207.2).
 -/
 
 namespace Mtg.Engine
@@ -2371,6 +2392,86 @@ def parseCantBeCountered (line : String) : Option CardPart :=
     some (.ability (.stackStatic (.forbid (.counter .this))))
   else none
 
+/-- The subtype printed in `amass Goblins`: the plural drops a trailing `s`. -/
+def amassSubtype? (s : String) : Option CardSubtype :=
+  if s.endsWith "s" && s.length > 1 then subtypeOfOracle? (s.dropEnd 1).copy else none
+
+/-- `Amass Goblins 1.` The controller amasses that subtype that many (CR 701.45).
+The subtype is plural. `N` is a positive count. -/
+def parseAmass (sentence : String) : Option CardAction :=
+  (after? (normSentence sentence) "amass ").bind fun rest =>
+    (split2? rest " ").bind fun (typeText, nText) =>
+      match amassSubtype? typeText, positiveCount nText with
+      | some st, some n =>
+        some (.keyword (.controller .this) (.amass st (.nat n)))
+      | _, _ => none
+
+/-- A noncreature spell this object's controller casts. -/
+def noncreatureSpellYouCast : Selector :=
+  .intersection [.spell, .not (.cardType .creature), youControl]
+
+/-- `Whenever you cast a noncreature spell, amass Goblins 1.`
+Amass is a keyword action of this card's controller. A reminder
+parenthetical is not rules text (CR 207.2). -/
+def parseYouCastNoncreatureAmass (line : String) : Option CardPart :=
+  onTrigger (.castSpell noncreatureSpellYouCast)
+    ((after? (normLine line) "whenever you cast a noncreature spell, ").bind parseAmass)
+
+/-- `When <this card> enters, amass Goblins 1.`
+The entering object is this card. -/
+def parseEnterAmass (cardName : String) (line : String) : Option CardPart :=
+  onSelfTrigger cardName line " enters, " (.enter .this) parseAmass
+
+/-- `When <this card> dies, amass Goblins 4.`
+The dying object is this card. -/
+def parseDiesAmass (cardName : String) (line : String) : Option CardPart :=
+  onSelfTrigger cardName line " dies, " (.die .this) parseAmass
+
+/-- `Whenever you attack, amass Goblins 2.`
+“Whenever you attack” is one trigger when creatures you control attack at
+the same time (CR 508.3 / 603.2d). -/
+def parseYouAttackAmass (line : String) : Option CardPart :=
+  onTrigger (.attackSimultaneously creaturesYouControl .all [])
+    ((after? (normLine line) "whenever you attack, ").bind parseAmass)
+
+/-- `You may cast this spell as though it had flash if you control a Human.`
+The permission is checked as you begin to cast this spell (CR 601.3 / 702.8). -/
+def parseCastAsThoughFlash (line : String) : Option CardPart :=
+  (after? (normLine line)
+      "you may cast this spell as though it had flash if you control ").bind
+    dropArticle? |>.bind subtypeOfOracle? |>.map fun st =>
+      .ability (.stackStatic (
+        .if
+          (.any (.intersection [.permanent, .subtype st, youControl]))
+          [.gainAbility .this (.keyword .flash)]))
+
+/-- `<permanents> get +P/+T.` No duration is printed, so this is a static
+ability (CR 604.2 / 613.4c). A zero bonus is omitted. `+0/+0` is not an
+effect. A bonus that lasts until end of turn is a different ability. -/
+def parseStaticGets (line : String) : Option (List CardPart) :=
+  let s := normLine line
+  if (split2? s " until end of turn").isSome then none
+  else
+    (splitGets? s).bind fun (who, ptText) =>
+      match parseControlledPhrase who, parsePowerToughness ptText with
+      | some sel, some (p, t) =>
+        let effects := flatPowerToughness sel p t
+        if effects.isEmpty then none
+        else some (effects.map fun e => .ability (.static e))
+      | _, _ => none
+
+/-- `Whenever <this card> enters or attacks, recruit.`
+Recruit is a keyword action of this card's controller. A reminder
+parenthetical is not rules text (CR 207.2). -/
+def parseEnterOrAttackRecruit (cardName : String) (line : String) : Option CardPart :=
+  (triggerSelfEffect? cardName "whenever" (normLine line) " enters or attacks, ").bind
+    fun effect =>
+      if effect == "recruit" then
+        some (.ability (.triggered
+          (.or (.enter .this) (.attack .this .all))
+          (.keyword (.controller .this) .recruit)))
+      else none
+
 /-- `When <this card> enters, put a +1/+1 counter on target <permanent>.`
 The entering object is this card. The target is `n`. -/
 def parseEnterPutPlusOneOnTarget (cardName : String) (line : String) (n : Nat) :
@@ -2395,6 +2496,13 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     (parseLandsCharacteristic cardName line).map (·, n) <|>
     (parseCreaturesPowerCharacteristic cardName line).map (·, n) <|>
     sole (parseCantBeCountered line) n <|>
+    sole (parseCastAsThoughFlash line) n <|>
+    (parseStaticGets line).map (·, n) <|>
+    sole (parseYouCastNoncreatureAmass line) n <|>
+    sole (parseYouAttackAmass line) n <|>
+    sole (parseEnterOrAttackRecruit cardName line) n <|>
+    sole (parseEnterAmass cardName line) n <|>
+    sole (parseDiesAmass cardName line) n <|>
     sole (parseEnterSearchForest cardName line) n <|>
     sole (parseGraveyardReturn line) n <|>
     carry (parseEnterExileOppGyLoseLife cardName line n) <|>
@@ -4123,5 +4231,96 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "") "This creature can't be countered." == none
 #guard parseOracleParts (name := "") "Hexproof, haste" ==
   some [.ability (.keyword .hexproof), .ability (.keyword .haste)]
+#guard parseOracleParts (name := "")
+  "Whenever you cast a noncreature spell, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)" ==
+  some [.ability (
+    .triggered
+      (.castSpell
+        (.intersection [
+          .spell,
+          .not (.cardType .creature),
+          .controlled (.controller .this)]))
+      (.keyword (.controller .this) (.amass .goblin (.nat 1))))]
+#guard parseOracleParts (name := "")
+  "Whenever you cast a creature spell, amass Goblins 1." == none
+#guard parseOracleParts (name := "") "Whenever you cast a noncreature spell, amass Goblin 1." == none
+#guard parseOracleParts (name := "") "Whenever you cast a noncreature spell, amass Goblins 0." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, amass Goblins 1." ==
+  some [.ability (
+    .triggered
+      (.enter .this)
+      (.keyword (.controller .this) (.amass .goblin (.nat 1))))]
+#guard parseOracleParts (name := "Goblin-town Flunkies")
+  "When Goblin-town Flunkies enters, amass Goblins 1." ==
+  parseOracleParts (name := "") "When this creature enters, amass Goblins 1."
+#guard parseOracleParts (name := "Gandalf")
+  "When Goblin-town Flunkies enters, amass Goblins 1." == none
+#guard parseOracleParts (name := "")
+  "When this creature dies, amass Goblins 4." ==
+  some [.ability (
+    .triggered
+      (.die .this)
+      (.keyword (.controller .this) (.amass .goblin (.nat 4))))]
+#guard parseOracleParts (name := "")
+  "Whenever you attack, amass Goblins 2." ==
+  some [.ability (
+    .triggered
+      (.attackSimultaneously
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .all
+        [])
+      (.keyword (.controller .this) (.amass .goblin (.nat 2))))]
+#guard parseOracleParts (name := "")
+  "Whenever you attack while you control a Goblin, amass Goblins 2." == none
+#guard parseOracleParts (name := "")
+  "You may cast this spell as though it had flash if you control a Human." ==
+  some [.ability (.stackStatic (
+    .if
+      (.any (.intersection [
+        .permanent, .subtype .human, .controlled (.controller .this)]))
+      [.gainAbility .this (.keyword .flash)]))]
+#guard parseOracleParts (name := "")
+  "You may cast this spell as though it had flash if you control Human." == none
+#guard parseOracleParts (name := "")
+  "You may cast this spell as though it had flash if you control an Elf." ==
+  some [.ability (.stackStatic (
+    .if
+      (.any (.intersection [
+        .permanent, .subtype .elf, .controlled (.controller .this)]))
+      [.gainAbility .this (.keyword .flash)]))]
+#guard parseOracleParts (name := "") "Other creatures you control get +1/+1." ==
+  some [
+    .ability (.static (.addPower
+      (.intersection [
+        .not .this,
+        .permanent,
+        .cardType .creature,
+        .controlled (.controller .this)]) (Value.int 1))),
+    .ability (.static (.addToughness
+      (.intersection [
+        .not .this,
+        .permanent,
+        .cardType .creature,
+        .controlled (.controller .this)]) (Value.int 1)))]
+#guard parseOracleParts (name := "") "Other creatures you control get +0/+0." == none
+#guard parseOracleParts (name := "")
+  "Other creatures you control get +1/+1 until end of turn." == none
+#guard parseOracleParts (name := "")
+  "Whenever this creature enters or attacks, recruit." ==
+  some [.ability (
+    .triggered
+      (.or (.enter .this) (.attack .this .all))
+      (.keyword (.controller .this) .recruit))]
+#guard parseOracleParts (name := "Bard's Company")
+  "Whenever Bard's Company enters or attacks, recruit." ==
+  parseOracleParts (name := "") "Whenever this creature enters or attacks, recruit."
+#guard parseOracleParts (name := "Gandalf")
+  "Whenever Bard's Company enters or attacks, recruit." == none
+#guard parseOracleParts (name := "")
+  "Whenever this creature enters or attacks, draw a card." == none
 
 end Mtg.Engine

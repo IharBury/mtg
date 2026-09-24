@@ -3794,6 +3794,8 @@ structure CardFace where
   entersTapped : Bool := false
   /-- This spell can't be countered (CR 701.5). -/
   cantBeCountered : Bool := false
+  /-- You may cast this spell as though it had flash if you control this subtype. -/
+  flashIfYouControlSubtype : Option String := none
   colorIndicator : Option ColorSet := none
   sagaChapters : Array SagaChapter := #[]
 deriving Inhabited
@@ -3898,6 +3900,22 @@ def leftoverHasteIfOtherSubtype? (among : Selector) (inners : List ContinuousEff
     else none
   | _ => none
 
+/-- This spell may be cast as though it had flash while you control that subtype. -/
+def leftoverFlashIfSubtypeYouControl? (among : Selector) (inners : List ContinuousEffect)
+    : Option String :=
+  match inners with
+  | [.gainAbility who (.keyword .flash)] =>
+    if who == .this || who == .source .this then
+      match among.shape.subtype with
+      | some t =>
+        if among.shape ==
+            { sameController := true, mustBePermanent := true, subtype := some t } then
+          some t
+        else none
+      | none => none
+    else none
+  | _ => none
+
 /-- Equip abilities you activate that target this, reduced by that much. -/
 def leftoverEquipAbilitiesTargetingThisCostLess? (who : Selector) (costs : List Cost)
     : Option Nat :=
@@ -3971,6 +3989,9 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           staticAbilities :=
             b.staticAbilities.push (.hasteIfYouControlOtherSubtype t) }
       | none =>
+        match leftoverFlashIfSubtypeYouControl? among inners with
+        | some t => { b with flashIfYouControlSubtype := some t }
+        | none =>
           if Selector.includesLegendary among && among.shape.sameController &&
               among.shape.types.eqTypes [.creature] then
             inners.foldl
@@ -4292,6 +4313,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       tapAddOneOf := b.tapAddOneOf
       entersTapped := b.entersTapped
       cantBeCountered := b.cantBeCountered
+      flashIfYouControlSubtype := b.flashIfYouControlSubtype
       colorIndicator := b.colorIndicator
       adventure := adventure
       saga :=
@@ -6781,6 +6803,15 @@ end TraditionalCardDefinition
             .cardType .creature,
             .controlled (.controller .this)]) (Value.int 1)))
   ]).toCardDef.staticAbilities == #[.otherCreaturesGet #[] 1 1]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.stackStatic (
+      .if
+        (.any (.intersection [
+          .permanent, .subtype .human, .controlled (.controller .this)]))
+        [.gainAbility .this (.keyword .flash)]))
+  ]).toCardDef.flashIfYouControlSubtype == some "Human"
 
 #guard
   match
