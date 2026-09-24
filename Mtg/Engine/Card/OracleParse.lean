@@ -179,6 +179,24 @@ Currently recognized:
   parenthetical is not rules text.
 - `When <this> enters, you gain N life.`
 - `When <this> enters, untap another target creature you control. If that creature is a <subtype>, put a +1/+1 counter on it.`
+- `When <this card> dies, recruit.`
+  Recruit is a keyword action of this card's controller. A trailing reminder
+  parenthetical is not rules text (CR 207.2).
+- `When <this card> enters, scry N.`
+  `N` is a positive printed number.
+- `When <this card> enters, create a Treasure token.`
+  `create a tapped Treasure token` creates that token tapped (CR 110.5).
+- `When <this card> enters, exile the top card of your library. Until the end of your next turn, you may play that card.`
+  The exiled card may be played until the end of your next turn (CR 611.2a).
+- `{cost}: Add one mana of any color.`
+  Costs separated by commas may include mana, `{T}`, and `Sacrifice <this>`.
+- `{cost}: Destroy target permanent.`
+  The same costs. The permanent is one target.
+- `<this>'s power is equal to the number of creatures you control.`
+  A characteristic-defining ability (CR 208.2a / 604.3). `<this>` is `this creature`
+  or the card's name. Toughness is not changed.
+- `This spell can't be countered.`
+  A static ability that functions while this spell is on the stack (CR 113.6b).
 -/
 
 namespace Mtg.Engine
@@ -1135,9 +1153,23 @@ def parseSearchBasicLandTapped (sentence : String) (n : Nat) : Option (CardActio
       n)
   else none
 
+/-- `Add one mana of any color.` The player chooses one of the five colors
+(CR 106.4). Does not choose a target, so the target number stays `n`. -/
+def parseAddOneManaOfAnyColor (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  if sentenceIs sentence "add one mana of any color" then
+    some (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1, n)
+  else none
+
+/-- `Destroy target permanent.` The target number is `n`. -/
+def parseDestroyTargetPermanent (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  if sentenceIs sentence "destroy target permanent" then
+    some (.destroy (.target n .permanent), n + 1)
+  else none
+
 /-- A pump, counters, a targeted restriction, a library search, becoming a
-creature that gains a static ability, or exiling the top card to play later,
-optionally followed by an activation limit. -/
+creature that gains a static ability, adding one mana of any color, destroying
+a permanent, or exiling the top card to play later, optionally followed by an
+activation limit. -/
 def parseActivatedEffect (cardName : String) (effect : String) (n : Nat) :
     Option (CardAction × ActivateLimit × Nat) :=
   let (body, limit) := splitActivateLimit (sentences effect)
@@ -1146,10 +1178,12 @@ def parseActivatedEffect (cardName : String) (effect : String) (n : Nat) :
     let targeted :=
       parseTargetCantBeBlocked one n <|>
         parsePutCountersOnTarget one n <|>
-        parseSearchBasicLandTapped one n
+        parseSearchBasicLandTapped one n <|>
+        parseDestroyTargetPermanent one n
     let plain :=
       (parsePumpUntilEndOfTurn one <|> parsePutCountersOnThis one <|>
-          parseBecomeAndGainStatic cardName one).map (fun action => (action, n))
+          parseBecomeAndGainStatic cardName one).map (fun action => (action, n)) <|>
+        parseAddOneManaOfAnyColor one n
     (targeted <|> plain).map fun (action, n') => (action, limit, n')
   | _ =>
     (parseExileTopMayPlay body n).map fun (action, n') => (action, limit, n')
@@ -1157,7 +1191,9 @@ def parseActivatedEffect (cardName : String) (effect : String) (n : Nat) :
 /-- `{3}{W}: Creatures you control get +1/+1 until end of turn.`
 Also `Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn.`
 And `Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn.`
-And `{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains "…"`. -/
+And `{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains "…"`.
+And `{1}, {T}: Add one mana of any color.`
+And `{7}, {T}, Sacrifice this artifact: Destroy target permanent.` -/
 def parseActivatedAbility (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   (split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": ").bind
@@ -2122,6 +2158,20 @@ def parseLandsCharacteristic (cardName : String) (line : String) : Option (List 
       some (powerToughnessEqualLandsAbilities.map fun a => .ability a)
     else none
 
+/-- The printed clause after `<this>'s`. -/
+def creaturesPowerSuffix : String :=
+  "power is equal to the number of creatures you control"
+
+/-- `<this>'s power is equal to the number of creatures you control.`
+A characteristic-defining ability (CR 208.2a / 604.3). Power is set to that
+count. Toughness is not changed. -/
+def parseCreaturesPowerCharacteristic (cardName : String) (line : String) :
+    Option (List CardPart) :=
+  (before? (normLine line) (" " ++ creaturesPowerSuffix)).bind fun whose =>
+    if possessiveSelf cardName whose then
+      some [.ability (.static (.setPower .this (.count creaturesYouControl)))]
+    else none
+
 /-- `When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle.`
 The entering object is this card. -/
 def parseEnterSearchForest (cardName : String) (line : String) : Option CardPart :=
@@ -2265,6 +2315,60 @@ def parseEnterRecruit (cardName : String) (line : String) : Option CardPart :=
   onSelfTrigger cardName line " enters, " (.enter .this) fun effect =>
     if effect == "recruit" then some (.keyword (.controller .this) .recruit) else none
 
+/-- `When <this card> dies, recruit.`
+Recruit is a keyword action of this card's controller. A reminder
+parenthetical is not rules text (CR 207.2). -/
+def parseDiesRecruit (cardName : String) (line : String) : Option CardPart :=
+  onSelfTrigger cardName line " dies, " (.die .this) fun effect =>
+    if effect == "recruit" then some (.keyword (.controller .this) .recruit) else none
+
+/-- `When <this card> enters, scry N.`
+`N` is a positive printed number. A reminder parenthetical is not rules text. -/
+def parseEnterScry (cardName : String) (line : String) : Option CardPart :=
+  onSelfTrigger cardName line " enters, " (.enter .this) fun effect =>
+    match parseScry effect 0 with
+    | some (action, _) => some action
+    | none => none
+
+/-- `create a Treasure token` or `create a tapped Treasure token`.
+A tapped token enters tapped (CR 110.5). -/
+def parseCreateTreasure (sentence : String) : Option CardAction :=
+  match normSentence sentence with
+  | "create a tapped treasure token" =>
+    some (.createTokens (.controller .this) 1 PredefinedToken.treasureToken [.tapped])
+  | "create a treasure token" =>
+    some (.createTokens (.controller .this) 1 PredefinedToken.treasureToken)
+  | _ => none
+
+/-- `When <this card> enters, create a Treasure token.`
+Also `create a tapped Treasure token`. -/
+def parseEnterCreateTreasure (cardName : String) (line : String) : Option CardPart :=
+  onSelfTrigger cardName line " enters, " (.enter .this) parseCreateTreasure
+
+/-- `When <this card> enters, exile the top card of your library. Until the end of your next turn, you may play that card.`
+The exile is action `n`. The exiled card may be played until the end of your
+next turn (CR 611.2a). -/
+def parseEnterExileTopMayPlay (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match sentences (stripReminderParenthetical line) with
+  | [enter, play] =>
+    (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+      if !sentenceIs effect "exile the top card of your library" then none
+      else if !sentenceIs play
+          "until the end of your next turn, you may play that card" then none
+      else
+        some (
+          .ability (.triggered (.enter .this) (exileTopPlayUntilEndOfNextTurn n)),
+          n + 1)
+  | _ => none
+
+/-- `This spell can't be countered.`
+A static ability that functions while this spell is on the stack (CR 113.6b). -/
+def parseCantBeCountered (line : String) : Option CardPart :=
+  if sentenceIs (rulesText line) "this spell can't be countered" then
+    some (.ability (.stackStatic (.cantBeCountered .this)))
+  else none
+
 /-- `When <this card> enters, put a +1/+1 counter on target <permanent>.`
 The entering object is this card. The target is `n`. -/
 def parseEnterPutPlusOneOnTarget (cardName : String) (line : String) (n : Nat) :
@@ -2287,6 +2391,8 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseAnotherElfEntersGets line) n <|>
     carry (parseLandYouControlEnters line n) <|>
     (parseLandsCharacteristic cardName line).map (·, n) <|>
+    (parseCreaturesPowerCharacteristic cardName line).map (·, n) <|>
+    sole (parseCantBeCountered line) n <|>
     sole (parseEnterSearchForest cardName line) n <|>
     sole (parseGraveyardReturn line) n <|>
     carry (parseEnterExileOppGyLoseLife cardName line n) <|>
@@ -2299,6 +2405,10 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseEnterYouGainLife cardName line) n <|>
     carry (parseEnterUntapPlusOneIfSubtype cardName line n) <|>
     sole (parseEnterRecruit cardName line) n <|>
+    sole (parseDiesRecruit cardName line) n <|>
+    sole (parseEnterScry cardName line) n <|>
+    sole (parseEnterCreateTreasure cardName line) n <|>
+    carry (parseEnterExileTopMayPlay cardName line n) <|>
     carry (parseEnterPutPlusOneOnTarget cardName line n) <|>
     sole (parseEnterDraw cardName line) n <|>
     sole (parseEnterEachOpponentDiscards cardName line) n <|>
@@ -3918,5 +4028,98 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   some [
     .ability (.keyword .flying),
     .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))]
+#guard parseOracleParts (name := "")
+  "When this creature dies, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)" ==
+  some [.ability (.triggered (.die .this) (.keyword (.controller .this) .recruit))]
+#guard parseOracleParts (name := "Lake-town Lookout")
+  "When Lake-town Lookout dies, recruit." ==
+  parseOracleParts (name := "") "When this creature dies, recruit."
+#guard parseOracleParts (name := "Gandalf") "When Lake-town Lookout dies, recruit." == none
+#guard parseOracleParts (name := "") "When this creature dies, draw a card." == none
+#guard parseOracleParts (name := "") "When another creature dies, recruit." == none
+#guard parseOracleParts (name := "")
+  "When this artifact enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)" ==
+  some [.ability (.triggered (.enter .this) (.scry (.controller .this) 2))]
+#guard parseOracleParts (name := "") "When this creature enters, scry 0." == none
+#guard parseOracleParts (name := "") "When this artifact enters, scry two." ==
+  some [.ability (.triggered (.enter .this) (.scry (.controller .this) 2))]
+#guard parseOracleParts (name := "")
+  "{1}, {T}: Add one mana of any color." ==
+  some [.ability (
+    .activated
+      [.mana [.generic 1], .tapSymbol]
+      (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1))]
+#guard parseOracleParts (name := "") "Add one mana of any color." == none
+#guard parseOracleParts (name := "") "{T}: Add one mana of any color." == none
+#guard parseOracleParts (name := "Giant's Boulder")
+  "{7}, {T}, Sacrifice this artifact: Destroy target permanent." ==
+  some [.ability (
+    .activated
+      [.mana [.generic 7], .tapSymbol, .sacrifice .this]
+      (.destroy (.target 1 .permanent)))]
+#guard parseOracleParts (name := "Giant's Boulder")
+  "{7}, {T}, Sacrifice Giant's Boulder: Destroy target permanent." ==
+  parseOracleParts (name := "Giant's Boulder")
+    "{7}, {T}, Sacrifice this artifact: Destroy target permanent."
+#guard parseOracleParts (name := "") "Destroy target permanent." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, create a tapped Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")" ==
+  some [.ability (
+    .triggered
+      (.enter .this)
+      (.createTokens (.controller .this) 1 PredefinedToken.treasureToken [.tapped]))]
+#guard parseOracleParts (name := "Dori, Bearer of Friends")
+  "When Dori enters, create a Treasure token." ==
+  some [.ability (
+    .triggered
+      (.enter .this)
+      (.createTokens (.controller .this) 1 PredefinedToken.treasureToken))]
+#guard parseOracleParts (name := "Gandalf")
+  "When Dori enters, create a Treasure token." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, create two Treasure tokens." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, create a tapped Food token." == none
+#guard parseOracleParts (name := "Esgaroth Garrison")
+  "Esgaroth Garrison's power is equal to the number of creatures you control." ==
+  some [.ability (
+    .static
+      (.setPower
+        .this
+        (.count
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))))]
+#guard parseOracleParts (name := "")
+  "This creature's power is equal to the number of creatures you control." ==
+  parseOracleParts (name := "Esgaroth Garrison")
+    "Esgaroth Garrison's power is equal to the number of creatures you control."
+#guard parseOracleParts (name := "Gandalf")
+  "Esgaroth Garrison's power is equal to the number of creatures you control." == none
+#guard parseOracleParts (name := "")
+  "This creature's toughness is equal to the number of creatures you control." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card." ==
+  some [.ability (
+    .triggered
+      (.enter .this)
+      (.sequence [
+        .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+        .continuous
+          [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+          (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))]
+#guard parseOracleParts (name := "")
+  "When this creature enters, exile the top card of your library." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, exile the top card of your library. You may play it until the end of your next turn." == none
+#guard parseOracleParts (name := "") "This spell can't be countered." ==
+  some [.ability (.stackStatic (.cantBeCountered .this))]
+#guard parseOracleParts (name := "")
+  "This spell can't be countered. (It can't be countered.)" ==
+  parseOracleParts (name := "") "This spell can't be countered."
+#guard parseOracleParts (name := "") "This creature can't be countered." == none
+#guard parseOracleParts (name := "") "Hexproof, haste" ==
+  some [.ability (.keyword .hexproof), .ability (.keyword .haste)]
 
 end Mtg.Engine
