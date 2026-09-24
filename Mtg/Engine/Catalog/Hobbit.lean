@@ -2720,7 +2720,7 @@ def giganticBigBear : CardDef :=
   .subtype .bear,
   .power 10,
   .toughness 7,
-  .ability (.stackStatic (.cantBeCountered .this)),
+  .ability (.stackStatic (.forbid (.counter .this))),
   .ability (.keyword .hexproof),
   .ability (.keyword .haste)
 ]

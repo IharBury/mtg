@@ -713,8 +713,6 @@ inductive ContinuousEffect where
   /-- The selected player may play that many additional lands on each of
   their turns (CR 305.2b). -/
   | increaseLandPlayLimit : Selector → Value → ContinuousEffect
-  /-- The selected spell can't be countered (CR 701.5 / 113.6b). -/
-  | cantBeCountered : Selector → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -958,7 +956,6 @@ def selector : ContinuousEffect → Selector
   | .setPower who _ | .setToughness who _ => who
   | .addPower who _ | .addToughness who _ => who
   | .increaseLandPlayLimit who _ => who
-  | .cantBeCountered who => who
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is
@@ -4052,6 +4049,8 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else if who == .token then
       { b with staticAbilities := b.staticAbilities.push .cantBeBlockedByTokens }
     else b
+  | .forbid (.counter who) =>
+    if isThisOrItsSource who then { b with cantBeCountered := true } else b
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
   | .canPlay _ _ => b
@@ -4061,8 +4060,6 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAllSubtypes _ _ => b
   | .setPower _ _ | .setToughness _ _ => b
   | .increaseLandPlayLimit _ _ => b
-  | .cantBeCountered who =>
-    if isThisOrItsSource who then { b with cantBeCountered := true } else b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
@@ -5721,12 +5718,12 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability (.stackStatic (.cantBeCountered .this))
+    .ability (.stackStatic (.forbid (.counter .this)))
   ]).toCardDef.cantBeCountered
 
 #guard
   !(TraditionalCardDefinition.card [
-    .ability (.stackStatic (.cantBeCountered (.controller .this)))
+    .ability (.stackStatic (.forbid (.counter (.controller .this))))
   ]).toCardDef.cantBeCountered
 
 #guard

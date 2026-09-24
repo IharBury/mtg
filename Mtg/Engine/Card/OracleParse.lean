@@ -196,7 +196,8 @@ Currently recognized:
   A characteristic-defining ability (CR 208.2a / 604.3). `<this>` is `this creature`
   or the card's name. Toughness is not changed.
 - `This spell can't be countered.`
-  A static ability that functions while this spell is on the stack (CR 113.6b).
+  Countering this spell is forbidden. The ability functions while this spell
+  is on the stack (CR 113.6b).
 -/
 
 namespace Mtg.Engine
@@ -2363,10 +2364,11 @@ def parseEnterExileTopMayPlay (cardName : String) (line : String) (n : Nat) :
   | _ => none
 
 /-- `This spell can't be countered.`
-A static ability that functions while this spell is on the stack (CR 113.6b). -/
+Countering this spell is forbidden. The ability functions while this spell
+is on the stack (CR 113.6b). -/
 def parseCantBeCountered (line : String) : Option CardPart :=
   if sentenceIs (rulesText line) "this spell can't be countered" then
-    some (.ability (.stackStatic (.cantBeCountered .this)))
+    some (.ability (.stackStatic (.forbid (.counter .this))))
   else none
 
 /-- `When <this card> enters, put a +1/+1 counter on target <permanent>.`
@@ -4114,7 +4116,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "When this creature enters, exile the top card of your library. You may play it until the end of your next turn." == none
 #guard parseOracleParts (name := "") "This spell can't be countered." ==
-  some [.ability (.stackStatic (.cantBeCountered .this))]
+  some [.ability (.stackStatic (.forbid (.counter .this)))]
 #guard parseOracleParts (name := "")
   "This spell can't be countered. (It can't be countered.)" ==
   parseOracleParts (name := "") "This spell can't be countered."
