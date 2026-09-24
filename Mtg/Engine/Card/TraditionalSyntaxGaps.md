@@ -81,7 +81,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **ContinuousEffect** — `gainAbility`, `addPowerToughness`, `if`,
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
   `canCastWithoutPayingManaCost`, `canPlay`, `setBasePowerToughnessFrom`,
-  `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPowerToughnessEqualToCount`,
+  `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPower`, `setToughness`,
   `addPowerToughnessPer`, `increaseLandPlayLimit`.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
@@ -97,7 +97,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`.
 - **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
-  `greatestPower`.
+  `greatestPower`, `count`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -369,13 +369,13 @@ complete.
 
 ### `ContinuousEffect`
 
-- **`setPowerToughness`** (14 cards) — Set base P/T to literal values (only from another object or a count exists)
+- **`setPowerToughness`** (14 cards) — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
   - Absorbing Man; Beorn the Fierce; Dependable Quinjet; Great Gilded Boat; I Am Iron Man; Iron Man Armor; Mirkwood Meditator; Moon Girl and Devil Dinosaur; Reptil, Dinomorpher; S.H.I.E.L.D. Helicarrier; … (4 more)
 - **`setTypes`** (14 cards) — Set types/subtypes rather than only gain them
   - Absorbing Man; Beorn the Fierce; Dependable Quinjet; Great Gilded Boat; I Am Iron Man; Iron Man Armor; Mirkwood Meditator; Moon Girl and Devil Dinosaur; Reptil, Dinomorpher; S.H.I.E.L.D. Helicarrier; … (4 more)
 - **`restrictManaSpend`** (11 cards) — Mana from an action may be spent only on matching events (current leftovers cover Elf sources and instant/sorcery spells)
   - Arcane Signet; Avengers Tower; Castle Doom; Delighted Halfling; Desolation of Smaug; Fíli and Kíli, Joyous; Hydraulic Helper; Mox Amber; Ronin, Shadow Stalker; … (2 more)
-- **`addPowerToughnessPer`** (8 cards) — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover and other-subtype +1/+0 per artifact token
+- **`addPowerToughnessPer`** (8 cards) — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control, and other-subtype +1/+0 per artifact token
   - Desert Were-Worm; Esgaroth Garrison; Iron Man, Master of Machines; Minas Tirith Garrison; Ms. Marvel, Kamala Khan; Namor the Sub-Mariner; Super-Adaptoid; Winter Soldier, Icy Assassin
 - **`reduceCostByValue`** (8 cards) — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
   - Call Forth the Tempest; Cavern-Hoard Dragon; Cosmic Cube; Glamdring; Loki Laufeyson; Part in Friendship; Punishing Punch; The Lord of the Eagles
@@ -669,7 +669,7 @@ Converted cards from the previous untagged set are omitted here.
 **Beorn the Fierce** (`beornTheFierce`)
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
 
@@ -740,7 +740,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Desert Were-Worm** (`desertWereWorm`)
 
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
+- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.extraCombat` — An additional combat phase; typically with untap attackers
 - `CardAction.addManaPer` — Add mana for each matching object
@@ -806,7 +806,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Esgaroth Garrison** (`esgarothGarrison`)
 
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
+- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
@@ -863,7 +863,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Cost.tapPowerTotal` — Tap creatures with total power N or more
 - `Ability.keywordCrew` — Crew N
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Great Ugly-Looking Goblin** (`greatUglyLookingGoblin`)
@@ -916,7 +916,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Mirkwood Meditator** (`mirkwoodMeditator`)
 
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Moment of Glory** (`momentOfGlory`)
@@ -1379,7 +1379,7 @@ Converted cards from the previous untagged set are omitted here.
 **Minas Tirith Garrison** (`minasTirithGarrison`)
 
 - `Selector.inHand` — An object in a hand
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
+- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
@@ -1566,7 +1566,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `CardAction.copy` — Copy a permanent, spell, or ability
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Aerial Doombot** (`aerialDoombot`)
@@ -1800,7 +1800,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Cost.tapPowerTotal` — Tap creatures with total power N or more
 - `Ability.keywordCrew` — Crew N
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Doc Samson, Super Psychiatrist** (`docSamsonSuperPsychiatrist`)
@@ -1953,7 +1953,7 @@ Converted cards from the previous untagged set are omitted here.
 **I Am Iron Man** (`iAmIronMan`)
 
 - `Selector.toughness` — Toughness comparisons / bind toughness as a number
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Invisible Woman, Sue Storm** (`invisibleWomanSueStorm`)
@@ -1973,12 +1973,12 @@ Converted cards from the previous untagged set are omitted here.
 
 **Iron Man Armor** (`ironManArmor`)
 
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Iron Man, Master of Machines** (`ironManMasterOfMachines`)
 
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
+- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 
 **Ironheart, Clever Champion** (`ironheartCleverChampion`)
@@ -2095,14 +2095,14 @@ Converted cards from the previous untagged set are omitted here.
 **Moon Girl and Devil Dinosaur** (`moonGirlAndDevilDinosaur`)
 
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Ms. Marvel, Kamala Khan** (`msMarvelKamalaKhan`)
 
 - `Selector.inHand` — An object in a hand
 - `ContinuousEffect.handSize` — Set / remove maximum hand size
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
+- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
@@ -2121,7 +2121,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Namor the Sub-Mariner** (`namorTheSubMariner`)
 
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
+- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
@@ -2209,7 +2209,7 @@ Converted cards from the previous untagged set are omitted here.
 **Reptil, Dinomorpher** (`reptilDinomorpher`)
 
 - `Selector.toughness` — Toughness comparisons / bind toughness as a number
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Repulsor Blast** (`repulsorBlast`)
@@ -2245,7 +2245,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Cost.tapPowerTotal` — Tap creatures with total power N or more
 - `Ability.keywordCrew` — Crew N
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **S.H.I.E.L.D. Spy Kit** (`sHIELDSpyKit`)
@@ -2266,7 +2266,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
 - `CardAction.copy` — Copy a permanent, spell, or ability
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Serpent Specialist** (`serpentSpecialist`)
@@ -2288,7 +2288,7 @@ Converted cards from the previous untagged set are omitted here.
 **Shuri, Wakandan Inventor** (`shuriWakandanInventor`)
 
 - `CardAction.copy` — Copy a permanent, spell, or ability
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Speedball, New Warrior** (`speedballNewWarrior`)
@@ -2330,7 +2330,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Super-Adaptoid** (`superAdaptoid`)
 
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
+- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
@@ -2350,7 +2350,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `CardAction.copy` — Copy a permanent, spell, or ability
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Team Tactics** (`teamTactics`)
@@ -2518,7 +2518,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 - `CardAction.copy` — Copy a permanent, spell, or ability
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
+- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count, and `setBasePowerToughnessFrom` copies another object)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
 **Unliving Legionnaire** (`unlivingLegionnaire`)
@@ -2592,7 +2592,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.attached` — Objects attached to a given object (inverse of hostOf)
 - `Ability.activateFromZone` — Activated ability that functions in the graveyard (or another non-battlefield zone)
 - `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
+- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
 

@@ -882,12 +882,17 @@ def landsYouControl : Selector :=
   permanentWith [.land] [youControl]
 
 /-- `This creature's power and toughness are each equal to the number of lands you control.`
-A characteristic-defining ability (CR 208.2a / 604.3), granted as a static
-ability rather than applied as a direct power and toughness change. -/
-def parsePowerToughnessEqualLands (text : String) : Option Ability :=
+A characteristic-defining ability (CR 208.2a / 604.3). Power and toughness are
+each a static ability set to the number of lands you control. -/
+def powerToughnessEqualLandsAbilities : List Ability := [
+  .static (.setPower .this (.count landsYouControl)),
+  .static (.setToughness .this (.count landsYouControl))
+]
+
+def parsePowerToughnessEqualLands (text : String) : Option (List Ability) :=
   if sentenceIs text
       "this creature's power and toughness are each equal to the number of lands you control" then
-    some (.static (.setPowerToughnessEqualToCount .this landsYouControl))
+    some powerToughnessEqualLandsAbilities
   else none
 
 /-- `a Bear creature in addition to its other types` as that creature subtype. -/
@@ -906,11 +911,12 @@ def parseBecomeAndGainStatic (cardName : String) (sentence : String) : Option Ca
       (split2? rest " and gains \"").bind fun (become, quoted) =>
         (before? quoted "\"").bind fun abilityText =>
           match parseAddedCreatureSubtype become, parsePowerToughnessEqualLands abilityText with
-          | some st, some ab =>
+          | some st, some [power, toughness] =>
             some (.continuous
               [.gainType .this .creature,
                 .gainSubtype .this st,
-                .gainAbility .this ab]
+                .gainAbility .this power,
+                .gainAbility .this toughness]
               .endOfGame)
           | _, _ => none
 
@@ -2839,12 +2845,23 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
             .gainAbility
               .this
               (.static
-                (.setPowerToughnessEqualToCount
+                (.setPower
                   .this
-                  (.intersection [
-                    .permanent,
-                    .cardType .land,
-                    .controlled (.controller .this)])))]
+                  (.count
+                    (.intersection [
+                      .permanent,
+                      .cardType .land,
+                      .controlled (.controller .this)])))),
+            .gainAbility
+              .this
+              (.static
+                (.setToughness
+                  .this
+                  (.count
+                    (.intersection [
+                      .permanent,
+                      .cardType .land,
+                      .controlled (.controller .this)]))))]
           .endOfGame))]
 #guard parseOracleParts (name := "")
   "Whenever a land you control enters, put a +1/+1 counter on target creature you control." ==
@@ -2861,12 +2878,23 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
           .gainAbility
             .this
             (.static
-              (.setPowerToughnessEqualToCount
+              (.setPower
                 .this
-                (.intersection [
-                  .permanent,
-                  .cardType .land,
-                  .controlled (.controller .this)])))]
+                (.count
+                  (.intersection [
+                    .permanent,
+                    .cardType .land,
+                    .controlled (.controller .this)])))),
+          .gainAbility
+            .this
+            (.static
+              (.setToughness
+                .this
+                (.count
+                  (.intersection [
+                    .permanent,
+                    .cardType .land,
+                    .controlled (.controller .this)]))))]
         .endOfGame))]
 #guard parseOracleParts (name := "")
   "Landfall — Whenever a land enters, put a +1/+1 counter on target creature you control." == none

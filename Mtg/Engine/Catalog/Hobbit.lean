@@ -1335,12 +1335,23 @@ def beornsHospitalityCard : CardDef :=
           .gainAbility
             .this
             (.static
-              (.setPowerToughnessEqualToCount
+              (.setPower
                 .this
-                (.intersection [
-                  .permanent,
-                  .cardType .land,
-                  .controlled (.controller .this)])))]
+                (.count
+                  (.intersection [
+                    .permanent,
+                    .cardType .land,
+                    .controlled (.controller .this)])))),
+          .gainAbility
+            .this
+            (.static
+              (.setToughness
+                .this
+                (.count
+                  (.intersection [
+                    .permanent,
+                    .cardType .land,
+                    .controlled (.controller .this)]))))]
         .endOfGame))
 ]
 
@@ -1394,12 +1405,22 @@ def mirkwoodPathmaker : CardDef :=
     .subtype .ranger,
     .ability
       (.static
-        (.setPowerToughnessEqualToCount
+        (.setPower
           .this
-          (.intersection [
-            .permanent,
-            .cardType .land,
-            .controlled (.controller .this)])))
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)])))),
+    .ability
+      (.static
+        (.setToughness
+          .this
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)]))))
   ]).toCardDef
     (oracleText := "Mirkwood Pathmaker's power and toughness are each equal to the number of lands you control.")
 
