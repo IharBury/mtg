@@ -25,7 +25,10 @@ Warg Tactics, Beorn's Hospitality, Woodland Weavemaster,
 Mirkwood Pathmaker, Beorn, Reluctant Host, Wood Elves, Attercop,
 Large Bear, Little Bear, Elvenking's Harper, Smaug's Fury,
 Well-Worn Spatula, Elvenking's Halls, Iron Hills, Lake-town,
-Goblin-town, Mirkwood, Hobbit Hole, and Nighthowl Pursuer
+Goblin-town, Mirkwood, Hobbit Hole, Nighthowl Pursuer, Wargling,
+Wilderland Scrounger, Nasty Little Rabbit, The Chief Warg,
+Thorin's Last Stand, Stone by Sunlight, Duskwatch Hunter,
+Patient Instructor, and Long Lake Nuisance
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -2109,215 +2112,355 @@ def nighthowlPursuer : CardDef :=
                       .addToughness (.source .this) (Value.int 2)] .endOfTurn))
 ]
 
-def wargling : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Wargling. -/
+def warglingOracle : String :=
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures you control gain trample."
+
+def warglingDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Wargling",
     .manaCost [.generic 1, .mono .green],
     .type .creature,
     .subtype .wolf,
     .power 2,
-    .toughness 2,
-    .ability (
-      .triggeredWhile
-        (.attack .this .all)
-        (.any
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this),
-            .powerAtLeast (Value.int 4)]))
-        (.continuous
-          [
-            .addPower (.source .this) (Value.int 1),
-            .gainAbility
-              (.intersection [
-                .permanent,
-                .cardType .creature,
-                .controlled (.controller .this)])
-              (.keyword .trample)]
-          .endOfTurn))
-  ]).toCardDef
-    (oracleText := "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures you control gain trample.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Wargling") warglingOracle).get!
 
-def wilderlandScrounger : CardDef :=
-  (TraditionalCardDefinition.card [
+def wargling : CardDef :=
+  warglingDefinition.toCardDef
+    (oracleText := warglingOracle)
+
+#guard warglingDefinition == .card [
+  .name "Wargling",
+  .manaCost [.generic 1, .mono .green],
+  .type .creature,
+  .subtype .wolf,
+  .power 2,
+  .toughness 2,
+  .ability (
+    .triggeredWhile
+      (.attack .this .all)
+      (.any
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast (Value.int 4)]))
+      (.continuous
+        [
+          .addPower (.source .this) (Value.int 1),
+          .gainAbility
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])
+            (.keyword .trample)]
+        .endOfTurn))
+]
+
+/-- Gatherer Oracle text for Wilderland Scrounger. -/
+def wilderlandScroungerOracle : String :=
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, put a +1/+1 counter on each creature you control."
+
+def wilderlandScroungerDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Wilderland Scrounger",
     .manaCost [.generic 4, .mono .green],
     .type .creature,
     .subtype .wolf,
     .power 3,
-    .toughness 6,
-    .ability (
-      .triggeredWhile
-        (.attack .this .all)
+    .toughness 6
+  ] ++ (parseOracleParts (name := "Wilderland Scrounger") wilderlandScroungerOracle).get!
+
+def wilderlandScrounger : CardDef :=
+  wilderlandScroungerDefinition.toCardDef
+    (oracleText := wilderlandScroungerOracle)
+
+#guard wilderlandScroungerDefinition == .card [
+  .name "Wilderland Scrounger",
+  .manaCost [.generic 4, .mono .green],
+  .type .creature,
+  .subtype .wolf,
+  .power 3,
+  .toughness 6,
+  .ability (
+    .triggeredWhile
+      (.attack .this .all)
+      (.any
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast (Value.int 4)]))
+      (.putCounter
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .plusOnePlusOne
+        1))
+]
+
+/-- Gatherer Oracle text for Nasty Little Rabbit. -/
+def nastyLittleRabbitOracle : String :=
+  "Ferocious — At the beginning of combat on your turn, if you control a creature with power 4 or greater, put a +1/+1 counter on this creature."
+
+def nastyLittleRabbitDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Nasty Little Rabbit",
+    .manaCost [.mono .green],
+    .type .creature,
+    .subtype .rabbit,
+    .power 1,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Nasty Little Rabbit") nastyLittleRabbitOracle).get!
+
+def nastyLittleRabbit : CardDef :=
+  nastyLittleRabbitDefinition.toCardDef
+    (oracleText := nastyLittleRabbitOracle)
+
+#guard nastyLittleRabbitDefinition == .card [
+  .name "Nasty Little Rabbit",
+  .manaCost [.mono .green],
+  .type .creature,
+  .subtype .rabbit,
+  .power 1,
+  .toughness 2,
+  .ability (
+    .triggered
+      (.combatStart (.controller .this))
+      (.if
         (.any
           (.intersection [
             .permanent,
             .cardType .creature,
             .controlled (.controller .this),
             .powerAtLeast (Value.int 4)]))
-        (.putCounter
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this)])
-          .plusOnePlusOne
-          1))
-  ]).toCardDef
-    (oracleText := "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, put a +1/+1 counter on each creature you control.")
+        [.putCounter (.source .this) .plusOnePlusOne 1]))
+]
 
-def nastyLittleRabbit : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Nasty Little Rabbit",
-    .manaCost [.mono .green],
-    .type .creature,
-    .subtype .rabbit,
-    .power 1,
-    .toughness 2,
-    .ability (
-      .triggered
-        (.combatStart (.controller .this))
-        (.if
-          (.any
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this),
-              .powerAtLeast (Value.int 4)]))
-          [.putCounter (.source .this) .plusOnePlusOne 1]))
-  ]).toCardDef
-    (oracleText := "Ferocious — At the beginning of combat on your turn, if you control a creature with power 4 or greater, put a +1/+1 counter on this creature.")
+/-- Gatherer Oracle text for The Chief Warg. -/
+def theChiefWargOracle : String :=
+  "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever you attack while you control a creature with power 4 or greater, you draw a card and lose 1 life."
 
-def theChiefWarg : CardDef :=
-  (TraditionalCardDefinition.card [
+def theChiefWargDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "The Chief Warg",
     .manaCost [.generic 2, .mono .black, .mono .green],
     .type .creature,
     .supertype .legendary,
     .subtype .wolf,
     .power 3,
-    .toughness 3,
-    .ability (.keyword .menace),
-    .ability (
-      .triggeredWhile
-        (.attackSimultaneously
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this)])
-          .all
-          [])
-        (.any
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this),
-            .powerAtLeast (Value.int 4)]))
-        (.sequence [
-          .draw (.controller .this) 1,
-          .loseLife (.controller .this) 1]))
-  ]).toCardDef
-    (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever you attack while you control a creature with power 4 or greater, you draw a card and lose 1 life.")
+    .toughness 3
+  ] ++ (parseOracleParts (name := "The Chief Warg") theChiefWargOracle).get!
 
-def thorinsLastStand : CardDef :=
-  (TraditionalCardDefinition.card [
+def theChiefWarg : CardDef :=
+  theChiefWargDefinition.toCardDef
+    (oracleText := theChiefWargOracle)
+
+#guard theChiefWargDefinition == .card [
+  .name "The Chief Warg",
+  .manaCost [.generic 2, .mono .black, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .wolf,
+  .power 3,
+  .toughness 3,
+  .ability (.keyword .menace),
+  .ability (
+    .triggeredWhile
+      (.attackSimultaneously
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .all
+        [])
+      (.any
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast (Value.int 4)]))
+      (.sequence [
+        .draw (.controller .this) 1,
+        .loseLife (.controller .this) 1]))
+]
+
+/-- Gatherer Oracle text for Thorin's Last Stand. -/
+def thorinsLastStandOracle : String :=
+  "Choose one —\n• Creatures you control get +2/+1 until end of turn.\n• Destroy target artifact or enchantment. You gain 2 life."
+
+def thorinsLastStandDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Thorin's Last Stand",
     .manaCost [.generic 2, .mono .white, .mono .white],
-    .type .instant,
-    .actions [
-      .chooseMode [
-        .continuous
-          [.addPower
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this)]) (Value.int 2),
-           .addToughness
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this)]) (Value.int 1)]
-          .endOfTurn,
-        .sequence [
-          .destroy
-            (.target
-              1
-              (.intersection [
-                .permanent,
-                .union [.cardType .artifact, .cardType .enchantment]])),
-          .gainLife (.controller .this) 2]]]
-  ]).toCardDef
-    (oracleText := "Choose one —\n• Creatures you control get +2/+1 until end of turn.\n• Destroy target artifact or enchantment. You gain 2 life.")
+    .type .instant
+  ] ++ (parseOracleParts (name := "Thorin's Last Stand") thorinsLastStandOracle).get!
 
-def stoneBySunlight : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Stone by Sunlight",
-    .manaCost [.generic 1, .mono .white],
-    .type .instant,
-    .actions [
-      .chooseMode [
+def thorinsLastStand : CardDef :=
+  thorinsLastStandDefinition.toCardDef
+    (oracleText := thorinsLastStandOracle)
+
+#guard thorinsLastStandDefinition == .card [
+  .name "Thorin's Last Stand",
+  .manaCost [.generic 2, .mono .white, .mono .white],
+  .type .instant,
+  .actions [
+    .chooseMode [
+      .continuous
+        [.addPower
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]) (Value.int 2),
+         .addToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]) (Value.int 1)]
+        .endOfTurn,
+      .sequence [
         .destroy
           (.target
             1
             (.intersection [
               .permanent,
-              .cardType .creature,
-              .powerAtLeast (Value.int 4)])),
-        .continuous
-          [
-            .gainType
-              (.target 2 (.intersection [.permanent, .cardType .creature]))
-              .artifact,
-            .gainAbility (.targetReference 2) (.keyword .indestructible)]
-          .endOfTurn]]
-  ]).toCardDef
-    (oracleText := "Choose one —\n• Destroy target creature with power 4 or greater.\n• Until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible. (Damage and effects that say \"destroy\" don't destroy it.)")
+              .union [.cardType .artifact, .cardType .enchantment]])),
+        .gainLife (.controller .this) 2]]]
+]
 
-def duskwatchHunter : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Stone by Sunlight. -/
+def stoneBySunlightOracle : String :=
+  "Choose one —\n• Destroy target creature with power 4 or greater.\n• Until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible. (Damage and effects that say \"destroy\" don't destroy it.)"
+
+def stoneBySunlightDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Stone by Sunlight",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Stone by Sunlight") stoneBySunlightOracle).get!
+
+def stoneBySunlight : CardDef :=
+  stoneBySunlightDefinition.toCardDef
+    (oracleText := stoneBySunlightOracle)
+
+#guard stoneBySunlightDefinition == .card [
+  .name "Stone by Sunlight",
+  .manaCost [.generic 1, .mono .white],
+  .type .instant,
+  .actions [
+    .chooseMode [
+      .destroy
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .powerAtLeast (Value.int 4)])),
+      .continuous
+        [
+          .gainType
+            (.target 2 (.intersection [.permanent, .cardType .creature]))
+            .artifact,
+          .gainAbility (.targetReference 2) (.keyword .indestructible)]
+        .endOfTurn]]
+]
+
+/-- Gatherer Oracle text for Duskwatch Hunter. -/
+def duskwatchHunterOracle : String :=
+  "This creature can't be blocked by tokens.\nWhen this creature enters, put a +1/+1 counter on target creature."
+
+def duskwatchHunterDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Duskwatch Hunter",
     .manaCost [.generic 2, .hybrid .black .green],
     .type .creature,
     .subtype .wolf,
     .power 3,
-    .toughness 1,
-    .ability (.static (.forbid (.block .token .this))),
-    .ability (
-      .triggered
-        (.enter .this)
-        (.putCounter
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
-          .plusOnePlusOne
-          1))
-  ]).toCardDef
-    (oracleText := "This creature can't be blocked by tokens.\nWhen this creature enters, put a +1/+1 counter on target creature.")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Duskwatch Hunter") duskwatchHunterOracle).get!
 
-def patientInstructor : CardDef :=
-  (TraditionalCardDefinition.card [
+def duskwatchHunter : CardDef :=
+  duskwatchHunterDefinition.toCardDef
+    (oracleText := duskwatchHunterOracle)
+
+#guard duskwatchHunterDefinition == .card [
+  .name "Duskwatch Hunter",
+  .manaCost [.generic 2, .hybrid .black .green],
+  .type .creature,
+  .subtype .wolf,
+  .power 3,
+  .toughness 1,
+  .ability (.static (.forbid (.block .token .this))),
+  .ability (
+    .triggered
+      (.enter .this)
+      (.putCounter
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1))
+]
+
+/-- Gatherer Oracle text for Patient Instructor. -/
+def patientInstructorOracle : String :=
+  "Vigilance\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+
+def patientInstructorDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Patient Instructor",
     .manaCost [.generic 2, .hybrid .white .blue],
     .type .creature,
     .subtype .human,
     .subtype .citizen,
     .power 2,
-    .toughness 2,
-    .ability (.keyword .vigilance),
-    .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))
-  ]).toCardDef
-    (oracleText := "Vigilance\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Patient Instructor") patientInstructorOracle).get!
 
-def longLakeNuisance : CardDef :=
-  (TraditionalCardDefinition.card [
+def patientInstructor : CardDef :=
+  patientInstructorDefinition.toCardDef
+    (oracleText := patientInstructorOracle)
+
+#guard patientInstructorDefinition == .card [
+  .name "Patient Instructor",
+  .manaCost [.generic 2, .hybrid .white .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .citizen,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .vigilance),
+  .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))
+]
+
+/-- Gatherer Oracle text for Long Lake Nuisance. -/
+def longLakeNuisanceOracle : String :=
+  "Flying\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+
+def longLakeNuisanceDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Long Lake Nuisance",
     .manaCost [.generic 3, .mono .blue],
     .type .creature,
     .subtype .bird,
     .power 3,
-    .toughness 1,
-    .ability (.keyword .flying),
-    .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))
-  ]).toCardDef
-    (oracleText := "Flying\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Long Lake Nuisance") longLakeNuisanceOracle).get!
+
+def longLakeNuisance : CardDef :=
+  longLakeNuisanceDefinition.toCardDef
+    (oracleText := longLakeNuisanceOracle)
+
+#guard longLakeNuisanceDefinition == .card [
+  .name "Long Lake Nuisance",
+  .manaCost [.generic 3, .mono .blue],
+  .type .creature,
+  .subtype .bird,
+  .power 3,
+  .toughness 1,
+  .ability (.keyword .flying),
+  .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))
+]
 
 def laketownLookout : CardDef :=
   (TraditionalCardDefinition.card [
