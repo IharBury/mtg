@@ -21,8 +21,9 @@ Dreaded Bat-Cloud, Crude Bent Blade, Gollum the Abandoned, Gnashing of
 Teeth, Reverent Howl, Stony-Voiced Goblins, Smaug, the Great Calamity,
 Gandalf, Spark Starter, Ragged Short Spear, Snowslope Hunter,
 Guardian of the Halls, Quarrel, Galion, Elvenking's Butler,
-Warg Tactics, and Beorn's Hospitality keep their printed
-characteristics as parts;
+Warg Tactics, Beorn's Hospitality, Woodland Weavemaster,
+Mirkwood Pathmaker, Beorn, Reluctant Host, Wood Elves, Attercop,
+and Large Bear keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -1380,7 +1381,26 @@ def beornsHospitalityCard : CardDef :=
         .endOfGame))
 ]
 
-def woodlandWeavemaster : TraditionalCardDefinition := .card [
+/-- Gatherer Oracle text for Woodland Weavemaster. -/
+def woodlandWeavemasterOracle : String :=
+  "Vigilance\nWhenever another Elf you control enters, this creature gets +1/+1 until end of turn.\n{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."
+
+def woodlandWeavemaster : TraditionalCardDefinition := .card <|
+  [
+    .name "Woodland Weavemaster",
+    .manaCost [.generic 1, .mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .druid,
+    .power 1,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Woodland Weavemaster") woodlandWeavemasterOracle).get!
+
+def woodlandWeavemasterCard : CardDef :=
+  woodlandWeavemaster.toCardDef
+    (oracleText := woodlandWeavemasterOracle)
+
+#guard woodlandWeavemaster == .card [
   .name "Woodland Weavemaster",
   .manaCost [.generic 1, .mono .green],
   .type .creature,
@@ -1418,40 +1438,55 @@ def woodlandWeavemaster : TraditionalCardDefinition := .card [
           .endOfTurn]))
 ]
 
-def woodlandWeavemasterCard : CardDef :=
-  woodlandWeavemaster.toCardDef
-    (oracleText := "Vigilance\nWhenever another Elf you control enters, this creature gets +1/+1 until end of turn.\n{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources.")
+/-- Gatherer Oracle text for Mirkwood Pathmaker. -/
+def mirkwoodPathmakerOracle : String :=
+  "Mirkwood Pathmaker's power and toughness are each equal to the number of lands you control."
 
-def mirkwoodPathmaker : CardDef :=
-  (TraditionalCardDefinition.card [
+def mirkwoodPathmakerDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Mirkwood Pathmaker",
     .manaCost [.generic 2, .mono .green],
     .type .creature,
     .subtype .elf,
-    .subtype .ranger,
-    .ability
-      (.static
-        (.setPower
-          .this
-          (.count
-            (.intersection [
-              .permanent,
-              .cardType .land,
-              .controlled (.controller .this)])))),
-    .ability
-      (.static
-        (.setToughness
-          .this
-          (.count
-            (.intersection [
-              .permanent,
-              .cardType .land,
-              .controlled (.controller .this)]))))
-  ]).toCardDef
-    (oracleText := "Mirkwood Pathmaker's power and toughness are each equal to the number of lands you control.")
+    .subtype .ranger
+  ] ++ (parseOracleParts (name := "Mirkwood Pathmaker") mirkwoodPathmakerOracle).get!
 
-def beornReluctantHost : CardDef :=
-  (TraditionalCardDefinition.card [
+def mirkwoodPathmaker : CardDef :=
+  mirkwoodPathmakerDefinition.toCardDef
+    (oracleText := mirkwoodPathmakerOracle)
+
+#guard mirkwoodPathmakerDefinition == .card [
+  .name "Mirkwood Pathmaker",
+  .manaCost [.generic 2, .mono .green],
+  .type .creature,
+  .subtype .elf,
+  .subtype .ranger,
+  .ability
+    (.static
+      (.setPower
+        .this
+        (.count
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)])))),
+  .ability
+    (.static
+      (.setToughness
+        .this
+        (.count
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)]))))
+]
+
+/-- Gatherer Oracle text for Beorn, Reluctant Host // Till and Tend. -/
+def beornReluctantHostOracle : String :=
+  "Trample\n//ADV//\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"
+
+def beornReluctantHostDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Beorn, Reluctant Host",
     .manaCost [.generic 4, .mono .green],
     .type .creature,
@@ -1460,64 +1495,112 @@ def beornReluctantHost : CardDef :=
     .subtype .bear,
     .subtype .shapeshifter,
     .power 5,
-    .toughness 5,
-    .ability (.keyword .trample),
-    .alternative [
-      .name "Till and Tend",
-      .manaCost [.generic 1, .mono .green],
-      .type .sorcery,
-      .subtype .adventure,
-      .actions [
-        .continuous
-          [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]
-          .endOfTurn]]
-  ]).toCardDef
-    (oracleText := "Trample\n//ADV//\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)")
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Beorn, Reluctant Host") beornReluctantHostOracle).get!
 
-def woodElves : CardDef :=
-  (TraditionalCardDefinition.card [
+def beornReluctantHost : CardDef :=
+  beornReluctantHostDefinition.toCardDef
+    (oracleText := beornReluctantHostOracle)
+
+#guard beornReluctantHostDefinition == .card [
+  .name "Beorn, Reluctant Host",
+  .manaCost [.generic 4, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .bear,
+  .subtype .shapeshifter,
+  .power 5,
+  .toughness 5,
+  .ability (.keyword .trample),
+  .alternative [
+    .name "Till and Tend",
+    .manaCost [.generic 1, .mono .green],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [
+      .continuous
+        [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]
+        .endOfTurn]]
+]
+
+/-- Gatherer Oracle text for Wood Elves. -/
+def woodElvesOracle : String :=
+  "When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."
+
+def woodElvesDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Wood Elves",
     .manaCost [.generic 2, .mono .green],
     .type .creature,
     .subtype .elf,
     .subtype .scout,
     .power 1,
-    .toughness 1,
-    .ability (
-      .triggered
-        (.enter .this)
-        (.searchLibraryThenShuffle
-          (.controller .this)
-          [
-            .putOntoBattlefield
-              (.selected
-                (.controller .this)
-                (.range 1 1)
-                (.intersection [.inLibrary, .subtype .forest]))]))
-  ]).toCardDef
-    (oracleText := "When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle.")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Wood Elves") woodElvesOracle).get!
 
-def attercop : CardDef :=
-  (TraditionalCardDefinition.card [
+def woodElves : CardDef :=
+  woodElvesDefinition.toCardDef
+    (oracleText := woodElvesOracle)
+
+#guard woodElvesDefinition == .card [
+  .name "Wood Elves",
+  .manaCost [.generic 2, .mono .green],
+  .type .creature,
+  .subtype .elf,
+  .subtype .scout,
+  .power 1,
+  .toughness 1,
+  .ability (
+    .triggered
+      (.enter .this)
+      (.searchLibraryThenShuffle
+        (.controller .this)
+        [
+          .putOntoBattlefield
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [.inLibrary, .subtype .forest]))]))
+]
+
+/-- Gatherer Oracle text for Attercop. -/
+def attercopOracle : String :=
+  "Reach, deathtouch\nLandfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn."
+
+def attercopDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Attercop",
     .manaCost [.generic 1, .mono .green],
     .type .creature,
     .subtype .spider,
     .power 2,
-    .toughness 1,
-    .ability (.keyword .reach),
-    .ability (.keyword .deathtouch),
-    .ability (
-      .triggered
-        (.enter
-          (.intersection [
-            .permanent,
-            .cardType .land,
-            .controlled (.controller .this)]))
-        (.continuous [.addPower (.source .this) (Value.int 1),
-                      .addToughness (.source .this) (Value.int 1)] .endOfTurn))
-  ]).toCardDef
-    (oracleText := "Reach, deathtouch\nLandfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn.")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Attercop") attercopOracle).get!
+
+def attercop : CardDef :=
+  attercopDefinition.toCardDef
+    (oracleText := attercopOracle)
+
+#guard attercopDefinition == .card [
+  .name "Attercop",
+  .manaCost [.generic 1, .mono .green],
+  .type .creature,
+  .subtype .spider,
+  .power 2,
+  .toughness 1,
+  .ability (.keyword .reach),
+  .ability (.keyword .deathtouch),
+  .ability (
+    .triggered
+      (.enter
+        (.intersection [
+          .permanent,
+          .cardType .land,
+          .controlled (.controller .this)]))
+      (.continuous [.addPower (.source .this) (Value.int 1),
+                    .addToughness (.source .this) (Value.int 1)] .endOfTurn))
+]
 
 def ordinaryBear : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1529,19 +1612,35 @@ def ordinaryBear : CardDef :=
     .toughness 5
   ]).toCardDef
 
-def largeBear : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Large Bear. -/
+def largeBearOracle : String :=
+  "Reach, trample, haste"
+
+def largeBearDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Large Bear",
     .manaCost [.generic 3, .hybrid .black .green, .hybrid .black .green],
     .type .creature,
     .subtype .bear,
     .power 5,
-    .toughness 5,
-    .ability (.keyword .reach),
-    .ability (.keyword .trample),
-    .ability (.keyword .haste)
-  ]).toCardDef
-    (oracleText := "Reach, trample, haste")
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Large Bear") largeBearOracle).get!
+
+def largeBear : CardDef :=
+  largeBearDefinition.toCardDef
+    (oracleText := largeBearOracle)
+
+#guard largeBearDefinition == .card [
+  .name "Large Bear",
+  .manaCost [.generic 3, .hybrid .black .green, .hybrid .black .green],
+  .type .creature,
+  .subtype .bear,
+  .power 5,
+  .toughness 5,
+  .ability (.keyword .reach),
+  .ability (.keyword .trample),
+  .ability (.keyword .haste)
+]
 
 def littleBear : CardDef :=
   (TraditionalCardDefinition.card [
