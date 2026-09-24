@@ -203,10 +203,6 @@ inductive Value where
   | greatestPower : Selector → Value
   /-- The number of objects matching the selector. -/
   | count : Selector → Value
-  /-- The power of the selected object (CR 208). -/
-  | power : Selector → Value
-  /-- The toughness of the selected object (CR 208). -/
-  | toughness : Selector → Value
 deriving Repr, Inhabited, BEq
 
 /-- How many objects a `.targets` selector may choose. -/
@@ -398,8 +394,7 @@ instance : ToString Value where
     | .nat n => toString n
     | .int n => toString n
     | .x => "X"
-    | .count _ | .power _ | .toughness _ | .greatestManaValue _
-    | .greatestToughness _ | .greatestPower _ => "X"
+    | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => "X"
 
 instance (n : Nat) : OfNat Value n where
   ofNat := .nat n
@@ -411,8 +406,6 @@ instance (n : Nat) : OfNat Value n where
 #guard toString (Value.greatestToughness .this) == "X"
 #guard toString (Value.greatestPower .this) == "X"
 #guard toString (Value.count .this) == "X"
-#guard toString (Value.power .this) == "X"
-#guard toString (Value.toughness .this) == "X"
 #guard (1 : Value) == Value.nat 1
 #guard Value.x != Value.nat 1
 

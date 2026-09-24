@@ -825,15 +825,13 @@ end PredefinedToken
 def valToInt? : Value → Option Int
   | .int p => some p
   | .nat p => some (Int.ofNat p)
-  | .x | .count _ | .power _ | .toughness _ | .greatestManaValue _
-  | .greatestToughness _ | .greatestPower _ => none
+  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
   | .nat n => some n
   | .int n => if n ≥ 0 then some n.toNat else none
-  | .x | .count _ | .power _ | .toughness _ | .greatestManaValue _
-  | .greatestToughness _ | .greatestPower _ => none
+  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
 
 /-- This object, or the source of this ability (CR 113.7). -/
 def isThisOrItsSource : Selector → Bool
@@ -1594,11 +1592,11 @@ def leftoverPlusOneOnTarget? : CardAction → Option Effect
     | none => none
   | _ => none
 
-/-- Set another creature you control's base power and toughness equal to
-this source's power and toughness. -/
+/-- Set another creature you control's base power and toughness to the
+greatest power and toughness of this source. -/
 def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
-  | [.setBasePower who (Value.power (.source .this)),
-     .setBaseToughness who' (Value.toughness (.source .this))] =>
+  | [.setBasePower who (Value.greatestPower (.source .this)),
+     .setBaseToughness who' (Value.greatestToughness (.source .this))] =>
     who == who' &&
       (match who with
         | .targets _ (.range 0 1) among => among.shape.anotherCreatureYouControl
@@ -4346,8 +4344,6 @@ end TraditionalCardDefinition
 #guard (valToNat? (Value.greatestPower .this)).isNone
 #guard (valToNat? (Value.greatestToughness .this)).isNone
 #guard (valToNat? (Value.count .this)).isNone
-#guard (valToNat? (Value.power .this)).isNone
-#guard (valToNat? (Value.toughness .this)).isNone
 #guard Range.range Value.x 1 != Range.range 0 1
 #guard Range.any != Range.range 0 0
 #guard Range.from Value.x != Range.from 1
@@ -5236,7 +5232,7 @@ end TraditionalCardDefinition
               .permanent,
               .cardType .creature,
               .controlled (.controller .this)]))
-          (Value.power (.source .this)),
+          (Value.greatestPower (.source .this)),
          .setBaseToughness
           (.targets
             1
@@ -5246,7 +5242,7 @@ end TraditionalCardDefinition
               .permanent,
               .cardType .creature,
               .controlled (.controller .this)]))
-          (Value.toughness (.source .this))]
+          (Value.greatestToughness (.source .this))]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackSetOtherBasePT
   | none => false
@@ -5265,7 +5261,7 @@ end TraditionalCardDefinition
               .permanent,
               .cardType .creature,
               .controlled (.controller .this)]))
-          (Value.power (.source .this))]
+          (Value.greatestPower (.source .this))]
         .endOfTurn)).toTriggeredAbility? with
   | some _ => false
   | none => true
