@@ -1247,12 +1247,7 @@ def galionElvenkingsButlerCard : CardDef :=
               .controlled (.controller .this)]))
           (Value.greatestPower (.source .this)),
          .setBaseToughness
-          (.targets 1 (.range 0 1)
-            (.intersection [
-              .not .this,
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this)]))
+          (.targetReference 1)
           (Value.greatestToughness (.source .this))]
         .endOfTurn))
 ]

@@ -1593,14 +1593,14 @@ def leftoverPlusOneOnTarget? : CardAction → Option Effect
   | _ => none
 
 /-- Set another creature you control's base power and toughness to the
-greatest power and toughness of this source. -/
+greatest power and toughness of this source. Target `n` is declared once. -/
 def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
   | [.setBasePower who (Value.greatestPower (.source .this)),
      .setBaseToughness who' (Value.greatestToughness (.source .this))] =>
-    who == who' &&
-      (match who with
-        | .targets _ (.range 0 1) among => among.shape.anotherCreatureYouControl
-        | _ => false)
+    match who with
+    | .targets n (.range 0 1) among =>
+      who' == .targetReference n && among.shape.anotherCreatureYouControl
+    | _ => false
   | _ => false
 
 /-- Nested search actions: put a basic land onto the battlefield tapped,
@@ -5234,18 +5234,29 @@ end TraditionalCardDefinition
               .controlled (.controller .this)]))
           (Value.greatestPower (.source .this)),
          .setBaseToughness
-          (.targets
-            1
-            (.range 0 1)
-            (.intersection [
-              .not .this,
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this)]))
+          (.targetReference 1)
           (Value.greatestToughness (.source .this))]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackSetOtherBasePT
   | none => false
+
+#guard
+  let among : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
+  let who := .targets 1 (.range 0 1) among
+  match
+    (Ability.triggered
+      (.attack .this .all)
+      (.continuous
+        [.setBasePower who (Value.greatestPower (.source .this)),
+         .setBaseToughness who (Value.greatestToughness (.source .this))]
+        .endOfTurn)).toTriggeredAbility? with
+  | some _ => false
+  | none => true
 
 #guard
   match

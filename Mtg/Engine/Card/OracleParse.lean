@@ -1709,7 +1709,7 @@ def parseAttackSetBasePT (cardName : String) (line : String) (n : Nat) :
                           (.targets n (.range 0 1) among)
                           (Value.greatestPower (.source .this)),
                          .setBaseToughness
-                          (.targets n (.range 0 1) among)
+                          (.targetReference n)
                           (Value.greatestToughness (.source .this))]
                         .endOfTurn)),
                   n + 1)
@@ -2782,12 +2782,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
               .controlled (.controller .this)]))
           (Value.greatestPower (.source .this)),
          .setBaseToughness
-          (.targets 1 (.range 0 1)
-            (.intersection [
-              .not .this,
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this)]))
+          (.targetReference 1)
           (Value.greatestToughness (.source .this))]
         .endOfTurn))]
 #guard parseOracleParts (name := "Galion, Elvenking's Butler")
