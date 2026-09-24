@@ -30,7 +30,9 @@ Wilderland Scrounger, Nasty Little Rabbit, The Chief Warg,
 Thorin's Last Stand, Stone by Sunlight, Duskwatch Hunter,
 Patient Instructor, Long Lake Nuisance, Lake-town Lookout,
 Giant's Boulder, Long-Bodied Grey Dog, Dori, Bearer of Friends,
-Esgaroth Garrison, Gundabad Opportunist, and Gigantic Big Bear
+Esgaroth Garrison, Gundabad Opportunist, Gigantic Big Bear,
+Bothersome Noisemaker, Fearsome Goblin Pair, Goblin-town Flunkies,
+Misty Mountains Raider, and Bard's Company
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -2730,82 +2732,212 @@ def giganticBigBear : CardDef :=
 #guard giganticBigBear.power == some 10
 #guard giganticBigBear.toughness == some 7
 
-def bothersomeNoisemaker : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Bothersome Noisemaker. -/
+def bothersomeNoisemakerOracle : String :=
+  "Whenever you cast a noncreature spell, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+
+def bothersomeNoisemakerDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Bothersome Noisemaker",
     .manaCost [.generic 1, .mono .red],
     .type .creature,
     .subtype .goblin,
     .subtype .bard,
     .power 2,
-    .toughness 2,
-    .ability (
-      .triggered
-        (.castSpell
-          (.intersection [
-            .spell,
-            .not (.cardType .creature),
-            .controlled (.controller .this)]))
-        (.keyword (.controller .this) (.amass .goblin (.nat 1))))
-  ]).toCardDef
-    (oracleText := "Whenever you cast a noncreature spell, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Bothersome Noisemaker") bothersomeNoisemakerOracle).get!
 
-def fearsomeGoblinPair : CardDef :=
-  (TraditionalCardDefinition.card [
+def bothersomeNoisemaker : CardDef :=
+  bothersomeNoisemakerDefinition.toCardDef
+    (oracleText := bothersomeNoisemakerOracle)
+
+#guard bothersomeNoisemakerDefinition == .card [
+  .name "Bothersome Noisemaker",
+  .manaCost [.generic 1, .mono .red],
+  .type .creature,
+  .subtype .goblin,
+  .subtype .bard,
+  .power 2,
+  .toughness 2,
+  .ability (
+    .triggered
+      (.castSpell
+        (.intersection [
+          .spell,
+          .not (.cardType .creature),
+          .controlled (.controller .this)]))
+      (.keyword (.controller .this) (.amass .goblin (.nat 1))))
+]
+
+#guard bothersomeNoisemaker.triggeredAbilities == #[.onCastNoncreatureAmassGoblins 1]
+
+/-- Gatherer Oracle text for Fearsome Goblin Pair. -/
+def fearsomeGoblinPairOracle : String :=
+  "When this creature dies, amass Goblins 4. (Put four +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+
+def fearsomeGoblinPairDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Fearsome Goblin Pair",
     .manaCost [.generic 2, .hybrid .black .red],
     .type .creature,
     .subtype .goblin,
     .subtype .soldier,
     .power 1,
-    .toughness 1,
-    .ability (.triggered (.die .this) (.keyword (.controller .this) (.amass .goblin (.nat 4))))
-  ]).toCardDef
-    (oracleText := "When this creature dies, amass Goblins 4. (Put four +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Fearsome Goblin Pair") fearsomeGoblinPairOracle).get!
 
-def goblinTownFlunkies : CardDef :=
-  (TraditionalCardDefinition.card [
+def fearsomeGoblinPair : CardDef :=
+  fearsomeGoblinPairDefinition.toCardDef
+    (oracleText := fearsomeGoblinPairOracle)
+
+#guard fearsomeGoblinPairDefinition == .card [
+  .name "Fearsome Goblin Pair",
+  .manaCost [.generic 2, .hybrid .black .red],
+  .type .creature,
+  .subtype .goblin,
+  .subtype .soldier,
+  .power 1,
+  .toughness 1,
+  .ability (
+    .triggered
+      (.die .this)
+      (.keyword (.controller .this) (.amass .goblin (.nat 4))))
+]
+
+#guard fearsomeGoblinPair.triggeredAbilities == #[.onDiesAmassGoblins 4]
+
+/-- Gatherer Oracle text for Goblin-town Flunkies. -/
+def goblinTownFlunkiesOracle : String :=
+  "Haste\nWhen this creature enters, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+
+def goblinTownFlunkiesDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Goblin-town Flunkies",
     .manaCost [.generic 1, .mono .red],
     .type .creature,
     .subtype .goblin,
     .subtype .soldier,
     .power 1,
-    .toughness 1,
-    .ability (.keyword .haste),
-    .ability (.triggered (.enter .this) (.keyword (.controller .this) (.amass .goblin (.nat 1))))
-  ]).toCardDef
-    (oracleText := "Haste\nWhen this creature enters, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Goblin-town Flunkies") goblinTownFlunkiesOracle).get!
 
-def mistyMountainsRaider : CardDef :=
-  (TraditionalCardDefinition.card [
+def goblinTownFlunkies : CardDef :=
+  goblinTownFlunkiesDefinition.toCardDef
+    (oracleText := goblinTownFlunkiesOracle)
+
+#guard goblinTownFlunkiesDefinition == .card [
+  .name "Goblin-town Flunkies",
+  .manaCost [.generic 1, .mono .red],
+  .type .creature,
+  .subtype .goblin,
+  .subtype .soldier,
+  .power 1,
+  .toughness 1,
+  .ability (.keyword .haste),
+  .ability (
+    .triggered
+      (.enter .this)
+      (.keyword (.controller .this) (.amass .goblin (.nat 1))))
+]
+
+#guard goblinTownFlunkies.keywords.haste
+#guard goblinTownFlunkies.triggeredAbilities == #[.onEnterAmassGoblins 1]
+
+/-- Gatherer Oracle text for Misty Mountains Raider. -/
+def mistyMountainsRaiderOracle : String :=
+  "Whenever you attack, amass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+
+def mistyMountainsRaiderDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Misty Mountains Raider",
     .manaCost [.generic 4, .mono .red],
     .type .creature,
     .subtype .goblin,
     .subtype .soldier,
     .power 4,
-    .toughness 4,
-    .ability (
-      .triggered
-        (.attackSimultaneously
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this)])
-          .all
-          [])
-        (.keyword (.controller .this) (.amass .goblin (.nat 2))))
-  ]).toCardDef
-    (oracleText := "Whenever you attack, amass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Misty Mountains Raider") mistyMountainsRaiderOracle).get!
+
+def mistyMountainsRaider : CardDef :=
+  mistyMountainsRaiderDefinition.toCardDef
+    (oracleText := mistyMountainsRaiderOracle)
+
+#guard mistyMountainsRaiderDefinition == .card [
+  .name "Misty Mountains Raider",
+  .manaCost [.generic 4, .mono .red],
+  .type .creature,
+  .subtype .goblin,
+  .subtype .soldier,
+  .power 4,
+  .toughness 4,
+  .ability (
+    .triggered
+      (.attackSimultaneously
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .all
+        [])
+      (.keyword (.controller .this) (.amass .goblin (.nat 2))))
+]
+
+#guard mistyMountainsRaider.triggeredAbilities == #[.onYouAttackAmassGoblins 2]
+
+/-- Gatherer Oracle text for Bard's Company. -/
+def bardsCompanyOracle : String :=
+  "You may cast this spell as though it had flash if you control a Human.\nOther creatures you control get +1/+1.\nWhenever this creature enters or attacks, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+
+def bardsCompanyDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Bard's Company",
+    .manaCost [.generic 2, .mono .white, .mono .blue],
+    .type .creature,
+    .subtype .human,
+    .subtype .citizen,
+    .power 2,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Bard's Company") bardsCompanyOracle).get!
 
 def bardsCompany : CardDef :=
-  creature "Bard's Company" (ManaCost.ofGenericAndColors 2 [.white, .blue])
-    #["Human", "Citizen"] 2 3
-    (oracleText := "You may cast this spell as though it had flash if you control a Human.\nOther creatures you control get +1/+1.\nWhenever this creature enters or attacks, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
-    (flashIfYouControlSubtype := some "Human")
-    (staticAbilities := #[.otherCreaturesGet #[] 1 1])
-    (triggeredAbilities := #[.onEnterOrAttackRecruit])
+  bardsCompanyDefinition.toCardDef
+    (oracleText := bardsCompanyOracle)
+
+#guard bardsCompanyDefinition == .card [
+  .name "Bard's Company",
+  .manaCost [.generic 2, .mono .white, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .citizen,
+  .power 2,
+  .toughness 3,
+  .ability (.everywhereStatic (
+    .canBeCastAsThoughWithFlashIf
+      .this
+      (.any (.intersection [
+        .permanent, .subtype .human, .controlled .caster])))),
+  .ability (.static (.addPower
+    (.intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]) (Value.int 1))),
+  .ability (.static (.addToughness
+    (.intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]) (Value.int 1))),
+  .ability (
+    .triggered
+      (.or (.enter .this) (.attack .this .all))
+      (.keyword (.controller .this) .recruit))
+]
+
+#guard bardsCompany.flashIfYouControlSubtype == some "Human"
+#guard !bardsCompany.keywords.flash
+#guard bardsCompany.staticAbilities == #[.otherCreaturesGet #[] 1 1]
+#guard bardsCompany.triggeredAbilities == #[.onEnterOrAttackRecruit]
 
 def rageIntoTheValley : CardDef :=
   (TraditionalCardDefinition.card [

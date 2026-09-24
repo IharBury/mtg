@@ -216,7 +216,7 @@ def shape : Selector → Shape
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
-  | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _
+  | .this | .source _ | .controller _ | .caster | .opponent _ | .owner _ | .target _ _
   | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _
   | .selected _ _ _ | .player => {}
   | .wasObjectSince (.putToGraveyard _) .turnStart =>
@@ -333,6 +333,7 @@ def referenceTargets : Selector → Selector
   | .this => .this
   | .source s => .source (referenceTargets s)
   | .controller s => .controller (referenceTargets s)
+  | .caster => .caster
   | .target n _ => .targetReference n
   | .targets n _ _ => .targetReference n
   | .targetSet n _ _ _ => .targetReference n
@@ -670,6 +671,9 @@ inductive Ability where
   /-- A static ability that functions while this spell is on the stack
   (CR 604.2), e.g. a cost reduction. -/
   | stackStatic : ContinuousEffect → Ability
+  /-- A static ability that functions in every zone (CR 113.6), including
+  before this card is put onto the stack. -/
+  | everywhereStatic : ContinuousEffect → Ability
 deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
@@ -713,6 +717,11 @@ inductive ContinuousEffect where
   /-- The selected player may play that many additional lands on each of
   their turns (CR 305.2b). -/
   | increaseLandPlayLimit : Selector → Value → ContinuousEffect
+  /-- The selected spell may be cast as though it had flash when the condition
+  holds (CR 601.3 / 702.8). `you` in that condition is `Selector.caster`,
+  the player who would cast the spell, not necessarily its controller or
+  owner. The spell does not gain the flash keyword. -/
+  | canBeCastAsThoughWithFlashIf : Selector → Condition → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -956,6 +965,7 @@ def selector : ContinuousEffect → Selector
   | .setPower who _ | .setToughness who _ => who
   | .addPower who _ | .addToughness who _ => who
   | .increaseLandPlayLimit who _ => who
+  | .canBeCastAsThoughWithFlashIf card _ => card
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is
@@ -1007,7 +1017,7 @@ def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
 def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
-    | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
+    | .this | .source _ | .controller _ | .caster | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
     | .spell | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
     | .player
@@ -3794,6 +3804,8 @@ structure CardFace where
   entersTapped : Bool := false
   /-- This spell can't be countered (CR 701.5). -/
   cantBeCountered : Bool := false
+  /-- You may cast this spell as though it had flash if you control this subtype. -/
+  flashIfYouControlSubtype : Option String := none
   colorIndicator : Option ColorSet := none
   sagaChapters : Array SagaChapter := #[]
 deriving Inhabited
@@ -3897,6 +3909,32 @@ def leftoverHasteIfOtherSubtype? (among : Selector) (inners : List ContinuousEff
       among.shape.anotherSubtypeYouControl
     else none
   | _ => none
+
+/-- A permanent of one subtype controlled by `Selector.caster`. -/
+def casterControlsPermanentSubtype? : Selector → Option String
+  | .intersection parts =>
+    let subtypes := parts.filterMap fun
+      | .subtype st => some st.toString
+      | _ => none
+    let only := parts.all fun
+      | .permanent | .controlled .caster | .subtype _ => true
+      | _ => false
+    if only && parts.contains .permanent && parts.contains (.controlled .caster) then
+      match subtypes with
+      | [t] => some t
+      | _ => none
+    else none
+  | _ => none
+
+/-- This spell may be cast as though it had flash while the caster controls
+that subtype. The spell does not gain flash. -/
+def leftoverCanBeCastAsThoughWithFlashIf? (card : Selector) (cond : Condition) :
+    Option String :=
+  if card == .this || card == .source .this then
+    match cond with
+    | .any among => casterControlsPermanentSubtype? among
+    | _ => none
+  else none
 
 /-- Equip abilities you activate that target this, reduced by that much. -/
 def leftoverEquipAbilitiesTargetingThisCostLess? (who : Selector) (costs : List Cost)
@@ -4060,6 +4098,10 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAllSubtypes _ _ => b
   | .setPower _ _ | .setToughness _ _ => b
   | .increaseLandPlayLimit _ _ => b
+  | .canBeCastAsThoughWithFlashIf card cond =>
+    match leftoverCanBeCastAsThoughWithFlashIf? card cond with
+    | some t => { b with flashIfYouControlSubtype := some t }
+    | none => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
@@ -4136,6 +4178,7 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | none => b
   | .static e => applyContinuousEffect b e
   | .stackStatic e => applyContinuousEffect b e
+  | .everywhereStatic e => applyContinuousEffect b e
 
 def apply (b : CardFace) : CardPart → CardFace
   | .name n => { b with name := n }
@@ -4162,7 +4205,7 @@ def apply (b : CardFace) : CardPart → CardFace
 /-- A static ability that sets power or toughness to the number of lands
 you control. -/
 def partSetsLandsCharacteristic (power : Bool) : CardPart → Bool
-  | .ability (.static e) | .ability (.stackStatic e) =>
+  | .ability (.static e) | .ability (.stackStatic e) | .ability (.everywhereStatic e) =>
     setsCharacteristicToLandsYouControl power e
   | _ => false
 
@@ -4173,7 +4216,7 @@ def partSetsCreaturesYouControlPower : CardPart → Bool
 
 /-- A static continuous effect, if this part is one. -/
 def staticContinuous? : CardPart → Option ContinuousEffect
-  | .ability (.static e) | .ability (.stackStatic e) => some e
+  | .ability (.static e) | .ability (.stackStatic e) | .ability (.everywhereStatic e) => some e
   | _ => none
 
 /-- Other-subtype +1/+0 for each artifact token. Toughness is not changed. -/
@@ -4292,6 +4335,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       tapAddOneOf := b.tapAddOneOf
       entersTapped := b.entersTapped
       cantBeCountered := b.cantBeCountered
+      flashIfYouControlSubtype := b.flashIfYouControlSubtype
       colorIndicator := b.colorIndicator
       adventure := adventure
       saga :=
@@ -6781,6 +6825,17 @@ end TraditionalCardDefinition
             .cardType .creature,
             .controlled (.controller .this)]) (Value.int 1)))
   ]).toCardDef.staticAbilities == #[.otherCreaturesGet #[] 1 1]
+
+#guard
+  let card :=
+    (TraditionalCardDefinition.card [
+      .ability (.everywhereStatic (
+        .canBeCastAsThoughWithFlashIf
+          .this
+          (.any (.intersection [
+            .permanent, .subtype .human, .controlled .caster]))))
+    ]).toCardDef
+  card.flashIfYouControlSubtype == some "Human" && !card.keywords.flash
 
 #guard
   match

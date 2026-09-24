@@ -225,6 +225,9 @@ inductive Selector where
   | source : Selector → Selector
   /-- The controller of the given object (CR 109.5). -/
   | controller : Selector → Selector
+  /-- The player who would cast this spell. Not necessarily its controller
+  or owner (CR 601.2 / 109.5). -/
+  | caster
   /-- A numbered target matching the given selector (CR 115.1). Later
   effects may refer to it with `targetReference`. The number is unique
   within a `TraditionalCardDefinition`, including `targets` /
