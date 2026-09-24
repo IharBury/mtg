@@ -56,6 +56,8 @@ Currently recognized:
   The ability word has no rules meaning (CR 207.2c). The “while” clause is
   part of the trigger condition (CR 603.2) and is not checked again on
   resolution. The word may be omitted.
+- `Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +P/+T until end of turn.`
+  The same ability word and “while” clause. The bonus is on this creature.
 - `Landfall — Whenever a land you control enters, put a +1/+1 counter on target <permanent type> you control.`
   `Landfall` is an ability word (CR 207.2c) and may be omitted.
 - `Landfall — Whenever a land you control enters, this creature gets +P/+T until end of turn.`
@@ -131,6 +133,27 @@ Currently recognized:
 - `Whenever <this card> deals combat damage to a player, draw <count> cards, then discard <count> card(s).`
 - `Exchange control of <count> target nonland permanents that share a card type.`
 - `Target <permanent type>'s owner puts it on their choice of the top or bottom of their library.`
+- `<this> enters tapped.`
+  A replacement effect (CR 614.1). `<this>` is `this`, `this <permanent type>`,
+  the card's name, or the short name before a comma.
+- `{T}: Add {A} or {B}.`
+  Two or more colored or colorless symbols, joined by `or`. The tap symbol is
+  the cost (CR 107.5). The player adds one of them.
+- `{cost}: Target creature can't be blocked this turn.`
+  The restriction lasts until end of turn.
+- `Put <count> +1/+1 counters on target <creature type> [you control].`
+  One counter is `a` or `one` with the singular noun; more than one uses the
+  plural. A creature type is `Elf`, `Goblin or Orc`, or `Bear, Spider, or Wolf`:
+  a creature of those subtypes. Costs separated by commas may include mana,
+  `{T}`, and `Sacrifice <this>`. `Activate only as a sorcery` is the timing
+  restriction (CR 602.5a).
+- `{T}, Sacrifice <this>: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.`
+- `<type>cycling {cost}`
+  Typecycling (CR 702.29). `<type>` is a subtype (`Halflingcycling`), a card
+  type, or supertypes plus a type (`Basic landcycling`). A trailing reminder
+  parenthetical is not rules text.
+- `When <this> enters, you gain N life.`
+- `When <this> enters, untap another target creature you control. If that creature is a <subtype>, put a +1/+1 counter on it.`
 -/
 
 namespace Mtg.Engine
@@ -439,6 +462,40 @@ def parseTargetPhrase (s : String) : Option Selector :=
     (typesInPhrase obj).map fun ts =>
       permanentWith ts (if controlled then [youControl] else [])
 
+/-- Creature subtypes in `Elf`, `Goblin or Orc`, or `Bear, Spider, or Wolf`. -/
+def parseSubtypeList (s : String) : Option (List CardSubtype) :=
+  let normalized := ((norm s).replace ", or " ", ").replace " or " ", "
+  let parts := normalized.splitOn ", " |>.map copied |>.filter (· != "")
+  if parts.isEmpty then none else parts.mapM subtypeOfOracle?
+
+/-- One subtype, or a union when several are printed. -/
+def subtypeSelector : List CardSubtype → Selector
+  | [st] => .subtype st
+  | sts => .union (sts.map fun st => .subtype st)
+
+/-- `target creature you control`, `another target creature you control`, or
+`target Elf you control`. A creature type is a creature of those subtypes.
+`another` excludes this object. -/
+def parseBattlefieldTarget (s : String) : Option Selector :=
+  let s := norm s
+  let opened :=
+    match after? s "another target " with
+    | some rest => some (true, rest)
+    | none =>
+      match after? s "target " with
+      | some rest => some (false, rest)
+      | none => none
+  opened.bind fun (another, rest) =>
+    let (obj, controlled) := splitYouControl rest
+    let head : List Selector :=
+      (if another then [.not .this] else []) ++ [.permanent]
+    let tail : List Selector := if controlled then [youControl] else []
+    match typesInPhrase obj with
+    | some ts => some (.intersection (head ++ [selectorOfTypes ts] ++ tail))
+    | none =>
+      (parseSubtypeList obj).map fun sts =>
+        .intersection (head ++ [.cardType .creature, subtypeSelector sts] ++ tail)
+
 /-- Keywords in `hexproof and indestructible` or `haste, flying, and trample`. -/
 def parseKeywordPhrase (s : String) : Option (List Keyword) :=
   let commaParts := (norm s).splitOn ", " |>.map copied |>.filter (· != "")
@@ -677,12 +734,15 @@ inductive ActivateLimit where
   | onceEachTurn
   | duringYourTurn
   | duringYourTurnOnce
+  /-- `Activate only as a sorcery` (CR 602.5a). -/
+  | asSorcery
 
 def parseActivateLimit (s : String) : ActivateLimit :=
   match normSentence s with
   | "activate only once each turn" => .onceEachTurn
   | "activate only during your turn" => .duringYourTurn
   | "activate only during your turn and only once each turn" => .duringYourTurnOnce
+  | "activate only as a sorcery" => .asSorcery
   | _ => .unlimited
 
 /-- Drop a trailing activation limit. A sentence that is not a limit stays
@@ -715,49 +775,113 @@ def parseSacrificeAn (s : String) : Option Cost :=
     (typesInPhrase obj).map fun ts => .sacrificeCount (permanentWith ts) 1
   | none => none
 
-/-- One printed cost: mana symbols, or sacrificing one permanent of the
-named types. -/
-def parsePrintedCost (s : String) : Option Cost :=
-  match nonemptyMana? s with
-  | some syms => some (.mana syms)
-  | none => parseSacrificeAn s <|> parseSacrificeAnother s
+/-- `this` or `this <type>`, such as `this creature` or `this spell`. -/
+def isGenericSelf (subject : String) : Bool :=
+  let s := norm subject
+  if s == "this" then true
+  else
+    match after? s "this " with
+    | none => false
+    | some rest =>
+      if (rest.splitOn " ").length != 1 then false
+      else
+        (typeOfOracle? rest).isSome || (subtypeOfOracle? rest).isSome ||
+          rest == "permanent" || rest == "spell"
+
+/-- The printed name, the short name before a comma (CR 201.5), and that
+name's first word when it is not an article. `Bilbo Baggins, Burglar` refers
+to itself as `Bilbo Baggins` or `Bilbo`. `Gollum the Abandoned` refers to
+itself as `Gollum`. -/
+def selfNames (cardName : String) : List String :=
+  let name := norm cardName
+  if name.isEmpty then []
+  else
+    let short :=
+      match name.splitOn "," with
+      | head :: _ => head.trimAscii.copy
+      | [] => name
+    let firstWord :=
+      match short.splitOn " " with
+      | w :: _ => w.trimAscii.copy
+      | [] => ""
+    let names :=
+      if short.isEmpty || short == name then [name] else [name, short]
+    if firstWord.isEmpty || firstWord == name || firstWord == short ||
+        firstWord == "the" || firstWord == "a" || firstWord == "an" then
+      names
+    else
+      names ++ [firstWord]
+
+/-- `subject` is this card: a generic `this` phrase, or one of `cardName`'s
+self-names. -/
+def refersToSelf (cardName subject : String) : Bool :=
+  isGenericSelf subject || (selfNames cardName).contains (norm subject)
+
+/-- `Sacrifice this land`: sacrifice this object. -/
+def parseSacrificeThis (cardName s : String) : Option Cost :=
+  (after? (norm s) "sacrifice ").bind fun obj =>
+    if refersToSelf cardName obj then some (.sacrifice .this) else none
+
+/-- One printed cost: mana symbols, the tap symbol, or sacrificing a permanent. -/
+def parsePrintedCost (cardName s : String) : Option Cost :=
+  if norm s == "{t}" then some .tapSymbol
+  else
+    match nonemptyMana? s with
+    | some syms => some (.mana syms)
+    | none =>
+      parseSacrificeThis cardName s <|> parseSacrificeAn s <|> parseSacrificeAnother s
+
+/-- Costs separated by commas, such as `{2}{G}{U}, {T}, Sacrifice this land`.
+One unrecognized cost fails the list. -/
+def parsePrintedCosts (cardName s : String) : Option (List Cost) :=
+  let parts := s.splitOn ", " |>.map (·.trimAscii.copy) |>.filter (· != "")
+  if parts.isEmpty then none else parts.mapM (parsePrintedCost cardName)
 
 /-- Wrap `action` as an activated ability.
 `once each turn` is tracked by ability number `n` (CR 602.5).
-`nAfter` is the next number after effects inside `action`. -/
+`nAfter` is the next number after effects inside `action`.
+`Activate only as a sorcery` is `activatedIf` of sorcery timing (CR 602.5a). -/
 def activatedWithCost (n : Nat) (costs : List Cost) (action : CardAction)
     (limit : ActivateLimit) (nAfter : Nat) : CardPart × Nat :=
-  let once :=
-    match limit with
-    | .onceEachTurn | .duringYourTurnOnce => true
-    | .duringYourTurn | .unlimited => false
-  let onYourTurn :=
-    match limit with
-    | .duringYourTurn | .duringYourTurnOnce => true
-    | .onceEachTurn | .unlimited => false
-  let notYet := Condition.didNotHappen (.abilityWithIdActivated n) .turnStart
-  let yourTurn := Condition.turn (.controller .this)
-  let cond? : Option Condition :=
-    match onYourTurn, once with
-    | false, false => none
-    | true, false => some yourTurn
-    | false, true => some notYet
-    | true, true => some (.and yourTurn notYet)
-  let ability : Ability :=
-    match cond? with
-    | none => .activated costs action
-    | some cond => .activatedIf cond costs action
-  let ability := if once then Ability.abilityId n ability else ability
-  let next := if once then max nAfter (n + 1) else nAfter
-  (.ability ability, next)
+  match limit with
+  | .asSorcery =>
+    (.ability (.activatedIf (.timeToCastSorcery (.controller .this)) costs action), nAfter)
+  | .unlimited | .onceEachTurn | .duringYourTurn | .duringYourTurnOnce =>
+    let once :=
+      match limit with
+      | .onceEachTurn | .duringYourTurnOnce => true
+      | .duringYourTurn | .unlimited | .asSorcery => false
+    let onYourTurn :=
+      match limit with
+      | .duringYourTurn | .duringYourTurnOnce => true
+      | .onceEachTurn | .unlimited | .asSorcery => false
+    let notYet := Condition.didNotHappen (.abilityWithIdActivated n) .turnStart
+    let yourTurn := Condition.turn (.controller .this)
+    let cond? : Option Condition :=
+      match onYourTurn, once with
+      | false, false => none
+      | true, false => some yourTurn
+      | false, true => some notYet
+      | true, true => some (.and yourTurn notYet)
+    let ability : Ability :=
+      match cond? with
+      | none => .activated costs action
+      | some cond => .activatedIf cond costs action
+    let ability := if once then Ability.abilityId n ability else ability
+    let next := if once then max nAfter (n + 1) else nAfter
+    (.ability ability, next)
 
-/-- Mana cost, a life payment, or sacrificing another permanent.
-An empty brace list fails rather than falling through. Sacrificing a
-permanent that is not `another` is not an activation cost here. -/
-def parseActivationCost (costText : String) : Option (List Cost) :=
+/-- Mana cost, a life payment, sacrificing another permanent, or a
+comma-separated list of printed costs (`{2}{G}{U}, {T}, Sacrifice this land`).
+An empty brace list fails rather than falling through. Sacrificing a permanent
+that is not `another` or `this`, and is not one item of a comma-separated
+list, is not an activation cost here. -/
+def parseActivationCost (cardName costText : String) : Option (List Cost) :=
   (nonemptyMana? costText).map (fun syms => [.mana syms]) <|>
     (parsePayLife costText).map (fun life => [.life life]) <|>
-    (parseSacrificeAnother costText).map (fun c => [c])
+    (parseSacrificeAnother costText).map (fun c => [c]) <|>
+    if (costText.splitOn ", ").length < 2 then none
+    else parsePrintedCosts cardName costText
 
 /-- The creature named by a stack cost reduction: `a tapped creature` or
 `an attacking nontoken creature`. -/
@@ -895,48 +1019,6 @@ def parseIfItsSubtypeMayAttach (sentence : String) (n : Nat) : Option (CardActio
         | _, _ => none
       | _, _ => none
 
-/-- `this` or `this <type>`, such as `this creature` or `this spell`. -/
-def isGenericSelf (subject : String) : Bool :=
-  let s := norm subject
-  if s == "this" then true
-  else
-    match after? s "this " with
-    | none => false
-    | some rest =>
-      if (rest.splitOn " ").length != 1 then false
-      else
-        (typeOfOracle? rest).isSome || (subtypeOfOracle? rest).isSome ||
-          rest == "permanent" || rest == "spell"
-
-/-- The printed name, the short name before a comma (CR 201.5), and that
-name's first word when it is not an article. `Bilbo Baggins, Burglar` refers
-to itself as `Bilbo Baggins` or `Bilbo`. `Gollum the Abandoned` refers to
-itself as `Gollum`. -/
-def selfNames (cardName : String) : List String :=
-  let name := norm cardName
-  if name.isEmpty then []
-  else
-    let short :=
-      match name.splitOn "," with
-      | head :: _ => head.trimAscii.copy
-      | [] => name
-    let firstWord :=
-      match short.splitOn " " with
-      | w :: _ => w.trimAscii.copy
-      | [] => ""
-    let names :=
-      if short.isEmpty || short == name then [name] else [name, short]
-    if firstWord.isEmpty || firstWord == name || firstWord == short ||
-        firstWord == "the" || firstWord == "a" || firstWord == "an" then
-      names
-    else
-      names ++ [firstWord]
-
-/-- `subject` is this card: a generic `this` phrase, or one of `cardName`'s
-self-names. -/
-def refersToSelf (cardName subject : String) : Bool :=
-  isGenericSelf subject || (selfNames cardName).contains (norm subject)
-
 /-- Lands this object's controller controls. -/
 def landsYouControl : Selector :=
   permanentWith [.land] [youControl]
@@ -983,17 +1065,67 @@ def parseBecomeAndGainStatic (cardName : String) (sentence : String) : Option Ca
               .endOfGame)
           | _, _ => none
 
-/-- A pump, counters on this creature, becoming a creature that gains a
-static ability, or exiling the top card to play later, optionally followed
-by an activation limit. -/
+/-- `Target creature can't be blocked this turn.` The target is `n`.
+The restriction lasts until end of turn. -/
+def parseTargetCantBeBlocked (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  (before? (normSentence sentence) " can't be blocked this turn").bind fun who =>
+    (parseBattlefieldTarget who).map fun sel =>
+      (.continuous [.forbid (.block .any (.target n sel))] .endOfTurn, n + 1)
+
+/-- `Put two +1/+1 counters on target Elf you control.`
+One counter uses the singular noun. A creature type is a creature of those
+subtypes. The target is `n`. -/
+def parsePutCountersOnTarget (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  match after? (normSentence sentence) "put " with
+  | none => none
+  | some rest =>
+    let split :=
+      (split2? rest " +1/+1 counters on ").map (fun (c, w) => (c, true, w)) <|>
+        (split2? rest " +1/+1 counter on ").map (fun (c, w) => (c, false, w))
+    match split with
+    | some (countText, plural, who) =>
+      match nounCount? countText plural, parseBattlefieldTarget who with
+      | some k, some sel =>
+        -- A creature type (`Elf`, `Goblin or Orc`), not a card type (`creature`).
+        if sel.includedSubtypes.isEmpty then none
+        else some (.putCounter (.target n sel) .plusOnePlusOne k, n + 1)
+      | _, _ => none
+    | none => none
+
+/-- `Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.`
+Does not choose a target, so the target number stays `n`. -/
+def parseSearchBasicLandTapped (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  if sentenceIs sentence
+      "search your library for a basic land card, put it onto the battlefield tapped, then shuffle" then
+    some (
+      .searchLibraryThenShuffle
+        (.controller .this)
+        [
+          .putOntoBattlefieldInState
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
+            [.tapped]],
+      n)
+  else none
+
+/-- A pump, counters, a targeted restriction, a library search, becoming a
+creature that gains a static ability, or exiling the top card to play later,
+optionally followed by an activation limit. -/
 def parseActivatedEffect (cardName : String) (effect : String) (n : Nat) :
     Option (CardAction × ActivateLimit × Nat) :=
   let (body, limit) := splitActivateLimit (sentences effect)
   match body with
   | [one] =>
-    (parsePumpUntilEndOfTurn one <|> parsePutCountersOnThis one <|>
-        parseBecomeAndGainStatic cardName one).map fun action =>
-      (action, limit, n)
+    let targeted :=
+      parseTargetCantBeBlocked one n <|>
+        parsePutCountersOnTarget one n <|>
+        parseSearchBasicLandTapped one n
+    let plain :=
+      (parsePumpUntilEndOfTurn one <|> parsePutCountersOnThis one <|>
+          parseBecomeAndGainStatic cardName one).map (fun action => (action, n))
+    (targeted <|> plain).map fun (action, n') => (action, limit, n')
   | _ =>
     (parseExileTopMayPlay body n).map fun (action, n') => (action, limit, n')
 
@@ -1005,7 +1137,7 @@ def parseActivatedAbility (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   (split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": ").bind
     fun (costText, effect) =>
-      match parseActivatedEffect cardName effect n, parseActivationCost costText with
+      match parseActivatedEffect cardName effect n, parseActivationCost cardName costText with
       | some (action, limit, n'), some costs =>
         some (activatedWithCost n costs action limit n')
       | _, _ => none
@@ -1535,23 +1667,30 @@ def withoutAbilityWord (s word : String) : String :=
 
 /-- `Ferocious — Whenever this creature attacks while you control a creature
 with power 4 or greater, you gain 2 life.`
+Also `… this creature gets +P/+T until end of turn.`
 `Ferocious` is an ability word (CR 207.2c). The “while” clause is part of
 the trigger condition (CR 603.2): it is checked when this creature attacks,
 and it is not checked again when the ability resolves. -/
 def parseFerociousAttackGainLife (line : String) : Option CardPart :=
   let s := withoutAbilityWord (normLine line) "ferocious"
   let lead := "whenever this creature attacks while you control a creature with power 4 or greater, "
-  match (after? s lead).bind fun effect => parseYouGainLife effect 0 with
-  | some (.gainLife _ k, _) =>
-    some (.ability (
-      .triggeredWhile
-        (.attack .this .all)
-        (.any
-          (permanentWith [.creature] [
-            youControl,
-            .powerAtLeast (Value.int 4)]))
-        (.gainLife (.controller .this) k)))
-  | _ => none
+  let ferociousSel :=
+    permanentWith [.creature] [youControl, .powerAtLeast (Value.int 4)]
+  let triggered (action : CardAction) : CardPart :=
+    .ability (.triggeredWhile (.attack .this .all) (.any ferociousSel) action)
+  match after? s lead with
+  | none => none
+  | some effect =>
+    match parseYouGainLife effect 0 with
+    | some (.gainLife _ k, _) =>
+      some (triggered (.gainLife (.controller .this) k))
+    | _ =>
+      match parsePumpUntilEndOfTurn effect with
+      | some action =>
+        match sourceGetsUntilEnd? action with
+        | some _ => some (triggered action)
+        | none => none
+      | none => none
 
 /-- `Landfall — Whenever a land you control enters, <effect>.`
 `Landfall` is an ability word (CR 207.2c) and may be omitted.
@@ -1642,12 +1781,6 @@ def parseEnterExileOppGyLoseLife (cardName : String) (line : String) (n : Nat) :
            n + 1)
   | _ => none
 
-/-- Costs separated by commas, such as `{2}, Sacrifice an artifact or creature`.
-One unrecognized cost fails the list. -/
-def parsePrintedCosts (s : String) : Option (List Cost) :=
-  let parts := s.splitOn ", " |>.map (·.trimAscii.copy) |>.filter (· != "")
-  if parts.isEmpty then none else parts.mapM parsePrintedCost
-
 def returnThisFromGraveyardToHand : CardAction :=
   .returnToHand (.intersection [.inGraveyard, .source .this])
 
@@ -1667,7 +1800,7 @@ def parseGraveyardReturn (line : String) : Option CardPart :=
     | [ret, restrict] =>
       if !sentenceIs restrict "activate only as a sorcery" then none
       else
-        match parsePrintedCosts costText, parseReturnThisFromGraveyard ret with
+        match parsePrintedCosts "" costText, parseReturnThisFromGraveyard ret with
         | some costs, some action =>
           some (.ability (
             .graveyardActivatedIf
@@ -1869,6 +2002,114 @@ def spellActions (parsed : Option (List CardAction × Nat)) : Option (List CardP
   parsed.bind fun (actions, n') =>
     if actions.isEmpty then none else some ([.actions actions], n')
 
+/-- `<this> enters tapped.` A replacement effect (CR 614.1). A spell does not
+enter the battlefield. -/
+def parseEntersTapped (cardName line : String) : Option CardPart :=
+  (before? (normLine line) " enters tapped").bind fun subject =>
+    if subject.isEmpty || norm subject == "this spell" ||
+        !refersToSelf cardName subject then
+      none
+    else
+      some (.ability (.static (.replace (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])))
+
+/-- One colored or colorless symbol that can be added to a mana pool. -/
+def addableSymbol? (s : String) : Option ManaSymbol :=
+  match parseManaSymbols s with
+  | some [sym] =>
+    match CardAction.addedManaType? sym with
+    | some _ => some sym
+    | none => none
+  | _ => none
+
+/-- `Add {G} or {U}`: the player chooses one listed symbol. -/
+def parseAddOneOf (effect : String) : Option (List CardAction) :=
+  (after? (normSentence effect) "add ").bind fun rest =>
+    let options := rest.splitOn " or " |>.map copied |>.filter (· != "")
+    if options.length < 2 then none
+    else
+      options.mapM fun opt =>
+        (addableSymbol? opt).map fun sym => .addMana (.controller .this) [sym]
+
+/-- `{T}: Add {G} or {U}.` The tap symbol is the cost (CR 107.5). -/
+def parseTapAddOneOf (line : String) : Option CardPart :=
+  (split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": ").bind
+    fun (costText, effect) =>
+      if norm costText != "{t}" then none
+      else
+        (parseAddOneOf effect).map fun actions =>
+          .ability (.activated [.tapSymbol]
+            (.playerSelectAction (.controller .this) (.range 1 1) actions))
+
+/-- One word of a typecycling type phrase. -/
+def addCyclingWord
+    (acc : Option (List CardSupertype × List CardType × List CardSubtype))
+    (w : String) : Option (List CardSupertype × List CardType × List CardSubtype) :=
+  acc.bind fun (sups, tys, sts) =>
+    match supertypeOfOracle? w with
+    | some s => some (sups ++ [s], tys, sts)
+    | none =>
+      match typeOfOracle? w with
+      | some t => some (sups, tys ++ [t], sts)
+      | none =>
+        match subtypeOfOracle? w with
+        | some st => some (sups, tys, sts ++ [st])
+        | none => none
+
+/-- `Halfling` or `Basic land` as the type a cycling ability searches for. -/
+def parseCyclingWords (phrase : String) :
+    Option (List CardSupertype × List CardType × List CardSubtype) :=
+  let words := (norm phrase).splitOn " " |>.map copied |>.filter (· != "")
+  if words.isEmpty then none
+  else
+    match words.foldl addCyclingWord (some ([], [], [])) with
+    | some (sups, tys, sts) =>
+      if tys.isEmpty && sts.isEmpty then none else some (sups, tys, sts)
+    | none => none
+
+/-- `Halflingcycling {4}`. Reminder text is not rules text (CR 702.29). -/
+def parseTypecycling (line : String) : Option CardPart :=
+  let line := stripTrailingPeriod (stripReminderParenthetical line)
+  let (phrase, costText) := splitNameCost line
+  if costText.isEmpty then none
+  else
+    (before? (norm phrase) "cycling").bind fun kind =>
+      match parseCyclingWords kind, nonemptyMana? costText with
+      | some (sups, tys, sts), some syms =>
+        some (.ability (.keywordWithCost (.typecycling sups tys sts) [.mana syms]))
+      | _, _ => none
+
+/-- `When this Equipment enters, you gain 2 life.` The entering object is this card. -/
+def parseEnterYouGainLife (cardName line : String) : Option CardPart :=
+  onSelfTrigger cardName line " enters, " (.enter .this) fun effect =>
+    match parseYouGainLife effect 0 with
+    | some (action, _) => some action
+    | none => none
+
+/-- `When this creature enters, untap another target creature you control. If that creature is a Bear, put a +1/+1 counter on it.`
+The creature is target `n`. `another` excludes this object. -/
+def parseEnterUntapPlusOneIfSubtype (cardName line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match sentences (stripReminderParenthetical line) with
+  | [enter, ifSubtype] =>
+    (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+      (after? effect "untap ").bind parseBattlefieldTarget |>.bind fun sel =>
+        if !sel.shape.anotherCreatureYouControl then none
+        else
+          (between? (normSentence ifSubtype)
+              "if that creature is " ", put a +1/+1 counter on it").bind
+            dropArticle? |>.bind subtypeOfOracle? |>.map fun st =>
+            (.ability (
+              .triggered
+                (.enter .this)
+                (.sequence [
+                  .untap (.target n sel),
+                  .if
+                    (.anySubtype (.targetReference n) st)
+                    [.putCounter (.targetReference n) .plusOnePlusOne 1]])),
+             n + 1)
+  | _ => none
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails.
 The first parser that accepts the line wins. -/
@@ -1877,7 +2118,10 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
   if (rulesText line).isEmpty then some ([], n)
   else
     (keywordParts? line).map (·, n) <|>
+    sole (parseEntersTapped cardName line) n <|>
+    sole (parseTypecycling line) n <|>
     carry (parseActivatedAbility cardName line n) <|>
+    sole (parseTapAddOneOf line) n <|>
     carry (parseTapAddAnyColorEqualToPower cardName line n) <|>
     sole (parseAnotherElfEntersGets line) n <|>
     carry (parseLandYouControlEnters line n) <|>
@@ -1889,6 +2133,8 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseAttackTriggered line) n <|>
     carry (parseAttackSetBasePT cardName line n) <|>
     sole (parseFerociousAttackGainLife line) n <|>
+    sole (parseEnterYouGainLife cardName line) n <|>
+    carry (parseEnterUntapPlusOneIfSubtype cardName line n) <|>
     sole (parseEnterDraw cardName line) n <|>
     sole (parseEnterEachOpponentDiscards cardName line) n <|>
     carry (parseEnterDividedDamage cardName line n) <|>
@@ -3261,5 +3507,92 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         .continuous
           [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]
           .endOfTurn]]]
+#guard parseOracleParts (name := "Elvenking's Halls") "This land enters tapped." ==
+  some [.ability (.static (.replace (.enter .this)
+    [.putOntoBattlefieldInState .this [.tapped]]))]
+#guard parseOracleParts (name := "") "This spell enters tapped." == none
+#guard parseOracleParts (name := "") "This land enters." == none
+#guard parseOracleParts (name := "") "{T}: Add {G} or {U}." ==
+  some [.ability (.activated [.tapSymbol]
+    (.playerSelectAction (.controller .this) (.range 1 1)
+      [.addMana (.controller .this) [.mono .green],
+       .addMana (.controller .this) [.mono .blue]]))]
+#guard parseOracleParts (name := "") "{T}: Add {G}." == none
+#guard parseOracleParts (name := "") "{T}: Add {2} or {G}." == none
+#guard parseOracleParts (name := "")
+  "{4}{U}: Target creature can't be blocked this turn." ==
+  some [.ability (.activated [.mana [.generic 4, .mono .blue]]
+    (.continuous
+      [.forbid (.block .any
+        (.target 1 (.intersection [.permanent, .cardType .creature])))]
+      .endOfTurn))]
+#guard parseOracleParts (name := "")
+  "{2}{G}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Elf you control. Activate only as a sorcery." ==
+  some [.ability (.activatedIf (.timeToCastSorcery (.controller .this))
+    [.mana [.generic 2, .mono .green, .mono .blue], .tapSymbol, .sacrifice .this]
+    (.putCounter
+      (.target 1 (.intersection
+        [.permanent, .cardType .creature, .subtype .elf, .controlled (.controller .this)]))
+      .plusOnePlusOne 2))]
+#guard parseOracleParts (name := "")
+  "{2}{B}{R}, {T}, Sacrifice this land: Put two +1/+1 counters on target Goblin or Orc you control. Activate only as a sorcery." ==
+  some [.ability (.activatedIf (.timeToCastSorcery (.controller .this))
+    [.mana [.generic 2, .mono .black, .mono .red], .tapSymbol, .sacrifice .this]
+    (.putCounter
+      (.target 1 (.intersection [
+        .permanent, .cardType .creature,
+        .union [.subtype .goblin, .subtype .orc],
+        .controlled (.controller .this)]))
+      .plusOnePlusOne 2))]
+#guard parseOracleParts (name := "")
+  "{2}{B}{G}, {T}, Sacrifice this land: Put two +1/+1 counter on target Bear, Spider, or Wolf you control. Activate only as a sorcery." ==
+  none
+#guard parseOracleParts (name := "")
+  "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle." ==
+  some [.ability (.activated [.tapSymbol, .sacrifice .this]
+    (.searchLibraryThenShuffle (.controller .this)
+      [.putOntoBattlefieldInState
+        (.selected (.controller .this) (.range 1 1)
+          (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
+        [.tapped]]))]
+#guard parseOracleParts (name := "")
+  "Halflingcycling {4} ({4}, Discard this card: Search your library for a Halfling card, reveal it, put it into your hand, then shuffle.)" ==
+  some [.ability (.keywordWithCost (.typecycling [] [] [.halfling]) [.mana [.generic 4]])]
+#guard parseOracleParts (name := "") "Halflingcycling" == none
+#guard parseOracleParts (name := "") "Cycling {2}" == none
+#guard parseOracleParts (name := "") "Basic landcycling {2}" ==
+  some [.ability (.keywordWithCost (.typecycling [.basic] [.land] []) [.mana [.generic 2]])]
+#guard parseOracleParts (name := "")
+  "When this Equipment enters, you gain 2 life." ==
+  some [.ability (.triggered (.enter .this) (.gainLife (.controller .this) 2))]
+#guard parseOracleParts (name := "")
+  "When this Equipment enters, target player gains 2 life." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, untap another target creature you control. If that creature is a Bear, put a +1/+1 counter on it." ==
+  some [.ability (.triggered (.enter .this)
+    (.sequence [
+      .untap (.target 1 (.intersection [
+        .not .this, .permanent, .cardType .creature, .controlled (.controller .this)])),
+      .if (.anySubtype (.targetReference 1) .bear)
+        [.putCounter (.targetReference 1) .plusOnePlusOne 1]]))]
+#guard parseOracleParts (name := "")
+  "When this creature enters, untap target creature you control. If that creature is a Bear, put a +1/+1 counter on it." ==
+  none
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn." ==
+  some [.ability (.triggeredWhile (.attack .this .all)
+    (.any (.intersection [
+      .permanent, .cardType .creature, .controlled (.controller .this),
+      .powerAtLeast (Value.int 4)]))
+    (.continuous
+      [.addPower (.source .this) (Value.int 2), .addToughness (.source .this) (Value.int 2)]
+      .endOfTurn))]
+#guard parseOracleParts (name := "")
+  "Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn." ==
+  parseOracleParts (name := "")
+    "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn."
+#guard parseOracleParts (name := "")
+  "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, creatures you control get +2/+2 until end of turn." ==
+  none
 
 end Mtg.Engine

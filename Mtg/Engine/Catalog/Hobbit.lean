@@ -23,7 +23,10 @@ Gandalf, Spark Starter, Ragged Short Spear, Snowslope Hunter,
 Guardian of the Halls, Quarrel, Galion, Elvenking's Butler,
 Warg Tactics, Beorn's Hospitality, Woodland Weavemaster,
 Mirkwood Pathmaker, Beorn, Reluctant Host, Wood Elves, Attercop,
-and Large Bear keep their printed characteristics as parts;
+Large Bear, Little Bear, Elvenking's Harper, Smaug's Fury,
+Well-Worn Spatula, Elvenking's Halls, Iron Hills, Lake-town,
+Goblin-town, Mirkwood, Hobbit Hole, and Nighthowl Pursuer
+keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -1642,88 +1645,161 @@ def largeBear : CardDef :=
   .ability (.keyword .haste)
 ]
 
-def littleBear : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Little Bear. -/
+def littleBearOracle : String :=
+  "Flash\nWhen this creature enters, untap another target creature you control. If that creature is a Bear, put a +1/+1 counter on it."
+
+def littleBearDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Little Bear",
     .manaCost [.generic 2, .mono .green],
     .type .creature,
     .subtype .bear,
     .power 3,
-    .toughness 2,
-    .ability (.keyword .flash),
-    .ability (
-      .triggered
-        (.enter .this)
-        (.sequence [
-          .untap
-            (.target
-              1
-              (.intersection [
-                .not .this,
-                .permanent,
-                .cardType .creature,
-                .controlled (.controller .this)])),
-          .if
-            (.anySubtype (.targetReference 1) .bear)
-            [.putCounter (.targetReference 1) .plusOnePlusOne 1]]))
-  ]).toCardDef
-    (oracleText := "Flash\nWhen this creature enters, untap another target creature you control. If that creature is a Bear, put a +1/+1 counter on it.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Little Bear") littleBearOracle).get!
 
-def elvenkingsHarper : CardDef :=
-  (TraditionalCardDefinition.card [
+def littleBear : CardDef :=
+  littleBearDefinition.toCardDef
+    (oracleText := littleBearOracle)
+
+#guard littleBearDefinition == .card [
+  .name "Little Bear",
+  .manaCost [.generic 2, .mono .green],
+  .type .creature,
+  .subtype .bear,
+  .power 3,
+  .toughness 2,
+  .ability (.keyword .flash),
+  .ability (
+    .triggered
+      (.enter .this)
+      (.sequence [
+        .untap
+          (.target
+            1
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])),
+        .if
+          (.anySubtype (.targetReference 1) .bear)
+          [.putCounter (.targetReference 1) .plusOnePlusOne 1]]))
+]
+
+/-- Gatherer Oracle text for Elvenking's Harper. -/
+def elvenkingsHarperOracle : String :=
+  "{4}{U}: Target creature can't be blocked this turn."
+
+def elvenkingsHarperDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Elvenking's Harper",
     .manaCost [.generic 1, .mono .blue],
     .type .creature,
     .subtype .elf,
     .subtype .bard,
     .power 2,
-    .toughness 2,
-    .ability (
-      .activated
-        [.mana [.generic 4, .mono .blue]]
-        (.continuous
-          [.forbid
-            (.block
-              .any
-              (.target 1 (.intersection [.permanent, .cardType .creature])))]
-          .endOfTurn))
-  ]).toCardDef
-    (oracleText := "{4}{U}: Target creature can't be blocked this turn.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Elvenking's Harper") elvenkingsHarperOracle).get!
 
-def smaugsFury : CardDef :=
-  (TraditionalCardDefinition.card [
+def elvenkingsHarper : CardDef :=
+  elvenkingsHarperDefinition.toCardDef
+    (oracleText := elvenkingsHarperOracle)
+
+#guard elvenkingsHarperDefinition == .card [
+  .name "Elvenking's Harper",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .subtype .elf,
+  .subtype .bard,
+  .power 2,
+  .toughness 2,
+  .ability (
+    .activated
+      [.mana [.generic 4, .mono .blue]]
+      (.continuous
+        [.forbid
+          (.block
+            .any
+            (.target 1 (.intersection [.permanent, .cardType .creature])))]
+        .endOfTurn))
+]
+
+/-- Gatherer Oracle text for Smaug's Fury. -/
+def smaugsFuryOracle : String :=
+  "Target creature gets +3/+0 and gains reach and first strike until end of turn."
+
+def smaugsFuryDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Smaug's Fury",
     .manaCost [.generic 1, .mono .red],
-    .type .instant,
-    .actions [
-      .continuous
-        [
-          .addPower
-            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
-          .gainAbility (.targetReference 1) (.keyword .reach),
-          .gainAbility (.targetReference 1) (.keyword .firstStrike)]
-        .endOfTurn]
-  ]).toCardDef
-    (oracleText := "Target creature gets +3/+0 and gains reach and first strike until end of turn.")
+    .type .instant
+  ] ++ (parseOracleParts (name := "Smaug's Fury") smaugsFuryOracle).get!
 
-def wellWornSpatula : CardDef :=
-  (TraditionalCardDefinition.card [
+def smaugsFury : CardDef :=
+  smaugsFuryDefinition.toCardDef
+    (oracleText := smaugsFuryOracle)
+
+#guard smaugsFuryDefinition == .card [
+  .name "Smaug's Fury",
+  .manaCost [.generic 1, .mono .red],
+  .type .instant,
+  .actions [
+    .continuous
+      [
+        .addPower
+          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
+        .gainAbility (.targetReference 1) (.keyword .reach),
+        .gainAbility (.targetReference 1) (.keyword .firstStrike)]
+      .endOfTurn]
+]
+
+/-- Gatherer Oracle text for Well-Worn Spatula. -/
+def wellWornSpatulaOracle : String :=
+  "When this Equipment enters, you gain 2 life.\nEquipped creature gets +1/+1.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
+
+def wellWornSpatulaDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Well-Worn Spatula",
     .manaCost [.generic 1],
     .type .artifact,
-    .subtype .equipment,
-    .ability (
-      .triggered
-        (.enter .this)
-        (.gainLife (.controller .this) 2)),
-    .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
-    .ability (.static (.addToughness (.hostOf .this) (Value.int 1))),
-    .ability (.keywordWithCost .equip [.mana [.generic 1]])
-  ]).toCardDef
-    (oracleText := "When this Equipment enters, you gain 2 life.\nEquipped creature gets +1/+1.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)")
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "Well-Worn Spatula") wellWornSpatulaOracle).get!
+
+def wellWornSpatula : CardDef :=
+  wellWornSpatulaDefinition.toCardDef
+    (oracleText := wellWornSpatulaOracle)
+
+#guard wellWornSpatulaDefinition == .card [
+  .name "Well-Worn Spatula",
+  .manaCost [.generic 1],
+  .type .artifact,
+  .subtype .equipment,
+  .ability (
+    .triggered
+      (.enter .this)
+      (.gainLife (.controller .this) 2)),
+  .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
+  .ability (.static (.addToughness (.hostOf .this) (Value.int 1))),
+  .ability (.keywordWithCost .equip [.mana [.generic 1]])
+]
+
+/-- Gatherer Oracle text for Elvenking's Halls. -/
+def elvenkingsHallsOracle : String :=
+  "This land enters tapped.\n{T}: Add {G} or {U}.\n{2}{G}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Elf you control. Activate only as a sorcery."
+
+def elvenkingsHallsDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Elvenking's Halls",
+    .type .land
+  ] ++ (parseOracleParts (name := "Elvenking's Halls") elvenkingsHallsOracle).get!
 
 def elvenkingsHalls : CardDef :=
-  (TraditionalCardDefinition.card [
+  elvenkingsHallsDefinition.toCardDef
+    (oracleText := elvenkingsHallsOracle)
+
+#guard elvenkingsHallsDefinition == .card [
     .name "Elvenking's Halls",
     .type .land,
     .ability (
@@ -1757,12 +1833,23 @@ def elvenkingsHalls : CardDef :=
               .controlled (.controller .this)]))
           .plusOnePlusOne
           2))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\n{T}: Add {G} or {U}.\n{2}{G}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Elf you control. Activate only as a sorcery.")
+]
+
+/-- Gatherer Oracle text for Iron Hills. -/
+def ironHillsOracle : String :=
+  "This land enters tapped.\n{T}: Add {R} or {W}.\n{2}{R}{W}, {T}, Sacrifice this land: Put two +1/+1 counters on target Dwarf you control. Activate only as a sorcery."
+
+def ironHillsDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Iron Hills",
+    .type .land
+  ] ++ (parseOracleParts (name := "Iron Hills") ironHillsOracle).get!
 
 def ironHills : CardDef :=
-  (TraditionalCardDefinition.card [
+  ironHillsDefinition.toCardDef
+    (oracleText := ironHillsOracle)
+
+#guard ironHillsDefinition == .card [
     .name "Iron Hills",
     .type .land,
     .ability (
@@ -1796,12 +1883,23 @@ def ironHills : CardDef :=
               .controlled (.controller .this)]))
           .plusOnePlusOne
           2))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\n{T}: Add {R} or {W}.\n{2}{R}{W}, {T}, Sacrifice this land: Put two +1/+1 counters on target Dwarf you control. Activate only as a sorcery.")
+]
+
+/-- Gatherer Oracle text for Lake-town. -/
+def lakeTownOracle : String :=
+  "This land enters tapped.\n{T}: Add {W} or {U}.\n{2}{W}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Human you control. Activate only as a sorcery."
+
+def lakeTownDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Lake-town",
+    .type .land
+  ] ++ (parseOracleParts (name := "Lake-town") lakeTownOracle).get!
 
 def lakeTown : CardDef :=
-  (TraditionalCardDefinition.card [
+  lakeTownDefinition.toCardDef
+    (oracleText := lakeTownOracle)
+
+#guard lakeTownDefinition == .card [
     .name "Lake-town",
     .type .land,
     .ability (
@@ -1835,12 +1933,23 @@ def lakeTown : CardDef :=
               .controlled (.controller .this)]))
           .plusOnePlusOne
           2))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\n{T}: Add {W} or {U}.\n{2}{W}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Human you control. Activate only as a sorcery.")
+]
+
+/-- Gatherer Oracle text for Goblin-town. -/
+def goblinTownOracle : String :=
+  "This land enters tapped.\n{T}: Add {B} or {R}.\n{2}{B}{R}, {T}, Sacrifice this land: Put two +1/+1 counters on target Goblin or Orc you control. Activate only as a sorcery."
+
+def goblinTownDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Goblin-town",
+    .type .land
+  ] ++ (parseOracleParts (name := "Goblin-town") goblinTownOracle).get!
 
 def goblinTown : CardDef :=
-  (TraditionalCardDefinition.card [
+  goblinTownDefinition.toCardDef
+    (oracleText := goblinTownOracle)
+
+#guard goblinTownDefinition == .card [
     .name "Goblin-town",
     .type .land,
     .ability (
@@ -1874,12 +1983,23 @@ def goblinTown : CardDef :=
               .controlled (.controller .this)]))
           .plusOnePlusOne
           2))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\n{T}: Add {B} or {R}.\n{2}{B}{R}, {T}, Sacrifice this land: Put two +1/+1 counters on target Goblin or Orc you control. Activate only as a sorcery.")
+]
+
+/-- Gatherer Oracle text for Mirkwood. -/
+def mirkwoodOracle : String :=
+  "This land enters tapped.\n{T}: Add {B} or {G}.\n{2}{B}{G}, {T}, Sacrifice this land: Put two +1/+1 counters on target Bear, Spider, or Wolf you control. Activate only as a sorcery."
+
+def mirkwoodDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Mirkwood",
+    .type .land
+  ] ++ (parseOracleParts (name := "Mirkwood") mirkwoodOracle).get!
 
 def mirkwood : CardDef :=
-  (TraditionalCardDefinition.card [
+  mirkwoodDefinition.toCardDef
+    (oracleText := mirkwoodOracle)
+
+#guard mirkwoodDefinition == .card [
     .name "Mirkwood",
     .type .land,
     .ability (
@@ -1913,12 +2033,23 @@ def mirkwood : CardDef :=
               .controlled (.controller .this)]))
           .plusOnePlusOne
           2))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\n{T}: Add {B} or {G}.\n{2}{B}{G}, {T}, Sacrifice this land: Put two +1/+1 counters on target Bear, Spider, or Wolf you control. Activate only as a sorcery.")
+]
+
+/-- Gatherer Oracle text for Hobbit Hole. -/
+def hobbitHoleOracle : String :=
+  "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nHalflingcycling {4} ({4}, Discard this card: Search your library for a Halfling card, reveal it, put it into your hand, then shuffle.)"
+
+def hobbitHoleDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Hobbit Hole",
+    .type .land
+  ] ++ (parseOracleParts (name := "Hobbit Hole") hobbitHoleOracle).get!
 
 def hobbitHole : CardDef :=
-  (TraditionalCardDefinition.card [
+  hobbitHoleDefinition.toCardDef
+    (oracleText := hobbitHoleOracle)
+
+#guard hobbitHoleDefinition == .card [
     .name "Hobbit Hole",
     .type .land,
     .ability (
@@ -1937,12 +2068,27 @@ def hobbitHole : CardDef :=
                   .supertype .basic]))
               [.tapped]])),
     .ability (.keywordWithCost (.typecycling [] [] [.halfling]) [.mana [.generic 4]])
-  ]).toCardDef
-    (oracleText :=
-      "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nHalflingcycling {4} ({4}, Discard this card: Search your library for a Halfling card, reveal it, put it into your hand, then shuffle.)")
+]
+
+/-- Gatherer Oracle text for Nighthowl Pursuer. -/
+def nighthowlPursuerOracle : String :=
+  "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn."
+
+def nighthowlPursuerDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Nighthowl Pursuer",
+    .manaCost [.mono .black],
+    .type .creature,
+    .subtype .wolf,
+    .power 1,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Nighthowl Pursuer") nighthowlPursuerOracle).get!
 
 def nighthowlPursuer : CardDef :=
-  (TraditionalCardDefinition.card [
+  nighthowlPursuerDefinition.toCardDef
+    (oracleText := nighthowlPursuerOracle)
+
+#guard nighthowlPursuerDefinition == .card [
     .name "Nighthowl Pursuer",
     .manaCost [.mono .black],
     .type .creature,
@@ -1961,8 +2107,7 @@ def nighthowlPursuer : CardDef :=
             .powerAtLeast (Value.int 4)]))
         (.continuous [.addPower (.source .this) (Value.int 2),
                       .addToughness (.source .this) (Value.int 2)] .endOfTurn))
-  ]).toCardDef
-    (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn.")
+]
 
 def wargling : CardDef :=
   (TraditionalCardDefinition.card [
