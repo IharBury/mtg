@@ -1064,10 +1064,7 @@ def thorinKingOfDurinsFolk : CardDef :=
         (.createTokens (.controller .this) 1 PredefinedToken.treasureToken)),
     .ability
       (.static
-        (.addPower otherDwarves (Value.count artifactTokens))),
-    .ability
-      (.static
-        (.addToughness otherDwarves (Value.product (Value.count artifactTokens) (Value.int 0))))
+        (.addPower otherDwarves (Value.count artifactTokens)))
   ]).toCardDef
     (oracleText := "Whenever Thorin or another Dwarf you control enters, create a Treasure token.\nOther Dwarves you control get +1/+0 for each artifact token you control.")
 

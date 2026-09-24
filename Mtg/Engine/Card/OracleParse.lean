@@ -507,16 +507,18 @@ def splitUntilEnd? (s : String) : Option (String × Option String) :=
   | none =>
     (before? s "until end of turn").map fun body => (body, none)
 
-/-- `+P/+T` until end of turn, optionally once per `among`. -/
+/-- `+P/+T` until end of turn, optionally once per `among`.
+Zero toughness is omitted. -/
 def pumpUntilEnd (sel : Selector) (p t : Int) (among : Option Selector) : CardAction :=
   match among with
   | none =>
     .continuous [.addPowerToughness sel (Value.int p) (Value.int t)] .endOfTurn
   | some among =>
-    .continuous
-      [.addPower sel (Value.timesCount p among),
-       .addToughness sel (Value.timesCount t among)]
-      .endOfTurn
+    let power :=
+      if p == 0 then [] else [.addPower sel (Value.timesCount p among)]
+    let toughness :=
+      if t == 0 then [] else [.addToughness sel (Value.timesCount t among)]
+    .continuous (power ++ toughness) .endOfTurn
 
 /-- `+P/+T` on target `n` until end of turn, plus keywords on that same target.
 No keywords is only the power and toughness change. -/

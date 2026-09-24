@@ -403,9 +403,11 @@ instance (n : Nat) : OfNat Value n where
   ofNat := .nat n
 
 /-- `n` times the number of objects matching the selector.
-One is the count; it is not a product. -/
+Zero is the constant zero and one is the count. Neither is a product. -/
 def timesCount (n : Int) (among : Selector) : Value :=
-  if n == 1 then .count among else .product (.count among) (.int n)
+  if n == 0 then .int 0
+  else if n == 1 then .count among
+  else .product (.count among) (.int n)
 
 #guard toString (Value.nat 3) == "3"
 #guard toString (Value.int (-2)) == "-2"
@@ -417,7 +419,7 @@ def timesCount (n : Int) (among : Selector) : Value :=
 #guard toString (Value.product (Value.count .this) 2) == "X"
 #guard Value.timesCount 1 .this == Value.count .this
 #guard Value.timesCount 2 .this == Value.product (Value.count .this) (Value.int 2)
-#guard Value.timesCount 0 .this == Value.product (Value.count .this) (Value.int 0)
+#guard Value.timesCount 0 .this == Value.int 0
 #guard Value.product 2 3 != Value.nat 6
 #guard (1 : Value) == Value.nat 1
 #guard Value.x != Value.nat 1

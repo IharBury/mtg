@@ -2353,19 +2353,16 @@ def leftoverPumpForEachOtherCreature? : List ContinuousEffect → Bool
   | _ => false
 
 /-- Other permanents you control of a subtype get +1/+0 for each artifact
-token you control. Power is the count; toughness is that count times zero. -/
+token you control. Power is the count. Zero toughness is omitted. -/
 def leftoverOtherSubtypeGetPowerPerArtifactToken?
-    (power toughness : ContinuousEffect) : Option String :=
-  match power, toughness with
-  | .addPower who (Value.count among),
-    .addToughness who' (Value.product (Value.count among') vt) =>
-    if who == who' && among == among' &&
-        valToInt? vt == some 0 &&
-        among.shape.token && among.shape.sameController &&
+    (power : ContinuousEffect) : Option String :=
+  match power with
+  | .addPower who (Value.count among) =>
+    if among.shape.token && among.shape.sameController &&
         among.shape.types.eqTypes [.artifact] then
       who.shape.anotherSubtypeYouControl
     else none
-  | _, _ => none
+  | _ => none
 
 /-- You may pay {1}. If you do, target creature with haste can't be
 blocked this turn except by creatures with haste. -/
@@ -4067,12 +4064,18 @@ def staticContinuous? : CardPart → Option ContinuousEffect
   | .ability (.static e) | .ability (.stackStatic e) => some e
   | _ => none
 
-/-- Other-subtype +1/+0 for each artifact token, from a power and toughness pair. -/
+/-- Other-subtype +1/+0 for each artifact token. Toughness is not changed. -/
 def otherSubtypePerArtifactToken? (parts : List CardPart) : Option String :=
   let effects := parts.filterMap staticContinuous?
   effects.findSome? fun power =>
-    effects.findSome? fun toughness =>
-      CardAction.leftoverOtherSubtypeGetPowerPerArtifactToken? power toughness
+    match CardAction.leftoverOtherSubtypeGetPowerPerArtifactToken? power with
+    | some st =>
+      let alsoToughness :=
+        effects.any fun
+          | .addToughness who _ => who == power.selector
+          | _ => false
+      if alsoToughness then none else some st
+    | none => none
 
 def ofParts (parts : List CardPart) : CardFace :=
   let b := parts.foldl apply {}
@@ -7625,10 +7628,7 @@ end TraditionalCardDefinition
   (TraditionalCardDefinition.card [
     .ability
       (.static
-        (.addPower dwarves (Value.count tokens))),
-    .ability
-      (.static
-        (.addToughness dwarves (Value.product (Value.count tokens) (Value.int 0))))
+        (.addPower dwarves (Value.count tokens)))
   ]).toCardDef.staticAbilities == #[.otherSubtypeGetPowerPerArtifactToken "Dwarf"]
 
 #guard
@@ -7646,9 +7646,8 @@ end TraditionalCardDefinition
       .cardType .artifact,
       .controlled (.controller .this)]
   (TraditionalCardDefinition.card [
-    .ability
-      (.static
-        (.addPower dwarves (Value.count tokens)))
+    .ability (.static (.addPower dwarves (Value.count tokens))),
+    .ability (.static (.addToughness dwarves (Value.count tokens)))
   ]).toCardDef.staticAbilities == #[]
 
 #guard
