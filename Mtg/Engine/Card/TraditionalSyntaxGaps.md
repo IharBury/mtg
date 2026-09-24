@@ -52,7 +52,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 
 - **Range** — `range lo hi` (`Value` bounds), `any` (0 unbounded), `from n` (`Value` lower bound, unbounded high).
 - **SetPredicate** — `shareCardType`, `countAtLeast`.
-- **Selector** — `this`, `source`, `controller`,   `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
+- **Selector** — `this`, `source`, `controller`, `caster` (the player who would cast this spell), `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
   `keywordAbility`,
   `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `hasTarget`, `isTargetOf`, `player`, `opponent`,
@@ -80,7 +80,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `static`, `stackStatic`, `everywhereStatic` (functions in every zone, including before the card is put onto the stack).
 - **ContinuousEffect** — `gainAbility`, `if`,
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
-  `canCastWithoutPayingManaCost`, `canPlay`, `canCastAsThoughWithFlash` (cast as though the spell had flash; the spell does not gain flash),
+  `canCastWithoutPayingManaCost`, `canPlay`, `canCastAsThoughWithFlashIf` (cast the spell as though it had flash when a condition holds; `you` is `Selector.caster`; the spell does not gain flash),
   `setBasePower`, `setBaseToughness`,
   `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPower`, `setToughness`,
   `addPower`, `addToughness`, `increaseLandPlayLimit`.

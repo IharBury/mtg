@@ -216,7 +216,7 @@ def shape : Selector → Shape
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
-  | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _
+  | .this | .source _ | .controller _ | .caster | .opponent _ | .owner _ | .target _ _
   | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _
   | .selected _ _ _ | .player => {}
   | .wasObjectSince (.putToGraveyard _) .turnStart =>
@@ -333,6 +333,7 @@ def referenceTargets : Selector → Selector
   | .this => .this
   | .source s => .source (referenceTargets s)
   | .controller s => .controller (referenceTargets s)
+  | .caster => .caster
   | .target n _ => .targetReference n
   | .targets n _ _ => .targetReference n
   | .targetSet n _ _ _ => .targetReference n
@@ -716,9 +717,11 @@ inductive ContinuousEffect where
   /-- The selected player may play that many additional lands on each of
   their turns (CR 305.2b). -/
   | increaseLandPlayLimit : Selector → Value → ContinuousEffect
-  /-- The selected player may cast the selected spell as though it had flash
-  (CR 601.3 / 702.8). The spell does not gain the flash keyword. -/
-  | canCastAsThoughWithFlash : Selector → Selector → ContinuousEffect
+  /-- The selected spell may be cast as though it had flash when the condition
+  holds (CR 601.3 / 702.8). `you` in that condition is `Selector.caster`,
+  the player who would cast the spell, not necessarily its controller or
+  owner. The spell does not gain the flash keyword. -/
+  | canCastAsThoughWithFlashIf : Selector → Condition → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -962,7 +965,7 @@ def selector : ContinuousEffect → Selector
   | .setPower who _ | .setToughness who _ => who
   | .addPower who _ | .addToughness who _ => who
   | .increaseLandPlayLimit who _ => who
-  | .canCastAsThoughWithFlash _ card => card
+  | .canCastAsThoughWithFlashIf card _ => card
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is
@@ -1014,7 +1017,7 @@ def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
 def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
-    | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
+    | .this | .source _ | .controller _ | .caster | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
     | .spell | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
     | .player
@@ -3907,22 +3910,31 @@ def leftoverHasteIfOtherSubtype? (among : Selector) (inners : List ContinuousEff
     else none
   | _ => none
 
-/-- This spell may be cast as though it had flash while you control that subtype.
-The spell does not gain flash. -/
-def leftoverFlashIfSubtypeYouControl? (among : Selector) (inners : List ContinuousEffect)
-    : Option String :=
-  match inners with
-  | [.canCastAsThoughWithFlash who card] =>
-    if who == .controller .this && (card == .this || card == .source .this) then
-      match among.shape.subtype with
-      | some t =>
-        if among.shape ==
-            { sameController := true, mustBePermanent := true, subtype := some t } then
-          some t
-        else none
-      | none => none
+/-- A permanent of one subtype controlled by `Selector.caster`. -/
+def casterControlsPermanentSubtype? : Selector → Option String
+  | .intersection parts =>
+    let subtypes := parts.filterMap fun
+      | .subtype st => some st.toString
+      | _ => none
+    let only := parts.all fun
+      | .permanent | .controlled .caster | .subtype _ => true
+      | _ => false
+    if only && parts.contains .permanent && parts.contains (.controlled .caster) then
+      match subtypes with
+      | [t] => some t
+      | _ => none
     else none
   | _ => none
+
+/-- This spell may be cast as though it had flash while the caster controls
+that subtype. The spell does not gain flash. -/
+def leftoverCanCastAsThoughWithFlashIf? (card : Selector) (cond : Condition) :
+    Option String :=
+  if card == .this || card == .source .this then
+    match cond with
+    | .any among => casterControlsPermanentSubtype? among
+    | _ => none
+  else none
 
 /-- Equip abilities you activate that target this, reduced by that much. -/
 def leftoverEquipAbilitiesTargetingThisCostLess? (who : Selector) (costs : List Cost)
@@ -3997,9 +4009,6 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           staticAbilities :=
             b.staticAbilities.push (.hasteIfYouControlOtherSubtype t) }
       | none =>
-        match leftoverFlashIfSubtypeYouControl? among inners with
-        | some t => { b with flashIfYouControlSubtype := some t }
-        | none =>
           if Selector.includesLegendary among && among.shape.sameController &&
               among.shape.types.eqTypes [.creature] then
             inners.foldl
@@ -4089,7 +4098,10 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAllSubtypes _ _ => b
   | .setPower _ _ | .setToughness _ _ => b
   | .increaseLandPlayLimit _ _ => b
-  | .canCastAsThoughWithFlash _ _ => b
+  | .canCastAsThoughWithFlashIf card cond =>
+    match leftoverCanCastAsThoughWithFlashIf? card cond with
+    | some t => { b with flashIfYouControlSubtype := some t }
+    | none => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
@@ -6818,10 +6830,10 @@ end TraditionalCardDefinition
   let card :=
     (TraditionalCardDefinition.card [
       .ability (.everywhereStatic (
-        .if
+        .canCastAsThoughWithFlashIf
+          .this
           (.any (.intersection [
-            .permanent, .subtype .human, .controlled (.controller .this)]))
-          [.canCastAsThoughWithFlash (.controller .this) .this]))
+            .permanent, .subtype .human, .controlled .caster]))))
     ]).toCardDef
   card.flashIfYouControlSubtype == some "Human" && !card.keywords.flash
 
