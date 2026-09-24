@@ -78,7 +78,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`, `abilityId`, `triggered`,
   `triggeredWhile` (condition checked when the trigger event occurs, not on resolution),
   `static`.
-- **ContinuousEffect** — `gainAbility`, `addPowerToughness`, `if`,
+- **ContinuousEffect** — `gainAbility`, `if`,
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
   `canCastWithoutPayingManaCost`, `canPlay`, `setBasePower`, `setBaseToughness`,
   `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPower`, `setToughness`,

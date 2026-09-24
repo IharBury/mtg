@@ -613,7 +613,6 @@ deriving Repr, Inhabited, BEq
 /-- A continuous effect granted by a spell or ability. -/
 inductive ContinuousEffect where
   | gainAbility : Selector → Ability → ContinuousEffect
-  | addPowerToughness : Selector → Value → Value → ContinuousEffect
   /-- Apply the given continuous effects only when the condition holds. -/
   | if : Condition → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
@@ -864,7 +863,6 @@ namespace ContinuousEffect
 
 def selector : ContinuousEffect → Selector
   | .gainAbility who _ => who
-  | .addPowerToughness who _ _ => who
   | .if _ (inner :: _) => selector inner
   | .if _ [] => .this
   | .reduceCost who _ => who
@@ -881,28 +879,44 @@ def selector : ContinuousEffect → Selector
   | .addPower who _ | .addToughness who _ => who
   | .increaseLandPlayLimit who _ => who
 
-/-- Combined +P/+T if every effect is `addPowerToughness`. -/
+/-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
+A side that is absent is zero. Any other effect, or a non-integer value, is
+`none`. -/
 def addedPT? : List ContinuousEffect → Option (Int × Int)
   | [] => some (0, 0)
-  | .addPowerToughness _ vp vt :: rest =>
-    match valToInt? vp, valToInt? vt, addedPT? rest with
-    | some p, some t, some (p', t') => some (p + p', t + t')
-    | _, _, _ => none
-  | .gainAbility _ _ :: _ => none
-  | .if _ _ :: _ => none
-  | .reduceCost _ _ :: _ => none
-  | .additionalCost _ _ :: _ => none
-  | .replace _ _ :: _ => none
-  | .forbid _ :: _ => none
-  | .canCastWithoutPayingManaCost _ _ :: _ => none
-  | .canPlay _ _ :: _ => none
-  | .setBasePower _ _ :: _ | .setBaseToughness _ _ :: _ => none
-  | .gainType _ _ :: _ => none
-  | .gainSubtype _ _ :: _ => none
-  | .gainAllSubtypes _ _ :: _ => none
-  | .setPower _ _ :: _ | .setToughness _ _ :: _ => none
-  | .addPower _ _ :: _ | .addToughness _ _ :: _ => none
-  | .increaseLandPlayLimit _ _ :: _ => none
+  | .addPower _ v :: rest =>
+    match valToInt? v, addedPT? rest with
+    | some p, some (p', t') => some (p + p', t')
+    | _, _ => none
+  | .addToughness _ v :: rest =>
+    match valToInt? v, addedPT? rest with
+    | some t, some (p', t') => some (p', t + t')
+    | _, _ => none
+  | _ :: _ => none
+
+/-- Integer power and toughness from `addPower` and `addToughness`.
+Other effects are ignored. `none` when neither is present, or when a power
+or toughness value is not an integer. -/
+def foundAddedPT? (effects : List ContinuousEffect) : Option (Int × Int) :=
+  match effects.foldl step (some ((0, 0), false)) with
+  | some ((p, t), true) => some (p, t)
+  | _ => none
+where
+  step (acc : Option ((Int × Int) × Bool)) (e : ContinuousEffect) :
+      Option ((Int × Int) × Bool) :=
+    match acc with
+    | none => none
+    | some ((p, t), seen) =>
+      match e with
+      | .addPower _ v =>
+        match valToInt? v with
+        | some dp => some ((p + dp, t), true)
+        | none => none
+      | .addToughness _ v =>
+        match valToInt? v with
+        | some dt => some ((p, t + dt), true)
+        | none => none
+      | _ => some ((p, t), seen)
 
 /-- First declared `target` or `targets`, if any. -/
 def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
@@ -994,12 +1008,19 @@ def withTargetCounts (e : Effect) (sel : Selector) (asAbility : Bool) : Effect :
   | _ => e
 
 /-- Source of this ability gets +P/+T. -/
-def leftoverSourcePump? : List ContinuousEffect → Option (Int × Int)
-  | [.addPowerToughness (.source .this) vp vt] =>
-    match valToInt? vp, valToInt? vt with
-    | some p, some t => some (p, t)
-    | _, _ => none
-  | _ => none
+def leftoverSourcePump? (effects : List ContinuousEffect) : Option (Int × Int) :=
+  match effects with
+  | [] => none
+  | _ =>
+    match ContinuousEffect.addedPT? effects with
+    | some pt =>
+      if effects.all fun e =>
+        match e with
+        | .addPower (.source .this) _ | .addToughness (.source .this) _ => true
+        | _ => false
+      then some pt
+      else none
+    | none => none
 
 /-- Target creature gets +P/+T (Giant Growth, Dark Deed). -/
 def leftoverTargetPump? (effects : List ContinuousEffect) : Option (Int × Int) :=
@@ -1194,14 +1215,7 @@ def leftoverEquipSubtype? : CardAction → Option String
 /-- Target creature gets +P/+T; if it would die this turn, exile it instead. -/
 def leftoverPumpAndExileIfDies? : CardAction → Option (Int × Int)
   | .continuous effects _ =>
-    let pt :=
-      effects.findSome? fun e =>
-        match e with
-        | .addPowerToughness _ vp vt =>
-          match valToInt? vp, valToInt? vt with
-          | some p, some t => some (p, t)
-          | _, _ => none
-        | _ => none
+    let pt := ContinuousEffect.foundAddedPT? effects
     let replacesDie :=
       effects.any fun e =>
         match e with
@@ -1213,14 +1227,7 @@ def leftoverPumpAndExileIfDies? : CardAction → Option (Int × Int)
 /-- Target creature gets +P/+T and gains lifelink. -/
 def leftoverPumpAndLifelink? : CardAction → Option (Int × Int)
   | .continuous effects _ =>
-    let pt :=
-      effects.findSome? fun e =>
-        match e with
-        | .addPowerToughness _ vp vt =>
-          match valToInt? vp, valToInt? vt with
-          | some p, some t => some (p, t)
-          | _, _ => none
-        | _ => none
+    let pt := ContinuousEffect.foundAddedPT? effects
     let lifelink :=
       effects.any fun e =>
         match e with
@@ -1285,14 +1292,7 @@ def leftoverReturnCreatureFromGyThenAmass? : CardAction → Option Nat
 /-- Target creature gets +P/+T and gains keywords. -/
 def leftoverPumpAndGrantKeywords? : CardAction → Option (Int × Int × Keywords)
   | .continuous effects _ =>
-    let pt :=
-      effects.findSome? fun e =>
-        match e with
-        | .addPowerToughness _ vp vt =>
-          match valToInt? vp, valToInt? vt with
-          | some p, some t => some (p, t)
-          | _, _ => none
-        | _ => none
+    let pt := ContinuousEffect.foundAddedPT? effects
     let kws := grantedKeywords effects
     match pt with
     | some (p, t) =>
@@ -1767,21 +1767,22 @@ def leftoverGainLifeSearchBasicPlusOne? : CardAction → Option Nat
   | _ => none
 
 /-- Source gets +P/+0 and creatures you control gain trample. -/
-def leftoverSourceGetsAndTeamTrample? : List ContinuousEffect → Option Int
-  | effects =>
-    let pt :=
-      effects.findSome? fun
-        | .addPowerToughness (.source .this) vp vt =>
-          match valToInt? vp, valToInt? vt with
-          | some p, some t => if t == 0 then some p else none
-          | _, _ => none
-        | _ => none
-    let trample :=
-      effects.any fun
-        | .gainAbility among (.keyword .trample) =>
-          among.shape.sameController && among.shape.types.eqTypes [.creature]
-        | _ => false
-    if trample then pt else none
+def leftoverSourceGetsAndTeamTrample? (effects : List ContinuousEffect) : Option Int :=
+  let sourceEffects :=
+    effects.filter fun e =>
+      match e with
+      | .addPower (.source .this) _ | .addToughness (.source .this) _ => true
+      | _ => false
+  let pt :=
+    match ContinuousEffect.foundAddedPT? sourceEffects with
+    | some (p, 0) => some p
+    | _ => none
+  let trample :=
+    effects.any fun
+      | .gainAbility among (.keyword .trample) =>
+        among.shape.sameController && among.shape.types.eqTypes [.creature]
+      | _ => false
+  if trample then pt else none
 
 /-- Put a +1/+1 counter on target creature; it gains lifelink. -/
 def leftoverPlusOneAndLifelinkTarget? : CardAction → Bool
@@ -2380,23 +2381,25 @@ def leftoverMayPayHasteUnblockable? : CardAction → Bool
 def leftoverGetsIfGyCreatureCards?
     (among : Selector) (inners : List ContinuousEffect) : Option StaticAbility :=
   if leftoverYourGyCreatures? among then
-    match inners with
-    | [.addPowerToughness who vp vt] =>
-      match valToInt? vp, valToInt? vt with
-      | some p, some t =>
-        if leftoverThis who then
-          some (.getsIfGyCreatureCards 2 p t)
-        else none
-      | _, _ => none
-    | [.addPowerToughness who vp vt, .gainAllSubtypes typesWho .creature]
-    | [.gainAllSubtypes typesWho .creature, .addPowerToughness who vp vt] =>
-      match valToInt? vp, valToInt? vt with
-      | some p, some t =>
-        if leftoverThis who && leftoverThis typesWho then
-          some (.getsAndAllTypesIfGyCreatureCards 2 p t)
-        else none
-      | _, _ => none
-    | _ => none
+    let ptEffects :=
+      inners.filter fun e =>
+        match e with
+        | .addPower _ _ | .addToughness _ _ => true
+        | _ => false
+    let rest :=
+      inners.filter fun e =>
+        match e with
+        | .addPower _ _ | .addToughness _ _ => false
+        | _ => true
+    let onThis := ptEffects.all fun e => leftoverThis e.selector
+    match ContinuousEffect.foundAddedPT? ptEffects, rest with
+    | some (p, t), [] =>
+      if onThis then some (.getsIfGyCreatureCards 2 p t) else none
+    | some (p, t), [.gainAllSubtypes typesWho .creature] =>
+      if onThis && leftoverThis typesWho then
+        some (.getsAndAllTypesIfGyCreatureCards 2 p t)
+      else none
+    | _, _ => none
   else none
 
 /-- Target opponent as a numbered target. -/
@@ -3826,6 +3829,39 @@ def leftoverEquipAbilitiesTargetingThisCostLess? (who : Selector) (costs : List 
     some n
   else none
 
+def mergeOtherCreaturesGet (b : CardFace) (subtypes : Array String) (p t : Int) : CardFace :=
+  match b.staticAbilities.back? with
+  | some (.otherCreaturesGet prev p0 t0) =>
+    if prev == subtypes then
+      { b with
+        staticAbilities :=
+          b.staticAbilities.pop.push (.otherCreaturesGet subtypes (p0 + p) (t0 + t)) }
+    else
+      { b with staticAbilities := b.staticAbilities.push (.otherCreaturesGet subtypes p t) }
+  | _ =>
+    { b with staticAbilities := b.staticAbilities.push (.otherCreaturesGet subtypes p t) }
+
+def mergeOpponentsCreaturesGet (b : CardFace) (p t : Int) : CardFace :=
+  match b.staticAbilities.back? with
+  | some (.opponentsCreaturesGet p0 t0) =>
+    { b with
+      staticAbilities :=
+        b.staticAbilities.pop.push (.opponentsCreaturesGet (p0 + p) (t0 + t)) }
+  | _ =>
+    { b with staticAbilities := b.staticAbilities.push (.opponentsCreaturesGet p t) }
+
+/-- Integer `addPower` / `addToughness`. Adjacent bonuses on the same objects combine. -/
+def applyIntegerPowerToughness (b : CardFace) (sel : Selector) (p t : Int) : CardFace :=
+  match sel with
+  | .hostOf .this => pushHostBonus b p t Keywords.none
+  | _ =>
+    let s := sel.shape
+    if s.other && s.sameController && s.types.eqTypes [.creature] then
+      mergeOtherCreaturesGet b sel.includedSubtypes.toArray p t
+    else if s.opponentControls && s.types.eqTypes [.creature] then
+      mergeOpponentsCreaturesGet b p t
+    else b
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
@@ -3837,24 +3873,14 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       { b with staticAbilities := b.staticAbilities.push .armiesYouControlHaveTrample }
     else b
   | .gainAbility _ _ => b
-  | .addPowerToughness (.hostOf .this) vp vt =>
-    match valToInt? vp, valToInt? vt with
-    | some p, some t => pushHostBonus b p t Keywords.none
-    | _, _ => b
-  | .addPowerToughness sel vp vt =>
-    match valToInt? vp, valToInt? vt with
-    | some p, some t =>
-      let s := sel.shape
-      if s.other && s.sameController && s.types.eqTypes [.creature] then
-        { b with
-          staticAbilities :=
-            b.staticAbilities.push
-              (.otherCreaturesGet sel.includedSubtypes.toArray p t) }
-      else if s.opponentControls && s.types.eqTypes [.creature] then
-        { b with
-          staticAbilities := b.staticAbilities.push (.opponentsCreaturesGet p t) }
-      else b
-    | _, _ => b
+  | .addPower sel v =>
+    match valToInt? v with
+    | some p => applyIntegerPowerToughness b sel p 0
+    | none => b
+  | .addToughness sel v =>
+    match valToInt? v with
+    | some t => applyIntegerPowerToughness b sel 0 t
+    | none => b
   | .if (.any among) inners =>
     match extraLandIfOtherSubtype? among inners with
     | some t => { b with extraLandIfOtherSubtype := some t }
@@ -3951,7 +3977,6 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainSubtype _ _ => b
   | .gainAllSubtypes _ _ => b
   | .setPower _ _ | .setToughness _ _ => b
-  | .addPower _ _ | .addToughness _ _ => b
   | .increaseLandPlayLimit _ _ => b
   | .additionalCost _ cs =>
     { b with
@@ -4225,12 +4250,18 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .continuous
-      [.addPowerToughness
+      [.addPower
         (.intersection [
           .permanent,
           .cardType .creature,
           .controlled (.controller .this)])
-        (Value.int 1) (Value.int 1)]
+        (Value.int 1),
+       .addToughness
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        (Value.int 1)]
       .endOfTurn
   action.toAbilityEffect == Effect.abilityCreaturesYouControlGet 1 1
 
@@ -4239,11 +4270,16 @@ end TraditionalCardDefinition
     (Ability.activated
       [.mana [.generic 3, .mono .white]]
       (.continuous
-        [.addPowerToughness
+        [.addPower
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
+            .controlled (.controller .this)]) (Value.int 1),
+         .addToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]) (Value.int 1)]
         .endOfTurn)).toActivatedAbility? with
   | some ab =>
     ab.cost.mana == ManaCost.ofGenericAndColor 3 .white &&
@@ -4312,7 +4348,8 @@ end TraditionalCardDefinition
 #guard
   (Ability.triggered
     (.attack .this .all)
-    (.continuous [.addPowerToughness (.source .this) (Value.int 1) (Value.int 1)] .endOfTurn)).toTriggeredAbility?.isNone
+    (.continuous [.addPower (.source .this) (Value.int 1),
+                  .addToughness (.source .this) (Value.int 1)] .endOfTurn)).toTriggeredAbility?.isNone
 
 -- Vow to Erebor: untap target creature you control, +2/+2, maybe attach if Dwarf.
 #guard Selector.toTargetKind
@@ -4334,7 +4371,8 @@ end TraditionalCardDefinition
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)])),
-      .continuous [.addPowerToughness (.targetReference 1) (Value.int 2) (Value.int 2)] .endOfTurn,
+      .continuous [.addPower (.targetReference 1) (Value.int 2),
+                   .addToughness (.targetReference 1) (Value.int 2)] .endOfTurn,
       .if
         (.anySubtype (.targetReference 1) .dwarf)
         [
@@ -4547,13 +4585,20 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.die .this)
       (.continuous
-        [.addPowerToughness
+        [.addPower
           (.target
             1
             (.intersection [
               .permanent,
               .cardType .creature,
-              .controlled (.opponent (.controller .this))])) (Value.int (-1)) (Value.int (-1))]
+              .controlled (.opponent (.controller .this))])) (Value.int (-1)),
+         .addToughness
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))])) (Value.int (-1))]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesOppCreatureGets (-1) (-1)
   | none => false
@@ -4674,7 +4719,8 @@ end TraditionalCardDefinition
       (.activatedIf
         (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
         [.life 2]
-        (.continuous [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)] .endOfTurn))).toActivatedAbility? with
+        (.continuous [.addPower (.source .this) (Value.int 2),
+                      .addToughness (.source .this) (Value.int 2)] .endOfTurn))).toActivatedAbility? with
   | some ab =>
     ab.effect == Effect.sourceGets 2 2 && ab.cost.payLife == 2 && ab.onceEachTurn
   | none => false
@@ -4831,7 +4877,8 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 1)))
+    .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
+    .ability (.static (.addToughness (.hostOf .this) (Value.int 1)))
   ]).toCardDef.staticAbilities == #[.equippedCreatureGets 2 1]
 
 #guard
@@ -5020,8 +5067,10 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .continuous
-      [.addPowerToughness
-        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)) (Value.int (-5)),
+      [.addPower
+        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)),
+       .addToughness
+        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)),
         .replace
           (.putToGraveyard (.targetReference 1))
           [.exile (.replacingObject)]]
@@ -5031,11 +5080,16 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .continuous
-      [.addPowerToughness
+      [.addPower
         (.intersection [
           .permanent,
           .cardType .creature,
-          .controlled (.target 1 .player)]) (Value.int (-1)) (Value.int (-1))]
+          .controlled (.target 1 .player)]) (Value.int (-1)),
+       .addToughness
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.target 1 .player)]) (Value.int (-1))]
       .endOfTurn
   action.toEffect == Effect.creaturesTargetPlayerGet (-1) (-1)
 
@@ -5043,18 +5097,25 @@ end TraditionalCardDefinition
   let action : CardAction :=
     .chooseMode [
       .continuous
-        [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)) (Value.int (-5)),
+        [.addPower
+          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)),
+         .addToughness
+          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)),
           .replace
             (.putToGraveyard (.targetReference 1))
             [.exile (.replacingObject)]]
         .endOfTurn,
       .continuous
-        [.addPowerToughness
+        [.addPower
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 2 .player)]) (Value.int (-1)) (Value.int (-1))]
+            .controlled (.target 2 .player)]) (Value.int (-1)),
+         .addToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.target 2 .player)]) (Value.int (-1))]
         .endOfTurn]
   CardAction.leftoverModes? action ==
     some #[Effect.pumpAndExileIfDies (-5) (-5), Effect.creaturesTargetPlayerGet (-1) (-1)]
@@ -5067,8 +5128,10 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .continuous
-      [.addPowerToughness
-        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 2) (Value.int 2),
+      [.addPower
+        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 2),
+       .addToughness
+        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 2),
         .gainAbility (.targetReference 1) (.keyword .lifelink)]
       .endOfTurn
   action.toEffect == Effect.pumpAndLifelink 2 2
@@ -5118,7 +5181,7 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 0)))
+    .ability (.static (.addPower (.hostOf .this) (Value.int 2)))
   ]).toCardDef.staticAbilities == #[.equippedCreatureGets 2 0]
 
 -- Snowslope Hunter: sacrifice another creature or artifact; exile top; your turn, once.
@@ -5188,13 +5251,16 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability
-      (.static
-        (.addPowerToughness
+    .ability (.static (.addPower
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.opponent (.controller .this))]) (Value.int (-1)) (Value.int (-1))))
+            .controlled (.opponent (.controller .this))]) (Value.int (-1)))),
+    .ability (.static (.addToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.opponent (.controller .this))]) (Value.int (-1))))
   ]).toCardDef.staticAbilities == #[.opponentsCreaturesGet (-1) (-1)]
 
 -- Guardian of the Halls: put three +1/+1 counters on this creature.
@@ -5443,7 +5509,8 @@ end TraditionalCardDefinition
           .permanent,
           .subtype .elf,
           .controlled (.controller .this)]))
-      (.continuous [.addPowerToughness (.source .this) (Value.int 1) (Value.int 1)] .endOfTurn)).toTriggeredAbility? with
+      (.continuous [.addPower (.source .this) (Value.int 1),
+                    .addToughness (.source .this) (Value.int 1)] .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAnotherElfYouControlEntersGets1
   | none => false
 
@@ -5471,8 +5538,10 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .continuous
-      [.addPowerToughness
-        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3) (Value.int 3)]
+      [.addPower
+        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
+       .addToughness
+        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3)]
       .endOfTurn
   action.toEffect == Effect.pump 3 3
 
@@ -5486,8 +5555,10 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .continuous
-      [.addPowerToughness
-        (.intersection [.permanent, .cardType .creature]) (Value.int (-4)) (Value.int (-4))]
+      [.addPower
+        (.intersection [.permanent, .cardType .creature]) (Value.int (-4)),
+       .addToughness
+        (.intersection [.permanent, .cardType .creature]) (Value.int (-4))]
       .endOfTurn
   action.toEffect == Effect.allCreaturesGet (-4) (-4)
 
@@ -5546,8 +5617,8 @@ end TraditionalCardDefinition
   let action : CardAction :=
     .sequence [
       .continuous
-        [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4)) (Value.int 0)]
+        [.addPower
+          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4))]
         .endOfTurn,
       .draw (.controller .this) 1]
   action.toEffect == Effect.pumpThenDraw (-4) 0
@@ -5633,8 +5704,8 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.enter .this)
       (.continuous
-        [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 2) (Value.int 0)]
+        [.addPower
+          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 2)]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterTargetGets 2 0
   | none => false
@@ -5728,7 +5799,8 @@ end TraditionalCardDefinition
 #guard
   (TraditionalCardDefinition.card [
     .type .enchantment,
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 3) (Value.int 3)))
+    .ability (.static (.addPower (.hostOf .this) (Value.int 3))),
+    .ability (.static (.addToughness (.hostOf .this) (Value.int 3)))
   ]).toCardDef.staticAbilities == #[.enchantedCreatureGets 3 3]
 
 #guard
@@ -6151,7 +6223,8 @@ end TraditionalCardDefinition
           .cardType .creature,
           .controlled (.controller .this),
           .powerAtLeast (Value.int 4)]))
-      (.continuous [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)] .endOfTurn)).toTriggeredAbility? with
+      (.continuous [.addPower (.source .this) (Value.int 2),
+                    .addToughness (.source .this) (Value.int 2)] .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackFerociousSourceGets 2 2
   | none => false
 
@@ -6193,14 +6266,14 @@ end TraditionalCardDefinition
       (.attack .this .all)
       (.continuous
         [
-          .addPowerToughness
+          .addPower
             (.target
               1
               (.intersection [
                 .not .this,
                 .permanent,
                 .cardType .creature,
-                .controlled (.controller .this)])) (Value.int 2) (Value.int 0),
+                .controlled (.controller .this)])) (Value.int 2),
           .gainAbility (.targetReference 1) (.keyword .trample)]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackOtherGets2AndTrample
@@ -6212,11 +6285,11 @@ end TraditionalCardDefinition
       (.enter .this)
       (.continuous
         [
-          .addPowerToughness
+          .addPower
             (.intersection [
               .permanent,
               .cardType .creature,
-              .controlled (.controller .this)]) (Value.int 1) (Value.int 0),
+              .controlled (.controller .this)]) (Value.int 1),
           .gainAbility
             (.intersection [
               .permanent,
@@ -6330,7 +6403,7 @@ end TraditionalCardDefinition
 #guard
   (TraditionalCardDefinition.card [
     .type .enchantment,
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 1) (Value.int 0))),
+    .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
     .ability (.static (.gainAbility (.hostOf .this) (.keyword .haste)))
   ]).toCardDef.staticAbilities ==
     #[.enchantedCreatureGetsAndHas 1 0 Keyword.haste]
@@ -6439,14 +6512,14 @@ end TraditionalCardDefinition
   let action : CardAction :=
     .continuous
       [
-        .addPowerToughness
+        .addPower
           (.target
             1
             (.intersection [
               .not .this,
               .permanent,
               .cardType .creature,
-              .controlled (.controller .this)])) (Value.int 2) (Value.int 0),
+              .controlled (.controller .this)])) (Value.int 2),
         .gainAbility (.targetReference 1) (.keyword .hexproof)]
       .endOfTurn
   action.toAbilityEffect == Effect.anotherYouControlGetsAndGrant 2 0 Keyword.hexproof
@@ -6582,14 +6655,18 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability
-      (.static
-        (.addPowerToughness
+    .ability (.static (.addPower
           (.intersection [
             .not .this,
             .permanent,
             .cardType .creature,
-            .controlled (.controller .this)]) (Value.int 1) (Value.int 1)))
+            .controlled (.controller .this)]) (Value.int 1))),
+    .ability (.static (.addToughness
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]) (Value.int 1)))
   ]).toCardDef.staticAbilities == #[.otherCreaturesGet #[] 1 1]
 
 #guard
@@ -6647,7 +6724,7 @@ end TraditionalCardDefinition
           .powerAtLeast (Value.int 4)]))
       (.continuous
         [
-          .addPowerToughness (.source .this) (Value.int 1) (Value.int 0),
+          .addPower (.source .this) (Value.int 1),
           .gainAbility
             (.intersection [
               .permanent,
@@ -6678,8 +6755,10 @@ end TraditionalCardDefinition
     (.sequence [
       .continuous
         [
-          .addPowerToughness
-            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3) (Value.int 1)]
+          .addPower
+            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
+          .addToughness
+            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 1)]
         .endOfTurn,
       .actionId 1 (.exile (.topOfLibrary (.controller .this))),
       .continuous
@@ -7195,11 +7274,11 @@ end TraditionalCardDefinition
         .type .creature, .subtype .villain, .colorIndicator [.black], .power 2, .toughness 1,
         .ability (.keyword .menace)],
       .continuous
-        [.addPowerToughness
+        [.addPower
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.controller .this)]) (Value.int 1) (Value.int 0)]
+            .controlled (.controller .this)]) (Value.int 1)]
         .endOfTurn]) ==
     Effect.createTokensThenTeamPump .villain21menace 1 1 0
 
@@ -7600,15 +7679,20 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability
-      (.static
-        (.addPowerToughness
+    .ability (.static (.addPower
           (.intersection [
             .not .this,
             .permanent,
             .cardType .creature,
             .subtype .villain,
-            .controlled (.controller .this)]) (Value.int 2) (Value.int 1)))
+            .controlled (.controller .this)]) (Value.int 2))),
+    .ability (.static (.addToughness
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .subtype .villain,
+            .controlled (.controller .this)]) (Value.int 1)))
   ]).toCardDef.staticAbilities == #[.otherCreaturesGet #["Villain"] 2 1]
 
 #guard
@@ -7662,13 +7746,13 @@ end TraditionalCardDefinition
               .cardType .artifact,
               .controlled (.controller .this)]))
           [
-            .addPowerToughness
+            .addPower
               (.intersection [
                 .not .this,
                 .permanent,
                 .cardType .creature,
                 .subtype .dwarf,
-                .controlled (.controller .this)]) (Value.int 1) (Value.int 0)]))
+                .controlled (.controller .this)]) (Value.int 1)]))
   ]).toCardDef.staticAbilities != #[.otherSubtypeGetPowerPerArtifactToken "Dwarf"]
 
 #guard
@@ -7682,7 +7766,8 @@ end TraditionalCardDefinition
               .cardType .creature,
               .owner (.controller .this)])
             2)
-          [.addPowerToughness .this (Value.int 2) (Value.int 1)]))
+          [.addPower .this (Value.int 2),
+           .addToughness .this (Value.int 1)]))
   ]).toCardDef.staticAbilities == #[.getsIfGyCreatureCards 2 2 1]
 
 #guard
@@ -7695,7 +7780,8 @@ end TraditionalCardDefinition
               .inGraveyard,
               .cardType .creature,
               .owner (.controller .this)]))
-          [.addPowerToughness .this (Value.int 2) (Value.int 1)]))
+          [.addPower .this (Value.int 2),
+           .addToughness .this (Value.int 1)]))
   ]).toCardDef.staticAbilities == #[]
 
 -- One creature card is not enough (Killmonger needs two or more).
@@ -7710,7 +7796,8 @@ end TraditionalCardDefinition
               .cardType .creature,
               .owner (.controller .this)])
             1)
-          [.addPowerToughness .this (Value.int 2) (Value.int 1)]))
+          [.addPower .this (Value.int 2),
+           .addToughness .this (Value.int 1)]))
   ]).toCardDef.staticAbilities == #[]
 
 #guard
@@ -7725,7 +7812,8 @@ end TraditionalCardDefinition
               .owner (.controller .this)])
             2)
           [
-            .addPowerToughness .this (Value.int 2) (Value.int 2),
+            .addPower .this (Value.int 2),
+            .addToughness .this (Value.int 2),
             .gainAllSubtypes .this .creature]))
   ]).toCardDef.staticAbilities == #[.getsAndAllTypesIfGyCreatureCards 2 2 2]
 
@@ -7740,7 +7828,8 @@ end TraditionalCardDefinition
               .cardType .creature,
               .owner (.controller .this)])
             2)
-          [.addPowerToughness .this (Value.int 2) (Value.int 2)]))
+          [.addPower .this (Value.int 2),
+           .addToughness .this (Value.int 2)]))
   ]).toCardDef.staticAbilities == #[.getsIfGyCreatureCards 2 2 2]
 
 #guard
@@ -7755,7 +7844,8 @@ end TraditionalCardDefinition
               .owner (.controller .this)])
             2)
           [
-            .addPowerToughness .this (Value.int 2) (Value.int 2),
+            .addPower .this (Value.int 2),
+            .addToughness .this (Value.int 2),
             .gainSubtype .this .elf]))
   ]).toCardDef.staticAbilities == #[]
 
@@ -7771,7 +7861,8 @@ end TraditionalCardDefinition
               .owner (.controller .this)])
             2)
           [
-            .addPowerToughness .this (Value.int 2) (Value.int 2),
+            .addPower .this (Value.int 2),
+            .addToughness .this (Value.int 2),
             .gainAllSubtypes .this .artifact]))
   ]).toCardDef.staticAbilities == #[]
 
@@ -7786,7 +7877,8 @@ end TraditionalCardDefinition
               .cardType .creature,
               .owner (.controller .this)]))
           [
-            .addPowerToughness .this (Value.int 2) (Value.int 2),
+            .addPower .this (Value.int 2),
+            .addToughness .this (Value.int 2),
             .gainAllSubtypes .this .creature]))
   ]).toCardDef.staticAbilities == #[]
 
@@ -7800,7 +7892,8 @@ end TraditionalCardDefinition
               .inGraveyard,
               .cardType .creature,
               .owner (.controller .this)]))
-          [.addPowerToughness .this (Value.int 2) (Value.int 2)]))
+          [.addPower .this (Value.int 2),
+           .addToughness .this (Value.int 2)]))
   ]).toCardDef.staticAbilities == #[]
 
 -- One creature card is not enough (Undercover Skrull needs two or more).
@@ -7816,7 +7909,8 @@ end TraditionalCardDefinition
               .owner (.controller .this)])
             1)
           [
-            .addPowerToughness .this (Value.int 2) (Value.int 2),
+            .addPower .this (Value.int 2),
+            .addToughness .this (Value.int 2),
             .gainAllSubtypes .this .creature]))
   ]).toCardDef.staticAbilities == #[]
 
@@ -7831,7 +7925,8 @@ end TraditionalCardDefinition
               .cardType .creature,
               .owner (.controller .this)])
             1)
-          [.addPowerToughness .this (Value.int 2) (Value.int 2)]))
+          [.addPower .this (Value.int 2),
+           .addToughness .this (Value.int 2)]))
   ]).toCardDef.staticAbilities == #[]
 
 #guard

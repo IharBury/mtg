@@ -114,11 +114,16 @@ def dwarvenProvisionerCard : CardDef :=
     .activated
       [.mana [.generic 3, .mono .white]]
       (.continuous
-        [.addPowerToughness
+        [.addPower
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
+            .controlled (.controller .this)]) (Value.int 1),
+         .addToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]) (Value.int 1)]
         .endOfTurn))]
 
 /-- Gatherer Oracle text for Velvetwing Butterflies // Gaze in Wonder. -/
@@ -260,7 +265,8 @@ def vowToEreborCard : CardDef :=
           .permanent,
           .cardType .creature,
           .controlled (.controller .this)])),
-    .continuous [.addPowerToughness (.targetReference 1) (Value.int 2) (Value.int 2)] .endOfTurn,
+    .continuous [.addPower (.targetReference 1) (Value.int 2),
+                 .addToughness (.targetReference 1) (Value.int 2)] .endOfTurn,
     .if
         (.anySubtype (.targetReference 1) .dwarf)
         [
@@ -550,13 +556,20 @@ def frontPorchSentriesCard : CardDef :=
     .triggered
       (.die .this)
       (.continuous
-        [.addPowerToughness
+        [.addPower
           (.target
             1
             (.intersection [
               .permanent,
               .cardType .creature,
-              .controlled (.opponent (.controller .this))])) (Value.int (-1)) (Value.int (-1))]
+              .controlled (.opponent (.controller .this))])) (Value.int (-1)),
+         .addToughness
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))])) (Value.int (-1))]
         .endOfTurn))]
 
 /-- Gatherer Oracle text for Great Fierce Bee. -/
@@ -653,7 +666,8 @@ def desolationProwlerCard : CardDef :=
         (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
         [.life 2]
         (.continuous
-          [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)]
+          [.addPower (.source .this) (Value.int 2),
+           .addToughness (.source .this) (Value.int 2)]
           .endOfTurn)))]
 
 /-- Gatherer Oracle text for Ravening Warg. -/
@@ -822,7 +836,8 @@ def crudeBentBladeCard : CardDef :=
             .permanent,
             .cardType .creature,
             .controlled (.targetReference 1)])))),
-  .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 1))),
+  .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
+  .ability (.static (.addToughness (.hostOf .this) (Value.int 1))),
   .ability (.keywordWithCost .equip [.mana [.generic 2]])
 ]
 
@@ -898,20 +913,29 @@ def gnashingOfTeethCard : CardDef :=
   .actions [
     .chooseMode [
       .continuous
-        [.addPowerToughness
+        [.addPower
           (.target 1 (.intersection [.permanent, .cardType .creature]))
-          (Value.int (-5)) (Value.int (-5)),
+          (Value.int (-5)),
+         .addToughness
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (Value.int (-5)),
          .replace
            (.putToGraveyard (.targetReference 1))
            [.exile (.replacingObject)]]
         .endOfTurn,
       .continuous
-        [.addPowerToughness
+        [.addPower
           (.intersection [
             .permanent,
             .cardType .creature,
             .controlled (.target 2 .player)])
-          (Value.int (-1)) (Value.int (-1))]
+          (Value.int (-1)),
+         .addToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.target 2 .player)])
+          (Value.int (-1))]
         .endOfTurn]]
 ]
 
@@ -940,9 +964,12 @@ def reverentHowlCard : CardDef :=
         .draw (.target 1 .player) 2,
         .loseLife (.targetReference 1) 2],
       .continuous
-        [.addPowerToughness
+        [.addPower
           (.target 2 (.intersection [.permanent, .cardType .creature]))
-          (Value.int 2) (Value.int 2),
+          (Value.int 2),
+         .addToughness
+          (.target 2 (.intersection [.permanent, .cardType .creature]))
+          (Value.int 2),
          .gainAbility (.targetReference 2) (.keyword .lifelink)]
         .endOfTurn]]
 ]
@@ -1088,7 +1115,7 @@ def raggedShortSpearCard : CardDef :=
         .optional
           (.actionId 1 (.discard (.controller .this) 1)),
         .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]])),
-  .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 0))),
+  .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
   .ability (.keywordWithCost .equip [.mana [.generic 3]])
 ]
 
@@ -1375,7 +1402,8 @@ def woodlandWeavemaster : TraditionalCardDefinition := .card [
           .permanent,
           .subtype .elf,
           .controlled (.controller .this)]))
-      (.continuous [.addPowerToughness (.source .this) (Value.int 1) (Value.int 1)] .endOfTurn)),
+      (.continuous [.addPower (.source .this) (Value.int 1),
+                    .addToughness (.source .this) (Value.int 1)] .endOfTurn)),
   .ability (
     .activated
       [.tapSymbol]
@@ -1491,7 +1519,8 @@ def attercop : CardDef :=
             .permanent,
             .cardType .land,
             .controlled (.controller .this)]))
-        (.continuous [.addPowerToughness (.source .this) (Value.int 1) (Value.int 1)] .endOfTurn))
+        (.continuous [.addPower (.source .this) (Value.int 1),
+                      .addToughness (.source .this) (Value.int 1)] .endOfTurn))
   ]).toCardDef
     (oracleText := "Reach, deathtouch\nLandfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn.")
 
@@ -1575,8 +1604,8 @@ def smaugsFury : CardDef :=
     .actions [
       .continuous
         [
-          .addPowerToughness
-            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3) (Value.int 0),
+          .addPower
+            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
           .gainAbility (.targetReference 1) (.keyword .reach),
           .gainAbility (.targetReference 1) (.keyword .firstStrike)]
         .endOfTurn]
@@ -1593,7 +1622,8 @@ def wellWornSpatula : CardDef :=
       .triggered
         (.enter .this)
         (.gainLife (.controller .this) 2)),
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 1) (Value.int 1))),
+    .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
+    .ability (.static (.addToughness (.hostOf .this) (Value.int 1))),
     .ability (.keywordWithCost .equip [.mana [.generic 1]])
   ]).toCardDef
     (oracleText := "When this Equipment enters, you gain 2 life.\nEquipped creature gets +1/+1.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)")
@@ -1835,7 +1865,8 @@ def nighthowlPursuer : CardDef :=
             .cardType .creature,
             .controlled (.controller .this),
             .powerAtLeast (Value.int 4)]))
-        (.continuous [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)] .endOfTurn))
+        (.continuous [.addPower (.source .this) (Value.int 2),
+                      .addToughness (.source .this) (Value.int 2)] .endOfTurn))
   ]).toCardDef
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn.")
 
@@ -1858,7 +1889,7 @@ def wargling : CardDef :=
             .powerAtLeast (Value.int 4)]))
         (.continuous
           [
-            .addPowerToughness (.source .this) (Value.int 1) (Value.int 0),
+            .addPower (.source .this) (Value.int 1),
             .gainAbility
               (.intersection [
                 .permanent,
@@ -1957,11 +1988,16 @@ def thorinsLastStand : CardDef :=
     .actions [
       .chooseMode [
         .continuous
-          [.addPowerToughness
+          [.addPower
             (.intersection [
               .permanent,
               .cardType .creature,
-              .controlled (.controller .this)]) (Value.int 2) (Value.int 1)]
+              .controlled (.controller .this)]) (Value.int 2),
+           .addToughness
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]) (Value.int 1)]
           .endOfTurn,
         .sequence [
           .destroy
@@ -2298,7 +2334,8 @@ def dwarvenShortsword : CardDef :=
             (.createTokens (.controller .this) 1 [
               .type .creature, .subtype .dwarf, .colorIndicator [.red], .power 2, .toughness 2]),
           .attach .this (.wasCreatedByAction 1)])),
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 1) (Value.int 2))),
+    .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
+    .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
     .ability (.keywordWithCost .equip [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "When this Equipment enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)")
@@ -2315,7 +2352,7 @@ def goblinPlateMail : CardDef :=
         (.sequence [
           .actionId 1 (.keyword (.controller .this) (.amass .goblin (.nat 1))),
           .attach .this (.wasObjectOfAction 1)])),
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 1) (Value.int 0))),
+    .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
     .ability (.static (.gainAbility (.hostOf .this) (.keyword .menace))),
     .ability (.keywordWithCost .equip [.mana [.generic 4]])
   ]).toCardDef
@@ -2648,15 +2685,20 @@ def thranduilSindarinLiege : CardDef :=
     .subtype .noble,
     .power 2,
     .toughness 3,
-    .ability
-      (.static
-        (.addPowerToughness
+    .ability (.static (.addPower
           (.intersection [
             .not .this,
             .permanent,
             .cardType .creature,
             .subtype .elf,
-            .controlled (.controller .this)]) (Value.int 1) (Value.int 1))),
+            .controlled (.controller .this)]) (Value.int 1))),
+    .ability (.static (.addToughness
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .subtype .elf,
+            .controlled (.controller .this)]) (Value.int 1))),
     .ability
       (.triggered
         (.enter
