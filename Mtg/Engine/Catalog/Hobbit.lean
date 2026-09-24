@@ -209,7 +209,14 @@ def eagleOfTheGreatShelfCard : CardDef :=
   eagleOfTheGreatShelf.toCardDef
     (oracleText := eagleOfTheGreatShelfOracle)
 
-#guard eagleOfTheGreatShelf == .card [
+#guard
+  let others : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
+  eagleOfTheGreatShelf == .card [
   .name "Eagle of the Great Shelf",
   .manaCost [.generic 4, .mono .white],
   .type .creature,
@@ -222,15 +229,8 @@ def eagleOfTheGreatShelfCard : CardDef :=
     .triggered
       (.attack .this .all)
       (.continuous
-        [.addPowerToughnessPer
-          (.source .this)
-          (.intersection [
-            .not .this,
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this)])
-          (Value.int 1)
-          (Value.int 1)]
+        [.addPower (.source .this) (Value.product (Value.count others) (Value.int 1)),
+         .addToughness (.source .this) (Value.product (Value.count others) (Value.int 1))]
         .endOfTurn))]
 
 /-- Gatherer Oracle text for Vow to Erebor. -/

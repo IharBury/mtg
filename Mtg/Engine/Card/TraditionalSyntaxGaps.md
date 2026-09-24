@@ -82,7 +82,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
   `canCastWithoutPayingManaCost`, `canPlay`, `setBasePower`, `setBaseToughness`,
   `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPower`, `setToughness`,
-  `addPowerToughnessPer`, `increaseLandPlayLimit`.
+  `addPower`, `addToughness`, `increaseLandPlayLimit`.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
   `chooseModeRestricted`,
@@ -97,7 +97,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`.
 - **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
-  `greatestPower`, `count`.
+  `greatestPower`, `count`, `product`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -117,7 +117,8 @@ cards (enter triggers, destroy-then-surveil, and Redwing token creation
 through leftovers).
 `SetPredicate.countAtLeast` is the set-wide size of a simultaneous event
 (Landroval’s two or more creatures attacking a player).
-`ContinuousEffect.addPowerToughnessPer` compiles other-subtype +1/+0 for
+`ContinuousEffect.addPower` and `addToughness` of `Value.product`
+(`Value.count` times a constant) compile other-subtype +1/+0 for
 each artifact token you control (Thorin).
 Aragorn and Arwen’s leftover is +1/+1 on each other creature you control and
 1 life per those creatures (`forEachVariable`), not a flat 1 life.
@@ -375,7 +376,7 @@ complete.
   - Absorbing Man; Beorn the Fierce; Dependable Quinjet; Great Gilded Boat; I Am Iron Man; Iron Man Armor; Mirkwood Meditator; Moon Girl and Devil Dinosaur; Reptil, Dinomorpher; S.H.I.E.L.D. Helicarrier; … (4 more)
 - **`restrictManaSpend`** (11 cards) — Mana from an action may be spent only on matching events (current leftovers cover Elf sources and instant/sorcery spells)
   - Arcane Signet; Avengers Tower; Castle Doom; Delighted Halfling; Desolation of Smaug; Fíli and Kíli, Joyous; Hydraulic Helper; Mox Amber; Ronin, Shadow Stalker; … (2 more)
-- **`addPowerToughnessPer`** (8 cards) — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control, and other-subtype +1/+0 per artifact token
+- **`addPower` / `addToughness`** (8 cards) — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs only `Value.product` of `Value.count` for other-subtype +1/+0 per artifact token
   - Desert Were-Worm; Esgaroth Garrison; Iron Man, Master of Machines; Minas Tirith Garrison; Ms. Marvel, Kamala Khan; Namor the Sub-Mariner; Super-Adaptoid; Winter Soldier, Icy Assassin
 - **`reduceCostByValue`** (8 cards) — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
   - Call Forth the Tempest; Cavern-Hoard Dragon; Cosmic Cube; Glamdring; Loki Laufeyson; Part in Friendship; Punishing Punch; The Lord of the Eagles
@@ -740,7 +741,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Desert Were-Worm** (`desertWereWorm`)
 
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
+- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs only `Value.product` of `Value.count` for other-subtype +1/+0 per artifact token
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.extraCombat` — An additional combat phase; typically with untap attackers
 - `CardAction.addManaPer` — Add mana for each matching object
@@ -806,7 +807,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Esgaroth Garrison** (`esgarothGarrison`)
 
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
+- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs only `Value.product` of `Value.count` for other-subtype +1/+0 per artifact token
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
@@ -1379,7 +1380,7 @@ Converted cards from the previous untagged set are omitted here.
 **Minas Tirith Garrison** (`minasTirithGarrison`)
 
 - `Selector.inHand` — An object in a hand
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
+- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs only `Value.product` of `Value.count` for other-subtype +1/+0 per artifact token
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
@@ -1978,7 +1979,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Iron Man, Master of Machines** (`ironManMasterOfMachines`)
 
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
+- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs only `Value.product` of `Value.count` for other-subtype +1/+0 per artifact token
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 
 **Ironheart, Clever Champion** (`ironheartCleverChampion`)
@@ -2102,7 +2103,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.inHand` — An object in a hand
 - `ContinuousEffect.handSize` — Set / remove maximum hand size
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
+- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs only `Value.product` of `Value.count` for other-subtype +1/+0 per artifact token
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
@@ -2121,7 +2122,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Namor the Sub-Mariner** (`namorTheSubMariner`)
 
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
+- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs only `Value.product` of `Value.count` for other-subtype +1/+0 per artifact token
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
@@ -2330,7 +2331,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Super-Adaptoid** (`superAdaptoid`)
 
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
+- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs only `Value.product` of `Value.count` for other-subtype +1/+0 per artifact token
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
@@ -2592,7 +2593,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.attached` — Objects attached to a given object (inverse of hostOf)
 - `Ability.activateFromZone` — Activated ability that functions in the graveyard (or another non-battlefield zone)
 - `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
-- `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control
+- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs only `Value.product` of `Value.count` for other-subtype +1/+0 per artifact token
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
 

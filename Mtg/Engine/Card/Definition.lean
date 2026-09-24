@@ -645,9 +645,10 @@ inductive ContinuousEffect where
   | setPower : Selector → Value → ContinuousEffect
   /-- The selected object's toughness becomes the given value. -/
   | setToughness : Selector → Value → ContinuousEffect
-  /-- The selected objects get the given power and toughness for each
-  object matching the second selector. -/
-  | addPowerToughnessPer : Selector → Selector → Value → Value → ContinuousEffect
+  /-- The selected objects get additional power equal to the given value. -/
+  | addPower : Selector → Value → ContinuousEffect
+  /-- The selected objects get additional toughness equal to the given value. -/
+  | addToughness : Selector → Value → ContinuousEffect
   /-- The selected player may play that many additional lands on each of
   their turns (CR 305.2b). -/
   | increaseLandPlayLimit : Selector → Value → ContinuousEffect
@@ -825,13 +826,15 @@ end PredefinedToken
 def valToInt? : Value → Option Int
   | .int p => some p
   | .nat p => some (Int.ofNat p)
-  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
+  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _
+  | .product _ _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
   | .nat n => some n
   | .int n => if n ≥ 0 then some n.toNat else none
-  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
+  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _
+  | .product _ _ => none
 
 /-- This object, or the source of this ability (CR 113.7). -/
 def isThisOrItsSource : Selector → Bool
@@ -875,7 +878,7 @@ def selector : ContinuousEffect → Selector
   | .gainSubtype who _ => who
   | .gainAllSubtypes who _ => who
   | .setPower who _ | .setToughness who _ => who
-  | .addPowerToughnessPer who _ _ _ => who
+  | .addPower who _ | .addToughness who _ => who
   | .increaseLandPlayLimit who _ => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
@@ -898,7 +901,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .gainSubtype _ _ :: _ => none
   | .gainAllSubtypes _ _ :: _ => none
   | .setPower _ _ :: _ | .setToughness _ _ :: _ => none
-  | .addPowerToughnessPer _ _ _ _ :: _ => none
+  | .addPower _ _ :: _ | .addToughness _ _ :: _ => none
   | .increaseLandPlayLimit _ _ :: _ => none
 
 /-- First declared `target` or `targets`, if any. -/
@@ -2341,22 +2344,31 @@ def leftoverEnterMaySacOrDiscardNonlandThenDamage? : CardAction → Bool
 
 /-- Source gets +1/+1 until end of turn for each other creature you control. -/
 def leftoverPumpForEachOtherCreature? : List ContinuousEffect → Bool
-  | [.addPowerToughnessPer who among vp vt] =>
-    (who == .source .this || who == .this) &&
+  | [.addPower who (Value.product (Value.count among) vp),
+     .addToughness who' (Value.product (Value.count among') vt)] =>
+    who == who' &&
+      (who == .source .this || who == .this) &&
+      among == among' &&
       among.shape.anotherCreatureYouControl &&
       valToInt? vp == some 1 &&
       valToInt? vt == some 1
   | _ => false
 
-/-- Other permanents you control of a subtype get +P/+T per matching object. -/
+/-- Other permanents you control of a subtype get +1/+0 for each artifact
+token you control. -/
 def leftoverOtherSubtypeGetPowerPerArtifactToken?
-    (who among : Selector) (vp vt : Value) : Option String :=
-  match valToInt? vp, valToInt? vt with
-  | some 1, some 0 =>
-    if among.shape.token && among.shape.sameController &&
-        among.shape.types.eqTypes [.artifact] then
-      who.shape.anotherSubtypeYouControl
-    else none
+    (power toughness : ContinuousEffect) : Option String :=
+  match power, toughness with
+  | .addPower who (Value.product (Value.count among) vp),
+    .addToughness who' (Value.product (Value.count among') vt) =>
+    match valToInt? vp, valToInt? vt with
+    | some 1, some 0 =>
+      if who == who' && among == among' &&
+          among.shape.token && among.shape.sameController &&
+          among.shape.types.eqTypes [.artifact] then
+        who.shape.anotherSubtypeYouControl
+      else none
+    | _, _ => none
   | _, _ => none
 
 /-- You may pay {1}. If you do, target creature with haste can't be
@@ -3946,13 +3958,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainSubtype _ _ => b
   | .gainAllSubtypes _ _ => b
   | .setPower _ _ | .setToughness _ _ => b
-  | .addPowerToughnessPer who among p t =>
-    match CardAction.leftoverOtherSubtypeGetPowerPerArtifactToken? who among p t with
-    | some st =>
-      { b with
-        staticAbilities :=
-          b.staticAbilities.push (.otherSubtypeGetPowerPerArtifactToken st) }
-    | none => b
+  | .addPower _ _ | .addToughness _ _ => b
   | .increaseLandPlayLimit _ _ => b
   | .additionalCost _ cs =>
     { b with
@@ -4060,15 +4066,34 @@ def partSetsLandsCharacteristic (power : Bool) : CardPart → Bool
     setsCharacteristicToLandsYouControl power e
   | _ => false
 
+/-- A static continuous effect, if this part is one. -/
+def staticContinuous? : CardPart → Option ContinuousEffect
+  | .ability (.static e) | .ability (.stackStatic e) => some e
+  | _ => none
+
+/-- Other-subtype +1/+0 for each artifact token, from a power and toughness pair. -/
+def otherSubtypePerArtifactToken? (parts : List CardPart) : Option String :=
+  let effects := parts.filterMap staticContinuous?
+  effects.findSome? fun power =>
+    effects.findSome? fun toughness =>
+      CardAction.leftoverOtherSubtypeGetPowerPerArtifactToken? power toughness
+
 def ofParts (parts : List CardPart) : CardFace :=
   let b := parts.foldl apply {}
-  if parts.any (partSetsLandsCharacteristic true) &&
-      parts.any (partSetsLandsCharacteristic false) then
+  let b :=
+    if parts.any (partSetsLandsCharacteristic true) &&
+        parts.any (partSetsLandsCharacteristic false) then
+      { b with
+        staticAbilities :=
+          b.staticAbilities.push .powerToughnessEqualLandsYouControl }
+    else
+      b
+  match otherSubtypePerArtifactToken? parts with
+  | some st =>
     { b with
       staticAbilities :=
-        b.staticAbilities.push .powerToughnessEqualLandsYouControl }
-  else
-    b
+        b.staticAbilities.push (.otherSubtypeGetPowerPerArtifactToken st) }
+  | none => b
 
 def toAdventure (b : CardFace) : AdventureFace := {
   name := b.name
@@ -4268,19 +4293,18 @@ end TraditionalCardDefinition
 
 -- Eagle of the Great Shelf: whenever this attacks, +1/+1 for each other creature.
 #guard
+  let others : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
   match
     (Ability.triggered
       (.attack .this .all)
       (.continuous
-        [.addPowerToughnessPer
-          (.source .this)
-          (.intersection [
-            .not .this,
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this)])
-          (Value.int 1)
-          (Value.int 1)]
+        [.addPower (.source .this) (Value.product (Value.count others) (Value.int 1)),
+         .addToughness (.source .this) (Value.product (Value.count others) (Value.int 1))]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackPumpForEachOtherCreature
   | none => false
@@ -4344,6 +4368,7 @@ end TraditionalCardDefinition
 #guard (valToNat? (Value.greatestPower .this)).isNone
 #guard (valToNat? (Value.greatestToughness .this)).isNone
 #guard (valToNat? (Value.count .this)).isNone
+#guard (valToNat? (Value.product (Value.count .this) (Value.int 1))).isNone
 #guard Range.range Value.x 1 != Range.range 0 1
 #guard Range.any != Range.range 0 0
 #guard Range.from Value.x != Range.from 1
@@ -7588,22 +7613,47 @@ end TraditionalCardDefinition
   ]).toCardDef.staticAbilities == #[.otherCreaturesGet #["Villain"] 2 1]
 
 #guard
+  let dwarves : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .subtype .dwarf,
+      .controlled (.controller .this)]
+  let tokens : Selector :=
+    .intersection [
+      .permanent,
+      .token,
+      .cardType .artifact,
+      .controlled (.controller .this)]
   (TraditionalCardDefinition.card [
     .ability
       (.static
-        (.addPowerToughnessPer
-          (.intersection [
-            .not .this,
-            .permanent,
-            .cardType .creature,
-            .subtype .dwarf,
-            .controlled (.controller .this)])
-          (.intersection [
-            .permanent,
-            .token,
-            .cardType .artifact,
-            .controlled (.controller .this)]) (Value.int 1) (Value.int 0)))
+        (.addPower dwarves (Value.product (Value.count tokens) (Value.int 1)))),
+    .ability
+      (.static
+        (.addToughness dwarves (Value.product (Value.count tokens) (Value.int 0))))
   ]).toCardDef.staticAbilities == #[.otherSubtypeGetPowerPerArtifactToken "Dwarf"]
+
+#guard
+  let dwarves : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .subtype .dwarf,
+      .controlled (.controller .this)]
+  let tokens : Selector :=
+    .intersection [
+      .permanent,
+      .token,
+      .cardType .artifact,
+      .controlled (.controller .this)]
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.addPower dwarves (Value.product (Value.count tokens) (Value.int 1))))
+  ]).toCardDef.staticAbilities == #[]
 
 #guard
   (TraditionalCardDefinition.card [

@@ -513,7 +513,10 @@ def pumpUntilEnd (sel : Selector) (p t : Int) (among : Option Selector) : CardAc
   | none =>
     .continuous [.addPowerToughness sel (Value.int p) (Value.int t)] .endOfTurn
   | some among =>
-    .continuous [.addPowerToughnessPer sel among (Value.int p) (Value.int t)] .endOfTurn
+    .continuous
+      [.addPower sel (Value.product (Value.count among) (Value.int p)),
+       .addToughness sel (Value.product (Value.count among) (Value.int t))]
+      .endOfTurn
 
 /-- `+P/+T` on target `n` until end of turn, plus keywords on that same target.
 No keywords is only the power and toughness change. -/
@@ -1997,23 +2000,23 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         .this
         (.target 1 (.intersection [.permanent, .cardType .creature]))
         (.nat 5)]]]
-#guard parseOracleParts (name := "")
-  "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." ==
+#guard
+  let others : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
+  parseOracleParts (name := "")
+    "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." ==
   some [
     .ability (.keyword .flying),
     .ability (
       .triggered
         (.attack .this .all)
         (.continuous
-          [.addPowerToughnessPer
-            (.source .this)
-            (.intersection [
-              .not .this,
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this)])
-            (Value.int 1)
-            (Value.int 1)]
+          [.addPower (.source .this) (Value.product (Value.count others) (Value.int 1)),
+           .addToughness (.source .this) (Value.product (Value.count others) (Value.int 1))]
           .endOfTurn))]
 #guard parseOracleParts (name := "") "Untap target creature you control." ==
   some [.actions [
