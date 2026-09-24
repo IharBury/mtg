@@ -2445,7 +2445,7 @@ def parseCastAsThoughFlash (line : String) : Option CardPart :=
       .ability (.everywhereStatic (
         .if
           (.any (.intersection [.permanent, .subtype st, youControl]))
-          [.castAsThoughFlash (.controller .this) .this]))
+          [.canCastAsThoughWithFlash (.controller .this) .this]))
 
 /-- `<permanents> get +P/+T.` No duration is printed, so this is a static
 ability (CR 604.2 / 613.4c). A zero bonus is omitted. `+0/+0` is not an
@@ -4284,7 +4284,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .if
       (.any (.intersection [
         .permanent, .subtype .human, .controlled (.controller .this)]))
-      [.castAsThoughFlash (.controller .this) .this]))]
+      [.canCastAsThoughWithFlash (.controller .this) .this]))]
 #guard parseOracleParts (name := "")
   "You may cast this spell as though it had flash if you control Human." == none
 #guard parseOracleParts (name := "")
@@ -4293,7 +4293,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .if
       (.any (.intersection [
         .permanent, .subtype .elf, .controlled (.controller .this)]))
-      [.castAsThoughFlash (.controller .this) .this]))]
+      [.canCastAsThoughWithFlash (.controller .this) .this]))]
 #guard parseOracleParts (name := "") "Other creatures you control get +1/+1." ==
   some [
     .ability (.static (.addPower

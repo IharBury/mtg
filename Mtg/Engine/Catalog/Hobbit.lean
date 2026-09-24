@@ -2915,7 +2915,7 @@ def bardsCompany : CardDef :=
     .if
       (.any (.intersection [
         .permanent, .subtype .human, .controlled (.controller .this)]))
-      [.castAsThoughFlash (.controller .this) .this])),
+      [.canCastAsThoughWithFlash (.controller .this) .this])),
   .ability (.static (.addPower
     (.intersection [
       .not .this,

@@ -718,7 +718,7 @@ inductive ContinuousEffect where
   | increaseLandPlayLimit : Selector → Value → ContinuousEffect
   /-- The selected player may cast the selected spell as though it had flash
   (CR 601.3 / 702.8). The spell does not gain the flash keyword. -/
-  | castAsThoughFlash : Selector → Selector → ContinuousEffect
+  | canCastAsThoughWithFlash : Selector → Selector → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -962,7 +962,7 @@ def selector : ContinuousEffect → Selector
   | .setPower who _ | .setToughness who _ => who
   | .addPower who _ | .addToughness who _ => who
   | .increaseLandPlayLimit who _ => who
-  | .castAsThoughFlash _ card => card
+  | .canCastAsThoughWithFlash _ card => card
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is
@@ -3912,7 +3912,7 @@ The spell does not gain flash. -/
 def leftoverFlashIfSubtypeYouControl? (among : Selector) (inners : List ContinuousEffect)
     : Option String :=
   match inners with
-  | [.castAsThoughFlash who card] =>
+  | [.canCastAsThoughWithFlash who card] =>
     if who == .controller .this && (card == .this || card == .source .this) then
       match among.shape.subtype with
       | some t =>
@@ -4089,7 +4089,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAllSubtypes _ _ => b
   | .setPower _ _ | .setToughness _ _ => b
   | .increaseLandPlayLimit _ _ => b
-  | .castAsThoughFlash _ _ => b
+  | .canCastAsThoughWithFlash _ _ => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
@@ -6821,7 +6821,7 @@ end TraditionalCardDefinition
         .if
           (.any (.intersection [
             .permanent, .subtype .human, .controlled (.controller .this)]))
-          [.castAsThoughFlash (.controller .this) .this]))
+          [.canCastAsThoughWithFlash (.controller .this) .this]))
     ]).toCardDef
   card.flashIfYouControlSubtype == some "Human" && !card.keywords.flash
 

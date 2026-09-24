@@ -80,7 +80,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `static`, `stackStatic`, `everywhereStatic` (functions in every zone, including before the card is put onto the stack).
 - **ContinuousEffect** — `gainAbility`, `if`,
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
-  `canCastWithoutPayingManaCost`, `canPlay`, `castAsThoughFlash` (cast as though the spell had flash; the spell does not gain flash),
+  `canCastWithoutPayingManaCost`, `canPlay`, `canCastAsThoughWithFlash` (cast as though the spell had flash; the spell does not gain flash),
   `setBasePower`, `setBaseToughness`,
   `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPower`, `setToughness`,
   `addPower`, `addToughness`, `increaseLandPlayLimit`.
