@@ -2366,7 +2366,7 @@ def undercoverSkrull : CardDef :=
     .ability
       (.activated
         [.tapSymbol]
-        (.addManaAnyColor (.controller .this) (.controller .this) 1))
+        (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1))
   ]).toCardDef
     (oracleText := "As long as there are two or more creature cards in your graveyard, this creature gets +2/+2 and is all creature types.\n{T}: Add one mana of any color.")
 
@@ -3417,7 +3417,7 @@ def surveillanceRoom : CardDef :=
     .ability
       (.activated
         [.mana [.generic 1], .tapSymbol]
-        (.addManaAnyColor (.controller .this) (.controller .this) 1))
+        (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1))
   ]).toCardDef
     (oracleText := "When this land enters, surveil 1. (Look at the top card of your library. You may put it into your graveyard.)\n{T}: Add {C}.\n{1}, {T}: Add one mana of any color.")
 

@@ -83,6 +83,14 @@ def colorContribution : ManaSymbol → ColorSet
 instance : ToString ManaSymbol where
   toString := toNotation
 
+/-- The five colored mana symbols in WUBRG order (CR 105.1).
+Choosing one of these adds mana of any color (CR 105.4). -/
+def anyColor : List ManaSymbol :=
+  Color.all.map colored
+
+#guard anyColor ==
+  [.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
+
 end ManaSymbol
 
 /-- A mana cost printed on a card (CR 202). -/
