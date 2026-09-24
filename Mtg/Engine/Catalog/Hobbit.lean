@@ -28,7 +28,9 @@ Well-Worn Spatula, Elvenking's Halls, Iron Hills, Lake-town,
 Goblin-town, Mirkwood, Hobbit Hole, Nighthowl Pursuer, Wargling,
 Wilderland Scrounger, Nasty Little Rabbit, The Chief Warg,
 Thorin's Last Stand, Stone by Sunlight, Duskwatch Hunter,
-Patient Instructor, and Long Lake Nuisance
+Patient Instructor, Long Lake Nuisance, Lake-town Lookout,
+Giant's Boulder, Long-Bodied Grey Dog, Dori, Bearer of Friends,
+Esgaroth Garrison, Gundabad Opportunist, and Gigantic Big Bear
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -2462,59 +2464,125 @@ def longLakeNuisance : CardDef :=
   .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))
 ]
 
-def laketownLookout : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Lake-town Lookout. -/
+def laketownLookoutOracle : String :=
+  "When this creature dies, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+
+def laketownLookoutDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Lake-town Lookout",
     .manaCost [.mono .white],
     .type .creature,
     .subtype .human,
     .subtype .scout,
     .power 1,
-    .toughness 1,
-    .ability (.triggered (.die .this) (.keyword (.controller .this) .recruit))
-  ]).toCardDef
-    (oracleText := "When this creature dies, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Lake-town Lookout") laketownLookoutOracle).get!
 
-def giantsBoulder : CardDef :=
-  (TraditionalCardDefinition.card [
+def laketownLookout : CardDef :=
+  laketownLookoutDefinition.toCardDef
+    (oracleText := laketownLookoutOracle)
+
+#guard laketownLookoutDefinition == .card [
+  .name "Lake-town Lookout",
+  .manaCost [.mono .white],
+  .type .creature,
+  .subtype .human,
+  .subtype .scout,
+  .power 1,
+  .toughness 1,
+  .ability (.triggered (.die .this) (.keyword (.controller .this) .recruit))
+]
+
+#guard laketownLookout.triggeredAbilities == #[.onDiesRecruit]
+
+/-- Gatherer Oracle text for Giant's Boulder. -/
+def giantsBoulderOracle : String :=
+  "When this artifact enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)\n{1}, {T}: Add one mana of any color.\n{7}, {T}, Sacrifice this artifact: Destroy target permanent."
+
+def giantsBoulderDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Giant's Boulder",
     .manaCost [.generic 1],
-    .type .artifact,
-    .ability (.triggered (.enter .this) (.scry (.controller .this) 2)),
-    .ability (
-      .activated
-        [.mana [.generic 1], .tapSymbol]
-        (.addManaOfOneColor
-          (.controller .this)
-          ManaSymbol.anyColor
-          1)),
-    .ability (
-      .activated
-        [.mana [.generic 7], .tapSymbol, .sacrifice .this]
-        (.destroy (.target 1 .permanent)))
-  ]).toCardDef
-    (oracleText := "When this artifact enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)\n{1}, {T}: Add one mana of any color.\n{7}, {T}, Sacrifice this artifact: Destroy target permanent.")
+    .type .artifact
+  ] ++ (parseOracleParts (name := "Giant's Boulder") giantsBoulderOracle).get!
 
-def longBodiedGreyDog : CardDef :=
-  (TraditionalCardDefinition.card [
+def giantsBoulder : CardDef :=
+  giantsBoulderDefinition.toCardDef
+    (oracleText := giantsBoulderOracle)
+
+#guard giantsBoulderDefinition == .card [
+  .name "Giant's Boulder",
+  .manaCost [.generic 1],
+  .type .artifact,
+  .ability (.triggered (.enter .this) (.scry (.controller .this) 2)),
+  .ability (
+    .activated
+      [.mana [.generic 1], .tapSymbol]
+      (.addManaOfOneColor
+        (.controller .this)
+        ManaSymbol.anyColor
+        1)),
+  .ability (
+    .activated
+      [.mana [.generic 7], .tapSymbol, .sacrifice .this]
+      (.destroy (.target 1 .permanent)))
+]
+
+#guard giantsBoulder.triggeredAbilities == #[.onEnterScry 2]
+#guard giantsBoulder.activatedAbilities.size == 2
+#guard giantsBoulder.activatedAbilities[0]!.effect == Effect.addAnyColor
+#guard giantsBoulder.activatedAbilities[0]!.cost.tap
+#guard giantsBoulder.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 1
+#guard giantsBoulder.activatedAbilities[1]!.effect == Effect.destroyTargetPermanent
+#guard giantsBoulder.activatedAbilities[1]!.cost.tap
+#guard giantsBoulder.activatedAbilities[1]!.cost.sacrificeSource
+#guard giantsBoulder.activatedAbilities[1]!.cost.mana == ManaCost.ofGeneric 7
+
+/-- Gatherer Oracle text for Long-Bodied Grey Dog. -/
+def longBodiedGreyDogOracle : String :=
+  "Flash\nReach\nWhen this creature enters, create a tapped Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")"
+
+def longBodiedGreyDogDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Long-Bodied Grey Dog",
     .manaCost [.generic 3],
     .type .creature,
     .subtype .dog,
     .power 2,
-    .toughness 2,
-    .ability (.keyword .flash),
-    .ability (.keyword .reach),
-    .ability (
-      .triggered
-        (.enter .this)
-        (.createTokens (.controller .this) 1 PredefinedToken.treasureToken
-          [.tapped]))
-  ]).toCardDef
-    (oracleText := "Flash\nReach\nWhen this creature enters, create a tapped Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Long-Bodied Grey Dog") longBodiedGreyDogOracle).get!
 
-def doriBearerOfFriends : CardDef :=
-  (TraditionalCardDefinition.card [
+def longBodiedGreyDog : CardDef :=
+  longBodiedGreyDogDefinition.toCardDef
+    (oracleText := longBodiedGreyDogOracle)
+
+#guard longBodiedGreyDogDefinition == .card [
+  .name "Long-Bodied Grey Dog",
+  .manaCost [.generic 3],
+  .type .creature,
+  .subtype .dog,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .flash),
+  .ability (.keyword .reach),
+  .ability (
+    .triggered
+      (.enter .this)
+      (.createTokens (.controller .this) 1 PredefinedToken.treasureToken
+        [.tapped]))
+]
+
+#guard longBodiedGreyDog.keywords.flash && longBodiedGreyDog.keywords.reach
+#guard longBodiedGreyDog.triggeredAbilities ==
+  #[.onEnterCreateTokens .treasure 1 true]
+
+/-- Gatherer Oracle text for Dori, Bearer of Friends. -/
+def doriBearerOfFriendsOracle : String :=
+  "Trample\nWhen Dori enters, create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")"
+
+def doriBearerOfFriendsDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Dori, Bearer of Friends",
     .manaCost [.generic 2, .mono .red],
     .type .creature,
@@ -2522,49 +2590,145 @@ def doriBearerOfFriends : CardDef :=
     .subtype .dwarf,
     .subtype .warrior,
     .power 3,
-    .toughness 2,
-    .ability (.keyword .trample),
-    .ability (
-      .triggered
-        (.enter .this)
-        (.createTokens (.controller .this) 1 PredefinedToken.treasureToken))
-  ]).toCardDef
-    (oracleText := "Trample\nWhen Dori enters, create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Dori, Bearer of Friends") doriBearerOfFriendsOracle).get!
+
+def doriBearerOfFriends : CardDef :=
+  doriBearerOfFriendsDefinition.toCardDef
+    (oracleText := doriBearerOfFriendsOracle)
+
+#guard doriBearerOfFriendsDefinition == .card [
+  .name "Dori, Bearer of Friends",
+  .manaCost [.generic 2, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 3,
+  .toughness 2,
+  .ability (.keyword .trample),
+  .ability (
+    .triggered
+      (.enter .this)
+      (.createTokens (.controller .this) 1 PredefinedToken.treasureToken))
+]
+
+#guard doriBearerOfFriends.keywords.trample
+#guard doriBearerOfFriends.triggeredAbilities == #[.onEnterCreateTokens .treasure 1]
+
+/-- Gatherer Oracle text for Esgaroth Garrison. -/
+def esgarothGarrisonOracle : String :=
+  "Esgaroth Garrison's power is equal to the number of creatures you control.\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+
+def esgarothGarrisonDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Esgaroth Garrison",
+    .manaCost [.generic 4, .mono .white],
+    .type .creature,
+    .subtype .human,
+    .subtype .soldier,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Esgaroth Garrison") esgarothGarrisonOracle).get!
 
 def esgarothGarrison : CardDef :=
-  card "Esgaroth Garrison" #[.creature] (ManaCost.ofGenericAndColor 4 .white)
-    #["Human", "Soldier"]
-    "Esgaroth Garrison's power is equal to the number of creatures you control.\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
-    (toughness := some 5)
-    (staticAbilities := #[.powerEqualCreaturesYouControl])
-    (triggeredAbilities := #[.onEnterRecruit])
+  esgarothGarrisonDefinition.toCardDef
+    (oracleText := esgarothGarrisonOracle)
 
-def gundabadOpportunist : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard esgarothGarrisonDefinition == .card [
+  .name "Esgaroth Garrison",
+  .manaCost [.generic 4, .mono .white],
+  .type .creature,
+  .subtype .human,
+  .subtype .soldier,
+  .toughness 5,
+  .ability (
+    .static
+      (.setPower
+        .this
+        (.count
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])))),
+  .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))
+]
+
+#guard esgarothGarrison.power == none
+#guard esgarothGarrison.toughness == some 5
+#guard esgarothGarrison.staticAbilities == #[.powerEqualCreaturesYouControl]
+#guard esgarothGarrison.triggeredAbilities == #[.onEnterRecruit]
+
+/-- Gatherer Oracle text for Gundabad Opportunist. -/
+def gundabadOpportunistOracle : String :=
+  "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card."
+
+def gundabadOpportunistDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Gundabad Opportunist",
     .manaCost [.generic 3, .mono .red],
     .type .creature,
     .subtype .goblin,
     .subtype .rogue,
     .power 4,
-    .toughness 2,
-    .ability (
-      .triggered
-        (.enter .this)
-        (.sequence [
-          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
-          .continuous
-            [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-            (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))
-  ]).toCardDef
-    (oracleText := "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Gundabad Opportunist") gundabadOpportunistOracle).get!
+
+def gundabadOpportunist : CardDef :=
+  gundabadOpportunistDefinition.toCardDef
+    (oracleText := gundabadOpportunistOracle)
+
+#guard gundabadOpportunistDefinition == .card [
+  .name "Gundabad Opportunist",
+  .manaCost [.generic 3, .mono .red],
+  .type .creature,
+  .subtype .goblin,
+  .subtype .rogue,
+  .power 4,
+  .toughness 2,
+  .ability (
+    .triggered
+      (.enter .this)
+      (.sequence [
+        .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+        .continuous
+          [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+          (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))
+]
+
+/-- Gatherer Oracle text for Gigantic Big Bear. -/
+def giganticBigBearOracle : String :=
+  "This spell can't be countered.\nHexproof, haste"
+
+def giganticBigBearDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Gigantic Big Bear",
+    .manaCost [.generic 5, .mono .green, .mono .green],
+    .type .creature,
+    .subtype .bear,
+    .power 10,
+    .toughness 7
+  ] ++ (parseOracleParts (name := "Gigantic Big Bear") giganticBigBearOracle).get!
 
 def giganticBigBear : CardDef :=
-  creature "Gigantic Big Bear" (ManaCost.ofGenericAndColors 5 [.green, .green])
-    #["Bear"] 10 7
-    (oracleText := "This spell can't be countered.\nHexproof, haste")
-    (keywords := Keyword.hexproof.merge Keyword.haste)
-    (cantBeCountered := true)
+  giganticBigBearDefinition.toCardDef
+    (oracleText := giganticBigBearOracle)
+
+#guard giganticBigBearDefinition == .card [
+  .name "Gigantic Big Bear",
+  .manaCost [.generic 5, .mono .green, .mono .green],
+  .type .creature,
+  .subtype .bear,
+  .power 10,
+  .toughness 7,
+  .ability (.stackStatic (.forbid (.counter .this))),
+  .ability (.keyword .hexproof),
+  .ability (.keyword .haste)
+]
+
+#guard giganticBigBear.cantBeCountered
+#guard giganticBigBear.keywords.hexproof && giganticBigBear.keywords.haste
+#guard giganticBigBear.power == some 10
+#guard giganticBigBear.toughness == some 7
 
 def bothersomeNoisemaker : CardDef :=
   (TraditionalCardDefinition.card [

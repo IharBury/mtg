@@ -907,6 +907,22 @@ def isLandsYouControlCount : Value → Bool
   | .count among => among.shape.landYouControl
   | _ => false
 
+/-- The number of creature permanents this object's controller controls.
+Another, a subtype, a power threshold, or a status such as tapped is a
+different count. -/
+def isCreaturesYouControlCount : Value → Bool
+  | .count among =>
+    let s := among.shape
+    s.mustBePermanent && s.sameController && !s.other && !s.opponentControls &&
+      s.types.eqTypes [.creature] && s.subtype.isNone && s.powerAtLeast.isNone &&
+      !s.tapped && !s.flying && !s.attacking && !s.token && !s.nontoken
+  | _ => false
+
+/-- `setPower` of this object to the number of creatures you control. -/
+def setsPowerToCreaturesYouControl : ContinuousEffect → Bool
+  | .setPower who v => isThisOrItsSource who && isCreaturesYouControlCount v
+  | _ => false
+
 /-- `setPower` when `power` is true, otherwise `setToughness`, of this object
 to the number of lands you control. -/
 def setsCharacteristicToLandsYouControl (power : Bool) : ContinuousEffect → Bool
@@ -3776,6 +3792,8 @@ structure CardFace where
   tapAddAnyColorForInstantOrSorcery : Bool := false
   tapAddOneOf : Array ManaType := #[]
   entersTapped : Bool := false
+  /-- This spell can't be countered (CR 701.5). -/
+  cantBeCountered : Bool := false
   colorIndicator : Option ColorSet := none
   sagaChapters : Array SagaChapter := #[]
 deriving Inhabited
@@ -4031,6 +4049,8 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else if who == .token then
       { b with staticAbilities := b.staticAbilities.push .cantBeBlockedByTokens }
     else b
+  | .forbid (.counter who) =>
+    if isThisOrItsSource who then { b with cantBeCountered := true } else b
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
   | .canPlay _ _ => b
@@ -4146,6 +4166,11 @@ def partSetsLandsCharacteristic (power : Bool) : CardPart → Bool
     setsCharacteristicToLandsYouControl power e
   | _ => false
 
+/-- A static ability that sets power to the number of creatures you control. -/
+def partSetsCreaturesYouControlPower : CardPart → Bool
+  | .ability (.static e) => setsPowerToCreaturesYouControl e
+  | _ => false
+
 /-- A static continuous effect, if this part is one. -/
 def staticContinuous? : CardPart → Option ContinuousEffect
   | .ability (.static e) | .ability (.stackStatic e) => some e
@@ -4172,6 +4197,13 @@ def ofParts (parts : List CardPart) : CardFace :=
       { b with
         staticAbilities :=
           b.staticAbilities.push .powerToughnessEqualLandsYouControl }
+    else
+      b
+  let b :=
+    if parts.any partSetsCreaturesYouControlPower then
+      { b with
+        staticAbilities :=
+          b.staticAbilities.push .powerEqualCreaturesYouControl }
     else
       b
   match otherSubtypePerArtifactToken? parts with
@@ -4259,6 +4291,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       tapAddAnyColorForInstantOrSorcery := b.tapAddAnyColorForInstantOrSorcery
       tapAddOneOf := b.tapAddOneOf
       entersTapped := b.entersTapped
+      cantBeCountered := b.cantBeCountered
       colorIndicator := b.colorIndicator
       adventure := adventure
       saga :=
@@ -5669,6 +5702,29 @@ end TraditionalCardDefinition
               .cardType .land,
               .controlled (.controller .this)]))))
   ]).toCardDef.staticAbilities == #[]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.setPower
+          .this
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))))
+  ]).toCardDef.staticAbilities == #[.powerEqualCreaturesYouControl]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.stackStatic (.forbid (.counter .this)))
+  ]).toCardDef.cantBeCountered
+
+#guard
+  !(TraditionalCardDefinition.card [
+    .ability (.stackStatic (.forbid (.counter (.controller .this))))
+  ]).toCardDef.cantBeCountered
 
 #guard
   let action : CardAction :=

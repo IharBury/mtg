@@ -377,6 +377,8 @@ inductive Trigger where
   | spendManaCreatedByAction : Nat → Trigger → Trigger
   /-- A spell matching the selector is cast (CR 601). -/
   | castSpell : Selector → Trigger
+  /-- The selected spell is countered (CR 701.5). -/
+  | counter : Selector → Trigger
   /-- An activated ability of a source matching the selector is activated
   (CR 602). -/
   | activateAbility : Selector → Trigger
