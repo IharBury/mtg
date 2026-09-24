@@ -507,12 +507,14 @@ def splitUntilEnd? (s : String) : Option (String × Option String) :=
   | none =>
     (before? s "until end of turn").map fun body => (body, none)
 
-/-- `+P/+T` as `addPower` and `addToughness`. A zero bonus is omitted. -/
+/-- `+P/+T` as `addPower` and `addToughness`. A zero bonus is omitted.
+The first effect declares any targets. Later effects use `targetReference`. -/
 def flatPowerToughness (sel : Selector) (p t : Int) : List ContinuousEffect :=
   let power :=
     if p == 0 then [] else [.addPower sel (Value.int p)]
+  let later := if power.isEmpty then sel else sel.referenceTargets
   let toughness :=
-    if t == 0 then [] else [.addToughness sel (Value.int t)]
+    if t == 0 then [] else [.addToughness later (Value.int t)]
   power ++ toughness
 
 /-- `+P/+T` until end of turn, optionally once per `among`.
@@ -524,8 +526,10 @@ def pumpUntilEnd (sel : Selector) (p t : Int) (among : Option Selector) : CardAc
   | some among =>
     let power :=
       if p == 0 then [] else [.addPower sel (Value.timesCount p among)]
+    let later := if p == 0 then sel else sel.referenceTargets
+    let laterAmong := if p == 0 then among else among.referenceTargets
     let toughness :=
-      if t == 0 then [] else [.addToughness sel (Value.timesCount t among)]
+      if t == 0 then [] else [.addToughness later (Value.timesCount t laterAmong)]
     .continuous (power ++ toughness) .endOfTurn
 
 /-- `+P/+T` on target `n` until end of turn, plus keywords on that same target.
@@ -2181,12 +2185,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
               .cardType .creature,
               .controlled (.opponent (.controller .this))])) (Value.int (-1)),
          .addToughness
-          (.target
-            1
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.opponent (.controller .this))])) (Value.int (-1))]
+          (.targetReference 1) (Value.int (-1))]
         .endOfTurn))]
 #guard parseOracleParts (name := "Front Porch Sentries")
   "When Front Porch Sentries dies, target creature an opponent controls gets -1/-1 until end of turn." ==
@@ -2202,12 +2201,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
               .cardType .creature,
               .controlled (.opponent (.controller .this))])) (Value.int (-1)),
          .addToughness
-          (.target
-            1
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.opponent (.controller .this))])) (Value.int (-1))]
+          (.targetReference 1) (Value.int (-1))]
         .endOfTurn))]
 #guard parseOracleParts (name := "")
   "When this creature dies, target creature an opponent controls gets +1/+1 until end of turn." ==
@@ -2223,12 +2217,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
               .cardType .creature,
               .controlled (.opponent (.controller .this))])) (Value.int 1),
          .addToughness
-          (.target
-            1
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.opponent (.controller .this))])) (Value.int 1)]
+          (.targetReference 1) (Value.int 1)]
         .endOfTurn))]
 #guard parseOracleParts (name := "Gandalf")
   "When Front Porch Sentries dies, target creature an opponent controls gets -1/-1 until end of turn." == none
@@ -2592,7 +2581,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         (.target 1 (.intersection [.permanent, .cardType .creature]))
         (Value.int 2),
        .addToughness
-        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.targetReference 1)
         (Value.int 2),
        .gainAbility (.targetReference 1) (.keyword .lifelink)]
       .endOfTurn]]
@@ -2606,7 +2595,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         (.target 1 (.intersection [.permanent, .cardType .creature]))
         (Value.int (-5)),
        .addToughness
-        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.targetReference 1)
         (Value.int (-5)),
        .replace
          (.putToGraveyard (.targetReference 1))
@@ -2628,7 +2617,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         (.intersection [
           .permanent,
           .cardType .creature,
-          .controlled (.target 1 .player)])
+          .controlled (.targetReference 1)])
         (Value.int (-1))]
       .endOfTurn]]
 #guard parseOracleParts (name := "")
@@ -2650,7 +2639,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
           (.target 1 (.intersection [.permanent, .cardType .creature]))
           (Value.int (-5)),
          .addToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (.targetReference 1)
           (Value.int (-5)),
          .replace
            (.putToGraveyard (.targetReference 1))
@@ -2667,7 +2656,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 2 .player)])
+            .controlled (.targetReference 2)])
           (Value.int (-1))]
         .endOfTurn]]]
 #guard parseOracleParts (name := "")
@@ -2682,7 +2671,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
           (.target 2 (.intersection [.permanent, .cardType .creature]))
           (Value.int 2),
          .addToughness
-          (.target 2 (.intersection [.permanent, .cardType .creature]))
+          (.targetReference 2)
           (Value.int 2),
          .gainAbility (.targetReference 2) (.keyword .lifelink)]
         .endOfTurn]]]

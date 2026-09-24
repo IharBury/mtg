@@ -1140,7 +1140,7 @@ def darkDeed : CardDef :=
         [.addPower
           (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4)),
          .addToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4))]
+          (.targetReference 1) (Value.int (-4))]
         .endOfTurn]
   ]).toCardDef
     (oracleText := "Target creature gets -4/-4 until end of turn.")
@@ -1597,7 +1597,7 @@ def blazingCrescendo : CardDef :=
           .addPower
             (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
           .addToughness
-            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 1)]
+            (.targetReference 1) (Value.int 1)]
         .endOfTurn,
       .actionId 1 (.exile (.topOfLibrary (.controller .this))),
       .continuous

@@ -327,6 +327,68 @@ def includesTargetReference : Selector → Bool
   | .not s => includesTargetReference s
   | _ => false
 
+/-- The same objects, with every declared target turned into a
+`targetReference`. A target number is declared once. -/
+def referenceTargets : Selector → Selector
+  | .this => .this
+  | .source s => .source (referenceTargets s)
+  | .controller s => .controller (referenceTargets s)
+  | .target n _ => .targetReference n
+  | .targets n _ _ => .targetReference n
+  | .targetSet n _ _ _ => .targetReference n
+  | .not s => .not (referenceTargets s)
+  | .targetReference n => .targetReference n
+  | .selected who range among =>
+    .selected (referenceTargets who) range (referenceTargets among)
+  | .intersection ss => .intersection (ss.map referenceTargets)
+  | .all => .all
+  | .cardType t => .cardType t
+  | .union ss => .union (ss.map referenceTargets)
+  | .permanent => .permanent
+  | .controlled s => .controlled (referenceTargets s)
+  | .tapped => .tapped
+  | .keyword k => .keyword k
+  | .keywordAbility k => .keywordAbility k
+  | .powerAtLeast v => .powerAtLeast v
+  | .subtype st => .subtype st
+  | .spell => .spell
+  | .permanentSpell => .permanentSpell
+  | .hasTarget s => .hasTarget (referenceTargets s)
+  | .isTargetOf s => .isTargetOf (referenceTargets s)
+  | .player => .player
+  | .opponent s => .opponent (referenceTargets s)
+  | .owner s => .owner (referenceTargets s)
+  | .attacking s => .attacking (referenceTargets s)
+  | .blocking s => .blocking (referenceTargets s)
+  | .token => .token
+  | .wasObjectOfAction n => .wasObjectOfAction n
+  | .wasObjectOfThisTrigger => .wasObjectOfThisTrigger
+  | .replacingObject => .replacingObject
+  | .wasCreatedByAction n => .wasCreatedByAction n
+  | .hostOf s => .hostOf (referenceTargets s)
+  | .inGraveyard => .inGraveyard
+  | .wasObjectSince a b => .wasObjectSince a b
+  | .inLibrary => .inLibrary
+  | .inHand => .inHand
+  | .inExile => .inExile
+  | .supertype st => .supertype st
+  | .variable n => .variable n
+  | .topOfLibrary s => .topOfLibrary (referenceTargets s)
+
+#guard
+  (Selector.target 1 (.intersection [.permanent, .cardType .creature])).referenceTargets ==
+    .targetReference 1
+
+#guard
+  (Selector.intersection [
+    .permanent,
+    .cardType .creature,
+    .controlled (.target 1 .player)]).referenceTargets ==
+    .intersection [
+      .permanent,
+      .cardType .creature,
+      .controlled (.targetReference 1)]
+
 /-- True when this selector includes the Basic supertype. -/
 def includesBasic : Selector → Bool
   | .supertype .basic => true
@@ -4593,12 +4655,7 @@ end TraditionalCardDefinition
               .cardType .creature,
               .controlled (.opponent (.controller .this))])) (Value.int (-1)),
          .addToughness
-          (.target
-            1
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.opponent (.controller .this))])) (Value.int (-1))]
+          (.targetReference 1) (Value.int (-1))]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesOppCreatureGets (-1) (-1)
   | none => false
@@ -5070,7 +5127,7 @@ end TraditionalCardDefinition
       [.addPower
         (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)),
        .addToughness
-        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)),
+        (.targetReference 1) (Value.int (-5)),
         .replace
           (.putToGraveyard (.targetReference 1))
           [.exile (.replacingObject)]]
@@ -5089,7 +5146,7 @@ end TraditionalCardDefinition
         (.intersection [
           .permanent,
           .cardType .creature,
-          .controlled (.target 1 .player)]) (Value.int (-1))]
+          .controlled (.targetReference 1)]) (Value.int (-1))]
       .endOfTurn
   action.toEffect == Effect.creaturesTargetPlayerGet (-1) (-1)
 
@@ -5100,7 +5157,7 @@ end TraditionalCardDefinition
         [.addPower
           (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)),
          .addToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)),
+          (.targetReference 1) (Value.int (-5)),
           .replace
             (.putToGraveyard (.targetReference 1))
             [.exile (.replacingObject)]]
@@ -5115,7 +5172,7 @@ end TraditionalCardDefinition
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 2 .player)]) (Value.int (-1))]
+            .controlled (.targetReference 2)]) (Value.int (-1))]
         .endOfTurn]
   CardAction.leftoverModes? action ==
     some #[Effect.pumpAndExileIfDies (-5) (-5), Effect.creaturesTargetPlayerGet (-1) (-1)]
@@ -5131,7 +5188,7 @@ end TraditionalCardDefinition
       [.addPower
         (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 2),
        .addToughness
-        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 2),
+        (.targetReference 1) (Value.int 2),
         .gainAbility (.targetReference 1) (.keyword .lifelink)]
       .endOfTurn
   action.toEffect == Effect.pumpAndLifelink 2 2
@@ -5541,7 +5598,7 @@ end TraditionalCardDefinition
       [.addPower
         (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
        .addToughness
-        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3)]
+        (.targetReference 1) (Value.int 3)]
       .endOfTurn
   action.toEffect == Effect.pump 3 3
 
@@ -6758,7 +6815,7 @@ end TraditionalCardDefinition
           .addPower
             (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
           .addToughness
-            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 1)]
+            (.targetReference 1) (Value.int 1)]
         .endOfTurn,
       .actionId 1 (.exile (.topOfLibrary (.controller .this))),
       .continuous

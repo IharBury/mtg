@@ -564,12 +564,7 @@ def frontPorchSentriesCard : CardDef :=
               .cardType .creature,
               .controlled (.opponent (.controller .this))])) (Value.int (-1)),
          .addToughness
-          (.target
-            1
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.opponent (.controller .this))])) (Value.int (-1))]
+          (.targetReference 1) (Value.int (-1))]
         .endOfTurn))]
 
 /-- Gatherer Oracle text for Great Fierce Bee. -/
@@ -917,7 +912,7 @@ def gnashingOfTeethCard : CardDef :=
           (.target 1 (.intersection [.permanent, .cardType .creature]))
           (Value.int (-5)),
          .addToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (.targetReference 1)
           (Value.int (-5)),
          .replace
            (.putToGraveyard (.targetReference 1))
@@ -934,7 +929,7 @@ def gnashingOfTeethCard : CardDef :=
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 2 .player)])
+            .controlled (.targetReference 2)])
           (Value.int (-1))]
         .endOfTurn]]
 ]
@@ -968,7 +963,7 @@ def reverentHowlCard : CardDef :=
           (.target 2 (.intersection [.permanent, .cardType .creature]))
           (Value.int 2),
          .addToughness
-          (.target 2 (.intersection [.permanent, .cardType .creature]))
+          (.targetReference 2)
           (Value.int 2),
          .gainAbility (.targetReference 2) (.keyword .lifelink)]
         .endOfTurn]]
