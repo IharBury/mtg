@@ -721,7 +721,7 @@ inductive ContinuousEffect where
   holds (CR 601.3 / 702.8). `you` in that condition is `Selector.caster`,
   the player who would cast the spell, not necessarily its controller or
   owner. The spell does not gain the flash keyword. -/
-  | canCastAsThoughWithFlashIf : Selector → Condition → ContinuousEffect
+  | canBeCastAsThoughWithFlashIf : Selector → Condition → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -965,7 +965,7 @@ def selector : ContinuousEffect → Selector
   | .setPower who _ | .setToughness who _ => who
   | .addPower who _ | .addToughness who _ => who
   | .increaseLandPlayLimit who _ => who
-  | .canCastAsThoughWithFlashIf card _ => card
+  | .canBeCastAsThoughWithFlashIf card _ => card
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is
@@ -3928,7 +3928,7 @@ def casterControlsPermanentSubtype? : Selector → Option String
 
 /-- This spell may be cast as though it had flash while the caster controls
 that subtype. The spell does not gain flash. -/
-def leftoverCanCastAsThoughWithFlashIf? (card : Selector) (cond : Condition) :
+def leftoverCanBeCastAsThoughWithFlashIf? (card : Selector) (cond : Condition) :
     Option String :=
   if card == .this || card == .source .this then
     match cond with
@@ -4098,8 +4098,8 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAllSubtypes _ _ => b
   | .setPower _ _ | .setToughness _ _ => b
   | .increaseLandPlayLimit _ _ => b
-  | .canCastAsThoughWithFlashIf card cond =>
-    match leftoverCanCastAsThoughWithFlashIf? card cond with
+  | .canBeCastAsThoughWithFlashIf card cond =>
+    match leftoverCanBeCastAsThoughWithFlashIf? card cond with
     | some t => { b with flashIfYouControlSubtype := some t }
     | none => b
   | .additionalCost _ cs =>
@@ -6830,7 +6830,7 @@ end TraditionalCardDefinition
   let card :=
     (TraditionalCardDefinition.card [
       .ability (.everywhereStatic (
-        .canCastAsThoughWithFlashIf
+        .canBeCastAsThoughWithFlashIf
           .this
           (.any (.intersection [
             .permanent, .subtype .human, .controlled .caster]))))

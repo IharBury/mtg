@@ -2912,7 +2912,7 @@ def bardsCompany : CardDef :=
   .power 2,
   .toughness 3,
   .ability (.everywhereStatic (
-    .canCastAsThoughWithFlashIf
+    .canBeCastAsThoughWithFlashIf
       .this
       (.any (.intersection [
         .permanent, .subtype .human, .controlled .caster])))),

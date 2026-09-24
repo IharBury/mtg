@@ -2446,7 +2446,7 @@ def parseCastAsThoughFlash (line : String) : Option CardPart :=
       "you may cast this spell as though it had flash if you control ").bind
     dropArticle? |>.bind subtypeOfOracle? |>.map fun st =>
       .ability (.everywhereStatic (
-        .canCastAsThoughWithFlashIf
+        .canBeCastAsThoughWithFlashIf
           .this
           (.any (.intersection [.permanent, .subtype st, .controlled .caster]))))
 
@@ -4284,7 +4284,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "You may cast this spell as though it had flash if you control a Human." ==
   some [.ability (.everywhereStatic (
-    .canCastAsThoughWithFlashIf
+    .canBeCastAsThoughWithFlashIf
       .this
       (.any (.intersection [
         .permanent, .subtype .human, .controlled .caster]))))]
@@ -4293,7 +4293,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "You may cast this spell as though it had flash if you control an Elf." ==
   some [.ability (.everywhereStatic (
-    .canCastAsThoughWithFlashIf
+    .canBeCastAsThoughWithFlashIf
       .this
       (.any (.intersection [
         .permanent, .subtype .elf, .controlled .caster]))))]
