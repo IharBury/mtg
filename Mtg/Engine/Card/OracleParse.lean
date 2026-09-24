@@ -514,8 +514,8 @@ def pumpUntilEnd (sel : Selector) (p t : Int) (among : Option Selector) : CardAc
     .continuous [.addPowerToughness sel (Value.int p) (Value.int t)] .endOfTurn
   | some among =>
     .continuous
-      [.addPower sel (Value.product (Value.count among) (Value.int p)),
-       .addToughness sel (Value.product (Value.count among) (Value.int t))]
+      [.addPower sel (Value.timesCount p among),
+       .addToughness sel (Value.timesCount t among)]
       .endOfTurn
 
 /-- `+P/+T` on target `n` until end of turn, plus keywords on that same target.
@@ -2015,8 +2015,8 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       .triggered
         (.attack .this .all)
         (.continuous
-          [.addPower (.source .this) (Value.product (Value.count others) (Value.int 1)),
-           .addToughness (.source .this) (Value.product (Value.count others) (Value.int 1))]
+          [.addPower (.source .this) (Value.count others),
+           .addToughness (.source .this) (Value.count others)]
           .endOfTurn))]
 #guard parseOracleParts (name := "") "Untap target creature you control." ==
   some [.actions [

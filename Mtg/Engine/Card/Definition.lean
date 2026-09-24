@@ -2344,31 +2344,27 @@ def leftoverEnterMaySacOrDiscardNonlandThenDamage? : CardAction → Bool
 
 /-- Source gets +1/+1 until end of turn for each other creature you control. -/
 def leftoverPumpForEachOtherCreature? : List ContinuousEffect → Bool
-  | [.addPower who (Value.product (Value.count among) vp),
-     .addToughness who' (Value.product (Value.count among') vt)] =>
+  | [.addPower who (Value.count among),
+     .addToughness who' (Value.count among')] =>
     who == who' &&
       (who == .source .this || who == .this) &&
       among == among' &&
-      among.shape.anotherCreatureYouControl &&
-      valToInt? vp == some 1 &&
-      valToInt? vt == some 1
+      among.shape.anotherCreatureYouControl
   | _ => false
 
 /-- Other permanents you control of a subtype get +1/+0 for each artifact
-token you control. -/
+token you control. Power is the count; toughness is that count times zero. -/
 def leftoverOtherSubtypeGetPowerPerArtifactToken?
     (power toughness : ContinuousEffect) : Option String :=
   match power, toughness with
-  | .addPower who (Value.product (Value.count among) vp),
+  | .addPower who (Value.count among),
     .addToughness who' (Value.product (Value.count among') vt) =>
-    match valToInt? vp, valToInt? vt with
-    | some 1, some 0 =>
-      if who == who' && among == among' &&
-          among.shape.token && among.shape.sameController &&
-          among.shape.types.eqTypes [.artifact] then
-        who.shape.anotherSubtypeYouControl
-      else none
-    | _, _ => none
+    if who == who' && among == among' &&
+        valToInt? vt == some 0 &&
+        among.shape.token && among.shape.sameController &&
+        among.shape.types.eqTypes [.artifact] then
+      who.shape.anotherSubtypeYouControl
+    else none
   | _, _ => none
 
 /-- You may pay {1}. If you do, target creature with haste can't be
@@ -4303,8 +4299,8 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.attack .this .all)
       (.continuous
-        [.addPower (.source .this) (Value.product (Value.count others) (Value.int 1)),
-         .addToughness (.source .this) (Value.product (Value.count others) (Value.int 1))]
+        [.addPower (.source .this) (Value.count others),
+         .addToughness (.source .this) (Value.count others)]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackPumpForEachOtherCreature
   | none => false
@@ -4368,7 +4364,7 @@ end TraditionalCardDefinition
 #guard (valToNat? (Value.greatestPower .this)).isNone
 #guard (valToNat? (Value.greatestToughness .this)).isNone
 #guard (valToNat? (Value.count .this)).isNone
-#guard (valToNat? (Value.product (Value.count .this) (Value.int 1))).isNone
+#guard (valToNat? (Value.product (Value.count .this) (Value.int 2))).isNone
 #guard Range.range Value.x 1 != Range.range 0 1
 #guard Range.any != Range.range 0 0
 #guard Range.from Value.x != Range.from 1
@@ -7629,7 +7625,7 @@ end TraditionalCardDefinition
   (TraditionalCardDefinition.card [
     .ability
       (.static
-        (.addPower dwarves (Value.product (Value.count tokens) (Value.int 1)))),
+        (.addPower dwarves (Value.count tokens))),
     .ability
       (.static
         (.addToughness dwarves (Value.product (Value.count tokens) (Value.int 0))))
@@ -7652,7 +7648,7 @@ end TraditionalCardDefinition
   (TraditionalCardDefinition.card [
     .ability
       (.static
-        (.addPower dwarves (Value.product (Value.count tokens) (Value.int 1))))
+        (.addPower dwarves (Value.count tokens)))
   ]).toCardDef.staticAbilities == #[]
 
 #guard

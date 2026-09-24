@@ -229,8 +229,8 @@ def eagleOfTheGreatShelfCard : CardDef :=
     .triggered
       (.attack .this .all)
       (.continuous
-        [.addPower (.source .this) (Value.product (Value.count others) (Value.int 1)),
-         .addToughness (.source .this) (Value.product (Value.count others) (Value.int 1))]
+        [.addPower (.source .this) (Value.count others),
+         .addToughness (.source .this) (Value.count others)]
         .endOfTurn))]
 
 /-- Gatherer Oracle text for Vow to Erebor. -/
