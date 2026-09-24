@@ -1238,14 +1238,17 @@ def galionElvenkingsButlerCard : CardDef :=
     .triggered
       (.attack .this .all)
       (.continuous
-        [.setBasePowerToughnessFrom
+        [.setBasePower
           (.targets 1 (.range 0 1)
             (.intersection [
               .not .this,
               .permanent,
               .cardType .creature,
               .controlled (.controller .this)]))
-          (.source .this)]
+          (Value.greatestPower (.source .this)),
+         .setBaseToughness
+          (.targetReference 1)
+          (Value.greatestToughness (.source .this))]
         .endOfTurn))
 ]
 

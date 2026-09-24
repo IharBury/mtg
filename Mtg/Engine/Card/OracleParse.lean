@@ -1705,9 +1705,12 @@ def parseAttackSetBasePT (cardName : String) (line : String) (n : Nat) :
                     .triggered
                       (.attack .this .all)
                       (.continuous
-                        [.setBasePowerToughnessFrom
+                        [.setBasePower
                           (.targets n (.range 0 1) among)
-                          (.source .this)]
+                          (Value.greatestPower (.source .this)),
+                         .setBaseToughness
+                          (.targetReference n)
+                          (Value.greatestToughness (.source .this))]
                         .endOfTurn)),
                   n + 1)
   | _ => none
@@ -2770,14 +2773,17 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .triggered
       (.attack .this .all)
       (.continuous
-        [.setBasePowerToughnessFrom
+        [.setBasePower
           (.targets 1 (.range 0 1)
             (.intersection [
               .not .this,
               .permanent,
               .cardType .creature,
               .controlled (.controller .this)]))
-          (.source .this)]
+          (Value.greatestPower (.source .this)),
+         .setBaseToughness
+          (.targetReference 1)
+          (Value.greatestToughness (.source .this))]
         .endOfTurn))]
 #guard parseOracleParts (name := "Galion, Elvenking's Butler")
   "Whenever this creature attacks, choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn." ==
