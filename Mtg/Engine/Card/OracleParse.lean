@@ -507,29 +507,40 @@ def splitUntilEnd? (s : String) : Option (String × Option String) :=
   | none =>
     (before? s "until end of turn").map fun body => (body, none)
 
+/-- `+P/+T` as `addPower` and `addToughness`. A zero bonus is omitted.
+The first effect declares any targets. Later effects use `targetReference`. -/
+def flatPowerToughness (sel : Selector) (p t : Int) : List ContinuousEffect :=
+  let power :=
+    if p == 0 then [] else [.addPower sel (Value.int p)]
+  let later := if power.isEmpty then sel else sel.referenceTargets
+  let toughness :=
+    if t == 0 then [] else [.addToughness later (Value.int t)]
+  power ++ toughness
+
 /-- `+P/+T` until end of turn, optionally once per `among`.
 Zero toughness is omitted. -/
 def pumpUntilEnd (sel : Selector) (p t : Int) (among : Option Selector) : CardAction :=
   match among with
   | none =>
-    .continuous [.addPowerToughness sel (Value.int p) (Value.int t)] .endOfTurn
+    .continuous (flatPowerToughness sel p t) .endOfTurn
   | some among =>
     let power :=
       if p == 0 then [] else [.addPower sel (Value.timesCount p among)]
+    let later := if p == 0 then sel else sel.referenceTargets
+    let laterAmong := if p == 0 then among else among.referenceTargets
     let toughness :=
-      if t == 0 then [] else [.addToughness sel (Value.timesCount t among)]
+      if t == 0 then [] else [.addToughness later (Value.timesCount t laterAmong)]
     .continuous (power ++ toughness) .endOfTurn
 
 /-- `+P/+T` on target `n` until end of turn, plus keywords on that same target.
 No keywords is only the power and toughness change. -/
 def pumpGainsUntilEnd (n : Nat) (sel : Selector) (p t : Int)
     (kws : List Keyword) : CardAction × Nat :=
-  let pump : ContinuousEffect :=
-    .addPowerToughness (.target n sel) (Value.int p) (Value.int t)
+  let pump := flatPowerToughness (.target n sel) p t
   let gains :=
     kws.map fun k =>
       ContinuousEffect.gainAbility (.targetReference n) (.keyword k)
-  (.continuous (pump :: gains) .endOfTurn, n + 1)
+  (.continuous (pump ++ gains) .endOfTurn, n + 1)
 
 /-- `<objects> get +P/+T until end of turn [for each <objects>].` -/
 def parsePumpUntilEndOfTurn (sentence : String) : Option CardAction :=
@@ -1141,21 +1152,18 @@ def parsePumpExileIfDies (text : String) (n : Nat) : Option (CardAction × Nat) 
     if !sentenceIs exile "if that creature would die this turn, exile it instead" then none
     else
       match parseTargetGetsUntilEndOfTurn pump n with
-      | some (
-          .continuous
-            [.addPowerToughness
-              (.target m (.intersection [.permanent, .cardType .creature])) vp vt]
-            .endOfTurn,
-          n') =>
-        some (
-          .continuous
-            [.addPowerToughness
-              (.target m (.intersection [.permanent, .cardType .creature])) vp vt,
-             .replace
-               (.putToGraveyard (.targetReference m))
-               [.exile (.replacingObject)]]
-            .endOfTurn,
-          n')
+      | some (.continuous effects .endOfTurn, n') =>
+        match ContinuousEffect.addedPT? effects, ContinuousEffect.targetingSelector? effects with
+        | some _, some (.target m (.intersection [.permanent, .cardType .creature])) =>
+          some (
+            .continuous
+              (effects ++
+                [.replace
+                  (.putToGraveyard (.targetReference m))
+                  [.exile (.replacingObject)]])
+              .endOfTurn,
+            n')
+        | _, _ => none
       | _ => none
   | _ => none
 
@@ -1533,11 +1541,13 @@ def parseEnterTargetOpponentSacrifices (cardName : String) (line : String) (n : 
 
 /-- `Equipped creature gets +2/+1.` The bonus is a static ability of the
 Equipment (CR 604.1 / 301.5). -/
-def parseEquippedGets (line : String) : Option CardPart :=
+def parseEquippedGets (line : String) : Option (List CardPart) :=
   match (after? (normLine line) "equipped creature gets ").bind parsePowerToughness with
   | some (p, t) =>
-    some (.ability
-      (.static (.addPowerToughness (.hostOf .this) (Value.int p) (Value.int t))))
+    let parts :=
+      (flatPowerToughness (.hostOf .this) p t).map fun e =>
+        (.ability (.static e) : CardPart)
+    if parts.isEmpty then none else some parts
   | none => none
 
 /-- `Equip {2}.` Reminder text such as
@@ -1763,7 +1773,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseCantBlock cardName line) n <|>
     sole (parseCombatDamageLoot cardName line) n <|>
     sole (parseAdditionalCostSacrificeOrPay line) n <|>
-    sole (parseEquippedGets line) n <|>
+    (parseEquippedGets line).map (·, n) <|>
     sole (parseEquip line) n <|>
     spellActions (actionsFromText cardName line n)
 
@@ -1932,11 +1942,16 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .activated
       [.mana [.generic 3, .mono .white]]
       (.continuous
-        [.addPowerToughness
+        [.addPower
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
+            .controlled (.controller .this)]) (Value.int 1),
+         .addToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]) (Value.int 1)]
         .endOfTurn))]
 #guard parseOracleParts (name := "") "Tap one or two target creatures." ==
   some [.actions [
@@ -2039,7 +2054,8 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
           .permanent,
           .cardType .creature,
           .controlled (.controller .this)])),
-    .continuous [.addPowerToughness (.targetReference 1) (Value.int 2) (Value.int 2)] .endOfTurn,
+    .continuous [.addPower (.targetReference 1) (Value.int 2),
+                 .addToughness (.targetReference 1) (Value.int 2)] .endOfTurn,
     .if
         (.anySubtype (.targetReference 1) .dwarf)
         [
@@ -2161,13 +2177,15 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .triggered
       (.die .this)
       (.continuous
-        [.addPowerToughness
+        [.addPower
           (.target
             1
             (.intersection [
               .permanent,
               .cardType .creature,
-              .controlled (.opponent (.controller .this))])) (Value.int (-1)) (Value.int (-1))]
+              .controlled (.opponent (.controller .this))])) (Value.int (-1)),
+         .addToughness
+          (.targetReference 1) (Value.int (-1))]
         .endOfTurn))]
 #guard parseOracleParts (name := "Front Porch Sentries")
   "When Front Porch Sentries dies, target creature an opponent controls gets -1/-1 until end of turn." ==
@@ -2175,13 +2193,15 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .triggered
       (.die .this)
       (.continuous
-        [.addPowerToughness
+        [.addPower
           (.target
             1
             (.intersection [
               .permanent,
               .cardType .creature,
-              .controlled (.opponent (.controller .this))])) (Value.int (-1)) (Value.int (-1))]
+              .controlled (.opponent (.controller .this))])) (Value.int (-1)),
+         .addToughness
+          (.targetReference 1) (Value.int (-1))]
         .endOfTurn))]
 #guard parseOracleParts (name := "")
   "When this creature dies, target creature an opponent controls gets +1/+1 until end of turn." ==
@@ -2189,13 +2209,15 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .triggered
       (.die .this)
       (.continuous
-        [.addPowerToughness
+        [.addPower
           (.target
             1
             (.intersection [
               .permanent,
               .cardType .creature,
-              .controlled (.opponent (.controller .this))])) (Value.int 1) (Value.int 1)]
+              .controlled (.opponent (.controller .this))])) (Value.int 1),
+         .addToughness
+          (.targetReference 1) (Value.int 1)]
         .endOfTurn))]
 #guard parseOracleParts (name := "Gandalf")
   "When Front Porch Sentries dies, target creature an opponent controls gets -1/-1 until end of turn." == none
@@ -2328,7 +2350,8 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
         [.life 2]
         (.continuous
-          [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)]
+          [.addPower (.source .this) (Value.int 2),
+           .addToughness (.source .this) (Value.int 2)]
           .endOfTurn)))]
 #guard parseOracleParts (name := "")
   "Pay 2 life: This creature gets +2/+2 until end of turn." ==
@@ -2336,7 +2359,8 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .activated
       [.life 2]
       (.continuous
-        [.addPowerToughness (.source .this) (Value.int 2) (Value.int 2)]
+        [.addPower (.source .this) (Value.int 2),
+         .addToughness (.source .this) (Value.int 2)]
         .endOfTurn))]
 #guard parseOracleParts (name := "")
   "Pay 2 life: This creature gets +2/+2 until end of turn. Activate only twice each turn." == none
@@ -2444,7 +2468,8 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "When this Equipment enters, target opponent sacrifices an artifact of their choice." == none
 #guard parseOracleParts (name := "") "Equipped creature gets +2/+1." ==
-  some [.ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 1)))]
+  some [.ability (.static (.addPower (.hostOf .this) (Value.int 2))),
+.ability (.static (.addToughness (.hostOf .this) (Value.int 1)))]
 #guard parseOracleParts (name := "") "Equipped creature gets +2/+1 until end of turn." == none
 #guard parseOracleParts (name := "") "Equipped creature gets +2/+1 and has flying." == none
 #guard parseOracleParts (name := "") "Equip {2}" ==
@@ -2468,7 +2493,8 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
               .permanent,
               .cardType .creature,
               .controlled (.targetReference 1)])))),
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 1))),
+    .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
+    .ability (.static (.addToughness (.hostOf .this) (Value.int 1))),
     .ability (.keywordWithCost .equip [.mana [.generic 2]])]
 
 #guard parseOracleParts (name := "Gollum the Abandoned") "Gollum can't block." ==
@@ -2551,9 +2577,12 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "Target creature gets +2/+2 and gains lifelink until end of turn." ==
   some [.actions [
     .continuous
-      [.addPowerToughness
+      [.addPower
         (.target 1 (.intersection [.permanent, .cardType .creature]))
-        (Value.int 2) (Value.int 2),
+        (Value.int 2),
+       .addToughness
+        (.targetReference 1)
+        (Value.int 2),
        .gainAbility (.targetReference 1) (.keyword .lifelink)]
       .endOfTurn]]
 #guard parseOracleParts (name := "")
@@ -2562,9 +2591,12 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "Target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead." ==
   some [.actions [
     .continuous
-      [.addPowerToughness
+      [.addPower
         (.target 1 (.intersection [.permanent, .cardType .creature]))
-        (Value.int (-5)) (Value.int (-5)),
+        (Value.int (-5)),
+       .addToughness
+        (.targetReference 1)
+        (Value.int (-5)),
        .replace
          (.putToGraveyard (.targetReference 1))
          [.exile (.replacingObject)]]
@@ -2575,12 +2607,18 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "Creatures target player controls get -1/-1 until end of turn." ==
   some [.actions [
     .continuous
-      [.addPowerToughness
+      [.addPower
         (.intersection [
           .permanent,
           .cardType .creature,
           .controlled (.target 1 .player)])
-        (Value.int (-1)) (Value.int (-1))]
+        (Value.int (-1)),
+       .addToughness
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.targetReference 1)])
+        (Value.int (-1))]
       .endOfTurn]]
 #guard parseOracleParts (name := "")
   "Creatures target player controls get -1/-1." == none
@@ -2597,20 +2635,29 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   some [.actions [
     .chooseMode [
       .continuous
-        [.addPowerToughness
+        [.addPower
           (.target 1 (.intersection [.permanent, .cardType .creature]))
-          (Value.int (-5)) (Value.int (-5)),
+          (Value.int (-5)),
+         .addToughness
+          (.targetReference 1)
+          (Value.int (-5)),
          .replace
            (.putToGraveyard (.targetReference 1))
            [.exile (.replacingObject)]]
         .endOfTurn,
       .continuous
-        [.addPowerToughness
+        [.addPower
           (.intersection [
             .permanent,
             .cardType .creature,
             .controlled (.target 2 .player)])
-          (Value.int (-1)) (Value.int (-1))]
+          (Value.int (-1)),
+         .addToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.targetReference 2)])
+          (Value.int (-1))]
         .endOfTurn]]]
 #guard parseOracleParts (name := "")
   "Choose one —\n• Target player draws two cards and loses 2 life.\n• Target creature gets +2/+2 and gains lifelink until end of turn." ==
@@ -2620,9 +2667,12 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         .draw (.target 1 .player) 2,
         .loseLife (.targetReference 1) 2],
       .continuous
-        [.addPowerToughness
+        [.addPower
           (.target 2 (.intersection [.permanent, .cardType .creature]))
-          (Value.int 2) (Value.int 2),
+          (Value.int 2),
+         .addToughness
+          (.targetReference 2)
+          (Value.int 2),
          .gainAbility (.targetReference 2) (.keyword .lifelink)]
         .endOfTurn]]]
 #guard parseOracleParts (name := "")
@@ -2697,7 +2747,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
           .optional
             (.actionId 1 (.discard (.controller .this) 1)),
           .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]])),
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 0))),
+    .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
     .ability (.keywordWithCost .equip [.mana [.generic 3]])]
 #guard parseOracleParts (name := "Smaug, the Great Calamity")
   "Flying\n//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)" ==

@@ -397,14 +397,14 @@ def patriotShieldWielder : CardDef :=
         [.mana [.generic 2], .tapSymbol]
         (.continuous
           [
-            .addPowerToughness
+            .addPower
               (.target
                 1
                 (.intersection [
                   .not .this,
                   .permanent,
                   .cardType .creature,
-                  .controlled (.controller .this)])) (Value.int 2) (Value.int 0),
+                  .controlled (.controller .this)])) (Value.int 2),
             .gainAbility (.targetReference 1) (.keyword .hexproof)]
           .endOfTurn))
   ]).toCardDef
@@ -606,15 +606,20 @@ def attumaAtlanteanWarlord : CardDef :=
     .subtype .villain,
     .power 3,
     .toughness 4,
-    .ability (
-      .static
-        (.addPowerToughness
+    .ability (.static (.addPower
           (.intersection [
             .not .this,
             .permanent,
             .cardType .creature,
             .subtype .merfolk,
-            .controlled (.controller .this)]) (Value.int 1) (Value.int 1))),
+            .controlled (.controller .this)]) (Value.int 1))),
+    .ability (.static (.addToughness
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .subtype .merfolk,
+            .controlled (.controller .this)]) (Value.int 1))),
     .ability (
       .triggered
         (.attackSimultaneously
@@ -657,8 +662,8 @@ def depower : CardDef :=
           [.reduceCost .this [.mana [.generic 2]]])),
     .actions [
       .continuous
-        [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4)) (Value.int 0)]
+        [.addPower
+          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4))]
         .endOfTurn,
       .draw (.controller .this) 1]
   ]).toCardDef
@@ -967,7 +972,8 @@ def superSuit : CardDef :=
                 .cardType .creature,
                 .controlled (.controller .this)])),
           .untap (.targetReference 1)])),
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 1) (Value.int 2))),
+    .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
+    .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
     .ability (.keywordWithCost .equip [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "Flash\nWhen this Equipment enters, attach it to target creature you control. Untap that creature.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)")
@@ -1131,8 +1137,10 @@ def darkDeed : CardDef :=
     .type .instant,
     .actions [
       .continuous
-        [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4)) (Value.int (-4))]
+        [.addPower
+          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4)),
+         .addToughness
+          (.targetReference 1) (Value.int (-4))]
         .endOfTurn]
   ]).toCardDef
     (oracleText := "Target creature gets -4/-4 until end of turn.")
@@ -1245,15 +1253,20 @@ def theMastersOfEvil : CardDef :=
     .subtype .villain,
     .power 5,
     .toughness 6,
-    .ability
-      (.static
-        (.addPowerToughness
+    .ability (.static (.addPower
           (.intersection [
             .not .this,
             .permanent,
             .cardType .creature,
             .subtype .villain,
-            .controlled (.controller .this)]) (Value.int 2) (Value.int 1))),
+            .controlled (.controller .this)]) (Value.int 2))),
+    .ability (.static (.addToughness
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .subtype .villain,
+            .controlled (.controller .this)]) (Value.int 1))),
     .ability
       (.activated
         [.mana [.generic 1, .mono .black], .discard .this]
@@ -1287,13 +1300,16 @@ def mODOK : CardDef :=
         (.turn (.controller .this))
         [.life 3]
         (.keyword (.source .this) (.connive (.nat 1)))),
-    .ability
-      (.static
-        (.addPowerToughness
+    .ability (.static (.addPower
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.opponent (.controller .this))]) (Value.int (-1)) (Value.int (-1))))
+            .controlled (.opponent (.controller .this))]) (Value.int (-1)))),
+    .ability (.static (.addToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.opponent (.controller .this))]) (Value.int (-1))))
   ]).toCardDef
     (oracleText := "Flying, lifelink\nMental Organism — Pay 3 life: M.O.D.O.K. connives. Activate only during your turn. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)\nDesigned Only for Killing — Creatures your opponents control get -1/-1.")
 
@@ -1422,7 +1438,7 @@ def stolenStarkTech : CardDef :=
           .continuous
             [.gainAbility (.hostOf .this) (.keyword .indestructible)]
             .endOfTurn])),
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 1) (Value.int 0))),
+    .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
     .ability (.keywordWithCost .equip [.mana [.generic 1]])
   ]).toCardDef
     (oracleText := "Flash\nWhen this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy it.)\nEquipped creature gets +1/+0.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)")
@@ -1558,7 +1574,7 @@ def yellowjacketHeartlessMarauder : CardDef :=
             .controlled (.controller .this)]))
         (.continuous
           [
-            .addPowerToughness (.source .this) (Value.int 1) (Value.int 0),
+            .addPower (.source .this) (Value.int 1),
             .gainAbility (.source .this) (.keyword .lifelink)]
           .endOfTurn))
   ]).toCardDef
@@ -1578,8 +1594,10 @@ def blazingCrescendo : CardDef :=
     .actions [
       .continuous
         [
-          .addPowerToughness
-            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3) (Value.int 1)]
+          .addPower
+            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
+          .addToughness
+            (.targetReference 1) (Value.int 1)]
         .endOfTurn,
       .actionId 1 (.exile (.topOfLibrary (.controller .this))),
       .continuous
@@ -1683,11 +1701,11 @@ def hireACrew : CardDef :=
         .ability (.keyword .menace)],
       .continuous
         [
-          .addPowerToughness
+          .addPower
             (.intersection [
               .permanent,
               .cardType .creature,
-              .controlled (.controller .this)]) (Value.int 1) (Value.int 0)]
+              .controlled (.controller .this)]) (Value.int 1)]
         .endOfTurn]
   ]).toCardDef
     (oracleText := "Create a 2/1 black Villain creature token with menace, then creatures you control get +1/+0 until end of turn. (A creature with menace can't be blocked except by two or more creatures.)")
@@ -1950,7 +1968,7 @@ def superSpeed : CardDef :=
         (.continuous
           [.gainAbility (.hostOf .this) (.keyword .firstStrike)]
           .endOfTurn)),
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 1) (Value.int 0))),
+    .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
     .ability (.static (.gainAbility (.hostOf .this) (.keyword .haste)))
   ]).toCardDef
     (oracleText := "Flash\nEnchant creature\nWhen this Aura enters, enchanted creature gains first strike until end of turn.\nEnchanted creature gets +1/+0 and has haste.")
@@ -2361,7 +2379,8 @@ def undercoverSkrull : CardDef :=
               .owner (.controller .this)])
             2)
           [
-            .addPowerToughness .this (Value.int 2) (Value.int 2),
+            .addPower .this (Value.int 2),
+            .addToughness .this (Value.int 2),
             .gainAllSubtypes .this .creature])),
     .ability
       (.activated
@@ -2550,11 +2569,16 @@ def blackPantherVanguard : CardDef :=
             .type .creature, .subtype .soldier, .colorIndicator [.white], .power 1, .toughness 1],
           .continuous
             [
-              .addPowerToughness
+              .addPower
                 (.intersection [
                   .permanent,
                   .cardType .creature,
-                  .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
+                  .controlled (.controller .this)]) (Value.int 1),
+              .addToughness
+                (.intersection [
+                  .permanent,
+                  .cardType .creature,
+                  .controlled (.controller .this)]) (Value.int 1)]
             .endOfTurn]))
   ]).toCardDef
     (oracleText := "Whenever another nontoken Hero you control enters, choose one —\n• Create a 1/1 white Soldier creature token.\n• Creatures you control get +1/+1 until end of turn.")
@@ -2732,7 +2756,8 @@ def killmongerScourgeOfWakanda : CardDef :=
               .cardType .creature,
               .owner (.controller .this)])
             2)
-          [.addPowerToughness .this (Value.int 2) (Value.int 1)]))
+          [.addPower .this (Value.int 2),
+           .addToughness .this (Value.int 1)]))
   ]).toCardDef
     (oracleText := "When Killmonger enters, you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls.\nAs long as there are two or more creature cards in your graveyard, Killmonger gets +2/+1.")
 
@@ -3116,7 +3141,8 @@ def vibraniumEnergyDaggers : CardDef :=
     .type .artifact,
     .subtype .equipment,
     .ability (.keyword .indestructible),
-    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 2))),
+    .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
+    .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
     .ability (.keywordWithCost .equip [.mana [.generic 3]])
   ]).toCardDef
     (oracleText := "Indestructible (Effects that say \"destroy\" don't destroy this Equipment.)\nEquipped creature gets +2/+2.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)")
