@@ -211,7 +211,8 @@ Currently recognized:
   “Whenever you attack” is one trigger when creatures you control attack at
   the same time (CR 508.3 / 603.2d).
 - `You may cast this spell as though it had flash if you control a <subtype>.`
-  The permission is checked as you begin to cast this spell (CR 601.3 / 702.8).
+  The permission is checked as you begin to cast this spell, before the card
+  is put onto the stack (CR 601.3 / 702.8). The spell does not gain flash.
 - `<permanents> get +P/+T.`
   No duration is printed, so this is a static ability (CR 604.2 / 613.4c).
   A zero bonus is omitted. `+0/+0` is not an effect. `until end of turn` is a
@@ -2435,15 +2436,16 @@ def parseYouAttackAmass (line : String) : Option CardPart :=
     ((after? (normLine line) "whenever you attack, ").bind parseAmass)
 
 /-- `You may cast this spell as though it had flash if you control a Human.`
-The permission is checked as you begin to cast this spell (CR 601.3 / 702.8). -/
+The permission is checked as you begin to cast this spell, before the card
+is put onto the stack (CR 601.3 / 702.8). The spell does not gain flash. -/
 def parseCastAsThoughFlash (line : String) : Option CardPart :=
   (after? (normLine line)
       "you may cast this spell as though it had flash if you control ").bind
     dropArticle? |>.bind subtypeOfOracle? |>.map fun st =>
-      .ability (.stackStatic (
+      .ability (.everywhereStatic (
         .if
           (.any (.intersection [.permanent, .subtype st, youControl]))
-          [.gainAbility .this (.keyword .flash)]))
+          [.castAsThoughFlash (.controller .this) .this]))
 
 /-- `<permanents> get +P/+T.` No duration is printed, so this is a static
 ability (CR 604.2 / 613.4c). A zero bonus is omitted. `+0/+0` is not an
@@ -4278,20 +4280,20 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "Whenever you attack while you control a Goblin, amass Goblins 2." == none
 #guard parseOracleParts (name := "")
   "You may cast this spell as though it had flash if you control a Human." ==
-  some [.ability (.stackStatic (
+  some [.ability (.everywhereStatic (
     .if
       (.any (.intersection [
         .permanent, .subtype .human, .controlled (.controller .this)]))
-      [.gainAbility .this (.keyword .flash)]))]
+      [.castAsThoughFlash (.controller .this) .this]))]
 #guard parseOracleParts (name := "")
   "You may cast this spell as though it had flash if you control Human." == none
 #guard parseOracleParts (name := "")
   "You may cast this spell as though it had flash if you control an Elf." ==
-  some [.ability (.stackStatic (
+  some [.ability (.everywhereStatic (
     .if
       (.any (.intersection [
         .permanent, .subtype .elf, .controlled (.controller .this)]))
-      [.gainAbility .this (.keyword .flash)]))]
+      [.castAsThoughFlash (.controller .this) .this]))]
 #guard parseOracleParts (name := "") "Other creatures you control get +1/+1." ==
   some [
     .ability (.static (.addPower

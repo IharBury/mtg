@@ -670,6 +670,9 @@ inductive Ability where
   /-- A static ability that functions while this spell is on the stack
   (CR 604.2), e.g. a cost reduction. -/
   | stackStatic : ContinuousEffect → Ability
+  /-- A static ability that functions in every zone (CR 113.6), including
+  before this card is put onto the stack. -/
+  | everywhereStatic : ContinuousEffect → Ability
 deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
@@ -713,6 +716,9 @@ inductive ContinuousEffect where
   /-- The selected player may play that many additional lands on each of
   their turns (CR 305.2b). -/
   | increaseLandPlayLimit : Selector → Value → ContinuousEffect
+  /-- The selected player may cast the selected spell as though it had flash
+  (CR 601.3 / 702.8). The spell does not gain the flash keyword. -/
+  | castAsThoughFlash : Selector → Selector → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -956,6 +962,7 @@ def selector : ContinuousEffect → Selector
   | .setPower who _ | .setToughness who _ => who
   | .addPower who _ | .addToughness who _ => who
   | .increaseLandPlayLimit who _ => who
+  | .castAsThoughFlash _ card => card
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is
@@ -3900,12 +3907,13 @@ def leftoverHasteIfOtherSubtype? (among : Selector) (inners : List ContinuousEff
     else none
   | _ => none
 
-/-- This spell may be cast as though it had flash while you control that subtype. -/
+/-- This spell may be cast as though it had flash while you control that subtype.
+The spell does not gain flash. -/
 def leftoverFlashIfSubtypeYouControl? (among : Selector) (inners : List ContinuousEffect)
     : Option String :=
   match inners with
-  | [.gainAbility who (.keyword .flash)] =>
-    if who == .this || who == .source .this then
+  | [.castAsThoughFlash who card] =>
+    if who == .controller .this && (card == .this || card == .source .this) then
       match among.shape.subtype with
       | some t =>
         if among.shape ==
@@ -4081,6 +4089,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAllSubtypes _ _ => b
   | .setPower _ _ | .setToughness _ _ => b
   | .increaseLandPlayLimit _ _ => b
+  | .castAsThoughFlash _ _ => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
@@ -4157,6 +4166,7 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | none => b
   | .static e => applyContinuousEffect b e
   | .stackStatic e => applyContinuousEffect b e
+  | .everywhereStatic e => applyContinuousEffect b e
 
 def apply (b : CardFace) : CardPart → CardFace
   | .name n => { b with name := n }
@@ -4183,7 +4193,7 @@ def apply (b : CardFace) : CardPart → CardFace
 /-- A static ability that sets power or toughness to the number of lands
 you control. -/
 def partSetsLandsCharacteristic (power : Bool) : CardPart → Bool
-  | .ability (.static e) | .ability (.stackStatic e) =>
+  | .ability (.static e) | .ability (.stackStatic e) | .ability (.everywhereStatic e) =>
     setsCharacteristicToLandsYouControl power e
   | _ => false
 
@@ -4194,7 +4204,7 @@ def partSetsCreaturesYouControlPower : CardPart → Bool
 
 /-- A static continuous effect, if this part is one. -/
 def staticContinuous? : CardPart → Option ContinuousEffect
-  | .ability (.static e) | .ability (.stackStatic e) => some e
+  | .ability (.static e) | .ability (.stackStatic e) | .ability (.everywhereStatic e) => some e
   | _ => none
 
 /-- Other-subtype +1/+0 for each artifact token. Toughness is not changed. -/
@@ -6805,13 +6815,15 @@ end TraditionalCardDefinition
   ]).toCardDef.staticAbilities == #[.otherCreaturesGet #[] 1 1]
 
 #guard
-  (TraditionalCardDefinition.card [
-    .ability (.stackStatic (
-      .if
-        (.any (.intersection [
-          .permanent, .subtype .human, .controlled (.controller .this)]))
-        [.gainAbility .this (.keyword .flash)]))
-  ]).toCardDef.flashIfYouControlSubtype == some "Human"
+  let card :=
+    (TraditionalCardDefinition.card [
+      .ability (.everywhereStatic (
+        .if
+          (.any (.intersection [
+            .permanent, .subtype .human, .controlled (.controller .this)]))
+          [.castAsThoughFlash (.controller .this) .this]))
+    ]).toCardDef
+  card.flashIfYouControlSubtype == some "Human" && !card.keywords.flash
 
 #guard
   match

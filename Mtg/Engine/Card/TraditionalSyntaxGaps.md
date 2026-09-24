@@ -77,10 +77,11 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
   `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`, `abilityId`, `triggered`,
   `triggeredWhile` (condition checked when the trigger event occurs, not on resolution),
-  `static`.
+  `static`, `stackStatic`, `everywhereStatic` (functions in every zone, including before the card is put onto the stack).
 - **ContinuousEffect** — `gainAbility`, `if`,
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
-  `canCastWithoutPayingManaCost`, `canPlay`, `setBasePower`, `setBaseToughness`,
+  `canCastWithoutPayingManaCost`, `canPlay`, `castAsThoughFlash` (cast as though the spell had flash; the spell does not gain flash),
+  `setBasePower`, `setBaseToughness`,
   `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPower`, `setToughness`,
   `addPower`, `addToughness`, `increaseLandPlayLimit`.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,

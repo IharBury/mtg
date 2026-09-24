@@ -2911,11 +2911,11 @@ def bardsCompany : CardDef :=
   .subtype .citizen,
   .power 2,
   .toughness 3,
-  .ability (.stackStatic (
+  .ability (.everywhereStatic (
     .if
       (.any (.intersection [
         .permanent, .subtype .human, .controlled (.controller .this)]))
-      [.gainAbility .this (.keyword .flash)])),
+      [.castAsThoughFlash (.controller .this) .this])),
   .ability (.static (.addPower
     (.intersection [
       .not .this,
@@ -2935,6 +2935,7 @@ def bardsCompany : CardDef :=
 ]
 
 #guard bardsCompany.flashIfYouControlSubtype == some "Human"
+#guard !bardsCompany.keywords.flash
 #guard bardsCompany.staticAbilities == #[.otherCreaturesGet #[] 1 1]
 #guard bardsCompany.triggeredAbilities == #[.onEnterOrAttackRecruit]
 
