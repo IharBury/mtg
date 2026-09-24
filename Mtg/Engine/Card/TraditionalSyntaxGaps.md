@@ -92,8 +92,8 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `sacrifice`, `returnToHand`, `putOntoBattlefield`,
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
   `holdOutInLibrary`, `defineVariable`,
-  `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`, `addManaAnyColor`,
-  `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
+  `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`, `addManaOfOneColor`,
+  `addMana`, `keyword`, `createTokens`,
   `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`.
 - **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,

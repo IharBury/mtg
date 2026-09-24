@@ -227,7 +227,7 @@ def pelargirSurvivor : CardDef :=
         [.tapSymbol]
         (.sequence [
           .actionId 1
-            (.addManaAnyColor (.controller .this) (.controller .this) 1),
+            (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1),
           .continuous
             [.forbid
               (.spendManaCreatedByAction 1

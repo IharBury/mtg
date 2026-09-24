@@ -743,17 +743,13 @@ inductive CardAction where
   | dealDamageEqualToPower : Selector → Selector → CardAction
   /-- The selected objects fight (CR 701.12). -/
   | fight : Selector → Selector → CardAction
-  /-- The first selected player chooses a color. The second selected
-  player adds X mana of that color. -/
-  | addManaAnyColor : Selector → Selector → Value → CardAction
-  /-- The first selected player chooses a color. The second selected
-  player adds X mana of that color, where X is the third selected
-  object's power. -/
-  | addManaAnyColorEqualToPower : Selector → Selector → Selector → CardAction
+  /-- The selected player chooses one of the listed mana symbols and adds
+  that many mana of the chosen symbol. -/
+  | addManaOfOneColor : Selector → List ManaSymbol → Value → CardAction
   /-- The selected player adds mana matching the listed symbols, all at
   once (CR 106.4). To let the player choose among symbols, use
-  `playerSelectAction`. To add any color, use
-  `addManaAnyColor`. -/
+  `playerSelectAction`. To add one chosen color, use
+  `addManaOfOneColor`. -/
   | addMana : Selector → List ManaSymbol → CardAction
   /-- The selected object or player performs a keyword action (CR 701),
   e.g. recruit, amass Goblins 1, or connive 1. -/
@@ -808,7 +804,7 @@ def treasureToken : List CardPart := [
   .ability
     (.activated
       [.tapSymbol, .sacrifice .this]
-      (.addManaAnyColor (.controller .this) (.controller .this) 1))
+      (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1))
 ]
 
 /-- Printed Food token characteristics (CR 111.10b). -/
@@ -1480,29 +1476,29 @@ def leftoverInstantOrSorcerySpend? : Trigger → Bool
 only on Elf spells and Elf sources. -/
 def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Bool
   | .sequence [
-      .actionId id (.addManaAnyColorEqualToPower chooser gainer power),
+      .actionId id (.addManaOfOneColor who syms amount),
       .continuous [.forbid (.spendManaCreatedByAction spendId restriction)] _
     ] =>
     id == spendId &&
       leftoverElfRestrictedSpend? restriction &&
       Cost.hasTapSymbol costs &&
-      chooser == .controller .this &&
-      gainer == .controller .this &&
-      (power == .this || power == .source .this)
+      who == .controller .this &&
+      syms == ManaSymbol.anyColor &&
+      (amount == .greatestPower .this || amount == .greatestPower (.source .this))
   | _ => false
 
 /-- `{T}: Add` one mana of any color, spendable only on instant and
 sorcery spells. -/
 def leftoverTapAddAnyColorForInstantOrSorcery? (costs : List Cost) : CardAction → Bool
   | .sequence [
-      .actionId id (.addManaAnyColor chooser gainer 1),
+      .actionId id (.addManaOfOneColor who syms 1),
       .continuous [.forbid (.spendManaCreatedByAction spendId restriction)] _
     ] =>
     id == spendId &&
       leftoverInstantOrSorcerySpend? restriction &&
       costs == [.tapSymbol] &&
-      chooser == .controller .this &&
-      gainer == .controller .this
+      who == .controller .this &&
+      syms == ManaSymbol.anyColor
   | _ => false
 
 /-- Mana produced when this symbol is added to a pool (CR 106.4). -/
@@ -1547,7 +1543,7 @@ def leftoverTapAddOneOf? (costs : List Cost) : CardAction → Option (Array Mana
 
 /-- Add one mana of any color. -/
 def leftoverAddAnyColor? : CardAction → Bool
-  | .addManaAnyColor _ _ 1 => true
+  | .addManaOfOneColor _ syms 1 => syms == ManaSymbol.anyColor
   | _ => false
 
 /-- Replacement “this enters tapped”. -/
@@ -2958,13 +2954,11 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .reveal _ => continuousEffect none [] asAbility
                   | .dealDamageEqualToPower _ _ | .fight _ _ =>
                     continuousEffect none [] asAbility
-                  | .addManaAnyColor chooser gainer n =>
-                    if leftoverAddAnyColor? (.addManaAnyColor chooser gainer n) then
+                  | .addManaOfOneColor who syms n =>
+                    if leftoverAddAnyColor? (.addManaOfOneColor who syms n) then
                       Effect.addAnyColor
                     else
                       continuousEffect none [] asAbility
-                  | .addManaAnyColorEqualToPower _ _ _ =>
-                    continuousEffect none [] asAbility
                   | .addMana _ syms =>
                     match addedManaTypes? syms with
                     | some types => Effect.addMana types
@@ -5350,10 +5344,10 @@ end TraditionalCardDefinition
         [.tapSymbol]
         (.sequence [
           .actionId 1
-          (.addManaAnyColorEqualToPower
+          (.addManaOfOneColor
             (.controller .this)
-            (.controller .this)
-            .this),
+            ManaSymbol.anyColor
+            (.greatestPower .this)),
           .continuous
             [.forbid
               (.spendManaCreatedByAction 1
@@ -5971,9 +5965,9 @@ end TraditionalCardDefinition
 
 #guard
   let action : CardAction :=
-    .addManaAnyColor
+    .addManaOfOneColor
       (.controller .this)
-      (.controller .this)
+      ManaSymbol.anyColor
       1
   action.toAbilityEffect == Effect.addAnyColor
 
@@ -7106,7 +7100,7 @@ end TraditionalCardDefinition
         [.tapSymbol]
         (.sequence [
           .actionId 1
-            (.addManaAnyColor (.controller .this) (.controller .this) 1),
+            (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1),
           .continuous
             [.forbid
               (.spendManaCreatedByAction 1
