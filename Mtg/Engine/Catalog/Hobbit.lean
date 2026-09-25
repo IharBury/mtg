@@ -3194,7 +3194,7 @@ def momentOfGlory : CardDef :=
       (.target 1 (.intersection [
         .permanent, .cardType .creature, .controlled (.controller .this)]))
       .plusOnePlusOne 1,
-    .if .castFromGraveyard
+    .if (.happened (.castSpellFromGraveyard .this) .gameStart)
       [.putCounter
         (.intersection [
           .not (.targetReference 1),

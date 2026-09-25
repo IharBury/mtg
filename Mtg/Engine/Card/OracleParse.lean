@@ -264,7 +264,8 @@ Currently recognized:
 - `Put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control.`
   The creature is one target. `each other` is every other creature that
   spell's controller controls. The extra counters are put only when this
-  spell was cast from a graveyard (CR 601.2 / 702.34).
+  spell was cast from a graveyard. That cast is an event since the start of
+  the game (CR 601.2 / 702.34).
 - `Flashback {cost}`
   The card may be cast from a graveyard for that cost (CR 702.34). A trailing
   reminder parenthetical is not rules text.
@@ -1885,14 +1886,17 @@ def parseAlsoPlusOneEachOther (sentence : String) (n : Nat) : Option CardAction 
 
 /-- `Put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control.`
 The creature is target `n`. The extra counters happen only when this spell
-was cast from a graveyard. -/
+was cast from a graveyard. That cast is an event since the start of the game. -/
 def parsePlusOneThenEachOtherIfFromGy (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   match sentences text with
   | [put, also] =>
     match parsePutPlusOneOnTarget put n, parseAlsoPlusOneEachOther also n with
     | some (putAction, n'), some alsoAction =>
-      some ([putAction, .if .castFromGraveyard [alsoAction]], n')
+      some ([
+        putAction,
+        .if (.happened (.castSpellFromGraveyard .this) .gameStart) [alsoAction]
+      ], n')
     | _, _ => none
   | _ => none
 
@@ -4781,7 +4785,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       (.target 1 (.intersection [
         .permanent, .cardType .creature, .controlled (.controller .this)]))
       .plusOnePlusOne 1,
-    .if .castFromGraveyard
+    .if (.happened (.castSpellFromGraveyard .this) .gameStart)
       [.putCounter
         (.intersection [
           .not (.targetReference 1),

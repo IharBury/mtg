@@ -629,8 +629,6 @@ inductive Condition where
   | greaterOrEqual : Value → Value → Condition
   /-- True when the two values are equal. -/
   | equal : Value → Value → Condition
-  /-- True when this spell was cast from a graveyard (CR 601.2 / 702.34). -/
-  | castFromGraveyard : Condition
 deriving Repr, Inhabited, BEq
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
@@ -2789,11 +2787,13 @@ def leftoverCreaturesYouControlMass? (s : Selector) : Bool :=
     !s.shape.opponentControls
 
 /-- Put a +1/+1 counter on target creature you control. If this spell was
-cast from a graveyard, also put one on each other creature you control. -/
+cast from a graveyard, also put one on each other creature you control.
+The cast is an event since the start of the game. -/
 def leftoverPlusOneThenEachOtherIfFromGy? : CardAction → Bool
   | .sequence [
       .putCounter (.target id among) .plusOnePlusOne 1,
-      .if .castFromGraveyard [.putCounter others .plusOnePlusOne 1]
+      .if (.happened (.castSpellFromGraveyard .this) .gameStart)
+        [.putCounter others .plusOnePlusOne 1]
     ] =>
     among.toTargetKind == .creatureYouControl &&
       leftoverExcludesTarget id others &&
@@ -3264,7 +3264,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
   | .any _ | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
   | .didNotHappen _ _ | .and _ _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
-  | .equal _ _ | .castFromGraveyard => none
+  | .equal _ _ => none
 
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost .equip costs =>
@@ -4144,7 +4144,6 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
             b.staticAbilities.push (.cantAttackUnlessYouControlNOther n subtype) }
       else b
     | _, _ => b
-  | .if .castFromGraveyard _ => b
   | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
   | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
   | .replace (.enter who) actions =>
@@ -7395,7 +7394,7 @@ end TraditionalCardDefinition
             .cardType .creature,
             .controlled (.controller .this)]))
         .plusOnePlusOne 1,
-      .if .castFromGraveyard
+      .if (.happened (.castSpellFromGraveyard .this) .gameStart)
         [.putCounter
           (.intersection [
             .not (.targetReference 1),

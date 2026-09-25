@@ -388,6 +388,9 @@ inductive Trigger where
   | spendManaCreatedByAction : Nat → Trigger → Trigger
   /-- A spell matching the selector is cast (CR 601). -/
   | castSpell : Selector → Trigger
+  /-- A spell matching the selector is cast from a graveyard
+  (CR 601.2 / 702.34). -/
+  | castSpellFromGraveyard : Selector → Trigger
   /-- The selected spell is countered (CR 701.5). -/
   | counter : Selector → Trigger
   /-- An activated ability of a source matching the selector is activated
