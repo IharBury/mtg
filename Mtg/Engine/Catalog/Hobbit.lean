@@ -3651,7 +3651,7 @@ def theLordOfTheEagles : CardDef :=
   .toughness 8,
   .ability (.keyword .flash),
   .ability (.stackStatic
-    (.reduceCostBy .this
+    (.reduceCostWithX .this [.mana [.x]]
       (.totalPower (.intersection [
         .permanent, .cardType .creature, .keyword .flying,
         .controlled (.controller .this)])))),

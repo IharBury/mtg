@@ -722,8 +722,9 @@ inductive ContinuousEffect where
   /-- Apply the given continuous effects only when the condition holds. -/
   | if : Condition → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
-  /-- Reduce the cost of the selected spell by this value (CR 601.2f). -/
-  | reduceCostBy : Selector → Value → ContinuousEffect
+  /-- Reduce the cost of the selected spell by `costs`, substituting `{X}`
+  with the given value (CR 601.2f / 107.3). -/
+  | reduceCostWithX : Selector → List Cost → Value → ContinuousEffect
   /-- An additional cost to cast the selected spell (CR 601.2b). -/
   | additionalCost : Selector → List Cost → ContinuousEffect
   /-- Replace the trigger with the given actions (CR 614). -/
@@ -1000,7 +1001,7 @@ def selector : ContinuousEffect → Selector
   | .gainAbility who _ => who
   | .if _ (inner :: _) => selector inner
   | .if _ [] => .this
-  | .reduceCost who _ | .reduceCostBy who _ => who
+  | .reduceCost who _ | .reduceCostWithX who _ _ => who
   | .additionalCost who _ => who
   | .replace _ _ => .this
   | .forbid _ => .this
@@ -4442,8 +4443,9 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           Cost.sacrificesArtifactOrCreature cs
       additionalCostOrPayGeneric :=
         b.additionalCostOrPayGeneric.orElse (fun _ => Cost.orPayGeneric? cs) }
-  | .reduceCostBy who v =>
+  | .reduceCostWithX who costs v =>
     if (who == .this || who == .source .this) &&
+        costs == [.mana [.x]] &&
         isTotalPowerOfFlyingCreaturesYouControl v then
       { b with costReductionEqualFlyingPower := true }
     else b

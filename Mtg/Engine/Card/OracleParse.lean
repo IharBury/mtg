@@ -320,8 +320,8 @@ Currently recognized:
   The attacker is `this`, `this <type>`, the card's name, or the short name
   before a comma.
 - `This spell costs {X} less to cast, where X is the total power of creatures you control with flying.`
-  The reduction is that total power (CR 601.2f). The ability functions on
-  the stack (CR 604.2).
+  The printed reduction is `{X}`, and X is that total power (CR 601.2f / 107.3).
+  The ability functions on the stack (CR 604.2).
 - `When <this> enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle.`
   The searcher chooses one basic land card (CR 701.19).
 - `When <this> enters, it deals N damage to any target. If a <subtype> is dealt damage this way, destroy it.`
@@ -3184,12 +3184,13 @@ def parseAttackTargetGains (cardName : String) (line : String) (n : Nat) :
                   n + 1)
 
 /-- `This spell costs {X} less to cast, where X is the total power of creatures you control with flying.`
-The reduction is that total power. It functions on the stack (CR 604.2). -/
+The printed reduction is `{X}`, and X is that total power. It functions on
+the stack (CR 604.2). -/
 def parseCostLessByFlyingPower (line : String) : Option CardPart :=
   if sentenceIs (normLine line)
       "this spell costs {x} less to cast, where x is the total power of creatures you control with flying" then
     some (.ability (.stackStatic
-      (.reduceCostBy .this (.totalPower flyingCreaturesYouControl))))
+      (.reduceCostWithX .this [.mana [.x]] (.totalPower flyingCreaturesYouControl))))
   else none
 
 /-- Search for one basic land card, reveal it, and put it into hand.
@@ -5478,7 +5479,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "This spell costs {X} less to cast, where X is the total power of creatures you control with flying." ==
   some [.ability (.stackStatic
-    (.reduceCostBy .this
+    (.reduceCostWithX .this [.mana [.x]]
       (.totalPower (.intersection [
         .permanent, .cardType .creature, .keyword .flying,
         .controlled (.controller .this)]))))]
