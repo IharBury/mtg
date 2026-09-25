@@ -69,6 +69,8 @@ structure Shape where
   nonland : Bool := false
   shareCardType : Bool := false
   powerAtLeast : Option Int := none
+  powerAtMost : Option Int := none
+  hasPlusOneCounter : Bool := false
   diedThisTurn : Bool := false
   putIntoGraveyardThisTurn : Bool := false
 deriving Repr, Inhabited, BEq
@@ -94,6 +96,11 @@ def meet (a b : Shape) : Shape :=
       match a.powerAtLeast, b.powerAtLeast with
       | some x, some y => some (max x y)
       | x, y => x.orElse fun _ => y
+    powerAtMost :=
+      match a.powerAtMost, b.powerAtMost with
+      | some x, some y => some (min x y)
+      | x, y => x.orElse fun _ => y
+    hasPlusOneCounter := a.hasPlusOneCounter || b.hasPlusOneCounter
     diedThisTurn := a.diedThisTurn || b.diedThisTurn
     putIntoGraveyardThisTurn :=
       a.putIntoGraveyardThisTurn || b.putIntoGraveyardThisTurn }
@@ -120,6 +127,11 @@ def join (a b : Shape) : Shape :=
       match a.powerAtLeast, b.powerAtLeast with
       | some x, some y => if x == y then some x else none
       | _, _ => none
+    powerAtMost :=
+      match a.powerAtMost, b.powerAtMost with
+      | some x, some y => if x == y then some x else none
+      | _, _ => none
+    hasPlusOneCounter := a.hasPlusOneCounter && b.hasPlusOneCounter
     diedThisTurn := a.diedThisTurn && b.diedThisTurn
     putIntoGraveyardThisTurn :=
       a.putIntoGraveyardThisTurn && b.putIntoGraveyardThisTurn }
@@ -202,6 +214,9 @@ def shape : Selector → Shape
   | .keywordAbility _ => {}
   | .powerAtLeast (.int n) | .powerAtLeast (.nat n) => { powerAtLeast := some n }
   | .powerAtLeast _ => {}
+  | .powerAtMost (.int n) | .powerAtMost (.nat n) => { powerAtMost := some n }
+  | .powerAtMost _ => {}
+  | .hasCounter .plusOnePlusOne => { hasPlusOneCounter := true }
   | .attacking _ => { attacking := true }
   | .blocking _ => {}
   | .token => { token := true }
@@ -258,7 +273,10 @@ def toTargetKind (f : Selector) : EffectTargetKind :=
   else if s.sameController then
     if s.other && s.types.eqTypes [.creature] then .anotherCreatureYouControl
     else if s.types.eqTypes [.artifact, .creature] then .artifactOrCreatureYouControl
-    else if s.types.eqTypes [.creature] then .creatureYouControl
+    else if s.types.eqTypes [.creature] then
+      match s.powerAtMost with
+      | some n => .creatureYouControlPowerAtMost n
+      | none => .creatureYouControl
     else if s.types.eqTypes [.artifact] then .artifactYouControl
     else .permanent
   else if s.flying && s.types.eqTypes [.creature] then .creatureWithFlying
@@ -272,9 +290,12 @@ def toTargetKind (f : Selector) : EffectTargetKind :=
   else if s.types.eqTypes [.artifact, .enchantment] then .artifactOrEnchantment
   else if s.types.eqTypes [.artifact, .land] then .artifactOrLand
   else if s.types.eqTypes [.creature] then
-    match s.powerAtLeast with
-    | some n => .creaturePowerAtLeast n
-    | none => .creature
+    match s.powerAtMost with
+    | some n => .creaturePowerAtMost n
+    | none =>
+      match s.powerAtLeast with
+      | some n => .creaturePowerAtLeast n
+      | none => .creature
   else if s.types.eqTypes [.artifact] then .artifact
   else .permanent
 
@@ -351,6 +372,8 @@ def referenceTargets : Selector → Selector
   | .keyword k => .keyword k
   | .keywordAbility k => .keywordAbility k
   | .powerAtLeast v => .powerAtLeast v
+  | .powerAtMost v => .powerAtMost v
+  | .hasCounter k => .hasCounter k
   | .subtype st => .subtype st
   | .spell => .spell
   | .permanentSpell => .permanentSpell
@@ -502,6 +525,11 @@ def includedSubtypes : Selector → List String
 /-- A basic land card in a library. -/
 def basicLandInLibrary (s : Selector) : Bool :=
   includesInLibrary s && includesLand s && includesBasic s
+
+/-- A legendary creature card in a library, with no further subtype. -/
+def legendaryCreatureInLibrary (s : Selector) : Bool :=
+  s.includesInLibrary && s.includesLegendary && !s.includesLand &&
+    s.includedSubtype?.isNone && s.shape.types.eqTypes [.creature]
 
 /-- The constraint a `selected` choice matches. -/
 def selectedAmong? : Selector → Option Selector
@@ -855,6 +883,8 @@ inductive CardAction where
   | keepReplacedAction
   /-- Heal all damage marked on the selected object. -/
   | healAllDamage : Selector → CardAction
+  /-- Shuffle the selected object into its owner's library (CR 701.20). -/
+  | shuffleIntoOwnersLibrary : Selector → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
@@ -1734,6 +1764,8 @@ def leftoverSearchActions? : List CardAction → Option Effect
       match sel.selectedAmong? with
       | some among =>
         if among.basicLandInLibrary then some Effect.searchBasicLandToHand
+        else if among.legendaryCreatureInLibrary then
+          some Effect.searchLegendaryCreatureToHand
         else
           match among.includedSubtype? with
           | some t =>
@@ -2776,7 +2808,8 @@ where
     | .intersection nested :: rest => go nested || go rest
     | _ :: rest => go rest
 
-/-- Creatures this object's controller controls, not announced as targets. -/
+/-- Creatures this object's controller controls, not announced as targets.
+Power bounds and a +1/+1 counter are a different set of creatures. -/
 def leftoverCreaturesYouControlMass? (s : Selector) : Bool :=
   s.among?.isNone &&
     s.shape.sameController &&
@@ -2784,7 +2817,68 @@ def leftoverCreaturesYouControlMass? (s : Selector) : Bool :=
     s.shape.types.eqTypes [.creature] &&
     !s.shape.other &&
     s.shape.subtype.isNone &&
-    !s.shape.opponentControls
+    !s.shape.opponentControls &&
+    s.shape.powerAtLeast.isNone &&
+    s.shape.powerAtMost.isNone &&
+    !s.shape.hasPlusOneCounter
+
+/-- Draw N, or draw more when this spell was cast from a graveyard.
+Amass Goblins N, or amass more in that same case. The “instead” branch is
+the cast-from-graveyard amount. -/
+def leftoverDrawOrAmassIfFromGy? : CardAction → Option Effect
+  | .ifElse (.happened (.castSpellFromGraveyard .this) .gameStart) [thenA] [elseA] =>
+    match thenA, elseA with
+    | .draw whoFrom (.nat fromGy), .draw who (.nat n) =>
+      if leftoverYou who && leftoverYou whoFrom then
+        some (Effect.drawIfFromGy n fromGy)
+      else none
+    | .keyword whoFrom (.amass .goblin (.nat fromGy)),
+      .keyword who (.amass .goblin (.nat n)) =>
+      if leftoverYou who && leftoverYou whoFrom then
+        some (Effect.amassGoblinsOrFromGy n fromGy)
+      else none
+    | _, _ => none
+  | _ => none
+
+/-- Put +1/+1 counters on target creature you control, then it fights
+target creature an opponent controls. -/
+def leftoverPlusOneThenFight? : CardAction → Option Nat
+  | .sequence [
+      .putCounter (.target id among) .plusOnePlusOne k,
+      .fight (.targetReference id') (.target id2 dest)
+    ] =>
+    if id == id' && id2 == id + 1 &&
+        among.toTargetKind == .creatureYouControl &&
+        dest.toTargetKind == .oppCreature then
+      some k
+    else none
+  | _ => none
+
+/-- This object's owner shuffles it into their library and draws N cards. -/
+def leftoverOwnerShuffleSourceDraw? : CardAction → Option Nat
+  | .sequence [
+      .shuffleIntoOwnersLibrary who,
+      .draw drawer (.nat n)
+    ] =>
+    if (who == .this || who == .source .this) && drawer == .owner who then
+      some n
+    else none
+  | _ => none
+
+/-- Return this card from a graveyard attached to a creature you control
+with power at most N. -/
+def leftoverReturnFromGyAttachPowerAtMost? : CardAction → Option Int
+  | .sequence [
+      .putOntoBattlefield src,
+      .attach who (.target _ among)
+    ] =>
+    let s := among.shape
+    if src == .intersection [.inGraveyard, .source .this] &&
+        (who == .this || who == .source .this) &&
+        s.sameController && s.types.eqTypes [.creature] && s.subtype.isNone then
+      s.powerAtMost
+    else none
+  | _ => none
 
 /-- Put a +1/+1 counter on target creature you control. If this spell was
 cast from a graveyard, also put one on each other creature you control.
@@ -2806,10 +2900,23 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
   leftoverChapterCompiled? action |>.orElse fun _ =>
   if leftoverPlusOneThenEachOtherIfFromGy? action then
     some Effect.plusOneThenEachOtherIfFromGy
-  else if leftoverOwnerPutsLibraryThenConnive? action then
-    some Effect.ownerPutsLibraryThenConnive
   else
-  (leftoverMillThenPutCompiled? action).orElse fun _ =>
+    match leftoverDrawOrAmassIfFromGy? action with
+    | some e => some e
+    | none =>
+      match leftoverPlusOneThenFight? action with
+      | some n => some (Effect.plusOneThenFight n)
+      | none =>
+        match leftoverOwnerShuffleSourceDraw? action with
+        | some n => some (Effect.ownerShuffleSourceDraw n)
+        | none =>
+          match leftoverReturnFromGyAttachPowerAtMost? action with
+          | some n => some (Effect.returnFromGyAttachPowerAtMost n)
+          | none =>
+            if leftoverOwnerPutsLibraryThenConnive? action then
+              some Effect.ownerPutsLibraryThenConnive
+            else
+              (leftoverMillThenPutCompiled? action).orElse fun _ =>
   (leftoverCreateThenTeamPump? action).orElse fun _ =>
   (leftoverContinuousCompiled? action).orElse fun _ =>
   match leftoverDrawLoseLifeThenAmass? action with
@@ -3189,6 +3296,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .copyWithNewTargets _ _ =>
                     continuousEffect none [] asAbility
                   | .keepReplacedAction | .healAllDamage _ =>
+                    continuousEffect none [] asAbility
+                  | .shuffleIntoOwnersLibrary _ =>
                     continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
@@ -3843,6 +3952,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       | some n, some k => some (TriggeredAbility.onYourUpkeepCreateTokens k n)
       | _, _ => none
     else none
+  | .triggered (.endStep who) (.draw drawer (.nat 1)) =>
+    if who == .controller .this && drawer == .controller .this then
+      some TriggeredAbility.onYourEndStepDraw
+    else none
   | _ => none
 
 end Ability
@@ -3886,6 +3999,8 @@ structure CardFace where
   flashIfYouControlSubtype : Option String := none
   /-- Flashback cost (CR 702.34). -/
   flashback : Option ManaCost := none
+  /-- Ward cost (CR 702.21). A generic mana cost. -/
+  ward : Option Nat := none
   colorIndicator : Option ColorSet := none
   sagaChapters : Array SagaChapter := #[]
 deriving Inhabited
@@ -3921,6 +4036,17 @@ def mergeHostBonus (prev : StaticAbility) (p t : Int) (k : Keywords)
     | .equippedCreatureGetsAndHas p0 t0 k0 =>
       some (hostBonus false (p0 + p) (t0 + t) (k0.merge k))
     | _ => none
+
+/-- Replace a trailing equipped +P/+T with the same bonus and ward `{w}`. -/
+def pushHostWard (b : CardFace) (w : Nat) : CardFace :=
+  if w == 0 || b.types.contains .enchantment then b
+  else
+    match b.staticAbilities.back? with
+    | some (.equippedCreatureGets p t) =>
+      { b with
+        staticAbilities :=
+          b.staticAbilities.pop.push (.equippedCreatureGetsAndWard p t w) }
+    | _ => b
 
 def pushHostBonus (b : CardFace) (p t : Int) (k : Keywords) : CardFace :=
   let enchanted := b.types.contains .enchantment
@@ -4048,6 +4174,15 @@ def mergeOpponentsCreaturesGet (b : CardFace) (p t : Int) : CardFace :=
   | _ =>
     { b with staticAbilities := b.staticAbilities.push (.opponentsCreaturesGet p t) }
 
+def mergeCreaturesYouControlGet (b : CardFace) (p t : Int) : CardFace :=
+  match b.staticAbilities.back? with
+  | some (.creaturesYouControlGet p0 t0) =>
+    { b with
+      staticAbilities :=
+        b.staticAbilities.pop.push (.creaturesYouControlGet (p0 + p) (t0 + t)) }
+  | _ =>
+    { b with staticAbilities := b.staticAbilities.push (.creaturesYouControlGet p t) }
+
 /-- Integer `addPower` / `addToughness`. Adjacent bonuses on the same objects combine. -/
 def applyIntegerPowerToughness (b : CardFace) (sel : Selector) (p t : Int) : CardFace :=
   match sel with
@@ -4058,11 +4193,26 @@ def applyIntegerPowerToughness (b : CardFace) (sel : Selector) (p t : Int) : Car
       mergeOtherCreaturesGet b sel.includedSubtypes.toArray p t
     else if s.opponentControls && s.types.eqTypes [.creature] then
       mergeOpponentsCreaturesGet b p t
+    else if CardAction.leftoverCreaturesYouControlMass? sel then
+      mergeCreaturesYouControlGet b p t
     else b
 
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
+  | .gainAbility (.hostOf .this) (.keywordWithCost .ward [.mana [.generic n]]) =>
+    pushHostWard b n
+  | .gainAbility sel (.keyword .menace) =>
+    let s := sel.shape
+    if s.sameController && s.mustBePermanent && s.types.eqTypes [.creature] &&
+        s.hasPlusOneCounter && !s.other && s.subtype.isNone &&
+        !s.opponentControls then
+      { b with
+        staticAbilities :=
+          b.staticAbilities.push .creaturesYouControlWithPlusOneHaveMenace }
+    else if s.attacking && s.token && s.sameController then
+      { b with staticAbilities := b.staticAbilities.push (.attackingTokensHave Keyword.menace) }
+    else b
   | .gainAbility sel (.keyword k) =>
     let s := sel.shape
     if s.attacking && s.token && s.sameController then
@@ -4215,6 +4365,8 @@ def applyAbility (b : CardFace) : Ability → CardFace
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
   | .keywordWithCost .flashback costs =>
     { b with flashback := some (Cost.manaCost costs) }
+  | .keywordWithCost .ward [.mana [.generic n]] =>
+    if n == 0 then b else { b with ward := some n }
   | .keywordWithCost k costs =>
     match (Ability.keywordWithCost k costs).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
@@ -4430,6 +4582,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       cantBeCountered := b.cantBeCountered
       flashIfYouControlSubtype := b.flashIfYouControlSubtype
       flashback := b.flashback
+      ward := b.ward
       colorIndicator := b.colorIndicator
       adventure := adventure
       saga :=

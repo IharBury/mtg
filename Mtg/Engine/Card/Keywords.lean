@@ -187,6 +187,8 @@ inductive Keyword where
   /-- Flashback (CR 702.34): printed with a cost, e.g. Flashback {4}{W}.
   The card may be cast from a graveyard for that cost, then is exiled. -/
   | flashback
+  /-- Ward (CR 702.21): printed with a cost, e.g. Ward {2}. -/
+  | ward
 deriving Repr, Inhabited, BEq
 
 /-- A number that is either a printed constant or computed from game
@@ -272,6 +274,10 @@ inductive Selector where
   | keywordAbility : Keyword → Selector
   /-- Objects with power at least this value (CR 208). -/
   | powerAtLeast : Value → Selector
+  /-- Objects with power at most this value (CR 208). -/
+  | powerAtMost : Value → Selector
+  /-- An object with a counter of the given kind (CR 122). -/
+  | hasCounter : CounterKind → Selector
   /-- Printed subtype (CR 205.3). -/
   | subtype : CardSubtype → Selector
   /-- A spell on the stack (CR 112.1). -/
@@ -334,6 +340,8 @@ inductive Trigger where
   | combatStart : Selector → Trigger
   /-- At the beginning of the selected player's upkeep (CR 503.1). -/
   | upkeep : Selector → Trigger
+  /-- At the beginning of the selected player's end step (CR 513.1). -/
+  | endStep : Selector → Trigger
   /-- From the start of the turn (a window bound for `happened`). -/
   | turnStart
   /-- From the start of the game (a window bound for `happened`). -/
@@ -490,7 +498,7 @@ def toKeywords : Keyword → Keywords
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
   | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
-  | .connive _ | .chapter _ | .flashback =>
+  | .connive _ | .chapter _ | .flashback | .ward =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -519,6 +527,7 @@ instance : ToString Keyword where
         | n => toString n
       s!"chapter {roman}"
     | .flashback => "flashback"
+    | .ward => "ward"
     | k => toString k.toKeywords
 
 end Keyword
