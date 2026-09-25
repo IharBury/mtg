@@ -624,6 +624,18 @@ def discardsThis : List Cost → Bool
     (s == .this || s == .source .this) || discardsThis rest
   | _ :: rest => discardsThis rest
 
+/-- This object's controller chooses one card they own in a hand. -/
+def discardsOneCardFromHand : Selector → Bool
+  | .selected (.controller .this) (.range (.nat 1) (.nat 1))
+      (.intersection [.inHand, .owner (.controller .this)]) => true
+  | _ => false
+
+/-- True when a cost discards one card from hand, not this card. -/
+def discardsACard : List Cost → Bool
+  | [] => false
+  | .discard s :: rest => discardsOneCardFromHand s || discardsACard rest
+  | _ :: rest => discardsACard rest
+
 end Cost
 
 /-- A boolean check used by a conditional effect or action. -/
@@ -649,6 +661,8 @@ inductive Condition where
   | enduringStory : Selector → Condition
   /-- True when both conditions hold. -/
   | and : Condition → Condition → Condition
+  /-- True when the condition does not hold. -/
+  | not : Condition → Condition
   /-- True when the first value is less than the second. -/
   | less : Value → Value → Condition
   /-- True when the first value is less than or equal to the second. -/
@@ -765,6 +779,12 @@ inductive ContinuousEffect where
   the player who would cast the spell, not necessarily its controller or
   owner. The spell does not gain the flash keyword. -/
   | canBeCastAsThoughWithFlashIf : Selector → Condition → ContinuousEffect
+  /-- The selected permanent doesn't untap during its controller's untap
+  step (CR 502.3). -/
+  | doesntUntap : Selector → ContinuousEffect
+  /-- Objects matching the first selector can't attack the second unless
+  their controller pays `costs` for each of them. -/
+  | cantAttackUnlessPays : Selector → Selector → List Cost → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -1015,6 +1035,8 @@ def selector : ContinuousEffect → Selector
   | .addPower who _ | .addToughness who _ => who
   | .increaseLandPlayLimit who _ => who
   | .canBeCastAsThoughWithFlashIf card _ => card
+  | .doesntUntap who => who
+  | .cantAttackUnlessPays who _ _ => who
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is
@@ -3374,6 +3396,7 @@ def activatedAbility (costs : List Cost) (action : CardAction)
         sacrificeAnotherCreatureOrArtifact := Cost.sacrificesArtifactOrCreature costs
         discardSource := Cost.discardsThis costs
         sacrificeAnotherSubtype := Cost.sacrificeAnotherSubtype? costs
+        discardACard := Cost.discardsACard costs
         sacrificeArtifactOrDiscardNonland :=
           CardAction.leftoverSacrificeArtifactOrDiscardNonlandCost? costs }
     effect :=
@@ -3410,7 +3433,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
       onlyDuringYourTurn := true
       activateFromGraveyard := fromGraveyard }
   | .any _ | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
-  | .didNotHappen _ _ | .and _ _ | .enduringStory _
+  | .didNotHappen _ _ | .and _ _ | .not _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
   | .equal _ _ => none
 
@@ -3943,7 +3966,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       match among.shape.anotherSubtypeYouControl, CardAction.leftoverTokenKind? parts,
           valToNat? n with
       | some st, some kind, some n =>
-        some (TriggeredAbility.onThisOrAnotherSubtypeEntersCreateTokens st kind n)
+        if among.shape.nontoken then
+          some (TriggeredAbility.onThisOrNontokenSubtypeEntersCreateTokens st kind n)
+        else
+          some (TriggeredAbility.onThisOrAnotherSubtypeEntersCreateTokens st kind n)
       | _, _, _ => none
     else none
   | .triggered (.castSpell among) (.tap sel) =>
@@ -4281,6 +4307,50 @@ where
       else none
     | _, _, _, _, _ => none
 
+/-- `+P/+T` on creatures this object's controller controls. A zero bonus is
+not an effect. -/
+def teamGetsIfEnduringStory? (effects : List ContinuousEffect) : Option (Int × Int) :=
+  match ContinuousEffect.addedPT? effects with
+  | some (p, t) =>
+    if (p != 0 || t != 0) &&
+        effects.all fun e =>
+          match e with
+          | .addPower who _ | .addToughness who _ =>
+            CardAction.leftoverCreaturesYouControlMass? who
+          | _ => false then
+      some (p, t)
+    else none
+  | none => none
+
+/-- Artifacts and creatures this object's controller controls. -/
+def artifactsAndCreaturesYouControl? : Selector → Bool
+  | .intersection
+      [.permanent,
+        .union [.cardType .artifact, .cardType .creature],
+        .controlled (.controller .this)] => true
+  | _ => false
+
+/-- Ward `{n}` on artifacts and creatures this object's controller controls.
+Zero ward is not an effect. -/
+def teamWardIfEnduringStory? : List ContinuousEffect → Option Nat
+  | [.gainAbility who (.keywordWithCost .ward [.mana [.generic n]])] =>
+    if n != 0 && artifactsAndCreaturesYouControl? who then some n else none
+  | _ => none
+
+/-- Creature permanents, with no further restriction. -/
+def allCreaturePermanents? : Selector → Bool
+  | .intersection [.permanent, .cardType .creature] => true
+  | _ => false
+
+/-- Creatures can't attack this object's controller unless their controller
+pays `{n}` for each. Zero is not a cost. -/
+def attackTaxIfEnduringStory? : List ContinuousEffect → Option Nat
+  | [.cantAttackUnlessPays attackers dest [.mana [.generic n]]] =>
+    if n != 0 && allCreaturePermanents? attackers && dest == .controller .this then
+      some n
+    else none
+  | _ => none
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
@@ -4362,6 +4432,11 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.happened _ _) _ => b
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
+  | .if (.not (.enduringStory who)) [.doesntUntap self] =>
+    if who == .controller .this && (self == .this || self == .source .this) then
+      { b with staticAbilities := b.staticAbilities.push .doesntUntapUnlessEnduringStory }
+    else b
+  | .if (.not _) _ => b
   | .if (.enduringStory who) inners =>
     if who == .controller .this then
       match selfGetsAndHas? inners with
@@ -4369,7 +4444,27 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         { b with
           staticAbilities :=
             b.staticAbilities.push (.getsAndHasIfEnduringStory p t k) }
-      | none => b
+      | none =>
+        match teamGetsIfEnduringStory? inners with
+        | some (p, t) =>
+          { b with
+            staticAbilities :=
+              b.staticAbilities.push (.creaturesYouControlGetIfEnduringStory p t) }
+        | none =>
+          match teamWardIfEnduringStory? inners with
+          | some n =>
+            { b with
+              staticAbilities :=
+                b.staticAbilities.push
+                  (.artifactsAndCreaturesHaveWardIfEnduringStory n) }
+          | none =>
+            match attackTaxIfEnduringStory? inners with
+            | some n =>
+              { b with
+                staticAbilities :=
+                  b.staticAbilities.push
+                    (.creaturesCantAttackYouUnlessPayIfEnduringStory n) }
+            | none => b
     else b
   | .if (.and _ _) _ => b
   | .if (.greaterOrEqual (.count among) threshold) inners =>
@@ -4436,6 +4531,8 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     match leftoverCanBeCastAsThoughWithFlashIf? card cond with
     | some t => { b with flashIfYouControlSubtype := some t }
     | none => b
+  | .doesntUntap _ => b
+  | .cantAttackUnlessPays _ _ _ => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=

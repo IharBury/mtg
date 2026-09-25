@@ -40,7 +40,9 @@ Eagle's Rescue, Gandalf, Wandering Wizard, Troll Negotiations,
 Dwarven Mattock, Great Ugly-Looking Goblin, The Arkenstone,
 Bolg's Company, Nori, Teller of Tales, The Lord of the Eagles,
 Thrór's Map, The Black Arrow, Smaug the Magnificent,
-The Queen of Dale, and Ori, Keeper of Songs
+The Queen of Dale, Ori, Keeper of Songs, Óin the Brave,
+Bombur, Gentle Dreamer, Fíli the Pathfinder, Thorin Oakenshield,
+and Dáin, Lord of the Iron Hills
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -3871,44 +3873,246 @@ def oriKeeperOfSongs : CardDef :=
   #[.getsAndHasIfEnduringStory 1 0 Keyword.vigilance]
 #guard oriKeeperOfSongs.oracleText == oriKeeperOfSongsOracle
 
+/-- Gatherer Oracle text for Óin the Brave. -/
+def oinTheBraveOracle : String :=
+  "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, Óin gets +1/+0 and has haste.\n{1}, {T}, Discard a card: Draw a card."
+
+def oinTheBraveDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Óin the Brave",
+    .manaCost [.generic 1, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .warrior,
+    .power 1,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Óin the Brave") oinTheBraveOracle).get!
+
 def oinTheBrave : CardDef :=
-  legendaryCreature "Óin the Brave" (ManaCost.ofGenericAndColor 1 .red)
-    #["Dwarf", "Warrior"] 1 3
-    (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, Óin gets +1/+0 and has haste.\n{1}, {T}, Discard a card: Draw a card.")
-    (keywords := Keyword.storied)
-    (staticAbilities := #[.getsAndHasIfEnduringStory 1 0 Keyword.haste])
-    (activatedAbilities := #[
-      activated (Effect.abilityDraw 1) (ManaCost.ofGeneric 1) (tap := true)
-        (discardACard := true)])
+  oinTheBraveDefinition.toCardDef
+    (oracleText := oinTheBraveOracle)
+
+#guard oinTheBraveDefinition == .card [
+  .name "Óin the Brave",
+  .manaCost [.generic 1, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 1,
+  .toughness 3,
+  .ability (.keyword .storied),
+  .ability (.static (.if (.enduringStory (.controller .this))
+    [.addPower .this (Value.int 1), .gainAbility .this (.keyword .haste)])),
+  .ability (.activated
+    [.mana [.generic 1], .tapSymbol,
+      .discard
+        (.selected
+          (.controller .this)
+          (.range 1 1)
+          (.intersection [.inHand, .owner (.controller .this)]))]
+    (.draw (.controller .this) 1))]
+
+#guard oinTheBrave.keywords.storied
+#guard oinTheBrave.staticAbilities ==
+  #[.getsAndHasIfEnduringStory 1 0 Keyword.haste]
+#guard oinTheBrave.activatedAbilities ==
+  #[activated (Effect.abilityDraw 1) (ManaCost.ofGeneric 1) (tap := true)
+    (discardACard := true)]
+#guard oinTheBrave.oracleText == oinTheBraveOracle
+
+/-- Gatherer Oracle text for Bombur, Gentle Dreamer. -/
+def bomburGentleDreamerOracle : String :=
+  "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nBombur doesn't untap during your untap step unless you have an enduring story."
+
+def bomburGentleDreamerDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Bombur, Gentle Dreamer",
+    .manaCost [.generic 2, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .bard,
+    .power 5,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Bombur, Gentle Dreamer") bomburGentleDreamerOracle).get!
 
 def bomburGentleDreamer : CardDef :=
-  legendaryCreature "Bombur, Gentle Dreamer" (ManaCost.ofGenericAndColor 2 .red)
-    #["Dwarf", "Bard"] 5 3
-    (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nBombur doesn't untap during your untap step unless you have an enduring story.")
-    (keywords := Keyword.storied)
-    (staticAbilities := #[.doesntUntapUnlessEnduringStory])
+  bomburGentleDreamerDefinition.toCardDef
+    (oracleText := bomburGentleDreamerOracle)
+
+#guard bomburGentleDreamerDefinition == .card [
+  .name "Bombur, Gentle Dreamer",
+  .manaCost [.generic 2, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .bard,
+  .power 5,
+  .toughness 3,
+  .ability (.keyword .storied),
+  .ability (.static
+    (.if (.not (.enduringStory (.controller .this)))
+      [.doesntUntap .this]))]
+
+#guard bomburGentleDreamer.keywords.storied
+#guard bomburGentleDreamer.staticAbilities == #[.doesntUntapUnlessEnduringStory]
+#guard bomburGentleDreamer.oracleText == bomburGentleDreamerOracle
+
+/-- Gatherer Oracle text for Fíli the Pathfinder. -/
+def filiThePathfinderOracle : String :=
+  "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, creatures you control get +1/+1.\nWhenever Fíli or another nontoken Dwarf you control enters, create a 2/2 red Dwarf creature token."
+
+def filiThePathfinderDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Fíli the Pathfinder",
+    .manaCost [.generic 3, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .scout,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Fíli the Pathfinder") filiThePathfinderOracle).get!
 
 def filiThePathfinder : CardDef :=
-  legendaryCreature "Fíli the Pathfinder" (ManaCost.ofGenericAndColor 3 .white)
-    #["Dwarf", "Scout"] 2 2
-    (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, creatures you control get +1/+1.\nWhenever Fíli or another nontoken Dwarf you control enters, create a 2/2 red Dwarf creature token.")
-    (keywords := Keyword.storied)
-    (staticAbilities := #[.creaturesYouControlGetIfEnduringStory 1 1])
-    (triggeredAbilities := #[.onThisOrNontokenSubtypeEntersCreateTokens "Dwarf" .dwarf 1])
+  filiThePathfinderDefinition.toCardDef
+    (oracleText := filiThePathfinderOracle)
+
+#guard filiThePathfinderDefinition == .card [
+  .name "Fíli the Pathfinder",
+  .manaCost [.generic 3, .mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .scout,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .storied),
+  .ability (.static (.if (.enduringStory (.controller .this))
+    [.addPower
+      (.intersection [
+        .permanent,
+        .cardType .creature,
+        .controlled (.controller .this)]) (Value.int 1),
+     .addToughness
+      (.intersection [
+        .permanent,
+        .cardType .creature,
+        .controlled (.controller .this)]) (Value.int 1)])),
+  .ability (.triggered
+    (.or
+      (.enter .this)
+      (.enter
+        (.intersection [
+          .not .this,
+          .not .token,
+          .permanent,
+          .cardType .creature,
+          .subtype .dwarf,
+          .controlled (.controller .this)])))
+    (.createTokens (.controller .this) 1 [
+      .type .creature,
+      .subtype .dwarf,
+      .colorIndicator [.red],
+      .power 2,
+      .toughness 2]))]
+
+#guard filiThePathfinder.keywords.storied
+#guard filiThePathfinder.staticAbilities ==
+  #[.creaturesYouControlGetIfEnduringStory 1 1]
+#guard filiThePathfinder.triggeredAbilities ==
+  #[.onThisOrNontokenSubtypeEntersCreateTokens "Dwarf" .dwarf 1]
+#guard filiThePathfinder.oracleText == filiThePathfinderOracle
+
+/-- Gatherer Oracle text for Thorin Oakenshield. -/
+def thorinOakenshieldOracle : String :=
+  "Trample\nStoried (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, artifacts and creatures you control have ward {1}."
+
+def thorinOakenshieldDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Thorin Oakenshield",
+    .manaCost [.mono .red, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .noble,
+    .power 3,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Thorin Oakenshield") thorinOakenshieldOracle).get!
 
 def thorinOakenshield : CardDef :=
-  legendaryCreature "Thorin Oakenshield" (ManaCost.ofColors [.red, .white])
-    #["Dwarf", "Noble"] 3 2
-    (oracleText := "Trample\nStoried (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, artifacts and creatures you control have ward {1}.")
-    (keywords := Keyword.trample.merge Keyword.storied)
-    (staticAbilities := #[.artifactsAndCreaturesHaveWardIfEnduringStory 1])
+  thorinOakenshieldDefinition.toCardDef
+    (oracleText := thorinOakenshieldOracle)
+
+#guard thorinOakenshieldDefinition == .card [
+  .name "Thorin Oakenshield",
+  .manaCost [.mono .red, .mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .noble,
+  .power 3,
+  .toughness 2,
+  .ability (.keyword .trample),
+  .ability (.keyword .storied),
+  .ability (.static (.if (.enduringStory (.controller .this))
+    [.gainAbility
+      (.intersection [
+        .permanent,
+        .union [.cardType .artifact, .cardType .creature],
+        .controlled (.controller .this)])
+      (.keywordWithCost .ward [.mana [.generic 1]])]))]
+
+#guard thorinOakenshield.keywords.trample
+#guard thorinOakenshield.keywords.storied
+#guard thorinOakenshield.staticAbilities ==
+  #[.artifactsAndCreaturesHaveWardIfEnduringStory 1]
+#guard thorinOakenshield.oracleText == thorinOakenshieldOracle
+
+/-- Gatherer Oracle text for Dáin, Lord of the Iron Hills. -/
+def dainLordOfTheIronHillsOracle : String :=
+  "Vigilance\nStoried (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, creatures can't attack you unless their controller pays {1} for each of those creatures."
+
+def dainLordOfTheIronHillsDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Dáin, Lord of the Iron Hills",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .noble,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Dáin, Lord of the Iron Hills") dainLordOfTheIronHillsOracle).get!
 
 def dainLordOfTheIronHills : CardDef :=
-  legendaryCreature "Dáin, Lord of the Iron Hills" (ManaCost.ofGenericAndColor 1 .white)
-    #["Dwarf", "Noble"] 2 2
-    (oracleText := "Vigilance\nStoried (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, creatures can't attack you unless their controller pays {1} for each of those creatures.")
-    (keywords := Keyword.vigilance.merge Keyword.storied)
-    (staticAbilities := #[.creaturesCantAttackYouUnlessPayIfEnduringStory 1])
+  dainLordOfTheIronHillsDefinition.toCardDef
+    (oracleText := dainLordOfTheIronHillsOracle)
+
+#guard dainLordOfTheIronHillsDefinition == .card [
+  .name "Dáin, Lord of the Iron Hills",
+  .manaCost [.generic 1, .mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .noble,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .vigilance),
+  .ability (.keyword .storied),
+  .ability (.static (.if (.enduringStory (.controller .this))
+    [.cantAttackUnlessPays
+      (.intersection [.permanent, .cardType .creature])
+      (.controller .this)
+      [.mana [.generic 1]]]))]
+
+#guard dainLordOfTheIronHills.keywords.vigilance
+#guard dainLordOfTheIronHills.keywords.storied
+#guard dainLordOfTheIronHills.staticAbilities ==
+  #[.creaturesCantAttackYouUnlessPayIfEnduringStory 1]
+#guard dainLordOfTheIronHills.oracleText == dainLordOfTheIronHillsOracle
 
 def oldThrush : CardDef :=
   (TraditionalCardDefinition.card [
