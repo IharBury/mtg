@@ -71,8 +71,9 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **Cost** — `mana`, `life`, `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
-- **Condition** — `any`, `countAtLeast`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
-  `happened`, `timeToCastSorcery`, `turn`, `and`.
+- **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
+  `happened`, `timeToCastSorcery`, `turn`, `and`, `less`, `lessOrEqual`,
+  `greater`, `greaterOrEqual`, `equal`.
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters).
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
   `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`, `abilityId`, `triggered`,
@@ -128,8 +129,8 @@ when it is allowed, and its actions (Galadriel: you, unchosen this turn by
 any player). Unrestricted `chooseMode` does not leftover to that triggered
 ability. `Trigger.modeWithIdChosen` of only you stays uncompiled.
 `Selector.wasObjectSince` is “the object of this event since that event”
-(Night Nurse: `putToGraveyard` since `turnStart`). `Condition.countAtLeast` is object-count
-(Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`
+(Night Nurse: `putToGraveyard` since `turnStart`). `Condition.greaterOrEqual` of
+`Value.count` is an object count (Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`
 is “whenever you discard” (Moonstone). The leftover exiles `Selector.wasObjectOfThisTrigger`
 from the graveyard (that discarded card); any graveyard card stays uncompiled.
 `Selector.hasTarget` is “has a target matching …” (Fin Fang Foom: artifact or
@@ -313,7 +314,7 @@ complete.
   - Chief Warg's Company; Minas Tirith; Olog-hai Crusher; Rivendell; The Black Gate; The Lonely Mountain; The Shire
 - **`controlCount`** (5 cards) — Controller controls N or more matching objects
   - Alien Invasion; Ares, God of War; Chief Warg's Company; The Sentry, Golden Guardian; fogOnTheBarrowDowns
-- **`countAtLeast`** (6 cards) — At least N objects match a selector (lore, quest counters, …). Constructor exists; Arnim Zola leftovers `countAtLeast 2` graveyard creatures. Remaining cards need other leftovers.
+- **`greaterOrEqual`** (6 cards) — At least N matching objects, written as `greaterOrEqual` of `Value.count`. Arnim Zola leftovers two or more creature cards in the graveyard. Remaining cards need other leftovers.
   - HYDRA Troopers; Master's Councillors; Most Decrepit Old Bird; Punishing Punch; The Master of Lake-town; Tom Bombadil
 - **`or`** (5 cards) — Activate only if this land entered this turn or you control a basic land
   - darkFortress; gatheringPlace; gleamingBastion; hiddenLair; trainingCompound
@@ -914,7 +915,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Master's Councillors** (`masterSCouncillors`)
 
-- `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
+- `Condition.greaterOrEqual` of `Value.count` — At least N objects match a selector (graveyard size, lore, quest counters, …)
 
 **Mirkwood Meditator** (`mirkwoodMeditator`)
 
@@ -929,7 +930,7 @@ Converted cards from the previous untagged set are omitted here.
 **Most Decrepit Old Bird** (`mostDecrepitOldBird`)
 
 - `SetPredicate.distinctNames` — Set-wide name constraints
-- `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
+- `Condition.greaterOrEqual` of `Value.count` — At least N objects match a selector (graveyard size, lore, quest counters, …)
 
 **My Precious** (`myPrecious`)
 
@@ -1078,7 +1079,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Master of Lake-town** (`theMasterOfLakeTown`)
 
-- `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
+- `Condition.greaterOrEqual` of `Value.count` — At least N objects match a selector (graveyard size, lore, quest counters, …)
 
 **The Misty Mountains Cold** (`theMistyMountainsCold`)
 
@@ -1517,7 +1518,7 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.canPlay` — canPlay exists; need top-of-library + land/creature spell filters as a continuous permission
 - `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
 - `CardAction.randomize` — Put on bottom in random order / pick a random card among
-- `Condition.countAtLeast` — N or more lore counters among Sagas you control
+- `Condition.greaterOrEqual` of `Value.count` — N or more lore counters among Sagas you control
 
 **Treasure Vault** (`treasureVault`)
 
@@ -1887,7 +1888,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **HYDRA Troopers** (`hYDRATroopers`)
 
-- `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
+- `Condition.greaterOrEqual` of `Value.count` — At least N objects match a selector (graveyard size, lore, quest counters, …)
 
 **Hawkeye's Bow** (`hawkeyeSBow`)
 
@@ -2175,7 +2176,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Punishing Punch** (`punishingPunch`)
 
-- `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
+- `Condition.greaterOrEqual` of `Value.count` — At least N objects match a selector (graveyard size, lore, quest counters, …)
 - `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
 
 **Quicksilver, Brash Blur** (`quicksilverBrashBlur`)

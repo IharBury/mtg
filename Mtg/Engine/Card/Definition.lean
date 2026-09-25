@@ -602,8 +602,6 @@ end Cost
 inductive Condition where
   /-- True when any object matching the selector exists. -/
   | any : Selector → Condition
-  /-- True when at least that many objects match the selector. -/
-  | countAtLeast : Selector → Nat → Condition
   /-- True when any target of the first selector matches the second
   (CR 115.1 / 601.2c). -/
   | targetsIncludeAny : Selector → Selector → Condition
@@ -3202,8 +3200,8 @@ functions while this card is in a graveyard (CR 113.6). -/
 def compileConditional (cond : Condition) (costs : List Cost) (action : CardAction)
     (fromGraveyard : Bool) : Option ActivatedAbility :=
   match cond with
-  | .countAtLeast among n =>
-    if CardAction.leftoverYourGyCreatures? among && n == 2 then
+  | .greaterOrEqual (.count among) threshold =>
+    if CardAction.leftoverYourGyCreatures? among && valToNat? threshold == some 2 then
       some { activatedAbility costs action with
         onlyIfGyCreaturesAtLeast := 2
         activateFromGraveyard := fromGraveyard }
@@ -4084,14 +4082,14 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
   | .if (.and _ _) _ => b
-  | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
-  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
-  | .if (.countAtLeast among n) inners =>
-    if n == 2 then
+  | .if (.greaterOrEqual (.count among) threshold) inners =>
+    if valToNat? threshold == some 2 then
       match CardAction.leftoverGetsIfGyCreatureCards? among inners with
       | some ab => { b with staticAbilities := b.staticAbilities.push ab }
       | none => b
     else b
+  | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
+  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
   | .replace (.enter who) actions =>
     if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersTapped? actions then
@@ -8001,11 +7999,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [.addPower .this (Value.int 2),
            .addToughness .this (Value.int 1)]))
@@ -8031,11 +8030,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             1)
           [.addPower .this (Value.int 2),
            .addToughness .this (Value.int 1)]))
@@ -8046,11 +8046,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [
             .addPower .this (Value.int 2),
@@ -8063,11 +8064,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [.addPower .this (Value.int 2),
            .addToughness .this (Value.int 2)]))
@@ -8078,11 +8080,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [
             .addPower .this (Value.int 2),
@@ -8095,11 +8098,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [
             .addPower .this (Value.int 2),
@@ -8143,11 +8147,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             1)
           [
             .addPower .this (Value.int 2),
@@ -8160,11 +8165,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             1)
           [.addPower .this (Value.int 2),
            .addToughness .this (Value.int 2)]))
@@ -8425,11 +8431,12 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.activatedIf
-      (.countAtLeast
-        (.intersection [
-          .inGraveyard,
-          .cardType .creature,
-          .owner (.controller .this)])
+      (.greaterOrEqual
+        (.count
+          (.intersection [
+            .inGraveyard,
+            .cardType .creature,
+            .owner (.controller .this)]))
         2)
       [.mana [.generic 3], .tapSymbol]
       (.createTokens
@@ -8460,11 +8467,12 @@ end TraditionalCardDefinition
 
 #guard
   (Ability.activatedIf
-    (.countAtLeast
-      (.intersection [
-        .inGraveyard,
-        .cardType .creature,
-        .owner (.controller .this)])
+    (.greaterOrEqual
+      (.count
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this)]))
       1)
     [.mana [.generic 3], .tapSymbol]
     (.createTokens
