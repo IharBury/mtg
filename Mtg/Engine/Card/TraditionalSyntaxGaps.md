@@ -19,12 +19,12 @@ without a new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 96 |
+| The Hobbit (HOB) | 95 |
 | The Hobbit Eternal (HOC) | 74 |
 | Marvel Super Heroes (MSH) | 195 |
-| **Total remaining** | **365** |
+| **Total remaining** | **364** |
 
-All **365** remaining cards have at least one identified constructor gap.
+All **364** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors). The other **12 cannot be spelled**
@@ -633,7 +633,7 @@ face (`alternative` is the Adventure face). Those are listed under
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards from the previous untagged set are omitted here.
 
-### The Hobbit (HOB) (96 cards)
+### The Hobbit (HOB) (95 cards)
 
 **An Unexpected Party** (`anUnexpectedParty`)
 
@@ -1030,10 +1030,6 @@ Converted cards from the previous untagged set are omitted here.
 **Smaug, Wicked Worm** (`smaugWickedWorm`)
 
 - leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
-
-**Sound the Trumpets** (`soundTheTrumpets`)
-
-- `Selector.manaValue` — Mana-value comparisons
 
 **Sting, Bilbo's Sword** (`stingBilboSSword`)
 

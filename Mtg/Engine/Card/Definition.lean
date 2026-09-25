@@ -621,6 +621,10 @@ inductive Condition where
   | turn : Selector → Condition
   /-- True when both conditions hold. -/
   | and : Condition → Condition → Condition
+  /-- True when the selected object's mana value is at most this number
+  (CR 202.3). Printed “was” uses last known information if that object
+  has left its zone (CR 608.2h). -/
+  | manaValueAtMost : Selector → Nat → Condition
 deriving Repr, Inhabited, BEq
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
@@ -1375,6 +1379,16 @@ def leftoverReturnCreatureFromGyThenAmass? : CardAction → Option Nat
         some n
       else none
     | _ => none
+  | _ => none
+
+/-- Counter the targeted spell, then recruit if its mana value was at most `n`. -/
+def leftoverCounterThenRecruitIfMvAtMost? : CardAction → Option Nat
+  | .sequence [
+      .counter (.target id .spell),
+      .if (.manaValueAtMost (.targetReference id') n)
+        [.keyword (.controller .this) .recruit]
+    ] =>
+    if id == id' then some n else none
   | _ => none
 
 /-- Target creature gets +P/+T and gains keywords. -/
@@ -2752,40 +2766,43 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
     match leftoverReturnCreatureFromGyThenAmass? action with
     | some n => some (Effect.returnCreatureFromGyThenAmass n)
     | none =>
-      match leftoverTapScryDraw? action with
-      | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
+      match leftoverCounterThenRecruitIfMvAtMost? action with
+      | some n => some (Effect.counterThenRecruitIfMvAtMost n)
       | none =>
-        if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
-        else if leftoverDestroyArtOrLandNonflyers? action then
-          some Effect.destroyArtifactOrLandNonflyersCantBlock
-        else if leftoverDestroyCreatureSurveil? action then
-          some Effect.destroyCreatureSurveil
-        else if leftoverBecomeArtifactIndestructible? action then
-          some Effect.becomeArtifactGainIndestructible
-        else if leftoverPlusOneLifelinkIndestructible? action then
-          some Effect.plusOneLifelinkIndestructible
-        else if leftoverGrantVigilanceUnblockable? action then
-          some Effect.grantVigilanceUnblockable
-        else
-          match leftoverPumpThenExileTopPlay? action with
-          | some (p, t) => some (Effect.pumpThenExileTopPlay p t)
-          | none =>
-            match leftoverDestroyArtEnchGainLife? action with
-            | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
+        match leftoverTapScryDraw? action with
+        | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
+        | none =>
+          if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
+          else if leftoverDestroyArtOrLandNonflyers? action then
+            some Effect.destroyArtifactOrLandNonflyersCantBlock
+          else if leftoverDestroyCreatureSurveil? action then
+            some Effect.destroyCreatureSurveil
+          else if leftoverBecomeArtifactIndestructible? action then
+            some Effect.becomeArtifactGainIndestructible
+          else if leftoverPlusOneLifelinkIndestructible? action then
+            some Effect.plusOneLifelinkIndestructible
+          else if leftoverGrantVigilanceUnblockable? action then
+            some Effect.grantVigilanceUnblockable
+          else
+            match leftoverPumpThenExileTopPlay? action with
+            | some (p, t) => some (Effect.pumpThenExileTopPlay p t)
             | none =>
-              match leftoverMaySacArtifactOrDiscardDraw? action with
-              | some n => some (Effect.maySacArtifactOrDiscardDraw n)
+              match leftoverDestroyArtEnchGainLife? action with
+              | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
               | none =>
-                match leftoverDrawThreeDiscardUnlessArtifact? action with
-                | some _ => some Effect.drawThreeDiscardUnlessArtifact
+                match leftoverMaySacArtifactOrDiscardDraw? action with
+                | some n => some (Effect.maySacArtifactOrDiscardDraw n)
                 | none =>
-                  match leftoverReturnUpToTwoGyModal? action with
-                  | some _ => some Effect.returnUpToTwoGyModal
+                  match leftoverDrawThreeDiscardUnlessArtifact? action with
+                  | some _ => some Effect.drawThreeDiscardUnlessArtifact
                   | none =>
-                    match leftoverGainLifeSearchBasicPlusOne? action with
-                    | some n => some (Effect.gainLifeSearchBasicPlusOne n)
+                    match leftoverReturnUpToTwoGyModal? action with
+                    | some _ => some Effect.returnUpToTwoGyModal
                     | none =>
-                      leftoverPlusOneOnEachOtherSubtype? action
+                      match leftoverGainLifeSearchBasicPlusOne? action with
+                      | some n => some (Effect.gainLifeSearchBasicPlusOne n)
+                      | none =>
+                        leftoverPlusOneOnEachOtherSubtype? action
 
 /-- Enters-the-battlefield actions that compile to a named trigger. -/
 def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
@@ -3192,7 +3209,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
       onlyDuringYourTurn := true
       activateFromGraveyard := fromGraveyard }
   | .any _ | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
-  | .didNotHappen _ _ | .and _ _ => none
+  | .didNotHappen _ _ | .and _ _ | .manaValueAtMost _ _ => none
 
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost .equip costs =>
@@ -4049,6 +4066,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
   | .if (.and _ _) _ => b
+  | .if (.manaValueAtMost _ _) _ => b
   | .if (.countAtLeast among n) inners =>
     if n == 2 then
       match CardAction.leftoverGetsIfGyCreatureCards? among inners with
@@ -7310,6 +7328,22 @@ end TraditionalCardDefinition
             .cardType .creature,
             .owner (.controller .this)])),
       .keyword (.controller .this) (.amass .goblin (.nat 3))]) == Effect.returnCreatureFromGyThenAmass 3
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .counter (.target 1 .spell),
+      .if (.manaValueAtMost (.targetReference 1) 2)
+        [.keyword (.controller .this) .recruit]]) ==
+    Effect.counterThenRecruitIfMvAtMost 2
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .counter (.target 1 .spell),
+      .if (.manaValueAtMost (.targetReference 2) 2)
+        [.keyword (.controller .this) .recruit]]) !=
+    Effect.counterThenRecruitIfMvAtMost 2
 
 #guard CardAction.toEffect (.keyword (.controller .this) .recruit) == Effect.recruit
 #guard CardAction.toEffect (.keyword (.controller .this) (.amass .goblin (.nat 1))) == Effect.amassGoblins 1
