@@ -636,10 +636,6 @@ inductive Condition where
   /-- True when any object matching the selector has the given subtype
   (CR 205.3). -/
   | anySubtype : Selector → CardSubtype → Condition
-  /-- True when the immediately preceding damage action dealt damage to an
-  object matching the selector (CR 120 / 608.2c). “This way” is that
-  action. Prevented or replaced damage was not dealt. -/
-  | dealtDamage : Selector → Condition
   /-- True when the first trigger has not occurred since the second. -/
   | didNotHappen : Trigger → Trigger → Condition
   /-- True when the first trigger has occurred since the second. -/
@@ -3344,30 +3340,19 @@ def leftoverDamageEqualTreasures? : CardAction → Bool
       isTreasuresYouControlCount amount
   | _ => false
 
-/-- `dealtDamage` of this target and one subtype: that damage was dealt to
-the target, and the target has the subtype. -/
-def dealtDamageToTargetSubtype? (who victim : Selector) : Option CardSubtype :=
-  match who with
-  | .intersection [.targetReference n, .subtype st] =>
-    if victim.referenceTargets == .targetReference n then some st else none
-  | _ => none
-
-/-- Deal damage to any target, then destroy that target only if that damage
-was dealt to it and it has this subtype. -/
+/-- Deal damage to any target, then destroy the object of that action if
+that damage was dealt to it and it has this subtype. -/
 def leftoverDealDamageDestroyIfSubtype? : CardAction → Option (Nat × String)
   | .sequence [
-      .dealDamage src victim (.nat n),
-      .if (.dealtDamage who) [.destroy dest]
+      .actionId id (.dealDamage src victim (.nat n)),
+      .if (.anySubtype (.wasObjectOfAction id') st)
+        [.destroy (.wasObjectOfAction id'')]
     ] =>
-    match dealtDamageToTargetSubtype? who victim with
-    | some st =>
-      if n != 0 &&
-          (src == .this || src == .source .this) &&
-          Selector.leftoverAnyTarget? victim &&
-          dest == victim.referenceTargets then
-        some (n, st.toString)
-      else none
-    | none => none
+    if n != 0 && id == id' && id == id'' &&
+        (src == .this || src == .source .this) &&
+        Selector.leftoverAnyTarget? victim then
+      some (n, st.toString)
+    else none
   | _ => none
 
 end CardAction
@@ -3424,7 +3409,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
     some { activatedAbility costs action with
       onlyDuringYourTurn := true
       activateFromGraveyard := fromGraveyard }
-  | .any _ | .anySubtype _ _ | .dealtDamage _ | .targetsIncludeAny _ _ | .happened _ _
+  | .any _ | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
   | .didNotHappen _ _ | .and _ _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
   | .equal _ _ => none
@@ -4351,7 +4336,6 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
               b
           else applyIfShape b among.shape inners
   | .if (.targetsIncludeAny _ among) inners => applyIfShape b among.shape inners
-  | .if (.dealtDamage _) _ => b
   | .if (.anySubtype among st) inners =>
     match inners with
     | [.increaseLandPlayLimit who (Value.nat 1)] =>
