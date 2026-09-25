@@ -2965,6 +2965,7 @@ def rageIntoTheValley : CardDef :=
     .keyword (.controller .this) (.amass .goblin (.nat 2))]]
 
 #guard rageIntoTheValley.spellEffect == some (Effect.drawLoseLifeThenAmass 2)
+#guard rageIntoTheValley.oracleText == rageIntoTheValleyOracle
 
 /-- Gatherer Oracle text for Gathering of Darkness. -/
 def gatheringOfDarknessOracle : String :=
@@ -2997,6 +2998,7 @@ def gatheringOfDarkness : CardDef :=
     .keyword (.controller .this) (.amass .goblin (.nat 3))]]
 
 #guard gatheringOfDarkness.spellEffect == some (Effect.returnCreatureFromGyThenAmass 3)
+#guard gatheringOfDarkness.oracleText == gatheringOfDarknessOracle
 
 /-- Gatherer Oracle text for Sound the Trumpets. -/
 def soundTheTrumpetsOracle : String :=
@@ -3023,6 +3025,7 @@ def soundTheTrumpets : CardDef :=
       [.keyword (.controller .this) .recruit]]]
 
 #guard soundTheTrumpets.spellEffect == some (Effect.counterThenRecruitIfMvAtMost 2)
+#guard soundTheTrumpets.oracleText == soundTheTrumpetsOracle
 
 def fatefulDiscovery : CardDef :=
   (TraditionalCardDefinition.card [
