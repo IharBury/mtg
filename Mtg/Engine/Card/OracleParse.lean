@@ -341,6 +341,19 @@ Currently recognized:
 - `As long as you have an enduring story, <this> gets +P/+T and has <keywords>.`
   `<this>` is this card. A zero bonus is omitted. `+0/+0` with no keywords
   is not an effect.
+- `As long as you have an enduring story, creatures you control get +P/+T.`
+  A zero bonus is omitted. `+0/+0` is not an effect.
+- `As long as you have an enduring story, artifacts and creatures you control have ward {N}.`
+  `N` is a positive generic cost.
+- `As long as you have an enduring story, creatures can't attack you unless their controller pays {N} for each of those creatures.`
+  `you` is this object's controller. `N` is a positive generic cost.
+- `<this> doesn't untap during your untap step unless you have an enduring story.`
+  `<this>` is this card. `your` is its controller (CR 502.3).
+- `Whenever <this> or another nontoken <subtype> you control enters, create a <P>/<T> <color> <subtype> creature token.`
+  `<this>` is this card. `another` excludes this object. One token is created.
+- `{cost}, Discard a card: Draw a card.`
+  Costs separated by commas may include mana, `{T}`, and discarding one card
+  from hand. One card is drawn.
 -/
 
 namespace Mtg.Engine
@@ -1016,14 +1029,29 @@ def parseSacrificeThis (cardName s : String) : Option Cost :=
   (after? (norm s) "sacrifice ").bind fun obj =>
     if refersToSelf cardName obj then some (.sacrifice .this) else none
 
-/-- One printed cost: mana symbols, the tap symbol, or sacrificing a permanent. -/
+/-- `Discard a card`: this object's controller discards one card they own
+from a hand (CR 701.8). -/
+def discardOneCardFromHand : Cost :=
+  .discard
+    (.selected
+      (.controller .this)
+      (.range 1 1)
+      (.intersection [.inHand, .owner (.controller .this)]))
+
+/-- `Discard a card` as a printed cost. -/
+def parseDiscardACard (s : String) : Option Cost :=
+  if norm s == "discard a card" then some discardOneCardFromHand else none
+
+/-- One printed cost: mana symbols, the tap symbol, sacrificing a permanent,
+or discarding a card. -/
 def parsePrintedCost (cardName s : String) : Option Cost :=
   if norm s == "{t}" then some .tapSymbol
   else
     match nonemptyMana? s with
     | some syms => some (.mana syms)
     | none =>
-      parseSacrificeThis cardName s <|> parseSacrificeAn s <|> parseSacrificeAnother s
+      parseSacrificeThis cardName s <|> parseSacrificeAn s <|>
+        parseSacrificeAnother s <|> parseDiscardACard s
 
 /-- Costs separated by commas, such as `{2}{G}{U}, {T}, Sacrifice this land`.
 One unrecognized cost fails the list. -/
@@ -1344,7 +1372,8 @@ Also `Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once
 And `Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn.`
 And `{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains "…"`.
 And `{1}, {T}: Add one mana of any color.`
-And `{7}, {T}, Sacrifice this artifact: Destroy target permanent.` -/
+And `{7}, {T}, Sacrifice this artifact: Destroy target permanent.`
+And `{1}, {T}, Discard a card: Draw a card.` -/
 def parseActivatedAbility (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   (split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": ").bind
@@ -3304,6 +3333,117 @@ def parseEnduringStoryGets (cardName line : String) : Option CardPart :=
                   (.if (.enduringStory (.controller .this)) effects)))
             | none => none
 
+/-- `As long as you have an enduring story, creatures you control get +1/+1.`
+The plural `get` is these creatures, not this card. A zero bonus is omitted.
+`+0/+0` is not an effect. -/
+def parseEnduringStoryTeamGets (line : String) : Option CardPart :=
+  (after? (normLine line) "as long as you have an enduring story, ").bind
+    fun rest =>
+      if (split2? rest " gets ").isSome then none
+      else
+        (splitGets? rest).bind fun (who, ptText) =>
+          match parseControlledPhrase who, parsePowerToughness ptText with
+          | some sel, some (p, t) =>
+            if sel != creaturesYouControl then none
+            else
+              let effects := flatPowerToughness sel p t
+              if effects.isEmpty then none
+              else
+                some (.ability (.static
+                  (.if (.enduringStory (.controller .this)) effects)))
+          | _, _ => none
+
+/-- `As long as you have an enduring story, artifacts and creatures you control have ward {1}.`
+`{N}` is a positive generic cost. -/
+def parseEnduringStoryTeamWard (line : String) : Option CardPart :=
+  (after? (normLine line) "as long as you have an enduring story, ").bind
+    fun rest =>
+      (split2? rest " have ward ").bind fun (who, cost) =>
+        match genericWard? ("ward " ++ cost) with
+        | some n =>
+          if who != "artifacts and creatures you control" then none
+          else
+            some (.ability (.static
+              (.if (.enduringStory (.controller .this))
+                [.gainAbility
+                  (permanentWith [.artifact, .creature] [youControl])
+                  (.keywordWithCost .ward [.mana [.generic n]])])))
+        | none => none
+
+/-- `As long as you have an enduring story, creatures can't attack you unless their controller pays {1} for each of those creatures.`
+`you` is this object's controller. `{N}` is a positive generic cost. -/
+def parseEnduringStoryAttackTax (line : String) : Option CardPart :=
+  (after? (normLine line) "as long as you have an enduring story, ").bind
+    fun rest =>
+      (between? rest
+          "creatures can't attack you unless their controller pays "
+          " for each of those creatures").bind
+        fun costText =>
+          match nonemptyMana? costText with
+          | some [.generic n] =>
+            if n == 0 then none
+            else
+              some (.ability (.static
+                (.if (.enduringStory (.controller .this))
+                  [.cantAttackUnlessPays
+                    (permanentWith [.creature])
+                    (.controller .this)
+                    [.mana [.generic n]]])))
+          | _ => none
+
+/-- `<this> doesn't untap during your untap step unless you have an enduring story.`
+The subject is this card. `your` is its controller (CR 502.3). -/
+def parseDoesntUntapUnlessEnduringStory (cardName line : String) : Option CardPart :=
+  (before? (normLine line)
+      " doesn't untap during your untap step unless you have an enduring story").bind
+    fun subject =>
+      if !refersToSelf cardName subject then none
+      else
+        some (.ability (.static
+          (.doesntUntapUnless .this (.enduringStory (.controller .this)))))
+
+/-- `Whenever <this> or another nontoken Dwarf you control enters, create a 2/2 red Dwarf creature token.`
+The subject is this card. `another` excludes this object. The subtype is
+singular. One token uses the singular noun. -/
+def parseThisOrNontokenSubtypeEntersCreate (cardName line : String) : Option CardPart :=
+  (after? (normLine line) "whenever ").bind fun rest =>
+    (split2? rest " or another nontoken ").bind fun (subject, tail) =>
+      if !refersToSelf cardName subject then none
+      else
+        (split2? tail " you control enters, ").bind fun (subtypeText, effect) =>
+          match subtypeOfOracle? subtypeText, parseCreateColoredCreatureToken effect with
+          | some st, some action =>
+            some (.ability (.triggered
+              (.or
+                (.enter .this)
+                (.enter
+                  (.intersection [
+                    .not .this,
+                    .not .token,
+                    .permanent,
+                    .cardType .creature,
+                    .subtype st,
+                    youControl])))
+              action))
+          | _, _ => none
+
+/-- `{1}, {T}, Discard a card: Draw a card.`
+Discarding one card is part of the cost. One card is drawn. An activation
+limit may follow the effect. -/
+def parseActivatedDiscardDraw (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": ").bind
+    fun (costText, effect) =>
+      let (body, limit) := splitActivateLimit (sentences effect)
+      match body, parseActivationCost cardName costText with
+      | [one], some costs =>
+        if !costs.any (fun c => c == discardOneCardFromHand) then none
+        else
+          match parseDrawCards one with
+          | some action => some (activatedWithCost n costs action limit n)
+          | none => none
+      | _, _ => none
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails.
 The first parser that accepts the line wins. -/
@@ -3315,6 +3455,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseEntersTapped cardName line) n <|>
     sole (parseTypecycling line) n <|>
     carry (parseActivatedAbility cardName line n) <|>
+    carry (parseActivatedDiscardDraw cardName line n) <|>
     carry (parseActivatedAddOrLoot cardName line n) <|>
     sole (parseTapAddOneOf line) n <|>
     carry (parseTapAddAnyColorEqualToPower cardName line n) <|>
@@ -3342,6 +3483,11 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseCostLessByFlyingPower line) n <|>
     sole (parseHasteIfAnother cardName line) n <|>
     sole (parseEnduringStoryGets cardName line) n <|>
+    sole (parseEnduringStoryTeamGets line) n <|>
+    sole (parseEnduringStoryTeamWard line) n <|>
+    sole (parseEnduringStoryAttackTax line) n <|>
+    sole (parseDoesntUntapUnlessEnduringStory cardName line) n <|>
+    sole (parseThisOrNontokenSubtypeEntersCreate cardName line) n <|>
     sole (parseOpponentFirstNoncreatureRecruit line) n <|>
     sole (parseAttackTriggered line) n <|>
     carry (parseAttackTargetGains cardName line n) <|>
@@ -5544,5 +5690,72 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "As long as you have an enduring story, Ori gets +1/+0 and has vigilance." == none
 #guard parseOracleParts (name := "Ori, Keeper of Songs")
   "As long as you have an enduring story, Ori gets +0/+0." == none
+#guard parseOracleParts (name := "Óin the Brave")
+  "As long as you have an enduring story, Óin gets +1/+0 and has haste." ==
+  some [.ability (.static (.if (.enduringStory (.controller .this))
+    [.addPower .this (Value.int 1), .gainAbility .this (.keyword .haste)]))]
+#guard parseOracleParts (name := "Óin the Brave")
+  "{1}, {T}, Discard a card: Draw a card." ==
+  some [.ability (.activated
+    [.mana [.generic 1], .tapSymbol,
+      .discard
+        (.selected
+          (.controller .this)
+          (.range 1 1)
+          (.intersection [.inHand, .owner (.controller .this)]))]
+    (.draw (.controller .this) 1))]
+#guard parseOracleParts (name := "Óin the Brave")
+  "{1}, {T}: Draw a card." == none
+#guard parseOracleParts (name := "Fíli the Pathfinder")
+  "As long as you have an enduring story, creatures you control get +1/+1." ==
+  some [.ability (.static (.if (.enduringStory (.controller .this))
+    [.addPower creaturesYouControl (Value.int 1),
+      .addToughness creaturesYouControl (Value.int 1)]))]
+#guard parseOracleParts (name := "Fíli the Pathfinder")
+  "As long as you have an enduring story, creatures you control get +0/+0." == none
+#guard parseOracleParts (name := "Thorin Oakenshield")
+  "As long as you have an enduring story, artifacts and creatures you control have ward {1}." ==
+  some [.ability (.static (.if (.enduringStory (.controller .this))
+    [.gainAbility
+      (permanentWith [.artifact, .creature] [youControl])
+      (.keywordWithCost .ward [.mana [.generic 1]])]))]
+#guard parseOracleParts (name := "Thorin Oakenshield")
+  "As long as you have an enduring story, artifacts and creatures you control have ward {0}." ==
+  none
+#guard parseOracleParts (name := "Dáin, Lord of the Iron Hills")
+  "As long as you have an enduring story, creatures can't attack you unless their controller pays {1} for each of those creatures." ==
+  some [.ability (.static (.if (.enduringStory (.controller .this))
+    [.cantAttackUnlessPays
+      (permanentWith [.creature])
+      (.controller .this)
+      [.mana [.generic 1]]]))]
+#guard parseOracleParts (name := "Bombur, Gentle Dreamer")
+  "Bombur doesn't untap during your untap step unless you have an enduring story." ==
+  some [.ability (.static
+    (.doesntUntapUnless .this (.enduringStory (.controller .this))))]
+#guard parseOracleParts (name := "Gandalf")
+  "Bombur doesn't untap during your untap step unless you have an enduring story." == none
+#guard parseOracleParts (name := "Fíli the Pathfinder")
+  "Whenever Fíli or another nontoken Dwarf you control enters, create a 2/2 red Dwarf creature token." ==
+  some [.ability (.triggered
+    (.or
+      (.enter .this)
+      (.enter
+        (.intersection [
+          .not .this,
+          .not .token,
+          .permanent,
+          .cardType .creature,
+          .subtype .dwarf,
+          youControl])))
+    (.createTokens (.controller .this) 1 [
+      .type .creature,
+      .subtype .dwarf,
+      .colorIndicator [.red],
+      .power 2,
+      .toughness 2]))]
+#guard parseOracleParts (name := "Gandalf")
+  "Whenever Fíli or another nontoken Dwarf you control enters, create a 2/2 red Dwarf creature token." ==
+  none
 
 end Mtg.Engine
