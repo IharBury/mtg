@@ -290,7 +290,8 @@ Currently recognized:
   parenthetical is not rules text.
 - `{cost}: <this>'s owner shuffles <object> into their library and draws <count> cards.`
   `<this>` is this card's name or `this <type>`. `<object>` is `him`,
-  `her`, `them`, `it`, or another reference to this card. The owner draws.
+  `her`, `them`, `it`, or another reference to this card. The owner is
+  recorded before the shuffle, and that player draws afterward.
 - `{cost}: Return this card from your graveyard to the battlefield attached to target creature you control with power N or less. Activate only as a sorcery.`
   Returning this card from a graveyard functions while the card is in that
   graveyard (CR 113.6), so the ability is `graveyardActivatedIf`. The card
@@ -2986,7 +2987,8 @@ def isObjectPronoun (s : String) : Bool :=
   | _ => false
 
 /-- `{6}: Gandalf's owner shuffles him into their library and draws three cards.`
-The owner of this card shuffles it away and draws. -/
+The owner is bound to variable `n` before the shuffle. That recorded
+player draws afterward. -/
 def parseOwnerShuffleDraw (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   (split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": ").bind
@@ -3001,10 +3003,11 @@ def parseOwnerShuffleDraw (cardName : String) (line : String) (n : Nat) :
                 (parseCardCount countText).map fun k =>
                   activatedWithCost n costs
                     (.sequence [
+                      .defineSelectorVariable n (.owner (.source .this)),
                       .shuffleIntoOwnersLibrary (.source .this),
-                      .draw (.owner (.source .this)) (Value.nat k)])
+                      .draw (.variable n) (Value.nat k)])
                     .unlimited
-                    n
+                    (n + 1)
 
 /-- `Return this card from your graveyard to the battlefield attached to target creature you control with power 1 or less.`
 The creature is target `n`. `N` is a positive printed power. The card enters
@@ -5139,8 +5142,9 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "{6}: Gandalf's owner shuffles him into their library and draws three cards." ==
   some [.ability (.activated [.mana [.generic 6]]
     (.sequence [
+      .defineSelectorVariable 1 (.owner (.source .this)),
       .shuffleIntoOwnersLibrary (.source .this),
-      .draw (.owner (.source .this)) 3]))]
+      .draw (.variable 1) 3]))]
 #guard parseOracleParts (name := "")
   "{2}{W/U}{W/U}: Return this card from your graveyard to the battlefield attached to target creature you control with power 1 or less. Activate only as a sorcery." ==
   some [.ability (.graveyardActivatedIf

@@ -2856,13 +2856,15 @@ def leftoverPlusOneThenFight? : CardAction → Option Nat
     else none
   | _ => none
 
-/-- This object's owner shuffles it into their library and draws N cards. -/
+/-- This object's owner shuffles it into their library and draws N cards.
+The owner is recorded before the shuffle and that player draws. -/
 def leftoverOwnerShuffleSourceDraw? : CardAction → Option Nat
   | .sequence [
-      .shuffleIntoOwnersLibrary who,
-      .draw drawer (.nat n)
+      .defineSelectorVariable id (.owner who),
+      .shuffleIntoOwnersLibrary who',
+      .draw (.variable id') (.nat n)
     ] =>
-    if (who == .this || who == .source .this) && drawer == .owner who then
+    if id == id' && who == who' && (who == .this || who == .source .this) then
       some n
     else none
   | _ => none

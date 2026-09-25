@@ -3345,8 +3345,9 @@ def gandalfWanderingWizard : CardDef :=
   .ability (.keywordWithCost .ward [.mana [.generic 3]]),
   .ability (.activated [.mana [.generic 6]]
     (.sequence [
+      .defineSelectorVariable 1 (.owner (.source .this)),
       .shuffleIntoOwnersLibrary (.source .this),
-      .draw (.owner (.source .this)) 3]))]
+      .draw (.variable 1) 3]))]
 
 #guard gandalfWanderingWizard.ward == some 3
 #guard gandalfWanderingWizard.activatedAbilities == #[
