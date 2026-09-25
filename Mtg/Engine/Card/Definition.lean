@@ -2763,11 +2763,50 @@ def leftoverContinuousCompiled? : CardAction → Option Effect
       | none => leftoverTeamGain? effects |>.map Effect.teamGain
   | _ => none
 
+/-- This selector excludes the numbered target, so a later mass effect
+can mean “each other” relative to that target. -/
+def leftoverExcludesTarget (n : Nat) : Selector → Bool
+  | .not (.targetReference id) => id == n
+  | .intersection parts => go parts
+  | _ => false
+where
+  go : List Selector → Bool
+    | [] => false
+    | .not (.targetReference id) :: rest => id == n || go rest
+    | .intersection nested :: rest => go nested || go rest
+    | _ :: rest => go rest
+
+/-- Creatures this object's controller controls, not announced as targets. -/
+def leftoverCreaturesYouControlMass? (s : Selector) : Bool :=
+  s.among?.isNone &&
+    s.shape.sameController &&
+    s.shape.mustBePermanent &&
+    s.shape.types.eqTypes [.creature] &&
+    !s.shape.other &&
+    s.shape.subtype.isNone &&
+    !s.shape.opponentControls
+
+/-- Put a +1/+1 counter on target creature you control. If this spell was
+cast from a graveyard, also put one on each other creature you control.
+The cast is an event since the start of the game. -/
+def leftoverPlusOneThenEachOtherIfFromGy? : CardAction → Bool
+  | .sequence [
+      .putCounter (.target id among) .plusOnePlusOne 1,
+      .if (.happened (.castSpellFromGraveyard .this) .gameStart)
+        [.putCounter others .plusOnePlusOne 1]
+    ] =>
+    among.toTargetKind == .creatureYouControl &&
+      leftoverExcludesTarget id others &&
+      leftoverCreaturesYouControlMass? others
+  | _ => false
+
 /-- Sequence leftovers that compile to a named `Effect` without taking
 only the first action. -/
 def leftoverCompiled? (action : CardAction) : Option Effect :=
   leftoverChapterCompiled? action |>.orElse fun _ =>
-  if leftoverOwnerPutsLibraryThenConnive? action then
+  if leftoverPlusOneThenEachOtherIfFromGy? action then
+    some Effect.plusOneThenEachOtherIfFromGy
+  else if leftoverOwnerPutsLibraryThenConnive? action then
     some Effect.ownerPutsLibraryThenConnive
   else
   (leftoverMillThenPutCompiled? action).orElse fun _ =>
@@ -3798,6 +3837,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         | _ => false then
       some (TriggeredAbility.onWatch Effect.watchJusticeBounce)
     else none
+  | .triggered (.upkeep who) (.createTokens controller n parts []) =>
+    if who == .controller .this && CardAction.leftoverYou controller then
+      match valToNat? n, CardAction.leftoverTokenKind? parts with
+      | some n, some k => some (TriggeredAbility.onYourUpkeepCreateTokens k n)
+      | _, _ => none
+    else none
   | _ => none
 
 end Ability
@@ -3839,6 +3884,8 @@ structure CardFace where
   cantBeCountered : Bool := false
   /-- You may cast this spell as though it had flash if you control this subtype. -/
   flashIfYouControlSubtype : Option String := none
+  /-- Flashback cost (CR 702.34). -/
+  flashback : Option ManaCost := none
   colorIndicator : Option ColorSet := none
   sagaChapters : Array SagaChapter := #[]
 deriving Inhabited
@@ -4088,6 +4135,15 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       | some ab => { b with staticAbilities := b.staticAbilities.push ab }
       | none => b
     else b
+  | .if (.less (.count among) threshold) [.forbid (.attack who .all)] =>
+    match valToNat? threshold, among.shape.anotherSubtypeYouControl with
+    | some n, some subtype =>
+      if (who == .this || who == .source .this) && n != 0 then
+        { b with
+          staticAbilities :=
+            b.staticAbilities.push (.cantAttackUnlessYouControlNOther n subtype) }
+      else b
+    | _, _ => b
   | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
   | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
   | .replace (.enter who) actions =>
@@ -4157,6 +4213,8 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
 
 def applyAbility (b : CardFace) : Ability → CardFace
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
+  | .keywordWithCost .flashback costs =>
+    { b with flashback := some (Cost.manaCost costs) }
   | .keywordWithCost k costs =>
     match (Ability.keywordWithCost k costs).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
@@ -4371,6 +4429,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       entersTapped := b.entersTapped
       cantBeCountered := b.cantBeCountered
       flashIfYouControlSubtype := b.flashIfYouControlSubtype
+      flashback := b.flashback
       colorIndicator := b.colorIndicator
       adventure := adventure
       saga :=
@@ -7300,6 +7359,55 @@ end TraditionalCardDefinition
         .attach .this (.wasObjectOfAction 1)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterAmassThenAttach 1
   | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.upkeep (.controller .this))
+      (.createTokens (.controller .this) 1 [
+        .type .creature, .subtype .wolf, .colorIndicator [.green],
+        .power 2, .toughness 2])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onYourUpkeepCreateTokens .wolf 1
+  | none => false
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.if
+      (.less
+        (.count
+          (.intersection [
+            .not .this,
+            .permanent,
+            .subtype .wolf,
+            .controlled (.controller .this)]))
+        (Value.nat 2))
+      [.forbid (.attack .this .all)]))
+  ]).toCardDef.staticAbilities == #[.cantAttackUnlessYouControlNOther 2 "Wolf"]
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .putCounter
+        (.target 1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        .plusOnePlusOne 1,
+      .if (.happened (.castSpellFromGraveyard .this) .gameStart)
+        [.putCounter
+          (.intersection [
+            .not (.targetReference 1),
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          .plusOnePlusOne 1]]) ==
+    Effect.plusOneThenEachOtherIfFromGy
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keywordWithCost .flashback [.mana [.generic 4, .mono .white]])
+  ]).toCardDef.flashback == some (ManaCost.ofGenericAndColor 4 .white)
 
 #guard
   (Ability.triggered
