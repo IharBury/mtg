@@ -661,6 +661,8 @@ inductive Condition where
   | enduringStory : Selector → Condition
   /-- True when both conditions hold. -/
   | and : Condition → Condition → Condition
+  /-- True when the condition does not hold. -/
+  | not : Condition → Condition
   /-- True when the first value is less than the second. -/
   | less : Value → Value → Condition
   /-- True when the first value is less than or equal to the second. -/
@@ -778,8 +780,8 @@ inductive ContinuousEffect where
   owner. The spell does not gain the flash keyword. -/
   | canBeCastAsThoughWithFlashIf : Selector → Condition → ContinuousEffect
   /-- The selected permanent doesn't untap during its controller's untap
-  step unless the condition holds (CR 502.3). -/
-  | doesntUntapUnless : Selector → Condition → ContinuousEffect
+  step (CR 502.3). -/
+  | doesntUntap : Selector → ContinuousEffect
   /-- Objects matching the first selector can't attack the second unless
   their controller pays `costs` for each of them. -/
   | cantAttackUnlessPays : Selector → Selector → List Cost → ContinuousEffect
@@ -1033,7 +1035,7 @@ def selector : ContinuousEffect → Selector
   | .addPower who _ | .addToughness who _ => who
   | .increaseLandPlayLimit who _ => who
   | .canBeCastAsThoughWithFlashIf card _ => card
-  | .doesntUntapUnless who _ => who
+  | .doesntUntap who => who
   | .cantAttackUnlessPays who _ _ => who
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
@@ -3431,7 +3433,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
       onlyDuringYourTurn := true
       activateFromGraveyard := fromGraveyard }
   | .any _ | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
-  | .didNotHappen _ _ | .and _ _ | .enduringStory _
+  | .didNotHappen _ _ | .and _ _ | .not _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
   | .equal _ _ => none
 
@@ -4430,6 +4432,11 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.happened _ _) _ => b
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
+  | .if (.not (.enduringStory who)) [.doesntUntap self] =>
+    if who == .controller .this && (self == .this || self == .source .this) then
+      { b with staticAbilities := b.staticAbilities.push .doesntUntapUnlessEnduringStory }
+    else b
+  | .if (.not _) _ => b
   | .if (.enduringStory who) inners =>
     if who == .controller .this then
       match selfGetsAndHas? inners with
@@ -4524,11 +4531,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     match leftoverCanBeCastAsThoughWithFlashIf? card cond with
     | some t => { b with flashIfYouControlSubtype := some t }
     | none => b
-  | .doesntUntapUnless who (.enduringStory storyHolder) =>
-    if (who == .this || who == .source .this) && storyHolder == .controller .this then
-      { b with staticAbilities := b.staticAbilities.push .doesntUntapUnlessEnduringStory }
-    else b
-  | .doesntUntapUnless _ _ => b
+  | .doesntUntap _ => b
   | .cantAttackUnlessPays _ _ _ => b
   | .additionalCost _ cs =>
     { b with

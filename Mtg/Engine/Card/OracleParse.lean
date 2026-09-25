@@ -3392,7 +3392,8 @@ def parseEnduringStoryAttackTax (line : String) : Option CardPart :=
           | _ => none
 
 /-- `<this> doesn't untap during your untap step unless you have an enduring story.`
-The subject is this card. `your` is its controller (CR 502.3). -/
+The subject is this card. `your` is its controller (CR 502.3). This does not
+untap when that player does not have an enduring story. -/
 def parseDoesntUntapUnlessEnduringStory (cardName line : String) : Option CardPart :=
   (before? (normLine line)
       " doesn't untap during your untap step unless you have an enduring story").bind
@@ -3400,7 +3401,8 @@ def parseDoesntUntapUnlessEnduringStory (cardName line : String) : Option CardPa
       if !refersToSelf cardName subject then none
       else
         some (.ability (.static
-          (.doesntUntapUnless .this (.enduringStory (.controller .this)))))
+          (.if (.not (.enduringStory (.controller .this)))
+            [.doesntUntap .this])))
 
 /-- `Whenever <this> or another nontoken Dwarf you control enters, create a 2/2 red Dwarf creature token.`
 The subject is this card. `another` excludes this object. The subtype is
@@ -5732,7 +5734,8 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "Bombur, Gentle Dreamer")
   "Bombur doesn't untap during your untap step unless you have an enduring story." ==
   some [.ability (.static
-    (.doesntUntapUnless .this (.enduringStory (.controller .this))))]
+    (.if (.not (.enduringStory (.controller .this)))
+      [.doesntUntap .this]))]
 #guard parseOracleParts (name := "Gandalf")
   "Bombur doesn't untap during your untap step unless you have an enduring story." == none
 #guard parseOracleParts (name := "Fíli the Pathfinder")

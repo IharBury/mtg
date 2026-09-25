@@ -3953,7 +3953,8 @@ def bomburGentleDreamer : CardDef :=
   .toughness 3,
   .ability (.keyword .storied),
   .ability (.static
-    (.doesntUntapUnless .this (.enduringStory (.controller .this))))]
+    (.if (.not (.enduringStory (.controller .this)))
+      [.doesntUntap .this]))]
 
 #guard bomburGentleDreamer.keywords.storied
 #guard bomburGentleDreamer.staticAbilities == #[.doesntUntapUnlessEnduringStory]
