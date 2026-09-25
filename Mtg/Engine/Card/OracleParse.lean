@@ -258,8 +258,10 @@ Currently recognized:
   controller. This object is attached to the Army that action amassed.
   A trailing reminder parenthetical is not rules text (CR 207.2).
 - `Equipped creature gets +P/+T and has <keywords>.`
-  The bonus and the keywords are static abilities of the Equipment
-  (CR 604.1 / 301.5). `and has` may be omitted when there are no keywords.
+  Also `Enchanted creature gets +P/+T and has <keywords>.`
+  The bonus and the keywords are static abilities of the Equipment or Aura
+  (CR 604.1 / 301.5 / 303.4). `and has ward {N}` is that much generic ward
+  instead of keywords. `and has` may be omitted when there is neither.
   A zero bonus on one side is omitted. `+0/+0` is not an effect.
 - `Put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control.`
   The creature is one target. `each other` is every other creature that
@@ -268,6 +270,42 @@ Currently recognized:
   the game (CR 601.2 / 702.34).
 - `Flashback {cost}`
   The card may be cast from a graveyard for that cost (CR 702.34). A trailing
+  reminder parenthetical is not rules text.
+- `Draw <count> cards. If this spell was cast from a graveyard, draw <count> cards instead.`
+  The second draw replaces the first when this spell was cast from a
+  graveyard. That cast is an event since the start of the game
+  (CR 601.2 / 702.34). One card is `a card`; more than one is plural.
+- `Amass <subtype>s N. If this spell was cast from a graveyard, amass <subtype>s M instead.`
+  The second amass replaces the first in that same case. Both amass the
+  same subtype. A trailing reminder parenthetical is not rules text.
+- `Put <count> +1/+1 counters on target creature you control. Then it fights target creature an opponent controls.`
+  The creature you control is one target. The opponent's creature is
+  another. One counter uses the singular noun. A trailing reminder
+  parenthetical is not rules text.
+- `Enchant <permanent>.`
+  Enchant (CR 702.5). The permanent is one target. `Enchant creature` is
+  a creature.
+- `Ward {N}`
+  Ward (CR 702.21). `N` is a positive generic cost. A trailing reminder
+  parenthetical is not rules text.
+- `{cost}: <this>'s owner shuffles <object> into their library and draws <count> cards.`
+  `<this>` is this card's name or `this <type>`. `<object>` is `him`,
+  `her`, `them`, `it`, or another reference to this card. The owner is
+  recorded before the shuffle, and that player draws afterward.
+- `{cost}: Return this card from your graveyard to the battlefield attached to target creature you control with power N or less. Activate only as a sorcery.`
+  Returning this card from a graveyard functions while the card is in that
+  graveyard (CR 113.6), so the ability is `graveyardActivatedIf`. The card
+  enters the battlefield already attached to that creature (CR 303.4f).
+  `N` is a positive printed power. The creature is one target.
+- `When <this> enters, attach <object> to target <permanent> [you control].`
+  The entering object is this card. `<object>` is `it` or this card. A
+  creature type such as `Dwarf` is a creature of that subtype.
+- `Each creature you control with a +1/+1 counter on it has menace.`
+  A trailing reminder parenthetical is not rules text.
+- `At the beginning of your end step, draw a card.`
+  `your` is this object's controller (CR 513.1). One card.
+- `Search your library for a legendary creature card, reveal it, put it into your hand, then shuffle.`
+  The searcher chooses one legendary creature card (CR 701.19). A trailing
   reminder parenthetical is not rules text.
 -/
 
@@ -1810,6 +1848,12 @@ def parseYouDrawCardLoseLife (sentence : String) : Option CardAction :=
 def amassSubtype? (s : String) : Option CardSubtype :=
   if s.endsWith "s" && s.length > 1 then subtypeOfOracle? (s.dropEnd 1).copy else none
 
+/-- `Draw a card.` / `Draw two cards.` The player is this spell's controller.
+One card is singular. More than one is plural. -/
+def parseDrawCards (sentence : String) : Option CardAction :=
+  (after? (normSentence sentence) "draw ").bind parseCardCount |>.map fun k =>
+    .draw (.controller .this) (Value.nat k)
+
 /-- `Amass Goblins 1.` The controller amasses that subtype that many (CR 701.45).
 The subtype is plural. `N` is a positive count. -/
 def parseAmass (sentence : String) : Option CardAction :=
@@ -1837,6 +1881,28 @@ def parseReturnUpToOneFromYourGraveyard (sentence : String) (n : Nat) :
               .owner (.controller .this)])),
          n + 1)
 
+/-- `Search your library for a legendary creature card, reveal it, put it into your hand, then shuffle.`
+The found card is variable `n`. A legendary creature card, with no further
+subtype. -/
+def parseSearchLegendaryCreatureToHand (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  if sentenceIs sentence
+      "search your library for a legendary creature card, reveal it, put it into your hand, then shuffle" then
+    some (
+      .searchLibraryThenShuffle
+        (.controller .this)
+        [
+          .defineSelectorVariable n
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [
+                .inLibrary, .cardType .creature, .supertype .legendary])),
+          .reveal (.variable n),
+          .returnToHand (.variable n)],
+      n + 1)
+  else none
+
 /-- A parsed action that does not choose a new target. -/
 def unchanged (parsed : Option CardAction) (n : Nat) : Option (CardAction × Nat) :=
   parsed.map (·, n)
@@ -1863,7 +1929,8 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
     parseExchangeControlSharingCardType sentence n <|>
     parseTargetGetsUntilEndOfTurn sentence n <|>
     parseTargetPlayerControlsGet sentence n <|>
-    parseTargetPlayerDrawsLosesLife sentence n
+    parseTargetPlayerDrawsLosesLife sentence n <|>
+    parseSearchLegendaryCreatureToHand sentence n
 
 /-- Creatures you control other than target `n`. -/
 def eachOtherCreatureThanTarget (n : Nat) : Selector :=
@@ -1900,6 +1967,78 @@ def parsePlusOneThenEachOtherIfFromGy (text : String) (n : Nat) :
     | _, _ => none
   | _ => none
 
+/-- The effect after `If this spell was cast from a graveyard, `, without
+the trailing `instead`. -/
+def fromGraveyardInstead? (sentence : String) : Option String :=
+  (after? (normSentence sentence) "if this spell was cast from a graveyard, ").bind
+    fun rest => before? rest " instead"
+
+/-- Draw, or amass, and the same action with a different count when this
+spell was cast from a graveyard. Both amass the same subtype. The
+cast-from-graveyard action is the “instead” branch. -/
+def insteadFromGraveyardPair (normal instead : String) :
+    Option (CardAction × CardAction) :=
+  let drawPair :=
+    match parseDrawCards normal, (fromGraveyardInstead? instead).bind parseDrawCards with
+    | some normalA, some fromGyA => some (fromGyA, normalA)
+    | _, _ => none
+  let amassPair :=
+    match parseAmass normal, (fromGraveyardInstead? instead).bind parseAmass with
+    | some (.keyword who (.amass st na)), some (.keyword who' (.amass st' ga)) =>
+      if who == who' && st == st' then
+        some (.keyword who (.amass st ga), .keyword who (.amass st na))
+      else none
+    | _, _ => none
+  drawPair <|> amassPair
+
+/-- `Draw a card. If this spell was cast from a graveyard, draw two cards instead.`
+Also the same shape for amass. The second sentence replaces the first when
+this spell was cast from a graveyard. -/
+def parseInsteadFromGraveyard (text : String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match sentences text with
+  | [normal, instead] =>
+    (insteadFromGraveyardPair normal instead).map fun (fromGyA, normalA) =>
+      ([.ifElse
+          (.happened (.castSpellFromGraveyard .this) .gameStart)
+          [fromGyA]
+          [normalA]],
+        n)
+  | _ => none
+
+/-- `Put two +1/+1 counters on target creature you control.`
+The creature is target `n`. A creature type is a different ability. -/
+def parsePutPlusOneOnCreatureYouControl (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  match after? (normSentence sentence) "put " with
+  | none => none
+  | some rest =>
+    let split :=
+      (split2? rest " +1/+1 counters on ").map (fun (c, w) => (c, true, w)) <|>
+        (split2? rest " +1/+1 counter on ").map (fun (c, w) => (c, false, w))
+    match split with
+    | some (countText, plural, who) =>
+      match nounCount? countText plural, parseTargetPhrase who with
+      | some k, some sel =>
+        if sel == permanentWith [.creature] [youControl] then
+          some (.putCounter (.target n sel) .plusOnePlusOne k, n + 1)
+        else none
+      | _, _ => none
+    | none => none
+
+/-- `Put two +1/+1 counters on target creature you control. Then it fights target creature an opponent controls.`
+The creature you control is target `n`. The opponent's creature is the next
+target. -/
+def parsePlusOneThenFight (text : String) (n : Nat) : Option (List CardAction × Nat) :=
+  match sentences text with
+  | [put, fights] =>
+    match parsePutPlusOneOnCreatureYouControl put n,
+        (after? (normSentence fights) "then it fights ").bind parseOppControlledTarget with
+    | some (putAction, n'), some dest =>
+      some ([putAction, .fight (.targetReference n) (.target n' dest)], n' + 1)
+    | _, _ => none
+  | _ => none
+
 /-- Every sentence of `text` must parse. An unrecognized sentence fails
 the text. No sentences (reminder-only or empty text) succeeds with no actions.
 Multi-sentence templates are tried before the sentence split. -/
@@ -1910,6 +2049,8 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
   parseCounterExilePermanentMayCast text n <|>
     parseCounterThenRecruitIfMv text n <|>
     parsePlusOneThenEachOtherIfFromGy text n <|>
+    parseInsteadFromGraveyard text n <|>
+    parsePlusOneThenFight text n <|>
     oneAction (parsePumpExileIfDies text n) <|>
     oneAction (parsePutPlusOneThenGains text n) <|>
     List.foldlM (fun (acc, n) s =>
@@ -2092,30 +2233,52 @@ def parseEnterTargetOpponentSacrifices (cardName : String) (line : String) (n : 
                     (permanentWith [.creature] [.controlled (.targetReference n)])))),
             n + 1)
 
-/-- `Equipped creature gets +2/+1.` Also `Equipped creature gets +1/+0 and has menace.`
-The bonus and any keywords are static abilities of the Equipment
-(CR 604.1 / 301.5). `and has` may be omitted. A zero bonus is omitted.
-`+0/+0` is not an effect. A bonus that lasts until end of turn is a
-different ability. -/
+/-- `ward {N}` with a positive generic cost. -/
+def genericWard? (s : String) : Option Nat :=
+  match (after? (norm s) "ward ").bind nonemptyMana? with
+  | some [.generic n] => if n == 0 then none else some n
+  | _ => none
+
+/-- `Equipped creature gets +2/+1.` Also `Enchanted creature gets +2/+2 and has flying.`
+And `Equipped creature gets +2/+2 and has ward {1}.`
+The bonus, keywords, or generic ward are static abilities of the Equipment
+or Aura (CR 604.1 / 301.5 / 303.4). `and has` may be omitted. A zero bonus
+is omitted. `+0/+0` is not an effect. A bonus that lasts until end of turn
+is a different ability. Ward is a generic cost, not a keyword. -/
 def parseEquippedGets (line : String) : Option (List CardPart) :=
-  (after? (normLine line) "equipped creature gets ").bind fun rest =>
+  let rest? :=
+    after? (normLine line) "equipped creature gets " <|>
+      after? (normLine line) "enchanted creature gets "
+  rest?.bind fun rest =>
     if (split2? rest " until end of turn").isSome then none
     else
-      let (ptText, kws?) :=
+      let parsed : Option (String × Option Nat × List Keyword) :=
         match split2? rest " and has " with
-        | none => (rest, some ([] : List Keyword))
-        | some (pt, has) => (pt, parseKeywordPhrase has)
-      match parsePowerToughness ptText, kws? with
-      | some (p, t), some kws =>
-        if p == 0 && t == 0 then none
-        else
-          let effects :=
-            flatPowerToughness (.hostOf .this) p t ++
+        | none => some (rest, none, [])
+        | some (pt, has) =>
+          match genericWard? has with
+          | some n => some (pt, some n, [])
+          | none =>
+            (parseKeywordPhrase has).map fun kws => (pt, none, kws)
+      parsed.bind fun (ptText, ward?, kws) =>
+        match parsePowerToughness ptText with
+        | some (p, t) =>
+          if p == 0 && t == 0 then none
+          else
+            let keywordEffects :=
               kws.map fun k =>
                 (.gainAbility (.hostOf .this) (.keyword k) : ContinuousEffect)
-          if effects.isEmpty then none
-          else some (effects.map fun e => .ability (.static e))
-      | _, _ => none
+            let wardEffects :=
+              match ward? with
+              | none => []
+              | some n =>
+                [.gainAbility (.hostOf .this)
+                  (.keywordWithCost .ward [.mana [.generic n]])]
+            let effects :=
+              flatPowerToughness (.hostOf .this) p t ++ keywordEffects ++ wardEffects
+            if effects.isEmpty then none
+            else some (effects.map fun e => .ability (.static e))
+        | none => none
 
 /-- `Equip {2}.` Reminder text such as
 `({2}: Attach to target creature you control. Equip only as a sorcery.)`
@@ -2765,6 +2928,132 @@ def parseEnterAmassThenAttach (cardName : String) (line : String) (n : Nat) :
         else none
       | none => none
 
+/-- `Enchant creature.` Enchant (CR 702.5). The permanent is target `n`. -/
+def parseEnchant (line : String) (n : Nat) : Option (CardPart × Nat) :=
+  (after? (normLine line) "enchant ").bind fun rest =>
+    (parseBattlefieldTarget ("target " ++ rest)).map fun sel =>
+      (.ability (.keywordWithTarget .enchant n sel), n + 1)
+
+/-- `Ward {3}`. A positive generic cost (CR 702.21). A reminder parenthetical
+is not rules text. -/
+def parseWard (line : String) : Option CardPart :=
+  (genericWard? (normLine line)).map fun n =>
+    .ability (.keywordWithCost .ward [.mana [.generic n]])
+
+/-- `Each creature you control with a +1/+1 counter on it has menace.`
+A reminder parenthetical is not rules text. -/
+def parseCreaturesWithPlusOneHaveMenace (line : String) : Option CardPart :=
+  if sentenceIs (normLine line)
+      "each creature you control with a +1/+1 counter on it has menace" then
+    some (.ability (.static (.gainAbility
+      (.intersection [
+        .permanent, .cardType .creature, youControl, .hasCounter .plusOnePlusOne])
+      (.keyword .menace))))
+  else none
+
+/-- `At the beginning of your end step, draw a card.`
+`your` is this object's controller. One card. -/
+def parseYourEndStepDraw (line : String) : Option CardPart :=
+  (after? (normLine line) "at the beginning of your end step, ").bind fun effect =>
+    match (after? effect "draw ").bind parseCardCount with
+    | some 1 =>
+      some (.ability (.triggered
+        (.endStep (.controller .this))
+        (.draw (.controller .this) 1)))
+    | _ => none
+
+/-- `attach it to target Dwarf you control`. `it` or this card is the
+attachment. The destination is target `n`. -/
+def parseAttachSelfToTarget (cardName effect : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  (split2? (normSentence effect) " to ").bind fun (head, dest) =>
+    (after? head "attach ").bind fun subject =>
+      if subject != "it" && !refersToSelf cardName subject then none
+      else
+        (parseBattlefieldTarget dest).map fun sel =>
+          (.attach .this (.target n sel), n + 1)
+
+/-- `When this Equipment enters, attach it to target Dwarf you control.`
+The entering object is this card. -/
+def parseEnterAttachToTarget (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  onSelfTriggerN cardName line " enters, " (.enter .this)
+    (parseAttachSelfToTarget cardName · n)
+
+/-- `him`, `her`, `them`, or `it`: the object named earlier in this ability. -/
+def isObjectPronoun (s : String) : Bool :=
+  match norm s with
+  | "him" | "her" | "them" | "it" => true
+  | _ => false
+
+/-- `{6}: Gandalf's owner shuffles him into their library and draws three cards.`
+The owner is bound to variable `n` before the shuffle. That recorded
+player draws afterward. -/
+def parseOwnerShuffleDraw (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": ").bind
+    fun (costText, effect) =>
+      (parseActivationCost cardName costText).bind fun costs =>
+        (split2? (normSentence effect) " owner shuffles ").bind fun (whose, rest) =>
+          if !possessiveSelf cardName whose then none
+          else
+            (split2? rest " into their library and draws ").bind fun (obj, countText) =>
+              if !(isObjectPronoun obj || refersToSelf cardName obj) then none
+              else
+                (parseCardCount countText).map fun k =>
+                  activatedWithCost n costs
+                    (.sequence [
+                      .defineSelectorVariable n (.owner (.source .this)),
+                      .shuffleIntoOwnersLibrary (.source .this),
+                      .draw (.variable n) (Value.nat k)])
+                    .unlimited
+                    (n + 1)
+
+/-- `Return this card from your graveyard to the battlefield attached to target creature you control with power 1 or less.`
+The creature is target `n`. `N` is a positive printed power. The card enters
+already attached to that creature (CR 303.4f). -/
+def parseReturnAttachedPowerAtMost (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  (after? (normSentence sentence)
+      "return this card from your graveyard to the battlefield attached to ").bind
+    fun dest =>
+      (split2? dest " with power ").bind fun (targetText, powerText) =>
+        (before? powerText " or less").bind positiveCount |>.bind fun p =>
+          (parseTargetPhrase targetText).bind fun sel =>
+            if sel != permanentWith [.creature] [youControl] then none
+            else
+              let among :=
+                match sel with
+                | .intersection parts =>
+                  .intersection (parts ++ [.powerAtMost (Value.int (p : Int))])
+                | _ =>
+                  .intersection [sel, .powerAtMost (Value.int (p : Int))]
+              some (
+                .putOntoBattlefieldInState
+                  (.intersection [.inGraveyard, .source .this])
+                  [.attachedTo (.target n among)],
+                n + 1)
+
+/-- `{2}{W/U}{W/U}: Return this card from your graveyard to the battlefield attached to target creature you control with power 1 or less. Activate only as a sorcery.`
+The ability functions in a graveyard (CR 113.6). -/
+def parseReturnFromGyAttach (line : String) (n : Nat) : Option (CardPart × Nat) :=
+  (split2? (stripReminderParenthetical line) ": ").bind fun (costText, effect) =>
+    match sentences effect with
+    | [body, restrict] =>
+      if !sentenceIs restrict "activate only as a sorcery" then none
+      else
+        match parsePrintedCosts "" costText, parseReturnAttachedPowerAtMost body n with
+        | some costs, some (action, n') =>
+          some (
+            .ability (
+              .graveyardActivatedIf
+                (.timeToCastSorcery (.controller .this))
+                costs
+                action),
+            n')
+        | _, _ => none
+    | _ => none
+
 /-- `Flashback {4}{W}`. A reminder parenthetical is not rules text (CR 702.34). -/
 def parseFlashback (line : String) : Option CardPart :=
   match (after? (normLine line) "flashback ").bind nonemptyMana? with
@@ -2791,6 +3080,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseCantBeCountered line) n <|>
     sole (parseCastAsThoughFlash line) n <|>
     (parseStaticGets line).map (·, n) <|>
+    sole (parseCreaturesWithPlusOneHaveMenace line) n <|>
     sole (parseYouCastNoncreatureAmass line) n <|>
     sole (parseYouAttackAmass line) n <|>
     sole (parseEnterOrAttackRecruit cardName line) n <|>
@@ -2798,6 +3088,8 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseDiesAmass cardName line) n <|>
     sole (parseEnterSearchForest cardName line) n <|>
     sole (parseGraveyardReturn line) n <|>
+    carry (parseOwnerShuffleDraw cardName line n) <|>
+    carry (parseReturnFromGyAttach line n) <|>
     carry (parseEnterExileOppGyLoseLife cardName line n) <|>
     sole (parseCostReduction line) n <|>
     sole (parseAttackTriggered line) n <|>
@@ -2828,11 +3120,15 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseCantAttackUnlessNOther cardName line) n <|>
     sole (parseArtifactYouControlEntersDraw line) n <|>
     sole (parseUpkeepCreateCreature line) n <|>
+    sole (parseYourEndStepDraw line) n <|>
     carry (parseEnterCreateThenAttach cardName line n) <|>
     carry (parseEnterAmassThenAttach cardName line n) <|>
+    carry (parseEnterAttachToTarget cardName line n) <|>
     sole (parseFlashback line) n <|>
+    sole (parseWard line) n <|>
     sole (parseCombatDamageLoot cardName line) n <|>
     sole (parseAdditionalCostSacrificeOrPay line) n <|>
+    carry (parseEnchant line n) <|>
     (parseEquippedGets line).map (·, n) <|>
     sole (parseEquip line) n <|>
     spellActions (actionsFromText cardName line n)
@@ -4797,5 +5093,108 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "Flashback {4}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)" ==
   parseOracleParts (name := "") "Flashback {4}{W}"
 #guard parseOracleParts (name := "") "Flashback" == none
+#guard parseOracleParts (name := "")
+  "Draw a card. If this spell was cast from a graveyard, draw two cards instead." ==
+  some [.actions [
+    .ifElse (.happened (.castSpellFromGraveyard .this) .gameStart)
+      [.draw (.controller .this) 2]
+      [.draw (.controller .this) 1]]]
+#guard parseOracleParts (name := "")
+  "Amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead." ==
+  some [.actions [
+    .ifElse (.happened (.castSpellFromGraveyard .this) .gameStart)
+      [.keyword (.controller .this) (.amass .goblin 3)]
+      [.keyword (.controller .this) (.amass .goblin 1)]]]
+#guard parseOracleParts (name := "") "Draw a card." == none
+#guard parseOracleParts (name := "")
+  "Draw a card. If this spell was cast from a graveyard, amass Goblins 3 instead." == none
+#guard parseOracleParts (name := "")
+  "Put two +1/+1 counters on target creature you control. Then it fights target creature an opponent controls." ==
+  some [.actions [
+    .putCounter
+      (.target 1 (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this)]))
+      .plusOnePlusOne 2,
+    .fight (.targetReference 1)
+      (.target 2 (.intersection [
+        .permanent, .cardType .creature,
+        .controlled (.opponent (.controller .this))]))]]
+#guard parseOracleParts (name := "") "Enchant creature" ==
+  some [.ability (.keywordWithTarget .enchant 1
+    (.intersection [.permanent, .cardType .creature]))]
+#guard parseOracleParts (name := "") "Ward {3}" ==
+  some [.ability (.keywordWithCost .ward [.mana [.generic 3]])]
+#guard parseOracleParts (name := "") "Ward {U}" == none
+#guard parseOracleParts (name := "")
+  "Enchanted creature gets +2/+2 and has flying." ==
+  some [
+    .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
+    .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
+    .ability (.static (.gainAbility (.hostOf .this) (.keyword .flying)))]
+#guard parseOracleParts (name := "")
+  "Equipped creature gets +2/+2 and has ward {1}." ==
+  some [
+    .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
+    .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
+    .ability (.static (.gainAbility (.hostOf .this)
+      (.keywordWithCost .ward [.mana [.generic 1]])))]
+#guard parseOracleParts (name := "Gandalf, Wandering Wizard")
+  "{6}: Gandalf's owner shuffles him into their library and draws three cards." ==
+  some [.ability (.activated [.mana [.generic 6]]
+    (.sequence [
+      .defineSelectorVariable 1 (.owner (.source .this)),
+      .shuffleIntoOwnersLibrary (.source .this),
+      .draw (.variable 1) 3]))]
+#guard parseOracleParts (name := "")
+  "{2}{W/U}{W/U}: Return this card from your graveyard to the battlefield attached to target creature you control with power 1 or less. Activate only as a sorcery." ==
+  some [.ability (.graveyardActivatedIf
+    (.timeToCastSorcery (.controller .this))
+    [.mana [.generic 2, .hybrid .white .blue, .hybrid .white .blue]]
+    (.putOntoBattlefieldInState
+      (.intersection [.inGraveyard, .source .this])
+      [.attachedTo
+        (.target 1 (.intersection [
+          .permanent, .cardType .creature, .controlled (.controller .this),
+          .powerAtMost (Value.int 1)]))]))]
+#guard parseOracleParts (name := "")
+  "When this Equipment enters, attach it to target Dwarf you control." ==
+  some [.ability (.triggered (.enter .this)
+    (.attach .this
+      (.target 1 (.intersection [
+        .permanent, .cardType .creature, .subtype .dwarf,
+        .controlled (.controller .this)]))))]
+#guard parseOracleParts (name := "")
+  "Each creature you control with a +1/+1 counter on it has menace." ==
+  some [.ability (.static (.gainAbility
+    (.intersection [
+      .permanent, .cardType .creature, .controlled (.controller .this),
+      .hasCounter .plusOnePlusOne])
+    (.keyword .menace)))]
+#guard parseOracleParts (name := "")
+  "At the beginning of your end step, draw a card." ==
+  some [.ability (.triggered (.endStep (.controller .this))
+    (.draw (.controller .this) 1))]
+#guard parseOracleParts (name := "")
+  "At the beginning of your end step, draw two cards." == none
+#guard parseOracleParts (name := "")
+  "Search your library for a legendary creature card, reveal it, put it into your hand, then shuffle." ==
+  some [.actions [
+    .searchLibraryThenShuffle (.controller .this) [
+      .defineSelectorVariable 1
+        (.selected (.controller .this) (.range 1 1)
+          (.intersection [
+            .inLibrary, .cardType .creature, .supertype .legendary])),
+      .reveal (.variable 1),
+      .returnToHand (.variable 1)]]]
+#guard parseOracleParts (name := "") "Creatures you control get +1/+1." ==
+  some [
+    .ability (.static (.addPower
+      (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this)])
+      (Value.int 1))),
+    .ability (.static (.addToughness
+      (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this)])
+      (Value.int 1)))]
 
 end Mtg.Engine

@@ -34,8 +34,10 @@ Esgaroth Garrison, Gundabad Opportunist, Gigantic Big Bear,
 Bothersome Noisemaker, Fearsome Goblin Pair, Goblin-town Flunkies,
 Misty Mountains Raider, Bard's Company, Rage into the Valley,
 Gathering of Darkness, Sound the Trumpets, Fateful Discovery,
-Chief Warg's Company, Dwarven Shortsword, Goblin Plate Mail, and
-Moment of Glory
+Chief Warg's Company, Dwarven Shortsword, Goblin Plate Mail,
+Moment of Glory, Plunder the Trollshaws, Tidings of War,
+Eagle's Rescue, Gandalf, Wandering Wizard, Troll Negotiations,
+Dwarven Mattock, Great Ugly-Looking Goblin, and The Arkenstone
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -3207,66 +3209,324 @@ def momentOfGlory : CardDef :=
 #guard momentOfGlory.manaCost == ManaCost.ofColor .white
 #guard momentOfGlory.oracleText == momentOfGloryOracle
 
+/-- Gatherer Oracle text for Plunder the Trollshaws. -/
+def plunderTheTrollshawsOracle : String :=
+  "Draw a card. If this spell was cast from a graveyard, draw two cards instead.\nFlashback {3}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+
+def plunderTheTrollshawsDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Plunder the Trollshaws",
+    .manaCost [.generic 1, .mono .blue],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Plunder the Trollshaws") plunderTheTrollshawsOracle).get!
+
 def plunderTheTrollshaws : CardDef :=
-  instant "Plunder the Trollshaws" (ManaCost.ofGenericAndColor 1 .blue)
-    "Draw a card. If this spell was cast from a graveyard, draw two cards instead.\nFlashback {3}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
-    (some (Effect.drawIfFromGy 1 2))
-    (flashback := some (ManaCost.ofGenericAndColor 3 .blue))
+  plunderTheTrollshawsDefinition.toCardDef
+    (oracleText := plunderTheTrollshawsOracle)
+
+#guard plunderTheTrollshawsDefinition == .card [
+  .name "Plunder the Trollshaws",
+  .manaCost [.generic 1, .mono .blue],
+  .type .instant,
+  .actions [
+    .ifElse (.happened (.castSpellFromGraveyard .this) .gameStart)
+      [.draw (.controller .this) 2]
+      [.draw (.controller .this) 1]],
+  .ability (.keywordWithCost .flashback [.mana [.generic 3, .mono .blue]])]
+
+#guard plunderTheTrollshaws.spellEffect == some (Effect.drawIfFromGy 1 2)
+#guard plunderTheTrollshaws.flashback == some (ManaCost.ofGenericAndColor 3 .blue)
+#guard plunderTheTrollshaws.manaCost == ManaCost.ofGenericAndColor 1 .blue
+#guard plunderTheTrollshaws.oracleText == plunderTheTrollshawsOracle
+
+/-- Gatherer Oracle text for Tidings of War. -/
+def tidingsOfWarOracle : String :=
+  "Amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead. (To amass Goblins X, put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+
+def tidingsOfWarDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Tidings of War",
+    .manaCost [.mono .red],
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Tidings of War") tidingsOfWarOracle).get!
 
 def tidingsOfWar : CardDef :=
-  sorcery "Tidings of War" (ManaCost.ofColor .red)
-    "Amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead. (To amass Goblins X, put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
-    (some (Effect.amassGoblinsOrFromGy 1 3))
-    (flashback := some (ManaCost.ofGenericAndColor 3 .red))
+  tidingsOfWarDefinition.toCardDef
+    (oracleText := tidingsOfWarOracle)
+
+#guard tidingsOfWarDefinition == .card [
+  .name "Tidings of War",
+  .manaCost [.mono .red],
+  .type .sorcery,
+  .actions [
+    .ifElse (.happened (.castSpellFromGraveyard .this) .gameStart)
+      [.keyword (.controller .this) (.amass .goblin 3)]
+      [.keyword (.controller .this) (.amass .goblin 1)]],
+  .ability (.keywordWithCost .flashback [.mana [.generic 3, .mono .red]])]
+
+#guard tidingsOfWar.spellEffect == some (Effect.amassGoblinsOrFromGy 1 3)
+#guard tidingsOfWar.flashback == some (ManaCost.ofGenericAndColor 3 .red)
+#guard tidingsOfWar.manaCost == ManaCost.ofColor .red
+#guard tidingsOfWar.oracleText == tidingsOfWarOracle
+
+/-- Gatherer Oracle text for Eagle's Rescue. -/
+def eaglesRescueOracle : String :=
+  "Enchant creature\nEnchanted creature gets +2/+2 and has flying.\n{2}{W/U}{W/U}: Return this card from your graveyard to the battlefield attached to target creature you control with power 1 or less. Activate only as a sorcery."
+
+def eaglesRescueDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Eagle's Rescue",
+    .manaCost [.generic 2, .hybrid .white .blue, .hybrid .white .blue],
+    .type .enchantment,
+    .subtype .aura
+  ] ++ (parseOracleParts (name := "Eagle's Rescue") eaglesRescueOracle).get!
 
 def eaglesRescue : CardDef :=
-  enchantment "Eagle's Rescue" (ManaCost.ofGenericAndHybrids 2 .white .blue 2)
-    "Enchant creature\nEnchanted creature gets +2/+2 and has flying.\n{2}{W/U}{W/U}: Return this card from your graveyard to the battlefield attached to target creature you control with power 1 or less. Activate only as a sorcery."
-    (subtypes := #["Aura"])
-    (staticAbilities := #[.enchantedCreatureGetsAndHas 2 2 Keyword.flying])
-    (activatedAbilities := #[
-      activated (Effect.returnFromGyAttachPowerAtMost 1)
-        (ManaCost.ofGenericAndHybrids 2 .white .blue 2)
-        (activateFromGraveyard := true) (onlyAsSorcery := true)])
+  eaglesRescueDefinition.toCardDef
+    (oracleText := eaglesRescueOracle)
+
+#guard eaglesRescueDefinition == .card [
+  .name "Eagle's Rescue",
+  .manaCost [.generic 2, .hybrid .white .blue, .hybrid .white .blue],
+  .type .enchantment,
+  .subtype .aura,
+  .ability (.keywordWithTarget .enchant 1
+    (.intersection [.permanent, .cardType .creature])),
+  .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
+  .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
+  .ability (.static (.gainAbility (.hostOf .this) (.keyword .flying))),
+  .ability (.graveyardActivatedIf
+    (.timeToCastSorcery (.controller .this))
+    [.mana [.generic 2, .hybrid .white .blue, .hybrid .white .blue]]
+    (.putOntoBattlefieldInState
+      (.intersection [.inGraveyard, .source .this])
+      [.attachedTo
+        (.target 2 (.intersection [
+          .permanent, .cardType .creature, .controlled (.controller .this),
+          .powerAtMost (Value.int 1)]))]))]
+
+#guard eaglesRescue.isAura
+#guard eaglesRescue.staticAbilities == #[.enchantedCreatureGetsAndHas 2 2 Keyword.flying]
+#guard eaglesRescue.activatedAbilities == #[
+  activated (Effect.returnFromGyAttachPowerAtMost 1)
+    (ManaCost.ofGenericAndHybrids 2 .white .blue 2)
+    (activateFromGraveyard := true) (onlyAsSorcery := true)]
+#guard eaglesRescue.oracleText == eaglesRescueOracle
+
+/-- Gatherer Oracle text for Gandalf, Wandering Wizard. -/
+def gandalfWanderingWizardOracle : String :=
+  "Ward {3} (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {3}.)\n{6}: Gandalf's owner shuffles him into their library and draws three cards."
+
+def gandalfWanderingWizardDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Gandalf, Wandering Wizard",
+    .manaCost [.generic 4, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .avatar,
+    .subtype .wizard,
+    .power 4,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Gandalf, Wandering Wizard") gandalfWanderingWizardOracle).get!
 
 def gandalfWanderingWizard : CardDef :=
-  legendaryCreature "Gandalf, Wandering Wizard" (ManaCost.ofGenericAndColor 4 .blue)
-    #["Avatar", "Wizard"] 4 5
-    (oracleText := "Ward {3} (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {3}.)\n{6}: Gandalf's owner shuffles him into their library and draws three cards.")
-    (ward := some 3)
-    (activatedAbilities := #[
-      activated (Effect.ownerShuffleSourceDraw 3) (ManaCost.ofGeneric 6)])
+  gandalfWanderingWizardDefinition.toCardDef
+    (oracleText := gandalfWanderingWizardOracle)
+
+#guard gandalfWanderingWizardDefinition == .card [
+  .name "Gandalf, Wandering Wizard",
+  .manaCost [.generic 4, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .avatar,
+  .subtype .wizard,
+  .power 4,
+  .toughness 5,
+  .ability (.keywordWithCost .ward [.mana [.generic 3]]),
+  .ability (.activated [.mana [.generic 6]]
+    (.sequence [
+      .defineSelectorVariable 1 (.owner (.source .this)),
+      .shuffleIntoOwnersLibrary (.source .this),
+      .draw (.variable 1) 3]))]
+
+#guard gandalfWanderingWizard.ward == some 3
+#guard gandalfWanderingWizard.activatedAbilities == #[
+  activated (Effect.ownerShuffleSourceDraw 3) (ManaCost.ofGeneric 6)]
+#guard gandalfWanderingWizard.oracleText == gandalfWanderingWizardOracle
+
+/-- Gatherer Oracle text for Troll Negotiations. -/
+def trollNegotiationsOracle : String :=
+  "Put two +1/+1 counters on target creature you control. Then it fights target creature an opponent controls. (Each deals damage equal to its power to the other.)"
+
+def trollNegotiationsDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Troll Negotiations",
+    .manaCost [.generic 2, .mono .green, .mono .green],
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Troll Negotiations") trollNegotiationsOracle).get!
 
 def trollNegotiations : CardDef :=
-  sorcery "Troll Negotiations" (ManaCost.ofGenericAndColors 2 [.green, .green])
-    "Put two +1/+1 counters on target creature you control. Then it fights target creature an opponent controls. (Each deals damage equal to its power to the other.)"
-    (some (Effect.plusOneThenFight 2))
+  trollNegotiationsDefinition.toCardDef
+    (oracleText := trollNegotiationsOracle)
+
+#guard trollNegotiationsDefinition == .card [
+  .name "Troll Negotiations",
+  .manaCost [.generic 2, .mono .green, .mono .green],
+  .type .sorcery,
+  .actions [
+    .putCounter
+      (.target 1 (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this)]))
+      .plusOnePlusOne 2,
+    .fight (.targetReference 1)
+      (.target 2 (.intersection [
+        .permanent, .cardType .creature,
+        .controlled (.opponent (.controller .this))]))]]
+
+#guard trollNegotiations.spellEffect == some (Effect.plusOneThenFight 2)
+#guard trollNegotiations.oracleText == trollNegotiationsOracle
+
+/-- Gatherer Oracle text for Dwarven Mattock. -/
+def dwarvenMattockOracle : String :=
+  "When this Equipment enters, attach it to target Dwarf you control.\nEquipped creature gets +2/+2 and has ward {1}. (Whenever equipped creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {1}.)\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
+
+def dwarvenMattockDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Dwarven Mattock",
+    .manaCost [.generic 2],
+    .type .artifact,
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "Dwarven Mattock") dwarvenMattockOracle).get!
 
 def dwarvenMattock : CardDef :=
-  equipment "Dwarven Mattock" (ManaCost.ofGeneric 2)
-    "When this Equipment enters, attach it to target Dwarf you control.\nEquipped creature gets +2/+2 and has ward {1}. (Whenever equipped creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {1}.)\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
-    (ManaCost.ofGeneric 3)
-    (triggeredAbilities := #[.onEnterAttachToSubtype "Dwarf"])
-    (staticAbilities := #[.equippedCreatureGetsAndWard 2 2 1])
+  dwarvenMattockDefinition.toCardDef
+    (oracleText := dwarvenMattockOracle)
+
+#guard dwarvenMattockDefinition == .card [
+  .name "Dwarven Mattock",
+  .manaCost [.generic 2],
+  .type .artifact,
+  .subtype .equipment,
+  .ability (.triggered (.enter .this)
+    (.attach .this
+      (.target 1 (.intersection [
+        .permanent, .cardType .creature, .subtype .dwarf,
+        .controlled (.controller .this)])))),
+  .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
+  .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
+  .ability (.static (.gainAbility (.hostOf .this)
+    (.keywordWithCost .ward [.mana [.generic 1]]))),
+  .ability (.keywordWithCost .equip [.mana [.generic 3]])]
+
+#guard dwarvenMattock.triggeredAbilities == #[.onEnterAttachToSubtype "Dwarf"]
+#guard dwarvenMattock.staticAbilities == #[.equippedCreatureGetsAndWard 2 2 1]
+#guard dwarvenMattock.activatedAbilities == #[equipAbility (ManaCost.ofGeneric 3)]
+#guard dwarvenMattock.oracleText == dwarvenMattockOracle
+
+/-- Gatherer Oracle text for Great Ugly-Looking Goblin. -/
+def greatUglyLookingGoblinOracle : String :=
+  "Each creature you control with a +1/+1 counter on it has menace. (It can't be blocked except by two or more creatures.)\n//ADV//\nClap! Snap! {1}{B}\nSorcery — Adventure\nAmass Goblins 2. (Then exile this card. You may cast the creature later from exile.)"
+
+def greatUglyLookingGoblinDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Great Ugly-Looking Goblin",
+    .manaCost [.generic 5, .mono .black],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .soldier,
+    .power 4,
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Great Ugly-Looking Goblin") greatUglyLookingGoblinOracle).get!
 
 def greatUglyLookingGoblin : CardDef :=
-  creature "Great Ugly-Looking Goblin" (ManaCost.ofGenericAndColor 5 .black)
-    #["Goblin", "Soldier"] 4 4
-    (oracleText := "Each creature you control with a +1/+1 counter on it has menace. (It can't be blocked except by two or more creatures.)\n//ADV//\nClap! Snap! {1}{B}\nSorcery — Adventure\nAmass Goblins 2. (Then exile this card. You may cast the creature later from exile.)")
-    (staticAbilities := #[.creaturesYouControlWithPlusOneHaveMenace])
-    (adventure := some (adventure "Clap! Snap!" (ManaCost.ofGenericAndColor 1 .black)
-      "Amass Goblins 2. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.amassGoblins 2)))
+  greatUglyLookingGoblinDefinition.toCardDef
+    (oracleText := greatUglyLookingGoblinOracle)
+
+#guard greatUglyLookingGoblinDefinition == .card [
+  .name "Great Ugly-Looking Goblin",
+  .manaCost [.generic 5, .mono .black],
+  .type .creature,
+  .subtype .goblin,
+  .subtype .soldier,
+  .power 4,
+  .toughness 4,
+  .ability (.static (.gainAbility
+    (.intersection [
+      .permanent, .cardType .creature, .controlled (.controller .this),
+      .hasCounter .plusOnePlusOne])
+    (.keyword .menace))),
+  .alternative [
+    .name "Clap! Snap!",
+    .manaCost [.generic 1, .mono .black],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [.keyword (.controller .this) (.amass .goblin 2)]]]
+
+#guard greatUglyLookingGoblin.staticAbilities == #[.creaturesYouControlWithPlusOneHaveMenace]
+#guard greatUglyLookingGoblin.adventure == some {
+  name := "Clap! Snap!"
+  manaCost := ManaCost.ofGenericAndColor 1 .black
+  types := #[.sorcery]
+  subtypes := #["Adventure"]
+  oracleText := "amass Goblins 2"
+  spellEffect := some (Effect.amassGoblins 2) }
+#guard greatUglyLookingGoblin.oracleText == greatUglyLookingGoblinOracle
+
+/-- Gatherer Oracle text for The Arkenstone. -/
+def theArkenstoneOracle : String :=
+  "Creatures you control get +1/+1.\nAt the beginning of your end step, draw a card.\n//ADV//\nSeek the Heart {2}{W}\nSorcery — Adventure\nSearch your library for a legendary creature card, reveal it, put it into your hand, then shuffle. (Then exile this card. You may cast the artifact later from exile.)"
+
+def theArkenstoneDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "The Arkenstone",
+    .manaCost [.generic 5],
+    .type .artifact,
+    .supertype .legendary
+  ] ++ (parseOracleParts (name := "The Arkenstone") theArkenstoneOracle).get!
 
 def theArkenstone : CardDef :=
-  card "The Arkenstone" #[.artifact] (ManaCost.ofGeneric 5)
-    (oracleText := "Creatures you control get +1/+1.\nAt the beginning of your end step, draw a card.\n//ADV//\nSeek the Heart {2}{W}\nSorcery — Adventure\nSearch your library for a legendary creature card, reveal it, put it into your hand, then shuffle. (Then exile this card. You may cast the artifact later from exile.)")
-    (supertypes := #[.legendary])
-    (staticAbilities := #[.creaturesYouControlGet 1 1])
-    (triggeredAbilities := #[.onYourEndStepDraw])
-    (adventure := some (adventure "Seek the Heart" (ManaCost.ofGenericAndColor 2 .white)
-      "Search your library for a legendary creature card, reveal it, put it into your hand, then shuffle. (Then exile this card. You may cast the artifact later from exile.)"
-      (Effect.searchLegendaryCreatureToHand)))
+  theArkenstoneDefinition.toCardDef
+    (oracleText := theArkenstoneOracle)
+
+#guard theArkenstoneDefinition == .card [
+  .name "The Arkenstone",
+  .manaCost [.generic 5],
+  .type .artifact,
+  .supertype .legendary,
+  .ability (.static (.addPower
+    (.intersection [
+      .permanent, .cardType .creature, .controlled (.controller .this)])
+    (Value.int 1))),
+  .ability (.static (.addToughness
+    (.intersection [
+      .permanent, .cardType .creature, .controlled (.controller .this)])
+    (Value.int 1))),
+  .ability (.triggered (.endStep (.controller .this))
+    (.draw (.controller .this) 1)),
+  .alternative [
+    .name "Seek the Heart",
+    .manaCost [.generic 2, .mono .white],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [
+      .searchLibraryThenShuffle (.controller .this) [
+        .defineSelectorVariable 1
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [
+              .inLibrary, .cardType .creature, .supertype .legendary])),
+        .reveal (.variable 1),
+        .returnToHand (.variable 1)]]]]
+
+#guard theArkenstone.staticAbilities == #[.creaturesYouControlGet 1 1]
+#guard theArkenstone.triggeredAbilities == #[.onYourEndStepDraw]
+#guard theArkenstone.adventure == some {
+  name := "Seek the Heart"
+  manaCost := ManaCost.ofGenericAndColor 2 .white
+  types := #[.sorcery]
+  subtypes := #["Adventure"]
+  oracleText := "search your library for a legendary creature card, reveal it, put it into your hand, then shuffle"
+  spellEffect := some Effect.searchLegendaryCreatureToHand }
+#guard theArkenstone.oracleText == theArkenstoneOracle
 
 def bolgsCompany : CardDef :=
   (TraditionalCardDefinition.card [
