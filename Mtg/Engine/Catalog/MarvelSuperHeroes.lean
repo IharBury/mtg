@@ -1077,11 +1077,12 @@ def arnimZolaBioFanatic : CardDef :=
     .toughness 3,
     .ability
       (.activatedIf
-        (.countAtLeast
-          (.intersection [
-            .inGraveyard,
-            .cardType .creature,
-            .owner (.controller .this)])
+        (.greaterOrEqual
+          (.count
+            (.intersection [
+              .inGraveyard,
+              .cardType .creature,
+              .owner (.controller .this)]))
           2)
         [.mana [.generic 3], .tapSymbol]
         (.createTokens
@@ -1273,7 +1274,7 @@ def theMastersOfEvil : CardDef :=
         (.searchLibraryThenShuffle
           (.controller .this)
           [
-            .defineVariable 1
+            .defineSelectorVariable 1
               (.selected
                 (.controller .this)
                 (.range 1 1)
@@ -2372,11 +2373,12 @@ def undercoverSkrull : CardDef :=
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [
             .addPower .this (Value.int 2),
@@ -2750,11 +2752,12 @@ def killmongerScourgeOfWakanda : CardDef :=
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [.addPower .this (Value.int 2),
            .addToughness .this (Value.int 1)]))

@@ -226,7 +226,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match g.findObject? id with
       | none => g.logMsg "The target is no longer legal"
       | some o =>
-        let mv := o.printed.manaValue
+        -- Calculate while the spell is still on the stack. Countering
+        -- moves it off the stack, where `{X}` becomes 0 (CR 202.3e).
+        let mv := g.objectManaValue o
         let g := g.counterStackSpell id
         if mv <= n then g.beginRecruit controller else g
     | _ => g.logMsg "The target is no longer legal"

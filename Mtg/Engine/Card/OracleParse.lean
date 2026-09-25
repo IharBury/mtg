@@ -222,6 +222,22 @@ Currently recognized:
 - `Whenever <this card> enters or attacks, recruit.`
   Recruit is a keyword action of this card's controller. A trailing reminder
   parenthetical is not rules text (CR 207.2).
+- `You draw a card and lose 1 life.`
+  One card and 1 life. The player is this spell's controller.
+- `Amass <subtype>s N.`
+  Amass is a keyword action of this spell's controller (CR 701.45). The
+  subtype is printed in the plural (`Goblins`). `N` is a positive count.
+  A trailing reminder parenthetical is not rules text (CR 207.2).
+- `Return up to one target <card type> card from your graveyard to your hand.`
+  Up to one target means zero or one (CR 115.1). The card is in your graveyard.
+- `Counter target spell. If that spell's mana value was N or less, recruit.`
+  The spell is one target. Its mana value is recorded before it is
+  countered, while it is still on the stack, so the chosen value of `{X}`
+  counts (CR 202.3 / 202.3e / 107.3a). Recruit happens only when that
+  recorded value is less than or equal to `N`. Recruit is a keyword action
+  of this spell's controller.
+  A trailing reminder parenthetical is not rules text (CR 207.2).
+  Successive spell lines are one effect, in printed order.
 -/
 
 namespace Mtg.Engine
@@ -1710,6 +1726,32 @@ def parseCounterExilePermanentMayCast (text : String) (n : Nat) :
         exileId)
   | _ => none
 
+/-- `If that spell's mana value was 2 or less, recruit.`
+`N` is a positive printed number. Recruit is the effect of that check. -/
+def recruitIfSpellMvAtMost? (sentence : String) : Option Nat :=
+  (between? (normSentence sentence)
+      "if that spell's mana value was " " or less, recruit").bind positiveCount
+
+/-- `Counter target spell. If that spell's mana value was N or less, recruit.`
+The spell is target `n`. Before it is countered, value variable `n` records
+the greatest mana value of that target, which on the stack includes the
+chosen `{X}` (CR 202.3e). Recruit happens only when that variable is less
+than or equal to `N`. -/
+def parseCounterThenRecruitIfMv (text : String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match sentences text with
+  | [counter, cond] =>
+    if !sentenceIs counter "counter target spell" then none
+    else
+      (recruitIfSpellMvAtMost? cond).map fun k =>
+        ([
+          .defineValueVariable n (.greatestManaValue (.target n .spell)),
+          .counter (.targetReference n),
+          .if (.lessOrEqual (.variable n) (.nat k))
+            [.keyword (.controller .this) .recruit]
+        ], n + 1)
+  | _ => none
+
 /-- `You may play an additional land this turn.` One extra land play, until end of turn
 (CR 305.2b). -/
 def parseAdditionalLand (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -1720,6 +1762,53 @@ def parseAdditionalLand (sentence : String) (n : Nat) : Option (CardAction × Na
         .endOfTurn,
       n)
   else none
+
+/-- `You draw a card and lose 1 life.` One card and 1 life. -/
+def parseYouDrawCardLoseLife (sentence : String) : Option CardAction :=
+  match (after? (normSentence sentence) "you draw ").bind (split2? · " and lose ") with
+  | some (drawText, lifeText) =>
+    match parseCardCount drawText, lifeAmount? ("lose " ++ lifeText) "lose " with
+    | some 1, some 1 =>
+      some (.sequence [
+        .draw (.controller .this) 1,
+        .loseLife (.controller .this) 1])
+    | _, _ => none
+  | none => none
+
+/-- The subtype printed in `amass Goblins`: the plural drops a trailing `s`. -/
+def amassSubtype? (s : String) : Option CardSubtype :=
+  if s.endsWith "s" && s.length > 1 then subtypeOfOracle? (s.dropEnd 1).copy else none
+
+/-- `Amass Goblins 1.` The controller amasses that subtype that many (CR 701.45).
+The subtype is plural. `N` is a positive count. -/
+def parseAmass (sentence : String) : Option CardAction :=
+  (after? (normSentence sentence) "amass ").bind fun rest =>
+    (split2? rest " ").bind fun (typeText, nText) =>
+      match amassSubtype? typeText, positiveCount nText with
+      | some st, some n =>
+        some (.keyword (.controller .this) (.amass st (.nat n)))
+      | _, _ => none
+
+/-- `Return up to one target creature card from your graveyard to your hand.`
+Up to one target is zero or one (CR 115.1). That card is in your graveyard.
+The target is numbered `n`. -/
+def parseReturnUpToOneFromYourGraveyard (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  (between? (normSentence sentence)
+      "return up to one target " " from your graveyard to your hand").bind
+    fun obj =>
+      (before? obj " card").bind typeOfOracle? |>.map fun t =>
+        (.returnToHand
+          (.targets n (.range 0 1)
+            (.intersection [
+              .inGraveyard,
+              .cardType t,
+              .owner (.controller .this)])),
+         n + 1)
+
+/-- A parsed action that does not choose a new target. -/
+def unchanged (parsed : Option CardAction) (n : Nat) : Option (CardAction × Nat) :=
+  parsed.map (·, n)
 
 /-- One sentence. The first parser that accepts it wins. -/
 def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -1734,6 +1823,9 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
     parsePutPlusOneUpToOne sentence n <|>
     parseTargetPlayerGainsLife sentence n <|>
     parseYouGainLife sentence n <|>
+    unchanged (parseYouDrawCardLoseLife sentence) n <|>
+    unchanged (parseAmass sentence) n <|>
+    parseReturnUpToOneFromYourGraveyard sentence n <|>
     parseAdditionalLand sentence n <|>
     parseScry sentence n <|>
     parseOwnerPutsTopOrBottom sentence n <|>
@@ -1750,6 +1842,7 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
   let oneAction (parsed : Option (CardAction × Nat)) : Option (List CardAction × Nat) :=
     parsed.map fun (action, n') => ([action], n')
   parseCounterExilePermanentMayCast text n <|>
+    parseCounterThenRecruitIfMv text n <|>
     oneAction (parsePumpExileIfDies text n) <|>
     oneAction (parsePutPlusOneThenGains text n) <|>
     List.foldlM (fun (acc, n) s =>
@@ -1835,18 +1928,6 @@ def parsePutPlusOneOnEachYouControl (sentence : String) : Option CardAction :=
       if sel == creaturesYouControl then
         some (.putCounter creaturesYouControl .plusOnePlusOne 1)
       else none
-    | _, _ => none
-  | none => none
-
-/-- `You draw a card and lose 1 life.` One card and 1 life. -/
-def parseYouDrawCardLoseLife (sentence : String) : Option CardAction :=
-  match (after? (normSentence sentence) "you draw ").bind (split2? · " and lose ") with
-  | some (drawText, lifeText) =>
-    match parseCardCount drawText, lifeAmount? ("lose " ++ lifeText) "lose " with
-    | some 1, some 1 =>
-      some (.sequence [
-        .draw (.controller .this) 1,
-        .loseLife (.controller .this) 1])
     | _, _ => none
   | none => none
 
@@ -2395,20 +2476,6 @@ def parseCantBeCountered (line : String) : Option CardPart :=
     some (.ability (.stackStatic (.forbid (.counter .this))))
   else none
 
-/-- The subtype printed in `amass Goblins`: the plural drops a trailing `s`. -/
-def amassSubtype? (s : String) : Option CardSubtype :=
-  if s.endsWith "s" && s.length > 1 then subtypeOfOracle? (s.dropEnd 1).copy else none
-
-/-- `Amass Goblins 1.` The controller amasses that subtype that many (CR 701.45).
-The subtype is plural. `N` is a positive count. -/
-def parseAmass (sentence : String) : Option CardAction :=
-  (after? (normSentence sentence) "amass ").bind fun rest =>
-    (split2? rest " ").bind fun (typeText, nText) =>
-      match amassSubtype? typeText, positiveCount nText with
-      | some st, some n =>
-        some (.keyword (.controller .this) (.amass st (.nat n)))
-      | _, _ => none
-
 /-- A noncreature spell this object's controller casts. -/
 def noncreatureSpellYouCast : Selector :=
   .intersection [.spell, .not (.cardType .creature), youControl]
@@ -2611,6 +2678,22 @@ def parseAdventure (cardName : String) (lines : List String) (n : Nat) :
                 if actions.isEmpty then none
                 else some (nameParts ++ typeParts ++ [.actions actions])
 
+/-- Steps of a sequence, in order. A sequence is those steps. -/
+def flattenAction : CardAction → List CardAction
+  | .sequence as => as.flatMap flattenAction
+  | action => [action]
+
+/-- Successive spell lines are one effect, in printed order. -/
+def mergeConsecutiveActions (parts : List CardPart) : List CardPart :=
+  go parts []
+where
+  go : List CardPart → List CardPart → List CardPart
+    | [], acc => acc.reverse
+    | .actions here :: rest, .actions earlier :: acc =>
+      go rest
+        (.actions (earlier.flatMap flattenAction ++ here.flatMap flattenAction) :: acc)
+    | part :: rest, acc => go rest (part :: acc)
+
 end OracleParts
 
 open OracleParts
@@ -2623,12 +2706,13 @@ article, means this card, as do `this` and `this <type>`.
 `Gollum the Abandoned` refers to itself as `Gollum`.
 Returns `none` when a line, sentence, mode, or Adventure face is not
 recognized. Reminder parentheticals are not rules text. Empty text is
-`some []`. -/
+`some []`. Successive spell lines are one effect, in printed order. -/
 def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   let lines :=
     text.splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
   let (main, adv) := splitAdventure lines
   (parseMainLines name main 1).bind fun (mainParts, n) =>
+    let mainParts := mergeConsecutiveActions mainParts
     match adv with
     | [] => some mainParts
     | _ =>
@@ -4327,5 +4411,65 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "Whenever Bard's Company enters or attacks, recruit." == none
 #guard parseOracleParts (name := "")
   "Whenever this creature enters or attacks, draw a card." == none
+#guard parseOracleParts (name := "") "You draw a card and lose 1 life." ==
+  some [.actions [
+    .sequence [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1]]]
+#guard parseOracleParts (name := "") "You draw two cards and lose 1 life." == none
+#guard parseOracleParts (name := "") "You draw a card and lose 2 life." == none
+#guard parseOracleParts (name := "") "Amass Goblins 2." ==
+  some [.actions [.keyword (.controller .this) (.amass .goblin (.nat 2))]]
+#guard parseOracleParts (name := "")
+  "Amass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)" ==
+  parseOracleParts (name := "") "Amass Goblins 2."
+#guard parseOracleParts (name := "") "Amass Goblin 2." == none
+#guard parseOracleParts (name := "") "Amass Goblins 0." == none
+#guard parseOracleParts (name := "")
+  "You draw a card and lose 1 life.\nAmass Goblins 2." ==
+  some [.actions [
+    .draw (.controller .this) 1,
+    .loseLife (.controller .this) 1,
+    .keyword (.controller .this) (.amass .goblin (.nat 2))]]
+#guard parseOracleParts (name := "")
+  "Return up to one target creature card from your graveyard to your hand." ==
+  some [.actions [
+    .returnToHand
+      (.targets 1 (.range 0 1)
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this)]))]]
+#guard parseOracleParts (name := "")
+  "Return up to one target creature from your graveyard to your hand." == none
+#guard parseOracleParts (name := "")
+  "Return target creature card from your graveyard to your hand." == none
+#guard parseOracleParts (name := "")
+  "Return up to one target creature card from your graveyard to your hand.\nAmass Goblins 3." ==
+  some [.actions [
+    .returnToHand
+      (.targets 1 (.range 0 1)
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this)])),
+    .keyword (.controller .this) (.amass .goblin (.nat 3))]]
+#guard parseOracleParts (name := "")
+  "Counter target spell. If that spell's mana value was 2 or less, recruit." ==
+  some [.actions [
+    .defineValueVariable 1 (.greatestManaValue (.target 1 .spell)),
+    .counter (.targetReference 1),
+    .if (.lessOrEqual (.variable 1) 2)
+      [.keyword (.controller .this) .recruit]]]
+#guard parseOracleParts (name := "")
+  "Counter target spell. If that spell's mana value was 2 or less, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)" ==
+  parseOracleParts (name := "")
+    "Counter target spell. If that spell's mana value was 2 or less, recruit."
+#guard parseOracleParts (name := "")
+  "Counter target spell. If that spell's mana value was 2 or less, draw a card." == none
+#guard parseOracleParts (name := "")
+  "Counter target spell. If that spell's mana value was 0 or less, recruit." == none
+#guard parseOracleParts (name := "")
+  "Counter target creature. If that spell's mana value was 2 or less, recruit." == none
 
 end Mtg.Engine

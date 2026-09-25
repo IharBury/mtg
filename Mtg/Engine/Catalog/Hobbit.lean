@@ -32,7 +32,8 @@ Patient Instructor, Long Lake Nuisance, Lake-town Lookout,
 Giant's Boulder, Long-Bodied Grey Dog, Dori, Bearer of Friends,
 Esgaroth Garrison, Gundabad Opportunist, Gigantic Big Bear,
 Bothersome Noisemaker, Fearsome Goblin Pair, Goblin-town Flunkies,
-Misty Mountains Raider, and Bard's Company
+Misty Mountains Raider, Bard's Company, Rage into the Valley,
+Gathering of Darkness, and Sound the Trumpets
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -2939,40 +2940,93 @@ def bardsCompany : CardDef :=
 #guard bardsCompany.staticAbilities == #[.otherCreaturesGet #[] 1 1]
 #guard bardsCompany.triggeredAbilities == #[.onEnterOrAttackRecruit]
 
-def rageIntoTheValley : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Rage into the Valley. -/
+def rageIntoTheValleyOracle : String :=
+  "You draw a card and lose 1 life.\nAmass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+
+def rageIntoTheValleyDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Rage into the Valley",
     .manaCost [.generic 2, .mono .black],
-    .type .sorcery,
-    .actions [
-      .draw (.controller .this) 1,
-      .loseLife (.controller .this) 1,
-      .keyword (.controller .this) (.amass .goblin (.nat 2))]
-  ]).toCardDef
-    (oracleText := "You draw a card and lose 1 life.\nAmass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Rage into the Valley") rageIntoTheValleyOracle).get!
 
-def gatheringOfDarkness : CardDef :=
-  (TraditionalCardDefinition.card [
+def rageIntoTheValley : CardDef :=
+  rageIntoTheValleyDefinition.toCardDef
+    (oracleText := rageIntoTheValleyOracle)
+
+#guard rageIntoTheValleyDefinition == .card [
+  .name "Rage into the Valley",
+  .manaCost [.generic 2, .mono .black],
+  .type .sorcery,
+  .actions [
+    .draw (.controller .this) 1,
+    .loseLife (.controller .this) 1,
+    .keyword (.controller .this) (.amass .goblin (.nat 2))]]
+
+#guard rageIntoTheValley.spellEffect == some (Effect.drawLoseLifeThenAmass 2)
+#guard rageIntoTheValley.oracleText == rageIntoTheValleyOracle
+
+/-- Gatherer Oracle text for Gathering of Darkness. -/
+def gatheringOfDarknessOracle : String :=
+  "Return up to one target creature card from your graveyard to your hand.\nAmass Goblins 3. (Put three +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+
+def gatheringOfDarknessDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Gathering of Darkness",
     .manaCost [.generic 3, .mono .black],
-    .type .sorcery,
-    .actions [
-      .returnToHand
-        (.targets
-          1
-          (.range 0 1)
-          (.intersection [
-            .inGraveyard,
-            .cardType .creature,
-            .owner (.controller .this)])),
-      .keyword (.controller .this) (.amass .goblin (.nat 3))]
-  ]).toCardDef
-    (oracleText := "Return up to one target creature card from your graveyard to your hand.\nAmass Goblins 3. (Put three +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Gathering of Darkness") gatheringOfDarknessOracle).get!
+
+def gatheringOfDarkness : CardDef :=
+  gatheringOfDarknessDefinition.toCardDef
+    (oracleText := gatheringOfDarknessOracle)
+
+#guard gatheringOfDarknessDefinition == .card [
+  .name "Gathering of Darkness",
+  .manaCost [.generic 3, .mono .black],
+  .type .sorcery,
+  .actions [
+    .returnToHand
+      (.targets
+        1
+        (.range 0 1)
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this)])),
+    .keyword (.controller .this) (.amass .goblin (.nat 3))]]
+
+#guard gatheringOfDarkness.spellEffect == some (Effect.returnCreatureFromGyThenAmass 3)
+#guard gatheringOfDarkness.oracleText == gatheringOfDarknessOracle
+
+/-- Gatherer Oracle text for Sound the Trumpets. -/
+def soundTheTrumpetsOracle : String :=
+  "Counter target spell. If that spell's mana value was 2 or less, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+
+def soundTheTrumpetsDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Sound the Trumpets",
+    .manaCost [.generic 1, .mono .blue, .mono .blue],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Sound the Trumpets") soundTheTrumpetsOracle).get!
 
 def soundTheTrumpets : CardDef :=
-  instant "Sound the Trumpets" (ManaCost.ofGenericAndColors 1 [.blue, .blue])
-    "Counter target spell. If that spell's mana value was 2 or less, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
-    (some (Effect.counterThenRecruitIfMvAtMost 2))
+  soundTheTrumpetsDefinition.toCardDef
+    (oracleText := soundTheTrumpetsOracle)
+
+#guard soundTheTrumpetsDefinition == .card [
+  .name "Sound the Trumpets",
+  .manaCost [.generic 1, .mono .blue, .mono .blue],
+  .type .instant,
+  .actions [
+    .defineValueVariable 1 (.greatestManaValue (.target 1 .spell)),
+    .counter (.targetReference 1),
+    .if (.lessOrEqual (.variable 1) 2)
+      [.keyword (.controller .this) .recruit]]]
+
+#guard soundTheTrumpets.spellEffect == some (Effect.counterThenRecruitIfMvAtMost 2)
+#guard soundTheTrumpets.oracleText == soundTheTrumpetsOracle
 
 def fatefulDiscovery : CardDef :=
   (TraditionalCardDefinition.card [
@@ -3182,7 +3236,7 @@ def throrsMap : CardDef :=
         (.searchLibraryThenShuffle
           (.controller .this)
           [
-            .defineVariable 1
+            .defineSelectorVariable 1
               (.selected
                 (.controller .this)
                 (.range 1 1)
@@ -3305,7 +3359,7 @@ def oldThrush : CardDef :=
               .searchLibraryThenShuffle
                 (.controller .this)
                 [
-                  .defineVariable 1
+                  .defineSelectorVariable 1
                     (.selected
                       (.controller .this)
                       (.range 1 1)
@@ -3511,7 +3565,7 @@ def troopOfPonies : CardDef :=
         (.searchLibraryThenShuffle
           (.controller .this)
           [
-            .defineVariable 1
+            .defineSelectorVariable 1
               (.selected
                 (.controller .this)
                 (.range 0 2)

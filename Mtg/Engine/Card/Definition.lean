@@ -602,8 +602,6 @@ end Cost
 inductive Condition where
   /-- True when any object matching the selector exists. -/
   | any : Selector → Condition
-  /-- True when at least that many objects match the selector. -/
-  | countAtLeast : Selector → Nat → Condition
   /-- True when any target of the first selector matches the second
   (CR 115.1 / 601.2c). -/
   | targetsIncludeAny : Selector → Selector → Condition
@@ -621,6 +619,16 @@ inductive Condition where
   | turn : Selector → Condition
   /-- True when both conditions hold. -/
   | and : Condition → Condition → Condition
+  /-- True when the first value is less than the second. -/
+  | less : Value → Value → Condition
+  /-- True when the first value is less than or equal to the second. -/
+  | lessOrEqual : Value → Value → Condition
+  /-- True when the first value is greater than the second. -/
+  | greater : Value → Value → Condition
+  /-- True when the first value is greater than or equal to the second. -/
+  | greaterOrEqual : Value → Value → Condition
+  /-- True when the two values are equal. -/
+  | equal : Value → Value → Condition
 deriving Repr, Inhabited, BEq
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
@@ -804,8 +812,12 @@ inductive CardAction where
   Held-out cards are still in the library, but not at the top, bottom,
   or among the shuffled cards. -/
   | holdOutInLibrary : Selector → CardAction
-  /-- Bind the selected objects to this numbered variable. -/
-  | defineVariable : Nat → Selector → CardAction
+  /-- Bind the selected objects to this numbered selector variable. -/
+  | defineSelectorVariable : Nat → Selector → CardAction
+  /-- Record this value under the numbered variable. The value is computed
+  when the action resolves, so a later `Value.variable` sees that result
+  after the objects it measured have changed zones. -/
+  | defineValueVariable : Nat → Value → CardAction
   /-- Execute the given actions for each of the given objects, binding the
   numbered variable to the current object. -/
   | forEachVariable : Nat → Selector → List CardAction → CardAction
@@ -897,14 +909,14 @@ def valToInt? : Value → Option Int
   | .int p => some p
   | .nat p => some (Int.ofNat p)
   | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _
-  | .product _ _ => none
+  | .product _ _ | .variable _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
   | .nat n => some n
   | .int n => if n ≥ 0 then some n.toNat else none
   | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _
-  | .product _ _ => none
+  | .product _ _ | .variable _ => none
 
 /-- This object, or the source of this ability (CR 113.7). -/
 def isThisOrItsSource : Selector → Bool
@@ -1377,6 +1389,21 @@ def leftoverReturnCreatureFromGyThenAmass? : CardAction → Option Nat
     | _ => none
   | _ => none
 
+/-- Counter the targeted spell, then recruit if its mana value was at most `n`.
+The threshold is a constant. The mana value is the greatest mana value of
+the target, recorded in a value variable before the spell is countered. -/
+def leftoverCounterThenRecruitIfMvAtMost? : CardAction → Option Nat
+  | .sequence [
+      .defineValueVariable id (.greatestManaValue (.target spellId .spell)),
+      .counter (.targetReference spellId'),
+      .if (.lessOrEqual (.variable id') threshold)
+        [.keyword (.controller .this) .recruit]
+    ] =>
+    if id == spellId && spellId == spellId' && id == id' then
+      valToNat? threshold
+    else none
+  | _ => none
+
 /-- Target creature gets +P/+T and gains keywords. -/
 def leftoverPumpAndGrantKeywords? : CardAction → Option (Int × Int × Keywords)
   | .continuous effects _ =>
@@ -1702,7 +1729,7 @@ def leftoverSearchActions? : List CardAction → Option Effect
     | some among =>
       if among.basicLandInLibrary then some Effect.searchBasicLandTapped else none
     | none => none
-  | [.defineVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
+  | [.defineSelectorVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
     if id == id' && id == id'' then
       match sel.selectedAmong? with
       | some among =>
@@ -1715,7 +1742,7 @@ def leftoverSearchActions? : List CardAction → Option Effect
       | none => none
     else none
   | [
-      .defineVariable id sel,
+      .defineSelectorVariable id sel,
       .reveal (.variable id'),
       .putOntoBattlefieldInState
         (.selected _ (.range 1 1) (.variable id'')) [.tapped],
@@ -1978,7 +2005,7 @@ def leftoverExileThenReturnTapped? : CardAction → Option Selector
 /-- Find, reveal, and hold out a basic land while searching so shuffle
 does not mix it back in. -/
 def leftoverSearchBasicHoldOut? : List CardAction → Option Nat
-  | [.defineVariable id sel, .reveal (.variable id'), .holdOutInLibrary (.variable id'')] =>
+  | [.defineSelectorVariable id sel, .reveal (.variable id'), .holdOutInLibrary (.variable id'')] =>
     if id == id' && id == id'' then
       match sel.selectedAmong? with
       | some among => if among.basicLandInLibrary then some id else none
@@ -2752,40 +2779,43 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
     match leftoverReturnCreatureFromGyThenAmass? action with
     | some n => some (Effect.returnCreatureFromGyThenAmass n)
     | none =>
-      match leftoverTapScryDraw? action with
-      | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
+      match leftoverCounterThenRecruitIfMvAtMost? action with
+      | some n => some (Effect.counterThenRecruitIfMvAtMost n)
       | none =>
-        if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
-        else if leftoverDestroyArtOrLandNonflyers? action then
-          some Effect.destroyArtifactOrLandNonflyersCantBlock
-        else if leftoverDestroyCreatureSurveil? action then
-          some Effect.destroyCreatureSurveil
-        else if leftoverBecomeArtifactIndestructible? action then
-          some Effect.becomeArtifactGainIndestructible
-        else if leftoverPlusOneLifelinkIndestructible? action then
-          some Effect.plusOneLifelinkIndestructible
-        else if leftoverGrantVigilanceUnblockable? action then
-          some Effect.grantVigilanceUnblockable
-        else
-          match leftoverPumpThenExileTopPlay? action with
-          | some (p, t) => some (Effect.pumpThenExileTopPlay p t)
-          | none =>
-            match leftoverDestroyArtEnchGainLife? action with
-            | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
+        match leftoverTapScryDraw? action with
+        | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
+        | none =>
+          if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
+          else if leftoverDestroyArtOrLandNonflyers? action then
+            some Effect.destroyArtifactOrLandNonflyersCantBlock
+          else if leftoverDestroyCreatureSurveil? action then
+            some Effect.destroyCreatureSurveil
+          else if leftoverBecomeArtifactIndestructible? action then
+            some Effect.becomeArtifactGainIndestructible
+          else if leftoverPlusOneLifelinkIndestructible? action then
+            some Effect.plusOneLifelinkIndestructible
+          else if leftoverGrantVigilanceUnblockable? action then
+            some Effect.grantVigilanceUnblockable
+          else
+            match leftoverPumpThenExileTopPlay? action with
+            | some (p, t) => some (Effect.pumpThenExileTopPlay p t)
             | none =>
-              match leftoverMaySacArtifactOrDiscardDraw? action with
-              | some n => some (Effect.maySacArtifactOrDiscardDraw n)
+              match leftoverDestroyArtEnchGainLife? action with
+              | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
               | none =>
-                match leftoverDrawThreeDiscardUnlessArtifact? action with
-                | some _ => some Effect.drawThreeDiscardUnlessArtifact
+                match leftoverMaySacArtifactOrDiscardDraw? action with
+                | some n => some (Effect.maySacArtifactOrDiscardDraw n)
                 | none =>
-                  match leftoverReturnUpToTwoGyModal? action with
-                  | some _ => some Effect.returnUpToTwoGyModal
+                  match leftoverDrawThreeDiscardUnlessArtifact? action with
+                  | some _ => some Effect.drawThreeDiscardUnlessArtifact
                   | none =>
-                    match leftoverGainLifeSearchBasicPlusOne? action with
-                    | some n => some (Effect.gainLifeSearchBasicPlusOne n)
+                    match leftoverReturnUpToTwoGyModal? action with
+                    | some _ => some Effect.returnUpToTwoGyModal
                     | none =>
-                      leftoverPlusOneOnEachOtherSubtype? action
+                      match leftoverGainLifeSearchBasicPlusOne? action with
+                      | some n => some (Effect.gainLifeSearchBasicPlusOne n)
+                      | none =>
+                        leftoverPlusOneOnEachOtherSubtype? action
 
 /-- Enters-the-battlefield actions that compile to a named trigger. -/
 def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
@@ -2895,7 +2925,7 @@ def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
         some TriggeredAbility.onEnterSearchForest
       else none
     | none => none
-  | [.defineVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
+  | [.defineSelectorVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
     if id == id' && id == id'' then
       match sel.selectedAmong? with
       | some among =>
@@ -3062,6 +3092,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putIntoLibraryFromTop _ _ =>
                     continuousEffect none [] asAbility
                   | .actionId _ inner => compile inner asAbility
+                  | .defineValueVariable _ _ => continuousEffect none [] asAbility
                   | .loseLife _ _ => continuousEffect none [] asAbility
                   | .sacrifice _ => continuousEffect none [] asAbility
                   | .returnToHand _ => Effect.returnFromGraveyardToHand
@@ -3070,7 +3101,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .searchLibraryThenShuffle _ _ =>
                     continuousEffect none [] asAbility
                   | .holdOutInLibrary _ => continuousEffect none [] asAbility
-                  | .defineVariable _ _ => continuousEffect none [] asAbility
+                  | .defineSelectorVariable _ _ => continuousEffect none [] asAbility
                   | .forEachVariable _ _ _ => continuousEffect none [] asAbility
                   | .reveal _ => continuousEffect none [] asAbility
                   | .dealDamageEqualToPower _ _ | .fight _ _ =>
@@ -3169,8 +3200,8 @@ functions while this card is in a graveyard (CR 113.6). -/
 def compileConditional (cond : Condition) (costs : List Cost) (action : CardAction)
     (fromGraveyard : Bool) : Option ActivatedAbility :=
   match cond with
-  | .countAtLeast among n =>
-    if CardAction.leftoverYourGyCreatures? among && n == 2 then
+  | .greaterOrEqual (.count among) threshold =>
+    if CardAction.leftoverYourGyCreatures? among && valToNat? threshold == some 2 then
       some { activatedAbility costs action with
         onlyIfGyCreaturesAtLeast := 2
         activateFromGraveyard := fromGraveyard }
@@ -3192,7 +3223,9 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
       onlyDuringYourTurn := true
       activateFromGraveyard := fromGraveyard }
   | .any _ | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
-  | .didNotHappen _ _ | .and _ _ => none
+  | .didNotHappen _ _ | .and _ _
+  | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
+  | .equal _ _ => none
 
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost .equip costs =>
@@ -4049,12 +4082,14 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
   | .if (.and _ _) _ => b
-  | .if (.countAtLeast among n) inners =>
-    if n == 2 then
+  | .if (.greaterOrEqual (.count among) threshold) inners =>
+    if valToNat? threshold == some 2 then
       match CardAction.leftoverGetsIfGyCreatureCards? among inners with
       | some ab => { b with staticAbilities := b.staticAbilities.push ab }
       | none => b
     else b
+  | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
+  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
   | .replace (.enter who) actions =>
     if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersTapped? actions then
@@ -4545,6 +4580,7 @@ end TraditionalCardDefinition
 #guard (valToNat? (Value.greatestToughness .this)).isNone
 #guard (valToNat? (Value.count .this)).isNone
 #guard (valToNat? (Value.product (Value.count .this) (Value.int 2))).isNone
+#guard (valToNat? (Value.variable 1)).isNone
 #guard Range.range Value.x 1 != Range.range 0 1
 #guard Range.any != Range.range 0 0
 #guard Range.from Value.x != Range.from 1
@@ -5984,7 +6020,7 @@ end TraditionalCardDefinition
     .searchLibraryThenShuffle
       (.controller .this)
       [
-        .defineVariable 1
+        .defineSelectorVariable 1
           (.selected
             (.controller .this)
             (.range 1 1)
@@ -6031,7 +6067,7 @@ end TraditionalCardDefinition
       (.searchLibraryThenShuffle
         (.controller .this)
         [
-          .defineVariable 1
+          .defineSelectorVariable 1
             (.selected
               (.controller .this)
               (.range 1 1)
@@ -6056,7 +6092,7 @@ end TraditionalCardDefinition
             .searchLibraryThenShuffle
               (.controller .this)
               [
-                .defineVariable 1
+                .defineSelectorVariable 1
                   (.selected
                     (.controller .this)
                     (.range 1 1)
@@ -6079,7 +6115,7 @@ end TraditionalCardDefinition
         (.searchLibraryThenShuffle
           (.controller .this)
           [
-            .defineVariable 1
+            .defineSelectorVariable 1
               (.selected
                 (.controller .this)
                 (.range 1 1)
@@ -6100,7 +6136,7 @@ end TraditionalCardDefinition
           .searchLibraryThenShuffle
             (.controller .this)
             [
-              .defineVariable 1
+              .defineSelectorVariable 1
                 (.selected
                   (.controller .this)
                   (.range 1 1)
@@ -6287,7 +6323,7 @@ end TraditionalCardDefinition
       (.searchLibraryThenShuffle
         (.controller .this)
         [
-          .defineVariable 1
+          .defineSelectorVariable 1
             (.selected
               (.controller .this)
               (.range 1 1)
@@ -6864,7 +6900,7 @@ end TraditionalCardDefinition
       (.searchLibraryThenShuffle
         (.controller .this)
         [
-          .defineVariable 1
+          .defineSelectorVariable 1
             (.selected
               (.controller .this)
               (.range 1 1)
@@ -7311,6 +7347,41 @@ end TraditionalCardDefinition
             .owner (.controller .this)])),
       .keyword (.controller .this) (.amass .goblin (.nat 3))]) == Effect.returnCreatureFromGyThenAmass 3
 
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .defineValueVariable 1 (.greatestManaValue (.target 1 .spell)),
+      .counter (.targetReference 1),
+      .if (.lessOrEqual (.variable 1) 2)
+        [.keyword (.controller .this) .recruit]]) ==
+    Effect.counterThenRecruitIfMvAtMost 2
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .counter (.target 1 .spell),
+      .if (.lessOrEqual (.variable 1) 2)
+        [.keyword (.controller .this) .recruit]]) !=
+    Effect.counterThenRecruitIfMvAtMost 2
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .defineValueVariable 1 (.greatestManaValue (.target 1 .spell)),
+      .counter (.targetReference 2),
+      .if (.lessOrEqual (.variable 1) 2)
+        [.keyword (.controller .this) .recruit]]) !=
+    Effect.counterThenRecruitIfMvAtMost 2
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .defineValueVariable 1 (.greatestManaValue (.target 1 .spell)),
+      .counter (.targetReference 1),
+      .if (.less (.variable 1) 2)
+        [.keyword (.controller .this) .recruit]]) !=
+    Effect.counterThenRecruitIfMvAtMost 2
+
 #guard CardAction.toEffect (.keyword (.controller .this) .recruit) == Effect.recruit
 #guard CardAction.toEffect (.keyword (.controller .this) (.amass .goblin (.nat 1))) == Effect.amassGoblins 1
 #guard CardAction.toEffect (.keyword .this (.connive (.nat 1))) == Effect.connive
@@ -7606,7 +7677,7 @@ end TraditionalCardDefinition
     .searchLibraryThenShuffle
       (.controller .this)
       [
-        .defineVariable 1
+        .defineSelectorVariable 1
           (.selected
             (.controller .this)
             (.range 0 2)
@@ -7626,7 +7697,7 @@ end TraditionalCardDefinition
     .searchLibraryThenShuffle
       (.controller .this)
       [
-        .defineVariable 1
+        .defineSelectorVariable 1
           (.selected
             (.controller .this)
             (.range 0 2)
@@ -7646,7 +7717,7 @@ end TraditionalCardDefinition
     .searchLibraryThenShuffle
       (.controller .this)
       [
-        .defineVariable 1
+        .defineSelectorVariable 1
           (.selected
             (.controller .this)
             (.range 1 1)
@@ -7928,11 +7999,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [.addPower .this (Value.int 2),
            .addToughness .this (Value.int 1)]))
@@ -7958,11 +8030,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             1)
           [.addPower .this (Value.int 2),
            .addToughness .this (Value.int 1)]))
@@ -7973,11 +8046,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [
             .addPower .this (Value.int 2),
@@ -7990,11 +8064,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [.addPower .this (Value.int 2),
            .addToughness .this (Value.int 2)]))
@@ -8005,11 +8080,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [
             .addPower .this (Value.int 2),
@@ -8022,11 +8098,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             2)
           [
             .addPower .this (Value.int 2),
@@ -8070,11 +8147,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             1)
           [
             .addPower .this (Value.int 2),
@@ -8087,11 +8165,12 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.countAtLeast
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])
+          (.greaterOrEqual
+            (.count
+              (.intersection [
+                .inGraveyard,
+                .cardType .creature,
+                .owner (.controller .this)]))
             1)
           [.addPower .this (Value.int 2),
            .addToughness .this (Value.int 2)]))
@@ -8352,11 +8431,12 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.activatedIf
-      (.countAtLeast
-        (.intersection [
-          .inGraveyard,
-          .cardType .creature,
-          .owner (.controller .this)])
+      (.greaterOrEqual
+        (.count
+          (.intersection [
+            .inGraveyard,
+            .cardType .creature,
+            .owner (.controller .this)]))
         2)
       [.mana [.generic 3], .tapSymbol]
       (.createTokens
@@ -8387,11 +8467,12 @@ end TraditionalCardDefinition
 
 #guard
   (Ability.activatedIf
-    (.countAtLeast
-      (.intersection [
-        .inGraveyard,
-        .cardType .creature,
-        .owner (.controller .this)])
+    (.greaterOrEqual
+      (.count
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this)]))
       1)
     [.mana [.generic 3], .tapSymbol]
     (.createTokens
