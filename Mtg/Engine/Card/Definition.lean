@@ -667,6 +667,8 @@ inductive CardState where
   | attacking
   /-- The permanent enters under the selected player's control (CR 110.2). -/
   | controlled : Selector → CardState
+  /-- The permanent enters attached to the selected object (CR 303.4f). -/
+  | attachedTo : Selector → CardState
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -2866,15 +2868,12 @@ def leftoverOwnerShuffleSourceDraw? : CardAction → Option Nat
   | _ => none
 
 /-- Return this card from a graveyard attached to a creature you control
-with power at most N. -/
+with power at most N. It enters the battlefield already attached
+(CR 303.4f). -/
 def leftoverReturnFromGyAttachPowerAtMost? : CardAction → Option Int
-  | .sequence [
-      .putOntoBattlefield src,
-      .attach who (.target _ among)
-    ] =>
+  | .putOntoBattlefieldInState src [.attachedTo (.target _ among)] =>
     let s := among.shape
     if src == .intersection [.inGraveyard, .source .this] &&
-        (who == .this || who == .source .this) &&
         s.sameController && s.types.eqTypes [.creature] && s.subtype.isNone then
       s.powerAtMost
     else none

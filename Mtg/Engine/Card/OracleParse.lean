@@ -293,8 +293,9 @@ Currently recognized:
   `her`, `them`, `it`, or another reference to this card. The owner draws.
 - `{cost}: Return this card from your graveyard to the battlefield attached to target creature you control with power N or less. Activate only as a sorcery.`
   Returning this card from a graveyard functions while the card is in that
-  graveyard (CR 113.6), so the ability is `graveyardActivatedIf`. `N` is a
-  positive printed power. The creature is one target.
+  graveyard (CR 113.6), so the ability is `graveyardActivatedIf`. The card
+  enters the battlefield already attached to that creature (CR 303.4f).
+  `N` is a positive printed power. The creature is one target.
 - `When <this> enters, attach <object> to target <permanent> [you control].`
   The entering object is this card. `<object>` is `it` or this card. A
   creature type such as `Dwarf` is a creature of that subtype.
@@ -3006,7 +3007,8 @@ def parseOwnerShuffleDraw (cardName : String) (line : String) (n : Nat) :
                     n
 
 /-- `Return this card from your graveyard to the battlefield attached to target creature you control with power 1 or less.`
-The creature is target `n`. `N` is a positive printed power. -/
+The creature is target `n`. `N` is a positive printed power. The card enters
+already attached to that creature (CR 303.4f). -/
 def parseReturnAttachedPowerAtMost (sentence : String) (n : Nat) :
     Option (CardAction × Nat) :=
   (after? (normSentence sentence)
@@ -3024,10 +3026,9 @@ def parseReturnAttachedPowerAtMost (sentence : String) (n : Nat) :
                 | _ =>
                   .intersection [sel, .powerAtMost (Value.int (p : Int))]
               some (
-                .sequence [
-                  .putOntoBattlefield
-                    (.intersection [.inGraveyard, .source .this]),
-                  .attach (.source .this) (.target n among)],
+                .putOntoBattlefieldInState
+                  (.intersection [.inGraveyard, .source .this])
+                  [.attachedTo (.target n among)],
                 n + 1)
 
 /-- `{2}{W/U}{W/U}: Return this card from your graveyard to the battlefield attached to target creature you control with power 1 or less. Activate only as a sorcery.`
@@ -5145,9 +5146,9 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   some [.ability (.graveyardActivatedIf
     (.timeToCastSorcery (.controller .this))
     [.mana [.generic 2, .hybrid .white .blue, .hybrid .white .blue]]
-    (.sequence [
-      .putOntoBattlefield (.intersection [.inGraveyard, .source .this]),
-      .attach (.source .this)
+    (.putOntoBattlefieldInState
+      (.intersection [.inGraveyard, .source .this])
+      [.attachedTo
         (.target 1 (.intersection [
           .permanent, .cardType .creature, .controlled (.controller .this),
           .powerAtMost (Value.int 1)]))]))]

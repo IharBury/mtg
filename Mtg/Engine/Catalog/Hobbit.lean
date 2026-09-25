@@ -3298,9 +3298,9 @@ def eaglesRescue : CardDef :=
   .ability (.graveyardActivatedIf
     (.timeToCastSorcery (.controller .this))
     [.mana [.generic 2, .hybrid .white .blue, .hybrid .white .blue]]
-    (.sequence [
-      .putOntoBattlefield (.intersection [.inGraveyard, .source .this]),
-      .attach (.source .this)
+    (.putOntoBattlefieldInState
+      (.intersection [.inGraveyard, .source .this])
+      [.attachedTo
         (.target 2 (.intersection [
           .permanent, .cardType .creature, .controlled (.controller .this),
           .powerAtMost (Value.int 1)]))]))]
