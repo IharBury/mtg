@@ -37,7 +37,10 @@ Gathering of Darkness, Sound the Trumpets, Fateful Discovery,
 Chief Warg's Company, Dwarven Shortsword, Goblin Plate Mail,
 Moment of Glory, Plunder the Trollshaws, Tidings of War,
 Eagle's Rescue, Gandalf, Wandering Wizard, Troll Negotiations,
-Dwarven Mattock, Great Ugly-Looking Goblin, and The Arkenstone
+Dwarven Mattock, Great Ugly-Looking Goblin, The Arkenstone,
+Bolg's Company, Nori, Teller of Tales, The Lord of the Eagles,
+Thrór's Map, The Black Arrow, Smaug the Magnificent,
+The Queen of Dale, and Ori, Keeper of Songs
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -3528,42 +3531,59 @@ def theArkenstone : CardDef :=
   spellEffect := some Effect.searchLegendaryCreatureToHand }
 #guard theArkenstone.oracleText == theArkenstoneOracle
 
-def bolgsCompany : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Bolg's Company. -/
+def bolgsCompanyOracle : String :=
+  "This creature has haste as long as you control another Goblin.\n{T}, Sacrifice another Goblin: Add {B}{R}."
+
+def bolgsCompanyDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Bolg's Company",
     .manaCost [.mono .black, .mono .red],
     .type .creature,
     .subtype .goblin,
     .subtype .soldier,
     .power 2,
-    .toughness 2,
-    .ability (
-      .static
-        (.if
-          (.any
-            (.intersection [
-              .not .this,
-              .permanent,
-              .subtype .goblin,
-              .controlled (.controller .this)]))
-          [.gainAbility .this (.keyword .haste)])),
-    .ability (
-      .activated
-        [
-          .tapSymbol,
-          .sacrificeCount
-            (.intersection [
-              .not .this,
-              .permanent,
-              .subtype .goblin,
-              .controlled (.controller .this)])
-            1]
-        (.addMana (.controller .this) [.mono .black, .mono .red]))
-  ]).toCardDef
-    (oracleText := "This creature has haste as long as you control another Goblin.\n{T}, Sacrifice another Goblin: Add {B}{R}.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Bolg's Company") bolgsCompanyOracle).get!
 
-def noriTellerOfTales : CardDef :=
-  (TraditionalCardDefinition.card [
+def bolgsCompany : CardDef :=
+  bolgsCompanyDefinition.toCardDef
+    (oracleText := bolgsCompanyOracle)
+
+#guard bolgsCompanyDefinition == .card [
+  .name "Bolg's Company",
+  .manaCost [.mono .black, .mono .red],
+  .type .creature,
+  .subtype .goblin,
+  .subtype .soldier,
+  .power 2,
+  .toughness 2,
+  .ability (.static (.if
+    (.any (.intersection [
+      .not .this, .permanent, .subtype .goblin, .controlled (.controller .this)]))
+    [.gainAbility .this (.keyword .haste)])),
+  .ability (.activated
+    [.tapSymbol,
+      .sacrificeCount
+        (.intersection [
+          .not .this, .permanent, .subtype .goblin, .controlled (.controller .this)])
+        1]
+    (.addMana (.controller .this) [.colored .black, .colored .red]))]
+
+#guard bolgsCompany.staticAbilities == #[.hasteIfYouControlOtherSubtype "Goblin"]
+#guard bolgsCompany.activatedAbilities.size == 1
+#guard bolgsCompany.activatedAbilities[0]!.cost.tap
+#guard bolgsCompany.activatedAbilities[0]!.cost.sacrificeAnotherSubtype == some "Goblin"
+#guard bolgsCompany.activatedAbilities[0]!.effect ==
+  Effect.addMana #[.colored .black, .colored .red]
+#guard bolgsCompany.oracleText == bolgsCompanyOracle
+
+/-- Gatherer Oracle text for Nori, Teller of Tales. -/
+def noriTellerOfTalesOracle : String :=
+  "Whenever Nori attacks, target attacking creature gains first strike until end of turn."
+
+def noriTellerOfTalesDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Nori, Teller of Tales",
     .manaCost [.generic 1, .hybrid .red .white],
     .type .creature,
@@ -3571,80 +3591,214 @@ def noriTellerOfTales : CardDef :=
     .subtype .dwarf,
     .subtype .bard,
     .power 2,
-    .toughness 2,
-    .ability (
-      .triggered
-        (.attack .this .all)
-        (.continuous
-          [.gainAbility
-            (.target
-              1
-              (.intersection [
-                .permanent,
-                .cardType .creature,
-                .attacking .all]))
-            (.keyword .firstStrike)]
-          .endOfTurn))
-  ]).toCardDef
-    (oracleText := "Whenever Nori attacks, target attacking creature gains first strike until end of turn.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Nori, Teller of Tales") noriTellerOfTalesOracle).get!
+
+def noriTellerOfTales : CardDef :=
+  noriTellerOfTalesDefinition.toCardDef
+    (oracleText := noriTellerOfTalesOracle)
+
+#guard noriTellerOfTalesDefinition == .card [
+  .name "Nori, Teller of Tales",
+  .manaCost [.generic 1, .hybrid .red .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .bard,
+  .power 2,
+  .toughness 2,
+  .ability (.triggered (.attack .this .all)
+    (.continuous
+      [.gainAbility
+        (.target 1 (.intersection [
+          .permanent, .cardType .creature, .attacking .all]))
+        (.keyword .firstStrike)]
+      .endOfTurn))]
+
+#guard noriTellerOfTales.triggeredAbilities ==
+  #[.onAttackTargetGainsKeywords Keyword.firstStrike.toKeywords]
+#guard noriTellerOfTales.supertypes.any (· == .legendary)
+#guard noriTellerOfTales.oracleText == noriTellerOfTalesOracle
+
+/-- Gatherer Oracle text for The Lord of the Eagles. -/
+def theLordOfTheEaglesOracle : String :=
+  "Flash\nThis spell costs {X} less to cast, where X is the total power of creatures you control with flying.\nFlying"
+
+def theLordOfTheEaglesDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "The Lord of the Eagles",
+    .manaCost [.generic 7, .mono .blue, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .bird,
+    .subtype .noble,
+    .power 8,
+    .toughness 8
+  ] ++ (parseOracleParts (name := "The Lord of the Eagles") theLordOfTheEaglesOracle).get!
 
 def theLordOfTheEagles : CardDef :=
-  legendaryCreature "The Lord of the Eagles" (ManaCost.ofGenericAndColors 7 [.blue, .blue])
-    #["Bird", "Noble"] 8 8
-    (oracleText := "Flash\nThis spell costs {X} less to cast, where X is the total power of creatures you control with flying.\nFlying")
-    (keywords := Keyword.flash.merge Keyword.flying)
-    (costReductionEqualFlyingPower := true)
+  theLordOfTheEaglesDefinition.toCardDef
+    (oracleText := theLordOfTheEaglesOracle)
 
-def throrsMap : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard theLordOfTheEaglesDefinition == .card [
+  .name "The Lord of the Eagles",
+  .manaCost [.generic 7, .mono .blue, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .bird,
+  .subtype .noble,
+  .power 8,
+  .toughness 8,
+  .ability (.keyword .flash),
+  .ability (.stackStatic
+    (.reduceCostBy .this
+      (.totalPower (.intersection [
+        .permanent, .cardType .creature, .keyword .flying,
+        .controlled (.controller .this)])))),
+  .ability (.keyword .flying)]
+
+#guard theLordOfTheEagles.keywords.flash
+#guard theLordOfTheEagles.keywords.flying
+#guard theLordOfTheEagles.costReductionEqualFlyingPower
+#guard theLordOfTheEagles.manaCost == ManaCost.ofGenericAndColors 7 [.blue, .blue]
+#guard theLordOfTheEagles.oracleText == theLordOfTheEaglesOracle
+
+/-- Gatherer Oracle text for Thrór's Map. -/
+def throrsMapOracle : String :=
+  "When Thrór's Map enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle.\n{2}, {T}: Draw a card, then discard a card."
+
+def throrsMapDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Thrór's Map",
     .manaCost [.generic 2],
     .type .artifact,
+    .supertype .legendary
+  ] ++ (parseOracleParts (name := "Thrór's Map") throrsMapOracle).get!
+
+def throrsMap : CardDef :=
+  throrsMapDefinition.toCardDef
+    (oracleText := throrsMapOracle)
+
+#guard throrsMapDefinition == .card [
+  .name "Thrór's Map",
+  .manaCost [.generic 2],
+  .type .artifact,
+  .supertype .legendary,
+  .ability (.triggered (.enter .this)
+    (.searchLibraryThenShuffle (.controller .this) [
+      .defineSelectorVariable 1
+        (.selected (.controller .this) (.range 1 1)
+          (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+      .reveal (.variable 1),
+      .returnToHand (.variable 1)])),
+  .ability (.activated
+    [.mana [.generic 2], .tapSymbol]
+    (.sequence [
+      .draw (.controller .this) 1,
+      .discard (.controller .this) 1]))]
+
+#guard throrsMap.triggeredAbilities == #[.onEnterSearchBasicToHand]
+#guard throrsMap.activatedAbilities.size == 1
+#guard throrsMap.activatedAbilities[0]!.effect == Effect.abilityDrawThenDiscard 1
+#guard throrsMap.activatedAbilities[0]!.cost.tap
+#guard throrsMap.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 2
+#guard throrsMap.supertypes.any (· == .legendary)
+#guard throrsMap.oracleText == throrsMapOracle
+
+/-- Gatherer Oracle text for The Black Arrow. -/
+def theBlackArrowOracle : String :=
+  "Flash\nWhen The Black Arrow enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it.\nEquipped creature gets +1/+1 and has reach.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
+
+def theBlackArrowDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "The Black Arrow",
+    .manaCost [.generic 3],
+    .type .artifact,
     .supertype .legendary,
-    .ability (
-      .triggered
-        (.enter .this)
-        (.searchLibraryThenShuffle
-          (.controller .this)
-          [
-            .defineSelectorVariable 1
-              (.selected
-                (.controller .this)
-                (.range 1 1)
-                (.intersection [
-                  .inLibrary,
-                  .cardType .land,
-                  .supertype .basic])),
-            .reveal (.variable 1),
-            .returnToHand (.variable 1)])),
-    .ability (
-      .activated
-        [.mana [.generic 2], .tapSymbol]
-        (.sequence [
-          .draw (.controller .this) 1,
-          .discard (.controller .this) 1]))
-  ]).toCardDef
-    (oracleText :=
-      "When Thrór's Map enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle.\n{2}, {T}: Draw a card, then discard a card.")
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "The Black Arrow") theBlackArrowOracle).get!
 
 def theBlackArrow : CardDef :=
-  equipment "The Black Arrow" (ManaCost.ofGeneric 3)
-    "Flash\nWhen The Black Arrow enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it.\nEquipped creature gets +1/+1 and has reach.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
-    (ManaCost.ofGeneric 1)
-    (legendary := true)
-    (keywords := Keyword.flash)
-    (triggeredAbilities := #[.onEnterDealDamageDestroyIfSubtype 1 "Dragon"])
-    (staticAbilities := #[.equippedCreatureGetsAndHas 1 1 Keyword.reach])
+  theBlackArrowDefinition.toCardDef
+    (oracleText := theBlackArrowOracle)
+
+#guard theBlackArrowDefinition == .card [
+  .name "The Black Arrow",
+  .manaCost [.generic 3],
+  .type .artifact,
+  .supertype .legendary,
+  .subtype .equipment,
+  .ability (.keyword .flash),
+  .ability (.triggered (.enter .this)
+    (.sequence [
+      .dealDamage (.source .this) (.target 1 .all) 1,
+      .if (.anySubtype (.targetReference 1) .dragon)
+        [.destroy (.targetReference 1)]])),
+  .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
+  .ability (.static (.addToughness (.hostOf .this) (Value.int 1))),
+  .ability (.static (.gainAbility (.hostOf .this) (.keyword .reach))),
+  .ability (.keywordWithCost .equip [.mana [.generic 1]])]
+
+#guard theBlackArrow.keywords.flash
+#guard theBlackArrow.triggeredAbilities == #[.onEnterDealDamageDestroyIfSubtype 1 "Dragon"]
+#guard theBlackArrow.staticAbilities == #[.equippedCreatureGetsAndHas 1 1 Keyword.reach]
+#guard theBlackArrow.supertypes.any (· == .legendary)
+#guard theBlackArrow.isEquipment
+#guard theBlackArrow.activatedAbilities.size == 1
+#guard theBlackArrow.activatedAbilities[0]!.onlyAsSorcery
+#guard theBlackArrow.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
+#guard theBlackArrow.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 1
+#guard theBlackArrow.oracleText == theBlackArrowOracle
+
+/-- Gatherer Oracle text for Smaug the Magnificent. -/
+def smaugTheMagnificentOracle : String :=
+  "Flying, haste\nWhenever Smaug attacks, he deals damage equal to the number of Treasures you control to any target.\nAt the beginning of your upkeep, create a Treasure token."
+
+def smaugTheMagnificentDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Smaug the Magnificent",
+    .manaCost [.generic 2, .mono .red, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dragon,
+    .power 4,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Smaug the Magnificent") smaugTheMagnificentOracle).get!
 
 def smaugTheMagnificent : CardDef :=
-  legendaryCreature "Smaug the Magnificent" (ManaCost.ofGenericAndColors 2 [.red, .red])
-    #["Dragon"] 4 3
-    (oracleText := "Flying, haste\nWhenever Smaug attacks, he deals damage equal to the number of Treasures you control to any target.\nAt the beginning of your upkeep, create a Treasure token.")
-    (keywords := Keyword.flying.merge Keyword.haste)
-    (triggeredAbilities := #[.onAttackDamageEqualTreasures, .onYourUpkeepCreateTokens .treasure 1])
+  smaugTheMagnificentDefinition.toCardDef
+    (oracleText := smaugTheMagnificentOracle)
 
-def theQueenOfDale : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard smaugTheMagnificentDefinition == .card [
+  .name "Smaug the Magnificent",
+  .manaCost [.generic 2, .mono .red, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dragon,
+  .power 4,
+  .toughness 3,
+  .ability (.keyword .flying),
+  .ability (.keyword .haste),
+  .ability (.triggered (.attack .this .all)
+    (.dealDamage (.source .this) (.target 1 .all)
+      (.count (.intersection [
+        .permanent, .cardType .artifact, .subtype .treasure,
+        .controlled (.controller .this)])))),
+  .ability (.triggered (.upkeep (.controller .this))
+    (.createTokens (.controller .this) 1 PredefinedToken.treasureToken))]
+
+#guard smaugTheMagnificent.keywords.flying
+#guard smaugTheMagnificent.keywords.haste
+#guard smaugTheMagnificent.triggeredAbilities ==
+  #[.onAttackDamageEqualTreasures, .onYourUpkeepCreateTokens .treasure 1]
+#guard smaugTheMagnificent.oracleText == smaugTheMagnificentOracle
+
+/-- Gatherer Oracle text for The Queen of Dale. -/
+def theQueenOfDaleOracle : String :=
+  "Whenever an opponent casts their first noncreature spell each turn, you recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+
+def theQueenOfDaleDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "The Queen of Dale",
     .manaCost [.generic 1, .mono .white],
     .type .creature,
@@ -3652,25 +3806,69 @@ def theQueenOfDale : CardDef :=
     .subtype .human,
     .subtype .noble,
     .power 2,
-    .toughness 1,
-    .ability (
-      .triggered
-        (.ordinal 1 .turnStart
-          (.castSpell
-            (.intersection [
-              .spell,
-              .not (.cardType .creature),
-              .controlled (.opponent (.controller .this))])))
-        (.keyword (.controller .this) .recruit))
-  ]).toCardDef
-    (oracleText := "Whenever an opponent casts their first noncreature spell each turn, you recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "The Queen of Dale") theQueenOfDaleOracle).get!
+
+def theQueenOfDale : CardDef :=
+  theQueenOfDaleDefinition.toCardDef
+    (oracleText := theQueenOfDaleOracle)
+
+#guard theQueenOfDaleDefinition == .card [
+  .name "The Queen of Dale",
+  .manaCost [.generic 1, .mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .noble,
+  .power 2,
+  .toughness 1,
+  .ability (.triggered
+    (.ordinal 1 .turnStart
+      (.castSpell (.intersection [
+        .spell, .not (.cardType .creature),
+        .controlled (.opponent (.controller .this))])))
+    (.keyword (.controller .this) .recruit))]
+
+#guard theQueenOfDale.triggeredAbilities == #[.onOpponentCastsFirstNoncreatureRecruit]
+#guard theQueenOfDale.oracleText == theQueenOfDaleOracle
+
+/-- Gatherer Oracle text for Ori, Keeper of Songs. -/
+def oriKeeperOfSongsOracle : String :=
+  "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, Ori gets +1/+0 and has vigilance."
+
+def oriKeeperOfSongsDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Ori, Keeper of Songs",
+    .manaCost [.generic 2, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .bard,
+    .power 3,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Ori, Keeper of Songs") oriKeeperOfSongsOracle).get!
 
 def oriKeeperOfSongs : CardDef :=
-  legendaryCreature "Ori, Keeper of Songs" (ManaCost.ofGenericAndColor 2 .white)
-    #["Dwarf", "Bard"] 3 3
-    (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, Ori gets +1/+0 and has vigilance.")
-    (keywords := Keyword.storied)
-    (staticAbilities := #[.getsAndHasIfEnduringStory 1 0 Keyword.vigilance])
+  oriKeeperOfSongsDefinition.toCardDef
+    (oracleText := oriKeeperOfSongsOracle)
+
+#guard oriKeeperOfSongsDefinition == .card [
+  .name "Ori, Keeper of Songs",
+  .manaCost [.generic 2, .mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .bard,
+  .power 3,
+  .toughness 3,
+  .ability (.keyword .storied),
+  .ability (.static (.if (.enduringStory (.controller .this))
+    [.addPower .this (Value.int 1), .gainAbility .this (.keyword .vigilance)]))]
+
+#guard oriKeeperOfSongs.keywords.storied
+#guard oriKeeperOfSongs.staticAbilities ==
+  #[.getsAndHasIfEnduringStory 1 0 Keyword.vigilance]
+#guard oriKeeperOfSongs.oracleText == oriKeeperOfSongsOracle
 
 def oinTheBrave : CardDef :=
   legendaryCreature "Óin the Brave" (ManaCost.ofGenericAndColor 1 .red)

@@ -307,6 +307,38 @@ Currently recognized:
 - `Search your library for a legendary creature card, reveal it, put it into your hand, then shuffle.`
   The searcher chooses one legendary creature card (CR 701.19). A trailing
   reminder parenthetical is not rules text.
+- `<this> has haste as long as you control another <subtype>.`
+  `<this>` is `this`, `this <type>`, the card's name, or the short name
+  before a comma. The subtype is singular (`Goblin`). This has haste while
+  its controller controls another permanent of that subtype.
+- `{cost}, Sacrifice another <subtype>: Add {mana}.`
+  Sacrificing another permanent of that subtype you control is part of the
+  cost. The controller adds that mana.
+- `{cost}: Draw a card, then discard a card.`
+  One card drawn, then one card discarded.
+- `Whenever <this> attacks, target attacking creature gains <keywords> until end of turn.`
+  The attacker is `this`, `this <type>`, the card's name, or the short name
+  before a comma.
+- `This spell costs {X} less to cast, where X is the total power of creatures you control with flying.`
+  The reduction is that total power (CR 601.2f). The ability functions on
+  the stack (CR 604.2).
+- `When <this> enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle.`
+  The searcher chooses one basic land card (CR 701.19).
+- `When <this> enters, it deals N damage to any target. If a <subtype> is dealt damage this way, destroy it.`
+  The source is `it`, `he`, `she`, `they`, or another reference to this card.
+  `N` is a positive printed number. `any target` is a player or creature.
+  The damaged object is destroyed when it has that subtype.
+- `Whenever <this> attacks, he deals damage equal to the number of Treasures you control to any target.`
+  The source is a pronoun or another reference to this card. The amount is
+  how many Treasure artifacts its controller controls.
+- `At the beginning of your upkeep, create a Treasure token.`
+  `your` is this object's controller (CR 503.1).
+- `Whenever an opponent casts their first noncreature spell each turn, you recruit.`
+  Recruit is a keyword action of this card's controller. A trailing reminder
+  parenthetical is not rules text (CR 207.2).
+- `As long as you have an enduring story, <this> gets +P/+T and has <keywords>.`
+  `<this>` is this card. A zero bonus is omitted. `+0/+0` with no keywords
+  is not an effect.
 -/
 
 namespace Mtg.Engine
@@ -911,14 +943,21 @@ def splitActivateLimit : List String → List String × ActivateLimit
     (s :: body, lim)
 
 /-- `Sacrifice another creature or artifact`: one other permanent of those
-types. `another` excludes this object. -/
+types. `Sacrifice another Goblin`: one other permanent of that subtype you
+control. `another` excludes this object. -/
 def parseSacrificeAnother (s : String) : Option Cost :=
   match after? (norm s) "sacrifice another " with
   | some obj =>
-    (typesInPhrase obj).map fun ts =>
-      .sacrificeCount
+    match typesInPhrase obj with
+    | some ts =>
+      some (.sacrificeCount
         (.intersection [.not .this, .permanent, selectorOfTypes ts])
-        1
+        1)
+    | none =>
+      (subtypeOfOracle? obj).map fun st =>
+        .sacrificeCount
+          (.intersection [.not .this, .permanent, .subtype st, youControl])
+          1
   | none => none
 
 /-- `Sacrifice an artifact or creature` as sacrificing one matching permanent. -/
@@ -2883,11 +2922,12 @@ def parseCantAttackUnlessNOther (cardName : String) (line : String) : Option Car
         | _, _ => none
 
 /-- `At the beginning of your upkeep, create a 2/2 green Wolf creature token.`
-`your` is this object's controller. -/
+Also `create a Treasure token`. `your` is this object's controller. -/
 def parseUpkeepCreateCreature (line : String) : Option CardPart :=
-  (after? (normLine line) "at the beginning of your upkeep, ").bind
-      parseCreateColoredCreatureToken |>.map fun action =>
-    .ability (.triggered (.upkeep (.controller .this)) action)
+  (after? (normLine line) "at the beginning of your upkeep, ").bind fun effect =>
+    (parseCreateColoredCreatureToken effect <|> parseCreateTreasure effect).map
+      fun action =>
+        .ability (.triggered (.upkeep (.controller .this)) action)
 
 /-- `When this Equipment enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it.`
 One token is created. This object is attached to that token. The creation
@@ -3060,6 +3100,205 @@ def parseFlashback (line : String) : Option CardPart :=
   | some syms => some (.ability (.keywordWithCost .flashback [.mana syms]))
   | none => none
 
+/-- Creature permanents with flying that this object's controller controls. -/
+def flyingCreaturesYouControl : Selector :=
+  .intersection [.permanent, .cardType .creature, .keyword .flying, youControl]
+
+/-- Treasure artifacts this object's controller controls. -/
+def treasuresYouControl : Selector :=
+  .intersection [
+    .permanent, .cardType .artifact, .subtype .treasure, youControl]
+
+/-- An attacking creature. -/
+def attackingCreatureTarget : Selector :=
+  .intersection [.permanent, .cardType .creature, .attacking .all]
+
+/-- `he`, `she`, `it`, `they`, or another reference to this card. -/
+def damageSource? (cardName who : String) : Bool :=
+  who != "" && (isPersonalPronoun who || refersToSelf cardName who)
+
+/-- `<this> has haste as long as you control another Goblin.`
+This has haste while its controller controls another permanent of that
+subtype. The subtype is singular. -/
+def parseHasteIfAnother (cardName line : String) : Option CardPart :=
+  (split2? (normLine line) " has haste as long as you control another ").bind
+    fun (subject, stText) =>
+      if !refersToSelf cardName subject then none
+      else
+        (subtypeOfOracle? stText).map fun st =>
+          .ability (.static (.if
+            (.any (.intersection [.not .this, .permanent, .subtype st, youControl]))
+            [.gainAbility .this (.keyword .haste)]))
+
+/-- `Add {B}{R}.` The controller adds that mana. Does not choose a target. -/
+def parseAddMana (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  (after? (normSentence sentence) "add ").bind nonemptyMana? |>.map fun syms =>
+    (.addMana (.controller .this) syms, n)
+
+/-- True when a cost sacrifices another permanent of a printed subtype. -/
+def sacrificesAnotherSubtype : List Cost → Bool
+  | [] => false
+  | .sacrificeCount s 1 :: rest =>
+    s.shape.anotherSubtypeYouControl.isSome || sacrificesAnotherSubtype rest
+  | _ :: rest => sacrificesAnotherSubtype rest
+
+/-- `{T}, Sacrifice another Goblin: Add {B}{R}.`
+Adding mana requires sacrificing another subtype, so `{T}: Add {G}` stays
+unrecognized. Also `{2}, {T}: Draw a card, then discard a card.`
+An activation limit may follow the effect. -/
+def parseActivatedAddOrLoot (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": ").bind
+    fun (costText, effect) =>
+      let (body, limit) := splitActivateLimit (sentences effect)
+      match body, parseActivationCost cardName costText with
+      | [one], some costs =>
+        match parseAddMana one n with
+        | some (action, n') =>
+          if sacrificesAnotherSubtype costs then
+            some (activatedWithCost n costs action limit n')
+          else none
+        | none =>
+          match parseDrawThenDiscard one n with
+          | some (action, n') => some (activatedWithCost n costs action limit n')
+          | none => none
+      | _, _ => none
+
+/-- `Whenever <this> attacks, target attacking creature gains first strike until end of turn.`
+The attacker is this card. The creature is target `n`. -/
+def parseAttackTargetGains (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (triggerSelfEffect? cardName "whenever" (normLine line) " attacks, ").bind
+    fun effect =>
+      (before? effect " until end of turn").bind (split2? · " gains ") |>.bind
+        fun (who, gained) =>
+          if who != "target attacking creature" then none
+          else
+            (parseKeywordPhrase gained).bind fun kws =>
+              let effects := gainEffects n attackingCreatureTarget kws
+              if effects.isEmpty then none
+              else
+                some (
+                  .ability (.triggered (.attack .this .all)
+                    (.continuous effects .endOfTurn)),
+                  n + 1)
+
+/-- `This spell costs {X} less to cast, where X is the total power of creatures you control with flying.`
+The reduction is that total power. It functions on the stack (CR 604.2). -/
+def parseCostLessByFlyingPower (line : String) : Option CardPart :=
+  if sentenceIs (normLine line)
+      "this spell costs {x} less to cast, where x is the total power of creatures you control with flying" then
+    some (.ability (.stackStatic
+      (.reduceCostBy .this (.totalPower flyingCreaturesYouControl))))
+  else none
+
+/-- Search for one basic land card, reveal it, and put it into hand.
+The found card is variable `n`. -/
+def searchBasicLandToHand (n : Nat) : CardAction × Nat :=
+  (
+    .searchLibraryThenShuffle (.controller .this) [
+      .defineSelectorVariable n
+        (.selected (.controller .this) (.range 1 1)
+          (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+      .reveal (.variable n),
+      .returnToHand (.variable n)],
+    n + 1)
+
+/-- `When <this> enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle.`
+The entering object is this card. The found card is variable `n`. -/
+def parseEnterSearchBasicToHand (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (whenSelfEffect? cardName (normLine line) " enters, ").bind fun effect =>
+    if sentenceIs effect
+        "search your library for a basic land card, reveal it, put it into your hand, then shuffle" then
+      let (action, n') := searchBasicLandToHand n
+      some (.ability (.triggered (.enter .this) action), n')
+    else none
+
+/-- `When <this> enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it.`
+The entering object is this card. The damaged object is target `n`. It is
+destroyed when it has the printed subtype. -/
+def parseEnterDealDamageDestroyIfSubtype (cardName : String) (line : String)
+    (n : Nat) : Option (CardPart × Nat) :=
+  match sentences (stripReminderParenthetical line) with
+  | [enter, cond] =>
+    (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+      (split2? effect " deals ").bind fun (who, rest) =>
+        (split2? rest " damage to ").bind fun (amt, dest) =>
+          if !damageSource? cardName who || dest != "any target" then none
+          else
+            match positiveDigits? amt with
+            | none => none
+            | some amount =>
+              (after? (normSentence cond) "if ").bind dropArticle? |>.bind
+                fun rest =>
+                  (before? rest " is dealt damage this way, destroy it").bind
+                    subtypeOfOracle? |>.map fun st =>
+                      (
+                        .ability (.triggered (.enter .this)
+                          (.sequence [
+                            .dealDamage (.source .this) (.target n .all)
+                              (.nat amount),
+                            .if (.anySubtype (.targetReference n) st)
+                              [.destroy (.targetReference n)]])),
+                        n + 1)
+  | _ => none
+
+/-- `Whenever <this> attacks, he deals damage equal to the number of Treasures you control to any target.`
+The attacker is this card. The recipient is target `n`. -/
+def parseAttackDamageEqualTreasures (cardName : String) (line : String)
+    (n : Nat) : Option (CardPart × Nat) :=
+  (triggerSelfEffect? cardName "whenever" (normLine line) " attacks, ").bind
+    fun effect =>
+      (split2? effect
+          " deals damage equal to the number of treasures you control to ").bind
+        fun (who, dest) =>
+          if !damageSource? cardName who || dest != "any target" then none
+          else
+            some (
+              .ability (.triggered (.attack .this .all)
+                (.dealDamage (.source .this) (.target n .all)
+                  (.count treasuresYouControl))),
+              n + 1)
+
+/-- `Whenever an opponent casts their first noncreature spell each turn, you recruit.`
+Recruit is a keyword action of this card's controller. A reminder
+parenthetical is not rules text. -/
+def parseOpponentFirstNoncreatureRecruit (line : String) : Option CardPart :=
+  if sentenceIs (normLine line)
+      "whenever an opponent casts their first noncreature spell each turn, you recruit" then
+    some (.ability (.triggered
+      (.ordinal 1 .turnStart
+        (.castSpell (.intersection [
+          .spell,
+          .not (.cardType .creature),
+          .controlled (.opponent (.controller .this))])))
+      (.keyword (.controller .this) .recruit)))
+  else none
+
+/-- `As long as you have an enduring story, <this> gets +1/+0 and has vigilance.`
+A zero bonus is omitted. `+0/+0` with no keywords is not an effect. -/
+def parseEnduringStoryGets (cardName line : String) : Option CardPart :=
+  (after? (normLine line) "as long as you have an enduring story, ").bind
+    fun rest =>
+      (splitGetsOnly? rest).bind fun (who, tail) =>
+        if !refersToSelf cardName who then none
+        else
+          let parsed :=
+            match split2? tail " and has " with
+            | none => some (tail, ([] : List Keyword))
+            | some (pt, has) =>
+              (parseKeywordPhrase has).map fun kws => (pt, kws)
+          parsed.bind fun (ptText, kws) =>
+            match parsePowerToughness ptText with
+            | some (p, t) =>
+              let effects := flatPowerToughness .this p t ++ keywordGains .this kws
+              if effects.isEmpty then none
+              else
+                some (.ability (.static
+                  (.if (.enduringStory (.controller .this)) effects)))
+            | none => none
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails.
 The first parser that accepts the line wins. -/
@@ -3071,6 +3310,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseEntersTapped cardName line) n <|>
     sole (parseTypecycling line) n <|>
     carry (parseActivatedAbility cardName line n) <|>
+    carry (parseActivatedAddOrLoot cardName line n) <|>
     sole (parseTapAddOneOf line) n <|>
     carry (parseTapAddAnyColorEqualToPower cardName line n) <|>
     sole (parseAnotherElfEntersGets line) n <|>
@@ -3087,12 +3327,20 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseEnterAmass cardName line) n <|>
     sole (parseDiesAmass cardName line) n <|>
     sole (parseEnterSearchForest cardName line) n <|>
+    carry (parseEnterSearchBasicToHand cardName line n) <|>
+    carry (parseEnterDealDamageDestroyIfSubtype cardName line n) <|>
     sole (parseGraveyardReturn line) n <|>
     carry (parseOwnerShuffleDraw cardName line n) <|>
     carry (parseReturnFromGyAttach line n) <|>
     carry (parseEnterExileOppGyLoseLife cardName line n) <|>
     sole (parseCostReduction line) n <|>
+    sole (parseCostLessByFlyingPower line) n <|>
+    sole (parseHasteIfAnother cardName line) n <|>
+    sole (parseEnduringStoryGets cardName line) n <|>
+    sole (parseOpponentFirstNoncreatureRecruit line) n <|>
     sole (parseAttackTriggered line) n <|>
+    carry (parseAttackTargetGains cardName line n) <|>
+    carry (parseAttackDamageEqualTreasures cardName line n) <|>
     carry (parseAttackSetBasePT cardName line n) <|>
     sole (parseFerociousThisAttacks line) n <|>
     sole (parseFerociousYouAttack line) n <|>
@@ -5196,5 +5444,99 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       (.intersection [
         .permanent, .cardType .creature, .controlled (.controller .this)])
       (Value.int 1)))]
+#guard parseOracleParts (name := "")
+  "This creature has haste as long as you control another Goblin." ==
+  some [.ability (.static (.if
+    (.any (.intersection [
+      .not .this, .permanent, .subtype .goblin,
+      .controlled (.controller .this)]))
+    [.gainAbility .this (.keyword .haste)]))]
+#guard parseOracleParts (name := "Bolg's Company")
+  "{T}, Sacrifice another Goblin: Add {B}{R}." ==
+  some [.ability (.activated
+    [.tapSymbol,
+      .sacrificeCount
+        (.intersection [
+          .not .this, .permanent, .subtype .goblin,
+          .controlled (.controller .this)])
+        1]
+    (.addMana (.controller .this) [.colored .black, .colored .red]))]
+#guard parseOracleParts (name := "") "{T}: Add {G}." == none
+#guard parseOracleParts (name := "") "{T}, Sacrifice another: Add {B}{R}." == none
+#guard parseOracleParts (name := "Nori, Teller of Tales")
+  "Whenever Nori attacks, target attacking creature gains first strike until end of turn." ==
+  some [.ability (.triggered (.attack .this .all)
+    (.continuous
+      [.gainAbility
+        (.target 1 (.intersection [
+          .permanent, .cardType .creature, .attacking .all]))
+        (.keyword .firstStrike)]
+      .endOfTurn))]
+#guard parseOracleParts (name := "Gandalf")
+  "Whenever Nori attacks, target attacking creature gains first strike until end of turn." ==
+  none
+#guard parseOracleParts (name := "")
+  "This spell costs {X} less to cast, where X is the total power of creatures you control with flying." ==
+  some [.ability (.stackStatic
+    (.reduceCostBy .this
+      (.totalPower (.intersection [
+        .permanent, .cardType .creature, .keyword .flying,
+        .controlled (.controller .this)]))))]
+#guard parseOracleParts (name := "")
+  "This spell costs {2} less to cast, where X is the total power of creatures you control with flying." ==
+  none
+#guard parseOracleParts (name := "Thrór's Map")
+  "When Thrór's Map enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle." ==
+  some [.ability (.triggered (.enter .this)
+    (.searchLibraryThenShuffle (.controller .this) [
+      .defineSelectorVariable 1
+        (.selected (.controller .this) (.range 1 1)
+          (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+      .reveal (.variable 1),
+      .returnToHand (.variable 1)]))]
+#guard parseOracleParts (name := "")
+  "{2}, {T}: Draw a card, then discard a card." ==
+  some [.ability (.activated
+    [.mana [.generic 2], .tapSymbol]
+    (.sequence [
+      .draw (.controller .this) 1,
+      .discard (.controller .this) 1]))]
+#guard parseOracleParts (name := "The Black Arrow")
+  "When The Black Arrow enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it." ==
+  some [.ability (.triggered (.enter .this)
+    (.sequence [
+      .dealDamage (.source .this) (.target 1 .all) 1,
+      .if (.anySubtype (.targetReference 1) .dragon)
+        [.destroy (.targetReference 1)]]))]
+#guard parseOracleParts (name := "Gandalf")
+  "When The Black Arrow enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it." ==
+  none
+#guard parseOracleParts (name := "Smaug the Magnificent")
+  "Whenever Smaug attacks, he deals damage equal to the number of Treasures you control to any target." ==
+  some [.ability (.triggered (.attack .this .all)
+    (.dealDamage (.source .this) (.target 1 .all)
+      (.count (.intersection [
+        .permanent, .cardType .artifact, .subtype .treasure,
+        .controlled (.controller .this)]))))]
+#guard parseOracleParts (name := "")
+  "At the beginning of your upkeep, create a Treasure token." ==
+  some [.ability (.triggered (.upkeep (.controller .this))
+    (.createTokens (.controller .this) 1 PredefinedToken.treasureToken))]
+#guard parseOracleParts (name := "")
+  "Whenever an opponent casts their first noncreature spell each turn, you recruit." ==
+  some [.ability (.triggered
+    (.ordinal 1 .turnStart
+      (.castSpell (.intersection [
+        .spell, .not (.cardType .creature),
+        .controlled (.opponent (.controller .this))])))
+    (.keyword (.controller .this) .recruit))]
+#guard parseOracleParts (name := "Ori, Keeper of Songs")
+  "As long as you have an enduring story, Ori gets +1/+0 and has vigilance." ==
+  some [.ability (.static (.if (.enduringStory (.controller .this))
+    [.addPower .this (Value.int 1), .gainAbility .this (.keyword .vigilance)]))]
+#guard parseOracleParts (name := "Gandalf")
+  "As long as you have an enduring story, Ori gets +1/+0 and has vigilance." == none
+#guard parseOracleParts (name := "Ori, Keeper of Songs")
+  "As long as you have an enduring story, Ori gets +0/+0." == none
 
 end Mtg.Engine
