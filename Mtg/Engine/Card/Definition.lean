@@ -814,8 +814,8 @@ inductive CardAction where
   Held-out cards are still in the library, but not at the top, bottom,
   or among the shuffled cards. -/
   | holdOutInLibrary : Selector → CardAction
-  /-- Bind the selected objects to this numbered variable. -/
-  | defineVariable : Nat → Selector → CardAction
+  /-- Bind the selected objects to this numbered selector variable. -/
+  | defineSelectorVariable : Nat → Selector → CardAction
   /-- Record this value under the numbered variable. The value is computed
   when the action resolves, so a later `Value.variable` sees that result
   after the objects it measured have changed zones. -/
@@ -1731,7 +1731,7 @@ def leftoverSearchActions? : List CardAction → Option Effect
     | some among =>
       if among.basicLandInLibrary then some Effect.searchBasicLandTapped else none
     | none => none
-  | [.defineVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
+  | [.defineSelectorVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
     if id == id' && id == id'' then
       match sel.selectedAmong? with
       | some among =>
@@ -1744,7 +1744,7 @@ def leftoverSearchActions? : List CardAction → Option Effect
       | none => none
     else none
   | [
-      .defineVariable id sel,
+      .defineSelectorVariable id sel,
       .reveal (.variable id'),
       .putOntoBattlefieldInState
         (.selected _ (.range 1 1) (.variable id'')) [.tapped],
@@ -2007,7 +2007,7 @@ def leftoverExileThenReturnTapped? : CardAction → Option Selector
 /-- Find, reveal, and hold out a basic land while searching so shuffle
 does not mix it back in. -/
 def leftoverSearchBasicHoldOut? : List CardAction → Option Nat
-  | [.defineVariable id sel, .reveal (.variable id'), .holdOutInLibrary (.variable id'')] =>
+  | [.defineSelectorVariable id sel, .reveal (.variable id'), .holdOutInLibrary (.variable id'')] =>
     if id == id' && id == id'' then
       match sel.selectedAmong? with
       | some among => if among.basicLandInLibrary then some id else none
@@ -2927,7 +2927,7 @@ def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
         some TriggeredAbility.onEnterSearchForest
       else none
     | none => none
-  | [.defineVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
+  | [.defineSelectorVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
     if id == id' && id == id'' then
       match sel.selectedAmong? with
       | some among =>
@@ -3103,7 +3103,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .searchLibraryThenShuffle _ _ =>
                     continuousEffect none [] asAbility
                   | .holdOutInLibrary _ => continuousEffect none [] asAbility
-                  | .defineVariable _ _ => continuousEffect none [] asAbility
+                  | .defineSelectorVariable _ _ => continuousEffect none [] asAbility
                   | .forEachVariable _ _ _ => continuousEffect none [] asAbility
                   | .reveal _ => continuousEffect none [] asAbility
                   | .dealDamageEqualToPower _ _ | .fight _ _ =>
@@ -6022,7 +6022,7 @@ end TraditionalCardDefinition
     .searchLibraryThenShuffle
       (.controller .this)
       [
-        .defineVariable 1
+        .defineSelectorVariable 1
           (.selected
             (.controller .this)
             (.range 1 1)
@@ -6069,7 +6069,7 @@ end TraditionalCardDefinition
       (.searchLibraryThenShuffle
         (.controller .this)
         [
-          .defineVariable 1
+          .defineSelectorVariable 1
             (.selected
               (.controller .this)
               (.range 1 1)
@@ -6094,7 +6094,7 @@ end TraditionalCardDefinition
             .searchLibraryThenShuffle
               (.controller .this)
               [
-                .defineVariable 1
+                .defineSelectorVariable 1
                   (.selected
                     (.controller .this)
                     (.range 1 1)
@@ -6117,7 +6117,7 @@ end TraditionalCardDefinition
         (.searchLibraryThenShuffle
           (.controller .this)
           [
-            .defineVariable 1
+            .defineSelectorVariable 1
               (.selected
                 (.controller .this)
                 (.range 1 1)
@@ -6138,7 +6138,7 @@ end TraditionalCardDefinition
           .searchLibraryThenShuffle
             (.controller .this)
             [
-              .defineVariable 1
+              .defineSelectorVariable 1
                 (.selected
                   (.controller .this)
                   (.range 1 1)
@@ -6325,7 +6325,7 @@ end TraditionalCardDefinition
       (.searchLibraryThenShuffle
         (.controller .this)
         [
-          .defineVariable 1
+          .defineSelectorVariable 1
             (.selected
               (.controller .this)
               (.range 1 1)
@@ -6902,7 +6902,7 @@ end TraditionalCardDefinition
       (.searchLibraryThenShuffle
         (.controller .this)
         [
-          .defineVariable 1
+          .defineSelectorVariable 1
             (.selected
               (.controller .this)
               (.range 1 1)
@@ -7679,7 +7679,7 @@ end TraditionalCardDefinition
     .searchLibraryThenShuffle
       (.controller .this)
       [
-        .defineVariable 1
+        .defineSelectorVariable 1
           (.selected
             (.controller .this)
             (.range 0 2)
@@ -7699,7 +7699,7 @@ end TraditionalCardDefinition
     .searchLibraryThenShuffle
       (.controller .this)
       [
-        .defineVariable 1
+        .defineSelectorVariable 1
           (.selected
             (.controller .this)
             (.range 0 2)
@@ -7719,7 +7719,7 @@ end TraditionalCardDefinition
     .searchLibraryThenShuffle
       (.controller .this)
       [
-        .defineVariable 1
+        .defineSelectorVariable 1
           (.selected
             (.controller .this)
             (.range 1 1)

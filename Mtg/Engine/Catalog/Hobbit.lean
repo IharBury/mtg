@@ -3236,7 +3236,7 @@ def throrsMap : CardDef :=
         (.searchLibraryThenShuffle
           (.controller .this)
           [
-            .defineVariable 1
+            .defineSelectorVariable 1
               (.selected
                 (.controller .this)
                 (.range 1 1)
@@ -3359,7 +3359,7 @@ def oldThrush : CardDef :=
               .searchLibraryThenShuffle
                 (.controller .this)
                 [
-                  .defineVariable 1
+                  .defineSelectorVariable 1
                     (.selected
                       (.controller .this)
                       (.range 1 1)
@@ -3565,7 +3565,7 @@ def troopOfPonies : CardDef :=
         (.searchLibraryThenShuffle
           (.controller .this)
           [
-            .defineVariable 1
+            .defineSelectorVariable 1
               (.selected
                 (.controller .this)
                 (.range 0 2)

@@ -92,7 +92,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `actionId`, `loseLife`,
   `sacrifice`, `returnToHand`, `putOntoBattlefield`,
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
-  `holdOutInLibrary`, `defineVariable`,
+  `holdOutInLibrary`, `defineSelectorVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`, `addManaOfOneColor`,
   `addMana`, `keyword`, `createTokens`,
   `mill`, `surveil`, `copyWithNewTargets`,
