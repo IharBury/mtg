@@ -231,10 +231,11 @@ Currently recognized:
 - `Return up to one target <card type> card from your graveyard to your hand.`
   Up to one target means zero or one (CR 115.1). The card is in your graveyard.
 - `Counter target spell. If that spell's mana value was N or less, recruit.`
-  The spell is one target. Recruit happens only when that spell's mana value
-  was at most `N` (CR 202.3). “Was” is last known information if the spell
-  has left the stack (CR 608.2h). Recruit is a keyword action of this spell's
-  controller. A trailing reminder parenthetical is not rules text (CR 207.2).
+  The spell is one target. Its mana value is calculated before it is
+  countered, while it is still on the stack, so the chosen value of `{X}`
+  counts (CR 202.3 / 202.3e / 107.3a). Recruit happens only when that value
+  was at most `N`. Recruit is a keyword action of this spell's controller.
+  A trailing reminder parenthetical is not rules text (CR 207.2).
   Successive spell lines are one effect, in printed order.
 -/
 
@@ -1731,8 +1732,9 @@ def recruitIfSpellMvAtMost? (sentence : String) : Option Nat :=
       "if that spell's mana value was " " or less, recruit").bind positiveCount
 
 /-- `Counter target spell. If that spell's mana value was N or less, recruit.`
-The spell is target `n`. Recruit happens only when that spell's mana value
-was at most `N` (CR 202.3 / 608.2h). -/
+The spell is target `n`. Its mana value is noted before it is countered,
+while it is still on the stack (CR 202.3e). Recruit happens only when that
+noted value was at most `N`. -/
 def parseCounterThenRecruitIfMv (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   match sentences text with
@@ -1741,8 +1743,9 @@ def parseCounterThenRecruitIfMv (text : String) (n : Nat) :
     else
       (recruitIfSpellMvAtMost? cond).map fun k =>
         ([
-          .counter (.target n .spell),
-          .if (.manaValueAtMost (.targetReference n) k)
+          .noteManaValue n (.target n .spell),
+          .counter (.targetReference n),
+          .if (.manaValueAtMost n k)
             [.keyword (.controller .this) .recruit]
         ], n + 1)
   | _ => none
@@ -4452,8 +4455,9 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "Counter target spell. If that spell's mana value was 2 or less, recruit." ==
   some [.actions [
-    .counter (.target 1 .spell),
-    .if (.manaValueAtMost (.targetReference 1) 2)
+    .noteManaValue 1 (.target 1 .spell),
+    .counter (.targetReference 1),
+    .if (.manaValueAtMost 1 2)
       [.keyword (.controller .this) .recruit]]]
 #guard parseOracleParts (name := "")
   "Counter target spell. If that spell's mana value was 2 or less, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)" ==

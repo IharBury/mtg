@@ -621,10 +621,10 @@ inductive Condition where
   | turn : Selector → Condition
   /-- True when both conditions hold. -/
   | and : Condition → Condition → Condition
-  /-- True when the selected object's mana value is at most this number
-  (CR 202.3). Printed “was” uses last known information if that object
-  has left its zone (CR 608.2h). -/
-  | manaValueAtMost : Selector → Nat → Condition
+  /-- True when the mana value recorded by `noteManaValue` with this number
+  is at most the given threshold. The record is the value when that action
+  resolved, before a later action counters the spell (CR 202.3 / 202.3e). -/
+  | manaValueAtMost : Nat → Nat → Condition
 deriving Repr, Inhabited, BEq
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
@@ -787,6 +787,10 @@ inductive CardAction where
   | putIntoLibraryFromTop : Selector → Value → CardAction
   /-- Number this action so later clauses can refer to it. -/
   | actionId : Nat → CardAction → CardAction
+  /-- Record the mana value of the selected object (CR 202.3). On the stack
+  the value includes the chosen `{X}` (CR 107.3a / 202.3e). The number
+  identifies the record for a later `Condition.manaValueAtMost`. -/
+  | noteManaValue : Nat → Selector → CardAction
   /-- The selected player loses that much life (CR 118.3). -/
   | loseLife : Selector → Value → CardAction
   /-- The controller sacrifices the selected object (CR 701.17). -/
@@ -1381,14 +1385,16 @@ def leftoverReturnCreatureFromGyThenAmass? : CardAction → Option Nat
     | _ => none
   | _ => none
 
-/-- Counter the targeted spell, then recruit if its mana value was at most `n`. -/
+/-- Counter the targeted spell, then recruit if its mana value was at most `n`.
+The mana value is the value noted before the spell is countered. -/
 def leftoverCounterThenRecruitIfMvAtMost? : CardAction → Option Nat
   | .sequence [
-      .counter (.target id .spell),
-      .if (.manaValueAtMost (.targetReference id') n)
+      .noteManaValue id (.target spellId .spell),
+      .counter (.targetReference spellId'),
+      .if (.manaValueAtMost id' n)
         [.keyword (.controller .this) .recruit]
     ] =>
-    if id == id' then some n else none
+    if id == spellId && spellId == spellId' && id == id' then some n else none
   | _ => none
 
 /-- Target creature gets +P/+T and gains keywords. -/
@@ -3079,6 +3085,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putIntoLibraryFromTop _ _ =>
                     continuousEffect none [] asAbility
                   | .actionId _ inner => compile inner asAbility
+                  | .noteManaValue _ _ => continuousEffect none [] asAbility
                   | .loseLife _ _ => continuousEffect none [] asAbility
                   | .sacrifice _ => continuousEffect none [] asAbility
                   | .returnToHand _ => Effect.returnFromGraveyardToHand
@@ -7332,8 +7339,9 @@ end TraditionalCardDefinition
 #guard
   CardAction.toEffect
     (.sequence [
-      .counter (.target 1 .spell),
-      .if (.manaValueAtMost (.targetReference 1) 2)
+      .noteManaValue 1 (.target 1 .spell),
+      .counter (.targetReference 1),
+      .if (.manaValueAtMost 1 2)
         [.keyword (.controller .this) .recruit]]) ==
     Effect.counterThenRecruitIfMvAtMost 2
 
@@ -7341,7 +7349,16 @@ end TraditionalCardDefinition
   CardAction.toEffect
     (.sequence [
       .counter (.target 1 .spell),
-      .if (.manaValueAtMost (.targetReference 2) 2)
+      .if (.manaValueAtMost 1 2)
+        [.keyword (.controller .this) .recruit]]) !=
+    Effect.counterThenRecruitIfMvAtMost 2
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .noteManaValue 1 (.target 1 .spell),
+      .counter (.targetReference 2),
+      .if (.manaValueAtMost 1 2)
         [.keyword (.controller .this) .recruit]]) !=
     Effect.counterThenRecruitIfMvAtMost 2
 
