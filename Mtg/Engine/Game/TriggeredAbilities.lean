@@ -1,4 +1,5 @@
 import Mtg.Engine.Game.Chapters
+import Mtg.Engine.Game.Damage
 
 /-!
 # Triggered-ability resolution (CR 603)
@@ -282,16 +283,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | Target.permanent oid =>
         match g.findObject? oid with
         | none => g.logMsg "The target is no longer legal"
-        | some o =>
+        | some _ =>
+          let before := g
           let g := g.applyEffect controller (Effect.dealDamage n) #[tgt]
-          if g.hasSubtype o subtype then
-            match g.findObject? oid with
-            | some o =>
-              let name := o.name
-              let (g, _) := g.move o.id (.graveyard o.owner) none
-              g.logMsg s!"{name} is destroyed"
-            | none => g
-          else g
+          match g.findObject? oid with
+          | some o =>
+            if g.wasJustDealtNoncombatDamage before oid && g.hasSubtype o subtype then
+              g.destroyPermanent o
+            else g
+          | none => g
       | _ => g.logMsg "The target is no longer legal")
   | .attachEquipmentToCreature =>
     match targets[0]?, targets[1]? with

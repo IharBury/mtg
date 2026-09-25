@@ -327,7 +327,8 @@ Currently recognized:
 - `When <this> enters, it deals N damage to any target. If a <subtype> is dealt damage this way, destroy it.`
   The source is `it`, `he`, `she`, `they`, or another reference to this card.
   `N` is a positive printed number. `any target` is a player or creature.
-  The damaged object is destroyed when it has that subtype.
+  The target is destroyed only when that damage is dealt to it and it has
+  the subtype. Prevented damage does not destroy it.
 - `Whenever <this> attacks, he deals damage equal to the number of Treasures you control to any target.`
   The source is a pronoun or another reference to this card. The amount is
   how many Treasure artifacts its controller controls.
@@ -3217,8 +3218,8 @@ def parseEnterSearchBasicToHand (cardName : String) (line : String) (n : Nat) :
     else none
 
 /-- `When <this> enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it.`
-The entering object is this card. The damaged object is target `n`. It is
-destroyed when it has the printed subtype. -/
+The entering object is this card. The recipient is target `n`. It is
+destroyed only when that damage is dealt to it and it has the subtype. -/
 def parseEnterDealDamageDestroyIfSubtype (cardName : String) (line : String)
     (n : Nat) : Option (CardPart × Nat) :=
   match sentences (stripReminderParenthetical line) with
@@ -3240,7 +3241,8 @@ def parseEnterDealDamageDestroyIfSubtype (cardName : String) (line : String)
                           (.sequence [
                             .dealDamage (.source .this) (.target n .all)
                               (.nat amount),
-                            .if (.anySubtype (.targetReference n) st)
+                            .if (.dealtDamage
+                              (.intersection [.targetReference n, .subtype st]))
                               [.destroy (.targetReference n)]])),
                         n + 1)
   | _ => none
@@ -5507,7 +5509,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   some [.ability (.triggered (.enter .this)
     (.sequence [
       .dealDamage (.source .this) (.target 1 .all) 1,
-      .if (.anySubtype (.targetReference 1) .dragon)
+      .if (.dealtDamage (.intersection [.targetReference 1, .subtype .dragon]))
         [.destroy (.targetReference 1)]]))]
 #guard parseOracleParts (name := "Gandalf")
   "When The Black Arrow enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it." ==

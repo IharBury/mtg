@@ -3732,7 +3732,7 @@ def theBlackArrow : CardDef :=
   .ability (.triggered (.enter .this)
     (.sequence [
       .dealDamage (.source .this) (.target 1 .all) 1,
-      .if (.anySubtype (.targetReference 1) .dragon)
+      .if (.dealtDamage (.intersection [.targetReference 1, .subtype .dragon]))
         [.destroy (.targetReference 1)]])),
   .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
   .ability (.static (.addToughness (.hostOf .this) (Value.int 1))),
