@@ -184,6 +184,9 @@ inductive Keyword where
   /-- A Saga chapter ability (CR 714.2), numbered from I. Printed with
   `Ability.keywordWithEffect`. -/
   | chapter : Nat → Keyword
+  /-- Flashback (CR 702.34): printed with a cost, e.g. Flashback {4}{W}.
+  The card may be cast from a graveyard for that cost, then is exiled. -/
+  | flashback
 deriving Repr, Inhabited, BEq
 
 /-- A number that is either a printed constant or computed from game
@@ -329,6 +332,8 @@ inductive Trigger where
   | endOfPlayerTurn : Selector → Trigger
   /-- At the beginning of combat on the selected player's turn (CR 507.1). -/
   | combatStart : Selector → Trigger
+  /-- At the beginning of the selected player's upkeep (CR 503.1). -/
+  | upkeep : Selector → Trigger
   /-- From the start of the turn (a window bound for `happened`). -/
   | turnStart
   /-- From the start of the game (a window bound for `happened`). -/
@@ -482,7 +487,7 @@ def toKeywords : Keyword → Keywords
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
   | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
-  | .connive _ | .chapter _ =>
+  | .connive _ | .chapter _ | .flashback =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -510,6 +515,7 @@ instance : ToString Keyword where
         | 6 => "VI"
         | n => toString n
       s!"chapter {roman}"
+    | .flashback => "flashback"
     | k => toString k.toKeywords
 
 end Keyword

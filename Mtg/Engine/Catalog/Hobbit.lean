@@ -33,7 +33,9 @@ Giant's Boulder, Long-Bodied Grey Dog, Dori, Bearer of Friends,
 Esgaroth Garrison, Gundabad Opportunist, Gigantic Big Bear,
 Bothersome Noisemaker, Fearsome Goblin Pair, Goblin-town Flunkies,
 Misty Mountains Raider, Bard's Company, Rage into the Valley,
-Gathering of Darkness, and Sound the Trumpets
+Gathering of Darkness, Sound the Trumpets, Fateful Discovery,
+Chief Warg's Company, Dwarven Shortsword, Goblin Plate Mail, and
+Moment of Glory
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -3028,73 +3030,182 @@ def soundTheTrumpets : CardDef :=
 #guard soundTheTrumpets.spellEffect == some (Effect.counterThenRecruitIfMvAtMost 2)
 #guard soundTheTrumpets.oracleText == soundTheTrumpetsOracle
 
-def fatefulDiscovery : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Fateful Discovery. -/
+def fatefulDiscoveryOracle : String :=
+  "Whenever an artifact you control enters, draw a card."
+
+def fatefulDiscoveryDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Fateful Discovery",
     .manaCost [.generic 3, .mono .blue, .mono .blue],
-    .type .enchantment,
-    .ability (
-      .triggered
-        (.enter
-          (.intersection [
-            .permanent,
-            .cardType .artifact,
-            .controlled (.controller .this)]))
-        (.draw (.controller .this) 1))
-  ]).toCardDef
-    (oracleText := "Whenever an artifact you control enters, draw a card.")
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "Fateful Discovery") fatefulDiscoveryOracle).get!
+
+def fatefulDiscovery : CardDef :=
+  fatefulDiscoveryDefinition.toCardDef
+    (oracleText := fatefulDiscoveryOracle)
+
+#guard fatefulDiscoveryDefinition == .card [
+  .name "Fateful Discovery",
+  .manaCost [.generic 3, .mono .blue, .mono .blue],
+  .type .enchantment,
+  .ability (.triggered
+    (.enter (.intersection [
+      .permanent, .cardType .artifact, .controlled (.controller .this)]))
+    (.draw (.controller .this) 1))]
+
+#guard fatefulDiscovery.triggeredAbilities == #[.onArtifactYouControlEntersDraw]
+#guard fatefulDiscovery.oracleText == fatefulDiscoveryOracle
+
+/-- Gatherer Oracle text for Chief Warg's Company. -/
+def chiefWargsCompanyOracle : String :=
+  "Trample\nThis creature can't attack unless you control two or more other Wolves.\nAt the beginning of your upkeep, create a 2/2 green Wolf creature token."
+
+def chiefWargsCompanyDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Chief Warg's Company",
+    .manaCost [.generic 1, .mono .black, .mono .green],
+    .type .creature,
+    .subtype .wolf,
+    .power 5,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Chief Warg's Company") chiefWargsCompanyOracle).get!
 
 def chiefWargsCompany : CardDef :=
-  creature "Chief Warg's Company" (ManaCost.ofGenericAndColors 1 [.black, .green])
-    #["Wolf"] 5 3
-    (oracleText := "Trample\nThis creature can't attack unless you control two or more other Wolves.\nAt the beginning of your upkeep, create a 2/2 green Wolf creature token.")
-    (keywords := Keyword.trample)
-    (staticAbilities := #[.cantAttackUnlessYouControlNOther 2 "Wolf"])
-    (triggeredAbilities := #[.onYourUpkeepCreateTokens .wolf 1])
+  chiefWargsCompanyDefinition.toCardDef
+    (oracleText := chiefWargsCompanyOracle)
 
-def dwarvenShortsword : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard chiefWargsCompanyDefinition == .card [
+  .name "Chief Warg's Company",
+  .manaCost [.generic 1, .mono .black, .mono .green],
+  .type .creature,
+  .subtype .wolf,
+  .power 5,
+  .toughness 3,
+  .ability (.keyword .trample),
+  .ability (.static (.if
+    (.less
+      (.count (.intersection [
+        .not .this, .permanent, .subtype .wolf, .controlled (.controller .this)]))
+      (Value.nat 2))
+    [.forbid (.attack .this .all)])),
+  .ability (.triggered
+    (.upkeep (.controller .this))
+    (.createTokens (.controller .this) 1 [
+      .type .creature, .subtype .wolf, .colorIndicator [.green],
+      .power 2, .toughness 2]))]
+
+#guard chiefWargsCompany.keywords.trample
+#guard chiefWargsCompany.staticAbilities == #[.cantAttackUnlessYouControlNOther 2 "Wolf"]
+#guard chiefWargsCompany.triggeredAbilities == #[.onYourUpkeepCreateTokens .wolf 1]
+#guard chiefWargsCompany.oracleText == chiefWargsCompanyOracle
+
+/-- Gatherer Oracle text for Dwarven Shortsword. -/
+def dwarvenShortswordOracle : String :=
+  "When this Equipment enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)"
+
+def dwarvenShortswordDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Dwarven Shortsword",
     .manaCost [.generic 3, .mono .white],
     .type .artifact,
-    .subtype .equipment,
-    .ability (
-      .triggered
-        (.enter .this)
-        (.sequence [
-          .actionId 1
-            (.createTokens (.controller .this) 1 [
-              .type .creature, .subtype .dwarf, .colorIndicator [.red], .power 2, .toughness 2]),
-          .attach .this (.wasCreatedByAction 1)])),
-    .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
-    .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
-    .ability (.keywordWithCost .equip [.mana [.generic 2]])
-  ]).toCardDef
-    (oracleText := "When this Equipment enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)")
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "Dwarven Shortsword") dwarvenShortswordOracle).get!
 
-def goblinPlateMail : CardDef :=
-  (TraditionalCardDefinition.card [
+def dwarvenShortsword : CardDef :=
+  dwarvenShortswordDefinition.toCardDef
+    (oracleText := dwarvenShortswordOracle)
+
+#guard dwarvenShortswordDefinition == .card [
+  .name "Dwarven Shortsword",
+  .manaCost [.generic 3, .mono .white],
+  .type .artifact,
+  .subtype .equipment,
+  .ability (.triggered
+    (.enter .this)
+    (.sequence [
+      .actionId 1
+        (.createTokens (.controller .this) 1 [
+          .type .creature, .subtype .dwarf, .colorIndicator [.red], .power 2, .toughness 2]),
+      .attach .this (.wasCreatedByAction 1)])),
+  .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
+  .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
+  .ability (.keywordWithCost .equip [.mana [.generic 2]])]
+
+#guard dwarvenShortsword.triggeredAbilities == #[.onEnterCreateThenAttach .dwarf]
+#guard dwarvenShortsword.staticAbilities == #[.equippedCreatureGets 1 2]
+#guard dwarvenShortsword.oracleText == dwarvenShortswordOracle
+
+/-- Gatherer Oracle text for Goblin Plate Mail. -/
+def goblinPlateMailOracle : String :=
+  "When this Equipment enters, amass Goblins 1, then attach this Equipment to the amassed Army. (To amass Goblins 1, put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nEquipped creature gets +1/+0 and has menace.\nEquip {4}"
+
+def goblinPlateMailDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Goblin Plate Mail",
     .manaCost [.generic 1, .hybrid .black .red],
     .type .artifact,
-    .subtype .equipment,
-    .ability (
-      .triggered
-        (.enter .this)
-        (.sequence [
-          .actionId 1 (.keyword (.controller .this) (.amass .goblin (.nat 1))),
-          .attach .this (.wasObjectOfAction 1)])),
-    .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
-    .ability (.static (.gainAbility (.hostOf .this) (.keyword .menace))),
-    .ability (.keywordWithCost .equip [.mana [.generic 4]])
-  ]).toCardDef
-    (oracleText := "When this Equipment enters, amass Goblins 1, then attach this Equipment to the amassed Army. (To amass Goblins 1, put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nEquipped creature gets +1/+0 and has menace.\nEquip {4}")
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "Goblin Plate Mail") goblinPlateMailOracle).get!
+
+def goblinPlateMail : CardDef :=
+  goblinPlateMailDefinition.toCardDef
+    (oracleText := goblinPlateMailOracle)
+
+#guard goblinPlateMailDefinition == .card [
+  .name "Goblin Plate Mail",
+  .manaCost [.generic 1, .hybrid .black .red],
+  .type .artifact,
+  .subtype .equipment,
+  .ability (.triggered
+    (.enter .this)
+    (.sequence [
+      .actionId 1 (.keyword (.controller .this) (.amass .goblin (.nat 1))),
+      .attach .this (.wasObjectOfAction 1)])),
+  .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
+  .ability (.static (.gainAbility (.hostOf .this) (.keyword .menace))),
+  .ability (.keywordWithCost .equip [.mana [.generic 4]])]
+
+#guard goblinPlateMail.triggeredAbilities == #[.onEnterAmassThenAttach 1]
+#guard goblinPlateMail.staticAbilities == #[.equippedCreatureGetsAndHas 1 0 Keyword.menace]
+#guard goblinPlateMail.oracleText == goblinPlateMailOracle
+
+/-- Gatherer Oracle text for Moment of Glory. -/
+def momentOfGloryOracle : String :=
+  "Put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control.\nFlashback {4}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+
+def momentOfGloryDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Moment of Glory",
+    .manaCost [.mono .white],
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Moment of Glory") momentOfGloryOracle).get!
 
 def momentOfGlory : CardDef :=
-  sorcery "Moment of Glory" (ManaCost.ofColor .white)
-    "Put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control.\nFlashback {4}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
-    (some (Effect.plusOneThenEachOtherIfFromGy))
-    (flashback := some (ManaCost.ofGenericAndColor 4 .white))
+  momentOfGloryDefinition.toCardDef
+    (oracleText := momentOfGloryOracle)
+
+#guard momentOfGloryDefinition == .card [
+  .name "Moment of Glory",
+  .manaCost [.mono .white],
+  .type .sorcery,
+  .actions [
+    .putCounter
+      (.target 1 (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this)]))
+      .plusOnePlusOne 1,
+    .if .castFromGraveyard
+      [.putCounter
+        (.intersection [
+          .not (.targetReference 1),
+          .permanent, .cardType .creature, .controlled (.controller .this)])
+        .plusOnePlusOne 1]],
+  .ability (.keywordWithCost .flashback [.mana [.generic 4, .mono .white]])]
+
+#guard momentOfGlory.spellEffect == some Effect.plusOneThenEachOtherIfFromGy
+#guard momentOfGlory.flashback == some (ManaCost.ofGenericAndColor 4 .white)
+#guard momentOfGlory.manaCost == ManaCost.ofColor .white
+#guard momentOfGlory.oracleText == momentOfGloryOracle
 
 def plunderTheTrollshaws : CardDef :=
   instant "Plunder the Trollshaws" (ManaCost.ofGenericAndColor 1 .blue)
