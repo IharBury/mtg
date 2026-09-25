@@ -208,6 +208,8 @@ inductive Value where
   | greatestPower : Selector → Value
   /-- The number of objects matching the selector. -/
   | count : Selector → Value
+  /-- The total power of objects matching the selector (CR 208). -/
+  | totalPower : Selector → Value
   /-- The product of two values. -/
   | product : Value → Value → Value
   /-- The value recorded by `defineValueVariable` with this number.
@@ -420,8 +422,8 @@ instance : ToString Value where
     | .nat n => toString n
     | .int n => toString n
     | .x => "X"
-    | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _
-    | .product _ _ | .variable _ => "X"
+    | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
+    | .greatestPower _ | .product _ _ | .variable _ => "X"
 
 instance (n : Nat) : OfNat Value n where
   ofNat := .nat n

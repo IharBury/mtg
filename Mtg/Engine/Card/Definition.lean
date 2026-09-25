@@ -645,6 +645,8 @@ inductive Condition where
   | timeToCastSorcery : Selector → Condition
   /-- True when it is the selected player's turn (CR 500.1). -/
   | turn : Selector → Condition
+  /-- True when the selected player has an enduring story. -/
+  | enduringStory : Selector → Condition
   /-- True when both conditions hold. -/
   | and : Condition → Condition → Condition
   /-- True when the first value is less than the second. -/
@@ -720,6 +722,9 @@ inductive ContinuousEffect where
   /-- Apply the given continuous effects only when the condition holds. -/
   | if : Condition → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
+  /-- Reduce the cost of the selected spell by `costs`, substituting `{X}`
+  with the given value (CR 601.2f / 107.3). -/
+  | reduceCostWithX : Selector → List Cost → Value → ContinuousEffect
   /-- An additional cost to cast the selected spell (CR 601.2b). -/
   | additionalCost : Selector → List Cost → ContinuousEffect
   /-- Replace the trigger with the given actions (CR 614). -/
@@ -940,15 +945,15 @@ end PredefinedToken
 def valToInt? : Value → Option Int
   | .int p => some p
   | .nat p => some (Int.ofNat p)
-  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _
-  | .product _ _ | .variable _ => none
+  | .x | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
+  | .greatestPower _ | .product _ _ | .variable _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
   | .nat n => some n
   | .int n => if n ≥ 0 then some n.toNat else none
-  | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _
-  | .product _ _ | .variable _ => none
+  | .x | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
+  | .greatestPower _ | .product _ _ | .variable _ => none
 
 /-- This object, or the source of this ability (CR 113.7). -/
 def isThisOrItsSource : Selector → Bool
@@ -996,7 +1001,7 @@ def selector : ContinuousEffect → Selector
   | .gainAbility who _ => who
   | .if _ (inner :: _) => selector inner
   | .if _ [] => .this
-  | .reduceCost who _ => who
+  | .reduceCost who _ | .reduceCostWithX who _ _ => who
   | .additionalCost who _ => who
   | .replace _ _ => .this
   | .forbid _ => .this
@@ -3317,6 +3322,39 @@ def toEffect (action : CardAction) : Effect :=
 def toAbilityEffect (action : CardAction) : Effect :=
   compile action true
 
+/-- The number of Treasure artifacts this object's controller controls. -/
+def isTreasuresYouControlCount : Value → Bool
+  | .count among =>
+    let s := among.shape
+    s.mustBePermanent && s.sameController && !s.other && !s.opponentControls &&
+      !s.flying && !s.attacking && !s.token && !s.nontoken &&
+      s.subtype == some "Treasure" && s.types.eqTypes [.artifact] &&
+      s.powerAtLeast.isNone && s.powerAtMost.isNone && !s.hasPlusOneCounter
+  | _ => false
+
+/-- Damage to any target equal to the number of Treasures you control. -/
+def leftoverDamageEqualTreasures? : CardAction → Bool
+  | .dealDamage src victim amount =>
+    (src == .this || src == .source .this) &&
+      Selector.leftoverAnyTarget? victim &&
+      isTreasuresYouControlCount amount
+  | _ => false
+
+/-- Deal damage to any target, then destroy the object of that action if
+that damage was dealt to it and it has this subtype. -/
+def leftoverDealDamageDestroyIfSubtype? : CardAction → Option (Nat × String)
+  | .sequence [
+      .actionId id (.dealDamage src victim (.nat n)),
+      .if (.anySubtype (.wasObjectOfAction id') st)
+        [.destroy (.wasObjectOfAction id'')]
+    ] =>
+    if n != 0 && id == id' && id == id'' &&
+        (src == .this || src == .source .this) &&
+        Selector.leftoverAnyTarget? victim then
+      some (n, st.toString)
+    else none
+  | _ => none
+
 end CardAction
 
 namespace Ability
@@ -3372,7 +3410,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
       onlyDuringYourTurn := true
       activateFromGraveyard := fromGraveyard }
   | .any _ | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
-  | .didNotHappen _ _ | .and _ _
+  | .didNotHappen _ _ | .and _ _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
   | .equal _ _ => none
 
@@ -3737,22 +3775,25 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     if CardAction.leftoverAttachTargetEquipment? action then
       some TriggeredAbility.onEnterAttachTargetEquipment
     else
-    match CardAction.leftoverUntapPlusOneIfSubtype? action with
-    | some st => some (TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype st)
-    | none =>
-      match CardAction.leftoverExileThenReturnTapped? action with
-      | some sel =>
-        match sel with
-        | .targets _ (.range 0 3) among =>
-          if among.shape.landYouControl then
-            some TriggeredAbility.onEnterExileLandsThenReturnTapped
-          else none
-        | _ => none
+      match CardAction.leftoverDealDamageDestroyIfSubtype? action with
+      | some (n, st) => some (TriggeredAbility.onEnterDealDamageDestroyIfSubtype n st)
       | none =>
-        match CardAction.leftoverMaySacArtifactOrDiscardDraw? action with
-        | some 1 => some TriggeredAbility.onEnterMaySacArtifactOrDiscardDraw
-        | _ =>
-          CardAction.leftoverEnterThisAction? action
+        match CardAction.leftoverUntapPlusOneIfSubtype? action with
+        | some st => some (TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype st)
+        | none =>
+          match CardAction.leftoverExileThenReturnTapped? action with
+          | some sel =>
+            match sel with
+            | .targets _ (.range 0 3) among =>
+              if among.shape.landYouControl then
+                some TriggeredAbility.onEnterExileLandsThenReturnTapped
+              else none
+            | _ => none
+          | none =>
+            match CardAction.leftoverMaySacArtifactOrDiscardDraw? action with
+            | some 1 => some TriggeredAbility.onEnterMaySacArtifactOrDiscardDraw
+            | _ =>
+              CardAction.leftoverEnterThisAction? action
   | .triggered (.enter among) (.chooseModeRestricted who modes) =>
     if among.shape.anotherCreatureYouControl &&
         CardAction.leftoverAllianceModes? who modes then
@@ -3807,6 +3848,9 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
           some (TriggeredAbility.onWatch Effect.watchVillainAttachEquipment)
         else none
   | .triggered (.attack .this .all) action =>
+    if CardAction.leftoverDamageEqualTreasures? action then
+      some TriggeredAbility.onAttackDamageEqualTreasures
+    else
     match CardAction.leftoverExileThenReturnTapped? action with
     | some sel =>
       match sel with
@@ -3984,6 +4028,9 @@ structure CardFace where
   costReductionIfTargetAttackingNontoken : Nat := 0
   costReductionIfTargetAttacking : Nat := 0
   costReductionIfCreatureDied : Nat := 0
+  /-- This spell costs {X} less, where X is the total power of creatures you
+  control with flying. -/
+  costReductionEqualFlyingPower : Bool := false
   costReductionIfYouControl : Option (Nat × String) := none
   additionalCostSacrificeArtifactOrCreature : Bool := false
   additionalCostOrPayGeneric : Option Nat := none
@@ -4198,6 +4245,42 @@ def applyIntegerPowerToughness (b : CardFace) (sel : Selector) (p t : Int) : Car
       mergeCreaturesYouControlGet b p t
     else b
 
+/-- Total power of creature permanents with flying that this object's
+controller controls. -/
+def isTotalPowerOfFlyingCreaturesYouControl : Value → Bool
+  | .totalPower among =>
+    let s := among.shape
+    s.mustBePermanent && s.sameController && s.flying && !s.other &&
+      !s.opponentControls && !s.attacking && !s.token && !s.nontoken &&
+      s.types.eqTypes [.creature] && s.subtype.isNone &&
+      s.powerAtLeast.isNone && s.powerAtMost.isNone && !s.hasPlusOneCounter
+  | _ => false
+
+/-- `+P/+T` and keywords on this object. A zero bonus with no keywords is
+not an effect. -/
+def selfGetsAndHas? (effects : List ContinuousEffect) : Option (Int × Int × Keywords) :=
+  go effects 0 0 Keywords.none false
+where
+  go : List ContinuousEffect → Int → Int → Keywords → Bool →
+      Option (Int × Int × Keywords)
+    | [], p, t, k, seen =>
+      if seen && (p != 0 || t != 0 || k != Keywords.none) then some (p, t, k)
+      else none
+    | .addPower who v :: rest, p, t, k, _ =>
+      match valToInt? v with
+      | some dp =>
+        if isThisOrItsSource who then go rest (p + dp) t k true else none
+      | none => none
+    | .addToughness who v :: rest, p, t, k, _ =>
+      match valToInt? v with
+      | some dt =>
+        if isThisOrItsSource who then go rest p (t + dt) k true else none
+      | none => none
+    | .gainAbility who (.keyword kw) :: rest, p, t, k, _ =>
+      if isThisOrItsSource who then go rest p t (k.merge kw.toKeywords) true
+      else none
+    | _, _, _, _, _ => none
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
@@ -4279,6 +4362,15 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.happened _ _) _ => b
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
+  | .if (.enduringStory who) inners =>
+    if who == .controller .this then
+      match selfGetsAndHas? inners with
+      | some (p, t, k) =>
+        { b with
+          staticAbilities :=
+            b.staticAbilities.push (.getsAndHasIfEnduringStory p t k) }
+      | none => b
+    else b
   | .if (.and _ _) _ => b
   | .if (.greaterOrEqual (.count among) threshold) inners =>
     if valToNat? threshold == some 2 then
@@ -4351,6 +4443,12 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           Cost.sacrificesArtifactOrCreature cs
       additionalCostOrPayGeneric :=
         b.additionalCostOrPayGeneric.orElse (fun _ => Cost.orPayGeneric? cs) }
+  | .reduceCostWithX who costs v =>
+    if (who == .this || who == .source .this) &&
+        costs == [.mana [.x]] &&
+        isTotalPowerOfFlyingCreaturesYouControl v then
+      { b with costReductionEqualFlyingPower := true }
+    else b
   | .reduceCost who costs =>
     match leftoverEquipAbilitiesTargetingThisCostLess? who costs with
     | some n =>
@@ -4569,6 +4667,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       costReductionIfTargetAttackingNontoken := b.costReductionIfTargetAttackingNontoken
       costReductionIfTargetAttacking := b.costReductionIfTargetAttacking
       costReductionIfCreatureDied := b.costReductionIfCreatureDied
+      costReductionEqualFlyingPower := b.costReductionEqualFlyingPower
       costReductionIfYouControl := b.costReductionIfYouControl
       additionalCostSacrificeArtifactOrCreature :=
         b.additionalCostSacrificeArtifactOrCreature

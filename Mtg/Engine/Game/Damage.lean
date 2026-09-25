@@ -231,6 +231,24 @@ def continueIfShuffled (g : Game) : Game :=
     | .gainLife p n => g.gainLife p n
     | other => { g with afterRandom := other }
 
+/-- Whether `after` shows that noncombat damage was just dealt to `oid`.
+Prevention and a shield counter do not deal that damage (CR 120 / 614). -/
+def wasJustDealtNoncombatDamage (after before : Game) (oid : ObjectId) : Bool :=
+  match after.findObject? oid with
+  | none => false
+  | some now =>
+    let increased :=
+      match before.findObject? oid with
+      | some prev => now.status.damage > prev.status.damage
+      | none => now.status.damage > 0
+    let freshlyMarked :=
+      match after.lastNoncombatDamage with
+      | some (id, amt) =>
+        id == oid && amt > 0 &&
+          after.lastNoncombatDamage != before.lastNoncombatDamage
+      | none => false
+    increased || freshlyMarked
+
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
   match t with

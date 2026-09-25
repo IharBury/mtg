@@ -645,4 +645,73 @@ def hunterSacrificesFireleaper : Game :=
 #guard hunterSacrificesFireleaper.log.any (fun s => mentions s "sacrifices Goblin Fireleaper")
 #guard hunterSacrificesFireleaper.log.any (fun s => mentions s "dies trigger is put on the stack")
 
+/- The Black Arrow destroys a Dragon only when its damage is actually dealt. -/
+
+/-- The Black Arrow in hand and `fodder` on Nissa's side, with mana to cast. -/
+def arrowReady (fodder : CardDef) : Game :=
+  let g := addPermanent afterDraw fodder ⟨1⟩ ⟨1⟩
+  withRedMana (addToHand g theBlackArrow ⟨0⟩) ⟨0⟩ 3
+
+/-- The Arrow has entered; its trigger is waiting for any target. -/
+def arrowEntered (g : Game) : Game :=
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "The Black Arrow").id)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+/-- Resolve the enter trigger against `choose`. -/
+def arrowResolved (g : Game) (choose : Game → Target) : Game :=
+  let entered := arrowEntered g
+  let targeted := mustApply entered ⟨0⟩ (.target (choose entered))
+  passBoth targeted
+
+def arrowVsDragon : Game := arrowResolved (arrowReady smaugTheMagnificent)
+  (fun g => Target.permanent (namedPermanent g "Smaug the Magnificent").id)
+
+#guard arrowVsDragon.stack.isEmpty
+#guard arrowVsDragon.log.any (fun s =>
+  mentions s "Smaug the Magnificent is dealt 1 damage")
+#guard arrowVsDragon.log.any (fun s => mentions s "Smaug the Magnificent is destroyed")
+#guard !(arrowVsDragon.battlefield.any (fun o => o.name == "Smaug the Magnificent"))
+#guard (arrowVsDragon.player ⟨1⟩).graveyard.any (fun id =>
+  (arrowVsDragon.object! id).name == "Smaug the Magnificent")
+
+/-- A non-Dragon takes the damage and stays. -/
+def arrowVsBears : Game := arrowResolved (arrowReady grizzlyBears)
+  (fun g => Target.permanent (namedPermanent g "Grizzly Bears").id)
+
+#guard (namedPermanent arrowVsBears "Grizzly Bears").status.damage == 1
+#guard (namedPermanent arrowVsBears "Grizzly Bears").isOnBattlefield
+#guard !arrowVsBears.log.any (fun s => mentions s "Grizzly Bears is destroyed")
+
+/-- Prevented damage is not dealt, so the Dragon is not destroyed. -/
+def wardedSmaug : CardDef :=
+  { smaugTheMagnificent with
+    staticAbilities :=
+      smaugTheMagnificent.staticAbilities.push StaticAbility.preventAllDamageToThis }
+
+def arrowVsWardedDragon : Game := arrowResolved (arrowReady wardedSmaug)
+  (fun g => Target.permanent (namedPermanent g "Smaug the Magnificent").id)
+
+#guard (namedPermanent arrowVsWardedDragon "Smaug the Magnificent").isOnBattlefield
+#guard (namedPermanent arrowVsWardedDragon "Smaug the Magnificent").status.damage == 0
+#guard arrowVsWardedDragon.log.any (fun s =>
+  mentions s "Damage that would be dealt to Smaug the Magnificent is prevented")
+#guard !arrowVsWardedDragon.log.any (fun s => mentions s "Smaug the Magnificent is destroyed")
+
+/-- A shield counter replaces the damage, so the Dragon is not destroyed. -/
+def arrowShieldReady : Game :=
+  let g := arrowReady smaugTheMagnificent
+  let o := namedPermanent g "Smaug the Magnificent"
+  g.setObject { o with status := { o.status with shield := 1 } }
+
+def arrowVsShield : Game := arrowResolved arrowShieldReady
+  (fun g => Target.permanent (namedPermanent g "Smaug the Magnificent").id)
+
+#guard (namedPermanent arrowVsShield "Smaug the Magnificent").isOnBattlefield
+#guard (namedPermanent arrowVsShield "Smaug the Magnificent").status.shield == 0
+#guard (namedPermanent arrowVsShield "Smaug the Magnificent").status.damage == 0
+#guard arrowVsShield.log.any (fun s =>
+  mentions s "A shield counter is removed from Smaug the Magnificent instead of damage")
+#guard !arrowVsShield.log.any (fun s => mentions s "Smaug the Magnificent is destroyed")
+
 end Mtg.Engine.Tests
