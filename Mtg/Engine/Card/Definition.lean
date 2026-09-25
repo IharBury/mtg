@@ -621,10 +621,16 @@ inductive Condition where
   | turn : Selector → Condition
   /-- True when both conditions hold. -/
   | and : Condition → Condition → Condition
-  /-- True when the mana value recorded by `noteManaValue` with this number
-  is at most the given threshold. The record is the value when that action
-  resolved, before a later action counters the spell (CR 202.3 / 202.3e). -/
-  | manaValueAtMost : Nat → Nat → Condition
+  /-- True when the first value is less than the second. -/
+  | less : Value → Value → Condition
+  /-- True when the first value is less than or equal to the second. -/
+  | lessOrEqual : Value → Value → Condition
+  /-- True when the first value is greater than the second. -/
+  | greater : Value → Value → Condition
+  /-- True when the first value is greater than or equal to the second. -/
+  | greaterOrEqual : Value → Value → Condition
+  /-- True when the two values are equal. -/
+  | equal : Value → Value → Condition
 deriving Repr, Inhabited, BEq
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
@@ -787,10 +793,6 @@ inductive CardAction where
   | putIntoLibraryFromTop : Selector → Value → CardAction
   /-- Number this action so later clauses can refer to it. -/
   | actionId : Nat → CardAction → CardAction
-  /-- Record the mana value of the selected object (CR 202.3). On the stack
-  the value includes the chosen `{X}` (CR 107.3a / 202.3e). The number
-  identifies the record for a later `Condition.manaValueAtMost`. -/
-  | noteManaValue : Nat → Selector → CardAction
   /-- The selected player loses that much life (CR 118.3). -/
   | loseLife : Selector → Value → CardAction
   /-- The controller sacrifices the selected object (CR 701.17). -/
@@ -814,6 +816,10 @@ inductive CardAction where
   | holdOutInLibrary : Selector → CardAction
   /-- Bind the selected objects to this numbered variable. -/
   | defineVariable : Nat → Selector → CardAction
+  /-- Record this value under the numbered variable. The value is computed
+  when the action resolves, so a later `Value.variable` sees that result
+  after the objects it measured have changed zones. -/
+  | defineValueVariable : Nat → Value → CardAction
   /-- Execute the given actions for each of the given objects, binding the
   numbered variable to the current object. -/
   | forEachVariable : Nat → Selector → List CardAction → CardAction
@@ -905,14 +911,14 @@ def valToInt? : Value → Option Int
   | .int p => some p
   | .nat p => some (Int.ofNat p)
   | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _
-  | .product _ _ => none
+  | .product _ _ | .variable _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
   | .nat n => some n
   | .int n => if n ≥ 0 then some n.toNat else none
   | .x | .count _ | .greatestManaValue _ | .greatestToughness _ | .greatestPower _
-  | .product _ _ => none
+  | .product _ _ | .variable _ => none
 
 /-- This object, or the source of this ability (CR 113.7). -/
 def isThisOrItsSource : Selector → Bool
@@ -1386,15 +1392,18 @@ def leftoverReturnCreatureFromGyThenAmass? : CardAction → Option Nat
   | _ => none
 
 /-- Counter the targeted spell, then recruit if its mana value was at most `n`.
-The mana value is the value noted before the spell is countered. -/
+The threshold is a constant. The mana value is the greatest mana value of
+the target, recorded in a value variable before the spell is countered. -/
 def leftoverCounterThenRecruitIfMvAtMost? : CardAction → Option Nat
   | .sequence [
-      .noteManaValue id (.target spellId .spell),
+      .defineValueVariable id (.greatestManaValue (.target spellId .spell)),
       .counter (.targetReference spellId'),
-      .if (.manaValueAtMost id' n)
+      .if (.lessOrEqual (.variable id') threshold)
         [.keyword (.controller .this) .recruit]
     ] =>
-    if id == spellId && spellId == spellId' && id == id' then some n else none
+    if id == spellId && spellId == spellId' && id == id' then
+      valToNat? threshold
+    else none
   | _ => none
 
 /-- Target creature gets +P/+T and gains keywords. -/
@@ -3085,7 +3094,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putIntoLibraryFromTop _ _ =>
                     continuousEffect none [] asAbility
                   | .actionId _ inner => compile inner asAbility
-                  | .noteManaValue _ _ => continuousEffect none [] asAbility
+                  | .defineValueVariable _ _ => continuousEffect none [] asAbility
                   | .loseLife _ _ => continuousEffect none [] asAbility
                   | .sacrifice _ => continuousEffect none [] asAbility
                   | .returnToHand _ => Effect.returnFromGraveyardToHand
@@ -3216,7 +3225,9 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
       onlyDuringYourTurn := true
       activateFromGraveyard := fromGraveyard }
   | .any _ | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
-  | .didNotHappen _ _ | .and _ _ | .manaValueAtMost _ _ => none
+  | .didNotHappen _ _ | .and _ _
+  | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
+  | .equal _ _ => none
 
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost .equip costs =>
@@ -4073,7 +4084,8 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
   | .if (.and _ _) _ => b
-  | .if (.manaValueAtMost _ _) _ => b
+  | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
+  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
   | .if (.countAtLeast among n) inners =>
     if n == 2 then
       match CardAction.leftoverGetsIfGyCreatureCards? among inners with
@@ -4570,6 +4582,7 @@ end TraditionalCardDefinition
 #guard (valToNat? (Value.greatestToughness .this)).isNone
 #guard (valToNat? (Value.count .this)).isNone
 #guard (valToNat? (Value.product (Value.count .this) (Value.int 2))).isNone
+#guard (valToNat? (Value.variable 1)).isNone
 #guard Range.range Value.x 1 != Range.range 0 1
 #guard Range.any != Range.range 0 0
 #guard Range.from Value.x != Range.from 1
@@ -7339,9 +7352,9 @@ end TraditionalCardDefinition
 #guard
   CardAction.toEffect
     (.sequence [
-      .noteManaValue 1 (.target 1 .spell),
+      .defineValueVariable 1 (.greatestManaValue (.target 1 .spell)),
       .counter (.targetReference 1),
-      .if (.manaValueAtMost 1 2)
+      .if (.lessOrEqual (.variable 1) 2)
         [.keyword (.controller .this) .recruit]]) ==
     Effect.counterThenRecruitIfMvAtMost 2
 
@@ -7349,16 +7362,25 @@ end TraditionalCardDefinition
   CardAction.toEffect
     (.sequence [
       .counter (.target 1 .spell),
-      .if (.manaValueAtMost 1 2)
+      .if (.lessOrEqual (.variable 1) 2)
         [.keyword (.controller .this) .recruit]]) !=
     Effect.counterThenRecruitIfMvAtMost 2
 
 #guard
   CardAction.toEffect
     (.sequence [
-      .noteManaValue 1 (.target 1 .spell),
+      .defineValueVariable 1 (.greatestManaValue (.target 1 .spell)),
       .counter (.targetReference 2),
-      .if (.manaValueAtMost 1 2)
+      .if (.lessOrEqual (.variable 1) 2)
+        [.keyword (.controller .this) .recruit]]) !=
+    Effect.counterThenRecruitIfMvAtMost 2
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .defineValueVariable 1 (.greatestManaValue (.target 1 .spell)),
+      .counter (.targetReference 1),
+      .if (.less (.variable 1) 2)
         [.keyword (.controller .this) .recruit]]) !=
     Effect.counterThenRecruitIfMvAtMost 2
 

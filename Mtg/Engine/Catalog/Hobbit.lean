@@ -3020,9 +3020,9 @@ def soundTheTrumpets : CardDef :=
   .manaCost [.generic 1, .mono .blue, .mono .blue],
   .type .instant,
   .actions [
-    .noteManaValue 1 (.target 1 .spell),
+    .defineValueVariable 1 (.greatestManaValue (.target 1 .spell)),
     .counter (.targetReference 1),
-    .if (.manaValueAtMost 1 2)
+    .if (.lessOrEqual (.variable 1) 2)
       [.keyword (.controller .this) .recruit]]]
 
 #guard soundTheTrumpets.spellEffect == some (Effect.counterThenRecruitIfMvAtMost 2)
