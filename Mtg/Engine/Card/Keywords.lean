@@ -421,8 +421,8 @@ inductive Trigger where
   The first selector is the spell or ability. The second is the target.
   One trigger, even if that spell or ability targets `object` more than once. -/
   | target : Selector → Selector → Trigger
-  /-- At the beginning of the selected player's first main phase (CR 505.1). -/
-  | firstMain : Selector → Trigger
+  /-- At the beginning of the selected player's precombat main phase (CR 505.1). -/
+  | precombatMainPhase : Selector → Trigger
 deriving Repr, Inhabited, BEq
 end
 

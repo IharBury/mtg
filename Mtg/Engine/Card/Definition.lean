@@ -4185,7 +4185,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     if who == .controller .this && drawer == .controller .this then
       some TriggeredAbility.onYourEndStepDraw
     else none
-  | .triggered (.firstMain who) (.addMana gainer syms) =>
+  | .triggered (.precombatMainPhase who) (.addMana gainer syms) =>
     if who == .controller .this && gainer == .controller .this then
       CardAction.addedManaTypes? syms |>.map TriggeredAbility.onYourFirstMainAddMana
     else none

@@ -3468,7 +3468,7 @@ def parseFirstMainAddMana (line : String) : Option CardPart :=
       match CardAction.addedManaTypes? syms with
       | some _ =>
         some (.ability (.triggered
-          (.firstMain (.controller .this))
+          (.precombatMainPhase (.controller .this))
           (.addMana (.controller .this) syms)))
       | none => none
 
@@ -6346,7 +6346,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     [.replace (.enter .this) [.putOntoBattlefieldInState .this [.tapped]]]))]
 #guard parseOracleParts (name := "Glóin the Mighty")
   "At the beginning of your first main phase, add {R}{R}." ==
-  some [.ability (.triggered (.firstMain (.controller .this))
+  some [.ability (.triggered (.precombatMainPhase (.controller .this))
     (.addMana (.controller .this) [.colored .red, .colored .red]))]
 #guard parseOracleParts (name := "Iron Hills Stalwart")
   "When this creature enters, attach target Equipment you control to up to one target creature you control." ==
