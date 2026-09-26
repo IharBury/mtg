@@ -4364,6 +4364,42 @@ def thranduilSindarinLiegeDefinition : TraditionalCardDefinition := .card <|
     .toughness 3
   ] ++ (parseOracleParts (name := "Thranduil, Sindarin Liege") thranduilSindarinLiegeOracle).get!
 
+#guard thranduilSindarinLiegeDefinition == .card [
+  .name "Thranduil, Sindarin Liege",
+  .manaCost [.generic 2, .hybrid .green .blue, .hybrid .green .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .elf,
+  .subtype .noble,
+  .power 2,
+  .toughness 3,
+  .ability (.static (.addPower
+    (.intersection [
+      .not .this, .permanent, .cardType .creature, .subtype .elf,
+      .controlled (.controller .this)])
+    (Value.int 1))),
+  .ability (.static (.addToughness
+    (.intersection [
+      .not .this, .permanent, .cardType .creature, .subtype .elf,
+      .controlled (.controller .this)])
+    (Value.int 1))),
+  .ability (.triggered
+    (.enter (.intersection [
+      .permanent, .cardType .land, .controlled (.controller .this)]))
+    (.createTokens (.controller .this) 1 [
+      .type .creature, .subtype .elf, .colorIndicator [.green],
+      .power 1, .toughness 1])),
+  .alternative [
+    .name "Silvan Rally",
+    .manaCost [.generic 1, .hybrid .green .blue, .hybrid .green .blue],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [.sequence [
+      .actionId 1 (.mill (.controller .this) 4),
+      .returnToHand
+        (.selected (.controller .this) (.range 0 2)
+          (.intersection [.wasObjectOfAction 1, .cardType .land]))]]]]
+
 def thranduilSindarinLiege : CardDef :=
   thranduilSindarinLiegeDefinition.toCardDef
     (oracleText := thranduilSindarinLiegeOracle)
