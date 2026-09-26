@@ -406,7 +406,9 @@ inductive Trigger where
   event (CR 106.10). -/
   | spendManaCreatedByAction : Nat → Trigger → Trigger
   /-- Mana from a source matching the selector was spent to pay for the
-  given event. An intervening “if” (CR 603.4). -/
+  given event. The payment happens before that event (CR 601.2h). An
+  ability that triggers once when the event occurs sequences this payment
+  before the event, so it does not trigger once for each mana spent. -/
   | spentManaFrom : Selector → Trigger → Trigger
   /-- A spell matching the selector is cast (CR 601). -/
   | castSpell : Selector → Trigger

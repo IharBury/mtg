@@ -442,8 +442,10 @@ Currently recognized:
 - `When <this> enters, create X tapped Treasure tokens, where X is the number of artifacts your opponents control.`
   X is how many artifact permanents those opponents control.
 - `Whenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life.`
-  The “if” is an intervening if (CR 603.4): mana from a Treasure was spent to
-  cast that spell. One card and 1 life.
+  The ability triggers once when that spell is cast, not once for each mana
+  spent. That mana is spent to pay for the spell before the spell becomes
+  cast (CR 601.2h / 601.2i). The “if” is an intervening if (CR 603.4). One
+  card and 1 life.
 - `Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.`
   The printed reduction is `{X}`. X is the equipped creature's power.
 - `Mill six cards, then put all instant and sorcery cards from among them into your hand.`
@@ -4245,14 +4247,18 @@ def treasureManaSource : Selector :=
   .intersection [.permanent, .cardType .artifact, .subtype .treasure]
 
 /-- `Whenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life.`
-The “if” is an intervening if (CR 603.4): mana from a Treasure was spent to
-cast that spell. One card and 1 life. -/
+The ability triggers once when that spell is cast, not once for each mana
+spent. That mana is spent to pay for the spell before the spell becomes
+cast (CR 601.2h / 601.2i). The “if” is an intervening if (CR 603.4). One
+card and 1 life. -/
 def parseYouCastSpellIfTreasureDrawLoseLife (line : String) : Option CardPart :=
   (after? (normLine line)
       "whenever you cast a spell, if mana from a treasure was spent to cast it, ").bind
     parseYouDrawCardLoseLife |>.map fun action =>
       .ability (.triggered
-        (.spentManaFrom treasureManaSource (.castSpell anySpellYouCast))
+        (.sequence [
+          .spentManaFrom treasureManaSource (.castSpell anySpellYouCast),
+          .castSpell anySpellYouCast])
         action)
 
 /-- `Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.`
@@ -6965,9 +6971,11 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         PredefinedToken.treasureToken
         [.tapped])),
     .ability (.triggered
-      (.spentManaFrom
-        (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
-        (.castSpell (.intersection [.spell, youControl])))
+      (.sequence [
+        .spentManaFrom
+          (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
+          (.castSpell (.intersection [.spell, youControl])),
+        .castSpell (.intersection [.spell, youControl])])
       (.sequence [
         .draw (.controller .this) 1,
         .loseLife (.controller .this) 1]))]

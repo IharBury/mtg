@@ -5009,9 +5009,11 @@ def smaugWickedWormDefinition : TraditionalCardDefinition := .card <|
       PredefinedToken.treasureToken
       [.tapped])),
   .ability (.triggered
-    (.spentManaFrom
-      (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
-      (.castSpell (.intersection [.spell, .controlled (.controller .this)])))
+    (.sequence [
+      .spentManaFrom
+        (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
+        (.castSpell (.intersection [.spell, .controlled (.controller .this)])),
+      .castSpell (.intersection [.spell, .controlled (.controller .this)])])
     (.sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1]))]
