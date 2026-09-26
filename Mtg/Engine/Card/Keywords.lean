@@ -189,6 +189,9 @@ inductive Keyword where
   | flashback
   /-- Ward (CR 702.21): printed with a cost, e.g. Ward {2}. -/
   | ward
+  /-- Crew N (CR 702.122): tap that many creatures you control. This permanent
+  becomes an artifact creature until end of turn. The number is not a mana cost. -/
+  | crew : Nat → Keyword
 deriving Repr, Inhabited, BEq
 
 /-- A number that is either a printed constant or computed from game
@@ -284,6 +287,11 @@ inductive Selector where
   | subtype : CardSubtype → Selector
   /-- A spell on the stack (CR 112.1). -/
   | spell
+  /-- An ability on the stack (CR 113 / 115.1). -/
+  | ability
+  /-- The ability numbered by `Ability.abilityId`. “This ability” is that
+  ability, not the card it is printed on. -/
+  | abilityWithId : Nat → Selector
   /-- A permanent spell (CR 110.4 / 112.1). -/
   | permanentSpell
   /-- An object that has a target matching the given selector (CR 115.1). -/
@@ -412,6 +420,12 @@ inductive Trigger where
   | not : Trigger → Trigger
   /-- Either trigger occurs. -/
   | or : Trigger → Trigger → Trigger
+  /-- `spellOrAbility` targets `object` (CR 115.10a / 603.2).
+  The first selector is the spell or ability. The second is the target.
+  One trigger, even if that spell or ability targets `object` more than once. -/
+  | target : Selector → Selector → Trigger
+  /-- At the beginning of the selected player's precombat main phase (CR 505.1). -/
+  | precombatMainPhase : Selector → Trigger
 deriving Repr, Inhabited, BEq
 end
 
@@ -500,7 +514,7 @@ def toKeywords : Keyword → Keywords
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
   | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
-  | .connive _ | .chapter _ | .flashback | .ward =>
+  | .connive _ | .chapter _ | .flashback | .ward | .crew _ =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -530,6 +544,7 @@ instance : ToString Keyword where
       s!"chapter {roman}"
     | .flashback => "flashback"
     | .ward => "ward"
+    | .crew n => s!"crew {n}"
     | k => toString k.toKeywords
 
 end Keyword

@@ -136,7 +136,7 @@ structure CardDef where
   /-- This spell costs {X} less to cast, where X is the total power of
   creatures you control with flying. -/
   costReductionEqualFlyingPower : Bool := false
-  /-- Crew `n` (CR 702.122). -/
+  /-- Crew `n` (CR 702.122). `n` is the number of creatures to tap. -/
   crew : Option Nat := none
   /-- `{T}: Add two mana in any combination of these types`. -/
   tapAddTwoAmong : Array ManaType := #[]
