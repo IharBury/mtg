@@ -4964,7 +4964,7 @@ def dainsCompanyDefinition : TraditionalCardDefinition := .card <|
               .wasObjectOfAction 1,
               .union [.subtype .dwarf, .subtype .equipment]]))),
       .returnToHand (.wasObjectOfAction 2)]),
-    .putOnBottomInRandomOrder
+    .putOnLibraryBottomInRandomOrder
       (.intersection [
         .wasObjectOfAction 1,
         .not (.wasObjectOfAction 2)])]))]

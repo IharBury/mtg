@@ -959,7 +959,7 @@ inductive CardAction where
   | lookAt : Selector → CardAction
   /-- Put the selected cards on the bottom of their owner's library in a
   random order (CR 401.4). -/
-  | putOnBottomInRandomOrder : Selector → CardAction
+  | putOnLibraryBottomInRandomOrder : Selector → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
@@ -3200,7 +3200,7 @@ def leftoverLookAtTopReveal? : CardAction → Option (Nat × Array String)
                 .wasObjectOfAction looked,
                 .union [.subtype a, .subtype b]]))),
         .returnToHand (.wasObjectOfAction returned)]),
-      .putOnBottomInRandomOrder
+      .putOnLibraryBottomInRandomOrder
         (.intersection [
           .wasObjectOfAction bottomFrom,
           .not (.wasObjectOfAction excluded)])
@@ -3563,7 +3563,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .keepReplacedAction | .healAllDamage _ =>
                     continuousEffect none [] asAbility
                   | .shuffleIntoOwnersLibrary _ | .lookAt _
-                  | .putOnBottomInRandomOrder _ =>
+                  | .putOnLibraryBottomInRandomOrder _ =>
                     continuousEffect none [] asAbility
 
 /-- “Choose one or both”: one or two distinct modes (CR 700.2). -/

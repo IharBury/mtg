@@ -4211,7 +4211,7 @@ def parseEnterLookAtTopReveal (cardName : String) (line : String) (n : Nat) :
                             (.reveal
                               (.selected (.controller .this) (.range 1 1) among)),
                           .returnToHand revealed]),
-                        .putOnBottomInRandomOrder
+                        .putOnLibraryBottomInRandomOrder
                           (.intersection [looked, .not revealed])])),
                        n + 2)
   | _ => none
@@ -6940,7 +6940,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
                 .wasObjectOfAction 1,
                 .union [.subtype .dwarf, .subtype .equipment]]))),
         .returnToHand (.wasObjectOfAction 2)]),
-      .putOnBottomInRandomOrder
+      .putOnLibraryBottomInRandomOrder
         (.intersection [
           .wasObjectOfAction 1,
           .not (.wasObjectOfAction 2)])]))]
