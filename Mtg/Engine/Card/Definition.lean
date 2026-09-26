@@ -895,10 +895,14 @@ inductive CardAction where
   /-- The selected player chooses one of the listed mana symbols and adds
   that many mana of the chosen symbol. -/
   | addManaOfOneColor : Selector → List ManaSymbol → Value → CardAction
+  /-- The selected player adds that much mana in any combination of the
+  listed colors (CR 106.4). Each mana may be a different color. -/
+  | addManaInAnyCombination : Selector → List ManaSymbol → Value → CardAction
   /-- The selected player adds mana matching the listed symbols, all at
   once (CR 106.4). To let the player choose among symbols, use
   `playerSelectAction`. To add one chosen color, use
-  `addManaOfOneColor`. -/
+  `addManaOfOneColor`. To add mana in any combination of colors, use
+  `addManaInAnyCombination`. -/
   | addMana : Selector → List ManaSymbol → CardAction
   /-- The selected object or player performs a keyword action (CR 701),
   e.g. recruit, amass Goblins 1, or connive 1. -/
@@ -3027,20 +3031,6 @@ def leftoverDealDamageToEachOppCreature? : CardAction → Option Nat
     else none
   | _ => none
 
-/-- One mana of any color, chosen independently. -/
-def leftoverOneAnyColor? : CardAction → Bool
-  | .addManaOfOneColor who syms 1 =>
-    who == .controller .this && syms == ManaSymbol.anyColor
-  | _ => false
-
-/-- That many independent choices of one mana of any color. -/
-def leftoverIndependentAnyColorCount : List CardAction → Option Nat
-  | [] => some 0
-  | a :: rest =>
-    if leftoverOneAnyColor? a then
-      (leftoverIndependentAnyColorCount rest).map (· + 1)
-    else none
-
 /-- Spend this mana only to cast a Dragon spell. -/
 def leftoverDragonSpellSpend? : Trigger → Bool
   | .not (.castSpell (.subtype .dragon)) => true
@@ -3051,17 +3041,16 @@ of colors that can be spent only on Dragon spells. -/
 def leftoverNonDragonThenDragonMana? : CardAction → Option Nat
   | .sequence [
       .dealDamage src dest (.nat n),
-      .actionId id (.sequence adds),
+      .actionId id (.addManaInAnyCombination who syms (.nat k)),
       .continuous [.forbid (.spendManaCreatedByAction id' restriction)] _
     ] =>
-    match leftoverIndependentAnyColorCount adds with
-    | some 4 =>
-      if id == id' && n != 0 && leftoverDragonSpellSpend? restriction &&
-          (src == .this || src == .source .this) &&
-          leftoverEachNonDragonCreature? dest then
-        some n
-      else none
-    | _ => none
+    if id == id' && n != 0 && k == 4 &&
+        who == .controller .this && syms == ManaSymbol.anyColor &&
+        leftoverDragonSpellSpend? restriction &&
+        (src == .this || src == .source .this) &&
+        leftoverEachNonDragonCreature? dest then
+      some n
+    else none
   | _ => none
 
 /-- Sequence leftovers that compile to a named `Effect` without taking
@@ -3435,6 +3424,12 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .addManaOfOneColor who syms n =>
                     if leftoverAddAnyColor? (.addManaOfOneColor who syms n) then
                       Effect.addAnyColor
+                    else
+                      continuousEffect none [] asAbility
+                  | .addManaInAnyCombination who syms n =>
+                    if who == .controller .this && syms == ManaSymbol.anyColor &&
+                        n == 4 then
+                      Effect.addFourAnyCombination
                     else
                       continuousEffect none [] asAbility
                   | .addMana _ syms =>

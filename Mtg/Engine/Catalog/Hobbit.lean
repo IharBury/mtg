@@ -4589,8 +4589,8 @@ def desolationOfSmaugDefinition : TraditionalCardDefinition := .card <|
       (.intersection [
         .permanent, .cardType .creature, .not (.subtype .dragon)])
       3,
-    .actionId 1 (.sequence (List.replicate 4
-      (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1))),
+    .actionId 1 (.addManaInAnyCombination
+      (.controller .this) ManaSymbol.anyColor 4),
     .continuous
       [.forbid (.spendManaCreatedByAction 1 (.not (.castSpell (.subtype .dragon))))]
       .endOfTurn]]

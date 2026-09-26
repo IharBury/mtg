@@ -378,8 +378,8 @@ Currently recognized:
 - `<this card> deals N damage to each creature your opponents control.`
 - `<this card> deals N damage to each non-Dragon creature.`
   `Add <count> mana in any combination of colors. Spend this mana only to cast <subtype> spells.`
-  Each mana is chosen independently. That mana can be spent only on spells
-  of that subtype.
+  The mana is one addition in any combination of colors. That mana can be
+  spent only on spells of that subtype.
 - `Other <plural creature type> you control get +P/+T.`
   No duration is printed, so this is a static ability. `Elves` is Elf.
 - `Landfall — Whenever a land you control enters, create a <P>/<T> <color> <subtype> creature token.`
@@ -2330,8 +2330,9 @@ def parsePlusOneThenFight (text : String) (n : Nat) : Option (List CardAction ×
   | _ => none
 
 /-- `Add four mana in any combination of colors. Spend this mana only to cast Dragon spells.`
-Each mana is one independent choice of a color. That mana can be spent only
-to cast a spell of the printed subtype. The adds are action `n`. -/
+The mana is one addition in any combination of colors, not that much mana
+of one color. That mana can be spent only to cast a spell of the printed
+subtype. The addition is action `n`. -/
 def parseAddManaCombination (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   match sentences text with
@@ -2345,9 +2346,8 @@ def parseAddManaCombination (text : String) (n : Nat) :
               subtypeOfOracle? |>.map fun st =>
                 ([
                   .actionId n
-                    (.sequence
-                      (List.replicate k
-                        (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1))),
+                    (.addManaInAnyCombination
+                      (.controller .this) ManaSymbol.anyColor (.nat k)),
                   .continuous
                     [.forbid
                       (.spendManaCreatedByAction n
@@ -6333,8 +6333,8 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "Desolation of Smaug deals 3 damage to each non-Dragon creature.\nAdd four mana in any combination of colors. Spend this mana only to cast Dragon spells." ==
   some [.actions [
     .dealDamage .this eachNonDragonCreature 3,
-    .actionId 1 (.sequence (List.replicate 4
-      (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1))),
+    .actionId 1 (.addManaInAnyCombination
+      (.controller .this) ManaSymbol.anyColor 4),
     .continuous
       [.forbid (.spendManaCreatedByAction 1 (.not (.castSpell (.subtype .dragon))))]
       .endOfTurn]]
