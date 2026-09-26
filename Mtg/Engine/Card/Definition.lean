@@ -4278,10 +4278,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       (.sequence [
         .spendManaFrom
           (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
-          (.castSpell paidFor),
+          (.castSpell .wasObjectOfThisTrigger),
         .castSpell among]) action =>
-    -- The payment is before the cast, and the cast is one trigger per spell.
-    if paidFor == among && Selector.anySpellYouCast among then
+    -- The mana paid for the spell that is the object of this trigger.
+    if Selector.anySpellYouCast among then
       match CardAction.leftoverDrawLoseLifeSelf? action with
       | some (1, 1) => some TriggeredAbility.onCastWithTreasureDrawLoseLife
       | _ => none
