@@ -4420,6 +4420,29 @@ def gloinTheMightyDefinition : TraditionalCardDefinition := .card <|
     .toughness 3
   ] ++ (parseOracleParts (name := "Glóin the Mighty") gloinTheMightyOracle).get!
 
+#guard gloinTheMightyDefinition == .card [
+  .name "Glóin the Mighty",
+  .manaCost [.generic 3, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 4,
+  .toughness 3,
+  .ability (.triggered
+    (.precombatMainPhase (.controller .this))
+    (.addMana (.controller .this) [.colored .red, .colored .red])),
+  .alternative [
+    .name "Easy Pickings",
+    .manaCost [.generic 2, .mono .red],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [.dealDamage .this
+      (.intersection [
+        .permanent, .cardType .creature,
+        .controlled (.opponent (.controller .this))])
+      1]]]
+
 def gloinTheMighty : CardDef :=
   gloinTheMightyDefinition.toCardDef (oracleText := gloinTheMightyOracle)
 
@@ -4447,6 +4470,25 @@ def ironHillsStalwartDefinition : TraditionalCardDefinition := .card <|
     .toughness 5
   ] ++ (parseOracleParts (name := "Iron Hills Stalwart") ironHillsStalwartOracle).get!
 
+#guard ironHillsStalwartDefinition == .card [
+  .name "Iron Hills Stalwart",
+  .manaCost [.generic 4, .mono .red],
+  .type .creature,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 4,
+  .toughness 5,
+  .ability (.keyword .reach),
+  .ability (.keyword .trample),
+  .ability (.triggered
+    (.enter .this)
+    (.attach
+      (.target 1 (.intersection [
+        .permanent, .subtype .equipment, .controlled (.controller .this)]))
+      (.targets 2 (.range 0 1)
+        (.intersection [
+          .permanent, .cardType .creature, .controlled (.controller .this)]))))]
+
 def ironHillsStalwart : CardDef :=
   ironHillsStalwartDefinition.toCardDef (oracleText := ironHillsStalwartOracle)
 
@@ -4463,6 +4505,26 @@ def oldFatSpiderDefinition : TraditionalCardDefinition := .card <|
     .power 6,
     .toughness 7
   ] ++ (parseOracleParts (name := "Old Fat Spider") oldFatSpiderOracle).get!
+
+#guard oldFatSpiderDefinition == .card [
+  .name "Old Fat Spider",
+  .manaCost [.generic 4, .mono .green, .mono .green],
+  .type .creature,
+  .subtype .spider,
+  .power 6,
+  .toughness 7,
+  .ability (.keyword .reach),
+  .ability (.static (.forbid (.block
+    (.intersection [
+      .permanent, .cardType .creature, .powerAtMost (Value.int 2)])
+    .this))),
+  .ability (.triggered
+    (.target
+      (.intersection [
+        .union [.spell, .ability],
+        .controlled (.opponent (.controller .this))])
+      .this)
+    (.draw (.controller .this) 1))]
 
 def oldFatSpider : CardDef :=
   oldFatSpiderDefinition.toCardDef (oracleText := oldFatSpiderOracle)
@@ -4485,6 +4547,22 @@ def greatGildedBoatDefinition : TraditionalCardDefinition := .card <|
     .toughness 4
   ] ++ (parseOracleParts (name := "Great Gilded Boat") greatGildedBoatOracle).get!
 
+#guard greatGildedBoatDefinition == .card [
+  .name "Great Gilded Boat",
+  .manaCost [.generic 2, .mono .blue],
+  .type .artifact,
+  .subtype .vehicle,
+  .power 4,
+  .toughness 4,
+  .ability (.triggered
+    (.attackSimultaneously
+      (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this)])
+      .all
+      [])
+    (.keyword (.controller .this) .recruit)),
+  .ability (.keywordWithCost .crew [.mana [.generic 2]])]
+
 def greatGildedBoat : CardDef :=
   greatGildedBoatDefinition.toCardDef (oracleText := greatGildedBoatOracle)
 
@@ -4501,6 +4579,21 @@ def desolationOfSmaugDefinition : TraditionalCardDefinition := .card <|
     .manaCost [.generic 2, .mono .red, .mono .red],
     .type .sorcery
   ] ++ (parseOracleParts (name := "Desolation of Smaug") desolationOfSmaugOracle).get!
+
+#guard desolationOfSmaugDefinition == .card [
+  .name "Desolation of Smaug",
+  .manaCost [.generic 2, .mono .red, .mono .red],
+  .type .sorcery,
+  .actions [
+    .dealDamage .this
+      (.intersection [
+        .permanent, .cardType .creature, .not (.subtype .dragon)])
+      3,
+    .actionId 1 (.sequence (List.replicate 4
+      (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1))),
+    .continuous
+      [.forbid (.spendManaCreatedByAction 1 (.not (.castSpell (.subtype .dragon))))]
+      .endOfTurn]]
 
 def desolationOfSmaug : CardDef :=
   desolationOfSmaugDefinition.toCardDef (oracleText := desolationOfSmaugOracle)
