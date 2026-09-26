@@ -189,6 +189,9 @@ inductive Keyword where
   | flashback
   /-- Ward (CR 702.21): printed with a cost, e.g. Ward {2}. -/
   | ward
+  /-- Crew N (CR 702.122): printed with a power, e.g. Crew 2.
+  The number is the generic cost of `keywordWithCost`. -/
+  | crew
 deriving Repr, Inhabited, BEq
 
 /-- A number that is either a printed constant or computed from game
@@ -412,6 +415,12 @@ inductive Trigger where
   | not : Trigger → Trigger
   /-- Either trigger occurs. -/
   | or : Trigger → Trigger → Trigger
+  /-- Whenever `who` becomes the target of a spell or ability controlled by
+  `controller` (CR 115.10a / 603.2). One ability, even if that spell or
+  ability targets `who` more than once. -/
+  | becomesTargetOf : Selector → Selector → Trigger
+  /-- At the beginning of the selected player's first main phase (CR 505.1). -/
+  | firstMain : Selector → Trigger
 deriving Repr, Inhabited, BEq
 end
 
@@ -500,7 +509,7 @@ def toKeywords : Keyword → Keywords
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
   | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
-  | .connive _ | .chapter _ | .flashback | .ward =>
+  | .connive _ | .chapter _ | .flashback | .ward | .crew =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -530,6 +539,7 @@ instance : ToString Keyword where
       s!"chapter {roman}"
     | .flashback => "flashback"
     | .ward => "ward"
+    | .crew => "crew"
     | k => toString k.toKeywords
 
 end Keyword

@@ -2968,9 +2968,104 @@ def leftoverPlusOneThenEachOtherIfFromGy? : CardAction → Bool
       leftoverCreaturesYouControlMass? others
   | _ => false
 
+/-- Target creature, with no further restriction. -/
+def leftoverCreaturePermanent? : Selector → Bool
+  | .intersection [.permanent, .cardType .creature] => true
+  | _ => false
+
+/-- Each creature an opponent of this object's controller controls. -/
+def leftoverEachOppCreature? : Selector → Bool
+  | .intersection
+      [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))] => true
+  | _ => false
+
+/-- Each creature that is not a Dragon. -/
+def leftoverEachNonDragonCreature? : Selector → Bool
+  | .intersection
+      [.permanent, .cardType .creature, .not (.subtype .dragon)] => true
+  | _ => false
+
+/-- Target artifact token. -/
+def leftoverArtifactTokenTarget? : Selector → Bool
+  | .target _ (.intersection [.permanent, .cardType .artifact, .token]) => true
+  | _ => false
+
+/-- Deal damage to target creature; if it would die this turn, exile it. -/
+def leftoverDealDamageExileIfDies? : CardAction → Option Nat
+  | .sequence [
+      .dealDamage src (.target id among) (.nat n),
+      .continuous
+        [.replace (.putToGraveyard (.targetReference id')) [.exile .replacingObject]] _
+    ] =>
+    if id == id' && n != 0 &&
+        (src == .this || src == .source .this) &&
+        leftoverCreaturePermanent? among then
+      some n
+    else none
+  | _ => none
+
+/-- Destroy target artifact token. -/
+def leftoverDestroyArtifactToken? : CardAction → Bool
+  | .destroy sel => leftoverArtifactTokenTarget? sel
+  | _ => false
+
+/-- Deal damage to each creature opponents control. -/
+def leftoverDealDamageToEachOppCreature? : CardAction → Option Nat
+  | .dealDamage src dest (.nat n) =>
+    if n != 0 && (src == .this || src == .source .this) &&
+        leftoverEachOppCreature? dest then
+      some n
+    else none
+  | _ => none
+
+/-- One mana of any color, chosen independently. -/
+def leftoverOneAnyColor? : CardAction → Bool
+  | .addManaOfOneColor who syms 1 =>
+    who == .controller .this && syms == ManaSymbol.anyColor
+  | _ => false
+
+/-- That many independent choices of one mana of any color. -/
+def leftoverIndependentAnyColorCount : List CardAction → Option Nat
+  | [] => some 0
+  | a :: rest =>
+    if leftoverOneAnyColor? a then
+      (leftoverIndependentAnyColorCount rest).map (· + 1)
+    else none
+
+/-- Spend this mana only to cast a Dragon spell. -/
+def leftoverDragonSpellSpend? : Trigger → Bool
+  | .not (.castSpell (.subtype .dragon)) => true
+  | _ => false
+
+/-- Damage each non-Dragon creature, then add four mana in any combination
+of colors that can be spent only on Dragon spells. -/
+def leftoverNonDragonThenDragonMana? : CardAction → Option Nat
+  | .sequence [
+      .dealDamage src dest (.nat n),
+      .actionId id (.sequence adds),
+      .continuous [.forbid (.spendManaCreatedByAction id' restriction)] _
+    ] =>
+    match leftoverIndependentAnyColorCount adds with
+    | some 4 =>
+      if id == id' && n != 0 && leftoverDragonSpellSpend? restriction &&
+          (src == .this || src == .source .this) &&
+          leftoverEachNonDragonCreature? dest then
+        some n
+      else none
+    | _ => none
+  | _ => none
+
 /-- Sequence leftovers that compile to a named `Effect` without taking
 only the first action. -/
 def leftoverCompiled? (action : CardAction) : Option Effect :=
+  leftoverNonDragonThenDragonMana? action |>.map
+      Effect.dealDamageToEachNonDragonThenAddDragonMana |>.orElse fun _ =>
+  leftoverDealDamageExileIfDies? action |>.map
+      Effect.dealDamageToCreatureExileIfDies |>.orElse fun _ =>
+  leftoverDealDamageToEachOppCreature? action |>.map
+      Effect.dealDamageToEachOppCreature |>.orElse fun _ =>
+  (if leftoverDestroyArtifactToken? action then some Effect.destroyArtifactToken else none) |>.orElse
+    fun _ =>
   leftoverChapterCompiled? action |>.orElse fun _ =>
   if leftoverPlusOneThenEachOtherIfFromGy? action then
     some Effect.plusOneThenEachOtherIfFromGy
@@ -3376,12 +3471,21 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .shuffleIntoOwnersLibrary _ =>
                     continuousEffect none [] asAbility
 
-/-- Modes of a “Choose one” action. -/
+/-- “Choose one or both”: the player selects one or two of the modes. -/
+def isChooseOneOrBoth : CardAction → Bool
+  | .playerSelectAction _ r _ => r == .range 1 2
+  | _ => false
+
+/-- Modes of a “Choose one” or “Choose one or both” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
   | .chooseMode as =>
     some ((as.map fun a => compile a false).toArray)
   | .chooseModeRestricted _ modes =>
     some ((modes.map fun (_, _, as) => compile (.sequence as) false).toArray)
+  | .playerSelectAction _ r as =>
+    if r == .range 1 2 then
+      some ((as.map fun a => compile a false).toArray)
+    else none
   | _ => none
 
 /-- Compile to a spell-shaped `Effect`. -/
@@ -3547,6 +3651,10 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
       | .attackSimultaneously among dest _, .amass .goblin (.nat n) =>
         if dest == .all && among.shape.sameController then
           some (TriggeredAbility.onYouAttackAmassGoblins n)
+        else none
+      | .attackSimultaneously among dest _, .recruit =>
+        if dest == .all && among.shape.sameController then
+          some TriggeredAbility.onYouAttackRecruit
         else none
       | .castSpell among, .amass .goblin (.nat n) =>
         if Selector.youCastNoncreatureSpell among then
@@ -4075,6 +4183,16 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     if who == .controller .this && drawer == .controller .this then
       some TriggeredAbility.onYourEndStepDraw
     else none
+  | .triggered (.firstMain who) (.addMana gainer syms) =>
+    if who == .controller .this && gainer == .controller .this then
+      CardAction.addedManaTypes? syms |>.map TriggeredAbility.onYourFirstMainAddMana
+    else none
+  | .triggered (.becomesTargetOf who controller) (.draw drawer (.nat 1)) =>
+    if (who == .this || who == .source .this) &&
+        controller == .opponent (.controller .this) &&
+        drawer == .controller .this then
+      some TriggeredAbility.onBecomesTargetDraw
+    else none
   | _ => none
 
 end Ability
@@ -4115,6 +4233,12 @@ structure CardFace where
   tapAddAnyColorForInstantOrSorcery : Bool := false
   tapAddOneOf : Array ManaType := #[]
   entersTapped : Bool := false
+  /-- This land enters tapped unless you control an Equipment. -/
+  entersTappedUnlessEquipment : Bool := false
+  /-- Crew N (CR 702.122). The number is the generic cost of `keywordWithCost`. -/
+  crew : Option Nat := none
+  /-- Choose one or both (CR 700.2). The controller may choose two modes. -/
+  chooseOneOrBoth : Bool := false
   /-- This spell can't be countered (CR 701.5). -/
   cantBeCountered : Bool := false
   /-- You may cast this spell as though it had flash if you control this subtype. -/
@@ -4390,6 +4514,27 @@ def allCreaturePermanents? : Selector → Bool
   | .intersection [.permanent, .cardType .creature] => true
   | _ => false
 
+/-- Creatures with power at most `n`, and nothing else. -/
+def powerAtMostCreatureBlocker? : Selector → Option Int
+  | .intersection [.permanent, .cardType .creature, .powerAtMost v] =>
+    valToInt? v
+  | _ => none
+
+/-- Add `{k}` to the last activated ability's per-Equipment cost reduction.
+The reduction is `{k}` times the number of Equipment its controller controls.
+No activated ability means the static text did not follow one. -/
+def addEquipmentCostReduction (b : CardFace) (k : Nat) : CardFace :=
+  if k == 0 then b
+  else
+    match b.activatedAbilities.back? with
+    | none => b
+    | some ab =>
+      { b with
+        activatedAbilities :=
+          b.activatedAbilities.pop.push
+            { ab with
+              costReductionPerEquipment := ab.costReductionPerEquipment + k } }
+
 /-- Creatures can't attack this object's controller unless their controller
 pays `{n}` for each. Zero is not a cost. -/
 def attackTaxIfEnduringStory? : List ContinuousEffect → Option Nat
@@ -4484,6 +4629,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     if who == .controller .this && (self == .this || self == .source .this) then
       { b with staticAbilities := b.staticAbilities.push .doesntUntapUnlessEnduringStory }
     else b
+  | .if (.not (.any among)) [.replace (.enter who) actions] =>
+    if (who == .this || who == .source .this) &&
+        CardAction.leftoverEntersTapped? actions &&
+        among.includedSubtype? == some "Equipment" &&
+        among.shape.sameController then
+      { b with entersTappedUnlessEquipment := true }
+    else b
   | .if (.not _) _ => b
   | .if (.enduringStory who) inners =>
     if who == .controller .this then
@@ -4567,7 +4719,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       { b with keywords := { b.keywords with cantBeBlocked := true } }
     else if who == .token then
       { b with staticAbilities := b.staticAbilities.push .cantBeBlockedByTokens }
-    else b
+    else
+      match powerAtMostCreatureBlocker? who with
+      | some n =>
+        { b with
+          staticAbilities :=
+            b.staticAbilities.push (.cantBeBlockedByPowerAtMost n) }
+      | none => b
   | .forbid (.counter who) =>
     if isThisOrItsSource who then { b with cantBeCountered := true } else b
   | .forbid _ => b
@@ -4597,7 +4755,15 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         costs == [.mana [.x]] &&
         isTotalPowerOfFlyingCreaturesYouControl v then
       { b with costReductionEqualFlyingPower := true }
-    else b
+    else
+      match costs, v with
+      | [.mana [.generic k]], .count among =>
+        if (who == .this || who == .source .this) && k != 0 &&
+            among.includedSubtype? == some "Equipment" &&
+            among.shape.sameController then
+          addEquipmentCostReduction b k
+        else b
+      | _, _ => b
   | .reduceCost who costs =>
     match leftoverEquipAbilitiesTargetingThisCostLess? who costs with
     | some n =>
@@ -4615,6 +4781,8 @@ def applyAbility (b : CardFace) : Ability → CardFace
     { b with flashback := some (Cost.manaCost costs) }
   | .keywordWithCost .ward [.mana [.generic n]] =>
     if n == 0 then b else { b with ward := some n }
+  | .keywordWithCost .crew [.mana [.generic n]] =>
+    if n == 0 then b else { b with crew := some n }
   | .keywordWithCost k costs =>
     match (Ability.keywordWithCost k costs).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
@@ -4689,11 +4857,14 @@ def apply (b : CardFace) : CardPart → CardFace
   | .ability a => applyAbility b a
   | .alternative parts => { b with alternatives := b.alternatives.push parts }
   | .actions as =>
+    let action :=
+      match as with
+      | [a] => a
+      | as => .sequence as
     { b with
-      action :=
-        match as with
-        | [a] => some a
-        | as => some (.sequence as) }
+      action := some action
+      chooseOneOrBoth :=
+        b.chooseOneOrBoth || CardAction.isChooseOneOrBoth action }
 
 /-- A static ability that sets power or toughness to the number of lands
 you control. -/
@@ -4828,6 +4999,9 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       tapAddAnyColorForInstantOrSorcery := b.tapAddAnyColorForInstantOrSorcery
       tapAddOneOf := b.tapAddOneOf
       entersTapped := b.entersTapped
+      entersTappedUnlessEquipment := b.entersTappedUnlessEquipment
+      crew := b.crew
+      chooseOneOrBoth := b.chooseOneOrBoth
       cantBeCountered := b.cantBeCountered
       flashIfYouControlSubtype := b.flashIfYouControlSubtype
       flashback := b.flashback
