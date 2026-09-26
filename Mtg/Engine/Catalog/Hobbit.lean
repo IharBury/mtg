@@ -4315,6 +4315,25 @@ def theLonelyMountainDefinition : TraditionalCardDefinition := .card <|
     .subtype .mountain
   ] ++ (parseOracleParts (name := "The Lonely Mountain") theLonelyMountainOracle).get!
 
+#guard theLonelyMountainDefinition == .card [
+  .name "The Lonely Mountain",
+  .type .land,
+  .subtype .mountain,
+  .ability (.static (.if
+    (.not (.any (.intersection [
+      .permanent, .subtype .equipment, .controlled (.controller .this)])))
+    [.replace (.enter .this)
+      [.putOntoBattlefieldInState .this [.tapped]]])),
+  .ability (.activatedIf (.timeToCastSorcery (.controller .this))
+    [.mana [.generic 4, .mono .red], .tapSymbol]
+    (.createTokens (.controller .this) 1 [
+      .type .creature, .subtype .dwarf, .colorIndicator [.red],
+      .power 2, .toughness 2])),
+  .ability (.static (.reduceCostWithX .this
+    [.mana [.generic 1]]
+    (.count (.intersection [
+      .permanent, .subtype .equipment, .controlled (.controller .this)]))))]
+
 def theLonelyMountain : CardDef :=
   theLonelyMountainDefinition.toCardDef (oracleText := theLonelyMountainOracle)
 
