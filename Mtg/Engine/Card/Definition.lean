@@ -704,9 +704,6 @@ inductive Condition where
   | greaterOrEqual : Value → Value → Condition
   /-- True when the two values are equal. -/
   | equal : Value → Value → Condition
-  /-- True when mana from a permanent of the given subtype was spent to cast
-  the spell (an intervening “if”, CR 603.4). -/
-  | spentManaFrom : CardSubtype → Condition
 deriving Repr, Inhabited, BEq
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
@@ -3681,7 +3678,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
   | .any _ | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
   | .didNotHappen _ _ | .and _ _ | .not _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
-  | .equal _ _ | .spentManaFrom _ => none
+  | .equal _ _ => none
 
 /-- `{k}` less for each Equipment this ability's controller controls.
 `.this` is this ability. Zero is not a reduction. -/
@@ -4278,8 +4275,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some (TriggeredAbility.onCasting Effect.castingTargetsGainFlying)
       else none
     | none => none
-  | .triggered (.castSpell among)
-      (.if (.spentManaFrom .treasure) [action]) =>
+  | .triggered (.spentManaFrom .treasure (.castSpell among)) action =>
     if Selector.anySpellYouCast among then
       match CardAction.leftoverDrawLoseLifeSelf? action with
       | some (1, 1) => some TriggeredAbility.onCastWithTreasureDrawLoseLife
@@ -4870,7 +4866,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       else b
     | _, _ => b
   | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
-  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ | .if (.spentManaFrom _) _ => b
+  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
   | .replace (.enter who) actions =>
     if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersTapped? actions then

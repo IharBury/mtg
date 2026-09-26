@@ -442,7 +442,8 @@ Currently recognized:
 - `When <this> enters, create X tapped Treasure tokens, where X is the number of artifacts your opponents control.`
   X is how many artifact permanents those opponents control.
 - `Whenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life.`
-  The “if” is an intervening if (CR 603.4). One card and 1 life.
+  The “if” is an intervening if (CR 603.4): mana from a Treasure was spent to
+  cast that spell. One card and 1 life.
 - `Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.`
   The printed reduction is `{X}`. X is the equipped creature's power.
 - `Mill six cards, then put all instant and sorcery cards from among them into your hand.`
@@ -4240,14 +4241,15 @@ def anySpellYouCast : Selector :=
   .intersection [.spell, youControl]
 
 /-- `Whenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life.`
-The “if” is an intervening if (CR 603.4). One card and 1 life. -/
+The “if” is an intervening if (CR 603.4): mana from a Treasure was spent to
+cast that spell. One card and 1 life. -/
 def parseYouCastSpellIfTreasureDrawLoseLife (line : String) : Option CardPart :=
   (after? (normLine line)
       "whenever you cast a spell, if mana from a treasure was spent to cast it, ").bind
     parseYouDrawCardLoseLife |>.map fun action =>
       .ability (.triggered
-        (.castSpell anySpellYouCast)
-        (.if (.spentManaFrom .treasure) [action]))
+        (.spentManaFrom .treasure (.castSpell anySpellYouCast))
+        action)
 
 /-- `Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.`
 The printed reduction is `{X}`. X is the equipped creature's power. -/
@@ -6959,11 +6961,11 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         PredefinedToken.treasureToken
         [.tapped])),
     .ability (.triggered
-      (.castSpell (.intersection [.spell, youControl]))
-      (.if (.spentManaFrom .treasure)
-        [.sequence [
-          .draw (.controller .this) 1,
-          .loseLife (.controller .this) 1]]))]
+      (.spentManaFrom .treasure
+        (.castSpell (.intersection [.spell, youControl])))
+      (.sequence [
+        .draw (.controller .this) 1,
+        .loseLife (.controller .this) 1]))]
 #guard parseOracleParts (name := "Gandalf")
   "When Smaug enters, create X tapped Treasure tokens, where X is the number of artifacts your opponents control." ==
   none
