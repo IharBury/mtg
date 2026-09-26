@@ -434,6 +434,23 @@ Currently recognized:
 - `Whenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn.`
   Another permanent that is a Dwarf or an Equipment. The trigger happens at
   most once each turn.
+- `<this> has lifelink as long as you control another <subtype>.`
+  This has lifelink while its controller controls another permanent of that
+  subtype. The subtype is singular.
+- `When <this> enters, look at the top <count> cards of your library. You may reveal a <subtype> or <subtype> card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.`
+  One card uses the singular. The revealed card is one of those two subtypes.
+- `When <this> enters, create X tapped Treasure tokens, where X is the number of artifacts your opponents control.`
+  X is how many artifact permanents those opponents control.
+- `Whenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life.`
+  The ability triggers once when that spell is cast, not once for each mana
+  spent. That mana is spent to cast the same spell, before the spell becomes
+  cast (CR 601.2h / 601.2i). The “if” is an intervening if (CR 603.4). One
+  card and 1 life.
+- `Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.`
+  The printed reduction is `{X}`. X is the equipped creature's power.
+- `Mill six cards, then put all instant and sorcery cards from among them into your hand.`
+  More than one card uses the plural `cards`. Every instant and sorcery card
+  from among them goes to hand.
 -/
 
 namespace Mtg.Engine
@@ -998,7 +1015,7 @@ def parsePutCountersOnThis (sentence : String) : Option CardAction :=
 of your next turn. The exile is action `n`. -/
 def exileTopPlayUntilEndOfNextTurn (n : Nat) : CardAction :=
   .sequence [
-    .actionId n (.exile (.topOfLibrary (.controller .this))),
+    .actionId n (.exile (.topOfLibrary (.controller .this) 1)),
     .continuous
       [.canPlay (.controller .this) (.wasCreatedByAction n)]
       (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]
@@ -2182,6 +2199,25 @@ def parseMillThenPutInstantOrSorcery (sentence : String) (n : Nat) :
                   .union [.cardType .instant, .cardType .sorcery]]))],
           n + 1)
 
+/-- `Mill six cards, then put all instant and sorcery cards from among them into your hand.`
+More than one card uses the plural `cards`. Every instant and sorcery card
+from among them goes to hand. The milled cards are action `n`. -/
+def parseMillThenPutAllInstantsOrSorceries (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  let tail :=
+    " cards, then put all instant and sorcery cards from among them into your hand"
+  (after? (normSentence sentence) "mill ").bind (before? · tail) |>.bind
+    fun countText =>
+      (nounCount? countText true).map fun k =>
+        (
+          .sequence [
+            .actionId n (.mill (.controller .this) (.nat k)),
+            .returnToHand
+              (.intersection [
+                .wasObjectOfAction n,
+                .union [.cardType .instant, .cardType .sorcery]])],
+          n + 1)
+
 /-- Two creatures and/or lands this object's controller controls. -/
 def twoCreaturesOrLandsYouControl : Selector :=
   permanentWith [.creature, .land] [youControl]
@@ -2283,6 +2319,7 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
     parseTargetPlayerControlsGet sentence n <|>
     parseTargetPlayerDrawsLosesLife sentence n <|>
     parseSearchLegendaryCreatureToHand sentence n <|>
+    parseMillThenPutAllInstantsOrSorceries sentence n <|>
     parseMillThenPutInstantOrSorcery sentence n <|>
     parseMillThenPutUpToLands sentence n <|>
     parseExileTwoThenReturn sentence n
@@ -4118,6 +4155,127 @@ def parseAdditionalCostSacrificeCreature (line : String) : Option CardPart :=
         [.sacrificeCount (permanentWith [.creature]) 1])))
   else none
 
+/-- `<this> has lifelink as long as you control another Dwarf.`
+This has lifelink while its controller controls another permanent of that
+subtype. The subtype is singular. -/
+def parseLifelinkIfAnother (cardName line : String) : Option CardPart :=
+  (split2? (normLine line) " has lifelink as long as you control another ").bind
+    fun (subject, stText) =>
+      if !refersToSelf cardName subject then none
+      else
+        (subtypeOfOracle? stText).map fun st =>
+          .ability (.static (.if
+            (.any (.intersection [.not .this, .permanent, .subtype st, youControl]))
+            [.gainAbility .this (.keyword .lifelink)]))
+
+/-- A card that is one of two subtypes, e.g. `a Dwarf or Equipment card`. -/
+def twoSubtypesCard? (s : String) : Option (CardSubtype × CardSubtype) :=
+  (dropArticle? s).bind fun rest =>
+    (before? rest " card").bind fun mid =>
+      (split2? mid " or ").bind fun (a, b) =>
+        match subtypeOfOracle? a, subtypeOfOracle? b with
+        | some sa, some sb => some (sa, sb)
+        | _, _ => none
+
+/-- `When <this> enters, look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.`
+The looked-at cards are action `n`. The revealed card is action `n + 1`.
+One card uses the singular. -/
+def parseEnterLookAtTopReveal (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match sentences line with
+  | [enter, reveal, restBottom] =>
+    if !sentenceIs restBottom
+        "put the rest on the bottom of your library in a random order" then none
+    else
+      (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+        (after? effect "look at the top ").bind fun tail =>
+          (before? tail " of your library").bind fun countPhrase =>
+            let counted :=
+              (before? countPhrase " cards").map (true, ·) <|>
+                (before? countPhrase " card").map (false, ·)
+            match counted with
+            | none => none
+            | some (plural, countText) =>
+              (nounCount? countText plural).bind fun k =>
+                (after? (normSentence reveal) "you may reveal ").bind fun rev =>
+                  (before? rev " from among them and put it into your hand").bind
+                    twoSubtypesCard? |>.map fun (a, b) =>
+                      let looked := .wasObjectOfAction n
+                      let revealed := .wasObjectOfAction (n + 1)
+                      let among :=
+                        .intersection [looked, .union [.subtype a, .subtype b]]
+                      (.ability (.triggered (.enter .this) (.sequence [
+                        .actionId n
+                          (.lookAt
+                            (.topOfLibrary (.controller .this) (.nat k))),
+                        .optional (.sequence [
+                          .actionId (n + 1)
+                            (.reveal
+                              (.selected (.controller .this) (.range 1 1) among)),
+                          .returnToHand revealed]),
+                        .putOnLibraryBottomInRandomOrder
+                          (.intersection [looked, .not revealed])])),
+                       n + 2)
+  | _ => none
+
+/-- `Create X tapped Treasure tokens, where X is the number of artifacts your opponents control.` -/
+def parseCreateTappedTreasuresEqualOppArtifacts (sentence : String) :
+    Option CardAction :=
+  if sentenceIs sentence
+      "create x tapped treasure tokens, where x is the number of artifacts your opponents control" then
+    some (.createTokens (.controller .this)
+      (.count (.intersection [
+        .permanent, .cardType .artifact,
+        .controlled (.opponent (.controller .this))]))
+      PredefinedToken.treasureToken
+      [.tapped])
+  else none
+
+/-- `When <this> enters, create X tapped Treasure tokens, where X is the number of artifacts your opponents control.`
+X is how many artifact permanents those opponents control. -/
+def parseEnterCreateTappedTreasuresEqualOppArtifacts (cardName line : String) :
+    Option CardPart :=
+  onSelfTrigger cardName line " enters, " (.enter .this)
+    parseCreateTappedTreasuresEqualOppArtifacts
+
+/-- Any spell this object's controller casts. -/
+def anySpellYouCast : Selector :=
+  .intersection [.spell, youControl]
+
+/-- A Treasure permanent, the source of “mana from a Treasure”. -/
+def treasureManaSource : Selector :=
+  .intersection [.permanent, .cardType .artifact, .subtype .treasure]
+
+/-- `Whenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life.`
+The ability triggers once when that spell is cast, not once for each mana
+spent. That mana is spent to cast the same spell, the object of this
+trigger, before the spell becomes cast (CR 601.2h / 601.2i). The “if” is an
+intervening if (CR 603.4). One card and 1 life. -/
+def parseYouCastSpellIfTreasureDrawLoseLife (line : String) : Option CardPart :=
+  (after? (normLine line)
+      "whenever you cast a spell, if mana from a treasure was spent to cast it, ").bind
+    parseYouDrawCardLoseLife |>.map fun action =>
+      .ability (.triggered
+        (.sequence [
+          .spendManaFrom treasureManaSource
+            (.castSpell .wasObjectOfThisTrigger),
+          .castSpell anySpellYouCast])
+        action)
+
+/-- `Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.`
+The printed reduction is `{X}`. X is the equipped creature's power. -/
+def parseInstantSorceryCostLessByEquippedPower (line : String) : Option CardPart :=
+  if sentenceIs (normLine line)
+      "instant and sorcery spells you cast cost {x} less to cast, where x is equipped creature's power" then
+    some (.ability (.static (.reduceCostWithX
+      (.intersection [
+        .spell,
+        .union [.cardType .instant, .cardType .sorcery],
+        youControl])
+      [.mana [.x]]
+      (.greatestPower (.hostOf .this)))))
+  else none
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails.
 The first parser that accepts the line wins. -/
@@ -4146,6 +4304,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     (parseOtherSubtypeYouControlGets line).map (·, n) <|>
     sole (parseCreaturesWithPlusOneHaveMenace line) n <|>
     sole (parseYouCastNoncreatureAmass line) n <|>
+    sole (parseYouCastSpellIfTreasureDrawLoseLife line) n <|>
     sole (parseYouAttackAmass line) n <|>
     sole (parseYouAttackRecruit line) n <|>
     sole (parseEnterOrAttackRecruit cardName line) n <|>
@@ -4161,7 +4320,9 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseEquipAbilitiesTargetingThisCostLess line) n <|>
     sole (parseCostReduction line) n <|>
     sole (parseCostLessByFlyingPower line) n <|>
+    sole (parseInstantSorceryCostLessByEquippedPower line) n <|>
     sole (parseHasteIfAnother cardName line) n <|>
+    sole (parseLifelinkIfAnother cardName line) n <|>
     sole (parseFirstEquipFreeIfEnduringStory line) n <|>
     sole (parseEnduringStoryGets cardName line) n <|>
     sole (parseEnduringStoryTeamGets line) n <|>
@@ -4185,6 +4346,8 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseDiesRecruit cardName line) n <|>
     sole (parseEnterScry cardName line) n <|>
     sole (parseEnterCreateTreasure cardName line) n <|>
+    sole (parseEnterCreateTappedTreasuresEqualOppArtifacts cardName line) n <|>
+    carry (parseEnterLookAtTopReveal cardName line n) <|>
     carry (parseEnterExileTopMayPlay cardName line n) <|>
     carry (parseEnterPutPlusOneOnTarget cardName line n) <|>
     carry (parseEnterReturnOtherPlusOne cardName line n) <|>
@@ -5359,7 +5522,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
             .union [.cardType .creature, .cardType .artifact]])
           1]
         (.sequence [
-          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
             (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])))]
@@ -5995,7 +6158,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .triggered
       (.enter .this)
       (.sequence [
-        .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+        .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
           (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))]
@@ -6771,5 +6934,87 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   none
 #guard parseOracleParts (name := "")
   "Whenever another Dwarf or Equipment you control enters, draw a card." == none
+#guard parseOracleParts (name := "Dáin's Company")
+  "This creature has lifelink as long as you control another Dwarf.\nWhen this creature enters, look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into your hand. Put the rest on the bottom of your library in a random order." ==
+  some [
+    .ability (.static (.if
+      (.any (.intersection [.not .this, .permanent, .subtype .dwarf, youControl]))
+      [.gainAbility .this (.keyword .lifelink)])),
+    .ability (.triggered (.enter .this) (.sequence [
+      .actionId 1
+        (.lookAt (.topOfLibrary (.controller .this) 4)),
+      .optional (.sequence [
+        .actionId 2
+          (.reveal
+            (.selected (.controller .this) (.range 1 1)
+              (.intersection [
+                .wasObjectOfAction 1,
+                .union [.subtype .dwarf, .subtype .equipment]]))),
+        .returnToHand (.wasObjectOfAction 2)]),
+      .putOnLibraryBottomInRandomOrder
+        (.intersection [
+          .wasObjectOfAction 1,
+          .not (.wasObjectOfAction 2)])]))]
+#guard parseOracleParts (name := "")
+  "This creature has lifelink as long as you control a Dwarf." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, look at the top one cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into your hand. Put the rest on the bottom of your library in a random order." ==
+  none
+#guard parseOracleParts (name := "Smaug, Wicked Worm")
+  "Flying\nWhen Smaug enters, create X tapped Treasure tokens, where X is the number of artifacts your opponents control.\nWhenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life." ==
+  some [
+    .ability (.keyword .flying),
+    .ability (.triggered (.enter .this)
+      (.createTokens (.controller .this)
+        (.count (.intersection [
+          .permanent, .cardType .artifact,
+          .controlled (.opponent (.controller .this))]))
+        PredefinedToken.treasureToken
+        [.tapped])),
+    .ability (.triggered
+      (.sequence [
+        .spendManaFrom
+          (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
+          (.castSpell .wasObjectOfThisTrigger),
+        .castSpell (.intersection [.spell, youControl])])
+      (.sequence [
+        .draw (.controller .this) 1,
+        .loseLife (.controller .this) 1]))]
+#guard parseOracleParts (name := "Gandalf")
+  "When Smaug enters, create X tapped Treasure tokens, where X is the number of artifacts your opponents control." ==
+  none
+#guard parseOracleParts (name := "")
+  "When this creature enters, create X Treasure tokens, where X is the number of artifacts your opponents control." ==
+  none
+#guard parseOracleParts (name := "")
+  "Whenever you cast a spell, you draw a card and lose 1 life." == none
+#guard parseOracleParts (name := "Glamdring, Foe-hammer")
+  "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.\nEquip {2}\n//ADV//\nGleam of Death {3}{U}\nSorcery — Adventure\nMill six cards, then put all instant and sorcery cards from among them into your hand. (Then exile this card. You may cast the artifact later from exile.)" ==
+  some [
+    .ability (.static (.reduceCostWithX
+      (.intersection [
+        .spell,
+        .union [.cardType .instant, .cardType .sorcery],
+        youControl])
+      [.mana [.x]]
+      (.greatestPower (.hostOf .this)))),
+    .ability (.keywordWithCost .equip [.mana [.generic 2]]),
+    .alternative [
+      .name "Gleam of Death",
+      .manaCost [.generic 3, .mono .blue],
+      .type .sorcery,
+      .subtype .adventure,
+      .actions [
+        .sequence [
+          .actionId 1 (.mill (.controller .this) 6),
+          .returnToHand (.intersection [
+            .wasObjectOfAction 1,
+            .union [.cardType .instant, .cardType .sorcery]])]]]]
+#guard parseOracleParts (name := "")
+  "Instant and sorcery spells you cast cost {1} less to cast, where X is equipped creature's power." ==
+  none
+#guard parseOracleParts (name := "")
+  "Mill six cards, then put all instant and sorcery card from among them into your hand." ==
+  none
 
 end Mtg.Engine

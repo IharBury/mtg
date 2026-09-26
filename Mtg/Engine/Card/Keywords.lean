@@ -335,8 +335,9 @@ inductive Selector where
   | supertype : CardSupertype → Selector
   /-- Objects bound to this numbered variable. -/
   | variable : Nat → Selector
-  /-- The top card of the selected player's library (CR 401). -/
-  | topOfLibrary : Selector → Selector
+  /-- The top cards of the selected player's library (CR 401). The value is
+  how many. One is the top card. -/
+  | topOfLibrary : Selector → Value → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
@@ -404,6 +405,11 @@ inductive Trigger where
   /-- Mana created by the numbered action is spent to pay for the given
   event (CR 106.10). -/
   | spendManaCreatedByAction : Nat → Trigger → Trigger
+  /-- Mana from a source matching the selector was spent to pay for the
+  given event. The payment happens before that event (CR 601.2h). An
+  ability that triggers once when the event occurs sequences this payment
+  before the event, so it does not trigger once for each mana spent. -/
+  | spendManaFrom : Selector → Trigger → Trigger
   /-- A spell matching the selector is cast (CR 601). -/
   | castSpell : Selector → Trigger
   /-- A spell matching the selector is cast from a graveyard

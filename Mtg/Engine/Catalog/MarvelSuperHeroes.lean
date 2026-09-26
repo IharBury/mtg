@@ -1600,7 +1600,7 @@ def blazingCrescendo : CardDef :=
           .addToughness
             (.targetReference 1) (Value.int 1)]
         .endOfTurn,
-      .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+      .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
       .continuous
         [.canPlay (.controller .this) (.wasCreatedByAction 1)]
         (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]
@@ -1622,7 +1622,7 @@ def crimsonOperative : CardDef :=
       .triggered
         (.enter .this)
         (.sequence [
-          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
             (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))
