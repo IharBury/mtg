@@ -189,9 +189,9 @@ inductive Keyword where
   | flashback
   /-- Ward (CR 702.21): printed with a cost, e.g. Ward {2}. -/
   | ward
-  /-- Crew N (CR 702.122): printed with a power, e.g. Crew 2.
-  The number is the generic cost of `keywordWithCost`. -/
-  | crew
+  /-- Crew N (CR 702.122): tap that many creatures you control. This permanent
+  becomes an artifact creature until end of turn. The number is not a mana cost. -/
+  | crew : Nat → Keyword
 deriving Repr, Inhabited, BEq
 
 /-- A number that is either a printed constant or computed from game
@@ -514,7 +514,7 @@ def toKeywords : Keyword → Keywords
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
   | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
-  | .connive _ | .chapter _ | .flashback | .ward | .crew =>
+  | .connive _ | .chapter _ | .flashback | .ward | .crew _ =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -544,7 +544,7 @@ instance : ToString Keyword where
       s!"chapter {roman}"
     | .flashback => "flashback"
     | .ward => "ward"
-    | .crew => "crew"
+    | .crew n => s!"crew {n}"
     | k => toString k.toKeywords
 
 end Keyword

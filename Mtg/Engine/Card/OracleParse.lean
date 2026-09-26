@@ -404,8 +404,8 @@ Currently recognized:
   the same time (CR 508.3 / 603.2d). A trailing reminder parenthetical is
   not rules text.
 - `Crew N`
-  Crew (CR 702.122). `N` is a positive power. A trailing reminder
-  parenthetical is not rules text.
+  Crew (CR 702.122). `N` is the number of creatures to tap. A trailing
+  reminder parenthetical is not rules text.
 -/
 
 namespace Mtg.Engine
@@ -3481,11 +3481,11 @@ def parseFirstMainAddMana (line : String) : Option CardPart :=
           (.addMana (.controller .this) syms)))
       | none => none
 
-/-- `Crew 2`. Crew (CR 702.122). `N` is a positive power.
+/-- `Crew 2`. Crew (CR 702.122). `N` is the number of creatures to tap.
 A reminder parenthetical is not rules text. -/
 def parseCrew (line : String) : Option CardPart :=
   (after? (normLine line) "crew ").bind positiveCount |>.map fun n =>
-    .ability (.keywordWithCost .crew [.mana [.generic n]])
+    .ability (.keyword (.crew n))
 
 /-- `him`, `her`, `them`, or `it`: the object named earlier in this ability. -/
 def isObjectPronoun (s : String) : Bool :=
@@ -6378,7 +6378,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .ability (.triggered
       (.attackSimultaneously creaturesYouControl .all [])
       (.keyword (.controller .this) .recruit)),
-    .ability (.keywordWithCost .crew [.mana [.generic 2]])]
+    .ability (.keyword (.crew 2))]
 #guard parseOracleParts (name := "") "Crew 0" == none
 
 end Mtg.Engine

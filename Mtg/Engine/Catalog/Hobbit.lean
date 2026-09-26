@@ -4561,7 +4561,7 @@ def greatGildedBoatDefinition : TraditionalCardDefinition := .card <|
       .all
       [])
     (.keyword (.controller .this) .recruit)),
-  .ability (.keywordWithCost .crew [.mana [.generic 2]])]
+  .ability (.keyword (.crew 2))]
 
 def greatGildedBoat : CardDef :=
   greatGildedBoatDefinition.toCardDef (oracleText := greatGildedBoatOracle)

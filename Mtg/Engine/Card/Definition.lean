@@ -4262,7 +4262,7 @@ structure CardFace where
   entersTapped : Bool := false
   /-- This land enters tapped unless you control an Equipment. -/
   entersTappedUnlessEquipment : Bool := false
-  /-- Crew N (CR 702.122). The number is the generic cost of `keywordWithCost`. -/
+  /-- Crew N (CR 702.122). `N` is the number of creatures to tap. -/
   crew : Option Nat := none
   /-- Choose one or both (CR 700.2). The controller may choose two modes. -/
   chooseOneOrBoth : Bool := false
@@ -4806,13 +4806,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           b.costReductionIfTargetTapped + ManaCost.manaValue (Cost.manaCost costs) }
 
 def applyAbility (b : CardFace) : Ability → CardFace
+  | .keyword (.crew n) =>
+    if n == 0 then b else { b with crew := some n }
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
   | .keywordWithCost .flashback costs =>
     { b with flashback := some (Cost.manaCost costs) }
   | .keywordWithCost .ward [.mana [.generic n]] =>
     if n == 0 then b else { b with ward := some n }
-  | .keywordWithCost .crew [.mana [.generic n]] =>
-    if n == 0 then b else { b with crew := some n }
   | .keywordWithCost k costs =>
     match (Ability.keywordWithCost k costs).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
