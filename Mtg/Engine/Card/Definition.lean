@@ -2063,6 +2063,29 @@ def leftoverExileThenReturnTapped? : CardAction → Option Selector
     else none
   | _ => none
 
+/-- Two target creatures and/or lands this object's controller controls. -/
+def leftoverTwoCreaturesOrLandsYouControl? : Selector → Bool
+  | .targets _ (.range (.nat 2) (.nat 2)) among =>
+    let s := among.shape
+    s.mustBePermanent && s.sameController &&
+      s.types.eqTypes [.creature, .land] &&
+      !s.other && s.subtype.isNone && !s.token && !s.nontoken &&
+      !s.opponentControls && !s.flying && !s.tapped &&
+      s.powerAtLeast.isNone && s.powerAtMost.isNone
+  | _ => false
+
+/-- Exile two creatures and/or lands you control, then return them under
+their owner's control. -/
+def leftoverExileThenReturnYouControl? : CardAction → Bool
+  | .sequence [
+      .actionId id (.exile sel),
+      .putOntoBattlefieldInState (.wasCreatedByAction id')
+        [.controlled who]
+    ] =>
+    id == id' && who == .owner (.wasCreatedByAction id) &&
+      leftoverTwoCreaturesOrLandsYouControl? sel
+  | _ => false
+
 /-- Find, reveal, and hold out a basic land while searching so shuffle
 does not mix it back in. -/
 def leftoverSearchBasicHoldOut? : List CardAction → Option Nat
@@ -2552,6 +2575,29 @@ def leftoverMayPayHasteUnblockable? : CardAction → Bool
       | _ => false
   | _ => false
 
+/-- Cards in this object's controller's graveyard, with no further filter. -/
+def leftoverYourGraveyardCards? : Selector → Bool
+  | .intersection fs =>
+    fs.length == 2 &&
+      fs.any (· == .inGraveyard) &&
+      fs.any (· == .owner (.controller .this))
+  | _ => false
+
+/-- +P/+T on this while your graveyard has at least seven cards. -/
+def leftoverThresholdGets?
+    (among : Selector) (inners : List ContinuousEffect) : Option StaticAbility :=
+  if leftoverYourGraveyardCards? among then
+    match ContinuousEffect.addedPT? inners with
+    | some (p, t) =>
+      let onThis :=
+        inners.all fun e =>
+          match e with
+          | .addPower who _ | .addToughness who _ => isThisOrItsSource who
+          | _ => false
+      if onThis && (p != 0 || t != 0) then some (.thresholdGets p t) else none
+    | none => none
+  else none
+
 /-- +P/+T on this as long as your graveyard has creature cards. With
 `gainAllSubtypes` of creature, also all creature types. -/
 def leftoverGetsIfGyCreatureCards?
@@ -2943,6 +2989,8 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
           | none =>
             if leftoverOwnerPutsLibraryThenConnive? action then
               some Effect.ownerPutsLibraryThenConnive
+            else if leftoverExileThenReturnYouControl? action then
+              some Effect.exileThenReturnYouControl
             else
               (leftoverMillThenPutCompiled? action).orElse fun _ =>
   (leftoverCreateThenTeamPump? action).orElse fun _ =>
@@ -4468,7 +4516,11 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else b
   | .if (.and _ _) _ => b
   | .if (.greaterOrEqual (.count among) threshold) inners =>
-    if valToNat? threshold == some 2 then
+    if valToNat? threshold == some 7 then
+      match CardAction.leftoverThresholdGets? among inners with
+      | some ab => { b with staticAbilities := b.staticAbilities.push ab }
+      | none => b
+    else if valToNat? threshold == some 2 then
       match CardAction.leftoverGetsIfGyCreatureCards? among inners with
       | some ab => { b with staticAbilities := b.staticAbilities.push ab }
       | none => b
@@ -6488,6 +6540,39 @@ end TraditionalCardDefinition
           .returnToHand (.variable 1)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterSearchBasicToHand
   | none => false
+
+-- Threshold: +P/+T while seven or more cards are in your graveyard.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.if
+      (.greaterOrEqual
+        (.count (.intersection [.inGraveyard, .owner (.controller .this)]))
+        7)
+      [.addPower .this (Value.int 1), .addToughness .this (Value.int 1)]))
+  ]).toCardDef.staticAbilities == #[.thresholdGets 1 1]
+
+-- Speak Secrets: mill, then one instant or sorcery from among them.
+#guard
+  (CardAction.sequence [
+    .actionId 1 (.mill (.controller .this) 4),
+    .returnToHand
+      (.selected (.controller .this) (.range 1 1)
+        (.intersection [
+          .wasObjectOfAction 1,
+          .union [.cardType .instant, .cardType .sorcery]]))
+  ]).toEffect == Effect.millThenPutInstantOrSorcery 4
+
+-- Gone Fishing: exile two creatures and/or lands, then return them.
+#guard
+  (CardAction.sequence [
+    .actionId 1 (.exile (.targets 1 (.range 2 2)
+      (.intersection [
+        .permanent,
+        .union [.cardType .creature, .cardType .land],
+        .controlled (.controller .this)]))),
+    .putOntoBattlefieldInState (.wasCreatedByAction 1)
+      [.controlled (.owner (.wasCreatedByAction 1))]
+  ]).toEffect == Effect.exileThenReturnYouControl
 
 -- Old Thrush: hold the found land out of the shuffle, then put it on top.
 #guard

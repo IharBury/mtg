@@ -42,7 +42,8 @@ Bolg's Company, Nori, Teller of Tales, The Lord of the Eagles,
 Thrór's Map, The Black Arrow, Smaug the Magnificent,
 The Queen of Dale, Ori, Keeper of Songs, Óin the Brave,
 Bombur, Gentle Dreamer, Fíli the Pathfinder, Thorin Oakenshield,
-and Dáin, Lord of the Iron Hills
+Dáin, Lord of the Iron Hills, Old Thrush, Most Decrepit Old Bird,
+and Lake-town Mariners
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -4114,57 +4115,159 @@ def dainLordOfTheIronHills : CardDef :=
   #[.creaturesCantAttackYouUnlessPayIfEnduringStory 1]
 #guard dainLordOfTheIronHills.oracleText == dainLordOfTheIronHillsOracle
 
-def oldThrush : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Old Thrush. -/
+def oldThrushOracle : String :=
+  "Flying\nWhen this creature enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top."
+
+def oldThrushDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Old Thrush",
     .manaCost [.generic 2],
     .type .creature,
     .subtype .bird,
     .power 1,
-    .toughness 2,
-    .ability (.keyword .flying),
-    .ability (
-      .triggered
-        (.enter .this)
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Old Thrush") oldThrushOracle).get!
+
+def oldThrush : CardDef :=
+  oldThrushDefinition.toCardDef
+    (oracleText := oldThrushOracle)
+
+#guard oldThrushDefinition == .card [
+  .name "Old Thrush",
+  .manaCost [.generic 2],
+  .type .creature,
+  .subtype .bird,
+  .power 1,
+  .toughness 2,
+  .ability (.keyword .flying),
+  .ability (.triggered (.enter .this)
+    (.sequence [
+      .gainLife (.controller .this) 2,
+      .optional
         (.sequence [
-          .gainLife (.controller .this) 2,
-          .optional
-            (.sequence [
-              .searchLibraryThenShuffle
-                (.controller .this)
-                [
-                  .defineSelectorVariable 1
-                    (.selected
-                      (.controller .this)
-                      (.range 1 1)
-                      (.intersection [
-                        .inLibrary,
-                        .cardType .land,
-                        .supertype .basic])),
-                  .reveal (.variable 1),
-                  .holdOutInLibrary (.variable 1)],
-              .putOnTopOfLibrary (.variable 1)])]))
-  ]).toCardDef
-    (oracleText := "Flying\nWhen this creature enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top.")
+          .searchLibraryThenShuffle (.controller .this) [
+            .defineSelectorVariable 1
+              (.selected (.controller .this) (.range 1 1)
+                (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+            .reveal (.variable 1),
+            .holdOutInLibrary (.variable 1)],
+          .putOnTopOfLibrary (.variable 1)])]))]
+
+#guard oldThrush.keywords.flying
+#guard oldThrush.triggeredAbilities == #[.onEnterGainLifeSearchBasicOnTop 2]
+#guard oldThrush.oracleText == oldThrushOracle
+
+/-- Gatherer Oracle text for Most Decrepit Old Bird. -/
+def mostDecrepitOldBirdOracle : String :=
+  "Flying\nThreshold — This creature gets +1/+1 as long as there are seven or more cards in your graveyard.\n//ADV//\nSpeak Secrets {1}{U}\nSorcery — Adventure\nMill four cards, then put an instant or sorcery card from among them into your hand."
+
+def mostDecrepitOldBirdDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Most Decrepit Old Bird",
+    .manaCost [.mono .blue],
+    .type .creature,
+    .subtype .bird,
+    .power 1,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Most Decrepit Old Bird") mostDecrepitOldBirdOracle).get!
 
 def mostDecrepitOldBird : CardDef :=
-  creature "Most Decrepit Old Bird" (ManaCost.ofColor .blue) #["Bird"] 1 1
-    (oracleText := "Flying\nThreshold — This creature gets +1/+1 as long as there are seven or more cards in your graveyard.\n//ADV//\nSpeak Secrets {1}{U}\nSorcery — Adventure\nMill four cards, then put an instant or sorcery card from among them into your hand.")
-    (keywords := Keyword.flying)
-    (staticAbilities := #[.thresholdGets 1 1])
-    (adventure := some (adventure "Speak Secrets" (ManaCost.ofGenericAndColor 1 .blue)
-      "Mill four cards, then put an instant or sorcery card from among them into your hand."
-      (Effect.millThenPutInstantOrSorcery 4)))
+  mostDecrepitOldBirdDefinition.toCardDef
+    (oracleText := mostDecrepitOldBirdOracle)
+
+#guard mostDecrepitOldBirdDefinition == .card [
+  .name "Most Decrepit Old Bird",
+  .manaCost [.mono .blue],
+  .type .creature,
+  .subtype .bird,
+  .power 1,
+  .toughness 1,
+  .ability (.keyword .flying),
+  .ability (.static (.if
+    (.greaterOrEqual
+      (.count (.intersection [.inGraveyard, .owner (.controller .this)]))
+      7)
+    [.addPower .this (Value.int 1), .addToughness .this (Value.int 1)])),
+  .alternative [
+    .name "Speak Secrets",
+    .manaCost [.generic 1, .mono .blue],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [.sequence [
+      .actionId 1 (.mill (.controller .this) 4),
+      .returnToHand
+        (.selected (.controller .this) (.range 1 1)
+          (.intersection [
+            .wasObjectOfAction 1,
+            .union [.cardType .instant, .cardType .sorcery]]))]]]]
+
+#guard mostDecrepitOldBird.keywords.flying
+#guard mostDecrepitOldBird.staticAbilities == #[.thresholdGets 1 1]
+#guard mostDecrepitOldBird.oracleText == mostDecrepitOldBirdOracle
+#guard
+  match mostDecrepitOldBird.adventure with
+  | some adv =>
+    adv.name == "Speak Secrets" &&
+      adv.manaCost == (ManaCost.ofGenericAndColor 1 .blue) &&
+      adv.types == #[.sorcery] &&
+      adv.spellEffect == some (Effect.millThenPutInstantOrSorcery 4)
+  | none => false
+
+/-- Gatherer Oracle text for Lake-town Mariners. -/
+def lakeTownMarinersOracle : String :=
+  "Vigilance\nWard {2} (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {2}.)\n//ADV//\nGone Fishing {3}{U}\nInstant — Adventure\nExile two target creatures and/or lands you control, then return them to the battlefield under their owner's control."
+
+def lakeTownMarinersDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Lake-town Mariners",
+    .manaCost [.generic 4, .mono .blue, .mono .blue],
+    .type .creature,
+    .subtype .human,
+    .subtype .citizen,
+    .power 6,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Lake-town Mariners") lakeTownMarinersOracle).get!
 
 def lakeTownMariners : CardDef :=
-  creature "Lake-town Mariners" (ManaCost.ofGenericAndColors 4 [.blue, .blue])
-    #["Human", "Citizen"] 6 5
-    (oracleText := "Vigilance\nWard {2} (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {2}.)\n//ADV//\nGone Fishing {3}{U}\nInstant — Adventure\nExile two target creatures and/or lands you control, then return them to the battlefield under their owner's control.")
-    (keywords := Keyword.vigilance)
-    (ward := some 2)
-    (adventure := some (adventure "Gone Fishing" (ManaCost.ofGenericAndColor 3 .blue)
-      "Exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control."
-      (Effect.exileThenReturnYouControl) .instant))
+  lakeTownMarinersDefinition.toCardDef
+    (oracleText := lakeTownMarinersOracle)
+
+#guard lakeTownMarinersDefinition == .card [
+  .name "Lake-town Mariners",
+  .manaCost [.generic 4, .mono .blue, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .citizen,
+  .power 6,
+  .toughness 5,
+  .ability (.keyword .vigilance),
+  .ability (.keywordWithCost .ward [.mana [.generic 2]]),
+  .alternative [
+    .name "Gone Fishing",
+    .manaCost [.generic 3, .mono .blue],
+    .type .instant,
+    .subtype .adventure,
+    .actions [.sequence [
+      .actionId 1 (.exile (.targets 1 (.range 2 2)
+        (.intersection [
+          .permanent,
+          .union [.cardType .creature, .cardType .land],
+          .controlled (.controller .this)]))),
+      .putOntoBattlefieldInState (.wasCreatedByAction 1)
+        [.controlled (.owner (.wasCreatedByAction 1))]]]]]
+
+#guard lakeTownMariners.keywords.vigilance
+#guard lakeTownMariners.ward == some 2
+#guard lakeTownMariners.oracleText == lakeTownMarinersOracle
+#guard
+  match lakeTownMariners.adventure with
+  | some adv =>
+    adv.name == "Gone Fishing" &&
+      adv.manaCost == (ManaCost.ofGenericAndColor 3 .blue) &&
+      adv.types == #[.instant] &&
+      adv.spellEffect == some Effect.exileThenReturnYouControl
+  | none => false
 
 def pineconeStrike : CardDef :=
   instant "Pinecone Strike" (ManaCost.ofGenericAndColor 1 .red)
