@@ -4324,12 +4324,12 @@ def theLonelyMountainDefinition : TraditionalCardDefinition := .card <|
       .permanent, .subtype .equipment, .controlled (.controller .this)])))
     [.replace (.enter .this)
       [.putOntoBattlefieldInState .this [.tapped]]])),
-  .ability (.activatedIf (.timeToCastSorcery (.controller .this))
+  .ability (.abilityId 1 (.activatedIf (.timeToCastSorcery (.controller .this))
     [.mana [.generic 4, .mono .red], .tapSymbol]
     (.createTokens (.controller .this) 1 [
       .type .creature, .subtype .dwarf, .colorIndicator [.red],
-      .power 2, .toughness 2])),
-  .ability (.static (.reduceCostWithX .this
+      .power 2, .toughness 2]))),
+  .ability (.static (.reduceCostWithX (.abilityWithId 1)
     [.mana [.generic 1]]
     (.count (.intersection [
       .permanent, .subtype .equipment, .controlled (.controller .this)]))))]

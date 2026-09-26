@@ -289,6 +289,9 @@ inductive Selector where
   | spell
   /-- An ability on the stack (CR 113 / 115.1). -/
   | ability
+  /-- The ability numbered by `Ability.abilityId`. “This ability” is that
+  ability, not the card it is printed on. -/
+  | abilityWithId : Nat → Selector
   /-- A permanent spell (CR 110.4 / 112.1). -/
   | permanentSpell
   /-- An object that has a target matching the given selector (CR 115.1). -/

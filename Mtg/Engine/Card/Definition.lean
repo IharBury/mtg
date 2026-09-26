@@ -224,6 +224,7 @@ def shape : Selector → Shape
   | .cardType t => { types := .oneOf [t] }
   | .spell => { isSpell := true }
   | .ability => {}
+  | .abilityWithId _ => {}
   | .permanentSpell => { isSpell := true }
   | .hasTarget _ => {}
   | .isTargetOf _ => {}
@@ -378,6 +379,7 @@ def referenceTargets : Selector → Selector
   | .subtype st => .subtype st
   | .spell => .spell
   | .ability => .ability
+  | .abilityWithId n => .abilityWithId n
   | .permanentSpell => .permanentSpell
   | .hasTarget s => .hasTarget (referenceTargets s)
   | .isTargetOf s => .isTargetOf (referenceTargets s)
@@ -1093,7 +1095,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     match e.selector with
     | .this | .source _ | .controller _ | .caster | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
-    | .spell | .ability | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
+    | .spell | .ability | .abilityWithId _ | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
     | .player
     | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inLibrary | .inHand
@@ -4760,11 +4762,14 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else
       match costs, v with
       | [.mana [.generic k]], .count among =>
-        if (who == .this || who == .source .this) && k != 0 &&
-            among.includedSubtype? == some "Equipment" &&
-            among.shape.sameController then
-          addEquipmentCostReduction b k
-        else b
+        match who with
+        | .abilityWithId _ =>
+          if k != 0 &&
+              among.includedSubtype? == some "Equipment" &&
+              among.shape.sameController then
+            addEquipmentCostReduction b k
+          else b
+        | _ => b
       | _, _ => b
   | .reduceCost who costs =>
     match leftoverEquipAbilitiesTargetingThisCostLess? who costs with
