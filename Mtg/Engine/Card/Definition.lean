@@ -526,6 +526,14 @@ def includedSubtypes : Selector → List String
   | .target _ among | .targets _ _ among => includedSubtypes among
   | _ => []
 
+/-- Another permanent you control that is `subtype` or Equipment. -/
+def anotherSubtypeOrEquipment? (s : Selector) : Option String :=
+  if s.shape.other && s.shape.sameController && s.shape.mustBePermanent then
+    match s.includedSubtypes with
+    | [st, "Equipment"] => some st
+    | _ => none
+  else none
+
 /-- A basic land card in a library. -/
 def basicLandInLibrary (s : Selector) : Bool :=
   includesInLibrary s && includesLand s && includesBasic s
@@ -590,6 +598,16 @@ def isSacArtifactOrCreature : Cost → Bool
 def sacrificesArtifactOrCreature : List Cost → Bool
   | [] => false
   | c :: rest => isSacArtifactOrCreature c || sacrificesArtifactOrCreature rest
+
+def isSacOneCreature : Cost → Bool
+  | .sacrificeCount s 1 => s.shape.types.eqTypes [.creature]
+  | _ => false
+
+/-- True when a cost sacrifices one creature and not an artifact-or-creature. -/
+def sacrificesOneCreature : List Cost → Bool
+  | [] => false
+  | c :: rest =>
+    (isSacOneCreature c && !isSacArtifactOrCreature c) || sacrificesOneCreature rest
 
 def orPayGeneric? : List Cost → Option Nat
   | [] => none
@@ -749,6 +767,9 @@ inductive ContinuousEffect where
   | reduceCostWithX : Selector → List Cost → Value → ContinuousEffect
   /-- An additional cost to cast the selected spell (CR 601.2b). -/
   | additionalCost : Selector → List Cost → ContinuousEffect
+  /-- You may pay `costs` rather than pay the cost of the selected ability
+  (CR 118.9). This is an alternative cost, not a cost reduction (CR 118.7). -/
+  | alternativeCost : Selector → List Cost → ContinuousEffect
   /-- Replace the trigger with the given actions (CR 614). -/
   | replace : Trigger → List CardAction → ContinuousEffect
   /-- The selected trigger is forbidden (CR 509 / 614). -/
@@ -1035,7 +1056,7 @@ def selector : ContinuousEffect → Selector
   | .if _ (inner :: _) => selector inner
   | .if _ [] => .this
   | .reduceCost who _ | .reduceCostWithX who _ _ => who
-  | .additionalCost who _ => who
+  | .additionalCost who _ | .alternativeCost who _ => who
   | .replace _ _ => .this
   | .forbid _ => .this
   | .canCastWithoutPayingManaCost _ who => who
@@ -1780,6 +1801,16 @@ def leftoverPlusOneOnTarget? : CardAction → Option Effect
         some (Effect.plusOneOnTarget n among.includedSubtypes.toArray)
       else none
     | none => none
+  | _ => none
+
+/-- Set this source's base power and toughness to printed integers. -/
+def leftoverSourceSetBasePT? : List ContinuousEffect → Option (Int × Int)
+  | [.setBasePower who p, .setBaseToughness who' t] =>
+    if (who == .source .this || who == .this) && who' == who then
+      match valToInt? p, valToInt? t with
+      | some p, some t => some (p, t)
+      | _, _ => none
+    else none
   | _ => none
 
 /-- Set another creature you control's base power and toughness to the
@@ -3609,7 +3640,7 @@ def withAbilityStatic (ab : ActivatedAbility) (e : ContinuousEffect) : Activated
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost .equip costs =>
     some {
-      cost := { mana := Cost.manaCost costs }
+      cost := { mana := Cost.manaCost costs, payLife := Cost.lifePaid costs }
       effect := Effect.attachToTargetCreatureYouControl
       onlyAsSorcery := true }
   | .keywordWithSubtypeAndCost .equip st cost =>
@@ -3941,11 +3972,15 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some TriggeredAbility.onAnotherArtifactEntersPlusOne
     else none
   | .triggered (.enter among) (.draw (.controller .this) 1) =>
-    if among.includedSubtype? == some "Equipment" && among.shape.sameController then
-      some TriggeredAbility.onEquipmentYouControlEntersDraw
-    else if among.shape.artifactYouControl then
-      some TriggeredAbility.onArtifactYouControlEntersDraw
-    else none
+    match among.anotherSubtypeOrEquipment? with
+    | some st =>
+      some (TriggeredAbility.onAnotherSubtypeOrEquipmentEntersDrawOnce st)
+    | none =>
+      if among.includedSubtype? == some "Equipment" && among.shape.sameController then
+        some TriggeredAbility.onEquipmentYouControlEntersDraw
+      else if among.shape.artifactYouControl then
+        some TriggeredAbility.onArtifactYouControlEntersDraw
+      else none
   | .triggered (.enter among) (.continuous effects _duration) =>
     if among.shape.anotherElfYouControl then
       match CardAction.leftoverSourcePump? effects with
@@ -4002,6 +4037,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some TriggeredAbility.onLandYouControlEntersTapOrUntap
     else if CardAction.leftoverNontokenHeroModal? among modes then
       some (TriggeredAbility.onWatch Effect.watchNontokenHeroModal)
+    else none
+  | .triggered (.enter among) (.optional (.continuous effects .endOfTurn)) =>
+    if among.shape.landYouControl then
+      match CardAction.leftoverSourceSetBasePT? effects with
+      | some (p, t) => some (TriggeredAbility.onLandYouControlEntersBecomePT p t)
+      | none => none
     else none
   | .triggered (.enter among) action =>
     match CardAction.leftoverPlusOneVigilance? action with
@@ -4247,6 +4288,8 @@ structure CardFace where
   costReductionEqualFlyingPower : Bool := false
   costReductionIfYouControl : Option (Nat × String) := none
   additionalCostSacrificeArtifactOrCreature : Bool := false
+  /-- Additional cost: sacrifice a creature. -/
+  additionalCostSacrificeCreature : Bool := false
   additionalCostOrPayGeneric : Option Nat := none
   extraLandIfOtherSubtype : Option String := none
   staticAbilities : Array StaticAbility := #[]
@@ -4566,6 +4609,12 @@ def attackTaxIfEnduringStory? : List ContinuousEffect → Option Nat
     else none
   | _ => none
 
+/-- Equip abilities of permanents this object's controller controls. -/
+def equipAbilitiesYouControl : Selector :=
+  .intersection [
+    Selector.keywordAbility .equip,
+    .controlled (.controller .this)]
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
@@ -4688,6 +4737,19 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
                     (.creaturesCantAttackYouUnlessPayIfEnduringStory n) }
             | none => b
     else b
+  | .if
+      (.and
+        (.enduringStory who)
+        (.didNotHappen (.activateAbility among) .turnStart))
+      [.alternativeCost who' costs] =>
+    if who == .controller .this &&
+        among == equipAbilitiesYouControl &&
+        who' == equipAbilitiesYouControl &&
+        costs == [.mana [.generic 0]] then
+      { b with
+        staticAbilities :=
+          b.staticAbilities.push .firstEquipFreeIfEnduringStory }
+    else b
   | .if (.and _ _) _ => b
   | .if (.greaterOrEqual (.count among) threshold) inners =>
     if valToNat? threshold == some 7 then
@@ -4750,6 +4812,14 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       | none => b
   | .forbid (.counter who) =>
     if isThisOrItsSource who then { b with cantBeCountered := true } else b
+  | .forbid (.block .any (.hostOf .this)) =>
+    match b.staticAbilities.back? with
+    | some (.equippedCreatureHasKeywords k) =>
+      { b with
+        staticAbilities :=
+          b.staticAbilities.pop.push
+            (.equippedCreatureHasKeywordsAndCantBeBlocked k) }
+    | _ => b
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
   | .canPlay _ _ => b
@@ -4765,11 +4835,14 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     | none => b
   | .doesntUntap _ => b
   | .cantAttackUnlessPays _ _ _ => b
+  | .alternativeCost _ _ => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
         b.additionalCostSacrificeArtifactOrCreature ||
           Cost.sacrificesArtifactOrCreature cs
+      additionalCostSacrificeCreature :=
+        b.additionalCostSacrificeCreature || Cost.sacrificesOneCreature cs
       additionalCostOrPayGeneric :=
         b.additionalCostOrPayGeneric.orElse (fun _ => Cost.orPayGeneric? cs) }
   | .reduceCostWithX who costs v =>
@@ -4959,6 +5032,7 @@ def toAdventure (b : CardFace) : AdventureFace := {
     | some a => a.toEffect.phrase
     | none => ""
   spellEffect := b.action.map (·.toEffect)
+  additionalCostSacrificeCreature := b.additionalCostSacrificeCreature
 }
 
 end CardFace
@@ -5020,6 +5094,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       costReductionIfYouControl := b.costReductionIfYouControl
       additionalCostSacrificeArtifactOrCreature :=
         b.additionalCostSacrificeArtifactOrCreature
+      additionalCostSacrificeCreature := b.additionalCostSacrificeCreature
       additionalCostOrPayGeneric := b.additionalCostOrPayGeneric
       extraLandIfOtherSubtype := b.extraLandIfOtherSubtype
       staticAbilities := b.staticAbilities
@@ -5768,7 +5843,18 @@ end TraditionalCardDefinition
   | some ab =>
     ab.onlyAsSorcery &&
       ab.effect == Effect.attachToTargetCreatureYouControl &&
-      ab.cost.mana == ManaCost.ofGeneric 2
+      ab.cost.mana == ManaCost.ofGeneric 2 &&
+      ab.cost.payLife == 0
+  | none => false
+
+#guard
+  match
+    (Ability.keywordWithCost .equip [.mana [.generic 2], .life 2]).toActivatedAbility? with
+  | some ab =>
+    ab.onlyAsSorcery &&
+      ab.effect == Effect.attachToTargetCreatureYouControl &&
+      ab.cost.mana == ManaCost.ofGeneric 2 &&
+      ab.cost.payLife == 2
   | none => false
 
 #guard
@@ -10226,5 +10312,129 @@ end TraditionalCardDefinition
     .subtype .saga,
     .ability (.keywordWithEffect (.chapter 1) [.draw (.controller .this) 1])
   ]).toCardDef.saga.isNone
+
+-- Equipped creature has hexproof and can't be blocked.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.gainAbility (.hostOf .this) (.keyword .hexproof))),
+    .ability (.static (.forbid (.block .any (.hostOf .this))))
+  ]).toCardDef.staticAbilities ==
+    #[.equippedCreatureHasKeywordsAndCantBeBlocked Keyword.hexproof]
+
+-- Hexproof without the restriction stays keywords only.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.gainAbility (.hostOf .this) (.keyword .hexproof)))
+  ]).toCardDef.staticAbilities == #[.equippedCreatureHasKeywords Keyword.hexproof]
+
+-- Alternative cost of {0} for Equip abilities you control, only before
+-- you have activated one this turn.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.if
+      (.and
+        (.enduringStory (.controller .this))
+        (.didNotHappen
+          (.activateAbility
+            (.intersection [
+              Selector.keywordAbility .equip,
+              .controlled (.controller .this)]))
+          .turnStart))
+      [.alternativeCost
+        (.intersection [
+          Selector.keywordAbility .equip,
+          .controlled (.controller .this)])
+        [.mana [.generic 0]]]))
+  ]).toCardDef.staticAbilities == #[.firstEquipFreeIfEnduringStory]
+
+-- Without the turn-start check, the alternative cost is not that ability.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.if (.enduringStory (.controller .this))
+      [.alternativeCost
+        (.intersection [
+          Selector.keywordAbility .equip,
+          .controlled (.controller .this)])
+        [.mana [.generic 0]]]))
+  ]).toCardDef.staticAbilities == #[]
+
+-- Reducing that cost, or an alternative cost other than {0}, is different.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.if (.enduringStory (.controller .this))
+      [.reduceCost
+        (.intersection [
+          Selector.keywordAbility .equip,
+          .controlled (.controller .this)])
+        [.mana [.generic 0]]]))
+  ]).toCardDef.staticAbilities == #[]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.if (.enduringStory (.controller .this))
+      [.alternativeCost
+        (.intersection [
+          Selector.keywordAbility .equip,
+          .controlled (.controller .this)])
+        [.mana [.generic 1]]]))
+  ]).toCardDef.staticAbilities == #[]
+
+-- Landfall may set this creature's base power and toughness.
+#guard
+  (Ability.triggered
+    (.enter
+      (.intersection [
+        .permanent, .cardType .land, .controlled (.controller .this)]))
+    (.optional (.continuous
+      [.setBasePower (.source .this) (Value.int 4),
+        .setBaseToughness (.source .this) (Value.int 2)]
+      .endOfTurn))).toTriggeredAbility? ==
+    some (TriggeredAbility.onLandYouControlEntersBecomePT 4 2)
+
+-- Another Dwarf or Equipment you control entering draws once each turn.
+#guard
+  (Ability.triggered
+    (.enter
+      (.intersection [
+        .not .this,
+        .permanent,
+        .union [.subtype .dwarf, .subtype .equipment],
+        .controlled (.controller .this)]))
+    (.draw (.controller .this) 1)).toTriggeredAbility? ==
+    some (TriggeredAbility.onAnotherSubtypeOrEquipmentEntersDrawOnce "Dwarf")
+
+-- Sacrifice a creature is its own additional cost.
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.stackStatic (.additionalCost .this
+        [.sacrificeCount
+          (.intersection [.permanent, .cardType .creature]) 1])),
+      .actions [.draw (.controller .this) 2]
+    ]).toCardDef
+  c.additionalCostSacrificeCreature &&
+    !c.additionalCostSacrificeArtifactOrCreature &&
+    c.spellEffect == some (Effect.draw 2)
+
+-- That cost on an Adventure face stays on the Adventure.
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .name "My Precious",
+      .alternative [
+        .name "Allure of Power",
+        .type .instant,
+        .ability (.stackStatic (.additionalCost .this
+          [.sacrificeCount
+            (.intersection [.permanent, .cardType .creature]) 1])),
+        .actions [.draw (.controller .this) 2]]
+    ]).toCardDef
+  !c.additionalCostSacrificeCreature &&
+    match c.adventure with
+    | some a =>
+      a.additionalCostSacrificeCreature &&
+        a.spellEffect == some (Effect.draw 2) &&
+        a.name == "Allure of Power"
+    | none => false
 
 end Mtg.Engine

@@ -99,7 +99,8 @@ inductive StaticAbility where
   | equippedCreatureHasKeywordsAndCantBeBlocked (k : Keywords)
   /-- Equip abilities that target this cost `{n}` less. -/
   | equipAbilitiesTargetingThisCostLess (n : Nat)
-  /-- As long as you have an enduring story, the first equip each turn is `{0}`. -/
+  /-- As long as you have an enduring story, you may pay `{0}` rather than pay
+  the equip cost of the first Equip ability you activate each turn. -/
   | firstEquipFreeIfEnduringStory
   /-- Creatures you control of the chosen type get +P/+T. -/
   | chosenTypeCreaturesGet (power toughness : Int)
@@ -343,7 +344,7 @@ inductive StaticShape where
   | equippedKeywordsAndUnblockable (k : Keywords)
   /-- Equip abilities targeting this cost less. -/
   | equipTargetingThisCostLess (n : Nat)
-  /-- First equip each turn is free if enduring story. -/
+  /-- Alternative cost of `{0}` for the first Equip ability each turn. -/
   | firstEquipFreeIfEnduringStory
   /-- Chosen-type team pump. -/
   | chosenTypePump (power toughness : Int)
@@ -468,7 +469,7 @@ structure StaticMeta where
   equippedCantBeBlocked : Bool := false
   /-- Equip abilities targeting this cost this much less. -/
   equipTargetingThisCostLess : Option Nat := none
-  /-- First equip is free if enduring story. -/
+  /-- Alternative cost of `{0}` for the first Equip ability each turn. -/
   firstEquipFreeIfEnduringStory : Bool := false
   /-- You have no maximum hand size. -/
   noMaximumHandSize : Bool := false

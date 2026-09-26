@@ -406,6 +406,34 @@ Currently recognized:
 - `Crew N`
   Crew (CR 702.122). `N` is the number of creatures to tap. A trailing
   reminder parenthetical is not rules text.
+- `Equip abilities you activate that target this creature cost {N} less to activate.`
+  `{N}` is generic mana. Those equip abilities cost that much less.
+- `Equipped creature has <keywords> and can't be blocked.`
+  The equipped creature has those keywords and can't be blocked.
+- `Equip—{cost}, Pay N life.`
+  The Equip keyword (CR 702.6). The cost is that mana plus `N` life.
+  `N` is a positive life payment. Equip only as a sorcery.
+- `As an additional cost to cast this spell, sacrifice a creature.`
+  The sacrifice is announced as the spell is cast (CR 601.2b). On an
+  Adventure face, a following `Draw a card` / `Draw N cards` is that face's
+  effect. A draw with no other text is still unrecognized on a main face.
+- `{cost}, {T}, Sacrifice this creature: Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle.`
+  Up to two is zero, one, or two. One of the found cards enters tapped.
+  The rest go to hand.
+- `Landfall — Whenever a land you control enters, choose one —`
+  then `• Tap target creature an opponent controls.` and
+  `• Untap target creature you control.`
+  `Landfall` may be omitted. Exactly one mode is chosen.
+- `Landfall — Whenever a land you control enters, you may have this creature's base power and toughness become P/T until end of turn.`
+  `Landfall` may be omitted. The change is optional and ends at the cleanup step.
+- `When this creature enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature.`
+  Up to one target is zero or one (CR 115.1). The counter is put only when a
+  permanent is returned.
+- `As long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn.`
+  An alternative cost of `{0}` for Equip abilities of permanents that player controls (CR 118.9), not a cost reduction. It is available only when that player has not activated one since the turn began.
+- `Whenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn.`
+  Another permanent that is a Dwarf or an Equipment. The trigger happens at
+  most once each turn.
 -/
 
 namespace Mtg.Engine
@@ -1388,6 +1416,32 @@ def parseSearchBasicLandTapped (sentence : String) (n : Nat) : Option (CardActio
       n)
   else none
 
+/-- `Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle.`
+Up to two is zero through two (CR 107.1c). The found cards are variable `n`.
+One of them enters tapped. Any not put onto the battlefield go to hand. -/
+def parseSearchUpToTwoBasics (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  if sentenceIs sentence
+      "search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle" then
+    some (
+      .searchLibraryThenShuffle
+        (.controller .this)
+        [
+          .defineSelectorVariable n
+            (.selected
+              (.controller .this)
+              (.range 0 2)
+              (.intersection [
+                .inLibrary,
+                .cardType .land,
+                .supertype .basic])),
+          .reveal (.variable n),
+          .putOntoBattlefieldInState
+            (.selected (.controller .this) (.range 1 1) (.variable n))
+            [.tapped],
+          .returnToHand (.variable n)],
+      n + 1)
+  else none
+
 /-- `Add one mana of any color.` The player chooses one of the five colors
 (CR 106.4). Does not choose a target, so the target number stays `n`. -/
 def parseAddOneManaOfAnyColor (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -1414,6 +1468,7 @@ def parseActivatedEffect (cardName : String) (effect : String) (n : Nat) :
       parseTargetCantBeBlocked one n <|>
         parsePutCountersOnTarget one n <|>
         parseSearchBasicLandTapped one n <|>
+        parseSearchUpToTwoBasics one n <|>
         parseDestroyTargetPermanent one n
     let plain :=
       (parsePumpUntilEndOfTurn one <|> parsePutCountersOnThis one <|>
@@ -1773,6 +1828,14 @@ def parseDealDamageExileIfDies (cardName : String) (text : String) (n : Nat) :
       | _ => none
   | _ => none
 
+/-- `Tap target creature an opponent controls.` The creature is target `n`. -/
+def parseTapOppCreature (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  match after? (normSentence sentence) "tap " with
+  | some rest =>
+    (parseOppControlledTarget rest).map fun sel =>
+      (.tap (.target n sel), n + 1)
+  | none => none
+
 /-- One printed mode of a “Choose one” spell. The first success wins. -/
 def parseModeAction (cardName : String) (text : String) (n : Nat) :
     Option (CardAction × Nat) :=
@@ -1788,7 +1851,9 @@ def parseModeAction (cardName : String) (text : String) (n : Nat) :
     parseBecomeArtifactIndestructible text n <|>
     parseDestroy text n <|>
     parsePutPlusOneThenGains text n <|>
-    (parsePumpUntilEndOfTurn text).map (·, n)
+    (parsePumpUntilEndOfTurn text).map (·, n) <|>
+    parseTapOppCreature text n <|>
+    parseUntap text n
 
 /-- The text of a `•` mode line, without the bullet. -/
 def stripModeBullet (line : String) : Option String :=
@@ -2509,12 +2574,27 @@ def parseFerociousBeginCombat (line : String) : Option CardPart :=
     .ability (.triggered (.combatStart (.controller .this))
       (.if (.any ferociousCreature) [action]))
 
+/-- `you may have this creature's base power and toughness become P/T until end of turn.`
+The change is optional. `this creature` is the source of this ability. -/
+def parseMaySetBasePT (effect : String) : Option CardAction :=
+  (after? (norm effect)
+      "you may have this creature's base power and toughness become ").bind
+    fun rest =>
+      (before? rest " until end of turn").bind parsePowerToughness |>.map
+        fun (p, t) =>
+          .optional (.continuous
+            [.setBasePower (.source .this) (Value.int p),
+              .setBaseToughness (.source .this) (Value.int t)]
+            .endOfTurn)
+
 /-- `Landfall — Whenever a land you control enters, <effect>.`
 `Landfall` is an ability word (CR 207.2c) and may be omitted.
-The effect is `this creature gets +P/+T until end of turn`, or
-`put a +1/+1 counter on target <permanent> you control`.
+The effect is `this creature gets +P/+T until end of turn`,
+`you may have this creature's base power and toughness become P/T until end of turn`,
+or `put a +1/+1 counter on target <permanent> you control`.
 `you control` is required on that target; a bare target is a different ability.
-The target, when there is one, is `n`. -/
+The target, when there is one, is `n`. A line that also says `choose one —`
+is a modal trigger, not this ability. -/
 def parseLandYouControlEnters (line : String) (n : Nat) : Option (CardPart × Nat) :=
   (after? (withoutAbilityWord (normLine line) "landfall")
       "whenever a land you control enters, ").bind fun effect =>
@@ -2526,10 +2606,13 @@ def parseLandYouControlEnters (line : String) (n : Nat) : Option (CardPart × Na
       | some _ => triggered action n
       | none => none
     | none =>
-      if !effect.endsWith " you control" then none
-      else
-        (parsePutPlusOneOnTarget effect n).bind fun (action, n') =>
-          triggered action n'
+      match parseMaySetBasePT effect with
+      | some action => triggered action n
+      | none =>
+        if !effect.endsWith " you control" then none
+        else
+          (parsePutPlusOneOnTarget effect n).bind fun (action, n') =>
+            triggered action n'
 
 /-- `When this Equipment enters, target opponent sacrifices a creature of their choice.`
 The entering object is this card. The opponent is target `n` and chooses which
@@ -3908,6 +3991,133 @@ def parseThresholdGets (cardName line : String) : Option CardPart :=
                   effects)))
           | none => none
 
+/-- `Equip abilities you activate that target this creature cost {N} less to activate.`
+`{N}` is generic mana, and it is not zero. -/
+def parseEquipAbilitiesTargetingThisCostLess (line : String) : Option CardPart :=
+  (between? (normLine line)
+      "equip abilities you activate that target this creature cost "
+      " less to activate").bind nonemptyMana? |>.bind fun syms =>
+    match syms with
+    | [.generic k] =>
+      if k == 0 then none
+      else
+        some (.ability (.static (.reduceCost
+          (.intersection [
+            Selector.keywordAbility .equip,
+            .hasTarget .this,
+            .controlled (.controller .this)])
+          [.mana [.generic k]])))
+    | _ => none
+
+/-- Equip abilities of permanents this object's controller controls. -/
+def equipAbilitiesYouControl : Selector :=
+  .intersection [
+    Selector.keywordAbility .equip,
+    .controlled (.controller .this)]
+
+/-- `As long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn.`
+`{0}` is an alternative cost for those Equip abilities (CR 118.9), not a
+cost reduction. It applies only while that player has not activated one
+since the turn began. Any other mana cost is a different ability. -/
+def parseFirstEquipFreeIfEnduringStory (line : String) : Option CardPart :=
+  if normLine line ==
+      "as long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn" then
+    some (.ability (.static (.if
+      (.and
+        (.enduringStory (.controller .this))
+        (.didNotHappen (.activateAbility equipAbilitiesYouControl) .turnStart))
+      [.alternativeCost equipAbilitiesYouControl [.mana [.generic 0]]])))
+  else none
+
+/-- `Whenever another <subtype> or Equipment you control enters, draw a card. This ability triggers only once each turn.`
+The entering permanent is another permanent of that subtype or an Equipment.
+One card. The second sentence is the once-each-turn restriction (CR 603.2i). -/
+def parseAnotherSubtypeOrEquipmentEntersDraw (line : String) : Option CardPart :=
+  match sentences line with
+  | [enter, once] =>
+    if !sentenceIs once "this ability triggers only once each turn" then none
+    else
+      (after? (norm enter) "whenever another ").bind fun rest =>
+        (before? rest " enters, draw a card").bind fun who =>
+          let (obj, controlled) := splitYouControl who
+          if !controlled then none
+          else
+            match parseSubtypeList obj with
+            | some [st, .equipment] =>
+              some (.ability (.triggered
+                (.enter (.intersection [
+                  .not .this,
+                  .permanent,
+                  .union [.subtype st, .subtype .equipment],
+                  youControl]))
+                (.draw (.controller .this) 1)))
+            | _ => none
+  | _ => none
+
+/-- `When this creature enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature.`
+Up to one target is zero or one (CR 115.1). That target is `n`, and the return
+is action `n`. The counter is put only when that action returns a permanent. -/
+def parseEnterReturnOtherPlusOne (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match sentences line with
+  | [enter, cond] =>
+    if !sentenceIs cond "if you do, put a +1/+1 counter on this creature" then none
+    else
+      (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+        if effect !=
+            "return up to one other target permanent you control to its owner's hand" then
+          none
+        else
+          some (
+            .ability (.triggered (.enter .this)
+              (.sequence [
+                .actionId n
+                  (.returnToHand
+                    (.targets n (.range 0 1)
+                      (.intersection [.not .this, .permanent, youControl]))),
+                .if (.happened (.actionWithId n) .gameStart)
+                  [.putCounter (.source .this) .plusOnePlusOne 1]])),
+            n + 1)
+  | _ => none
+
+/-- `Equipped creature has <keywords> and can't be blocked.`
+The keywords and the restriction are static abilities of this Equipment. -/
+def parseEquippedHasAndCantBeBlocked (line : String) : Option (List CardPart) :=
+  (after? (normLine line) "equipped creature has ").bind fun rest =>
+    (before? rest " and can't be blocked").bind parseKeywordPhrase |>.bind
+      fun kws =>
+        match kws with
+        | [] => none
+        | _ =>
+          some (
+            (kws.map fun k =>
+              .ability (.static (.gainAbility (.hostOf .this) (.keyword k)))) ++
+            [.ability (.static (.forbid (.block .any (.hostOf .this))))])
+
+/-- `Equip—{cost}, Pay N life.`
+The Equip keyword (CR 702.6). The cost is that mana plus `N` life.
+`N` is a positive life payment. Equip only as a sorcery. -/
+def parseEquipPayLife (line : String) : Option CardPart :=
+  (after? (normLine line) "equip—").bind fun rest =>
+    match split2? rest ", " with
+    | some (costText, lifeText) =>
+      match nonemptyMana? costText, parsePayLife lifeText with
+      | some syms, some life =>
+        some (.ability (.keywordWithCost .equip [.mana syms, .life life]))
+      | _, _ => none
+    | none => none
+
+/-- `As an additional cost to cast this spell, sacrifice a creature.`
+The sacrifice is one creature and is announced at CR 601.2b. The ability
+functions while this spell is on the stack (CR 113.6 / 604.2). -/
+def parseAdditionalCostSacrificeCreature (line : String) : Option CardPart :=
+  if normLine line ==
+      "as an additional cost to cast this spell, sacrifice a creature" then
+    some (.ability (.stackStatic
+      (.additionalCost .this
+        [.sacrificeCount (permanentWith [.creature]) 1])))
+  else none
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails.
 The first parser that accepts the line wins. -/
@@ -3948,9 +4158,11 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     carry (parseOwnerShuffleDraw cardName line n) <|>
     carry (parseReturnFromGyAttach line n) <|>
     carry (parseEnterExileOppGyLoseLife cardName line n) <|>
+    sole (parseEquipAbilitiesTargetingThisCostLess line) n <|>
     sole (parseCostReduction line) n <|>
     sole (parseCostLessByFlyingPower line) n <|>
     sole (parseHasteIfAnother cardName line) n <|>
+    sole (parseFirstEquipFreeIfEnduringStory line) n <|>
     sole (parseEnduringStoryGets cardName line) n <|>
     sole (parseEnduringStoryTeamGets line) n <|>
     sole (parseEnduringStoryTeamWard line) n <|>
@@ -3975,6 +4187,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseEnterCreateTreasure cardName line) n <|>
     carry (parseEnterExileTopMayPlay cardName line n) <|>
     carry (parseEnterPutPlusOneOnTarget cardName line n) <|>
+    carry (parseEnterReturnOtherPlusOne cardName line n) <|>
     sole (parseEnterDraw cardName line) n <|>
     sole (parseEnterEachOpponentDiscards cardName line) n <|>
     carry (parseEnterDividedDamage cardName line n) <|>
@@ -3991,6 +4204,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseBecomesTargetDraw cardName line) n <|>
     sole (parseFirstMainAddMana line) n <|>
     sole (parseCantAttackUnlessNOther cardName line) n <|>
+    sole (parseAnotherSubtypeOrEquipmentEntersDraw line) n <|>
     sole (parseArtifactYouControlEntersDraw line) n <|>
     sole (parseUpkeepCreateCreature line) n <|>
     sole (parseYourEndStepDraw line) n <|>
@@ -4002,23 +4216,63 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseWard line) n <|>
     sole (parseCrew line) n <|>
     sole (parseCombatDamageLoot cardName line) n <|>
+    sole (parseAdditionalCostSacrificeCreature line) n <|>
     sole (parseAdditionalCostSacrificeOrPay line) n <|>
     carry (parseEnchant line n) <|>
+    (parseEquippedHasAndCantBeBlocked line).map (·, n) <|>
     (parseEquippedGets line).map (·, n) <|>
+    sole (parseEquipPayLife line) n <|>
     sole (parseEquip line) n <|>
     spellActions (actionsFromText cardName line n)
+
+/-- `Landfall — Whenever a land you control enters, choose one —`.
+`Landfall` may be omitted. The em dash after `choose one` keeps this from
+being only an ability-word line. -/
+def landfallChooseOne? (line : String) : Bool :=
+  match after? (normLine line) "landfall — " with
+  | some rest => rest == "whenever a land you control enters, choose one —"
+  | none => normLine line == "whenever a land you control enters, choose one —"
 
 mutual
 /-- Lines outside a `Choose one —` list. `parseModeLines` reads the list. -/
 def parseBodyLines (cardName : String) : List String → Nat → Option (List CardPart × Nat)
   | [], n => some ([], n)
   | line :: rest, n =>
-    match chooseHeader? line with
-    | some orBoth => parseModeLines cardName rest n [] orBoth
+    if landfallChooseOne? line then
+      parseLandfallModes cardName rest n []
+    else
+      match chooseHeader? line with
+      | some orBoth => parseModeLines cardName rest n [] orBoth
+      | none =>
+        (parseOneLine cardName line n).bind fun (here, nHere) =>
+          (parseBodyLines cardName rest nHere).map fun (more, nMore) =>
+            (here ++ more, nMore)
+
+/-- Bullet modes after a landfall “choose one —” line.
+A bullet that does not parse fails. No bullets fails rather than dropping
+the printed choice. A later non-bullet ends the list. -/
+def parseLandfallModes (cardName : String) (lines : List String) (n : Nat)
+    (acc : List CardAction) : Option (List CardPart × Nat) :=
+  let modesPart (modes : List CardAction) : List CardPart :=
+    [.ability (.triggered (.enter landsYouControl)
+      (.chooseUniqueModes (.range 1 1) modes))]
+  match lines with
+  | [] =>
+    match acc with
+    | [] => none
+    | modes => some (modesPart modes, n)
+  | line :: rest =>
+    match stripModeBullet line with
+    | some text =>
+      (parseModeAction cardName text n).bind fun (action, n') =>
+        parseLandfallModes cardName rest n' (acc ++ [action])
     | none =>
-      (parseOneLine cardName line n).bind fun (here, nHere) =>
-        (parseBodyLines cardName rest nHere).map fun (more, nMore) =>
-          (here ++ more, nMore)
+      match acc with
+      | [] => none
+      | modes =>
+        (parseOneLine cardName line n).bind fun (here, nHere) =>
+          (parseBodyLines cardName rest nHere).map fun (more, nMore) =>
+            (modesPart modes ++ here ++ more, nMore)
 
 /-- `•` modes after `Choose one —` or `Choose one or both —`.
 A later non-mode line ends the list.
@@ -4054,10 +4308,24 @@ def nameOfParts (parts : List CardPart) : Option String :=
     | .name n => some n
     | _ => none
 
+/-- Leading `sacrifice a creature` additional-cost lines, and the lines left. -/
+def peelLeadingSacrificeCreatureCosts (lines : List String) :
+    List CardPart × List String :=
+  match lines with
+  | [] => ([], [])
+  | line :: rest =>
+    match parseAdditionalCostSacrificeCreature line with
+    | some part =>
+      let (more, left) := peelLeadingSacrificeCreatureCosts rest
+      (part :: more, left)
+    | none => ([], lines)
+
 /-- A Gatherer Adventure face: `Name {cost}`, a type line, then rules text.
 A missing name or cost, a line that is not a type line, or effect text the
 grammar does not cover makes the parse fail. No effect lines is a face
-with no spell effect. -/
+with no spell effect. A leading sacrifice-a-creature additional cost is an
+ability of the face. `Draw a card` is that face's effect only after such a
+cost; a draw with no other text stays unrecognized. -/
 def parseAdventure (cardName : String) (lines : List String) (n : Nat) :
     Option (List CardPart) :=
   match lines with
@@ -4073,10 +4341,21 @@ def parseAdventure (cardName : String) (lines : List String) (n : Nat) :
           match effectLines with
           | [] => some (nameParts ++ typeParts)
           | _ =>
-            (actionsFromText faceName (String.intercalate " " effectLines) n).bind
-              fun (actions, _) =>
-                if actions.isEmpty then none
-                else some (nameParts ++ typeParts ++ [.actions actions])
+            let (costParts, restLines) := peelLeadingSacrificeCreatureCosts effectLines
+            let text := String.intercalate " " restLines
+            let actions? : Option (List CardAction) :=
+              if restLines.isEmpty then some []
+              else
+                match actionsFromText faceName text n with
+                | some (actions, _) =>
+                  if actions.isEmpty then none else some actions
+                | none =>
+                  if costParts.isEmpty then none
+                  else (parseDrawCards (rulesText text)).map fun action => [action]
+            actions?.map fun actions =>
+              let actionParts :=
+                if actions.isEmpty then [] else [.actions actions]
+              nameParts ++ typeParts ++ costParts ++ actionParts
 
 /-- Steps of a sequence, in order. A sequence is those steps. -/
 def flattenAction : CardAction → List CardAction
@@ -6380,5 +6659,117 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       (.keyword (.controller .this) .recruit)),
     .ability (.keyword (.crew 2))]
 #guard parseOracleParts (name := "") "Crew 0" == none
+#guard parseOracleParts (name := "Dwarven Mauler")
+  "Equip abilities you activate that target this creature cost {2} less to activate." ==
+  some [.ability (.static (.reduceCost
+    (.intersection [
+      Selector.keywordAbility .equip,
+      .hasTarget .this,
+      .controlled (.controller .this)])
+    [.mana [.generic 2]]))]
+#guard parseOracleParts (name := "")
+  "Equip abilities you activate that target this creature cost {0} less to activate." ==
+  none
+#guard parseOracleParts (name := "My Precious")
+  "Equipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life." ==
+  some [
+    .ability (.static (.gainAbility (.hostOf .this) (.keyword .hexproof))),
+    .ability (.static (.forbid (.block .any (.hostOf .this)))),
+    .ability (.keywordWithCost .equip [.mana [.generic 2], .life 2])]
+#guard parseOracleParts (name := "My Precious")
+  "Equipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life.\n//ADV//\nAllure of Power {1}{B}\nInstant — Adventure\nAs an additional cost to cast this spell, sacrifice a creature.\nDraw two cards. (Then exile this card. You may cast the artifact later from exile.)" ==
+  some [
+    .ability (.static (.gainAbility (.hostOf .this) (.keyword .hexproof))),
+    .ability (.static (.forbid (.block .any (.hostOf .this)))),
+    .ability (.keywordWithCost .equip [.mana [.generic 2], .life 2]),
+    .alternative [
+      .name "Allure of Power",
+      .manaCost [.generic 1, .mono .black],
+      .type .instant,
+      .subtype .adventure,
+      .ability (.stackStatic (.additionalCost .this
+        [.sacrificeCount (permanentWith [.creature]) 1])),
+      .actions [.draw (.controller .this) 2]]]
+#guard parseOracleParts (name := "")
+  "Flying\n//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nDraw two cards." == none
+#guard parseOracleParts (name := "Troop of Ponies")
+  "{2}, {T}, Sacrifice this creature: Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle." ==
+  some [.ability (.activated
+    [.mana [.generic 2], .tapSymbol, .sacrifice .this]
+    (.searchLibraryThenShuffle
+      (.controller .this)
+      [
+        .defineSelectorVariable 1
+          (.selected
+            (.controller .this)
+            (.range 0 2)
+            (.intersection [
+              .inLibrary, .cardType .land, .supertype .basic])),
+        .reveal (.variable 1),
+        .putOntoBattlefieldInState
+          (.selected (.controller .this) (.range 1 1) (.variable 1))
+          [.tapped],
+        .returnToHand (.variable 1)]))]
+#guard parseOracleParts (name := "")
+  "{2}, {T}, Sacrifice this creature: Search your library for up to one basic land card, reveal it, put it onto the battlefield tapped, then shuffle." ==
+  none
+#guard parseOracleParts (name := "Elven Raft-Steerer")
+  "Landfall — Whenever a land you control enters, choose one —\n• Tap target creature an opponent controls.\n• Untap target creature you control." ==
+  some [.ability (.triggered
+    (.enter landsYouControl)
+    (.chooseUniqueModes (.range 1 1) [
+      .tap (.target 1 (permanentWith [.creature]
+        [.controlled (.opponent (.controller .this))])),
+      .untap (.target 2 (permanentWith [.creature] [youControl]))]))]
+#guard parseOracleParts (name := "")
+  "Landfall — Whenever a land you control enters, choose one —" == none
+#guard parseOracleParts (name := "Mirkwood Meditator")
+  "Landfall — Whenever a land you control enters, you may have this creature's base power and toughness become 4/2 until end of turn." ==
+  some [.ability (.triggered
+    (.enter landsYouControl)
+    (.optional (.continuous
+      [.setBasePower (.source .this) (Value.int 4),
+        .setBaseToughness (.source .this) (Value.int 2)]
+      .endOfTurn)))]
+#guard parseOracleParts (name := "Mirkwood Nurturer")
+  "When this creature enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature." ==
+  some [.ability (.triggered
+    (.enter .this)
+    (.sequence [
+      .actionId 1
+        (.returnToHand
+          (.targets 1 (.range 0 1)
+            (.intersection [.not .this, .permanent, youControl]))),
+      .if (.happened (.actionWithId 1) .gameStart)
+        [.putCounter (.source .this) .plusOnePlusOne 1]]))]
+#guard parseOracleParts (name := "Kíli the Resourceful")
+  "As long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn.\nWhenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn." ==
+  some [
+    .ability (.static (.if
+      (.and
+        (.enduringStory (.controller .this))
+        (.didNotHappen
+          (.activateAbility
+            (.intersection [
+              Selector.keywordAbility .equip,
+              .controlled (.controller .this)]))
+          .turnStart))
+      [.alternativeCost
+        (.intersection [
+          Selector.keywordAbility .equip,
+          .controlled (.controller .this)])
+        [.mana [.generic 0]]])),
+    .ability (.triggered
+      (.enter (.intersection [
+        .not .this,
+        .permanent,
+        .union [.subtype .dwarf, .subtype .equipment],
+        youControl]))
+      (.draw (.controller .this) 1))]
+#guard parseOracleParts (name := "")
+  "As long as you have an enduring story, you may pay {1} rather than pay the equip cost of the first equip ability you activate each turn." ==
+  none
+#guard parseOracleParts (name := "")
+  "Whenever another Dwarf or Equipment you control enters, draw a card." == none
 
 end Mtg.Engine
