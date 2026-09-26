@@ -47,7 +47,8 @@ Lake-town Mariners, Pinecone Strike, The Lonely Mountain,
 Thranduil, Sindarin Liege, Glóin the Mighty, Iron Hills Stalwart,
 Old Fat Spider, Great Gilded Boat, Desolation of Smaug,
 Dwarven Mauler, My Precious, Troop of Ponies, Elven Raft-Steerer,
-Mirkwood Meditator, Mirkwood Nurturer, and Kíli the Resourceful
+Mirkwood Meditator, Mirkwood Nurturer, Kíli the Resourceful,
+Dáin's Company, Smaug, Wicked Worm, and Glamdring, Foe-hammer
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -4924,30 +4925,165 @@ def kiliTheResourceful : CardDef :=
   #[.onAnotherSubtypeOrEquipmentEntersDrawOnce "Dwarf"]
 #guard kiliTheResourceful.triggeredAbilities[0]!.onceEachTurn
 
+/-- Gatherer Oracle text for Dáin's Company. -/
+def dainsCompanyOracle : String :=
+  "This creature has lifelink as long as you control another Dwarf.\nWhen this creature enters, look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into your hand. Put the rest on the bottom of your library in a random order."
+
+def dainsCompanyDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Dáin's Company",
+    .manaCost [.mono .red, .mono .white],
+    .type .creature,
+    .subtype .dwarf,
+    .subtype .warrior,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Dáin's Company") dainsCompanyOracle).get!
+
+#guard dainsCompanyDefinition == .card [
+  .name "Dáin's Company",
+  .manaCost [.mono .red, .mono .white],
+  .type .creature,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 2,
+  .toughness 2,
+  .ability (.static (.if
+    (.any (.intersection [
+      .not .this, .permanent, .subtype .dwarf,
+      .controlled (.controller .this)]))
+    [.gainAbility .this (.keyword .lifelink)])),
+  .ability (.triggered (.enter .this) (.sequence [
+    .actionId 1
+      (.lookAt (.topCardsOfLibrary (.controller .this) 4)),
+    .optional (.sequence [
+      .actionId 2
+        (.reveal
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [
+              .wasObjectOfAction 1,
+              .union [.subtype .dwarf, .subtype .equipment]]))),
+      .returnToHand (.wasObjectOfAction 2)]),
+    .putOnBottomInRandomOrder
+      (.intersection [
+        .wasObjectOfAction 1,
+        .not (.wasObjectOfAction 2)])]))]
+
 def dainsCompany : CardDef :=
-  creature "Dáin's Company" (ManaCost.ofColors [.red, .white]) #["Dwarf", "Warrior"] 2 2
-    (oracleText := "This creature has lifelink as long as you control another Dwarf.\nWhen this creature enters, look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.")
-    (staticAbilities := #[.lifelinkIfYouControlOtherSubtype "Dwarf"])
-    (triggeredAbilities := #[.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"]])
+  dainsCompanyDefinition.toCardDef (oracleText := dainsCompanyOracle)
+
+#guard dainsCompany.oracleText == dainsCompanyOracle
+#guard dainsCompany.staticAbilities == #[.lifelinkIfYouControlOtherSubtype "Dwarf"]
+#guard dainsCompany.triggeredAbilities ==
+  #[.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"]]
+
+/-- Gatherer Oracle text for Smaug, Wicked Worm. -/
+def smaugWickedWormOracle : String :=
+  "Flying\nWhen Smaug enters, create X tapped Treasure tokens, where X is the number of artifacts your opponents control.\nWhenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life."
+
+def smaugWickedWormDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Smaug, Wicked Worm",
+    .manaCost [.generic 3, .mono .black, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dragon,
+    .power 5,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Smaug, Wicked Worm") smaugWickedWormOracle).get!
+
+#guard smaugWickedWormDefinition == .card [
+  .name "Smaug, Wicked Worm",
+  .manaCost [.generic 3, .mono .black, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dragon,
+  .power 5,
+  .toughness 5,
+  .ability (.keyword .flying),
+  .ability (.triggered (.enter .this)
+    (.createTokens (.controller .this)
+      (.count (.intersection [
+        .permanent, .cardType .artifact,
+        .controlled (.opponent (.controller .this))]))
+      PredefinedToken.treasureToken
+      [.tapped])),
+  .ability (.triggered
+    (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
+    (.if (.spentManaFrom .treasure)
+      [.sequence [
+        .draw (.controller .this) 1,
+        .loseLife (.controller .this) 1]]))]
 
 def smaugWickedWorm : CardDef :=
-  legendaryCreature "Smaug, Wicked Worm" (ManaCost.ofGenericAndColors 3 [.black, .red])
-    #["Dragon"] 5 5
-    (oracleText := "Flying\nWhen Smaug enters, create X tapped Treasure tokens, where X is the number of artifacts your opponents control.\nWhenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[
-      .onEnterCreateTappedTreasuresEqualOppArtifacts,
-      .onCastWithTreasureDrawLoseLife])
+  smaugWickedWormDefinition.toCardDef (oracleText := smaugWickedWormOracle)
+
+#guard smaugWickedWorm.oracleText == smaugWickedWormOracle
+#guard smaugWickedWorm.hasSupertype .legendary
+#guard smaugWickedWorm.keywords.flying
+#guard smaugWickedWorm.power == some 5
+#guard smaugWickedWorm.toughness == some 5
+#guard smaugWickedWorm.subtypes == #["Dragon"]
+#guard smaugWickedWorm.triggeredAbilities == #[
+  .onEnterCreateTappedTreasuresEqualOppArtifacts,
+  .onCastWithTreasureDrawLoseLife]
+
+/-- Gatherer Oracle text for Glamdring, Foe-hammer // Gleam of Death. -/
+def glamdringFoeHammerOracle : String :=
+  "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.\nEquip {2}\n//ADV//\nGleam of Death {3}{U}\nSorcery — Adventure\nMill six cards, then put all instant and sorcery cards from among them into your hand. (Then exile this card. You may cast the artifact later from exile.)"
+
+def glamdringFoeHammerDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Glamdring, Foe-hammer",
+    .manaCost [.generic 2],
+    .type .artifact,
+    .supertype .legendary,
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "Glamdring, Foe-hammer") glamdringFoeHammerOracle).get!
+
+#guard glamdringFoeHammerDefinition == .card [
+  .name "Glamdring, Foe-hammer",
+  .manaCost [.generic 2],
+  .type .artifact,
+  .supertype .legendary,
+  .subtype .equipment,
+  .ability (.static (.reduceCostWithX
+    (.intersection [
+      .spell,
+      .union [.cardType .instant, .cardType .sorcery],
+      .controlled (.controller .this)])
+    [.mana [.x]]
+    (.greatestPower (.hostOf .this)))),
+  .ability (.keywordWithCost .equip [.mana [.generic 2]]),
+  .alternative [
+    .name "Gleam of Death",
+    .manaCost [.generic 3, .mono .blue],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [
+      .sequence [
+        .actionId 1 (.mill (.controller .this) 6),
+        .returnToHand (.intersection [
+          .wasObjectOfAction 1,
+          .union [.cardType .instant, .cardType .sorcery]])]]]]
 
 def glamdringFoeHammer : CardDef :=
-  equipment "Glamdring, Foe-hammer" (ManaCost.ofGeneric 2)
-    "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.\nEquip {2}\n//ADV//\nGleam of Death {3}{U}\nSorcery — Adventure\nMill six cards, then put all instant and sorcery cards from among them into your hand. (Then exile this card. You may cast the artifact later from exile.)"
-    (ManaCost.ofGeneric 2)
-    (legendary := true)
-    (staticAbilities := #[.instantSorceryCostReductionEqualEquippedPower])
-    (adventure := some (adventure "Gleam of Death" (ManaCost.ofGenericAndColor 3 .blue)
-      "Mill six cards, then put all instant and sorcery cards from among them into your hand. (Then exile this card. You may cast the artifact later from exile.)"
-      (Effect.millThenPutAllInstantsOrSorceries 6)))
+  glamdringFoeHammerDefinition.toCardDef (oracleText := glamdringFoeHammerOracle)
+
+#guard glamdringFoeHammer.oracleText == glamdringFoeHammerOracle
+#guard glamdringFoeHammer.hasSupertype .legendary
+#guard glamdringFoeHammer.staticAbilities ==
+  #[.instantSorceryCostReductionEqualEquippedPower]
+#guard glamdringFoeHammer.activatedAbilities == #[equipAbility (ManaCost.ofGeneric 2)]
+#guard
+  match glamdringFoeHammer.adventure with
+  | some adv =>
+    adv.name == "Gleam of Death" &&
+      adv.manaCost == ManaCost.ofGenericAndColor 3 .blue &&
+      adv.types == #[.sorcery] &&
+      adv.subtypes == #["Adventure"] &&
+      adv.spellEffect == some (Effect.millThenPutAllInstantsOrSorceries 6)
+  | none => false
 
 def settleTheWreckage : CardDef :=
   instant "Settle the Wreckage" (ManaCost.ofGenericAndColors 2 [.white, .white])
