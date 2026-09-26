@@ -430,7 +430,7 @@ Currently recognized:
   Up to one target is zero or one (CR 115.1). The counter is put only when a
   permanent is returned.
 - `As long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn.`
-  The first equip ability that player activates each turn costs `{0}`.
+  An alternative cost of `{0}` for that Equip ability (CR 118.9), not a cost reduction.
 - `Whenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn.`
   Another permanent that is a Dwarf or an Equipment. The trigger happens at
   most once each turn.
@@ -4010,12 +4010,13 @@ def parseEquipAbilitiesTargetingThisCostLess (line : String) : Option CardPart :
     | _ => none
 
 /-- `As long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn.`
-`{0}` is that replacement cost. Any other mana cost is a different ability. -/
+`{0}` is an alternative cost for that Equip ability (CR 118.9), not a cost
+reduction. Any other mana cost is a different ability. -/
 def parseFirstEquipFreeIfEnduringStory (line : String) : Option CardPart :=
   if normLine line ==
       "as long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn" then
     some (.ability (.static (.if (.enduringStory (.controller .this))
-      [.reduceCost
+      [.alternativeCost
         (.intersection [
           Selector.keywordAbility .equip,
           .controlled (.controller .this)])
@@ -6739,7 +6740,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "As long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn.\nWhenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn." ==
   some [
     .ability (.static (.if (.enduringStory (.controller .this))
-      [.reduceCost
+      [.alternativeCost
         (.intersection [
           Selector.keywordAbility .equip,
           .controlled (.controller .this)])

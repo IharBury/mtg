@@ -4892,7 +4892,7 @@ def kiliTheResourcefulDefinition : TraditionalCardDefinition := .card <|
   .toughness 2,
   .ability (.keyword .storied),
   .ability (.static (.if (.enduringStory (.controller .this))
-    [.reduceCost
+    [.alternativeCost
       (.intersection [
         Selector.keywordAbility .equip,
         .controlled (.controller .this)])

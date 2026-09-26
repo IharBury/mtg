@@ -767,6 +767,9 @@ inductive ContinuousEffect where
   | reduceCostWithX : Selector → List Cost → Value → ContinuousEffect
   /-- An additional cost to cast the selected spell (CR 601.2b). -/
   | additionalCost : Selector → List Cost → ContinuousEffect
+  /-- You may pay `costs` rather than pay the cost of the selected ability
+  (CR 118.9). This is an alternative cost, not a cost reduction (CR 118.7). -/
+  | alternativeCost : Selector → List Cost → ContinuousEffect
   /-- Replace the trigger with the given actions (CR 614). -/
   | replace : Trigger → List CardAction → ContinuousEffect
   /-- The selected trigger is forbidden (CR 509 / 614). -/
@@ -1053,7 +1056,7 @@ def selector : ContinuousEffect → Selector
   | .if _ (inner :: _) => selector inner
   | .if _ [] => .this
   | .reduceCost who _ | .reduceCostWithX who _ _ => who
-  | .additionalCost who _ => who
+  | .additionalCost who _ | .alternativeCost who _ => who
   | .replace _ _ => .this
   | .forbid _ => .this
   | .canCastWithoutPayingManaCost _ who => who
@@ -4606,9 +4609,10 @@ def attackTaxIfEnduringStory? : List ContinuousEffect → Option Nat
     else none
   | _ => none
 
-/-- The first equip ability you activate each turn costs `{0}`. -/
+/-- You may pay `{0}` rather than pay the equip cost of the first Equip
+ability you activate each turn. `{0}` is an alternative cost (CR 118.9). -/
 def firstEquipFreeIfEnduringStory? : List ContinuousEffect → Bool
-  | [.reduceCost who costs] =>
+  | [.alternativeCost who costs] =>
     costs == [.mana [.generic 0]] &&
       who == .intersection [
         Selector.keywordAbility .equip,
@@ -4827,6 +4831,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     | none => b
   | .doesntUntap _ => b
   | .cantAttackUnlessPays _ _ _ => b
+  | .alternativeCost _ _ => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
@@ -10318,7 +10323,18 @@ end TraditionalCardDefinition
     .ability (.static (.gainAbility (.hostOf .this) (.keyword .hexproof)))
   ]).toCardDef.staticAbilities == #[.equippedCreatureHasKeywords Keyword.hexproof]
 
--- First equip ability each turn costs {0} while you have an enduring story.
+-- Alternative cost of {0} for the first Equip ability each turn.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.if (.enduringStory (.controller .this))
+      [.alternativeCost
+        (.intersection [
+          Selector.keywordAbility .equip,
+          .controlled (.controller .this)])
+        [.mana [.generic 0]]]))
+  ]).toCardDef.staticAbilities == #[.firstEquipFreeIfEnduringStory]
+
+-- Reducing that cost, or an alternative cost other than {0}, is different.
 #guard
   (TraditionalCardDefinition.card [
     .ability (.static (.if (.enduringStory (.controller .this))
@@ -10327,13 +10343,12 @@ end TraditionalCardDefinition
           Selector.keywordAbility .equip,
           .controlled (.controller .this)])
         [.mana [.generic 0]]]))
-  ]).toCardDef.staticAbilities == #[.firstEquipFreeIfEnduringStory]
+  ]).toCardDef.staticAbilities == #[]
 
--- A nonzero replacement cost is not that first-equip ability.
 #guard
   (TraditionalCardDefinition.card [
     .ability (.static (.if (.enduringStory (.controller .this))
-      [.reduceCost
+      [.alternativeCost
         (.intersection [
           Selector.keywordAbility .equip,
           .controlled (.controller .this)])
