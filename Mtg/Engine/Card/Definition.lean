@@ -4609,15 +4609,11 @@ def attackTaxIfEnduringStory? : List ContinuousEffect → Option Nat
     else none
   | _ => none
 
-/-- You may pay `{0}` rather than pay the equip cost of the first Equip
-ability you activate each turn. `{0}` is an alternative cost (CR 118.9). -/
-def firstEquipFreeIfEnduringStory? : List ContinuousEffect → Bool
-  | [.alternativeCost who costs] =>
-    costs == [.mana [.generic 0]] &&
-      who == .intersection [
-        Selector.keywordAbility .equip,
-        .controlled (.controller .this)]
-  | _ => false
+/-- Equip abilities of permanents this object's controller controls. -/
+def equipAbilitiesYouControl : Selector :=
+  .intersection [
+    Selector.keywordAbility .equip,
+    .controlled (.controller .this)]
 
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
@@ -4739,12 +4735,20 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
                 staticAbilities :=
                   b.staticAbilities.push
                     (.creaturesCantAttackYouUnlessPayIfEnduringStory n) }
-            | none =>
-              if firstEquipFreeIfEnduringStory? inners then
-                { b with
-                  staticAbilities :=
-                    b.staticAbilities.push .firstEquipFreeIfEnduringStory }
-              else b
+            | none => b
+    else b
+  | .if
+      (.and
+        (.enduringStory who)
+        (.didNotHappen (.activateAbility among) .turnStart))
+      [.alternativeCost who' costs] =>
+    if who == .controller .this &&
+        among == equipAbilitiesYouControl &&
+        who' == equipAbilitiesYouControl &&
+        costs == [.mana [.generic 0]] then
+      { b with
+        staticAbilities :=
+          b.staticAbilities.push .firstEquipFreeIfEnduringStory }
     else b
   | .if (.and _ _) _ => b
   | .if (.greaterOrEqual (.count among) threshold) inners =>
@@ -10323,7 +10327,27 @@ end TraditionalCardDefinition
     .ability (.static (.gainAbility (.hostOf .this) (.keyword .hexproof)))
   ]).toCardDef.staticAbilities == #[.equippedCreatureHasKeywords Keyword.hexproof]
 
--- Alternative cost of {0} for the first Equip ability each turn.
+-- Alternative cost of {0} for Equip abilities you control, only before
+-- you have activated one this turn.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.if
+      (.and
+        (.enduringStory (.controller .this))
+        (.didNotHappen
+          (.activateAbility
+            (.intersection [
+              Selector.keywordAbility .equip,
+              .controlled (.controller .this)]))
+          .turnStart))
+      [.alternativeCost
+        (.intersection [
+          Selector.keywordAbility .equip,
+          .controlled (.controller .this)])
+        [.mana [.generic 0]]]))
+  ]).toCardDef.staticAbilities == #[.firstEquipFreeIfEnduringStory]
+
+-- Without the turn-start check, the alternative cost is not that ability.
 #guard
   (TraditionalCardDefinition.card [
     .ability (.static (.if (.enduringStory (.controller .this))
@@ -10332,7 +10356,7 @@ end TraditionalCardDefinition
           Selector.keywordAbility .equip,
           .controlled (.controller .this)])
         [.mana [.generic 0]]]))
-  ]).toCardDef.staticAbilities == #[.firstEquipFreeIfEnduringStory]
+  ]).toCardDef.staticAbilities == #[]
 
 -- Reducing that cost, or an alternative cost other than {0}, is different.
 #guard
