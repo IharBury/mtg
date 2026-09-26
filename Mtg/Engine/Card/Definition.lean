@@ -3637,7 +3637,7 @@ def withAbilityStatic (ab : ActivatedAbility) (e : ContinuousEffect) : Activated
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost .equip costs =>
     some {
-      cost := { mana := Cost.manaCost costs }
+      cost := { mana := Cost.manaCost costs, payLife := Cost.lifePaid costs }
       effect := Effect.attachToTargetCreatureYouControl
       onlyAsSorcery := true }
   | .keywordWithSubtypeAndCost .equip st cost =>
@@ -5834,7 +5834,18 @@ end TraditionalCardDefinition
   | some ab =>
     ab.onlyAsSorcery &&
       ab.effect == Effect.attachToTargetCreatureYouControl &&
-      ab.cost.mana == ManaCost.ofGeneric 2
+      ab.cost.mana == ManaCost.ofGeneric 2 &&
+      ab.cost.payLife == 0
+  | none => false
+
+#guard
+  match
+    (Ability.keywordWithCost .equip [.mana [.generic 2], .life 2]).toActivatedAbility? with
+  | some ab =>
+    ab.onlyAsSorcery &&
+      ab.effect == Effect.attachToTargetCreatureYouControl &&
+      ab.cost.mana == ManaCost.ofGeneric 2 &&
+      ab.cost.payLife == 2
   | none => false
 
 #guard

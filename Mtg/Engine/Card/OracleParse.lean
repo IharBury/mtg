@@ -411,8 +411,8 @@ Currently recognized:
 - `Equipped creature has <keywords> and can't be blocked.`
   The equipped creature has those keywords and can't be blocked.
 - `Equip—{cost}, Pay N life.`
-  Attach this to target creature you control. Equip only as a sorcery.
-  `N` is a positive life payment.
+  The Equip keyword (CR 702.6). The cost is that mana plus `N` life.
+  `N` is a positive life payment. Equip only as a sorcery.
 - `As an additional cost to cast this spell, sacrifice a creature.`
   The sacrifice is announced as the spell is cast (CR 601.2b). On an
   Adventure face, a following `Draw a card` / `Draw N cards` is that face's
@@ -4088,21 +4088,15 @@ def parseEquippedHasAndCantBeBlocked (line : String) : Option (List CardPart) :=
             [.ability (.static (.forbid (.block .any (.hostOf .this))))])
 
 /-- `Equip—{cost}, Pay N life.`
-Attach this to target creature you control. Equip only as a sorcery
-(CR 702.6). The target is `n`. `N` is a positive life payment. -/
-def parseEquipPayLife (line : String) (n : Nat) : Option (CardPart × Nat) :=
+The Equip keyword (CR 702.6). The cost is that mana plus `N` life.
+`N` is a positive life payment. Equip only as a sorcery. -/
+def parseEquipPayLife (line : String) : Option CardPart :=
   (after? (normLine line) "equip—").bind fun rest =>
     match split2? rest ", " with
     | some (costText, lifeText) =>
       match nonemptyMana? costText, parsePayLife lifeText with
       | some syms, some life =>
-        some (
-          .ability (.activatedIf
-            (.timeToCastSorcery (.controller .this))
-            [.mana syms, .life life]
-            (.attach .this
-              (.target n (permanentWith [.creature] [youControl])))),
-          n + 1)
+        some (.ability (.keywordWithCost .equip [.mana syms, .life life]))
       | _, _ => none
     | none => none
 
@@ -4220,7 +4214,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     carry (parseEnchant line n) <|>
     (parseEquippedHasAndCantBeBlocked line).map (·, n) <|>
     (parseEquippedGets line).map (·, n) <|>
-    carry (parseEquipPayLife line n) <|>
+    sole (parseEquipPayLife line) n <|>
     sole (parseEquip line) n <|>
     spellActions (actionsFromText cardName line n)
 
@@ -6674,21 +6668,13 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   some [
     .ability (.static (.gainAbility (.hostOf .this) (.keyword .hexproof))),
     .ability (.static (.forbid (.block .any (.hostOf .this)))),
-    .ability (.activatedIf
-      (.timeToCastSorcery (.controller .this))
-      [.mana [.generic 2], .life 2]
-      (.attach .this
-        (.target 1 (permanentWith [.creature] [youControl]))))]
+    .ability (.keywordWithCost .equip [.mana [.generic 2], .life 2])]
 #guard parseOracleParts (name := "My Precious")
   "Equipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life.\n//ADV//\nAllure of Power {1}{B}\nInstant — Adventure\nAs an additional cost to cast this spell, sacrifice a creature.\nDraw two cards. (Then exile this card. You may cast the artifact later from exile.)" ==
   some [
     .ability (.static (.gainAbility (.hostOf .this) (.keyword .hexproof))),
     .ability (.static (.forbid (.block .any (.hostOf .this)))),
-    .ability (.activatedIf
-      (.timeToCastSorcery (.controller .this))
-      [.mana [.generic 2], .life 2]
-      (.attach .this
-        (.target 1 (permanentWith [.creature] [youControl])))),
+    .ability (.keywordWithCost .equip [.mana [.generic 2], .life 2]),
     .alternative [
       .name "Allure of Power",
       .manaCost [.generic 1, .mono .black],

@@ -4660,13 +4660,7 @@ def myPreciousDefinition : TraditionalCardDefinition := .card <|
   .subtype .equipment,
   .ability (.static (.gainAbility (.hostOf .this) (.keyword .hexproof))),
   .ability (.static (.forbid (.block .any (.hostOf .this)))),
-  .ability (.activatedIf
-    (.timeToCastSorcery (.controller .this))
-    [.mana [.generic 2], .life 2]
-    (.attach .this
-      (.target 1
-        (.intersection [
-          .permanent, .cardType .creature, .controlled (.controller .this)])))),
+  .ability (.keywordWithCost .equip [.mana [.generic 2], .life 2]),
   .alternative [
     .name "Allure of Power",
     .manaCost [.generic 1, .mono .black],
