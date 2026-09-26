@@ -4282,6 +4282,20 @@ def pineconeStrikeDefinition : TraditionalCardDefinition := .card <|
     .type .instant
   ] ++ (parseOracleParts (name := "Pinecone Strike") pineconeStrikeOracle).get!
 
+#guard pineconeStrikeDefinition == .card [
+  .name "Pinecone Strike",
+  .manaCost [.generic 1, .mono .red],
+  .type .instant,
+  .actions [.playerSelectAction (.controller .this) (.range 1 2) [
+    .sequence [
+      .dealDamage .this
+        (.target 1 (.intersection [.permanent, .cardType .creature])) 3,
+      .continuous
+        [.replace (.putToGraveyard (.targetReference 1)) [.exile .replacingObject]]
+        .endOfTurn],
+    .destroy (.target 2
+      (.intersection [.permanent, .cardType .artifact, .token]))]]]
+
 def pineconeStrike : CardDef :=
   pineconeStrikeDefinition.toCardDef (oracleText := pineconeStrikeOracle)
 
