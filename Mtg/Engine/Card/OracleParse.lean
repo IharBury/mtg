@@ -385,7 +385,9 @@ Currently recognized:
 - `Landfall — Whenever a land you control enters, create a <P>/<T> <color> <subtype> creature token.`
   `Landfall` may be omitted.
 - `<this> enters tapped unless you control an Equipment.`
-  It enters tapped while its controller controls no Equipment.
+  It enters tapped while its controller controls no Equipment. The ability
+  functions in every zone (CR 113.6) so it can replace how this card enters
+  the battlefield.
 - `{cost}: Create a <P>/<T> <color> <subtype> creature token. This ability costs {N} less to activate for each Equipment you control. Activate only as a sorcery.`
   `{N}` is generic mana. The reduction is that much for each Equipment.
 - `At the beginning of your first main phase, add {mana}.`
@@ -2878,7 +2880,9 @@ def parseEntersTapped (cardName line : String) : Option CardPart :=
         [.putOntoBattlefieldInState .this [.tapped]])))
 
 /-- `<this> enters tapped unless you control an Equipment.`
-It enters tapped while its controller controls no Equipment. -/
+It enters tapped while its controller controls no Equipment. The ability
+functions in every zone (CR 113.6) so it can replace how this card enters
+the battlefield. -/
 def parseEntersTappedUnlessEquipment (cardName line : String) : Option CardPart :=
   (split2? (normLine line) " enters tapped unless you control ").bind
     fun (subject, rest) =>
@@ -2886,7 +2890,7 @@ def parseEntersTappedUnlessEquipment (cardName line : String) : Option CardPart 
       else
         match dropArticle? rest with
         | some "equipment" =>
-          some (.ability (.static (.if (.not (.any equipmentYouControl))
+          some (.ability (.everywhereStatic (.if (.not (.any equipmentYouControl))
             [.replace (.enter .this)
               [.putOntoBattlefieldInState .this [.tapped]]])))
         | _ => none
@@ -6343,7 +6347,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       (Value.int 1)))]
 #guard parseOracleParts (name := "The Lonely Mountain")
   "({T}: Add {R}.)\nThis land enters tapped unless you control an Equipment." ==
-  some [.ability (.static (.if (.not (.any equipmentYouControl))
+  some [.ability (.everywhereStatic (.if (.not (.any equipmentYouControl))
     [.replace (.enter .this) [.putOntoBattlefieldInState .this [.tapped]]]))]
 #guard parseOracleParts (name := "Glóin the Mighty")
   "At the beginning of your first main phase, add {R}{R}." ==

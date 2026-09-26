@@ -4319,7 +4319,7 @@ def theLonelyMountainDefinition : TraditionalCardDefinition := .card <|
   .name "The Lonely Mountain",
   .type .land,
   .subtype .mountain,
-  .ability (.static (.if
+  .ability (.everywhereStatic (.if
     (.not (.any (.intersection [
       .permanent, .subtype .equipment, .controlled (.controller .this)])))
     [.replace (.enter .this)
