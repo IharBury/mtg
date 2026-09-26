@@ -45,7 +45,9 @@ Bombur, Gentle Dreamer, Fíli the Pathfinder, Thorin Oakenshield,
 Dáin, Lord of the Iron Hills, Old Thrush, Most Decrepit Old Bird,
 Lake-town Mariners, Pinecone Strike, The Lonely Mountain,
 Thranduil, Sindarin Liege, Glóin the Mighty, Iron Hills Stalwart,
-Old Fat Spider, Great Gilded Boat, and Desolation of Smaug
+Old Fat Spider, Great Gilded Boat, Desolation of Smaug,
+Dwarven Mauler, My Precious, Troop of Ponies, Elven Raft-Steerer,
+Mirkwood Meditator, Mirkwood Nurturer, and Kíli the Resourceful
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -4601,145 +4603,324 @@ def desolationOfSmaug : CardDef :=
 #guard desolationOfSmaug.spellEffect ==
   some (Effect.dealDamageToEachNonDragonThenAddDragonMana 3)
 
-def dwarvenMauler : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Dwarven Mauler. -/
+def dwarvenMaulerOracle : String :=
+  "Equip abilities you activate that target this creature cost {2} less to activate."
+
+def dwarvenMaulerDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Dwarven Mauler",
     .manaCost [.mono .red],
     .type .creature,
     .subtype .dwarf,
     .subtype .warrior,
     .power 2,
-    .toughness 1,
-    .ability
-      (.static
-        (.reduceCost
-          (.intersection [
-            Selector.keywordAbility .equip,
-            .hasTarget .this,
-            .controlled (.controller .this)])
-          [.mana [.generic 2]]))
-  ]).toCardDef
-    (oracleText := "Equip abilities you activate that target this creature cost {2} less to activate.")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Dwarven Mauler") dwarvenMaulerOracle).get!
+
+#guard dwarvenMaulerDefinition == .card [
+  .name "Dwarven Mauler",
+  .manaCost [.mono .red],
+  .type .creature,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 2,
+  .toughness 1,
+  .ability (.static (.reduceCost
+    (.intersection [
+      Selector.keywordAbility .equip,
+      .hasTarget .this,
+      .controlled (.controller .this)])
+    [.mana [.generic 2]]))]
+
+def dwarvenMauler : CardDef :=
+  dwarvenMaulerDefinition.toCardDef (oracleText := dwarvenMaulerOracle)
+
+#guard dwarvenMauler.oracleText == dwarvenMaulerOracle
+#guard dwarvenMauler.staticAbilities == #[.equipAbilitiesTargetingThisCostLess 2]
+
+/-- Gatherer Oracle text for My Precious. -/
+def myPreciousOracle : String :=
+  "Equipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life.\n//ADV//\nAllure of Power {1}{B}\nInstant — Adventure\nAs an additional cost to cast this spell, sacrifice a creature.\nDraw two cards. (Then exile this card. You may cast the artifact later from exile.)"
+
+def myPreciousDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "My Precious",
+    .manaCost [.generic 3],
+    .type .artifact,
+    .supertype .legendary,
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "My Precious") myPreciousOracle).get!
+
+#guard myPreciousDefinition == .card [
+  .name "My Precious",
+  .manaCost [.generic 3],
+  .type .artifact,
+  .supertype .legendary,
+  .subtype .equipment,
+  .ability (.static (.gainAbility (.hostOf .this) (.keyword .hexproof))),
+  .ability (.static (.forbid (.block .any (.hostOf .this)))),
+  .ability (.activatedIf
+    (.timeToCastSorcery (.controller .this))
+    [.mana [.generic 2], .life 2]
+    (.attach .this
+      (.target 1
+        (.intersection [
+          .permanent, .cardType .creature, .controlled (.controller .this)])))),
+  .alternative [
+    .name "Allure of Power",
+    .manaCost [.generic 1, .mono .black],
+    .type .instant,
+    .subtype .adventure,
+    .ability (.stackStatic (.additionalCost .this
+      [.sacrificeCount
+        (.intersection [.permanent, .cardType .creature]) 1])),
+    .actions [.draw (.controller .this) 2]]]
 
 def myPrecious : CardDef :=
-  artifact "My Precious" (ManaCost.ofGeneric 3)
-    "Equipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life.\n//ADV//\nAllure of Power {1}{B}\nInstant — Adventure\nAs an additional cost to cast this spell, sacrifice a creature.\nDraw two cards. (Then exile this card. You may cast the artifact later from exile.)"
-    (subtypes := #["Equipment"])
-    (supertypes := #[.legendary])
-    (staticAbilities := #[.equippedCreatureHasKeywordsAndCantBeBlocked Keyword.hexproof])
-    (activatedAbilities := #[
-      activated (Effect.attachToTargetCreatureYouControl) (ManaCost.ofGeneric 2)
-        (onlyAsSorcery := true) (payLife := 2)])
-    (adventure := some (adventure "Allure of Power"
-      (ManaCost.ofGenericAndColor 1 .black)
-      "As an additional cost to cast this spell, sacrifice a creature.\nDraw two cards. (Then exile this card. You may cast the artifact later from exile.)"
-      (Effect.draw 2) (cardType := .instant) (additionalCostSacrificeCreature := true)))
+  myPreciousDefinition.toCardDef (oracleText := myPreciousOracle)
 
-def troopOfPonies : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard myPrecious.oracleText == myPreciousOracle
+#guard myPrecious.staticAbilities ==
+  #[.equippedCreatureHasKeywordsAndCantBeBlocked Keyword.hexproof]
+#guard myPrecious.activatedAbilities.size == 1 &&
+  myPrecious.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl &&
+  myPrecious.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 2 &&
+  myPrecious.activatedAbilities[0]!.cost.payLife == 2 &&
+  myPrecious.activatedAbilities[0]!.onlyAsSorcery
+#guard match myPrecious.adventure with
+  | some a =>
+    a.name == "Allure of Power" &&
+      a.spellEffect == some (Effect.draw 2) &&
+      a.additionalCostSacrificeCreature &&
+      a.types == #[.instant]
+  | none => false
+
+/-- Gatherer Oracle text for Troop of Ponies. -/
+def troopOfPoniesOracle : String :=
+  "{2}, {T}, Sacrifice this creature: Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle."
+
+def troopOfPoniesDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Troop of Ponies",
     .manaCost [.generic 2],
     .type .creature,
     .subtype .horse,
     .power 2,
-    .toughness 1,
-    .ability
-      (.activated
-        [.mana [.generic 2], .tapSymbol, .sacrifice .this]
-        (.searchLibraryThenShuffle
-          (.controller .this)
-          [
-            .defineSelectorVariable 1
-              (.selected
-                (.controller .this)
-                (.range 0 2)
-                (.intersection [
-                  .inLibrary,
-                  .cardType .land,
-                  .supertype .basic])),
-            .reveal (.variable 1),
-            .putOntoBattlefieldInState
-              (.selected (.controller .this) (.range 1 1) (.variable 1))
-              [.tapped],
-            .returnToHand (.variable 1)]))
-  ]).toCardDef
-    (oracleText := "{2}, {T}, Sacrifice this creature: Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle.")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Troop of Ponies") troopOfPoniesOracle).get!
 
-def elvenRaftSteerer : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard troopOfPoniesDefinition == .card [
+  .name "Troop of Ponies",
+  .manaCost [.generic 2],
+  .type .creature,
+  .subtype .horse,
+  .power 2,
+  .toughness 1,
+  .ability (.activated
+    [.mana [.generic 2], .tapSymbol, .sacrifice .this]
+    (.searchLibraryThenShuffle
+      (.controller .this)
+      [
+        .defineSelectorVariable 1
+          (.selected
+            (.controller .this)
+            (.range 0 2)
+            (.intersection [
+              .inLibrary, .cardType .land, .supertype .basic])),
+        .reveal (.variable 1),
+        .putOntoBattlefieldInState
+          (.selected (.controller .this) (.range 1 1) (.variable 1))
+          [.tapped],
+        .returnToHand (.variable 1)]))]
+
+def troopOfPonies : CardDef :=
+  troopOfPoniesDefinition.toCardDef (oracleText := troopOfPoniesOracle)
+
+#guard troopOfPonies.oracleText == troopOfPoniesOracle
+#guard troopOfPonies.activatedAbilities.size == 1 &&
+  troopOfPonies.activatedAbilities[0]!.effect == Effect.searchTwoBasicsSplit &&
+  troopOfPonies.activatedAbilities[0]!.cost.tap &&
+  troopOfPonies.activatedAbilities[0]!.cost.sacrificeSource
+
+/-- Gatherer Oracle text for Elven Raft-Steerer. -/
+def elvenRaftSteererOracle : String :=
+  "Landfall — Whenever a land you control enters, choose one —\n• Tap target creature an opponent controls.\n• Untap target creature you control."
+
+def elvenRaftSteererDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Elven Raft-Steerer",
     .manaCost [.generic 2, .mono .blue],
     .type .creature,
     .subtype .elf,
     .subtype .pilot,
     .power 3,
-    .toughness 2,
-    .ability (
-      .triggered
-        (.enter
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Elven Raft-Steerer") elvenRaftSteererOracle).get!
+
+#guard elvenRaftSteererDefinition == .card [
+  .name "Elven Raft-Steerer",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .subtype .elf,
+  .subtype .pilot,
+  .power 3,
+  .toughness 2,
+  .ability (.triggered
+    (.enter
+      (.intersection [
+        .permanent, .cardType .land, .controlled (.controller .this)]))
+    (.chooseUniqueModes (.range 1 1) [
+      .tap
+        (.target 1
           (.intersection [
             .permanent,
-            .cardType .land,
-            .controlled (.controller .this)]))
-        (.chooseUniqueModes (.range 1 1) [
-          .tap
-            (.target
-              1
-              (.intersection [
-                .permanent,
-                .cardType .creature,
-                .controlled (.opponent (.controller .this))])),
-          .untap
-            (.target
-              2
-              (.intersection [
-                .permanent,
-                .cardType .creature,
-                .controlled (.controller .this)]))]))
-  ]).toCardDef
-    (oracleText := "Landfall — Whenever a land you control enters, choose one —\n• Tap target creature an opponent controls.\n• Untap target creature you control.")
+            .cardType .creature,
+            .controlled (.opponent (.controller .this))])),
+      .untap
+        (.target 2
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))]))]
+
+def elvenRaftSteerer : CardDef :=
+  elvenRaftSteererDefinition.toCardDef (oracleText := elvenRaftSteererOracle)
+
+#guard elvenRaftSteerer.oracleText == elvenRaftSteererOracle
+#guard elvenRaftSteerer.triggeredAbilities == #[.onLandYouControlEntersTapOrUntap]
+
+/-- Gatherer Oracle text for Mirkwood Meditator. -/
+def mirkwoodMeditatorOracle : String :=
+  "Landfall — Whenever a land you control enters, you may have this creature's base power and toughness become 4/2 until end of turn."
+
+def mirkwoodMeditatorDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Mirkwood Meditator",
+    .manaCost [.generic 2, .mono .blue],
+    .type .creature,
+    .subtype .elf,
+    .subtype .druid,
+    .power 2,
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Mirkwood Meditator") mirkwoodMeditatorOracle).get!
+
+#guard mirkwoodMeditatorDefinition == .card [
+  .name "Mirkwood Meditator",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .subtype .elf,
+  .subtype .druid,
+  .power 2,
+  .toughness 4,
+  .ability (.triggered
+    (.enter
+      (.intersection [
+        .permanent, .cardType .land, .controlled (.controller .this)]))
+    (.optional (.continuous
+      [.setBasePower (.source .this) (Value.int 4),
+        .setBaseToughness (.source .this) (Value.int 2)]
+      .endOfTurn)))]
 
 def mirkwoodMeditator : CardDef :=
-  creature "Mirkwood Meditator" (ManaCost.ofGenericAndColor 2 .blue)
-    #["Elf", "Druid"] 2 4
-    (oracleText := "Landfall — Whenever a land you control enters, you may have this creature's base power and toughness become 4/2 until end of turn.")
-    (triggeredAbilities := #[.onLandYouControlEntersBecomePT 4 2])
+  mirkwoodMeditatorDefinition.toCardDef (oracleText := mirkwoodMeditatorOracle)
 
-def mirkwoodNurturer : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard mirkwoodMeditator.oracleText == mirkwoodMeditatorOracle
+#guard mirkwoodMeditator.power == some 2 && mirkwoodMeditator.toughness == some 4
+#guard mirkwoodMeditator.triggeredAbilities == #[.onLandYouControlEntersBecomePT 4 2]
+
+/-- Gatherer Oracle text for Mirkwood Nurturer. -/
+def mirkwoodNurturerOracle : String :=
+  "When this creature enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature."
+
+def mirkwoodNurturerDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Mirkwood Nurturer",
     .manaCost [.generic 2, .hybrid .green .blue],
     .type .creature,
     .subtype .elf,
     .subtype .ranger,
     .power 3,
-    .toughness 2,
-    .ability (
-      .triggered
-        (.enter .this)
-        (.sequence [
-          .actionId 1
-            (.returnToHand
-              (.targets
-                1
-                (.range 0 1)
-                (.intersection [
-                  .not .this,
-                  .permanent,
-                  .controlled (.controller .this)]))),
-          .if
-            (.happened (.actionWithId 1) .gameStart)
-            [.putCounter (.source .this) .plusOnePlusOne 1]]))
-  ]).toCardDef
-    (oracleText := "When this creature enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Mirkwood Nurturer") mirkwoodNurturerOracle).get!
+
+#guard mirkwoodNurturerDefinition == .card [
+  .name "Mirkwood Nurturer",
+  .manaCost [.generic 2, .hybrid .green .blue],
+  .type .creature,
+  .subtype .elf,
+  .subtype .ranger,
+  .power 3,
+  .toughness 2,
+  .ability (.triggered
+    (.enter .this)
+    (.sequence [
+      .actionId 1
+        (.returnToHand
+          (.targets 1 (.range 0 1)
+            (.intersection [
+              .not .this,
+              .permanent,
+              .controlled (.controller .this)]))),
+      .if (.happened (.actionWithId 1) .gameStart)
+        [.putCounter (.source .this) .plusOnePlusOne 1]]))]
+
+def mirkwoodNurturer : CardDef :=
+  mirkwoodNurturerDefinition.toCardDef (oracleText := mirkwoodNurturerOracle)
+
+#guard mirkwoodNurturer.oracleText == mirkwoodNurturerOracle
+#guard mirkwoodNurturer.triggeredAbilities == #[.onEnterReturnOtherPlusOne]
+
+/-- Gatherer Oracle text for Kíli the Resourceful. -/
+def kiliTheResourcefulOracle : String :=
+  "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn.\nWhenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn."
+
+def kiliTheResourcefulDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Kíli the Resourceful",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .scout,
+    .power 1,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Kíli the Resourceful") kiliTheResourcefulOracle).get!
+
+#guard kiliTheResourcefulDefinition == .card [
+  .name "Kíli the Resourceful",
+  .manaCost [.generic 1, .mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .scout,
+  .power 1,
+  .toughness 2,
+  .ability (.keyword .storied),
+  .ability (.static (.if (.enduringStory (.controller .this))
+    [.reduceCost
+      (.intersection [
+        Selector.keywordAbility .equip,
+        .controlled (.controller .this)])
+      [.mana [.generic 0]]])),
+  .ability (.triggered
+    (.enter
+      (.intersection [
+        .not .this,
+        .permanent,
+        .union [.subtype .dwarf, .subtype .equipment],
+        .controlled (.controller .this)]))
+    (.draw (.controller .this) 1))]
 
 def kiliTheResourceful : CardDef :=
-  legendaryCreature "Kíli the Resourceful" (ManaCost.ofGenericAndColor 1 .white)
-    #["Dwarf", "Scout"] 1 2
-    (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nAs long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn.\nWhenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn.")
-    (keywords := Keyword.storied)
-    (staticAbilities := #[.firstEquipFreeIfEnduringStory])
-    (triggeredAbilities := #[.onAnotherSubtypeOrEquipmentEntersDrawOnce "Dwarf"])
+  kiliTheResourcefulDefinition.toCardDef (oracleText := kiliTheResourcefulOracle)
+
+#guard kiliTheResourceful.oracleText == kiliTheResourcefulOracle
+#guard kiliTheResourceful.keywords.storied
+#guard kiliTheResourceful.staticAbilities == #[.firstEquipFreeIfEnduringStory]
+#guard kiliTheResourceful.triggeredAbilities ==
+  #[.onAnotherSubtypeOrEquipmentEntersDrawOnce "Dwarf"]
+#guard kiliTheResourceful.triggeredAbilities[0]!.onceEachTurn
 
 def dainsCompany : CardDef :=
   creature "Dáin's Company" (ManaCost.ofColors [.red, .white]) #["Dwarf", "Warrior"] 2 2
