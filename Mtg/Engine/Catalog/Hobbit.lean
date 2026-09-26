@@ -1181,7 +1181,7 @@ def snowslopeHunterCard : CardDef :=
             .union [.cardType .creature, .cardType .artifact]])
           1]
         (.sequence [
-          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
             (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])))
@@ -2707,7 +2707,7 @@ def gundabadOpportunist : CardDef :=
     .triggered
       (.enter .this)
       (.sequence [
-        .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+        .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
           (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))
@@ -4955,7 +4955,7 @@ def dainsCompanyDefinition : TraditionalCardDefinition := .card <|
     [.gainAbility .this (.keyword .lifelink)])),
   .ability (.triggered (.enter .this) (.sequence [
     .actionId 1
-      (.lookAt (.topCardsOfLibrary (.controller .this) 4)),
+      (.lookAt (.topOfLibrary (.controller .this) 4)),
     .optional (.sequence [
       .actionId 2
         (.reveal

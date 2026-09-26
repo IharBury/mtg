@@ -1013,7 +1013,7 @@ def parsePutCountersOnThis (sentence : String) : Option CardAction :=
 of your next turn. The exile is action `n`. -/
 def exileTopPlayUntilEndOfNextTurn (n : Nat) : CardAction :=
   .sequence [
-    .actionId n (.exile (.topOfLibrary (.controller .this))),
+    .actionId n (.exile (.topOfLibrary (.controller .this) 1)),
     .continuous
       [.canPlay (.controller .this) (.wasCreatedByAction n)]
       (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]
@@ -4205,7 +4205,7 @@ def parseEnterLookAtTopReveal (cardName : String) (line : String) (n : Nat) :
                       (.ability (.triggered (.enter .this) (.sequence [
                         .actionId n
                           (.lookAt
-                            (.topCardsOfLibrary (.controller .this) (.nat k))),
+                            (.topOfLibrary (.controller .this) (.nat k))),
                         .optional (.sequence [
                           .actionId (n + 1)
                             (.reveal
@@ -5511,7 +5511,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
             .union [.cardType .creature, .cardType .artifact]])
           1]
         (.sequence [
-          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
             (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])))]
@@ -6147,7 +6147,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .triggered
       (.enter .this)
       (.sequence [
-        .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+        .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
           (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))]
@@ -6931,7 +6931,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       [.gainAbility .this (.keyword .lifelink)])),
     .ability (.triggered (.enter .this) (.sequence [
       .actionId 1
-        (.lookAt (.topCardsOfLibrary (.controller .this) 4)),
+        (.lookAt (.topOfLibrary (.controller .this) 4)),
       .optional (.sequence [
         .actionId 2
           (.reveal

@@ -241,7 +241,7 @@ def shape : Selector → Shape
   | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject
   | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inLibrary | .inHand
   | .inExile | .supertype _
-  | .variable _ | .topOfLibrary _ | .topCardsOfLibrary _ _ => {}
+  | .variable _ | .topOfLibrary _ _ => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
 def applySetPredicates (s : Shape) : List SetPredicate → Shape
@@ -401,8 +401,7 @@ def referenceTargets : Selector → Selector
   | .inExile => .inExile
   | .supertype st => .supertype st
   | .variable n => .variable n
-  | .topOfLibrary s => .topOfLibrary (referenceTargets s)
-  | .topCardsOfLibrary s n => .topCardsOfLibrary (referenceTargets s) n
+  | .topOfLibrary s n => .topOfLibrary (referenceTargets s) n
 
 #guard
   (Selector.target 1 (.intersection [.permanent, .cardType .creature])).referenceTargets ==
@@ -1143,7 +1142,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inLibrary | .inHand
     | .inExile | .supertype _
-    | .variable _ | .topOfLibrary _ | .topCardsOfLibrary _ _ => none
+    | .variable _ | .topOfLibrary _ _ => none
     | s => some s
 
 end ContinuousEffect
@@ -1390,7 +1389,7 @@ def leftoverUntilEndOfYourNextTurn? : Trigger → Bool
 /-- Exile the top card; you may play it until the end of your next turn. -/
 def leftoverExileTopPlayUntilEndOfNextTurn? : CardAction → Bool
   | .sequence [
-      .actionId id (.exile (.topOfLibrary who)),
+      .actionId id (.exile (.topOfLibrary who 1)),
       .continuous [.canPlay permit (.wasCreatedByAction created)] duration
     ] =>
     id == created &&
@@ -1576,12 +1575,12 @@ the end of your next turn. -/
 def leftoverPumpThenExileTopPlay? : CardAction → Option (Int × Int)
   | .sequence [
       .continuous effects _,
-      .actionId id (.exile (.topOfLibrary who)),
+      .actionId id (.exile (.topOfLibrary who 1)),
       .continuous [.canPlay permit (.wasCreatedByAction created)] duration
     ] =>
     if leftoverExileTopPlayUntilEndOfNextTurn?
         (.sequence [
-          .actionId id (.exile (.topOfLibrary who)),
+          .actionId id (.exile (.topOfLibrary who 1)),
           .continuous [.canPlay permit (.wasCreatedByAction created)] duration
         ]) then
       leftoverTargetPump? effects
@@ -3191,7 +3190,7 @@ def isOpponentArtifactsCount : Value → Bool
 and put the rest on the bottom in a random order. -/
 def leftoverLookAtTopReveal? : CardAction → Option (Nat × Array String)
   | .sequence [
-      .actionId lookId (.lookAt (.topCardsOfLibrary who (.nat n))),
+      .actionId lookId (.lookAt (.topOfLibrary who (.nat n))),
       .optional (.sequence [
         .actionId revealId
           (.reveal
@@ -3862,12 +3861,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     some (TriggeredAbility.onEnterGainLife n)
   | .triggered (.enter .this)
       (.sequence [
-        .actionId id (.exile (.topOfLibrary who)),
+        .actionId id (.exile (.topOfLibrary who 1)),
         .continuous [.canPlay permit (.wasCreatedByAction created)] duration
       ]) =>
     if CardAction.leftoverExileTopPlayUntilEndOfNextTurn?
         (.sequence [
-          .actionId id (.exile (.topOfLibrary who)),
+          .actionId id (.exile (.topOfLibrary who 1)),
           .continuous [.canPlay permit (.wasCreatedByAction created)] duration
         ]) then
       some TriggeredAbility.onEnterExileTop
@@ -6208,7 +6207,7 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .sequence [
-      .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+      .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
       .continuous
         [.canPlay (.controller .this) (.wasCreatedByAction 1)]
         (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]
@@ -6217,7 +6216,7 @@ end TraditionalCardDefinition
 #guard
   !(CardAction.leftoverExileTopPlayUntilEndOfNextTurn?
     (.sequence [
-      .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+      .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
       .continuous
         [.canPlay (.controller .this) (.wasCreatedByAction 1)]
         .endOfTurn]))
@@ -6236,7 +6235,7 @@ end TraditionalCardDefinition
             .union [.cardType .artifact, .cardType .creature]])
           1]
         (.sequence [
-          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
             (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))).toActivatedAbility? with
@@ -7257,7 +7256,7 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.enter .this)
       (.sequence [
-        .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+        .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
           (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])).toTriggeredAbility? with
@@ -7847,7 +7846,7 @@ end TraditionalCardDefinition
           .addToughness
             (.targetReference 1) (Value.int 1)]
         .endOfTurn,
-      .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+      .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
       .continuous
         [.canPlay (.controller .this) (.wasCreatedByAction 1)]
         (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]) == some (3, 1)

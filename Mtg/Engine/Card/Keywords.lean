@@ -335,11 +335,9 @@ inductive Selector where
   | supertype : CardSupertype → Selector
   /-- Objects bound to this numbered variable. -/
   | variable : Nat → Selector
-  /-- The top card of the selected player's library (CR 401). -/
-  | topOfLibrary : Selector → Selector
   /-- The top cards of the selected player's library (CR 401). The value is
-  how many. -/
-  | topCardsOfLibrary : Selector → Value → Selector
+  how many. One is the top card. -/
+  | topOfLibrary : Selector → Value → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
