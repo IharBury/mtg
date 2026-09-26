@@ -3439,8 +3439,16 @@ def parseEnterAttachTargetEquipment (cardName : String) (line : String) (n : Nat
   onSelfTriggerN cardName line " enters, " (.enter .this)
     (parseAttachTargetEquipment · n)
 
+/-- A spell or ability controlled by an opponent of this object's controller. -/
+def spellOrAbilityOpponentControls : Selector :=
+  .intersection [
+    .union [.spell, .ability],
+    .controlled (.opponent (.controller .this))]
+
 /-- `Whenever <this> becomes the target of a spell or ability an opponent controls, draw a card.`
-One card. One ability, even if that spell or ability targets this more than once. -/
+One card. The spell or ability is the first argument of `target`; this
+object is the target. One trigger, even if that spell or ability targets
+this more than once. -/
 def parseBecomesTargetDraw (cardName : String) (line : String) : Option CardPart :=
   (triggerSelfEffect? cardName "whenever" (normLine line)
       " becomes the target of a spell or ability an opponent controls, ").bind
@@ -3448,7 +3456,7 @@ def parseBecomesTargetDraw (cardName : String) (line : String) : Option CardPart
       match (after? effect "draw ").bind parseCardCount with
       | some 1 =>
         some (.ability (.triggered
-          (.becomesTargetOf .this (.opponent (.controller .this)))
+          (.target spellOrAbilityOpponentControls .this)
           (.draw (.controller .this) 1)))
       | _ => none
 
@@ -6353,7 +6361,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       (.intersection [.permanent, .cardType .creature, .powerAtMost (Value.int 2)])
       .this))),
     .ability (.triggered
-      (.becomesTargetOf .this (.opponent (.controller .this)))
+      (.target spellOrAbilityOpponentControls .this)
       (.draw (.controller .this) 1))]
 #guard parseOracleParts (name := "Great Gilded Boat")
   "Whenever you attack, recruit.\nCrew 2" ==

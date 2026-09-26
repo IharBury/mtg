@@ -223,6 +223,7 @@ def shape : Selector → Shape
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
   | .spell => { isSpell := true }
+  | .ability => {}
   | .permanentSpell => { isSpell := true }
   | .hasTarget _ => {}
   | .isTargetOf _ => {}
@@ -376,6 +377,7 @@ def referenceTargets : Selector → Selector
   | .hasCounter k => .hasCounter k
   | .subtype st => .subtype st
   | .spell => .spell
+  | .ability => .ability
   | .permanentSpell => .permanentSpell
   | .hasTarget s => .hasTarget (referenceTargets s)
   | .isTargetOf s => .isTargetOf (referenceTargets s)
@@ -1090,7 +1092,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     match e.selector with
     | .this | .source _ | .controller _ | .caster | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
-    | .spell | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
+    | .spell | .ability | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
     | .player
     | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inLibrary | .inHand
@@ -4187,9 +4189,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     if who == .controller .this && gainer == .controller .this then
       CardAction.addedManaTypes? syms |>.map TriggeredAbility.onYourFirstMainAddMana
     else none
-  | .triggered (.becomesTargetOf who controller) (.draw drawer (.nat 1)) =>
-    if (who == .this || who == .source .this) &&
-        controller == .opponent (.controller .this) &&
+  | .triggered (.target spellOrAbility object) (.draw drawer (.nat 1)) =>
+    if (object == .this || object == .source .this) &&
+        spellOrAbility ==
+          .intersection [
+            .union [.spell, .ability],
+            .controlled (.opponent (.controller .this))] &&
         drawer == .controller .this then
       some TriggeredAbility.onBecomesTargetDraw
     else none

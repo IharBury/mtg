@@ -287,6 +287,8 @@ inductive Selector where
   | subtype : CardSubtype → Selector
   /-- A spell on the stack (CR 112.1). -/
   | spell
+  /-- An ability on the stack (CR 113 / 115.1). -/
+  | ability
   /-- A permanent spell (CR 110.4 / 112.1). -/
   | permanentSpell
   /-- An object that has a target matching the given selector (CR 115.1). -/
@@ -415,10 +417,10 @@ inductive Trigger where
   | not : Trigger → Trigger
   /-- Either trigger occurs. -/
   | or : Trigger → Trigger → Trigger
-  /-- Whenever `who` becomes the target of a spell or ability controlled by
-  `controller` (CR 115.10a / 603.2). One ability, even if that spell or
-  ability targets `who` more than once. -/
-  | becomesTargetOf : Selector → Selector → Trigger
+  /-- `spellOrAbility` targets `object` (CR 115.10a / 603.2).
+  The first selector is the spell or ability. The second is the target.
+  One trigger, even if that spell or ability targets `object` more than once. -/
+  | target : Selector → Selector → Trigger
   /-- At the beginning of the selected player's first main phase (CR 505.1). -/
   | firstMain : Selector → Trigger
 deriving Repr, Inhabited, BEq
