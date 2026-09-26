@@ -409,7 +409,7 @@ inductive Trigger where
   given event. The payment happens before that event (CR 601.2h). An
   ability that triggers once when the event occurs sequences this payment
   before the event, so it does not trigger once for each mana spent. -/
-  | spentManaFrom : Selector → Trigger → Trigger
+  | spendManaFrom : Selector → Trigger → Trigger
   /-- A spell matching the selector is cast (CR 601). -/
   | castSpell : Selector → Trigger
   /-- A spell matching the selector is cast from a graveyard

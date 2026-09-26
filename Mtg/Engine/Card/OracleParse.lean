@@ -4257,7 +4257,7 @@ def parseYouCastSpellIfTreasureDrawLoseLife (line : String) : Option CardPart :=
     parseYouDrawCardLoseLife |>.map fun action =>
       .ability (.triggered
         (.sequence [
-          .spentManaFrom treasureManaSource (.castSpell anySpellYouCast),
+          .spendManaFrom treasureManaSource (.castSpell anySpellYouCast),
           .castSpell anySpellYouCast])
         action)
 
@@ -6972,7 +6972,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         [.tapped])),
     .ability (.triggered
       (.sequence [
-        .spentManaFrom
+        .spendManaFrom
           (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
           (.castSpell (.intersection [.spell, youControl])),
         .castSpell (.intersection [.spell, youControl])])

@@ -5010,7 +5010,7 @@ def smaugWickedWormDefinition : TraditionalCardDefinition := .card <|
       [.tapped])),
   .ability (.triggered
     (.sequence [
-      .spentManaFrom
+      .spendManaFrom
         (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
         (.castSpell (.intersection [.spell, .controlled (.controller .this)])),
       .castSpell (.intersection [.spell, .controlled (.controller .this)])])

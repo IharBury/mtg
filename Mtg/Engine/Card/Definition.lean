@@ -4276,7 +4276,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     | none => none
   | .triggered
       (.sequence [
-        .spentManaFrom
+        .spendManaFrom
           (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
           (.castSpell paidFor),
         .castSpell among]) action =>
