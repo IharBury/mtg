@@ -396,7 +396,7 @@ def confusticateAndBebotherCard : CardDef :=
   .manaCost [.generic 2, .mono .blue],
   .type .instant,
   .actions [
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .preventable (.controller (.targetReference 1)) [.mana [.generic 4]]
         (.counter (.target 1 .spell)),
       .sequence [
@@ -930,7 +930,7 @@ def gnashingOfTeethCard : CardDef :=
   .manaCost [.generic 1, .mono .black, .mono .black],
   .type .sorcery,
   .actions [
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .continuous
         [.addPower
           (.target 1 (.intersection [.permanent, .cardType .creature]))
@@ -978,7 +978,7 @@ def reverentHowlCard : CardDef :=
   .manaCost [.generic 2, .mono .black],
   .type .instant,
   .actions [
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .sequence [
         .draw (.target 1 .player) 2,
         .loseLife (.targetReference 1) 2],
@@ -1318,7 +1318,7 @@ def wargTacticsCard : CardDef :=
   .manaCost [.generic 1, .mono .green],
   .type .instant,
   .actions [
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .destroy
         (.target 1
           (.intersection [
@@ -2324,7 +2324,7 @@ def thorinsLastStand : CardDef :=
   .manaCost [.generic 2, .mono .white, .mono .white],
   .type .instant,
   .actions [
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .continuous
         [.addPower
           (.intersection [
@@ -2367,7 +2367,7 @@ def stoneBySunlight : CardDef :=
   .manaCost [.generic 1, .mono .white],
   .type .instant,
   .actions [
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .destroy
         (.target
           1
@@ -4286,7 +4286,7 @@ def pineconeStrikeDefinition : TraditionalCardDefinition := .card <|
   .name "Pinecone Strike",
   .manaCost [.generic 1, .mono .red],
   .type .instant,
-  .actions [.playerSelectAction (.controller .this) (.range 1 2) [
+  .actions [.chooseUniqueModes (.range 1 2) [
     .sequence [
       .dealDamage .this
         (.target 1 (.intersection [.permanent, .cardType .creature])) 3,
@@ -4532,7 +4532,7 @@ def elvenRaftSteerer : CardDef :=
             .permanent,
             .cardType .land,
             .controlled (.controller .this)]))
-        (.chooseMode [
+        (.chooseUniqueModes (.range 1 1) [
           .tap
             (.target
               1
@@ -4737,7 +4737,7 @@ def bejeweledWarg : CardDef :=
     .ability (
       .triggered
         (.combatDamage .this .player)
-        (.chooseMode [
+        (.chooseUniqueModes (.range 1 1) [
           .putCounter
             (.target
               1

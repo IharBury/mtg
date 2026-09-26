@@ -368,7 +368,7 @@ Currently recognized:
   Those two permanents are the targets. They return under their owner's
   control, not tapped.
 - `Choose one or both —` followed by `•` modes. The controller selects one
-  or two of them (CR 700.2).
+  or two distinct modes (CR 700.2).
 - `<this card> deals N damage to target creature. If that creature would die this turn, exile it instead.`
   The damage is dealt to one creature. Dying this turn is replaced by exile.
 - `Destroy target artifact token.`
@@ -1799,17 +1799,18 @@ def chooseHeader? (line : String) : Option Bool :=
   else none
 
 /-- Parts for a modal spell with at least one parsed mode.
-`orBoth` is “choose one or both”: the controller selects one or two modes.
-No modes makes the parse fail rather than dropping the printed choice. -/
+`orBoth` is “choose one or both”: the controller selects one or two distinct
+modes. “Choose one” selects exactly one. Each mode is chosen at most once
+(CR 700.2). No modes makes the parse fail rather than dropping the printed choice. -/
 def chooseOneParts (modes : List CardAction) (orBoth : Bool) : Option (List CardPart) :=
   match modes with
   | [] => none
   | modes =>
     some [.actions [
       if orBoth then
-        .playerSelectAction (.controller .this) (.range 1 2) modes
+        .chooseUniqueModes (.range 1 2) modes
       else
-        .chooseMode modes]]
+        .chooseUniqueModes (.range 1 1) modes]]
 
 /-- `<subject> <tail>` as a static restriction, when `subject` is this card. -/
 def staticCant (cardName line tail : String) (restriction : Trigger) : Option CardPart :=
@@ -4315,7 +4316,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "Confusticate and Bebother")
   "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card." ==
   some [.actions [
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .preventable (.controller (.targetReference 1)) [.mana [.generic 4]]
         (.counter (.target 1 .spell)),
       .sequence [
@@ -4909,7 +4910,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "Choose one —\n• Target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead.\n• Creatures target player controls get -1/-1 until end of turn." ==
   some [.actions [
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .continuous
         [.addPower
           (.target 1 (.intersection [.permanent, .cardType .creature]))
@@ -4938,7 +4939,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "Choose one —\n• Target player draws two cards and loses 2 life.\n• Target creature gets +2/+2 and gains lifelink until end of turn." ==
   some [.actions [
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .sequence [
         .draw (.target 1 .player) 2,
         .loseLife (.targetReference 1) 2],
@@ -5129,7 +5130,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "Choose one —\n• Destroy target creature with flying.\n• Put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)" ==
   some [.actions [
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .destroy
         (.target 1
           (.intersection [
@@ -5564,7 +5565,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   none
 #guard parseOracleParts (name := "")
   "Choose one —\n• Creatures you control get +2/+1 until end of turn.\n• Destroy target artifact or enchantment. You gain 2 life." ==
-  some [.actions [.chooseMode [
+  some [.actions [.chooseUniqueModes (.range 1 1) [
     .continuous
       [.addPower
         (.intersection [
@@ -5584,7 +5585,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       .gainLife (.controller .this) 2]]]]
 #guard parseOracleParts (name := "")
   "Choose one —\n• Destroy target creature with power 4 or greater.\n• Until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible. (Damage and effects that say \"destroy\" don't destroy it.)" ==
-  some [.actions [.chooseMode [
+  some [.actions [.chooseUniqueModes (.range 1 1) [
     .destroy
       (.target 1
         (.intersection [
@@ -6297,7 +6298,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   none
 #guard parseOracleParts (name := "Pinecone Strike")
   "Choose one or both —\n• Pinecone Strike deals 3 damage to target creature. If that creature would die this turn, exile it instead.\n• Destroy target artifact token." ==
-  some [.actions [.playerSelectAction (.controller .this) (.range 1 2) [
+  some [.actions [.chooseUniqueModes (.range 1 2) [
     .sequence [
       .dealDamage .this
         (.target 1 (.intersection [.permanent, .cardType .creature])) 3,

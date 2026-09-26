@@ -532,7 +532,7 @@ def whiteWidowFreeAgent : CardDef :=
     .ability (
       .triggered
         (.enter .this)
-        (.chooseMode [
+        (.chooseUniqueModes (.range 1 1) [
           .putCounter
             (.targets 1 (.range 0 2) (.intersection [.permanent, .cardType .creature]))
             .plusOnePlusOne
@@ -747,7 +747,7 @@ def giantSizedFlyingAnt : CardDef :=
     .ability (
       .triggered
         (.enter .this)
-        (.chooseMode [
+        (.chooseUniqueModes (.range 1 1) [
           .tap
             (.target
               1
@@ -2566,7 +2566,7 @@ def blackPantherVanguard : CardDef :=
             .cardType .creature,
             .subtype .hero,
             .controlled (.controller .this)]))
-        (.chooseMode [
+        (.chooseUniqueModes (.range 1 1) [
           .createTokens (.controller .this) 1 [
             .type .creature, .subtype .soldier, .colorIndicator [.white], .power 1, .toughness 1],
           .continuous

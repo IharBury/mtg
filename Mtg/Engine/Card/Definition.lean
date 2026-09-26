@@ -811,8 +811,9 @@ inductive CardAction where
   | ifElse : Condition → List CardAction → List CardAction → CardAction
   | optional : CardAction → CardAction
   | attach : Selector → Selector → CardAction
-  /-- Choose one of the given modes (CR 700.2). -/
-  | chooseMode : List CardAction → CardAction
+  /-- Choose that many distinct modes (CR 700.2). Each mode is chosen at most once.
+  `range 1 1` is “choose one”. `range 1 2` is “choose one or both”. -/
+  | chooseUniqueModes : Range → List CardAction → CardAction
   /-- The selected player chooses one of the given modes. Each mode has an
   ID, a condition under which it may be chosen, and the actions it
   performs (CR 700.2 / 700.2e). -/
@@ -3361,8 +3362,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .ifElse _ [] [] => continuousEffect none [] asAbility
                   | .optional inner => compile inner asAbility
                   | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
-                  | .chooseMode (a :: _) => compile a asAbility
-                  | .chooseMode [] => continuousEffect none [] asAbility
+                  | .chooseUniqueModes _ (a :: _) => compile a asAbility
+                  | .chooseUniqueModes _ [] => continuousEffect none [] asAbility
                   | .chooseModeRestricted _ ((_, _, a :: _) :: _) =>
                     compile a asAbility
                   | .chooseModeRestricted _ _ =>
@@ -3473,21 +3474,17 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .shuffleIntoOwnersLibrary _ =>
                     continuousEffect none [] asAbility
 
-/-- “Choose one or both”: the player selects one or two of the modes. -/
+/-- “Choose one or both”: one or two distinct modes (CR 700.2). -/
 def isChooseOneOrBoth : CardAction → Bool
-  | .playerSelectAction _ r _ => r == .range 1 2
+  | .chooseUniqueModes r _ => r == .range 1 2
   | _ => false
 
 /-- Modes of a “Choose one” or “Choose one or both” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
-  | .chooseMode as =>
+  | .chooseUniqueModes _ as =>
     some ((as.map fun a => compile a false).toArray)
   | .chooseModeRestricted _ modes =>
     some ((modes.map fun (_, _, as) => compile (.sequence as) false).toArray)
-  | .playerSelectAction _ r as =>
-    if r == .range 1 2 then
-      some ((as.map fun a => compile a false).toArray)
-    else none
   | _ => none
 
 /-- Compile to a spell-shaped `Effect`. -/
@@ -3946,7 +3943,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       | some (p, t) => some (TriggeredAbility.onLandYouControlEntersGets p t)
       | none => none
     else none
-  | .triggered (.enter .this) (.chooseMode modes) =>
+  | .triggered (.enter .this) (.chooseUniqueModes _ modes) =>
     if CardAction.leftoverTapOrUntapNonland? modes then
       some TriggeredAbility.onEnterTapOrUntapNonland
     else if CardAction.leftoverPlusOnesOrReturnArtEnch? modes then
@@ -3980,7 +3977,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverAllianceModes? who modes then
       some TriggeredAbility.onAnotherCreatureYouControlEntersAlliance
     else none
-  | .triggered (.enter among) (.chooseMode modes) =>
+  | .triggered (.enter among) (.chooseUniqueModes _ modes) =>
     if among.shape.landYouControl && CardAction.leftoverTapOppOrUntapYours? modes then
       some TriggeredAbility.onLandYouControlEntersTapOrUntap
     else if CardAction.leftoverNontokenHeroModal? among modes then
@@ -4081,7 +4078,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverTargetOpponent? sel then
       some TriggeredAbility.onYouSacrificeTokenOppLosesLife
     else none
-  | .triggered (.combatDamage .this .player) (.chooseMode modes) =>
+  | .triggered (.combatDamage .this .player) (.chooseUniqueModes _ modes) =>
     if CardAction.leftoverWolfPlusOneOrTreasure? modes then
       some TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure
     else none
@@ -5253,7 +5250,7 @@ end TraditionalCardDefinition
 -- Confusticate and Bebother: choose counter-unless or loot.
 #guard
   let action : CardAction :=
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .preventable (.controller (.targetReference 1)) [.mana [.generic 4]]
         (.counter (.target 1 .spell)),
       .sequence [
@@ -5905,7 +5902,7 @@ end TraditionalCardDefinition
 
 #guard
   let action : CardAction :=
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .continuous
         [.addPower
           (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-5)),
@@ -6222,7 +6219,7 @@ end TraditionalCardDefinition
 
 #guard
   let action : CardAction :=
-    .chooseMode [
+    .chooseUniqueModes (.range 1 1) [
       .destroy
         (.target
           1
@@ -8184,7 +8181,7 @@ end TraditionalCardDefinition
 #guard
   (Ability.triggered
     (.enter .this)
-    (.chooseMode [
+    (.chooseUniqueModes (.range 1 1) [
       .createTokens (.controller .this) 1 PredefinedToken.foodToken,
       .createTokens (.controller .this) 1 PredefinedToken.treasureToken])).toTriggeredAbility?
     |>.isNone
@@ -8947,7 +8944,7 @@ end TraditionalCardDefinition
   ]).toCardDef.staticAbilities == #[]
 
 -- Galadriel, Light of Valinor: you choose modes unchosen this turn by
--- any player. Unrestricted `chooseMode` does not compile to Alliance.
+-- any player. Unrestricted `chooseUniqueModes` does not compile to Alliance.
 #guard
   let you : Selector := .controller .this
   let among : Selector :=
@@ -8997,7 +8994,7 @@ end TraditionalCardDefinition
         .plusOnePlusOne
         1,
       .sequence [.scry you 2, .draw you 1]]
-  (Ability.triggered (.enter among) (.chooseMode modes)).toTriggeredAbility?.isNone
+  (Ability.triggered (.enter among) (.chooseUniqueModes (.range 1 1) modes)).toTriggeredAbility?.isNone
 
 -- An opponent choosing is not you.
 #guard
