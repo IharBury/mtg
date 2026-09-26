@@ -4240,6 +4240,10 @@ def parseEnterCreateTappedTreasuresEqualOppArtifacts (cardName line : String) :
 def anySpellYouCast : Selector :=
   .intersection [.spell, youControl]
 
+/-- A Treasure permanent, the source of “mana from a Treasure”. -/
+def treasureManaSource : Selector :=
+  .intersection [.permanent, .cardType .artifact, .subtype .treasure]
+
 /-- `Whenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life.`
 The “if” is an intervening if (CR 603.4): mana from a Treasure was spent to
 cast that spell. One card and 1 life. -/
@@ -4248,7 +4252,7 @@ def parseYouCastSpellIfTreasureDrawLoseLife (line : String) : Option CardPart :=
       "whenever you cast a spell, if mana from a treasure was spent to cast it, ").bind
     parseYouDrawCardLoseLife |>.map fun action =>
       .ability (.triggered
-        (.spentManaFrom .treasure (.castSpell anySpellYouCast))
+        (.spentManaFrom treasureManaSource (.castSpell anySpellYouCast))
         action)
 
 /-- `Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.`
@@ -6961,7 +6965,8 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
         PredefinedToken.treasureToken
         [.tapped])),
     .ability (.triggered
-      (.spentManaFrom .treasure
+      (.spentManaFrom
+        (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
         (.castSpell (.intersection [.spell, youControl])))
       (.sequence [
         .draw (.controller .this) 1,

@@ -405,9 +405,9 @@ inductive Trigger where
   /-- Mana created by the numbered action is spent to pay for the given
   event (CR 106.10). -/
   | spendManaCreatedByAction : Nat → Trigger → Trigger
-  /-- Mana from a permanent of the given subtype was spent to pay for the
+  /-- Mana from a source matching the selector was spent to pay for the
   given event. An intervening “if” (CR 603.4). -/
-  | spentManaFrom : CardSubtype → Trigger → Trigger
+  | spentManaFrom : Selector → Trigger → Trigger
   /-- A spell matching the selector is cast (CR 601). -/
   | castSpell : Selector → Trigger
   /-- A spell matching the selector is cast from a graveyard

@@ -4274,7 +4274,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some (TriggeredAbility.onCasting Effect.castingTargetsGainFlying)
       else none
     | none => none
-  | .triggered (.spentManaFrom .treasure (.castSpell among)) action =>
+  | .triggered
+      (.spentManaFrom
+        (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
+        (.castSpell among)) action =>
     if Selector.anySpellYouCast among then
       match CardAction.leftoverDrawLoseLifeSelf? action with
       | some (1, 1) => some TriggeredAbility.onCastWithTreasureDrawLoseLife
