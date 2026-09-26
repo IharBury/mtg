@@ -389,8 +389,8 @@ Currently recognized:
   functions in every zone (CR 113.6) so it can replace how this card enters
   the battlefield.
 - `{cost}: Create a <P>/<T> <color> <subtype> creature token. This ability costs {N} less to activate for each Equipment you control. Activate only as a sorcery.`
-  `{N}` is generic mana. The reduction applies to that activated ability,
-  not to casting this card.
+  `{N}` is generic mana. The reduction is a static effect of that activated
+  ability, not a separate ability and not a reduction of this card.
 - `At the beginning of your first main phase, add {mana}.`
   `your` is this object's controller (CR 505.1).
 - `When <this> enters, attach target Equipment you control to up to one target creature you control.`
@@ -3259,8 +3259,8 @@ def parseAbilityCostsLessPerEquipment (sentence : String) : Option Nat :=
 
 /-- `{4}{R}, {T}: Create a 2/2 red Dwarf creature token. This ability costs {1} less to activate for each Equipment you control. Activate only as a sorcery.`
 The reduction is `{N}` for each Equipment this object's controller controls.
-It reduces that numbered ability, not the card. Sorcery timing is the
-activation restriction. -/
+It is a static effect of that activated ability. `.this` in the effect is
+the ability. Sorcery timing is the activation restriction. -/
 def parseActivatedCreateCostsLess (cardName line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
   (split2? (stripTrailingPeriod (stripReminderParenthetical line)) ": ").bind
@@ -3272,16 +3272,15 @@ def parseActivatedCreateCostsLess (cardName line : String) (n : Nat) :
             parseAbilityCostsLessPerEquipment lessText,
             parsePrintedCosts cardName costText with
         | some create, some k, some costs =>
-          let (part, n') := activatedWithCost n costs create .asSorcery n
-          match part with
-          | .ability ab =>
-            some ([
-              .ability (.abilityId n ab),
-              .ability (.static (.reduceCostWithX (.abilityWithId n)
+          some ([
+            .ability (.activatedWithStaticIf
+              (.timeToCastSorcery (.controller .this))
+              costs
+              create
+              (.reduceCostWithX .this
                 [.mana [.generic k]]
                 (.count equipmentYouControl)))],
-              max n' (n + 1))
-          | _ => none
+            n)
         | _, _, _ => none
       | _, _ => none
 

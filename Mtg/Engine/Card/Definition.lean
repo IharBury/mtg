@@ -713,6 +713,10 @@ inductive Ability where
   | activated : List Cost → CardAction → Ability
   /-- An activated ability that may be used only when the condition holds. -/
   | activatedIf : Condition → List Cost → CardAction → Ability
+  /-- An activated ability that may be used only when the condition holds,
+  together with a static effect of that ability. The static effect is part
+  of the ability, so `.this` in it is this ability. -/
+  | activatedWithStaticIf : Condition → List Cost → CardAction → ContinuousEffect → Ability
   /-- An activated ability that functions while this card is in a graveyard
   (CR 113.6) and may be used only when the condition holds. -/
   | graveyardActivatedIf : Condition → List Cost → CardAction → Ability
@@ -3590,6 +3594,23 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
   | .equal _ _ => none
 
+/-- `{k}` less for each Equipment this ability's controller controls.
+`.this` is this ability. Zero is not a reduction. -/
+def abilityEquipmentCostReduction? : ContinuousEffect → Option Nat
+  | .reduceCostWithX .this [.mana [.generic k]] (.count among) =>
+    if k != 0 &&
+        among.includedSubtype? == some "Equipment" &&
+        among.shape.sameController then
+      some k
+    else none
+  | _ => none
+
+/-- Apply a static effect that belongs to this activated ability. -/
+def withAbilityStatic (ab : ActivatedAbility) (e : ContinuousEffect) : ActivatedAbility :=
+  match abilityEquipmentCostReduction? e with
+  | some k => { ab with costReductionPerEquipment := ab.costReductionPerEquipment + k }
+  | none => ab
+
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost .equip costs =>
     some {
@@ -3609,6 +3630,8 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       activateFromHand := true }
   | .activated costs action => some (activatedAbility costs action)
   | .activatedIf cond costs action => compileConditional cond costs action false
+  | .activatedWithStaticIf cond costs action e =>
+    (compileConditional cond costs action false).map (withAbilityStatic · e)
   | .graveyardActivatedIf cond costs action =>
     compileConditional cond costs action true
   | .abilityId _ inner => toActivatedAbility? inner
@@ -4826,6 +4849,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
               b.activatedAbilities.push (Ability.activatedAbility costs action) }
   | .activatedIf cond costs action =>
     match (Ability.activatedIf cond costs action).toActivatedAbility? with
+    | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
+    | none => b
+  | .activatedWithStaticIf cond costs action e =>
+    match (Ability.activatedWithStaticIf cond costs action e).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
   | .graveyardActivatedIf cond costs action =>
