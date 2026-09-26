@@ -354,6 +354,19 @@ Currently recognized:
 - `{cost}, Discard a card: Draw a card.`
   Costs separated by commas may include mana, `{T}`, and discarding one card
   from hand. One card is drawn.
+- `When <this> enters, you gain N life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top.`
+  The entering object is this card. The searcher chooses one basic land
+  card (CR 701.19). That card is held out of the shuffle, then put on top.
+- `Threshold — <this> gets +P/+T as long as there are seven or more cards in your graveyard.`
+  `Threshold` is an ability word (CR 207.2c / 702.62) and may be omitted.
+  Seven or more cards in your graveyard is that ability. A zero bonus is
+  omitted. `+0/+0` is not an effect.
+- `Mill <count> cards, then put an instant or sorcery card from among them into your hand.`
+  More than one card uses the plural `cards`. One instant or sorcery card
+  from among the milled cards goes to hand.
+- `Exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control.`
+  Those two permanents are the targets. They return under their owner's
+  control, not tapped.
 -/
 
 namespace Mtg.Engine
@@ -1977,6 +1990,49 @@ def parseSearchLegendaryCreatureToHand (sentence : String) (n : Nat) :
 def unchanged (parsed : Option CardAction) (n : Nat) : Option (CardAction × Nat) :=
   parsed.map (·, n)
 
+/-- `Mill four cards, then put an instant or sorcery card from among them into your hand.`
+More than one card uses the plural `cards`. The milled cards are action `n`.
+One instant or sorcery card from among them goes to hand. -/
+def parseMillThenPutInstantOrSorcery (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  let tail :=
+    " cards, then put an instant or sorcery card from among them into your hand"
+  (after? (normSentence sentence) "mill ").bind (before? · tail) |>.bind
+    fun countText =>
+      (nounCount? countText true).map fun k =>
+        (
+          .sequence [
+            .actionId n (.mill (.controller .this) (.nat k)),
+            .returnToHand
+              (.selected
+                (.controller .this)
+                (.range 1 1)
+                (.intersection [
+                  .wasObjectOfAction n,
+                  .union [.cardType .instant, .cardType .sorcery]]))],
+          n + 1)
+
+/-- Two creatures and/or lands this object's controller controls. -/
+def twoCreaturesOrLandsYouControl : Selector :=
+  permanentWith [.creature, .land] [youControl]
+
+/-- `Exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control.`
+Those two permanents are target `n`, and that exile is action `n`.
+They return under their owner's control. -/
+def parseExileTwoThenReturn (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  if sentenceIs sentence
+      "exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control" then
+    some (
+      .sequence [
+        .actionId n
+          (.exile (.targets n (.range 2 2) twoCreaturesOrLandsYouControl)),
+        .putOntoBattlefieldInState
+          (.wasCreatedByAction n)
+          [.controlled (.owner (.wasCreatedByAction n))]],
+      n + 1)
+  else none
+
 /-- One sentence. The first parser that accepts it wins. -/
 def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   parseGainsUntilEndOfTurn sentence n <|>
@@ -2000,7 +2056,9 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
     parseTargetGetsUntilEndOfTurn sentence n <|>
     parseTargetPlayerControlsGet sentence n <|>
     parseTargetPlayerDrawsLosesLife sentence n <|>
-    parseSearchLegendaryCreatureToHand sentence n
+    parseSearchLegendaryCreatureToHand sentence n <|>
+    parseMillThenPutInstantOrSorcery sentence n <|>
+    parseExileTwoThenReturn sentence n
 
 /-- Creatures you control other than target `n`. -/
 def eachOtherCreatureThanTarget (n : Nat) : Selector :=
@@ -2703,6 +2761,41 @@ def parseEnterYouGainLife (cardName line : String) : Option CardPart :=
     match parseYouGainLife effect 0 with
     | some (action, _) => some action
     | none => none
+
+/-- Search for one basic land, reveal it, hold it out of the shuffle, then
+put that card on top. The found card is variable `n`. -/
+def searchBasicLandOnTop (n : Nat) : CardAction :=
+  .sequence [
+    .searchLibraryThenShuffle (.controller .this) [
+      .defineSelectorVariable n
+        (.selected (.controller .this) (.range 1 1)
+          (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+      .reveal (.variable n),
+      .holdOutInLibrary (.variable n)],
+    .putOnTopOfLibrary (.variable n)]
+
+/-- `You may search your library for a basic land card, reveal it, then shuffle and put that card on top.`
+The found card is variable `n`. -/
+def parseMaySearchBasicOnTop (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  if sentenceIs sentence
+      "you may search your library for a basic land card, reveal it, then shuffle and put that card on top" then
+    some (.optional (searchBasicLandOnTop n), n + 1)
+  else none
+
+/-- `When <this> enters, you gain N life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top.`
+The entering object is this card. The found card is variable `n`. -/
+def parseEnterGainLifeMaySearchBasicOnTop (cardName line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match sentences (stripReminderParenthetical line) with
+  | [enter, search] =>
+    (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+      match parseYouGainLife effect n, parseMaySearchBasicOnTop search n with
+      | some (gain, _), some (maySearch, n') =>
+        some (
+          .ability (.triggered (.enter .this) (.sequence [gain, maySearch])),
+          n')
+      | _, _ => none
+  | _ => none
 
 /-- `When this creature enters, untap another target creature you control. If that creature is a Bear, put a +1/+1 counter on it.`
 The creature is target `n`. `another` excludes this object. -/
@@ -3446,6 +3539,32 @@ def parseActivatedDiscardDraw (cardName : String) (line : String) (n : Nat) :
           | none => none
       | _, _ => none
 
+/-- Cards in this object's controller's graveyard. -/
+def cardsInYourGraveyard : Selector :=
+  .intersection [.inGraveyard, .owner (.controller .this)]
+
+/-- `Threshold — This creature gets +1/+1 as long as there are seven or more cards in your graveyard.`
+`Threshold` is an ability word (CR 207.2c / 702.62) and may be omitted.
+Seven or more cards in your graveyard is that ability. A zero bonus is
+omitted. `+0/+0` is not an effect. -/
+def parseThresholdGets (cardName line : String) : Option CardPart :=
+  let s := withoutAbilityWord (normLine line) "threshold"
+  (before? s " as long as there are seven or more cards in your graveyard").bind
+    fun pump =>
+      (splitGetsOnly? pump).bind fun (who, ptText) =>
+        if !refersToSelf cardName who then none
+        else
+          match parsePowerToughness ptText with
+          | some (p, t) =>
+            let effects := flatPowerToughness .this p t
+            if effects.isEmpty then none
+            else
+              some (.ability (.static
+                (.if
+                  (.greaterOrEqual (.count cardsInYourGraveyard) 7)
+                  effects)))
+          | none => none
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails.
 The first parser that accepts the line wins. -/
@@ -3498,7 +3617,9 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseFerociousThisAttacks line) n <|>
     sole (parseFerociousYouAttack line) n <|>
     sole (parseFerociousBeginCombat line) n <|>
+    carry (parseEnterGainLifeMaySearchBasicOnTop cardName line n) <|>
     sole (parseEnterYouGainLife cardName line) n <|>
+    sole (parseThresholdGets cardName line) n <|>
     carry (parseEnterUntapPlusOneIfSubtype cardName line n) <|>
     sole (parseEnterRecruit cardName line) n <|>
     sole (parseDiesRecruit cardName line) n <|>
@@ -5759,6 +5880,74 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       .toughness 2]))]
 #guard parseOracleParts (name := "Gandalf")
   "Whenever Fíli or another nontoken Dwarf you control enters, create a 2/2 red Dwarf creature token." ==
+  none
+#guard parseOracleParts (name := "Old Thrush")
+  "When this creature enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top." ==
+  some [.ability (.triggered (.enter .this)
+    (.sequence [
+      .gainLife (.controller .this) 2,
+      .optional
+        (.sequence [
+          .searchLibraryThenShuffle (.controller .this) [
+            .defineSelectorVariable 1
+              (.selected (.controller .this) (.range 1 1)
+                (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+            .reveal (.variable 1),
+            .holdOutInLibrary (.variable 1)],
+          .putOnTopOfLibrary (.variable 1)])]))]
+#guard parseOracleParts (name := "Old Thrush")
+  "When this creature enters, you gain 2 life." ==
+  some [.ability (.triggered (.enter .this) (.gainLife (.controller .this) 2))]
+#guard parseOracleParts (name := "Old Thrush")
+  "When this creature enters, you gain 2 life. Draw a card." == none
+#guard parseOracleParts (name := "Gandalf")
+  "When Old Thrush enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top." ==
+  none
+#guard parseOracleParts (name := "Most Decrepit Old Bird")
+  "Threshold — This creature gets +1/+1 as long as there are seven or more cards in your graveyard." ==
+  some [.ability (.static (.if
+    (.greaterOrEqual
+      (.count (.intersection [.inGraveyard, .owner (.controller .this)]))
+      7)
+    [.addPower .this (Value.int 1), .addToughness .this (Value.int 1)]))]
+#guard parseOracleParts (name := "Most Decrepit Old Bird")
+  "This creature gets +1/+1 as long as there are seven or more cards in your graveyard." ==
+  parseOracleParts (name := "Most Decrepit Old Bird")
+    "Threshold — This creature gets +1/+1 as long as there are seven or more cards in your graveyard."
+#guard parseOracleParts (name := "Most Decrepit Old Bird")
+  "Threshold — This creature gets +0/+0 as long as there are seven or more cards in your graveyard." ==
+  none
+#guard parseOracleParts (name := "Most Decrepit Old Bird")
+  "Threshold — This creature gets +1/+1 as long as there are six or more cards in your graveyard." ==
+  none
+#guard parseOracleParts (name := "Gandalf")
+  "Threshold — Most Decrepit Old Bird gets +1/+1 as long as there are seven or more cards in your graveyard." ==
+  none
+#guard parseOracleParts (name := "")
+  "Mill four cards, then put an instant or sorcery card from among them into your hand." ==
+  some [.actions [.sequence [
+    .actionId 1 (.mill (.controller .this) 4),
+    .returnToHand
+      (.selected (.controller .this) (.range 1 1)
+        (.intersection [
+          .wasObjectOfAction 1,
+          .union [.cardType .instant, .cardType .sorcery]]))]]]
+#guard parseOracleParts (name := "")
+  "Mill one cards, then put an instant or sorcery card from among them into your hand." == none
+#guard parseOracleParts (name := "")
+  "Mill four cards, then put a creature card from among them into your hand." == none
+#guard parseOracleParts (name := "")
+  "Exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control." ==
+  some [.actions [.sequence [
+    .actionId 1 (.exile (.targets 1 (.range 2 2)
+      (.intersection [
+        .permanent,
+        .union [.cardType .creature, .cardType .land],
+        .controlled (.controller .this)]))),
+    .putOntoBattlefieldInState (.wasCreatedByAction 1)
+      [.controlled (.owner (.wasCreatedByAction 1))]]]]
+#guard parseOracleParts (name := "")
+  "Exile one target creatures and/or lands you control, then return them to the battlefield under their owner's control." ==
   none
 
 end Mtg.Engine
