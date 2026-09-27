@@ -238,7 +238,7 @@ def shape : Selector → Shape
   | .selected _ _ _ | .player => {}
   | .wasObjectSince (.putToGraveyard _) .turnStart =>
     { putIntoGraveyardThisTurn := true }
-  | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject
+  | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasArgumentOfTrigger _ _ | .replacingObject
   | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inLibrary | .inHand
   | .inExile | .supertype _
   | .variable _ | .topOfLibrary _ _ => {}
@@ -390,7 +390,7 @@ def referenceTargets : Selector → Selector
   | .blocking s => .blocking (referenceTargets s)
   | .token => .token
   | .wasObjectOfAction n => .wasObjectOfAction n
-  | .wasObjectOfThisTrigger => .wasObjectOfThisTrigger
+  | .wasArgumentOfTrigger id n => .wasArgumentOfTrigger id n
   | .replacingObject => .replacingObject
   | .wasCreatedByAction n => .wasCreatedByAction n
   | .hostOf s => .hostOf (referenceTargets s)
@@ -444,11 +444,11 @@ def includesInGraveyard : Selector → Bool
   | .target _ among | .targets _ _ among => includesInGraveyard among
   | _ => false
 
-/-- True when this selector is the object of this triggered ability. -/
-def includesWasObjectOfThisTrigger : Selector → Bool
-  | .wasObjectOfThisTrigger => true
+/-- True when this selector names an argument of a numbered trigger. -/
+def includesWasArgumentOfTrigger : Selector → Bool
+  | .wasArgumentOfTrigger _ _ => true
   | .intersection (f :: fs) =>
-    includesWasObjectOfThisTrigger f || includesWasObjectOfThisTrigger (.intersection fs)
+    includesWasArgumentOfTrigger f || includesWasArgumentOfTrigger (.intersection fs)
   | _ => false
 
 /-- The target constraint of a `hasTarget` conjunct, if any. -/
@@ -469,9 +469,9 @@ def leftoverKeywordAbility? : Selector → Option Keyword
     | none => leftoverKeywordAbility? (.intersection fs)
   | _ => none
 
-/-- True when this selector is a target of this trigger's object. -/
+/-- True when this selector is a target of an argument of a numbered trigger. -/
 def leftoverIsTargetOfThisSpell? : Selector → Bool
-  | .isTargetOf .wasObjectOfThisTrigger => true
+  | .isTargetOf (.wasArgumentOfTrigger _ _) => true
   | .intersection (f :: fs) =>
     leftoverIsTargetOfThisSpell? f || leftoverIsTargetOfThisSpell? (.intersection fs)
   | _ => false
@@ -1139,7 +1139,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
     | .spell | .ability | .abilityWithId _ | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
     | .player
-    | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject | .wasCreatedByAction _
+    | .wasObjectOfAction _ | .wasArgumentOfTrigger _ _ | .replacingObject | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inLibrary | .inHand
     | .inExile | .supertype _
     | .variable _ | .topOfLibrary _ _ => none
@@ -2555,7 +2555,7 @@ def leftoverAllianceModes? (who : Selector) :
 def leftoverCreatureOrLandTarget? (s : Selector) : Bool :=
   s.targetingShape.types.eqTypes [.creature, .land]
 
-/-- Exile the object of this triggered ability from a graveyard, then you
+/-- Exile an argument of this triggered ability from a graveyard, then you
 may play it until the end of your next turn. -/
 def leftoverExileGyPlayUntilNextTurn? : CardAction → Bool
   | .optional
@@ -2564,14 +2564,14 @@ def leftoverExileGyPlayUntilNextTurn? : CardAction → Bool
         .continuous [.canPlay permit (.wasCreatedByAction created)] duration
       ]) =>
     id == created && leftoverYou permit &&
-      among.includesInGraveyard && among.includesWasObjectOfThisTrigger &&
+      among.includesInGraveyard && among.includesWasArgumentOfTrigger &&
       leftoverUntilEndOfYourNextTurn? duration
   | _ => false
 
 /-- Copy that spell or ability; you may choose new targets. -/
 def leftoverCopyWithNewTargets? : CardAction → Bool
   | .copyWithNewTargets who what =>
-    leftoverYou who && what.includesWasObjectOfThisTrigger
+    leftoverYou who && what.includesWasArgumentOfTrigger
   | _ => false
 
 /-- Sacrifice an artifact or discard a nonland card. -/
@@ -3781,6 +3781,8 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
 
 /-- Compile a `.triggered` ability. -/
 def toTriggeredAbility? : Ability → Option TriggeredAbility
+  | .triggered (.triggerId _ t) action =>
+    toTriggeredAbility? (.triggered t action)
   | .triggered (.attack .this .all) (.continuous effects _duration) =>
     if CardAction.leftoverSetOtherBasePT? effects then
       some TriggeredAbility.onAttackSetOtherBasePT
@@ -4278,10 +4280,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       (.sequence [
         .spendManaFrom
           (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
-          (.castSpell .wasObjectOfThisTrigger),
-        .castSpell among]) action =>
-    -- The mana paid for the spell that is the object of this trigger.
-    if Selector.anySpellYouCast among then
+          (.castSpell (.wasArgumentOfTrigger id arg)),
+        .triggerId id' (.castSpell among)]) action =>
+    -- The mana paid for argument 1 of this same numbered cast.
+    if id == id' && arg == 1 && Selector.anySpellYouCast among then
       match CardAction.leftoverDrawLoseLifeSelf? action with
       | some (1, 1) => some TriggeredAbility.onCastWithTreasureDrawLoseLife
       | _ => none
@@ -4328,6 +4330,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some TriggeredAbility.onBecomesTargetDraw
     else none
   | _ => none
+termination_by a => sizeOf a
 
 end Ability
 
@@ -9441,12 +9444,12 @@ end TraditionalCardDefinition
         .actionId 1
           (.exile (.intersection [
             .inGraveyard,
-            .wasObjectOfThisTrigger,
+            .wasArgumentOfTrigger 1 1,
             .owner (.controller .this)])),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
           (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])
-  match (Ability.triggered (.discard (.controller .this)) action).toTriggeredAbility? with
+  match (Ability.triggered (.triggerId 1 (.discard (.controller .this))) action).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onResource Effect.resourceDiscardExilePlay
   | none => false
 
@@ -9482,25 +9485,26 @@ end TraditionalCardDefinition
         .actionId 1
           (.exile (.intersection [
             .inGraveyard,
-            .wasObjectOfThisTrigger,
+            .wasArgumentOfTrigger 1 1,
             .owner (.controller .this)])),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
           (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])
-  (Ability.triggered (.putToGraveyard (.owner (.controller .this))) action
+  (Ability.triggered (.triggerId 1 (.putToGraveyard (.owner (.controller .this)))) action
     ).toTriggeredAbility?.isNone
 
 #guard
   match
     (Ability.triggered
-      (.castSpell
-        (.intersection [
-          .spell,
-          .union [.cardType .instant, .cardType .sorcery],
-          .controlled (.controller .this),
-          .hasTarget (.union [.cardType .artifact, .cardType .land])]))
+      (.triggerId 1
+        (.castSpell
+          (.intersection [
+            .spell,
+            .union [.cardType .instant, .cardType .sorcery],
+            .controlled (.controller .this),
+            .hasTarget (.union [.cardType .artifact, .cardType .land])])))
       (.sequence [
-        .copyWithNewTargets (.controller .this) .wasObjectOfThisTrigger,
+        .copyWithNewTargets (.controller .this) (.wasArgumentOfTrigger 1 1),
         .putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand
   | none => false
@@ -9523,13 +9527,14 @@ end TraditionalCardDefinition
 
 #guard
   (Ability.triggered
-    (.castSpell
-      (.intersection [
-        .spell,
-        .union [.cardType .instant, .cardType .sorcery],
-        .controlled (.controller .this)]))
+    (.triggerId 1
+      (.castSpell
+        (.intersection [
+          .spell,
+          .union [.cardType .instant, .cardType .sorcery],
+          .controlled (.controller .this)])))
     (.sequence [
-      .copyWithNewTargets (.controller .this) .wasObjectOfThisTrigger,
+      .copyWithNewTargets (.controller .this) (.wasArgumentOfTrigger 1 1),
       .putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility?.isNone
 
 #guard
@@ -9546,14 +9551,15 @@ end TraditionalCardDefinition
 
 #guard
   (Ability.triggered
-    (.castSpell
-      (.intersection [
-        .spell,
-        .union [.cardType .instant, .cardType .sorcery],
-        .controlled (.controller .this),
-        .hasTarget (.cardType .creature)]))
+    (.triggerId 1
+      (.castSpell
+        (.intersection [
+          .spell,
+          .union [.cardType .instant, .cardType .sorcery],
+          .controlled (.controller .this),
+          .hasTarget (.cardType .creature)])))
     (.sequence [
-      .copyWithNewTargets (.controller .this) .wasObjectOfThisTrigger,
+      .copyWithNewTargets (.controller .this) (.wasArgumentOfTrigger 1 1),
       .putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility?.isNone
 
 #guard
@@ -9764,21 +9770,22 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.triggered
-      (.castSpell
-        (.intersection [
-          .spell,
-          .controlled (.controller .this),
-          .hasTarget
-            (.intersection [
-              .permanent,
-              .cardType .creature])]))
+      (.triggerId 1
+        (.castSpell
+          (.intersection [
+            .spell,
+            .controlled (.controller .this),
+            .hasTarget
+              (.intersection [
+                .permanent,
+                .cardType .creature])])))
       (.continuous
         [
           .gainAbility
             (.intersection [
               .permanent,
               .cardType .creature,
-              .isTargetOf .wasObjectOfThisTrigger])
+              .isTargetOf (.wasArgumentOfTrigger 1 1)])
             (.keyword .flying)]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCasting Effect.castingTargetsGainFlying
@@ -9801,21 +9808,22 @@ end TraditionalCardDefinition
 
 #guard
   (Ability.triggered
-    (.castSpell
-      (.intersection [
-        .spell,
-        .controlled (.controller .this),
-        .hasTarget
-          (.intersection [
-            .permanent,
-            .cardType .creature])]))
+    (.triggerId 1
+      (.castSpell
+        (.intersection [
+          .spell,
+          .controlled (.controller .this),
+          .hasTarget
+            (.intersection [
+              .permanent,
+              .cardType .creature])])))
     (.continuous
       [
         .gainAbility
           (.intersection [
             .permanent,
             .cardType .creature,
-            .wasObjectOfThisTrigger])
+            .wasArgumentOfTrigger 1 1)])
           (.keyword .flying)]
       .endOfTurn)).toTriggeredAbility?.isNone
 
@@ -9838,37 +9846,39 @@ end TraditionalCardDefinition
 
 #guard
   (Ability.triggered
-    (.castSpell
-      (.intersection [
-        .spell,
-        .controlled (.controller .this)]))
+    (.triggerId 1
+      (.castSpell
+        (.intersection [
+          .spell,
+          .controlled (.controller .this)])))
     (.continuous
       [
         .gainAbility
           (.intersection [
             .permanent,
             .cardType .creature,
-            .isTargetOf .wasObjectOfThisTrigger])
+            .isTargetOf (.wasArgumentOfTrigger 1 1)])
           (.keyword .flying)]
       .endOfTurn)).toTriggeredAbility?.isNone
 
 #guard
   (Ability.triggered
-    (.castSpell
-      (.intersection [
-        .spell,
-        .controlled (.controller .this),
-        .hasTarget
-          (.intersection [
-            .permanent,
-            .cardType .artifact])]))
+    (.triggerId 1
+      (.castSpell
+        (.intersection [
+          .spell,
+          .controlled (.controller .this),
+          .hasTarget
+            (.intersection [
+              .permanent,
+              .cardType .artifact])])))
     (.continuous
       [
         .gainAbility
           (.intersection [
             .permanent,
             .cardType .creature,
-            .isTargetOf .wasObjectOfThisTrigger])
+            .isTargetOf (.wasArgumentOfTrigger 1 1)])
           (.keyword .flying)]
       .endOfTurn)).toTriggeredAbility?.isNone
 

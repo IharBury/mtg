@@ -5012,8 +5012,8 @@ def smaugWickedWormDefinition : TraditionalCardDefinition := .card <|
     (.sequence [
       .spendManaFrom
         (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
-        (.castSpell .wasObjectOfThisTrigger),
-      .castSpell (.intersection [.spell, .controlled (.controller .this)])])
+        (.castSpell (.wasArgumentOfTrigger 1 1)),
+      .triggerId 1 (.castSpell (.intersection [.spell, .controlled (.controller .this)]))])
     (.sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1]))]

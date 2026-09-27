@@ -312,8 +312,10 @@ inductive Selector where
   | token
   /-- The object of the numbered action. -/
   | wasObjectOfAction : Nat → Selector
-  /-- The object of this triggered ability. -/
-  | wasObjectOfThisTrigger
+  /-- A selector argument of the trigger numbered by `Trigger.triggerId`.
+  The first `Nat` is the selector id. The second is the trigger argument
+  ordinal; `1` is the first selector argument. -/
+  | wasArgumentOfTrigger : Nat → Nat → Selector
   /-- The object a replacement effect is replacing. -/
   | replacingObject : Selector
   /-- An object created by the numbered action. -/
@@ -400,6 +402,9 @@ inductive Trigger where
   | abilityWithIdActivated : Nat → Trigger
   /-- The numbered action occurred. -/
   | actionWithId : Nat → Trigger
+  /-- Number this trigger so later clauses can refer to its selector
+  arguments. -/
+  | triggerId : Nat → Trigger → Trigger
   /-- The selected player chose the numbered mode (CR 700.2). -/
   | modeWithIdChosen : Selector → Nat → Trigger
   /-- Mana created by the numbered action is spent to pay for the given
