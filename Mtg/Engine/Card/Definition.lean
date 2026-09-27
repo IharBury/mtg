@@ -3781,8 +3781,6 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
 
 /-- Compile a `.triggered` ability. -/
 def toTriggeredAbility? : Ability → Option TriggeredAbility
-  | .triggered (.triggerId _ t) action =>
-    toTriggeredAbility? (.triggered t action)
   | .triggered (.attack .this .all) (.continuous effects _duration) =>
     if CardAction.leftoverSetOtherBasePT? effects then
       some TriggeredAbility.onAttackSetOtherBasePT
@@ -4257,6 +4255,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.castSpell among)
       (.sequence [
         copy,
+        .putCounter (.source .this) .plusOnePlusOne 2])
+  | .triggered (.triggerId _ (.castSpell among))
+      (.sequence [
+        copy,
         .putCounter (.source .this) .plusOnePlusOne 2]) =>
     if CardAction.leftoverCopyWithNewTargets? copy &&
         among.shape.types.eqTypes [.instant, .sorcery] &&
@@ -4266,7 +4268,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         | none => false then
       some (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand)
     else none
-  | .triggered (.castSpell among) (.continuous effects _) =>
+  | .triggered (.castSpell among) (.continuous effects _)
+  | .triggered (.triggerId _ (.castSpell among)) (.continuous effects _) =>
     match Selector.leftoverHasTarget? among with
     | some dest =>
       if among.shape.sameController && Selector.includesSpell among &&
@@ -4293,7 +4296,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverMayPayHasteUnblockable? action then
       some (TriggeredAbility.onCasting Effect.castingMayPayHasteUnblockable)
     else none
-  | .triggered (.discard who) action =>
+  | .triggered (.discard who) action
+  | .triggered (.triggerId _ (.discard who)) action =>
     if CardAction.leftoverYou who &&
         CardAction.leftoverExileGyPlayUntilNextTurn? action then
       some (TriggeredAbility.onResource Effect.resourceDiscardExilePlay)
@@ -4330,7 +4334,6 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some TriggeredAbility.onBecomesTargetDraw
     else none
   | _ => none
-termination_by a => sizeOf a
 
 end Ability
 
@@ -9823,7 +9826,7 @@ end TraditionalCardDefinition
           (.intersection [
             .permanent,
             .cardType .creature,
-            .wasArgumentOfTrigger 1 1)])
+            (.wasArgumentOfTrigger 1 1)])
           (.keyword .flying)]
       .endOfTurn)).toTriggeredAbility?.isNone
 
