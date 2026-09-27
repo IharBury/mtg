@@ -410,10 +410,11 @@ inductive Trigger where
   /-- Mana created by the numbered action is spent to pay for the given
   event (CR 106.10). -/
   | spendManaCreatedByAction : Nat → Trigger → Trigger
-  /-- Mana from a source matching the selector was spent to pay for the
-  given event. The payment happens before that event (CR 601.2h). An
-  ability that triggers once when the event occurs sequences this payment
-  before the event, so it does not trigger once for each mana spent. -/
+/-- Mana from a source matching the selector was spent to pay for the
+given event. The payment happens before that event (CR 601.2h). In a
+`sequence`, this payment follows the numbered trigger it names, so
+`wasArgumentOfTrigger` comes after that `triggerId`. The ability still
+triggers once when the event occurs, not once for each mana spent. -/
   | spendManaFrom : Selector → Trigger → Trigger
   /-- A spell matching the selector is cast (CR 601). -/
   | castSpell : Selector → Trigger

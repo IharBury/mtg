@@ -4281,11 +4281,11 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     | none => none
   | .triggered
       (.sequence [
+        .triggerId id' (.castSpell among),
         .spendManaFrom
           (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
-          (.castSpell (.wasArgumentOfTrigger id arg)),
-        .triggerId id' (.castSpell among)]) action =>
-    -- The mana paid for argument 1 of this same numbered cast.
+          (.castSpell (.wasArgumentOfTrigger id arg))]) action =>
+    -- The numbered cast comes first. The mana paid for its first argument follows.
     if id == id' && arg == 1 && Selector.anySpellYouCast among then
       match CardAction.leftoverDrawLoseLifeSelf? action with
       | some (1, 1) => some TriggeredAbility.onCastWithTreasureDrawLoseLife
@@ -9439,6 +9439,19 @@ end TraditionalCardDefinition
         [.tapped])).toActivatedAbility? with
   | some ab => ab.onlyIfGyCreaturesAtLeast == 0
   | none => false
+
+-- Naming the cast's argument before that cast is numbered does not compile.
+#guard
+  (Ability.triggered
+    (.sequence [
+      .spendManaFrom
+        (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
+        (.castSpell (.wasArgumentOfTrigger 1 1)),
+      .triggerId 1
+        (.castSpell (.intersection [.spell, .controlled (.controller .this)]))])
+    (.sequence [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1])).toTriggeredAbility?.isNone
 
 #guard
   let action : CardAction :=
