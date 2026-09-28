@@ -3192,9 +3192,47 @@ def leftoverAxeToken? (parts : List CardPart) : Bool :=
       .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
       .ability (.keywordWithCost .equip [.mana [.generic 2]])]
 
+/-- Sequences that put +1/+1 counters on this creature alongside another
+action, as printed on power-up abilities. -/
+def leftoverSourcePlusOneSequence? : CardAction → Option Effect
+  | .sequence [.putCounter (.source .this) .plusOnePlusOne k, .draw who (.nat n)] =>
+    if leftoverYou who then some (Effect.plusOneAndDraw k n) else none
+  | .sequence [.putCounter (.source .this) .plusOnePlusOne 1, .fight src dest] =>
+    match dest with
+    | .targets _ (.range 0 1) among =>
+      if (src == .this || src == .source .this) && among.toTargetKind == .oppCreature then
+        some Effect.plusOneThenFightUpToOne
+      else none
+    | _ => none
+  | .sequence [.putCounter (.source .this) .plusOnePlusOne 1, .continuous effects .endOfTurn] =>
+    let onSelf := effects.all fun
+      | .gainAbility (.source .this) (.keyword _) => true
+      | _ => false
+    if onSelf && !effects.isEmpty then some (Effect.plusOneAndGrant (grantedKeywords effects))
+    else none
+  | .sequence [.putCounter (.source .this) .plusOnePlusOne k, create] =>
+    match leftoverCreateTokensKindN? create with
+    | some (kind, 1) => some (Effect.plusOneAndCreateTokens k kind)
+    | _ => none
+  | .sequence [.discard (.opponent (.controller .this)) (.nat 1),
+      .putCounter (.source .this) .plusOnePlusOne 1] =>
+    some Effect.eachOppDiscardThenPlusOne
+  | .sequence [.destroy (.targets _ (.range 0 1) among),
+      .putCounter (.source .this) .plusOnePlusOne 1] =>
+    if among.toTargetKind == .artifactOrEnchantment then
+      some Effect.destroyUpToOneThenPlusOne
+    else none
+  | .sequence [.returnToHand (.targets _ (.range 0 1) among),
+      .putCounter (.source .this) .plusOnePlusOne k] =>
+    if leftoverYourGyCreatures? among then
+      some (Effect.returnGyCreatureThenPlusOne k)
+    else none
+  | _ => none
+
 /-- Sequence leftovers that compile to a named `Effect` without taking
 only the first action. -/
 def leftoverCompiled? (action : CardAction) : Option Effect :=
+  leftoverSourcePlusOneSequence? action |>.orElse fun _ =>
   (if leftoverExileAttackersSearchBasics? action then
     some Effect.exileAttackersSearchBasics
   else none) |>.orElse fun _ =>
@@ -3961,6 +3999,18 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         sel.shape.sameController && sel.shape.types.eqTypes [.creature] then
       some TriggeredAbility.onAttackFerociousPlusOneEach
     else none
+  | .triggered (.attack .this .all)
+      (.if (.any (.intersection [.source .this, .powerAtLeast (.int 4)]))
+        [.draw who (.nat 1)]) =>
+    if CardAction.leftoverYou who then
+      some (TriggeredAbility.onThisAttack Effect.thisAttackDrawIfPower4)
+    else none
+  | .triggered (.draw who .all)
+      (.if (.any (.intersection [.not .this, .permanent, .subtype .hero, ctl]))
+        [.dealDamage .this (.target _ (.opponent (.controller .this))) (.nat 1)]) =>
+    if CardAction.leftoverYou who && ctl == .controlled (.controller .this) then
+      some (TriggeredAbility.onResource Effect.resourceDrawIfAnotherHeroDamage)
+    else none
   | .triggered (.attack .this .all) (.scry _ (.nat n)) =>
     some (TriggeredAbility.onAttackScry n)
   | .triggered (.attack .this .all) (.surveil who (.nat n)) =>
@@ -3988,6 +4038,15 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         creatureSel.shape.sameController &&
         creatureSel.shape.types.eqTypes [.creature] then
       some (TriggeredAbility.onCasting Effect.castingPlusOneThis)
+    else none
+  | .triggered (.castSpell among)
+      (.if (.targetsIncludeAny _ creatureSel)
+        [.putCounter (.source .this) .plusOnePlusOne 1, .scry who (.nat 1)]) =>
+    if among.shape.sameController && Selector.includesSpell among &&
+        creatureSel.shape.sameController &&
+        creatureSel.shape.types.eqTypes [.creature] &&
+        CardAction.leftoverYou who then
+      some (TriggeredAbility.onCasting Effect.castingPlusOneScry)
     else none
   | .triggered (.enter .this) (.draw (.controller .this) (.nat n)) =>
     some (TriggeredAbility.onEnterDraw n)
@@ -5221,6 +5280,15 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.graveyardActivatedIf cond costs action).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
+  | .abilityId n
+      (.activatedWithStaticIf (.didNotHappen (.abilityWithIdActivated n') .gameStart) costs action
+        (.if (.happened (.enter (.source .this)) .turnStart) [.reduceCost .this [.mana syms]])) =>
+    -- Power-up: once, and this card's mana cost less the turn it entered.
+    if n == n' && (syms : ManaCost) == b.manaCost then
+      { b with
+        activatedAbilities :=
+          b.activatedAbilities.push { Ability.activatedAbility costs action with powerUp := true } }
+    else b
   | .abilityId n a =>
     match (Ability.abilityId n a).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }

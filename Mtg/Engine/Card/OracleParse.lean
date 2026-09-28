@@ -479,6 +479,20 @@ Currently recognized:
   X is the value of X (CR 107.3). The noun is plural.
 - `{X}{X}, {T}, Sacrifice this land: Create X Treasure tokens.`
   X is the value of X in the activation cost (CR 107.3). The noun is plural.
+- `Power-up — <costs>: <effect>`, with the power-up reminder text.
+  The ability may be activated only once, and costs this card's mana cost
+  less if this card entered this turn. The mana cost is passed as `manaCost`;
+  without it the line is not recognized.
+- `<effect>. He gains <keywords> until end of turn.` and `Destroy up to one
+  target artifact or enchantment. Put a +1/+1 counter on She-Hulk.`
+  `He` and `she` are this card.
+- `Create a 2/2 colorless Robot Villain artifact creature token.`
+  Colorless is an empty color indicator.
+- `Each opponent discards a card.`
+- `Whenever you draw a card, if you control another Hero, <this> deals N damage to target opponent.`
+  The condition is checked on resolution.
+- `Whenever <this> attacks, draw a card if her power is 4 or greater.`
+  Her power is checked on resolution.
 -/
 
 namespace Mtg.Engine
@@ -4427,7 +4441,7 @@ def afterAbilityWord? (line : String) : Option String :=
       none
     else
       match norm word with
-      | "ferocious" => none
+      | "ferocious" | "power-up" => none
       | "landfall" =>
         if (norm rest).startsWith "whenever a land you control enters, " then some rest else none
       | _ => some rest
@@ -4623,6 +4637,7 @@ def parseSubject (cardName who : String) (n : Nat) : Option (Selector × Nat) :=
   match who with
   | "it" | "that creature" =>
     if n <= 1 then none else some (.targetReference (n - 1), n)
+  | "he" | "she" => some (.source .this, n)
   | "enchanted creature" | "equipped creature" => some (.hostOf .this, n)
   | "all creatures" => some (permanentWith [.creature], n)
   | _ =>
@@ -4696,7 +4711,8 @@ def parsePutCountersOn (cardName sentence : String) (n : Nat) :
 [with <keywords>]`. One token uses the singular noun; more than one uses the
 plural. `X` is the value of X (CR 107.3) and uses the plural. A tapped token
 enters tapped (CR 110.5). The token is a creature of that power, toughness,
-color, and subtypes, with those keywords. -/
+color, and subtypes, with those keywords. The color may be `colorless`, and
+the type `artifact creature`. -/
 def parseCreateCreatureTokens (sentence : String) : Option CardAction :=
   (after? (normSentence sentence) "create ").bind fun rest =>
     let (rest, kws?) :=
@@ -4718,14 +4734,20 @@ def parseCreateCreatureTokens (sentence : String) : Option CardAction :=
           let count? : Option Value :=
             if countText == "x" then (if plural then some .x else none)
             else (nounCount? countText plural).map Value.nat
+          let (types, subtypeWordsRev) : List CardType × List String :=
+            match subtypeWordsRev with
+            | "artifact" :: more => ([.artifact, .creature], more)
+            | _ => ([.creature], subtypeWordsRev)
+          let colors? : Option (List Color) :=
+            if colorText == "colorless" then some [] else (colorName? colorText).map ([·])
           if tokenWord != "token" && !plural then none
           else
-            match count?, parseUnsignedPT pt, colorName? colorText,
+            match count?, parseUnsignedPT pt, colors?,
                 subtypeWordsRev.reverse.mapM subtypeOfOracle?, kws? with
-            | some k, some (p, t), some c, some (st :: sts), some kws =>
+            | some k, some (p, t), some cs, some (st :: sts), some kws =>
               some (.createTokens (.controller .this) k
-                ([.type .creature] ++ (st :: sts).map CardPart.subtype ++
-                  [.colorIndicator [c], .power p, .toughness t] ++
+                (types.map CardPart.type ++ (st :: sts).map CardPart.subtype ++
+                  [.colorIndicator cs, .power p, .toughness t] ++
                   kws.map fun kw => .ability (.keyword kw))
                 (if tapped then [.tapped] else []))
             | _, _, _, _, _ => none
@@ -4977,14 +4999,39 @@ def parseSpellsCostLessThisTurn (sentence : String) (n : Nat) : Option (CardActi
         .endOfTurn, n)
     | _, _ => none
 
-/-- `If you control another Hero, you gain 2 life.` `another` excludes this
-object. The gain is checked on resolution. -/
-def parseIfControlAnotherGainLife (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+/-- `If you control another Hero, you gain 2 life.` or `If you control another
+Hero, Human Torch deals 1 damage to target opponent.` `another` excludes this
+object. The condition is checked on resolution. -/
+def parseIfControlAnotherGainLife (cardName sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
   (after? (normSentence sentence) "if you control another ").bind (split2? · ", ") |>.bind
     fun (stText, effect) =>
-      match subtypeOfOracle? stText, parseYouGainLife effect n with
-      | some st, some (gain, n') => some (.if (.any (anotherSubtypeYouControl st)) [gain], n')
+      match subtypeOfOracle? stText,
+          parseYouGainLife effect n <|> parseDealsDamageTo cardName effect n with
+      | some st, some (action, n') => some (.if (.any (anotherSubtypeYouControl st)) [action], n')
       | _, _ => none
+
+/-- `Each opponent discards a card.` Each opponent chooses the card. -/
+def parseEachOpponentDiscards (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  (after? (normSentence sentence) "each opponent discards ").bind parseCardCount |>.map fun k =>
+    (.discard (.opponent (.controller .this)) (Value.nat k), n)
+
+/-- `Draw a card if her power is 4 or greater.` The power is this object's,
+checked on resolution. -/
+def parseDrawIfPowerAtLeast (cardName sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  (split2? (normSentence sentence) " if ").bind fun (draw, cond) =>
+    (after? draw "draw ").bind parseCardCount |>.bind fun k =>
+      (between? cond "" " or greater").bind (split2? · " power is ") |>.bind fun (who, p) =>
+        let who := (before? who "'s").getD
+          (match who with
+            | "his" | "her" | "its" => "it"
+            | _ => "")
+        if !damageSource? cardName who then none
+        else
+          (positiveDigits? p).map fun p =>
+            (.if (.any (.intersection [.source .this, .powerAtLeast (Value.int p)]))
+              [.draw (.controller .this) (Value.nat k)], n)
 
 /-- `You gain N life for each <objects>.` Each of those objects is variable `n`. -/
 def parseGainLifeForEach (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -5106,7 +5153,9 @@ def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
     parseWithoutKeywordCantBlock s n <|>
     parseDiscardUnlessArtifact s n <|>
     parseSpellsCostLessThisTurn s n <|>
-    parseIfControlAnotherGainLife s n <|>
+    parseIfControlAnotherGainLife cardName s n <|>
+    parseEachOpponentDiscards s n <|>
+    parseDrawIfPowerAtLeast cardName s n <|>
     parseGainLifeForEach s n <|>
     parseTargetGainsThenSearchesBasic s n <|>
     parseOwnerPutsSecondOrBottom s n <|>
@@ -5423,8 +5472,8 @@ def parseSpellYouCast (s : String) : Option Selector :=
 
 /-- The event of a trigger condition (CR 603.1), after `when` or `whenever`:
 this card entering, dying, attacking, or becoming blocked; another permanent
-entering; creatures attacking together; a spell being cast; or a second draw
-or spell in a turn. -/
+entering; creatures attacking together; a spell being cast; you drawing a
+card; or a second draw or spell in a turn. -/
 def parseTriggerEvent (cardName clause : String) : Option Trigger :=
   let c := norm clause
   let self (tail : String) : Option Unit :=
@@ -5439,6 +5488,7 @@ def parseTriggerEvent (cardName clause : String) : Option Trigger :=
   let fixed : Option Trigger :=
     match c with
     | "you attack" => some youAttack
+    | "you draw a card" => some (.draw (.controller .this) .all)
     | "you draw your second card each turn" =>
       some (.ordinal 2 .turnStart (.draw (.controller .this) .all))
     | "a player casts their second spell each turn" =>
@@ -6131,36 +6181,62 @@ def modeListHeader? (cardName line : String) : Option ModeList :=
       positiveCount |>.map chooseUpToReturnModes
   ((triggeredChooseOne? cardName line).map (triggeredModes cardName)) <|> restricted <|> returnCards
 
+/-- `Power-up — <cost>: <effect>` (CR 702.193). The ability is number `n'`,
+the next number after its effect. It may be activated only if it has not
+been activated since the game began. While this permanent entered this
+turn, the ability costs `manaCost`, this card's mana cost, less. `.this` in
+that reduction is the ability, so the permanent is its source. A card with
+no mana cost is not recognized. -/
+def parsePowerUp (cardName : String) (manaCost : List ManaSymbol) (line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  if manaCost.isEmpty then none
+  else
+    (after? (rulesText line) "Power-up — ").bind fun rest =>
+      (parseOneLine cardName rest n).bind fun
+        | ([.ability (.activated costs action)], n') =>
+          some ([.ability (.abilityId n' (.activatedWithStaticIf
+            (.didNotHappen (.abilityWithIdActivated n') .gameStart) costs action
+            (.if (.happened (.enter (.source .this)) .turnStart)
+              [.reduceCost .this [.mana manaCost]])))], n' + 1)
+        | _ => none
+
+/-- One line outside a mode list. -/
+def parseLine (cardName : String) (manaCost : List ManaSymbol) (line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  parsePowerUp cardName manaCost line n <|> parseOneLine cardName line n
+
 mutual
 /-- Lines outside a `Choose one —` list. `parseModeLines` reads the list. -/
-def parseBodyLines (cardName : String) : List String → Nat → Option (List CardPart × Nat)
+def parseBodyLines (cardName : String) (manaCost : List ManaSymbol) :
+    List String → Nat → Option (List CardPart × Nat)
   | [], n => some ([], n)
   | line :: rest, n =>
     if landfallChooseOne? line then
-      parseListedModes cardName (triggeredModes cardName (.enter landsYouControl)) rest n []
+      parseListedModes cardName manaCost (triggeredModes cardName (.enter landsYouControl))
+        rest n []
     else
       match modeListHeader? cardName line with
-      | some list => parseListedModes cardName list rest n []
+      | some list => parseListedModes cardName manaCost list rest n []
       | none =>
       match chooseHeader? line with
-      | some orBoth => parseModeLines cardName rest n [] orBoth
+      | some orBoth => parseModeLines cardName manaCost rest n [] orBoth
       | none =>
         let oneLine (more : Nat → Option (List CardPart × Nat)) :=
-          (parseOneLine cardName line n).bind fun (here, nHere) =>
+          (parseLine cardName manaCost line n).bind fun (here, nHere) =>
             (more nHere).map fun (more, nMore) => (here ++ more, nMore)
         match rest with
-        | [] => oneLine (parseBodyLines cardName [])
+        | [] => oneLine (parseBodyLines cardName manaCost [])
         | gets :: after =>
           ((parseAsEntersChooseCreatureType cardName line gets n).bind fun (here, nHere) =>
-            (parseBodyLines cardName after nHere).map fun (more, nMore) =>
+            (parseBodyLines cardName manaCost after nHere).map fun (more, nMore) =>
               (here ++ more, nMore)) <|>
-            oneLine (parseBodyLines cardName (gets :: after))
+            oneLine (parseBodyLines cardName manaCost (gets :: after))
 
 /-- Bullet modes after a header such as a landfall “choose one —” line.
 A bullet that does not parse fails. No bullets fails rather than dropping
 the printed choice. A later non-bullet ends the list. -/
-def parseListedModes (cardName : String) (list : ModeList) (lines : List String) (n : Nat)
-    (acc : List CardAction) : Option (List CardPart × Nat) :=
+def parseListedModes (cardName : String) (manaCost : List ManaSymbol) (list : ModeList)
+    (lines : List String) (n : Nat) (acc : List CardAction) : Option (List CardPart × Nat) :=
   let modesPart := list.wrap
   match lines with
   | [] =>
@@ -6171,43 +6247,44 @@ def parseListedModes (cardName : String) (list : ModeList) (lines : List String)
     match stripModeBullet line with
     | some text =>
       (list.mode text n).bind fun (action, n') =>
-        parseListedModes cardName list rest n' (acc ++ [action])
+        parseListedModes cardName manaCost list rest n' (acc ++ [action])
     | none =>
       match acc with
       | [] => none
       | modes =>
-        (parseOneLine cardName line n).bind fun (here, nHere) =>
-          (parseBodyLines cardName rest nHere).map fun (more, nMore) =>
+        (parseLine cardName manaCost line n).bind fun (here, nHere) =>
+          (parseBodyLines cardName manaCost rest nHere).map fun (more, nMore) =>
             (modesPart modes ++ here ++ more, nMore)
 
 /-- `•` modes after `Choose one —` or `Choose one or both —`.
 A later non-mode line ends the list.
 No parsed modes fails rather than dropping the printed choice. -/
-def parseModeLines (cardName : String) (lines : List String) (n : Nat)
-    (acc : List CardAction) (orBoth : Bool) : Option (List CardPart × Nat) :=
+def parseModeLines (cardName : String) (manaCost : List ManaSymbol) (lines : List String)
+    (n : Nat) (acc : List CardAction) (orBoth : Bool) : Option (List CardPart × Nat) :=
   match lines with
   | [] => (chooseOneParts acc orBoth).map fun parts => (parts, n)
   | line :: rest =>
     match stripModeBullet line with
     | some text =>
       (parseCatalogMode cardName text n).bind fun (action, n') =>
-        parseModeLines cardName rest n' (acc ++ [action]) orBoth
+        parseModeLines cardName manaCost rest n' (acc ++ [action]) orBoth
     | none =>
       (chooseOneParts acc orBoth).bind fun head =>
         match chooseHeader? line with
         | some nested =>
-          (parseModeLines cardName rest n [] nested).map fun (more, nMore) =>
+          (parseModeLines cardName manaCost rest n [] nested).map fun (more, nMore) =>
             (head ++ more, nMore)
         | none =>
-          (parseOneLine cardName line n).bind fun (here, nHere) =>
-            (parseBodyLines cardName rest nHere).map fun (more, nMore) =>
+          (parseLine cardName manaCost line n).bind fun (here, nHere) =>
+            (parseBodyLines cardName manaCost rest nHere).map fun (more, nMore) =>
               (head ++ here ++ more, nMore)
 end
 
-/-- Oracle lines, including `Choose one —` lists. -/
-def parseMainLines (cardName : String) (lines : List String) (n : Nat) :
-    Option (List CardPart × Nat) :=
-  parseBodyLines cardName lines n
+/-- Oracle lines, including `Choose one —` lists. `manaCost` is this card's
+mana cost. -/
+def parseMainLines (cardName : String) (manaCost : List ManaSymbol) (lines : List String)
+    (n : Nat) : Option (List CardPart × Nat) :=
+  parseBodyLines cardName manaCost lines n
 
 def nameOfParts (parts : List CardPart) : Option String :=
   parts.findSome? fun
@@ -6291,12 +6368,15 @@ article, means this card, as do `this` and `this <type>`.
 `Gollum the Abandoned` refers to itself as `Gollum`.
 Returns `none` when a line, sentence, mode, or Adventure face is not
 recognized. Reminder parentheticals are not rules text. Empty text is
-`some []`. Successive spell lines are one effect, in printed order. -/
-def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
+`some []`. Successive spell lines are one effect, in printed order.
+`manaCost` is the card's printed mana cost. Only abilities that refer to
+that cost, such as power-up, read it. -/
+def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol := []) :
+    Option (List CardPart) :=
   let lines :=
     text.splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
   let (main, adv) := splitAdventure lines
-  (parseMainLines name main 1).bind fun (mainParts, n) =>
+  (parseMainLines name manaCost main 1).bind fun (mainParts, n) =>
     let mainParts := mergeConsecutiveActions mainParts
     match adv with
     | [] => some mainParts
@@ -6366,9 +6446,14 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       (.ordinal 2 .turnStart (.draw (.controller .this) .all))
       (.putCounter (.source .this) .plusOnePlusOne 1))]
 #guard parseOracleParts (name := "")
-  "Whenever you draw a card, draw a card." == none
+  "Whenever you draw a card, draw a card." ==
+  some [.ability (
+    .triggered (.draw (.controller .this) .all) (.draw (.controller .this) (.nat 1)))]
 #guard parseOracleParts (name := "")
-  "Whenever you draw a card, put a +1/+1 counter on target creature." == none
+  "Whenever you draw a card, put a +1/+1 counter on target creature." ==
+  some [.ability (
+    .triggered (.draw (.controller .this) .all)
+      (.putCounter (.target 1 (.intersection [.permanent, .cardType .creature])) .plusOnePlusOne 1))]
 #guard parseOracleParts (name := "")
   "Whenever you draw a card, if you control another Hero, put a +1/+1 counter on this creature." == none
 #guard parseOracleParts (name := "Ravenhill Flock")
@@ -6385,6 +6470,57 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       .triggered
         (.draw (.controller .this) .all)
         (.putCounter (.source .this) .plusOnePlusOne 1))]
+#guard parseOracleParts (name := "Brave Brawler") (manaCost := [.generic 1, .mono .white])
+  "Power-up — {4}{W}: Put two +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)" ==
+  some [.ability (
+    .abilityId 1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 4, .mono .white]]
+        (.putCounter (.source .this) .plusOnePlusOne 2)
+        (.if (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 1, .mono .white]]])))]
+#guard parseOracleParts (name := "Brave Brawler")
+  "Power-up — {4}{W}: Put two +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)" ==
+  none
+#guard parseOracleParts (name := "Hercules, Prince of Power") (manaCost := [.generic 2, .mono .green])
+  "Power-up — {4}{G}: Put a +1/+1 counter on Hercules. He gains vigilance, indestructible, and haste until end of turn. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)" ==
+  some [.ability (
+    .abilityId 1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 4, .mono .green]]
+        (.sequence [
+          .putCounter (.source .this) .plusOnePlusOne 1,
+          .continuous [
+            .gainAbility (.source .this) (.keyword .vigilance),
+            .gainAbility (.source .this) (.keyword .indestructible),
+            .gainAbility (.source .this) (.keyword .haste)]
+            .endOfTurn])
+        (.if (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 2, .mono .green]]])))]
+#guard parseOracleParts (name := "Human Torch, Johnny Storm")
+  "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent." ==
+  some [.ability (
+    .triggered (.draw (.controller .this) .all)
+      (.if (.any (.intersection [.not .this, .permanent, .subtype .hero, .controlled (.controller .this)]))
+        [.dealDamage .this (.target 1 (.opponent (.controller .this))) (.nat 1)]))]
+#guard parseOracleParts (name := "Viv Vision, Teen Synthezoid")
+  "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater." ==
+  some [.ability (
+    .triggered (.attack .this .all)
+      (.if (.any (.intersection [.source .this, .powerAtLeast (.int 4)]))
+        [.draw (.controller .this) (.nat 1)]))]
+#guard parseOracleParts (name := "")
+  "{6}: Each opponent discards a card. Create a 2/2 colorless Robot Villain artifact creature token." ==
+  some [.ability (
+    .activated [.mana [.generic 6]]
+      (.sequence [
+        .discard (.opponent (.controller .this)) (.nat 1),
+        .createTokens (.controller .this) (.nat 1)
+          [.type .artifact, .type .creature, .subtype .robot, .subtype .villain,
+            .colorIndicator [], .power 2, .toughness 2]
+          []]))]
 #guard parseOracleParts (name := "") "Scry 2." ==
   some [.actions [.scry (.controller .this) 2]]
 #guard parseOracleParts (name := "")
@@ -7295,7 +7431,11 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       (.enter .this)
       (.discard (.opponent (.controller .this)) 1))]
 #guard parseOracleParts (name := "")
-  "When another creature enters, each opponent discards a card." == none
+  "When another creature enters, each opponent discards a card." ==
+  some [.ability (
+    .triggered
+      (.enter (.intersection [.not .this, .permanent, .cardType .creature]))
+      (.discard (.opponent (.controller .this)) (.nat 1)))]
 #guard parseOracleParts (name := "")
   "When this creature enters, each opponent discards a card of their choice." == none
 #guard parseOracleParts (name := "Gandalf, Spark Starter")
