@@ -298,7 +298,7 @@ def vowToEreborCard : CardDef :=
     .if
         (.anySubtype (.targetReference 1) .dwarf)
         [
-          .optional
+          .optional (.controller .this)
             (.attach
               (.selected
                 (.controller .this)
@@ -1135,7 +1135,7 @@ def raggedShortSpearCard : CardDef :=
     .triggered
       (.enter .this)
       (.sequence [
-        .optional
+        .optional (.controller .this)
           (.actionId 1 (.discard (.controller .this) 1)),
         .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]])),
   .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
@@ -4150,7 +4150,7 @@ def oldThrush : CardDef :=
   .ability (.triggered (.enter .this)
     (.sequence [
       .gainLife (.controller .this) 2,
-      .optional
+      .optional (.controller .this)
         (.sequence [
           .searchLibraryThenShuffle (.controller .this) [
             .defineSelectorVariable 1
@@ -4813,7 +4813,7 @@ def mirkwoodMeditatorDefinition : TraditionalCardDefinition := .card <|
     (.enter
       (.intersection [
         .permanent, .cardType .land, .controlled (.controller .this)]))
-    (.optional (.continuous
+    (.optional (.controller .this) (.continuous
       [.setBasePower (.source .this) (Value.int 4),
         .setBaseToughness (.source .this) (Value.int 2)]
       .endOfTurn)))]
@@ -4957,7 +4957,7 @@ def dainsCompanyDefinition : TraditionalCardDefinition := .card <|
   .ability (.triggered (.enter .this) (.sequence [
     .actionId 1
       (.lookAt (.topOfLibrary (.controller .this) 4)),
-    .optional (.sequence [
+    .optional (.controller .this) (.sequence [
       .actionId 2
         (.reveal
           (.selected (.controller .this) (.range 1 1)
@@ -5111,7 +5111,7 @@ def settleTheWreckageDefinition : TraditionalCardDefinition := .card <|
           .cardType .creature,
           .attacking .all,
           .controlled (.target 1 .player)])),
-    .optional
+    .optional (.targetReference 1)
       (.searchLibraryThenShuffle
         (.targetReference 1)
         [
@@ -5622,7 +5622,7 @@ def theSackvilleBagginses : CardDef :=
       .triggered
         (.enter .this)
         (.sequence [
-          .optional
+          .optional (.controller .this)
             (.actionId 1
               (.sacrifice
                 (.selected

@@ -455,7 +455,7 @@ Currently recognized:
   from among them goes to hand.
 - `Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle.`
   The player is one target. “That many” is how many of those creatures are
-  exiled. The search is optional. The lands enter tapped.
+  exiled. That player chooses whether to search. The lands enter tapped.
 - `When <this> enters, create a colorless Equipment artifact token named <name> with "<equipped creature gets +P/+T>" and equip {cost}.`
   The token is a colorless Equipment artifact with that name. A zero bonus
   is omitted. `+0/+0` is not an effect.
@@ -1363,7 +1363,7 @@ def parseIfItsSubtypeMayAttach (sentence : String) (n : Nat) : Option (CardActio
             .if
               (.anySubtype host hostSt)
               [
-                .optional
+                .optional (.controller .this)
                   (.attach
                     (.selected
                       (.controller .this)
@@ -2476,7 +2476,7 @@ def topCount? (phrase : String) : Option Nat :=
 
 /-- `Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle.`
 The player is target `n`, and the exile is action `n`. “That many” is how
-many of those creatures are exiled. The search is optional. -/
+many of those creatures are exiled. That player chooses whether to search. -/
 def parseExileAttackersSearchBasics (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   match sentences text with
@@ -2496,7 +2496,7 @@ def parseExileAttackersSearchBasics (text : String) (n : Nat) :
               .cardType .creature,
               .attacking .all,
               .controlled (.target n .player)])),
-        .optional
+        .optional (.targetReference n)
           (.searchLibraryThenShuffle
             (.targetReference n)
             [
@@ -2711,7 +2711,7 @@ def parseMaySetBasePT (effect : String) : Option CardAction :=
     fun rest =>
       (before? rest " until end of turn").bind parsePowerToughness |>.map
         fun (p, t) =>
-          .optional (.continuous
+          .optional (.controller .this) (.continuous
             [.setBasePower (.source .this) (Value.int p),
               .setBaseToughness (.source .this) (Value.int t)]
             .endOfTurn)
@@ -2956,7 +2956,7 @@ def parseEnterMayDiscardDraw (cardName : String) (line : String) (n : Nat) :
               .triggered
                 (.enter .this)
                 (.sequence [
-                  .optional
+                  .optional (.controller .this)
                     (.actionId n
                       (.discard (.controller .this) (Value.nat discarded))),
                   .if
@@ -3220,7 +3220,7 @@ The found card is variable `n`. -/
 def parseMaySearchBasicOnTop (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   if sentenceIs sentence
       "you may search your library for a basic land card, reveal it, then shuffle and put that card on top" then
-    some (.optional (searchBasicLandOnTop n), n + 1)
+    some (.optional (.controller .this) (searchBasicLandOnTop n), n + 1)
   else none
 
 /-- `When <this> enters, you gain N life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top.`
@@ -4314,7 +4314,7 @@ def parseEnterLookAtTopReveal (cardName : String) (line : String) (n : Nat) :
                         .actionId n
                           (.lookAt
                             (.topOfLibrary (.controller .this) (.nat k))),
-                        .optional (.sequence [
+                        .optional (.controller .this) (.sequence [
                           .actionId (n + 1)
                             (.reveal
                               (.selected (.controller .this) (.range 1 1) among)),
@@ -4859,7 +4859,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .if
         (.anySubtype (.targetReference 1) .dwarf)
         [
-          .optional
+          .optional (.controller .this)
             (.attach
               (.selected
                 (.controller .this)
@@ -5564,7 +5564,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .triggered
       (.enter .this)
       (.sequence [
-        .optional
+        .optional (.controller .this)
           (.actionId 1 (.discard (.controller .this) 1)),
         .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]]))]
 #guard parseOracleParts (name := "")
@@ -5578,7 +5578,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       .triggered
         (.enter .this)
         (.sequence [
-          .optional
+          .optional (.controller .this)
             (.actionId 1 (.discard (.controller .this) 1)),
           .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]])),
     .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
@@ -6790,7 +6790,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   some [.ability (.triggered (.enter .this)
     (.sequence [
       .gainLife (.controller .this) 2,
-      .optional
+      .optional (.controller .this)
         (.sequence [
           .searchLibraryThenShuffle (.controller .this) [
             .defineSelectorVariable 1
@@ -6997,7 +6997,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "Landfall — Whenever a land you control enters, you may have this creature's base power and toughness become 4/2 until end of turn." ==
   some [.ability (.triggered
     (.enter landsYouControl)
-    (.optional (.continuous
+    (.optional (.controller .this) (.continuous
       [.setBasePower (.source .this) (Value.int 4),
         .setBaseToughness (.source .this) (Value.int 2)]
       .endOfTurn)))]
@@ -7050,7 +7050,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
     .ability (.triggered (.enter .this) (.sequence [
       .actionId 1
         (.lookAt (.topOfLibrary (.controller .this) 4)),
-      .optional (.sequence [
+      .optional (.controller .this) (.sequence [
         .actionId 2
           (.reveal
             (.selected (.controller .this) (.range 1 1)
@@ -7132,7 +7132,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
           .cardType .creature,
           .attacking .all,
           .controlled (.target 1 .player)])),
-    .optional
+    .optional (.targetReference 1)
       (.searchLibraryThenShuffle
         (.targetReference 1)
         [

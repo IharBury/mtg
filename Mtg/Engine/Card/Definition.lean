@@ -844,7 +844,9 @@ inductive CardAction where
   /-- Perform the first actions when the condition holds, otherwise the
   second (an “if … instead …” replacement). -/
   | ifElse : Condition → List CardAction → List CardAction → CardAction
-  | optional : CardAction → CardAction
+  /-- The selected player chooses whether to perform the action.
+  Printed “you may” is `.controller .this`. “That player may” is that player. -/
+  | optional : Selector → CardAction → CardAction
   | attach : Selector → Selector → CardAction
   /-- Choose that many distinct modes (CR 700.2). Each mode is chosen at most once.
   `range 1 1` is “choose one”. `range 1 2` is “choose one or both”. -/
@@ -1321,7 +1323,7 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
   | .sequence [
       .untap ut,
       .continuous effects _,
-      .if (.anySubtype _ .dwarf) [.optional (.attach _eq _to)]
+      .if (.anySubtype _ .dwarf) [.optional (.controller .this) (.attach _eq _to)]
     ] =>
     let youControlCreature :=
       match ut.among? with
@@ -1941,7 +1943,7 @@ def leftoverSacrificeOneArtifact? : Selector → Bool
 /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
 def leftoverMaySacArtifactOrDiscardDraw? : CardAction → Option Nat
   | .sequence [
-      .optional
+      .optional (.controller .this)
         (.actionId id
           (.playerSelectAction _ (.range 1 1) [
             .sacrifice sac,
@@ -2424,14 +2426,14 @@ def leftoverSacrificeAnotherCreatureOrArtifact? : Selector → Bool
 create a Treasure. -/
 def leftoverMaySacDrawTreasure? : CardAction → Bool
   | .sequence [
-      .optional (.actionId id (.sacrifice sel)),
+      .optional (.controller .this) (.actionId id (.sacrifice sel)),
       .if (.happened (.actionWithId id') _)
         [.draw _ 1, .createTokens who 1 parts []]
     ] =>
     id == id' && leftoverSacrificeAnotherCreatureOrArtifact? sel &&
       leftoverYou who && leftoverTokenKind? parts == some .treasure
   | .sequence [
-      .optional (.actionId id (.sacrifice sel)),
+      .optional (.controller .this) (.actionId id (.sacrifice sel)),
       .if (.happened (.actionWithId id') _)
         [.createTokens who 1 parts [], .draw _ 1]
     ] =>
@@ -2487,7 +2489,7 @@ def leftoverEnterFightUpToOne? : CardAction → Bool
 nonland permanent an opponent controls. -/
 def leftoverEnterMaySacAnotherThenDestroyOppNonland? : CardAction → Bool
   | .sequence [
-      .optional (.actionId id (.sacrifice (.selected _ (.range 1 1) among))),
+      .optional (.controller .this) (.actionId id (.sacrifice (.selected _ (.range 1 1) among))),
       .if (.happened (.actionWithId id') _) [.destroy sel]
     ] =>
     id == id' && among.shape.other && among.shape.sameController &&
@@ -2560,7 +2562,7 @@ def leftoverCreatureOrLandTarget? (s : Selector) : Bool :=
 /-- Exile an argument of this triggered ability from a graveyard, then you
 may play it until the end of your next turn. -/
 def leftoverExileGyPlayUntilNextTurn? : CardAction → Bool
-  | .optional
+  | .optional (.controller .this)
       (.sequence [
         .actionId id (.exile among),
         .continuous [.canPlay permit (.wasCreatedByAction created)] duration
@@ -2773,7 +2775,7 @@ def leftoverMillThenPutAllInstantsOrSorceries? : CardAction → Option Nat
 def leftoverMillThenPutPermanentGainLife? : CardAction → Option (Nat × Nat)
   | .sequence [
       .actionId id (.mill who (.nat n)),
-      .optional (.returnToHand sel),
+      .optional (.controller .this) (.returnToHand sel),
       .gainLife gainer (.nat life)
     ] =>
     match leftoverSelectedMilled? id leftoverPermanentCardFilter sel with
@@ -2786,7 +2788,7 @@ def leftoverMillThenPutPermanentGainLife? : CardAction → Option (Nat × Nat)
 def leftoverMillThenPutSubtypeOrEnchantment? : CardAction → Option (Nat × String)
   | .sequence [
       .actionId id (.mill who (.nat n)),
-      .optional (.returnToHand (.selected _ (.range (.nat lo) 1) among))
+      .optional (.controller .this) (.returnToHand (.selected _ (.range (.nat lo) 1) among))
     ] =>
     if leftoverYou who && lo ≤ 1 then
       match among with
@@ -2798,7 +2800,7 @@ def leftoverMillThenPutSubtypeOrEnchantment? : CardAction → Option (Nat × Str
     else none
   | .sequence [
       .actionId id (.mill who (.nat n)),
-      .optional (.returnToHand (.targets _ (.range (.nat lo) 1) among))
+      .optional (.controller .this) (.returnToHand (.targets _ (.range (.nat lo) 1) among))
     ] =>
     if leftoverYou who && lo ≤ 1 then
       match among with
@@ -2872,7 +2874,7 @@ def leftoverLoseLifeCreateTreasure? : CardAction → Bool
 /-- You may draw a card for each artifact you control. If you do, each
 opponent draws a card. -/
 def leftoverMayDrawPerArtifactOppsDraw? : CardAction → Bool
-  | .optional
+  | .optional (.controller .this)
       (.sequence [
         .forEachVariable _ among [.draw who 1],
         .draw dest 1
@@ -3110,7 +3112,7 @@ def leftoverExileAttackersSearchBasics? : CardAction → Bool
             .cardType .creature,
             .attacking .all,
             .controlled (.target tid .player)])),
-      .optional
+      .optional chooser
         (.searchLibraryThenShuffle
           (.targetReference sid)
           [
@@ -3126,7 +3128,8 @@ def leftoverExileAttackersSearchBasics? : CardAction → Bool
                   .supertype .basic]))
               [.tapped]])
     ] =>
-    id == tid && id == sid && sid == sid' && id == cid && cid == cid'
+    id == tid && id == sid && sid == sid' && id == cid && cid == cid' &&
+      chooser == .targetReference sid
   | _ => false
 
 /-- Look at the top `n` cards, exile them face down, and play them while
@@ -3267,7 +3270,7 @@ and put the rest on the bottom in a random order. -/
 def leftoverLookAtTopReveal? : CardAction → Option (Nat × Array String)
   | .sequence [
       .actionId lookId (.lookAt (.topOfLibrary who (.nat n))),
-      .optional (.sequence [
+      .optional (.controller .this) (.sequence [
         .actionId revealId
           (.reveal
             (.selected chooser (.range 1 1)
@@ -3343,7 +3346,7 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
     else none
   | .sequence [
       .gainLife _ (.nat n),
-      .optional search
+      .optional (.controller .this) search
     ] =>
     if leftoverSearchBasicOnTop? search then
       some (TriggeredAbility.onEnterGainLifeSearchBasicOnTop n)
@@ -3522,7 +3525,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .ifElse _ (a :: _) _ => compile a asAbility
                   | .ifElse _ [] (a :: _) => compile a asAbility
                   | .ifElse _ [] [] => continuousEffect none [] asAbility
-                  | .optional inner => compile inner asAbility
+                  | .optional _ inner => compile inner asAbility
                   | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
                   | .chooseUniqueModes _ (a :: _) => compile a asAbility
                   | .chooseUniqueModes _ [] => continuousEffect none [] asAbility
@@ -4097,7 +4100,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     some (TriggeredAbility.onEnterOrAttackDealDividedDamage amount maxTargets)
   | .triggered (.enter .this)
       (.sequence [
-        .optional (.actionId id (.discard _ 1)),
+        .optional (.controller .this) (.actionId id (.discard _ 1)),
         .if (.happened (.actionWithId id') _) [.draw _ (.nat n)]]) =>
     if id == id' then some (TriggeredAbility.onEnterMayDiscardDraw n) else none
   | .triggered (.enter among) (.putCounter sel .plusOnePlusOne 1) =>
@@ -4176,7 +4179,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     else if CardAction.leftoverNontokenHeroModal? among modes then
       some (TriggeredAbility.onWatch Effect.watchNontokenHeroModal)
     else none
-  | .triggered (.enter among) (.optional (.continuous effects .endOfTurn)) =>
+  | .triggered (.enter among) (.optional (.controller .this) (.continuous effects .endOfTurn)) =>
     if among.shape.landYouControl then
       match CardAction.leftoverSourceSetBasePT? effects with
       | some (p, t) => some (TriggeredAbility.onLandYouControlEntersBecomePT p t)
@@ -5488,7 +5491,7 @@ end TraditionalCardDefinition
       .if
         (.anySubtype (.targetReference 1) .dwarf)
         [
-          .optional
+          .optional (.controller .this)
             (.attach
               (.selected
                 (.controller .this)
@@ -6292,7 +6295,7 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.enter .this)
       (.sequence [
-        .optional
+        .optional (.controller .this)
           (.actionId 1 (.discard (.controller .this) 1)),
         .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterMayDiscardDraw 2
@@ -7069,7 +7072,7 @@ end TraditionalCardDefinition
       (.enter .this)
       (.sequence [
         .gainLife (.controller .this) 2,
-        .optional
+        .optional (.controller .this)
           (.sequence [
             .searchLibraryThenShuffle
               (.controller .this)
@@ -7093,7 +7096,7 @@ end TraditionalCardDefinition
     (.enter .this)
     (.sequence [
       .gainLife (.controller .this) 2,
-      .optional
+      .optional (.controller .this)
         (.searchLibraryThenShuffle
           (.controller .this)
           [
@@ -7113,7 +7116,7 @@ end TraditionalCardDefinition
     (.enter .this)
     (.sequence [
       .gainLife (.controller .this) 2,
-      .optional
+      .optional (.controller .this)
         (.sequence [
           .searchLibraryThenShuffle
             (.controller .this)
@@ -7495,7 +7498,7 @@ end TraditionalCardDefinition
 #guard
   CardAction.leftoverMaySacArtifactOrDiscardDraw?
     (.sequence [
-      .optional
+      .optional (.controller .this)
         (.actionId 1
           (.playerSelectAction
             (.controller .this)
@@ -7515,7 +7518,7 @@ end TraditionalCardDefinition
 #guard
   CardAction.leftoverMaySacArtifactOrDiscardDraw?
     (.sequence [
-      .optional
+      .optional (.controller .this)
         (.actionId 1
           (.playerSelectAction
             (.controller .this)
@@ -8596,7 +8599,7 @@ end TraditionalCardDefinition
   CardAction.toEffect
     (.sequence [
       .actionId 1 (.mill (.controller .this) 2),
-      .optional
+      .optional (.controller .this)
         (.returnToHand
           (.selected
             (.controller .this)
@@ -8609,7 +8612,7 @@ end TraditionalCardDefinition
   CardAction.toAbilityEffect
     (.sequence [
       .actionId 1 (.mill (.controller .this) 4),
-      .optional
+      .optional (.controller .this)
         (.returnToHand
           (.selected
             (.controller .this)
@@ -9569,7 +9572,7 @@ end TraditionalCardDefinition
 
 #guard
   let action : CardAction :=
-    .optional
+    .optional (.controller .this)
       (.sequence [
         .actionId 1
           (.exile (.intersection [
@@ -9585,7 +9588,7 @@ end TraditionalCardDefinition
 
 #guard
   let action : CardAction :=
-    .optional
+    .optional (.controller .this)
       (.sequence [
         .actionId 1
           (.exile (.intersection [.inGraveyard, .owner (.controller .this)])),
@@ -9596,7 +9599,7 @@ end TraditionalCardDefinition
 
 #guard
   let action : CardAction :=
-    .optional
+    .optional (.controller .this)
       (.sequence [
         .actionId 1
           (.exile (.intersection [
@@ -9610,7 +9613,7 @@ end TraditionalCardDefinition
 
 #guard
   let action : CardAction :=
-    .optional
+    .optional (.controller .this)
       (.sequence [
         .actionId 1
           (.exile (.intersection [
@@ -10290,7 +10293,7 @@ end TraditionalCardDefinition
 -- Armor Wars I: you may draw per artifact; if you do, each opponent draws.
 #guard
   CardAction.leftoverMayDrawPerArtifactOppsDraw?
-    (.optional
+    (.optional (.controller .this)
       (.sequence [
         .forEachVariable 1
           (.intersection [
@@ -10317,7 +10320,7 @@ end TraditionalCardDefinition
 -- Creatures you control are not artifacts.
 #guard
   !CardAction.leftoverMayDrawPerArtifactOppsDraw?
-    (.optional
+    (.optional (.controller .this)
       (.sequence [
         .forEachVariable 1
           (.intersection [
@@ -10331,7 +10334,7 @@ end TraditionalCardDefinition
 -- Missing opponent draw is not enough.
 #guard
   !CardAction.leftoverMayDrawPerArtifactOppsDraw?
-    (.optional
+    (.optional (.controller .this)
       (.forEachVariable 1
         (.intersection [
           .permanent,
@@ -10342,7 +10345,7 @@ end TraditionalCardDefinition
 -- Each player drawing is not each opponent.
 #guard
   !CardAction.leftoverMayDrawPerArtifactOppsDraw?
-    (.optional
+    (.optional (.controller .this)
       (.sequence [
         .forEachVariable 1
           (.intersection [
@@ -10453,7 +10456,7 @@ end TraditionalCardDefinition
 #guard
   CardAction.leftoverChapterEffect?
     [
-      .optional
+      .optional (.controller .this)
         (.sequence [
           .forEachVariable 1
             (.intersection [
@@ -10502,7 +10505,7 @@ end TraditionalCardDefinition
         (.keywordWithEffect
           (.chapter 1)
           [
-            .optional
+            .optional (.controller .this)
               (.sequence [
                 .forEachVariable 1
                   (.intersection [
@@ -10630,7 +10633,7 @@ end TraditionalCardDefinition
     (.enter
       (.intersection [
         .permanent, .cardType .land, .controlled (.controller .this)]))
-    (.optional (.continuous
+    (.optional (.controller .this) (.continuous
       [.setBasePower (.source .this) (Value.int 4),
         .setBaseToughness (.source .this) (Value.int 2)]
       .endOfTurn))).toTriggeredAbility? ==
