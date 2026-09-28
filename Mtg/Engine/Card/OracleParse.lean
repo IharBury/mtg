@@ -1013,6 +1013,11 @@ def triggeredSourcePump (line lead : String) (event : Trigger)
 def onTrigger (event : Trigger) (action? : Option CardAction) : Option CardPart :=
   action?.map fun action => .ability (.triggered event action)
 
+/-- Same as `onTrigger`, keeping the target number the effect parser returns. -/
+def onTriggerN (event : Trigger) (parsed : Option (CardAction × Nat)) :
+    Option (CardPart × Nat) :=
+  parsed.map fun (action, n') => (.ability (.triggered event action), n')
+
 /-- The action from a sentence parser, dropping the target number it returns. -/
 def actionOf (parsed : Option (CardAction × Nat)) : Option CardAction :=
   parsed.map fun (action, _) => action
@@ -1584,8 +1589,7 @@ def onSelfTrigger (cardName line mid : String) (event : Trigger)
 /-- Same as `onSelfTrigger`, keeping the target number the effect parser returns. -/
 def onSelfTriggerN (cardName line mid : String) (event : Trigger)
     (effect? : String → Option (CardAction × Nat)) : Option (CardPart × Nat) :=
-  ((whenSelfEffect? cardName (normLine line) mid).bind effect?).map
-    fun (action, n') => (.ability (.triggered event action), n')
+  onTriggerN event ((whenSelfEffect? cardName (normLine line) mid).bind effect?)
 
 /-- `when <this card> enters, <effect>` as an enters-the-battlefield trigger. -/
 def onEnter (cardName line : String) (effect? : String → Option CardAction) : Option CardPart :=
@@ -1604,6 +1608,13 @@ def onEnterN (cardName line : String)
 def onDiesN (cardName line : String)
     (effect? : String → Option (CardAction × Nat)) : Option (CardPart × Nat) :=
   onSelfTriggerN cardName line " dies, " (.die .this) effect?
+
+/-- `whenever <this card> attacks, <effect>` as an attack trigger, keeping the
+target number the effect parser returns. -/
+def onAttackN (cardName line : String)
+    (effect? : String → Option (CardAction × Nat)) : Option (CardPart × Nat) :=
+  onTriggerN (.attack .this .all)
+    ((triggerSelfEffect? cardName "whenever" (normLine line) " attacks, ").bind effect?)
 
 /-- `<this card> deals 5 damage to target creature.` The source must be this
 card. The target number is `n`. -/
@@ -2085,10 +2096,8 @@ def parseOtherCreaturesDieScry (line : String) (n : Nat) : Option (CardPart × N
     fun (who, effect) =>
       if who != "other creatures" then none
       else
-        match parseControlledPhrase who, parseScry effect n with
-        | some among, some (action, n') =>
-          some (.ability (.triggered (.dieSimultaneously among []) action), n')
-        | _, _ => none
+        (parseControlledPhrase who).bind fun among =>
+          onTriggerN (.dieSimultaneously among []) (parseScry effect n)
 
 /-- `Counter target spell. If a permanent spell is countered this way, exile
 it instead of putting it into its owner's graveyard. You may cast that card
@@ -2781,21 +2790,15 @@ The target, when there is one, is `n`. A line that also says `choose one —`
 is a modal trigger, not this ability. -/
 def parseLandYouControlEnters (line : String) (n : Nat) : Option (CardPart × Nat) :=
   (after? (withoutLandfall line) landYouControlEnters).bind fun effect =>
-    let triggered (action : CardAction) (n' : Nat) : Option (CardPart × Nat) :=
-      some (.ability (.triggered (.enter landsYouControl) action), n')
-    match parsePumpUntilEndOfTurn effect with
-    | some action =>
-      match sourceGetsUntilEnd? action with
-      | some _ => triggered action n
-      | none => none
-    | none =>
-      match parseMaySetBasePT effect with
-      | some action => triggered action n
+    onTriggerN (.enter landsYouControl) <|
+      match parsePumpUntilEndOfTurn effect with
+      | some action => (sourceGetsUntilEnd? action).map fun _ => (action, n)
       | none =>
-        if !effect.endsWith " you control" then none
-        else
-          (parsePutPlusOneOnTarget effect n).bind fun (action, n') =>
-            triggered action n'
+        match parseMaySetBasePT effect with
+        | some action => some (action, n)
+        | none =>
+          if !effect.endsWith " you control" then none
+          else parsePutPlusOneOnTarget effect n
 
 /-- `When this Equipment enters, target opponent sacrifices a creature of their choice.`
 The entering object is this card. The opponent is target `n` and chooses which
@@ -3023,7 +3026,7 @@ def parseAttackSetBasePT (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   match sentences line with
   | [attack, become] =>
-    (triggerSelfEffect? cardName "whenever" (norm attack) " attacks, ").bind fun effect =>
+    onAttackN cardName attack fun effect =>
       (after? effect "choose ").bind parseUpToOneOtherYouControl |>.bind fun among =>
         (between? (normSentence become)
             "its base power and toughness become equal to "
@@ -3031,17 +3034,14 @@ def parseAttackSetBasePT (cardName : String) (line : String) (n : Nat) :
           if !possessiveSelf cardName whose then none
           else
             some (
-              .ability (
-                .triggered
-                  (.attack .this .all)
-                  (.continuous
-                    [.setBasePower
-                      (.targets n (.range 0 1) among)
-                      (Value.greatestPower (.source .this)),
-                     .setBaseToughness
-                      (.targetReference n)
-                      (Value.greatestToughness (.source .this))]
-                    .endOfTurn)),
+              .continuous
+                [.setBasePower
+                  (.targets n (.range 0 1) among)
+                  (Value.greatestPower (.source .this)),
+                 .setBaseToughness
+                  (.targetReference n)
+                  (Value.greatestToughness (.source .this))]
+                .endOfTurn,
               n + 1)
   | _ => none
 
@@ -3912,20 +3912,15 @@ def parseActivatedAddOrLoot (cardName : String) (line : String) (n : Nat) :
 The attacker is this card. The creature is target `n`. -/
 def parseAttackTargetGains (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
-  (triggerSelfEffect? cardName "whenever" (normLine line) " attacks, ").bind
-    fun effect =>
-      (before? effect " until end of turn").bind (split2? · " gains ") |>.bind
-        fun (who, gained) =>
-          if who != "target attacking creature" then none
-          else
-            (parseKeywordPhrase gained).bind fun kws =>
-              let effects := gainEffects n attackingCreatureTarget kws
-              if effects.isEmpty then none
-              else
-                some (
-                  .ability (.triggered (.attack .this .all)
-                    (.continuous effects .endOfTurn)),
-                  n + 1)
+  onAttackN cardName line fun effect =>
+    (before? effect " until end of turn").bind (split2? · " gains ") |>.bind
+      fun (who, gained) =>
+        if who != "target attacking creature" then none
+        else
+          (parseKeywordPhrase gained).bind fun kws =>
+            let effects := gainEffects n attackingCreatureTarget kws
+            if effects.isEmpty then none
+            else some (.continuous effects .endOfTurn, n + 1)
 
 /-- `This spell costs {X} less to cast, where X is the total power of creatures you control with flying.`
 The printed reduction is `{X}`, and X is that total power. It functions on
@@ -3986,18 +3981,15 @@ def parseEnterDealDamageDestroyIfSubtype (cardName : String) (line : String)
 The attacker is this card. The recipient is target `n`. -/
 def parseAttackDamageEqualTreasures (cardName : String) (line : String)
     (n : Nat) : Option (CardPart × Nat) :=
-  (triggerSelfEffect? cardName "whenever" (normLine line) " attacks, ").bind
-    fun effect =>
-      (split2? effect
-          " deals damage equal to the number of treasures you control to ").bind
-        fun (who, dest) =>
-          if !damageSource? cardName who || dest != "any target" then none
-          else
-            some (
-              .ability (.triggered (.attack .this .all)
-                (.dealDamage (.source .this) (.target n .all)
-                  (.count treasuresYouControl))),
-              n + 1)
+  onAttackN cardName line fun effect =>
+    (split2? effect
+        " deals damage equal to the number of treasures you control to ").bind
+      fun (who, dest) =>
+        if !damageSource? cardName who || dest != "any target" then none
+        else
+          some (
+            .dealDamage (.source .this) (.target n .all) (.count treasuresYouControl),
+            n + 1)
 
 /-- `Whenever an opponent casts their first noncreature spell each turn, you recruit.`
 Recruit is a keyword action of this card's controller. A reminder
