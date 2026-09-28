@@ -5845,21 +5845,31 @@ def visionQuestDefinition : TraditionalCardDefinition := .card <|
   .manaCost [.x, .mono .blue, .mono .red],
   .type .sorcery,
   .actions [
-    .sequence [
-      .defineSelectorVariable 1
-        (.selected (.controller .this) (.range 1 1)
-          (.intersection [
-            .union [.inLibrary, .inGraveyard],
-            .cardType .artifact,
-            .cardType .creature,
-            .manaValueAtMost .x])),
-      .defineSelectorVariable 2 (.intersection [.variable 1, .inLibrary]),
-      .putOntoBattlefield (.variable 1),
-      .putCounter (.variable 1) .plusOnePlusOne .x,
-      .if (.greaterOrEqual .x (.nat 4))
-        [.continuous [.gainAbility (.variable 1) (.keyword .haste)] .endOfTurn],
-      .if (.any (.variable 2))
-        [.searchLibraryThenShuffle (.controller .this) []]]]]
+    .playerSelectAction (.controller .this) (.range 1 1) [
+      .searchLibraryThenShuffle (.controller .this) [
+        .defineSelectorVariable 1
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [
+              .union [.inLibrary, .inGraveyard],
+              .cardType .artifact,
+              .cardType .creature,
+              .manaValueAtMost .x])),
+        .putOntoBattlefield (.variable 1),
+        .putCounter (.variable 1) .plusOnePlusOne .x,
+        .if (.greaterOrEqual .x (.nat 4))
+          [.continuous [.gainAbility (.variable 1) (.keyword .haste)] .endOfTurn]],
+      .sequence [
+        .defineSelectorVariable 1
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [
+              .inGraveyard,
+              .cardType .artifact,
+              .cardType .creature,
+              .manaValueAtMost .x])),
+        .putOntoBattlefield (.variable 1),
+        .putCounter (.variable 1) .plusOnePlusOne .x,
+        .if (.greaterOrEqual .x (.nat 4))
+          [.continuous [.gainAbility (.variable 1) (.keyword .haste)] .endOfTurn]]]]]
 
 def visionQuest : CardDef :=
   visionQuestDefinition.toCardDef (oracleText := visionQuestOracle)

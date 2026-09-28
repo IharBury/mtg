@@ -3439,24 +3439,36 @@ def leftoverSourcePlusOneSequence? : CardAction → Option Effect
 /-- Printed actions of cards read with `parseOracleParts` that compile to one
 named `Effect`. -/
 def leftoverPrintedCompiled? : CardAction → Option Effect
-  | .sequence [
-      .defineSelectorVariable id
-        (.selected who (.range 1 1)
-          (.intersection [
-            .union [.inLibrary, .inGraveyard],
-            .cardType .artifact,
-            .cardType .creature,
-            .manaValueAtMost .x])),
-      .defineSelectorVariable id2 (.intersection [.variable id', .inLibrary]),
-      .putOntoBattlefield (.variable id''),
-      .putCounter (.variable id''') .plusOnePlusOne .x,
-      .if (.greaterOrEqual .x (.nat 4))
-        [.continuous [.gainAbility (.variable id4) (.keyword .haste)] .endOfTurn],
-      .if (.any (.variable id5))
-        [.searchLibraryThenShuffle shuffler []]
+  | .playerSelectAction who (.range 1 1) [
+      .searchLibraryThenShuffle searcher [
+        .defineSelectorVariable id
+          (.selected chooser (.range 1 1)
+            (.intersection [
+              .union [.inLibrary, .inGraveyard],
+              .cardType .artifact,
+              .cardType .creature,
+              .manaValueAtMost .x])),
+        .putOntoBattlefield (.variable id1),
+        .putCounter (.variable id2) .plusOnePlusOne .x,
+        .if (.greaterOrEqual .x (.nat 4))
+          [.continuous [.gainAbility (.variable id3) (.keyword .haste)] .endOfTurn]],
+      .sequence [
+        .defineSelectorVariable id4
+          (.selected chooser2 (.range 1 1)
+            (.intersection [
+              .inGraveyard,
+              .cardType .artifact,
+              .cardType .creature,
+              .manaValueAtMost .x])),
+        .putOntoBattlefield (.variable id5),
+        .putCounter (.variable id6) .plusOnePlusOne .x,
+        .if (.greaterOrEqual .x (.nat 4))
+          [.continuous [.gainAbility (.variable id7) (.keyword .haste)] .endOfTurn]]
     ] =>
-    if CardAction.leftoverYou who && CardAction.leftoverYou shuffler &&
-        id == id' && id == id'' && id == id''' && id == id4 && id2 == id5 then
+    if CardAction.leftoverYou who && CardAction.leftoverYou searcher &&
+        CardAction.leftoverYou chooser && CardAction.leftoverYou chooser2 &&
+        id == id1 && id == id2 && id == id3 &&
+        id == id4 && id == id5 && id == id6 && id == id7 then
       some Effect.searchLibraryOrGyArtifactCreatureX
     else none
   | .draw (.targets _ (.range (.nat 2) (.nat 2)) .player) (.nat 1) => some Effect.twoPlayersDraw

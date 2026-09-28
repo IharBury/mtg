@@ -2733,32 +2733,36 @@ def parseLookAtTopExileFaceDownPlayIf (text : String) (n : Nat) :
                 exileId + 1)
   | _ => none
 
-/-- Vision Quest: search library and/or graveyard for an artifact creature of
-mana value X or less, put it onto the battlefield with X +1/+1 counters, give
-it haste when X is 4 or greater, and shuffle only if the card came from the
-library. The found card is variable `n`. Whether it was in the library is
-variable `n + 1`, recorded before it moves. -/
+/-- Vision Quest: the player chooses to search the library and graveyard, or
+only the graveyard, for an artifact creature of mana value X or less. The
+found card is variable `n`. It enters with X +1/+1 counters and gains haste
+when X is 4 or greater. Searching the library shuffles. -/
 def parseVisionQuest (text : String) (n : Nat) : Option (List CardAction × Nat) :=
   match (sentences text).map normSentence with
   | [search, haste, shuffle] =>
     if search == "search your library and/or graveyard for an artifact creature card with mana value x or less and put it onto the battlefield with x additional +1/+1 counters on it" &&
         haste == "if x is 4 or greater, it gains haste until end of turn" &&
         shuffle == "if you search your library this way, shuffle" then
-      some ([.sequence [
+      let artifactCreature :=
+        [
+          .cardType .artifact,
+          .cardType .creature,
+          .manaValueAtMost .x]
+      let found (zone : Selector) : CardAction :=
         .defineSelectorVariable n
           (.selected (.controller .this) (.range 1 1)
-            (.intersection [
-              .union [.inLibrary, .inGraveyard],
-              .cardType .artifact,
-              .cardType .creature,
-              .manaValueAtMost .x])),
-        .defineSelectorVariable (n + 1) (.intersection [.variable n, .inLibrary]),
+            (.intersection (zone :: artifactCreature)))
+      let enter : List CardAction := [
         .putOntoBattlefield (.variable n),
         .putCounter (.variable n) .plusOnePlusOne .x,
         .if (.greaterOrEqual .x (.nat 4))
-          [.continuous [.gainAbility (.variable n) (.keyword .haste)] .endOfTurn],
-        .if (.any (.variable (n + 1)))
-          [.searchLibraryThenShuffle (.controller .this) []]]], n + 2)
+          [.continuous [.gainAbility (.variable n) (.keyword .haste)] .endOfTurn]]
+      some ([
+        .playerSelectAction (.controller .this) (.range 1 1) [
+          .searchLibraryThenShuffle (.controller .this)
+            (found (.union [.inLibrary, .inGraveyard]) :: enter),
+          .sequence (found .inGraveyard :: enter)]],
+        n + 1)
     else none
   | _ => none
 
