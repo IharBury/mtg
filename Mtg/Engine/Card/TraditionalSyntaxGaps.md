@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**318** catalog cards are still `CardDef` helpers. **226**
+**315** catalog cards are still `CardDef` helpers. **223**
 of them need at least one missing constructor. The other **92** can be
 spelled with the current constructors and only need Oracle parsing or
 `toCardDef` support; see [Cards with no constructor gap](#cards-with-no-constructor-gap).
@@ -22,12 +22,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 132 | 56 | 45 |
-| The Hobbit Eternal (HOC) | 117 | 43 | 74 | 52 |
+| The Hobbit (HOB) | 188 | 135 | 53 | 43 |
+| The Hobbit Eternal (HOC) | 117 | 43 | 74 | 51 |
 | Marvel Super Heroes (MSH) | 281 | 93 | 188 | 129 |
-| **Total** | **586** | **268** | **318** | **226** |
+| **Total** | **586** | **271** | **315** | **223** |
 
-266 of the 268 `TraditionalCardDefinition`s (131 HOB, 43 HOC, 92 MSH,
+269 of the 271 `TraditionalCardDefinition`s (134 HOB, 43 HOC, 92 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
@@ -76,7 +76,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `token`, `wasObjectOfAction`, `wasArgumentOfTrigger`, `replacingObject`,
   `wasCreatedByAction`, `hostOf`, `inGraveyard`, `wasObjectSince`,
   `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`
-  (whose library, how many cards).
+  (whose library, how many cards), `hasCreatureTypeChosenByAction` (the
+  creature type chosen by a numbered `CardAction.chooseCreatureType`).
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `turnStart`, `gameStart`, `attack`, `enter`, `draw`,
@@ -122,7 +123,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
   `createTokens`, `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`, `shuffleIntoOwnersLibrary`,
-  `lookAt`, `putOnLibraryBottomInRandomOrder`.
+  `lookAt`, `putOnLibraryBottomInRandomOrder`, `chooseCreatureType` (the
+  selected player chooses a creature type).
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -250,6 +252,8 @@ constructors now spell them, so the tags are gone from the lists below.
 | `ContinuousEffect.replace`, `canPlay`, `gainAbility` | The constructors of those names |
 | `CardAction.lookAt`, `randomize` (bottom of library), `connive`, `addManaCombination` | `lookAt`, `putOnLibraryBottomInRandomOrder`, `keyword … (.connive n)`, `addManaInAnyCombination` |
 | `CardAction.chooseModes` (“choose one or both”) | `chooseUniqueModes (.range 1 2)` |
+| `CardAction.chooseCreatureType`, `Selector.chosenType` | `actionId n (chooseCreatureType …)` and `Selector.hasCreatureTypeChosenByAction n` |
+| `TraditionalCardDefinition.asEntersChoice` | `static (replace (enter this) [actionId n (chooseCreatureType (controller this)), keepReplacedAction])` (An Unexpected Party) |
 | `CardAction.eventAmount` for “for each permanent destroyed this way” | `Value.count (Selector.wasObjectOfAction n)` |
 
 ## Missing constructors by type
@@ -288,8 +292,6 @@ complete.
   - Aragorn, the Uniter; Baron Helmut Zemo; Goblin Cratermaker; Necklace of Girion; World War Hulk
 - **`toughness`** (4 cards) — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
   - Baxter Building; Murdock's Crusade; Stern Scolding; The Kingpin of Crime
-- **`chosenType`** (3 cards) — Objects of the chosen creature type
-  - An Unexpected Party; Orcrist, Goblin-cleaver; Raise the Palisade
 - **`defendingPlayer`** (3 cards) — The defending player relative to an attacker
   - Captain America's Shield; Colossal Whale; Witch-king, Bringer of Ruin
 - **`powerUpAbility`** (3 cards) — Power-up abilities as a class (cost reductions, extra activations, “can't be activated”). Power-up is not a `Keyword`, so `keywordAbility` can't pick it
@@ -466,8 +468,6 @@ complete.
   - Elrond, Moon-Reader; Roll-Roll-Roll-Roll; S.H.I.E.L.D. Flying Car; Wiccan, Rising Magician
 - **`gainControl`** (4 cards) — Gain control of selected objects
   - Bilbo's Burglaring; Evil's Thrall; Sauron, the Lidless Eye; The Super Hero Civil War
-- **`chooseCreatureType`** (3 cards) — Choose a creature type (as-enters or on resolution)
-  - An Unexpected Party; Orcrist, Goblin-cleaver; Raise the Palisade
 - **`addManaOfColorAmong`** (2 cards) — Add one mana of any color among selected objects or a commander's color identity
   - Arcane Signet; Mox Amber
 - **`chooseOddEven`** (2 cards) — Choose odd or even
@@ -507,8 +507,6 @@ complete.
 
 - **`otherFace`** (6 cards) — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
   - Bruce Banner; Jennifer Walters; King T'Challa; Monica Rambeau; Nick Fury, Agent of S.H.I.E.L.D.; Tony Stark
-- **`asEntersChoice`** (3 cards) — As-this-enters choice on the face
-  - An Unexpected Party; Orcrist, Goblin-cleaver; Raise the Palisade
 - **`entersWithCounters`** (3 cards) — Enters with named counters (blocked by `CounterKind`)
   - Arwen, Mortal Queen; Captain America, Super-Soldier; Dawn of a New Age
 
@@ -526,9 +524,9 @@ These 92 remaining cards can be spelled with the current
 constructors. They stay `CardDef` helpers until `parseOracleParts` or
 `toCardDef` handles their text.
 
-**Hobbit (11):** Azog, Moria's Ruin; Balin, Loremaster; Boughside Wanderers; Burn, Burn, Tree and Fern; Down in the Valley; Gleaming Splendor; Lake-town Toymaker; Radagast of Rhosgobel; Stone-Giant of High Pass; The Misty Mountains Cold; Through the Forest Gate.
+**Hobbit (10):** Boughside Wanderers; Burn, Burn, Tree and Fern; Down in the Valley; Gleaming Splendor; Lake-town Toymaker; Orcrist, Goblin-cleaver; Radagast of Rhosgobel; Stone-Giant of High Pass; The Misty Mountains Cold; Through the Forest Gate.
 
-**Hobbit Eternal (22):** Bag End Banquet; Bolg, Erebor's Reckoning; Dragon's Desire; Dwarven Warriors; Dáin of the Ancient Halls; Elvish Archdruid; Errand-Rider of Gondor; Flowering of the White Tree; Fíli and Kíli, Joyous; Haunt of the Dead Marshes; Last March of the Ents; Mentor of the Meek; Minas Tirith Garrison; Mirkwood Elk; Mount Doom; Olog-hai Crusher; Orcish Siegemaster; Ori, Plate Stacker; Relic of Sauron; Rivendell; Thranduil the Strategist; Treasure Vault.
+**Hobbit Eternal (23):** Bag End Banquet; Bolg, Erebor's Reckoning; Dragon's Desire; Dwarven Warriors; Dáin of the Ancient Halls; Elvish Archdruid; Errand-Rider of Gondor; Flowering of the White Tree; Fíli and Kíli, Joyous; Haunt of the Dead Marshes; Last March of the Ents; Mentor of the Meek; Minas Tirith Garrison; Mirkwood Elk; Mount Doom; Olog-hai Crusher; Orcish Siegemaster; Ori, Plate Stacker; Raise the Palisade; Relic of Sauron; Rivendell; Thranduil the Strategist; Treasure Vault.
 
 **Marvel Super Heroes (59):** Abomination, Terrifying Titan; Aerial Doombot; Avengers Assemble!; Avengers Disassembled; Avengers Tower; Avengers: Under Siege; Black Panther, Hope Enduring; Bold Biochemist; Brave Brawler; Captain America, Wings of Freedom; Captain Mar-Vell, Space-Born; Castle Doom; Colleen Wing, Street Samurai; Dark Fortress; Decoy Ploy; Dependable Quinjet; Doctor Doom; Epic Fight; Falcon's Wing Harness; Gathering Place; Gleaming Bastion; H.E.R.B.I.E. Scout Unit; Hercules, Prince of Power; Hidden Lair; Hulkling, Burgeoning Bruiser; Human Torch, Johnny Storm; HYDRA Troopers; Hydraulic Helper; Invisible Woman, Sue Storm; Iron Fist, Living Weapon; Iron Man, Master of Machines; Mister Fantastic, Reed Richards; Misty Knight, Hero for Hire; Mole Man, Moloid Master; Ninja of the Hand; Pet Avengers; Punishing Punch; Raft Security Officer; S.H.I.E.L.D. Helicarrier; Serpent Specialist; She-Hulk, Jade Defender; Super Intelligence; Super Strength; Super-Skrull; The Coming of Galactus; The Invincible Iron Man; The Unbeatable Squirrel Girl; The Vision; Titania, Rugged Rumbler; Training Compound; Training Regimen; U.S.Agent, John Walker; Ultron Drone; Unliving Legionnaire; Villainous Hideout; Viv Vision, Teen Synthezoid; Volcanic Villain; War Machine, Legacy of Iron; Worlds Within Worlds.
 
@@ -574,11 +572,11 @@ another-Villain pump/lifelink, plus-one-on-each-other-subtype, Merfolk attack
 draw, legendary-creature activated cost reduction, and the enter/search/modal
 spell leftovers those printings need.
 
-Since the previous revision of this index, 46 more listed cards became
+Since the previous revision of this index, 49 more listed cards became
 `TraditionalCardDefinition`s. All of them read their Oracle text with
 `parseOracleParts`.
 
-**Hobbit (39):** Bard's Company; Bombur, Gentle Dreamer; Chief Warg's Company; Desolation of Smaug; Dwarven Mattock; Dáin's Company; Dáin, Lord of the Iron Hills; Eagle's Rescue; Esgaroth Garrison; Fíli the Pathfinder; Gandalf, Goblins' Bane; Gandalf, Wandering Wizard; Gigantic Big Bear; Glamdring, Foe-hammer; Glóin the Mighty; Great Gilded Boat; Great Ugly-Looking Goblin; Iron Hills Blacksmith; Kíli the Resourceful; Lake-town Mariners; Mirkwood Meditator; Moment of Glory; Most Decrepit Old Bird; My Precious; Old Fat Spider; Ori, Keeper of Songs; Pinecone Strike; Plunder the Trollshaws; Settle the Wreckage; Smaug the Magnificent; Smaug, Wicked Worm; The Arkenstone; The Black Arrow; The Lonely Mountain; The Lord of the Eagles; Thorin Oakenshield; Tidings of War; Troll Negotiations; Óin the Brave.
+**Hobbit (42):** An Unexpected Party; Azog, Moria's Ruin; Balin, Loremaster; Bard's Company; Bombur, Gentle Dreamer; Chief Warg's Company; Desolation of Smaug; Dwarven Mattock; Dáin's Company; Dáin, Lord of the Iron Hills; Eagle's Rescue; Esgaroth Garrison; Fíli the Pathfinder; Gandalf, Goblins' Bane; Gandalf, Wandering Wizard; Gigantic Big Bear; Glamdring, Foe-hammer; Glóin the Mighty; Great Gilded Boat; Great Ugly-Looking Goblin; Iron Hills Blacksmith; Kíli the Resourceful; Lake-town Mariners; Mirkwood Meditator; Moment of Glory; Most Decrepit Old Bird; My Precious; Old Fat Spider; Ori, Keeper of Songs; Pinecone Strike; Plunder the Trollshaws; Settle the Wreckage; Smaug the Magnificent; Smaug, Wicked Worm; The Arkenstone; The Black Arrow; The Lonely Mountain; The Lord of the Eagles; Thorin Oakenshield; Tidings of War; Troll Negotiations; Óin the Brave.
 
 **Marvel Super Heroes (7):** A.I.M. Scientists; Kang, Temporal Tyrant; M.O.D.O.K.; Madame Masque; Red Room Recruit; Swordsman, Sharp Scoundrel; Trickster's Stratagem.
 
@@ -659,21 +657,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (56 cards)
-
-**An Unexpected Party** (`anUnexpectedParty`)
-
-- `CardAction.chooseCreatureType` — Choose a creature type (as-enters or on resolution)
-- `Selector.chosenType` — Objects of the chosen creature type
-- `TraditionalCardDefinition.asEntersChoice` — As-this-enters choice on the face
-
-**Azog, Moria's Ruin** (`azogMoriaSRuin`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Balin, Loremaster** (`balinLoremaster`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
+### The Hobbit (HOB) (53 cards)
 
 **Bard, King of Dale** (`bardKingOfDale`)
 
@@ -801,9 +785,7 @@ Converted cards are omitted here.
 
 **Orcrist, Goblin-cleaver** (`orcristGoblinCleaver`)
 
-- `CardAction.chooseCreatureType` — Choose a creature type (as-enters or on resolution)
-- `Selector.chosenType` — Objects of the chosen creature type
-- `TraditionalCardDefinition.asEntersChoice` — As-this-enters choice on the face
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Part in Friendship** (`partInFriendship`)
 
@@ -1141,9 +1123,7 @@ Converted cards are omitted here.
 
 **Raise the Palisade** (`raiseThePalisade`)
 
-- `CardAction.chooseCreatureType` — Choose a creature type (as-enters or on resolution)
-- `Selector.chosenType` — Objects of the chosen creature type
-- `TraditionalCardDefinition.asEntersChoice` — As-this-enters choice on the face
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Relic of Sauron** (`relicOfSauron`)
 

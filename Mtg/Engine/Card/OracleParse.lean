@@ -466,6 +466,17 @@ Currently recognized:
 - `Look at the top <count> cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a <subtype>.`
   One card uses the singular. Those cards are exiled face down. You may play
   them while they remain exiled and you control a permanent of that subtype.
+- `When <this> enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card.`
+  The power and controller are the creature's last-known information
+  (CR 608.2h). With no target, no player amasses and no card is drawn.
+- `Whenever <this> or another <subtype> you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, <this> deals X damage to each opponent.`
+  X is how many cards were discarded. Declining discards nothing, so no
+  cards are drawn and no damage is dealt. An empty hand may be discarded.
+- `As this enchantment enters, choose a creature type.` followed by `Creatures you control of the chosen type get +P/+T.`
+  Its controller chooses as it enters (CR 614.12). The bonus applies to
+  creatures of that type. A zero bonus is omitted.
+- `Create X <P>/<T> <color> <subtypes> creature tokens.`
+  X is the value of X (CR 107.3). The noun is plural.
 -/
 
 namespace Mtg.Engine
@@ -4124,6 +4135,10 @@ def parseActivatedDiscardDraw (cardName : String) (line : String) (n : Nat) :
     else
       (parseDrawCards one).map fun action => activatedWithCost n costs action limit n
 
+/-- Cards in this object's controller's hand. -/
+def cardsInYourHand : Selector :=
+  .intersection [.inHand, .owner (.controller .this)]
+
 /-- Cards in this object's controller's graveyard. -/
 def cardsInYourGraveyard : Selector :=
   .intersection [.inGraveyard, .owner (.controller .this)]
@@ -4549,9 +4564,10 @@ def parseTargetObject (s : String) : Option Selector :=
   parseObjectDesc s true
 
 /-- `target <object>`, `another target <object>`, `up to one target <object>`,
-`each of up to two target <object>`, or `any target`, as target `n`.
-Up to N is zero through N (CR 115.1). `any target` is a player or a
-permanent that can be dealt damage. -/
+`up to one other target <object>`, `each of up to two target <object>`, or
+`any target`, as target `n`. Up to N is zero through N (CR 115.1). `other`
+excludes this object. `any target` is a player or a permanent that can be
+dealt damage. -/
 def parseTargetDesc (s : String) (n : Nat) : Option Selector :=
   let s := norm s
   if s == "any target" then some (.target n .all)
@@ -4559,6 +4575,10 @@ def parseTargetDesc (s : String) (n : Nat) : Option Selector :=
     let upTo :=
       (after? s "each of up to " <|> after? s "up to ").bind fun rest =>
         (split2? rest " target ").bind fun (countText, obj) =>
+          let (countText, obj) :=
+            match before? countText " other" with
+            | some c => (c, "other " ++ obj)
+            | none => (countText, obj)
           (positiveCount countText).bind fun k =>
             (parseTargetObject obj).map fun sel => .targets n (.range 0 (Value.nat k)) sel
     let another :=
@@ -4672,8 +4692,9 @@ def parsePutCountersOn (cardName sentence : String) (n : Nat) :
 
 /-- `create <count> [tapped] <P>/<T> <color> <subtypes> creature token(s)
 [with <keywords>]`. One token uses the singular noun; more than one uses the
-plural. A tapped token enters tapped (CR 110.5). The token is a creature of
-that power, toughness, color, and subtypes, with those keywords. -/
+plural. `X` is the value of X (CR 107.3) and uses the plural. A tapped token
+enters tapped (CR 110.5). The token is a creature of that power, toughness,
+color, and subtypes, with those keywords. -/
 def parseCreateCreatureTokens (sentence : String) : Option CardAction :=
   (after? (normSentence sentence) "create ").bind fun rest =>
     let (rest, kws?) :=
@@ -4692,12 +4713,15 @@ def parseCreateCreatureTokens (sentence : String) : Option CardAction :=
         match typeWords.reverse with
         | tokenWord :: "creature" :: subtypeWordsRev =>
           let plural := tokenWord == "tokens"
+          let count? : Option Value :=
+            if countText == "x" then (if plural then some .x else none)
+            else (nounCount? countText plural).map Value.nat
           if tokenWord != "token" && !plural then none
           else
-            match nounCount? countText plural, parseUnsignedPT pt, colorName? colorText,
+            match count?, parseUnsignedPT pt, colorName? colorText,
                 subtypeWordsRev.reverse.mapM subtypeOfOracle?, kws? with
             | some k, some (p, t), some c, some (st :: sts), some kws =>
-              some (.createTokens (.controller .this) (Value.nat k)
+              some (.createTokens (.controller .this) k
                 ([.type .creature] ++ (st :: sts).map CardPart.subtype ++
                   [.colorIndicator [c], .power p, .toughness t] ++
                   kws.map fun kw => .ability (.keyword kw))
@@ -5283,6 +5307,56 @@ def parsePutCounterMoreIfSubtype (ss : List String) (n : Nat) : Option (List Car
 where
   parsePutPlusOneOn?' (s : String) : Option (Nat × String) := parsePutPlusOneOn? ("put " ++ s)
 
+/-- `Destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card.`
+The creature is target `n`. Before it is destroyed, value variable `n`
+records its power and selector variable `n + 1` its controller, so both are
+its last-known information (CR 608.2h). With no target, that controller is
+no player, so no one amasses and no card is drawn. -/
+def parseDestroyAmassPowerDrawIfYours (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [destroy, amass, draw] =>
+    let ctl := n + 1
+    match (after? (normSentence destroy) "destroy ").bind (parseTargetDesc · n),
+        (between? (normSentence amass)
+          "its controller amasses " " x, where x is that creature's power").bind amassSubtype?,
+        (after? (normSentence draw) "if you controlled that creature, ").bind parseDrawCards with
+    | some sel, some st, some drawAction =>
+      some ([
+        .defineValueVariable n (.greatestPower sel),
+        .defineSelectorVariable ctl (.controller (.targetReference n)),
+        .destroy (.targetReference n),
+        .keyword (.variable ctl) (.amass st (.variable n)),
+        .if (.any (.intersection [.variable ctl, .controller .this])) [drawAction]],
+        n + 2)
+    | _, _, _ => none
+  | _ => none
+
+/-- `You may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, <this> deals X damage to each opponent.`
+The discard is action `n`, and X is how many cards it discarded. Declining
+discards nothing, so X is zero. The damage source is this card. -/
+def parseMayDiscardHandDrawDamage (cardName : String) (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [discard, draw, damage] =>
+    let discarded := Value.count (.wasObjectOfAction n)
+    if !sentenceIs discard "you may discard your hand" ||
+        !sentenceIs draw "draw x cards, where x is the number of cards discarded this way" then
+      none
+    else
+      (between? (normSentence damage)
+          "if you have an enduring story, " " deals x damage to each opponent").bind fun who =>
+        if !damageSource? cardName who then none
+        else
+          some ([
+            .optional (.controller .this)
+              (.actionId n (.discard (.controller .this) (.count cardsInYourHand))),
+            .draw (.controller .this) discarded,
+            .if controllerHasEnduringStory
+              [.dealDamage (.source .this) (.opponent (.controller .this)) discarded]],
+            n + 1)
+  | _ => none
+
 /-- Each sentence as one catalog action, in order. -/
 def catalogSentenceActions (cardName : String) (ss : List String) (n : Nat) :
     Option (List CardAction × Nat) :=
@@ -5297,6 +5371,8 @@ def catalogActionsFromText (cardName text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   let ss := sentences text
   parseMayIfYouDo cardName ss n <|>
+    parseDestroyAmassPowerDrawIfYours ss n <|>
+    parseMayDiscardHandDrawDamage cardName ss n <|>
     parseMayPayWhenYouDo cardName ss n <|>
     parseMayDrawForEachIfYouDo ss n <|>
     parseChooseGraveyardCardReturn ss n <|>
@@ -5823,6 +5899,28 @@ def parseDamageHealsOther (cardName line : String) : Option CardPart :=
             [.healAllDamage .this, .keepReplacedAction])))
         else none
 
+/-- `As this enchantment enters, choose a creature type.` then
+`Creatures you control of the chosen type get +2/+2.` The choice is action
+`n`. This object's controller makes it as a replacement of this object
+entering (CR 614.12). The bonus is a static ability on creatures of that
+type. A zero bonus is omitted. `+0/+0` is not an effect. -/
+def parseAsEntersChooseCreatureType (cardName choose gets : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  (between? (normLine choose) "as " " enters, choose a creature type").bind fun who =>
+    if !refersToSelf cardName who then none
+    else
+      (splitGets? (normLine gets)).bind fun (whoGets, ptText) =>
+        match (before? whoGets " of the chosen type").bind parseControlledPhrase,
+            parsePowerToughness ptText with
+        | some (.intersection sel), some (p, t) =>
+          let chosen := Selector.intersection (sel ++ [.hasCreatureTypeChosenByAction n])
+          (staticPowerToughness chosen p t).map fun bonus =>
+            (.ability (.static (.replace (.enter .this)
+                [.actionId n (.chooseCreatureType (.controller .this)), .keepReplacedAction])) ::
+              bonus,
+              n + 1)
+        | _, _ => none
+
 /-- One catalog line that is not a mode list. -/
 def parseCatalogLine (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
   (parseEquipSubtype line).map ([·], n) <|>
@@ -6040,9 +6138,16 @@ def parseBodyLines (cardName : String) : List String → Nat → Option (List Ca
       match chooseHeader? line with
       | some orBoth => parseModeLines cardName rest n [] orBoth
       | none =>
-        (parseOneLine cardName line n).bind fun (here, nHere) =>
-          (parseBodyLines cardName rest nHere).map fun (more, nMore) =>
-            (here ++ more, nMore)
+        let oneLine (more : Nat → Option (List CardPart × Nat)) :=
+          (parseOneLine cardName line n).bind fun (here, nHere) =>
+            (more nHere).map fun (more, nMore) => (here ++ more, nMore)
+        match rest with
+        | [] => oneLine (parseBodyLines cardName [])
+        | gets :: after =>
+          ((parseAsEntersChooseCreatureType cardName line gets n).bind fun (here, nHere) =>
+            (parseBodyLines cardName after nHere).map fun (more, nMore) =>
+              (here ++ more, nMore)) <|>
+            oneLine (parseBodyLines cardName (gets :: after))
 
 /-- Bullet modes after a header such as a landfall “choose one —” line.
 A bullet that does not parse fails. No bullets fails rather than dropping
@@ -6119,7 +6224,8 @@ A missing name or cost, a line that is not a type line, or effect text the
 grammar does not cover makes the parse fail. No effect lines is a face
 with no spell effect. A leading sacrifice-a-creature additional cost is an
 ability of the face. `Draw a card` is that face's effect only after such a
-cost; a draw with no other text stays unrecognized. -/
+cost; a draw with no other text stays unrecognized. A lone sentence that
+creates creature tokens is also an effect. -/
 def parseAdventure (cardName : String) (lines : List String) (n : Nat) :
     Option (List CardPart) :=
   match lines with
@@ -6137,10 +6243,14 @@ def parseAdventure (cardName : String) (lines : List String) (n : Nat) :
           | _ =>
             let (costParts, restLines) := peelLeadingSacrificeCreatureCosts effectLines
             let text := String.intercalate " " restLines
+            let tokens :=
+              match sentences text with
+              | [one] => (parseCreateCreatureTokens one).map fun action => ([action], n)
+              | _ => none
             let actions? : Option (List CardAction) :=
               if restLines.isEmpty then some []
               else
-                match actionsFromText faceName text n with
+                match actionsFromText faceName text n <|> tokens with
                 | some (actions, _) =>
                   if actions.isEmpty then none else some actions
                 | none =>
@@ -9130,5 +9240,74 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
 #guard parseOracleParts (name := "")
   "Look at the top two cards of your library and exile them face up. For as long as they remain exiled, you may play them if you control a Wizard." ==
   none
+#guard OracleParts.parseTargetDesc "up to one other target creature" 1 ==
+  some (.targets 1 (.range 0 1) (.intersection [.not .this, .permanent, .cardType .creature]))
+#guard parseOracleParts (name := "Azog, Moria's Ruin")
+  "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)" ==
+  some [.ability (.triggered (.enter .this) (.sequence [
+    .defineValueVariable 1
+      (.greatestPower
+        (.targets 1 (.range 0 1) (.intersection [.not .this, .permanent, .cardType .creature]))),
+    .defineSelectorVariable 2 (.controller (.targetReference 1)),
+    .destroy (.targetReference 1),
+    .keyword (.variable 2) (.amass .goblin (.variable 1)),
+    .if (.any (.intersection [.variable 2, .controller .this]))
+      [.draw (.controller .this) 1]]))]
+#guard parseOracleParts (name := "Azog, Moria's Ruin")
+  "When this creature enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card." ==
+  parseOracleParts (name := "Azog, Moria's Ruin")
+    "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
+#guard parseOracleParts (name := "")
+  "When this creature enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's toughness. If you controlled that creature, draw a card." ==
+  none
+#guard parseOracleParts (name := "Balin, Loremaster")
+  "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent." ==
+  some [.ability (.triggered
+    (.or
+      (.enter .this)
+      (.enter (.intersection [
+        .not .this, .permanent, .cardType .creature, .subtype .dwarf,
+        .controlled (.controller .this)])))
+    (.sequence [
+      .optional (.controller .this)
+        (.actionId 1
+          (.discard (.controller .this)
+            (.count (.intersection [.inHand, .owner (.controller .this)])))),
+      .draw (.controller .this) (.count (.wasObjectOfAction 1)),
+      .if (.enduringStory (.controller .this))
+        [.dealDamage (.source .this) (.opponent (.controller .this))
+          (.count (.wasObjectOfAction 1))]]))]
+#guard parseOracleParts (name := "Balin, Loremaster")
+  "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Thorin deals X damage to each opponent." ==
+  none
+#guard parseOracleParts (name := "An Unexpected Party")
+  "As this enchantment enters, choose a creature type.\nCreatures you control of the chosen type get +2/+2." ==
+  some [
+    .ability (.static (.replace (.enter .this)
+      [.actionId 1 (.chooseCreatureType (.controller .this)), .keepReplacedAction])),
+    .ability (.static (.addPower
+      (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this),
+        .hasCreatureTypeChosenByAction 1])
+      (Value.int 2))),
+    .ability (.static (.addToughness
+      (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this),
+        .hasCreatureTypeChosenByAction 1])
+      (Value.int 2)))]
+#guard parseOracleParts (name := "")
+  "As this enchantment enters, choose a creature type." == none
+#guard parseOracleParts (name := "")
+  "Creatures you control of the chosen type get +2/+2." == none
+#guard parseOracleParts (name := "")
+  "As this enchantment enters, choose a creature type.\nCreatures you control of the chosen type get +0/+0." ==
+  none
+#guard parseOracleParts (name := "")
+  "Create X 2/2 red Dwarf creature tokens." ==
+  some [.actions [
+    .createTokens (.controller .this) .x [
+      .type .creature, .subtype .dwarf, .colorIndicator [.red], .power 2, .toughness 2]]]
+#guard parseOracleParts (name := "")
+  "Create X 2/2 red Dwarf creature token." == none
 
 end Mtg.Engine
