@@ -4281,11 +4281,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     | none => none
   | .triggered
       (.sequence [
-        .triggerId id' (.castSpell among),
-        .spendManaFrom
-          (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
-          (.castSpell (.wasArgumentOfTrigger id arg))]) action =>
-    -- The numbered cast comes first. The mana paid for its first argument follows.
+        .spendManaFrom (.subtype .treasure)
+          (.triggerId id (.castSpell among)),
+        .castSpell (.wasArgumentOfTrigger id' arg)]) action =>
+    -- Mana from a Treasure is spent to cast this spell, then that spell is cast.
     if id == id' && arg == 1 && Selector.anySpellYouCast among then
       match CardAction.leftoverDrawLoseLifeSelf? action with
       | some (1, 1) => some TriggeredAbility.onCastWithTreasureDrawLoseLife
@@ -9444,11 +9443,37 @@ end TraditionalCardDefinition
 #guard
   (Ability.triggered
     (.sequence [
-      .spendManaFrom
-        (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
+      .spendManaFrom (.subtype .treasure)
         (.castSpell (.wasArgumentOfTrigger 1 1)),
       .triggerId 1
         (.castSpell (.intersection [.spell, .controlled (.controller .this)]))])
+    (.sequence [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1])).toTriggeredAbility?.isNone
+
+-- The numbered cast comes after the payment only when the payment's event
+-- is that cast. Numbering the cast first, then paying for its argument,
+-- does not compile.
+#guard
+  (Ability.triggered
+    (.sequence [
+      .triggerId 1
+        (.castSpell (.intersection [.spell, .controlled (.controller .this)])),
+      .spendManaFrom (.subtype .treasure)
+        (.castSpell (.wasArgumentOfTrigger 1 1))])
+    (.sequence [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1])).toTriggeredAbility?.isNone
+
+-- A Treasure artifact permanent is a narrower source than the Treasure subtype.
+#guard
+  (Ability.triggered
+    (.sequence [
+      .spendManaFrom
+        (.intersection [.permanent, .cardType .artifact, .subtype .treasure])
+        (.triggerId 1
+          (.castSpell (.intersection [.spell, .controlled (.controller .this)]))),
+      .castSpell (.wasArgumentOfTrigger 1 1)])
     (.sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1])).toTriggeredAbility?.isNone
