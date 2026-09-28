@@ -4313,7 +4313,7 @@ def twoSubtypesCard? (s : String) : Option (CardSubtype × CardSubtype) :=
 
 /-- `When <this> enters, look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.`
 The looked-at cards are action `n`. The revealed card is action `n + 1`.
-One card uses the singular. -/
+One card uses the singular. The revealed card may also be `a permanent card`. -/
 def parseEnterLookAtTopReveal (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   match sentences line with
@@ -4333,11 +4333,14 @@ def parseEnterLookAtTopReveal (cardName : String) (line : String) (n : Nat) :
               (nounCount? countText plural).bind fun k =>
                 (after? (normSentence reveal) "you may reveal ").bind fun rev =>
                   (before? rev " from among them and put it into your hand").bind
-                    twoSubtypesCard? |>.map fun (a, b) =>
+                    (fun kind =>
+                      (twoSubtypesCard? kind).map (fun (a, b) =>
+                        Selector.union [.subtype a, .subtype b]) <|>
+                      (if kind == "a permanent card" then some .permanent else none))
+                    |>.map fun kindSel =>
                       let looked := .wasObjectOfAction n
                       let revealed := .wasObjectOfAction (n + 1)
-                      let among :=
-                        .intersection [looked, .union [.subtype a, .subtype b]]
+                      let among := .intersection [looked, kindSel]
                       (.sequence [
                         .actionId n
                           (.lookAt
@@ -4941,8 +4944,11 @@ def parseSearchLibrary (sentence : String) (n : Nat) : Option (CardAction × Nat
     else none
   let reveal :=
     (between? s "search your library for " " card, reveal it, put it into your hand, then shuffle").bind
-      dropArticle? |>.bind subtypeOfOracle? |>.map fun st =>
-        searchRevealToHand n (.intersection [.inLibrary, .subtype st])
+      dropArticle? |>.bind fun kind =>
+        if kind == "basic land" then some (searchRevealToHand n basicLandInLibrary)
+        else
+          (subtypeOfOracle? kind).map fun st =>
+            searchRevealToHand n (.intersection [.inLibrary, .subtype st])
   tapped <|> reveal
 
 /-- `<who> fights up to one other target creature`. This object fights that
@@ -5120,11 +5126,64 @@ def typeOrSubtypeList? (s : String) : Option Selector :=
         | [one] => one
         | many => .union many
 
-/-- One sentence of a catalog effect. A leading `Then` is sequencing only. -/
+/-- `Two target players each draw a card.` The players are targets `n`. -/
+def parseTwoTargetPlayersEachDraw (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  (after? (normSentence sentence) "two target players each draw ").bind parseCardCount |>.map
+    fun k => (.draw (.targets n (.range 2 2) .player) (Value.nat k), n + 1)
+
+/-- `create a 3/1 colorless Wall artifact creature token with defender named
+Stone Boulder`. The token has that name as printed (CR 111.4). -/
+def parseCreateNamedCreatureTokens (sentence : String) : Option CardAction :=
+  (split2? (stripTrailingPeriod sentence) " named ").bind fun (head, tokenName) =>
+    (parseCreateCreatureTokens head).bind fun
+      | .createTokens who k parts states => some (.createTokens who k (.name tokenName :: parts) states)
+      | _ => none
+
+/-- A single token to create: `a Treasure token` or `a 1/1 green Elf creature
+token`. -/
+def createOneToken? (s : String) : Option CardAction :=
+  match parseCreatePredefinedTokens s <|> parseCreateCreatureTokens s with
+  | some a@(.createTokens _ (.nat 1) _ _) => some a
+  | _ => none
+
+/-- `create a Treasure token for each Villain you control`. One token for each
+matching object; the object is variable `n`. -/
+def parseCreateTokensForEach (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  (split2? (normSentence sentence) " for each ").bind fun (create, each) =>
+    match createOneToken? create, parseObjectDesc each false with
+    | some token, some sel => some (.forEachVariable n sel [token], n + 1)
+    | _, _ => none
+
+/-- `Look at the top twenty cards of your library, put any number of land cards
+from among them onto the battlefield tapped, then shuffle.` The look is action
+`n`. The lands are put onto the battlefield from the library before it is
+shuffled. -/
+def parseLookTopPutLandsShuffle (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  (between? (normSentence sentence) "look at the top "
+      " cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle").bind
+    (fun c => (twentyOrSmall? c)) |>.map fun k =>
+      (.sequence [
+        .actionId n (.lookAt (.topOfLibrary (.controller .this) (Value.nat k))),
+        .searchLibraryThenShuffle (.controller .this) [
+          .putOntoBattlefieldInState
+            (.selected (.controller .this) .any
+              (.intersection [.wasObjectOfAction n, .cardType .land]))
+            [.tapped]]], n + 1)
+where
+  twentyOrSmall? (s : String) : Option Nat :=
+    if s == "twenty" then some 20 else positiveCount s
+
+/-- One sentence of a catalog effect. A leading `Then` is sequencing only.
+`You create` is `create`. -/
 def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
     Option (CardAction × Nat) :=
   let s := (after? (normSentence sentence) "then ").getD (normSentence sentence)
-  parseDrawAndLoseLife s n <|>
+  let s := (after? s "you create ").map ("create " ++ ·) |>.getD s
+  (parseCreateNamedCreatureTokens sentence).map (·, n) <|>
+    parseTwoTargetPlayersEachDraw s n <|>
+    parseCreateTokensForEach s n <|>
+    parseLookTopPutLandsShuffle s n <|>
+    parseDrawAndLoseLife s n <|>
     parseCatalogAttach cardName s n <|>
     parseCantBeBlockedExceptBy s n <|>
     parseAddOneManaOfAnyColor s n <|>
@@ -5420,6 +5479,48 @@ def catalogSentenceActions (cardName : String) (ss : List String) (n : Nat) :
     (parseCatalogSentence cardName s n).map fun (a, n') => (acc ++ [a], n'))
     ([], n) ss
 
+/-- `<effect>. Then if you control four or more Treasures, sacrifice this Saga.
+If you do, <effect>.` The count is of permanents of that subtype you control.
+The sacrifice is action `n`; the last effect happens only if this was
+sacrificed. -/
+def parseThenIfControlSacrificeIfYouDo (cardName : String) (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [first, thenIf, ifYouDo] =>
+    (between? (normSentence thenIf) "then if you control " ", sacrifice this saga").bind
+        (split2? · " or more ") |>.bind fun (countText, plural) =>
+      match positiveCount countText, pluralCreatureType? plural,
+          after? (normSentence ifYouDo) "if you do, " with
+      | some k, some st, some effect =>
+        (catalogSentenceActions cardName [first] (n + 1)).bind fun (firstActions, n1) =>
+          (parseCatalogSentence cardName effect n1).map fun (last, n2) =>
+            (firstActions ++ [
+              .if (.greaterOrEqual
+                  (.count (.intersection [.permanent, .subtype st, youControl])) (Value.nat k))
+                [.actionId n (.sacrifice .this),
+                 .if (.happened (.actionWithId n) .gameStart) (flattenAction last)]],
+             n2)
+      | _, _, _ => none
+  | _ => none
+
+/-- `Choose a creature type. Create a Treasure token for each creature you
+control of that type.` The choice is action `n` (CR 205.3m); each counted
+creature is variable `n + 1`. -/
+def parseChooseTypeCreateForEach (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [choose, create] =>
+    if normSentence choose != "choose a creature type" then none
+    else
+      (before? (normSentence create) " for each creature you control of that type").bind
+        createOneToken? |>.map fun token =>
+          ([.actionId n (.chooseCreatureType (.controller .this)),
+            .forEachVariable (n + 1)
+              (.intersection [
+                .permanent, .cardType .creature, youControl, .hasCreatureTypeChosenByAction n])
+              [token]], n + 2)
+  | _ => none
+
 /-- Every sentence of `text` as catalog actions, in order. Multi-sentence
 templates come first. A leading sentence may come before exiling the top card
 to play later. -/
@@ -5427,6 +5528,7 @@ def catalogActionsFromText (cardName text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   let ss := sentences text
   parseMayIfYouDo cardName ss n <|>
+    parseThenIfControlSacrificeIfYouDo cardName ss n <|>
     parseDestroyAmassPowerDrawIfYours ss n <|>
     parseMayDiscardHandDrawDamage cardName ss n <|>
     parseMayPayWhenYouDo cardName ss n <|>
@@ -5437,6 +5539,7 @@ def catalogActionsFromText (cardName text : String) (n : Nat) :
       (catalogSentenceActions cardName rest n1).map fun (more, n2) => (first ++ more, n2)) <|>
     parseExileTopUntilNextTurn ss n <|>
     parseAddAnyColorSpendOnly ss n <|>
+    parseChooseTypeCreateForEach ss n <|>
     (match ss with
       | first :: rest =>
         (catalogSentenceActions cardName [first] n).bind fun (a, n1) =>
@@ -5493,7 +5596,11 @@ def parseTriggerEvent (cardName clause : String) : Option Trigger :=
       some (.ordinal 2 .turnStart (.draw (.controller .this) .all))
     | "a player casts their second spell each turn" =>
       some (.ordinal 2 .turnStart (.castSpell .spell))
+    | "an opponent draws their second card each turn" =>
+      some (.ordinal 2 .turnStart (.draw (.opponent (.controller .this)) .all))
     | "equipped creature attacks" => some (.attack (.hostOf .this) .all)
+    | "equipped creature deals combat damage to a player" =>
+      some (.combatDamage (.hostOf .this) .player)
     | _ => none
   let cast := (after? c "you cast ").bind parseSpellYouCast |>.map Trigger.castSpell
   let selfOrAnother :=
@@ -5905,12 +6012,30 @@ def parseCatalogCantBeBlocked (cardName line : String) : Option CardPart :=
     if refersToSelf cardName who then some (.ability (.static (.forbid (.block .any .this))))
     else none
 
-/-- A Saga chapter ability `I — <effect>` (CR 714.2). -/
+/-- A Saga chapter ability `I — <effect>` (CR 714.2). `III, IV — <effect>`
+is one chapter ability for each number (CR 714.2b), numbered in turn. -/
 def parseChapter (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
-  (split2? (rulesText line) " — ").bind fun (num, effect) =>
-    (chapterNumber? num).bind fun k =>
-      (catalogActionsFromText cardName effect n).map fun (actions, n') =>
-        ([.ability (.keywordWithEffect (.chapter k) actions)], n')
+  (match (rulesText line).splitOn " — " with
+    | nums :: effect@(_ :: _) => some (copied nums, copied (" — ".intercalate effect))
+    | _ => none).bind fun (nums, effect) =>
+    ((nums.splitOn ", ").mapM chapterNumber?).bind fun ks =>
+      if ks.isEmpty then none
+      else
+        ks.foldlM (fun (parts, n) k =>
+          ((catalogActionsFromText cardName effect n) <|>
+              (parseSagaGainsQuoted cardName effect).map ([·], n)).map fun (actions, n') =>
+            (parts ++ [CardPart.ability (.keywordWithEffect (.chapter k) actions)], n'))
+          (([] : List CardPart), n)
+where
+  /-- `This Saga gains "<triggered ability>".` No duration is printed, so the
+  ability lasts until the end of the game (CR 611.2a). -/
+  parseSagaGainsQuoted (cardName effect : String) : Option CardAction :=
+    (between? (copied effect) "This Saga gains \"" "\"").bind fun quoted =>
+      if !(copied effect).endsWith "\"" then none else
+      let quoted := (stripTrailingPeriod quoted)
+      let quoted := (afterAbilityWord? quoted).getD quoted
+      (quotedTriggered? cardName quoted).map fun ability =>
+        .continuous [.gainAbility .this ability] .endOfGame
 
 /-- A line about `equipped creature` or `enchanted creature`, which is an
 ability of an Equipment or Aura rather than a spell. -/
@@ -5978,6 +6103,63 @@ def parseAsEntersChooseCreatureType (cardName choose gets : String) (n : Nat) :
               n + 1)
         | _, _ => none
 
+/-- The step or phase of `At the beginning of <phase>` (CR 503.1 / 507.1 /
+513.1): `combat on your turn`, `each combat`, `your upkeep`, `your end step`,
+`each end step`, or `the upkeep of enchanted creature's controller`. -/
+def beginningPhase? (s : String) : Option Trigger :=
+  match norm s with
+  | "combat on your turn" => some (.combatStart (.controller .this))
+  | "each combat" => some (.combatStart .player)
+  | "your upkeep" => some (.upkeep (.controller .this))
+  | "your end step" => some (.endStep (.controller .this))
+  | "each end step" => some (.endStep .player)
+  | "the upkeep of enchanted creature's controller" =>
+    some (.upkeep (.controller (.hostOf .this)))
+  | _ => none
+
+/-- The condition of an intervening `if` clause (CR 603.4). -/
+def interveningCondition? (s : String) : Option Condition :=
+  match norm s with
+  | "you've drawn two or more cards this turn" =>
+    some (.happened (.ordinal 2 .turnStart (.draw (.controller .this) .all)) .turnStart)
+  | _ => none
+
+/-- `At the beginning of <phase>, [if <condition>,] <effect>.` The condition is
+an intervening if (CR 603.4): checked when the phase begins and again on
+resolution. -/
+def parseBeginningOfTriggered (cardName line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (after? (copied (rulesText line)) "At the beginning of ").bind fun rest =>
+    match rest.splitOn ", " with
+    | phase :: more =>
+      (beginningPhase? phase).bind fun trigger =>
+        let (cond, effect) : Option Condition × String :=
+          match more with
+          | c :: effect@(_ :: _) =>
+            match (after? (norm c) "if ").bind interveningCondition? with
+            | some cond => (some cond, ", ".intercalate effect)
+            | none => (none, ", ".intercalate more)
+          | _ => (none, ", ".intercalate more)
+        (parseCatalogEffect cardName effect n).map fun (action, n') =>
+          let action :=
+            match cond with
+            | some c => CardAction.if c (flattenAction action)
+            | none => action
+          (.ability (.triggered trigger action), n')
+    | [] => none
+
+/-- `The first creature spell you cast each turn costs {2} less to cast and can
+be cast as though it had flash.` The spell is first when no creature spell of
+yours was cast earlier this turn. Neither effect grants flash. -/
+def parseFirstCreatureSpellCostsLessFlash (line : String) : Option (List CardPart) :=
+  (between? (normLine line) "the first creature spell you cast each turn costs "
+      " less to cast and can be cast as though it had flash").bind parseManaSymbols |>.map
+    fun syms =>
+      let creatureSpell := Selector.intersection [.spell, .cardType .creature, youControl]
+      let first := Condition.didNotHappen (.castSpell creatureSpell) .turnStart
+      [.ability (.static (.if first [.reduceCost creatureSpell [.mana syms]])),
+       .ability (.static (.canBeCastAsThoughWithFlashIf creatureSpell first))]
+
 /-- One catalog line that is not a mode list. -/
 def parseCatalogLine (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
   (parseEquipSubtype line).map ([·], n) <|>
@@ -5995,6 +6177,8 @@ def parseCatalogLine (cardName line : String) (n : Nat) : Option (List CardPart 
     parseCatalogActivated cardName line n <|>
     (parseCatalogStaticGets cardName line).map (·, n) <|>
     (parseCatalogStaticHas cardName line).map (·, n) <|>
+    (parseBeginningOfTriggered cardName line n).map (fun (p, n') => ([p], n')) <|>
+    (parseFirstCreatureSpellCostsLessFlash line).map (·, n) <|>
     if hostSubject? line then none
     else
       spellActions ((catalogActionsFromText cardName line n).map fun (actions, n') =>
@@ -8744,7 +8928,11 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
   some [.ability (.triggered (.endStep (.controller .this))
     (.draw (.controller .this) 1))]
 #guard parseOracleParts (name := "")
-  "At the beginning of your end step, draw two cards." == none
+  "At the beginning of your end step, draw two cards." ==
+  some [.ability (.triggered (.endStep (.controller .this))
+    (.draw (.controller .this) 2))]
+#guard parseOracleParts (name := "")
+  "At the beginning of your end step, draw two." == none
 #guard parseOracleParts (name := "")
   "Search your library for a legendary creature card, reveal it, put it into your hand, then shuffle." ==
   some [.actions [
@@ -9463,5 +9651,78 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
     (.createTokens (.controller .this) .x PredefinedToken.treasureToken))]
 #guard parseOracleParts (name := "")
   "{X}{X}, {T}, Sacrifice this land: Create X Treasure token." == none
+#guard parseOracleParts (name := "")
+  "III, IV — Add {R}." ==
+  some [
+    .ability (.keywordWithEffect (.chapter 3) [.addMana (.controller .this) [.mono .red]]),
+    .ability (.keywordWithEffect (.chapter 4) [.addMana (.controller .this) [.mono .red]])]
+#guard parseOracleParts (name := "")
+  "II — This Saga gains \"Whenever a land you control enters, draw a card.\"" ==
+  some [.ability (.keywordWithEffect (.chapter 2) [
+    .continuous
+      [.gainAbility .this (.triggered
+        (.enter (.intersection [.permanent, .cardType .land, .controlled (.controller .this)]))
+        (.draw (.controller .this) 1))]
+      .endOfGame])]
+#guard parseOracleParts (name := "")
+  "II — This Saga gains \"Whenever a land you control enters, draw a card.\" Draw a card." ==
+  none
+#guard parseOracleParts (name := "")
+  "{2}{W}: Two target players each draw a card." ==
+  some [.ability (.activated [.mana [.generic 2, .mono .white]]
+    (.draw (.targets 1 (.range 2 2) .player) 1))]
+#guard parseOracleParts (name := "")
+  "{2}{W}: Two target players each draw." == none
+#guard parseOracleParts (name := "")
+  "When this creature enters, you create a Treasure token." ==
+  some [.ability (.triggered (.enter .this)
+    (.createTokens (.controller .this) 1 PredefinedToken.treasureToken))]
+#guard parseOracleParts (name := "")
+  "Create a Treasure token for each Villain you control." ==
+  some [.actions [.forEachVariable 1
+    (.intersection [.permanent, .subtype .villain, .controlled (.controller .this)])
+    [.createTokens (.controller .this) 1 PredefinedToken.treasureToken]]]
+#guard parseOracleParts (name := "")
+  "Create two Treasure tokens for each Villain you control." == none
+#guard parseOracleParts (name := "")
+  "Whenever equipped creature deals combat damage to a player, choose a creature type. Create a Treasure token for each creature you control of that type." ==
+  some [.ability (.triggered (.combatDamage (.hostOf .this) .player) (.sequence [
+    .actionId 1 (.chooseCreatureType (.controller .this)),
+    .forEachVariable 2
+      (.intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this),
+        .hasCreatureTypeChosenByAction 1])
+      [.createTokens (.controller .this) 1 PredefinedToken.treasureToken]]))]
+#guard parseOracleParts (name := "")
+  "Choose a creature type. Create a Treasure token for each creature you control." == none
+#guard parseOracleParts (name := "")
+  "Look at the top twenty cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle." ==
+  some [.actions [
+    .actionId 1 (.lookAt (.topOfLibrary (.controller .this) 20)),
+    .searchLibraryThenShuffle (.controller .this) [
+      .putOntoBattlefieldInState
+        (.selected (.controller .this) .any (.intersection [.wasObjectOfAction 1, .cardType .land]))
+        [.tapped]]]]
+#guard parseOracleParts (name := "")
+  "Look at the top twenty cards of your library, put any number of land cards from among them onto the battlefield tapped." ==
+  none
+#guard parseOracleParts (name := "")
+  "At the beginning of combat on your turn, if you've drawn two or more cards this turn, draw a card." ==
+  some [.ability (.triggered (.combatStart (.controller .this))
+    (.if (.happened (.ordinal 2 .turnStart (.draw (.controller .this) .all)) .turnStart)
+      [.draw (.controller .this) 1]))]
+#guard parseOracleParts (name := "")
+  "At the beginning of combat on your turn, if you've drawn a card this turn, draw a card." == none
+#guard parseOracleParts (name := "")
+  "At the beginning of lunch, draw a card." == none
+#guard parseOracleParts (name := "")
+  "The first creature spell you cast each turn costs {1} less to cast and can be cast as though it had flash." ==
+  let creatureSpell := Selector.intersection [.spell, .cardType .creature, .controlled (.controller .this)]
+  let first := Condition.didNotHappen (.castSpell creatureSpell) .turnStart
+  some [
+    .ability (.static (.if first [.reduceCost creatureSpell [.mana [.generic 1]]])),
+    .ability (.static (.canBeCastAsThoughWithFlashIf creatureSpell first))]
+#guard parseOracleParts (name := "")
+  "The first creature spell you cast each turn costs {1} less to cast." == none
 
 end Mtg.Engine

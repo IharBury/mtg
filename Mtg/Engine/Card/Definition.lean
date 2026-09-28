@@ -2918,6 +2918,51 @@ def leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv? :
     leftoverThis src && leftoverTargetOpponent? dest && among.shape.artifactYouControl
   | _ => false
 
+/-- Leftovers that compile to a named `Effect` only as a printed Saga chapter. -/
+def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
+  match action with
+  | .dealDamage src (.target _ sel) (.nat n) =>
+    if (src == Selector.this || leftoverSourceThis src) &&
+        sel.toTargetKind == EffectTargetKind.oppCreature then
+      some (Effect.chapterDealDamageToOppCreature n)
+    else none
+  | .destroy (.target _ sel) =>
+    if sel == Selector.intersection
+        [.permanent, .cardType .artifact, .controlled (.opponent (.controller .this))] then
+      some Effect.chapterDestroyOppArtifact
+    else none
+  | .addMana who [sym] =>
+    if leftoverYou who then (addedManaType? sym).map Effect.chapterAddMana else none
+  | .searchLibraryThenShuffle who actions =>
+    if leftoverYou who && leftoverSearchActions? actions == some Effect.searchBasicLandToHand then
+      some Effect.chapterSearchBasicLandToHand
+    else none
+  | .continuous
+      [.gainAbility .this
+        (.triggered (.enter lands) (.createTokens who (.nat 1) parts []))] .endOfGame =>
+    if lands.shape.landYouControl && leftoverYou who &&
+        leftoverTokenKind? parts == some TokenKind.elf then
+      some Effect.chapterGainLandfallCreateElf
+    else none
+  | .sequence [
+      treasure,
+      .if (.greaterOrEqual (.count sel) (.nat 4)) [
+        .actionId id (.sacrifice .this),
+        .if (.happened (.actionWithId id') .gameStart) [dragon]]] =>
+    if id == id' &&
+        sel == Selector.intersection
+          [.permanent, .subtype .treasure, .controlled (.controller .this)] &&
+        leftoverCreateTokensKindN? treasure == some (TokenKind.treasure, 1) &&
+        leftoverCreateTokensKindN? dragon == some (TokenKind.dragon, 1) then
+      some Effect.chapterTreasureThenDragonIfFour
+    else none
+  | .continuous [.addPower sel (.int p), .gainAbility sel' (.keyword .vigilance)] .endOfTurn =>
+    if sel == sel' &&
+        sel == Selector.intersection [.permanent, .subtype .elf, .controlled (.controller .this)] then
+      some (Effect.chapterElvesGetVigilance p)
+    else none
+  | _ => none
+
 /-- Saga-chapter leftovers that compile to a named `Effect`. -/
 def leftoverChapterCompiled? (action : CardAction) : Option Effect :=
   if leftoverMayDrawPerArtifactOppsDraw? action then
@@ -2932,10 +2977,11 @@ def leftoverChapterCompiled? (action : CardAction) : Option Effect :=
 
 /-- Compile printed Saga-chapter actions. -/
 def leftoverChapterEffect? (actions : List CardAction) : Option Effect :=
-  leftoverChapterCompiled?
-    (match actions with
-      | [a] => a
-      | as => .sequence as)
+  let action :=
+    match actions with
+    | [a] => a
+    | as => .sequence as
+  leftoverSagaChapterOnly? action |>.orElse fun _ => leftoverChapterCompiled? action
 
 /-- Continuous leftovers that compile to a named `Effect`. -/
 def leftoverContinuousCompiled? : CardAction → Option Effect
@@ -3229,10 +3275,28 @@ def leftoverSourcePlusOneSequence? : CardAction → Option Effect
     else none
   | _ => none
 
+/-- Printed actions of cards read with `parseOracleParts` that compile to one
+named `Effect`. -/
+def leftoverPrintedCompiled? : CardAction → Option Effect
+  | .draw (.targets _ (.range (.nat 2) (.nat 2)) .player) (.nat 1) => some Effect.twoPlayersDraw
+  | .sequence [
+      .actionId id (.lookAt (.topOfLibrary who (.nat k))),
+      .searchLibraryThenShuffle searcher [
+        .putOntoBattlefieldInState
+          (.selected chooser .any (.intersection [.wasObjectOfAction id', .cardType .land]))
+          [.tapped]],
+      .gainLife gainer (.nat life)] =>
+    if id == id' && leftoverYou who && leftoverYou searcher && leftoverYou chooser &&
+        leftoverYou gainer then
+      some (Effect.lookAtTopLandsGainLife k life)
+    else none
+  | _ => none
+
 /-- Sequence leftovers that compile to a named `Effect` without taking
 only the first action. -/
 def leftoverCompiled? (action : CardAction) : Option Effect :=
   leftoverSourcePlusOneSequence? action |>.orElse fun _ =>
+  leftoverPrintedCompiled? action |>.orElse fun _ =>
   (if leftoverExileAttackersSearchBasics? action then
     some Effect.exileAttackersSearchBasics
   else none) |>.orElse fun _ =>
@@ -3335,18 +3399,23 @@ def leftoverLookAtTopReveal? : CardAction → Option (Nat × Array String)
             (.selected chooser (.range 1 1)
               (.intersection [
                 .wasObjectOfAction looked,
-                .union [.subtype a, .subtype b]]))),
+                kind]))),
         .returnToHand (.wasObjectOfAction returned)]),
       .putOnLibraryBottomInRandomOrder
         (.intersection [
           .wasObjectOfAction bottomFrom,
           .not (.wasObjectOfAction excluded)])
     ] =>
+    let types : Option (Array String) :=
+      match kind with
+      | .union [.subtype a, .subtype b] => some #[a.toString, b.toString]
+      | .permanent => some #["permanent"]
+      | _ => none
     if lookId == looked && lookId == bottomFrom &&
         revealId == returned && revealId == excluded &&
         lookId != revealId &&
         leftoverYou who && leftoverYou chooser then
-      some (n, #[a.toString, b.toString])
+      types.map (n, ·)
     else none
   | _ => none
 
@@ -4134,6 +4203,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       (.putCounter (.source .this) .plusOnePlusOne 1) =>
     some TriggeredAbility.onDrawSecondPlusOne
   | .triggered
+      (.ordinal 2 .turnStart (.draw (.opponent (.controller .this)) .all))
+      action =>
+    if CardAction.leftoverCreateTokensKindN? action == some (.treasure, 1) then
+      some TriggeredAbility.onOpponentDrawsSecondCreateTreasure
+    else none
+  | .triggered
       (.ordinal 2 .turnStart (.draw (.controller .this) .all))
       action =>
     if CardAction.leftoverPlusOneAndLifelinkTarget? action then
@@ -4532,6 +4607,26 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       | some n, some k => some (TriggeredAbility.onYourUpkeepCreateTokens k n)
       | _, _ => none
     else none
+  | .triggered (.combatStart who)
+      (.if (.happened (.ordinal 2 .turnStart (.draw drawer .all)) .turnStart)
+        [.continuous
+          [.addPower (.target id sel) (.int 3), .gainAbility (.targetReference id') (.keyword .firstStrike)]
+          .endOfTurn]) =>
+    if who == .controller .this && drawer == .controller .this && id == id' &&
+        sel == .intersection [.not .this, .permanent, .cardType .creature, .controlled (.controller .this)] then
+      some TriggeredAbility.onYourBeginCombatIfDrawnTwoPumpFirstStrike
+    else none
+  | .triggered (.combatDamage (.hostOf .this) .player)
+      (.sequence [
+        .actionId id (.chooseCreatureType chooser),
+        .forEachVariable _ sel [token]]) =>
+    if CardAction.leftoverYou chooser &&
+        sel == .intersection [
+          .permanent, .cardType .creature, .controlled (.controller .this),
+          .hasCreatureTypeChosenByAction id] &&
+        CardAction.leftoverCreateTokensKindN? token == some (.treasure, 1) then
+      some TriggeredAbility.onEquippedCombatDamageTreasuresPerChosenType
+    else none
   | .triggered (.endStep who) (.draw drawer (.nat 1)) =>
     if who == .controller .this && drawer == .controller .this then
       some TriggeredAbility.onYourEndStepDraw
@@ -4609,6 +4704,10 @@ structure CardFace where
   ward : Option Nat := none
   colorIndicator : Option ColorSet := none
   sagaChapters : Array SagaChapter := #[]
+  /-- The first creature spell you cast each turn costs this much generic less. -/
+  firstCreatureCostsLess : Nat := 0
+  /-- The first creature spell you cast each turn can be cast as though it had flash. -/
+  firstCreatureHasFlash : Bool := false
 deriving Inhabited
 
 namespace CardFace
@@ -4757,6 +4856,10 @@ def leftoverCanBeCastAsThoughWithFlashIf? (card : Selector) (cond : Condition) :
     | .any among => casterControlsPermanentSubtype? among
     | _ => none
   else none
+
+/-- Creature spells this object's controller casts. -/
+def firstCreatureSpellYouCast? (sel : Selector) : Bool :=
+  sel == .intersection [.spell, .cardType .creature, .controlled (.controller .this)]
 
 /-- Equip abilities you activate that target this, reduced by that much. -/
 def leftoverEquipAbilitiesTargetingThisCostLess? (who : Selector) (costs : List Cost)
@@ -5029,6 +5132,12 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
             { b with costReductionIfYouControl := some (n, st.toString) })
           b
       else b
+  | .if (.didNotHappen (.castSpell cast) .turnStart) [.reduceCost cast' costs] =>
+    if cast == cast' && firstCreatureSpellYouCast? cast then
+      { b with
+        firstCreatureCostsLess :=
+          b.firstCreatureCostsLess + ManaCost.manaValue (Cost.manaCost costs) }
+    else b
   | .if (.didNotHappen _ _) _ => b
   | .if (.happened (.die who) .turnStart) inners =>
     applyIfShape b { who.shape with diedThisTurn := true } inners
@@ -5180,7 +5289,11 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .canBeCastAsThoughWithFlashIf card cond =>
     match leftoverCanBeCastAsThoughWithFlashIf? card cond with
     | some t => { b with flashIfYouControlSubtype := some t }
-    | none => b
+    | none =>
+      if firstCreatureSpellYouCast? card &&
+          cond == .didNotHappen (.castSpell card) .turnStart then
+        { b with firstCreatureHasFlash := true }
+      else b
   | .doesntUntap _ => b
   | .cantAttackUnlessPays _ _ _ => b
   | .alternativeCost _ _ => b
@@ -5248,9 +5361,18 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | .chapter n =>
       match CardAction.leftoverChapterEffect? actions with
       | some e =>
-        { b with
-          sagaChapters :=
-            b.sagaChapters.push (SagaChapter.of (toRomanNumeral n) e.phrase e) }
+        let ch := SagaChapter.of (toRomanNumeral n) e.phrase e
+        -- `III, IV — <effect>` is one catalog line for consecutive chapters.
+        match b.sagaChapters.back? with
+        | some last =>
+          if last.chapterEffect == ch.chapterEffect && last.effect == ch.effect &&
+              last.chapterNumbers.back? == some (n - 1) then
+            { b with
+              sagaChapters :=
+                b.sagaChapters.pop.push
+                  (SagaChapter.of (last.roman ++ ", " ++ toRomanNumeral n) e.phrase e) }
+          else { b with sagaChapters := b.sagaChapters.push ch }
+        | none => { b with sagaChapters := b.sagaChapters.push ch }
       | none => b
     | _ => b
   | .activated costs action =>
@@ -5471,6 +5593,8 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       flashback := b.flashback
       ward := b.ward
       colorIndicator := b.colorIndicator
+      firstCreatureCostsLess := b.firstCreatureCostsLess
+      firstCreatureHasFlash := b.firstCreatureHasFlash
       adventure := adventure
       saga :=
         if b.sagaChapters.isEmpty then none
@@ -5478,7 +5602,18 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
           let final :=
             b.sagaChapters.foldl (fun acc ch =>
               ch.chapterNumbers.foldl (fun acc n => max acc n) acc) 0
-          some { sacrificeAfter := toRomanNumeral final, chapters := b.sagaChapters }
+          -- A chapter's text is its printed Oracle line when there is one.
+          let printed (ch : SagaChapter) : SagaChapter :=
+            match (oracleText.splitOn "\n").findSome? fun line =>
+                match line.splitOn " — " with
+                | roman :: rest@(_ :: _) =>
+                  if roman == ch.roman then some (" — ".intercalate rest) else none
+                | _ => none with
+            | some text => { ch with effect := text }
+            | none => ch
+          some {
+            sacrificeAfter := toRomanNumeral final
+            chapters := b.sagaChapters.map printed }
       oracleText := if oracleText.isEmpty then generated else oracleText
     }
 
