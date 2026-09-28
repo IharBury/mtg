@@ -1629,15 +1629,30 @@ def attercop : CardDef :=
                     .addToughness (.source .this) (Value.int 1)] .endOfTurn))
 ]
 
-def ordinaryBear : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Ordinary Bear. -/
+def ordinaryBearOracle : String :=
+  ""
+
+def ordinaryBearDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Ordinary Bear",
     .manaCost [.generic 3, .mono .green],
     .type .creature,
     .subtype .bear,
     .power 4,
     .toughness 5
-  ]).toCardDef
+  ] ++ (parseOracleParts (name := "Ordinary Bear") ordinaryBearOracle).get!
+
+#guard ordinaryBearDefinition == .card [
+  .name "Ordinary Bear",
+  .manaCost [.generic 3, .mono .green],
+  .type .creature,
+  .subtype .bear,
+  .power 4,
+  .toughness 5]
+
+def ordinaryBear : CardDef :=
+  ordinaryBearDefinition.toCardDef (oracleText := ordinaryBearOracle)
 
 /-- Gatherer Oracle text for Large Bear. -/
 def largeBearOracle : String :=

@@ -258,35 +258,65 @@ def lorienRevealed : CardDef :=
   ]).toCardDef
     (oracleText := "Draw three cards.\nIslandcycling {1} ({1}, Discard this card: Search your library for an Island card, reveal it, put it into your hand, then shuffle.)")
 
-def knightsOfDolAmroth : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Knights of Dol Amroth. -/
+def knightsOfDolAmrothOracle : String :=
+  "Whenever you draw your second card each turn, put a +1/+1 counter on this creature."
+
+def knightsOfDolAmrothDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Knights of Dol Amroth",
     .manaCost [.generic 3, .mono .blue],
     .type .creature,
     .subtype .human,
     .subtype .knight,
     .power 3,
-    .toughness 3,
-    .ability (
-      .triggered
-        (.ordinal 2 .turnStart (.draw (.controller .this) .all))
-        (.putCounter (.source .this) .plusOnePlusOne 1))
-  ]).toCardDef
-    (oracleText := "Whenever you draw your second card each turn, put a +1/+1 counter on this creature.")
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Knights of Dol Amroth") knightsOfDolAmrothOracle).get!
 
-def greyHavensNavigator : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard knightsOfDolAmrothDefinition == .card [
+  .name "Knights of Dol Amroth",
+  .manaCost [.generic 3, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .knight,
+  .power 3,
+  .toughness 3,
+  .ability (
+    .triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.putCounter (.source .this) .plusOnePlusOne 1))]
+
+def knightsOfDolAmroth : CardDef :=
+  knightsOfDolAmrothDefinition.toCardDef (oracleText := knightsOfDolAmrothOracle)
+
+/-- Oracle text for Grey Havens Navigator. -/
+def greyHavensNavigatorOracle : String :=
+  "Flash\nWhen this creature enters, scry 1."
+
+def greyHavensNavigatorDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Grey Havens Navigator",
     .manaCost [.generic 2, .mono .blue],
     .type .creature,
     .subtype .elf,
     .subtype .pilot,
     .power 3,
-    .toughness 2,
-    .ability (.keyword .flash),
-    .ability (.triggered (.enter .this) (.scry (.controller .this) 1))
-  ]).toCardDef
-    (oracleText := "Flash\nWhen this creature enters, scry 1.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Grey Havens Navigator") greyHavensNavigatorOracle).get!
+
+#guard greyHavensNavigatorDefinition == .card [
+  .name "Grey Havens Navigator",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .subtype .elf,
+  .subtype .pilot,
+  .power 3,
+  .toughness 2,
+  .ability (.keyword .flash),
+  .ability (.triggered (.enter .this) (.scry (.controller .this) 1))]
+
+def greyHavensNavigator : CardDef :=
+  greyHavensNavigatorDefinition.toCardDef (oracleText := greyHavensNavigatorOracle)
 
 def ithilienKingfisher : CardDef :=
   (TraditionalCardDefinition.card [
@@ -313,21 +343,36 @@ def hithlainKnots : CardDef :=
   ]).toCardDef
     (oracleText := "Tap target creature. Scry 1.\nDraw a card.")
 
-def captainOfUmbar : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Captain of Umbar. -/
+def captainOfUmbarOracle : String :=
+  "{1}, {T}: Draw a card, then discard a card."
+
+def captainOfUmbarDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Captain of Umbar",
     .manaCost [.generic 2, .mono .blue],
     .type .creature,
     .subtype .human,
     .subtype .pirate,
     .power 2,
-    .toughness 3,
-    .ability (
-      .activated
-        [.mana [.generic 1], .tapSymbol]
-        (.sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]))
-  ]).toCardDef
-    (oracleText := "{1}, {T}: Draw a card, then discard a card.")
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Captain of Umbar") captainOfUmbarOracle).get!
+
+#guard captainOfUmbarDefinition == .card [
+  .name "Captain of Umbar",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .pirate,
+  .power 2,
+  .toughness 3,
+  .ability (
+    .activated
+      [.mana [.generic 1], .tapSymbol]
+      (.sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]))]
+
+def captainOfUmbar : CardDef :=
+  captainOfUmbarDefinition.toCardDef (oracleText := captainOfUmbarOracle)
 
 def minasTirithGarrison : CardDef :=
   card "Minas Tirith Garrison" #[.creature] (ManaCost.ofGenericAndColor 3 .blue) #["Human", "Soldier"]
@@ -342,18 +387,32 @@ def colossalWhale : CardDef :=
     (keywords := Keyword.islandwalk)
     (triggeredAbilities := #[.onAttackMayExileDefenderUntilLeaves])
 
-def willowWind : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Willow-Wind. -/
+def willowWindOracle : String :=
+  "Flying\nWhen this creature enters, scry 2."
+
+def willowWindDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Willow-Wind",
     .manaCost [.generic 4, .mono .blue],
     .type .creature,
     .subtype .elemental,
     .power 3,
-    .toughness 4,
-    .ability (.keyword .flying),
-    .ability (.triggered (.enter .this) (.scry (.controller .this) 2))
-  ]).toCardDef
-    (oracleText := "Flying\nWhen this creature enters, scry 2.")
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Willow-Wind") willowWindOracle).get!
+
+#guard willowWindDefinition == .card [
+  .name "Willow-Wind",
+  .manaCost [.generic 4, .mono .blue],
+  .type .creature,
+  .subtype .elemental,
+  .power 3,
+  .toughness 4,
+  .ability (.keyword .flying),
+  .ability (.triggered (.enter .this) (.scry (.controller .this) 2))]
+
+def willowWind : CardDef :=
+  willowWindDefinition.toCardDef (oracleText := willowWindOracle)
 
 def nimrodelWatcher : CardDef :=
   creature "Nimrodel Watcher" (ManaCost.ofGenericAndColor 1 .blue) #["Elf", "Scout"] 2 1
@@ -638,31 +697,61 @@ def fireOfOrthanc : CardDef :=
   ]).toCardDef
     (oracleText := "Destroy target artifact or land. Creatures without flying can't block this turn.")
 
-def galadhrimGuide : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Galadhrim Guide. -/
+def galadhrimGuideOracle : String :=
+  "When this creature enters, scry 2."
+
+def galadhrimGuideDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Galadhrim Guide",
     .manaCost [.generic 3, .mono .green],
     .type .creature,
     .subtype .elf,
     .subtype .scout,
     .power 3,
-    .toughness 4,
-    .ability (.triggered (.enter .this) (.scry (.controller .this) 2))
-  ]).toCardDef
-    (oracleText := "When this creature enters, scry 2.")
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Galadhrim Guide") galadhrimGuideOracle).get!
 
-def elvishVisionary : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard galadhrimGuideDefinition == .card [
+  .name "Galadhrim Guide",
+  .manaCost [.generic 3, .mono .green],
+  .type .creature,
+  .subtype .elf,
+  .subtype .scout,
+  .power 3,
+  .toughness 4,
+  .ability (.triggered (.enter .this) (.scry (.controller .this) 2))]
+
+def galadhrimGuide : CardDef :=
+  galadhrimGuideDefinition.toCardDef (oracleText := galadhrimGuideOracle)
+
+/-- Oracle text for Elvish Visionary. -/
+def elvishVisionaryOracle : String :=
+  "When this creature enters, draw a card."
+
+def elvishVisionaryDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Elvish Visionary",
     .manaCost [.generic 1, .mono .green],
     .type .creature,
     .subtype .elf,
     .subtype .shaman,
     .power 1,
-    .toughness 1,
-    .ability (.triggered (.enter .this) (.draw (.controller .this) 1))
-  ]).toCardDef
-    (oracleText := "When this creature enters, draw a card.")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Elvish Visionary") elvishVisionaryOracle).get!
+
+#guard elvishVisionaryDefinition == .card [
+  .name "Elvish Visionary",
+  .manaCost [.generic 1, .mono .green],
+  .type .creature,
+  .subtype .elf,
+  .subtype .shaman,
+  .power 1,
+  .toughness 1,
+  .ability (.triggered (.enter .this) (.draw (.controller .this) 1))]
+
+def elvishVisionary : CardDef :=
+  elvishVisionaryDefinition.toCardDef (oracleText := elvishVisionaryOracle)
 
 def mirkwoodElk : CardDef :=
   creature "Mirkwood Elk" (ManaCost.ofGenericAndColor 5 .green) #["Elk"] 6 6
@@ -675,23 +764,35 @@ def celebornTheWise : CardDef :=
     (oracleText := "Whenever you attack with one or more Elves, scry 1.\nWhenever you scry, Celeborn gets +1/+1 until end of turn for each card looked at while scrying this way.")
     (triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt])
 
-def giftOfStrands : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Gift of Strands. -/
+def giftOfStrandsOracle : String :=
+  "Flash\nEnchant creature\nWhen this Aura enters, scry 2.\nEnchanted creature gets +3/+3."
+
+def giftOfStrandsDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Gift of Strands",
     .manaCost [.generic 3, .mono .green],
     .type .enchantment,
-    .subtype .aura,
-    .ability (.keyword .flash),
-    .ability (
-      .keywordWithTarget
-        .enchant
-        1
-        (.intersection [.permanent, .cardType .creature])),
-    .ability (.triggered (.enter .this) (.scry (.controller .this) 2)),
-    .ability (.static (.addPower (.hostOf .this) (Value.int 3))),
-    .ability (.static (.addToughness (.hostOf .this) (Value.int 3)))
-  ]).toCardDef
-    (oracleText := "Flash\nEnchant creature\nWhen this Aura enters, scry 2.\nEnchanted creature gets +3/+3.")
+    .subtype .aura
+  ] ++ (parseOracleParts (name := "Gift of Strands") giftOfStrandsOracle).get!
+
+#guard giftOfStrandsDefinition == .card [
+  .name "Gift of Strands",
+  .manaCost [.generic 3, .mono .green],
+  .type .enchantment,
+  .subtype .aura,
+  .ability (.keyword .flash),
+  .ability (
+    .keywordWithTarget
+      .enchant
+      1
+      (.intersection [.permanent, .cardType .creature])),
+  .ability (.triggered (.enter .this) (.scry (.controller .this) 2)),
+  .ability (.static (.addPower (.hostOf .this) (Value.int 3))),
+  .ability (.static (.addToughness (.hostOf .this) (Value.int 3)))]
+
+def giftOfStrands : CardDef :=
+  giftOfStrandsDefinition.toCardDef (oracleText := giftOfStrandsOracle)
 
 def elvishArchdruid : CardDef :=
   creature "Elvish Archdruid" (ManaCost.ofGenericAndColors 1 [.green, .green])

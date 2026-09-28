@@ -84,8 +84,12 @@ def agentMariaHill : CardDef :=
     (oracleText := "Whenever Agent Maria Hill becomes tapped to pay a teamwork cost, put a +1/+1 counter on her and draw a card.")
     (triggeredAbilities := #[.onTappedForTeamworkPlusOneAndDraw])
 
-def agentOfAtlas : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Agent of Atlas. -/
+def agentOfAtlasOracle : String :=
+  "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)"
+
+def agentOfAtlasDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Agent of Atlas",
     .manaCost [.generic 1, .mono .white],
     .type .creature,
@@ -93,10 +97,22 @@ def agentOfAtlas : CardDef :=
     .subtype .spy,
     .subtype .hero,
     .power 2,
-    .toughness 2,
-    .ability (.keyword .prowess)
-  ]).toCardDef
-    (oracleText := "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Agent of Atlas") agentOfAtlasOracle).get!
+
+#guard agentOfAtlasDefinition == .card [
+  .name "Agent of Atlas",
+  .manaCost [.generic 1, .mono .white],
+  .type .creature,
+  .subtype .human,
+  .subtype .spy,
+  .subtype .hero,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .prowess)]
+
+def agentOfAtlas : CardDef :=
+  agentOfAtlasDefinition.toCardDef (oracleText := agentOfAtlasOracle)
 
 def agentPhilCoulson : CardDef :=
   (TraditionalCardDefinition.card [
@@ -238,8 +254,12 @@ def jenniferWalters : CardDef :=
     (activatedAbilities := #[activated (Effect.transform) (ManaCost.ofGenericAndColors 3 [.green, .white, .white]) (onlyAsSorcery := true)])
     (otherFace := some theSensationalSheHulk)
 
-def kreeCommandos : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Kree Commandos. -/
+def kreeCommandosOracle : String :=
+  "Flying, vigilance\nProwess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)"
+
+def kreeCommandosDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Kree Commandos",
     .manaCost [.generic 2, .mono .white],
     .type .creature,
@@ -247,12 +267,24 @@ def kreeCommandos : CardDef :=
     .subtype .soldier,
     .subtype .villain,
     .power 2,
-    .toughness 1,
-    .ability (.keyword .flying),
-    .ability (.keyword .vigilance),
-    .ability (.keyword .prowess)
-  ]).toCardDef
-    (oracleText := "Flying, vigilance\nProwess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Kree Commandos") kreeCommandosOracle).get!
+
+#guard kreeCommandosDefinition == .card [
+  .name "Kree Commandos",
+  .manaCost [.generic 2, .mono .white],
+  .type .creature,
+  .subtype .kree,
+  .subtype .soldier,
+  .subtype .villain,
+  .power 2,
+  .toughness 1,
+  .ability (.keyword .flying),
+  .ability (.keyword .vigilance),
+  .ability (.keyword .prowess)]
+
+def kreeCommandos : CardDef :=
+  kreeCommandosDefinition.toCardDef (oracleText := kreeCommandosOracle)
 
 def lukeCagePowerMan : CardDef :=
   legendaryCreature "Luke Cage, Power Man" (ManaCost.ofGenericAndColor 3 .white) #["Human", "Hero"] 2 5
@@ -499,19 +531,34 @@ def takeUpTheShield : CardDef :=
   ]).toCardDef
     (oracleText := "Put a +1/+1 counter on target creature. It gains lifelink and indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy it.)")
 
-def wakandanDroneFlock : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Wakandan Drone Flock. -/
+def wakandanDroneFlockOracle : String :=
+  "Flying\nWhen this creature enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)"
+
+def wakandanDroneFlockDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Wakandan Drone Flock",
     .manaCost [.generic 3, .mono .white],
     .type .artifact,
     .type .creature,
     .subtype .robot,
     .power 3,
-    .toughness 3,
-    .ability (.keyword .flying),
-    .ability (.triggered (.enter .this) (.scry (.controller .this) 2))
-  ]).toCardDef
-    (oracleText := "Flying\nWhen this creature enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)")
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Wakandan Drone Flock") wakandanDroneFlockOracle).get!
+
+#guard wakandanDroneFlockDefinition == .card [
+  .name "Wakandan Drone Flock",
+  .manaCost [.generic 3, .mono .white],
+  .type .artifact,
+  .type .creature,
+  .subtype .robot,
+  .power 3,
+  .toughness 3,
+  .ability (.keyword .flying),
+  .ability (.triggered (.enter .this) (.scry (.controller .this) 2))]
+
+def wakandanDroneFlock : CardDef :=
+  wakandanDroneFlockDefinition.toCardDef (oracleText := wakandanDroneFlockOracle)
 
 def webUp : CardDef :=
   enchantment "Web Up" (ManaCost.ofGenericAndColor 2 .white)
@@ -571,22 +618,37 @@ def aIMScientists : CardDef :=
   ]).toCardDef
     (oracleText := "When this creature enters, it connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
 
-def atlanteanCavalry : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Atlantean Cavalry. -/
+def atlanteanCavalryOracle : String :=
+  "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature."
+
+def atlanteanCavalryDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Atlantean Cavalry",
     .manaCost [.generic 2, .mono .blue],
     .type .creature,
     .subtype .merfolk,
     .subtype .soldier,
     .power 3,
-    .toughness 2,
-    .ability (.keyword .vigilance),
-    .ability (
-      .triggered
-        (.ordinal 2 .turnStart (.draw (.controller .this) .all))
-        (.putCounter (.source .this) .plusOnePlusOne 1))
-  ]).toCardDef
-    (oracleText := "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Atlantean Cavalry") atlanteanCavalryOracle).get!
+
+#guard atlanteanCavalryDefinition == .card [
+  .name "Atlantean Cavalry",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .subtype .merfolk,
+  .subtype .soldier,
+  .power 3,
+  .toughness 2,
+  .ability (.keyword .vigilance),
+  .ability (
+    .triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.putCounter (.source .this) .plusOnePlusOne 1))]
+
+def atlanteanCavalry : CardDef :=
+  atlanteanCavalryDefinition.toCardDef (oracleText := atlanteanCavalryOracle)
 
 def atlantisAttacks : CardDef :=
   sorcery "Atlantis Attacks" (ManaCost.ofGenericAndColors 5 [.blue, .blue])
@@ -1131,20 +1193,31 @@ def cruelAlliance : CardDef :=
     (teamwork := some 2)
     (spellEffect := some (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3))
 
-def darkDeed : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Dark Deed. -/
+def darkDeedOracle : String :=
+  "Target creature gets -4/-4 until end of turn."
+
+def darkDeedDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Dark Deed",
     .manaCost [.generic 1, .mono .black],
-    .type .instant,
-    .actions [
-      .continuous
-        [.addPower
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4)),
-         .addToughness
-          (.targetReference 1) (Value.int (-4))]
-        .endOfTurn]
-  ]).toCardDef
-    (oracleText := "Target creature gets -4/-4 until end of turn.")
+    .type .instant
+  ] ++ (parseOracleParts (name := "Dark Deed") darkDeedOracle).get!
+
+#guard darkDeedDefinition == .card [
+  .name "Dark Deed",
+  .manaCost [.generic 1, .mono .black],
+  .type .instant,
+  .actions [
+    .continuous
+      [.addPower
+        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4)),
+       .addToughness
+        (.targetReference 1) (Value.int (-4))]
+      .endOfTurn]]
+
+def darkDeed : CardDef :=
+  darkDeedDefinition.toCardDef (oracleText := darkDeedOracle)
 
 def decoyPloy : CardDef :=
   instant "Decoy Ploy" (ManaCost.ofGenericAndColor 1 .black)
@@ -1607,8 +1680,12 @@ def blazingCrescendo : CardDef :=
   ]).toCardDef
     (oracleText := "Target creature gets +3/+1 until end of turn.\nExile the top card of your library. Until the end of your next turn, you may play that card.")
 
-def crimsonOperative : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Crimson Operative. -/
+def crimsonOperativeOracle : String :=
+  "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)\nWhen this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card."
+
+def crimsonOperativeDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Crimson Operative",
     .manaCost [.generic 3, .mono .red],
     .type .artifact,
@@ -1616,18 +1693,30 @@ def crimsonOperative : CardDef :=
     .subtype .human,
     .subtype .villain,
     .power 3,
-    .toughness 2,
-    .ability (.keyword .prowess),
-    .ability (
-      .triggered
-        (.enter .this)
-        (.sequence [
-          .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
-          .continuous
-            [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-            (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))
-  ]).toCardDef
-    (oracleText := "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)\nWhen this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Crimson Operative") crimsonOperativeOracle).get!
+
+#guard crimsonOperativeDefinition == .card [
+  .name "Crimson Operative",
+  .manaCost [.generic 3, .mono .red],
+  .type .artifact,
+  .type .creature,
+  .subtype .human,
+  .subtype .villain,
+  .power 3,
+  .toughness 2,
+  .ability (.keyword .prowess),
+  .ability (
+    .triggered
+      (.enter .this)
+      (.sequence [
+        .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
+        .continuous
+          [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+          (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))]
+
+def crimsonOperative : CardDef :=
+  crimsonOperativeDefinition.toCardDef (oracleText := crimsonOperativeOracle)
 
 def deathToOurEnemies : CardDef :=
   enchantment "Death to Our Enemies" (ManaCost.ofGenericAndColor 2 .red)
@@ -1797,8 +1886,12 @@ def kUnLunWarrior : CardDef :=
   ]).toCardDef
     (oracleText := "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card.")
 
-def kreeSentinel : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Kree Sentinel. -/
+def kreeSentinelOracle : String :=
+  "Reach\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)"
+
+def kreeSentinelDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Kree Sentinel",
     .manaCost [.generic 4, .mono .red],
     .type .artifact,
@@ -1807,14 +1900,27 @@ def kreeSentinel : CardDef :=
     .subtype .robot,
     .subtype .villain,
     .power 5,
-    .toughness 5,
-    .ability (.keyword .reach),
-    .ability
-      (.keywordWithCost
-        (.typecycling [.basic] [.land] [])
-        [.mana [.generic 2]])
-  ]).toCardDef
-    (oracleText := "Reach\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Kree Sentinel") kreeSentinelOracle).get!
+
+#guard kreeSentinelDefinition == .card [
+  .name "Kree Sentinel",
+  .manaCost [.generic 4, .mono .red],
+  .type .artifact,
+  .type .creature,
+  .subtype .kree,
+  .subtype .robot,
+  .subtype .villain,
+  .power 5,
+  .toughness 5,
+  .ability (.keyword .reach),
+  .ability
+    (.keywordWithCost
+      (.typecycling [.basic] [.land] [])
+      [.mana [.generic 2]])]
+
+def kreeSentinel : CardDef :=
+  kreeSentinelDefinition.toCardDef (oracleText := kreeSentinelOracle)
 
 def lightningStrike : CardDef :=
   (TraditionalCardDefinition.card [
@@ -2278,21 +2384,35 @@ def rickJonesDestinedSidekick : CardDef :=
   ]).toCardDef
     (oracleText := "{3}, {T}: Mill four cards. You may put a Hero or enchantment card from among those cards into your hand. (To mill four cards, put the top four cards of your library into your graveyard.)")
 
-def savageLandDinosaur : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Savage Land Dinosaur. -/
+def savageLandDinosaurOracle : String :=
+  "Trample\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)"
+
+def savageLandDinosaurDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Savage Land Dinosaur",
     .manaCost [.generic 4, .mono .green, .mono .green],
     .type .creature,
     .subtype .dinosaur,
     .power 7,
-    .toughness 6,
-    .ability (.keyword .trample),
-    .ability
-      (.keywordWithCost
-        (.typecycling [.basic] [.land] [])
-        [.mana [.generic 2]])
-  ]).toCardDef
-    (oracleText := "Trample\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
+    .toughness 6
+  ] ++ (parseOracleParts (name := "Savage Land Dinosaur") savageLandDinosaurOracle).get!
+
+#guard savageLandDinosaurDefinition == .card [
+  .name "Savage Land Dinosaur",
+  .manaCost [.generic 4, .mono .green, .mono .green],
+  .type .creature,
+  .subtype .dinosaur,
+  .power 7,
+  .toughness 6,
+  .ability (.keyword .trample),
+  .ability
+    (.keywordWithCost
+      (.typecycling [.basic] [.land] [])
+      [.mana [.generic 2]])]
+
+def savageLandDinosaur : CardDef :=
+  savageLandDinosaurDefinition.toCardDef (oracleText := savageLandDinosaurOracle)
 
 def serpentSpecialist : CardDef :=
   creature "Serpent Specialist" (ManaCost.ofColor .green) #["Human", "Snake", "Villain"] 1 1
@@ -2948,8 +3068,12 @@ def thanosTheMadTitan : CardDef :=
     (keywords := (Keyword.deathtouch).merge Keyword.lifelink)
     (activatedAbilities := #[activated (Effect.plusTwoThenOddEvenDestroy) ({ symbols := #[.colorless, .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green] }) (powerUp := true)])
 
-def thorOdinson : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Thor Odinson. -/
+def thorOdinsonOracle : String :=
+  "Flying, vigilance, prowess, prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn twice.)"
+
+def thorOdinsonDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Thor Odinson",
     .manaCost [.generic 3, .mono .red, .mono .white],
     .type .creature,
@@ -2958,13 +3082,26 @@ def thorOdinson : CardDef :=
     .subtype .warrior,
     .subtype .hero,
     .power 4,
-    .toughness 4,
-    .ability (.keyword .flying),
-    .ability (.keyword .vigilance),
-    .ability (.keyword .prowess),
-    .ability (.keyword .prowess)
-  ]).toCardDef
-    (oracleText := "Flying, vigilance, prowess, prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn twice.)")
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Thor Odinson") thorOdinsonOracle).get!
+
+#guard thorOdinsonDefinition == .card [
+  .name "Thor Odinson",
+  .manaCost [.generic 3, .mono .red, .mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .god,
+  .subtype .warrior,
+  .subtype .hero,
+  .power 4,
+  .toughness 4,
+  .ability (.keyword .flying),
+  .ability (.keyword .vigilance),
+  .ability (.keyword .prowess),
+  .ability (.keyword .prowess)]
+
+def thorOdinson : CardDef :=
+  thorOdinsonDefinition.toCardDef (oracleText := thorOdinsonOracle)
 
 def titaniaRuggedRumbler : CardDef :=
   card "Titania, Rugged Rumbler" #[.creature] (ManaCost.ofGenericAndHybrids 2 .black .green)
@@ -3139,18 +3276,30 @@ def ultronDrone : CardDef :=
     (oracleText := "Power-up — {6}: Put two +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
     (activatedAbilities := #[activated (Effect.plusOneAndCreateTokens 2 .robotVillain22) (ManaCost.ofGeneric 6) (powerUp := true)])
 
-def vibraniumEnergyDaggers : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Vibranium Energy Daggers. -/
+def vibraniumEnergyDaggersOracle : String :=
+  "Indestructible (Effects that say \"destroy\" don't destroy this Equipment.)\nEquipped creature gets +2/+2.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
+
+def vibraniumEnergyDaggersDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Vibranium Energy Daggers",
     .manaCost [.generic 1],
     .type .artifact,
-    .subtype .equipment,
-    .ability (.keyword .indestructible),
-    .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
-    .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
-    .ability (.keywordWithCost .equip [.mana [.generic 3]])
-  ]).toCardDef
-    (oracleText := "Indestructible (Effects that say \"destroy\" don't destroy this Equipment.)\nEquipped creature gets +2/+2.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)")
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "Vibranium Energy Daggers") vibraniumEnergyDaggersOracle).get!
+
+#guard vibraniumEnergyDaggersDefinition == .card [
+  .name "Vibranium Energy Daggers",
+  .manaCost [.generic 1],
+  .type .artifact,
+  .subtype .equipment,
+  .ability (.keyword .indestructible),
+  .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
+  .ability (.static (.addToughness (.hostOf .this) (Value.int 2))),
+  .ability (.keywordWithCost .equip [.mana [.generic 3]])]
+
+def vibraniumEnergyDaggers : CardDef :=
+  vibraniumEnergyDaggersDefinition.toCardDef (oracleText := vibraniumEnergyDaggersOracle)
 
 def theVision : CardDef :=
   artifactCreature "The Vision" (ManaCost.ofGeneric 4) #["Robot", "Hero"] 2 5
@@ -3167,28 +3316,37 @@ def vivVisionTeenSynthezoid : CardDef :=
     (activatedAbilities := #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGeneric 7)])
     (legendary := true)
 
-def aIMLabs : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for A.I.M. Labs. -/
+def aIMLabsOracle : String :=
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}."
+
+def aIMLabsDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "A.I.M. Labs",
-    .type .land,
-    .ability (
-      .static
-        (.replace
-          (.enter .this)
-          [.putOntoBattlefieldInState .this [.tapped]])),
-    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
-    .ability (
-      .activated
-        [.tapSymbol]
-        (.playerSelectAction
-          (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .blue],
-            .addMana (.controller .this) [.mono .black]]))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}.")
+    .type .land
+  ] ++ (parseOracleParts (name := "A.I.M. Labs") aIMLabsOracle).get!
+
+#guard aIMLabsDefinition == .card [
+  .name "A.I.M. Labs",
+  .type .land,
+  .ability (
+    .static
+      (.replace
+        (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])),
+  .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+  .ability (
+    .activated
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .addMana (.controller .this) [.mono .blue],
+          .addMana (.controller .this) [.mono .black]]))]
+
+def aIMLabs : CardDef :=
+  aIMLabsDefinition.toCardDef (oracleText := aIMLabsOracle)
 
 #guard aIMLabs.tapAddOneOf == #[.colored .blue, .colored .black]
 #guard aIMLabs.triggeredAbilities == #[.onEnterGainLife 1]
@@ -3196,51 +3354,69 @@ def aIMLabs : CardDef :=
   "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}."
 #guard aIMLabs.entersTapped
 
-def asgardianCitadel : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Asgardian Citadel. -/
+def asgardianCitadelOracle : String :=
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {W}."
+
+def asgardianCitadelDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Asgardian Citadel",
-    .type .land,
-    .ability (
-      .static
-        (.replace
-          (.enter .this)
-          [.putOntoBattlefieldInState .this [.tapped]])),
-    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
-    .ability (
-      .activated
-        [.tapSymbol]
-        (.playerSelectAction
-          (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .red],
-            .addMana (.controller .this) [.mono .white]]))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {W}.")
+    .type .land
+  ] ++ (parseOracleParts (name := "Asgardian Citadel") asgardianCitadelOracle).get!
+
+#guard asgardianCitadelDefinition == .card [
+  .name "Asgardian Citadel",
+  .type .land,
+  .ability (
+    .static
+      (.replace
+        (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])),
+  .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+  .ability (
+    .activated
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .addMana (.controller .this) [.mono .red],
+          .addMana (.controller .this) [.mono .white]]))]
+
+def asgardianCitadel : CardDef :=
+  asgardianCitadelDefinition.toCardDef (oracleText := asgardianCitadelOracle)
+
+/-- Oracle text for Avengers Hangar. -/
+def avengersHangarOracle : String :=
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {U}."
+
+def avengersHangarDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Avengers Hangar",
+    .type .land
+  ] ++ (parseOracleParts (name := "Avengers Hangar") avengersHangarOracle).get!
+
+#guard avengersHangarDefinition == .card [
+  .name "Avengers Hangar",
+  .type .land,
+  .ability (
+    .static
+      (.replace
+        (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])),
+  .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+  .ability (
+    .activated
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .addMana (.controller .this) [.mono .white],
+          .addMana (.controller .this) [.mono .blue]]))]
 
 def avengersHangar : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Avengers Hangar",
-    .type .land,
-    .ability (
-      .static
-        (.replace
-          (.enter .this)
-          [.putOntoBattlefieldInState .this [.tapped]])),
-    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
-    .ability (
-      .activated
-        [.tapSymbol]
-        (.playerSelectAction
-          (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .white],
-            .addMana (.controller .this) [.mono .blue]]))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {U}.")
+  avengersHangarDefinition.toCardDef (oracleText := avengersHangarOracle)
 
 def avengersTower : CardDef :=
   land "Avengers Tower"
@@ -3257,28 +3433,37 @@ def baxterBuilding : CardDef :=
       activated (Effect.abilityDraw 1) (ManaCost.ofGeneric 4) (tap := true)
         (onlyIfYouControlCreatureToughnessAtLeast := 4)])
 
-def birninZanaPlaza : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Birnin Zana Plaza. -/
+def birninZanaPlazaOracle : String :=
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {W}."
+
+def birninZanaPlazaDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Birnin Zana Plaza",
-    .type .land,
-    .ability (
-      .static
-        (.replace
-          (.enter .this)
-          [.putOntoBattlefieldInState .this [.tapped]])),
-    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
-    .ability (
-      .activated
-        [.tapSymbol]
-        (.playerSelectAction
-          (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .green],
-            .addMana (.controller .this) [.mono .white]]))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {W}.")
+    .type .land
+  ] ++ (parseOracleParts (name := "Birnin Zana Plaza") birninZanaPlazaOracle).get!
+
+#guard birninZanaPlazaDefinition == .card [
+  .name "Birnin Zana Plaza",
+  .type .land,
+  .ability (
+    .static
+      (.replace
+        (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])),
+  .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+  .ability (
+    .activated
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .addMana (.controller .this) [.mono .green],
+          .addMana (.controller .this) [.mono .white]]))]
+
+def birninZanaPlaza : CardDef :=
+  birninZanaPlazaDefinition.toCardDef (oracleText := birninZanaPlazaOracle)
 
 def castleDoom : CardDef :=
   land "Castle Doom"
@@ -3291,28 +3476,37 @@ def castleDoom : CardDef :=
 def darkFortress : CardDef :=
   conditionalDualLand "Dark Fortress" .black .red
 
-def fiskTower : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Fisk Tower. -/
+def fiskTowerOracle : String :=
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {B}."
+
+def fiskTowerDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Fisk Tower",
-    .type .land,
-    .ability (
-      .static
-        (.replace
-          (.enter .this)
-          [.putOntoBattlefieldInState .this [.tapped]])),
-    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
-    .ability (
-      .activated
-        [.tapSymbol]
-        (.playerSelectAction
-          (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .white],
-            .addMana (.controller .this) [.mono .black]]))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {B}.")
+    .type .land
+  ] ++ (parseOracleParts (name := "Fisk Tower") fiskTowerOracle).get!
+
+#guard fiskTowerDefinition == .card [
+  .name "Fisk Tower",
+  .type .land,
+  .ability (
+    .static
+      (.replace
+        (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])),
+  .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+  .ability (
+    .activated
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .addMana (.controller .this) [.mono .white],
+          .addMana (.controller .this) [.mono .black]]))]
+
+def fiskTower : CardDef :=
+  fiskTowerDefinition.toCardDef (oracleText := fiskTowerOracle)
 
 def gatheringPlace : CardDef :=
   conditionalDualLand "Gathering Place" .green .white
@@ -3320,123 +3514,168 @@ def gatheringPlace : CardDef :=
 def gleamingBastion : CardDef :=
   conditionalDualLand "Gleaming Bastion" .white .blue
 
-def hellSKitchen : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Hell's Kitchen. -/
+def hellSKitchenOracle : String :=
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {R}."
+
+def hellSKitchenDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Hell's Kitchen",
-    .type .land,
-    .ability (
-      .static
-        (.replace
-          (.enter .this)
-          [.putOntoBattlefieldInState .this [.tapped]])),
-    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
-    .ability (
-      .activated
-        [.tapSymbol]
-        (.playerSelectAction
-          (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .black],
-            .addMana (.controller .this) [.mono .red]]))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {R}.")
+    .type .land
+  ] ++ (parseOracleParts (name := "Hell's Kitchen") hellSKitchenOracle).get!
+
+#guard hellSKitchenDefinition == .card [
+  .name "Hell's Kitchen",
+  .type .land,
+  .ability (
+    .static
+      (.replace
+        (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])),
+  .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+  .ability (
+    .activated
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .addMana (.controller .this) [.mono .black],
+          .addMana (.controller .this) [.mono .red]]))]
+
+def hellSKitchen : CardDef :=
+  hellSKitchenDefinition.toCardDef (oracleText := hellSKitchenOracle)
 
 def hiddenLair : CardDef :=
   conditionalDualLand "Hidden Lair" .blue .black
 
-def losDiablosMissileBase : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Los Diablos Missile Base. -/
+def losDiablosMissileBaseOracle : String :=
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {G}."
+
+def losDiablosMissileBaseDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Los Diablos Missile Base",
-    .type .land,
-    .ability (
-      .static
-        (.replace
-          (.enter .this)
-          [.putOntoBattlefieldInState .this [.tapped]])),
-    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
-    .ability (
-      .activated
-        [.tapSymbol]
-        (.playerSelectAction
-          (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .red],
-            .addMana (.controller .this) [.mono .green]]))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {G}.")
+    .type .land
+  ] ++ (parseOracleParts (name := "Los Diablos Missile Base") losDiablosMissileBaseOracle).get!
+
+#guard losDiablosMissileBaseDefinition == .card [
+  .name "Los Diablos Missile Base",
+  .type .land,
+  .ability (
+    .static
+      (.replace
+        (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])),
+  .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+  .ability (
+    .activated
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .addMana (.controller .this) [.mono .red],
+          .addMana (.controller .this) [.mono .green]]))]
+
+def losDiablosMissileBase : CardDef :=
+  losDiablosMissileBaseDefinition.toCardDef (oracleText := losDiablosMissileBaseOracle)
+
+/-- Oracle text for Pym Technologies. -/
+def pymTechnologiesOracle : String :=
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {U}."
+
+def pymTechnologiesDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Pym Technologies",
+    .type .land
+  ] ++ (parseOracleParts (name := "Pym Technologies") pymTechnologiesOracle).get!
+
+#guard pymTechnologiesDefinition == .card [
+  .name "Pym Technologies",
+  .type .land,
+  .ability (
+    .static
+      (.replace
+        (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])),
+  .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+  .ability (
+    .activated
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .addMana (.controller .this) [.mono .green],
+          .addMana (.controller .this) [.mono .blue]]))]
 
 def pymTechnologies : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Pym Technologies",
-    .type .land,
-    .ability (
-      .static
-        (.replace
-          (.enter .this)
-          [.putOntoBattlefieldInState .this [.tapped]])),
-    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
-    .ability (
-      .activated
-        [.tapSymbol]
-        (.playerSelectAction
-          (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .green],
-            .addMana (.controller .this) [.mono .blue]]))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {U}.")
+  pymTechnologiesDefinition.toCardDef (oracleText := pymTechnologiesOracle)
+
+/-- Oracle text for Stark Industries. -/
+def starkIndustriesOracle : String :=
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {R}."
+
+def starkIndustriesDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Stark Industries",
+    .type .land
+  ] ++ (parseOracleParts (name := "Stark Industries") starkIndustriesOracle).get!
+
+#guard starkIndustriesDefinition == .card [
+  .name "Stark Industries",
+  .type .land,
+  .ability (
+    .static
+      (.replace
+        (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])),
+  .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+  .ability (
+    .activated
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .addMana (.controller .this) [.mono .blue],
+          .addMana (.controller .this) [.mono .red]]))]
 
 def starkIndustries : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Stark Industries",
-    .type .land,
-    .ability (
-      .static
-        (.replace
-          (.enter .this)
-          [.putOntoBattlefieldInState .this [.tapped]])),
-    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
-    .ability (
-      .activated
-        [.tapSymbol]
-        (.playerSelectAction
-          (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .blue],
-            .addMana (.controller .this) [.mono .red]]))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {R}.")
+  starkIndustriesDefinition.toCardDef (oracleText := starkIndustriesOracle)
+
+/-- Oracle text for Subterranean Cavern. -/
+def subterraneanCavernOracle : String :=
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {G}."
+
+def subterraneanCavernDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Subterranean Cavern",
+    .type .land
+  ] ++ (parseOracleParts (name := "Subterranean Cavern") subterraneanCavernOracle).get!
+
+#guard subterraneanCavernDefinition == .card [
+  .name "Subterranean Cavern",
+  .type .land,
+  .ability (
+    .static
+      (.replace
+        (.enter .this)
+        [.putOntoBattlefieldInState .this [.tapped]])),
+  .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+  .ability (
+    .activated
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .addMana (.controller .this) [.mono .black],
+          .addMana (.controller .this) [.mono .green]]))]
 
 def subterraneanCavern : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Subterranean Cavern",
-    .type .land,
-    .ability (
-      .static
-        (.replace
-          (.enter .this)
-          [.putOntoBattlefieldInState .this [.tapped]])),
-    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
-    .ability (
-      .activated
-        [.tapSymbol]
-        (.playerSelectAction
-          (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .black],
-            .addMana (.controller .this) [.mono .green]]))
-  ]).toCardDef
-    (oracleText :=
-      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {G}.")
+  subterraneanCavernDefinition.toCardDef (oracleText := subterraneanCavernOracle)
 
 def surveillanceRoom : CardDef :=
   (TraditionalCardDefinition.card [
