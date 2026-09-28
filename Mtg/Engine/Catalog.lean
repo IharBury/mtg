@@ -124,45 +124,110 @@ def basicLand (landName : String) (color : Color) : CardDef :=
   card landName #[.land] (subtypes := #[landName]) (supertypes := #[.basic])
     (oracleText := s!"(\{T}: Add \{{color.letter}}.)")
 
-def plains : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Plains. -/
+def plainsOracle : String :=
+  "({T}: Add {W}.)"
+
+def plainsDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Plains",
     .type .land,
     .supertype .basic,
     .subtype .plains
-  ]).toCardDef (oracleText := "({T}: Add {W}.)")
+  ] ++ (parseOracleParts (name := "Plains") plainsOracle).get!
 
-def island : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard plainsDefinition == .card [
+  .name "Plains",
+  .type .land,
+  .supertype .basic,
+  .subtype .plains]
+
+def plains : CardDef :=
+  plainsDefinition.toCardDef (oracleText := plainsOracle)
+
+/-- Oracle text for Island. -/
+def islandOracle : String :=
+  "({T}: Add {U}.)"
+
+def islandDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Island",
     .type .land,
     .supertype .basic,
     .subtype .island
-  ]).toCardDef (oracleText := "({T}: Add {U}.)")
+  ] ++ (parseOracleParts (name := "Island") islandOracle).get!
 
-def swamp : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard islandDefinition == .card [
+  .name "Island",
+  .type .land,
+  .supertype .basic,
+  .subtype .island]
+
+def island : CardDef :=
+  islandDefinition.toCardDef (oracleText := islandOracle)
+
+/-- Oracle text for Swamp. -/
+def swampOracle : String :=
+  "({T}: Add {B}.)"
+
+def swampDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Swamp",
     .type .land,
     .supertype .basic,
     .subtype .swamp
-  ]).toCardDef (oracleText := "({T}: Add {B}.)")
+  ] ++ (parseOracleParts (name := "Swamp") swampOracle).get!
 
-def mountain : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard swampDefinition == .card [
+  .name "Swamp",
+  .type .land,
+  .supertype .basic,
+  .subtype .swamp]
+
+def swamp : CardDef :=
+  swampDefinition.toCardDef (oracleText := swampOracle)
+
+/-- Oracle text for Mountain. -/
+def mountainOracle : String :=
+  "({T}: Add {R}.)"
+
+def mountainDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Mountain",
     .type .land,
     .supertype .basic,
     .subtype .mountain
-  ]).toCardDef (oracleText := "({T}: Add {R}.)")
+  ] ++ (parseOracleParts (name := "Mountain") mountainOracle).get!
 
-def forest : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard mountainDefinition == .card [
+  .name "Mountain",
+  .type .land,
+  .supertype .basic,
+  .subtype .mountain]
+
+def mountain : CardDef :=
+  mountainDefinition.toCardDef (oracleText := mountainOracle)
+
+/-- Oracle text for Forest. -/
+def forestOracle : String :=
+  "({T}: Add {G}.)"
+
+def forestDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Forest",
     .type .land,
     .supertype .basic,
     .subtype .forest
-  ]).toCardDef (oracleText := "({T}: Add {G}.)")
+  ] ++ (parseOracleParts (name := "Forest") forestOracle).get!
+
+#guard forestDefinition == .card [
+  .name "Forest",
+  .type .land,
+  .supertype .basic,
+  .subtype .forest]
+
+def forest : CardDef :=
+  forestDefinition.toCardDef (oracleText := forestOracle)
 
 /-- A creature used by engine tests and the Hobbit catalog. -/
 def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
@@ -783,29 +848,59 @@ def canyonMinotaur : CardDef :=
     .toughness 3
   ]).toCardDef
 
-def ragingGoblin : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Raging Goblin. -/
+def ragingGoblinOracle : String :=
+  "Haste (This creature can attack and {T} as soon as it comes under your control.)"
+
+def ragingGoblinDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Raging Goblin",
     .manaCost [.mono .red],
     .type .creature,
     .subtype .goblin,
     .power 1,
-    .toughness 1,
-    .ability (.keyword .haste)
-  ]).toCardDef
-    (oracleText := "Haste (This creature can attack and {T} as soon as it comes under your control.)")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Raging Goblin") ragingGoblinOracle).get!
 
-def llanowarElves : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard ragingGoblinDefinition == .card [
+  .name "Raging Goblin",
+  .manaCost [.mono .red],
+  .type .creature,
+  .subtype .goblin,
+  .power 1,
+  .toughness 1,
+  .ability (.keyword .haste)]
+
+def ragingGoblin : CardDef :=
+  ragingGoblinDefinition.toCardDef (oracleText := ragingGoblinOracle)
+
+/-- Oracle text for Llanowar Elves. -/
+def llanowarElvesOracle : String :=
+  "{T}: Add {G}."
+
+def llanowarElvesDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Llanowar Elves",
     .manaCost [.mono .green],
     .type .creature,
     .subtype .elf,
     .subtype .druid,
     .power 1,
-    .toughness 1,
-    .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.mono .green]))
-  ]).toCardDef (oracleText := "{T}: Add {G}.")
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Llanowar Elves") llanowarElvesOracle).get!
+
+#guard llanowarElvesDefinition == .card [
+  .name "Llanowar Elves",
+  .manaCost [.mono .green],
+  .type .creature,
+  .subtype .elf,
+  .subtype .druid,
+  .power 1,
+  .toughness 1,
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.mono .green]))]
+
+def llanowarElves : CardDef :=
+  llanowarElvesDefinition.toCardDef (oracleText := llanowarElvesOracle)
 
 def crawWurm : CardDef :=
   (TraditionalCardDefinition.card [
@@ -837,50 +932,97 @@ def rumblingBaloth : CardDef :=
     .toughness 4
   ]).toCardDef
 
-def giantSpider : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for Giant Spider. -/
+def giantSpiderOracle : String :=
+  "Reach (This creature can block creatures with flying.)"
+
+def giantSpiderDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Giant Spider",
     .manaCost [.generic 3, .mono .green],
     .type .creature,
     .subtype .spider,
     .power 2,
-    .toughness 4,
-    .ability (.keyword .reach)
-  ]).toCardDef
-    (oracleText := "Reach (This creature can block creatures with flying.)")
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Giant Spider") giantSpiderOracle).get!
 
-def lightningBolt : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard giantSpiderDefinition == .card [
+  .name "Giant Spider",
+  .manaCost [.generic 3, .mono .green],
+  .type .creature,
+  .subtype .spider,
+  .power 2,
+  .toughness 4,
+  .ability (.keyword .reach)]
+
+def giantSpider : CardDef :=
+  giantSpiderDefinition.toCardDef (oracleText := giantSpiderOracle)
+
+/-- Oracle text for Lightning Bolt. -/
+def lightningBoltOracle : String :=
+  "Lightning Bolt deals 3 damage to any target."
+
+def lightningBoltDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Lightning Bolt",
     .manaCost [.mono .red],
-    .type .instant,
-    .actions [.dealDamage .this (.target 1 .all) (.nat 3)]
-  ]).toCardDef
-    (oracleText := "Lightning Bolt deals 3 damage to any target.")
+    .type .instant
+  ] ++ (parseOracleParts (name := "Lightning Bolt") lightningBoltOracle).get!
 
-def shock : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard lightningBoltDefinition == .card [
+  .name "Lightning Bolt",
+  .manaCost [.mono .red],
+  .type .instant,
+  .actions [.dealDamage .this (.target 1 .all) (.nat 3)]]
+
+def lightningBolt : CardDef :=
+  lightningBoltDefinition.toCardDef (oracleText := lightningBoltOracle)
+
+/-- Oracle text for Shock. -/
+def shockOracle : String :=
+  "Shock deals 2 damage to any target."
+
+def shockDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Shock",
     .manaCost [.mono .red],
-    .type .instant,
-    .actions [.dealDamage .this (.target 1 .all) (.nat 2)]
-  ]).toCardDef
-    (oracleText := "Shock deals 2 damage to any target.")
+    .type .instant
+  ] ++ (parseOracleParts (name := "Shock") shockOracle).get!
 
-def giantGrowth : CardDef :=
-  (TraditionalCardDefinition.card [
+#guard shockDefinition == .card [
+  .name "Shock",
+  .manaCost [.mono .red],
+  .type .instant,
+  .actions [.dealDamage .this (.target 1 .all) (.nat 2)]]
+
+def shock : CardDef :=
+  shockDefinition.toCardDef (oracleText := shockOracle)
+
+/-- Oracle text for Giant Growth. -/
+def giantGrowthOracle : String :=
+  "Target creature gets +3/+3 until end of turn."
+
+def giantGrowthDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Giant Growth",
     .manaCost [.mono .green],
-    .type .instant,
-    .actions [
-      .continuous
-        [.addPower
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
-         .addToughness
-          (.targetReference 1) (Value.int 3)]
-        .endOfTurn]
-  ]).toCardDef
-    (oracleText := "Target creature gets +3/+3 until end of turn.")
+    .type .instant
+  ] ++ (parseOracleParts (name := "Giant Growth") giantGrowthOracle).get!
+
+#guard giantGrowthDefinition == .card [
+  .name "Giant Growth",
+  .manaCost [.mono .green],
+  .type .instant,
+  .actions [
+    .continuous
+      [.addPower
+        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
+       .addToughness
+        (.targetReference 1) (Value.int 3)]
+      .endOfTurn]]
+
+def giantGrowth : CardDef :=
+  giantGrowthDefinition.toCardDef (oracleText := giantGrowthOracle)
 
 /-- Repeat a card `n` times. -/
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
