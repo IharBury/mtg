@@ -1769,11 +1769,55 @@ def shuriWakandanInventor : CardDef :=
     (staticAbilities := #[.typeSpellsCostLess .artifact 1])
     (activatedAbilities := #[activated (Effect.copyArtifactYouControlNotLegendary) (ManaCost.ofGeneric 1) (tap := true) (onlyAsSorcery := true)])
 
+/-- Oracle text for Stature, Size Shifter. -/
+def statureSizeShifterOracle : String :=
+  "Stature can't be blocked if her power is 1 or less.\nPower-up — {X}{U}{U}: Put X +1/+1 counters on Stature. (Activate each power-up ability only once. Reduce the cost by her mana cost if she entered this turn.)"
+
+def statureSizeShifterDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Stature, Size Shifter",
+    .manaCost [.mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .hero,
+    .power 1,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Stature, Size Shifter") (manaCost := [.mono .blue])
+    statureSizeShifterOracle).get!
+
+#guard statureSizeShifterDefinition == .card [
+  .name "Stature, Size Shifter",
+  .manaCost [.mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .hero,
+  .power 1,
+  .toughness 1,
+  .ability
+    (.static
+      (.if
+        (.lessOrEqual (.greatestPower (.source .this)) (.nat 1))
+        [.forbid (.block .any (.source .this))])),
+  .ability
+    (.abilityId 1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.x, .mono .blue, .mono .blue]]
+        (.putCounter (.source .this) .plusOnePlusOne .x)
+        (.if (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.mono .blue]]])))]
+
 def statureSizeShifter : CardDef :=
-  legendaryCreature "Stature, Size Shifter" (ManaCost.ofColor .blue) #["Human", "Hero"] 1 1
-    (oracleText := "Stature can't be blocked if her power is 1 or less.\nPower-up — {X}{U}{U}: Put X +1/+1 counters on Stature. (Activate each power-up ability only once. Reduce the cost by her mana cost if she entered this turn.)")
-    (staticAbilities := #[StaticAbility.cantBeBlockedIfPowerAtMost 1])
-    (activatedAbilities := #[activated (Effect.plusOneX) ({ symbols := #[.x, .colored .blue, .colored .blue] }) (powerUp := true)])
+  statureSizeShifterDefinition.toCardDef (oracleText := statureSizeShifterOracle)
+
+#guard statureSizeShifter.oracleText == statureSizeShifterOracle
+#guard statureSizeShifter.staticAbilities == #[StaticAbility.cantBeBlockedIfPowerAtMost 1]
+#guard statureSizeShifter.activatedAbilities[0]!.effect == Effect.plusOneX
+#guard statureSizeShifter.activatedAbilities[0]!.powerUp
+#guard statureSizeShifter.activatedAbilities[0]!.cost.mana ==
+  ({ symbols := #[.x, .colored .blue, .colored .blue] } : ManaCost)
 
 /-- Oracle text for Super Intelligence. -/
 def superIntelligenceOracle : String :=
@@ -5466,11 +5510,60 @@ def moonGirlAndDevilDinosaur : CardDef :=
     (oracleText := "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample.\nWhenever an artifact you control enters, draw a card. This ability triggers only once each turn.")
     (triggeredAbilities := #[.onResource Effect.resourceSecondDrawBecome66, .onArtifactYouControlEntersDrawOnce])
 
+/-- Oracle text for The Ruinous Wrecking Crew. -/
+def theRuinousWreckingCrewOracle : String :=
+  "The Ruinous Wrecking Crew enters with X +1/+1 counters on it.\nWhen The Ruinous Wrecking Crew enters, choose up to X —\n• Discard a card, then draw a card.\n• Target opponent loses 2 life.\n• Destroy target token.\n• Each player sacrifices a creature of their choice."
+
+def theRuinousWreckingCrewDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "The Ruinous Wrecking Crew",
+    .manaCost [.x, .mono .black, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .villain,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "The Ruinous Wrecking Crew") theRuinousWreckingCrewOracle).get!
+
+#guard theRuinousWreckingCrewDefinition == .card [
+  .name "The Ruinous Wrecking Crew",
+  .manaCost [.x, .mono .black, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .villain,
+  .power 2,
+  .toughness 2,
+  .ability
+    (.static
+      (.replace (.enter .this) [
+        .putCounter (.source .this) .plusOnePlusOne .x,
+        .keepReplacedAction])),
+  .ability
+    (.triggered
+      (.enter .this)
+      (.chooseUniqueModes (.range (.nat 0) .x) [
+        .sequence [
+          .discard (.controller .this) (.nat 1),
+          .draw (.controller .this) (.nat 1)],
+        .loseLife (.target 1 (.opponent (.controller .this))) (.nat 2),
+        .destroy (.target 2 (.intersection [.permanent, .token])),
+        .forEachVariable 3 .player [
+          .sacrifice
+            (.selected (.variable 3) (.range 1 1)
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.variable 3)]))]
+      ]))]
+
 def theRuinousWreckingCrew : CardDef :=
-  legendaryCreature "The Ruinous Wrecking Crew" ({ symbols := #[.x, .colored .black, .colored .red] }) #["Human", "Villain"] 2 2
-    (oracleText := "The Ruinous Wrecking Crew enters with X +1/+1 counters on it.\nWhen The Ruinous Wrecking Crew enters, choose up to X —\n• Discard a card, then draw a card.\n• Target opponent loses 2 life.\n• Destroy target token.\n• Each player sacrifices a creature of their choice.")
-    (triggeredAbilities := #[.onEnter Effect.enterChooseUpToXModes])
-    (staticAbilities := #[StaticAbility.entersWithXPlusOne])
+  theRuinousWreckingCrewDefinition.toCardDef (oracleText := theRuinousWreckingCrewOracle)
+
+#guard theRuinousWreckingCrew.oracleText == theRuinousWreckingCrewOracle
+#guard theRuinousWreckingCrew.staticAbilities == #[StaticAbility.entersWithXPlusOne]
+#guard theRuinousWreckingCrew.triggeredAbilities == #[.onEnter Effect.enterChooseUpToXModes]
 
 def scientistSupremeOfAIM : CardDef :=
   legendaryCreature "Scientist Supreme of A.I.M." (ManaCost.ofColors [.blue, .black]) #["Human", "Scientist", "Villain"] 2 2
@@ -5736,10 +5829,53 @@ def uSAgentJohnWalker : CardDef :=
 #guard uSAgentJohnWalker.oracleText == uSAgentJohnWalkerOracle
 #guard uSAgentJohnWalker.triggeredAbilities == #[.onEnter Effect.enterCreateSturdyShieldAttach]
 
+/-- Oracle text for Vision Quest. -/
+def visionQuestOracle : String :=
+  "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
+
+def visionQuestDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Vision Quest",
+    .manaCost [.x, .mono .blue, .mono .red],
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Vision Quest") visionQuestOracle).get!
+
+#guard visionQuestDefinition == .card [
+  .name "Vision Quest",
+  .manaCost [.x, .mono .blue, .mono .red],
+  .type .sorcery,
+  .actions [
+    .playerSelectAction (.controller .this) (.range 1 1) [
+      .searchLibraryThenShuffle (.controller .this) [
+        .defineSelectorVariable 1
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [
+              .union [.inLibrary, .inGraveyard],
+              .cardType .artifact,
+              .cardType .creature,
+              .manaValueAtMost .x])),
+        .putOntoBattlefield (.variable 1),
+        .putCounter (.variable 1) .plusOnePlusOne .x,
+        .if (.greaterOrEqual .x (.nat 4))
+          [.continuous [.gainAbility (.variable 1) (.keyword .haste)] .endOfTurn]],
+      .sequence [
+        .defineSelectorVariable 1
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [
+              .inGraveyard,
+              .cardType .artifact,
+              .cardType .creature,
+              .manaValueAtMost .x])),
+        .putOntoBattlefield (.variable 1),
+        .putCounter (.variable 1) .plusOnePlusOne .x,
+        .if (.greaterOrEqual .x (.nat 4))
+          [.continuous [.gainAbility (.variable 1) (.keyword .haste)] .endOfTurn]]]]]
+
 def visionQuest : CardDef :=
-  sorcery "Vision Quest" ({ symbols := #[.x, .colored .blue, .colored .red] })
-    "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
-    (spellEffect := some (Effect.searchLibraryOrGyArtifactCreatureX))
+  visionQuestDefinition.toCardDef (oracleText := visionQuestOracle)
+
+#guard visionQuest.oracleText == visionQuestOracle
+#guard visionQuest.spellEffect == some Effect.searchLibraryOrGyArtifactCreatureX
 
 /-- Oracle text for War Machine, Legacy of Iron. -/
 def warMachineLegacyOfIronOracle : String :=

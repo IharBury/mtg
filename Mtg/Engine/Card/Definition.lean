@@ -221,6 +221,7 @@ def shape : Selector → Shape
   | .powerAtMost (.int n) | .powerAtMost (.nat n) => { powerAtMost := some n }
   | .powerAtMost _ => {}
   | .hasCounter .plusOnePlusOne => { hasPlusOneCounter := true }
+  | .hasCounter _ => {}
   | .attacking _ => { attacking := true }
   | .blocking _ => {}
   | .token => { token := true }
@@ -247,6 +248,7 @@ def shape : Selector → Shape
   | .inExile | .supertype _
   | .variable _ | .topOfLibrary _ _ => {}
   | .hasCreatureTypeChosenByAction _ => { chosenCreatureType := true }
+  | .manaValueAtMost _ => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
 def applySetPredicates (s : Shape) : List SetPredicate → Shape
@@ -408,6 +410,7 @@ def referenceTargets : Selector → Selector
   | .variable n => .variable n
   | .topOfLibrary s n => .topOfLibrary (referenceTargets s) n
   | .hasCreatureTypeChosenByAction n => .hasCreatureTypeChosenByAction n
+  | .manaValueAtMost v => .manaValueAtMost v
 
 #guard
   (Selector.target 1 (.intersection [.permanent, .cardType .creature])).referenceTargets ==
@@ -911,7 +914,9 @@ inductive CardAction where
   /-- The selected player discards that many cards. -/
   | discard : Selector → Value → CardAction
   /-- Put that many counters of the given kind on the selected object. -/
-  | putCounter : Selector → CounterKind → Nat → CardAction
+  | putCounter : Selector → CounterKind → Value → CardAction
+  /-- Remove that many counters of the given kind from the selected object. -/
+  | removeCounter : Selector → CounterKind → Value → CardAction
   /-- Exile the selected object. -/
   | exile : Selector → CardAction
   /-- Exile the selected objects face down (CR 406.3). -/
@@ -1723,7 +1728,7 @@ def leftoverPlusOnePlusOneTrampleHexproof? : CardAction → Bool
 /-- Put +1/+1 counters on a creature you control; it gains vigilance. -/
 def leftoverPlusOneVigilance? : CardAction → Option Nat
   | .sequence [
-      .putCounter sel .plusOnePlusOne n,
+      .putCounter sel .plusOnePlusOne (.nat n),
       .continuous effects _
     ] =>
     let youControlCreature :=
@@ -1917,6 +1922,36 @@ def leftoverChooseCreatureTypeAsEnters? : List CardAction → Bool
     who == .controller .this
   | _ => false
 
+/-- Replacement “this enters with X +1/+1 counters”. -/
+def leftoverEntersWithXPlusOne? : List CardAction → Bool
+  | [.putCounter who .plusOnePlusOne .x, .keepReplacedAction] =>
+    who == .this || who == .source .this
+  | _ => false
+
+/-- Replacement “this enters with a hope counter for each creature you control”. -/
+def leftoverEntersWithHopePerCreature? : List CardAction → Bool
+  | [.putCounter who (.hope) (.count among), .keepReplacedAction] =>
+    (who == .this || who == .source .this) &&
+      among == .intersection [
+        .permanent, .cardType .creature, .controlled (.controller .this)]
+  | _ => false
+
+/-- The Ruinous Wrecking Crew's four “choose up to X” modes, in printed order. -/
+def wreckingCrewModes? : List CardAction → Bool
+  | [
+      .sequence [
+        .discard (.controller .this) (.nat 1),
+        .draw (.controller .this) (.nat 1)],
+      .loseLife (.target _ (.opponent (.controller .this))) (.nat 2),
+      .destroy (.target _ (.intersection [.permanent, .token])),
+      .forEachVariable id .player
+        [.sacrifice (.selected (.variable id') (.range 1 1) among)]
+    ] =>
+    id == id' &&
+      among == .intersection [
+        .permanent, .cardType .creature, .controlled (.variable id)]
+  | _ => false
+
 /-- Heal all marked damage on this, then perform the replaced action. -/
 def leftoverHealThenKeepReplaced? : List CardAction → Bool
   | [.healAllDamage who, .keepReplacedAction] =>
@@ -1926,7 +1961,7 @@ def leftoverHealThenKeepReplaced? : List CardAction → Bool
 /-- Put +1/+1 counters on a targeted creature you control, optionally of
 listed subtypes. -/
 def leftoverPlusOneOnTarget? : CardAction → Option Effect
-  | .putCounter sel .plusOnePlusOne n =>
+  | .putCounter sel .plusOnePlusOne (.nat n) =>
     match sel.among? with
     | some among =>
       if among.shape.sameController && among.shape.types.eqTypes [.creature] then
@@ -2042,7 +2077,7 @@ def leftoverOwnerPutsLibraryThenConnive? : CardAction → Bool
 
 /-- Put +1/+1 counters on each other permanent you control of a subtype. -/
 def leftoverPlusOneOnEachOtherSubtype? : CardAction → Option Effect
-  | .putCounter sel .plusOnePlusOne n =>
+  | .putCounter sel .plusOnePlusOne (.nat n) =>
     if sel.among?.isNone then
       match sel.shape.anotherSubtypeYouControl with
       | some st => some (Effect.plusOneOnEachOtherSubtype st n)
@@ -3170,7 +3205,7 @@ def leftoverDrawOrAmassIfFromGy? : CardAction → Option Effect
 target creature an opponent controls. -/
 def leftoverPlusOneThenFight? : CardAction → Option Nat
   | .sequence [
-      .putCounter (.target id among) .plusOnePlusOne k,
+      .putCounter (.target id among) .plusOnePlusOne (.nat k),
       .fight (.targetReference id') (.target id2 dest)
     ] =>
     if id == id' && id2 == id + 1 &&
@@ -3367,7 +3402,7 @@ def leftoverAxeToken? (parts : List CardPart) : Bool :=
 /-- Sequences that put +1/+1 counters on this creature alongside another
 action, as printed on power-up abilities. -/
 def leftoverSourcePlusOneSequence? : CardAction → Option Effect
-  | .sequence [.putCounter (.source .this) .plusOnePlusOne k, .draw who (.nat n)] =>
+  | .sequence [.putCounter (.source .this) .plusOnePlusOne (.nat k), .draw who (.nat n)] =>
     if leftoverYou who then some (Effect.plusOneAndDraw k n) else none
   | .sequence [.putCounter (.source .this) .plusOnePlusOne 1, .fight src dest] =>
     match dest with
@@ -3382,7 +3417,7 @@ def leftoverSourcePlusOneSequence? : CardAction → Option Effect
       | _ => false
     if onSelf && !effects.isEmpty then some (Effect.plusOneAndGrant (grantedKeywords effects))
     else none
-  | .sequence [.putCounter (.source .this) .plusOnePlusOne k, create] =>
+  | .sequence [.putCounter (.source .this) .plusOnePlusOne (.nat k), create] =>
     match leftoverCreateTokensKindN? create with
     | some (kind, 1) => some (Effect.plusOneAndCreateTokens k kind)
     | _ => none
@@ -3395,7 +3430,7 @@ def leftoverSourcePlusOneSequence? : CardAction → Option Effect
       some Effect.destroyUpToOneThenPlusOne
     else none
   | .sequence [.returnToHand (.targets _ (.range 0 1) among),
-      .putCounter (.source .this) .plusOnePlusOne k] =>
+      .putCounter (.source .this) .plusOnePlusOne (.nat k)] =>
     if leftoverYourGyCreatures? among then
       some (Effect.returnGyCreatureThenPlusOne k)
     else none
@@ -3404,6 +3439,38 @@ def leftoverSourcePlusOneSequence? : CardAction → Option Effect
 /-- Printed actions of cards read with `parseOracleParts` that compile to one
 named `Effect`. -/
 def leftoverPrintedCompiled? : CardAction → Option Effect
+  | .playerSelectAction who (.range 1 1) [
+      .searchLibraryThenShuffle searcher [
+        .defineSelectorVariable id
+          (.selected chooser (.range 1 1)
+            (.intersection [
+              .union [.inLibrary, .inGraveyard],
+              .cardType .artifact,
+              .cardType .creature,
+              .manaValueAtMost .x])),
+        .putOntoBattlefield (.variable id1),
+        .putCounter (.variable id2) .plusOnePlusOne .x,
+        .if (.greaterOrEqual .x (.nat 4))
+          [.continuous [.gainAbility (.variable id3) (.keyword .haste)] .endOfTurn]],
+      .sequence [
+        .defineSelectorVariable id4
+          (.selected chooser2 (.range 1 1)
+            (.intersection [
+              .inGraveyard,
+              .cardType .artifact,
+              .cardType .creature,
+              .manaValueAtMost .x])),
+        .putOntoBattlefield (.variable id5),
+        .putCounter (.variable id6) .plusOnePlusOne .x,
+        .if (.greaterOrEqual .x (.nat 4))
+          [.continuous [.gainAbility (.variable id7) (.keyword .haste)] .endOfTurn]]
+    ] =>
+    if CardAction.leftoverYou who && CardAction.leftoverYou searcher &&
+        CardAction.leftoverYou chooser && CardAction.leftoverYou chooser2 &&
+        id == id1 && id == id2 && id == id3 &&
+        id == id4 && id == id5 && id == id6 && id == id7 then
+      some Effect.searchLibraryOrGyArtifactCreatureX
+    else none
   | .draw (.targets _ (.range (.nat 2) (.nat 2)) .player) (.nat 1) => some Effect.twoPlayersDraw
   | .sequence [
       .actionId id (.lookAt (.topOfLibrary who (.nat k))),
@@ -3950,9 +4017,12 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     match valToNat? n with
                     | some n => Effect.drawThenDiscard n
                     | none => continuousEffect none [] asAbility
-                  | .putCounter (.source .this) .plusOnePlusOne n =>
+                  | .putCounter (.source .this) .plusOnePlusOne (.nat n) =>
                     Effect.putPlusOnePlusOneOnSource n
+                  | .putCounter (.source .this) .plusOnePlusOne .x =>
+                    Effect.plusOneX
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
+                  | .removeCounter _ _ _ => continuousEffect none [] asAbility
                   | .exile _ | .exileFaceDown _ =>
                     continuousEffect none [] asAbility
                   | .exchangeControl _ => Effect.exchangeControlSharingType
@@ -4258,6 +4328,8 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
       | .die .this, .recruit => some TriggeredAbility.onDiesRecruit
       | .enter .this, .amass .goblin (.nat n) => some (TriggeredAbility.onEnterAmassGoblins n)
       | .die .this, .amass .goblin (.nat n) => some (TriggeredAbility.onDiesAmassGoblins n)
+      | .die .this, .amass .goblin (.greatestPower (.source .this)) =>
+        some TriggeredAbility.onDiesAmassGoblinsEqualPower
       | .or (.enter .this) (.attack .this .all), .recruit =>
         some TriggeredAbility.onEnterOrAttackRecruit
       | .or (.enter .this) (.attack .this .all), .amass .goblin (.nat n) =>
@@ -4287,6 +4359,62 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
 /-- Triggered abilities of cards read with `parseOracleParts` that compile to
 one named `TriggeredAbility`. -/
 def printedTriggeredAbility? : Ability → Option TriggeredAbility
+  | .triggered (.triggerId id (.castSpell among))
+      (.putCounter (.target id' who) .plusOnePlusOne
+        (.greatestManaValue (.wasArgumentOfTrigger id'' 1))) =>
+    let you := Selector.controlled (.controller .this)
+    if id == id' && id == id'' &&
+        among == .intersection [.spell, .cardType .creature, you] &&
+        who == .intersection [.permanent, .cardType .creature, you] then
+      some TriggeredAbility.onCastCreaturePlusOneEqualMv
+    else none
+  | .triggered (.attack .this .all)
+      (.sequence [
+        .optional chooser
+          (.actionId id
+            (.sacrifice
+              (.selected picker (.range 1 1)
+                (.intersection [
+                  .not .this, .permanent, .cardType .creature, you])))),
+        .if (.happened (.actionWithId id') .gameStart)
+          [.putCounter (.source .this) .plusOnePlusOne
+            (.greatestPower (.wasObjectOfAction id''))]
+      ]) =>
+    let youCtl := Selector.controlled (.controller .this)
+    if CardAction.leftoverYou chooser && CardAction.leftoverYou picker &&
+        you == youCtl && id == id' && id == id'' then
+      some TriggeredAbility.onAttackMaySacAnotherPlusOneEqualPower
+    else none
+  | .triggered (.enter .this)
+      (.sequence [
+        .putCounter (.source .this) (.hone)
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.target id (.opponent (.controller .this)))])),
+        .attach .this
+          (.targets id2 (.range 0 1)
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+      ]) =>
+    if id2 == id + 1 then
+      some TriggeredAbility.onEnterHonePerOppCreaturesAttach
+    else none
+  | .triggered (.endStep (.controller .this))
+      (.sequence [
+        .actionId id (.removeCounter (.source .this) (.hope) (.nat 1)),
+        .if (.happened (.actionWithId id') .gameStart) [
+          .draw who (.nat 1),
+          .if (.not (.any (.intersection [.source .this, .hasCounter (.hope)]))) [
+            .sacrifice (.source .this),
+            .gainLife who' (.nat 4)]]
+      ]) =>
+    if id == id' && CardAction.leftoverYou who && CardAction.leftoverYou who' then
+      some TriggeredAbility.onYourEndStepRemoveHopeDrawSac
+    else none
   | .triggered (.endStep .player)
       (.if (.not (.and
           (.not (.happened (.attack attackers .all) .turnStart))
@@ -4771,8 +4899,10 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
       | some (p, t) => some (TriggeredAbility.onLandYouControlEntersGets p t)
       | none => none
     else none
-  | .triggered (.enter .this) (.chooseUniqueModes _ modes) =>
-    if CardAction.leftoverTapOrUntapNonland? modes then
+  | .triggered (.enter .this) (.chooseUniqueModes r modes) =>
+    if r == .range 0 .x && CardAction.wreckingCrewModes? modes then
+      some (TriggeredAbility.onEnter Effect.enterChooseUpToXModes)
+    else if CardAction.leftoverTapOrUntapNonland? modes then
       some TriggeredAbility.onEnterTapOrUntapNonland
     else if CardAction.leftoverPlusOnesOrReturnArtEnch? modes then
       some (TriggeredAbility.onEnter Effect.enterPlusOnesOrReturnArtEnch)
@@ -5130,6 +5260,9 @@ structure CardFace where
   tapAddAnyColorForInstantOrSorcery : Bool := false
   tapAddOneOf : Array ManaType := #[]
   entersTapped : Bool := false
+  /-- This enchantment enters with a hope counter for each creature its
+  controller controls (Dawn of a New Age). -/
+  entersWithHopePerCreature : Bool := false
   /-- As this enters, its controller chooses a creature type (CR 614.12). -/
   asEntersChooseCreatureType : Bool := false
   /-- This land enters tapped unless you control an Equipment. -/
@@ -5599,6 +5732,13 @@ def printedStaticApplied? (b : CardFace) : ContinuousEffect → Option CardFace
     if (who == .this || who == .source .this) && you == .controlled (.controller .this) then
       some { b with staticAbilities := b.staticAbilities.push (.getsPowerPerOtherArtifact 1) }
     else none
+  | .if (.lessOrEqual (.greatestPower who) (.nat n)) [.forbid (.block .any blocked)] =>
+    if (who == .this || who == .source .this) &&
+        (blocked == .this || blocked == .source .this) then
+      some { b with
+        staticAbilities :=
+          b.staticAbilities.push (.cantBeBlockedIfPowerAtMost (n : Int)) }
+    else none
   | .if (.targetsIncludeAny .this among) [.reduceCost .this [.mana [.generic n]]] =>
     match among, b.activatedAbilities.back? with
     | .intersection [.permanent, .cardType .creature, .powerAtMost (.int k)], some ab =>
@@ -5825,6 +5965,12 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else if (who == .this || who == .source .this) &&
         CardAction.leftoverChooseCreatureTypeAsEnters? actions then
       { b with asEntersChooseCreatureType := true }
+    else if (who == .this || who == .source .this) &&
+        CardAction.leftoverEntersWithXPlusOne? actions then
+      { b with staticAbilities := b.staticAbilities.push .entersWithXPlusOne }
+    else if (who == .this || who == .source .this) &&
+        CardAction.leftoverEntersWithHopePerCreature? actions then
+      { b with entersWithHopePerCreature := true }
     else b
   | .replace (.damage src who) actions =>
     if (who == .this || who == .source .this) && src == .all &&
@@ -6211,6 +6357,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       tapAddAnyColorForInstantOrSorcery := b.tapAddAnyColorForInstantOrSorcery
       tapAddOneOf := b.tapAddOneOf
       entersTapped := b.entersTapped
+      entersWithHopePerCreature := b.entersWithHopePerCreature
       asEntersChooseCreatureType := b.asEntersChooseCreatureType
       entersTappedUnlessEquipment := b.entersTappedUnlessEquipment
       crew := b.crew

@@ -5688,10 +5688,57 @@ def celebrateTheMountainKing : CardDef :=
     (triggeredAbilities := #[.onEnterRecruit,
       .onEnterExileOppNonlandEachUntilLeaves])
 
+/-- Oracle text for Dancing from Dark to Dawn. -/
+def dancingFromDarkToDawnOracle : String :=
+  "Whenever you cast a creature spell, put X +1/+1 counters on target creature you control, where X is that spell's mana value.\nLandfall — Whenever a land you control enters, create a 2/2 green Bear creature token."
+
+def dancingFromDarkToDawnDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Dancing from Dark to Dawn",
+    .manaCost [.generic 3, .mono .green, .mono .green],
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "Dancing from Dark to Dawn") dancingFromDarkToDawnOracle).get!
+
+#guard dancingFromDarkToDawnDefinition == .card [
+  .name "Dancing from Dark to Dawn",
+  .manaCost [.generic 3, .mono .green, .mono .green],
+  .type .enchantment,
+  .ability
+    (.triggered
+      (.triggerId 1
+        (.castSpell
+          (.intersection [
+            .spell,
+            .cardType .creature,
+            .controlled (.controller .this)])))
+      (.putCounter
+        (.target 1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        .plusOnePlusOne
+        (.greatestManaValue (.wasArgumentOfTrigger 1 1)))),
+  .ability
+    (.triggered
+      (.enter
+        (.intersection [
+          .permanent,
+          .cardType .land,
+          .controlled (.controller .this)]))
+      (.createTokens (.controller .this) (.nat 1) [
+        .type .creature,
+        .subtype .bear,
+        .colorIndicator [.green],
+        .power 2,
+        .toughness 2]))]
+
 def dancingFromDarkToDawn : CardDef :=
-  enchantment "Dancing from Dark to Dawn" (ManaCost.ofGenericAndColors 3 [.green, .green]) "Whenever you cast a creature spell, put X +1/+1 counters on target creature you control, where X is that spell's mana value.\nLandfall — Whenever a land you control enters, create a 2/2 green Bear creature token."
-    (triggeredAbilities := #[.onLandYouControlEntersCreateTokens .bear 1,
-      .onCastCreaturePlusOneEqualMv])
+  dancingFromDarkToDawnDefinition.toCardDef (oracleText := dancingFromDarkToDawnOracle)
+
+#guard dancingFromDarkToDawn.oracleText == dancingFromDarkToDawnOracle
+#guard dancingFromDarkToDawn.triggeredAbilities ==
+  #[.onCastCreaturePlusOneEqualMv, .onLandYouControlEntersCreateTokens .bear 1]
 
 def desertWereWorm : CardDef :=
   creature "Desert Were-Worm" (ManaCost.ofGenericAndColors 4 [.red, .red]) #["Dragon", "Wurm"] 0 5 (oracleText := "This creature gets +2/+0 for each Mountain you control.\nWhenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase.")
@@ -6073,10 +6120,55 @@ def radagastOfRhosgobel : CardDef :=
 #guard radagastOfRhosgobel.firstCreatureCostsLess == 2
 #guard radagastOfRhosgobel.firstCreatureHasFlash
 
+/-- Oracle text for Rhovanion Rampager. -/
+def rhovanionRampagerOracle : String :=
+  "Whenever this creature attacks, you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power.\nWhen this creature dies, amass Goblins X, where X is this creature's power. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+
+def rhovanionRampagerDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Rhovanion Rampager",
+    .manaCost [.generic 2, .mono .black],
+    .type .creature,
+    .subtype .wolf,
+    .power 3,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Rhovanion Rampager") rhovanionRampagerOracle).get!
+
+#guard rhovanionRampagerDefinition == .card [
+  .name "Rhovanion Rampager",
+  .manaCost [.generic 2, .mono .black],
+  .type .creature,
+  .subtype .wolf,
+  .power 3,
+  .toughness 2,
+  .ability
+    (.triggered
+      (.attack .this .all)
+      (.sequence [
+        .optional (.controller .this)
+          (.actionId 1
+            (.sacrifice
+              (.selected (.controller .this) (.range 1 1)
+                (.intersection [
+                  .not .this,
+                  .permanent,
+                  .cardType .creature,
+                  .controlled (.controller .this)])))),
+        .if (.happened (.actionWithId 1) .gameStart)
+          [.putCounter (.source .this) .plusOnePlusOne
+            (.greatestPower (.wasObjectOfAction 1))]])),
+  .ability
+    (.triggered
+      (.die .this)
+      (.keyword (.controller .this)
+        (.amass .goblin (.greatestPower (.source .this)))))]
+
 def rhovanionRampager : CardDef :=
-  creature "Rhovanion Rampager" (ManaCost.ofGenericAndColor 2 .black) #["Wolf"] 3 2 (oracleText := "Whenever this creature attacks, you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power.\nWhen this creature dies, amass Goblins X, where X is this creature's power. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
-    (triggeredAbilities := #[.onAttackMaySacAnotherPlusOneEqualPower,
-      .onDiesAmassGoblinsEqualPower])
+  rhovanionRampagerDefinition.toCardDef (oracleText := rhovanionRampagerOracle)
+
+#guard rhovanionRampager.oracleText == rhovanionRampagerOracle
+#guard rhovanionRampager.triggeredAbilities ==
+  #[.onAttackMaySacAnotherPlusOneEqualPower, .onDiesAmassGoblinsEqualPower]
 
 def riddlesInTheDark : CardDef :=
   instant "Riddles in the Dark" (ManaCost.ofGenericAndColor 2 .blue) "Look at the top four cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard." (some (Effect.riddlesInTheDark))
@@ -6100,12 +6192,52 @@ def silvanReveler : CardDef :=
     (triggeredAbilities := #[.onEnterLootLandEntersTapped,
       .onLandYouControlEntersPayReturnFromGy])
 
+/-- Oracle text for Sting, Bilbo's Sword. -/
+def stingBilboSSwordOracle : String :=
+  "Flash\nWhen Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)\nEquip {3}"
+
+def stingBilboSSwordDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Sting, Bilbo's Sword",
+    .manaCost [.generic 2],
+    .type .artifact,
+    .supertype .legendary,
+    .subtype .equipment
+  ] ++ (parseOracleParts (name := "Sting, Bilbo's Sword") stingBilboSSwordOracle).get!
+
+#guard stingBilboSSwordDefinition == .card [
+  .name "Sting, Bilbo's Sword",
+  .manaCost [.generic 2],
+  .type .artifact,
+  .supertype .legendary,
+  .subtype .equipment,
+  .ability (.keyword .flash),
+  .ability
+    (.triggered
+      (.enter .this)
+      (.sequence [
+        .putCounter (.source .this) (.hone)
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.target 1 (.opponent (.controller .this)))])),
+        .attach .this
+          (.targets 2 (.range 0 1)
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))])),
+  .ability (.keywordWithCost .equip [.mana [.generic 3]])]
+
 def stingBilboSSword : CardDef :=
-  equipment "Sting, Bilbo's Sword" (ManaCost.ofGeneric 2) "Flash\nWhen Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)\nEquip {3}"
-    (ManaCost.ofGeneric 3)
-    (legendary := true)
-    (keywords := Keyword.flash)
-    (triggeredAbilities := #[.onEnterHonePerOppCreaturesAttach])
+  stingBilboSSwordDefinition.toCardDef (oracleText := stingBilboSSwordOracle)
+
+#guard stingBilboSSword.oracleText == stingBilboSSwordOracle
+#guard stingBilboSSword.supertypes == #[.legendary]
+#guard stingBilboSSword.types == #[.artifact]
+#guard stingBilboSSword.keywords.flash
+#guard stingBilboSSword.triggeredAbilities == #[.onEnterHonePerOppCreaturesAttach]
 
 def stoneGiantOfHighPass : CardDef :=
   creature "Stone-Giant of High Pass" (ManaCost.ofGenericAndColors 5 [.red, .red]) #["Giant"] 7 7 (oracleText := "Whenever this creature enters or attacks, create a 3/1 colorless Wall artifact creature token with defender named Stone Boulder.\n{2}{R}, Sacrifice an artifact: This creature deals 4 damage to any target.")

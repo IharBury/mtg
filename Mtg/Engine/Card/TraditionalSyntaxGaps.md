@@ -5,9 +5,13 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**229** catalog cards are still `CardDef` helpers. **223**
+**222** catalog cards are still `CardDef` helpers. **203**
 of them need at least one missing constructor listed under
-[Missing constructors by type](#missing-constructors-by-type). The other
+[Missing constructors by type](#missing-constructors-by-type). **13** lost
+their last tag when a constructor for each named counter,
+`CardAction.removeCounter`, and enters-with-counters became expressible;
+they are not converted yet (see
+[Tags now spelled](#tags-now-spelled-not-yet-converted)). The other
 **6** were listed as having no constructor gap, but each needs a missing
 `CardSubtype` or `Trigger` constructor; see
 [Cards with no constructor gap](#cards-with-no-constructor-gap).
@@ -24,12 +28,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 144 | 44 | 44 |
-| The Hobbit Eternal (HOC) | 117 | 66 | 51 | 51 |
-| Marvel Super Heroes (MSH) | 281 | 147 | 134 | 134 |
-| **Total** | **586** | **357** | **229** | **229** |
+| The Hobbit (HOB) | 188 | 147 | 41 | 38 |
+| The Hobbit Eternal (HOC) | 117 | 67 | 50 | 48 |
+| Marvel Super Heroes (MSH) | 281 | 150 | 131 | 123 |
+| **Total** | **586** | **364** | **222** | **209** |
 
-All 357 `TraditionalCardDefinition`s (144 HOB, 66 HOC, 147 MSH,
+All 364 `TraditionalCardDefinition`s (147 HOB, 67 HOC, 150 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
@@ -45,14 +49,14 @@ modeled `CardDef` fields, triggered/static/activated constructors, and
 `Ability`, `ContinuousEffect`, `CardAction`, and `TraditionalCardDefinition`
 (including `CardPart`).
 
-`Keyword` and `CounterKind` are not in the requested list. They still block
-because `Ability.keyword`, `CardAction.keyword`, and `CardAction.putCounter`
-are indexed by those inductives. Missing constructors there are listed under
-`Ability` / `CardAction` and `CounterKind`. `CardSubtype` has no Wall,
+`Keyword` is not in the requested list. It still blocks because
+`Ability.keyword` and `CardAction.keyword` are indexed by it. Missing
+`Keyword` constructors are listed under `Ability` / `CardAction`.
+`CounterKind` has a constructor for every named counter in the supported
+catalog, so it no longer blocks a conversion. `CardSubtype` has no Wall,
 Minion, or Elder, which five token-making cards need (see
 [Cards with no constructor gap](#cards-with-no-constructor-gap)); Plan
-enchantments stay blocked by `CounterKind` / put-counter triggers, not
-missing subtypes.
+enchantments stay blocked by put-counter triggers, not missing subtypes.
 
 ## Current constructors (inventory)
 
@@ -68,7 +72,13 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `firstStrike`, `islandwalk`, `storied`, `doubleStrike`, `prowess`, `ascend`,
   `shadow`, `changeling`, `equip`, `enchant`, `typecycling`, `recruit`,
   `amass`, `connive`, `chapter`, `flashback`, `ward`, `crew`.
-- **CounterKind** — `plusOnePlusOne`.
+- **CounterKind** — `plusOnePlusOne`, and one constructor per other printed
+  counter in the supported catalog: `burden`, `deathtouch`, `doubleStrike`,
+  `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`,
+  `indestructible`, `influence`, `invasion`, `lifelink`, `menace`, `plan`,
+  `quest`, `reach`, `shadow`, `shield`, `stun`, `trample`, `vigilance`.
+  Lore counters are Saga chapters. Poison counters as a Ward cost stay
+  `Cost.getPoisonCounters`.
 - **Selector** — `this`, `source`, `controller`, `caster` (the player who would cast this spell), `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
   `keywordAbility`, `powerAtLeast`, `powerAtMost`, `hasCounter`, `subtype`,
@@ -78,7 +88,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `wasCreatedByAction`, `hostOf`, `inGraveyard`, `wasObjectSince`,
   `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`
   (whose library, how many cards), `hasCreatureTypeChosenByAction` (the
-  creature type chosen by a numbered `CardAction.chooseCreatureType`).
+  creature type chosen by a numbered `CardAction.chooseCreatureType`),
+  `manaValueAtMost` (mana value at most a `Value`).
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `turnStart`, `gameStart`, `attack`, `enter`, `draw`,
@@ -116,7 +127,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`,
   `chooseUniqueModes`, `chooseModeRestricted`, `counter`, `preventable`,
-  `optionalPayFor`, `discard`, `putCounter`, `exile`, `exileFaceDown`,
+  `optionalPayFor`, `discard`, `putCounter` (a `Value` count), `removeCounter`,
+  `exile`, `exileFaceDown`,
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `putIntoLibraryFromTop`,
   `actionId`, `loseLife`, `sacrifice`, `returnToHand`, `putOntoBattlefield`,
@@ -258,6 +270,11 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.chooseCreatureType`, `Selector.chosenType` | `actionId n (chooseCreatureType …)` and `Selector.hasCreatureTypeChosenByAction n` |
 | `TraditionalCardDefinition.asEntersChoice` | `static (replace (enter this) [actionId n (chooseCreatureType (controller this)), keepReplacedAction])` (An Unexpected Party) |
 | `CardAction.eventAmount` for “for each permanent destroyed this way” | `Value.count (Selector.wasObjectOfAction n)` |
+| `CardAction.putCounter` of a `Value` | `putCounter` takes a `Value` (`x`, `count`, `greatestPower`, `greatestManaValue`) |
+| `CardAction.removeCounter` | `removeCounter` of a selector, `CounterKind`, and `Value` |
+| `CounterKind.named` | `burden`, `deathtouch`, `doubleStrike`, `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`, `indestructible`, `influence`, `invasion`, `lifelink`, `menace`, `plan`, `quest`, `reach`, `shadow`, `shield`, `stun`, `trample`, `vigilance` |
+| `TraditionalCardDefinition.entersWithCounters` | `static (replace (enter this) [putCounter …, keepReplacedAction])` (Dawn of a New Age, The Ruinous Wrecking Crew) |
+| `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
 
 ## Missing constructors by type
 
@@ -285,7 +302,7 @@ complete.
 
 ### `Selector`
 
-- **`manaValue`** (20 cards) — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- **`manaValue`** (19 cards) — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
   - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Evil's Thrall; Gandalf, Party Guest; Glamdring; Gollum, Riddle Master; Inside Information; Loki Laufeyson; … (10 more)
 - **`attackingAlone`** (8 cards) — A creature attacking alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
@@ -459,12 +476,8 @@ complete.
   - Bolg of the North; Doc Samson, Super Psychiatrist; Hawkeye, Young Avenger; Heroic Feast; Smaug the Impenetrable; The Master of Lake-town; The Reaver Cleaver; The Sensational She-Hulk
 - **`returnExiled`** (8 cards) — Return objects exiled by a linked action
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Roads Go Ever, Ever On; Super Villain Lockup; Web Up
-- **`putCounter` of a `Value`** (7 cards) — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
-  - Dancing from Dark to Dawn; Dawn of a New Age; Rhovanion Rampager; Stature, Size Shifter; Sting, Bilbo's Sword; The Ruinous Wrecking Crew; Vision Quest
 - **`chooseModes`** (6 cards) — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
   - Atlantis Attacks; Flame of Anor; Go Nuts!; HULK SMASH!; Murdock's Crusade; Widow's Bite
-- **`removeCounter`** (6 cards) — Remove counters from the selected object
-  - Arwen, Mortal Queen; Captain America, Super-Soldier; Dawn of a New Age; Enchanted River's Grasp; Mister Hyde, Monster Within; The Astonishing Ant-Man
 - **`transform`** (6 cards) — Transform this permanent
   - Bruce Banner; Jennifer Walters; King T'Challa; Monica Rambeau; Nick Fury, Agent of S.H.I.E.L.D.; Tony Stark
 - **`exileThenReturn`** (4 cards) — Exile, then return at a later event (a delayed trigger such as the next end step)
@@ -510,16 +523,6 @@ complete.
 
 - **`otherFace`** (6 cards) — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
   - Bruce Banner; Jennifer Walters; King T'Challa; Monica Rambeau; Nick Fury, Agent of S.H.I.E.L.D.; Tony Stark
-- **`entersWithCounters`** (3 cards) — Enters with named counters (blocked by `CounterKind`)
-  - Arwen, Mortal Queen; Captain America, Super-Soldier; Dawn of a New Age
-
-### `CounterKind`
-
-`CounterKind` is used by `CardAction.putCounter`, `Selector.hasCounter`, and
-`Trigger.putCountersSimultaneously`. It has only `plusOnePlusOne`.
-
-- **`named`** (25 cards) — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-  - Alien Invasion; Arwen, Mortal Queen; Beorn the Fierce; Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Claim the Kingdom; Construct a Cosmic Cube; Dawn of a New Age; Death to Our Enemies; Doom Reigns Supreme; … (15 more)
 
 ## Cards with no constructor gap
 
@@ -572,8 +575,8 @@ The Masters of Evil; Moonstone, Harsh Mistress; Roxxon Brutes; Fin Fang Foom;
 Speed, Young Avenger; Guerrilla Gorilla; Undercover Skrull; Beast, Erudite
 Aerialist; Bullseye, Death Dealer; Killmonger, Scourge of Wakanda; Storm,
 Windrider; Wolverine, Fierce Fighter. Five Plan enchantments and The Great
-Goblin stay in the catalog as `CardDef` helpers (`CounterKind` / put-counter
-triggers). Catalog files: `Hobbit.lean`, `HobbitEternal.lean`,
+Goblin stay in the catalog as `CardDef` helpers (put-counter triggers;
+`CounterKind.plan` exists). Catalog files: `Hobbit.lean`, `HobbitEternal.lean`,
 `MarvelSuperHeroes.lean`.
 
 **Hobbit (9):** Bard the Bowman, Bolg's Company, Elven Raft-Steerer, Iron Hills
@@ -673,9 +676,9 @@ These are not in the requested list but block a conversion of the listed types:
 
 | Inductive | Used by | Missing constructors that remaining cards need |
 | --- | --- | --- |
-| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Wall (Stone-Giant of High Pass; Invisible Woman, Sue Storm; Super-Skrull), Minion (Mole Man, Moloid Master), and Elder (The Coming of Galactus) token subtypes. Army exists (`Selector.subtype .army`). Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers / `CounterKind`, not missing subtypes. |
+| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Wall (Stone-Giant of High Pass; Invisible Woman, Sue Storm; Super-Skrull), Minion (Mole Man, Moloid Master), and Elder (The Coming of Galactus) token subtypes. Army exists (`Selector.subtype .army`). Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers, not missing subtypes. |
 | `Keyword` | `Ability.keyword`, `CardAction.keyword` | Kicker, Cascade, Affinity, Teamwork, Improvise, Extort, Sneak, Boast, Gift, Harness (some of these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters exist. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
-| `CounterKind` | `CardAction.putCounter`, `Selector.hasCounter`, `Trigger.putCountersSimultaneously` | shield, hope, hone, trample, quest, shadow, finality, indestructible, lifelink, plan, stun, influence, burden, invasion, double strike, and other named counters |
+| `CounterKind` | `CardAction.putCounter`, `Selector.hasCounter`, `Trigger.putCountersSimultaneously` | Each named counter in the supported catalog has its own constructor. `Trigger.putCounter` (who put them, any kind) is still missing. Lore counters are Saga chapters. |
 
 `CardPart` also has no `loyalty` or DFC-back face (`alternative` is the
 Adventure face). The back face is listed under `TraditionalCardDefinition`.
@@ -696,10 +699,6 @@ Converted cards are omitted here.
 **Belladonna Took** (`belladonnaTook`)
 
 - `Condition.resolvedThisTurnCount` — This ability has resolved N times this turn
-
-**Beorn the Fierce** (`beornTheFierce`)
-
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Bifur, Melodic Rider** (`bifurMelodicRider`)
 
@@ -729,10 +728,6 @@ Converted cards are omitted here.
 - `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
 
-**Dancing from Dark to Dawn** (`dancingFromDarkToDawn`)
-
-- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
-
 **Desert Were-Worm** (`desertWereWorm`)
 
 - `CardAction.extraCombat` — An additional combat phase; typically with untap attackers
@@ -740,10 +735,6 @@ Converted cards are omitted here.
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
 - `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
-
-**Dwalin, Weaponmaster** (`dwalinWeaponmaster`)
-
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Dáin Ironfoot** (`dainIronfoot`)
 
@@ -766,7 +757,7 @@ Converted cards are omitted here.
 
 - `CardAction.chooseOddEven` — Choose odd or even
 - `Condition.manaValueParity` — Mana value is odd/even
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Head of the Hunt** (`headOfTheHunt`)
 
@@ -774,15 +765,11 @@ Converted cards are omitted here.
 
 **Inside Information** (`insideInformation`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Key to the Side-Door** (`keyToTheSideDoor`)
 
 - `SetPredicate.shareName` — The selected objects share a name
-
-**Last Light of Durin's Day** (`lastLightOfDurinSDay`)
-
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Master's Councillors** (`masterSCouncillors`)
 
@@ -795,10 +782,6 @@ Converted cards are omitted here.
 **Part in Friendship** (`partInFriendship`)
 
 - `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
-
-**Rhovanion Rampager** (`rhovanionRampager`)
-
-- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **Riddles in the Dark** (`riddlesInTheDark`)
 
@@ -816,11 +799,6 @@ Converted cards are omitted here.
 **Silvan Reveler** (`silvanReveler`)
 
 - `Ability.graveyardTriggered` — A triggered ability that functions while the card is in a graveyard (`graveyardActivatedIf` is activated only)
-
-**Sting, Bilbo's Sword** (`stingBilboSSword`)
-
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **Stone-Giant of High Pass** (`stoneGiantOfHighPass`)
 
@@ -849,7 +827,7 @@ Converted cards are omitted here.
 
 **The Mountain-king's Return** (`theMountainKingSReturn`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **The Notary Hobbits** (`theNotaryHobbits`)
 
@@ -879,7 +857,6 @@ Converted cards are omitted here.
 **Enchanted River's Grasp** (`enchantedRiverSGrasp`)
 
 - `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
-- `CardAction.removeCounter` — Remove counters from the selected object
 
 ### The Hobbit Eternal (HOC) (51 cards)
 
@@ -895,12 +872,6 @@ Converted cards are omitted here.
 
 - `Selector.commander` — The selected player's commander
 - `CardAction.addManaOfColorAmong` — Add one mana of any color among selected objects or a commander's color identity
-
-**Arwen, Mortal Queen** (`arwenMortalQueen`)
-
-- `TraditionalCardDefinition.entersWithCounters` — Enters with named counters (blocked by `CounterKind`)
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-- `CardAction.removeCounter` — Remove counters from the selected object
 
 **Arwen, Weaver of Hope** (`arwenWeaverOfHope`)
 
@@ -927,7 +898,7 @@ Converted cards are omitted here.
 
 **Bilbo, Unexpected Adventurer** (`bilboUnexpectedAdventurer`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Bitter Downfall** (`bitterDownfall`)
 
@@ -936,7 +907,7 @@ Converted cards are omitted here.
 
 **Call Forth the Tempest** (`callForthTheTempest`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `Ability.keywordCascade` — Cascade
 - `CardAction.cascade` — Exile until a cheaper nonland; you may cast it
 
@@ -958,13 +929,6 @@ Converted cards are omitted here.
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 - `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
-
-**Dawn of a New Age** (`dawnOfANewAge`)
-
-- `TraditionalCardDefinition.entersWithCounters` — Enters with named counters (blocked by `CounterKind`)
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-- `CardAction.removeCounter` — Remove counters from the selected object
-- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **Delighted Halfling** (`delightedHalfling`)
 
@@ -993,11 +957,11 @@ Converted cards are omitted here.
 
 **Gandalf, Party Guest** (`gandalfPartyGuest`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Glamdring** (`glamdring`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Goblin Cratermaker** (`goblinCratermaker`)
 
@@ -1010,10 +974,6 @@ Converted cards are omitted here.
 **Long-Lost Lances** (`longLostLances`)
 
 - `Selector.attached` — Objects attached to a given object (inverse of `hostOf`)
-
-**Minas Morgul, Dark Fortress** (`minasMorgulDarkFortress`)
-
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Minas Tirith** (`minasTirith`)
 
@@ -1038,13 +998,12 @@ Converted cards are omitted here.
 
 **Palantír of Orthanc** (`palantirOfOrthanc`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `Value.counterCount` — The number of counters of a kind on an object
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Saruman of Many Colors** (`sarumanOfManyColors`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Sauron, the Dark Lord** (`sauronTheDarkLord`)
@@ -1083,7 +1042,6 @@ Converted cards are omitted here.
 **The One Ring** (`theOneRing`)
 
 - `Value.counterCount` — The number of counters of a kind on an object
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `CardAction.gainProtection` — A player gains protection from everything
 - `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
@@ -1144,7 +1102,6 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.attacksEachCombat` — Attacks each combat if able (“can't attack” is `forbid` of `Trigger.attack`)
 - `Value.counterCount` — The number of counters of a kind on an object
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Ant-Man, Colony Commander** (`antManColonyCommander`)
 
@@ -1203,19 +1160,8 @@ Converted cards are omitted here.
 
 - `Trigger.becomeTapped` — When the selected object becomes tapped (including tapped to pay a cost)
 
-**Captain America, Super-Soldier** (`captainAmericaSuperSoldier`)
-
-- `TraditionalCardDefinition.entersWithCounters` — Enters with named counters (blocked by `CounterKind`)
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-- `CardAction.removeCounter` — Remove counters from the selected object
-
-**Captain Marvel, Earth's Protector** (`captainMarvelEarthSProtector`)
-
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-
 **Claim the Kingdom** (`claimTheKingdom`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
@@ -1227,13 +1173,12 @@ Converted cards are omitted here.
 
 **Construct a Cosmic Cube** (`constructACosmicCube`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Cosmic Cube** (`cosmicCube`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Crossbones, Malicious Mercenary** (`crossbonesMaliciousMercenary`)
 
@@ -1246,7 +1191,7 @@ Converted cards are omitted here.
 
 **Cruel Alliance** (`cruelAlliance`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
@@ -1257,7 +1202,6 @@ Converted cards are omitted here.
 
 **Death to Our Enemies** (`deathToOurEnemies`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
@@ -1268,7 +1212,6 @@ Converted cards are omitted here.
 
 **Doom Reigns Supreme** (`doomReignsSupreme`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
@@ -1288,7 +1231,7 @@ Converted cards are omitted here.
 
 **Evil's Thrall** (`evilSThrall`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `CardAction.gainControl` — Gain control of selected objects
 - `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
@@ -1306,7 +1249,6 @@ Converted cards are omitted here.
 
 **Grim Reaper, Lethal Legionnaire** (`grimReaperLethalLegionnaire`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **HULK SMASH!** (`hULKSMASH`)
@@ -1385,10 +1327,6 @@ Converted cards are omitted here.
 - `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
 - `CardAction.transform` — Transform this permanent
 
-**Jessica Jones, Private Eye** (`jessicaJonesPrivateEye`)
-
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-
 **Ka-Zar of the Savage Land** (`kaZarOfTheSavageLand`)
 
 - `ContinuousEffect.mayLookAtTop` — May look at the top card of the selected library any time
@@ -1421,7 +1359,7 @@ Converted cards are omitted here.
 
 **Loki Laufeyson** (`lokiLaufeyson`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Loki, God of Mischief** (`lokiGodOfMischief`)
 
@@ -1435,10 +1373,6 @@ Converted cards are omitted here.
 **Mister Fantastic, Reed Richards** (`misterFantasticReedRichards`)
 
 - `Trigger.enterSimultaneously` — “Whenever one or more tokens you control enter” triggers once per group
-
-**Mister Hyde, Monster Within** (`misterHydeMonsterWithin`)
-
-- `CardAction.removeCounter` — Remove counters from the selected object
 
 **Mjölnir, Hammer of Thor** (`mjLnirHammerOfThor`)
 
@@ -1469,7 +1403,7 @@ Converted cards are omitted here.
 **Murdock's Crusade** (`murdockSCrusade`)
 
 - `Selector.toughness` — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
@@ -1486,7 +1420,7 @@ Converted cards are omitted here.
 
 **Origin of the Avengers** (`originOfTheAvengers`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Panther Pounce** (`pantherPounce`)
 
@@ -1498,16 +1432,11 @@ Converted cards are omitted here.
 
 **Political Triumph** (`politicalTriumph`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
 
 **Powerful Broker** (`powerfulBroker`)
 
 - `CardAction.forEachCounterKind` — For each kind of counter on a selected object, give another of that kind
-
-**Quicksilver, Brash Blur** (`quicksilverBrashBlur`)
-
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Red Guardian, Super-Soldier** (`redGuardianSuperSoldier`)
 
@@ -1530,13 +1459,11 @@ Converted cards are omitted here.
 
 **Rewrite History** (`rewriteHistory`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Robot Domination** (`robotDomination`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
 
 **Ronin, Shadow Stalker** (`roninShadowStalker`)
@@ -1581,19 +1508,11 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.forbidUntapWhileYouControl` — Can't become untapped for as long as you control this
 
-**Stature, Size Shifter** (`statureSizeShifter`)
-
-- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
-
 **Super Villain Lockup** (`superVillainLockup`)
 
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 - `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
-
-**Super-Adaptoid** (`superAdaptoid`)
-
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Super-Skrull** (`superSkrull`)
 
@@ -1619,11 +1538,7 @@ Converted cards are omitted here.
 
 - `CardAction.chooseOddEven` — Choose odd or even
 - `Condition.manaValueParity` — Mana value is odd/even
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
-
-**The Astonishing Ant-Man** (`theAstonishingAntMan`)
-
-- `CardAction.removeCounter` — Remove counters from the selected object
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **The Coming of Galactus** (`theComingOfGalactus`)
 
@@ -1642,13 +1557,9 @@ Converted cards are omitted here.
 
 - `Ability.harness` — Harness and the ∞ ability that works once harnessed
 
-**The Ruinous Wrecking Crew** (`theRuinousWreckingCrew`)
-
-- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
-
 **The Scarlet Witch** (`theScarletWitch`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **The Sensational She-Hulk** (`theSensationalSheHulk`)
 
@@ -1665,7 +1576,7 @@ Converted cards are omitted here.
 
 **The Super Hero Civil War** (`theSuperHeroCivilWar`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `CardAction.gainControl` — Gain control of selected objects
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 
@@ -1682,10 +1593,6 @@ Converted cards are omitted here.
 
 - `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
-**Thunderbolts Conspiracy** (`thunderboltsConspiracy`)
-
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-
 **Tigra, Feline Fury** (`tigraFelineFury`)
 
 - `Trigger.gainLife` — Whenever the selected player gains life
@@ -1697,7 +1604,7 @@ Converted cards are omitted here.
 
 **Too Evil to Stay Dead** (`tooEvilToStayDead`)
 
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
@@ -1705,11 +1612,6 @@ Converted cards are omitted here.
 **Ultron, Artificial Malevolence** (`ultronArtificialMalevolence`)
 
 - `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
-
-**Vision Quest** (`visionQuest`)
-
-- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
-- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **We Say Thee Nay!** (`weSayTheeNay`)
 
@@ -1745,7 +1647,6 @@ Converted cards are omitted here.
 **Winter Soldier, Icy Assassin** (`winterSoldierIcyAssassin`)
 
 - `Selector.attached` — Objects attached to a given object (inverse of `hostOf`)
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Wonder Man, Hollywood Hero** (`wonderManHollywoodHero`)
 
@@ -1754,6 +1655,19 @@ Converted cards are omitted here.
 **World War Hulk** (`worldWarHulk`)
 
 - `Selector.color` — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
+
+## Tags now spelled, not yet converted
+
+These 13 cards lost every tag when a constructor for each named counter,
+`CardAction.removeCounter`, `CardAction.putCounter` of a `Value`, and
+enters-with-counters became expressible. They are still `CardDef` helpers.
+A later pass should reread them before conversion.
+
+**Hobbit (3):** Beorn the Fierce; Dwalin, Weaponmaster; Last Light of Durin's Day.
+
+**Hobbit Eternal (2):** Arwen, Mortal Queen; Minas Morgul, Dark Fortress.
+
+**Marvel Super Heroes (8):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Super-Adaptoid; The Astonishing Ant-Man; Thunderbolts Conspiracy.
 
 ## Method notes
 

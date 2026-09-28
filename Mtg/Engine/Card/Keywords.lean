@@ -128,10 +128,56 @@ inductive SetPredicate where
 deriving Repr, Inhabited, BEq
 
 /-- Kind of counter (CR 122.1). Used by `CardAction.putCounter` and
-`Trigger.putCountersSimultaneously`. -/
+`Trigger.putCountersSimultaneously`. Each printed counter name in the
+supported catalog is its own constructor. Lore counters are Saga chapters
+(`Keyword.chapter`). -/
 inductive CounterKind where
   /-- A +1/+1 counter. -/
   | plusOnePlusOne
+  /-- A burden counter. -/
+  | burden
+  /-- A deathtouch counter (CR 122.1b). -/
+  | deathtouch
+  /-- A double strike counter (CR 122.1b). -/
+  | doubleStrike
+  /-- A finality counter. -/
+  | finality
+  /-- A first strike counter (CR 122.1b). -/
+  | firstStrike
+  /-- A flying counter (CR 122.1b). -/
+  | flying
+  /-- A haste counter (CR 122.1b). -/
+  | haste
+  /-- A hone counter. -/
+  | hone
+  /-- A hope counter. -/
+  | hope
+  /-- An indestructible counter (CR 122.1b). -/
+  | indestructible
+  /-- An influence counter. -/
+  | influence
+  /-- An invasion counter. -/
+  | invasion
+  /-- A lifelink counter (CR 122.1b). -/
+  | lifelink
+  /-- A menace counter (CR 122.1b). -/
+  | menace
+  /-- A plan counter. -/
+  | plan
+  /-- A quest counter. -/
+  | quest
+  /-- A reach counter (CR 122.1b). -/
+  | reach
+  /-- A shadow counter (CR 122.1b). -/
+  | shadow
+  /-- A shield counter. -/
+  | shield
+  /-- A stun counter. -/
+  | stun
+  /-- A trample counter (CR 122.1b). -/
+  | trample
+  /-- A vigilance counter (CR 122.1b). -/
+  | vigilance
 deriving Repr, Inhabited, BEq
 
 -- `Keyword.amass` / `Keyword.connive` take a `Value`, `Value` names a
@@ -343,6 +389,8 @@ inductive Selector where
   /-- Objects of the creature type chosen by the numbered
   `CardAction.chooseCreatureType` action (CR 205.3m / 607.2d). -/
   | hasCreatureTypeChosenByAction : Nat → Selector
+  /-- Objects whose mana value is at most this value (CR 202.3). -/
+  | manaValueAtMost : Value → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
