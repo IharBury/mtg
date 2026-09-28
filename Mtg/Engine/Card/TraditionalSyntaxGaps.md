@@ -5,8 +5,8 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**315** catalog cards are still `CardDef` helpers. **223**
-of them need at least one missing constructor. The other **92** can be
+**312** catalog cards are still `CardDef` helpers. **223**
+of them need at least one missing constructor. The other **89** can be
 spelled with the current constructors and only need Oracle parsing or
 `toCardDef` support; see [Cards with no constructor gap](#cards-with-no-constructor-gap).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
@@ -23,11 +23,11 @@ catalog.
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
 | The Hobbit (HOB) | 188 | 135 | 53 | 43 |
-| The Hobbit Eternal (HOC) | 117 | 43 | 74 | 51 |
-| Marvel Super Heroes (MSH) | 281 | 93 | 188 | 129 |
-| **Total** | **586** | **271** | **315** | **223** |
+| The Hobbit Eternal (HOC) | 117 | 44 | 73 | 51 |
+| Marvel Super Heroes (MSH) | 281 | 95 | 186 | 129 |
+| **Total** | **586** | **274** | **312** | **223** |
 
-269 of the 271 `TraditionalCardDefinition`s (134 HOB, 43 HOC, 92 MSH,
+272 of the 274 `TraditionalCardDefinition`s (134 HOB, 44 HOC, 94 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
@@ -520,15 +520,19 @@ complete.
 
 ## Cards with no constructor gap
 
-These 92 remaining cards can be spelled with the current
+These 89 remaining cards can be spelled with the current
 constructors. They stay `CardDef` helpers until `parseOracleParts` or
-`toCardDef` handles their text.
+`toCardDef` handles their text. Each of them also needs `toCardDef`
+support: a leftover onto its modeled `Effect` or ability, or a `CardDef`
+field that `toCardDef` does not set yet (power-up, conditional dual-land
+mana, per-subtype mana, and similar flags). None of them converts with
+`parseOracleParts` changes alone.
 
 **Hobbit (10):** Boughside Wanderers; Burn, Burn, Tree and Fern; Down in the Valley; Gleaming Splendor; Lake-town Toymaker; Orcrist, Goblin-cleaver; Radagast of Rhosgobel; Stone-Giant of High Pass; The Misty Mountains Cold; Through the Forest Gate.
 
-**Hobbit Eternal (23):** Bag End Banquet; Bolg, Erebor's Reckoning; Dragon's Desire; Dwarven Warriors; Dáin of the Ancient Halls; Elvish Archdruid; Errand-Rider of Gondor; Flowering of the White Tree; Fíli and Kíli, Joyous; Haunt of the Dead Marshes; Last March of the Ents; Mentor of the Meek; Minas Tirith Garrison; Mirkwood Elk; Mount Doom; Olog-hai Crusher; Orcish Siegemaster; Ori, Plate Stacker; Raise the Palisade; Relic of Sauron; Rivendell; Thranduil the Strategist; Treasure Vault.
+**Hobbit Eternal (22):** Bag End Banquet; Bolg, Erebor's Reckoning; Dragon's Desire; Dwarven Warriors; Dáin of the Ancient Halls; Elvish Archdruid; Errand-Rider of Gondor; Flowering of the White Tree; Fíli and Kíli, Joyous; Haunt of the Dead Marshes; Last March of the Ents; Mentor of the Meek; Minas Tirith Garrison; Mirkwood Elk; Mount Doom; Olog-hai Crusher; Orcish Siegemaster; Ori, Plate Stacker; Raise the Palisade; Relic of Sauron; Rivendell; Thranduil the Strategist.
 
-**Marvel Super Heroes (59):** Abomination, Terrifying Titan; Aerial Doombot; Avengers Assemble!; Avengers Disassembled; Avengers Tower; Avengers: Under Siege; Black Panther, Hope Enduring; Bold Biochemist; Brave Brawler; Captain America, Wings of Freedom; Captain Mar-Vell, Space-Born; Castle Doom; Colleen Wing, Street Samurai; Dark Fortress; Decoy Ploy; Dependable Quinjet; Doctor Doom; Epic Fight; Falcon's Wing Harness; Gathering Place; Gleaming Bastion; H.E.R.B.I.E. Scout Unit; Hercules, Prince of Power; Hidden Lair; Hulkling, Burgeoning Bruiser; Human Torch, Johnny Storm; HYDRA Troopers; Hydraulic Helper; Invisible Woman, Sue Storm; Iron Fist, Living Weapon; Iron Man, Master of Machines; Mister Fantastic, Reed Richards; Misty Knight, Hero for Hire; Mole Man, Moloid Master; Ninja of the Hand; Pet Avengers; Punishing Punch; Raft Security Officer; S.H.I.E.L.D. Helicarrier; Serpent Specialist; She-Hulk, Jade Defender; Super Intelligence; Super Strength; Super-Skrull; The Coming of Galactus; The Invincible Iron Man; The Unbeatable Squirrel Girl; The Vision; Titania, Rugged Rumbler; Training Compound; Training Regimen; U.S.Agent, John Walker; Ultron Drone; Unliving Legionnaire; Villainous Hideout; Viv Vision, Teen Synthezoid; Volcanic Villain; War Machine, Legacy of Iron; Worlds Within Worlds.
+**Marvel Super Heroes (57):** Abomination, Terrifying Titan; Aerial Doombot; Avengers Assemble!; Avengers Disassembled; Avengers Tower; Avengers: Under Siege; Black Panther, Hope Enduring; Bold Biochemist; Brave Brawler; Captain America, Wings of Freedom; Captain Mar-Vell, Space-Born; Castle Doom; Colleen Wing, Street Samurai; Dark Fortress; Decoy Ploy; Doctor Doom; Epic Fight; Falcon's Wing Harness; Gathering Place; Gleaming Bastion; H.E.R.B.I.E. Scout Unit; Hercules, Prince of Power; Hidden Lair; Hulkling, Burgeoning Bruiser; Human Torch, Johnny Storm; HYDRA Troopers; Hydraulic Helper; Invisible Woman, Sue Storm; Iron Fist, Living Weapon; Iron Man, Master of Machines; Mister Fantastic, Reed Richards; Misty Knight, Hero for Hire; Mole Man, Moloid Master; Ninja of the Hand; Pet Avengers; Punishing Punch; Raft Security Officer; Serpent Specialist; She-Hulk, Jade Defender; Super Intelligence; Super Strength; Super-Skrull; The Coming of Galactus; The Invincible Iron Man; The Unbeatable Squirrel Girl; The Vision; Titania, Rugged Rumbler; Training Compound; Training Regimen; U.S.Agent, John Walker; Ultron Drone; Unliving Legionnaire; Villainous Hideout; Viv Vision, Teen Synthezoid; Volcanic Villain; War Machine, Legacy of Iron; Worlds Within Worlds.
 
 ## Earlier conversions
 
@@ -572,13 +576,15 @@ another-Villain pump/lifelink, plus-one-on-each-other-subtype, Merfolk attack
 draw, legendary-creature activated cost reduction, and the enter/search/modal
 spell leftovers those printings need.
 
-Since the previous revision of this index, 49 more listed cards became
+Since the previous revision of this index, 52 more listed cards became
 `TraditionalCardDefinition`s. All of them read their Oracle text with
 `parseOracleParts`.
 
 **Hobbit (42):** An Unexpected Party; Azog, Moria's Ruin; Balin, Loremaster; Bard's Company; Bombur, Gentle Dreamer; Chief Warg's Company; Desolation of Smaug; Dwarven Mattock; Dáin's Company; Dáin, Lord of the Iron Hills; Eagle's Rescue; Esgaroth Garrison; Fíli the Pathfinder; Gandalf, Goblins' Bane; Gandalf, Wandering Wizard; Gigantic Big Bear; Glamdring, Foe-hammer; Glóin the Mighty; Great Gilded Boat; Great Ugly-Looking Goblin; Iron Hills Blacksmith; Kíli the Resourceful; Lake-town Mariners; Mirkwood Meditator; Moment of Glory; Most Decrepit Old Bird; My Precious; Old Fat Spider; Ori, Keeper of Songs; Pinecone Strike; Plunder the Trollshaws; Settle the Wreckage; Smaug the Magnificent; Smaug, Wicked Worm; The Arkenstone; The Black Arrow; The Lonely Mountain; The Lord of the Eagles; Thorin Oakenshield; Tidings of War; Troll Negotiations; Óin the Brave.
 
-**Marvel Super Heroes (7):** A.I.M. Scientists; Kang, Temporal Tyrant; M.O.D.O.K.; Madame Masque; Red Room Recruit; Swordsman, Sharp Scoundrel; Trickster's Stratagem.
+**Hobbit Eternal (1):** Treasure Vault.
+
+**Marvel Super Heroes (9):** A.I.M. Scientists; Dependable Quinjet; Kang, Temporal Tyrant; M.O.D.O.K.; Madame Masque; Red Room Recruit; S.H.I.E.L.D. Helicarrier; Swordsman, Sharp Scoundrel; Trickster's Stratagem.
 
 ## Cards that still cannot convert
 
@@ -888,7 +894,7 @@ Converted cards are omitted here.
 - `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
 - `CardAction.removeCounter` — Remove counters from the selected object
 
-### The Hobbit Eternal (HOC) (74 cards)
+### The Hobbit Eternal (HOC) (73 cards)
 
 **Andúril, Narsil Reforged** (`andurilNarsilReforged`)
 
@@ -1196,10 +1202,6 @@ Converted cards are omitted here.
 - `Value.counterCount` — The number of counters of a kind on an object
 - `Trigger.chapterResolves` — Whenever the final chapter ability of a Saga resolves
 
-**Treasure Vault** (`treasureVault`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Troll of Khazad-dûm** (`trollOfKhazadDum`)
 
 - `ContinuousEffect.cantBeBlockedExceptBy` — Can't be blocked except by N or more creatures (menace is Keyword for N=2)
@@ -1217,7 +1219,7 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (`gainSubtype` only adds)
 
-### Marvel Super Heroes (MSH) (188 cards)
+### Marvel Super Heroes (MSH) (186 cards)
 
 **Abomination, Terrifying Titan** (`abominationTerrifyingTitan`)
 
@@ -1413,10 +1415,6 @@ Converted cards are omitted here.
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Decoy Ploy** (`decoyPloy`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Dependable Quinjet** (`dependableQuinjet`)
 
 - No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
@@ -1768,10 +1766,6 @@ Converted cards are omitted here.
 **S.H.I.E.L.D. Flying Car** (`sHIELDFlyingCar`)
 
 - `CardAction.exileThenReturn` — Exile, then return at a later event (a delayed trigger such as the next end step)
-
-**S.H.I.E.L.D. Helicarrier** (`sHIELDHelicarrier`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **S.H.I.E.L.D. Spy Kit** (`sHIELDSpyKit`)
 
