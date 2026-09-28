@@ -50,7 +50,11 @@ Dwarven Mauler, My Precious, Troop of Ponies, Elven Raft-Steerer,
 Mirkwood Meditator, Mirkwood Nurturer, Kíli the Resourceful,
 Dáin's Company, Smaug, Wicked Worm, Glamdring, Foe-hammer,
 Settle the Wreckage, Iron Hills Blacksmith, Gandalf, Goblins' Bane,
-An Unexpected Party, Azog, Moria's Ruin, and Balin, Loremaster keep their printed characteristics as parts;
+An Unexpected Party, Azog, Moria's Ruin, Balin, Loremaster,
+Boughside Wanderers, Burn, Burn, Tree and Fern, Down in the Valley,
+Gleaming Splendor, Lake-town Toymaker, Orcrist, Goblin-cleaver,
+Radagast of Rhosgobel, The Misty Mountains Cold, and Through the Forest
+Gate keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
