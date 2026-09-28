@@ -1,13 +1,14 @@
 # TraditionalCardDefinition conversion gaps
 
 This note records what is missing from the part-based printed-card types in
-`Mtg/Engine/Card/Definition.lean` in order to convert every **currently
-supported catalog card** that is not yet written as a
-`TraditionalCardDefinition`.
+`Mtg/Engine/Card/Definition.lean` and `Mtg/Engine/Card/Keywords.lean` in
+order to convert every **currently supported catalog card** that is not yet
+written as a `TraditionalCardDefinition`.
 
-Thirty cards that previously had no tagged constructor gap are now spelled
-as `TraditionalCardDefinition`. Twelve others still cannot be spelled;
-see [Cards that still cannot convert](#cards-that-still-cannot-convert).
+**318** catalog cards are still `CardDef` helpers. **226**
+of them need at least one missing constructor. The other **92** can be
+spelled with the current constructors and only need Oracle parsing or
+`toCardDef` support; see [Cards with no constructor gap](#cards-with-no-constructor-gap).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
 when a constructor already exists but cannot express the printed ability
 without a new constructor.
@@ -16,90 +17,105 @@ without a new constructor.
 
 `Oracle.supportedCatalogCards` is the core vanilla cards plus
 `Catalog.hobbitCards`, `Catalog.hobbitEternalCards`, and `Catalog.mshCards`.
+Counts exclude the basic lands that `hobbitCards` shares with the core
+catalog.
 
-| Set | Remaining non-TCD cards |
-| --- | ---: |
-| The Hobbit (HOB) | 95 |
-| The Hobbit Eternal (HOC) | 74 |
-| Marvel Super Heroes (MSH) | 195 |
-| **Total remaining** | **364** |
+| Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
+| --- | ---: | ---: | ---: | ---: |
+| The Hobbit (HOB) | 188 | 132 | 56 | 45 |
+| The Hobbit Eternal (HOC) | 117 | 43 | 74 | 52 |
+| Marvel Super Heroes (MSH) | 281 | 93 | 188 | 129 |
+| **Total** | **586** | **268** | **318** | **226** |
 
-All **364** remaining cards have at least one identified constructor gap.
-Of the 44 that previously had no tagged gap, **30 are now written as
-`TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
-onto existing engine constructors). The other **12 cannot be spelled**
-with the current types; closer
-reading found constructor gaps the first pass missed (see [Cards that still
-cannot convert](#cards-that-still-cannot-convert)).
+126 of the Hobbit `TraditionalCardDefinition`s keep only their printed
+characteristics as parts and read the rest of their Oracle text with
+`parseOracleParts` (`Mtg/Engine/Card/OracleParse.lean`). The others spell
+every part by hand.
 
 Evidence for each remaining card is its catalog definition (Oracle text plus
 modeled `CardDef` fields, triggered/static/activated constructors, and
 `Effect` names) compared with the current constructors of `Range`,
-`SetPredicate`, `Selector`, `Trigger`, `Cost`, `Condition`, `Ability`,
-`ContinuousEffect`, `CardAction`, and `TraditionalCardDefinition` (including
-`CardPart`).
+`SetPredicate`, `Value`, `Selector`, `Trigger`, `Cost`, `Condition`,
+`Ability`, `ContinuousEffect`, `CardAction`, and `TraditionalCardDefinition`
+(including `CardPart`).
 
 `Keyword` and `CounterKind` are not in the requested list. They still block
-because `Ability.keyword` and `CardAction.putCounter` are indexed by those
-inductives. Missing constructors there are listed under `Ability` /
-`CardAction` and `CounterKind`. `CardSubtype` constructors now exist for
-every remaining catalog subtype; Plan enchantments stay blocked by
+because `Ability.keyword`, `CardAction.keyword`, and `CardAction.putCounter`
+are indexed by those inductives. Missing constructors there are listed under
+`Ability` / `CardAction` and `CounterKind`. `CardSubtype` constructors exist
+for every remaining catalog subtype; Plan enchantments stay blocked by
 `CounterKind` / put-counter triggers, not missing subtypes.
 
 ## Current constructors (inventory)
 
-From `Mtg/Engine/Card/Definition.lean` as of this analysis:
+From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
 
 - **Range** — `range lo hi` (`Value` bounds), `any` (0 unbounded), `from n` (`Value` lower bound, unbounded high).
 - **SetPredicate** — `shareCardType`, `countAtLeast`.
+- **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
+  `greatestPower`, `count`, `totalPower`, `product`, `variable` (recorded by
+  `CardAction.defineValueVariable`).
+- **Keyword** — `flash`, `haste`, `vigilance`, `flying`, `menace`, `hexproof`,
+  `indestructible`, `reach`, `trample`, `deathtouch`, `defender`, `lifelink`,
+  `firstStrike`, `islandwalk`, `storied`, `doubleStrike`, `prowess`, `ascend`,
+  `shadow`, `changeling`, `equip`, `enchant`, `typecycling`, `recruit`,
+  `amass`, `connive`, `chapter`, `flashback`, `ward`, `crew`.
+- **CounterKind** — `plusOnePlusOne`.
 - **Selector** — `this`, `source`, `controller`, `caster` (the player who would cast this spell), `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
-  `keywordAbility`,
-  `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `hasTarget`, `isTargetOf`, `player`, `opponent`,
-  `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
-  `wasArgumentOfTrigger`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
-  `wasObjectSince`,
-  `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`.
+  `keywordAbility`, `powerAtLeast`, `powerAtMost`, `hasCounter`, `subtype`,
+  `spell`, `ability`, `abilityWithId`, `permanentSpell`, `hasTarget`,
+  `isTargetOf`, `player`, `opponent`, `owner`, `attacking`, `blocking`,
+  `token`, `wasObjectOfAction`, `wasArgumentOfTrigger`, `replacingObject`,
+  `wasCreatedByAction`, `hostOf`, `inGraveyard`, `wasObjectSince`,
+  `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`
+  (whose library, how many cards).
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
-  `combatStart` (player whose turn it is), `turnStart`,
-  `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
-  `damage`, `putToGraveyard`, `leaveGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`, `block`, `die`, `dieSimultaneously`,
-  `attackSimultaneously` (who attacks, who is attacked),
+  `combatStart` (player whose turn it is), `upkeep`, `endStep`,
+  `precombatMainPhase`, `turnStart`, `gameStart`, `attack`, `enter`, `draw`,
+  `ordinal`, `combatDamage`, `damage`, `putToGraveyard`, `leaveGraveyard`,
+  `returnToHand`, `discard`, `putCountersSimultaneously`, `block`, `die`,
+  `dieSimultaneously`, `attackSimultaneously` (who attacks, who is attacked),
   `abilityWithIdActivated`, `actionWithId`, `triggerId`, `modeWithIdChosen`,
-  `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
-  `not`, `or`.
-- **Cost** — `mana`, `life`, `sacrifice` (every selected permanent),
+  `spendManaCreatedByAction`, `spendManaFrom`, `castSpell`,
+  `castSpellFromGraveyard`, `counter`, `activateAbility`, `target` (a spell or
+  ability targets an object), `sequence`, `not`, `or`.
+- **Cost** — `mana` (including `ManaSymbol.x`), `life`, `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
 - **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
-  `happened`, `timeToCastSorcery`, `turn`, `and`, `less`, `lessOrEqual`,
-  `greater`, `greaterOrEqual`, `equal`.
-- **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters).
+  `happened`, `timeToCastSorcery`, `turn`, `enduringStory`, `and`, `not`,
+  `less`, `lessOrEqual`, `greater`, `greaterOrEqual`, `equal`.
+- **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters), `attachedTo`.
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
-  `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`, `abilityId`, `triggered`,
+  `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`,
+  `activatedWithStaticIf` (with a static effect of that ability, such as its
+  own cost reduction), `graveyardActivatedIf`, `abilityId`, `triggered`,
   `triggeredWhile` (condition checked when the trigger event occurs, not on resolution),
   `static`, `stackStatic`, `everywhereStatic` (functions in every zone, including before the card is put onto the stack).
-- **ContinuousEffect** — `gainAbility`, `if`,
-  `reduceCost`, `additionalCost`, `replace`, `forbid`,
-  `canCastWithoutPayingManaCost`, `canPlay`, `canBeCastAsThoughWithFlashIf` (the spell can be cast as though it had flash when a condition holds; `you` is `Selector.caster`; the spell does not gain flash),
-  `setBasePower`, `setBaseToughness`,
-  `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPower`, `setToughness`,
-  `addPower`, `addToughness`, `increaseLandPlayLimit`.
+- **ContinuousEffect** — `gainAbility`, `if`, `reduceCost`, `reduceCostWithX`
+  (substitutes `{X}` with a `Value`), `additionalCost`, `alternativeCost`,
+  `replace`, `forbid`, `canCastWithoutPayingManaCost`, `canPlay`,
+  `setBasePower`, `setBaseToughness`, `gainType`, `gainSubtype`,
+  `gainAllSubtypes`, `setPower`, `setToughness`, `addPower`, `addToughness`,
+  `increaseLandPlayLimit`, `canBeCastAsThoughWithFlashIf` (the spell can be
+  cast as though it had flash when a condition holds; `you` is
+  `Selector.caster`; the spell does not gain flash), `doesntUntap`,
+  `cantAttackUnlessPays`.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
-  `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
-  `chooseModeRestricted`,
-  `counter`, `preventable`, `optionalPayFor`, `discard`, `putCounter`, `exile`,
+  `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`,
+  `chooseUniqueModes`, `chooseModeRestricted`, `counter`, `preventable`,
+  `optionalPayFor`, `discard`, `putCounter`, `exile`, `exileFaceDown`,
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
-  `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `actionId`, `loseLife`,
-  `sacrifice`, `returnToHand`, `putOntoBattlefield`,
+  `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `putIntoLibraryFromTop`,
+  `actionId`, `loseLife`, `sacrifice`, `returnToHand`, `putOntoBattlefield`,
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
-  `holdOutInLibrary`, `defineSelectorVariable`,
-  `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`, `addManaOfOneColor`,
-  `addMana`, `keyword`, `createTokens`,
-  `mill`, `surveil`, `copyWithNewTargets`,
-  `keepReplacedAction`, `healAllDamage`.
-- **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
-  `greatestPower`, `count`, `product`.
+  `holdOutInLibrary`, `defineSelectorVariable`, `defineValueVariable`,
+  `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`,
+  `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
+  `createTokens`, `mill`, `surveil`, `copyWithNewTargets`,
+  `keepReplacedAction`, `healAllDamage`, `shuffleIntoOwnersLibrary`,
+  `lookAt`, `putOnLibraryBottomInRandomOrder`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -126,7 +142,7 @@ Aragorn and Arwen’s leftover is +1/+1 on each other creature you control and
 1 life per those creatures (`forEachVariable`), not a flat 1 life.
 `CardAction.chooseModeRestricted` is who chooses and, for each mode, an ID,
 when it is allowed, and its actions (Galadriel: you, unchosen this turn by
-any player). Unrestricted `chooseMode` does not leftover to that triggered
+any player). `chooseUniqueModes` does not leftover to that triggered
 ability. `Trigger.modeWithIdChosen` of only you stays uncompiled.
 `Selector.wasObjectSince` is “the object of this event since that event”
 (Night Nurse: `putToGraveyard` since `turnStart`). `Condition.greaterOrEqual` of
@@ -186,6 +202,49 @@ stays uncompiled as all-types.
 statics, Alliance modes, second-draw +1/+1 on a target, and the other
 printed abilities of the 21 subtype-unlocked catalog cards.
 
+## Former gaps that current constructors cover
+
+An earlier revision tagged these gaps on the remaining cards. The listed
+constructors now spell them, so the tags are gone from the lists below.
+
+| Former gap | Spelled with |
+| --- | --- |
+| `Selector.topNOfLibrary` | `Selector.topOfLibrary` of a player and a `Value` count |
+| `Selector.countOf`, `CardAction.repeatN`, `CardAction.addManaPer` | `Value.count`, `totalPower`, `greatestPower`, `greatestToughness`, `greatestManaValue`, `product`; `draw`, `dealDamage`, `gainLife`, `loseLife`, `mill`, `createTokens`, `addManaOfOneColor`, and `Keyword.amass` take a `Value` |
+| `Selector.inHand`, `inExile`, `powerAtMost`, `hasCounter` | The `Selector` constructors of those names |
+| `Selector.eachPlayer` | `Selector.player` / `Selector.opponent`, with `forEachVariable` |
+| `Selector.named`, colorless tokens under `Selector.color` | `CardPart.name` and `CardPart.colorIndicator []` on `createTokens` |
+| `Selector.putFromBattlefieldThisTurn` | `Selector.wasObjectSince` of `Trigger.putToGraveyard` of permanents, since `Trigger.turnStart` |
+| `SetPredicate.distinctNames` | No remaining card needs it; earlier tags matched “from among them” |
+| `Trigger.beginStep` | `Trigger.upkeep`, `endStep`, `combatStart`, `precombatMainPhase` |
+| `Trigger.becomeTarget` | `Trigger.target`, or `castSpell` of a spell that `hasTarget` |
+| `Trigger.tokenEnters` | `Trigger.enter` of a selector with `Selector.token` |
+| `Trigger.dealtDamage` | `Trigger.damage .all` of the damaged object |
+| `Trigger.sagaChapter`, `TraditionalCardDefinition.sagaChapters`, `CounterKind.lore` | `Ability.keywordWithEffect (.chapter n)` (Armor Wars) |
+| `Condition.enteredThisTurn`, `sourceEnteredThisTurn` | `Condition.happened (Trigger.enter …) .turnStart` |
+| `Condition.firstThisTurn` | `Condition.didNotHappen … .turnStart` or `Trigger.ordinal` |
+| `Condition.not`, `enduringStory`, `any` | The `Condition` constructors of those names |
+| `Condition.controlCount`, `greaterOrEqual` of `Value.count` | `Condition.greaterOrEqual (Value.count …)` |
+| `Condition.or` | `Condition.not (.and (.not a) (.not b))` |
+| `Ability.activatedOnce` (power-up) | `Ability.abilityId` with `activatedWithStaticIf (didNotHappen (abilityWithIdActivated n) gameStart)` and a static `if (happened (enter this) turnStart) [reduceCost .this …]` |
+| `TraditionalCardDefinition.entersTappedUnless` | `static (if (not c) [replace (enter this) [putOntoBattlefieldInState this [tapped]]])` (The Lonely Mountain) |
+| `Ability.keywordWard`, `Cost.wardNonmana` | `Ability.keywordWithCost .ward` with `Cost.mana`, `discard`, `sacrificeCount`, or `or` (poison stays a gap) |
+| `Ability.keywordCrew`, `Cost.tapPowerTotal` on Vehicles | `Keyword.crew n` |
+| `Ability.keywordFlashback` | `Keyword.flashback` |
+| `Ability.activateFromZone` | `Ability.graveyardActivatedIf` |
+| `Cost.manaX`, `Cost.life`, `Cost.or` | `ManaSymbol.x` in `Cost.mana` with `Value.x`; `Cost.life`; `Cost.or` |
+| `ContinuousEffect.setPowerToughness` | `setBasePower` / `setBaseToughness` of a `Value` |
+| `ContinuousEffect.addPower` / `addToughness`, `reduceCostByValue`, `reduceCostPer` | `addPower`, `addToughness`, `setPower` of a `Value`; `reduceCostWithX` |
+| `ContinuousEffect.restrictManaSpend` | `actionId n` on the mana action plus `forbid (spendManaCreatedByAction n (.not …))` (Desolation of Smaug) |
+| `ContinuousEffect.cantBeCountered`, `forbidCast`, `cantBeBlockedBy`, can't attack/block | `forbid` of `Trigger.counter`, `castSpell`, `block`, `attack` |
+| `ContinuousEffect.skipsUntap` | `ContinuousEffect.doesntUntap` |
+| `ContinuousEffect.gainAbilityIf` (flash) | `canBeCastAsThoughWithFlashIf`, with `reduceCost` under `if` |
+| `ContinuousEffect.preventDamage` | `replace (Trigger.damage …) []` |
+| `ContinuousEffect.replace`, `canPlay`, `gainAbility` | The constructors of those names |
+| `CardAction.lookAt`, `randomize` (bottom of library), `connive`, `addManaCombination` | `lookAt`, `putOnLibraryBottomInRandomOrder`, `keyword … (.connive n)`, `addManaInAnyCombination` |
+| `CardAction.chooseModes` (“choose one or both”) | `chooseUniqueModes (.range 1 2)` |
+| `CardAction.eventAmount` for “for each permanent destroyed this way” | `Value.count (Selector.wasObjectOfAction n)` |
+
 ## Missing constructors by type
 
 Each subsection lists constructors that at least one remaining supported card
@@ -194,335 +253,282 @@ complete.
 
 ### `SetPredicate`
 
-- **`distinctNames`** (13 cards) — Set-wide name constraints
-  - Avengers Tower; Boughside Wanderers; Cantankerous Keepers; Cosmic Cube; Dáin's Company; Earth's Mightiest Heroes; Getaway Barrel; Glamdring, Foe-hammer; Most Decrepit Old Bird; Nick Fury, Agent of S.H.I.E.L.D.; … (3 more)
-- **`shareName`** (1 cards) — The selected objects share a name
+- **`shareName`** (1 card) — The selected objects share a name
   - Key to the Side-Door
+
+### `Value`
+
+- **`counterCount`** (5 cards) — The number of counters of a kind on an object
+  - Alien Invasion; Palantír of Orthanc; Red Hulk; The One Ring; Tom Bombadil
+- **`greatestCountAmongPlayers`** (1 card) — The greatest count over players (greatest number of artifacts an opponent controls)
+  - Cavern-Hoard Dragon
+- **`lifeGainedThisTurn`** (1 card) — How much life a player gained this turn
+  - The Gaffer
+- **`manaSpent`** (1 card) — The amount of mana spent to cast a spell
+  - Uncover the Moon-Letters
+- **`manaSymbols`** (1 card) — The number of mana symbols of a color in a mana cost
+  - Namor the Sub-Mariner
 
 ### `Selector`
 
-- **`topNOfLibrary`** (26 cards) — The top N cards of a library (only topOfLibrary for N=1 exists)
-  - Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Doom Reigns Supreme; Dáin's Company; Earth's Mightiest Heroes; Elven Chorus; Black Widow, Super Spy; … (16 more)
-- **`countOf`** (27 cards) — Numeric value derived from a count or characteristic
-  - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Desert Were-Worm; Dragon's Desire; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Ori, Plate Stacker; … (16 more)
-- **`inHand`** (26 cards) — An object in a hand
-  - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Cloak and Dagger, Entwined; Elven Passage; Errand-Rider of Gondor; Gandalf, Party Guest; Glamdring; Great Gilded Boat; H.E.R.B.I.E. Scout Unit; … (16 more)
-- **`manaValue`** (24 cards) — Mana-value comparisons
-  - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Dancing from Dark to Dawn; Evil's Thrall; Gandalf, Party Guest; Glamdring; Gollum, Riddle Master; … (15 more)
-- **`eachPlayer`** (22 cards) — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-  - Avengers: Under Siege; Balin, Loremaster; Bilbo's Burglaring; Celebrate the Mountain-king; Crossbones, Malicious Mercenary; Doom Reigns Supreme; Dáin of the Ancient Halls; Gandalf, Goblins' Bane; Gollum, Riddle Master; … (13 more)
-- **`color`** (14 cards) — Objects of a color / colorless
-  - Aragorn, the Uniter; Baron Helmut Zemo; Castle Doom; Doctor Doom; Dáin Ironfoot; Goblin Cratermaker; Invisible Woman, Sue Storm; Iron Hills Blacksmith; Necklace of Girion; Robot Domination; … (4 more)
-- **`inExile`** (15 cards) — An object in exile (wasCreatedByAction only covers this action's exile)
-  - An Unexpected Party; Baron Helmut Zemo; Call Forth the Tempest; Doom Reigns Supreme; Gandalf, Goblins' Bane; Glamdring, Foe-hammer; Glóin the Mighty; Great Ugly-Looking Goblin; Gríma, Saruman's Footman; My Precious; Black Widow, Super Spy; … (4 more)
+- **`manaValue`** (20 cards) — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+  - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Evil's Thrall; Gandalf, Party Guest; Glamdring; Gollum, Riddle Master; Inside Information; Loki Laufeyson; … (10 more)
 - **`attackingAlone`** (8 cards) — A creature attacking alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
-- **`powerAtMost`** (8 cards) — Power at most N (only powerAtLeast exists)
-  - Dwarven Warriors; Eagle's Rescue; Elektra, Daughter of the Hand; Hulkling, Burgeoning Bruiser; Mentor of the Meek; Old Fat Spider; Raft Security Officer; Stern Scolding
-- **`toughness`** (8 cards) — Toughness comparisons / bind toughness as a number
-  - Arwen, Weaver of Hope; Baxter Building; I Am Iron Man; Last March of the Ents; Murdock's Crusade; Reptil, Dinomorpher; Stern Scolding; The Kingpin of Crime
-- **`attached`** (7 cards) — Objects attached to a given object (inverse of hostOf)
-  - Eagle's Rescue; Galadriel's Dismissal; Ronin, Shadow Stalker; Thorin, Mountain-king; Whiplash, Vengeful Engineer; Winter Soldier, Icy Assassin; Long-Lost Lances
-- **`named`** (5 cards) — Objects with a given name
-  - Castle Doom; Dáin Ironfoot; Iron Hills Blacksmith; Mole Man, Moloid Master; U.S.Agent, John Walker
-- **`hasCounter`** (5 cards) — Objects with / without a given counter kind
-  - Captain America, Super-Soldier; Dawn of a New Age; Great Ugly-Looking Goblin; Hellcat, Undying Vigilante; Kid Loki
+- **`attached`** (5 cards) — Objects attached to a given object (inverse of `hostOf`)
+  - Long-Lost Lances; Ronin, Shadow Stalker; Thorin, Mountain-king; Whiplash, Vengeful Engineer; Winter Soldier, Icy Assassin
+- **`color`** (5 cards) — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
+  - Aragorn, the Uniter; Baron Helmut Zemo; Goblin Cratermaker; Necklace of Girion; World War Hulk
+- **`toughness`** (4 cards) — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
+  - Baxter Building; Murdock's Crusade; Stern Scolding; The Kingpin of Crime
 - **`chosenType`** (3 cards) — Objects of the chosen creature type
   - An Unexpected Party; Orcrist, Goblin-cleaver; Raise the Palisade
 - **`defendingPlayer`** (3 cards) — The defending player relative to an attacker
   - Captain America's Shield; Colossal Whale; Witch-king, Bringer of Ruin
-- **`damagedThisTurn`** (2 cards) — Objects dealt damage this turn
+- **`powerUpAbility`** (3 cards) — Power-up abilities as a class (cost reductions, extra activations, “can't be activated”). Power-up is not a `Keyword`, so `keywordAbility` can't pick it
+  - Hulk, Gamma Goliath; Kang the Conqueror; Wonder Man, Hollywood Hero
+- **`damagedThisTurn`** (2 cards) — Objects that were dealt damage / dealt damage this turn
   - Bitter Downfall; Red Guardian, Super-Soldier
-- **`castFromZone`** (1 cards) — Zone a spell is cast from
+- **`graveyardSizeAtLeast`** (2 cards) — Graveyards (or their owners) with at least N cards, so they can be counted
+  - Master's Councillors; The Master of Lake-town
+- **`castFromZone`** (1 card) — Zone a spell is cast from (only `Trigger.castSpellFromGraveyard` exists)
   - Bilbo, Thief in the Night
-- **`commander`** (1 cards) — The selected player's commander
+- **`commander`** (1 card) — The selected player's commander
   - Arcane Signet
-- **`worthy`** (1 cards) — Worthy (Marvel)
-  - Mjölnir, Hammer of Thor
-- **`putFromBattlefieldThisTurn`** (1 cards) — Cards put into a graveyard from the battlefield this turn (Shape.diedThisTurn is Condition-only)
-  - Supper for Spiders
-- **`receivedCounterThisTurn`** (1 cards) — Objects you put +1/+1 counters on this turn
+- **`mostLife`** (1 card) — A player with the most life or tied for most life
+  - The Black Gate
+- **`receivedCounterThisTurn`** (1 card) — Objects *you* put +1/+1 counters on this turn (`putCountersSimultaneously` does not say who put them)
   - Kid Loki
+- **`sacrificedForCost`** (1 card) — The object sacrificed to pay a cost (`wasObjectOfAction` names actions, not costs)
+  - Tom, Bert, and William
+- **`worthy`** (1 card) — Worthy (Marvel)
+  - Mjölnir, Hammer of Thor
 
 ### `Trigger`
 
-- **`beginStep`** (26 cards) — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-  - Absorbing Man; Alien Invasion; Avengers Assemble!; Beorn the Fierce; Bolg, Erebor's Reckoning; Chief Warg's Company; Dawn of a New Age; Doctor Doom; Gandalf, Party Guest; Glóin the Mighty; … (16 more)
-- **`onceEachTurn`** (15 cards) — Limit a trigger to once each turn
-  - Ant-Man, Colony Commander; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Crossbones, Malicious Mercenary; Elrond, Moon-Reader; Knight of Wundagore; Kíli the Resourceful; Loki, God of Mischief; Moon Girl and Devil Dinosaur; Nimrodel Watcher; … (5 more)
-- **`sagaChapter`** (13 cards) — When a lore counter is put / a (final) chapter ability resolves
-  - Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
-- **`leaveBattlefield`** (9 cards) — When the selected object leaves the battlefield
-  - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Roads Go Ever, Ever On; Secret Invasion; Super Villain Lockup; Web Up
+- **`whenYouDo`** (14 cards) — Reflexive trigger after an action (“When you do, …”, CR 603.12)
+  - Ant-Man, Colony Commander; Bolg of the North; Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Dáin Ironfoot; Grim Reaper, Lethal Legionnaire; Hawkeye, Master Marksman; Head of the Hunt; … (4 more)
+- **`leaveBattlefield`** (11 cards) — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
+  - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Old Fat Spider Can't See Me; Secret Invasion; Super Villain Lockup; The Super Hero Civil War; The Wondrous Wasp; … (1 more)
+- **`onceEachTurn`** (11 cards) — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+  - Ant-Man, Colony Commander; Baron Strucker, HYDRA Overlord; Crossbones, Malicious Mercenary; Elrond, Moon-Reader; Knight of Wundagore; Loki, God of Mischief; Moon Girl and Devil Dinosaur; Nimrodel Watcher; Part in Friendship; The Sensational She-Hulk; … (1 more)
 - **`attackAlone`** (8 cards) — When the selected object attacks alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
-- **`becomeTarget`** (9 cards) — When the selected object becomes the target of a spell or ability
-  - Dwarven Mattock; Falcon's Wing Harness; Gandalf, Wandering Wizard; Lake-town Mariners; Loki, God of Mischief; Old Fat Spider; Super Strength; Titania, Rugged Rumbler; Speedball, New Warrior
+- **`nextTurnOf`** (7 cards) — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
+  - Absorbing Man; Evil's Thrall; Hex Magic; Taskmaster, Mercenary Mimic; The Great Goblin; The One Ring; Thor, God of Thunder
+- **`nthCounter`** (7 cards) — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
+  - Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Political Triumph; Rewrite History; Robot Domination
 - **`becomeTapped`** (4 cards) — When the selected object becomes tapped (including tapped to pay a cost)
   - Agent Maria Hill; Captain America, Living Legend; Hawkeye's Bow; Hawkeye, Master Marksman
-- **`dealtDamage`** (4 cards) — When the selected object is dealt damage (Enrage / watch-damage)
-  - Red Hulk; The Black Arrow; The Incredible Hulk; The Sensational She-Hulk
-- **`tokenEnters`** (4 cards) — When a token the player controls enters (enter + token selector may suffice if token creation exists)
-  - Belladonna Took; Cavern-Hoard Dragon; Gleaming Splendor; Mister Fantastic, Reed Richards
-- **`gainLife`** (3 cards) — Whenever the selected player gains life
-  - Heroic Feast; Mirkwood Elk; Tigra, Feline Fury
-- **`scry`** (3 cards) — Whenever the selected player scries
-  - Celeborn the Wise; Nimrodel Watcher; Witch-king of Angmar
+- **`gainLife`** (2 cards) — Whenever the selected player gains life
+  - Heroic Feast; Tigra, Feline Fury
+- **`putCounter`** (2 cards) — Whenever counters of any kind are put on matching objects (`putCountersSimultaneously` takes one `CounterKind`)
+  - Doc Samson, Super Psychiatrist; The Great Goblin
+- **`scry`** (2 cards) — Whenever the selected player scries
+  - Celeborn the Wise; Nimrodel Watcher
 - **`theRingTemptsYou`** (2 cards) — Whenever the Ring tempts you / you choose a Ring-bearer
   - Sauron, the Dark Lord; Witch-king of Angmar
-- **`wouldDraw`** (2 cards) — Would-draw replacement window (Trigger.draw is the actual event)
-  - Bard, King of Dale; Plunder the Trollshaws
-- **`nthCounter`** (7 cards) — When the Nth counter of a kind is put on the selected object
-  - Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Political Triumph; Rewrite History; Robot Domination
-- **`putCounter`** (1 cards) — Whenever counters are put on matching objects
-  - The Great Goblin
-- **`whenYouDo`** (1 cards) — Nested delayed trigger after an optional action ('when you do')
-  - Spider-Man, To the Rescue
-- **`opponentDrawsExceptFirst`** (1 cards) — An opponent draws except the first card of their draw step
+- **`chapterResolves`** (1 card) — Whenever the final chapter ability of a Saga resolves
+  - Tom Bombadil
+- **`connive`** (1 card) — When the selected creature would connive (a keyword-action event for `replace`)
+  - Leader, Super-Genius
+- **`loseLife`** (1 card) — Whenever the selected player loses life
+  - The Master of Lake-town
+- **`opponentDrawsExceptFirst`** (1 card) — An opponent draws except the first card of their draw step (same missing draw-step window as `wouldDraw`)
   - Orcish Bowmasters
+- **`wouldDraw`** (1 card) — A draw other than the first in each draw step. `replace` of `Trigger.draw` is “would draw”; there is no draw-step window
+  - Bard, King of Dale
 
 ### `Cost`
 
-- **`tapPowerTotal`** (16 cards) — Tap creatures you control with total power N or more (Teamwork / Crew)
-  - Atlantis Attacks; Cruel Alliance; Dependable Quinjet; Earth's Mightiest Heroes; Go Nuts!; Great Gilded Boat; HULK SMASH!; Helicarrier Strike; Murdock's Crusade; Repulsor Blast; … (6 more)
-- **`wardNonmana`** (14 cards) — Nonmana ward payments
-  - Captain America, Wings of Freedom; Cosmic Cube; Dwarven Mattock; Falcon's Wing Harness; Flowering of the White Tree; Gandalf, Wandering Wizard; Lake-town Mariners; Saruman of Many Colors; Sauron, the Dark Lord; Secret Invasion; … (4 more)
-- **`manaX`** (8 cards) — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
-  - An Unexpected Party; Bruce Banner; Cavern-Hoard Dragon; Glamdring, Foe-hammer; Stature, Size Shifter; The Lord of the Eagles; The Scarlet Witch; Treasure Vault
+- **`tapPowerTotal`** (12 cards) — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
+  - Atlantis Attacks; Cruel Alliance; Earth's Mightiest Heroes; Go Nuts!; Helicarrier Strike; HULK SMASH!; Murdock's Crusade; Repulsor Blast; Team Tactics; Too Evil to Stay Dead; … (2 more)
 - **`optionalAdditional`** (2 cards) — Optional additional cost (Kicker)
   - Galadriel's Dismissal; The Eagles Are Coming!
-- **`tapArtifactsForGeneric`** (2 cards) — Tap artifacts to pay generic
+- **`tapArtifactsForGeneric`** (2 cards) — Tap artifacts to pay generic (Improvise)
   - Arc Reactor; Ironheart, Clever Champion
-- **`life`** (1 cards) — Cost.life exists; combination with tap+addMana one-of is expressible if Condition/action compile
-  - Mount Doom
-- **`or`** (1 cards) — Cost.or exists; need discard-a-card (inHand) OR pay generic
-  - Titania, Rugged Rumbler
-- **`tapOther`** (1 cards) — Tap another matching permanent (not the tap symbol on the source)
+- **`getPoisonCounters`** (1 card) — Get poison counters as a cost (Ward—Get five poison counters). Other nonmana ward costs are `Cost.discard` / `sacrificeCount` / `or`
+  - The Serpent Society
+- **`tapOther`** (1 card) — Tap another matching permanent (not the tap symbol on the source)
   - The Shire
 
 ### `Condition`
 
-- **`enteredThisTurn`** (29 cards) — This land entered this turn
-  - Abomination, Terrifying Titan; Aerial Doombot; Bold Biochemist; Brave Brawler; Captain Marvel, Earth's Protector; Hercules, Prince of Power; Hulk, Gamma Goliath; Human Torch, Johnny Storm; Kang the Conqueror; Loki Laufeyson; … (19 more)
-- **`sourceEnteredThisTurn`** (24 cards) — The source entered this turn
-  - Abomination, Terrifying Titan; Aerial Doombot; Bold Biochemist; Brave Brawler; Captain Marvel, Earth's Protector; Hercules, Prince of Power; Hulk, Gamma Goliath; Human Torch, Johnny Storm; Kang the Conqueror; Loki Laufeyson; … (14 more)
 - **`castWithTeamwork`** (12 cards) — This spell was cast using teamwork
-  - Atlantis Attacks; Cruel Alliance; Earth's Mightiest Heroes; Go Nuts!; HULK SMASH!; Helicarrier Strike; Murdock's Crusade; Repulsor Blast; Team Tactics; Too Evil to Stay Dead; … (2 more)
-- **`enduringStory`** (9 cards) — You have an enduring story (Storied is already a Keyword)
-  - Balin, Loremaster; Bifur, Melodic Rider; Bombur, Gentle Dreamer; Dáin, Lord of the Iron Hills; Fíli the Pathfinder; Kíli the Resourceful; Ori, Keeper of Songs; Thorin Oakenshield; Óin the Brave
-- **`not`** (7 cards) — Negation / unless (Condition has and, not or/not)
-  - Chief Warg's Company; Minas Tirith; Olog-hai Crusher; Rivendell; The Black Gate; The Lonely Mountain; The Shire
-- **`controlCount`** (5 cards) — Controller controls N or more matching objects
-  - Alien Invasion; Ares, God of War; Chief Warg's Company; The Sentry, Golden Guardian; fogOnTheBarrowDowns
-- **`greaterOrEqual`** (6 cards) — At least N matching objects, written as `greaterOrEqual` of `Value.count`. Arnim Zola leftovers two or more creature cards in the graveyard. Remaining cards need other leftovers.
-  - HYDRA Troopers; Master's Councillors; Most Decrepit Old Bird; Punishing Punch; The Master of Lake-town; Tom Bombadil
-- **`or`** (5 cards) — Activate only if this land entered this turn or you control a basic land
-  - darkFortress; gatheringPlace; gleamingBastion; hiddenLair; trainingCompound
-- **`any`** (2 cards) — any with a legendary-you-control selector is already expressible; listed only if other gaps remain
-  - Haunt of the Dead Marshes; Rivendell
-- **`firstThisTurn`** (2 cards) — The first matching event this turn
-  - Bard's Company; Radagast of Rhosgobel
+  - Atlantis Attacks; Cruel Alliance; Earth's Mightiest Heroes; Go Nuts!; Helicarrier Strike; HULK SMASH!; Murdock's Crusade; Repulsor Blast; Team Tactics; Too Evil to Stay Dead; … (2 more)
 - **`kicked`** (2 cards) — This spell was kicked
   - Galadriel's Dismissal; The Eagles Are Coming!
 - **`manaValueParity`** (2 cards) — Mana value is odd/even
   - Gollum, Riddle Master; Thanos, the Mad Titan
-- **`attackedThisTurn`** (1 cards) — You attacked with N or more creatures this turn
+- **`attackedThisTurn`** (1 card) — You attacked with N or more creatures this turn (over every combat, not one `attackSimultaneously`)
   - Minas Tirith
-- **`citysBlessing`** (1 cards) — You have the city's blessing
+- **`citysBlessing`** (1 card) — You have the city's blessing
   - Andúril, Narsil Reforged
-- **`resolvedThisTurnCount`** (1 cards) — This ability has resolved N times this turn
+- **`resolvedThisTurnCount`** (1 card) — This ability has resolved N times this turn
   - Belladonna Took
-- **`modeNotChosenThisTurn`** — Constructor is now
-  `CardAction.chooseModeRestricted` plus `Trigger.modeWithIdChosen`
-  (Galadriel). The Vision still
-  needs a leftover for its noncreature-spell modes.
 
 ### `Ability`
 
-- **`activatedOnce`** (24 cards) — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-  - Abomination, Terrifying Titan; Aerial Doombot; Bold Biochemist; Brave Brawler; Captain Marvel, Earth's Protector; Hercules, Prince of Power; Hulk, Gamma Goliath; Human Torch, Johnny Storm; Kang the Conqueror; Loki Laufeyson; … (14 more)
-- **`keywordWard`** (14 cards) — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-  - Captain America, Wings of Freedom; Cosmic Cube; Dwarven Mattock; Falcon's Wing Harness; Flowering of the White Tree; Gandalf, Wandering Wizard; Lake-town Mariners; Saruman of Many Colors; Sauron, the Dark Lord; Secret Invasion; … (4 more)
 - **`keywordTeamwork`** (12 cards) — Teamwork N as an optional additional cost
-  - Atlantis Attacks; Cruel Alliance; Earth's Mightiest Heroes; Go Nuts!; HULK SMASH!; Helicarrier Strike; Murdock's Crusade; Repulsor Blast; Team Tactics; Too Evil to Stay Dead; … (2 more)
-- **`linkedExile`** (8 cards) — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
+  - Atlantis Attacks; Cruel Alliance; Earth's Mightiest Heroes; Go Nuts!; Helicarrier Strike; HULK SMASH!; Murdock's Crusade; Repulsor Blast; Team Tactics; Too Evil to Stay Dead; … (2 more)
+- **`linkedExile`** (8 cards) — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Roads Go Ever, Ever On; Super Villain Lockup; Web Up
-- **`activateFromZone`** (7 cards) — Activated ability that functions in the graveyard (or another non-battlefield zone)
-  - Eagle's Rescue; Haunt of the Dead Marshes; Moment of Glory; Plunder the Trollshaws; Silvan Reveler; Tidings of War; Winter Soldier, Icy Assassin
-- **`keywordCrew`** (4 cards) — Crew N
-  - Dependable Quinjet; Great Gilded Boat; S.H.I.E.L.D. Flying Car; S.H.I.E.L.D. Helicarrier
-- **`keywordFlashback`** (3 cards) — Flashback with a cost
-  - Moment of Glory; Plunder the Trollshaws; Tidings of War
 - **`keywordImprovise`** (2 cards) — Improvise
   - Arc Reactor; Ironheart, Clever Champion
 - **`keywordKicker`** (2 cards) — Kicker
   - Galadriel's Dismissal; The Eagles Are Coming!
-- **`gift`** (1 cards) — Gift (promise an opponent a token)
+- **`gift`** (1 card) — Gift (promise an opponent a token)
   - Bilbo's Gambit
-- **`keywordAffinity`** (1 cards) — Affinity for a type/subtype
+- **`graveyardTriggered`** (1 card) — A triggered ability that functions while the card is in a graveyard (`graveyardActivatedIf` is activated only)
+  - Silvan Reveler
+- **`harness`** (1 card) — Harness and the ∞ ability that works once harnessed
+  - The Mind Stone
+- **`keywordAffinity`** (1 card) — Affinity for a type/subtype (the reduction itself is `reduceCostWithX`)
   - Cantankerous Keepers
-- **`keywordBoast`** (1 cards) — Boast
+- **`keywordBoast`** (1 card) — Boast
   - Baron Helmut Zemo
-- **`keywordCascade`** (1 cards) — Cascade
+- **`keywordCascade`** (1 card) — Cascade
   - Call Forth the Tempest
-- **`keywordExtort`** (1 cards) — Extort
+- **`keywordExtort`** (1 card) — Extort
   - The Kingpin of Crime
-- **`keywordSneak`** (1 cards) — Sneak
+- **`keywordSneak`** (1 card) — Sneak
   - Elektra, Daughter of the Hand
 
 ### `ContinuousEffect`
 
-- **`setPowerToughness`** (14 cards) — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-  - Absorbing Man; Beorn the Fierce; Dependable Quinjet; Great Gilded Boat; I Am Iron Man; Iron Man Armor; Mirkwood Meditator; Moon Girl and Devil Dinosaur; Reptil, Dinomorpher; S.H.I.E.L.D. Helicarrier; … (4 more)
-- **`setTypes`** (14 cards) — Set types/subtypes rather than only gain them
-  - Absorbing Man; Beorn the Fierce; Dependable Quinjet; Great Gilded Boat; I Am Iron Man; Iron Man Armor; Mirkwood Meditator; Moon Girl and Devil Dinosaur; Reptil, Dinomorpher; S.H.I.E.L.D. Helicarrier; … (4 more)
-- **`restrictManaSpend`** (11 cards) — Mana from an action may be spent only on matching events (current leftovers cover Elf sources and instant/sorcery spells)
-  - Arcane Signet; Avengers Tower; Castle Doom; Delighted Halfling; Desolation of Smaug; Fíli and Kíli, Joyous; Hydraulic Helper; Mox Amber; Ronin, Shadow Stalker; … (2 more)
-- **`addPower` / `addToughness`** (8 cards) — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs `Value.count` for +1/+1, and `addPower` of `Value.count` alone for other-subtype +1/+0 per artifact token. Zero toughness is omitted
-  - Desert Were-Worm; Esgaroth Garrison; Iron Man, Master of Machines; Minas Tirith Garrison; Ms. Marvel, Kamala Khan; Namor the Sub-Mariner; Super-Adaptoid; Winter Soldier, Icy Assassin
-- **`reduceCostByValue`** (8 cards) — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
-  - Call Forth the Tempest; Cavern-Hoard Dragon; Cosmic Cube; Glamdring; Loki Laufeyson; Part in Friendship; Punishing Punch; The Lord of the Eagles
-- **`replace`** (7 cards) — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
-  - Bilbo, Thief in the Night; Grim Reaper, Lethal Legionnaire; Head of the Hunt; Pinecone Strike; Smite the Deathless; Thunderbolts Conspiracy; Winter Soldier, Icy Assassin
-- **`canPlay`** (5 cards) — canPlay exists; need top-of-library + land/creature spell filters as a continuous permission
-  - Call Forth the Tempest; Elven Chorus; Ka-Zar of the Savage Land; Part in Friendship; Tom Bombadil
-- **`forbidAttack`** (5 cards) — Can't attack / attacks-if-able (forbid exists for Trigger; need an attack event plus a restriction combinator)
-  - Alien Invasion; Ares, God of War; Chief Warg's Company; The Sentry, Golden Guardian; fogOnTheBarrowDowns
-- **`extraTrigger`** (4 cards) — Matching triggered abilities trigger an additional time
-  - Bifur, Melodic Rider; Chief of the Wilds; Wizard's Staff; Wonder Man, Hollywood Hero
-- **`loseAbilities`** (4 cards) — Selected object loses all abilities
-  - Frozen in Ice; Hellcat, Undying Vigilante; The Wondrous Wasp; enchantedRiverSGrasp
+- **`loseAbilities`** (5 cards) — Selected object loses all abilities, or a named ability
+  - Enchanted River's Grasp; Frozen in Ice; Hellcat, Undying Vigilante; Smite the Deathless; The Wondrous Wasp
+- **`setTypes`** (5 cards) — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
+  - I Am Iron Man; Iron Man Armor; Reptil, Dinomorpher; Taskmaster, Mercenary Mimic; Tom, Bert, and William
 - **`mayLookAtTop`** (4 cards) — May look at the top card of the selected library any time
   - Daredevil, Man Without Fear; Elven Chorus; Iron Lad, Diverging Destiny; Ka-Zar of the Savage Land
-- **`cantBeCountered`** (3 cards) — Selected spells can't be countered
-  - Delighted Halfling; Gigantic Big Bear; Last March of the Ents
-- **`forbidCast`** (3 cards) — Players matching a selector can't cast spells matching a selector
-  - Bilbo's Gambit; Jennifer Walters; The Sensational She-Hulk
-- **`skipsUntap`** (4 cards) — Selected permanents don't untap during the untap step
-  - Bombur, Gentle Dreamer; Frozen in Ice; enchantedRiverSGrasp; Spider-Woman, Secret Agent
-- **`cantBeBlockedBy`** (2 cards) — Can't be blocked by / if matching a selector (power at most/at least, tokens already exist as forbid block token this)
-  - Bilbo, Unexpected Adventurer; Old Fat Spider
-- **`cantBeBlockedExceptBy`** (2 cards) — Can't be blocked except by N or more creatures (menace is Keyword for N=2)
-  - Troll of Khazad-dûm; Witch-king of Angmar
-- **`gainAbility`** (2 cards) — gainAbility exists; granting a tap-add-mana activated ability to others needs Ability.activated as the granted ability (already in Ability) — compiler may not emit it
-  - Elven Chorus; Thranduil the Strategist
-- **`gainAbilityIf`** (3 cards) — Matching spells have flash / cost less with a 'first this turn' condition
-  - Bard's Company; Radagast of Rhosgobel; Captain Mar-Vell, Space-Born
+- **`attacksEachCombat`** (3 cards) — Attacks each combat if able (“can't attack” is `forbid` of `Trigger.attack`)
+  - Alien Invasion; Ares, God of War; The Sentry, Golden Guardian
+- **`extraTrigger`** (3 cards) — Matching triggered abilities trigger an additional time
+  - Bifur, Melodic Rider; Chief of the Wilds; Wizard's Staff
 - **`handSize`** (2 cards) — Set / remove maximum hand size
   - Ms. Marvel, Kamala Khan; The Ten Rings
 - **`modifyDamage`** (2 cards) — Replacement that changes how much damage is dealt
   - Hawkeye, Young Avenger; Mjölnir, Hammer of Thor
-- **`preventDamage`** (2 cards) — Prevent (all) damage that would be dealt to/by a selector
-  - Black Panther, Hope Enduring; Old Fat Spider Can't See Me
-- **`replaceDraw`** (2 cards) — If you would draw (except the first in each draw step), draw N instead
-  - Bard, King of Dale; Plunder the Trollshaws
-- **`replaceTokenCreation`** (2 cards) — If you would create a Food, also create a Treasure
+- **`replaceTokenCreation`** (2 cards) — If tokens would be created, create more or different tokens (no token-creation event for `replace`)
   - Bard, King of Dale; Bilbo, Fellow Conspirator
-- **`copyActivatedAbilities`** (1 cards) — Gains the activated abilities of matching objects
+- **`spendManaAsThoughAnyType`** (2 cards) — Mana of any type can be spent to cast the selected spells
+  - Black Widow, Super Spy; Shadow of the Enemy
+- **`activateAsThoughHaste`** (1 card) — Activate abilities of the selected creatures as though they had haste
+  - Shang-Chi, Master of Kung Fu
+- **`cantBeBlockedByMoreThan`** (1 card) — Can't be blocked by more than N creatures
+  - White Tiger, Ava Ayala
+- **`cantBeBlockedExceptBy`** (1 card) — Can't be blocked except by N or more creatures (menace is Keyword for N=2)
+  - Troll of Khazad-dûm
+- **`cantBecomeUntapped`** (1 card) — Can't become untapped (stronger than `doesntUntap`)
+  - Frozen in Ice
+- **`cantBeCountered`** (1 card) — The spell a mana ability's mana was spent on can't be countered. `forbid (Trigger.counter …)` covers “this spell can't be countered”
+  - Delighted Halfling
+- **`copyActivatedAbilities`** (1 card) — Gains the activated abilities of matching objects
   - Thranduil, the Elvenking
-- **`reduceCost`** (1 cards) — reduceCost+if exists for tapped/attacking/died; missing damaged-this-turn shape
-  - Bitter Downfall
-- **`reduceCostIfCastFrom`** (1 cards) — Spells you cast from matching zones cost less
-  - Bilbo, Thief in the Night
-- **`reduceCostPer`** (1 cards) — Reduce cost by {1} per matching object
-  - Cantankerous Keepers
-- **`replaceEnterCounters`** (1 cards) — As matching objects enter, they enter with extra counters
-  - Arwen, Weaver of Hope
-- **`setSubtypes`** (1 cards) — Overwrite subtypes (gainSubtype only adds)
-  - fogOnTheBarrowDowns
-- **`gainSupertype`** (1 cards) — Gain a supertype in addition to other types (legendary)
-  - Super-Soldier Serum
-- **`forbidUntapWhileYouControl`** (1 cards) — Can't become untapped for as long as you control this
+- **`forbidUntapWhileYouControl`** (1 card) — Can't become untapped for as long as you control this
   - Spider-Woman, Secret Agent
+- **`gainSupertype`** (1 card) — Gain a supertype in addition to other types (legendary)
+  - Super-Soldier Serum
+- **`reduceCost`** (1 card) — `reduceCost` + `if` exists; missing the damaged-this-turn target shape
+  - Bitter Downfall
+- **`reduceCostIfCastFrom`** (1 card) — Spells you cast from matching zones cost less
+  - Bilbo, Thief in the Night
+- **`replaceEnterCounters`** (1 card) — As matching other objects enter, they enter with extra counters
+  - Arwen, Weaver of Hope
+- **`setSubtypes`** (1 card) — Overwrite subtypes (`gainSubtype` only adds)
+  - Fog on the Barrow-Downs
 
 ### `CardAction`
 
-- **`repeatN`** (22 cards) — Repeat an action / deal damage / draw / put counters X times where X is computed
-  - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Iron Fist, Living Weapon; Last March of the Ents; … (12 more)
-- **`lookAt`** (17 cards) — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-  - Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Dáin's Company; Elven Chorus; Gandalf, Goblins' Bane; … (9 more)
-- **`connive`** (11 cards) — Connive
-  - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Kang, Temporal Tyrant; Leader, Super-Genius; M.O.D.O.K.; Madame Masque; Red Room Recruit; Swordsman, Sharp Scoundrel; Trickster's Stratagem; … (1 more)
-- **`addManaPer`** (9 cards) — Add mana for each matching object
-  - Avengers: Under Siege; Bag End Banquet; Desert Were-Worm; Dragon's Desire; Elvish Archdruid; Roads Go Ever, Ever On; The Eagles Are Coming!; The Lonely Mountain; The Notary Hobbits
-- **`chooseModes`** (11 cards) — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
-  - Atlantis Attacks; Avengers Disassembled; Decoy Ploy; Epic Fight; Flame of Anor; Go Nuts!; HULK SMASH!; Murdock's Crusade; Pinecone Strike; Widow's Bite; The Vision
-- **`randomize`** (10 cards) — Put on bottom in random order / pick a random card among
-  - Boughside Wanderers; Call Forth the Tempest; Cosmic Cube; Dáin's Company; Getaway Barrel; Gríma, Saruman's Footman; Nick Fury, Agent of S.H.I.E.L.D.; Part in Friendship; Tom Bombadil; Tony Stark
-- **`copy`** (9 cards) — Copy a permanent, spell, or ability
-  - Absorbing Man; Echo, Perceptive Prodigy; Multiversal Incursion; Photon Blast Barrage; Scientist Supreme of A.I.M.; Secret Invasion; Shuri, Wakandan Inventor; Taskmaster, Mercenary Mimic; Ultron, Artificial Malevolence
+- **`copy`** (10 cards) — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
+  - Absorbing Man; Echo, Perceptive Prodigy; Multiversal Incursion; Photon Blast Barrage; Scientist Supreme of A.I.M.; Secret Invasion; Shuri, Wakandan Inventor; Taskmaster, Mercenary Mimic; The Notary Hobbits; Ultron, Artificial Malevolence
+- **`eventAmount`** (8 cards) — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+  - Bolg of the North; Doc Samson, Super Psychiatrist; Hawkeye, Young Avenger; Heroic Feast; Smaug the Impenetrable; The Master of Lake-town; The Reaver Cleaver; The Sensational She-Hulk
 - **`returnExiled`** (8 cards) — Return objects exiled by a linked action
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Roads Go Ever, Ever On; Super Villain Lockup; Web Up
-- **`eventAmount`** (8 cards) — Use the amount of damage/life/cards from the triggering event ('that much')
-  - Bolg of the North; Hawkeye, Young Avenger; Red Hulk; The Black Arrow; The Incredible Hulk; The Kingpin of Crime; The Sensational She-Hulk; Ori, Plate Stacker
+- **`putCounter` of a `Value`** (7 cards) — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
+  - Dancing from Dark to Dawn; Dawn of a New Age; Rhovanion Rampager; Stature, Size Shifter; Sting, Bilbo's Sword; The Ruinous Wrecking Crew; Vision Quest
+- **`chooseModes`** (6 cards) — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
+  - Atlantis Attacks; Flame of Anor; Go Nuts!; HULK SMASH!; Murdock's Crusade; Widow's Bite
 - **`removeCounter`** (6 cards) — Remove counters from the selected object
-  - Arwen, Mortal Queen; Captain America, Super-Soldier; Dawn of a New Age; Mister Hyde, Monster Within; The Astonishing Ant-Man; enchantedRiverSGrasp
+  - Arwen, Mortal Queen; Captain America, Super-Soldier; Dawn of a New Age; Enchanted River's Grasp; Mister Hyde, Monster Within; The Astonishing Ant-Man
 - **`transform`** (6 cards) — Transform this permanent
   - Bruce Banner; Jennifer Walters; King T'Challa; Monica Rambeau; Nick Fury, Agent of S.H.I.E.L.D.; Tony Stark
-- **`exileThenReturn`** (5 cards) — Exile then return at a later trigger (end step / leaves)
-  - Elrond, Moon-Reader; Roll-Roll-Roll-Roll; S.H.I.E.L.D. Flying Car; The Mind Stone; Wiccan, Rising Magician
-- **`optionalPayFor` leftover besides Speed** (5 cards) — Constructor exists; leftover only compiles you / {1} / haste-except-haste
-  - Mentor of the Meek; Silvan Reveler; The Black Gate; The Kingpin of Crime; Ultron, Artificial Malevolence
+- **`exileThenReturn`** (4 cards) — Exile, then return at a later event (a delayed trigger such as the next end step)
+  - Elrond, Moon-Reader; Roll-Roll-Roll-Roll; S.H.I.E.L.D. Flying Car; Wiccan, Rising Magician
 - **`gainControl`** (4 cards) — Gain control of selected objects
   - Bilbo's Burglaring; Evil's Thrall; Sauron, the Lidless Eye; The Super Hero Civil War
-- **`addManaCombination`** (3 cards) — Add N mana in any combination of listed types / any color
-  - Baxter Building; Desolation of Smaug; Relic of Sauron
 - **`chooseCreatureType`** (3 cards) — Choose a creature type (as-enters or on resolution)
   - An Unexpected Party; Orcrist, Goblin-cleaver; Raise the Palisade
+- **`addManaOfColorAmong`** (2 cards) — Add one mana of any color among selected objects or a commander's color identity
+  - Arcane Signet; Mox Amber
 - **`chooseOddEven`** (2 cards) — Choose odd or even
   - Gollum, Riddle Master; Thanos, the Mad Titan
+- **`discardChosen`** (2 cards) — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
+  - Down, Down to Goblin-town; Klaw, Sonic Subjugator
+- **`exileUntil`** (2 cards) — Exile from the top of a library until a matching card
+  - Black Widow, Super Spy; Gríma, Saruman's Footman
 - **`extraCombat`** (2 cards) — An additional combat phase; typically with untap attackers
   - Desert Were-Worm; The Incredible Hulk
 - **`investigate`** (2 cards) — Investigate / create a Clue
   - Agent 13, Sharon Carter; Panther Pounce
 - **`theRingTemptsYou`** (2 cards) — The Ring tempts you
   - Sauron, the Dark Lord; Witch-king of Angmar
-- **`behold`** (1 cards) — Behold a subtype
-  - Elven Passage
-- **`cascade`** (1 cards) — Exile until a cheaper nonland; you may cast it
-  - Call Forth the Tempest
-- **`becomeWithAbility`** (1 cards) — Lose other types, become Food artifacts, and gain a stated activated ability
+- **`becomeWithAbility`** (1 card) — Lose other types, become Food artifacts, and gain a stated activated ability
   - Supper for Spiders
-- **`exileUntil`** (1 cards) — Exile from the top until a matching card (nonland leftover)
-  - Black Widow, Super Spy
-- **`forEachCounterKind`** (1 cards) — For each kind of counter on a selected object, give another of that kind
-  - Powerful Broker
-- **`changeTargets`** (1 cards) — Choose new targets for another spell or ability
+- **`behold`** (1 card) — Behold a subtype
+  - Elven Passage
+- **`cascade`** (1 card) — Exile until a cheaper nonland; you may cast it
+  - Call Forth the Tempest
+- **`changeTargets`** (1 card) — Choose new targets for another spell or ability
   - Speedball, New Warrior
+- **`extraTurn`** (1 card) — Take an extra turn
+  - Kang the Conqueror
+- **`forEachCounterKind`** (1 card) — For each kind of counter on a selected object, give another of that kind
+  - Powerful Broker
+- **`gainProtection`** (1 card) — A player gains protection from everything
+  - The One Ring
+- **`phaseOut`** (1 card) — Phase out
+  - Galadriel's Dismissal
+- **`randomize`** (1 card) — Pick a random card among (`putOnLibraryBottomInRandomOrder` exists)
+  - Getaway Barrel
+- **`separatePiles`** (1 card) — Separate cards into piles for an opponent to choose
+  - Riddles in the Dark
 
 ### `TraditionalCardDefinition`
 
-- **`sagaChapters`** (13 cards) — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-  - Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
-- **`entersTappedUnless`** (7 cards) — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-  - Chief Warg's Company; Minas Tirith; Olog-hai Crusher; Rivendell; The Black Gate; The Lonely Mountain; The Shire
-- **`otherFace`** (6 cards) — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
+- **`otherFace`** (6 cards) — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
   - Bruce Banner; Jennifer Walters; King T'Challa; Monica Rambeau; Nick Fury, Agent of S.H.I.E.L.D.; Tony Stark
-- **`asEntersChoice`** (3 cards) — As-this-enters replacement/choice on the face
+- **`asEntersChoice`** (3 cards) — As-this-enters choice on the face
   - An Unexpected Party; Orcrist, Goblin-cleaver; Raise the Palisade
-- **`entersWithCounters`** (3 cards) — Enters with shield counters
+- **`entersWithCounters`** (3 cards) — Enters with named counters (blocked by `CounterKind`)
   - Arwen, Mortal Queen; Captain America, Super-Soldier; Dawn of a New Age
 
 ### `CounterKind`
 
-`CounterKind` is used by `CardAction.putCounter` and
-`Trigger.putCountersSimultaneously`. It currently has only `plusOnePlusOne`.
+`CounterKind` is used by `CardAction.putCounter`, `Selector.hasCounter`, and
+`Trigger.putCountersSimultaneously`. It has only `plusOnePlusOne`.
 
-- **`lore`** (13 cards) — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-  - Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
-- **`named`** (17 cards) — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, …)
-  - Beorn the Fierce; Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Dwalin, Weaponmaster; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Last Light of Durin's Day; Minas Morgul, Dark Fortress; … (7 more)
-- **`Hope`** (1 cards) — Named counter kind beyond +1/+1
-  - Dawn of a New Age
-- **`IndestructibleCounter`** (1 cards) — Named counter kind beyond +1/+1
-  - Arwen, Mortal Queen
-- **`Shield`** (1 cards) — Named counter kind beyond +1/+1
-  - Captain America, Super-Soldier
+- **`named`** (25 cards) — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+  - Alien Invasion; Arwen, Mortal Queen; Beorn the Fierce; Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Claim the Kingdom; Construct a Cosmic Cube; Dawn of a New Age; Death to Our Enemies; Doom Reigns Supreme; … (15 more)
 
-## Cards with no tagged type gap
+## Cards with no constructor gap
+
+These 92 remaining cards can be spelled with the current
+constructors. They stay `CardDef` helpers until `parseOracleParts` or
+`toCardDef` handles their text.
+
+**Hobbit (11):** Azog, Moria's Ruin; Balin, Loremaster; Boughside Wanderers; Burn, Burn, Tree and Fern; Down in the Valley; Gleaming Splendor; Lake-town Toymaker; Radagast of Rhosgobel; Stone-Giant of High Pass; The Misty Mountains Cold; Through the Forest Gate.
+
+**Hobbit Eternal (22):** Bag End Banquet; Bolg, Erebor's Reckoning; Dragon's Desire; Dwarven Warriors; Dáin of the Ancient Halls; Elvish Archdruid; Errand-Rider of Gondor; Flowering of the White Tree; Fíli and Kíli, Joyous; Haunt of the Dead Marshes; Last March of the Ents; Mentor of the Meek; Minas Tirith Garrison; Mirkwood Elk; Mount Doom; Olog-hai Crusher; Orcish Siegemaster; Ori, Plate Stacker; Relic of Sauron; Rivendell; Thranduil the Strategist; Treasure Vault.
+
+**Marvel Super Heroes (59):** Abomination, Terrifying Titan; Aerial Doombot; Avengers Assemble!; Avengers Disassembled; Avengers Tower; Avengers: Under Siege; Black Panther, Hope Enduring; Bold Biochemist; Brave Brawler; Captain America, Wings of Freedom; Captain Mar-Vell, Space-Born; Castle Doom; Colleen Wing, Street Samurai; Dark Fortress; Decoy Ploy; Dependable Quinjet; Doctor Doom; Epic Fight; Falcon's Wing Harness; Gathering Place; Gleaming Bastion; H.E.R.B.I.E. Scout Unit; Hercules, Prince of Power; Hidden Lair; Hulkling, Burgeoning Bruiser; Human Torch, Johnny Storm; HYDRA Troopers; Hydraulic Helper; Invisible Woman, Sue Storm; Iron Fist, Living Weapon; Iron Man, Master of Machines; Mister Fantastic, Reed Richards; Misty Knight, Hero for Hire; Mole Man, Moloid Master; Ninja of the Hand; Pet Avengers; Punishing Punch; Raft Security Officer; S.H.I.E.L.D. Helicarrier; Serpent Specialist; She-Hulk, Jade Defender; Super Intelligence; Super Strength; Super-Skrull; The Coming of Galactus; The Invincible Iron Man; The Unbeatable Squirrel Girl; The Vision; Titania, Rugged Rumbler; Training Compound; Training Regimen; U.S.Agent, John Walker; Ultron Drone; Unliving Legionnaire; Villainous Hideout; Viv Vision, Teen Synthezoid; Volcanic Villain; War Machine, Legacy of Iron; Worlds Within Worlds.
+
+## Earlier conversions
 
 The first pass listed 44 remaining cards that did not match a missing-constructor
-pattern. Conversion against `toCardDef` split them:
+pattern. Conversion against `toCardDef` split them.
 
 ### Converted to `TraditionalCardDefinition`
 
@@ -561,59 +567,71 @@ another-Villain pump/lifelink, plus-one-on-each-other-subtype, Merfolk attack
 draw, legendary-creature activated cost reduction, and the enter/search/modal
 spell leftovers those printings need.
 
-### Cards that still cannot convert
+Since the previous revision of this index, 46 more listed cards became
+`TraditionalCardDefinition`s. The Hobbit ones read their Oracle text with
+`parseOracleParts`.
+
+**Hobbit (39):** Bard's Company; Bombur, Gentle Dreamer; Chief Warg's Company; Desolation of Smaug; Dwarven Mattock; Dáin's Company; Dáin, Lord of the Iron Hills; Eagle's Rescue; Esgaroth Garrison; Fíli the Pathfinder; Gandalf, Goblins' Bane; Gandalf, Wandering Wizard; Gigantic Big Bear; Glamdring, Foe-hammer; Glóin the Mighty; Great Gilded Boat; Great Ugly-Looking Goblin; Iron Hills Blacksmith; Kíli the Resourceful; Lake-town Mariners; Mirkwood Meditator; Moment of Glory; Most Decrepit Old Bird; My Precious; Old Fat Spider; Ori, Keeper of Songs; Pinecone Strike; Plunder the Trollshaws; Settle the Wreckage; Smaug the Magnificent; Smaug, Wicked Worm; The Arkenstone; The Black Arrow; The Lonely Mountain; The Lord of the Eagles; Thorin Oakenshield; Tidings of War; Troll Negotiations; Óin the Brave.
+
+**Marvel Super Heroes (7):** A.I.M. Scientists; Kang, Temporal Tyrant; M.O.D.O.K.; Madame Masque; Red Room Recruit; Swordsman, Sharp Scoundrel; Trickster's Stratagem.
+
+## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. They stay in the
 catalog as `CardDef` helpers. Evidence is the printed ability vs the current
-inductives (not a missing leftover for an expressible spelling).
+inductives (not a missing leftover for an expressible spelling). Three of
+them can now be spelled.
 
 - **Supper for Spiders** — Put onto the battlefield all creature cards in
   opponents' graveyards that were put there *from the battlefield this turn*;
-  they become Food artifacts with an activated ability. `Shape.diedThisTurn`
-  is only set from a `Condition`, not a selector conjunct, and there is no
-  `CardAction` to change types to Food and grant an ability.
+  they become Food artifacts with an activated ability.
+  `Selector.wasObjectSince` of `Trigger.putToGraveyard` now selects those
+  cards. There is still no `CardAction` to change types to Food, losing the
+  other types, and grant an ability.
 - **Long-Lost Lances** — During your turn, *creatures you control that are
   equipped* have first strike and vigilance. That needs `Selector.attached`
   (inverse of `hostOf`). Equipped-creature host bonuses already exist; this
   static is the other direction.
 - **Ori, Plate Stacker** — Destroy all artifacts and enchantments opponents
-  control; gain 1 life *for each permanent destroyed this way*.
-  `CardAction.eventAmount` / `Selector.countOf` are missing.
+  control; gain 1 life *for each permanent destroyed this way*. Now
+  spellable: `actionId` on the destroy and `gainLife` of
+  `Value.count (Selector.wasObjectOfAction n)`.
 - **Black Widow, Super Spy** — Combat-damage exile from the top until a
-  nonland, then an optional +1/+1 or cast-the-exiled-card. Needs
-  `Selector.topNOfLibrary` / exile-until and `Selector.inExile` for the
-  leftover nonland.
+  nonland, then an optional +1/+1 or cast-the-exiled-card.
+  `Selector.topOfLibrary` and `Selector.inExile` exist. Exile-until and
+  “mana of any type can be spent” are missing.
 - **Captain Mar-Vell, Space-Born** — As long as an opponent has cast a spell
-  this turn, you may cast spells as though they had flash.
-  `ContinuousEffect.gainAbilityIf` / “as though they had flash” is missing
-  (`Condition.happened` on an opponent's `castSpell` exists, but granting
-  flash to spells you cast does not).
+  this turn, you may cast spells as though they had flash. Now spellable:
+  `ContinuousEffect.canBeCastAsThoughWithFlashIf` with `Condition.happened`
+  of an opponent's `castSpell` since `turnStart`.
 - **Kid Loki** — Each creature you control that you've put +1/+1 counters on
-  *this turn* has hexproof. `Selector.hasCounter` and a “this turn” put-
-  counters window are missing. (The second-card +1/+1 on self is already
+  *this turn* has hexproof. `Selector.hasCounter` and `wasObjectSince` of
+  `putCountersSimultaneously` exist, but that trigger does not say who put
+  the counters. (The second-card +1/+1 on self is already
   leftover-expressible as `onDrawSecondPlusOne`, but the static is not.)
 - **Powerful Broker** — For each *kind of counter* on target permanent or
   player, give another counter of that kind. No constructor iterates counter
   kinds.
 - **Speedball, New Warrior** — Whenever a player casts a spell that targets
-  Speedball, pump and *choose new targets for that spell*. `Trigger.becomeTarget`
-  is missing (also listed for other cards); changing targets of another spell
-  is not a `CardAction`.
+  Speedball, pump and *choose new targets for that spell*. The trigger is
+  `Trigger.target` (or `castSpell` of a spell that `hasTarget` Speedball);
+  changing targets of another spell is not a `CardAction`.
 - **Spider-Man, To the Rescue** — You may tap him. *When you do*, another
   target nonattacking creature gains indestructible. Nested “when you do”
   delayed trigger is not a `Trigger` constructor.
 - **Spider-Woman, Secret Agent** — Tap target opponent creature; it can't
   become untapped for as long as you control Spider-Woman.
-  `ContinuousEffect.skipsUntap` / “can't become untapped while you control
-  this” is missing.
+  `ContinuousEffect.doesntUntap` covers only the untap step, and no
+  duration ends when you lose control.
 - **Super-Soldier Serum** — Enchanted creature is a *legendary Soldier* in
   addition to its other types, and attach *any number* of Equipment you
   control. No `ContinuousEffect.gainSupertype`; `Range.any` now covers the
   unbounded count.
-- **The Vision** — Choose one *that hasn't been chosen this turn*.
-  `CardAction.chooseModeRestricted` now exists (Galadriel’s Alliance).
-  The Vision still needs a leftover for “whenever you cast a noncreature
-  spell” plus its three named modes (`Effect.castingVisionModes`).
+- **The Vision** — Choose one *that hasn't been chosen this turn*. Now
+  spellable: `CardAction.chooseModeRestricted` with
+  `Trigger.modeWithIdChosen`, triggered by `castSpell` of a noncreature
+  spell you control. The leftover onto `Effect.castingVisionModes` is
+  missing.
 
 ## Adjacent inductives
 
@@ -621,494 +639,239 @@ These are not in the requested list but block a conversion of the listed types:
 
 | Inductive | Used by | Missing constructors that remaining cards need |
 | --- | --- | --- |
-| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Constructors now exist for every remaining catalog subtype, including Army (`Selector.subtype .army`). Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers / `CounterKind`, not missing subtypes. |
-| `Keyword` | `Ability.keyword`, `CardAction.keyword` | Ward, Crew, Kicker, Flashback, Cascade, Affinity, Teamwork, Improvise, Extort, Sneak, Boast, Daybound/Nightbound (some of these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Recruit and amass are keyword actions via `CardAction.keyword`. |
-| `CounterKind` | `CardAction.putCounter` | lore, shield, hope, hone, trample, quest, shadow, finality, indestructible, plan, and other named counters |
+| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Constructors exist for every remaining catalog subtype, including Army (`Selector.subtype .army`). Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers / `CounterKind`, not missing subtypes. |
+| `Keyword` | `Ability.keyword`, `CardAction.keyword` | Kicker, Cascade, Affinity, Teamwork, Improvise, Extort, Sneak, Boast, Gift, Harness (some of these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters exist. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
+| `CounterKind` | `CardAction.putCounter`, `Selector.hasCounter`, `Trigger.putCountersSimultaneously` | shield, hope, hone, trample, quest, shadow, finality, indestructible, lifelink, plan, stun, influence, burden, invasion, double strike, and other named counters |
 
-`CardPart` also has no `loyalty`, `chapter`, or DFC-back
-face (`alternative` is the Adventure face). Those are listed under
-`TraditionalCardDefinition`.
+`CardPart` also has no `loyalty` or DFC-back face (`alternative` is the
+Adventure face). The back face is listed under `TraditionalCardDefinition`.
+Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 
 ## Per-card index
 
 Every remaining supported catalog card. Constructors are `Type.ctor`.
-Converted cards from the previous untagged set are omitted here.
+Converted cards are omitted here.
 
-### The Hobbit (HOB) (95 cards)
+### The Hobbit (HOB) (56 cards)
 
 **An Unexpected Party** (`anUnexpectedParty`)
 
 - `CardAction.chooseCreatureType` — Choose a creature type (as-enters or on resolution)
 - `Selector.chosenType` — Objects of the chosen creature type
-- `TraditionalCardDefinition.asEntersChoice` — As-this-enters replacement/choice on the face
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
+- `TraditionalCardDefinition.asEntersChoice` — As-this-enters choice on the face
 
 **Azog, Moria's Ruin** (`azogMoriaSRuin`)
 
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Balin, Loremaster** (`balinLoremaster`)
 
-- `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-
-**Bard's Company** (`bardsCompany`)
-
-- `ContinuousEffect.gainAbilityIf` — Matching spells have flash / cost less with a 'first this turn' condition
-- `Condition.firstThisTurn` — The first matching event this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Bard, King of Dale** (`bardKingOfDale`)
 
-- `ContinuousEffect.replaceDraw` — If you would draw (except the first in each draw step), draw N instead
-- `Trigger.wouldDraw` — Would-draw replacement window (Trigger.draw is the actual event)
-- `ContinuousEffect.replaceTokenCreation` — If tokens would be created, create twice as many instead
+- `Trigger.wouldDraw` — A draw other than the first in each draw step. `replace` of `Trigger.draw` is “would draw”; there is no draw-step window
+- `ContinuousEffect.replaceTokenCreation` — If tokens would be created, create more or different tokens (no token-creation event for `replace`)
 
 **Belladonna Took** (`belladonnaTook`)
 
 - `Condition.resolvedThisTurnCount` — This ability has resolved N times this turn
-- `Trigger.tokenEnters` — When a token the player controls enters (enter + token selector may suffice if token creation exists)
 
 **Beorn the Fierce** (`beornTheFierce`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Bifur, Melodic Rider** (`bifurMelodicRider`)
 
-- `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 - `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
 
 **Bilbo's Gambit** (`bilboSGambit`)
 
 - `Ability.gift` — Gift (promise an opponent a token)
-- `ContinuousEffect.forbidCast` — Players matching a selector can't cast spells matching a selector
 
 **Bilbo, Thief in the Night** (`bilboThiefInTheNight`)
 
-- `Selector.castFromZone` — Zone a spell is cast from
-- `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
+- `Selector.castFromZone` — Zone a spell is cast from (only `Trigger.castSpellFromGraveyard` exists)
 - `ContinuousEffect.reduceCostIfCastFrom` — Spells you cast from matching zones cost less
 
 **Bolg of the North** (`bolgOfTheNorth`)
 
-- `CardAction.eventAmount` — Bind/use an amount from a previous action or trigger (that much, excess, sacrificed power)
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-
-**Bombur, Gentle Dreamer** (`bomburGentleDreamer`)
-
-- `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
-- `ContinuousEffect.skipsUntap` — Selected permanents don't untap during the untap step
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Boughside Wanderers** (`boughsideWanderers`)
 
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `CardAction.randomize` — Put on bottom in random order / pick a random card among
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Burn, Burn, Tree and Fern** (`burnBurnTreeAndFern`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Cantankerous Keepers** (`cantankerousKeepers`)
 
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Ability.keywordAffinity` — Affinity for a type/subtype
-- `ContinuousEffect.reduceCostPer` — Reduce cost by {1} per matching object
+- `Ability.keywordAffinity` — Affinity for a type/subtype (the reduction itself is `reduceCostWithX`)
 
 **Celebrate the Mountain-king** (`celebrateTheMountainKing`)
 
-- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
-- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
+- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-
-**Chief Warg's Company** (`chiefWargsCompany`)
-
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `Condition.not` — Negation / unless (Condition has and, not or/not)
-- `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-- `ContinuousEffect.forbidAttack` — Can't attack / attacks-if-able (forbid exists for Trigger; need an attack event plus a restriction combinator)
-- `Condition.controlCount` — Controller controls N or more matching objects
 
 **Dancing from Dark to Dawn** (`dancingFromDarkToDawn`)
 
-- `Selector.manaValue` — Mana-value comparisons
+- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **Desert Were-Worm** (`desertWereWorm`)
 
-- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs `Value.count` for +1/+1, and `addPower` of `Value.count` alone for other-subtype +1/+0 per artifact token. Zero toughness is omitted
-- `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.extraCombat` — An additional combat phase; typically with untap attackers
-- `CardAction.addManaPer` — Add mana for each matching object
-
-**Desolation of Smaug** (`desolationOfSmaug`)
-
-- `CardAction.addManaCombination` — Add N mana in any combination of listed types / any color
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
 
 **Down in the Valley** (`downInTheValley`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
+- `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
 
 **Dwalin, Weaponmaster** (`dwalinWeaponmaster`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
-
-**Dwarven Mattock** (`dwarvenMattock`)
-
-- `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Dáin Ironfoot** (`dainIronfoot`)
 
-- `Selector.color` — Objects of a color / colorless
-- `Selector.named` — Objects with a given name
-
-**Dáin's Company** (`dainsCompany`)
-
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `CardAction.randomize` — Put on bottom in random order / pick a random card among
-
-**Dáin, Lord of the Iron Hills** (`dainLordOfTheIronHills`)
-
-- `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
-
-**Eagle's Rescue** (`eaglesRescue`)
-
-- `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
-- `Selector.attached` — Objects attached to a given object (inverse of hostOf)
-- `Ability.activateFromZone` — Activated ability that functions in the graveyard (or another non-battlefield zone)
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Elrond, Moon-Reader** (`elrondMoonReader`)
 
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `CardAction.exileThenReturn` — Exile then return at a later trigger (end step / leaves)
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `CardAction.exileThenReturn` — Exile, then return at a later event (a delayed trigger such as the next end step)
 
 **Elven Passage** (`elvenPassage`)
 
-- `Selector.inHand` — An object in a hand
 - `CardAction.behold` — Behold a subtype
-
-**Esgaroth Garrison** (`esgarothGarrison`)
-
-- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs `Value.count` for +1/+1, and `addPower` of `Value.count` alone for other-subtype +1/+0 per artifact token. Zero toughness is omitted
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-
-**Fíli the Pathfinder** (`filiThePathfinder`)
-
-- `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
-
-**Gandalf, Goblins' Bane** (`gandalfGoblinsBane`)
-
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-
-**Gandalf, Wandering Wizard** (`gandalfWanderingWizard`)
-
-- `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
 
 **Getaway Barrel** (`getawayBarrel`)
 
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.randomize` — Put on bottom in random order / pick a random card among
-
-**Gigantic Big Bear** (`giganticBigBear`)
-
-- `ContinuousEffect.cantBeCountered` — Selected spells can't be countered
-
-**Glamdring, Foe-hammer** (`glamdringFoeHammer`)
-
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
+- `CardAction.randomize` — Pick a random card among (`putOnLibraryBottomInRandomOrder` exists)
 
 **Gleaming Splendor** (`gleamingSplendor`)
 
-- `Trigger.tokenEnters` — When a token the player controls enters (enter + token selector may suffice if token creation exists)
-
-**Glóin the Mighty** (`gloinTheMighty`)
-
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Gollum, Riddle Master** (`gollumRiddleMaster`)
 
 - `CardAction.chooseOddEven` — Choose odd or even
 - `Condition.manaValueParity` — Mana value is odd/even
-- `Selector.manaValue` — Mana-value comparisons
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-
-**Great Gilded Boat** (`greatGildedBoat`)
-
-- `Cost.tapPowerTotal` — Tap creatures with total power N or more
-- `Ability.keywordCrew` — Crew N
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
-
-**Great Ugly-Looking Goblin** (`greatUglyLookingGoblin`)
-
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `Selector.hasCounter` — Objects with / without a given counter kind
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Head of the Hunt** (`headOfTheHunt`)
 
-- `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Inside Information** (`insideInformation`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-
-**Iron Hills Blacksmith** (`ironHillsBlacksmith`)
-
-- `Selector.color` — Objects of a color / colorless
-- `Selector.named` — Objects with a given name
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Key to the Side-Door** (`keyToTheSideDoor`)
 
 - `SetPredicate.shareName` — The selected objects share a name
 
-**Kíli the Resourceful** (`kiliTheResourceful`)
-
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
-
-**Lake-town Mariners** (`lakeTownMariners`)
-
-- `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
-
 **Lake-town Toymaker** (`lakeTownToymaker`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Last Light of Durin's Day** (`lastLightOfDurinSDay`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Master's Councillors** (`masterSCouncillors`)
 
-- `Condition.greaterOrEqual` of `Value.count` — At least N objects match a selector (graveyard size, lore, quest counters, …)
-
-**Mirkwood Meditator** (`mirkwoodMeditator`)
-
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
-
-**Moment of Glory** (`momentOfGlory`)
-
-- `Ability.keywordFlashback` — Flashback with a cost
-- `Ability.activateFromZone` — Ability that functions from the graveyard
-
-**Most Decrepit Old Bird** (`mostDecrepitOldBird`)
-
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Condition.greaterOrEqual` of `Value.count` — At least N objects match a selector (graveyard size, lore, quest counters, …)
-
-**My Precious** (`myPrecious`)
-
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-
-**Old Fat Spider** (`oldFatSpider`)
-
-- `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
-- `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
-- `ContinuousEffect.cantBeBlockedBy` — Can't be blocked by / if matching a selector (power at most/at least, tokens already exist as forbid block token this)
+- `Selector.graveyardSizeAtLeast` — Graveyards (or their owners) with at least N cards, so they can be counted
 
 **Old Fat Spider Can't See Me** (`oldFatSpiderCanTSeeMe`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `ContinuousEffect.preventDamage` — Prevent (all) damage that would be dealt to/by a selector
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 
 **Orcrist, Goblin-cleaver** (`orcristGoblinCleaver`)
 
 - `CardAction.chooseCreatureType` — Choose a creature type (as-enters or on resolution)
 - `Selector.chosenType` — Objects of the chosen creature type
-- `TraditionalCardDefinition.asEntersChoice` — As-this-enters replacement/choice on the face
-
-**Ori, Keeper of Songs** (`oriKeeperOfSongs`)
-
-- `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
+- `TraditionalCardDefinition.asEntersChoice` — As-this-enters choice on the face
 
 **Part in Friendship** (`partInFriendship`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `ContinuousEffect.canPlay` — canPlay exists; need top-of-library + land/creature spell filters as a continuous permission
-- `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `CardAction.randomize` — Put on bottom in random order / pick a random card among
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-
-**Pinecone Strike** (`pineconeStrike`)
-
-- `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
-
-**Plunder the Trollshaws** (`plunderTheTrollshaws`)
-
-- `Ability.keywordFlashback` — Flashback with a cost
-- `Ability.activateFromZone` — Ability that functions from the graveyard
-- `ContinuousEffect.replaceDraw` — If you would draw (except the first in each draw step), draw N instead
-- `Trigger.wouldDraw` — Would-draw replacement window (Trigger.draw is the actual event)
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
 
 **Radagast of Rhosgobel** (`radagastOfRhosgobel`)
 
-- `ContinuousEffect.gainAbilityIf` — Matching spells have flash / cost less with a 'first this turn' condition
-- `Condition.firstThisTurn` — The first matching event this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Rhovanion Rampager** (`rhovanionRampager`)
 
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
+- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **Riddles in the Dark** (`riddlesInTheDark`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
+- `CardAction.separatePiles` — Separate cards into piles for an opponent to choose
 
 **Roads Go Ever, Ever On** (`roadsGoEverEverOn`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
-- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
+- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
-- `CardAction.addManaPer` — Add mana for each matching object
 
 **Roll-Roll-Roll-Roll** (`rollRollRollRoll`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `CardAction.exileThenReturn` — Exile then return at a later trigger (end step / leaves)
-
-**Settle the Wreckage** (`settleTheWreckage`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
+- `CardAction.exileThenReturn` — Exile, then return at a later event (a delayed trigger such as the next end step)
 
 **Silvan Reveler** (`silvanReveler`)
 
-- `Ability.activateFromZone` — Activated ability that functions in the graveyard (or another non-battlefield zone)
-- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
-
-**Smaug the Magnificent** (`smaugTheMagnificent`)
-
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-
-**Smaug, Wicked Worm** (`smaugWickedWorm`)
-
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
+- `Ability.graveyardTriggered` — A triggered ability that functions while the card is in a graveyard (`graveyardActivatedIf` is activated only)
 
 **Sting, Bilbo's Sword** (`stingBilboSSword`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **Stone-Giant of High Pass** (`stoneGiantOfHighPass`)
 
-- `Selector.color` — Objects of a color / colorless
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Supper for Spiders** (`supperForSpiders`)
 
-- `Selector.putFromBattlefieldThisTurn` — Cards put into a graveyard from the battlefield this turn (Shape.diedThisTurn is Condition-only)
 - `CardAction.becomeWithAbility` — Lose other types, become Food artifacts, and gain a stated activated ability
-
-**The Arkenstone** (`theArkenstone`)
-
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-
-**The Black Arrow** (`theBlackArrow`)
-
-- `Trigger.dealtDamage` — When the selected object is dealt damage (Enrage / watch-damage)
-- `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
 
 **The Eagles Are Coming!** (`theEaglesAreComing`)
 
 - `Cost.optionalAdditional` — Optional additional cost (Kicker)
 - `Ability.keywordKicker` — Kicker
 - `Condition.kicked` — This spell was kicked
-- `CardAction.addManaPer` — Add mana for each matching object
 
 **The Great Goblin** (`theGreatGoblin`)
 
-- `Trigger.putCounter` — Whenever counters are put on matching objects
-
-**The Lonely Mountain** (`theLonelyMountain`)
-
-- `Condition.not` — Negation / unless (Condition has and, not or/not)
-- `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-- `CardAction.addManaPer` — Add mana for each matching object
-
-**The Lord of the Eagles** (`theLordOfTheEagles`)
-
-- `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
-- `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
+- `Trigger.putCounter` — Whenever counters of any kind are put on matching objects (`putCountersSimultaneously` takes one `CounterKind`)
+- `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
 **The Master of Lake-town** (`theMasterOfLakeTown`)
 
-- `Condition.greaterOrEqual` of `Value.count` — At least N objects match a selector (graveyard size, lore, quest counters, …)
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+- `Trigger.loseLife` — Whenever the selected player loses life
+- `Selector.graveyardSizeAtLeast` — Graveyards (or their owners) with at least N cards, so they can be counted
 
 **The Misty Mountains Cold** (`theMistyMountainsCold`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **The Mountain-king's Return** (`theMountainKingSReturn`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `Selector.manaValue` — Mana-value comparisons
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **The Notary Hobbits** (`theNotaryHobbits`)
 
-- `CardAction.addManaPer` — Add mana for each matching object
-
-**Thorin Oakenshield** (`thorinOakenshield`)
-
-- `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
+- `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 
 **Thorin, Mountain-king** (`thorinMountainKing`)
 
-- `Selector.attached` — Objects attached to a given object (inverse of hostOf)
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- `Selector.attached` — Objects attached to a given object (inverse of `hostOf`)
 
 **Thranduil, the Elvenking** (`thranduilTheElvenking`)
 
@@ -1116,42 +879,25 @@ Converted cards from the previous untagged set are omitted here.
 
 **Through the Forest Gate** (`throughTheForestGate`)
 
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-
-**Tidings of War** (`tidingsOfWar`)
-
-- `Ability.keywordFlashback` — Flashback with a cost
-- `Ability.activateFromZone` — Ability that functions from the graveyard
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Tom, Bert, and William** (`tomBertAndWilliam`)
 
-- `Selector.inHand` — A card in hand for Cost.discard
-
-**Troll Negotiations** (`trollNegotiations`)
-
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- `Selector.sacrificedForCost` — The object sacrificed to pay a cost (`wasObjectOfAction` names actions, not costs)
+- `ContinuousEffect.setTypes` — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
 
 **Uncover the Moon-Letters** (`uncoverTheMoonLetters`)
 
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
+- `Value.manaSpent` — The amount of mana spent to cast a spell
 
 **Wizard's Staff** (`wizardSStaff`)
 
 - `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
 
-**enchantedRiverSGrasp** (`enchantedRiverSGrasp`)
+**Enchanted River's Grasp** (`enchantedRiverSGrasp`)
 
-- `ContinuousEffect.loseAbilities` — Selected object loses all abilities
-- `ContinuousEffect.skipsUntap` — Selected permanents don't untap during the untap step
+- `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
 - `CardAction.removeCounter` — Remove counters from the selected object
-
-**Óin the Brave** (`oinTheBrave`)
-
-- `Selector.inHand` — A card in hand for Cost.discard
-- `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 
 ### The Hobbit Eternal (HOC) (74 cards)
 
@@ -1161,38 +907,36 @@ Converted cards from the previous untagged set are omitted here.
 
 **Aragorn, the Uniter** (`aragornTheUniter`)
 
-- `Selector.color` — Objects of a color / colorless
+- `Selector.color` — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
 
 **Arcane Signet** (`arcaneSignet`)
 
 - `Selector.commander` — The selected player's commander
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
+- `CardAction.addManaOfColorAmong` — Add one mana of any color among selected objects or a commander's color identity
 
 **Arwen, Mortal Queen** (`arwenMortalQueen`)
 
-- `TraditionalCardDefinition.entersWithCounters` — Enters with an indestructible counter
-- `CounterKind.IndestructibleCounter` — Named counter kind beyond +1/+1
+- `TraditionalCardDefinition.entersWithCounters` — Enters with named counters (blocked by `CounterKind`)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `CardAction.removeCounter` — Remove counters from the selected object
 
 **Arwen, Weaver of Hope** (`arwenWeaverOfHope`)
 
-- `Selector.toughness` — Toughness comparisons / bind toughness as a number
-- `ContinuousEffect.replaceEnterCounters` — As matching objects enter, they enter with extra counters
+- `ContinuousEffect.replaceEnterCounters` — As matching other objects enter, they enter with extra counters
 
 **Bag End Banquet** (`bagEndBanquet`)
 
-- `CardAction.addManaPer` — Add mana for each matching object
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Banishing Light** (`banishingLight`)
 
-- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
-- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
+- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
 
 **Bilbo's Burglaring** (`bilboSBurglaring`)
 
 - `CardAction.gainControl` — Gain control of selected objects
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
 **Bilbo's Ring** (`bilboSRing`)
 
@@ -1201,39 +945,30 @@ Converted cards from the previous untagged set are omitted here.
 
 **Bilbo, Fellow Conspirator** (`bilboFellowConspirator`)
 
-- `ContinuousEffect.replaceTokenCreation` — If you would create a Food, also create a Treasure
+- `ContinuousEffect.replaceTokenCreation` — If tokens would be created, create more or different tokens (no token-creation event for `replace`)
 
 **Bilbo, Unexpected Adventurer** (`bilboUnexpectedAdventurer`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `ContinuousEffect.cantBeBlockedBy` — Can't be blocked by / if matching a selector (power at most/at least, tokens already exist as forbid block token this)
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Bitter Downfall** (`bitterDownfall`)
 
-- `Selector.damagedThisTurn` — Objects dealt damage this turn
-- `ContinuousEffect.reduceCost` — reduceCost+if exists for tapped/attacking/died; missing damaged-this-turn shape
+- `Selector.damagedThisTurn` — Objects that were dealt damage / dealt damage this turn
+- `ContinuousEffect.reduceCost` — `reduceCost` + `if` exists; missing the damaged-this-turn target shape
 
 **Bolg, Erebor's Reckoning** (`bolgEreborsReckoning`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Call Forth the Tempest** (`callForthTheTempest`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `Ability.keywordCascade` — Cascade
 - `CardAction.cascade` — Exile until a cheaper nonland; you may cast it
-- `ContinuousEffect.canPlay` — canPlay exists; need top-of-library + land/creature spell filters as a continuous permission
-- `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
-- `CardAction.randomize` — Put on bottom in random order / pick a random card among
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
 
 **Cavern-Hoard Dragon** (`cavernHoardDragon`)
 
-- `Trigger.tokenEnters` — When a token the player controls enters (enter + token selector may suffice if token creation exists)
-- `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
-- `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
+- `Value.greatestCountAmongPlayers` — The greatest count over players (greatest number of artifacts an opponent controls)
 
 **Celeborn the Wise** (`celebornTheWise`)
 
@@ -1246,283 +981,237 @@ Converted cards from the previous untagged set are omitted here.
 **Colossal Whale** (`colossalWhale`)
 
 - `Selector.defendingPlayer` — The defending player relative to an attacker
-- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
-- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
+- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
 
 **Dawn of a New Age** (`dawnOfANewAge`)
 
-- `TraditionalCardDefinition.entersWithCounters` — Enters with hope counters per matching object
-- `CounterKind.Hope` — Named counter kind beyond +1/+1
-- `Selector.hasCounter` — Objects with / without a given counter kind
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- `TraditionalCardDefinition.entersWithCounters` — Enters with named counters (blocked by `CounterKind`)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `CardAction.removeCounter` — Remove counters from the selected object
+- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **Delighted Halfling** (`delightedHalfling`)
 
-- `ContinuousEffect.cantBeCountered` — Selected spells can't be countered
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
+- `ContinuousEffect.cantBeCountered` — The spell a mana ability's mana was spent on can't be countered. `forbid (Trigger.counter …)` covers “this spell can't be countered”
 
 **Dragon's Desire** (`dragonsDesire`)
 
-- `CardAction.addManaPer` — Add mana for each matching object
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Dwarven Warriors** (`dwarvenWarriors`)
 
-- `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Dáin of the Ancient Halls** (`dainOfTheAncientHalls`)
 
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Elven Chorus** (`elvenChorus`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `ContinuousEffect.mayLookAtTop` — May look at the top card of the selected library any time
-- `ContinuousEffect.canPlay` — canPlay exists; need top-of-library + land/creature spell filters as a continuous permission
-- `ContinuousEffect.gainAbility` — gainAbility exists; granting a tap-add-mana activated ability to others needs Ability.activated as the granted ability (already in Ability) — compiler may not emit it
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
 
 **Elvish Archdruid** (`elvishArchdruid`)
 
-- `CardAction.addManaPer` — Add mana for each matching object
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Errand-Rider of Gondor** (`errandRiderOfGondor`)
 
-- `Selector.inHand` — An object in a hand
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Fiend Hunter** (`fiendHunter`)
 
-- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
-- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
+- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
 
 **Flame of Anor** (`flameOfAnor`)
 
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+- `CardAction.chooseModes` — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
 
 **Flowering of the White Tree** (`floweringOfTheWhiteTree`)
 
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Fíli and Kíli, Joyous** (`filiAndKiliJoyous`)
 
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Galadriel's Dismissal** (`galadrielSDismissal`)
 
-- `Selector.attached` — Objects attached to a given object (inverse of hostOf)
 - `Cost.optionalAdditional` — Optional additional cost (Kicker)
 - `Ability.keywordKicker` — Kicker
 - `Condition.kicked` — This spell was kicked
+- `CardAction.phaseOut` — Phase out
 
 **Gandalf, Party Guest** (`gandalfPartyGuest`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Selector.inHand` — An object in a hand
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Glamdring** (`glamdring`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Selector.inHand` — An object in a hand
-- `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Goblin Cratermaker** (`goblinCratermaker`)
 
-- `Selector.color` — Objects of a color / colorless
+- `Selector.color` — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
 
 **Gríma, Saruman's Footman** (`grimaSarumanSFootman`)
 
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `CardAction.randomize` — Put on bottom in random order / pick a random card among
+- `CardAction.exileUntil` — Exile from the top of a library until a matching card
 
 **Haunt of the Dead Marshes** (`hauntOfTheDeadMarshes`)
 
-- `Condition.any` — any with a legendary-you-control selector is already expressible; listed only if other gaps remain
-- `Ability.activateFromZone` — Activated ability that functions in the graveyard (or another non-battlefield zone)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Last March of the Ents** (`lastMarchOfTheEnts`)
 
-- `Selector.toughness` — Toughness comparisons / bind toughness as a number
-- `Selector.inHand` — An object in a hand
-- `ContinuousEffect.cantBeCountered` — Selected spells can't be countered
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Long-Lost Lances** (`longLostLances`)
 
-- `Selector.attached` — Objects attached to a given object (inverse of hostOf)
+- `Selector.attached` — Objects attached to a given object (inverse of `hostOf`)
 
 **Mentor of the Meek** (`mentorOfTheMeek`)
 
-- `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
-- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Minas Morgul, Dark Fortress** (`minasMorgulDarkFortress`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Minas Tirith** (`minasTirith`)
 
-- `Condition.not` — Negation / unless (Condition has and, not or/not)
-- `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-- `Condition.attackedThisTurn` — You attacked with N or more creatures this turn
+- `Condition.attackedThisTurn` — You attacked with N or more creatures this turn (over every combat, not one `attackSimultaneously`)
 
 **Minas Tirith Garrison** (`minasTirithGarrison`)
 
-- `Selector.inHand` — An object in a hand
-- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs `Value.count` for +1/+1, and `addPower` of `Value.count` alone for other-subtype +1/+0 per artifact token. Zero toughness is omitted
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Mirkwood Elk** (`mirkwoodElk`)
 
-- `Trigger.gainLife` — Whenever the selected player gains life
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Mount Doom** (`mountDoom`)
 
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `Cost.life` — Cost.life exists; combination with tap+addMana one-of is expressible if Condition/action compile
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Mox Amber** (`moxAmber`)
 
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
+- `CardAction.addManaOfColorAmong` — Add one mana of any color among selected objects or a commander's color identity
 
 **Necklace of Girion** (`necklaceOfGirion`)
 
-- `Selector.color` — Objects of a color / colorless
+- `Selector.color` — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
 
 **Nimrodel Watcher** (`nimrodelWatcher`)
 
 - `Trigger.scry` — Whenever the selected player scries
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
 
 **Olog-hai Crusher** (`ologHaiCrusher`)
 
-- `Condition.not` — Negation / unless (Condition has and, not or/not)
-- `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Orcish Bowmasters** (`orcishBowmasters`)
 
-- `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step
+- `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step (same missing draw-step window as `wouldDraw`)
 
 **Orcish Siegemaster** (`orcishSiegemaster`)
 
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Ori, Plate Stacker** (`oriPlateStacker`)
 
-- `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
+
 **Palantír of Orthanc** (`palantirOfOrthanc`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Value.counterCount` — The number of counters of a kind on an object
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Raise the Palisade** (`raiseThePalisade`)
 
 - `CardAction.chooseCreatureType` — Choose a creature type (as-enters or on resolution)
 - `Selector.chosenType` — Objects of the chosen creature type
-- `TraditionalCardDefinition.asEntersChoice` — As-this-enters replacement/choice on the face
+- `TraditionalCardDefinition.asEntersChoice` — As-this-enters choice on the face
 
 **Relic of Sauron** (`relicOfSauron`)
 
-- `Selector.inHand` — A card in hand for Cost.discard
-- `CardAction.addManaCombination` — Add N mana in any combination of listed types / any color
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Rivendell** (`rivendell`)
 
-- `Condition.not` — Negation / unless (Condition has and, not or/not)
-- `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-- `Condition.any` — any with a legendary-you-control selector is already expressible; listed only if other gaps remain
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Saruman of Many Colors** (`sarumanOfManyColors`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Sauron, the Dark Lord** (`sauronTheDarkLord`)
 
 - `Trigger.theRingTemptsYou` — Whenever the Ring tempts you / you choose a Ring-bearer
 - `CardAction.theRingTemptsYou` — The Ring tempts you
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
 
 **Sauron, the Lidless Eye** (`sauronTheLidlessEye`)
 
 - `CardAction.gainControl` — Gain control of selected objects
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
 **Shadow of the Enemy** (`shadowOfTheEnemy`)
 
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
+- `ContinuousEffect.spendManaAsThoughAnyType` — Mana of any type can be spent to cast the selected spells
 
 **Smaug the Impenetrable** (`smaugTheImpenetrable`)
 
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
 
 **Smite the Deathless** (`smiteTheDeathless`)
 
-- `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
+- `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
 
 **Stern Scolding** (`sternScolding`)
 
-- `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
-- `Selector.toughness` — Toughness comparisons / bind toughness as a number
+- `Selector.toughness` — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
 
 **The Black Gate** (`theBlackGate`)
 
-- `Condition.not` — Negation / unless (Condition has and, not or/not)
-- `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
+- `Selector.mostLife` — A player with the most life or tied for most life
 
 **The Gaffer** (`theGaffer`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- `Value.lifeGainedThisTurn` — How much life a player gained this turn
 
 **The One Ring** (`theOneRing`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- `Value.counterCount` — The number of counters of a kind on an object
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+- `CardAction.gainProtection` — A player gains protection from everything
+- `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
 **The Reaver Cleaver** (`theReaverCleaver`)
 
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
 
 **The Shire** (`theShire`)
 
 - `Cost.tapOther` — Tap another matching permanent (not the tap symbol on the source)
-- `Condition.not` — Negation / unless (Condition has and, not or/not)
-- `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
 
 **Thranduil the Strategist** (`thranduilTheStrategist`)
 
-- `ContinuousEffect.gainAbility` — gainAbility exists; granting a tap-add-mana activated ability to others needs Ability.activated as the granted ability (already in Ability) — compiler may not emit it
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Tom Bombadil** (`tomBombadil`)
 
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `ContinuousEffect.canPlay` — canPlay exists; need top-of-library + land/creature spell filters as a continuous permission
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `CardAction.randomize` — Put on bottom in random order / pick a random card among
-- `Condition.greaterOrEqual` of `Value.count` — N or more lore counters among Sagas you control
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Value.counterCount` — The number of counters of a kind on an object
+- `Trigger.chapterResolves` — Whenever the final chapter ability of a Saga resolves
 
 **Treasure Vault** (`treasureVault`)
 
-- `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Troll of Khazad-dûm** (`trollOfKhazadDum`)
 
@@ -1530,49 +1219,31 @@ Converted cards from the previous untagged set are omitted here.
 
 **Witch-king of Angmar** (`witchKingOfAngmar`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `Trigger.theRingTemptsYou` — Whenever the Ring tempts you / you choose a Ring-bearer
 - `CardAction.theRingTemptsYou` — The Ring tempts you
-- `Trigger.scry` — Whenever the selected player scries
-- `Selector.inHand` — A card in hand for Cost.discard
-- `ContinuousEffect.cantBeBlockedExceptBy` — Can't be blocked except by N or more creatures (menace is Keyword for N=2)
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
 **Witch-king, Bringer of Ruin** (`witchKingBringerOfRuin`)
 
 - `Selector.defendingPlayer` — The defending player relative to an attacker
 
-**fogOnTheBarrowDowns** (`fogOnTheBarrowDowns`)
+**Fog on the Barrow-Downs** (`fogOnTheBarrowDowns`)
 
-- `ContinuousEffect.forbidAttack` — Can't attack / attacks-if-able (forbid exists for Trigger; need an attack event plus a restriction combinator)
-- `Condition.controlCount` — Controller controls N or more matching objects
-- `ContinuousEffect.setSubtypes` — Overwrite subtypes (gainSubtype only adds)
+- `ContinuousEffect.setSubtypes` — Overwrite subtypes (`gainSubtype` only adds)
 
-### Marvel Super Heroes (MSH) (196 cards)
-
-**A.I.M. Scientists** (`aIMScientists`)
-
-- `Selector.inHand` — A card in hand for Cost.discard
-- `CardAction.connive` — Connive
+### Marvel Super Heroes (MSH) (188 cards)
 
 **Abomination, Terrifying Titan** (`abominationTerrifyingTitan`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Absorbing Man** (`absorbingMan`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `CardAction.copy` — Copy a permanent, spell, or ability
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
+- `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
 **Aerial Doombot** (`aerialDoombot`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Agent 13, Sharon Carter** (`agent13SharonCarter`)
 
@@ -1591,77 +1262,63 @@ Converted cards from the previous untagged set are omitted here.
 
 **Alien Invasion** (`alienInvasion`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `ContinuousEffect.forbidAttack` — Can't attack / attacks-if-able (forbid exists for Trigger; need an attack event plus a restriction combinator)
-- `Condition.controlCount` — Controller controls N or more matching objects
+- `ContinuousEffect.attacksEachCombat` — Attacks each combat if able (“can't attack” is `forbid` of `Trigger.attack`)
+- `Value.counterCount` — The number of counters of a kind on an object
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Ant-Man, Colony Commander** (`antManColonyCommander`)
 
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Arc Reactor** (`arcReactor`)
 
 - `Ability.keywordImprovise` — Improvise
-- `Cost.tapArtifactsForGeneric` — Tap artifacts to pay generic
+- `Cost.tapArtifactsForGeneric` — Tap artifacts to pay generic (Improvise)
 
 **Ares, God of War** (`aresGodOfWar`)
 
-- `ContinuousEffect.forbidAttack` — Can't attack / attacks-if-able (forbid exists for Trigger; need an attack event plus a restriction combinator)
-- `Condition.controlCount` — Controller controls N or more matching objects
+- `ContinuousEffect.attacksEachCombat` — Attacks each combat if able (“can't attack” is `forbid` of `Trigger.attack`)
 
 **Atlantis Attacks** (`atlantisAttacks`)
 
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+- `CardAction.chooseModes` — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
 
 **Avengers Assemble!** (`avengersAssemble`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Avengers Disassembled** (`avengersDisassembled`)
 
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Avengers Tower** (`avengersTower`)
 
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Avengers: Under Siege** (`avengersUnderSiege`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `CardAction.addManaPer` — Add mana for each matching object
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Baron Helmut Zemo** (`baronHelmutZemo`)
 
-- `Selector.inHand` — An object in a hand
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `Selector.color` — Objects of a color / colorless
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
+- `Selector.color` — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
 - `Ability.keywordBoast` — Boast
-- `CardAction.connive` — Connive
 
 **Baron Strucker, HYDRA Overlord** (`baronStruckerHYDRAOverlord`)
 
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `Selector.inHand` — A card in hand for Cost.discard
-- `CardAction.connive` — Connive
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
 
 **Baxter Building** (`baxterBuilding`)
 
-- `Selector.toughness` — Toughness comparisons / bind toughness as a number
-- `CardAction.addManaCombination` — Add N mana in any combination of listed types / any color
+- `Selector.toughness` — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
 
 **Black Panther, Hope Enduring** (`blackPantherHopeEnduring`)
 
-- `ContinuousEffect.preventDamage` — Prevent (all) damage that would be dealt to/by a selector
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Black Widow, Double Agent** (`blackWidowDoubleAgent`)
 
@@ -1670,26 +1327,20 @@ Converted cards from the previous untagged set are omitted here.
 
 **Black Widow, Super Spy** (`blackWidowSuperSpy`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `CardAction.exileUntil` — Exile from the top until a matching card (nonland leftover)
+- `CardAction.exileUntil` — Exile from the top of a library until a matching card
+- `ContinuousEffect.spendManaAsThoughAnyType` — Mana of any type can be spent to cast the selected spells
 
 **Bold Biochemist** (`boldBiochemist`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Brave Brawler** (`braveBrawler`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Bruce Banner** (`bruceBanner`)
 
-- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
-- `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
+- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
 - `CardAction.transform` — Transform this permanent
 
 **Captain America's Shield** (`captainAmericaSShield`)
@@ -1702,71 +1353,55 @@ Converted cards from the previous untagged set are omitted here.
 
 **Captain America, Super-Soldier** (`captainAmericaSuperSoldier`)
 
-- `TraditionalCardDefinition.entersWithCounters` — Enters with shield counters
-- `CounterKind.Shield` — Named counter kind beyond +1/+1
-- `Selector.hasCounter` — Objects with / without a given counter kind
+- `TraditionalCardDefinition.entersWithCounters` — Enters with named counters (blocked by `CounterKind`)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `CardAction.removeCounter` — Remove counters from the selected object
 
 **Captain America, Wings of Freedom** (`captainAmericaWingsOfFreedom`)
 
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Captain Mar-Vell, Space-Born** (`captainMarVellSpaceBorn`)
 
-- `ContinuousEffect.gainAbilityIf` — Matching spells have flash / cost less with a 'first this turn' condition
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Captain Marvel, Earth's Protector** (`captainMarvelEarthSProtector`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Castle Doom** (`castleDoom`)
 
-- `Selector.color` — Objects of a color / colorless
-- `Selector.named` — Objects with a given name
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Claim the Kingdom** (`claimTheKingdom`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (plan)
-- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Cloak and Dagger, Entwined** (`cloakAndDaggerEntwined`)
 
-- `Selector.inHand` — An object in a hand
-- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
-- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
+- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 - `CardAction.returnExiled` — Return objects exiled by a linked action
 
 **Colleen Wing, Street Samurai** (`colleenWingStreetSamurai`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Construct a Cosmic Cube** (`constructACosmicCube`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (plan)
-- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Cosmic Cube** (`cosmicCube`)
 
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.manaValue` — Mana-value comparisons
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
-- `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `CardAction.randomize` — Put on bottom in random order / pick a random card among
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Crossbones, Malicious Mercenary** (`crossbonesMaliciousMercenary`)
 
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
 
 **Crowd of True Believers** (`crowdOfTrueBelievers`)
 
@@ -1775,111 +1410,99 @@ Converted cards from the previous untagged set are omitted here.
 
 **Cruel Alliance** (`cruelAlliance`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 
 **Daredevil, Man Without Fear** (`daredevilManWithoutFear`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `ContinuousEffect.mayLookAtTop` — May look at the top card of the selected library any time
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
 
 **Death to Our Enemies** (`deathToOurEnemies`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (plan)
-- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Decoy Ploy** (`decoyPloy`)
 
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Dependable Quinjet** (`dependableQuinjet`)
 
-- `Cost.tapPowerTotal` — Tap creatures with total power N or more
-- `Ability.keywordCrew` — Crew N
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Doc Samson, Super Psychiatrist** (`docSamsonSuperPsychiatrist`)
 
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
+- `Trigger.putCounter` — Whenever counters of any kind are put on matching objects (`putCountersSimultaneously` takes one `CounterKind`)
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
 
 **Doctor Doom** (`doctorDoom`)
 
-- `Selector.color` — Objects of a color / colorless
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Doom Reigns Supreme** (`doomReignsSupreme`)
 
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `CounterKind.named` — Named counters other than +1/+1 (plan)
-- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Earth's Mightiest Heroes** (`earthSMightiestHeroes`)
 
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 
 **Echo, Perceptive Prodigy** (`echoPerceptiveProdigy`)
 
-- `CardAction.copy` — Copy a permanent, spell, or ability
+- `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 
 **Elektra, Daughter of the Hand** (`elektraDaughterOfTheHand`)
 
-- `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
 - `Ability.keywordSneak` — Sneak
 
 **Epic Fight** (`epicFight`)
 
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Evil's Thrall** (`evilSThrall`)
 
-- `Selector.manaValue` — Mana-value comparisons
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `CardAction.gainControl` — Gain control of selected objects
+- `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
 **Falcon's Wing Harness** (`falconSWingHarness`)
 
-- `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Frozen in Ice** (`frozenInIce`)
 
-- `ContinuousEffect.loseAbilities` — Selected object loses all abilities
-- `ContinuousEffect.skipsUntap` — Selected permanents don't untap during the untap step
+- `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
+- `ContinuousEffect.cantBecomeUntapped` — Can't become untapped (stronger than `doesntUntap`)
 
 **Go Nuts!** (`goNuts`)
 
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+- `CardAction.chooseModes` — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
 
 **Grim Reaper, Lethal Legionnaire** (`grimReaperLethalLegionnaire`)
 
-- `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **H.E.R.B.I.E. Scout Unit** (`hERBIEScoutUnit`)
 
-- `Selector.inHand` — An object in a hand
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **HULK SMASH!** (`hULKSMASH`)
 
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- `CardAction.chooseModes` — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
 
 **HYDRA Infiltration** (`hYDRAInfiltration`)
 
@@ -1888,194 +1511,153 @@ Converted cards from the previous untagged set are omitted here.
 
 **HYDRA Troopers** (`hYDRATroopers`)
 
-- `Condition.greaterOrEqual` of `Value.count` — At least N objects match a selector (graveyard size, lore, quest counters, …)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Hawkeye's Bow** (`hawkeyeSBow`)
 
 - `Trigger.becomeTapped` — When the selected object becomes tapped (including tapped to pay a cost)
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
 **Hawkeye, Master Marksman** (`hawkeyeMasterMarksman`)
 
 - `Trigger.becomeTapped` — When the selected object becomes tapped (including tapped to pay a cost)
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Hawkeye, Young Avenger** (`hawkeyeYoungAvenger`)
 
 - `ContinuousEffect.modifyDamage` — Replacement that changes how much damage is dealt
-- `CardAction.eventAmount` — Bind/use an amount from a previous action or trigger (that much, excess, sacrificed power)
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
 
 **Helicarrier Strike** (`helicarrierStrike`)
 
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 
 **Hellcat, Undying Vigilante** (`hellcatUndyingVigilante`)
 
-- `Selector.hasCounter` — Objects with / without a given counter kind
-- `ContinuousEffect.loseAbilities` — Selected object loses all abilities
+- `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
 
 **Hercules, Prince of Power** (`herculesPrinceOfPower`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Heroic Feast** (`heroicFeast`)
 
 - `Trigger.gainLife` — Whenever the selected player gains life
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
 
 **Hex Magic** (`hexMagic`)
 
-- `Selector.inHand` — An object in a hand
+- `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
 **Hulk, Gamma Goliath** (`hulkGammaGoliath`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- `Selector.powerUpAbility` — Power-up abilities as a class (cost reductions, extra activations, “can't be activated”). Power-up is not a `Keyword`, so `keywordAbility` can't pick it
 
 **Hulkling, Burgeoning Bruiser** (`hulklingBurgeoningBruiser`)
 
-- `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Human Torch, Johnny Storm** (`humanTorchJohnnyStorm`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Hydraulic Helper** (`hydraulicHelper`)
 
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **I Am Iron Man** (`iAmIronMan`)
 
-- `Selector.toughness` — Toughness comparisons / bind toughness as a number
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- `ContinuousEffect.setTypes` — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
 
 **Invisible Woman, Sue Storm** (`invisibleWomanSueStorm`)
 
-- `Selector.color` — Objects of a color / colorless
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Iron Fist, Living Weapon** (`ironFistLivingWeapon`)
 
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Iron Lad, Diverging Destiny** (`ironLadDivergingDestiny`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `ContinuousEffect.mayLookAtTop` — May look at the top card of the selected library any time
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
 
 **Iron Man Armor** (`ironManArmor`)
 
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- `ContinuousEffect.setTypes` — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
 
 **Iron Man, Master of Machines** (`ironManMasterOfMachines`)
 
-- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs `Value.count` for +1/+1, and `addPower` of `Value.count` alone for other-subtype +1/+0 per artifact token. Zero toughness is omitted
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Ironheart, Clever Champion** (`ironheartCleverChampion`)
 
 - `Ability.keywordImprovise` — Improvise
-- `Cost.tapArtifactsForGeneric` — Tap artifacts to pay generic
+- `Cost.tapArtifactsForGeneric` — Tap artifacts to pay generic (Improvise)
 
 **Jennifer Walters** (`jenniferWalters`)
 
-- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
-- `ContinuousEffect.forbidCast` — Players matching a selector can't cast spells matching a selector
+- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
 - `CardAction.transform` — Transform this permanent
 
 **Jessica Jones, Private Eye** (`jessicaJonesPrivateEye`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Ka-Zar of the Savage Land** (`kaZarOfTheSavageLand`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `ContinuousEffect.mayLookAtTop` — May look at the top card of the selected library any time
-- `ContinuousEffect.canPlay` — canPlay exists; need top-of-library + land/creature spell filters as a continuous permission
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
 
 **Kang the Conqueror** (`kangTheConqueror`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
-
-**Kang, Temporal Tyrant** (`kangTemporalTyrant`)
-
-- `CardAction.connive` — Connive
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- `CardAction.extraTurn` — Take an extra turn
+- `Selector.powerUpAbility` — Power-up abilities as a class (cost reductions, extra activations, “can't be activated”). Power-up is not a `Keyword`, so `keywordAbility` can't pick it
 
 **Kid Loki** (`kidLoki`)
 
-- `Selector.hasCounter` — Objects with / without a given counter kind
-- `Selector.receivedCounterThisTurn` — Objects you put +1/+1 counters on this turn
+- `Selector.receivedCounterThisTurn` — Objects *you* put +1/+1 counters on this turn (`putCountersSimultaneously` does not say who put them)
 
 **King T'Challa** (`kingTChalla`)
 
-- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
+- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
 - `CardAction.transform` — Transform this permanent
 
 **Klaw, Sonic Subjugator** (`klawSonicSubjugator`)
 
-- `Selector.inHand` — An object in a hand
+- `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
 
 **Knight of Wundagore** (`knightOfWundagore`)
 
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
 
 **Leader, Super-Genius** (`leaderSuperGenius`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `CardAction.connive` — Connive
+- `Trigger.connive` — When the selected creature would connive (a keyword-action event for `replace`)
 
 **Loki Laufeyson** (`lokiLaufeyson`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Loki, God of Mischief** (`lokiGodOfMischief`)
 
-- `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
 
 **Luke Cage, Power Man** (`lukeCagePowerMan`)
 
 - `Selector.attackingAlone` — A creature attacking alone
 - `Trigger.attackAlone` — When the selected object attacks alone
 
-**M.O.D.O.K.** (`mODOK`)
-
-- `Selector.inHand` — A card in hand for Cost.discard
-- `CardAction.connive` — Connive
-
-**Madame Masque** (`madameMasque`)
-
-- `CardAction.connive` — Connive
-
 **Mister Fantastic, Reed Richards** (`misterFantasticReedRichards`)
 
-- `Trigger.tokenEnters` — When a token the player controls enters (enter + token selector may suffice if token creation exists)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Mister Hyde, Monster Within** (`misterHydeMonsterWithin`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `CardAction.removeCounter` — Remove counters from the selected object
 
 **Misty Knight, Hero for Hire** (`mistyKnightHeroForHire`)
 
-- `Selector.inHand` — A card in hand for Cost.discard
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Mjölnir, Hammer of Thor** (`mjLnirHammerOfThor`)
 
@@ -2084,72 +1666,50 @@ Converted cards from the previous untagged set are omitted here.
 
 **Mole Man, Moloid Master** (`moleManMoloidMaster`)
 
-- `Selector.named` — Objects with a given name
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Monica Rambeau** (`monicaRambeau`)
 
-- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
+- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
 - `CardAction.transform` — Transform this permanent
 
 **Moon Girl and Devil Dinosaur** (`moonGirlAndDevilDinosaur`)
 
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
 
 **Ms. Marvel, Kamala Khan** (`msMarvelKamalaKhan`)
 
-- `Selector.inHand` — An object in a hand
 - `ContinuousEffect.handSize` — Set / remove maximum hand size
-- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs `Value.count` for +1/+1, and `addPower` of `Value.count` alone for other-subtype +1/+0 per artifact token. Zero toughness is omitted
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 
 **Multiversal Incursion** (`multiversalIncursion`)
 
-- `CardAction.copy` — Copy a permanent, spell, or ability
+- `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 
 **Murdock's Crusade** (`murdockSCrusade`)
 
-- `Selector.toughness` — Toughness comparisons / bind toughness as a number
-- `Selector.manaValue` — Mana-value comparisons
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Selector.toughness` — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+- `CardAction.chooseModes` — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
 
 **Namor the Sub-Mariner** (`namorTheSubMariner`)
 
-- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs `Value.count` for +1/+1, and `addPower` of `Value.count` alone for other-subtype +1/+0 per artifact token. Zero toughness is omitted
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
+- `Value.manaSymbols` — The number of mana symbols of a color in a mana cost
 
 **Nick Fury, Agent of S.H.I.E.L.D.** (`nickFuryAgentOfSHIELD`)
 
-- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `CardAction.randomize` — Put on bottom in random order / pick a random card among
+- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
 - `CardAction.transform` — Transform this permanent
 
 **Ninja of the Hand** (`ninjaOfTheHand`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Origin of the Avengers** (`originOfTheAvengers`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `Selector.manaValue` — Mana-value comparisons
-- `Selector.inHand` — An object in a hand
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Panther Pounce** (`pantherPounce`)
 
@@ -2157,18 +1717,16 @@ Converted cards from the previous untagged set are omitted here.
 
 **Pet Avengers** (`petAvengers`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Photon Blast Barrage** (`photonBlastBarrage`)
 
-- `CardAction.copy` — Copy a permanent, spell, or ability
+- `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 
 **Political Triumph** (`politicalTriumph`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (plan)
-- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
 
 **Powerful Broker** (`powerfulBroker`)
 
@@ -2176,185 +1734,139 @@ Converted cards from the previous untagged set are omitted here.
 
 **Punishing Punch** (`punishingPunch`)
 
-- `Condition.greaterOrEqual` of `Value.count` — At least N objects match a selector (graveyard size, lore, quest counters, …)
-- `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Quicksilver, Brash Blur** (`quicksilverBrashBlur`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Raft Security Officer** (`raftSecurityOfficer`)
 
-- `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Red Guardian, Super-Soldier** (`redGuardianSuperSoldier`)
 
-- `Selector.damagedThisTurn` — Objects dealt damage this turn
+- `Selector.damagedThisTurn` — Objects that were dealt damage / dealt damage this turn
 
 **Red Hulk** (`redHulk`)
 
-- `Trigger.dealtDamage` — When the selected object is dealt damage (Enrage / watch-damage)
-- `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-
-**Red Room Recruit** (`redRoomRecruit`)
-
-- `CardAction.connive` — Connive
+- `Value.counterCount` — The number of counters of a kind on an object
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Reptil, Dinomorpher** (`reptilDinomorpher`)
 
-- `Selector.toughness` — Toughness comparisons / bind toughness as a number
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- `ContinuousEffect.setTypes` — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
 
 **Repulsor Blast** (`repulsorBlast`)
 
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 
 **Rewrite History** (`rewriteHistory`)
 
-- `CounterKind.named` — Named counters other than +1/+1 (plan)
-- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Robot Domination** (`robotDomination`)
 
-- `Selector.color` — Objects of a color / colorless
-- `CounterKind.named` — Named counters other than +1/+1 (plan)
-- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
 
 **Ronin, Shadow Stalker** (`roninShadowStalker`)
 
-- `Selector.attached` — Objects attached to a given object (inverse of hostOf)
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
+- `Selector.attached` — Objects attached to a given object (inverse of `hostOf`)
 
 **S.H.I.E.L.D. Flying Car** (`sHIELDFlyingCar`)
 
-- `Cost.tapPowerTotal` — Tap creatures with total power N or more
-- `Ability.keywordCrew` — Crew N
-- `CardAction.exileThenReturn` — Exile then return at a later trigger (end step / leaves)
+- `CardAction.exileThenReturn` — Exile, then return at a later event (a delayed trigger such as the next end step)
 
 **S.H.I.E.L.D. Helicarrier** (`sHIELDHelicarrier`)
 
-- `Cost.tapPowerTotal` — Tap creatures with total power N or more
-- `Ability.keywordCrew` — Crew N
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **S.H.I.E.L.D. Spy Kit** (`sHIELDSpyKit`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `Selector.attackingAlone` — A creature attacking alone
 - `Trigger.attackAlone` — When the selected object attacks alone
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
 
 **Scientist Supreme of A.I.M.** (`scientistSupremeOfAIM`)
 
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `CardAction.copy` — Copy a permanent, spell, or ability
+- `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 
 **Secret Invasion** (`secretInvasion`)
 
-- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
-- `CardAction.copy` — Copy a permanent, spell, or ability
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
+- `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 
 **Serpent Specialist** (`serpentSpecialist`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Shang-Chi, Master of Kung Fu** (`shangChiMasterOfKungFu`)
 
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
+- `ContinuousEffect.activateAsThoughHaste` — Activate abilities of the selected creatures as though they had haste
 
 **She-Hulk, Jade Defender** (`sheHulkJadeDefender`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Shuri, Wakandan Inventor** (`shuriWakandanInventor`)
 
-- `CardAction.copy` — Copy a permanent, spell, or ability
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 
 **Speedball, New Warrior** (`speedballNewWarrior`)
 
-- `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
 - `CardAction.changeTargets` — Choose new targets for another spell or ability
 
 **Spider-Man, To the Rescue** (`spiderManToTheRescue`)
 
-- `Trigger.whenYouDo` — Nested delayed trigger after an optional action ('when you do')
+- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Spider-Woman, Secret Agent** (`spiderWomanSecretAgent`)
 
-- `ContinuousEffect.skipsUntap` — Selected permanents don't untap during the untap step
 - `ContinuousEffect.forbidUntapWhileYouControl` — Can't become untapped for as long as you control this
 
 **Stature, Size Shifter** (`statureSizeShifter`)
 
-- `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **Super Intelligence** (`superIntelligence`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Super Strength** (`superStrength`)
 
-- `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Super Villain Lockup** (`superVillainLockup`)
 
-- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
-- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
+- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
 
 **Super-Adaptoid** (`superAdaptoid`)
 
-- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs `Value.count` for +1/+1, and `addPower` of `Value.count` alone for other-subtype +1/+0 per artifact token. Zero toughness is omitted
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Super-Skrull** (`superSkrull`)
 
-- `Selector.color` — Objects of a color / colorless
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Super-Soldier Serum** (`superSoldierSerum`)
 
 - `ContinuousEffect.gainSupertype` — Gain a supertype in addition to other types (legendary)
 
-**Swordsman, Sharp Scoundrel** (`swordsmanSharpScoundrel`)
-
-- `CardAction.connive` — Connive
-
 **Taskmaster, Mercenary Mimic** (`taskmasterMercenaryMimic`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `CardAction.copy` — Copy a permanent, spell, or ability
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
+- `ContinuousEffect.setTypes` — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
+- `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
 **Team Tactics** (`teamTactics`)
 
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 
@@ -2362,10 +1874,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `CardAction.chooseOddEven` — Choose odd or even
 - `Condition.manaValueParity` — Mana value is odd/even
-- `Selector.manaValue` — Mana-value comparisons
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **The Astonishing Ant-Man** (`theAstonishingAntMan`)
 
@@ -2373,97 +1882,76 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Coming of Galactus** (`theComingOfGalactus`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **The Incredible Hulk** (`theIncredibleHulk`)
 
-- `Trigger.dealtDamage` — When the selected object is dealt damage (Enrage / watch-damage)
-- `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
 - `CardAction.extraCombat` — An additional combat phase; typically with untap attackers
 
 **The Invincible Iron Man** (`theInvincibleIronMan`)
 
-- `Selector.inHand` — An object in a hand
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **The Kingpin of Crime** (`theKingpinOfCrime`)
 
-- `Selector.toughness` — Toughness comparisons / bind toughness as a number
+- `Selector.toughness` — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
 - `Ability.keywordExtort` — Extort
-- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
-- `CardAction.eventAmount` — Bind/use an amount from a previous action or trigger (that much, excess, sacrificed power)
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
 **The Mind Stone** (`theMindStone`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `CardAction.exileThenReturn` — Exile then return at a later trigger (end step / leaves)
+- `Ability.harness` — Harness and the ∞ ability that works once harnessed
 
 **The Ruinous Wrecking Crew** (`theRuinousWreckingCrew`)
 
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **The Scarlet Witch** (`theScarletWitch`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **The Sensational She-Hulk** (`theSensationalSheHulk`)
 
-- `Trigger.dealtDamage` — When the selected object is dealt damage (Enrage / watch-damage)
-- `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
-- `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `ContinuousEffect.forbidCast` — Players matching a selector can't cast spells matching a selector
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
 
 **The Sentry, Golden Guardian** (`theSentryGoldenGuardian`)
 
-- `ContinuousEffect.forbidAttack` — Can't attack / attacks-if-able (forbid exists for Trigger; need an attack event plus a restriction combinator)
-- `Condition.controlCount` — Controller controls N or more matching objects
+- `ContinuousEffect.attacksEachCombat` — Attacks each combat if able (“can't attack” is `forbid` of `Trigger.attack`)
 
 **The Serpent Society** (`theSerpentSociety`)
 
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- `Cost.getPoisonCounters` — Get poison counters as a cost (Ward—Get five poison counters). Other nonmana ward costs are `Cost.discard` / `sacrificeCount` / `or`
 
 **The Super Hero Civil War** (`theSuperHeroCivilWar`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `Selector.manaValue` — Mana-value comparisons
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `CardAction.gainControl` — Gain control of selected objects
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 
 **The Ten Rings** (`theTenRings`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `ContinuousEffect.handSize` — Set / remove maximum hand size
 
 **The Unbeatable Squirrel Girl** (`theUnbeatableSquirrelGirl`)
 
-- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **The Vision** (`theVision`)
 
-- `CardAction.chooseModeRestricted` now exists (Galadriel). Vision still needs a leftover from that constructor plus “you cast a noncreature spell” onto `Effect.castingVisionModes`.
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **The Wondrous Wasp** (`theWondrousWasp`)
 
-- `ContinuousEffect.loseAbilities` — Selected object loses all abilities
+- `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 
 **Thor, God of Thunder** (`thorGodOfThunder`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `Selector.countOf` — Numeric value derived from a count or characteristic
+- `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
 **Thunderbolts Conspiracy** (`thunderboltsConspiracy`)
 
-- `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Tigra, Feline Fury** (`tigraFelineFury`)
 
@@ -2471,183 +1959,141 @@ Converted cards from the previous untagged set are omitted here.
 
 **Titania, Rugged Rumbler** (`titaniaRuggedRumbler`)
 
-- `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
-- `Selector.inHand` — A card in hand for Cost.discard
-- `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
-- `Cost.wardNonmana` — Nonmana ward payments
-- `Cost.or` — Cost.or exists; need discard-a-card (inHand) OR pay generic
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Tony Stark** (`tonyStark`)
 
-- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `CardAction.randomize` — Put on bottom in random order / pick a random card among
+- `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
 - `CardAction.transform` — Transform this permanent
 
 **Too Evil to Stay Dead** (`tooEvilToStayDead`)
 
-- `Selector.manaValue` — Mana-value comparisons
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 
 **Training Regimen** (`trainingRegimen`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-
-**Trickster's Stratagem** (`tricksterSStratagem`)
-
-- `CardAction.connive` — Connive
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **U.S.Agent, John Walker** (`uSAgentJohnWalker`)
 
-- `Selector.color` — Objects of a color / colorless
-- `Selector.named` — Objects with a given name
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Ultron Drone** (`ultronDrone`)
 
-- `Selector.color` — Objects of a color / colorless
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Ultron, Artificial Malevolence** (`ultronArtificialMalevolence`)
 
-- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
-- `CardAction.copy` — Copy a permanent, spell, or ability
-- `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (`setPower` and `setToughness` take a `Value`; the compiler pairs only a lands-you-control count. `setBasePower` and `setBaseToughness` take a `Value`; the compiler pairs only `greatestPower` and `greatestToughness` of this source)
-- `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
+- `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 
 **Unliving Legionnaire** (`unlivingLegionnaire`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Villainous Hideout** (`villainousHideout`)
 
-- `Selector.inHand` — A card in hand for Cost.discard
-- `CardAction.connive` — Connive
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Vision Quest** (`visionQuest`)
 
-- `Selector.manaValue` — Mana-value comparisons
+- `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+- `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
 **Viv Vision, Teen Synthezoid** (`vivVisionTeenSynthezoid`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Volcanic Villain** (`volcanicVillain`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **War Machine, Legacy of Iron** (`warMachineLegacyOfIron`)
 
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **We Say Thee Nay!** (`weSayTheeNay`)
 
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 
 **Web Up** (`webUp`)
 
-- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
-- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
+- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
+- `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
 
 **Whiplash, Vengeful Engineer** (`whiplashVengefulEngineer`)
 
-- `Selector.attached` — Objects attached to a given object (inverse of hostOf)
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- `Selector.attached` — Objects attached to a given object (inverse of `hostOf`)
 
 **White Tiger, Ava Ayala** (`whiteTigerAvaAyala`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
+- `ContinuousEffect.cantBeBlockedByMoreThan` — Can't be blocked by more than N creatures
 
 **Wiccan, Rising Magician** (`wiccanRisingMagician`)
 
-- `CardAction.exileThenReturn` — Exile then return at a later trigger (end step / leaves)
+- `CardAction.exileThenReturn` — Exile, then return at a later event (a delayed trigger such as the next end step)
 
 **Widow's Bite** (`widowSBite`)
 
-- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
+- `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+- `CardAction.chooseModes` — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
 
 **Winter Soldier, Icy Assassin** (`winterSoldierIcyAssassin`)
 
-- `Selector.attached` — Objects attached to a given object (inverse of hostOf)
-- `Ability.activateFromZone` — Activated ability that functions in the graveyard (or another non-battlefield zone)
-- `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
-- `ContinuousEffect.addPower` / `addToughness` — Pump / set PT from a count other than `setPower` and `setToughness` of `Value.count` of lands you control. `addPower` and `addToughness` take a `Value`; the compiler pairs `Value.count` for +1/+1, and `addPower` of `Value.count` alone for other-subtype +1/+0 per artifact token. Zero toughness is omitted
-- `Selector.countOf` — Numeric value derived from a count or characteristic
-- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
+- `Selector.attached` — Objects attached to a given object (inverse of `hostOf`)
+- `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 
 **Wonder Man, Hollywood Hero** (`wonderManHollywoodHero`)
 
-- `Condition.enteredThisTurn` — The selected object entered this turn
-- `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
-- `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
+- `Selector.powerUpAbility` — Power-up abilities as a class (cost reductions, extra activations, “can't be activated”). Power-up is not a `Keyword`, so `keywordAbility` can't pick it
 
 **World War Hulk** (`worldWarHulk`)
 
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
+- `Selector.color` — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
 
 **Worlds Within Worlds** (`worldsWithinWorlds`)
 
-- `Selector.inHand` — An object in a hand
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Dark Fortress** (`darkFortress`)
 
-- `Condition.or` — Activate only if this land entered this turn or you control a basic land
-- `Condition.enteredThisTurn` — This land entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Gathering Place** (`gatheringPlace`)
 
-- `Condition.or` — Activate only if this land entered this turn or you control a basic land
-- `Condition.enteredThisTurn` — This land entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Gleaming Bastion** (`gleamingBastion`)
 
-- `Condition.or` — Activate only if this land entered this turn or you control a basic land
-- `Condition.enteredThisTurn` — This land entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Hidden Lair** (`hiddenLair`)
 
-- `Condition.or` — Activate only if this land entered this turn or you control a basic land
-- `Condition.enteredThisTurn` — This land entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Training Compound** (`trainingCompound`)
 
-- `Condition.or` — Activate only if this land entered this turn or you control a basic land
-- `Condition.enteredThisTurn` — This land entered this turn
+- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 ## Method notes
 
-- A card is “remaining” when its catalog `def` is a `CardDef` whose body is
-  not a `TraditionalCardDefinition.card […]` (and is not a `fooCard` wrapper
-  around such a definition).
+- A card is “remaining” when its catalog `def` is a `CardDef` that is not
+  compiled from a `TraditionalCardDefinition` with `toCardDef`.
 - Tags come from Oracle text plus modeled fields (`triggeredAbilities`,
   `staticAbilities`, `Effect.*`, CardDef flags such as `teamwork`, `otherFace`,
   `saga`, `crew`, `ward`, …).
+- Every tag was rechecked against the current constructors. Tags that the
+  current types can spell were dropped (see
+  [Former gaps that current constructors cover](#former-gaps-that-current-constructors-cover)),
+  and cards left without a tag were reread for gaps the earlier pass missed.
 - Reminder text in parentheses can still mention tokens (Amass, Recruit).
   Token-creation tags therefore include those ability words.
-- `toCardDef` compilation gaps are out of scope except where the types
-  themselves cannot name the ability (for example `Condition` has `and` but
-  not `or` / `not`).
+- `toCardDef` compilation and `parseOracleParts` gaps are out of scope except
+  where the types themselves cannot name the ability.
