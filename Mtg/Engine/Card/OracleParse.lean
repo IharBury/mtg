@@ -477,6 +477,8 @@ Currently recognized:
   creatures of that type. A zero bonus is omitted.
 - `Create X <P>/<T> <color> <subtypes> creature tokens.`
   X is the value of X (CR 107.3). The noun is plural.
+- `{X}{X}, {T}, Sacrifice this land: Create X Treasure tokens.`
+  X is the value of X in the activation cost (CR 107.3). The noun is plural.
 -/
 
 namespace Mtg.Engine
@@ -4731,9 +4733,11 @@ def parseCreateCreatureTokens (sentence : String) : Option CardAction :=
       | _ => none
     | [] => none
 
-/-- `Create a Treasure token`, `create two Treasure tokens`, `create a Food
-token`, or `create a Food token or a Treasure token`. Food and Treasure are
-predefined tokens (CR 111.10). With `or`, the player chooses one to create. -/
+/-- `Create a Treasure token`, `create two Treasure tokens`, `create X
+Treasure tokens`, `create a Food token`, or `create a Food token or a
+Treasure token`. Food and Treasure are predefined tokens (CR 111.10). `X`
+takes the plural noun and is the X of the cost (CR 107.3). With `or`, the
+player chooses one to create. -/
 def parseCreatePredefinedTokens (sentence : String) : Option CardAction :=
   let one (s : String) : Option CardAction :=
     (after? (norm s) "create ").bind fun rest =>
@@ -4744,13 +4748,16 @@ def parseCreatePredefinedTokens (sentence : String) : Option CardAction :=
       let named :=
         (before? noun " tokens").map (true, ·) <|> (before? noun " token").map (false, ·)
       named.bind fun (plural, kind) =>
-        (nounCount? countText plural).bind fun k =>
+        let count? : Option Value :=
+          if countText == "x" then (if plural then some .x else none)
+          else (nounCount? countText plural).map Value.nat
+        count?.bind fun k =>
           let parts? : Option (List CardPart) :=
             match kind with
             | "treasure" => some PredefinedToken.treasureToken
             | "food" => some PredefinedToken.foodToken
             | _ => none
-          parts?.map fun parts => .createTokens (.controller .this) (Value.nat k) parts
+          parts?.map fun parts => .createTokens (.controller .this) k parts
   let s := normSentence sentence
   match split2? s " or a " with
   | some (first, second) =>
@@ -9309,5 +9316,12 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       .type .creature, .subtype .dwarf, .colorIndicator [.red], .power 2, .toughness 2]]]
 #guard parseOracleParts (name := "")
   "Create X 2/2 red Dwarf creature token." == none
+#guard parseOracleParts (name := "")
+  "{X}{X}, {T}, Sacrifice this land: Create X Treasure tokens." ==
+  some [.ability (.activated
+    [.mana [.x, .x], .tapSymbol, .sacrifice .this]
+    (.createTokens (.controller .this) .x PredefinedToken.treasureToken))]
+#guard parseOracleParts (name := "")
+  "{X}{X}, {T}, Sacrifice this land: Create X Treasure token." == none
 
 end Mtg.Engine

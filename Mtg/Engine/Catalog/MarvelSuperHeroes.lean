@@ -4249,15 +4249,41 @@ def cosmicCube : CardDef :=
     (ward := some 2)
     (triggeredAbilities := #[.onYouAttacking Effect.youAttackingLookSixCast])
 
+/-- Oracle text for Dependable Quinjet. -/
+def dependableQuinjetOracle : String :=
+  "Flying\n{T}: Add one mana of any color.\nCrew 4 (Tap any number of creatures you control with total power 4 or more: This Vehicle becomes an artifact creature until end of turn.)"
+
+def dependableQuinjetDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Dependable Quinjet",
+    .manaCost [.generic 3],
+    .type .artifact,
+    .subtype .vehicle,
+    .power 3,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Dependable Quinjet") dependableQuinjetOracle).get!
+
+#guard dependableQuinjetDefinition == .card [
+  .name "Dependable Quinjet",
+  .manaCost [.generic 3],
+  .type .artifact,
+  .subtype .vehicle,
+  .power 3,
+  .toughness 3,
+  .ability (.keyword .flying),
+  .ability (.activated [.tapSymbol]
+    (.addManaOfOneColor (.controller .this)
+      [.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
+      (.nat 1))),
+  .ability (.keyword (.crew 4))]
+
 def dependableQuinjet : CardDef :=
-  artifact "Dependable Quinjet" (ManaCost.ofGeneric 3)
-    "Flying\n{T}: Add one mana of any color.\nCrew 4 (Tap any number of creatures you control with total power 4 or more: This Vehicle becomes an artifact creature until end of turn.)"
-    (subtypes := #["Vehicle"])
-    (power := some 3)
-    (toughness := some 3)
-    (keywords := Keyword.flying)
-    (crew := some 4)
-    (activatedAbilities := #[activated (Effect.addAnyColor) (ManaCost.empty) (tap := true)])
+  dependableQuinjetDefinition.toCardDef (oracleText := dependableQuinjetOracle)
+
+#guard dependableQuinjet.keywords == Keyword.flying
+#guard dependableQuinjet.crew == some 4
+#guard dependableQuinjet.activatedAbilities ==
+  #[activated (Effect.addAnyColor) (ManaCost.empty) (tap := true)]
 
 def hERBIEScoutUnit : CardDef :=
   artifactCreature "H.E.R.B.I.E. Scout Unit" (ManaCost.ofGeneric 4) #["Robot", "Scout"] 2 1
@@ -4273,15 +4299,43 @@ def ironManArmor : CardDef :=
     (staticAbilities := #[StaticAbility.equippedCreatureGetsAndHas 2 1 Keyword.flying])
     (activatedAbilities := #[activated (Effect.equipmentBecomesConstructHero) (ManaCost.ofGeneric 2), equipAbility (ManaCost.ofGeneric 2)])
 
+/-- Oracle text for S.H.I.E.L.D. Helicarrier. -/
+def sHIELDHelicarrierOracle : String :=
+  "Flying\nWhen this Vehicle enters, create two 1/1 white Soldier creature tokens.\nCrew 6 (Tap any number of creatures you control with total power 6 or more: This Vehicle becomes an artifact creature until end of turn.)"
+
+def sHIELDHelicarrierDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "S.H.I.E.L.D. Helicarrier",
+    .manaCost [.generic 4],
+    .type .artifact,
+    .subtype .vehicle,
+    .power 4,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "S.H.I.E.L.D. Helicarrier") sHIELDHelicarrierOracle).get!
+
+#guard sHIELDHelicarrierDefinition == .card [
+  .name "S.H.I.E.L.D. Helicarrier",
+  .manaCost [.generic 4],
+  .type .artifact,
+  .subtype .vehicle,
+  .power 4,
+  .toughness 5,
+  .ability (.keyword .flying),
+  .ability (.triggered (.enter .this)
+    (.createTokens (.controller .this) 2 [
+      .type .creature,
+      .subtype .soldier,
+      .colorIndicator [.white],
+      .power 1,
+      .toughness 1])),
+  .ability (.keyword (.crew 6))]
+
 def sHIELDHelicarrier : CardDef :=
-  artifact "S.H.I.E.L.D. Helicarrier" (ManaCost.ofGeneric 4)
-    "Flying\nWhen this Vehicle enters, create two 1/1 white Soldier creature tokens.\nCrew 6 (Tap any number of creatures you control with total power 6 or more: This Vehicle becomes an artifact creature until end of turn.)"
-    (subtypes := #["Vehicle"])
-    (power := some 4)
-    (toughness := some 5)
-    (keywords := Keyword.flying)
-    (crew := some 6)
-    (triggeredAbilities := #[.onEnterCreateTokens .soldier11white 2])
+  sHIELDHelicarrierDefinition.toCardDef (oracleText := sHIELDHelicarrierOracle)
+
+#guard sHIELDHelicarrier.keywords == Keyword.flying
+#guard sHIELDHelicarrier.crew == some 6
+#guard sHIELDHelicarrier.triggeredAbilities == #[.onEnterCreateTokens .soldier11white 2]
 
 def superAdaptoid : CardDef :=
   card "Super-Adaptoid" #[.artifact, .creature] (ManaCost.ofGeneric 2)
