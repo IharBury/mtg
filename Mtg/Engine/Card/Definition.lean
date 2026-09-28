@@ -705,7 +705,7 @@ inductive Condition where
   | equal : Value → Value → Condition
 deriving Repr, Inhabited, BEq
 
-/-- Status an object has as it enters a zone (CR 110.5 / 406.3). -/
+/-- Status a permanent has as it enters the battlefield (CR 110.5). -/
 inductive CardState where
   /-- The permanent enters tapped. -/
   | tapped
@@ -715,8 +715,6 @@ inductive CardState where
   | controlled : Selector → CardState
   /-- The permanent enters attached to the selected object (CR 303.4f). -/
   | attachedTo : Selector → CardState
-  /-- The object is face down (CR 708). Cards exiled face down use this. -/
-  | faceDown
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -868,6 +866,8 @@ inductive CardAction where
   | putCounter : Selector → CounterKind → Nat → CardAction
   /-- Exile the selected object. -/
   | exile : Selector → CardAction
+  /-- Exile the selected objects face down (CR 406.3). -/
+  | exileFaceDown : Selector → CardAction
   /-- Exchange control of the selected objects. -/
   | exchangeControl : Selector → CardAction
   /-- Destroy the selected permanent (CR 701.7). -/
@@ -961,9 +961,6 @@ inductive CardAction where
   /-- Put the selected cards on the bottom of their owner's library in a
   random order (CR 401.4). -/
   | putOnLibraryBottomInRandomOrder : Selector → CardAction
-  /-- Exile the selected objects in the given states. `[.faceDown]` exiles
-  them face down (CR 406.3). -/
-  | exileInState : Selector → List CardState → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
@@ -3138,7 +3135,7 @@ def leftoverExileTopFaceDownPlayIf? : CardAction → Option (Nat × String)
   | .sequence [
       .actionId lookId (.lookAt (.topOfLibrary who (.nat n))),
       .actionId exileId
-        (.exileInState (.wasObjectOfAction looked) [.faceDown]),
+        (.exileFaceDown (.wasObjectOfAction looked)),
       .continuous
         [.if
           (.any
@@ -3546,7 +3543,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putCounter (.source .this) .plusOnePlusOne n =>
                     Effect.putPlusOnePlusOneOnSource n
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
-                  | .exile _ | .exileInState _ _ =>
+                  | .exile _ | .exileFaceDown _ =>
                     continuousEffect none [] asAbility
                   | .exchangeControl _ => Effect.exchangeControlSharingType
                   | .destroy s =>

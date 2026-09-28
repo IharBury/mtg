@@ -2531,7 +2531,7 @@ def parseLookAtTopExileFaceDownPlayIf (text : String) (n : Nat) :
                 .actionId n
                   (.lookAt (.topOfLibrary (.controller .this) (.nat k))),
                 .actionId exileId
-                  (.exileInState (.wasObjectOfAction n) [.faceDown]),
+                  (.exileFaceDown (.wasObjectOfAction n)),
                 .continuous
                   [.if
                     (.any
@@ -7184,7 +7184,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   "Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard." ==
   some [.actions [
     .actionId 1 (.lookAt (.topOfLibrary (.controller .this) 2)),
-    .actionId 2 (.exileInState (.wasObjectOfAction 1) [.faceDown]),
+    .actionId 2 (.exileFaceDown (.wasObjectOfAction 1)),
     .continuous
       [.if
         (.any (.intersection [

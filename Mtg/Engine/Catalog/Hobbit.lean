@@ -5213,7 +5213,7 @@ def gandalfGoblinsBaneDefinition : TraditionalCardDefinition := .card <|
     .subtype .adventure,
     .actions [
       .actionId 1 (.lookAt (.topOfLibrary (.controller .this) 2)),
-      .actionId 2 (.exileInState (.wasObjectOfAction 1) [.faceDown]),
+      .actionId 2 (.exileFaceDown (.wasObjectOfAction 1)),
       .continuous
         [.if
           (.any (.intersection [
