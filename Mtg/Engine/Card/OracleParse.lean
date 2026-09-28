@@ -453,6 +453,18 @@ Currently recognized:
 - `Mill six cards, then put all instant and sorcery cards from among them into your hand.`
   More than one card uses the plural `cards`. Every instant and sorcery card
   from among them goes to hand.
+- `Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle.`
+  The player is one target. “That many” is how many of those creatures are
+  exiled. The search is optional. The lands enter tapped.
+- `When <this> enters, create a colorless Equipment artifact token named <name> with "<equipped creature gets +P/+T>" and equip {cost}.`
+  The token is a colorless Equipment artifact with that name. A zero bonus
+  is omitted. `+0/+0` is not an effect.
+- `Whenever you cast a noncreature spell, <this> gets +P/+T until end of turn and deals N damage to each opponent.`
+  `<this>` is this card. The bonus lasts until end of turn. `N` is a positive
+  count. Each opponent of this object's controller is dealt that damage.
+- `Look at the top <count> cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a <subtype>.`
+  One card uses the singular. Those cards are exiled face down. You may play
+  them while they remain exiled and you control a permanent of that subtype.
 -/
 
 namespace Mtg.Engine
@@ -2452,6 +2464,90 @@ def parseAddManaCombination (text : String) (n : Nat) :
                   n + 1)
   | _ => none
 
+/-- How many cards `the top <count> card(s)` names.
+One takes the singular. Any larger count takes the plural. -/
+def topCount? (phrase : String) : Option Nat :=
+  let counted :=
+    (before? phrase " cards").map (true, ·) <|>
+      (before? phrase " card").map (false, ·)
+  match counted with
+  | some (plural, countText) => nounCount? countText plural
+  | none => none
+
+/-- `Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle.`
+The player is target `n`, and the exile is action `n`. “That many” is how
+many of those creatures are exiled. The search is optional. -/
+def parseExileAttackersSearchBasics (text : String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match sentences text with
+  | [exile, search] =>
+    if !sentenceIs exile
+        "exile all attacking creatures target player controls" then none
+    else if !sentenceIs search
+        "that player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle" then
+      none
+    else
+      let exiled := .count (.wasObjectOfAction n)
+      some ([
+        .actionId n
+          (.exile
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .attacking .all,
+              .controlled (.target n .player)])),
+        .optional
+          (.searchLibraryThenShuffle
+            (.targetReference n)
+            [
+              .putOntoBattlefieldInState
+                (.selected
+                  (.targetReference n)
+                  (.range exiled exiled)
+                  (.intersection [
+                    .inLibrary,
+                    .cardType .land,
+                    .supertype .basic]))
+                [.tapped]])],
+        n + 1)
+  | _ => none
+
+/-- `Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard.`
+The looked-at cards are action `n`. The exile is action `n + 1`. One card
+uses the singular. Those cards are exiled face down. You may play them
+while they remain exiled and you control a permanent of that subtype. -/
+def parseLookAtTopExileFaceDownPlayIf (text : String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match sentences text with
+  | [look, play] =>
+    (after? (normSentence look) "look at the top ").bind fun tail =>
+      (before? tail " of your library and exile them face down").bind topCount? |>.bind
+        fun k =>
+          (after? (normSentence play)
+              "for as long as they remain exiled, you may play them if you control ").bind
+            dropArticle? |>.bind subtypeOfOracle? |>.map fun st =>
+              let exileId := n + 1
+              ([
+                .actionId n
+                  (.lookAt (.topOfLibrary (.controller .this) (.nat k))),
+                .actionId exileId
+                  (.exileInState (.wasObjectOfAction n) [.faceDown]),
+                .continuous
+                  [.if
+                    (.any
+                      (.intersection [
+                        .permanent,
+                        .subtype st,
+                        .controlled (.controller .this)]))
+                    [.canPlay
+                      (.controller .this)
+                      (.intersection [
+                        .inExile,
+                        .wasCreatedByAction exileId])]]
+                  .endOfGame],
+                exileId + 1)
+  | _ => none
+
 /-- Every sentence of `text` must parse. An unrecognized sentence fails
 the text. No sentences (reminder-only or empty text) succeeds with no actions.
 Multi-sentence templates are tried before the sentence split. -/
@@ -2459,7 +2555,9 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   let oneAction (parsed : Option (CardAction × Nat)) : Option (List CardAction × Nat) :=
     parsed.map fun (action, n') => ([action], n')
-  parseCounterExilePermanentMayCast text n <|>
+  parseExileAttackersSearchBasics text n <|>
+    parseLookAtTopExileFaceDownPlayIf text n <|>
+    parseCounterExilePermanentMayCast text n <|>
     parseCounterThenRecruitIfMv text n <|>
     parsePlusOneThenEachOtherIfFromGy text n <|>
     parseInsteadFromGraveyard text n <|>
@@ -2720,6 +2818,29 @@ def parseEquip (line : String) : Option CardPart :=
   match (after? (normLine line) "equip ").bind nonemptyMana? with
   | some syms => some (.ability (.keywordWithCost .equip [.mana syms]))
   | none => none
+
+/-- `When <this> enters, create a colorless Equipment artifact token named Axe with "Equipped creature gets +1/+0" and equip {2}.`
+The token is a colorless Equipment artifact with that name. The quoted text
+is a static ability of the token. Equip is another ability of the token.
+A zero bonus is omitted. `+0/+0` is not an effect. -/
+def parseEnterCreateNamedEquipment (cardName : String) (line : String) :
+    Option CardPart :=
+  let raw := rulesText line
+  (split2? raw " named ").bind fun (lead, rest) =>
+    (split2? rest " with \"").bind fun (tokenName, afterName) =>
+      (split2? afterName "\" and ").bind fun (quoted, equipText) =>
+        if tokenName.isEmpty then none
+        else
+          (whenSelfEffect? cardName (norm lead) " enters, ").bind fun effect =>
+            if effect != "create a colorless equipment artifact token" then none
+            else
+              match parseEquippedGets quoted, parseEquip equipText with
+              | some quotedParts, some equipPart =>
+                some (.ability (.triggered (.enter .this)
+                  (.createTokens (.controller .this) 1
+                    ([.name tokenName, .type .artifact, .subtype .equipment] ++
+                      quotedParts ++ [equipPart]))))
+              | _, _ => none
 
 /-- `Each opponent loses 2 life.` The amount is a printed number. -/
 def parseEachOpponentLosesLife (sentence : String) : Option Nat :=
@@ -3215,6 +3336,28 @@ parenthetical is not rules text (CR 207.2). -/
 def parseYouCastNoncreatureAmass (line : String) : Option CardPart :=
   onTrigger (.castSpell noncreatureSpellYouCast)
     ((after? (normLine line) "whenever you cast a noncreature spell, ").bind parseAmass)
+
+/-- `Whenever you cast a noncreature spell, <this> gets +1/+1 until end of turn and deals 1 damage to each opponent.`
+`<this>` is this card. The bonus lasts until end of turn. `N` is a positive
+count. Each opponent of this object's controller is dealt that damage. -/
+def parseYouCastNoncreaturePumpAndDamage (cardName : String) (line : String) :
+    Option CardPart :=
+  (after? (normLine line) "whenever you cast a noncreature spell, ").bind fun effect =>
+    (split2? effect " until end of turn and deals ").bind fun (pump, damage) =>
+      (splitGetsOnly? pump).bind fun (who, ptText) =>
+        (before? damage " damage to each opponent").bind fun amt =>
+          if !refersToSelf cardName who then none
+          else
+            match parsePowerToughness ptText, positiveCount amt with
+            | some (p, t), some n =>
+              (pumpUntilEnd (.source .this) p t none).map fun pumpAction =>
+                .ability (.triggered
+                  (.castSpell noncreatureSpellYouCast)
+                  (.sequence [
+                    pumpAction,
+                    .dealDamage (.source .this)
+                      (.opponent (.controller .this)) (.nat n)]))
+            | _, _ => none
 
 /-- `When <this card> enters, amass Goblins 1.`
 The entering object is this card. -/
@@ -4266,6 +4409,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     (parseOtherSubtypeYouControlGets line).map (·, n) <|>
     sole (parseCreaturesWithPlusOneHaveMenace line) n <|>
     sole (parseYouCastNoncreatureAmass line) n <|>
+    sole (parseYouCastNoncreaturePumpAndDamage cardName line) n <|>
     sole (parseYouCastSpellIfTreasureDrawLoseLife line) n <|>
     sole (parseYouAttackAmass line) n <|>
     sole (parseYouAttackRecruit line) n <|>
@@ -4308,6 +4452,7 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseDiesRecruit cardName line) n <|>
     sole (parseEnterScry cardName line) n <|>
     sole (parseEnterCreateTreasure cardName line) n <|>
+    sole (parseEnterCreateNamedEquipment cardName line) n <|>
     sole (parseEnterCreateTappedTreasuresEqualOppArtifacts cardName line) n <|>
     carry (parseEnterLookAtTopReveal cardName line n) <|>
     carry (parseEnterExileTopMayPlay cardName line n) <|>
@@ -6976,6 +7121,87 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
   none
 #guard parseOracleParts (name := "")
   "Mill six cards, then put all instant and sorcery card from among them into your hand." ==
+  none
+#guard parseOracleParts (name := "Settle the Wreckage")
+  "Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle." ==
+  some [.actions [
+    .actionId 1
+      (.exile
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .attacking .all,
+          .controlled (.target 1 .player)])),
+    .optional
+      (.searchLibraryThenShuffle
+        (.targetReference 1)
+        [
+          .putOntoBattlefieldInState
+            (.selected
+              (.targetReference 1)
+              (.range
+                (.count (.wasObjectOfAction 1))
+                (.count (.wasObjectOfAction 1)))
+              (.intersection [
+                .inLibrary,
+                .cardType .land,
+                .supertype .basic]))
+            [.tapped]])]]
+#guard parseOracleParts (name := "")
+  "Exile all attacking creatures. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle." ==
+  none
+#guard parseOracleParts (name := "Iron Hills Blacksmith")
+  "When this creature enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}." ==
+  some [.ability (.triggered (.enter .this)
+    (.createTokens (.controller .this) 1 [
+      .name "Axe",
+      .type .artifact,
+      .subtype .equipment,
+      .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
+      .ability (.keywordWithCost .equip [.mana [.generic 2]])]))]
+#guard parseOracleParts (name := "Iron Hills Blacksmith")
+  "When Iron Hills Blacksmith enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}." ==
+  parseOracleParts (name := "Iron Hills Blacksmith")
+    "When this creature enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}."
+#guard parseOracleParts (name := "")
+  "When this creature enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +0/+0\" and equip {2}." ==
+  none
+#guard parseOracleParts (name := "Gandalf, Goblins' Bane")
+  "Whenever you cast a noncreature spell, Gandalf gets +1/+1 until end of turn and deals 1 damage to each opponent." ==
+  some [.ability (.triggered
+    (.castSpell (.intersection [
+      .spell, .not (.cardType .creature), .controlled (.controller .this)]))
+    (.sequence [
+      .continuous [
+        .addPower (.source .this) (Value.int 1),
+        .addToughness (.source .this) (Value.int 1)]
+        .endOfTurn,
+      .dealDamage (.source .this) (.opponent (.controller .this)) 1]))]
+#guard parseOracleParts (name := "Saruman")
+  "Whenever you cast a noncreature spell, Gandalf gets +1/+1 until end of turn and deals 1 damage to each opponent." ==
+  none
+#guard parseOracleParts (name := "")
+  "Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard." ==
+  some [.actions [
+    .actionId 1 (.lookAt (.topOfLibrary (.controller .this) 2)),
+    .actionId 2 (.exileInState (.wasObjectOfAction 1) [.faceDown]),
+    .continuous
+      [.if
+        (.any (.intersection [
+          .permanent, .subtype .wizard, .controlled (.controller .this)]))
+        [.canPlay
+          (.controller .this)
+          (.intersection [.inExile, .wasCreatedByAction 2])]]
+      .endOfGame]]
+#guard parseOracleParts (name := "")
+  "Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard. (Then exile this card. You may cast the creature later from exile.)" ==
+  parseOracleParts (name := "")
+    "Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard."
+#guard parseOracleParts (name := "")
+  "Look at the top one cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard." ==
+  none
+#guard parseOracleParts (name := "")
+  "Look at the top two cards of your library and exile them face up. For as long as they remain exiled, you may play them if you control a Wizard." ==
   none
 
 end Mtg.Engine

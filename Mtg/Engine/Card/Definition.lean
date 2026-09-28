@@ -705,7 +705,7 @@ inductive Condition where
   | equal : Value → Value → Condition
 deriving Repr, Inhabited, BEq
 
-/-- Status a permanent has as it enters the battlefield (CR 110.5). -/
+/-- Status an object has as it enters a zone (CR 110.5 / 406.3). -/
 inductive CardState where
   /-- The permanent enters tapped. -/
   | tapped
@@ -715,6 +715,8 @@ inductive CardState where
   | controlled : Selector → CardState
   /-- The permanent enters attached to the selected object (CR 303.4f). -/
   | attachedTo : Selector → CardState
+  /-- The object is face down (CR 708). Cards exiled face down use this. -/
+  | faceDown
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -959,6 +961,9 @@ inductive CardAction where
   /-- Put the selected cards on the bottom of their owner's library in a
   random order (CR 401.4). -/
   | putOnLibraryBottomInRandomOrder : Selector → CardAction
+  /-- Exile the selected objects in the given states. `[.faceDown]` exiles
+  them face down (CR 406.3). -/
+  | exileInState : Selector → List CardState → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
@@ -3097,9 +3102,83 @@ def leftoverNonDragonThenDragonMana? : CardAction → Option Nat
     else none
   | _ => none
 
+/-- Exile every attacking creature the targeted player controls, then that
+player may search for that many basic lands and put them in tapped. -/
+def leftoverExileAttackersSearchBasics? : CardAction → Bool
+  | .sequence [
+      .actionId id
+        (.exile
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .attacking .all,
+            .controlled (.target tid .player)])),
+      .optional
+        (.searchLibraryThenShuffle
+          (.targetReference sid)
+          [
+            .putOntoBattlefieldInState
+              (.selected
+                (.targetReference sid')
+                (.range
+                  (.count (.wasObjectOfAction cid))
+                  (.count (.wasObjectOfAction cid')))
+                (.intersection [
+                  .inLibrary,
+                  .cardType .land,
+                  .supertype .basic]))
+              [.tapped]])
+    ] =>
+    id == tid && id == sid && sid == sid' && id == cid && cid == cid'
+  | _ => false
+
+/-- Look at the top `n` cards, exile them face down, and play them while
+exiled if you control this subtype. -/
+def leftoverExileTopFaceDownPlayIf? : CardAction → Option (Nat × String)
+  | .sequence [
+      .actionId lookId (.lookAt (.topOfLibrary who (.nat n))),
+      .actionId exileId
+        (.exileInState (.wasObjectOfAction looked) [.faceDown]),
+      .continuous
+        [.if
+          (.any
+            (.intersection [
+              .permanent,
+              .subtype st,
+              .controlled (.controller .this)]))
+          [.canPlay permit
+            (.intersection [.inExile, .wasCreatedByAction exiled])]]
+        .endOfGame
+    ] =>
+    if n != 0 && lookId == looked && exileId == exiled &&
+        leftoverYou who && permit == .controller .this then
+      some (n, st.toString)
+    else none
+  | _ => none
+
+/-- A colorless Equipment artifact token named Axe with “equipped creature
+gets +1/+0” and equip {2}. -/
+def leftoverAxeToken? (parts : List CardPart) : Bool :=
+  let p := collectTokenParts parts
+  let abilities :=
+    parts.filter fun
+      | .ability _ => true
+      | _ => false
+  p.name == "Axe" && p.types == [.artifact] && p.subtypes == ["Equipment"] &&
+    p.colors == ColorSet.empty && p.power.isNone && p.toughness.isNone &&
+    p.keywords == Keywords.none &&
+    abilities == [
+      .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
+      .ability (.keywordWithCost .equip [.mana [.generic 2]])]
+
 /-- Sequence leftovers that compile to a named `Effect` without taking
 only the first action. -/
 def leftoverCompiled? (action : CardAction) : Option Effect :=
+  (if leftoverExileAttackersSearchBasics? action then
+    some Effect.exileAttackersSearchBasics
+  else none) |>.orElse fun _ =>
+  leftoverExileTopFaceDownPlayIf? action |>.map
+      (fun (n, st) => Effect.exileTopPlayIfYouControlSubtype n st) |>.orElse fun _ =>
   leftoverNonDragonThenDragonMana? action |>.map
       Effect.dealDamageToEachNonDragonThenAddDragonMana |>.orElse fun _ =>
   leftoverDealDamageExileIfDies? action |>.map
@@ -3219,7 +3298,9 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
     | some n =>
       if leftoverYou who then
         if states == [] then
-          if n == 1 && leftoverRedwingToken? parts then
+          if n == 1 && leftoverAxeToken? parts then
+            some TriggeredAbility.onEnterCreateAxe
+          else if n == 1 && leftoverRedwingToken? parts then
             some (TriggeredAbility.onEnter Effect.enterCreateRedwing)
           else
             leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onEnterCreateTokens k n)
@@ -3465,7 +3546,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putCounter (.source .this) .plusOnePlusOne n =>
                     Effect.putPlusOnePlusOneOnSource n
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
-                  | .exile _ => continuousEffect none [] asAbility
+                  | .exile _ | .exileInState _ _ =>
+                    continuousEffect none [] asAbility
                   | .exchangeControl _ => Effect.exchangeControlSharingType
                   | .destroy s =>
                     if s.toTargetKind == .creatureWithFlying then
@@ -4289,6 +4371,16 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       match CardAction.leftoverDrawLoseLifeSelf? action with
       | some (1, 1) => some TriggeredAbility.onCastWithTreasureDrawLoseLife
       | _ => none
+    else none
+  | .triggered (.castSpell among)
+      (.sequence [
+        .continuous effects .endOfTurn,
+        .dealDamage src (.opponent who) (.nat n)]) =>
+    if Selector.youCastNoncreatureSpell among && n != 0 &&
+        CardAction.leftoverSourcePump? effects == some (1, 1) &&
+        (src == .source .this || src == .this) &&
+        CardAction.leftoverYou who then
+      some (TriggeredAbility.onCastNoncreaturePumpAndDamageOpponents n)
     else none
   | .triggered (.castSpell among) action =>
     if Selector.youCastNoncreatureSpell among &&
