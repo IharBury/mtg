@@ -1775,11 +1775,37 @@ def darkDeedDefinition : TraditionalCardDefinition := .card <|
 def darkDeed : CardDef :=
   darkDeedDefinition.toCardDef (oracleText := darkDeedOracle)
 
+/-- Oracle text for Decoy Ploy. -/
+def decoyPloyOracle : String :=
+  "Choose one or both —\n• Return target Villain card from your graveyard to your hand.\n• Return target Hero card from your graveyard to your hand."
+
+def decoyPloyDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Decoy Ploy",
+    .manaCost [.generic 1, .mono .black],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Decoy Ploy") decoyPloyOracle).get!
+
+#guard decoyPloyDefinition == .card [
+  .name "Decoy Ploy",
+  .manaCost [.generic 1, .mono .black],
+  .type .instant,
+  .actions
+    [
+      .chooseUniqueModes
+        (.range (.nat 1) (.nat 2))
+        [
+          .returnToHand
+            (.target 1 (.intersection [.inGraveyard, .subtype .villain, .owner (.controller .this)])),
+          .returnToHand
+            (.target 2 (.intersection [.inGraveyard, .subtype .hero, .owner (.controller .this)]))]]]
+
 def decoyPloy : CardDef :=
-  instant "Decoy Ploy" (ManaCost.ofGenericAndColor 1 .black)
-    "Choose one or both —\n• Return target Villain card from your graveyard to your hand.\n• Return target Hero card from your graveyard to your hand."
-    (spellModes := #[(Effect.returnGySubtypeToHand "Villain"), (Effect.returnGySubtypeToHand "Hero")])
-    (chooseOneOrBoth := true)
+  decoyPloyDefinition.toCardDef (oracleText := decoyPloyOracle)
+
+#guard decoyPloy.oracleText == decoyPloyOracle
+#guard decoyPloy.spellModes == #[(Effect.returnGySubtypeToHand "Villain"), (Effect.returnGySubtypeToHand "Hero")]
+#guard decoyPloy.chooseOneOrBoth == true
 
 def doctorDoom : CardDef :=
   legendaryCreature "Doctor Doom" (ManaCost.ofGenericAndColors 4 [.black, .black]) #["Human", "Scientist", "Villain"] 3 3
@@ -2490,11 +2516,48 @@ def yellowjacketHeartlessMarauderDefinition : TraditionalCardDefinition := .card
 def yellowjacketHeartlessMarauder : CardDef :=
   yellowjacketHeartlessMarauderDefinition.toCardDef (oracleText := yellowjacketHeartlessMarauderOracle)
 
+/-- Oracle text for Avengers Disassembled. -/
+def avengersDisassembledOracle : String :=
+  "Choose one or both —\n• Avengers Disassembled deals 3 damage to each creature.\n• Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle."
+
+def avengersDisassembledDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Avengers Disassembled",
+    .manaCost [.generic 1, .mono .red, .mono .red],
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Avengers Disassembled") avengersDisassembledOracle).get!
+
+#guard avengersDisassembledDefinition == .card [
+  .name "Avengers Disassembled",
+  .manaCost [.generic 1, .mono .red, .mono .red],
+  .type .sorcery,
+  .actions
+    [
+      .chooseUniqueModes
+        (.range (.nat 1) (.nat 2))
+        [
+          .dealDamage .this (.intersection [.permanent, .cardType .creature]) (.nat 3),
+          .sequence
+            [
+              .destroy (.target 1 (.intersection [.permanent, .cardType .land])),
+              .optional
+                (.controller (.targetReference 1))
+                (.searchLibraryThenShuffle
+                  (.controller (.targetReference 1))
+                  [
+                    .putOntoBattlefieldInState
+                      (.selected
+                        (.controller (.targetReference 1))
+                        (.range (.nat 1) (.nat 1))
+                        (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
+                      [.tapped]])]]]]
+
 def avengersDisassembled : CardDef :=
-  sorcery "Avengers Disassembled" (ManaCost.ofGenericAndColors 1 [.red, .red])
-    "Choose one or both —\n• Avengers Disassembled deals 3 damage to each creature.\n• Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle."
-    (spellModes := #[(Effect.dealDamageToEachCreature 3), (Effect.destroyLandSearchBasic)])
-    (chooseOneOrBoth := true)
+  avengersDisassembledDefinition.toCardDef (oracleText := avengersDisassembledOracle)
+
+#guard avengersDisassembled.oracleText == avengersDisassembledOracle
+#guard avengersDisassembled.spellModes == #[(Effect.dealDamageToEachCreature 3), (Effect.destroyLandSearchBasic)]
+#guard avengersDisassembled.chooseOneOrBoth == true
 
 /-- Oracle text for Blazing Crescendo. -/
 def blazingCrescendoOracle : String :=
@@ -3312,11 +3375,48 @@ def earthSMightiestHeroes : CardDef :=
     (teamwork := some 5)
     (spellEffect := some (Effect.revealTopPutCreatures 8))
 
+/-- Oracle text for Epic Fight. -/
+def epicFightOracle : String :=
+  "Choose one or both —\n• Double target creature's power and toughness until end of turn.\n• Target creature you control fights target creature an opponent controls."
+
+def epicFightDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Epic Fight",
+    .manaCost [.generic 2, .mono .green],
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Epic Fight") epicFightOracle).get!
+
+#guard epicFightDefinition == .card [
+  .name "Epic Fight",
+  .manaCost [.generic 2, .mono .green],
+  .type .sorcery,
+  .actions
+    [
+      .chooseUniqueModes
+        (.range (.nat 1) (.nat 2))
+        [
+          .continuous
+            [
+              .addPower
+                (.target 1 (.intersection [.permanent, .cardType .creature]))
+                (.greatestPower (.targetReference 1)),
+              .addToughness (.targetReference 1) (.greatestToughness (.targetReference 1))]
+            .endOfTurn,
+          .fight
+            (.target
+              2
+              (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)]))
+            (.target
+              3
+              (.intersection
+                [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))]))]]]
+
 def epicFight : CardDef :=
-  sorcery "Epic Fight" (ManaCost.ofGenericAndColor 2 .green)
-    "Choose one or both —\n• Double target creature's power and toughness until end of turn.\n• Target creature you control fights target creature an opponent controls."
-    (spellModes := #[(Effect.doublePowerAndToughness), (Effect.fight)])
-    (chooseOneOrBoth := true)
+  epicFightDefinition.toCardDef (oracleText := epicFightOracle)
+
+#guard epicFight.oracleText == epicFightOracle
+#guard epicFight.spellModes == #[(Effect.doublePowerAndToughness), (Effect.fight)]
+#guard epicFight.chooseOneOrBoth == true
 
 def goNuts : CardDef :=
   sorcery "Go Nuts!" (ManaCost.ofColor .green)
@@ -3531,11 +3631,46 @@ def powerfulBroker : CardDef :=
     (oracleText := "{T}: For each kind of counter on target permanent or player, give that permanent or player another counter of that kind. Activate only as a sorcery.")
     (activatedAbilities := #[activated (Effect.proliferateEachKind) (ManaCost.empty) (tap := true) (onlyAsSorcery := true)])
 
+/-- Oracle text for Punishing Punch. -/
+def punishingPunchOracle : String :=
+  "This spell costs {2} less to cast if there are two or more creature cards in your graveyard.\nTarget creature you control deals damage equal to twice its power to target creature an opponent controls."
+
+def punishingPunchDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Punishing Punch",
+    .manaCost [.generic 2, .mono .green],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Punishing Punch") punishingPunchOracle).get!
+
+#guard punishingPunchDefinition == .card [
+  .name "Punishing Punch",
+  .manaCost [.generic 2, .mono .green],
+  .type .instant,
+  .ability
+    (.stackStatic
+      (.if
+        (.greaterOrEqual
+          (.count (.intersection [.inGraveyard, .cardType .creature, .owner (.controller .this)]))
+          (.nat 2))
+        [.reduceCost .this [.mana [.generic 2]]])),
+  .actions
+    [
+      .dealDamage
+        (.target
+          1
+          (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)]))
+        (.target
+          2
+          (.intersection
+            [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))]))
+        (.product (.totalPower (.targetReference 1)) (.int 2))]]
+
 def punishingPunch : CardDef :=
-  card "Punishing Punch" #[.instant] (ManaCost.ofGenericAndColor 2 .green)
-    (oracleText := "This spell costs {2} less to cast if there are two or more creature cards in your graveyard.\nTarget creature you control deals damage equal to twice its power to target creature an opponent controls.")
-    (costReductionIfGyCreaturesAtLeast := some (2, 2))
-    (spellEffect := some (Effect.creatureYouControlDealsTwicePower))
+  punishingPunchDefinition.toCardDef (oracleText := punishingPunchOracle)
+
+#guard punishingPunch.oracleText == punishingPunchOracle
+#guard punishingPunch.costReductionIfGyCreaturesAtLeast == some (2, 2)
+#guard punishingPunch.spellEffect == some (Effect.creatureYouControlDealsTwicePower)
 
 /-- Oracle text for Rapid Rescue. -/
 def rapidRescueOracle : String :=
@@ -4780,10 +4915,43 @@ def wolverineFierceFighterDefinition : TraditionalCardDefinition := .card <|
 def wolverineFierceFighter : CardDef :=
   wolverineFierceFighterDefinition.toCardDef (oracleText := wolverineFierceFighterOracle)
 
+/-- Oracle text for Worlds Within Worlds. -/
+def worldsWithinWorldsOracle : String :=
+  "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
+
+def worldsWithinWorldsDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Worlds Within Worlds",
+    .manaCost [.generic 5, .mono .green, .mono .blue],
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Worlds Within Worlds") worldsWithinWorldsOracle).get!
+
+#guard worldsWithinWorldsDefinition == .card [
+  .name "Worlds Within Worlds",
+  .manaCost [.generic 5, .mono .green, .mono .blue],
+  .type .sorcery,
+  .actions
+    [
+      .actionId 1 (.exile (.intersection [.permanent, .cardType .creature])),
+      .forEachVariable
+        2
+        .player
+        [
+          .optional
+            (.variable 2)
+            (.putOntoBattlefield
+              (.selected
+                (.variable 2)
+                .any
+                (.intersection [.inHand, .owner (.variable 2), .cardType .creature])))],
+      .returnToHand (.wasCreatedByAction 1),
+      .exile .this]]
+
 def worldsWithinWorlds : CardDef :=
-  sorcery "Worlds Within Worlds" (ManaCost.ofGenericAndColors 5 [.green, .blue])
-    "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
-    (spellEffect := some (Effect.worldsWithinWorlds))
+  worldsWithinWorldsDefinition.toCardDef (oracleText := worldsWithinWorldsOracle)
+
+#guard worldsWithinWorlds.oracleText == worldsWithinWorldsOracle
+#guard worldsWithinWorlds.spellEffect == some (Effect.worldsWithinWorlds)
 
 /-- Oracle text for A.I.M. Synthoids. -/
 def aIMSynthoidsOracle : String :=
