@@ -2802,20 +2802,17 @@ The entering object is this card. The opponent is target `n` and chooses which
 creature to sacrifice (CR 701.17a). -/
 def parseEnterTargetOpponentSacrifices (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
-  (whenSelfEffect? cardName (normLine line) " enters, ").bind fun effect =>
+  onEnterN cardName line fun effect =>
     (between? effect "target opponent sacrifices " " of their choice").bind fun obj =>
       (dropArticle? obj).bind fun named =>
         if named != "creature" then none
         else
           some (
-            .ability (
-              .triggered
-                (.enter .this)
-                (.sacrifice
-                  (.selected
-                    (.target n (.opponent (.controller .this)))
-                    (.range 1 1)
-                    (permanentWith [.creature] [.controlled (.targetReference n)])))),
+            .sacrifice
+              (.selected
+                (.target n (.opponent (.controller .this)))
+                (.range 1 1)
+                (permanentWith [.creature] [.controlled (.targetReference n)])),
             n + 1)
 
 /-- `ward {N}` with a positive generic cost. -/
@@ -2884,16 +2881,15 @@ def parseEnterCreateNamedEquipment (cardName : String) (line : String) :
       (split2? afterName "\" and ").bind fun (quoted, equipText) =>
         if tokenName.isEmpty then none
         else
-          (whenSelfEffect? cardName (norm lead) " enters, ").bind fun effect =>
+          onEnter cardName lead fun effect =>
             if effect != "create a colorless equipment artifact token" then none
             else
               match parseEquippedGets quoted, parseEquip equipText with
               | some quotedParts, some equipPart =>
-                some (.ability (.triggered (.enter .this)
-                  (.createTokens (.controller .this) 1
-                    ([.name tokenName, .type .artifact, .subtype .equipment,
-                      .colorIndicator []] ++
-                      quotedParts ++ [equipPart]))))
+                some (.createTokens (.controller .this) 1
+                  ([.name tokenName, .type .artifact, .subtype .equipment,
+                    .colorIndicator []] ++
+                    quotedParts ++ [equipPart]))
               | _, _ => none
 
 /-- `Each opponent loses 2 life.` The amount is a printed number. -/
@@ -2906,20 +2902,17 @@ def parseEnterExileOppGyLoseLife (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   match sentences line with
   | [enter, lose] =>
-    (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+    onEnterN cardName enter fun effect =>
       if effect != "exile up to one target card from an opponent's graveyard" then none
       else
         (parseEachOpponentLosesLife lose).map fun k =>
-          (.ability (
-            .triggered
-              (.enter .this)
-              (.sequence [
-                .exile
-                  (.targets n (.range 0 1)
-                    (.intersection [
-                      .inGraveyard,
-                      .owner (.opponent (.controller .this))])),
-                .loseLife (.opponent (.controller .this)) (Value.nat k)])),
+          (.sequence [
+              .exile
+                (.targets n (.range 0 1)
+                  (.intersection [
+                    .inGraveyard,
+                    .owner (.opponent (.controller .this))])),
+              .loseLife (.opponent (.controller .this)) (Value.nat k)],
            n + 1)
   | _ => none
 
@@ -2974,7 +2967,7 @@ contiguous range, and those targets are numbered `n`. -/
 def parseEnterDividedDamage (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   (before? (normLine line) " targets").bind fun body =>
-    (whenSelfEffect? cardName body " enters, ").bind fun effect =>
+    onEnterN cardName body fun effect =>
       (split2? effect " deals ").bind fun (who, rest) =>
         if who.isEmpty || !(isPersonalPronoun who || refersToSelf cardName who) then none
         else
@@ -2982,14 +2975,11 @@ def parseEnterDividedDamage (cardName : String) (line : String) (n : Nat) :
             match positiveCount amt, parseContiguousCounts counts with
             | some amount, some (lo, hi) =>
               some (
-                .ability (
-                  .triggered
-                    (.enter .this)
-                    (.divideDamage
-                      (.controller .this)
-                      (.source .this)
-                      (.targets n (.range (Value.nat lo) (Value.nat hi)) .all)
-                      (Value.nat amount))),
+                .divideDamage
+                  (.controller .this)
+                  (.source .this)
+                  (.targets n (.range (Value.nat lo) (Value.nat hi)) .all)
+                  (Value.nat amount),
                 n + 1)
             | _, _ => none
 
@@ -3000,22 +2990,19 @@ def parseEnterMayDiscardDraw (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   match sentences line with
   | [may, ifYouDo] =>
-    (whenSelfEffect? cardName (norm may) " enters, ").bind fun effect =>
+    onEnterN cardName may fun effect =>
       (after? effect "you may discard ").bind fun discardedText =>
         match parseCardCount discardedText,
             (after? (norm ifYouDo) "if you do, draw ").bind parseCardCount with
         | some discarded, some drawn =>
           some (
-            .ability (
-              .triggered
-                (.enter .this)
-                (.sequence [
-                  .optional (.controller .this)
-                    (.actionId n
-                      (.discard (.controller .this) (Value.nat discarded))),
-                  .if
-                    (.happened (.actionWithId n) .gameStart)
-                    [.draw (.controller .this) (Value.nat drawn)]])),
+            .sequence [
+              .optional (.controller .this)
+                (.actionId n
+                  (.discard (.controller .this) (Value.nat discarded))),
+              .if
+                (.happened (.actionWithId n) .gameStart)
+                [.draw (.controller .this) (Value.nat drawn)]],
             n + 1)
         | _, _ => none
   | _ => none
@@ -3293,21 +3280,18 @@ def parseEnterUntapPlusOneIfSubtype (cardName line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   match sentences line with
   | [enter, ifSubtype] =>
-    (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+    onEnterN cardName enter fun effect =>
       (after? effect "untap ").bind parseBattlefieldTarget |>.bind fun sel =>
         if !sel.shape.anotherCreatureYouControl then none
         else
           (between? (normSentence ifSubtype)
               "if that creature is " ", put a +1/+1 counter on it").bind
             dropArticle? |>.bind subtypeOfOracle? |>.map fun st =>
-            (.ability (
-              .triggered
-                (.enter .this)
-                (.sequence [
-                  .untap (.target n sel),
-                  .if
-                    (.anySubtype (.targetReference n) st)
-                    [.putCounter (.targetReference n) .plusOnePlusOne 1]])),
+            (.sequence [
+                .untap (.target n sel),
+                .if
+                  (.anySubtype (.targetReference n) st)
+                  [.putCounter (.targetReference n) .plusOnePlusOne 1]],
              n + 1)
   | _ => none
 
@@ -3354,14 +3338,11 @@ def parseEnterExileTopMayPlay (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   match sentences line with
   | [enter, play] =>
-    (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+    onEnterN cardName enter fun effect =>
       if !sentenceIs effect "exile the top card of your library" then none
       else if !sentenceIs play
           "until the end of your next turn, you may play that card" then none
-      else
-        some (
-          .ability (.triggered (.enter .this) (exileTopPlayUntilEndOfNextTurn n)),
-          n + 1)
+      else some (exileTopPlayUntilEndOfNextTurn n, n + 1)
   | _ => none
 
 /-- `This spell can't be countered.`
@@ -3629,16 +3610,15 @@ One token is created. This object is attached to that token. The creation
 is action `n`. -/
 def parseEnterCreateThenAttach (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
-  (whenSelfEffect? cardName (normLine line) " enters, ").bind fun effect =>
+  onEnterN cardName line fun effect =>
     (split2? effect ", then attach ").bind fun (createText, attachText) =>
       match parseCreateColoredCreatureToken createText with
       | some (.createTokens who (.nat 1) parts []) =>
         if who == .controller .this && attachSelfToIt? cardName attachText then
           some (
-            .ability (.triggered (.enter .this)
-              (.sequence [
-                .actionId n (.createTokens who 1 parts),
-                .attach .this (.wasCreatedByAction n)])),
+            .sequence [
+              .actionId n (.createTokens who 1 parts),
+              .attach .this (.wasCreatedByAction n)],
             n + 1)
         else none
       | _ => none
@@ -3649,16 +3629,15 @@ to the Army that action amassed. The amass is action `n`. A reminder
 parenthetical is not rules text. -/
 def parseEnterAmassThenAttach (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
-  (whenSelfEffect? cardName (normLine line) " enters, ").bind fun effect =>
+  onEnterN cardName line fun effect =>
     (split2? effect ", then attach ").bind fun (amassText, attachText) =>
       match parseAmass amassText with
       | some amass =>
         if attachSelfToAmassedArmy? cardName attachText then
           some (
-            .ability (.triggered (.enter .this)
-              (.sequence [
-                .actionId n amass,
-                .attach .this (.wasObjectOfAction n)])),
+            .sequence [
+              .actionId n amass,
+              .attach .this (.wasObjectOfAction n)],
             n + 1)
         else none
       | none => none
@@ -3981,7 +3960,7 @@ def parseEnterDealDamageDestroyIfSubtype (cardName : String) (line : String)
     (n : Nat) : Option (CardPart × Nat) :=
   match sentences line with
   | [enter, cond] =>
-    (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+    onEnterN cardName enter fun effect =>
       (split2? effect " deals ").bind fun (who, rest) =>
         (split2? rest " damage to ").bind fun (amt, dest) =>
           if !damageSource? cardName who || dest != "any target" then none
@@ -3994,13 +3973,12 @@ def parseEnterDealDamageDestroyIfSubtype (cardName : String) (line : String)
                   (before? rest " is dealt damage this way, destroy it").bind
                     subtypeOfOracle? |>.map fun st =>
                       (
-                        .ability (.triggered (.enter .this)
-                          (.sequence [
-                            .actionId n
-                              (.dealDamage (.source .this) (.target n .all)
-                                (.nat amount)),
-                            .if (.anySubtype (.wasObjectOfAction n) st)
-                              [.destroy (.wasObjectOfAction n)]])),
+                        .sequence [
+                          .actionId n
+                            (.dealDamage (.source .this) (.target n .all)
+                              (.nat amount)),
+                          .if (.anySubtype (.wasObjectOfAction n) st)
+                            [.destroy (.wasObjectOfAction n)]],
                         n + 1)
   | _ => none
 
@@ -4243,20 +4221,19 @@ def parseEnterReturnOtherPlusOne (cardName : String) (line : String) (n : Nat) :
   | [enter, cond] =>
     if !sentenceIs cond "if you do, put a +1/+1 counter on this creature" then none
     else
-      (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+      onEnterN cardName enter fun effect =>
         if effect !=
             "return up to one other target permanent you control to its owner's hand" then
           none
         else
           some (
-            .ability (.triggered (.enter .this)
-              (.sequence [
-                .actionId n
-                  (.returnToHand
-                    (.targets n (.range 0 1)
-                      (.intersection [.not .this, .permanent, youControl]))),
-                .if (.happened (.actionWithId n) .gameStart)
-                  [.putCounter (.source .this) .plusOnePlusOne 1]])),
+            .sequence [
+              .actionId n
+                (.returnToHand
+                  (.targets n (.range 0 1)
+                    (.intersection [.not .this, .permanent, youControl]))),
+              .if (.happened (.actionWithId n) .gameStart)
+                [.putCounter (.source .this) .plusOnePlusOne 1]],
             n + 1)
   | _ => none
 
@@ -4321,7 +4298,7 @@ def parseEnterLookAtTopReveal (cardName : String) (line : String) (n : Nat) :
     if !sentenceIs restBottom
         "put the rest on the bottom of your library in a random order" then none
     else
-      (whenSelfEffect? cardName (norm enter) " enters, ").bind fun effect =>
+      onEnterN cardName enter fun effect =>
         (after? effect "look at the top ").bind fun tail =>
           (before? tail " of your library").bind fun countPhrase =>
             let counted :=
@@ -4338,7 +4315,7 @@ def parseEnterLookAtTopReveal (cardName : String) (line : String) (n : Nat) :
                       let revealed := .wasObjectOfAction (n + 1)
                       let among :=
                         .intersection [looked, .union [.subtype a, .subtype b]]
-                      (.ability (.triggered (.enter .this) (.sequence [
+                      (.sequence [
                         .actionId n
                           (.lookAt
                             (.topOfLibrary (.controller .this) (.nat k))),
@@ -4348,7 +4325,7 @@ def parseEnterLookAtTopReveal (cardName : String) (line : String) (n : Nat) :
                               (.selected (.controller .this) (.range 1 1) among)),
                           .returnToHand revealed]),
                         .putOnLibraryBottomInRandomOrder
-                          (.intersection [looked, .not revealed])])),
+                          (.intersection [looked, .not revealed])],
                        n + 2)
   | _ => none
 
