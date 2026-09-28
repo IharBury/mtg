@@ -317,11 +317,48 @@ def banishingLight : CardDef :=
     "When this enchantment enters, exile target nonland permanent an opponent controls until this enchantment leaves the battlefield."
     (triggeredAbilities := #[.onEnterExileOppNonlandUntilLeaves])
 
+/-- Oracle text for Dawn of a New Age. -/
+def dawnOfANewAgeOracle : String :=
+  "This enchantment enters with a hope counter on it for each creature you control.\nAt the beginning of your end step, remove a hope counter from this enchantment. If you do, draw a card. Then if this enchantment has no hope counters on it, sacrifice it and you gain 4 life."
+
+def dawnOfANewAgeDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Dawn of a New Age",
+    .manaCost [.generic 1, .mono .white],
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "Dawn of a New Age") dawnOfANewAgeOracle).get!
+
+#guard dawnOfANewAgeDefinition == .card [
+  .name "Dawn of a New Age",
+  .manaCost [.generic 1, .mono .white],
+  .type .enchantment,
+  .ability
+    (.static
+      (.replace (.enter .this) [
+        .putCounter (.source .this) (.named "hope")
+          (.count
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])),
+        .keepReplacedAction])),
+  .ability
+    (.triggered
+      (.endStep (.controller .this))
+      (.sequence [
+        .actionId 1 (.removeCounter (.source .this) (.named "hope") (.nat 1)),
+        .if (.happened (.actionWithId 1) .gameStart) [
+          .draw (.controller .this) (.nat 1),
+          .if (.not (.any (.intersection [.source .this, .hasCounter (.named "hope")]))) [
+            .sacrifice (.source .this),
+            .gainLife (.controller .this) (.nat 4)]]]))]
+
 def dawnOfANewAge : CardDef :=
-  enchantment "Dawn of a New Age" (ManaCost.ofGenericAndColor 1 .white)
-    "This enchantment enters with a hope counter on it for each creature you control.\nAt the beginning of your end step, remove a hope counter from this enchantment. If you do, draw a card. Then if this enchantment has no hope counters on it, sacrifice it and you gain 4 life."
-    (entersWithHopePerCreature := true)
-    (triggeredAbilities := #[.onYourEndStepRemoveHopeDrawSac])
+  dawnOfANewAgeDefinition.toCardDef (oracleText := dawnOfANewAgeOracle)
+
+#guard dawnOfANewAge.oracleText == dawnOfANewAgeOracle
+#guard dawnOfANewAge.entersWithHopePerCreature
+#guard dawnOfANewAge.triggeredAbilities == #[.onYourEndStepRemoveHopeDrawSac]
 
 /-- Oracle text for Westfold Rider. -/
 def westfoldRiderOracle : String :=

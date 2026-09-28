@@ -1140,7 +1140,7 @@ def parsePutCountersOnThis (sentence : String) : Option CardAction :=
     match parsePumpWho who with
     | some sel =>
       if sel == .source .this then
-        some (.putCounter (.source .this) .plusOnePlusOne k)
+        some (.putCounter (.source .this) .plusOnePlusOne (.nat k))
       else none
     | none => none
 
@@ -1539,7 +1539,7 @@ def parsePutCountersOnTarget (sentence : String) (n : Nat) : Option (CardAction 
     | some sel =>
       -- A creature type (`Elf`, `Goblin or Orc`), not a card type (`creature`).
       if sel.includedSubtypes.isEmpty then none
-      else some (.putCounter (.target n sel) .plusOnePlusOne k, n + 1)
+      else some (.putCounter (.target n sel) .plusOnePlusOne (.nat k), n + 1)
     | none => none
 
 /-- A basic land card in a library. -/
@@ -1605,6 +1605,36 @@ def parseDestroyTargetPermanent (sentence : String) (n : Nat) : Option (CardActi
     some (.destroy (.target n .permanent), n + 1)
   else none
 
+/-- This creature's power, including the pronouns a card uses for itself. -/
+def selfPowerAmount? (s : String) : Option Value :=
+  match norm s with
+  | "this creature's power" | "its power" | "her power" | "his power" | "their power" =>
+    some (.greatestPower (.source .this))
+  | _ => none
+
+/-- `Put X +1/+1 counters on <who>`, or `Put X +1/+1 counters on <who>, where X
+is this creature's power`. `X` with no where-clause is the value of X
+(CR 107.3). A printed natural count stays in `parsePutPlusOneOn?`. -/
+def parsePutVariablePlusOne? (sentence : String) : Option (Value × String) :=
+  (after? (normSentence sentence) "put ").bind fun rest =>
+    let (body, where?) :=
+      match split2? rest ", where x is " with
+      | some (body, clause) => (body, some clause)
+      | none => (rest, none)
+    (split2? body " +1/+1 counters on ").bind fun (countText, who) =>
+      if norm countText != "x" then none
+      else
+        match where? with
+        | none => some (.x, who)
+        | some clause => (selfPowerAmount? clause).map fun v => (v, who)
+
+/-- `Put X +1/+1 counters on <this>`. The counters go on the source. -/
+def parsePutXOnSelf (cardName sentence : String) : Option CardAction :=
+  (parsePutVariablePlusOne? sentence).bind fun (amount, who) =>
+    if refersToSelf cardName (norm who) || norm who == "it" then
+      some (.putCounter (.source .this) .plusOnePlusOne amount)
+    else none
+
 /-- A pump, counters, a targeted restriction, a library search, becoming a
 creature that gains a static ability, adding one mana of any color, destroying
 a permanent, or exiling the top card to play later, optionally followed by an
@@ -1622,7 +1652,8 @@ def parseActivatedEffect (cardName : String) (effect : String) (n : Nat) :
         parseDestroyTargetPermanent one n
     let plain :=
       (parsePumpUntilEndOfTurn one <|> parsePutCountersOnThis one <|>
-          parseBecomeAndGainStatic cardName one).map (fun action => (action, n)) <|>
+          parseBecomeAndGainStatic cardName one <|>
+          parsePutXOnSelf cardName one).map (fun action => (action, n)) <|>
         parseAddOneManaOfAnyColor one n
     (targeted <|> plain).map fun (action, n') => (action, limit, n')
   | _ =>
@@ -2284,14 +2315,19 @@ def parseDrawCards (sentence : String) : Option CardAction :=
     .draw (.controller .this) (Value.nat k)
 
 /-- `Amass Goblins 1.` The controller amasses that subtype that many (CR 701.45).
-The subtype is plural. `N` is a positive count. -/
+The subtype is plural. `N` is a positive count. `Amass Goblins X, where X is
+this creature's power` uses that power. -/
 def parseAmass (sentence : String) : Option CardAction :=
   (after? (normSentence sentence) "amass ").bind fun rest =>
-    (split2? rest " ").bind fun (typeText, nText) =>
-      match amassSubtype? typeText, positiveCount nText with
-      | some st, some n =>
-        some (.keyword (.controller .this) (.amass st (.nat n)))
-      | _, _ => none
+    match rest.splitOn " " |>.map copied |>.filter (· != "") with
+    | typeText :: nWords =>
+      let nText := " ".intercalate nWords
+      (amassSubtype? typeText).bind fun st =>
+        let amount :=
+          (positiveCount nText).map Value.nat <|>
+            ((after? nText "x, where x is ").bind selfPowerAmount?)
+        amount.map fun v => .keyword (.controller .this) (.amass st v)
+    | [] => none
 
 /-- `Return up to one target creature card from your graveyard to your hand.`
 Up to one target is zero or one (CR 115.1). That card is in your graveyard.
@@ -2568,7 +2604,7 @@ def parsePutPlusOneOnCreatureYouControl (sentence : String) (n : Nat) :
     match parseTargetPhrase who with
     | some sel =>
       if sel == permanentWith [.creature] [youControl] then
-        some (.putCounter (.target n sel) .plusOnePlusOne k, n + 1)
+        some (.putCounter (.target n sel) .plusOnePlusOne (.nat k), n + 1)
       else none
     | none => none
 
@@ -2697,6 +2733,35 @@ def parseLookAtTopExileFaceDownPlayIf (text : String) (n : Nat) :
                 exileId + 1)
   | _ => none
 
+/-- Vision Quest: search library and/or graveyard for an artifact creature of
+mana value X or less, put it onto the battlefield with X +1/+1 counters, give
+it haste when X is 4 or greater, and shuffle only if the card came from the
+library. The found card is variable `n`. Whether it was in the library is
+variable `n + 1`, recorded before it moves. -/
+def parseVisionQuest (text : String) (n : Nat) : Option (List CardAction × Nat) :=
+  match (sentences text).map normSentence with
+  | [search, haste, shuffle] =>
+    if search == "search your library and/or graveyard for an artifact creature card with mana value x or less and put it onto the battlefield with x additional +1/+1 counters on it" &&
+        haste == "if x is 4 or greater, it gains haste until end of turn" &&
+        shuffle == "if you search your library this way, shuffle" then
+      some ([.sequence [
+        .defineSelectorVariable n
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [
+              .union [.inLibrary, .inGraveyard],
+              .cardType .artifact,
+              .cardType .creature,
+              .manaValueAtMost .x])),
+        .defineSelectorVariable (n + 1) (.intersection [.variable n, .inLibrary]),
+        .putOntoBattlefield (.variable n),
+        .putCounter (.variable n) .plusOnePlusOne .x,
+        .if (.greaterOrEqual .x (.nat 4))
+          [.continuous [.gainAbility (.variable n) (.keyword .haste)] .endOfTurn],
+        .if (.any (.variable (n + 1)))
+          [.searchLibraryThenShuffle (.controller .this) []]]], n + 2)
+    else none
+  | _ => none
+
 /-- Every sentence of `text` must parse. An unrecognized sentence fails
 the text. No sentences (reminder-only or empty text) succeeds with no actions.
 Multi-sentence templates are tried before the sentence split. -/
@@ -2704,7 +2769,8 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   let oneAction (parsed : Option (CardAction × Nat)) : Option (List CardAction × Nat) :=
     parsed.map fun (action, n') => ([action], n')
-  parseExileAttackersSearchBasics text n <|>
+  parseVisionQuest text n <|>
+    parseExileAttackersSearchBasics text n <|>
     parseLookAtTopExileFaceDownPlayIf text n <|>
     parseCounterExilePermanentMayCast text n <|>
     parseCounterThenRecruitIfMv text n <|>
@@ -4608,7 +4674,8 @@ def objectNoun? (core : String) (withCreature : Bool) :
     match before? core " tokens" <|> before? core " token" with
     | some rest => (rest, true)
     | none => (core, false)
-  if core == "permanent" || core == "permanents" then some ([], tokens)
+  if core == "token" || core == "tokens" then some ([], true)
+  else if core == "permanent" || core == "permanents" then some ([], tokens)
   else
     match typesInPhrase core with
     | some ts => some ([selectorOfTypes ts], tokens)
@@ -4839,13 +4906,13 @@ def parsePutCountersOn (cardName sentence : String) (n : Nat) :
     let onEach :=
       (after? who "each ").bind fun each =>
         if (after? each "of ").isSome then none
-        else (parseObjectDesc each false).map fun sel => (.putCounter sel .plusOnePlusOne k, n)
+        else (parseObjectDesc each false).map fun sel => (.putCounter sel .plusOnePlusOne (.nat k), n)
     let onTarget :=
       (parseTargetDesc ((after? who "each of ").getD who) n).map fun sel =>
-        (.putCounter sel .plusOnePlusOne k, n + 1)
+        (.putCounter sel .plusOnePlusOne (.nat k), n + 1)
     let onSelf :=
       if refersToSelf cardName who || who == "it" then
-        some (.putCounter (.source .this) .plusOnePlusOne k, n)
+        some (.putCounter (.source .this) .plusOnePlusOne (.nat k), n)
       else none
     onSelf <|> onEach <|> onTarget
 
@@ -5033,6 +5100,12 @@ def parseConnive (cardName sentence : String) (n : Nat) : Option (CardAction × 
     match selfSubject? cardName who with
     | some sel => some (.keyword sel (.connive (.nat 1)), n)
     | none => (parseTargetDesc who n).map fun sel => (.keyword sel (.connive (.nat 1)), n + 1)
+
+/-- `Discard a card.` / `Discard two cards.` The player is this spell's
+controller. One card is singular. More than one is plural. -/
+def parseDiscardCards (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  (after? (normSentence sentence) "discard ").bind parseCardCount |>.map fun k =>
+    (.discard (.controller .this) (Value.nat k), n)
 
 /-- `Draw <count>`, or `You draw <count> and lose N life`. -/
 def parseDrawAndLoseLife (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -5544,6 +5617,7 @@ def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
     parseGetsGreatestPowerUntilEnd cardName s n <|>
     parseChooseUpToDestroyRest s n <|>
     parseDrawAndLoseLife s n <|>
+    parseDiscardCards s n <|>
     parseCatalogAttach cardName s n <|>
     parseCantBeBlockedExceptBy s n <|>
     parseAddOneManaOfAnyColor s n <|>
@@ -5780,9 +5854,9 @@ def parsePutCounterMoreIfSubtype (ss : List String) (n : Nat) : Option (List Car
           if k' <= k then none
           else
             some ([
-              .putCounter sel .plusOnePlusOne k,
+              .putCounter sel .plusOnePlusOne (.nat k),
               .if (.anySubtype (.intersection [.targetReference n, .not .this]) st)
-                [.putCounter (.targetReference n) .plusOnePlusOne (k' - k)]],
+                [.putCounter (.targetReference n) .plusOnePlusOne (.nat (k' - k))]],
               n + 1)
         | _, _, _ => none
     | _, _ => none
@@ -7029,6 +7103,147 @@ def parseCatalogMode (cardName text : String) (n : Nat) : Option (CardAction × 
     (afterAbilityWord? text).bind fun rest =>
       parseModeAction cardName rest n <|> parseCatalogEffect cardName rest n
 
+/-- `<this> can't be blocked if her/his/its/their power is N or less.` -/
+def parseCantBeBlockedIfOwnPower (cardName line : String) : Option CardPart :=
+  (split2? (normLine line) " can't be blocked if ").bind fun (subject, rest) =>
+    if !refersToSelf cardName subject then none
+    else
+      let power? :=
+        after? rest "her power is " <|> after? rest "his power is " <|>
+          after? rest "its power is " <|> after? rest "their power is "
+      (power?.bind (before? · " or less")).bind positiveCount |>.map fun p =>
+        .ability (.static (.if
+          (.lessOrEqual (.greatestPower (.source .this)) (.nat p))
+          [.forbid (.block .any (.source .this))]))
+
+/-- `Whenever you cast a creature spell, put X +1/+1 counters on target
+creature you control, where X is that spell's mana value.` The spell is
+trigger `n` and the creature is target `n`. -/
+def parseCastCreaturePutCountersEqualMv (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (splitTrigger? line).bind fun (clause, effect) =>
+    if norm clause != "you cast a creature spell" ||
+        normSentence effect !=
+          "put x +1/+1 counters on target creature you control, where x is that spell's mana value" then
+      none
+    else
+      let you := Selector.controlled (.controller .this)
+      some (
+        .ability (.triggered
+          (.triggerId n (.castSpell (.intersection [.spell, .cardType .creature, you])))
+          (.putCounter
+            (.target n (.intersection [.permanent, .cardType .creature, you]))
+            .plusOnePlusOne
+            (.greatestManaValue (.wasArgumentOfTrigger n 1)))),
+        n + 1)
+
+/-- `Whenever this creature attacks, you may sacrifice another creature. If
+you do, put a number of +1/+1 counters on this creature equal to the
+sacrificed creature's power.` The sacrifice is action `n`. -/
+def parseAttackMaySacrificePlusOneEqualPower (cardName line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (triggerSelfEffect? cardName "whenever" (normLine line) " attacks, ").bind fun effect =>
+    match (sentences effect).map normSentence with
+    | [may, result] =>
+      if may == "you may sacrifice another creature" &&
+          result == "if you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power" then
+        let you := Selector.controlled (.controller .this)
+        some (
+          .ability (.triggered (.attack .this .all) (.sequence [
+            .optional (.controller .this)
+              (.actionId n
+                (.sacrifice
+                  (.selected (.controller .this) (.range 1 1)
+                    (.intersection [.not .this, .permanent, .cardType .creature, you])))),
+            .if (.happened (.actionWithId n) .gameStart)
+              [.putCounter (.source .this) .plusOnePlusOne
+                (.greatestPower (.wasObjectOfAction n))]])),
+          n + 1)
+      else none
+    | _ => none
+
+/-- `When <this> enters, put a hone counter on <this> for each creature target
+opponent controls. Attach <this> to up to one target creature you control.`
+The opponent is target `n`. The creature is target `n + 1`. -/
+def parseEnterHonePerOppAttach (cardName line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match sentences (rulesText line) with
+  | [entered, attach] =>
+    let putEffect := whenSelfEffect? cardName (normSentence entered) " enters, "
+    let putWho :=
+      putEffect.bind fun effect =>
+        (after? (norm effect) "put a hone counter on ").bind
+          (before? · " for each creature target opponent controls")
+    let attachWho :=
+      (after? (normSentence attach) "attach ").bind
+        (before? · " to up to one target creature you control")
+    match putWho, attachWho with
+    | some who, some whom =>
+      if refersToSelf cardName who && refersToSelf cardName whom then
+        let you := Selector.controlled (.controller .this)
+        some (
+          .ability (.triggered (.enter .this) (.sequence [
+            .putCounter (.source .this) (.named "hone")
+              (.count
+                (.intersection [
+                  .permanent,
+                  .cardType .creature,
+                  .controlled (.target n (.opponent (.controller .this)))])),
+            .attach .this
+              (.targets (n + 1) (.range 0 1)
+                (.intersection [.permanent, .cardType .creature, you]))])),
+          n + 2)
+      else none
+    | _, _ => none
+  | _ => none
+
+/-- `<this> enters with a hope counter on it for each creature you control`,
+or `<this> enters with X +1/+1 counters on it`. Both replace how this enters. -/
+def parseEntersWithCounters (cardName line : String) : Option CardPart :=
+  let s := normLine line
+  let hope :=
+    (before? s " enters with a hope counter on it for each creature you control").bind
+      fun who =>
+        if !refersToSelf cardName who then none
+        else
+          some (.ability (.static (.replace (.enter .this) [
+            .putCounter (.source .this) (.named "hope")
+              (.count
+                (.intersection [
+                  .permanent,
+                  .cardType .creature,
+                  .controlled (.controller .this)])),
+            .keepReplacedAction])))
+  let plus :=
+    (before? s " enters with x +1/+1 counters on it").bind fun who =>
+      if !refersToSelf cardName who then none
+      else
+        some (.ability (.static (.replace (.enter .this) [
+          .putCounter (.source .this) .plusOnePlusOne .x,
+          .keepReplacedAction])))
+  hope <|> plus
+
+/-- `At the beginning of your end step, remove a hope counter from this
+enchantment. If you do, draw a card. Then if this enchantment has no hope
+counters on it, sacrifice it and you gain 4 life.` The removal is action `n`. -/
+def parseEndStepRemoveHopeDrawSac (line : String) (n : Nat) : Option (CardPart × Nat) :=
+  match (sentences (rulesText line)).map normSentence with
+  | [remove, draw, thenSac] =>
+    if remove == "at the beginning of your end step, remove a hope counter from this enchantment" &&
+        draw == "if you do, draw a card" &&
+        thenSac == "then if this enchantment has no hope counters on it, sacrifice it and you gain 4 life" then
+      some (
+        .ability (.triggered (.endStep (.controller .this)) (.sequence [
+          .actionId n (.removeCounter (.source .this) (.named "hope") (.nat 1)),
+          .if (.happened (.actionWithId n) .gameStart) [
+            .draw (.controller .this) (.nat 1),
+            .if (.not (.any (.intersection [.source .this, .hasCounter (.named "hope")]))) [
+              .sacrifice (.source .this),
+              .gainLife (.controller .this) (.nat 4)]]])),
+        n + 1)
+    else none
+  | _ => none
+
 /-- One non-empty Oracle line. A reminder-only line contributes no parts.
 Anything else that the grammar does not cover fails.
 The first parser that accepts the line wins. -/
@@ -7037,6 +7252,12 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
   if (rulesText line).isEmpty then some ([], n)
   else
     (keywordParts? line).map (·, n) <|>
+    sole (parseCantBeBlockedIfOwnPower cardName line) n <|>
+    sole (parseEntersWithCounters cardName line) n <|>
+    carry (parseCastCreaturePutCountersEqualMv line n) <|>
+    carry (parseAttackMaySacrificePlusOneEqualPower cardName line n) <|>
+    carry (parseEnterHonePerOppAttach cardName line n) <|>
+    carry (parseEndStepRemoveHopeDrawSac line n) <|>
     sole (parseEntersTapped cardName line) n <|>
     sole (parseEntersTappedUnlessEquipment cardName line) n <|>
     sole (parseTypecycling line) n <|>
@@ -7161,6 +7382,13 @@ structure ModeList where
   wrap : List CardAction → List CardPart
   mode : String → Nat → Option (CardAction × Nat)
 
+/-- `<trigger>, choose up to X —`. The controller chooses up to X distinct modes.
+`X` is the value of X (CR 107.3). -/
+def chooseUpToXModes (cardName : String) (trigger : Trigger) : ModeList where
+  wrap modes :=
+    [.ability (.triggered trigger (.chooseUniqueModes (.range (.nat 0) .x) modes))]
+  mode := parseCatalogMode cardName
+
 /-- A triggered “choose one —” ability: exactly one mode (CR 700.2). -/
 def triggeredModes (cardName : String) (trigger : Trigger) : ModeList where
   wrap modes := [.ability (.triggered trigger (.chooseUniqueModes (.range 1 1) modes))]
@@ -7187,7 +7415,8 @@ def chooseUpToReturnModes (k : Nat) : ModeList where
         n + 1)
 
 /-- A header whose `•` modes follow: a triggered `choose one —`, a triggered
-`choose one that hasn't been chosen this turn —` (after an ability word), or
+`choose one that hasn't been chosen this turn —` (after an ability word), a
+triggered `choose up to X —`, or
 `Choose up to N. Return those cards from your graveyard to your hand.` -/
 def modeListHeader? (cardName line : String) : Option ModeList :=
   let line' := (afterAbilityWord? line).getD line
@@ -7195,6 +7424,8 @@ def modeListHeader? (cardName line : String) : Option ModeList :=
     (splitTrigger? line').bind fun (clause, effect) =>
       if norm effect == "choose one that hasn't been chosen this turn —" then
         (parseTriggerEvent cardName clause).map (restrictedModes cardName)
+      else if norm effect == "choose up to x —" then
+        (parseTriggerEvent cardName clause).map (chooseUpToXModes cardName)
       else none
   let returnCards :=
     (between? (normLine line) "choose up to " ". return those cards from your graveyard to your hand").bind

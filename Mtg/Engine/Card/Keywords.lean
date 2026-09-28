@@ -132,6 +132,8 @@ deriving Repr, Inhabited, BEq
 inductive CounterKind where
   /-- A +1/+1 counter. -/
   | plusOnePlusOne
+  /-- A counter with this printed name, such as hone or hope (CR 122.1). -/
+  | named : String → CounterKind
 deriving Repr, Inhabited, BEq
 
 -- `Keyword.amass` / `Keyword.connive` take a `Value`, `Value` names a
@@ -343,6 +345,8 @@ inductive Selector where
   /-- Objects of the creature type chosen by the numbered
   `CardAction.chooseCreatureType` action (CR 205.3m / 607.2d). -/
   | hasCreatureTypeChosenByAction : Nat → Selector
+  /-- Objects whose mana value is at most this value (CR 202.3). -/
+  | manaValueAtMost : Value → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
