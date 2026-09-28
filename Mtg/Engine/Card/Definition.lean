@@ -700,6 +700,12 @@ def discardsOneCardFromHand : Selector → Bool
       (.intersection [.inHand, .owner (.controller .this)]) => true
   | _ => false
 
+/-- `Discard a card or pay {N}` as one cost. -/
+def discardOrPayGeneric? : List Cost → Option Nat
+  | [.or [.discard s, .mana [.generic n]]] =>
+    if discardsOneCardFromHand s && n != 0 then some n else none
+  | _ => none
+
 /-- True when a cost discards one card from hand, not this card. -/
 def discardsACard : List Cost → Bool
   | [] => false
@@ -3055,8 +3061,35 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
     else none
   | _ => none
 
+/-- This deals N damage to each creature that isn't of a subtype and to each
+opponent. -/
+def leftoverDamageNonSubtypeAndOpponents? : CardAction → Option (Nat × String)
+  | .sequence [
+      .dealDamage src (.intersection [.permanent, .cardType .creature, .not (.subtype st)]) (.nat n),
+      .dealDamage src' (.opponent who) (.nat n')] =>
+    if n != 0 && n == n' && (src == .this || src == .source .this) && src == src' &&
+        who == .controller .this then
+      some (n, st.toString)
+    else none
+  | _ => none
+
+/-- `Create N <token>s.` or `Create a <token> for each <subtype> you control.` -/
+def leftoverChapterCreateTokens? : CardAction → Option Effect
+  | .createTokens who (.nat n) parts [] =>
+    if leftoverYou who && n != 0 then
+      (leftoverTokenKind? parts).map (Effect.createTokens · n)
+    else none
+  | .forEachVariable _ (.intersection [.permanent, .subtype st, .controlled (.controller .this)])
+      [.createTokens who (.nat 1) parts []] =>
+    if leftoverYou who then
+      (leftoverTokenKind? parts).map (Effect.createTokensPerSubtype · st.toString)
+    else none
+  | _ => none
+
 /-- Saga-chapter leftovers that compile to a named `Effect`. -/
 def leftoverChapterCompiled? (action : CardAction) : Option Effect :=
+  (leftoverDamageNonSubtypeAndOpponents? action).map (fun (n, st) =>
+    Effect.chapterDealDamageToEachNonSubtypeAndOpponents n st) |>.orElse fun _ =>
   if leftoverMayDrawPerArtifactOppsDraw? action then
     some Effect.mayDrawPerArtifactOppsDraw
   else
@@ -3073,7 +3106,8 @@ def leftoverChapterEffect? (actions : List CardAction) : Option Effect :=
     match actions with
     | [a] => a
     | as => .sequence as
-  leftoverSagaChapterOnly? action |>.orElse fun _ => leftoverChapterCompiled? action
+  leftoverSagaChapterOnly? action |>.orElse fun _ =>
+  leftoverChapterCreateTokens? action |>.orElse fun _ => leftoverChapterCompiled? action
 
 /-- Continuous leftovers that compile to a named `Effect`. -/
 def leftoverContinuousCompiled? : CardAction → Option Effect
@@ -3456,6 +3490,13 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     else none
   | .returnToHand (.target _ (.intersection [.inGraveyard, .subtype st, .owner owner])) =>
     if leftoverYou owner then some (Effect.returnGySubtypeToHand st.toString) else none
+  | .draw who (.count (.wasObjectSince (.discard who') .turnStart)) =>
+    if leftoverYou who && leftoverYou who' then some Effect.drawPerDiscardedThisTurn else none
+  | .createTokens who (.count among) parts [] =>
+    match Selector.subtypesYouControl? among, leftoverTokenKind? parts with
+    | some (#[st], false), some kind =>
+      if leftoverYou who then some (Effect.createTokensEqualSubtype kind st) else none
+    | _, _ => none
   | .dealDamage src (.intersection [.permanent, .cardType .creature]) (.nat n) =>
     if n != 0 && (src == .this || leftoverSourceThis src) then
       some (Effect.dealDamageToEachCreature n)
@@ -4099,6 +4140,8 @@ def activatedAbility (costs : List Cost) (action : CardAction)
           CardAction.leftoverSacrificeArtifactOrDiscardNonlandCost? costs }
     effect :=
       if cyclingBasic then Effect.searchLandTypeToHand "Basic land"
+      else if action == .tap (.target 1 (.intersection [.permanent, .cardType .creature])) then
+        Effect.tapTargetCreature
       else action.toAbilityEffect
     onceEachTurn
     activateFromHand := Cost.discardsThis costs }
@@ -4244,6 +4287,113 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
 /-- Triggered abilities of cards read with `parseOracleParts` that compile to
 one named `TriggeredAbility`. -/
 def printedTriggeredAbility? : Ability → Option TriggeredAbility
+  | .triggered (.endStep .player)
+      (.if (.not (.and
+          (.not (.happened (.attack attackers .all) .turnStart))
+          (.not (.happened (.enter entered) .turnStart))))
+        [.draw who (.nat 1)]) =>
+    match Selector.subtypesYouControl? attackers with
+    | some (#[st], false) =>
+      if attackers == entered && who == .controller .this then
+        some (TriggeredAbility.onEachEndStepDrawIfAttackedOrEnteredSubtype st)
+      else none
+    | _ => none
+  | .triggered (.enter .this)
+      (.sequence [
+        .draw drawer (.nat 1),
+        .optional chooser (.putOntoBattlefieldInState
+          (.selected picker (.range (.nat 1) (.nat 1))
+            (.intersection [.inHand, .owner owner, .cardType .land])) [.tapped])]) =>
+    let you := Selector.controller .this
+    if drawer == you && chooser == you && picker == you && owner == you then
+      some .onEnterDrawMayPutLandTapped
+    else none
+  | .triggered (.enter .this)
+      (.ifElse (.greaterOrEqual (.count among) (.nat 2))
+        [.createTokens who (.nat 1) parts [.tapped]]
+        [.mill who' (.nat 2)]) =>
+    if CardAction.leftoverYourGyCreatures? among && who == .controller .this &&
+        who' == .controller .this && CardAction.leftoverTokenKind? parts == some .villain21menace then
+      some .onEnterVillainIfGyElseMill
+    else none
+  | .triggered (.triggerId 1
+      (.enter (.intersection [.not .this, .permanent, .cardType .creature, .controlled (.controller .this)])))
+      (.if (.not (.and
+          (.not (.greater (.greatestPower (.wasArgumentOfTrigger 1 1)) (.greatestPower (.source .this))))
+          (.not (.greater (.greatestToughness (.wasArgumentOfTrigger 1 1))
+            (.greatestToughness (.source .this))))))
+        [.putCounter (.source .this) .plusOnePlusOne 1]) =>
+    some (.onWatch Effect.watchHulklingCompare)
+  | .triggered (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
+      (.if (.targetsIncludeAny .this (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)]))
+        [.continuous [.gainAbility (.source .this)
+          (.activated [.tapSymbol] (.dealDamageEqualToPower (.source .this) (.target _ (.not .this))))]
+          .endOfTurn]) =>
+    some (.onCasting Effect.castingIronFistTap)
+  | .triggered (.attack .this .all)
+      (.if (.happened (.enter (.intersection [.permanent, .cardType .artifact, .controlled (.controller .this)]))
+          .turnStart)
+        [.draw who (.nat 1)]) =>
+    if who == .controller .this then some (.onThisAttack Effect.thisAttackIfArtifactEnteredDraw) else none
+  | .triggered (.upkeep (.controller (.hostOf .this))) (.draw (.controller (.hostOf .this)) (.nat 1)) =>
+    some (.onStep Effect.stepEnchantedControllerDraws)
+  | .triggered (.combatStart (.controller .this))
+      (.optional chooser (.sequence [
+        .actionId id (.putOntoBattlefield (.selected picker (.range (.nat 1) (.nat 1))
+          (.intersection [.inHand, .owner owner, .cardType .artifact]))),
+        .if (.anySubtype (.wasObjectOfAction id') .equipment)
+          [.attach (.wasObjectOfAction id'') (.source .this)]])) =>
+    let you := Selector.controller .this
+    if chooser == you && picker == you && owner == you && id == id' && id == id'' then
+      some .onCombatMayPutArtifactAttachEquipment
+    else none
+  | .triggered (.castSpell (.intersection [.spell, .not (.cardType .creature), .controlled (.controller .this)]))
+      (.chooseModeRestricted who
+        [(1, .didNotHappen (.modeWithIdChosen .player 1) .turnStart,
+            [.continuous [.gainAbility (.source .this) (.keyword .doubleStrike)] .endOfTurn]),
+         (2, .didNotHappen (.modeWithIdChosen .player 2) .turnStart,
+            [.continuous [.gainAbility (.source .this) (.keyword .indestructible)] .endOfTurn]),
+         (3, .didNotHappen (.modeWithIdChosen .player 3) .turnStart, [.draw drawer (.nat 1)])]) =>
+    if who == .controller .this && drawer == .controller .this then
+      some (.onCasting Effect.castingVisionModes)
+    else none
+  | .triggered (.enter .this)
+      (.sequence [
+        .actionId id (.createTokens who (.nat 1) parts []),
+        .attach (.wasCreatedByAction id') (.source .this)]) =>
+    if id == id' && who == .controller .this &&
+        parts.contains (.name "Sturdy Shield") && parts.contains (.subtype .equipment) then
+      some (.onEnter Effect.enterCreateSturdyShieldAttach)
+    else none
+  | .triggered (.endStep (.controller .this))
+      (.sequence [.draw drawer (.nat 1), .loseLife loser (.nat 1)]) =>
+    if drawer == .controller .this && loser == .controller .this then
+      some .onYourEndStepDrawLoseLife
+    else none
+  | .triggered (.or (.enter .this) (.attack .this .all)) (.createTokens who (.nat 1) parts []) =>
+    if who == .controller .this && CardAction.leftoverTokenKind? parts == some .squirrel11green then
+      some (.onEnterOrAttack Effect.enterOrAttackCreateSquirrel)
+    else none
+  | .triggered (.combatStart (.controller .this))
+      (.putCounter (.target _ sel) .plusOnePlusOne 1) =>
+    if sel == .intersection [.permanent, .cardType .creature, .controlled (.controller .this)] then
+      some .onCombatPlusOneOnCreatureYouControl
+    else none
+  | .triggered (.attack .this .all)
+      (.continuous [.addPower others (.greatestToughness src), .addToughness others' (.greatestToughness src')]
+        .endOfTurn) =>
+    match Selector.subtypesYouControl? others with
+    | some (#[st], true) =>
+      if others == others' && CardAction.leftoverSourceThis src && src == src' then
+        some (TriggeredAbility.onAttackOthersOfSubtypeGetEqualToughness st)
+      else none
+    | _ => none
+  | .triggered (.combatStart (.controller .this))
+      (.continuous [.addPower (.target _ sel) (.greatestPower src)] .endOfTurn) =>
+    if CardAction.leftoverSourceThis src &&
+        sel == .intersection [.not .this, .permanent, .cardType .creature, .controlled (.controller .this)] then
+      some TriggeredAbility.onCombatAnotherGetsSourcePower
+    else none
   | .triggered (.combatStart .player)
       (.sequence [
         .continuous [.addPower others (.int p), .addToughness others' (.int t)] .endOfTurn,
@@ -5011,6 +5161,8 @@ structure CardFace where
   /-- This spell costs this much generic less if your graveyard has at least
   this many creature cards: `(count, generic)`. -/
   costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none
+  /-- As an additional cost, discard a card or pay this much generic mana. -/
+  additionalCostDiscardOrPayGeneric : Option Nat := none
 deriving Inhabited
 
 namespace CardFace
@@ -5047,13 +5199,24 @@ def mergeHostBonus (prev : StaticAbility) (p t : Int) (k : Keywords)
 
 /-- Replace a trailing equipped +P/+T with the same bonus and ward `{w}`. -/
 def pushHostWard (b : CardFace) (w : Nat) : CardFace :=
-  if w == 0 || b.types.contains .enchantment then b
+  if w == 0 then b
+  else if b.types.contains .enchantment then
+    match b.staticAbilities.back? with
+    | some (.enchantedCreatureGetsAndHas p t k) =>
+      { b with
+        staticAbilities :=
+          b.staticAbilities.pop.push (.enchantedCreatureGetsHasAndWard p t k w) }
+    | _ => b
   else
     match b.staticAbilities.back? with
     | some (.equippedCreatureGets p t) =>
       { b with
         staticAbilities :=
           b.staticAbilities.pop.push (.equippedCreatureGetsAndWard p t w) }
+    | some (.equippedCreatureGetsAndHas p t k) =>
+      { b with
+        staticAbilities :=
+          b.staticAbilities.pop.push (.equippedCreatureGetsHasAndWard p t k w) }
     | _ => b
 
 def pushHostBonus (b : CardFace) (p t : Int) (k : Keywords) : CardFace :=
@@ -5187,6 +5350,19 @@ def mergeOtherCreaturesGet (b : CardFace) (subtypes : Array String) (p t : Int) 
   | _ =>
     { b with staticAbilities := b.staticAbilities.push (.otherCreaturesGet subtypes p t) }
 
+def mergeSubtypeCreaturesYouControlGet (b : CardFace) (subtype : String) (p t : Int) :
+    CardFace :=
+  match b.staticAbilities.back? with
+  | some (.creaturesYouControlOfSubtypeGet prev p0 t0) =>
+    if prev == subtype then
+      { b with
+        staticAbilities :=
+          b.staticAbilities.pop.push (.creaturesYouControlOfSubtypeGet subtype (p0 + p) (t0 + t)) }
+    else
+      { b with staticAbilities := b.staticAbilities.push (.creaturesYouControlOfSubtypeGet subtype p t) }
+  | _ =>
+    { b with staticAbilities := b.staticAbilities.push (.creaturesYouControlOfSubtypeGet subtype p t) }
+
 def mergeOpponentsCreaturesGet (b : CardFace) (p t : Int) : CardFace :=
   match b.staticAbilities.back? with
   | some (.opponentsCreaturesGet p0 t0) =>
@@ -5269,7 +5445,11 @@ def applyIntegerPowerToughness (b : CardFace) (sel : Selector) (p t : Int) : Car
       mergeOpponentsCreaturesGet b p t
     else if CardAction.leftoverCreaturesYouControlMass? sel then
       mergeCreaturesYouControlGet b p t
-    else b
+    else
+      match sel with
+      | .intersection [.permanent, .cardType .creature, .subtype st, .controlled (.controller .this)] =>
+        mergeSubtypeCreaturesYouControlGet b st.toString p t
+      | _ => b
 
 /-- Total power of creature permanents with flying that this object's
 controller controls. -/
@@ -5391,6 +5571,42 @@ def equipAbilitiesYouControl : Selector :=
     Selector.keywordAbility .equip,
     .controlled (.controller .this)]
 
+/-- Printed static abilities of cards read with `parseOracleParts` that
+compile to one named static ability or ability field. -/
+def printedStaticApplied? (b : CardFace) : ContinuousEffect → Option CardFace
+  | .replace (.damage .all who) [] =>
+    if who == .this || who == .source .this then
+      some { b with staticAbilities := b.staticAbilities.push .preventAllDamageToThis }
+    else none
+  | .canBeCastAsThoughWithFlashIf card cond =>
+    if card == .intersection [.spell, .controlled (.controller .this)] &&
+        cond == .happened
+          (.castSpell (.intersection [.spell, .controlled (.opponent (.controller .this))]))
+          .turnStart then
+      some { b with staticAbilities := b.staticAbilities.push .flashIfOpponentCastThisTurn }
+    else none
+  | .if (.not (.and (.not (.any a)) (.not (.any p)))) [.gainAbility who (.keyword .indestructible)] =>
+    let you := Selector.controlled (.controller .this)
+    if (who == .this || who == .source .this) &&
+        a == .intersection [.permanent, .cardType .artifact, .cardType .creature, you] &&
+        p == .intersection [.permanent, .subtype .plan, you] then
+      some { b with staticAbilities := b.staticAbilities.push .indestructibleIfArtifactCreatureOrPlan }
+    else none
+  | .addPower who (.count (.intersection [.not .this, .permanent, .cardType .artifact, you])) =>
+    if (who == .this || who == .source .this) && you == .controlled (.controller .this) then
+      some { b with staticAbilities := b.staticAbilities.push (.getsPowerPerOtherArtifact 1) }
+    else none
+  | .if (.targetsIncludeAny .this among) [.reduceCost .this [.mana [.generic n]]] =>
+    match among, b.activatedAbilities.back? with
+    | .intersection [.permanent, .cardType .creature, .powerAtMost (.int k)], some ab =>
+      if n != 0 then
+        some { b with
+          activatedAbilities :=
+            b.activatedAbilities.pop.push { ab with costReductionIfTargetPowerAtMost := some (n, k) } }
+      else none
+    | _, _ => none
+  | _ => none
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
@@ -5413,6 +5629,9 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       { b with staticAbilities := b.staticAbilities.push (.attackingTokensHave k.toKeywords) }
     else if k == .trample && sel.includedSubtype? == some "Army" && s.sameController then
       { b with staticAbilities := b.staticAbilities.push .armiesYouControlHaveTrample }
+    else if s.sameController && s.mustBePermanent && s.types.eqTypes [.creature] &&
+        s.hasPlusOneCounter && !s.other && s.subtype.isNone && !s.opponentControls then
+      { b with staticAbilities := b.staticAbilities.push (.creaturesWithPlusOneHave k.toKeywords) }
     else
       match k, Selector.subtypesYouControl? sel with
       | .trample, some (subtypes, true) =>
@@ -5675,7 +5894,10 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       additionalCostSacrificeCreature :=
         b.additionalCostSacrificeCreature || Cost.sacrificesOneCreature cs
       additionalCostOrPayGeneric :=
-        b.additionalCostOrPayGeneric.orElse (fun _ => Cost.orPayGeneric? cs) }
+        if (Cost.discardOrPayGeneric? cs).isSome then b.additionalCostOrPayGeneric
+        else b.additionalCostOrPayGeneric.orElse (fun _ => Cost.orPayGeneric? cs)
+      additionalCostDiscardOrPayGeneric :=
+        b.additionalCostDiscardOrPayGeneric.orElse (fun _ => Cost.discardOrPayGeneric? cs) }
   | .reduceCostWithX who costs v =>
     if (who == .this || who == .source .this) &&
         costs == [.mana [.x]] &&
@@ -5717,6 +5939,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
     { b with flashback := some (Cost.manaCost costs) }
   | .keywordWithCost .ward [.mana [.generic n]] =>
     if n == 0 then b else { b with ward := some n }
+  | .keywordWithCost .ward costs =>
+    match Cost.discardOrPayGeneric? costs with
+    | some n => { b with staticAbilities := b.staticAbilities.push (.wardDiscardOrPay n) }
+    | none => b
   | .keywordWithCost k costs =>
     match (Ability.keywordWithCost k costs).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
@@ -5809,9 +6035,9 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.triggeredWhile w cond action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
-  | .static e => applyContinuousEffect b e
-  | .stackStatic e => applyContinuousEffect b e
-  | .everywhereStatic e => applyContinuousEffect b e
+  | .static e => (printedStaticApplied? b e).getD (applyContinuousEffect b e)
+  | .stackStatic e => (printedStaticApplied? b e).getD (applyContinuousEffect b e)
+  | .everywhereStatic e => (printedStaticApplied? b e).getD (applyContinuousEffect b e)
 
 def apply (b : CardFace) : CardPart → CardFace
   | .name n => { b with name := n }
@@ -6000,6 +6226,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       entersTappedUnlessLegendary := b.entersTappedUnlessLegendary
       tapAddOneOfIfEnteredOrBasic := b.tapAddOneOfIfEnteredOrBasic
       costReductionIfGyCreaturesAtLeast := b.costReductionIfGyCreaturesAtLeast
+      additionalCostDiscardOrPayGeneric := b.additionalCostDiscardOrPayGeneric
       adventure := adventure
       saga :=
         if b.sagaChapters.isEmpty then none
@@ -10748,11 +10975,11 @@ end TraditionalCardDefinition
           [.healAllDamage .this, .keepReplacedAction]))
   ]).toCardDef.staticAbilities == #[.healOtherDamageWhenDealt]
 
--- Empty replacement is not enough (must heal then keep the damage).
+-- An empty replacement prevents the damage instead of healing it.
 #guard
   (TraditionalCardDefinition.card [
     .ability (.static (.replace (.damage .all .this) []))
-  ]).toCardDef.staticAbilities == #[]
+  ]).toCardDef.staticAbilities == #[.preventAllDamageToThis]
 
 #guard
   (TraditionalCardDefinition.card [
