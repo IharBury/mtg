@@ -379,6 +379,11 @@ inductive Trigger where
   /-- Whenever the selected object would deal damage to objects matching
   the given selector (CR 120). -/
   | damage : Selector → Selector → Trigger
+  /-- When one or more objects matching the first selector deal damage to
+  objects matching the second at the same time, with set-wide predicates
+  (CR 120 / 603.2c). One trigger for that simultaneous damage. Combat
+  damage and noncombat damage both count. -/
+  | damageSimultaneously : Selector → Selector → List SetPredicate → Trigger
   /-- The selected object would be put into a graveyard (CR 614). -/
   | putToGraveyard : Selector → Trigger
   /-- Whenever a matching card leaves a graveyard (CR 404). -/
@@ -397,6 +402,10 @@ inductive Trigger where
   /-- When objects matching the selector die at the same time, with
   set-wide predicates (CR 700.4 / 603.2d). -/
   | dieSimultaneously : Selector → List SetPredicate → Trigger
+  /-- Whenever the selected permanents are sacrificed (CR 701.17).
+  The player who sacrifices them is their controller. “You sacrifice a
+  token” is a token this object's controller sacrifices. -/
+  | sacrifice : Selector → Trigger
   /-- Whenever objects matching the first selector attack objects matching
   the second at the same time, with set-wide predicates
   (CR 508.3 / 603.2d). -/

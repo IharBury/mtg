@@ -4675,9 +4675,12 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     some TriggeredAbility.onCombatDamageToPlayerLoot
   | .triggered (.combatDamage .this .player) (.draw _ (.nat n)) =>
     some (TriggeredAbility.onCombatDamageDraw n)
-  | .triggered (.combatDamage among .player)
+  | .triggered (.damageSimultaneously among .player preds)
       (.putCounter (.source .this) .plusOnePlusOne 2) =>
-    if among.shape.sameController && among.shape.subtype == some "Hero" then
+    -- One trigger when those Heroes deal damage at the same time
+    -- (CR 603.2c), including combat damage and noncombat damage.
+    if preds.isEmpty && among.shape.sameController &&
+        among.shape.subtype == some "Hero" then
       some (TriggeredAbility.onWatch Effect.watchHeroesDamagePlusTwo)
     else none
   | .triggered (.die .this) (.continuous effects _duration) =>
@@ -4904,7 +4907,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onDiesCreateTokens k n)
       | none => none
     else none
-  | .triggered (.die among) (.loseLife sel 1) =>
+  | .triggered (.sacrifice among) (.loseLife sel 1) =>
     if among.shape.token && among.shape.sameController &&
         CardAction.leftoverTargetOpponent? sel then
       some TriggeredAbility.onYouSacrificeTokenOppLosesLife
