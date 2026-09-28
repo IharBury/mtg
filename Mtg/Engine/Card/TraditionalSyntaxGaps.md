@@ -5,10 +5,12 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**312** catalog cards are still `CardDef` helpers. **223**
-of them need at least one missing constructor. The other **89** can be
-spelled with the current constructors and only need Oracle parsing or
-`toCardDef` support; see [Cards with no constructor gap](#cards-with-no-constructor-gap).
+**229** catalog cards are still `CardDef` helpers. **223**
+of them need at least one missing constructor listed under
+[Missing constructors by type](#missing-constructors-by-type). The other
+**6** were listed as having no constructor gap, but each needs a missing
+`CardSubtype` or `Trigger` constructor; see
+[Cards with no constructor gap](#cards-with-no-constructor-gap).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
 when a constructor already exists but cannot express the printed ability
 without a new constructor.
@@ -22,12 +24,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 135 | 53 | 43 |
-| The Hobbit Eternal (HOC) | 117 | 44 | 73 | 51 |
-| Marvel Super Heroes (MSH) | 281 | 95 | 186 | 129 |
-| **Total** | **586** | **274** | **312** | **223** |
+| The Hobbit (HOB) | 188 | 144 | 44 | 44 |
+| The Hobbit Eternal (HOC) | 117 | 66 | 51 | 51 |
+| Marvel Super Heroes (MSH) | 281 | 147 | 134 | 134 |
+| **Total** | **586** | **357** | **229** | **229** |
 
-272 of the 274 `TraditionalCardDefinition`s (134 HOB, 44 HOC, 94 MSH,
+355 of the 357 `TraditionalCardDefinition`s (143 HOB, 66 HOC, 146 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
@@ -49,9 +51,11 @@ modeled `CardDef` fields, triggered/static/activated constructors, and
 `Keyword` and `CounterKind` are not in the requested list. They still block
 because `Ability.keyword`, `CardAction.keyword`, and `CardAction.putCounter`
 are indexed by those inductives. Missing constructors there are listed under
-`Ability` / `CardAction` and `CounterKind`. `CardSubtype` constructors exist
-for every remaining catalog subtype; Plan enchantments stay blocked by
-`CounterKind` / put-counter triggers, not missing subtypes.
+`Ability` / `CardAction` and `CounterKind`. `CardSubtype` has no Wall,
+Minion, or Elder, which five token-making cards need (see
+[Cards with no constructor gap](#cards-with-no-constructor-gap)); Plan
+enchantments stay blocked by `CounterKind` / put-counter triggers, not
+missing subtypes.
 
 ## Current constructors (inventory)
 
@@ -520,19 +524,37 @@ complete.
 
 ## Cards with no constructor gap
 
-These 89 remaining cards can be spelled with the current
-constructors. They stay `CardDef` helpers until `parseOracleParts` or
-`toCardDef` handles their text. Each of them also needs `toCardDef`
-support: a leftover onto its modeled `Effect` or ability, or a `CardDef`
-field that `toCardDef` does not set yet (power-up, conditional dual-land
-mana, per-subtype mana, and similar flags). None of them converts with
-`parseOracleParts` changes alone.
+The first pass listed 89 cards that the current constructors could spell.
+83 of them are now `TraditionalCardDefinition`s that read their
+Oracle text with `parseOracleParts`, with a `#guard` pinning each parsed
+definition and the modeled `CardDef` fields `toCardDef` produces. The new
+templates are in `OracleParse.lean`, and the leftovers and `CardFace` fields
+they compile to are in `Definition.lean`.
 
-**Hobbit (10):** Boughside Wanderers; Burn, Burn, Tree and Fern; Down in the Valley; Gleaming Splendor; Lake-town Toymaker; Orcrist, Goblin-cleaver; Radagast of Rhosgobel; Stone-Giant of High Pass; The Misty Mountains Cold; Through the Forest Gate.
+**Hobbit (9):** Boughside Wanderers; Burn, Burn, Tree and Fern; Down in the Valley; Gleaming Splendor; Lake-town Toymaker; Orcrist, Goblin-cleaver; Radagast of Rhosgobel; The Misty Mountains Cold; Through the Forest Gate.
 
 **Hobbit Eternal (22):** Bag End Banquet; Bolg, Erebor's Reckoning; Dragon's Desire; Dwarven Warriors; Dáin of the Ancient Halls; Elvish Archdruid; Errand-Rider of Gondor; Flowering of the White Tree; Fíli and Kíli, Joyous; Haunt of the Dead Marshes; Last March of the Ents; Mentor of the Meek; Minas Tirith Garrison; Mirkwood Elk; Mount Doom; Olog-hai Crusher; Orcish Siegemaster; Ori, Plate Stacker; Raise the Palisade; Relic of Sauron; Rivendell; Thranduil the Strategist.
 
-**Marvel Super Heroes (57):** Abomination, Terrifying Titan; Aerial Doombot; Avengers Assemble!; Avengers Disassembled; Avengers Tower; Avengers: Under Siege; Black Panther, Hope Enduring; Bold Biochemist; Brave Brawler; Captain America, Wings of Freedom; Captain Mar-Vell, Space-Born; Castle Doom; Colleen Wing, Street Samurai; Dark Fortress; Decoy Ploy; Doctor Doom; Epic Fight; Falcon's Wing Harness; Gathering Place; Gleaming Bastion; H.E.R.B.I.E. Scout Unit; Hercules, Prince of Power; Hidden Lair; Hulkling, Burgeoning Bruiser; Human Torch, Johnny Storm; HYDRA Troopers; Hydraulic Helper; Invisible Woman, Sue Storm; Iron Fist, Living Weapon; Iron Man, Master of Machines; Mister Fantastic, Reed Richards; Misty Knight, Hero for Hire; Mole Man, Moloid Master; Ninja of the Hand; Pet Avengers; Punishing Punch; Raft Security Officer; Serpent Specialist; She-Hulk, Jade Defender; Super Intelligence; Super Strength; Super-Skrull; The Coming of Galactus; The Invincible Iron Man; The Unbeatable Squirrel Girl; The Vision; Titania, Rugged Rumbler; Training Compound; Training Regimen; U.S.Agent, John Walker; Ultron Drone; Unliving Legionnaire; Villainous Hideout; Viv Vision, Teen Synthezoid; Volcanic Villain; War Machine, Legacy of Iron; Worlds Within Worlds.
+**Marvel Super Heroes (52):** Abomination, Terrifying Titan; Aerial Doombot; Avengers Assemble!; Avengers Disassembled; Avengers Tower; Avengers: Under Siege; Black Panther, Hope Enduring; Bold Biochemist; Brave Brawler; Captain America, Wings of Freedom; Captain Mar-Vell, Space-Born; Castle Doom; Colleen Wing, Street Samurai; Decoy Ploy; Doctor Doom; Epic Fight; Falcon's Wing Harness; H.E.R.B.I.E. Scout Unit; HYDRA Troopers; Hercules, Prince of Power; Hulkling, Burgeoning Bruiser; Human Torch, Johnny Storm; Hydraulic Helper; Iron Fist, Living Weapon; Iron Man, Master of Machines; Misty Knight, Hero for Hire; Ninja of the Hand; Pet Avengers; Punishing Punch; Raft Security Officer; Serpent Specialist; She-Hulk, Jade Defender; Super Intelligence; Super Strength; The Invincible Iron Man; The Unbeatable Squirrel Girl; The Vision; Titania, Rugged Rumbler; Training Regimen; U.S.Agent, John Walker; Ultron Drone; Unliving Legionnaire; Villainous Hideout; Viv Vision, Teen Synthezoid; Volcanic Villain; War Machine, Legacy of Iron; Worlds Within Worlds; Dark Fortress; Gathering Place; Gleaming Bastion; Hidden Lair; Training Compound.
+
+The other 6 stay `CardDef` helpers. A closer reading found a missing
+constructor in each:
+
+- **Stone-Giant of High Pass** (HOB) — its Stone Boulder token is a Wall;
+  `CardSubtype` has no `wall`.
+- **Invisible Woman, Sue Storm** (MSH) — its token is a Wall (no
+  `CardSubtype.wall`). `Trigger.putCountersSimultaneously` also does not
+  say who put the counters.
+- **Super-Skrull** (MSH) — `{2}{W}` creates a 0/4 Wall token (no
+  `CardSubtype.wall`).
+- **Mole Man, Moloid Master** (MSH) — its Moloid token is a Minion; `CardSubtype`
+  has no `minion`.
+- **The Coming of Galactus** (MSH) — chapter IV's Galactus token is an Elder
+  Alien; `CardSubtype` has no `elder`.
+- **Mister Fantastic, Reed Richards** (MSH) — “Whenever one or more tokens you
+  control enter” triggers once for a simultaneous group. `Trigger.enter`
+  triggers per object, and there is no `enterSimultaneously` (like
+  `dieSimultaneously` / `attackSimultaneously`).
 
 ## Earlier conversions
 
@@ -588,10 +610,12 @@ Since the previous revision of this index, 52 more listed cards became
 
 ## Cards that still cannot convert
 
-Closer reading of the remaining 12 found constructor gaps. They stay in the
-catalog as `CardDef` helpers. Evidence is the printed ability vs the current
-inductives (not a missing leftover for an expressible spelling). Three of
-them can now be spelled.
+Closer reading of the remaining 12 found constructor gaps. Evidence is the
+printed ability vs the current inductives (not a missing leftover for an
+expressible spelling). Three of them could later be spelled and are now
+`TraditionalCardDefinition`s read with `parseOracleParts`: Ori, Plate
+Stacker; Captain Mar-Vell, Space-Born; and The Vision. The other nine stay
+in the catalog as `CardDef` helpers.
 
 - **Supper for Spiders** — Put onto the battlefield all creature cards in
   opponents' graveyards that were put there *from the battlefield this turn*;
@@ -606,7 +630,7 @@ them can now be spelled.
 - **Ori, Plate Stacker** — Destroy all artifacts and enchantments opponents
   control; gain 1 life *for each permanent destroyed this way*. Now
   spellable: `actionId` on the destroy and `gainLife` of
-  `Value.count (Selector.wasObjectOfAction n)`.
+  `Value.count (Selector.wasObjectOfAction n)`. Converted.
 - **Black Widow, Super Spy** — Combat-damage exile from the top until a
   nonland, then an optional +1/+1 or cast-the-exiled-card.
   `Selector.topOfLibrary` and `Selector.inExile` exist. Exile-until and
@@ -614,7 +638,7 @@ them can now be spelled.
 - **Captain Mar-Vell, Space-Born** — As long as an opponent has cast a spell
   this turn, you may cast spells as though they had flash. Now spellable:
   `ContinuousEffect.canBeCastAsThoughWithFlashIf` with `Condition.happened`
-  of an opponent's `castSpell` since `turnStart`.
+  of an opponent's `castSpell` since `turnStart`. Converted.
 - **Kid Loki** — Each creature you control that you've put +1/+1 counters on
   *this turn* has hexproof. `Selector.hasCounter` and `wasObjectSince` of
   `putCountersSimultaneously` exist, but that trigger does not say who put
@@ -641,8 +665,8 @@ them can now be spelled.
 - **The Vision** — Choose one *that hasn't been chosen this turn*. Now
   spellable: `CardAction.chooseModeRestricted` with
   `Trigger.modeWithIdChosen`, triggered by `castSpell` of a noncreature
-  spell you control. The leftover onto `Effect.castingVisionModes` is
-  missing.
+  spell you control. Converted; it compiles onto
+  `Effect.castingVisionModes`.
 
 ## Adjacent inductives
 
@@ -650,7 +674,7 @@ These are not in the requested list but block a conversion of the listed types:
 
 | Inductive | Used by | Missing constructors that remaining cards need |
 | --- | --- | --- |
-| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Constructors exist for every remaining catalog subtype, including Army (`Selector.subtype .army`). Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers / `CounterKind`, not missing subtypes. |
+| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Wall (Stone-Giant of High Pass; Invisible Woman, Sue Storm; Super-Skrull), Minion (Mole Man, Moloid Master), and Elder (The Coming of Galactus) token subtypes. Army exists (`Selector.subtype .army`). Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers / `CounterKind`, not missing subtypes. |
 | `Keyword` | `Ability.keyword`, `CardAction.keyword` | Kicker, Cascade, Affinity, Teamwork, Improvise, Extort, Sneak, Boast, Gift, Harness (some of these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters exist. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
 | `CounterKind` | `CardAction.putCounter`, `Selector.hasCounter`, `Trigger.putCountersSimultaneously` | shield, hope, hone, trample, quest, shadow, finality, indestructible, lifelink, plan, stun, influence, burden, invasion, double strike, and other named counters |
 
@@ -663,7 +687,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (53 cards)
+### The Hobbit (HOB) (44 cards)
 
 **Bard, King of Dale** (`bardKingOfDale`)
 
@@ -696,14 +720,6 @@ Converted cards are omitted here.
 - `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
-**Boughside Wanderers** (`boughsideWanderers`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Burn, Burn, Tree and Fern** (`burnBurnTreeAndFern`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Cantankerous Keepers** (`cantankerousKeepers`)
 
 - `Ability.keywordAffinity` — Affinity for a type/subtype (the reduction itself is `reduceCostWithX`)
@@ -721,10 +737,6 @@ Converted cards are omitted here.
 **Desert Were-Worm** (`desertWereWorm`)
 
 - `CardAction.extraCombat` — An additional combat phase; typically with untap attackers
-
-**Down in the Valley** (`downInTheValley`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
@@ -751,10 +763,6 @@ Converted cards are omitted here.
 
 - `CardAction.randomize` — Pick a random card among (`putOnLibraryBottomInRandomOrder` exists)
 
-**Gleaming Splendor** (`gleamingSplendor`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Gollum, Riddle Master** (`gollumRiddleMaster`)
 
 - `CardAction.chooseOddEven` — Choose odd or even
@@ -773,10 +781,6 @@ Converted cards are omitted here.
 
 - `SetPredicate.shareName` — The selected objects share a name
 
-**Lake-town Toymaker** (`lakeTownToymaker`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Last Light of Durin's Day** (`lastLightOfDurinSDay`)
 
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
@@ -789,17 +793,9 @@ Converted cards are omitted here.
 
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 
-**Orcrist, Goblin-cleaver** (`orcristGoblinCleaver`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Part in Friendship** (`partInFriendship`)
 
 - `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
-
-**Radagast of Rhosgobel** (`radagastOfRhosgobel`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Rhovanion Rampager** (`rhovanionRampager`)
 
@@ -829,7 +825,7 @@ Converted cards are omitted here.
 
 **Stone-Giant of High Pass** (`stoneGiantOfHighPass`)
 
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
+- `CardSubtype.wall` — Stone Boulder is a Wall artifact creature token
 
 **Supper for Spiders** (`supperForSpiders`)
 
@@ -852,10 +848,6 @@ Converted cards are omitted here.
 - `Trigger.loseLife` — Whenever the selected player loses life
 - `Selector.graveyardSizeAtLeast` — Graveyards (or their owners) with at least N cards, so they can be counted
 
-**The Misty Mountains Cold** (`theMistyMountainsCold`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **The Mountain-king's Return** (`theMountainKingSReturn`)
 
 - `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
@@ -871,10 +863,6 @@ Converted cards are omitted here.
 **Thranduil, the Elvenking** (`thranduilTheElvenking`)
 
 - `ContinuousEffect.copyActivatedAbilities` — Gains the activated abilities of matching objects
-
-**Through the Forest Gate** (`throughTheForestGate`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Tom, Bert, and William** (`tomBertAndWilliam`)
 
@@ -894,7 +882,7 @@ Converted cards are omitted here.
 - `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
 - `CardAction.removeCounter` — Remove counters from the selected object
 
-### The Hobbit Eternal (HOC) (73 cards)
+### The Hobbit Eternal (HOC) (51 cards)
 
 **Andúril, Narsil Reforged** (`andurilNarsilReforged`)
 
@@ -918,10 +906,6 @@ Converted cards are omitted here.
 **Arwen, Weaver of Hope** (`arwenWeaverOfHope`)
 
 - `ContinuousEffect.replaceEnterCounters` — As matching other objects enter, they enter with extra counters
-
-**Bag End Banquet** (`bagEndBanquet`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Banishing Light** (`banishingLight`)
 
@@ -950,10 +934,6 @@ Converted cards are omitted here.
 
 - `Selector.damagedThisTurn` — Objects that were dealt damage / dealt damage this turn
 - `ContinuousEffect.reduceCost` — `reduceCost` + `if` exists; missing the damaged-this-turn target shape
-
-**Bolg, Erebor's Reckoning** (`bolgEreborsReckoning`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Call Forth the Tempest** (`callForthTheTempest`)
 
@@ -991,29 +971,9 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.cantBeCountered` — The spell a mana ability's mana was spent on can't be countered. `forbid (Trigger.counter …)` covers “this spell can't be countered”
 
-**Dragon's Desire** (`dragonsDesire`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Dwarven Warriors** (`dwarvenWarriors`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Dáin of the Ancient Halls** (`dainOfTheAncientHalls`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Elven Chorus** (`elvenChorus`)
 
 - `ContinuousEffect.mayLookAtTop` — May look at the top card of the selected library any time
-
-**Elvish Archdruid** (`elvishArchdruid`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Errand-Rider of Gondor** (`errandRiderOfGondor`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Fiend Hunter** (`fiendHunter`)
 
@@ -1024,14 +984,6 @@ Converted cards are omitted here.
 **Flame of Anor** (`flameOfAnor`)
 
 - `CardAction.chooseModes` — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
-
-**Flowering of the White Tree** (`floweringOfTheWhiteTree`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Fíli and Kíli, Joyous** (`filiAndKiliJoyous`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Galadriel's Dismissal** (`galadrielSDismissal`)
 
@@ -1056,21 +1008,9 @@ Converted cards are omitted here.
 
 - `CardAction.exileUntil` — Exile from the top of a library until a matching card
 
-**Haunt of the Dead Marshes** (`hauntOfTheDeadMarshes`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Last March of the Ents** (`lastMarchOfTheEnts`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Long-Lost Lances** (`longLostLances`)
 
 - `Selector.attached` — Objects attached to a given object (inverse of `hostOf`)
-
-**Mentor of the Meek** (`mentorOfTheMeek`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Minas Morgul, Dark Fortress** (`minasMorgulDarkFortress`)
 
@@ -1079,18 +1019,6 @@ Converted cards are omitted here.
 **Minas Tirith** (`minasTirith`)
 
 - `Condition.attackedThisTurn` — You attacked with N or more creatures this turn (over every combat, not one `attackSimultaneously`)
-
-**Minas Tirith Garrison** (`minasTirithGarrison`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Mirkwood Elk** (`mirkwoodElk`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Mount Doom** (`mountDoom`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Mox Amber** (`moxAmber`)
 
@@ -1105,39 +1033,15 @@ Converted cards are omitted here.
 - `Trigger.scry` — Whenever the selected player scries
 - `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
 
-**Olog-hai Crusher** (`ologHaiCrusher`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Orcish Bowmasters** (`orcishBowmasters`)
 
 - `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step (same missing draw-step window as `wouldDraw`)
-
-**Orcish Siegemaster** (`orcishSiegemaster`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Ori, Plate Stacker** (`oriPlateStacker`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Palantír of Orthanc** (`palantirOfOrthanc`)
 
 - `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `Value.counterCount` — The number of counters of a kind on an object
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-
-**Raise the Palisade** (`raiseThePalisade`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Relic of Sauron** (`relicOfSauron`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Rivendell** (`rivendell`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Saruman of Many Colors** (`sarumanOfManyColors`)
 
@@ -1192,10 +1096,6 @@ Converted cards are omitted here.
 
 - `Cost.tapOther` — Tap another matching permanent (not the tap symbol on the source)
 
-**Thranduil the Strategist** (`thranduilTheStrategist`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Tom Bombadil** (`tomBombadil`)
 
 - `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
@@ -1219,20 +1119,12 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (`gainSubtype` only adds)
 
-### Marvel Super Heroes (MSH) (186 cards)
-
-**Abomination, Terrifying Titan** (`abominationTerrifyingTitan`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
+### Marvel Super Heroes (MSH) (134 cards)
 
 **Absorbing Man** (`absorbingMan`)
 
 - `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 - `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
-
-**Aerial Doombot** (`aerialDoombot`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Agent 13, Sharon Carter** (`agent13SharonCarter`)
 
@@ -1276,22 +1168,6 @@ Converted cards are omitted here.
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 - `CardAction.chooseModes` — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
 
-**Avengers Assemble!** (`avengersAssemble`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Avengers Disassembled** (`avengersDisassembled`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Avengers Tower** (`avengersTower`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Avengers: Under Siege** (`avengersUnderSiege`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Baron Helmut Zemo** (`baronHelmutZemo`)
 
 - `Selector.color` — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
@@ -1305,10 +1181,6 @@ Converted cards are omitted here.
 
 - `Selector.toughness` — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
 
-**Black Panther, Hope Enduring** (`blackPantherHopeEnduring`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Black Widow, Double Agent** (`blackWidowDoubleAgent`)
 
 - `Selector.attackingAlone` — A creature attacking alone
@@ -1318,14 +1190,6 @@ Converted cards are omitted here.
 
 - `CardAction.exileUntil` — Exile from the top of a library until a matching card
 - `ContinuousEffect.spendManaAsThoughAnyType` — Mana of any type can be spent to cast the selected spells
-
-**Bold Biochemist** (`boldBiochemist`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Brave Brawler** (`braveBrawler`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Bruce Banner** (`bruceBanner`)
 
@@ -1346,21 +1210,9 @@ Converted cards are omitted here.
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `CardAction.removeCounter` — Remove counters from the selected object
 
-**Captain America, Wings of Freedom** (`captainAmericaWingsOfFreedom`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Captain Mar-Vell, Space-Born** (`captainMarVellSpaceBorn`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Captain Marvel, Earth's Protector** (`captainMarvelEarthSProtector`)
 
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-
-**Castle Doom** (`castleDoom`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Claim the Kingdom** (`claimTheKingdom`)
 
@@ -1373,10 +1225,6 @@ Converted cards are omitted here.
 - `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 - `CardAction.returnExiled` — Return objects exiled by a linked action
-
-**Colleen Wing, Street Samurai** (`colleenWingStreetSamurai`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Construct a Cosmic Cube** (`constructACosmicCube`)
 
@@ -1414,18 +1262,10 @@ Converted cards are omitted here.
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
-**Decoy Ploy** (`decoyPloy`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Doc Samson, Super Psychiatrist** (`docSamsonSuperPsychiatrist`)
 
 - `Trigger.putCounter` — Whenever counters of any kind are put on matching objects (`putCountersSimultaneously` takes one `CounterKind`)
 - `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
-
-**Doctor Doom** (`doctorDoom`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Doom Reigns Supreme** (`doomReignsSupreme`)
 
@@ -1447,19 +1287,11 @@ Converted cards are omitted here.
 
 - `Ability.keywordSneak` — Sneak
 
-**Epic Fight** (`epicFight`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Evil's Thrall** (`evilSThrall`)
 
 - `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `CardAction.gainControl` — Gain control of selected objects
 - `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
-
-**Falcon's Wing Harness** (`falconSWingHarness`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Frozen in Ice** (`frozenInIce`)
 
@@ -1478,10 +1310,6 @@ Converted cards are omitted here.
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
-**H.E.R.B.I.E. Scout Unit** (`hERBIEScoutUnit`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **HULK SMASH!** (`hULKSMASH`)
 
 - `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
@@ -1493,10 +1321,6 @@ Converted cards are omitted here.
 
 - `Selector.attackingAlone` — A creature attacking alone
 - `Trigger.attackAlone` — When the selected object attacks alone
-
-**HYDRA Troopers** (`hYDRATroopers`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Hawkeye's Bow** (`hawkeyeSBow`)
 
@@ -1522,10 +1346,6 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
 
-**Hercules, Prince of Power** (`herculesPrinceOfPower`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Heroic Feast** (`heroicFeast`)
 
 - `Trigger.gainLife` — Whenever the selected player gains life
@@ -1539,29 +1359,14 @@ Converted cards are omitted here.
 
 - `Selector.powerUpAbility` — Power-up abilities as a class (cost reductions, extra activations, “can't be activated”). Power-up is not a `Keyword`, so `keywordAbility` can't pick it
 
-**Hulkling, Burgeoning Bruiser** (`hulklingBurgeoningBruiser`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Human Torch, Johnny Storm** (`humanTorchJohnnyStorm`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Hydraulic Helper** (`hydraulicHelper`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **I Am Iron Man** (`iAmIronMan`)
 
 - `ContinuousEffect.setTypes` — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
 
 **Invisible Woman, Sue Storm** (`invisibleWomanSueStorm`)
 
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Iron Fist, Living Weapon** (`ironFistLivingWeapon`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
+- `CardSubtype.wall` — The 0/4 token is a Wall
+- `Trigger.putCountersSimultaneously` does not say who put the counters (“Whenever you put …”)
 
 **Iron Lad, Diverging Destiny** (`ironLadDivergingDestiny`)
 
@@ -1570,10 +1375,6 @@ Converted cards are omitted here.
 **Iron Man Armor** (`ironManArmor`)
 
 - `ContinuousEffect.setTypes` — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
-
-**Iron Man, Master of Machines** (`ironManMasterOfMachines`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Ironheart, Clever Champion** (`ironheartCleverChampion`)
 
@@ -1634,15 +1435,11 @@ Converted cards are omitted here.
 
 **Mister Fantastic, Reed Richards** (`misterFantasticReedRichards`)
 
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
+- `Trigger.enterSimultaneously` — “Whenever one or more tokens you control enter” triggers once per group
 
 **Mister Hyde, Monster Within** (`misterHydeMonsterWithin`)
 
 - `CardAction.removeCounter` — Remove counters from the selected object
-
-**Misty Knight, Hero for Hire** (`mistyKnightHeroForHire`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Mjölnir, Hammer of Thor** (`mjLnirHammerOfThor`)
 
@@ -1651,7 +1448,7 @@ Converted cards are omitted here.
 
 **Mole Man, Moloid Master** (`moleManMoloidMaster`)
 
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
+- `CardSubtype.minion` — The Moloid token is a Minion
 
 **Monica Rambeau** (`monicaRambeau`)
 
@@ -1688,10 +1485,6 @@ Converted cards are omitted here.
 - `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
 - `CardAction.transform` — Transform this permanent
 
-**Ninja of the Hand** (`ninjaOfTheHand`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Origin of the Avengers** (`originOfTheAvengers`)
 
 - `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
@@ -1699,10 +1492,6 @@ Converted cards are omitted here.
 **Panther Pounce** (`pantherPounce`)
 
 - `CardAction.investigate` — Investigate / create a Clue
-
-**Pet Avengers** (`petAvengers`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Photon Blast Barrage** (`photonBlastBarrage`)
 
@@ -1717,17 +1506,9 @@ Converted cards are omitted here.
 
 - `CardAction.forEachCounterKind` — For each kind of counter on a selected object, give another of that kind
 
-**Punishing Punch** (`punishingPunch`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Quicksilver, Brash Blur** (`quicksilverBrashBlur`)
 
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, stun, influence, burden, invasion, shield, hope, indestructible, lifelink, double strike, keyword counters, …)
-
-**Raft Security Officer** (`raftSecurityOfficer`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Red Guardian, Super-Soldier** (`redGuardianSuperSoldier`)
 
@@ -1781,17 +1562,9 @@ Converted cards are omitted here.
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 - `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 
-**Serpent Specialist** (`serpentSpecialist`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Shang-Chi, Master of Kung Fu** (`shangChiMasterOfKungFu`)
 
 - `ContinuousEffect.activateAsThoughHaste` — Activate abilities of the selected creatures as though they had haste
-
-**She-Hulk, Jade Defender** (`sheHulkJadeDefender`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Shuri, Wakandan Inventor** (`shuriWakandanInventor`)
 
@@ -1813,14 +1586,6 @@ Converted cards are omitted here.
 
 - `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
 
-**Super Intelligence** (`superIntelligence`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Super Strength** (`superStrength`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Super Villain Lockup** (`superVillainLockup`)
 
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
@@ -1833,7 +1598,7 @@ Converted cards are omitted here.
 
 **Super-Skrull** (`superSkrull`)
 
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
+- `CardSubtype.wall` — The 0/4 token is a Wall
 
 **Super-Soldier Serum** (`superSoldierSerum`)
 
@@ -1863,15 +1628,11 @@ Converted cards are omitted here.
 
 **The Coming of Galactus** (`theComingOfGalactus`)
 
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
+- `CardSubtype.elder` — The Galactus token is an Elder Alien
 
 **The Incredible Hulk** (`theIncredibleHulk`)
 
 - `CardAction.extraCombat` — An additional combat phase; typically with untap attackers
-
-**The Invincible Iron Man** (`theInvincibleIronMan`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **The Kingpin of Crime** (`theKingpinOfCrime`)
 
@@ -1913,14 +1674,6 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.handSize` — Set / remove maximum hand size
 
-**The Unbeatable Squirrel Girl** (`theUnbeatableSquirrelGirl`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**The Vision** (`theVision`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **The Wondrous Wasp** (`theWondrousWasp`)
 
 - `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
@@ -1938,10 +1691,6 @@ Converted cards are omitted here.
 
 - `Trigger.gainLife` — Whenever the selected player gains life
 
-**Titania, Rugged Rumbler** (`titaniaRuggedRumbler`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Tony Stark** (`tonyStark`)
 
 - `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
@@ -1954,46 +1703,14 @@ Converted cards are omitted here.
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 
-**Training Regimen** (`trainingRegimen`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**U.S.Agent, John Walker** (`uSAgentJohnWalker`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Ultron Drone** (`ultronDrone`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
 **Ultron, Artificial Malevolence** (`ultronArtificialMalevolence`)
 
 - `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
-
-**Unliving Legionnaire** (`unlivingLegionnaire`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Villainous Hideout** (`villainousHideout`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **Vision Quest** (`visionQuest`)
 
 - `Selector.manaValue` — Mana value at most / at least N, or a total mana value. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 - `CardAction.putCounter` of a `Value` — Put a computed number of counters (X, a count, a power). `putCounter` takes a literal `Nat`
-
-**Viv Vision, Teen Synthezoid** (`vivVisionTeenSynthezoid`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Volcanic Villain** (`volcanicVillain`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**War Machine, Legacy of Iron** (`warMachineLegacyOfIron`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 **We Say Thee Nay!** (`weSayTheeNay`)
 
@@ -2038,30 +1755,6 @@ Converted cards are omitted here.
 **World War Hulk** (`worldWarHulk`)
 
 - `Selector.color` — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
-
-**Worlds Within Worlds** (`worldsWithinWorlds`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Dark Fortress** (`darkFortress`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Gathering Place** (`gatheringPlace`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Gleaming Bastion** (`gleamingBastion`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Hidden Lair** (`hiddenLair`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
-
-**Training Compound** (`trainingCompound`)
-
-- No constructor gap. Needs Oracle parsing or `toCardDef` support only.
 
 ## Method notes
 
