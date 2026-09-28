@@ -527,6 +527,14 @@ Currently recognized:
 - `{T}: Add {A} or {B}. Activate only if this land entered this turn or if you control a basic land.`
 - `Look at the top <count> cards of your library. You may reveal a <subtype> card from among them and put it into your hand. Put the rest on the bottom of your library in any order.`
   The owner orders the rest (CR 401.4).
+- `<this> deals N damage to each creature.`
+- `Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle.`
+- `Double target creature's power and toughness until end of turn.`
+  It gets +X/+Y where X and Y are its power and toughness (CR 701.10b).
+- `Target creature you control fights target creature an opponent controls.`
+- `Target creature you control deals damage equal to twice its power to target creature an opponent controls.`
+- `This spell costs {N} less to cast if there are <count> or more <type> cards in your graveyard.`
+- `Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile <this>.`
 -/
 
 namespace Mtg.Engine
@@ -2410,6 +2418,7 @@ def parseDealDamageToEach (cardName : String) (sentence : String) (n : Nat) :
           let dest :=
             if obj == "creature your opponents control" then some eachOppCreature
             else if obj == "non-dragon creature" then some eachNonDragonCreature
+            else if obj == "creature" then some (.intersection [.permanent, .cardType .creature])
             else none
           dest.map fun sel => (.dealDamage .this sel (.nat amount), n)
 
@@ -5340,6 +5349,35 @@ def parseChooseUpToDestroyRest (sentence : String) (n : Nat) : Option (CardActio
             .destroy (.intersection [.permanent, selectorOfTypes ts, .not (.variable n)])], n + 1)
         | _, _ => none
 
+/-- `Double target creature's power and toughness until end of turn.` It gets
++X/+Y where X is its power and Y is its toughness (CR 701.10b). The creature
+is target `n`. -/
+def parseDoubleTargetPowerToughness (s : String) (n : Nat) : Option (CardAction × Nat) :=
+  (between? s "double " "'s power and toughness until end of turn").bind parseTargetPhrase |>.map
+    fun sel =>
+      (.continuous [
+        .addPower (.target n sel) (.greatestPower (.targetReference n)),
+        .addToughness (.targetReference n) (.greatestToughness (.targetReference n))] .endOfTurn,
+       n + 1)
+
+/-- `Target creature you control fights target creature an opponent controls.`
+The first creature is target `n`; the second is target `n + 1` (CR 701.12). -/
+def parseTargetFightsTarget (s : String) (n : Nat) : Option (CardAction × Nat) :=
+  (split2? s " fights ").bind fun (a, b) =>
+    match parseTargetPhrase a, parseOppControlledTarget b with
+    | some src, some dest => some (.fight (.target n src) (.target (n + 1) dest), n + 2)
+    | _, _ => none
+
+/-- `Target creature you control deals damage equal to twice its power to
+target creature an opponent controls.` The source is target `n`. -/
+def parseDealsTwicePower (s : String) (n : Nat) : Option (CardAction × Nat) :=
+  (split2? s " deals damage equal to twice its power to ").bind fun (a, b) =>
+    match parseTargetPhrase a, parseOppControlledTarget b with
+    | some src, some dest =>
+      some (.dealDamage (.target n src) (.target (n + 1) dest)
+        (.product (.totalPower (.targetReference n)) (.int 2)), n + 2)
+    | _, _ => none
+
 /-- One sentence of a catalog effect. A leading `Then` is sequencing only.
 `You create` is `create`. -/
 def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
@@ -5347,6 +5385,9 @@ def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
   let s := (after? (normSentence sentence) "then ").getD (normSentence sentence)
   let s := (after? s "you create ").map ("create " ++ ·) |>.getD s
   (parseCreateNamedCreatureTokens sentence).map (·, n) <|>
+    parseDoubleTargetPowerToughness s n <|>
+    parseTargetFightsTarget s n <|>
+    parseDealsTwicePower s n <|>
     parseTwoTargetPlayersEachDraw s n <|>
     parseCreateTokensForEach s n <|>
     parseLookTopPutLandsShuffle s n <|>
@@ -5858,6 +5899,56 @@ def parseChooseTypeCreateForEach (ss : List String) (n : Nat) :
               [token]], n + 2)
   | _ => none
 
+/-- `Destroy target land. Its controller may search their library for a basic
+land card, put it onto the battlefield tapped, then shuffle.` The land is target
+`n`; its controller searches (CR 701.19). -/
+def parseDestroyThenControllerSearchesBasic (cardName : String) (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [destroy, search] =>
+    if normSentence search !=
+        "its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle"
+    then none
+    else
+      match catalogSentenceActions cardName [destroy] n with
+      | some ([.destroy (.target t sel)], n1) =>
+        let who := Selector.controller (.targetReference t)
+        some ([
+          .destroy (.target t sel),
+          .optional who (.searchLibraryThenShuffle who [
+            .putOntoBattlefieldInState (.selected who (.range 1 1) basicLandInLibrary) [.tapped]])],
+          n1)
+      | _ => none
+  | _ => none
+
+/-- `Exile all creatures. Each player may put any number of creature cards from
+their hand onto the battlefield. Then put all cards exiled this way into their
+owners' hands. Exile <this>.` The exile is action `n`; each player is variable
+`n + 1`. -/
+def parseExileAllPutFromHandReturnExiled (cardName : String) (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss.map normSentence with
+  | [exileAll, put, ret, exileSelf] =>
+    let kind? := (after? exileAll "exile all ").bind typesInPhrase
+    let putKind? :=
+      (between? put "each player may put any number of "
+        " cards from their hand onto the battlefield").bind typeOfOracle?
+    let self := (after? exileSelf "exile ").any (refersToSelf cardName)
+    match kind?, putKind? with
+    | some ts, some t =>
+      if ret != "then put all cards exiled this way into their owners' hands" || !self then none
+      else
+        let p := Selector.variable (n + 1)
+        some ([
+          .actionId n (.exile (permanentWith ts [])),
+          .forEachVariable (n + 1) .player [
+            .optional p (.putOntoBattlefield
+              (.selected p .any (.intersection [.inHand, .owner p, .cardType t])))],
+          .returnToHand (.wasCreatedByAction n),
+          .exile .this], n + 2)
+    | _, _ => none
+  | _ => none
+
 /-- Every sentence of `text` as catalog actions, in order. Multi-sentence
 templates come first. A leading sentence may come before exiling the top card
 to play later. -/
@@ -5885,6 +5976,8 @@ def catalogActionsFromText (cardName text : String) (n : Nat) :
     parseAddManaSpendOnlySubtypes ss n <|>
     parseAddManaSpendRestricted ss n <|>
     parseLookAtTopRevealAnyOrder ss n <|>
+    parseDestroyThenControllerSearchesBasic cardName ss n <|>
+    parseExileAllPutFromHandReturnExiled cardName ss n <|>
     (match ss with
       | first :: rest =>
         (catalogSentenceActions cardName [first] n).bind fun (a, n1) =>
@@ -6187,6 +6280,17 @@ def parseCatalogCosts (cardName s : String) : Option (List Cost) :=
   | [one] => if (parseSacrificeAn one).isSome then none else costs one
   | _ => (parts.mapM costs).map List.flatten
 
+/-- `there are two or more creature cards in your graveyard`. -/
+def graveyardCountCondition? (s : String) : Option Condition :=
+  (between? s "there are " " in your graveyard").bind fun rest =>
+    (split2? rest " or more ").bind fun (countText, cards) =>
+      match positiveCount countText, (before? cards " cards").bind typeOfOracle? with
+      | some k, some t =>
+        some (.greaterOrEqual
+          (.count (.intersection [.inGraveyard, .cardType t, .owner (.controller .this)]))
+          (Value.nat k))
+      | _, _ => none
+
 /-- `Activate only if there are two or more creature cards in your graveyard.`
 or `Activate only if you control a legendary creature.` -/
 def parseActivateOnlyIf (s : String) : Option Condition :=
@@ -6194,15 +6298,7 @@ def parseActivateOnlyIf (s : String) : Option Condition :=
   ((after? (normSentence s) "activate only if this land entered this turn or if you control ").bind
     youControlCondition? |>.map fun cond =>
       .not (.and (.not (.happened (.enter (.source .this)) .turnStart)) (.not cond))) <|>
-  (between? (normSentence s) "activate only if there are " " in your graveyard").bind
-    fun rest =>
-      (split2? rest " or more ").bind fun (countText, cards) =>
-        match positiveCount countText, (before? cards " cards").bind typeOfOracle? with
-        | some k, some t =>
-          some (.greaterOrEqual
-            (.count (.intersection [.inGraveyard, .cardType t, .owner (.controller .this)]))
-            (Value.nat k))
-        | _, _ => none
+  (after? (normSentence s) "activate only if ").bind graveyardCountCondition?
 
 /-- `This ability costs {2} less to activate if you control a legendary
 creature.` A static ability that reduces this ability's cost. -/
@@ -6384,7 +6480,7 @@ def parseCatalogCostReduction (line : String) : Option CardPart :=
     let targets :=
       (after? cond "it targets ").bind dropArticle? |>.bind parseTargetObject |>.map fun sel =>
         Condition.targetsIncludeAny .this sel
-    (controls <|> targets).map (reduceOnStack · syms)
+    (controls <|> targets <|> graveyardCountCondition? cond).map (reduceOnStack · syms)
 
 /-- `As an additional cost to cast this spell, sacrifice an artifact or
 creature.` The ability functions while this spell is on the stack. -/
@@ -10341,6 +10437,48 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
     .putOnBottomOfLibrary (.intersection [.wasObjectOfAction 1, .not (.wasObjectOfAction 2)])]))]
 #guard parseOracleParts (name := "")
   "{4}, {T}: Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in a random order." ==
+  none
+
+#guard parseOracleParts (name := "Quake") "Quake deals 3 damage to each creature." ==
+  some [.actions [.dealDamage .this (.intersection [.permanent, .cardType .creature]) 3]]
+#guard parseOracleParts (name := "")
+  "Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle." ==
+  some [.actions [
+    .destroy (.target 1 (.intersection [.permanent, .cardType .land])),
+    .optional (.controller (.targetReference 1)) (.searchLibraryThenShuffle (.controller (.targetReference 1)) [
+      .putOntoBattlefieldInState (.selected (.controller (.targetReference 1)) (.range 1 1)
+        (.intersection [.inLibrary, .cardType .land, .supertype .basic])) [.tapped]])]]
+#guard parseOracleParts (name := "")
+  "Double target creature's power and toughness until end of turn." ==
+  some [.actions [.continuous [
+    .addPower (.target 1 (.intersection [.permanent, .cardType .creature])) (.greatestPower (.targetReference 1)),
+    .addToughness (.targetReference 1) (.greatestToughness (.targetReference 1))] .endOfTurn]]
+#guard parseOracleParts (name := "")
+  "Target creature you control fights target creature an opponent controls." ==
+  some [.actions [.fight
+    (.target 1 (.intersection [.permanent, .cardType .creature, youControl]))
+    (.target 2 (.intersection [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))]))]]
+#guard parseOracleParts (name := "")
+  "Target creature you control deals damage equal to twice its power to target creature an opponent controls." ==
+  some [.actions [.dealDamage
+    (.target 1 (.intersection [.permanent, .cardType .creature, youControl]))
+    (.target 2 (.intersection [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))]))
+    (.product (.totalPower (.targetReference 1)) (.int 2))]]
+#guard parseOracleParts (name := "")
+  "This spell costs {2} less to cast if there are two or more creature cards in your graveyard." ==
+  some [.ability (.stackStatic (.if
+    (.greaterOrEqual (.count (.intersection [.inGraveyard, .cardType .creature, .owner (.controller .this)])) 2)
+    [.reduceCost .this [.mana [.generic 2]]]))]
+#guard parseOracleParts (name := "Worlds")
+  "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds." ==
+  some [.actions [
+    .actionId 1 (.exile (.intersection [.permanent, .cardType .creature])),
+    .forEachVariable 2 .player [.optional (.variable 2) (.putOntoBattlefield
+      (.selected (.variable 2) .any (.intersection [.inHand, .owner (.variable 2), .cardType .creature])))],
+    .returnToHand (.wasCreatedByAction 1),
+    .exile .this]]
+#guard parseOracleParts (name := "Worlds")
+  "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Other Card." ==
   none
 
 end Mtg.Engine

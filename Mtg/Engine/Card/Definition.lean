@@ -3454,6 +3454,49 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     if you == .controlled (.controller .this) then
       some (Effect.targetSubtypeConnives st.toString)
     else none
+  | .returnToHand (.target _ (.intersection [.inGraveyard, .subtype st, .owner owner])) =>
+    if leftoverYou owner then some (Effect.returnGySubtypeToHand st.toString) else none
+  | .dealDamage src (.intersection [.permanent, .cardType .creature]) (.nat n) =>
+    if n != 0 && (src == .this || leftoverSourceThis src) then
+      some (Effect.dealDamageToEachCreature n)
+    else none
+  | .sequence [
+      .destroy (.target t (.intersection [.permanent, .cardType .land])),
+      .optional who (.searchLibraryThenShuffle searcher [
+        .putOntoBattlefieldInState (.selected chooser (.range (.nat 1) (.nat 1))
+          (.intersection [.inLibrary, .cardType .land, .supertype .basic])) [.tapped]])] =>
+    let controller := Selector.controller (.targetReference t)
+    if who == controller && searcher == controller && chooser == controller then
+      some Effect.destroyLandSearchBasic
+    else none
+  | .continuous [
+      .addPower (.target t (.intersection [.permanent, .cardType .creature]))
+        (.greatestPower (.targetReference t1)),
+      .addToughness (.targetReference t2) (.greatestToughness (.targetReference t3))] .endOfTurn =>
+    if t == t1 && t == t2 && t == t3 then some Effect.doublePowerAndToughness else none
+  | .fight (.target _ src) (.target _ dest) =>
+    if src == .intersection [.permanent, .cardType .creature, .controlled (.controller .this)] &&
+        dest == .intersection
+          [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))] then
+      some Effect.fight
+    else none
+  | .dealDamage (.target t src) (.target _ dest) (.product (.totalPower (.targetReference t')) (.int 2)) =>
+    if t == t' &&
+        src == .intersection [.permanent, .cardType .creature, .controlled (.controller .this)] &&
+        dest == .intersection
+          [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))] then
+      some Effect.creatureYouControlDealsTwicePower
+    else none
+  | .sequence [
+      .actionId id (.exile (.intersection [.permanent, .cardType .creature])),
+      .forEachVariable v .player [
+        .optional p (.putOntoBattlefield (.selected p' .any
+          (.intersection [.inHand, .owner p'', .cardType .creature])))],
+      .returnToHand (.wasCreatedByAction id'),
+      .exile .this] =>
+    if id == id' && p == .variable v && p' == p && p'' == p then
+      some Effect.worldsWithinWorlds
+    else none
   | _ => none
 
 /-- Sequence leftovers that compile to a named `Effect` without taking
@@ -4965,6 +5008,9 @@ structure CardFace where
   /-- `{T}: Add {A} or {B}` usable only if this land entered this turn or you
   control a basic land. -/
   tapAddOneOfIfEnteredOrBasic : Array ManaType := #[]
+  /-- This spell costs this much generic less if your graveyard has at least
+  this many creature cards: `(count, generic)`. -/
+  costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none
 deriving Inhabited
 
 namespace CardFace
@@ -5522,6 +5568,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           b.staticAbilities.push .firstEquipFreeIfEnduringStory }
     else b
   | .if (.and _ _) _ => b
+  | .if (.greaterOrEqual (.count among) threshold) [.reduceCost .this [.mana [.generic k]]] =>
+    match valToNat? threshold with
+    | some t =>
+      if CardAction.leftoverYourGyCreatures? among && t != 0 && k != 0 then
+        { b with costReductionIfGyCreaturesAtLeast := some (t, k) }
+      else b
+    | none => b
   | .if (.greaterOrEqual (.count among) threshold) inners =>
     if valToNat? threshold == some 7 then
       match CardAction.leftoverThresholdGets? among inners with
@@ -5946,6 +5999,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       tapPayLifeAddOneOf := b.tapPayLifeAddOneOf
       entersTappedUnlessLegendary := b.entersTappedUnlessLegendary
       tapAddOneOfIfEnteredOrBasic := b.tapAddOneOfIfEnteredOrBasic
+      costReductionIfGyCreaturesAtLeast := b.costReductionIfGyCreaturesAtLeast
       adventure := adventure
       saga :=
         if b.sagaChapters.isEmpty then none
