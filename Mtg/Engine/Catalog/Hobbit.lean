@@ -1629,15 +1629,30 @@ def attercop : CardDef :=
                     .addToughness (.source .this) (Value.int 1)] .endOfTurn))
 ]
 
-def ordinaryBear : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Ordinary Bear. -/
+def ordinaryBearOracle : String :=
+  ""
+
+def ordinaryBearDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Ordinary Bear",
     .manaCost [.generic 3, .mono .green],
     .type .creature,
     .subtype .bear,
     .power 4,
     .toughness 5
-  ]).toCardDef
+  ] ++ (parseOracleParts (name := "Ordinary Bear") ordinaryBearOracle).get!
+
+#guard ordinaryBearDefinition == .card [
+  .name "Ordinary Bear",
+  .manaCost [.generic 3, .mono .green],
+  .type .creature,
+  .subtype .bear,
+  .power 4,
+  .toughness 5]
+
+def ordinaryBear : CardDef :=
+  ordinaryBearDefinition.toCardDef (oracleText := ordinaryBearOracle)
 
 /-- Gatherer Oracle text for Large Bear. -/
 def largeBearOracle : String :=
@@ -5248,42 +5263,53 @@ def anUnexpectedParty : CardDef :=
       "Create X 2/2 red Dwarf creature tokens. (Then exile this card. You may cast the enchantment later from exile.)"
       (Effect.createTokensX .dwarf)))
 
-def alongTheCrookedWay : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Along the Crooked Way. -/
+def alongTheCrookedWayOracle : String :=
+  "When this enchantment enters, return target creature card from your graveyard to your hand.\nWhenever a creature card leaves your graveyard, amass Goblins 1.\n{1}{B}: Goblins and Orcs you control gain menace until end of turn."
+
+def alongTheCrookedWayDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Along the Crooked Way",
     .manaCost [.generic 2, .mono .black],
-    .type .enchantment,
-    .ability (
-      .triggered
-        (.enter .this)
-        (.returnToHand
-          (.target
-            1
-            (.intersection [
-              .inGraveyard,
-              .cardType .creature,
-              .owner (.controller .this)])))),
-    .ability (
-      .triggered
-        (.leaveGraveyard
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "Along the Crooked Way") alongTheCrookedWayOracle).get!
+
+#guard alongTheCrookedWayDefinition == .card [
+  .name "Along the Crooked Way",
+  .manaCost [.generic 2, .mono .black],
+  .type .enchantment,
+  .ability (
+    .triggered
+      (.enter .this)
+      (.returnToHand
+        (.target
+          1
           (.intersection [
             .inGraveyard,
             .cardType .creature,
-            .owner (.controller .this)]))
-        (.keyword (.controller .this) (.amass .goblin (.nat 1)))),
-    .ability (
-      .activated
-        [.mana [.generic 1, .mono .black]]
-        (.continuous
-          [.gainAbility
-            (.intersection [
-              .permanent,
-              .union [.subtype .goblin, .subtype .orc],
-              .controlled (.controller .this)])
-            (.keyword .menace)]
-          .endOfTurn))
-  ]).toCardDef
-    (oracleText := "When this enchantment enters, return target creature card from your graveyard to your hand.\nWhenever a creature card leaves your graveyard, amass Goblins 1.\n{1}{B}: Goblins and Orcs you control gain menace until end of turn.")
+            .owner (.controller .this)])))),
+  .ability (
+    .triggered
+      (.leaveGraveyard
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this)]))
+      (.keyword (.controller .this) (.amass .goblin (.nat 1)))),
+  .ability (
+    .activated
+      [.mana [.generic 1, .mono .black]]
+      (.continuous
+        [.gainAbility
+          (.intersection [
+            .permanent,
+            .union [.subtype .goblin, .subtype .orc],
+            .controlled (.controller .this)])
+          (.keyword .menace)]
+        .endOfTurn))]
+
+def alongTheCrookedWay : CardDef :=
+  alongTheCrookedWayDefinition.toCardDef (oracleText := alongTheCrookedWayOracle)
 
 def azogMoriaSRuin : CardDef :=
   legendaryCreature "Azog, Moria's Ruin" (ManaCost.ofGenericAndColor 2 .black) #["Goblin", "Soldier"] 1 3 (oracleText := "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)")
@@ -5294,8 +5320,12 @@ def balinLoremaster : CardDef :=
     (keywords := Keyword.storied)
     (triggeredAbilities := #[.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf"])
 
-def bardTheBowman : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Bard the Bowman. -/
+def bardTheBowmanOracle : String :=
+  "Reach\nWhenever you draw your second card each turn, put a +1/+1 counter on target creature. It gains lifelink until end of turn."
+
+def bardTheBowmanDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Bard the Bowman",
     .manaCost [.generic 1, .mono .white, .mono .blue],
     .type .creature,
@@ -5303,21 +5333,33 @@ def bardTheBowman : CardDef :=
     .subtype .human,
     .subtype .archer,
     .power 1,
-    .toughness 3,
-    .ability (.keyword .reach),
-    .ability (
-      .triggered
-        (.ordinal 2 .turnStart (.draw (.controller .this) .all))
-        (.sequence [
-          .putCounter
-            (.target 1 (.intersection [.permanent, .cardType .creature]))
-            .plusOnePlusOne
-            1,
-          .continuous
-            [.gainAbility (.targetReference 1) (.keyword .lifelink)]
-            .endOfTurn]))
-  ]).toCardDef
-    (oracleText := "Reach\nWhenever you draw your second card each turn, put a +1/+1 counter on target creature. It gains lifelink until end of turn.")
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Bard the Bowman") bardTheBowmanOracle).get!
+
+#guard bardTheBowmanDefinition == .card [
+  .name "Bard the Bowman",
+  .manaCost [.generic 1, .mono .white, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .archer,
+  .power 1,
+  .toughness 3,
+  .ability (.keyword .reach),
+  .ability (
+    .triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.sequence [
+        .putCounter
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          .plusOnePlusOne
+          1,
+        .continuous
+          [.gainAbility (.targetReference 1) (.keyword .lifelink)]
+          .endOfTurn]))]
+
+def bardTheBowman : CardDef :=
+  bardTheBowmanDefinition.toCardDef (oracleText := bardTheBowmanOracle)
 
 def bardKingOfDale : CardDef :=
   legendaryCreature "Bard, King of Dale" (ManaCost.ofGenericAndColors 4 [.white, .blue]) #["Human", "Noble", "Archer"] 3 5 (oracleText := "Reach, vigilance\nIf you would draw a card except the first one you draw in each of your draw steps, draw two cards instead.\nIf one or more tokens would be created under your control, twice that many of those tokens are created instead.")
@@ -5325,31 +5367,45 @@ def bardKingOfDale : CardDef :=
     (tokenDoubling := true)
     (drawTwoExceptFirstDrawStep := true)
 
-def bejeweledWarg : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Bejeweled Warg. -/
+def bejeweledWargOracle : String :=
+  "Trample\nWhenever this creature deals combat damage to a player, choose one —\n• Put a +1/+1 counter on target Wolf you control.\n• Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")"
+
+def bejeweledWargDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Bejeweled Warg",
     .manaCost [.generic 1, .mono .green],
     .type .creature,
     .subtype .wolf,
     .power 3,
-    .toughness 2,
-    .ability (.keyword .trample),
-    .ability (
-      .triggered
-        (.combatDamage .this .player)
-        (.chooseUniqueModes (.range 1 1) [
-          .putCounter
-            (.target
-              1
-              (.intersection [
-                .permanent,
-                .cardType .creature,
-                .subtype .wolf,
-                .controlled (.controller .this)]))
-            .plusOnePlusOne 1,
-          .createTokens (.controller .this) 1 PredefinedToken.treasureToken]))
-  ]).toCardDef
-    (oracleText := "Trample\nWhenever this creature deals combat damage to a player, choose one —\n• Put a +1/+1 counter on target Wolf you control.\n• Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Bejeweled Warg") bejeweledWargOracle).get!
+
+#guard bejeweledWargDefinition == .card [
+  .name "Bejeweled Warg",
+  .manaCost [.generic 1, .mono .green],
+  .type .creature,
+  .subtype .wolf,
+  .power 3,
+  .toughness 2,
+  .ability (.keyword .trample),
+  .ability (
+    .triggered
+      (.combatDamage .this .player)
+      (.chooseUniqueModes (.range 1 1) [
+        .putCounter
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .subtype .wolf,
+              .controlled (.controller .this)]))
+          .plusOnePlusOne 1,
+        .createTokens (.controller .this) 1 PredefinedToken.treasureToken]))]
+
+def bejeweledWarg : CardDef :=
+  bejeweledWargDefinition.toCardDef (oracleText := bejeweledWargOracle)
 
 def belladonnaTook : CardDef :=
   legendaryCreature "Belladonna Took" (ManaCost.ofGenericAndColor 1 .white) #["Halfling", "Citizen"] 2 2 (oracleText := "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control.")
@@ -5651,47 +5707,62 @@ def thorinMountainKing : CardDef :=
     (keywords := Keyword.trample)
     (triggeredAbilities := #[.onEnterAttachEquipmentThenFight])
 
-def thranduilSCompany : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Gatherer Oracle text for Thranduil's Company. -/
+def thranduilSCompanyOracle : String :=
+  "As long as you control another Elf, you may play an additional land on each of your turns.\nLandfall — Whenever a land you control enters, put two +1/+1 counters on target creature you control. It gains vigilance until end of turn."
+
+def thranduilSCompanyDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "Thranduil's Company",
     .manaCost [.generic 2, .mono .green, .mono .blue],
     .type .creature,
     .subtype .elf,
     .subtype .soldier,
     .power 3,
-    .toughness 4,
-    .ability (
-      .static
-        (.if
-          (.any
-            (.intersection [
-              .not .this,
-              .permanent,
-              .subtype .elf,
-              .controlled (.controller .this)]))
-          [.increaseLandPlayLimit (.controller .this) (Value.nat 1)])),
-    .ability (
-      .triggered
-        (.enter
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Thranduil's Company") thranduilSCompanyOracle).get!
+
+#guard thranduilSCompanyDefinition == .card [
+  .name "Thranduil's Company",
+  .manaCost [.generic 2, .mono .green, .mono .blue],
+  .type .creature,
+  .subtype .elf,
+  .subtype .soldier,
+  .power 3,
+  .toughness 4,
+  .ability (
+    .static
+      (.if
+        (.any
           (.intersection [
+            .not .this,
             .permanent,
-            .cardType .land,
+            .subtype .elf,
             .controlled (.controller .this)]))
-        (.sequence [
-          .putCounter
-            (.target
-              1
-              (.intersection [
-                .permanent,
-                .cardType .creature,
-                .controlled (.controller .this)]))
-            .plusOnePlusOne
-            2,
-          .continuous
-            [.gainAbility (.targetReference 1) (.keyword .vigilance)]
-            .endOfTurn]))
-  ]).toCardDef
-    (oracleText := "As long as you control another Elf, you may play an additional land on each of your turns.\nLandfall — Whenever a land you control enters, put two +1/+1 counters on target creature you control. It gains vigilance until end of turn.")
+        [.increaseLandPlayLimit (.controller .this) (Value.nat 1)])),
+  .ability (
+    .triggered
+      (.enter
+        (.intersection [
+          .permanent,
+          .cardType .land,
+          .controlled (.controller .this)]))
+      (.sequence [
+        .putCounter
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          .plusOnePlusOne
+          2,
+        .continuous
+          [.gainAbility (.targetReference 1) (.keyword .vigilance)]
+          .endOfTurn]))]
+
+def thranduilSCompany : CardDef :=
+  thranduilSCompanyDefinition.toCardDef (oracleText := thranduilSCompanyOracle)
 
 def thranduilTheElvenking : CardDef :=
   legendaryCreature "Thranduil, the Elvenking" (ManaCost.ofGenericAndColors 2 [.black, .green, .blue]) #["Elf", "Noble"] 5 6 (oracleText := "Thranduil has all activated abilities of all Elf cards in your graveyard.\nWhenever another legendary Elf you control enters, draw two cards, then discard a card.")
