@@ -976,7 +976,7 @@ inductive CardPart where
   | supertype : CardSupertype → CardPart
   | subtype : CardSubtype → CardPart
   /-- Color indicator (CR 107.13 / 202.2e). Tokens without a mana cost use
-  this for their color; colorless tokens omit it. -/
+  this for their color. An empty list is colorless (CR 105.2c). -/
   | colorIndicator : List Color → CardPart
   | power : Nat → CardPart
   | toughness : Nat → CardPart
@@ -3156,16 +3156,20 @@ def leftoverExileTopFaceDownPlayIf? : CardAction → Option (Nat × String)
   | _ => none
 
 /-- A colorless Equipment artifact token named Axe with “equipped creature
-gets +1/+0” and equip {2}. -/
+gets +1/+0” and equip {2}. Colorless is an empty color indicator. -/
 def leftoverAxeToken? (parts : List CardPart) : Bool :=
   let p := collectTokenParts parts
   let abilities :=
     parts.filter fun
       | .ability _ => true
       | _ => false
+  let colorless :=
+    parts.any fun
+      | .colorIndicator [] => true
+      | _ => false
   p.name == "Axe" && p.types == [.artifact] && p.subtypes == ["Equipment"] &&
-    p.colors == ColorSet.empty && p.power.isNone && p.toughness.isNone &&
-    p.keywords == Keywords.none &&
+    colorless && p.colors == ColorSet.empty && p.power.isNone &&
+    p.toughness.isNone && p.keywords == Keywords.none &&
     abilities == [
       .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
       .ability (.keywordWithCost .equip [.mana [.generic 2]])]
@@ -5151,10 +5155,7 @@ def apply (b : CardFace) : CardPart → CardFace
   | .supertype s => { b with supertypes := b.supertypes.push s }
   | .subtype s => { b with subtypes := b.subtypes.push s.toString }
   | .colorIndicator cs =>
-    { b with
-      colorIndicator :=
-        if cs.isEmpty then none
-        else some (cs.foldl ColorSet.insert ColorSet.empty) }
+    { b with colorIndicator := some (cs.foldl ColorSet.insert ColorSet.empty) }
   | .power n => { b with power := some n }
   | .toughness n => { b with toughness := some n }
   | .ability a => applyAbility b a

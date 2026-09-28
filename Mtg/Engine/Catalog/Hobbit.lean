@@ -5160,6 +5160,7 @@ def ironHillsBlacksmithDefinition : TraditionalCardDefinition := .card <|
       .name "Axe",
       .type .artifact,
       .subtype .equipment,
+      .colorIndicator [],
       .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
       .ability (.keywordWithCost .equip [.mana [.generic 2]])]))]
 

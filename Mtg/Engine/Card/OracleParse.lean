@@ -458,8 +458,8 @@ Currently recognized:
   exiled. That player chooses whether to search, and may find any number
   from zero up to that many (CR 701.19b). The lands enter tapped.
 - `When <this> enters, create a colorless Equipment artifact token named <name> with "<equipped creature gets +P/+T>" and equip {cost}.`
-  The token is a colorless Equipment artifact with that name. A zero bonus
-  is omitted. `+0/+0` is not an effect.
+  The token is a colorless Equipment artifact with that name. Colorless is
+  an empty color indicator. A zero bonus is omitted. `+0/+0` is not an effect.
 - `Whenever you cast a noncreature spell, <this> gets +P/+T until end of turn and deals N damage to each opponent.`
   `<this>` is this card. The bonus lasts until end of turn. `N` is a positive
   count. Each opponent of this object's controller is dealt that damage.
@@ -2822,9 +2822,10 @@ def parseEquip (line : String) : Option CardPart :=
   | none => none
 
 /-- `When <this> enters, create a colorless Equipment artifact token named Axe with "Equipped creature gets +1/+0" and equip {2}.`
-The token is a colorless Equipment artifact with that name. The quoted text
-is a static ability of the token. Equip is another ability of the token.
-A zero bonus is omitted. `+0/+0` is not an effect. -/
+The token is a colorless Equipment artifact with that name. Colorless is an
+empty color indicator. The quoted text is a static ability of the token.
+Equip is another ability of the token. A zero bonus is omitted. `+0/+0` is
+not an effect. -/
 def parseEnterCreateNamedEquipment (cardName : String) (line : String) :
     Option CardPart :=
   let raw := rulesText line
@@ -2840,7 +2841,8 @@ def parseEnterCreateNamedEquipment (cardName : String) (line : String) :
               | some quotedParts, some equipPart =>
                 some (.ability (.triggered (.enter .this)
                   (.createTokens (.controller .this) 1
-                    ([.name tokenName, .type .artifact, .subtype .equipment] ++
+                    ([.name tokenName, .type .artifact, .subtype .equipment,
+                      .colorIndicator []] ++
                       quotedParts ++ [equipPart]))))
               | _, _ => none
 
@@ -7157,6 +7159,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
       .name "Axe",
       .type .artifact,
       .subtype .equipment,
+      .colorIndicator [],
       .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
       .ability (.keywordWithCost .equip [.mana [.generic 2]])]))]
 #guard parseOracleParts (name := "Iron Hills Blacksmith")
