@@ -340,6 +340,9 @@ inductive Selector where
   /-- The top cards of the selected player's library (CR 401). The value is
   how many. One is the top card. -/
   | topOfLibrary : Selector → Value → Selector
+  /-- Objects of the creature type chosen by the numbered
+  `CardAction.chooseCreatureType` action (CR 205.3m / 607.2d). -/
+  | hasCreatureTypeChosenByAction : Nat → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or

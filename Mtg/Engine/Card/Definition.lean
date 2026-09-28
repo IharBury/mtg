@@ -73,6 +73,8 @@ structure Shape where
   hasPlusOneCounter : Bool := false
   diedThisTurn : Bool := false
   putIntoGraveyardThisTurn : Bool := false
+  /-- Only objects of a chosen creature type. -/
+  chosenCreatureType : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Shape
@@ -103,7 +105,8 @@ def meet (a b : Shape) : Shape :=
     hasPlusOneCounter := a.hasPlusOneCounter || b.hasPlusOneCounter
     diedThisTurn := a.diedThisTurn || b.diedThisTurn
     putIntoGraveyardThisTurn :=
-      a.putIntoGraveyardThisTurn || b.putIntoGraveyardThisTurn }
+      a.putIntoGraveyardThisTurn || b.putIntoGraveyardThisTurn
+    chosenCreatureType := a.chosenCreatureType || b.chosenCreatureType }
 
 def join (a b : Shape) : Shape :=
   { sameController := a.sameController && b.sameController
@@ -134,7 +137,8 @@ def join (a b : Shape) : Shape :=
     hasPlusOneCounter := a.hasPlusOneCounter && b.hasPlusOneCounter
     diedThisTurn := a.diedThisTurn && b.diedThisTurn
     putIntoGraveyardThisTurn :=
-      a.putIntoGraveyardThisTurn && b.putIntoGraveyardThisTurn }
+      a.putIntoGraveyardThisTurn && b.putIntoGraveyardThisTurn
+    chosenCreatureType := a.chosenCreatureType && b.chosenCreatureType }
 
 /-- True when this shape is a tapped creature (optional permanent conjunct). -/
 def tappedCreature (s : Shape) : Bool :=
@@ -242,6 +246,7 @@ def shape : Selector → Shape
   | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inLibrary | .inHand
   | .inExile | .supertype _
   | .variable _ | .topOfLibrary _ _ => {}
+  | .hasCreatureTypeChosenByAction _ => { chosenCreatureType := true }
 
 /-- Apply set-wide predicates onto an object-level shape. -/
 def applySetPredicates (s : Shape) : List SetPredicate → Shape
@@ -402,6 +407,7 @@ def referenceTargets : Selector → Selector
   | .supertype st => .supertype st
   | .variable n => .variable n
   | .topOfLibrary s n => .topOfLibrary (referenceTargets s) n
+  | .hasCreatureTypeChosenByAction n => .hasCreatureTypeChosenByAction n
 
 #guard
   (Selector.target 1 (.intersection [.permanent, .cardType .creature])).referenceTargets ==
@@ -963,6 +969,10 @@ inductive CardAction where
   /-- Put the selected cards on the bottom of their owner's library in a
   random order (CR 401.4). -/
   | putOnLibraryBottomInRandomOrder : Selector → CardAction
+  /-- The selected player chooses an existing creature type (CR 205.3m).
+  Number it with `actionId` so `Selector.hasCreatureTypeChosenByAction` can
+  refer to the choice. -/
+  | chooseCreatureType : Selector → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
@@ -1800,6 +1810,13 @@ def leftoverAddAnyColor? : CardAction → Bool
 def leftoverEntersTapped? : List CardAction → Bool
   | [.putOntoBattlefieldInState obj [.tapped]] =>
     obj == .this || obj == .source .this
+  | _ => false
+
+/-- Replacement “as this enters, choose a creature type”: this object's
+controller makes the numbered choice, then it enters (CR 614.12). -/
+def leftoverChooseCreatureTypeAsEnters? : List CardAction → Bool
+  | [.actionId _ (.chooseCreatureType who), .keepReplacedAction] =>
+    who == .controller .this
   | _ => false
 
 /-- Heal all marked damage on this, then perform the replaced action. -/
@@ -2956,7 +2973,8 @@ def leftoverCreaturesYouControlMass? (s : Selector) : Bool :=
     !s.shape.opponentControls &&
     s.shape.powerAtLeast.isNone &&
     s.shape.powerAtMost.isNone &&
-    !s.shape.hasPlusOneCounter
+    !s.shape.hasPlusOneCounter &&
+    !s.shape.chosenCreatureType
 
 /-- Draw N, or draw more when this spell was cast from a graveyard.
 Amass Goblins N, or amass more in that same case. The “instead” branch is
@@ -3294,6 +3312,22 @@ def leftoverLookAtTopReveal? : CardAction → Option (Nat × Array String)
     else none
   | _ => none
 
+/-- You may discard your hand, then draw that many cards. With an enduring
+story, this deals that much damage to each opponent. -/
+def leftoverMayDiscardHandDrawDamageIfStory? : CardAction → Bool
+  | .sequence [
+      .optional (.controller .this)
+        (.actionId id
+          (.discard (.controller .this)
+            (.count (.intersection [.inHand, .owner (.controller .this)])))),
+      .draw (.controller .this) (.count (.wasObjectOfAction id')),
+      .if (.enduringStory (.controller .this))
+        [.dealDamage src (.opponent (.controller .this))
+          (.count (.wasObjectOfAction id''))]
+    ] =>
+    id == id' && id == id'' && leftoverSourceThis src
+  | _ => false
+
 /-- Enters-the-battlefield actions that compile to a named trigger. -/
 def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
   | .createTokens who n parts states =>
@@ -3379,6 +3413,21 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
     ] =>
     if id == id' && leftoverYou who then
       some (TriggeredAbility.onEnterAmassThenAttach n)
+    else none
+  | .sequence [
+      .defineValueVariable power (.greatestPower (.targets tid (.range 0 1) among)),
+      .defineSelectorVariable ctl (.controller (.targetReference tid')),
+      .destroy (.targetReference tid''),
+      .keyword (.variable ctl') (.amass .goblin (.variable power')),
+      .if (.any (.intersection [.variable ctl'', .controller .this]))
+        [.draw (.controller .this) 1]
+    ] =>
+    -- The power and controller are recorded before the destroy, so they are
+    -- the creature's last-known information (CR 608.2h).
+    if tid == tid' && tid == tid'' && power == power' && ctl == ctl' &&
+        ctl == ctl'' && among.shape.otherCreatures && among.shape.mustBePermanent &&
+        !among.shape.sameController && !among.shape.opponentControls then
+      some TriggeredAbility.onEnterDestroyOtherAmassControllerPower
     else none
   | action =>
     match leftoverMillThenSubtypeToHand? action with
@@ -3620,6 +3669,12 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                         if ok then e else continuousEffect none [] asAbility
                       | _ => e
                     | none => continuousEffect none [] asAbility
+                  | .createTokens _ .x parts [] =>
+                    match leftoverTokenKind? parts with
+                    | some kind =>
+                      if asAbility then Effect.abilityCreateTokensX kind
+                      else Effect.createTokensX kind
+                    | none => continuousEffect none [] asAbility
                   | .createTokens _ n parts states =>
                     match leftoverTokenKind? parts, valToNat? n with
                     | some kind, some n =>
@@ -3647,7 +3702,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .keepReplacedAction | .healAllDamage _ =>
                     continuousEffect none [] asAbility
                   | .shuffleIntoOwnersLibrary _ | .lookAt _
-                  | .putOnLibraryBottomInRandomOrder _ =>
+                  | .putOnLibraryBottomInRandomOrder _ | .chooseCreatureType _ =>
                     continuousEffect none [] asAbility
 
 /-- “Choose one or both”: one or two distinct modes (CR 700.2). -/
@@ -4332,6 +4387,14 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
           some (TriggeredAbility.onThisOrAnotherSubtypeEntersCreateTokens st kind n)
       | _, _, _ => none
     else none
+  | .triggered (.or (.enter .this) (.enter among)) action =>
+    match among.shape.anotherSubtypeYouControl with
+    | some st =>
+      if among.shape.types.eqTypes [.creature] && !among.shape.nontoken &&
+          CardAction.leftoverMayDiscardHandDrawDamageIfStory? action then
+        some (TriggeredAbility.onThisOrAnotherSubtypeEntersDiscardHand st)
+      else none
+    | none => none
   | .triggered (.castSpell among) (.tap sel) =>
     if Selector.youCastNoncreatureSpell among &&
         CardAction.leftoverCreatureOrLandTarget? sel then
@@ -4469,6 +4532,8 @@ structure CardFace where
   tapAddAnyColorForInstantOrSorcery : Bool := false
   tapAddOneOf : Array ManaType := #[]
   entersTapped : Bool := false
+  /-- As this enters, its controller chooses a creature type (CR 614.12). -/
+  asEntersChooseCreatureType : Bool := false
   /-- This land enters tapped unless you control an Equipment. -/
   entersTappedUnlessEquipment : Bool := false
   /-- Crew N (CR 702.122). `N` is the number of creatures to tap. -/
@@ -4675,13 +4740,34 @@ def mergeCreaturesYouControlGet (b : CardFace) (p t : Int) : CardFace :=
   | _ =>
     { b with staticAbilities := b.staticAbilities.push (.creaturesYouControlGet p t) }
 
+/-- Creatures this object's controller controls of the creature type chosen
+by an action. -/
+def chosenTypeCreaturesYouControl? : Selector → Bool
+  | .intersection [
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this),
+      .hasCreatureTypeChosenByAction _] => true
+  | _ => false
+
+def mergeChosenTypeCreaturesGet (b : CardFace) (p t : Int) : CardFace :=
+  match b.staticAbilities.back? with
+  | some (.chosenTypeCreaturesGet p0 t0) =>
+    { b with
+      staticAbilities :=
+        b.staticAbilities.pop.push (.chosenTypeCreaturesGet (p0 + p) (t0 + t)) }
+  | _ =>
+    { b with staticAbilities := b.staticAbilities.push (.chosenTypeCreaturesGet p t) }
+
 /-- Integer `addPower` / `addToughness`. Adjacent bonuses on the same objects combine. -/
 def applyIntegerPowerToughness (b : CardFace) (sel : Selector) (p t : Int) : CardFace :=
   match sel with
   | .hostOf .this => pushHostBonus b p t Keywords.none
   | _ =>
     let s := sel.shape
-    if s.other && s.sameController && s.types.eqTypes [.creature] then
+    if chosenTypeCreaturesYouControl? sel then
+      mergeChosenTypeCreaturesGet b p t
+    else if s.other && s.sameController && s.types.eqTypes [.creature] then
       mergeOtherCreaturesGet b sel.includedSubtypes.toArray p t
     else if s.opponentControls && s.types.eqTypes [.creature] then
       mergeOpponentsCreaturesGet b p t
@@ -4976,6 +5062,9 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersTapped? actions then
       { b with entersTapped := true }
+    else if (who == .this || who == .source .this) &&
+        CardAction.leftoverChooseCreatureTypeAsEnters? actions then
+      { b with asEntersChooseCreatureType := true }
     else b
   | .replace (.damage src who) actions =>
     if (who == .this || who == .source .this) && src == .all &&
@@ -5305,6 +5394,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       tapAddAnyColorForInstantOrSorcery := b.tapAddAnyColorForInstantOrSorcery
       tapAddOneOf := b.tapAddOneOf
       entersTapped := b.entersTapped
+      asEntersChooseCreatureType := b.asEntersChooseCreatureType
       entersTappedUnlessEquipment := b.entersTappedUnlessEquipment
       crew := b.crew
       chooseOneOrBoth := b.chooseOneOrBoth
