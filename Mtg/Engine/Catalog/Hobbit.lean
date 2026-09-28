@@ -5118,9 +5118,7 @@ def settleTheWreckageDefinition : TraditionalCardDefinition := .card <|
           .putOntoBattlefieldInState
             (.selected
               (.targetReference 1)
-              (.range
-                (.count (.wasObjectOfAction 1))
-                (.count (.wasObjectOfAction 1)))
+              (.range (.nat 0) (.count (.wasObjectOfAction 1)))
               (.intersection [
                 .inLibrary,
                 .cardType .land,

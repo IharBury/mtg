@@ -3102,7 +3102,8 @@ def leftoverNonDragonThenDragonMana? : CardAction → Option Nat
   | _ => none
 
 /-- Exile every attacking creature the targeted player controls, then that
-player may search for that many basic lands and put them in tapped. -/
+player may search for up to that many basic lands and put them in tapped.
+The player may find fewer, including none (CR 701.19b). -/
 def leftoverExileAttackersSearchBasics? : CardAction → Bool
   | .sequence [
       .actionId id
@@ -3119,16 +3120,14 @@ def leftoverExileAttackersSearchBasics? : CardAction → Bool
             .putOntoBattlefieldInState
               (.selected
                 (.targetReference sid')
-                (.range
-                  (.count (.wasObjectOfAction cid))
-                  (.count (.wasObjectOfAction cid')))
+                (.range (.nat 0) (.count (.wasObjectOfAction cid)))
                 (.intersection [
                   .inLibrary,
                   .cardType .land,
                   .supertype .basic]))
               [.tapped]])
     ] =>
-    id == tid && id == sid && sid == sid' && id == cid && cid == cid' &&
+    id == tid && id == sid && sid == sid' && id == cid &&
       chooser == .targetReference sid
   | _ => false
 

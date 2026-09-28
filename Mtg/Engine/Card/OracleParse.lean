@@ -455,7 +455,8 @@ Currently recognized:
   from among them goes to hand.
 - `Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle.`
   The player is one target. “That many” is how many of those creatures are
-  exiled. That player chooses whether to search. The lands enter tapped.
+  exiled. That player chooses whether to search, and may find any number
+  from zero up to that many (CR 701.19b). The lands enter tapped.
 - `When <this> enters, create a colorless Equipment artifact token named <name> with "<equipped creature gets +P/+T>" and equip {cost}.`
   The token is a colorless Equipment artifact with that name. A zero bonus
   is omitted. `+0/+0` is not an effect.
@@ -2476,7 +2477,8 @@ def topCount? (phrase : String) : Option Nat :=
 
 /-- `Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle.`
 The player is target `n`, and the exile is action `n`. “That many” is how
-many of those creatures are exiled. That player chooses whether to search. -/
+many of those creatures are exiled. That player chooses whether to search,
+and may find any number from zero up to that many (CR 701.19b). -/
 def parseExileAttackersSearchBasics (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   match sentences text with
@@ -2503,7 +2505,7 @@ def parseExileAttackersSearchBasics (text : String) (n : Nat) :
               .putOntoBattlefieldInState
                 (.selected
                   (.targetReference n)
-                  (.range exiled exiled)
+                  (.range (.nat 0) exiled)
                   (.intersection [
                     .inLibrary,
                     .cardType .land,
@@ -7139,9 +7141,7 @@ def parseOracleParts (name : String) (text : String) : Option (List CardPart) :=
           .putOntoBattlefieldInState
             (.selected
               (.targetReference 1)
-              (.range
-                (.count (.wasObjectOfAction 1))
-                (.count (.wasObjectOfAction 1)))
+              (.range (.nat 0) (.count (.wasObjectOfAction 1)))
               (.intersection [
                 .inLibrary,
                 .cardType .land,
