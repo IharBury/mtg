@@ -673,6 +673,12 @@ def sacrificesLegendaryArtifact (costs : List Cost) : Bool :=
       s == .intersection [.permanent, .cardType .artifact, .supertype .legendary]
     | _ => false
 
+/-- Sacrifice one artifact as part of the cost. -/
+def sacrificesArtifact (costs : List Cost) : Bool :=
+  costs.any fun
+    | .sacrificeCount s 1 => s == .intersection [.permanent, .cardType .artifact]
+    | _ => false
+
 /-- Sacrifice another permanent you control of a printed subtype. -/
 def sacrificeAnotherSubtype? : List Cost → Option String
   | [] => none
@@ -1853,6 +1859,13 @@ def leftoverTapPayLifeAddOneOf? (costs : List Cost) (action : CardAction) :
   | [.tapSymbol, .life k] =>
     if k == 0 then none else (leftoverTapAddOneOf? [.tapSymbol] action).map (k, ·)
   | _ => none
+
+/-- This land entered this turn or you control a basic land. -/
+def leftoverEnteredThisTurnOrBasic? : Condition → Bool
+  | .not (.and (.not (.happened (.enter (.source .this)) .turnStart))
+      (.not (.any (.intersection [.permanent, .cardType .land, .supertype .basic, you])))) =>
+    you == .controlled (.controller .this)
+  | _ => false
 
 /-- `A, B, and C`: an English list with a serial comma. -/
 def englishAndList : List String → String
@@ -3406,6 +3419,41 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
         kind == .intersection [.permanent, .cardType .creature] then
       some Effect.chooseTwoDestroyRest
     else none
+  | .sequence [
+      .actionId id (.addManaOfOneColor who syms (.nat 1)),
+      .continuous [.forbid (.spendManaCreatedByAction id' restriction)] .endOfTurn] =>
+    if id != id' || !leftoverYou who || syms != ManaSymbol.anyColor then none
+    else
+      match restriction with
+      | .not (.or (.castSpell (.intersection [.spell, .subtype st]))
+          (.activateAbility (.subtype st'))) =>
+        if st == st' then some (Effect.addAnyColorSpendOnlySubtype st.toString) else none
+      | .not (.castSpell (.intersection [.spell, .cardType .artifact])) =>
+        some Effect.addAnyColorSpendOnlyArtifactSpell
+      | _ => none
+  | .sequence [
+      .actionId id (.addMana who [.colored .blue]),
+      .continuous [.forbid (.spendManaCreatedByAction id'
+        (.castSpell (.intersection [.spell, .not (.cardType .artifact)])))] .endOfTurn] =>
+    if id == id' && leftoverYou who then some Effect.addBlueCantNonartifact else none
+  | .sequence [
+      .actionId lookId (.lookAt (.topOfLibrary who (.nat k))),
+      .optional chooser (.sequence [
+        .actionId revealId
+          (.reveal (.selected picker (.range (.nat 1) (.nat 1))
+            (.intersection [.wasObjectOfAction looked, .subtype st]))),
+        .returnToHand (.wasObjectOfAction revealed)]),
+      .putOnBottomOfLibrary
+        (.intersection [.wasObjectOfAction looked', .not (.wasObjectOfAction revealed')])] =>
+    if k != 0 && lookId == looked && lookId == looked' && revealId == revealed &&
+        revealId == revealed' && leftoverYou who && leftoverYou chooser && leftoverYou picker then
+      some (Effect.lookAtTopRevealSubtype k st.toString)
+    else none
+  | .keyword (.target _ (.intersection [.permanent, .cardType .creature, .subtype st, you]))
+      (.connive (.nat 1)) =>
+    if you == .controlled (.controller .this) then
+      some (Effect.targetSubtypeConnives st.toString)
+    else none
   | _ => none
 
 /-- Sequence leftovers that compile to a named `Effect` without taking
@@ -4000,6 +4048,7 @@ def activatedAbility (costs : List Cost) (action : CardAction)
         sacrificeSource := Cost.sacrificesThis costs
         sacrificeAnotherCreatureOrArtifact := Cost.sacrificesArtifactOrCreature costs
         sacrificeLegendaryArtifact := Cost.sacrificesLegendaryArtifact costs
+        sacrificeArtifact := Cost.sacrificesArtifact costs
         discardSource := Cost.discardsThis costs
         sacrificeAnotherSubtype := Cost.sacrificeAnotherSubtype? costs
         discardACard := Cost.discardsACard costs
@@ -4913,6 +4962,9 @@ structure CardFace where
   tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none
   /-- This enters tapped unless you control a legendary creature. -/
   entersTappedUnlessLegendary : Bool := false
+  /-- `{T}: Add {A} or {B}` usable only if this land entered this turn or you
+  control a basic land. -/
+  tapAddOneOfIfEnteredOrBasic : Array ManaType := #[]
 deriving Inhabited
 
 namespace CardFace
@@ -5668,6 +5720,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
             activatedAbilities :=
               b.activatedAbilities.push (Ability.activatedAbility costs action) }
   | .activatedIf cond costs action =>
+    match (if CardAction.leftoverEnteredThisTurnOrBasic? cond then
+        CardAction.leftoverTapAddOneOf? costs action else none) with
+    | some types => { b with tapAddOneOfIfEnteredOrBasic := types }
+    | none =>
     match (Ability.activatedIf cond costs action).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
@@ -5889,6 +5945,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       tapAddRestricted := b.tapAddRestricted
       tapPayLifeAddOneOf := b.tapPayLifeAddOneOf
       entersTappedUnlessLegendary := b.entersTappedUnlessLegendary
+      tapAddOneOfIfEnteredOrBasic := b.tapAddOneOfIfEnteredOrBasic
       adventure := adventure
       saga :=
         if b.sagaChapters.isEmpty then none

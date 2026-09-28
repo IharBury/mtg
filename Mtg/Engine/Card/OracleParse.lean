@@ -522,6 +522,11 @@ Currently recognized:
 - `Choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands.`
 - `Draw cards equal to the greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield.`
 - `<this> gets +X/+0 until end of turn, where X is the greatest power among creatures you control.`
+- `Add one mana of any color. Spend this mana only to cast a <subtype> spell or to activate an ability of a <subtype> source.`
+  Also `Spend this mana only to cast an <type> spell.` and `Add <mana>. This mana can't be spent to cast a non<type> spell.` (CR 106.6).
+- `{T}: Add {A} or {B}. Activate only if this land entered this turn or if you control a basic land.`
+- `Look at the top <count> cards of your library. You may reveal a <subtype> card from among them and put it into your hand. Put the rest on the bottom of your library in any order.`
+  The owner orders the rest (CR 401.4).
 -/
 
 namespace Mtg.Engine
@@ -4497,6 +4502,7 @@ def objectModifier? (w : String) : Option Selector :=
   | "attacking" => some (.attacking .all)
   | "tapped" => some .tapped
   | "legendary" => some (.supertype .legendary)
+  | "basic" => some (.supertype .basic)
   | "nontoken" => some (.not .token)
   | "untapped" => some (.not .tapped)
   | "nonlegendary" => some (.not (.supertype .legendary))
@@ -5770,6 +5776,70 @@ def parseAddManaSpendOnlySubtypes (ss : List String) (n : Nat) :
     | _, _ => none
   | _ => none
 
+/-- `Add one mana of any color. Spend this mana only to cast a Hero spell or to
+activate an ability of a Hero source.`, `… only to cast an artifact spell.`,
+and `Add {U}. This mana can't be spent to cast a nonartifact spell.` The mana
+is action `n`; the restricted spending is forbidden (CR 106.6). -/
+def parseAddManaSpendRestricted (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [add, spend] =>
+    let a := normSentence add
+    let s := normSentence spend
+    let add? : Option CardAction :=
+      if a == "add one mana of any color" then
+        some (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1)
+      else (after? a "add ").bind nonemptyMana? |>.map (.addMana (.controller .this) ·)
+    let sourceSubtype? : Option Trigger :=
+      (between? s "spend this mana only to cast a " " source").bind
+          (split2? · " spell or to activate an ability of a ") |>.bind fun (k, k') =>
+        if k != k' then none
+        else (subtypeOfOracle? k).map fun st =>
+          .not (.or (.castSpell (.intersection [.spell, .subtype st]))
+            (.activateAbility (.subtype st)))
+    let spellType? : Option Trigger :=
+      (between? s "spend this mana only to cast an " " spell").bind typeOfOracle? |>.map fun t =>
+        .not (.castSpell (.intersection [.spell, .cardType t]))
+    let nonType? : Option Trigger :=
+      (between? s "this mana can't be spent to cast a non" " spell").bind typeOfOracle? |>.map
+        fun t => .castSpell (.intersection [.spell, .not (.cardType t)])
+    match add?, sourceSubtype? <|> spellType? <|> nonType? with
+    | some addAction, some forbidden =>
+      some ([.sequence [
+        .actionId n addAction,
+        .continuous [.forbid (.spendManaCreatedByAction n forbidden)] .endOfTurn]], n + 1)
+    | _, _ => none
+  | _ => none
+
+/-- `Look at the top three cards of your library. You may reveal a Hero card
+from among them and put it into your hand. Put the rest on the bottom of your
+library in any order.` The looked-at cards are action `n`; the revealed card is
+action `n + 1`. The owner orders the rest (CR 401.4). -/
+def parseLookAtTopRevealAnyOrder (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [look, reveal, rest] =>
+    if normSentence rest != "put the rest on the bottom of your library in any order" then none
+    else
+      match (between? (normSentence look) "look at the top " " of your library").bind
+          parseCardCount,
+        (between? (normSentence reveal) "you may reveal "
+          " card from among them and put it into your hand").bind dropArticle? |>.bind
+          subtypeOfOracle? with
+      | some k, some st =>
+        let looked := Selector.wasObjectOfAction n
+        let revealed := Selector.wasObjectOfAction (n + 1)
+        some ([
+          .actionId n (.lookAt (.topOfLibrary (.controller .this) (.nat k))),
+          .optional (.controller .this) (.sequence [
+            .actionId (n + 1)
+              (.reveal (.selected (.controller .this) (.range 1 1)
+                (.intersection [looked, .subtype st]))),
+            .returnToHand revealed]),
+          .putOnBottomOfLibrary (.intersection [looked, .not revealed])], n + 2)
+      | _, _ => none
+  | _ => none
+
 /-- `Choose a creature type. Create a Treasure token for each creature you
 control of that type.` The choice is action `n` (CR 205.3m); each counted
 creature is variable `n + 1`. -/
@@ -5813,6 +5883,8 @@ def catalogActionsFromText (cardName text : String) (n : Nat) :
     parseDestroyAllGainLifePer ss n <|>
     parseChooseTypeReturnOthers ss n <|>
     parseAddManaSpendOnlySubtypes ss n <|>
+    parseAddManaSpendRestricted ss n <|>
+    parseLookAtTopRevealAnyOrder ss n <|>
     (match ss with
       | first :: rest =>
         (catalogSentenceActions cardName [first] n).bind fun (a, n1) =>
@@ -6119,6 +6191,9 @@ def parseCatalogCosts (cardName s : String) : Option (List Cost) :=
 or `Activate only if you control a legendary creature.` -/
 def parseActivateOnlyIf (s : String) : Option Condition :=
   ((after? (normSentence s) "activate only if you control ").bind youControlCondition?) <|>
+  ((after? (normSentence s) "activate only if this land entered this turn or if you control ").bind
+    youControlCondition? |>.map fun cond =>
+      .not (.and (.not (.happened (.enter (.source .this)) .turnStart)) (.not cond))) <|>
   (between? (normSentence s) "activate only if there are " " in your graveyard").bind
     fun rest =>
       (split2? rest " or more ").bind fun (countText, cards) =>
@@ -10225,5 +10300,47 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
     (.activated [.tapSymbol] (.playerSelectAction (.controller .this) (.range 1 1)
       [.addMana (.controller .this) [.colored .green], .addMana (.controller .this) [.colored .blue]]))))]
 #guard parseOracleParts (name := "") "Other Elves you control have \"Flying.\"" == none
+#guard parseOracleParts (name := "")
+  "{T}: Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source." ==
+  some [.ability (.activated [.tapSymbol] (.sequence [
+    .actionId 1 (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1),
+    .continuous [.forbid (.spendManaCreatedByAction 1 (.not (.or
+      (.castSpell (.intersection [.spell, .subtype .hero])) (.activateAbility (.subtype .hero)))))]
+      .endOfTurn]))]
+#guard parseOracleParts (name := "")
+  "{T}: Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Villain source." ==
+  none
+#guard parseOracleParts (name := "")
+  "{T}: Add one mana of any color. Spend this mana only to cast an artifact spell." ==
+  some [.ability (.activated [.tapSymbol] (.sequence [
+    .actionId 1 (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1),
+    .continuous [.forbid (.spendManaCreatedByAction 1
+      (.not (.castSpell (.intersection [.spell, .cardType .artifact]))))] .endOfTurn]))]
+#guard parseOracleParts (name := "")
+  "{T}: Add {U}. This mana can't be spent to cast a nonartifact spell." ==
+  some [.ability (.activated [.tapSymbol] (.sequence [
+    .actionId 1 (.addMana (.controller .this) [.colored .blue]),
+    .continuous [.forbid (.spendManaCreatedByAction 1
+      (.castSpell (.intersection [.spell, .not (.cardType .artifact)])))] .endOfTurn]))]
+#guard parseOracleParts (name := "")
+  "{T}: Add {B} or {R}. Activate only if this land entered this turn or if you control a basic land." ==
+  some [.ability (.activatedIf
+    (.not (.and (.not (.happened (.enter (.source .this)) .turnStart))
+      (.not (.any (.intersection [.permanent, .cardType .land, .supertype .basic, youControl])))))
+    [.tapSymbol]
+    (.playerSelectAction (.controller .this) (.range 1 1)
+      [.addMana (.controller .this) [.colored .black], .addMana (.controller .this) [.colored .red]]))]
+#guard parseOracleParts (name := "")
+  "{4}, {T}: Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order." ==
+  some [.ability (.activated [.mana [.generic 4], .tapSymbol] (.sequence [
+    .actionId 1 (.lookAt (.topOfLibrary (.controller .this) 3)),
+    .optional (.controller .this) (.sequence [
+      .actionId 2 (.reveal (.selected (.controller .this) (.range 1 1)
+        (.intersection [.wasObjectOfAction 1, .subtype .hero]))),
+      .returnToHand (.wasObjectOfAction 2)]),
+    .putOnBottomOfLibrary (.intersection [.wasObjectOfAction 1, .not (.wasObjectOfAction 2)])]))]
+#guard parseOracleParts (name := "")
+  "{4}, {T}: Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in a random order." ==
+  none
 
 end Mtg.Engine
