@@ -212,11 +212,49 @@ def boroughBackupDefinition : TraditionalCardDefinition := .card <|
 def boroughBackup : CardDef :=
   boroughBackupDefinition.toCardDef (oracleText := boroughBackupOracle)
 
+/-- Oracle text for Brave Brawler. -/
+def braveBrawlerOracle : String :=
+  "Lifelink\nPower-up — {4}{W}: Put two +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)"
+
+def braveBrawlerDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Brave Brawler",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .subtype .human,
+    .subtype .warrior,
+    .subtype .hero,
+    .power 2,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Brave Brawler") (manaCost := [.generic 1, .mono .white]) braveBrawlerOracle).get!
+
+#guard braveBrawlerDefinition == .card [
+  .name "Brave Brawler",
+  .manaCost [.generic 1, .mono .white],
+  .type .creature,
+  .subtype .human,
+  .subtype .warrior,
+  .subtype .hero,
+  .power 2,
+  .toughness 1,
+  .ability (.keyword .lifelink),
+  .ability
+    (.abilityId
+      1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 4, .mono .white]]
+        (.putCounter (.source .this) .plusOnePlusOne 2)
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 1, .mono .white]]])))]
+
 def braveBrawler : CardDef :=
-  creature "Brave Brawler" (ManaCost.ofGenericAndColor 1 .white) #["Human", "Warrior", "Hero"] 2 1
-    (oracleText := "Lifelink\nPower-up — {4}{W}: Put two +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
-    (keywords := Keyword.lifelink)
-    (activatedAbilities := #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGenericAndColor 4 .white)])
+  braveBrawlerDefinition.toCardDef (oracleText := braveBrawlerOracle)
+
+#guard braveBrawler.oracleText == braveBrawlerOracle
+#guard braveBrawler.keywords == Keyword.lifelink
+#guard braveBrawler.activatedAbilities == #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGenericAndColor 4 .white)]
 
 def captainAmericaSuperSoldier : CardDef :=
   legendaryCreature "Captain America, Super-Soldier" (ManaCost.ofGenericAndColors 1 [.white, .white]) #["Human", "Soldier", "Hero"] 3 2
@@ -244,10 +282,47 @@ def captainMarVellSpaceBorn : CardDef :=
     (keywords := (Keyword.flying).merge Keyword.vigilance)
     (staticAbilities := #[StaticAbility.flashIfOpponentCastThisTurn])
 
+/-- Oracle text for Colleen Wing, Street Samurai. -/
+def colleenWingStreetSamuraiOracle : String :=
+  "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1. (Look at the top card of your library. You may put that card on the bottom.)"
+
+def colleenWingStreetSamuraiDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Colleen Wing, Street Samurai",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .samurai,
+    .subtype .hero,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Colleen Wing, Street Samurai") colleenWingStreetSamuraiOracle).get!
+
+#guard colleenWingStreetSamuraiDefinition == .card [
+  .name "Colleen Wing, Street Samurai",
+  .manaCost [.generic 1, .mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .samurai,
+  .subtype .hero,
+  .power 2,
+  .toughness 2,
+  .ability
+    (.triggered
+      (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
+      (.if
+        (.targetsIncludeAny
+          .this
+          (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)]))
+        [.putCounter (.source .this) .plusOnePlusOne 1, .scry (.controller .this) (.nat 1)]))]
+
 def colleenWingStreetSamurai : CardDef :=
-  legendaryCreature "Colleen Wing, Street Samurai" (ManaCost.ofGenericAndColor 1 .white) #["Human", "Samurai", "Hero"] 2 2
-    (oracleText := "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1. (Look at the top card of your library. You may put that card on the bottom.)")
-    (triggeredAbilities := #[.onCasting Effect.castingPlusOneScry])
+  colleenWingStreetSamuraiDefinition.toCardDef (oracleText := colleenWingStreetSamuraiOracle)
+
+#guard colleenWingStreetSamurai.oracleText == colleenWingStreetSamuraiOracle
+#guard colleenWingStreetSamurai.triggeredAbilities == #[.onCasting Effect.castingPlusOneScry]
 
 def crowdOfTrueBelievers : CardDef :=
   creature "Crowd of True Believers" (ManaCost.ofColor .white) #["Human", "Citizen"] 1 2
@@ -768,11 +843,49 @@ def whiteWidowFreeAgentDefinition : TraditionalCardDefinition := .card <|
 def whiteWidowFreeAgent : CardDef :=
   whiteWidowFreeAgentDefinition.toCardDef (oracleText := whiteWidowFreeAgentOracle)
 
+/-- Oracle text for Aerial Doombot. -/
+def aerialDoombotOracle : String :=
+  "Flying\nPower-up — {5}{U}: Put three +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)"
+
+def aerialDoombotDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Aerial Doombot",
+    .manaCost [.mono .blue],
+    .type .artifact,
+    .type .creature,
+    .subtype .robot,
+    .subtype .villain,
+    .power 1,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Aerial Doombot") (manaCost := [.mono .blue]) aerialDoombotOracle).get!
+
+#guard aerialDoombotDefinition == .card [
+  .name "Aerial Doombot",
+  .manaCost [.mono .blue],
+  .type .artifact,
+  .type .creature,
+  .subtype .robot,
+  .subtype .villain,
+  .power 1,
+  .toughness 1,
+  .ability (.keyword .flying),
+  .ability
+    (.abilityId
+      1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 5, .mono .blue]]
+        (.putCounter (.source .this) .plusOnePlusOne 3)
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.mono .blue]]])))]
+
 def aerialDoombot : CardDef :=
-  artifactCreature "Aerial Doombot" (ManaCost.ofColor .blue) #["Robot", "Villain"] 1 1
-    (oracleText := "Flying\nPower-up — {5}{U}: Put three +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
-    (keywords := Keyword.flying)
-    (activatedAbilities := #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 3) (ManaCost.ofGenericAndColor 5 .blue)])
+  aerialDoombotDefinition.toCardDef (oracleText := aerialDoombotOracle)
+
+#guard aerialDoombot.oracleText == aerialDoombotOracle
+#guard aerialDoombot.keywords == Keyword.flying
+#guard aerialDoombot.activatedAbilities == #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 3) (ManaCost.ofGenericAndColor 5 .blue)]
 
 /-- Oracle text for A.I.M. Scientists. -/
 def aIMScientistsOracle : String :=
@@ -903,10 +1016,46 @@ def attumaAtlanteanWarlordDefinition : TraditionalCardDefinition := .card <|
 def attumaAtlanteanWarlord : CardDef :=
   attumaAtlanteanWarlordDefinition.toCardDef (oracleText := attumaAtlanteanWarlordOracle)
 
+/-- Oracle text for Bold Biochemist. -/
+def boldBiochemistOracle : String :=
+  "Power-up — {5}{U}: Put a +1/+1 counter on this creature and draw two cards. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)"
+
+def boldBiochemistDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Bold Biochemist",
+    .manaCost [.generic 1, .mono .blue],
+    .type .creature,
+    .subtype .human,
+    .subtype .scientist,
+    .power 1,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Bold Biochemist") (manaCost := [.generic 1, .mono .blue]) boldBiochemistOracle).get!
+
+#guard boldBiochemistDefinition == .card [
+  .name "Bold Biochemist",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .scientist,
+  .power 1,
+  .toughness 3,
+  .ability
+    (.abilityId
+      1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 5, .mono .blue]]
+        (.sequence
+          [.putCounter (.source .this) .plusOnePlusOne 1, .draw (.controller .this) (.nat 2)])
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 1, .mono .blue]]])))]
+
 def boldBiochemist : CardDef :=
-  creature "Bold Biochemist" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Scientist"] 1 3
-    (oracleText := "Power-up — {5}{U}: Put a +1/+1 counter on this creature and draw two cards. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
-    (activatedAbilities := #[activated (Effect.plusOneAndDraw 1 2) (ManaCost.ofGenericAndColor 5 .blue) (powerUp := true)])
+  boldBiochemistDefinition.toCardDef (oracleText := boldBiochemistOracle)
+
+#guard boldBiochemist.oracleText == boldBiochemistOracle
+#guard boldBiochemist.activatedAbilities == #[activated (Effect.plusOneAndDraw 1 2) (ManaCost.ofGenericAndColor 5 .blue) (powerUp := true)]
 
 def bruceBanner : CardDef :=
   legendaryCreature "Bruce Banner" (ManaCost.ofColor .blue) #["Human", "Scientist", "Hero"] 1 1
@@ -1874,11 +2023,52 @@ def moonstoneHarshMistressDefinition : TraditionalCardDefinition := .card <|
 def moonstoneHarshMistress : CardDef :=
   moonstoneHarshMistressDefinition.toCardDef (oracleText := moonstoneHarshMistressOracle)
 
+/-- Oracle text for Ninja of the Hand. -/
+def ninjaOfTheHandOracle : String :=
+  "Deathtouch\nPower-up — {4}{B}: Each opponent discards a card. Put a +1/+1 counter on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)"
+
+def ninjaOfTheHandDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Ninja of the Hand",
+    .manaCost [.generic 2, .mono .black],
+    .type .creature,
+    .subtype .human,
+    .subtype .ninja,
+    .subtype .villain,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Ninja of the Hand") (manaCost := [.generic 2, .mono .black]) ninjaOfTheHandOracle).get!
+
+#guard ninjaOfTheHandDefinition == .card [
+  .name "Ninja of the Hand",
+  .manaCost [.generic 2, .mono .black],
+  .type .creature,
+  .subtype .human,
+  .subtype .ninja,
+  .subtype .villain,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .deathtouch),
+  .ability
+    (.abilityId
+      1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 4, .mono .black]]
+        (.sequence
+          [
+            .discard (.opponent (.controller .this)) (.nat 1),
+            .putCounter (.source .this) .plusOnePlusOne 1])
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 2, .mono .black]]])))]
+
 def ninjaOfTheHand : CardDef :=
-  creature "Ninja of the Hand" (ManaCost.ofGenericAndColor 2 .black) #["Human", "Ninja", "Villain"] 2 2
-    (oracleText := "Deathtouch\nPower-up — {4}{B}: Each opponent discards a card. Put a +1/+1 counter on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
-    (keywords := Keyword.deathtouch)
-    (activatedAbilities := #[activated (Effect.eachOppDiscardThenPlusOne) (ManaCost.ofGenericAndColor 4 .black) (powerUp := true)])
+  ninjaOfTheHandDefinition.toCardDef (oracleText := ninjaOfTheHandOracle)
+
+#guard ninjaOfTheHand.oracleText == ninjaOfTheHandOracle
+#guard ninjaOfTheHand.keywords == Keyword.deathtouch
+#guard ninjaOfTheHand.activatedAbilities == #[activated (Effect.eachOppDiscardThenPlusOne) (ManaCost.ofGenericAndColor 4 .black) (powerUp := true)]
 
 /-- Oracle text for Project Deathlok Soldier. -/
 def projectDeathlokSoldierOracle : String :=
@@ -2123,11 +2313,54 @@ def tooEvilToStayDead : CardDef :=
     (teamwork := some 4)
     (spellEffect := some (Effect.returnGyCreatureMvAtMostOrAny 4))
 
+/-- Oracle text for Unliving Legionnaire. -/
+def unlivingLegionnaireOracle : String :=
+  "Flying\nPower-up — {5}{B}{B}: Return up to one target creature card from your graveyard to your hand. Put two +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)"
+
+def unlivingLegionnaireDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Unliving Legionnaire",
+    .manaCost [.generic 3, .mono .black],
+    .type .creature,
+    .subtype .vampire,
+    .subtype .villain,
+    .power 3,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Unliving Legionnaire") (manaCost := [.generic 3, .mono .black]) unlivingLegionnaireOracle).get!
+
+#guard unlivingLegionnaireDefinition == .card [
+  .name "Unliving Legionnaire",
+  .manaCost [.generic 3, .mono .black],
+  .type .creature,
+  .subtype .vampire,
+  .subtype .villain,
+  .power 3,
+  .toughness 2,
+  .ability (.keyword .flying),
+  .ability
+    (.abilityId
+      2
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 2) .gameStart)
+        [.mana [.generic 5, .mono .black, .mono .black]]
+        (.sequence
+          [
+            .returnToHand
+              (.targets
+                1
+                (.range (.nat 0) (.nat 1))
+                (.intersection [.inGraveyard, .cardType .creature, .owner (.controller .this)])),
+            .putCounter (.source .this) .plusOnePlusOne 2])
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 3, .mono .black]]])))]
+
 def unlivingLegionnaire : CardDef :=
-  creature "Unliving Legionnaire" (ManaCost.ofGenericAndColor 3 .black) #["Vampire", "Villain"] 3 2
-    (oracleText := "Flying\nPower-up — {5}{B}{B}: Return up to one target creature card from your graveyard to your hand. Put two +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
-    (keywords := Keyword.flying)
-    (activatedAbilities := #[activated (Effect.returnGyCreatureThenPlusOne 2) (ManaCost.ofGenericAndColors 5 [.black, .black]) (powerUp := true)])
+  unlivingLegionnaireDefinition.toCardDef (oracleText := unlivingLegionnaireOracle)
+
+#guard unlivingLegionnaire.oracleText == unlivingLegionnaireOracle
+#guard unlivingLegionnaire.keywords == Keyword.flying
+#guard unlivingLegionnaire.activatedAbilities == #[activated (Effect.returnGyCreatureThenPlusOne 2) (ManaCost.ofGenericAndColors 5 [.black, .black]) (powerUp := true)]
 
 /-- Oracle text for Visions of Villainy. -/
 def visionsOfVillainyOracle : String :=
@@ -2414,12 +2647,57 @@ def hULKSMASH : CardDef :=
     (spellModes := #[(Effect.destroyNoncreatureArtifact), (Effect.creatureYouControlDealsPowerToOppCreature)])
     (chooseBothIfTeamwork := true)
 
+/-- Oracle text for Human Torch, Johnny Storm. -/
+def humanTorchJohnnyStormOracle : String :=
+  "Flying\nWhenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent.\nPower-up — {6}{R}: Put three +1/+1 counters on Human Torch. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)"
+
+def humanTorchJohnnyStormDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Human Torch, Johnny Storm",
+    .manaCost [.generic 2, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .hero,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Human Torch, Johnny Storm") (manaCost := [.generic 2, .mono .red]) humanTorchJohnnyStormOracle).get!
+
+#guard humanTorchJohnnyStormDefinition == .card [
+  .name "Human Torch, Johnny Storm",
+  .manaCost [.generic 2, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .hero,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .flying),
+  .ability
+    (.triggered
+      (.draw (.controller .this) .all)
+      (.if
+        (.any
+          (.intersection [.not .this, .permanent, .subtype .hero, .controlled (.controller .this)]))
+        [.dealDamage .this (.target 1 (.opponent (.controller .this))) (.nat 1)])),
+  .ability
+    (.abilityId
+      2
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 2) .gameStart)
+        [.mana [.generic 6, .mono .red]]
+        (.putCounter (.source .this) .plusOnePlusOne 3)
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 2, .mono .red]]])))]
+
 def humanTorchJohnnyStorm : CardDef :=
-  legendaryCreature "Human Torch, Johnny Storm" (ManaCost.ofGenericAndColor 2 .red) #["Human", "Hero"] 2 2
-    (oracleText := "Flying\nWhenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent.\nPower-up — {6}{R}: Put three +1/+1 counters on Human Torch. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onResource Effect.resourceDrawIfAnotherHeroDamage])
-    (activatedAbilities := #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 3) (ManaCost.ofGenericAndColor 6 .red)])
+  humanTorchJohnnyStormDefinition.toCardDef (oracleText := humanTorchJohnnyStormOracle)
+
+#guard humanTorchJohnnyStorm.oracleText == humanTorchJohnnyStormOracle
+#guard humanTorchJohnnyStorm.keywords == Keyword.flying
+#guard humanTorchJohnnyStorm.triggeredAbilities == #[.onResource Effect.resourceDrawIfAnotherHeroDamage]
+#guard humanTorchJohnnyStorm.activatedAbilities == #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 3) (ManaCost.ofGenericAndColor 6 .red)]
 
 /-- Oracle text for HYDRA Assault Robot. -/
 def hYDRAAssaultRobotOracle : String :=
@@ -2862,11 +3140,47 @@ def visionOfLoveDefinition : TraditionalCardDefinition := .card <|
 def visionOfLove : CardDef :=
   visionOfLoveDefinition.toCardDef (oracleText := visionOfLoveOracle)
 
+/-- Oracle text for Volcanic Villain. -/
+def volcanicVillainOracle : String :=
+  "Haste\nPower-up — {5}{R}: Put two +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)"
+
+def volcanicVillainDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Volcanic Villain",
+    .manaCost [.generic 2, .mono .red],
+    .type .creature,
+    .subtype .elemental,
+    .subtype .villain,
+    .power 3,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Volcanic Villain") (manaCost := [.generic 2, .mono .red]) volcanicVillainOracle).get!
+
+#guard volcanicVillainDefinition == .card [
+  .name "Volcanic Villain",
+  .manaCost [.generic 2, .mono .red],
+  .type .creature,
+  .subtype .elemental,
+  .subtype .villain,
+  .power 3,
+  .toughness 2,
+  .ability (.keyword .haste),
+  .ability
+    (.abilityId
+      1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 5, .mono .red]]
+        (.putCounter (.source .this) .plusOnePlusOne 2)
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 2, .mono .red]]])))]
+
 def volcanicVillain : CardDef :=
-  creature "Volcanic Villain" (ManaCost.ofGenericAndColor 2 .red) #["Elemental", "Villain"] 3 2
-    (oracleText := "Haste\nPower-up — {5}{R}: Put two +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
-    (keywords := Keyword.haste)
-    (activatedAbilities := #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGenericAndColor 5 .red)])
+  volcanicVillainDefinition.toCardDef (oracleText := volcanicVillainOracle)
+
+#guard volcanicVillain.oracleText == volcanicVillainOracle
+#guard volcanicVillain.keywords == Keyword.haste
+#guard volcanicVillain.activatedAbilities == #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGenericAndColor 5 .red)]
 
 def wonderManHollywoodHero : CardDef :=
   legendaryCreature "Wonder Man, Hollywood Hero" (ManaCost.ofGenericAndColors 3 [.red, .red]) #["Human", "Performer", "Hero"] 4 4
@@ -3019,10 +3333,57 @@ def hellcatUndyingVigilante : CardDef :=
     (keywords := Keyword.haste)
     (triggeredAbilities := #[.onDeath Effect.deathHellcatReturn])
 
+/-- Oracle text for Hercules, Prince of Power. -/
+def herculesPrinceOfPowerOracle : String :=
+  "Power-up — {4}{G}: Put a +1/+1 counter on Hercules. He gains vigilance, indestructible, and haste until end of turn. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)"
+
+def herculesPrinceOfPowerDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Hercules, Prince of Power",
+    .manaCost [.generic 2, .mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .demigod,
+    .subtype .warrior,
+    .subtype .hero,
+    .power 3,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Hercules, Prince of Power") (manaCost := [.generic 2, .mono .green]) herculesPrinceOfPowerOracle).get!
+
+#guard herculesPrinceOfPowerDefinition == .card [
+  .name "Hercules, Prince of Power",
+  .manaCost [.generic 2, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .demigod,
+  .subtype .warrior,
+  .subtype .hero,
+  .power 3,
+  .toughness 3,
+  .ability
+    (.abilityId
+      1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 4, .mono .green]]
+        (.sequence
+          [
+            .putCounter (.source .this) .plusOnePlusOne 1,
+            .continuous
+              [
+                .gainAbility (.source .this) (.keyword .vigilance),
+                .gainAbility (.source .this) (.keyword .indestructible),
+                .gainAbility (.source .this) (.keyword .haste)]
+              .endOfTurn])
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 2, .mono .green]]])))]
+
 def herculesPrinceOfPower : CardDef :=
-  legendaryCreature "Hercules, Prince of Power" (ManaCost.ofGenericAndColor 2 .green) #["Demigod", "Warrior", "Hero"] 3 3
-    (oracleText := "Power-up — {4}{G}: Put a +1/+1 counter on Hercules. He gains vigilance, indestructible, and haste until end of turn. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)")
-    (activatedAbilities := #[activated (Effect.plusOneAndGrant ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste)) (ManaCost.ofGenericAndColor 4 .green) (powerUp := true)])
+  herculesPrinceOfPowerDefinition.toCardDef (oracleText := herculesPrinceOfPowerOracle)
+
+#guard herculesPrinceOfPower.oracleText == herculesPrinceOfPowerOracle
+#guard herculesPrinceOfPower.activatedAbilities == #[activated (Effect.plusOneAndGrant ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste)) (ManaCost.ofGenericAndColor 4 .green) (powerUp := true)]
 
 def heroicFeast : CardDef :=
   enchantment "Heroic Feast" (ManaCost.ofGenericAndColor 2 .green)
@@ -3063,11 +3424,68 @@ def moleManMoloidMaster : CardDef :=
     (staticAbilities := #[StaticAbility.mayPlayLandsFromGraveyard])
     (triggeredAbilities := #[.onLandYouControlEntersCreateTokens .moloid 1])
 
+/-- Oracle text for Pet Avengers. -/
+def petAvengersOracle : String :=
+  "Reach\nPower-up — {6}{G}: Put a +1/+1 counter on this creature and create a 3/2 white Hero creature token with vigilance. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)"
+
+def petAvengersDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Pet Avengers",
+    .manaCost [.generic 3, .mono .green],
+    .type .creature,
+    .subtype .dragon,
+    .subtype .cat,
+    .subtype .dog,
+    .subtype .bird,
+    .subtype .frog,
+    .subtype .hero,
+    .power 4,
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Pet Avengers") (manaCost := [.generic 3, .mono .green]) petAvengersOracle).get!
+
+#guard petAvengersDefinition == .card [
+  .name "Pet Avengers",
+  .manaCost [.generic 3, .mono .green],
+  .type .creature,
+  .subtype .dragon,
+  .subtype .cat,
+  .subtype .dog,
+  .subtype .bird,
+  .subtype .frog,
+  .subtype .hero,
+  .power 4,
+  .toughness 4,
+  .ability (.keyword .reach),
+  .ability
+    (.abilityId
+      1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 6, .mono .green]]
+        (.sequence
+          [
+            .putCounter (.source .this) .plusOnePlusOne 1,
+            .createTokens
+              (.controller .this)
+              (.nat 1)
+              [
+                .type .creature,
+                .subtype .hero,
+                .colorIndicator [.white],
+                .power 3,
+                .toughness 2,
+                .ability (.keyword .vigilance)]
+              []])
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 3, .mono .green]]])))]
+
 def petAvengers : CardDef :=
-  creature "Pet Avengers" (ManaCost.ofGenericAndColor 3 .green) #["Dragon", "Cat", "Dog", "Bird", "Frog", "Hero"] 4 4
-    (oracleText := "Reach\nPower-up — {6}{G}: Put a +1/+1 counter on this creature and create a 3/2 white Hero creature token with vigilance. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
-    (keywords := Keyword.reach)
-    (activatedAbilities := #[activated (Effect.plusOneAndCreateTokens 1 .hero32vigilance) (ManaCost.ofGenericAndColor 6 .green) (powerUp := true)])
+  petAvengersDefinition.toCardDef (oracleText := petAvengersOracle)
+
+#guard petAvengers.oracleText == petAvengersOracle
+#guard petAvengers.keywords == Keyword.reach
+#guard petAvengers.activatedAbilities == #[activated (Effect.plusOneAndCreateTokens 1 .hero32vigilance) (ManaCost.ofGenericAndColor 6 .green) (powerUp := true)]
 
 def powerfulBroker : CardDef :=
   creature "Powerful Broker" (ManaCost.ofGenericAndColor 2 .green) #["Human", "Villain"] 3 3
@@ -3223,11 +3641,49 @@ def savageLandDinosaurDefinition : TraditionalCardDefinition := .card <|
 def savageLandDinosaur : CardDef :=
   savageLandDinosaurDefinition.toCardDef (oracleText := savageLandDinosaurOracle)
 
+/-- Oracle text for Serpent Specialist. -/
+def serpentSpecialistOracle : String :=
+  "Deathtouch\nPower-up — {3}{G}: Put two +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)"
+
+def serpentSpecialistDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Serpent Specialist",
+    .manaCost [.mono .green],
+    .type .creature,
+    .subtype .human,
+    .subtype .snake,
+    .subtype .villain,
+    .power 1,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Serpent Specialist") (manaCost := [.mono .green]) serpentSpecialistOracle).get!
+
+#guard serpentSpecialistDefinition == .card [
+  .name "Serpent Specialist",
+  .manaCost [.mono .green],
+  .type .creature,
+  .subtype .human,
+  .subtype .snake,
+  .subtype .villain,
+  .power 1,
+  .toughness 1,
+  .ability (.keyword .deathtouch),
+  .ability
+    (.abilityId
+      1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 3, .mono .green]]
+        (.putCounter (.source .this) .plusOnePlusOne 2)
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.mono .green]]])))]
+
 def serpentSpecialist : CardDef :=
-  creature "Serpent Specialist" (ManaCost.ofColor .green) #["Human", "Snake", "Villain"] 1 1
-    (oracleText := "Deathtouch\nPower-up — {3}{G}: Put two +1/+1 counters on this creature. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
-    (keywords := Keyword.deathtouch)
-    (activatedAbilities := #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGenericAndColor 3 .green)])
+  serpentSpecialistDefinition.toCardDef (oracleText := serpentSpecialistOracle)
+
+#guard serpentSpecialist.oracleText == serpentSpecialistOracle
+#guard serpentSpecialist.keywords == Keyword.deathtouch
+#guard serpentSpecialist.activatedAbilities == #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGenericAndColor 3 .green)]
 
 def shangChiMasterOfKungFu : CardDef :=
   legendaryCreature "Shang-Chi, Master of Kung Fu" (ManaCost.ofGenericAndColor 1 .green) #["Human", "Warrior", "Hero"] 2 2
@@ -3235,11 +3691,57 @@ def shangChiMasterOfKungFu : CardDef :=
     (staticAbilities := #[StaticAbility.activateCreaturesAsThoughHaste])
     (activatedAbilities := #[activated (Effect.addTwoAnyColorCreatureSources) (ManaCost.empty) (tap := true)])
 
+/-- Oracle text for She-Hulk, Jade Defender. -/
+def sheHulkJadeDefenderOracle : String :=
+  "Reach, trample\nPower-up — {4}{G}{G}: Destroy up to one target artifact or enchantment. Put a +1/+1 counter on She-Hulk. (Activate each power-up ability only once. Reduce the cost by her mana cost if she entered this turn.)"
+
+def sheHulkJadeDefenderDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "She-Hulk, Jade Defender",
+    .manaCost [.generic 3, .mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .gamma,
+    .subtype .hero,
+    .power 4,
+    .toughness 4
+  ] ++ (parseOracleParts (name := "She-Hulk, Jade Defender") (manaCost := [.generic 3, .mono .green]) sheHulkJadeDefenderOracle).get!
+
+#guard sheHulkJadeDefenderDefinition == .card [
+  .name "She-Hulk, Jade Defender",
+  .manaCost [.generic 3, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .gamma,
+  .subtype .hero,
+  .power 4,
+  .toughness 4,
+  .ability (.keyword .reach),
+  .ability (.keyword .trample),
+  .ability
+    (.abilityId
+      2
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 2) .gameStart)
+        [.mana [.generic 4, .mono .green, .mono .green]]
+        (.sequence
+          [
+            .destroy
+              (.targets
+                1
+                (.range (.nat 0) (.nat 1))
+                (.intersection [.permanent, .union [.cardType .artifact, .cardType .enchantment]])),
+            .putCounter (.source .this) .plusOnePlusOne 1])
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 3, .mono .green]]])))]
+
 def sheHulkJadeDefender : CardDef :=
-  legendaryCreature "She-Hulk, Jade Defender" (ManaCost.ofGenericAndColor 3 .green) #["Gamma", "Hero"] 4 4
-    (oracleText := "Reach, trample\nPower-up — {4}{G}{G}: Destroy up to one target artifact or enchantment. Put a +1/+1 counter on She-Hulk. (Activate each power-up ability only once. Reduce the cost by her mana cost if she entered this turn.)")
-    (keywords := (Keyword.reach).merge Keyword.trample)
-    (activatedAbilities := #[activated (Effect.destroyUpToOneThenPlusOne) (ManaCost.ofGenericAndColors 4 [.green, .green]) (powerUp := true)])
+  sheHulkJadeDefenderDefinition.toCardDef (oracleText := sheHulkJadeDefenderOracle)
+
+#guard sheHulkJadeDefender.oracleText == sheHulkJadeDefenderOracle
+#guard sheHulkJadeDefender.keywords == (Keyword.reach).merge Keyword.trample
+#guard sheHulkJadeDefender.activatedAbilities == #[activated (Effect.destroyUpToOneThenPlusOne) (ManaCost.ofGenericAndColors 4 [.green, .green]) (powerUp := true)]
 
 def superStrength : CardDef :=
   enchantment "Super Strength" (ManaCost.ofGenericAndColor 4 .green)
@@ -3391,11 +3893,58 @@ def worldWarHulk : CardDef :=
     (subtypes := #["Saga"])
     (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "The next red or green creature spell you cast this turn can be cast without paying its mana cost." (Effect.nextFreeRGCreature), chapter "II" "Put three +1/+1 counters on target creature you control." (Effect.plusOneOnCreatureN 3), chapter "III" "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample." (Effect.chooseTargetDoubleAndTrample)] })
 
+/-- Oracle text for Abomination, Terrifying Titan. -/
+def abominationTerrifyingTitanOracle : String :=
+  "Trample\nPower-up — {5}{R/G}{R/G}: Put a +1/+1 counter on Abomination. He fights up to one target creature an opponent controls. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)"
+
+def abominationTerrifyingTitanDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Abomination, Terrifying Titan",
+    .manaCost [.generic 3, .hybrid .red .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .gamma,
+    .subtype .villain,
+    .power 4,
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Abomination, Terrifying Titan") (manaCost := [.generic 3, .hybrid .red .green]) abominationTerrifyingTitanOracle).get!
+
+#guard abominationTerrifyingTitanDefinition == .card [
+  .name "Abomination, Terrifying Titan",
+  .manaCost [.generic 3, .hybrid .red .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .gamma,
+  .subtype .villain,
+  .power 4,
+  .toughness 4,
+  .ability (.keyword .trample),
+  .ability
+    (.abilityId
+      2
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 2) .gameStart)
+        [.mana [.generic 5, .hybrid .red .green, .hybrid .red .green]]
+        (.sequence
+          [
+            .putCounter (.source .this) .plusOnePlusOne 1,
+            .fight
+              .this
+              (.targets
+                1
+                (.range (.nat 0) (.nat 1))
+                (.intersection
+                  [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))]))])
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 3, .hybrid .red .green]]])))]
+
 def abominationTerrifyingTitan : CardDef :=
-  legendaryCreature "Abomination, Terrifying Titan" (ManaCost.ofGenericAndHybrids 3 .red .green) #["Gamma", "Villain"] 4 4
-    (oracleText := "Trample\nPower-up — {5}{R/G}{R/G}: Put a +1/+1 counter on Abomination. He fights up to one target creature an opponent controls. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)")
-    (keywords := Keyword.trample)
-    (activatedAbilities := #[activated (Effect.plusOneThenFightUpToOne) (ManaCost.ofGenericAndHybrids 5 .red .green 2) (powerUp := true)])
+  abominationTerrifyingTitanDefinition.toCardDef (oracleText := abominationTerrifyingTitanOracle)
+
+#guard abominationTerrifyingTitan.oracleText == abominationTerrifyingTitanOracle
+#guard abominationTerrifyingTitan.keywords == Keyword.trample
+#guard abominationTerrifyingTitan.activatedAbilities == #[activated (Effect.plusOneThenFightUpToOne) (ManaCost.ofGenericAndHybrids 5 .red .green 2) (powerUp := true)]
 
 def absorbingMan : CardDef :=
   legendaryCreature "Absorbing Man" (ManaCost.ofGenericAndColors 1 [.green, .blue]) #["Human", "Villain"] 4 4
@@ -4359,10 +4908,61 @@ def ultronArtificialMalevolence : CardDef :=
     (triggeredAbilities := #[.onWatch Effect.watchUltronCopy])
     (legendary := true)
 
+/-- Oracle text for Ultron Drone. -/
+def ultronDroneOracle : String :=
+  "Power-up — {6}: Put two +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)"
+
+def ultronDroneDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Ultron Drone",
+    .manaCost [.generic 3],
+    .type .artifact,
+    .type .creature,
+    .subtype .robot,
+    .subtype .villain,
+    .power 2,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Ultron Drone") (manaCost := [.generic 3]) ultronDroneOracle).get!
+
+#guard ultronDroneDefinition == .card [
+  .name "Ultron Drone",
+  .manaCost [.generic 3],
+  .type .artifact,
+  .type .creature,
+  .subtype .robot,
+  .subtype .villain,
+  .power 2,
+  .toughness 3,
+  .ability
+    (.abilityId
+      1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 6]]
+        (.sequence
+          [
+            .putCounter (.source .this) .plusOnePlusOne 2,
+            .createTokens
+              (.controller .this)
+              (.nat 1)
+              [
+                .type .artifact,
+                .type .creature,
+                .subtype .robot,
+                .subtype .villain,
+                .colorIndicator [],
+                .power 2,
+                .toughness 2]
+              []])
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 3]]])))]
+
 def ultronDrone : CardDef :=
-  artifactCreature "Ultron Drone" (ManaCost.ofGeneric 3) #["Robot", "Villain"] 2 3
-    (oracleText := "Power-up — {6}: Put two +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
-    (activatedAbilities := #[activated (Effect.plusOneAndCreateTokens 2 .robotVillain22) (ManaCost.ofGeneric 6) (powerUp := true)])
+  ultronDroneDefinition.toCardDef (oracleText := ultronDroneOracle)
+
+#guard ultronDrone.oracleText == ultronDroneOracle
+#guard ultronDrone.activatedAbilities == #[activated (Effect.plusOneAndCreateTokens 2 .robotVillain22) (ManaCost.ofGeneric 6) (powerUp := true)]
 
 /-- Oracle text for Vibranium Energy Daggers. -/
 def vibraniumEnergyDaggersOracle : String :=
@@ -4396,13 +4996,58 @@ def theVision : CardDef :=
     (triggeredAbilities := #[.onCasting Effect.castingVisionModes])
     (legendary := true)
 
+/-- Oracle text for Viv Vision, Teen Synthezoid. -/
+def vivVisionTeenSynthezoidOracle : String :=
+  "Flying\nCybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater.\nPower-up — {7}: Put two +1/+1 counters on Viv Vision. (Activate each power-up ability only once. Reduce the cost by her mana cost if she entered this turn.)"
+
+def vivVisionTeenSynthezoidDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Viv Vision, Teen Synthezoid",
+    .manaCost [.generic 3],
+    .type .artifact,
+    .type .creature,
+    .supertype .legendary,
+    .subtype .robot,
+    .subtype .hero,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Viv Vision, Teen Synthezoid") (manaCost := [.generic 3]) vivVisionTeenSynthezoidOracle).get!
+
+#guard vivVisionTeenSynthezoidDefinition == .card [
+  .name "Viv Vision, Teen Synthezoid",
+  .manaCost [.generic 3],
+  .type .artifact,
+  .type .creature,
+  .supertype .legendary,
+  .subtype .robot,
+  .subtype .hero,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .flying),
+  .ability
+    (.triggered
+      (.attack .this .all)
+      (.if
+        (.any (.intersection [.source .this, .powerAtLeast (.int 4)]))
+        [.draw (.controller .this) (.nat 1)])),
+  .ability
+    (.abilityId
+      1
+      (.activatedWithStaticIf
+        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        [.mana [.generic 7]]
+        (.putCounter (.source .this) .plusOnePlusOne 2)
+        (.if
+          (.happened (.enter (.source .this)) .turnStart)
+          [.reduceCost .this [.mana [.generic 3]]])))]
+
 def vivVisionTeenSynthezoid : CardDef :=
-  artifactCreature "Viv Vision, Teen Synthezoid" (ManaCost.ofGeneric 3) #["Robot", "Hero"] 2 2
-    (oracleText := "Flying\nCybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater.\nPower-up — {7}: Put two +1/+1 counters on Viv Vision. (Activate each power-up ability only once. Reduce the cost by her mana cost if she entered this turn.)")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onThisAttack Effect.thisAttackDrawIfPower4])
-    (activatedAbilities := #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGeneric 7)])
-    (legendary := true)
+  vivVisionTeenSynthezoidDefinition.toCardDef (oracleText := vivVisionTeenSynthezoidOracle)
+
+#guard vivVisionTeenSynthezoid.oracleText == vivVisionTeenSynthezoidOracle
+#guard vivVisionTeenSynthezoid.keywords == Keyword.flying
+#guard vivVisionTeenSynthezoid.triggeredAbilities == #[.onThisAttack Effect.thisAttackDrawIfPower4]
+#guard vivVisionTeenSynthezoid.activatedAbilities == #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGeneric 7)]
 
 /-- Oracle text for A.I.M. Labs. -/
 def aIMLabsOracle : String :=
