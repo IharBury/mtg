@@ -7183,7 +7183,7 @@ def parseEnterHonePerOppAttach (cardName line : String) (n : Nat) :
         let you := Selector.controlled (.controller .this)
         some (
           .ability (.triggered (.enter .this) (.sequence [
-            .putCounter (.source .this) (.named "hone")
+            .putCounter (.source .this) (.hone)
               (.count
                 (.intersection [
                   .permanent,
@@ -7207,7 +7207,7 @@ def parseEntersWithCounters (cardName line : String) : Option CardPart :=
         if !refersToSelf cardName who then none
         else
           some (.ability (.static (.replace (.enter .this) [
-            .putCounter (.source .this) (.named "hope")
+            .putCounter (.source .this) (.hope)
               (.count
                 (.intersection [
                   .permanent,
@@ -7234,10 +7234,10 @@ def parseEndStepRemoveHopeDrawSac (line : String) (n : Nat) : Option (CardPart Ã
         thenSac == "then if this enchantment has no hope counters on it, sacrifice it and you gain 4 life" then
       some (
         .ability (.triggered (.endStep (.controller .this)) (.sequence [
-          .actionId n (.removeCounter (.source .this) (.named "hope") (.nat 1)),
+          .actionId n (.removeCounter (.source .this) (.hope) (.nat 1)),
           .if (.happened (.actionWithId n) .gameStart) [
             .draw (.controller .this) (.nat 1),
-            .if (.not (.any (.intersection [.source .this, .hasCounter (.named "hope")]))) [
+            .if (.not (.any (.intersection [.source .this, .hasCounter (.hope)]))) [
               .sacrifice (.source .this),
               .gainLife (.controller .this) (.nat 4)]]])),
         n + 1)

@@ -8,8 +8,9 @@ written as a `TraditionalCardDefinition`.
 **222** catalog cards are still `CardDef` helpers. **203**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **13** lost
-their last tag when `CounterKind.named`, `CardAction.removeCounter`, and
-enters-with-counters became expressible; they are not converted yet (see
+their last tag when a constructor for each named counter,
+`CardAction.removeCounter`, and enters-with-counters became expressible;
+they are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)). The other
 **6** were listed as having no constructor gap, but each needs a missing
 `CardSubtype` or `Trigger` constructor; see
@@ -48,14 +49,14 @@ modeled `CardDef` fields, triggered/static/activated constructors, and
 `Ability`, `ContinuousEffect`, `CardAction`, and `TraditionalCardDefinition`
 (including `CardPart`).
 
-`Keyword` and `CounterKind` are not in the requested list. They still block
-because `Ability.keyword`, `CardAction.keyword`, and `CardAction.putCounter`
-are indexed by those inductives. Missing constructors there are listed under
-`Ability` / `CardAction` and `CounterKind`. `CardSubtype` has no Wall,
+`Keyword` is not in the requested list. It still blocks because
+`Ability.keyword` and `CardAction.keyword` are indexed by it. Missing
+`Keyword` constructors are listed under `Ability` / `CardAction`.
+`CounterKind` has a constructor for every named counter in the supported
+catalog, so it no longer blocks a conversion. `CardSubtype` has no Wall,
 Minion, or Elder, which five token-making cards need (see
 [Cards with no constructor gap](#cards-with-no-constructor-gap)); Plan
-enchantments stay blocked by `CounterKind` / put-counter triggers, not
-missing subtypes.
+enchantments stay blocked by put-counter triggers, not missing subtypes.
 
 ## Current constructors (inventory)
 
@@ -71,7 +72,13 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `firstStrike`, `islandwalk`, `storied`, `doubleStrike`, `prowess`, `ascend`,
   `shadow`, `changeling`, `equip`, `enchant`, `typecycling`, `recruit`,
   `amass`, `connive`, `chapter`, `flashback`, `ward`, `crew`.
-- **CounterKind** — `plusOnePlusOne`, `named` (a counter with a printed name, such as hone or hope).
+- **CounterKind** — `plusOnePlusOne`, and one constructor per other printed
+  counter in the supported catalog: `burden`, `deathtouch`, `doubleStrike`,
+  `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`,
+  `indestructible`, `influence`, `invasion`, `lifelink`, `menace`, `plan`,
+  `quest`, `reach`, `shadow`, `shield`, `stun`, `trample`, `vigilance`.
+  Lore counters are Saga chapters. Poison counters as a Ward cost stay
+  `Cost.getPoisonCounters`.
 - **Selector** — `this`, `source`, `controller`, `caster` (the player who would cast this spell), `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
   `keywordAbility`, `powerAtLeast`, `powerAtMost`, `hasCounter`, `subtype`,
@@ -265,7 +272,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.eventAmount` for “for each permanent destroyed this way” | `Value.count (Selector.wasObjectOfAction n)` |
 | `CardAction.putCounter` of a `Value` | `putCounter` takes a `Value` (`x`, `count`, `greatestPower`, `greatestManaValue`) |
 | `CardAction.removeCounter` | `removeCounter` of a selector, `CounterKind`, and `Value` |
-| `CounterKind.named` | `CounterKind.named` |
+| `CounterKind.named` | `burden`, `deathtouch`, `doubleStrike`, `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`, `indestructible`, `influence`, `invasion`, `lifelink`, `menace`, `plan`, `quest`, `reach`, `shadow`, `shield`, `stun`, `trample`, `vigilance` |
 | `TraditionalCardDefinition.entersWithCounters` | `static (replace (enter this) [putCounter …, keepReplacedAction])` (Dawn of a New Age, The Ruinous Wrecking Crew) |
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
 
@@ -569,7 +576,7 @@ Speed, Young Avenger; Guerrilla Gorilla; Undercover Skrull; Beast, Erudite
 Aerialist; Bullseye, Death Dealer; Killmonger, Scourge of Wakanda; Storm,
 Windrider; Wolverine, Fierce Fighter. Five Plan enchantments and The Great
 Goblin stay in the catalog as `CardDef` helpers (put-counter triggers;
-named counters are `CounterKind.named`). Catalog files: `Hobbit.lean`, `HobbitEternal.lean`,
+`CounterKind.plan` exists). Catalog files: `Hobbit.lean`, `HobbitEternal.lean`,
 `MarvelSuperHeroes.lean`.
 
 **Hobbit (9):** Bard the Bowman, Bolg's Company, Elven Raft-Steerer, Iron Hills
@@ -669,9 +676,9 @@ These are not in the requested list but block a conversion of the listed types:
 
 | Inductive | Used by | Missing constructors that remaining cards need |
 | --- | --- | --- |
-| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Wall (Stone-Giant of High Pass; Invisible Woman, Sue Storm; Super-Skrull), Minion (Mole Man, Moloid Master), and Elder (The Coming of Galactus) token subtypes. Army exists (`Selector.subtype .army`). Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers / `CounterKind`, not missing subtypes. |
+| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Wall (Stone-Giant of High Pass; Invisible Woman, Sue Storm; Super-Skrull), Minion (Mole Man, Moloid Master), and Elder (The Coming of Galactus) token subtypes. Army exists (`Selector.subtype .army`). Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers, not missing subtypes. |
 | `Keyword` | `Ability.keyword`, `CardAction.keyword` | Kicker, Cascade, Affinity, Teamwork, Improvise, Extort, Sneak, Boast, Gift, Harness (some of these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters exist. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
-| `CounterKind` | `CardAction.putCounter`, `Selector.hasCounter`, `Trigger.putCountersSimultaneously` | Named counters are `CounterKind.named`. `Trigger.putCounter` (who put them, any kind) is still missing. |
+| `CounterKind` | `CardAction.putCounter`, `Selector.hasCounter`, `Trigger.putCountersSimultaneously` | Each named counter in the supported catalog has its own constructor. `Trigger.putCounter` (who put them, any kind) is still missing. Lore counters are Saga chapters. |
 
 `CardPart` also has no `loyalty` or DFC-back face (`alternative` is the
 Adventure face). The back face is listed under `TraditionalCardDefinition`.
@@ -1651,10 +1658,10 @@ Converted cards are omitted here.
 
 ## Tags now spelled, not yet converted
 
-These 13 cards lost every tag when `CounterKind.named`, `CardAction.removeCounter`,
-`CardAction.putCounter` of a `Value`, and enters-with-counters became
-expressible. They are still `CardDef` helpers. A later pass should reread
-them before conversion.
+These 13 cards lost every tag when a constructor for each named counter,
+`CardAction.removeCounter`, `CardAction.putCounter` of a `Value`, and
+enters-with-counters became expressible. They are still `CardDef` helpers.
+A later pass should reread them before conversion.
 
 **Hobbit (3):** Beorn the Fierce; Dwalin, Weaponmaster; Last Light of Durin's Day.
 

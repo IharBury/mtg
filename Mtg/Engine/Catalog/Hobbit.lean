@@ -6216,7 +6216,7 @@ def stingBilboSSwordDefinition : TraditionalCardDefinition := .card <|
     (.triggered
       (.enter .this)
       (.sequence [
-        .putCounter (.source .this) (.named "hone")
+        .putCounter (.source .this) (.hone)
           (.count
             (.intersection [
               .permanent,

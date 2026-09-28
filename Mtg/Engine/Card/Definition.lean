@@ -1930,7 +1930,7 @@ def leftoverEntersWithXPlusOne? : List CardAction → Bool
 
 /-- Replacement “this enters with a hope counter for each creature you control”. -/
 def leftoverEntersWithHopePerCreature? : List CardAction → Bool
-  | [.putCounter who (.named "hope") (.count among), .keepReplacedAction] =>
+  | [.putCounter who (.hope) (.count among), .keepReplacedAction] =>
     (who == .this || who == .source .this) &&
       among == .intersection [
         .permanent, .cardType .creature, .controlled (.controller .this)]
@@ -4375,7 +4375,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.enter .this)
       (.sequence [
-        .putCounter (.source .this) (.named "hone")
+        .putCounter (.source .this) (.hone)
           (.count
             (.intersection [
               .permanent,
@@ -4393,10 +4393,10 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.endStep (.controller .this))
       (.sequence [
-        .actionId id (.removeCounter (.source .this) (.named "hope") (.nat 1)),
+        .actionId id (.removeCounter (.source .this) (.hope) (.nat 1)),
         .if (.happened (.actionWithId id') .gameStart) [
           .draw who (.nat 1),
-          .if (.not (.any (.intersection [.source .this, .hasCounter (.named "hope")]))) [
+          .if (.not (.any (.intersection [.source .this, .hasCounter (.hope)]))) [
             .sacrifice (.source .this),
             .gainLife who' (.nat 4)]]
       ]) =>

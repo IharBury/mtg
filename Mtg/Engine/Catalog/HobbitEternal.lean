@@ -335,7 +335,7 @@ def dawnOfANewAgeDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.static
       (.replace (.enter .this) [
-        .putCounter (.source .this) (.named "hope")
+        .putCounter (.source .this) (.hope)
           (.count
             (.intersection [
               .permanent,
@@ -346,10 +346,10 @@ def dawnOfANewAgeDefinition : TraditionalCardDefinition := .card <|
     (.triggered
       (.endStep (.controller .this))
       (.sequence [
-        .actionId 1 (.removeCounter (.source .this) (.named "hope") (.nat 1)),
+        .actionId 1 (.removeCounter (.source .this) (.hope) (.nat 1)),
         .if (.happened (.actionWithId 1) .gameStart) [
           .draw (.controller .this) (.nat 1),
-          .if (.not (.any (.intersection [.source .this, .hasCounter (.named "hope")]))) [
+          .if (.not (.any (.intersection [.source .this, .hasCounter (.hope)]))) [
             .sacrifice (.source .this),
             .gainLife (.controller .this) (.nat 4)]]]))]
 
