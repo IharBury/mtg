@@ -27,10 +27,17 @@ catalog.
 | Marvel Super Heroes (MSH) | 281 | 93 | 188 | 129 |
 | **Total** | **586** | **268** | **318** | **226** |
 
-126 of the Hobbit `TraditionalCardDefinition`s keep only their printed
-characteristics as parts and read the rest of their Oracle text with
-`parseOracleParts` (`Mtg/Engine/Card/OracleParse.lean`). The others spell
-every part by hand.
+266 of the 268 `TraditionalCardDefinition`s (131 HOB, 43 HOC, 92 MSH,
+including Giant Growth) spell only their printed characteristics as parts
+and read the rest of their Oracle text with `parseOracleParts`
+(`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
+parsed definition. The other two spell every part by hand because their
+modeled abilities are narrower than the printed text:
+
+- **The Sackville-Bagginses** models “Whenever you sacrifice a token” as a
+  token you control dying.
+- **The Thing, Ben Grimm** models “Whenever one or more Heroes you control
+  deal damage to a player” as each Hero dealing combat damage to a player.
 
 Evidence for each remaining card is its catalog definition (Oracle text plus
 modeled `CardDef` fields, triggered/static/activated constructors, and
@@ -568,7 +575,7 @@ draw, legendary-creature activated cost reduction, and the enter/search/modal
 spell leftovers those printings need.
 
 Since the previous revision of this index, 46 more listed cards became
-`TraditionalCardDefinition`s. The Hobbit ones read their Oracle text with
+`TraditionalCardDefinition`s. All of them read their Oracle text with
 `parseOracleParts`.
 
 **Hobbit (39):** Bard's Company; Bombur, Gentle Dreamer; Chief Warg's Company; Desolation of Smaug; Dwarven Mattock; Dáin's Company; Dáin, Lord of the Iron Hills; Eagle's Rescue; Esgaroth Garrison; Fíli the Pathfinder; Gandalf, Goblins' Bane; Gandalf, Wandering Wizard; Gigantic Big Bear; Glamdring, Foe-hammer; Glóin the Mighty; Great Gilded Boat; Great Ugly-Looking Goblin; Iron Hills Blacksmith; Kíli the Resourceful; Lake-town Mariners; Mirkwood Meditator; Moment of Glory; Most Decrepit Old Bird; My Precious; Old Fat Spider; Ori, Keeper of Songs; Pinecone Strike; Plunder the Trollshaws; Settle the Wreckage; Smaug the Magnificent; Smaug, Wicked Worm; The Arkenstone; The Black Arrow; The Lonely Mountain; The Lord of the Eagles; Thorin Oakenshield; Tidings of War; Troll Negotiations; Óin the Brave.
