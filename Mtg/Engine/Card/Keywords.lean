@@ -312,8 +312,10 @@ inductive Selector where
   | token
   /-- The object of the numbered action. -/
   | wasObjectOfAction : Nat → Selector
-  /-- The object of this triggered ability. -/
-  | wasObjectOfThisTrigger
+  /-- A selector argument of the trigger numbered by `Trigger.triggerId`.
+  The first `Nat` is the selector id. The second is the trigger argument
+  ordinal; `1` is the first selector argument. -/
+  | wasArgumentOfTrigger : Nat → Nat → Selector
   /-- The object a replacement effect is replacing. -/
   | replacingObject : Selector
   /-- An object created by the numbered action. -/
@@ -335,8 +337,9 @@ inductive Selector where
   | supertype : CardSupertype → Selector
   /-- Objects bound to this numbered variable. -/
   | variable : Nat → Selector
-  /-- The top card of the selected player's library (CR 401). -/
-  | topOfLibrary : Selector → Selector
+  /-- The top cards of the selected player's library (CR 401). The value is
+  how many. One is the top card. -/
+  | topOfLibrary : Selector → Value → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
@@ -399,11 +402,20 @@ inductive Trigger where
   | abilityWithIdActivated : Nat → Trigger
   /-- The numbered action occurred. -/
   | actionWithId : Nat → Trigger
+  /-- Number this trigger so later clauses can refer to its selector
+  arguments. -/
+  | triggerId : Nat → Trigger → Trigger
   /-- The selected player chose the numbered mode (CR 700.2). -/
   | modeWithIdChosen : Selector → Nat → Trigger
   /-- Mana created by the numbered action is spent to pay for the given
   event (CR 106.10). -/
   | spendManaCreatedByAction : Nat → Trigger → Trigger
+  /-- Mana from a source matching the selector was spent to pay for the
+  given event. The payment happens before that event (CR 601.2h). In a
+  `sequence`, `wasArgumentOfTrigger` comes after the `triggerId` it names.
+  An ability that triggers once when the event occurs ends on that event,
+  so it does not trigger once for each mana spent. -/
+  | spendManaFrom : Selector → Trigger → Trigger
   /-- A spell matching the selector is cast (CR 601). -/
   | castSpell : Selector → Trigger
   /-- A spell matching the selector is cast from a graveyard

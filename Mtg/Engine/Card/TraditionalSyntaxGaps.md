@@ -57,7 +57,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `keywordAbility`,
   `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `hasTarget`, `isTargetOf`, `player`, `opponent`,
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
-  `wasObjectOfThisTrigger`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
+  `wasArgumentOfTrigger`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
   `wasObjectSince`,
   `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
@@ -65,7 +65,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
   `damage`, `putToGraveyard`, `leaveGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`, `block`, `die`, `dieSimultaneously`,
   `attackSimultaneously` (who attacks, who is attacked),
-  `abilityWithIdActivated`, `actionWithId`, `modeWithIdChosen`,
+  `abilityWithIdActivated`, `actionWithId`, `triggerId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
   `not`, `or`.
 - **Cost** — `mana`, `life`, `sacrifice` (every selected permanent),
@@ -131,8 +131,8 @@ ability. `Trigger.modeWithIdChosen` of only you stays uncompiled.
 `Selector.wasObjectSince` is “the object of this event since that event”
 (Night Nurse: `putToGraveyard` since `turnStart`). `Condition.greaterOrEqual` of
 `Value.count` is an object count (Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`
-is “whenever you discard” (Moonstone). The leftover exiles `Selector.wasObjectOfThisTrigger`
-from the graveyard (that discarded card); any graveyard card stays uncompiled.
+is “whenever you discard” (Moonstone). The leftover exiles `Selector.wasArgumentOfTrigger`
+of that discard from the graveyard (that discarded card); any graveyard card stays uncompiled.
 `Selector.hasTarget` is “has a target matching …” (Fin Fang Foom: artifact or
 land). `CardAction.copyWithNewTargets` is who copies and what is copied (you,
 that spell). Intervening `targetsIncludeAny` without copy stays uncompiled.
@@ -149,7 +149,7 @@ Empty replacement, combat-only, keep without heal, heal without keep, or keep th
 heal stay uncompiled. `Trigger.putCountersSimultaneously` is
 one or more counters of a kind on the selected objects at the same time
 (Beast: +1/+1 this turn). Storm’s leftover is `hasTarget` of a creature on the spell you cast, then
-flying on creatures that are `isTargetOf` this spell (`wasObjectOfThisTrigger`).
+flying on creatures that are `isTargetOf` argument 1 of that cast (`wasArgumentOfTrigger`).
 Treating the spell as those creatures stays uncompiled. Intervening
 `targetsIncludeAny` or flying on all creatures stays uncompiled. Storm’s
 flying restriction is

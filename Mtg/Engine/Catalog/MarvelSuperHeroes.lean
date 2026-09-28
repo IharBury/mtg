@@ -1328,13 +1328,13 @@ def moonstoneHarshMistress : CardDef :=
     .ability (.keyword .flying),
     .ability
       (.triggered
-        (.discard (.controller .this))
+        (.triggerId 1 (.discard (.controller .this)))
         (.optional
           (.sequence [
             .actionId 1
               (.exile (.intersection [
                 .inGraveyard,
-                .wasObjectOfThisTrigger,
+                .wasArgumentOfTrigger 1 1,
                 .owner (.controller .this)])),
             .continuous
               [.canPlay (.controller .this) (.wasCreatedByAction 1)]
@@ -1600,7 +1600,7 @@ def blazingCrescendo : CardDef :=
           .addToughness
             (.targetReference 1) (Value.int 1)]
         .endOfTurn,
-      .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+      .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
       .continuous
         [.canPlay (.controller .this) (.wasCreatedByAction 1)]
         (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]
@@ -1622,7 +1622,7 @@ def crimsonOperative : CardDef :=
       .triggered
         (.enter .this)
         (.sequence [
-          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
             (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))
@@ -1654,14 +1654,15 @@ def finFangFoom : CardDef :=
     .ability (.keyword .flying),
     .ability
       (.triggered
-        (.castSpell
-          (.intersection [
-            .spell,
-            .union [.cardType .instant, .cardType .sorcery],
-            .controlled (.controller .this),
-            .hasTarget (.union [.cardType .artifact, .cardType .land])]))
+        (.triggerId 1
+          (.castSpell
+            (.intersection [
+              .spell,
+              .union [.cardType .instant, .cardType .sorcery],
+              .controlled (.controller .this),
+              .hasTarget (.union [.cardType .artifact, .cardType .land])])))
         (.sequence [
-          .copyWithNewTargets (.controller .this) .wasObjectOfThisTrigger,
+          .copyWithNewTargets (.controller .this) (.wasArgumentOfTrigger 1 1),
           .putCounter (.source .this) .plusOnePlusOne 2]))
   ]).toCardDef
     (oracleText := "Flying\nWhenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom.")
@@ -2909,21 +2910,22 @@ def stormWindrider : CardDef :=
                 .controlled (.controller .this)]))))),
     .ability
       (.triggered
-        (.castSpell
-          (.intersection [
-            .spell,
-            .controlled (.controller .this),
-            .hasTarget
-              (.intersection [
-                .permanent,
-                .cardType .creature])]))
+        (.triggerId 1
+          (.castSpell
+            (.intersection [
+              .spell,
+              .controlled (.controller .this),
+              .hasTarget
+                (.intersection [
+                  .permanent,
+                  .cardType .creature])])))
         (.continuous
           [
             .gainAbility
               (.intersection [
                 .permanent,
                 .cardType .creature,
-                .isTargetOf .wasObjectOfThisTrigger])
+                .isTargetOf (.wasArgumentOfTrigger 1 1)])
               (.keyword .flying)]
           .endOfTurn))
   ]).toCardDef
