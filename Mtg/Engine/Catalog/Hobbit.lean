@@ -48,7 +48,8 @@ Thranduil, Sindarin Liege, Glóin the Mighty, Iron Hills Stalwart,
 Old Fat Spider, Great Gilded Boat, Desolation of Smaug,
 Dwarven Mauler, My Precious, Troop of Ponies, Elven Raft-Steerer,
 Mirkwood Meditator, Mirkwood Nurturer, Kíli the Resourceful,
-Dáin's Company, Smaug, Wicked Worm, and Glamdring, Foe-hammer
+Dáin's Company, Smaug, Wicked Worm, Glamdring, Foe-hammer,
+Settle the Wreckage, Iron Hills Blacksmith, and Gandalf, Goblins' Bane
 keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
@@ -297,7 +298,7 @@ def vowToEreborCard : CardDef :=
     .if
         (.anySubtype (.targetReference 1) .dwarf)
         [
-          .optional
+          .optional (.controller .this)
             (.attach
               (.selected
                 (.controller .this)
@@ -1134,7 +1135,7 @@ def raggedShortSpearCard : CardDef :=
     .triggered
       (.enter .this)
       (.sequence [
-        .optional
+        .optional (.controller .this)
           (.actionId 1 (.discard (.controller .this) 1)),
         .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]])),
   .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
@@ -4149,7 +4150,7 @@ def oldThrush : CardDef :=
   .ability (.triggered (.enter .this)
     (.sequence [
       .gainLife (.controller .this) 2,
-      .optional
+      .optional (.controller .this)
         (.sequence [
           .searchLibraryThenShuffle (.controller .this) [
             .defineSelectorVariable 1
@@ -4812,7 +4813,7 @@ def mirkwoodMeditatorDefinition : TraditionalCardDefinition := .card <|
     (.enter
       (.intersection [
         .permanent, .cardType .land, .controlled (.controller .this)]))
-    (.optional (.continuous
+    (.optional (.controller .this) (.continuous
       [.setBasePower (.source .this) (Value.int 4),
         .setBaseToughness (.source .this) (Value.int 2)]
       .endOfTurn)))]
@@ -4956,7 +4957,7 @@ def dainsCompanyDefinition : TraditionalCardDefinition := .card <|
   .ability (.triggered (.enter .this) (.sequence [
     .actionId 1
       (.lookAt (.topOfLibrary (.controller .this) 4)),
-    .optional (.sequence [
+    .optional (.controller .this) (.sequence [
       .actionId 2
         (.reveal
           (.selected (.controller .this) (.range 1 1)
@@ -5087,26 +5088,155 @@ def glamdringFoeHammer : CardDef :=
       adv.spellEffect == some (Effect.millThenPutAllInstantsOrSorceries 6)
   | none => false
 
+/-- Gatherer Oracle text for Settle the Wreckage. -/
+def settleTheWreckageOracle : String :=
+  "Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle."
+
+def settleTheWreckageDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Settle the Wreckage",
+    .manaCost [.generic 2, .mono .white, .mono .white],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Settle the Wreckage") settleTheWreckageOracle).get!
+
+#guard settleTheWreckageDefinition == .card [
+  .name "Settle the Wreckage",
+  .manaCost [.generic 2, .mono .white, .mono .white],
+  .type .instant,
+  .actions [
+    .actionId 1
+      (.exile
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .attacking .all,
+          .controlled (.target 1 .player)])),
+    .optional (.targetReference 1)
+      (.searchLibraryThenShuffle
+        (.targetReference 1)
+        [
+          .putOntoBattlefieldInState
+            (.selected
+              (.targetReference 1)
+              (.range (.nat 0) (.count (.wasObjectOfAction 1)))
+              (.intersection [
+                .inLibrary,
+                .cardType .land,
+                .supertype .basic]))
+            [.tapped]])]]
+
 def settleTheWreckage : CardDef :=
-  instant "Settle the Wreckage" (ManaCost.ofGenericAndColors 2 [.white, .white])
-    "Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle."
-    (some (Effect.exileAttackersSearchBasics))
+  settleTheWreckageDefinition.toCardDef (oracleText := settleTheWreckageOracle)
+
+#guard settleTheWreckage.oracleText == settleTheWreckageOracle
+#guard settleTheWreckage.spellEffect == some Effect.exileAttackersSearchBasics
+
+/-- Gatherer Oracle text for Iron Hills Blacksmith. -/
+def ironHillsBlacksmithOracle : String :=
+  "Double strike\nWhen this creature enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}."
+
+def ironHillsBlacksmithDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Iron Hills Blacksmith",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .subtype .dwarf,
+    .subtype .artificer,
+    .power 1,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Iron Hills Blacksmith") ironHillsBlacksmithOracle).get!
+
+#guard ironHillsBlacksmithDefinition == .card [
+  .name "Iron Hills Blacksmith",
+  .manaCost [.generic 1, .mono .white],
+  .type .creature,
+  .subtype .dwarf,
+  .subtype .artificer,
+  .power 1,
+  .toughness 1,
+  .ability (.keyword .doubleStrike),
+  .ability (.triggered (.enter .this)
+    (.createTokens (.controller .this) 1 [
+      .name "Axe",
+      .type .artifact,
+      .subtype .equipment,
+      .colorIndicator [],
+      .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
+      .ability (.keywordWithCost .equip [.mana [.generic 2]])]))]
 
 def ironHillsBlacksmith : CardDef :=
-  creature "Iron Hills Blacksmith" (ManaCost.ofGenericAndColor 1 .white)
-    #["Dwarf", "Artificer"] 1 1
-    (oracleText := "Double strike\nWhen this creature enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}.")
-    (keywords := Keyword.doubleStrike)
-    (triggeredAbilities := #[.onEnterCreateAxe])
+  ironHillsBlacksmithDefinition.toCardDef (oracleText := ironHillsBlacksmithOracle)
+
+#guard ironHillsBlacksmith.oracleText == ironHillsBlacksmithOracle
+#guard ironHillsBlacksmith.keywords.doubleStrike
+#guard ironHillsBlacksmith.triggeredAbilities == #[.onEnterCreateAxe]
+
+/-- Gatherer Oracle text for Gandalf, Goblins' Bane // Flameshape. -/
+def gandalfGoblinsBaneOracle : String :=
+  "Whenever you cast a noncreature spell, Gandalf gets +1/+1 until end of turn and deals 1 damage to each opponent.\n//ADV//\nFlameshape {1}{R}\nSorcery — Adventure\nLook at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard. (Then exile this card. You may cast the creature later from exile.)"
+
+def gandalfGoblinsBaneDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Gandalf, Goblins' Bane",
+    .manaCost [.generic 2, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .avatar,
+    .subtype .wizard,
+    .power 2,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Gandalf, Goblins' Bane") gandalfGoblinsBaneOracle).get!
+
+#guard gandalfGoblinsBaneDefinition == .card [
+  .name "Gandalf, Goblins' Bane",
+  .manaCost [.generic 2, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .avatar,
+  .subtype .wizard,
+  .power 2,
+  .toughness 3,
+  .ability (.triggered
+    (.castSpell (.intersection [
+      .spell, .not (.cardType .creature), .controlled (.controller .this)]))
+    (.sequence [
+      .continuous [
+        .addPower (.source .this) (Value.int 1),
+        .addToughness (.source .this) (Value.int 1)]
+        .endOfTurn,
+      .dealDamage (.source .this) (.opponent (.controller .this)) 1])),
+  .alternative [
+    .name "Flameshape",
+    .manaCost [.generic 1, .mono .red],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [
+      .actionId 1 (.lookAt (.topOfLibrary (.controller .this) 2)),
+      .actionId 2 (.exileFaceDown (.wasObjectOfAction 1)),
+      .continuous
+        [.if
+          (.any (.intersection [
+            .permanent, .subtype .wizard, .controlled (.controller .this)]))
+          [.canPlay
+            (.controller .this)
+            (.intersection [.inExile, .wasCreatedByAction 2])]]
+        .endOfGame]]]
 
 def gandalfGoblinsBane : CardDef :=
-  legendaryCreature "Gandalf, Goblins' Bane" (ManaCost.ofGenericAndColor 2 .red)
-    #["Avatar", "Wizard"] 2 3
-    (oracleText := "Whenever you cast a noncreature spell, Gandalf gets +1/+1 until end of turn and deals 1 damage to each opponent.\n//ADV//\nFlameshape {1}{R}\nSorcery — Adventure\nLook at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard. (Then exile this card. You may cast the creature later from exile.)")
-    (triggeredAbilities := #[.onCastNoncreaturePumpAndDamageOpponents 1])
-    (adventure := some (adventure "Flameshape" (ManaCost.ofGenericAndColor 1 .red)
-      "Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.exileTopPlayIfYouControlSubtype 2 "Wizard")))
+  gandalfGoblinsBaneDefinition.toCardDef (oracleText := gandalfGoblinsBaneOracle)
+
+#guard gandalfGoblinsBane.oracleText == gandalfGoblinsBaneOracle
+#guard gandalfGoblinsBane.triggeredAbilities ==
+  #[.onCastNoncreaturePumpAndDamageOpponents 1]
+#guard
+  match gandalfGoblinsBane.adventure with
+  | some adv =>
+    adv.name == "Flameshape" &&
+      adv.manaCost == ManaCost.ofGenericAndColor 1 .red &&
+      adv.types == #[.sorcery] &&
+      adv.subtypes == #["Adventure"] &&
+      adv.spellEffect == some (Effect.exileTopPlayIfYouControlSubtype 2 "Wizard")
+  | none => false
 
 def anUnexpectedParty : CardDef :=
   enchantment "An Unexpected Party" (ManaCost.ofGenericAndColors 2 [.white, .white])
@@ -5491,7 +5621,7 @@ def theSackvilleBagginses : CardDef :=
       .triggered
         (.enter .this)
         (.sequence [
-          .optional
+          .optional (.controller .this)
             (.actionId 1
               (.sacrifice
                 (.selected

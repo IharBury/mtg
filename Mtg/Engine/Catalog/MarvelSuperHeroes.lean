@@ -1329,7 +1329,7 @@ def moonstoneHarshMistress : CardDef :=
     .ability
       (.triggered
         (.triggerId 1 (.discard (.controller .this)))
-        (.optional
+        (.optional (.controller .this)
           (.sequence [
             .actionId 1
               (.exile (.intersection [
@@ -1778,7 +1778,7 @@ def kUnLunWarrior : CardDef :=
       .triggered
         (.enter .this)
         (.sequence [
-          .optional
+          .optional (.controller .this)
             (.actionId 1
               (.playerSelectAction
                 (.controller .this)
@@ -2007,7 +2007,7 @@ def visionOfLove : CardDef :=
     .manaCost [.generic 1, .mono .red],
     .type .instant,
     .actions [
-      .optional
+      .optional (.controller .this)
         (.actionId 1
           (.playerSelectAction
             (.controller .this)
@@ -2210,7 +2210,7 @@ def rapidRescue : CardDef :=
     .type .instant,
     .actions [
       .actionId 1 (.mill (.controller .this) 2),
-      .optional
+      .optional (.controller .this)
         (.returnToHand
           (.selected
             (.controller .this)
@@ -2267,7 +2267,7 @@ def rickJonesDestinedSidekick : CardDef :=
         [.mana [.generic 3], .tapSymbol]
         (.sequence [
           .actionId 1 (.mill (.controller .this) 4),
-          .optional
+          .optional (.controller .this)
             (.returnToHand
               (.selected
                 (.controller .this)
@@ -2468,7 +2468,7 @@ def armorWars : CardDef :=
       (.keywordWithEffect
         (.chapter 1)
         [
-          .optional
+          .optional (.controller .this)
             (.sequence [
               .forEachVariable 1
                 (.intersection [
@@ -2729,7 +2729,7 @@ def killmongerScourgeOfWakanda : CardDef :=
       (.triggered
         (.enter .this)
         (.sequence [
-          .optional
+          .optional (.controller .this)
             (.actionId 1
               (.sacrifice
                 (.selected
