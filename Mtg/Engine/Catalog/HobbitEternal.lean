@@ -1429,13 +1429,35 @@ def dainOfTheAncientHalls : CardDef :=
     (keywords := Keyword.vigilance.merge Keyword.haste)
     (triggeredAbilities := #[.onAttackDamageEqualSubtypeToEachOpponent "Dwarf"])
 
+/-- Oracle text for Treasure Vault. -/
+def treasureVaultOracle : String :=
+  "{T}: Add {C}.\n{X}{X}, {T}, Sacrifice this land: Create X Treasure tokens."
+
+def treasureVaultDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Treasure Vault",
+    .type .artifact,
+    .type .land
+  ] ++ (parseOracleParts (name := "Treasure Vault") treasureVaultOracle).get!
+
+#guard treasureVaultDefinition == .card [
+  .name "Treasure Vault",
+  .type .artifact,
+  .type .land,
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+  .ability (.activated
+    [.mana [.x, .x], .tapSymbol, .sacrifice .this]
+    (.createTokens (.controller .this) .x PredefinedToken.treasureToken))]
+
 def treasureVault : CardDef :=
-  card "Treasure Vault" #[.artifact, .land] ManaCost.empty
-    (oracleText := "{T}: Add {C}.\n{X}{X}, {T}, Sacrifice this land: Create X Treasure tokens.")
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[
-      activated (Effect.abilityCreateTokensX .treasure) { symbols := #[.x, .x] }
-        (tap := true) (sacrificeSource := true)])
+  treasureVaultDefinition.toCardDef (oracleText := treasureVaultOracle)
+
+#guard treasureVault.types == #[.artifact, .land]
+#guard treasureVault.manaCost == ManaCost.empty
+#guard treasureVault.tapAddMana == #[.colorless]
+#guard treasureVault.activatedAbilities == #[
+  activated (Effect.abilityCreateTokensX .treasure) { symbols := #[.x, .x] }
+    (tap := true) (sacrificeSource := true)]
 
 /-- Oracle text for Aragorn and Arwen, Wed. -/
 def aragornAndArwenWedOracle : String :=
