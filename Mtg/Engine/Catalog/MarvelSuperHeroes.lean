@@ -4498,8 +4498,12 @@ def superStrength : CardDef :=
 #guard superStrength.staticAbilities == #[StaticAbility.enchantedCreatureGetsHasAndWard 4 4
       Keyword.trample 1]
 
-def theThingBenGrimm : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for The Thing, Ben Grimm. -/
+def theThingBenGrimmOracle : String :=
+  "Trample\nWhenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing."
+
+def theThingBenGrimmDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "The Thing, Ben Grimm",
     .manaCost [.generic 5, .mono .green],
     .type .creature,
@@ -4507,20 +4511,38 @@ def theThingBenGrimm : CardDef :=
     .subtype .human,
     .subtype .hero,
     .power 7,
-    .toughness 7,
-    .ability (.keyword .trample),
-    .ability (
-      .triggered
-        (.combatDamage
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .subtype .hero,
-            .controlled (.controller .this)])
-          .player)
-        (.putCounter (.source .this) .plusOnePlusOne 2))
-  ]).toCardDef
-    (oracleText := "Trample\nWhenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing.")
+    .toughness 7
+  ] ++ (parseOracleParts (name := "The Thing, Ben Grimm") theThingBenGrimmOracle).get!
+
+#guard theThingBenGrimmDefinition == .card [
+  .name "The Thing, Ben Grimm",
+  .manaCost [.generic 5, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .hero,
+  .power 7,
+  .toughness 7,
+  .ability (.keyword .trample),
+  .ability (
+    .triggered
+      (.damageSimultaneously
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .subtype .hero,
+          .controlled (.controller .this)])
+        .player
+        [])
+      (.putCounter (.source .this) .plusOnePlusOne 2))]
+
+def theThingBenGrimm : CardDef :=
+  theThingBenGrimmDefinition.toCardDef (oracleText := theThingBenGrimmOracle)
+
+#guard theThingBenGrimm.oracleText == theThingBenGrimmOracle
+#guard theThingBenGrimm.keywords == Keyword.trample
+#guard theThingBenGrimm.triggeredAbilities == #[
+  .onWatch Effect.watchHeroesDamagePlusTwo]
 
 def tigraFelineFury : CardDef :=
   legendaryCreature "Tigra, Feline Fury" (ManaCost.ofGenericAndColor 1 .green) #["Cat", "Human", "Hero"] 2 1

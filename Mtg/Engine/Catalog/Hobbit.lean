@@ -6327,8 +6327,12 @@ def theNotaryHobbits : CardDef :=
     (tapAddColorlessPerSubtype := some "Halfling")
     (triggeredAbilities := #[.onEnterIfNotTokenCopySelf])
 
-def theSackvilleBagginses : CardDef :=
-  (TraditionalCardDefinition.card [
+/-- Oracle text for The Sackville-Bagginses. -/
+def theSackvilleBagginsesOracle : String :=
+  "When The Sackville-Bagginses enter, you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token.\nWhenever you sacrifice a token, target opponent loses 1 life."
+
+def theSackvilleBagginsesDefinition : TraditionalCardDefinition := .card <|
+  [
     .name "The Sackville-Bagginses",
     .manaCost [.generic 1, .mono .black],
     .type .creature,
@@ -6336,35 +6340,54 @@ def theSackvilleBagginses : CardDef :=
     .subtype .halfling,
     .subtype .citizen,
     .power 2,
-    .toughness 2,
-    .ability (
-      .triggered
-        (.enter .this)
-        (.sequence [
-          .optional (.controller .this)
-            (.actionId 1
-              (.sacrifice
-                (.selected
-                  (.controller .this)
-                  (.range 1 1)
-                  (.intersection [
-                    .not .this,
-                    .permanent,
-                    .union [.cardType .creature, .cardType .artifact],
-                    .controlled (.controller .this)])))),
-          .if (.happened (.actionWithId 1) .gameStart)
-            [
-              .draw (.controller .this) 1,
-              .createTokens (.controller .this) 1 PredefinedToken.treasureToken]])),
-    .ability (
-      .triggered
-        (.die
-          (.intersection [
-            .token,
-            .controlled (.controller .this)]))
-        (.loseLife (.target 1 (.opponent (.controller .this))) 1))
-  ]).toCardDef
-    (oracleText := "When The Sackville-Bagginses enter, you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token.\nWhenever you sacrifice a token, target opponent loses 1 life.")
+    .toughness 2
+  ] ++ (parseOracleParts (name := "The Sackville-Bagginses") theSackvilleBagginsesOracle).get!
+
+#guard theSackvilleBagginsesDefinition == .card [
+  .name "The Sackville-Bagginses",
+  .manaCost [.generic 1, .mono .black],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .citizen,
+  .power 2,
+  .toughness 2,
+  .ability (
+    .triggered
+      (.enter .this)
+      (.sequence [
+        .optional (.controller .this)
+          (.actionId 1
+            (.sacrifice
+              (.selected
+                (.controller .this)
+                (.range 1 1)
+                (.intersection [
+                  .not .this,
+                  .permanent,
+                  .union [.cardType .creature, .cardType .artifact],
+                  .controlled (.controller .this)])))),
+        .if
+          (.happened (.actionWithId 1) .gameStart)
+          [
+            .draw (.controller .this) 1,
+            .createTokens (.controller .this) 1 PredefinedToken.treasureToken]])),
+  .ability (
+    .triggered
+      (.sacrifice
+        (.intersection [
+          .permanent,
+          .token,
+          .controlled (.controller .this)]))
+      (.loseLife (.target 1 (.opponent (.controller .this))) 1))]
+
+def theSackvilleBagginses : CardDef :=
+  theSackvilleBagginsesDefinition.toCardDef (oracleText := theSackvilleBagginsesOracle)
+
+#guard theSackvilleBagginses.oracleText == theSackvilleBagginsesOracle
+#guard theSackvilleBagginses.triggeredAbilities == #[
+  .onEnterMaySacDrawTreasure,
+  .onYouSacrificeTokenOppLosesLife]
 
 def thorinMountainKing : CardDef :=
   legendaryCreature "Thorin, Mountain-king" (ManaCost.ofGenericAndColor 3 .red) #["Dwarf", "Noble"] 3 4 (oracleText := "Trample\nWhen Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature.")

@@ -29,17 +29,14 @@ catalog.
 | Marvel Super Heroes (MSH) | 281 | 147 | 134 | 134 |
 | **Total** | **586** | **357** | **229** | **229** |
 
-355 of the 357 `TraditionalCardDefinition`s (143 HOB, 66 HOC, 146 MSH,
+All 357 `TraditionalCardDefinition`s (144 HOB, 66 HOC, 147 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
-parsed definition. The other two spell every part by hand because their
-modeled abilities are narrower than the printed text:
-
-- **The Sackville-Bagginses** models “Whenever you sacrifice a token” as a
-  token you control dying.
-- **The Thing, Ben Grimm** models “Whenever one or more Heroes you control
-  deal damage to a player” as each Hero dealing combat damage to a player.
+parsed definition. The Sackville-Bagginses reads “Whenever you sacrifice a
+token” as sacrificing a token permanent you control, and The Thing, Ben Grimm
+reads “Whenever one or more Heroes you control deal damage to a player” as
+those Heroes dealing damage to a player at the same time.
 
 Evidence for each remaining card is its catalog definition (Oracle text plus
 modeled `CardDef` fields, triggered/static/activated constructors, and
@@ -85,9 +82,11 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `turnStart`, `gameStart`, `attack`, `enter`, `draw`,
-  `ordinal`, `combatDamage`, `damage`, `putToGraveyard`, `leaveGraveyard`,
-  `returnToHand`, `discard`, `putCountersSimultaneously`, `block`, `die`,
-  `dieSimultaneously`, `attackSimultaneously` (who attacks, who is attacked),
+  `ordinal`, `combatDamage`, `damage`, `damageSimultaneously` (who deals
+  damage, who is dealt damage, at the same time), `putToGraveyard`,
+  `leaveGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`,
+  `block`, `die`, `dieSimultaneously`, `sacrifice` (the permanents sacrificed),
+  `attackSimultaneously` (who attacks, who is attacked),
   `abilityWithIdActivated`, `actionWithId`, `triggerId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `spendManaFrom`, `castSpell`,
   `castSpellFromGraveyard`, `counter`, `activateAbility`, `target` (a spell or

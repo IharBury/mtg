@@ -100,6 +100,13 @@ Currently recognized:
   `P/T` is a signed change such as -1 / -1
 - `Whenever one or more other creatures die, scry N.`
   Those creatures die at the same time (CR 603.2c).
+- `Whenever you sacrifice a token, target opponent loses N life.`
+  The token is a permanent this object's controller sacrifices (CR 701.17).
+  The opponent is one target.
+- `Whenever one or more <objects> you control deal damage to a player, put <count> +1/+1 counters on <this>.`
+  Those objects deal that damage at the same time, so this is one trigger
+  (CR 603.2c). Combat damage and noncombat damage both count. `<this>` is
+  this card's name or the short name before a comma.
 - `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
 - `Whenever you draw a card, put a +1/+1 counter on this creature.`
 - `When <this card> enters, target opponent sacrifices a creature of their choice.`
@@ -5040,12 +5047,16 @@ def parseDrawAndLoseLife (sentence : String) (n : Nat) : Option (CardAction × N
       | _, _ => none
   lose <|> unchanged (parseDrawCards s) n
 
-/-- `Each opponent loses N life` or `you lose N life`. -/
+/-- `Each opponent loses N life`, `you lose N life`, or
+`target opponent loses N life`. The target is numbered `n`. -/
 def parseLoseLife (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := normSentence sentence
   ((parseEachOpponentLosesLife s).map fun k =>
       (.loseLife (.opponent (.controller .this)) (Value.nat k), n)) <|>
-    ((lifeAmount? s "you lose ").map fun k => (.loseLife (.controller .this) (Value.nat k), n))
+    ((lifeAmount? s "you lose ").map fun k =>
+      (.loseLife (.controller .this) (Value.nat k), n)) <|>
+    ((lifeAmount? s "target opponent loses ").map fun k =>
+      (.loseLife (.target n (.opponent (.controller .this))) (Value.nat k), n + 1))
 
 /-- `Target player mills <count>`. The player is target `n`. -/
 def parseTargetPlayerMills (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -6178,19 +6189,22 @@ def parseSpellYouCast (s : String) : Option Selector :=
 
 /-- The event of a trigger condition (CR 603.1), after `when` or `whenever`:
 this card entering, dying, attacking, or becoming blocked; another permanent
-entering; creatures attacking together; a spell being cast; you drawing a
+entering; creatures attacking together; one or more objects dealing damage
+to a player; you sacrificing a token; a spell being cast; you drawing a
 card; or a second draw or spell in a turn. -/
 def parseTriggerEvent (cardName clause : String) : Option Trigger :=
   let c := norm clause
   let self (tail : String) : Option Unit :=
     (before? c tail).bind fun who => if refersToSelf cardName who then some () else none
+  -- A plural name takes the plural verb (`The Sackville-Bagginses enter`).
   let selfEvent :=
     ((self " enters or attacks").map fun _ => Trigger.or (.enter .this) (.attack .this .all)) <|>
-      ((self " enters").map fun _ => Trigger.enter .this) <|>
-      ((self " dies").map fun _ => Trigger.die .this) <|>
-      ((self " attacks").map fun _ => Trigger.attack .this .all) <|>
-      ((self " becomes blocked").map fun _ => Trigger.block .all .this) <|>
-      ((self " deals combat damage to a player").map fun _ => Trigger.combatDamage .this .player)
+      ((self " enters" <|> self " enter").map fun _ => Trigger.enter .this) <|>
+      ((self " dies" <|> self " die").map fun _ => Trigger.die .this) <|>
+      ((self " attacks" <|> self " attack").map fun _ => Trigger.attack .this .all) <|>
+      ((self " becomes blocked" <|> self " become blocked").map fun _ => Trigger.block .all .this) <|>
+      ((self " deals combat damage to a player" <|> self " deal combat damage to a player").map fun _ =>
+        Trigger.combatDamage .this .player)
   let fixed : Option Trigger :=
     match c with
     | "you attack" => some youAttack
@@ -6204,6 +6218,8 @@ def parseTriggerEvent (cardName clause : String) : Option Trigger :=
     | "equipped creature attacks" => some (.attack (.hostOf .this) .all)
     | "equipped creature deals combat damage to a player" =>
       some (.combatDamage (.hostOf .this) .player)
+    | "you sacrifice a token" =>
+      some (.sacrifice (.intersection [.permanent, .token, youControl]))
     | _ => none
   let cast := (after? c "you cast ").bind parseSpellYouCast |>.map Trigger.castSpell
   let selfOrAnother :=
@@ -6239,10 +6255,15 @@ def parseTriggerEvent (cardName clause : String) : Option Trigger :=
     (before? c " deals combat damage to a player or battle").bind fun who =>
       (parseObjectDesc ((dropArticle? who).getD who) true).map fun sel =>
         Trigger.combatDamage sel (.union [.player, .cardType .battle])
+  let damageTogether :=
+    (before? c " deal damage to a player").bind fun who =>
+      (after? who "one or more ").bind fun obj =>
+        (parseObjectDesc obj true).map fun sel =>
+          Trigger.damageSimultaneously sel .player []
   let leaves :=
     (before? c " leaves your graveyard").bind parseGraveyardCard' |>.map Trigger.leaveGraveyard
   selfEvent <|> fixed <|> cast <|> selfOrAnother <|> andOr <|> returned <|>
-    attackTogether <|> combat <|> leaves <|> enters
+    attackTogether <|> combat <|> damageTogether <|> leaves <|> enters
 where
   parseGraveyardCard' (s : String) : Option Selector :=
     (dropArticle? s).bind parseGraveyardCard
@@ -10828,5 +10849,29 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
   "Flying, first strike, ward {1}" ==
   some [.ability (.keyword .flying), .ability (.keyword .firstStrike),
     .ability (.keywordWithCost .ward [.mana [.generic 1]])]
+#guard parseOracleParts (name := "The Sackville-Bagginses")
+  "Whenever you sacrifice a token, target opponent loses 1 life." ==
+  some [.ability (.triggered
+    (.sacrifice (.intersection [.permanent, .token, youControl]))
+    (.loseLife (.target 1 (.opponent (.controller .this))) 1))]
+#guard parseOracleParts (name := "The Sackville-Bagginses")
+  "Whenever you sacrifice a creature, target opponent loses 1 life." == none
+#guard parseOracleParts (name := "The Sackville-Bagginses")
+  "Whenever a token you control dies, target opponent loses 1 life." == none
+#guard parseOracleParts (name := "The Thing, Ben Grimm")
+  "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing." ==
+  some [.ability (.triggered
+    (.damageSimultaneously
+      (.intersection [
+        .permanent, .cardType .creature, .subtype .hero, youControl])
+      .player
+      [])
+    (.putCounter (.source .this) .plusOnePlusOne 2))]
+#guard parseOracleParts (name := "The Thing, Ben Grimm")
+  "Whenever one or more Heroes you control deal combat damage to a player, put two +1/+1 counters on The Thing." ==
+  none
+#guard parseOracleParts (name := "Other Card")
+  "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing." ==
+  none
 
 end Mtg.Engine
