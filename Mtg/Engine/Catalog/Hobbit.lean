@@ -49,8 +49,8 @@ Old Fat Spider, Great Gilded Boat, Desolation of Smaug,
 Dwarven Mauler, My Precious, Troop of Ponies, Elven Raft-Steerer,
 Mirkwood Meditator, Mirkwood Nurturer, Kíli the Resourceful,
 Dáin's Company, Smaug, Wicked Worm, Glamdring, Foe-hammer,
-Settle the Wreckage, Iron Hills Blacksmith, and Gandalf, Goblins' Bane
-keep their printed characteristics as parts;
+Settle the Wreckage, Iron Hills Blacksmith, Gandalf, Goblins' Bane,
+An Unexpected Party, Azog, Moria's Ruin, and Balin, Loremaster keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -5253,15 +5253,61 @@ def gandalfGoblinsBane : CardDef :=
       adv.spellEffect == some (Effect.exileTopPlayIfYouControlSubtype 2 "Wizard")
   | none => false
 
+/-- Gatherer Oracle text for An Unexpected Party // At the Door. -/
+def anUnexpectedPartyOracle : String :=
+  "As this enchantment enters, choose a creature type.\nCreatures you control of the chosen type get +2/+2.\n//ADV//\nAt the Door {X}{2}{W}\nSorcery — Adventure\nCreate X 2/2 red Dwarf creature tokens. (Then exile this card. You may cast the enchantment later from exile.)"
+
+def anUnexpectedPartyDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "An Unexpected Party",
+    .manaCost [.generic 2, .mono .white, .mono .white],
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "An Unexpected Party") anUnexpectedPartyOracle).get!
+
+#guard anUnexpectedPartyDefinition == .card [
+  .name "An Unexpected Party",
+  .manaCost [.generic 2, .mono .white, .mono .white],
+  .type .enchantment,
+  .ability (.static (.replace (.enter .this)
+    [.actionId 1 (.chooseCreatureType (.controller .this)), .keepReplacedAction])),
+  .ability (.static (.addPower
+    (.intersection [
+      .permanent, .cardType .creature, .controlled (.controller .this),
+      .hasCreatureTypeChosenByAction 1])
+    (Value.int 2))),
+  .ability (.static (.addToughness
+    (.intersection [
+      .permanent, .cardType .creature, .controlled (.controller .this),
+      .hasCreatureTypeChosenByAction 1])
+    (Value.int 2))),
+  .alternative [
+    .name "At the Door",
+    .manaCost [.x, .generic 2, .mono .white],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [
+      .createTokens (.controller .this) .x [
+        .type .creature,
+        .subtype .dwarf,
+        .colorIndicator [.red],
+        .power 2,
+        .toughness 2]]]]
+
 def anUnexpectedParty : CardDef :=
-  enchantment "An Unexpected Party" (ManaCost.ofGenericAndColors 2 [.white, .white])
-    "As this enchantment enters, choose a creature type.\nCreatures you control of the chosen type get +2/+2.\n//ADV//\nAt the Door {X}{2}{W}\nSorcery — Adventure\nCreate X 2/2 red Dwarf creature tokens. (Then exile this card. You may cast the enchantment later from exile.)"
-    (asEntersChooseCreatureType := true)
-    (staticAbilities := #[.chosenTypeCreaturesGet 2 2])
-    (adventure := some (adventure "At the Door"
-      { symbols := #[.x, .generic 2, .colored .white] }
-      "Create X 2/2 red Dwarf creature tokens. (Then exile this card. You may cast the enchantment later from exile.)"
-      (Effect.createTokensX .dwarf)))
+  anUnexpectedPartyDefinition.toCardDef (oracleText := anUnexpectedPartyOracle)
+
+#guard anUnexpectedParty.oracleText == anUnexpectedPartyOracle
+#guard anUnexpectedParty.asEntersChooseCreatureType
+#guard anUnexpectedParty.staticAbilities == #[.chosenTypeCreaturesGet 2 2]
+#guard
+  match anUnexpectedParty.adventure with
+  | some adv =>
+    adv.name == "At the Door" &&
+      adv.manaCost == { symbols := #[.x, .generic 2, .colored .white] } &&
+      adv.types == #[.sorcery] &&
+      adv.subtypes == #["Adventure"] &&
+      adv.spellEffect == some (Effect.createTokensX .dwarf)
+  | none => false
 
 /-- Gatherer Oracle text for Along the Crooked Way. -/
 def alongTheCrookedWayOracle : String :=
@@ -5311,14 +5357,96 @@ def alongTheCrookedWayDefinition : TraditionalCardDefinition := .card <|
 def alongTheCrookedWay : CardDef :=
   alongTheCrookedWayDefinition.toCardDef (oracleText := alongTheCrookedWayOracle)
 
+/-- Gatherer Oracle text for Azog, Moria's Ruin. -/
+def azogMoriaSRuinOracle : String :=
+  "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)"
+
+def azogMoriaSRuinDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Azog, Moria's Ruin",
+    .manaCost [.generic 2, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .goblin,
+    .subtype .soldier,
+    .power 1,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Azog, Moria's Ruin") azogMoriaSRuinOracle).get!
+
+#guard azogMoriaSRuinDefinition == .card [
+  .name "Azog, Moria's Ruin",
+  .manaCost [.generic 2, .mono .black],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .goblin,
+  .subtype .soldier,
+  .power 1,
+  .toughness 3,
+  .ability (.triggered (.enter .this) (.sequence [
+    .defineValueVariable 1
+      (.greatestPower
+        (.targets 1 (.range 0 1) (.intersection [.not .this, .permanent, .cardType .creature]))),
+    .defineSelectorVariable 2 (.controller (.targetReference 1)),
+    .destroy (.targetReference 1),
+    .keyword (.variable 2) (.amass .goblin (.variable 1)),
+    .if (.any (.intersection [.variable 2, .controller .this]))
+      [.draw (.controller .this) 1]]))]
+
 def azogMoriaSRuin : CardDef :=
-  legendaryCreature "Azog, Moria's Ruin" (ManaCost.ofGenericAndColor 2 .black) #["Goblin", "Soldier"] 1 3 (oracleText := "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)")
-    (triggeredAbilities := #[.onEnterDestroyOtherAmassControllerPower])
+  azogMoriaSRuinDefinition.toCardDef (oracleText := azogMoriaSRuinOracle)
+
+#guard azogMoriaSRuin.oracleText == azogMoriaSRuinOracle
+#guard azogMoriaSRuin.triggeredAbilities == #[.onEnterDestroyOtherAmassControllerPower]
+
+/-- Gatherer Oracle text for Balin, Loremaster. -/
+def balinLoremasterOracle : String :=
+  "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nWhenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
+
+def balinLoremasterDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Balin, Loremaster",
+    .manaCost [.generic 3, .mono .red, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .bard,
+    .power 4,
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Balin, Loremaster") balinLoremasterOracle).get!
+
+#guard balinLoremasterDefinition == .card [
+  .name "Balin, Loremaster",
+  .manaCost [.generic 3, .mono .red, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .bard,
+  .power 4,
+  .toughness 4,
+  .ability (.keyword .storied),
+  .ability (.triggered
+    (.or
+      (.enter .this)
+      (.enter (.intersection [
+        .not .this, .permanent, .cardType .creature, .subtype .dwarf,
+        .controlled (.controller .this)])))
+    (.sequence [
+      .optional (.controller .this)
+        (.actionId 1
+          (.discard (.controller .this)
+            (.count (.intersection [.inHand, .owner (.controller .this)])))),
+      .draw (.controller .this) (.count (.wasObjectOfAction 1)),
+      .if (.enduringStory (.controller .this))
+        [.dealDamage (.source .this) (.opponent (.controller .this))
+          (.count (.wasObjectOfAction 1))]]))]
 
 def balinLoremaster : CardDef :=
-  legendaryCreature "Balin, Loremaster" (ManaCost.ofGenericAndColors 3 [.red, .red]) #["Dwarf", "Bard"] 4 4 (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nWhenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent.")
-    (keywords := Keyword.storied)
-    (triggeredAbilities := #[.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf"])
+  balinLoremasterDefinition.toCardDef (oracleText := balinLoremasterOracle)
+
+#guard balinLoremaster.oracleText == balinLoremasterOracle
+#guard balinLoremaster.keywords == Keyword.storied
+#guard balinLoremaster.triggeredAbilities ==
+  #[.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf"]
 
 /-- Gatherer Oracle text for Bard the Bowman. -/
 def bardTheBowmanOracle : String :=
