@@ -1229,11 +1229,50 @@ def giantSizedFlyingAntDefinition : TraditionalCardDefinition := .card <|
 def giantSizedFlyingAnt : CardDef :=
   giantSizedFlyingAntDefinition.toCardDef (oracleText := giantSizedFlyingAntOracle)
 
+/-- Oracle text for Hydraulic Helper. -/
+def hydraulicHelperOracle : String :=
+  "Defender\n{T}: Add {U}. This mana can't be spent to cast a nonartifact spell."
+
+def hydraulicHelperDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Hydraulic Helper",
+    .manaCost [.generic 1, .mono .blue],
+    .type .artifact,
+    .type .creature,
+    .subtype .robot,
+    .power 2,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Hydraulic Helper") hydraulicHelperOracle).get!
+
+#guard hydraulicHelperDefinition == .card [
+  .name "Hydraulic Helper",
+  .manaCost [.generic 1, .mono .blue],
+  .type .artifact,
+  .type .creature,
+  .subtype .robot,
+  .power 2,
+  .toughness 3,
+  .ability (.keyword .defender),
+  .ability
+    (.activated
+      [.tapSymbol]
+      (.sequence
+        [
+          .actionId 1 (.addMana (.controller .this) [.mono .blue]),
+          .continuous
+            [
+              .forbid
+                (.spendManaCreatedByAction
+                  1
+                  (.castSpell (.intersection [.spell, .not (.cardType .artifact)])))]
+            .endOfTurn]))]
+
 def hydraulicHelper : CardDef :=
-  artifactCreature "Hydraulic Helper" (ManaCost.ofGenericAndColor 1 .blue) #["Robot"] 2 3
-    (oracleText := "Defender\n{T}: Add {U}. This mana can't be spent to cast a nonartifact spell.")
-    (keywords := Keyword.defender)
-    (activatedAbilities := #[activated (Effect.addBlueCantNonartifact) (ManaCost.empty) (tap := true)])
+  hydraulicHelperDefinition.toCardDef (oracleText := hydraulicHelperOracle)
+
+#guard hydraulicHelper.oracleText == hydraulicHelperOracle
+#guard hydraulicHelper.keywords == Keyword.defender
+#guard hydraulicHelper.activatedAbilities == #[activated (Effect.addBlueCantNonartifact) (ManaCost.empty) (tap := true)]
 
 def iAmIronMan : CardDef :=
   instant "I Am Iron Man" (ManaCost.ofGenericAndColor 2 .blue)
@@ -5151,12 +5190,68 @@ def avengersHangarDefinition : TraditionalCardDefinition := .card <|
 def avengersHangar : CardDef :=
   avengersHangarDefinition.toCardDef (oracleText := avengersHangarOracle)
 
+/-- Oracle text for Avengers Tower. -/
+def avengersTowerOracle : String :=
+  "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source.\n{4}, {T}: Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order."
+
+def avengersTowerDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Avengers Tower",
+    .type .land
+  ] ++ (parseOracleParts (name := "Avengers Tower") avengersTowerOracle).get!
+
+#guard avengersTowerDefinition == .card [
+  .name "Avengers Tower",
+  .type .land,
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+  .ability
+    (.activated
+      [.tapSymbol]
+      (.sequence
+        [
+          .actionId
+            1
+            (.addManaOfOneColor
+              (.controller .this)
+              [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
+              (.nat 1)),
+          .continuous
+            [
+              .forbid
+                (.spendManaCreatedByAction
+                  1
+                  (.not
+                    (.or
+                      (.castSpell (.intersection [.spell, .subtype .hero]))
+                      (.activateAbility (.subtype .hero)))))]
+            .endOfTurn])),
+  .ability
+    (.activated
+      [.mana [.generic 4], .tapSymbol]
+      (.sequence
+        [
+          .actionId 2 (.lookAt (.topOfLibrary (.controller .this) (.nat 3))),
+          .optional
+            (.controller .this)
+            (.sequence
+              [
+                .actionId
+                  3
+                  (.reveal
+                    (.selected
+                      (.controller .this)
+                      (.range (.nat 1) (.nat 1))
+                      (.intersection [.wasObjectOfAction 2, .subtype .hero]))),
+                .returnToHand (.wasObjectOfAction 3)]),
+          .putOnBottomOfLibrary (.intersection [.wasObjectOfAction 2, .not (.wasObjectOfAction 3)])]))]
+
 def avengersTower : CardDef :=
-  land "Avengers Tower"
-    "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source.\n{4}, {T}: Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order."
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (Effect.addAnyColorSpendOnlySubtype "Hero") (ManaCost.empty) (tap := true),
-      activated (Effect.lookAtTopRevealSubtype 3 "Hero") (ManaCost.ofGeneric 4) (tap := true)])
+  avengersTowerDefinition.toCardDef (oracleText := avengersTowerOracle)
+
+#guard avengersTower.oracleText == avengersTowerOracle
+#guard avengersTower.tapAddMana == #[.colorless]
+#guard avengersTower.activatedAbilities == #[activated (Effect.addAnyColorSpendOnlySubtype "Hero") (ManaCost.empty) (tap := true),
+      activated (Effect.lookAtTopRevealSubtype 3 "Hero") (ManaCost.ofGeneric 4) (tap := true)]
 
 def baxterBuilding : CardDef :=
   land "Baxter Building"
@@ -5198,16 +5293,103 @@ def birninZanaPlazaDefinition : TraditionalCardDefinition := .card <|
 def birninZanaPlaza : CardDef :=
   birninZanaPlazaDefinition.toCardDef (oracleText := birninZanaPlazaOracle)
 
+/-- Oracle text for Castle Doom. -/
+def castleDoomOracle : String :=
+  "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast an artifact spell.\n{3}, {T}, Sacrifice an artifact: Create a 3/3 colorless Robot Villain artifact creature token named Doombot. Activate only as a sorcery."
+
+def castleDoomDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Castle Doom",
+    .type .land
+  ] ++ (parseOracleParts (name := "Castle Doom") castleDoomOracle).get!
+
+#guard castleDoomDefinition == .card [
+  .name "Castle Doom",
+  .type .land,
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+  .ability
+    (.activated
+      [.tapSymbol]
+      (.sequence
+        [
+          .actionId
+            1
+            (.addManaOfOneColor
+              (.controller .this)
+              [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
+              (.nat 1)),
+          .continuous
+            [
+              .forbid
+                (.spendManaCreatedByAction
+                  1
+                  (.not (.castSpell (.intersection [.spell, .cardType .artifact]))))]
+            .endOfTurn])),
+  .ability
+    (.activatedIf
+      (.timeToCastSorcery (.controller .this))
+      [
+        .mana [.generic 3],
+        .tapSymbol,
+        .sacrificeCount (.intersection [.permanent, .cardType .artifact]) 1]
+      (.createTokens
+        (.controller .this)
+        (.nat 1)
+        [
+          .name "Doombot",
+          .type .artifact,
+          .type .creature,
+          .subtype .robot,
+          .subtype .villain,
+          .colorIndicator [],
+          .power 3,
+          .toughness 3]
+        []))]
+
 def castleDoom : CardDef :=
-  land "Castle Doom"
-    "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast an artifact spell.\n{3}, {T}, Sacrifice an artifact: Create a 3/3 colorless Robot Villain artifact creature token named Doombot. Activate only as a sorcery."
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (Effect.addAnyColorSpendOnlyArtifactSpell) (ManaCost.empty) (tap := true),
+  castleDoomDefinition.toCardDef (oracleText := castleDoomOracle)
+
+#guard castleDoom.oracleText == castleDoomOracle
+#guard castleDoom.tapAddMana == #[.colorless]
+#guard castleDoom.activatedAbilities == #[activated (Effect.addAnyColorSpendOnlyArtifactSpell) (ManaCost.empty) (tap := true),
       activated (Effect.abilityCreateTokens .doombot 1) (ManaCost.ofGeneric 3) (tap := true)
-        (sacrificeArtifact := true) (onlyAsSorcery := true)])
+        (sacrificeArtifact := true) (onlyAsSorcery := true)]
+
+/-- Oracle text for Dark Fortress. -/
+def darkFortressOracle : String :=
+  "{T}: Add {C}.\n{T}: Add {B} or {R}. Activate only if this land entered this turn or if you control a basic land."
+
+def darkFortressDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Dark Fortress",
+    .type .land
+  ] ++ (parseOracleParts (name := "Dark Fortress") darkFortressOracle).get!
+
+#guard darkFortressDefinition == .card [
+  .name "Dark Fortress",
+  .type .land,
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+  .ability
+    (.activatedIf
+      (.not
+        (.and
+          (.not (.happened (.enter (.source .this)) .turnStart))
+          (.not
+            (.any
+              (.intersection
+                [.permanent, .cardType .land, .supertype .basic, .controlled (.controller .this)])))))
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range (.nat 1) (.nat 1))
+        [.addMana (.controller .this) [.mono .black], .addMana (.controller .this) [.mono .red]]))]
 
 def darkFortress : CardDef :=
-  conditionalDualLand "Dark Fortress" .black .red
+  darkFortressDefinition.toCardDef (oracleText := darkFortressOracle)
+
+#guard darkFortress.oracleText == darkFortressOracle
+#guard darkFortress.tapAddMana == #[.colorless]
+#guard darkFortress.tapAddOneOfIfEnteredOrBasic == #[.colored .black, .colored .red]
 
 /-- Oracle text for Fisk Tower. -/
 def fiskTowerOracle : String :=
@@ -5241,11 +5423,77 @@ def fiskTowerDefinition : TraditionalCardDefinition := .card <|
 def fiskTower : CardDef :=
   fiskTowerDefinition.toCardDef (oracleText := fiskTowerOracle)
 
+/-- Oracle text for Gathering Place. -/
+def gatheringPlaceOracle : String :=
+  "{T}: Add {C}.\n{T}: Add {G} or {W}. Activate only if this land entered this turn or if you control a basic land."
+
+def gatheringPlaceDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Gathering Place",
+    .type .land
+  ] ++ (parseOracleParts (name := "Gathering Place") gatheringPlaceOracle).get!
+
+#guard gatheringPlaceDefinition == .card [
+  .name "Gathering Place",
+  .type .land,
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+  .ability
+    (.activatedIf
+      (.not
+        (.and
+          (.not (.happened (.enter (.source .this)) .turnStart))
+          (.not
+            (.any
+              (.intersection
+                [.permanent, .cardType .land, .supertype .basic, .controlled (.controller .this)])))))
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range (.nat 1) (.nat 1))
+        [.addMana (.controller .this) [.mono .green], .addMana (.controller .this) [.mono .white]]))]
+
 def gatheringPlace : CardDef :=
-  conditionalDualLand "Gathering Place" .green .white
+  gatheringPlaceDefinition.toCardDef (oracleText := gatheringPlaceOracle)
+
+#guard gatheringPlace.oracleText == gatheringPlaceOracle
+#guard gatheringPlace.tapAddMana == #[.colorless]
+#guard gatheringPlace.tapAddOneOfIfEnteredOrBasic == #[.colored .green, .colored .white]
+
+/-- Oracle text for Gleaming Bastion. -/
+def gleamingBastionOracle : String :=
+  "{T}: Add {C}.\n{T}: Add {W} or {U}. Activate only if this land entered this turn or if you control a basic land."
+
+def gleamingBastionDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Gleaming Bastion",
+    .type .land
+  ] ++ (parseOracleParts (name := "Gleaming Bastion") gleamingBastionOracle).get!
+
+#guard gleamingBastionDefinition == .card [
+  .name "Gleaming Bastion",
+  .type .land,
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+  .ability
+    (.activatedIf
+      (.not
+        (.and
+          (.not (.happened (.enter (.source .this)) .turnStart))
+          (.not
+            (.any
+              (.intersection
+                [.permanent, .cardType .land, .supertype .basic, .controlled (.controller .this)])))))
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range (.nat 1) (.nat 1))
+        [.addMana (.controller .this) [.mono .white], .addMana (.controller .this) [.mono .blue]]))]
 
 def gleamingBastion : CardDef :=
-  conditionalDualLand "Gleaming Bastion" .white .blue
+  gleamingBastionDefinition.toCardDef (oracleText := gleamingBastionOracle)
+
+#guard gleamingBastion.oracleText == gleamingBastionOracle
+#guard gleamingBastion.tapAddMana == #[.colorless]
+#guard gleamingBastion.tapAddOneOfIfEnteredOrBasic == #[.colored .white, .colored .blue]
 
 /-- Oracle text for Hell's Kitchen. -/
 def hellSKitchenOracle : String :=
@@ -5279,8 +5527,41 @@ def hellSKitchenDefinition : TraditionalCardDefinition := .card <|
 def hellSKitchen : CardDef :=
   hellSKitchenDefinition.toCardDef (oracleText := hellSKitchenOracle)
 
+/-- Oracle text for Hidden Lair. -/
+def hiddenLairOracle : String :=
+  "{T}: Add {C}.\n{T}: Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land."
+
+def hiddenLairDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Hidden Lair",
+    .type .land
+  ] ++ (parseOracleParts (name := "Hidden Lair") hiddenLairOracle).get!
+
+#guard hiddenLairDefinition == .card [
+  .name "Hidden Lair",
+  .type .land,
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+  .ability
+    (.activatedIf
+      (.not
+        (.and
+          (.not (.happened (.enter (.source .this)) .turnStart))
+          (.not
+            (.any
+              (.intersection
+                [.permanent, .cardType .land, .supertype .basic, .controlled (.controller .this)])))))
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range (.nat 1) (.nat 1))
+        [.addMana (.controller .this) [.mono .blue], .addMana (.controller .this) [.mono .black]]))]
+
 def hiddenLair : CardDef :=
-  conditionalDualLand "Hidden Lair" .blue .black
+  hiddenLairDefinition.toCardDef (oracleText := hiddenLairOracle)
+
+#guard hiddenLair.oracleText == hiddenLairOracle
+#guard hiddenLair.tapAddMana == #[.colorless]
+#guard hiddenLair.tapAddOneOfIfEnteredOrBasic == #[.colored .blue, .colored .black]
 
 /-- Oracle text for Los Diablos Missile Base. -/
 def losDiablosMissileBaseOracle : String :=
@@ -5434,15 +5715,95 @@ def surveillanceRoomDefinition : TraditionalCardDefinition := .card <|
 def surveillanceRoom : CardDef :=
   surveillanceRoomDefinition.toCardDef (oracleText := surveillanceRoomOracle)
 
+/-- Oracle text for Training Compound. -/
+def trainingCompoundOracle : String :=
+  "{T}: Add {C}.\n{T}: Add {R} or {G}. Activate only if this land entered this turn or if you control a basic land."
+
+def trainingCompoundDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Training Compound",
+    .type .land
+  ] ++ (parseOracleParts (name := "Training Compound") trainingCompoundOracle).get!
+
+#guard trainingCompoundDefinition == .card [
+  .name "Training Compound",
+  .type .land,
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+  .ability
+    (.activatedIf
+      (.not
+        (.and
+          (.not (.happened (.enter (.source .this)) .turnStart))
+          (.not
+            (.any
+              (.intersection
+                [.permanent, .cardType .land, .supertype .basic, .controlled (.controller .this)])))))
+      [.tapSymbol]
+      (.playerSelectAction
+        (.controller .this)
+        (.range (.nat 1) (.nat 1))
+        [.addMana (.controller .this) [.mono .red], .addMana (.controller .this) [.mono .green]]))]
+
 def trainingCompound : CardDef :=
-  conditionalDualLand "Training Compound" .red .green
+  trainingCompoundDefinition.toCardDef (oracleText := trainingCompoundOracle)
+
+#guard trainingCompound.oracleText == trainingCompoundOracle
+#guard trainingCompound.tapAddMana == #[.colorless]
+#guard trainingCompound.tapAddOneOfIfEnteredOrBasic == #[.colored .red, .colored .green]
+
+/-- Oracle text for Villainous Hideout. -/
+def villainousHideoutOracle : String :=
+  "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source.\n{3}, {T}: Target Villain you control connives. Activate only as a sorcery. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)"
+
+def villainousHideoutDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Villainous Hideout",
+    .type .land
+  ] ++ (parseOracleParts (name := "Villainous Hideout") villainousHideoutOracle).get!
+
+#guard villainousHideoutDefinition == .card [
+  .name "Villainous Hideout",
+  .type .land,
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+  .ability
+    (.activated
+      [.tapSymbol]
+      (.sequence
+        [
+          .actionId
+            1
+            (.addManaOfOneColor
+              (.controller .this)
+              [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
+              (.nat 1)),
+          .continuous
+            [
+              .forbid
+                (.spendManaCreatedByAction
+                  1
+                  (.not
+                    (.or
+                      (.castSpell (.intersection [.spell, .subtype .villain]))
+                      (.activateAbility (.subtype .villain)))))]
+            .endOfTurn])),
+  .ability
+    (.activatedIf
+      (.timeToCastSorcery (.controller .this))
+      [.mana [.generic 3], .tapSymbol]
+      (.keyword
+        (.target
+          2
+          (.intersection
+            [.permanent, .cardType .creature, .subtype .villain, .controlled (.controller .this)]))
+        (.connive (.nat 1))))]
 
 def villainousHideout : CardDef :=
-  land "Villainous Hideout"
-    "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source.\n{3}, {T}: Target Villain you control connives. Activate only as a sorcery. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)"
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (Effect.addAnyColorSpendOnlySubtype "Villain") (ManaCost.empty) (tap := true),
-      activated (Effect.targetSubtypeConnives "Villain") (ManaCost.ofGeneric 3) (tap := true) (onlyAsSorcery := true)])
+  villainousHideoutDefinition.toCardDef (oracleText := villainousHideoutOracle)
+
+#guard villainousHideout.oracleText == villainousHideoutOracle
+#guard villainousHideout.tapAddMana == #[.colorless]
+#guard villainousHideout.activatedAbilities == #[activated (Effect.addAnyColorSpendOnlySubtype "Villain") (ManaCost.empty) (tap := true),
+      activated (Effect.targetSubtypeConnives "Villain") (ManaCost.ofGeneric 3) (tap := true) (onlyAsSorcery := true)]
 
 /-- All unique MSH card names, including both faces of transforming cards
 and the five basic lands printed in the set. -/
