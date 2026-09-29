@@ -5318,6 +5318,14 @@ structure CardFace where
   flashIfYouControlSubtype : Option String := none
   /-- Flashback cost (CR 702.34). -/
   flashback : Option ManaCost := none
+  /-- Teamwork N (CR 702.194). `N` is the total power of creatures that may be tapped. -/
+  teamwork : Option Nat := none
+  /-- How many times cascade is printed. Each instance is one ability. -/
+  cascade : Nat := 0
+  /-- Optional kicker cost (CR 702.32). -/
+  kicker : Option ManaCost := none
+  /-- Affinity for this subtype (CR 702.40). -/
+  affinityForSubtype : Option String := none
   /-- Ward cost (CR 702.21). A generic mana cost. -/
   ward : Option Nat := none
   colorIndicator : Option ColorSet := none
@@ -6131,9 +6139,30 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
 def applyAbility (b : CardFace) : Ability → CardFace
   | .keyword (.crew n) =>
     if n == 0 then b else { b with crew := some n }
+  | .keyword (.teamwork n) =>
+    if n == 0 then b else { b with teamwork := some n }
+  | .keyword .improvise =>
+    { b with staticAbilities := b.staticAbilities.push .improvise }
+  | .keyword (.affinity types subtypes) =>
+    match types, subtypes with
+    | [], [st] => { b with affinityForSubtype := some st.toString }
+    | _, _ => b
+  | .keyword .boast =>
+    { b with staticAbilities := b.staticAbilities.push .boast }
+  | .keyword .cascade =>
+    { b with cascade := b.cascade + 1 }
+  | .keyword .extort =>
+    { b with staticAbilities := b.staticAbilities.push .extort }
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
   | .keywordWithCost .flashback costs =>
     { b with flashback := some (Cost.manaCost costs) }
+  | .keywordWithCost .kicker costs =>
+    let cost := Cost.manaCost costs
+    if cost.symbols.isEmpty then b else { b with kicker := some cost }
+  | .keywordWithCost .sneak costs =>
+    let cost := Cost.manaCost costs
+    if cost.symbols.isEmpty then b
+    else { b with staticAbilities := b.staticAbilities.push (.sneak cost) }
   | .keywordWithCost .ward [.mana [.generic n]] =>
     if n == 0 then b else { b with ward := some n }
   | .keywordWithCost .ward costs =>
@@ -6413,6 +6442,10 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       cantBeCountered := b.cantBeCountered
       flashIfYouControlSubtype := b.flashIfYouControlSubtype
       flashback := b.flashback
+      teamwork := b.teamwork
+      cascade := b.cascade
+      kicker := b.kicker
+      affinityForSubtype := b.affinityForSubtype
       ward := b.ward
       colorIndicator := b.colorIndicator
       firstCreatureCostsLess := b.firstCreatureCostsLess
@@ -9457,6 +9490,58 @@ end TraditionalCardDefinition
   (TraditionalCardDefinition.card [
     .ability (.keywordWithCost .flashback [.mana [.generic 4, .mono .white]])
   ]).toCardDef.flashback == some (ManaCost.ofGenericAndColor 4 .white)
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.teamwork 2))
+  ]).toCardDef.teamwork == some 2
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.teamwork 0))
+  ]).toCardDef.teamwork.isNone
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword .improvise)
+  ]).toCardDef.hasImprovise
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keywordWithCost .kicker [.mana [.generic 2, .mono .white]])
+  ]).toCardDef.kicker == some (ManaCost.ofGenericAndColor 2 .white)
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.affinity [] [.elf]))
+  ]).toCardDef.affinityForSubtype == some "Elf"
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.affinity [.artifact] []))
+  ]).toCardDef.affinityForSubtype.isNone
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword .boast)
+  ]).toCardDef.hasBoast
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword .cascade),
+    .ability (.keyword .cascade)
+  ]).toCardDef.cascade == 2
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword .extort)
+  ]).toCardDef.staticAbilities == #[.extort]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keywordWithCost .sneak [.mana [.generic 1, .mono .black, .mono .black]])
+  ]).toCardDef.sneakCost ==
+    some (ManaCost.ofGenericAndColors 1 [.black, .black])
 
 #guard
   (Ability.triggered
