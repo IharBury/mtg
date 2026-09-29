@@ -210,6 +210,9 @@ Currently recognized:
   `{T}`, and `Sacrifice <this>`. `Activate only as a sorcery` is the timing
   restriction (CR 602.5a).
 - `{T}, Sacrifice <this>: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.`
+- `{T}, Pay N life, Sacrifice <this>: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold a <subtype>. If you do, untap that land.`
+  Behold is a keyword action (CR 701.4). The found land untaps only when that
+  behold happened (CR 701.4b). A trailing reminder parenthetical is not rules text.
 - `<type>cycling {cost}`
   Typecycling (CR 702.29). `<type>` is a subtype (`Halflingcycling`), a card
   type, or supertypes plus a type (`Basic landcycling`). A trailing reminder

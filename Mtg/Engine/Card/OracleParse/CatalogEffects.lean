@@ -517,13 +517,39 @@ def parseMayPutThenAttachEquipment (cardName : String) (ss : List String) (n : N
     | _, _ => none
   | _ => none
 
+/-- `Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land.`
+The found land is variable `n`. Beholding that subtype is action `n + 1`
+(CR 701.4). The land untaps only when that behold happened (CR 701.4b). -/
+def parseSearchBasicBeholdUntap (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [search, may, ifYouDo] =>
+    if !sentenceIs ifYouDo "if you do, untap that land" then none
+    else
+      match parseSearchBasicLandTapped search n,
+          (after? (normSentence may) "you may ").bind beholdKeyword? with
+      | some _, some (.behold st) =>
+        some ([
+          .searchLibraryThenShuffle (.controller .this) [
+            .defineSelectorVariable n
+              (.selected (.controller .this) (.range 1 1) basicLandInLibrary),
+            .putOntoBattlefieldInState (.variable n) [.tapped]],
+          .optional (.controller .this)
+            (.actionId (n + 1) (.keyword (.controller .this) (.behold st))),
+          .if (.happened (.actionWithId (n + 1)) .gameStart)
+            [.untap (.variable n)]],
+          n + 2)
+      | _, _ => none
+  | _ => none
+
 /-- Every sentence of `text` as catalog actions, in order. Multi-sentence
 templates come first. A leading sentence may come before exiling the top card
 to play later. -/
 def catalogActionsFromText (cardName text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   let ss := sentences text
-  parseMayIfYouDo cardName ss n <|>
+  parseSearchBasicBeholdUntap ss n <|>
+    parseMayIfYouDo cardName ss n <|>
     parseThenIfControlSacrificeIfYouDo cardName ss n <|>
     parseDestroyAmassPowerDrawIfYours ss n <|>
     parseMayDiscardHandDrawDamage cardName ss n <|>

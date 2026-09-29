@@ -252,6 +252,11 @@ inductive Keyword where
   nonland card discarded this way, put a +1/+1 counter on the conniving
   creature. Printed “connives” is connive 1. -/
   | connive : Value → Keyword
+  /-- Behold a subtype (CR 701.4): reveal a card of that subtype from your
+  hand or choose a permanent you control of that subtype. Printed
+  `behold an Elf`. “If a [quality] was beheld” is whether this action
+  happened (CR 701.4b). -/
+  | behold : CardSubtype → Keyword
   /-- A Saga chapter ability (CR 714.2), numbered from I. Printed with
   `Ability.keywordWithEffect`. -/
   | chapter : Nat → Keyword
@@ -688,7 +693,7 @@ def toKeywords : Keyword → Keywords
   | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
   | .connive _ | .chapter _ | .flashback | .ward | .crew _
   | .teamwork _ | .improvise | .kicker | .affinity _ _ | .boast | .cascade
-  | .extort | .sneak | .gift _ | .harness | .infinity =>
+  | .extort | .sneak | .gift _ | .behold _ | .harness | .infinity =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -697,6 +702,18 @@ def merge (a b : Keyword) : Keywords :=
 
 instance : Coe Keyword Keywords where
   coe := toKeywords
+
+/-- Printed “behold an Elf” / “behold a Goblin” (CR 701.4). -/
+def beholdPhrase (st : CardSubtype) : String :=
+  let name := toString st
+  let article :=
+    match name.toList with
+    | c :: _ =>
+      match c.toLower with
+      | 'a' | 'e' | 'i' | 'o' | 'u' => "an"
+      | _ => "a"
+    | [] => "a"
+  s!"behold {article} {name}"
 
 instance : ToString Keyword where
   toString
@@ -730,6 +747,7 @@ instance : ToString Keyword where
     | .extort => "extort"
     | .sneak => "sneak"
     | .gift g => g.phrase
+    | .behold st => beholdPhrase st
     | .harness => "harness"
     | .infinity => "∞"
     | k => toString k.toKeywords
@@ -771,6 +789,11 @@ instance : ToString Keyword where
 #guard Keyword.infinity.toKeywords == Keywords.none
 #guard toString Keyword.harness == "harness"
 #guard toString Keyword.infinity == "∞"
+#guard (Keyword.behold .elf).toKeywords == Keywords.none
+#guard (Keyword.behold .goblin).toKeywords == Keywords.none
+#guard toString (Keyword.behold .elf) == "behold an Elf"
+#guard toString (Keyword.behold .goblin) == "behold a Goblin"
+#guard toString (Keyword.behold .orc) == "behold an Orc"
 
 end Keyword
 

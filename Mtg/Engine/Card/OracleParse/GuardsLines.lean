@@ -465,6 +465,28 @@ open OracleParts
           (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
         [.tapped]]))]
 #guard parseOracleParts (name := "")
+  "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land." ==
+  some [.ability (.activated
+    [.tapSymbol, .life 1, .sacrifice .this]
+    (.sequence [
+      .searchLibraryThenShuffle (.controller .this) [
+        .defineSelectorVariable 1
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+        .putOntoBattlefieldInState (.variable 1) [.tapped]],
+      .optional (.controller .this)
+        (.actionId 2 (.keyword (.controller .this) (.behold .elf))),
+      .if (.happened (.actionWithId 2) .gameStart)
+        [.untap (.variable 1)]]))]
+#guard parseOracleParts (name := "")
+  "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land. (To behold an Elf, choose an Elf you control or reveal an Elf card from your hand.)" ==
+  parseOracleParts (name := "")
+    "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land."
+#guard parseOracleParts (name := "") "You may behold a Goblin." ==
+  some [.actions [
+    .optional (.controller .this) (.keyword (.controller .this) (.behold .goblin))]]
+#guard parseOracleParts (name := "") "You may behold Elf." == none
+#guard parseOracleParts (name := "")
   "Halflingcycling {4} ({4}, Discard this card: Search your library for a Halfling card, reveal it, put it into your hand, then shuffle.)" ==
   some [.ability (.keywordWithCost (.typecycling [] [] [.halfling]) [.mana [.generic 4]])]
 #guard parseOracleParts (name := "") "Halflingcycling" == none

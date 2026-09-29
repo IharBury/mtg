@@ -46,7 +46,8 @@ Dáin, Lord of the Iron Hills, Old Thrush, Most Decrepit Old Bird,
 Lake-town Mariners, Pinecone Strike, The Lonely Mountain,
 Thranduil, Sindarin Liege, Glóin the Mighty, Iron Hills Stalwart,
 Old Fat Spider, Great Gilded Boat, Desolation of Smaug,
-Dwarven Mauler, My Precious, Troop of Ponies, Elven Raft-Steerer,
+Dwarven Mauler, My Precious, Troop of Ponies, Elven Passage,
+Elven Raft-Steerer,
 Mirkwood Meditator, Mirkwood Nurturer, Kíli the Resourceful,
 Dáin's Company, Smaug, Wicked Worm, Glamdring, Foe-hammer,
 Settle the Wreckage, Iron Hills Blacksmith, Gandalf, Goblins' Bane,
@@ -5919,11 +5920,40 @@ def elrondMoonReader : CardDef :=
       activated (Effect.exileThenReturnNextEnd) (ManaCost.ofGenericAndColors 5 [.blue, .blue])])
     (triggeredAbilities := #[.onActivateCreatureAbilityDrawOnce])
 
+/-- Oracle text for Elven Passage. -/
+def elvenPassageOracle : String :=
+  "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land. (To behold an Elf, choose an Elf you control or reveal an Elf card from your hand.)"
+
+def elvenPassageDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Elven Passage",
+    .type .land
+  ] ++ (parseOracleParts (name := "Elven Passage") elvenPassageOracle).get!
+
+#guard elvenPassageDefinition == .card [
+  .name "Elven Passage",
+  .type .land,
+  .ability (.activated
+    [.tapSymbol, .life 1, .sacrifice .this]
+    (.sequence [
+      .searchLibraryThenShuffle (.controller .this) [
+        .defineSelectorVariable 1
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+        .putOntoBattlefieldInState (.variable 1) [.tapped]],
+      .optional (.controller .this)
+        (.actionId 2 (.keyword (.controller .this) (.behold .elf))),
+      .if (.happened (.actionWithId 2) .gameStart)
+        [.untap (.variable 1)]]))]
+
 def elvenPassage : CardDef :=
-  land "Elven Passage" "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land. (To behold an Elf, choose an Elf you control or reveal an Elf card from your hand.)"
-    (activatedAbilities := #[
-      activated (Effect.searchBasicBeholdSubtypeUntap "Elf") (tap := true) (payLife := 1)
-        (sacrificeSource := true)])
+  elvenPassageDefinition.toCardDef (oracleText := elvenPassageOracle)
+
+#guard elvenPassage.types == #[.land]
+#guard elvenPassage.oracleText == elvenPassageOracle
+#guard elvenPassage.activatedAbilities == #[
+  activated (Effect.searchBasicBeholdSubtypeUntap "Elf") (tap := true) (payLife := 1)
+    (sacrificeSource := true)]
 
 def enchantedRiverSGrasp : CardDef :=
   aura "Enchanted River's Grasp" (ManaCost.ofGenericAndColor 2 .blue) "Enchant creature\nWhen this Aura enters, tap enchanted creature and remove all counters from it.\nEnchanted creature loses all abilities and doesn't untap during its controller's untap step."

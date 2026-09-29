@@ -996,7 +996,8 @@ inductive CardAction where
   `addManaInAnyCombination`. -/
   | addMana : Selector → List ManaSymbol → CardAction
   /-- The selected object or player performs a keyword action (CR 701),
-  e.g. recruit, amass Goblins 1, connive 1, or harness this permanent. -/
+  e.g. recruit, amass Goblins 1, connive 1, behold an Elf, or harness
+  this permanent. -/
   | keyword : Selector → Keyword → CardAction
   /-- The selected player creates that many tokens with the given
   characteristics, entering in the given states (CR 111, CR 110.5).
@@ -2396,6 +2397,27 @@ def leftoverIsColor (p : TokenParts) (c : Color) : Bool :=
 def leftoverYou : Selector → Bool
   | .controller .this => true
   | _ => false
+
+/-- Search a basic land onto the battlefield tapped. You may behold a subtype.
+If you do, untap that land (CR 701.4 / 701.4b). The land is the selector
+variable; the behold is the numbered action. -/
+def leftoverSearchBasicBeholdUntap? : CardAction → Option String
+  | .sequence [
+      .searchLibraryThenShuffle who [
+        .defineSelectorVariable id
+          (.selected chooser (.range 1 1) among),
+        .putOntoBattlefieldInState (.variable id') [.tapped]],
+      .optional who'
+        (.actionId beholdId (.keyword actor (.behold st))),
+      .if (.happened (.actionWithId beholdId') .gameStart)
+        [.untap (.variable id'')]
+    ] =>
+    if leftoverYou who && leftoverYou chooser && leftoverYou who' &&
+        leftoverYou actor && id == id' && id == id'' && beholdId == beholdId' &&
+        among.basicLandInLibrary then
+      some st.toString
+    else none
+  | _ => none
 
 /-- Destroy target creature, then surveil 1. -/
 def leftoverDestroyCreatureSurveil? : CardAction → Bool
@@ -3959,6 +3981,9 @@ def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
 /-- Compile `continuous` effects, reading targeting from `target`
 and mass application from constraint selectors. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
+  match leftoverSearchBasicBeholdUntap? action with
+  | some st => Effect.searchBasicBeholdSubtypeUntap st
+  | none =>
   match leftoverCompiled? action with
   | some e => e
   | none =>
@@ -8215,6 +8240,24 @@ end TraditionalCardDefinition
             (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
           [.tapped]]
   action.toAbilityEffect == Effect.searchBasicLandTapped
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .searchLibraryThenShuffle
+        (.controller .this)
+        [
+          .defineSelectorVariable 1
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+          .putOntoBattlefieldInState (.variable 1) [.tapped]],
+      .optional (.controller .this)
+        (.actionId 2 (.keyword (.controller .this) (.behold .elf))),
+      .if (.happened (.actionWithId 2) .gameStart)
+        [.untap (.variable 1)]]
+  action.toAbilityEffect == Effect.searchBasicBeholdSubtypeUntap "Elf"
 
 #guard
   match

@@ -5964,6 +5964,38 @@ def beholdAlreadyRevealedOk : Bool :=
 
 #guard beholdAlreadyRevealedOk
 
+/-- The searched land untaps when this behold happens, and an older tapped
+land stays tapped. -/
+def beholdUntapsSearchedLandOk : Bool :=
+  let g := addPermanent afterDraw mountain ⟨0⟩ ⟨0⟩
+  let old := namedPermanent g "Mountain"
+  let g := g.mapObjectStatus old (fun s => { s with tapped := true })
+  let g := addToHand g llanowarElves ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g forest ⟨0⟩
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.searchBasicBeholdSubtypeUntap "Elf") #[]
+  let found := namedPermanent g "Forest"
+  let old := namedPermanent g "Mountain"
+  !found.status.tapped && old.status.tapped && g.qualityWasBeheld ⟨0⟩ "Elf"
+
+#guard beholdUntapsSearchedLandOk
+
+/-- An earlier behold does not untap the land when this one cannot happen. -/
+def beholdWithoutQualityLeavesLandTappedOk : Bool :=
+  let g := addToHand afterDraw llanowarElves ⟨0⟩
+  let g := g.beholdQuality ⟨0⟩ "Elf"
+  let elf := handCardNamed g ⟨0⟩ "Llanowar Elves"
+  let (g, _) := g.move elf.id (.graveyard ⟨0⟩) none
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g forest ⟨0⟩
+  let before := (g.player ⟨0⟩).beheldQualities.size
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.searchBasicBeholdSubtypeUntap "Elf") #[]
+  let found := namedPermanent g "Forest"
+  found.status.tapped && (g.player ⟨0⟩).beheldQualities.size == before &&
+    logContains g "does not behold"
+
+#guard beholdWithoutQualityLeavesLandTappedOk
+
 /-!
 ## 164 — Gollum modes exhausted
 -/
