@@ -32,7 +32,7 @@ def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : Proposed
     g.logMsg s!"{pl.name} may kick the spell (CR 702.32 / 601.2b)"
   else if needsGift then
     let g := { g with pending := .chooseGift p, proposedSpell := some prop }
-    g.logMsg s!"{pl.name} may promise a gift (CR 702.185 / 601.2b)"
+    g.logMsg s!"{pl.name} may promise a gift (CR 702.174 / 601.2b)"
   else if needsTeamwork then
     let g := { g with pending := .chooseTeamwork p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} may pay a teamwork cost (CR 702.194 / 601.2b)"
@@ -112,7 +112,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsTarget := face.requiresTarget && !needsMode
   let needsAdditionalCostChoice := face.announcesAdditionalCost
   let needsKicker := face.kicker.isSome
-  let needsGift := face.giftTreasure
+  let needsGift := face.gift.isSome
   let needsTeamwork := face.teamwork.isSome
   if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
       !needsSacrifice &&
@@ -225,7 +225,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       return g.enterProposalWindow p pl prop face.isModal
         (face.requiresTarget && !face.isModal) "CR 601.2b / 700.2"
         (needsAdditionalCost := face.announcesAdditionalCost)
-        (needsKicker := face.kicker.isSome) (needsGift := face.giftTreasure)
+        (needsKicker := face.kicker.isSome) (needsGift := face.gift.isSome)
         (needsTeamwork := face.teamwork.isSome)
   | _ => throw "Not time to choose X (CR 601.2b)"
 

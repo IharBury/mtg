@@ -180,6 +180,31 @@ inductive CounterKind where
   | vigilance
 deriving Repr, Inhabited, BEq
 
+/-- The gift a spell may promise an opponent (CR 702.174d–i). -/
+inductive Gift where
+  /-- The chosen player creates a Food token (CR 702.174d). -/
+  | food
+  /-- The chosen player draws a card (CR 702.174e). -/
+  | card
+  /-- The chosen player creates a tapped 1/1 blue Fish (CR 702.174f). -/
+  | tappedFish
+  /-- The chosen player takes an extra turn after this one (CR 702.174g). -/
+  | extraTurn
+  /-- The chosen player creates a Treasure token (CR 702.174h). -/
+  | treasure
+  /-- The chosen player creates an 8/8 blue Octopus (CR 702.174i). -/
+  | octopus
+deriving Repr, Inhabited, BEq
+
+/-- Printed phrase for a gift, keyword word first. -/
+def Gift.phrase : Gift → String
+  | .food => "gift a Food"
+  | .card => "gift a card"
+  | .tappedFish => "gift a tapped Fish"
+  | .extraTurn => "gift an extra turn"
+  | .treasure => "gift a Treasure"
+  | .octopus => "gift an Octopus"
+
 -- `Keyword.amass` / `Keyword.connive` take a `Value`, `Value` names a
 -- `Selector`, a `Selector` may name a `Keyword` or a `Range`, and
 -- `Range.range` takes `Value` bounds, so these five inductives are
@@ -268,6 +293,13 @@ inductive Keyword where
   blockers step. It enters tapped and attacking. Printed with that cost,
   e.g. Sneak {1}{B}{B}, via `keywordWithCost`. -/
   | sneak
+  /-- Gift (CR 702.174): as an additional cost to cast this spell, you may
+  promise the listed gift to an opponent. If you do, that opponent gets the
+  gift when this instant or sorcery begins resolving, before its other
+  effects, or when this permanent enters. Printed as `Gift a Food`,
+  `Gift a card`, `Gift a tapped Fish`, `Gift an extra turn`,
+  `Gift a Treasure`, or `Gift an Octopus`. -/
+  | gift : Gift → Keyword
 deriving Repr, Inhabited, BEq
 
 /-- A number that is either a printed constant or computed from game
@@ -516,6 +548,8 @@ inductive Trigger where
   /-- A spell matching the selector is cast from a graveyard
   (CR 601.2 / 702.34). -/
   | castSpellFromGraveyard : Selector → Trigger
+  /-- The selected spell's gift was promised as it was cast (CR 702.174k). -/
+  | giftPromised : Selector → Trigger
   /-- The selected spell is countered (CR 701.5). -/
   | counter : Selector → Trigger
   /-- An activated ability of a source matching the selector is activated
@@ -644,7 +678,7 @@ def toKeywords : Keyword → Keywords
   | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
   | .connive _ | .chapter _ | .flashback | .ward | .crew _
   | .teamwork _ | .improvise | .kicker | .affinity _ _ | .boast | .cascade
-  | .extort | .sneak =>
+  | .extort | .sneak | .gift _ =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -685,6 +719,7 @@ instance : ToString Keyword where
     | .cascade => "cascade"
     | .extort => "extort"
     | .sneak => "sneak"
+    | .gift g => g.phrase
     | k => toString k.toKeywords
 
 #guard pluralName "Elf" == "Elves"
@@ -712,6 +747,14 @@ instance : ToString Keyword where
 #guard toString Keyword.cascade == "cascade"
 #guard toString Keyword.extort == "extort"
 #guard toString Keyword.sneak == "sneak"
+#guard (Keyword.gift .treasure).toKeywords == Keywords.none
+#guard (Keyword.gift .food).toKeywords == Keywords.none
+#guard toString (Keyword.gift .food) == "gift a Food"
+#guard toString (Keyword.gift .card) == "gift a card"
+#guard toString (Keyword.gift .tappedFish) == "gift a tapped Fish"
+#guard toString (Keyword.gift .extraTurn) == "gift an extra turn"
+#guard toString (Keyword.gift .treasure) == "gift a Treasure"
+#guard toString (Keyword.gift .octopus) == "gift an Octopus"
 
 end Keyword
 

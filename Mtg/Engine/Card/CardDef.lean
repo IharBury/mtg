@@ -166,8 +166,8 @@ structure CardDef where
   /-- This spell costs {X} less, where X is the greatest number of artifacts
   an opponent controls. -/
   costReductionEqualOppArtifacts : Bool := false
-  /-- Gift a Treasure (you may promise an opponent a Treasure). -/
-  giftTreasure : Bool := false
+  /-- Gift promised to an opponent (CR 702.174). `none` when the spell has no gift. -/
+  gift : Option Gift := none
   /-- If you would create a Food token, also create a Treasure. -/
   foodAlsoCreatesTreasure : Bool := false
   /-- Other creatures enter with +1/+1 counters equal to this creature's toughness. -/
@@ -537,6 +537,10 @@ def grantsImproviseToNoncreature (c : CardDef) : Bool :=
   c.staticAbilities.any (fun
     | .noncreatureSpellsHaveImprovise => true
     | _ => false)
+
+/-- True when this spell's gift is a Treasure (CR 702.174h). -/
+def giftTreasure (c : CardDef) : Bool :=
+  c.gift == some .treasure
 
 /-- True when this permanent has a boast ability (MSH). -/
 def hasBoast (c : CardDef) : Bool :=

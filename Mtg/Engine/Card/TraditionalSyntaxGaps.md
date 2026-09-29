@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**214** catalog cards are still `CardDef` helpers. **201**
+**213** catalog cards are still `CardDef` helpers. **200**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **13** lost
 their last tag (named counters, `CardAction.removeCounter`, or
@@ -24,12 +24,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 149 | 39 | 36 |
+| The Hobbit (HOB) | 188 | 150 | 38 | 35 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 48 |
 | Marvel Super Heroes (MSH) | 281 | 156 | 125 | 117 |
-| **Total** | **586** | **372** | **214** | **201** |
+| **Total** | **586** | **373** | **213** | **200** |
 
-All 372 `TraditionalCardDefinition`s (149 HOB, 67 HOC, 156 MSH,
+All 373 `TraditionalCardDefinition`s (150 HOB, 67 HOC, 156 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
@@ -67,7 +67,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `firstStrike`, `islandwalk`, `storied`, `doubleStrike`, `prowess`, `ascend`,
   `shadow`, `changeling`, `equip`, `enchant`, `typecycling`, `recruit`,
   `amass`, `connive`, `chapter`, `flashback`, `ward`, `crew`, `teamwork`,
-  `improvise`, `kicker`, `affinity`, `boast`, `cascade`, `extort`, `sneak`.
+  `improvise`, `kicker`, `affinity`, `boast`, `cascade`, `extort`, `sneak`,
+  `gift` (`Gift`: a Food, a card, a tapped Fish, an extra turn, a Treasure, an Octopus; CR 702.174d–i).
 - **CounterKind** — `plusOnePlusOne`, and one constructor per other printed
   counter in the supported catalog: `burden`, `deathtouch`, `doubleStrike`,
   `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`,
@@ -96,7 +97,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `attackSimultaneously` (who attacks, who is attacked),
   `abilityWithIdActivated`, `actionWithId`, `triggerId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `spendManaFrom`, `castSpell`,
-  `castSpellFromGraveyard`, `counter`, `activateAbility`, `target` (a spell or
+  `castSpellFromGraveyard`, `giftPromised` (the selected spell's gift was
+  promised), `counter`, `activateAbility`, `target` (a spell or
   ability targets an object), `sequence`, `not`, `or`.
 - **Cost** — `mana` (including `ManaSymbol.x`), `life`, `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
@@ -259,6 +261,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Ability.keywordCascade` | `Keyword.cascade` (one ability per instance) |
 | `Ability.keywordExtort` | `Keyword.extort` |
 | `Ability.keywordSneak` | `Keyword.sneak` with `Ability.keywordWithCost` |
+| `Ability.gift` | `Keyword.gift` of each gift in CR 702.174d–i. “If the gift was promised” is `Condition.happened (.giftPromised .this) .gameStart` (Bilbo's Gambit) |
 | `Ability.activateFromZone` | `Ability.graveyardActivatedIf` |
 | `Cost.manaX`, `Cost.life`, `Cost.or` | `ManaSymbol.x` in `Cost.mana` with `Value.x`; `Cost.life`; `Cost.or` |
 | `ContinuousEffect.setPowerToughness` | `setBasePower` / `setBaseToughness` of a `Value` |
@@ -404,8 +407,6 @@ complete.
 
 - **`linkedExile`** (8 cards) — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Roads Go Ever, Ever On; Super Villain Lockup; Web Up
-- **`gift`** (1 card) — Gift (promise an opponent a token)
-  - Bilbo's Gambit
 - **`graveyardTriggered`** (1 card) — A triggered ability that functions while the card is in a graveyard (`graveyardActivatedIf` is activated only)
   - Silvan Reveler
 - **`harness`** (1 card) — Harness and the ∞ ability that works once harnessed
@@ -649,7 +650,7 @@ These are not in the requested list but block a conversion of the listed types:
 | Inductive | Used by | Missing constructors that remaining cards need |
 | --- | --- | --- |
 | `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | None for the remaining cards. Wall, Minion, and Elder exist. Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers, not missing subtypes. |
-| `Keyword` | `Ability.keyword`, `CardAction.keyword` | Gift, Harness (these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Teamwork, Improvise, Kicker, Affinity, Boast, Cascade, Extort, and Sneak exist, as do Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
+| `Keyword` | `Ability.keyword`, `CardAction.keyword` | Harness (this may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Gift, Teamwork, Improvise, Kicker, Affinity, Boast, Cascade, Extort, and Sneak exist, as do Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
 | `CounterKind` | `CardAction.putCounter`, `Selector.hasCounter`, `Trigger.putCountersSimultaneously` | Each named counter in the supported catalog has its own constructor. `Trigger.putCounter` (who put them, any kind) is still missing. Lore counters are Saga chapters. |
 
 `CardPart` also has no `loyalty` or DFC-back face (`alternative` is the
@@ -661,7 +662,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (42 cards)
+### The Hobbit (HOB) (41 cards)
 
 **Bard, King of Dale** (`bardKingOfDale`)
 
@@ -675,10 +676,6 @@ Converted cards are omitted here.
 **Bifur, Melodic Rider** (`bifurMelodicRider`)
 
 - `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
-
-**Bilbo's Gambit** (`bilboSGambit`)
-
-- `Ability.gift` — Gift (promise an opponent a token)
 
 **Bilbo, Thief in the Night** (`bilboThiefInTheNight`)
 

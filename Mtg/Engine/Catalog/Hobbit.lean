@@ -52,7 +52,7 @@ Dáin's Company, Smaug, Wicked Worm, Glamdring, Foe-hammer,
 Settle the Wreckage, Iron Hills Blacksmith, Gandalf, Goblins' Bane,
 An Unexpected Party, Azog, Moria's Ruin, Balin, Loremaster,
 Boughside Wanderers, Burn, Burn, Tree and Fern, Cantankerous Keepers,
-Down in the Valley, Gleaming Splendor, Lake-town Toymaker,
+Bilbo's Gambit, Down in the Valley, Gleaming Splendor, Lake-town Toymaker,
 Orcrist, Goblin-cleaver,
 Radagast of Rhosgobel, The Misty Mountains Cold, and Through the Forest
 Gate keep their printed characteristics as parts;
@@ -5556,9 +5556,35 @@ def bifurMelodicRider : CardDef :=
     (staticAbilities := #[.extraTriggerIfEnduringStorySubtype "Dwarf"])
     (triggeredAbilities := #[.onEnterOrAttackPlusOneOnCreature])
 
+/-- Oracle text for Bilbo's Gambit. -/
+def bilboSGambitOracle : String :=
+  "Gift a Treasure (You may promise an opponent a gift as you cast this spell. If you do, they create a Treasure token before its other effects. It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")\nReturn target spell to its owner's hand. If the gift was promised, players can't cast spells this turn."
+
+def bilboSGambitDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Bilbo's Gambit",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant
+  ] ++ (parseOracleParts (name := "Bilbo's Gambit") bilboSGambitOracle).get!
+
+#guard bilboSGambitDefinition == .card [
+  .name "Bilbo's Gambit",
+  .manaCost [.generic 1, .mono .white],
+  .type .instant,
+  .ability (.keyword (.gift .treasure)),
+  .actions [
+    .returnToHand (.target 1 .spell),
+    .if (.happened (.giftPromised .this) .gameStart) [
+      .continuous [.forbid (.castSpell .all)] .endOfTurn]]]
+
 def bilboSGambit : CardDef :=
-  instant "Bilbo's Gambit" (ManaCost.ofGenericAndColor 1 .white) "Gift a Treasure (You may promise an opponent a gift as you cast this spell. If you do, they create a Treasure token before its other effects. It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")\nReturn target spell to its owner's hand. If the gift was promised, players can't cast spells this turn." (some (Effect.returnSpellCantCastIfGift))
-    (giftTreasure := true)
+  bilboSGambitDefinition.toCardDef (oracleText := bilboSGambitOracle)
+
+#guard bilboSGambit.oracleText == bilboSGambitOracle
+#guard bilboSGambit.giftTreasure
+#guard bilboSGambit.spellEffect == some Effect.returnSpellCantCastIfGift
+#guard bilboSGambit.manaCost == ManaCost.ofGenericAndColor 1 .white
+#guard bilboSGambit.types == #[.instant]
 
 def bilboThiefInTheNight : CardDef :=
   let c :=

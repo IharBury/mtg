@@ -1671,6 +1671,17 @@ def leftoverReturnSpellDraw? : CardAction → Bool
   | .sequence [.returnToHand sel, .draw _ 1] => sel.toTargetKind == .spell
   | _ => false
 
+/-- Return target spell to its owner's hand. If the gift was promised,
+players can't cast spells until end of turn. The promise is an event
+since the start of the game (CR 702.174k). -/
+def leftoverReturnSpellCantCastIfGift? : CardAction → Bool
+  | .sequence [
+      .returnToHand (.target _ .spell),
+      .if (.happened (.giftPromised .this) .gameStart) [
+        .continuous [.forbid (.castSpell .all)] .endOfTurn]
+    ] => true
+  | _ => false
+
 /-- Destroy target artifact or enchantment; you gain life. -/
 def leftoverDestroyArtEnchGainLife? : CardAction → Option Nat
   | .sequence [.destroy sel, .gainLife _ (.nat n)] =>
@@ -3685,6 +3696,8 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
         | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
         | none =>
           if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
+          else if leftoverReturnSpellCantCastIfGift? action then
+            some Effect.returnSpellCantCastIfGift
           else if leftoverDestroyArtOrLandNonflyers? action then
             some Effect.destroyArtifactOrLandNonflyersCantBlock
           else if leftoverDestroyCreatureSurveil? action then
@@ -5329,6 +5342,8 @@ structure CardFace where
   cascade : Nat := 0
   /-- Optional kicker cost (CR 702.32). -/
   kicker : Option ManaCost := none
+  /-- Gift this spell may promise (CR 702.174). -/
+  gift : Option Gift := none
   /-- Affinity for this subtype (CR 702.40). -/
   affinityForSubtype : Option String := none
   /-- Ward cost (CR 702.21). A generic mana cost. -/
@@ -6158,6 +6173,8 @@ def applyAbility (b : CardFace) : Ability → CardFace
     { b with cascade := b.cascade + 1 }
   | .keyword .extort =>
     { b with staticAbilities := b.staticAbilities.push .extort }
+  | .keyword (.gift g) =>
+    { b with gift := some g }
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
   | .keywordWithCost .flashback costs =>
     { b with flashback := some (Cost.manaCost costs) }
@@ -6450,6 +6467,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       teamwork := b.teamwork
       cascade := b.cascade
       kicker := b.kicker
+      gift := b.gift
       affinityForSubtype := b.affinityForSubtype
       ward := b.ward
       colorIndicator := b.colorIndicator
@@ -9555,6 +9573,44 @@ end TraditionalCardDefinition
     .ability (.keywordWithCost .sneak [.mana [.generic 1, .mono .black, .mono .black]])
   ]).toCardDef.sneakCost ==
     some (ManaCost.ofGenericAndColors 1 [.black, .black])
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .food))
+  ]).toCardDef.gift == some .food
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .card))
+  ]).toCardDef.gift == some .card
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .tappedFish))
+  ]).toCardDef.gift == some .tappedFish
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .extraTurn))
+  ]).toCardDef.gift == some .extraTurn
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .treasure))
+  ]).toCardDef.giftTreasure
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .octopus))
+  ]).toCardDef.gift == some .octopus
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .returnToHand (.target 1 .spell),
+      .if (.happened (.giftPromised .this) .gameStart) [
+        .continuous [.forbid (.castSpell .all)] .endOfTurn]]) ==
+    Effect.returnSpellCantCastIfGift
 
 #guard
   (Ability.triggered
