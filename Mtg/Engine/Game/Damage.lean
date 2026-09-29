@@ -38,8 +38,8 @@ def queueCreatureYouControlDealtDamage (g : Game) (o : GameObject) (n : Int) : G
         g.putMatchingSourceTriggers p src .creatureYouControlDealtDamage (some n))
 
 /-- True when all damage that would be dealt to `o` is prevented. -/
-def preventsAllDamageTo (_g : Game) (o : GameObject) : Bool :=
-  o.staticAbilities.any (fun
+def preventsAllDamageTo (g : Game) (o : GameObject) : Bool :=
+  (g.staticAbilitiesOf o).any (fun
     | .preventAllDamageToThis => true
     | _ => false)
 
@@ -100,7 +100,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
 the time the damage would be dealt (MSH 305). -/
 def hawkeyeNoncombatBonus (g : Game) (sourceController : PlayerId) : Int :=
   (g.permanentsOf sourceController).foldl (fun acc o =>
-    if o.staticAbilities.any (fun
+    if (g.staticAbilitiesOf o).any (fun
       | .noncombatDamagePlusSourcePower => true
       | _ => false) then
       acc + g.power o
@@ -111,7 +111,7 @@ def mjolnirMultiplier (g : Game) (src : GameObject) : Nat :=
   let n :=
     (g.battlefield.filter (fun o =>
       o.attachedTo == some src.id &&
-        o.staticAbilities.any (fun
+        (g.staticAbilitiesOf o).any (fun
           | .equippedDealsDoubleDamage => true
           | _ => false))).size
   if n == 0 then 1 else Nat.pow 2 n

@@ -74,7 +74,7 @@ def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
 Cycling and other activated abilities of those cards are still illegal. -/
 def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun x =>
-    x.staticAbilities.any (fun
+    (g.staticAbilitiesOf x).any (fun
       | .mayPlayLandsFromGraveyard => true
       | _ => false))
 

@@ -239,7 +239,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       let n :=
         (g.permanentsOf caster).foldl (fun acc o =>
           let reduces :=
-            o.staticAbilities.any (fun ab =>
+            (g.staticAbilitiesOf o).any (fun ab =>
               match ab with
               | .instantSorceryCostReductionEqualEquippedPower => true
               | _ => false)
@@ -272,7 +272,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       else
         (g.permanentsOf caster).foldl (fun acc o =>
           let reduces :=
-            o.staticAbilities.any (fun ab =>
+            (g.staticAbilitiesOf o).any (fun ab =>
               match ab with
               | .instantSorceryCostLessEqualPower => true
               | _ => false)
@@ -290,7 +290,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
   let afterWitch := afterX.reduceGeneric witchLess
   let subtypeLess :=
     (g.permanentsOf caster).foldl (fun acc o =>
-      o.staticAbilities.foldl (fun acc ab =>
+      (g.staticAbilitiesOf o).foldl (fun acc ab =>
         match ab with
         | .subtypeSpellsCostLess subtype n =>
           if face.hasSubtype subtype then acc + n else acc

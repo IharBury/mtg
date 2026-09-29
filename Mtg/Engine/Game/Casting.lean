@@ -17,7 +17,7 @@ cast a spell this turn (MSH 105). The permanent need not have been on
 the battlefield when that spell was cast. -/
 def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
-    o.staticAbilities.any (fun
+    (g.staticAbilitiesOf o).any (fun
       | .flashIfOpponentCastThisTurn => true
       | _ => false)) &&
     (g.livingOpponents p).any (fun pl => pl.spellsCastThisTurn > 0)
@@ -371,7 +371,7 @@ def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
     match o.printed.ward with
     | some n => acc := acc.push (.genericMana n)
     | none => pure ()
-    for ab in o.staticAbilities do
+    for ab in g.staticAbilitiesOf o do
       match ab with
       | .wardDiscardEnchantmentInstantOrSorcery =>
         acc := acc.push .discardEnchantmentInstantOrSorcery
@@ -397,7 +397,7 @@ def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
           | none => pure ()
     for src in g.battlefield do
       if src.id != o.id then
-        for ab in src.staticAbilities do
+        for ab in g.staticAbilitiesOf src do
           match ab.grantedWard? with
           | some n =>
             if src.attachedTo == some o.id then

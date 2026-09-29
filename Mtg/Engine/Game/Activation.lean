@@ -14,7 +14,7 @@ namespace Game
 (MSH 280). Does not grant haste and does not allow attacking. -/
 def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
-    o.staticAbilities.any (fun
+    (g.staticAbilitiesOf o).any (fun
       | .activateCreaturesAsThoughHaste => true
       | _ => false))
 
@@ -53,7 +53,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s power-up ability can be activated only once"
   if ab.cost.tap && o.status.tapped then
     throw s!"{o.name} is already tapped"
-  if ab.cost.tap && o.hasSummoningSickness && !g.activatesAsThoughHaste p then
+  if ab.cost.tap && g.hasSummoningSickness o && !g.activatesAsThoughHaste p then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then

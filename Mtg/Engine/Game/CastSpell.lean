@@ -49,7 +49,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     throw "You don't have priority"
   if p != g.activePlayer &&
       (g.permanentsOf g.activePlayer).any (fun o =>
-        o.staticAbilities.any (fun
+        (g.staticAbilitiesOf o).any (fun
           | .opponentsCantCastOnYourTurn => true
           | _ => false)) then
     throw "Opponents can't cast spells during that player's turn"

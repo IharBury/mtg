@@ -1087,4 +1087,154 @@ def discardOneStillOne : Bool :=
 
 #guard discardOneStillOne
 
+/- ContinuousEffect.removeAllAbilities (CR 613.1f). -/
+
+def abilityLord : CardDef := {
+  name := "Ability Lord"
+  types := #[.creature]
+  subtypes := #["Elf"]
+  power := some 2
+  toughness := some 2
+  keywords := Keyword.flying.toKeywords
+  staticAbilities := #[.creaturesYouControlGet 1 1]
+  triggeredAbilities := #[.onThisAttack (Effect.scry 1)]
+}
+
+def abilityStrip : CardDef := {
+  name := "Ability Strip"
+  types := #[.enchantment]
+  subtypes := #["Aura"]
+  removesAllAbilitiesFrom := #[.hostOf .this]
+}
+
+def massAbilityStrip : CardDef := {
+  name := "Mass Ability Strip"
+  types := #[.enchantment]
+  removesAllAbilitiesFrom := #[.intersection
+    [.permanent, .cardType .creature, .controlled (.controller .this)]]
+}
+
+def selfAbilityStrip : CardDef := {
+  name := "Self Ability Strip"
+  types := #[.creature]
+  power := some 2
+  toughness := some 2
+  keywords := Keyword.flying.toKeywords
+  staticAbilities := #[.creaturesYouControlGet 1 1]
+  removesAllAbilitiesFrom := #[.intersection
+    [.permanent, .cardType .creature]]
+}
+
+/-- Targeted “loses all abilities” compiles to the permanent action. -/
+def targetedRemoveAllAbilitiesCompiles : Bool :=
+  (CardAction.toAbilityEffect
+    (.continuous [.removeAllAbilities (.target 1 (.cardType .creature))] .endOfTurn)).resolution ==
+    .onPermanent .removeAllAbilities
+
+#guard targetedRemoveAllAbilitiesCompiles
+
+/-- A selector with no announced target is matched when the effect resolves. -/
+def massRemoveAllAbilitiesCompiles : Bool :=
+  let sel := Selector.intersection
+    [.permanent, .cardType .creature, .controlled (.controller .this)]
+  (CardAction.toEffect
+    (.continuous [.removeAllAbilities sel] .endOfTurn)).resolution ==
+    .removeAllAbilities sel
+
+#guard massRemoveAllAbilitiesCompiles
+
+def lordAndBear : Game :=
+  let g := addPermanent afterDraw abilityLord ⟨0⟩ ⟨0⟩
+  addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+
+def lordStripped : Game :=
+  let g := addPermanent lordAndBear abilityStrip ⟨0⟩ ⟨0⟩
+  let lord := namedPermanent g "Ability Lord"
+  let aura := namedPermanent g "Ability Strip"
+  g.attachSourceTo aura lord
+
+#guard lordAndBear.power (namedPermanent lordAndBear "Grizzly Bears") == 3
+#guard lordAndBear.hasKeyword (namedPermanent lordAndBear "Ability Lord") (·.flying)
+#guard !lordStripped.hasKeyword (namedPermanent lordStripped "Ability Lord") (·.flying)
+#guard lordStripped.power (namedPermanent lordStripped "Grizzly Bears") == 2
+
+def lordAttackQueued : Game :=
+  lordAndBear.putAttackTriggersOnStack ⟨0⟩
+    #[(namedPermanent lordAndBear "Ability Lord").id]
+
+def lordAttackStripped : Game :=
+  lordStripped.putAttackTriggersOnStack ⟨0⟩
+    #[(namedPermanent lordStripped "Ability Lord").id]
+
+#guard lordAttackQueued.waitingTriggers.size == 1
+#guard lordAttackStripped.waitingTriggers.isEmpty
+
+def spiderStrippedByAura : Game :=
+  let g := addPermanent afterDraw giantSpider ⟨0⟩ ⟨0⟩
+  let g := addPermanent g abilityStrip ⟨0⟩ ⟨0⟩
+  let spider := namedPermanent g "Giant Spider"
+  let aura := namedPermanent g "Ability Strip"
+  g.attachSourceTo aura spider
+
+def spiderUnattached : Game :=
+  let aura := namedPermanent spiderStrippedByAura "Ability Strip"
+  spiderStrippedByAura.setObject { aura with attachedTo := none }
+
+#guard !spiderStrippedByAura.hasKeyword
+  (namedPermanent spiderStrippedByAura "Giant Spider") (·.reach)
+#guard spiderUnattached.hasKeyword
+  (namedPermanent spiderUnattached "Giant Spider") (·.reach)
+
+def massStripBoard : Game :=
+  let g := addPermanent afterDraw giantSpider ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ragingGoblin ⟨1⟩ ⟨1⟩
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  addPermanent g massAbilityStrip ⟨0⟩ ⟨0⟩
+
+#guard !massStripBoard.hasKeyword (namedPermanent massStripBoard "Giant Spider") (·.reach)
+#guard massStripBoard.hasHaste (namedPermanent massStripBoard "Raging Goblin")
+#guard (massStripBoard.manaAbilitiesOf
+  (namedPermanent massStripBoard "Llanowar Elves")).isEmpty
+#guard
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  !(g.manaAbilitiesOf (namedPermanent g "Llanowar Elves")).isEmpty
+
+def selfStripBoard : Game :=
+  let g := addPermanent afterDraw selfAbilityStrip ⟨0⟩ ⟨0⟩
+  addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+
+#guard !selfStripBoard.hasKeyword (namedPermanent selfStripBoard "Self Ability Strip") (·.flying)
+#guard selfStripBoard.power (namedPermanent selfStripBoard "Grizzly Bears") == 2
+
+def untilEotAbilityStrip : Game :=
+  let g := addPermanent afterDraw giantSpider ⟨0⟩ ⟨0⟩
+  g.applyAbilityEffect ⟨0⟩
+    (Effect.mkAbility ({})
+      (.removeAllAbilities (.intersection [.permanent, .cardType .creature]))) #[]
+
+def untilEotThenTrample : Game :=
+  let spider := namedPermanent untilEotAbilityStrip "Giant Spider"
+  untilEotAbilityStrip.grantUntilEotLogged spider Keyword.trample.toKeywords
+
+#guard !untilEotAbilityStrip.hasKeyword
+  (namedPermanent untilEotAbilityStrip "Giant Spider") (·.reach)
+#guard untilEotAbilityStrip.clearEOT.hasKeyword
+  (namedPermanent untilEotAbilityStrip.clearEOT "Giant Spider") (·.reach)
+#guard untilEotThenTrample.hasTrample
+  (namedPermanent untilEotThenTrample "Giant Spider")
+#guard !untilEotThenTrample.hasKeyword
+  (namedPermanent untilEotThenTrample "Giant Spider") (·.reach)
+
+def targetedAbilityStrip : Game :=
+  let g := addPermanent afterDraw giantSpider ⟨0⟩ ⟨0⟩
+  let spider := namedPermanent g "Giant Spider"
+  g.applyAbilityEffect ⟨0⟩
+    (Effect.mkAbility (EffectTargeting.of .creature) (.onPermanent .removeAllAbilities))
+    #[Target.permanent spider.id]
+
+#guard !targetedAbilityStrip.hasKeyword
+  (namedPermanent targetedAbilityStrip "Giant Spider") (·.reach)
+#guard targetedAbilityStrip.log.any (fun s =>
+  mentions s "Giant Spider loses all abilities until end of turn")
+
 end Mtg.Engine.Tests

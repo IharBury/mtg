@@ -420,16 +420,17 @@ def mustAttackCanDeclineIfOnlyAttackCosts (onlyAttacksRequireCost : Bool) : Bool
   onlyAttacksRequireCost
 
 /-- Ares and similar “attacks each combat if able” statics (MSH 130). -/
-def hasAttacksIfAble (o : GameObject) : Bool :=
-  o.staticAbilities.any (fun
+def hasAttacksIfAble (g : Game) (o : GameObject) : Bool :=
+  (g.staticAbilitiesOf o).any (fun
     | .attacksEachCombatIfAble => true
     | _ => false) ||
-    o.printed.oracleText.contains "attacks each combat if able"
+    (!g.losesAllAbilities o &&
+      o.printed.oracleText.contains "attacks each combat if able")
 
 /-- True when `o` must attack this combat. Summoning sickness, being tapped,
 or an unpaid attack cost means it does not have to attack (MSH 130). -/
 def mustAttackIfAble (g : Game) (o : GameObject) (attackRequiresCost := false) : Bool :=
-  hasAttacksIfAble o && g.canAttack o &&
+  g.hasAttacksIfAble o && g.canAttack o &&
     !mustAttackCanDeclineIfOnlyAttackCosts attackRequiresCost
 
 /-- Failed Adventure from Bilbo's graveyard ability is exiled by Bilbo, not

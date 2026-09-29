@@ -47,8 +47,8 @@ def promptBottom (g : Game) (p : PlayerId) : Game :=
 
 /-- Cards that may begin the game on the battlefield from an opening hand
 (Quicksilver; MSH 84). -/
-def beginsOnBattlefieldFromOpeningHand (o : GameObject) : Bool :=
-  o.staticAbilities.any (fun
+def beginsOnBattlefieldFromOpeningHand (g : Game) (o : GameObject) : Bool :=
+  (g.staticAbilitiesOf o).any (fun
     | .mayBeginOnBattlefield => true
     | _ => false)
 
@@ -63,7 +63,7 @@ def applyOpeningHandActions (g : Game) : Game :=
       for id in ids do
         match g.findObject? id with
         | some o =>
-          if beginsOnBattlefieldFromOpeningHand o then
+          if g.beginsOnBattlefieldFromOpeningHand o then
             let name := o.name
             let (g', _) := g.move o.id .battlefield (some pid)
             g := g'

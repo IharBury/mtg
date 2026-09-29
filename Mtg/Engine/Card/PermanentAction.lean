@@ -48,6 +48,9 @@ inductive PermanentAction where
   | becomeArtifactIndestructible
   /-- Until-end-of-turn +P/+T and these keywords. -/
   | pumpAndGrant (power toughness : Int) (k : Keywords)
+  /-- The permanent loses all abilities until end of turn (CR 613.1f).
+  Abilities granted later still apply. -/
+  | removeAllAbilities
 deriving Repr, Inhabited, BEq
 
 namespace PermanentAction
@@ -84,6 +87,8 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
       s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
     | .pumpAndGrant p t k =>
       s!"{noun} gets {signedStat p}/{signedStat t} and gains {k.joinedAnd} until end of turn"
+    | .removeAllAbilities =>
+      s!"{noun} loses all abilities until end of turn"
   if sentence then capitalizeAscii raw else raw
 
 end PermanentAction
