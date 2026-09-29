@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**213** catalog cards are still `CardDef` helpers. **200**
+**212** catalog cards are still `CardDef` helpers. **199**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **13** lost
 their last tag (named counters, `CardAction.removeCounter`, or
@@ -26,10 +26,10 @@ catalog.
 | --- | ---: | ---: | ---: | ---: |
 | The Hobbit (HOB) | 188 | 150 | 38 | 35 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 48 |
-| Marvel Super Heroes (MSH) | 281 | 156 | 125 | 117 |
-| **Total** | **586** | **373** | **213** | **200** |
+| Marvel Super Heroes (MSH) | 281 | 157 | 124 | 116 |
+| **Total** | **586** | **374** | **212** | **199** |
 
-All 373 `TraditionalCardDefinition`s (150 HOB, 67 HOC, 156 MSH,
+All 374 `TraditionalCardDefinition`s (150 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
@@ -46,8 +46,9 @@ modeled `CardDef` fields, triggered/static/activated constructors, and
 (including `CardPart`).
 
 `Keyword` is not in the requested list. It still blocks because
-`Ability.keyword` and `CardAction.keyword` are indexed by it. Missing
-`Keyword` constructors are listed under `Ability` / `CardAction`.
+`Ability.keyword` and `CardAction.keyword` are indexed by it. No `Keyword`
+constructor is missing for the remaining cards. Harness and ∞ are
+`Keyword.harness` and `Keyword.infinity`.
 `CounterKind` has a constructor for every named counter in the supported
 catalog, so it no longer blocks a conversion. `CardSubtype` includes Wall,
 Minion, and Elder. Plan enchantments stay blocked by put-counter triggers,
@@ -68,7 +69,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `shadow`, `changeling`, `equip`, `enchant`, `typecycling`, `recruit`,
   `amass`, `connive`, `chapter`, `flashback`, `ward`, `crew`, `teamwork`,
   `improvise`, `kicker`, `affinity`, `boast`, `cascade`, `extort`, `sneak`,
-  `gift` (`Gift`: a Food, a card, a tapped Fish, an extra turn, a Treasure, an Octopus; CR 702.174d–i).
+  `gift` (`Gift`: a Food, a card, a tapped Fish, an extra turn, a Treasure, an Octopus; CR 702.174d–i),
+  `harness` (CR 701.64; `CardAction.keyword` of this permanent),
+  `infinity` (CR 702.186; `Ability.keywordWithAbility`).
 - **CounterKind** — `plusOnePlusOne`, and one constructor per other printed
   counter in the supported catalog: `burden`, `deathtouch`, `doubleStrike`,
   `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`,
@@ -262,6 +265,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Ability.keywordExtort` | `Keyword.extort` |
 | `Ability.keywordSneak` | `Keyword.sneak` with `Ability.keywordWithCost` |
 | `Ability.gift` | `Keyword.gift` of each gift in CR 702.174d–i. “If the gift was promised” is `Condition.happened (.giftPromised .this) .gameStart` (Bilbo's Gambit) |
+| `Ability.harness` | `Keyword.harness` as `CardAction.keyword` of this permanent, and `Keyword.infinity` via `Ability.keywordWithAbility` (The Mind Stone; CR 701.64 / 702.186) |
 | `Ability.activateFromZone` | `Ability.graveyardActivatedIf` |
 | `Cost.manaX`, `Cost.life`, `Cost.or` | `ManaSymbol.x` in `Cost.mana` with `Value.x`; `Cost.life`; `Cost.or` |
 | `ContinuousEffect.setPowerToughness` | `setBasePower` / `setBaseToughness` of a `Value` |
@@ -409,8 +413,6 @@ complete.
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Roads Go Ever, Ever On; Super Villain Lockup; Web Up
 - **`graveyardTriggered`** (1 card) — A triggered ability that functions while the card is in a graveyard (`graveyardActivatedIf` is activated only)
   - Silvan Reveler
-- **`harness`** (1 card) — Harness and the ∞ ability that works once harnessed
-  - The Mind Stone
 
 ### `ContinuousEffect`
 
@@ -529,7 +531,7 @@ enter together.
 
 **Hobbit Eternal (22):** Bag End Banquet; Bolg, Erebor's Reckoning; Dragon's Desire; Dwarven Warriors; Dáin of the Ancient Halls; Elvish Archdruid; Errand-Rider of Gondor; Flowering of the White Tree; Fíli and Kíli, Joyous; Haunt of the Dead Marshes; Last March of the Ents; Mentor of the Meek; Minas Tirith Garrison; Mirkwood Elk; Mount Doom; Olog-hai Crusher; Orcish Siegemaster; Ori, Plate Stacker; Raise the Palisade; Relic of Sauron; Rivendell; Thranduil the Strategist.
 
-**Marvel Super Heroes (57):** Abomination, Terrifying Titan; Aerial Doombot; Avengers Assemble!; Avengers Disassembled; Avengers Tower; Avengers: Under Siege; Black Panther, Hope Enduring; Bold Biochemist; Brave Brawler; Captain America, Wings of Freedom; Captain Mar-Vell, Space-Born; Castle Doom; Colleen Wing, Street Samurai; Decoy Ploy; Doctor Doom; Epic Fight; Falcon's Wing Harness; H.E.R.B.I.E. Scout Unit; HYDRA Troopers; Hercules, Prince of Power; Hulkling, Burgeoning Bruiser; Human Torch, Johnny Storm; Hydraulic Helper; Invisible Woman, Sue Storm; Iron Fist, Living Weapon; Iron Man, Master of Machines; Mister Fantastic, Reed Richards; Misty Knight, Hero for Hire; Mole Man, Moloid Master; Ninja of the Hand; Pet Avengers; Punishing Punch; Raft Security Officer; Serpent Specialist; She-Hulk, Jade Defender; Super Intelligence; Super Strength; Super-Skrull; The Coming of Galactus; The Invincible Iron Man; The Unbeatable Squirrel Girl; The Vision; Titania, Rugged Rumbler; Training Regimen; U.S.Agent, John Walker; Ultron Drone; Unliving Legionnaire; Villainous Hideout; Viv Vision, Teen Synthezoid; Volcanic Villain; War Machine, Legacy of Iron; Worlds Within Worlds; Dark Fortress; Gathering Place; Gleaming Bastion; Hidden Lair; Training Compound.
+**Marvel Super Heroes (58):** Abomination, Terrifying Titan; Aerial Doombot; Avengers Assemble!; Avengers Disassembled; Avengers Tower; Avengers: Under Siege; Black Panther, Hope Enduring; Bold Biochemist; Brave Brawler; Captain America, Wings of Freedom; Captain Mar-Vell, Space-Born; Castle Doom; Colleen Wing, Street Samurai; Decoy Ploy; Doctor Doom; Epic Fight; Falcon's Wing Harness; H.E.R.B.I.E. Scout Unit; HYDRA Troopers; Hercules, Prince of Power; Hulkling, Burgeoning Bruiser; Human Torch, Johnny Storm; Hydraulic Helper; Invisible Woman, Sue Storm; Iron Fist, Living Weapon; Iron Man, Master of Machines; Mister Fantastic, Reed Richards; Misty Knight, Hero for Hire; Mole Man, Moloid Master; Ninja of the Hand; Pet Avengers; Punishing Punch; Raft Security Officer; Serpent Specialist; She-Hulk, Jade Defender; Super Intelligence; Super Strength; Super-Skrull; The Coming of Galactus; The Invincible Iron Man; The Mind Stone; The Unbeatable Squirrel Girl; The Vision; Titania, Rugged Rumbler; Training Regimen; U.S.Agent, John Walker; Ultron Drone; Unliving Legionnaire; Villainous Hideout; Viv Vision, Teen Synthezoid; Volcanic Villain; War Machine, Legacy of Iron; Worlds Within Worlds; Dark Fortress; Gathering Place; Gleaming Bastion; Hidden Lair; Training Compound.
 
 ## Earlier conversions
 
@@ -650,7 +652,7 @@ These are not in the requested list but block a conversion of the listed types:
 | Inductive | Used by | Missing constructors that remaining cards need |
 | --- | --- | --- |
 | `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | None for the remaining cards. Wall, Minion, and Elder exist. Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers, not missing subtypes. |
-| `Keyword` | `Ability.keyword`, `CardAction.keyword` | Harness (this may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Gift, Teamwork, Improvise, Kicker, Affinity, Boast, Cascade, Extort, and Sneak exist, as do Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
+| `Keyword` | `Ability.keyword`, `CardAction.keyword` | None for the remaining cards. Harness (CR 701.64) and ∞ (CR 702.186) exist, as do Gift, Teamwork, Improvise, Kicker, Affinity, Boast, Cascade, Extort, Sneak, Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
 | `CounterKind` | `CardAction.putCounter`, `Selector.hasCounter`, `Trigger.putCountersSimultaneously` | Each named counter in the supported catalog has its own constructor. `Trigger.putCounter` (who put them, any kind) is still missing. Lore counters are Saga chapters. |
 
 `CardPart` also has no `loyalty` or DFC-back face (`alternative` is the
@@ -1034,7 +1036,7 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (`gainSubtype` only adds)
 
-### Marvel Super Heroes (MSH) (128 cards)
+### Marvel Super Heroes (MSH) (127 cards)
 
 **Absorbing Man** (`absorbingMan`)
 
@@ -1472,10 +1474,6 @@ Converted cards are omitted here.
 **The Kingpin of Crime** (`theKingpinOfCrime`)
 
 - `Selector.toughness` — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
-
-**The Mind Stone** (`theMindStone`)
-
-- `Ability.harness` — Harness and the ∞ ability that works once harnessed
 
 **The Scarlet Witch** (`theScarletWitch`)
 

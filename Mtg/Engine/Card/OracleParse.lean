@@ -562,6 +562,11 @@ Currently recognized:
 - `Target creature you control deals damage equal to twice its power to target creature an opponent controls.`
 - `This spell costs {N} less to cast if there are <count> or more <type> cards in your graveyard.`
 - `Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile <this>.`
+- `{cost}: Harness <this>.` Harness is a keyword action (CR 701.64): if this
+  permanent isn’t harnessed, it becomes harnessed. A reminder parenthetical
+  is not rules text.
+- `∞ — At the beginning of <phase>, <effect>.` ∞ is a keyword ability
+  (CR 702.186): as long as this permanent is harnessed, it has that ability.
 -/
 
 namespace Mtg.Engine
@@ -1770,6 +1775,17 @@ def parseActivatedAbility (cardName : String) (line : String) (n : Nat) :
       | some (action, limit, n'), some costs =>
         some (activatedWithCost n costs action limit n')
       | _, _ => none
+
+/-- `{5}{W}, {T}: Harness The Mind Stone.` Harness this permanent
+(CR 701.64). Reminder text, such as “Once harnessed, its ∞ ability is
+active,” is not rules text. -/
+def parseHarness (cardName line : String) : Option CardPart :=
+  (splitPrintedAbility? line).bind fun (costText, effect) =>
+    (after? (normSentence effect) "harness ").bind fun who =>
+      if !refersToSelf cardName who then none
+      else
+        (parseActivationCost cardName costText).map fun costs =>
+          .ability (.activated costs (.keyword (.source .this) .harness))
 
 /-- Effect of `<word> <this card> <mid> <effect>`.
 `word` is `when` or `whenever`. `mid` is the clause boundary, such as
@@ -4788,7 +4804,7 @@ def afterAbilityWord? (line : String) : Option String :=
       none
     else
       match norm word with
-      | "ferocious" | "power-up" => none
+      | "ferocious" | "power-up" | "∞" | "infinity" => none
       | "landfall" =>
         if (norm rest).startsWith "whenever a land you control enters, " then some rest else none
       | _ => some rest
@@ -5361,6 +5377,20 @@ def parseExileThenReturnTapped (sentence : String) (n : Nat) : Option (CardActio
           [.tapped, .controlled (.owner (.wasCreatedByAction n))]],
        n + 1)
 
+/-- `Exile <targets>, then return that card to the battlefield under its owner's control.`
+The exile is action `n`. The card returns untapped under its owner's control. -/
+def parseExileThenReturn (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  let s := normSentence sentence
+  (before? s ", then return that card to the battlefield under its owner's control").bind
+    (after? · "exile ") |>.bind fun who =>
+      (parseTargetDesc who n).map fun sel =>
+        (.sequence [
+          .actionId n (.exile sel),
+          .putOntoBattlefieldInState
+            (.wasCreatedByAction n)
+            [.controlled (.owner (.wasCreatedByAction n))]],
+         n + 1)
+
 /-- `Creatures without flying can't block this turn.` Only creatures block,
 so the blockers are objects without that keyword. -/
 def parseWithoutKeywordCantBlock (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -5841,6 +5871,7 @@ private def parseCatalogSentenceResolve (cardName s : String) (n : Nat) :
     parseSearchLibrary s n <|>
     parseSelfFights cardName s n <|>
     parseExileThenReturnTapped s n <|>
+    parseExileThenReturn s n <|>
     parseWithoutKeywordCantBlock s n <|>
     parseDiscardUnlessArtifact s n <|>
     parseSpellsCostLessThisTurn s n <|>
@@ -7171,6 +7202,15 @@ def parseBeginningOfTriggered (cardName line : String) (n : Nat) :
           (.ability (.triggered trigger (applyInterveningIf cond action)), n')
     | [] => none
 
+/-- `∞ — At the beginning of <phase>, <effect>.` ∞ (CR 702.186) means this
+permanent has that ability as long as it is harnessed. -/
+def parseInfinity (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  (after? (rulesText line) "∞ — ").bind fun rest =>
+    (parseBeginningOfTriggered cardName rest n).bind fun (part, n') =>
+      match part with
+      | .ability a => some ([.ability (.keywordWithAbility .infinity a)], n')
+      | _ => none
+
 /-- `The first creature spell you cast each turn costs {2} less to cast and can
 be cast as though it had flash.` The spell is first when no creature spell of
 yours was cast earlier this turn. Neither effect grants flash. -/
@@ -7505,6 +7545,8 @@ private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     sole (parseEntersTapped cardName line) n <|>
     sole (parseEntersTappedUnlessEquipment cardName line) n <|>
     sole (parseTypecycling line) n <|>
+    sole (parseHarness cardName line) n <|>
+    parseInfinity cardName line n <|>
     carry (parseActivatedAbility cardName line n) <|>
     parseActivatedCreateCostsLess cardName line n <|>
     carry (parseActivatedDiscardDraw cardName line n) <|>

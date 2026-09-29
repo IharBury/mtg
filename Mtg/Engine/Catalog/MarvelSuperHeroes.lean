@@ -680,15 +680,56 @@ def lukeCagePowerMan : CardDef :=
     (oracleText := "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy him.)")
     (triggeredAbilities := #[.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible])
 
+/-- Oracle text for The Mind Stone. -/
+def theMindStoneOracle : String :=
+  "Indestructible\n{T}: Add {W}.\n{5}{W}, {T}: Harness The Mind Stone. (Once harnessed, its ∞ ability is active.)\n∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
+
+def theMindStoneDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "The Mind Stone",
+    .manaCost [.generic 1, .mono .white],
+    .type .artifact,
+    .supertype .legendary,
+    .subtype .infinity,
+    .subtype .stone
+  ] ++ (parseOracleParts (name := "The Mind Stone") theMindStoneOracle).get!
+
+#guard theMindStoneDefinition == .card [
+  .name "The Mind Stone",
+  .manaCost [.generic 1, .mono .white],
+  .type .artifact,
+  .supertype .legendary,
+  .subtype .infinity,
+  .subtype .stone,
+  .ability (.keyword .indestructible),
+  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.colored .white])),
+  .ability (.activated
+    [.mana [.generic 5, .mono .white], .tapSymbol]
+    (.keyword (.source .this) .harness)),
+  .ability (.keywordWithAbility .infinity
+    (.triggered (.endStep (.controller .this))
+      (.sequence [
+        .actionId 1 (.exile
+          (.targets 1 (.range 0 1)
+            (.intersection [
+              .not .this,
+              .permanent,
+              .not (.cardType .land),
+              .controlled (.controller .this)]))),
+        .putOntoBattlefieldInState (.wasCreatedByAction 1)
+          [.controlled (.owner (.wasCreatedByAction 1))]])))]
+
 def theMindStone : CardDef :=
-  artifact "The Mind Stone" (ManaCost.ofGenericAndColor 1 .white)
-    "Indestructible\n{T}: Add {W}.\n{5}{W}, {T}: Harness The Mind Stone. (Once harnessed, its ∞ ability is active.)\n∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
-    (subtypes := #["Infinity", "Stone"])
-    (keywords := Keyword.indestructible)
-    (triggeredAbilities := #[.onStep Effect.stepHarnessedFlicker])
-    (tapAddMana := #[.colored .white])
-    (activatedAbilities := #[activated (Effect.harnessInfinityStone) (ManaCost.ofGenericAndColor 5 .white) (tap := true)])
-    (legendary := true)
+  theMindStoneDefinition.toCardDef (oracleText := theMindStoneOracle)
+
+#guard theMindStone.oracleText == theMindStoneOracle
+#guard theMindStone.keywords == Keyword.indestructible
+#guard theMindStone.subtypes == #["Infinity", "Stone"]
+#guard theMindStone.supertypes == #[.legendary]
+#guard theMindStone.tapAddMana == #[.colored .white]
+#guard theMindStone.triggeredAbilities == #[.onStep Effect.stepHarnessedFlicker]
+#guard theMindStone.activatedAbilities ==
+  #[activated (Effect.harnessInfinityStone) (ManaCost.ofGenericAndColor 5 .white) (tap := true)]
 
 /-- Oracle text for Mockingbird, Ace Agent. -/
 def mockingbirdAceAgentOracle : String :=
