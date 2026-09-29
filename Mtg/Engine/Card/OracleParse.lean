@@ -413,6 +413,22 @@ Currently recognized:
 - `Crew N`
   Crew (CR 702.122). `N` is the number of creatures to tap. A trailing
   reminder parenthetical is not rules text.
+- `Teamwork N`
+  Teamwork (CR 702.194). `N` is a positive total power. A trailing reminder
+  parenthetical is not rules text.
+- `Improvise`, `Boast`, `Cascade`, `Extort`
+  Each is that keyword. `Cascade, cascade` is two instances. A trailing
+  reminder parenthetical is not rules text.
+- `Kicker {cost}`
+  Kicker (CR 702.32). `{cost}` is mana symbols. A trailing reminder
+  parenthetical is not rules text.
+- `Affinity for <type>`
+  Affinity (CR 702.40). `<type>` is a plural card type (`artifacts`) or the
+  English plural of one subtype (`Elves`). A trailing reminder parenthetical
+  is not rules text.
+- `Sneak {cost}`
+  Sneak. `{cost}` is mana symbols. A trailing reminder parenthetical is not
+  rules text.
 - `Equip abilities you activate that target this creature cost {N} less to activate.`
   `{N}` is generic mana. Those equip abilities cost that much less.
 - `Equipped creature has <keywords> and can't be blocked.`
@@ -460,6 +476,9 @@ Currently recognized:
 - `Mill six cards, then put all instant and sorcery cards from among them into your hand.`
   More than one card uses the plural `cards`. Every instant and sorcery card
   from among them goes to hand.
+- `Mill four cards, then put all Elf cards from among them into your hand.`
+  More than one card uses the plural `cards`. The subtype is singular
+  (`Elf`, not `Elves`). Every card of that subtype from among them goes to hand.
 - `Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle.`
   The player is one target. “That many” is how many of those creatures are
   exiled. That player chooses whether to search, and may find any number
@@ -731,6 +750,10 @@ def keywordOfOracle? (s : String) : Option Keyword :=
   | "ascend" => some .ascend
   | "shadow" => some .shadow
   | "changeling" => some .changeling
+  | "improvise" => some .improvise
+  | "boast" => some .boast
+  | "cascade" => some .cascade
+  | "extort" => some .extort
   | _ => none
 
 /-- A line that is only modeled keywords, e.g. `Lifelink` or `Flying, deathtouch`.
@@ -2416,6 +2439,21 @@ def parseMillThenPutAllInstantsOrSorceries (sentence : String) (n : Nat) :
       " cards, then put all instant and sorcery cards from among them into your hand").map
     fun k => millThen n k fun id => .returnToHand (instantOrSorceryAmong id)
 
+/-- `Mill four cards, then put all Elf cards from among them into your hand.`
+More than one card uses the plural `cards`. The subtype is printed singular
+(`Elf`, not `Elves`). Every card of that subtype from among them goes to
+hand. The milled cards are action `n`. -/
+def parseMillThenPutAllSubtype (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  (after? (normSentence sentence) "mill ").bind fun rest =>
+    (split2? rest " cards, then put all ").bind fun (countText, tail) =>
+      (nounCount? countText true).bind fun k =>
+        ((before? tail " cards from among them into your hand").bind
+            subtypeOfOracle?).map fun st =>
+          millThen n k fun id =>
+            .returnToHand
+              (.intersection [.wasObjectOfAction id, .subtype st])
+
 /-- Two creatures and/or lands this object's controller controls. -/
 def twoCreaturesOrLandsYouControl : Selector :=
   permanentWith [.creature, .land] [youControl]
@@ -2532,6 +2570,7 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
     parseMillThenPutAllInstantsOrSorceries sentence n <|>
     parseMillThenPutInstantOrSorcery sentence n <|>
     parseMillThenPutUpToLands sentence n <|>
+    parseMillThenPutAllSubtype sentence n <|>
     parseMillCards sentence n <|>
     parseExileTwoThenReturn sentence n
 
@@ -3967,6 +4006,12 @@ def parseCrew (line : String) : Option CardPart :=
   (after? (normLine line) "crew ").bind positiveCount |>.map fun n =>
     .ability (.keyword (.crew n))
 
+/-- `Teamwork 2`. Teamwork (CR 702.194). `N` is a positive total power.
+A reminder parenthetical is not rules text. -/
+def parseTeamwork (line : String) : Option CardPart :=
+  (after? (normLine line) "teamwork ").bind positiveCount |>.map fun n =>
+    .ability (.keyword (.teamwork n))
+
 /-- `him`, `her`, `them`, or `it`: the object named earlier in this ability. -/
 def isObjectPronoun (s : String) : Bool :=
   match norm s with
@@ -4042,6 +4087,31 @@ def parseFlashback (line : String) : Option CardPart :=
   match (after? (normLine line) "flashback ").bind nonemptyMana? with
   | some syms => some (.ability (.keywordWithCost .flashback [.mana syms]))
   | none => none
+
+/-- `Kicker {2}{W}`. A reminder parenthetical is not rules text (CR 702.32). -/
+def parseKicker (line : String) : Option CardPart :=
+  match (after? (normLine line) "kicker ").bind nonemptyMana? with
+  | some syms => some (.ability (.keywordWithCost .kicker [.mana syms]))
+  | none => none
+
+/-- `Sneak {1}{B}{B}`. A reminder parenthetical is not rules text. -/
+def parseSneak (line : String) : Option CardPart :=
+  match (after? (normLine line) "sneak ").bind nonemptyMana? with
+  | some syms => some (.ability (.keywordWithCost .sneak [.mana syms]))
+  | none => none
+
+/-- `Affinity for Elves` or `Affinity for artifacts` (CR 702.40).
+The word after `for` is one plural card type or one subtype plural. -/
+def parseAffinity (line : String) : Option CardPart :=
+  (after? (normLine line) "affinity for ").bind fun rest =>
+    if rest.isEmpty then none
+    else
+      match cardTypes.find? (fun t => norm (Keyword.affinityPhrase [t] []) == rest) with
+      | some t => some (.ability (.keyword (.affinity [t] [])))
+      | none =>
+        match cardSubtypes.find? (fun st => norm (Keyword.affinityPhrase [] [st]) == rest) with
+        | some st => some (.ability (.keyword (.affinity [] [st])))
+        | none => none
 
 /-- Creature permanents with flying that this object's controller controls. -/
 def flyingCreaturesYouControl : Selector :=
@@ -7415,8 +7485,12 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     carry (parseEnterAttachToTarget cardName line n) <|>
     carry (parseEnterAttachTargetEquipment cardName line n) <|>
     sole (parseFlashback line) n <|>
+    sole (parseKicker line) n <|>
+    sole (parseSneak line) n <|>
+    sole (parseAffinity line) n <|>
     sole (parseWard line) n <|>
     sole (parseCrew line) n <|>
+    sole (parseTeamwork line) n <|>
     sole (parseCombatDamageLoot cardName line) n <|>
     sole (parseAdditionalCostSacrificeCreature line) n <|>
     sole (parseAdditionalCostSacrificeOrPay line) n <|>
@@ -9989,6 +10063,48 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
   "Flashback {4}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)" ==
   parseOracleParts (name := "") "Flashback {4}{W}"
 #guard parseOracleParts (name := "") "Flashback" == none
+#guard parseOracleParts (name := "") "Teamwork 2" ==
+  some [.ability (.keyword (.teamwork 2))]
+#guard parseOracleParts (name := "")
+  "Teamwork 2 (As an additional cost to cast this spell, you may tap any number of creatures you control with total power 2 or more.)" ==
+  parseOracleParts (name := "") "Teamwork 2"
+#guard parseOracleParts (name := "") "Teamwork" == none
+#guard parseOracleParts (name := "") "Teamwork 0" == none
+#guard parseOracleParts (name := "") "Improvise" ==
+  some [.ability (.keyword .improvise)]
+#guard parseOracleParts (name := "")
+  "Improvise (Your artifacts can help cast this spell. Each artifact you tap after you're done activating mana abilities pays for {1}.)" ==
+  parseOracleParts (name := "") "Improvise"
+#guard parseOracleParts (name := "") "Kicker {2}{W}" ==
+  some [.ability (.keywordWithCost .kicker [.mana [.generic 2, .mono .white]])]
+#guard parseOracleParts (name := "")
+  "Kicker {2}{W}{W} (You may pay an additional {2}{W}{W} as you cast this spell.)" ==
+  some [.ability (.keywordWithCost .kicker [.mana [.generic 2, .mono .white, .mono .white]])]
+#guard parseOracleParts (name := "") "Kicker" == none
+#guard parseOracleParts (name := "") "Affinity for Elves" ==
+  some [.ability (.keyword (.affinity [] [.elf]))]
+#guard parseOracleParts (name := "")
+  "Affinity for Elves (This spell costs {1} less to cast for each Elf you control.)" ==
+  parseOracleParts (name := "") "Affinity for Elves"
+#guard parseOracleParts (name := "") "Affinity for artifacts" ==
+  some [.ability (.keyword (.affinity [.artifact] []))]
+#guard parseOracleParts (name := "") "Affinity for Elf" == none
+#guard parseOracleParts (name := "") "Affinity" == none
+#guard parseOracleParts (name := "") "Boast" ==
+  some [.ability (.keyword .boast)]
+#guard parseOracleParts (name := "") "Cascade, cascade" ==
+  some [.ability (.keyword .cascade), .ability (.keyword .cascade)]
+#guard parseOracleParts (name := "")
+  "Cascade, cascade (When you cast this spell, exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost. Put the exiled cards on the bottom of your library in a random order. Then do it again.)" ==
+  parseOracleParts (name := "") "Cascade, cascade"
+#guard parseOracleParts (name := "") "Extort" ==
+  some [.ability (.keyword .extort)]
+#guard parseOracleParts (name := "") "Sneak {1}{B}{B}" ==
+  some [.ability (.keywordWithCost .sneak [.mana [.generic 1, .mono .black, .mono .black]])]
+#guard parseOracleParts (name := "")
+  "Sneak {1}{B}{B} (You may cast this spell for {1}{B}{B} if you also return an unblocked attacker you control to hand during the declare blockers step. She enters tapped and attacking.)" ==
+  parseOracleParts (name := "") "Sneak {1}{B}{B}"
+#guard parseOracleParts (name := "") "Sneak" == none
 #guard parseOracleParts (name := "")
   "Draw a card. If this spell was cast from a graveyard, draw two cards instead." ==
   some [.actions [
@@ -10639,6 +10755,40 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
   none
 #guard parseOracleParts (name := "")
   "Mill six cards, then put all instant and sorcery card from among them into your hand." ==
+  none
+#guard parseOracleParts (name := "")
+  "Mill four cards, then put all Elf cards from among them into your hand." ==
+  some [.actions [.sequence [
+    .actionId 1 (.mill (.controller .this) 4),
+    .returnToHand
+      (.intersection [.wasObjectOfAction 1, .subtype .elf])]]]
+#guard parseOracleParts (name := "Cantankerous Keepers")
+  "When this creature enters, mill four cards, then put all Elf cards from among them into your hand." ==
+  some [.ability (.triggered
+    (.enter .this)
+    (.sequence [
+      .actionId 1 (.mill (.controller .this) 4),
+      .returnToHand
+        (.intersection [.wasObjectOfAction 1, .subtype .elf])]))]
+#guard parseOracleParts (name := "")
+  "Mill one cards, then put all Elf cards from among them into your hand." == none
+#guard parseOracleParts (name := "")
+  "Mill four cards, then put all Elves cards from among them into your hand." == none
+#guard parseOracleParts (name := "")
+  "Mill four cards, then put all instant cards from among them into your hand." == none
+#guard parseOracleParts (name := "Elektra, Daughter of the Hand")
+  "When Elektra enters, destroy target creature an opponent controls with power 3 or less." ==
+  some [.ability (.triggered
+    (.enter .this)
+    (.destroy
+      (.target 1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.opponent (.controller .this)),
+          .powerAtMost (Value.int 3)]))))]
+#guard parseOracleParts (name := "Elektra, Daughter of the Hand")
+  "When Gandalf enters, destroy target creature an opponent controls with power 3 or less." ==
   none
 #guard parseOracleParts (name := "Settle the Wreckage")
   "Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle." ==

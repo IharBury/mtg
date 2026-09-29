@@ -2312,11 +2312,56 @@ def doomReignsSupreme : CardDef :=
     (subtypes := #["Plan"])
     (triggeredAbilities := #[.onVillainYouControlEntersDrainAndPlan 1, .onFifthPlanExileTopCast])
 
+/-- Oracle text for Elektra, Daughter of the Hand. -/
+def elektraDaughterOfTheHandOracle : String :=
+  "Sneak {1}{B}{B} (You may cast this spell for {1}{B}{B} if you also return an unblocked attacker you control to hand during the declare blockers step. She enters tapped and attacking.)\nWhen Elektra enters, destroy target creature an opponent controls with power 3 or less."
+
+def elektraDaughterOfTheHandDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Elektra, Daughter of the Hand",
+    .manaCost [.generic 2, .mono .black, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .ninja,
+    .subtype .villain,
+    .power 3,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Elektra, Daughter of the Hand")
+      elektraDaughterOfTheHandOracle).get!
+
+#guard elektraDaughterOfTheHandDefinition == .card [
+  .name "Elektra, Daughter of the Hand",
+  .manaCost [.generic 2, .mono .black, .mono .black],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .ninja,
+  .subtype .villain,
+  .power 3,
+  .toughness 3,
+  .ability
+    (.keywordWithCost .sneak [.mana [.generic 1, .mono .black, .mono .black]]),
+  .ability
+    (.triggered
+      (.enter .this)
+      (.destroy
+        (.target 1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.opponent (.controller .this)),
+            .powerAtMost (Value.int 3)]))))]
+
 def elektraDaughterOfTheHand : CardDef :=
-  legendaryCreature "Elektra, Daughter of the Hand" (ManaCost.ofGenericAndColors 2 [.black, .black]) #["Human", "Ninja", "Villain"] 3 3
-    (oracleText := "Sneak {1}{B}{B} (You may cast this spell for {1}{B}{B} if you also return an unblocked attacker you control to hand during the declare blockers step. She enters tapped and attacking.)\nWhen Elektra enters, destroy target creature an opponent controls with power 3 or less.")
-    (triggeredAbilities := #[.onEnter (Effect.enterDestroy (.oppCreaturePowerAtMost 3))])
-    (staticAbilities := #[StaticAbility.sneak (ManaCost.ofGenericAndColors 1 [.black, .black])])
+  elektraDaughterOfTheHandDefinition.toCardDef
+    (oracleText := elektraDaughterOfTheHandOracle)
+
+#guard elektraDaughterOfTheHand.oracleText == elektraDaughterOfTheHandOracle
+#guard elektraDaughterOfTheHand.triggeredAbilities ==
+  #[.onEnter (Effect.enterDestroy (.oppCreaturePowerAtMost 3))]
+#guard elektraDaughterOfTheHand.staticAbilities ==
+  #[StaticAbility.sneak (ManaCost.ofGenericAndColors 1 [.black, .black])]
 
 def grimReaperLethalLegionnaire : CardDef :=
   legendaryCreature "Grim Reaper, Lethal Legionnaire" (ManaCost.ofGenericAndColor 3 .black) #["Human", "Villain"] 3 4

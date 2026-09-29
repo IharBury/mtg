@@ -238,6 +238,36 @@ inductive Keyword where
   /-- Crew N (CR 702.122): tap that many creatures you control. This permanent
   becomes an artifact creature until end of turn. The number is not a mana cost. -/
   | crew : Nat → Keyword
+  /-- Teamwork N (CR 702.194): as an additional cost to cast this spell, you
+  may tap any number of creatures you control with total power N or more.
+  The number is not a mana cost. -/
+  | teamwork : Nat → Keyword
+  /-- Improvise (CR 702.126): each artifact tapped after mana abilities are
+  activated pays for {1}. -/
+  | improvise
+  /-- Kicker (CR 702.32): you may pay an additional cost as you cast this
+  spell. Printed with that cost, e.g. Kicker {2}{W}, via `keywordWithCost`. -/
+  | kicker
+  /-- Affinity for the given card types and subtypes (CR 702.40). This spell
+  costs {1} less to cast for each permanent of those characteristics its
+  controller controls. Types print in the plural (`artifacts`); subtypes
+  print as their English plural (`Elves`). -/
+  | affinity : List CardType → List CardSubtype → Keyword
+  /-- Boast: activate only if this creature attacked this turn and only once
+  each turn. -/
+  | boast
+  /-- Cascade: when you cast this spell, exile cards from the top of your
+  library until you exile a nonland card that costs less. You may cast that
+  card without paying its mana cost. Each printed instance is one ability. -/
+  | cascade
+  /-- Extort (CR 702.83): whenever you cast a spell, you may pay {W/B}. If you
+  do, each opponent loses 1 life and you gain that much life. -/
+  | extort
+  /-- Sneak: you may cast this spell for its sneak cost if you also return an
+  unblocked attacker you control to its owner's hand during the declare
+  blockers step. It enters tapped and attacking. Printed with that cost,
+  e.g. Sneak {1}{B}{B}, via `keywordWithCost`. -/
+  | sneak
 deriving Repr, Inhabited, BEq
 
 /-- A number that is either a printed constant or computed from game
@@ -559,6 +589,27 @@ end Range
 
 namespace Keyword
 
+/-- English plural of a printed name, keeping its capitalization.
+`Elf` is `Elves`. A name that already ends in `s` stays unchanged. -/
+def pluralName (s : String) : String :=
+  match s with
+  | "Army" => "Armies"
+  | "Elf" => "Elves"
+  | "Wolf" => "Wolves"
+  | "Dwarf" => "Dwarves"
+  | "Hero" => "Heroes"
+  | "Merfolk" => "Merfolk"
+  | s => if s.endsWith "s" then s else s ++ "s"
+
+/-- Characteristics an affinity ability counts, e.g. `artifacts` or `Elves`.
+An empty list of both is an empty phrase. -/
+def affinityPhrase (types : List CardType) (subtypes : List CardSubtype) : String :=
+  let typeWords := types.map fun t =>
+    let name := t.englishName.toLower
+    if name.endsWith "s" then name else name ++ "s"
+  let subtypeWords := subtypes.map fun st => pluralName (toString st)
+  String.intercalate " " (typeWords ++ subtypeWords)
+
 /-- The type-line phrase a typecycling ability searches for, e.g. `Halfling`
 or `Basic land`. -/
 def typecyclingPhrase (supertypes : List CardSupertype) (types : List CardType)
@@ -591,7 +642,9 @@ def toKeywords : Keyword → Keywords
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
   | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
-  | .connive _ | .chapter _ | .flashback | .ward | .crew _ =>
+  | .connive _ | .chapter _ | .flashback | .ward | .crew _
+  | .teamwork _ | .improvise | .kicker | .affinity _ _ | .boast | .cascade
+  | .extort | .sneak =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -622,7 +675,43 @@ instance : ToString Keyword where
     | .flashback => "flashback"
     | .ward => "ward"
     | .crew n => s!"crew {n}"
+    | .teamwork n => s!"teamwork {n}"
+    | .improvise => "improvise"
+    | .kicker => "kicker"
+    | .affinity types subtypes =>
+      let phrase := affinityPhrase types subtypes
+      if phrase.isEmpty then "affinity" else s!"affinity for {phrase}"
+    | .boast => "boast"
+    | .cascade => "cascade"
+    | .extort => "extort"
+    | .sneak => "sneak"
     | k => toString k.toKeywords
+
+#guard pluralName "Elf" == "Elves"
+#guard pluralName "Hero" == "Heroes"
+#guard pluralName "Merfolk" == "Merfolk"
+#guard pluralName "Goblin" == "Goblins"
+#guard affinityPhrase [.artifact] [] == "artifacts"
+#guard affinityPhrase [] [.elf] == "Elves"
+#guard affinityPhrase [] [] == ""
+#guard (Keyword.teamwork 2).toKeywords == Keywords.none
+#guard Keyword.improvise.toKeywords == Keywords.none
+#guard Keyword.kicker.toKeywords == Keywords.none
+#guard (Keyword.affinity [] [.elf]).toKeywords == Keywords.none
+#guard Keyword.boast.toKeywords == Keywords.none
+#guard Keyword.cascade.toKeywords == Keywords.none
+#guard Keyword.extort.toKeywords == Keywords.none
+#guard Keyword.sneak.toKeywords == Keywords.none
+#guard toString (Keyword.teamwork 2) == "teamwork 2"
+#guard toString Keyword.improvise == "improvise"
+#guard toString Keyword.kicker == "kicker"
+#guard toString (Keyword.affinity [] [.elf]) == "affinity for Elves"
+#guard toString (Keyword.affinity [.artifact] []) == "affinity for artifacts"
+#guard toString (Keyword.affinity [] []) == "affinity"
+#guard toString Keyword.boast == "boast"
+#guard toString Keyword.cascade == "cascade"
+#guard toString Keyword.extort == "extort"
+#guard toString Keyword.sneak == "sneak"
 
 end Keyword
 
