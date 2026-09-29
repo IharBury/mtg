@@ -986,8 +986,13 @@ def parseCreateXTokensCount (s : String) (n : Nat) : Option (CardAction × Nat) 
         some (.createTokens who (.count sel) parts kws, n)
       | _, _ => none
 
-/-- `you may draw <count>`, `you may mill <count>`, or
-`you may create <creature tokens>`. The rest of the sentence is that action. -/
+/-- `behold an Elf`: behold that subtype (CR 701.4). The article is `a` or `an`. -/
+def beholdKeyword? (s : String) : Option Keyword :=
+  (after? (norm s) "behold ").bind dropArticle? |>.bind subtypeOfOracle? |>.map
+    Keyword.behold
+
+/-- `you may draw <count>`, `you may mill <count>`, `you may create <creature tokens>`,
+or `you may behold a <subtype>`. The rest of the sentence is that action. -/
 def parseYouMay (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   (after? (normSentence sentence) "you may ").bind fun rest =>
     let counted (lead tail : String) (plural : Bool) : Option Nat :=
@@ -1003,7 +1008,10 @@ def parseYouMay (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
     let create :=
       (parseCreateCreatureTokens rest).map fun action =>
         .optional (.controller .this) action
-    (draw <|> mill <|> create).map (·, n)
+    let behold :=
+      (beholdKeyword? rest).map fun k =>
+        .optional (.controller .this) (.keyword (.controller .this) k)
+    (draw <|> mill <|> create <|> behold).map (·, n)
 
 /-- `Target player draws <count>.` The player is target `n`.
 The sentence is that draw and nothing more. -/

@@ -517,13 +517,42 @@ def parseMayPutThenAttachEquipment (cardName : String) (ss : List String) (n : N
     | _, _ => none
   | _ => none
 
+/-- `Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land.`
+Variable `n` is the library card. Putting it onto the battlefield is
+action `n + 1`; the land there is `affectedByAction` of that action
+(CR 400.7). Beholding that subtype is action `n + 2` (CR 701.4). The land
+untaps only when that behold happened (CR 701.4b). -/
+def parseSearchBasicBeholdUntap (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [search, may, ifYouDo] =>
+    if !sentenceIs ifYouDo "if you do, untap that land" then none
+    else
+      match parseSearchBasicLandTapped search n,
+          (after? (normSentence may) "you may ").bind beholdKeyword? with
+      | some _, some (.behold st) =>
+        some ([
+          .searchLibraryThenShuffle (.controller .this) [
+            .defineSelectorVariable n
+              (.selected (.controller .this) (.range 1 1) basicLandInLibrary),
+            .actionId (n + 1)
+              (.putOntoBattlefieldInState (.variable n) [.tapped])],
+          .optional (.controller .this)
+            (.actionId (n + 2) (.keyword (.controller .this) (.behold st))),
+          .if (.happened (.actionWithId (n + 2)) .gameStart)
+            [.untap (.affectedByAction (n + 1))]],
+          n + 3)
+      | _, _ => none
+  | _ => none
+
 /-- Every sentence of `text` as catalog actions, in order. Multi-sentence
 templates come first. A leading sentence may come before exiling the top card
 to play later. -/
 def catalogActionsFromText (cardName text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   let ss := sentences text
-  parseMayIfYouDo cardName ss n <|>
+  parseSearchBasicBeholdUntap ss n <|>
+    parseMayIfYouDo cardName ss n <|>
     parseThenIfControlSacrificeIfYouDo cardName ss n <|>
     parseDestroyAmassPowerDrawIfYours ss n <|>
     parseMayDiscardHandDrawDamage cardName ss n <|>

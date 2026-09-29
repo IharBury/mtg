@@ -842,12 +842,20 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.exileThenReturn o "is exiled, then returned" (clearExileFields := true)
       else g)
   | .searchBasicBeholdSubtypeUntap subtype =>
+    -- “That land” is the permanent `putOntoBattlefieldInState` affected,
+    -- not the library card the search variable named (CR 400.7).
+    -- “If you do” is this behold, not an earlier one (CR 701.4b).
+    let before := g.battlefield.map (·.id)
     let g := g.resolveSearchBasicLandTapped controller
+    let entered? :=
+      (g.battlefield.find? fun o =>
+        o.printed.isLand && !before.any (· == o.id)).map (·.id)
+    let beheld := (g.player controller).beheldQualities.size
     let g := g.beholdQuality controller subtype
-    if g.qualityWasBeheld controller subtype then
-      match (g.permanentsOf controller).find? (fun o => o.printed.isLand && o.status.tapped) with
-      | none => g
+    if (g.player controller).beheldQualities.size > beheld then
+      match entered?.bind g.findObject? with
       | some land => g.applyPermanentAction land .untap
+      | none => g
     else g
   | .twoPlayersDraw =>
     match targets[0]?, targets[1]? with

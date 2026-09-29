@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**212** catalog cards are still `CardDef` helpers. **199**
+**211** catalog cards are still `CardDef` helpers. **198**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **13** lost
 their last tag (named counters, `CardAction.removeCounter`, or
@@ -24,12 +24,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 150 | 38 | 35 |
+| The Hobbit (HOB) | 188 | 151 | 37 | 34 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 48 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 116 |
-| **Total** | **586** | **374** | **212** | **199** |
+| **Total** | **586** | **375** | **211** | **198** |
 
-All 374 `TraditionalCardDefinition`s (150 HOB, 67 HOC, 157 MSH,
+All 375 `TraditionalCardDefinition`s (151 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -67,7 +67,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `indestructible`, `reach`, `trample`, `deathtouch`, `defender`, `lifelink`,
   `firstStrike`, `islandwalk`, `storied`, `doubleStrike`, `prowess`, `ascend`,
   `shadow`, `changeling`, `equip`, `enchant`, `typecycling`, `recruit`,
-  `amass`, `connive`, `chapter`, `flashback`, `ward`, `crew`, `teamwork`,
+  `amass`, `connive`, `behold` (CR 701.4; a subtype, e.g. `behold an Elf`),
+  `chapter`, `flashback`, `ward`, `crew`, `teamwork`,
   `improvise`, `kicker`, `affinity`, `boast`, `cascade`, `extort`, `sneak`,
   `gift` (`Gift`: a Food, a card, a tapped Fish, an extra turn, a Treasure, an Octopus; CR 702.174d–i),
   `harness` (CR 701.64; `CardAction.keyword` of this permanent),
@@ -85,7 +86,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `spell`, `ability`, `abilityWithId`, `permanentSpell`, `hasTarget`,
   `isTargetOf`, `player`, `opponent`, `owner`, `attacking`, `blocking`,
   `token`, `wasObjectOfAction`, `wasArgumentOfTrigger`, `replacingObject`,
-  `wasCreatedByAction`, `hostOf`, `inGraveyard`, `wasObjectSince`,
+  `wasCreatedByAction`, `affectedByAction` (the new object a numbered action
+  moved onto the battlefield; CR 400.7), `hostOf`, `inGraveyard`, `wasObjectSince`,
   `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`
   (whose library, how many cards), `hasCreatureTypeChosenByAction` (the
   creature type chosen by a numbered `CardAction.chooseCreatureType`),
@@ -277,6 +279,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `ContinuousEffect.preventDamage` | `replace (Trigger.damage …) []` |
 | `ContinuousEffect.replace`, `canPlay`, `gainAbility` | The constructors of those names |
 | `CardAction.lookAt`, `randomize` (bottom of library), `connive`, `addManaCombination` | `lookAt`, `putOnLibraryBottomInRandomOrder`, `keyword … (.connive n)`, `addManaInAnyCombination` |
+| `CardAction.behold` | `keyword … (.behold st)` (CR 701.4). “If you do” is `happened (actionWithId n)`. Elven Passage searches a basic land, puts it onto the battlefield with a numbered `putOntoBattlefieldInState`, may behold a subtype, and untaps `affectedByAction` of that put. The search variable still names the library card (CR 400.7) |
 | `CardAction.chooseModes` (“choose one or both”) | `chooseUniqueModes (.range 1 2)` |
 | `CardAction.chooseCreatureType`, `Selector.chosenType` | `actionId n (chooseCreatureType …)` and `Selector.hasCreatureTypeChosenByAction n` |
 | `TraditionalCardDefinition.asEntersChoice` | `static (replace (enter this) [actionId n (chooseCreatureType (controller this)), keepReplacedAction])` (An Unexpected Party) |
@@ -491,8 +494,6 @@ complete.
   - Sauron, the Dark Lord; Witch-king of Angmar
 - **`becomeWithAbility`** (1 card) — Lose other types, become Food artifacts, and gain a stated activated ability
   - Supper for Spiders
-- **`behold`** (1 card) — Behold a subtype
-  - Elven Passage
 - **`cascade`** (1 card) — Exile until a cheaper nonland; you may cast it
   - Call Forth the Tempest
 - **`changeTargets`** (1 card) — Choose new targets for another spell or ability
@@ -652,7 +653,7 @@ These are not in the requested list but block a conversion of the listed types:
 | Inductive | Used by | Missing constructors that remaining cards need |
 | --- | --- | --- |
 | `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | None for the remaining cards. Wall, Minion, and Elder exist. Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers, not missing subtypes. |
-| `Keyword` | `Ability.keyword`, `CardAction.keyword` | None for the remaining cards. Harness (CR 701.64) and ∞ (CR 702.186) exist, as do Gift, Teamwork, Improvise, Kicker, Affinity, Boast, Cascade, Extort, Sneak, Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
+| `Keyword` | `Ability.keyword`, `CardAction.keyword` | None for the remaining cards. Harness (CR 701.64), ∞ (CR 702.186), and Behold (CR 701.4) exist, as do Gift, Teamwork, Improvise, Kicker, Affinity, Boast, Cascade, Extort, Sneak, Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
 | `CounterKind` | `CardAction.putCounter`, `Selector.hasCounter`, `Trigger.putCountersSimultaneously` | Each named counter in the supported catalog has its own constructor. `Trigger.putCounter` (who put them, any kind) is still missing. Lore counters are Saga chapters. |
 
 `CardPart` also has no `loyalty` or DFC-back face (`alternative` is the
@@ -664,7 +665,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (41 cards)
+### The Hobbit (HOB) (34 cards)
 
 **Bard, King of Dale** (`bardKingOfDale`)
 
@@ -711,10 +712,6 @@ Converted cards are omitted here.
 
 - `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
 - `CardAction.exileThenReturn` — Exile, then return at a later event (a delayed trigger such as the next end step)
-
-**Elven Passage** (`elvenPassage`)
-
-- `CardAction.behold` — Behold a subtype
 
 **Getaway Barrel** (`getawayBarrel`)
 

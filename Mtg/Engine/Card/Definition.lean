@@ -244,7 +244,7 @@ def shape : Selector → Shape
   | .wasObjectSince (.putToGraveyard _) .turnStart =>
     { putIntoGraveyardThisTurn := true }
   | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasArgumentOfTrigger _ _ | .replacingObject
-  | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inLibrary | .inHand
+  | .wasCreatedByAction _ | .affectedByAction _ | .hostOf _ | .inGraveyard | .inLibrary | .inHand
   | .inExile | .supertype _
   | .variable _ | .topOfLibrary _ _ => {}
   | .hasCreatureTypeChosenByAction _ => { chosenCreatureType := true }
@@ -403,6 +403,7 @@ def referenceTargets : Selector → Selector
   | .wasArgumentOfTrigger id n => .wasArgumentOfTrigger id n
   | .replacingObject => .replacingObject
   | .wasCreatedByAction n => .wasCreatedByAction n
+  | .affectedByAction n => .affectedByAction n
   | .hostOf s => .hostOf (referenceTargets s)
   | .inGraveyard => .inGraveyard
   | .wasObjectSince a b => .wasObjectSince a b
@@ -996,7 +997,8 @@ inductive CardAction where
   `addManaInAnyCombination`. -/
   | addMana : Selector → List ManaSymbol → CardAction
   /-- The selected object or player performs a keyword action (CR 701),
-  e.g. recruit, amass Goblins 1, connive 1, or harness this permanent. -/
+  e.g. recruit, amass Goblins 1, connive 1, behold an Elf, or harness
+  this permanent. -/
   | keyword : Selector → Keyword → CardAction
   /-- The selected player creates that many tokens with the given
   characteristics, entering in the given states (CR 111, CR 110.5).
@@ -1206,6 +1208,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .spell | .ability | .abilityWithId _ | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
     | .player
     | .wasObjectOfAction _ | .wasArgumentOfTrigger _ _ | .replacingObject | .wasCreatedByAction _
+    | .affectedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inLibrary | .inHand
     | .inExile | .supertype _
     | .variable _ | .topOfLibrary _ _ => none
@@ -2396,6 +2399,31 @@ def leftoverIsColor (p : TokenParts) (c : Color) : Bool :=
 def leftoverYou : Selector → Bool
   | .controller .this => true
   | _ => false
+
+/-- Search a basic land onto the battlefield tapped. You may behold a subtype.
+If you do, untap that land (CR 701.4 / 701.4b). The selector variable is
+the library card. The land on the battlefield is `affectedByAction` of the
+numbered `putOntoBattlefieldInState`. The behold is the other numbered
+action. -/
+def leftoverSearchBasicBeholdUntap? : CardAction → Option String
+  | .sequence [
+      .searchLibraryThenShuffle who [
+        .defineSelectorVariable id
+          (.selected chooser (.range 1 1) among),
+        .actionId putId
+          (.putOntoBattlefieldInState (.variable id') [.tapped])],
+      .optional who'
+        (.actionId beholdId (.keyword actor (.behold st))),
+      .if (.happened (.actionWithId beholdId') .gameStart)
+        [.untap (.affectedByAction putId')]
+    ] =>
+    if leftoverYou who && leftoverYou chooser && leftoverYou who' &&
+        leftoverYou actor && id == id' && putId == putId' &&
+        beholdId == beholdId' && putId != beholdId &&
+        among.basicLandInLibrary then
+      some st.toString
+    else none
+  | _ => none
 
 /-- Destroy target creature, then surveil 1. -/
 def leftoverDestroyCreatureSurveil? : CardAction → Bool
@@ -3959,6 +3987,9 @@ def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
 /-- Compile `continuous` effects, reading targeting from `target`
 and mass application from constraint selectors. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
+  match leftoverSearchBasicBeholdUntap? action with
+  | some st => Effect.searchBasicBeholdSubtypeUntap st
+  | none =>
   match leftoverCompiled? action with
   | some e => e
   | none =>
@@ -8215,6 +8246,25 @@ end TraditionalCardDefinition
             (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
           [.tapped]]
   action.toAbilityEffect == Effect.searchBasicLandTapped
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .searchLibraryThenShuffle
+        (.controller .this)
+        [
+          .defineSelectorVariable 1
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+          .actionId 2
+            (.putOntoBattlefieldInState (.variable 1) [.tapped])],
+      .optional (.controller .this)
+        (.actionId 3 (.keyword (.controller .this) (.behold .elf))),
+      .if (.happened (.actionWithId 3) .gameStart)
+        [.untap (.affectedByAction 2)]]
+  action.toAbilityEffect == Effect.searchBasicBeholdSubtypeUntap "Elf"
 
 #guard
   match
