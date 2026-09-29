@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**211** catalog cards are still `CardDef` helpers. **198**
+**209** catalog cards are still `CardDef` helpers. **196**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **13** lost
 their last tag (named counters, `CardAction.removeCounter`, or
@@ -24,12 +24,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 151 | 37 | 34 |
+| The Hobbit (HOB) | 188 | 153 | 35 | 32 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 48 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 116 |
-| **Total** | **586** | **375** | **211** | **198** |
+| **Total** | **586** | **377** | **209** | **196** |
 
-All 375 `TraditionalCardDefinition`s (151 HOB, 67 HOC, 157 MSH,
+All 377 `TraditionalCardDefinition`s (153 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -132,6 +132,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`,
   `chooseUniqueModes`, `chooseModeRestricted`, `counter`, `preventable`,
   `optionalPayFor`, `discard`, `putCounter` (a `Value` count), `removeCounter`,
+  `removeAllCounters` (every counter on the selected object),
   `exile`, `exileFaceDown`,
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `putIntoLibraryFromTop`,
@@ -321,8 +322,8 @@ complete.
   - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Evil's Thrall; Gandalf, Party Guest; Glamdring; Gollum, Riddle Master; Inside Information; Loki Laufeyson; … (10 more)
 - **`attackingAlone`** (8 cards) — A creature attacking alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
-- **`attached`** (5 cards) — Objects attached to a given object (inverse of `hostOf`)
-  - Long-Lost Lances; Ronin, Shadow Stalker; Thorin, Mountain-king; Whiplash, Vengeful Engineer; Winter Soldier, Icy Assassin
+- **`attached`** (4 cards) — Objects attached to a given object (inverse of `hostOf`)
+  - Long-Lost Lances; Ronin, Shadow Stalker; Whiplash, Vengeful Engineer; Winter Soldier, Icy Assassin
 - **`color`** (5 cards) — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
   - Aragorn, the Uniter; Baron Helmut Zemo; Goblin Cratermaker; Necklace of Girion; World War Hulk
 - **`toughness`** (4 cards) — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
@@ -421,7 +422,7 @@ complete.
 ### `ContinuousEffect`
 
 - **`loseAbility`** (named ability still open) — Selected object loses one named ability (`removeAllAbilities` removes every ability)
-  - Enchanted River's Grasp; Frozen in Ice; Hellcat, Undying Vigilante; Smite the Deathless; The Wondrous Wasp
+  - Frozen in Ice; Hellcat, Undying Vigilante; Smite the Deathless; The Wondrous Wasp
 - **`setTypes`** (5 cards) — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
   - I Am Iron Man; Iron Man Armor; Reptil, Dinomorpher; Taskmaster, Mercenary Mimic; Tom, Bert, and William
 - **`mayLookAtTop`** (4 cards) — May look at the top card of the selected library any time
@@ -666,7 +667,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (34 cards)
+### The Hobbit (HOB) (32 cards)
 
 **Bard, King of Dale** (`bardKingOfDale`)
 
@@ -793,10 +794,6 @@ Converted cards are omitted here.
 
 - `CardAction.copy` — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
 
-**Thorin, Mountain-king** (`thorinMountainKing`)
-
-- `Selector.attached` — Objects attached to a given object (inverse of `hostOf`)
-
 **Thranduil, the Elvenking** (`thranduilTheElvenking`)
 
 - `ContinuousEffect.copyActivatedAbilities` — Gains the activated abilities of matching objects
@@ -813,10 +810,6 @@ Converted cards are omitted here.
 **Wizard's Staff** (`wizardSStaff`)
 
 - `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
-
-**Enchanted River's Grasp** (`enchantedRiverSGrasp`)
-
-- `ContinuousEffect.loseAbility` — Selected object loses one named ability (`removeAllAbilities` removes every ability)
 
 ### The Hobbit Eternal (HOC) (51 cards)
 

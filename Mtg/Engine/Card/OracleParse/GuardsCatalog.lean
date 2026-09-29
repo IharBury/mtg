@@ -1194,5 +1194,42 @@ open OracleParts
 #guard parseOracleParts (name := "Other Card")
   "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing." ==
   none
+#guard parseOracleParts (name := "Enchanted River's Grasp")
+  "When this Aura enters, tap enchanted creature and remove all counters from it." ==
+  some [.ability (.triggered (.enter .this)
+    (.sequence [
+      .tap (.hostOf .this),
+      .removeAllCounters (.hostOf .this)]))]
+#guard parseOracleParts (name := "Enchanted River's Grasp")
+  "Enchanted creature loses all abilities and doesn't untap during its controller's untap step." ==
+  some [
+    .ability (.static (.removeAllAbilities (.hostOf .this))),
+    .ability (.static (.doesntUntap (.hostOf .this)))]
+#guard parseOracleParts (name := "Enchanted River's Grasp")
+  "Enchanted creature loses all abilities." == none
+#guard parseOracleParts (name := "Enchanted River's Grasp")
+  "When this Aura enters, tap enchanted creature." == none
+#guard parseOracleParts (name := "")
+  "Attach any number of target Equipment you control to target creature you control." ==
+  some [.actions [.attach
+    (.targets 1 .any equipmentYouControl)
+    (.target 2 creaturesYouControl)]]
+#guard parseOracleParts (name := "Thorin, Mountain-king")
+  "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature." ==
+  some [.ability (.triggered (.enter .this)
+    (.sequence [
+      .actionId 3 (.attach
+        (.targets 1 .any equipmentYouControl)
+        (.target 2 creaturesYouControl)),
+      .if (.greaterOrEqual (.count (.wasObjectOfAction 3)) 1)
+        [.dealDamageEqualToPower (.targetReference 2)
+          (.targets 4 (.range 0 1)
+            (.intersection [.permanent, .cardType .creature]))]]))]
+#guard parseOracleParts (name := "Thorin, Mountain-king")
+  "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its toughness to up to one target creature." ==
+  none
+#guard parseOracleParts (name := "Other Card")
+  "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature." ==
+  none
 
 end Mtg.Engine

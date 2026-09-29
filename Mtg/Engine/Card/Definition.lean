@@ -931,6 +931,8 @@ inductive CardAction where
   | putCounter : Selector → CounterKind → Value → CardAction
   /-- Remove that many counters of the given kind from the selected object. -/
   | removeCounter : Selector → CounterKind → Value → CardAction
+  /-- Remove every counter from the selected object. -/
+  | removeAllCounters : Selector → CardAction
   /-- Exile the selected object. -/
   | exile : Selector → CardAction
   /-- Exile the selected objects face down (CR 406.3). -/
@@ -4167,7 +4169,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putCounter (.source .this) .plusOnePlusOne .x =>
                     Effect.plusOneX
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
-                  | .removeCounter _ _ _ => continuousEffect none [] asAbility
+                  | .removeCounter _ _ _ | .removeAllCounters _ =>
+                    continuousEffect none [] asAbility
                   | .exile _ | .exileFaceDown _ =>
                     continuousEffect none [] asAbility
                   | .exchangeControl _ => Effect.exchangeControlSharingType
@@ -4751,6 +4754,26 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         .gainLife gainer (.count (.wasObjectOfAction id'))]) =>
     if id == id' && gainer == .controller .this then
       some TriggeredAbility.onEnterDestroyOppArtifactsEnchantmentsGainLife
+    else none
+  | .triggered (.enter .this)
+      (.sequence [
+        .tap (.hostOf .this),
+        .removeAllCounters (.hostOf .this)]) =>
+    some TriggeredAbility.onEnterTapEnchantedRemoveCounters
+  | .triggered (.enter .this)
+      (.sequence [
+        .actionId id (.attach
+          (.targets equipId .any
+            (.intersection [.permanent, .subtype .equipment, .controlled (.controller .this)]))
+          (.target creatureId
+            (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)]))),
+        .if (.greaterOrEqual (.count (.wasObjectOfAction id')) (.nat 1))
+          [.dealDamageEqualToPower (.targetReference creatureId')
+            (.targets damageId (.range (.nat 0) (.nat 1))
+              (.intersection [.permanent, .cardType .creature]))]]) =>
+    if id == id' && creatureId == creatureId' &&
+        equipId + 1 == creatureId && creatureId + 1 == id && id + 1 == damageId then
+      some TriggeredAbility.onEnterAttachEquipmentThenFight
     else none
   | _ => none
 
@@ -6215,7 +6238,12 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           cond == .didNotHappen (.castSpell card) .turnStart then
         { b with firstCreatureHasFlash := true }
       else b
-  | .doesntUntap _ => b
+  | .doesntUntap who =>
+    if who == .hostOf .this && b.removesAllAbilitiesFrom.contains (.hostOf .this) then
+      { b with
+        staticAbilities :=
+          b.staticAbilities.push .enchantedLosesAbilitiesDoesntUntap }
+    else b
   | .cantAttackUnlessPays _ _ _ => b
   | .removeAllAbilities who =>
     { b with removesAllAbilitiesFrom := b.removesAllAbilitiesFrom.push who }

@@ -874,10 +874,21 @@ def parseMayPlayLandsFromGraveyard (line : String) : Option CardPart :=
       (.intersection [.inGraveyard, .cardType .land, .owner (.controller .this)]))))
   else none
 
+/-- `Enchanted creature loses all abilities and doesn't untap during its
+controller's untap step.` -/
+def parseEnchantedLosesAbilitiesDoesntUntap (line : String) : Option (List CardPart) :=
+  if normLine line ==
+      "enchanted creature loses all abilities and doesn't untap during its controller's untap step" then
+    some [
+      .ability (.static (.removeAllAbilities (.hostOf .this))),
+      .ability (.static (.doesntUntap (.hostOf .this)))]
+  else none
+
 /-- Static and cost lines of a catalog card, before its triggers. -/
 private def parseCatalogLineStatic (cardName line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  (parseMayPlayLandsFromGraveyard line).map ([·], n) <|>
+  (parseEnchantedLosesAbilitiesDoesntUntap line).map (·, n) <|>
+    (parseMayPlayLandsFromGraveyard line).map ([·], n) <|>
     (parseKeywordsThenWard line).map (·, n) <|>
     (parseEntersGreaterThanSelfCounter cardName line).map ([·], n) <|>
     (parseCastTargetsYoursGainsQuoted cardName line n).map (fun (p, n') => ([p], n')) <|>
