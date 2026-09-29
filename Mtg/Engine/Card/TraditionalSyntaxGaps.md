@@ -5,12 +5,11 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**216** catalog cards are still `CardDef` helpers. **201**
+**214** catalog cards are still `CardDef` helpers. **201**
 of them need at least one missing constructor listed under
-[Missing constructors by type](#missing-constructors-by-type). **15** lost
-their last tag (named counters, `CardAction.removeCounter`,
-enters-with-counters, `Keyword.affinity`, or `Keyword.sneak`) and are not
-converted yet (see
+[Missing constructors by type](#missing-constructors-by-type). **13** lost
+their last tag (named counters, `CardAction.removeCounter`, or
+enters-with-counters) and are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
 when a constructor already exists but cannot express the printed ability
@@ -25,12 +24,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 148 | 40 | 36 |
+| The Hobbit (HOB) | 188 | 149 | 39 | 36 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 48 |
-| Marvel Super Heroes (MSH) | 281 | 155 | 126 | 117 |
-| **Total** | **586** | **370** | **216** | **201** |
+| Marvel Super Heroes (MSH) | 281 | 156 | 125 | 117 |
+| **Total** | **586** | **372** | **214** | **201** |
 
-All 370 `TraditionalCardDefinition`s (148 HOB, 67 HOC, 155 MSH,
+All 372 `TraditionalCardDefinition`s (149 HOB, 67 HOC, 156 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
@@ -1579,18 +1578,16 @@ Converted cards are omitted here.
 
 ## Tags now spelled, not yet converted
 
-These 15 cards lost every tag and are still `CardDef` helpers. Thirteen lost
+These 13 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, and enters-with-counters became
-expressible. Cantankerous Keepers and Elektra, Daughter of the Hand lost
-them when `Keyword.affinity` and `Keyword.sneak` became expressible. A later
-pass should reread them before conversion.
+expressible. A later pass should reread them before conversion.
 
-**Hobbit (4):** Beorn the Fierce; Cantankerous Keepers; Dwalin, Weaponmaster; Last Light of Durin's Day.
+**Hobbit (3):** Beorn the Fierce; Dwalin, Weaponmaster; Last Light of Durin's Day.
 
 **Hobbit Eternal (2):** Arwen, Mortal Queen; Minas Morgul, Dark Fortress.
 
-**Marvel Super Heroes (9):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Elektra, Daughter of the Hand; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Super-Adaptoid; The Astonishing Ant-Man; Thunderbolts Conspiracy.
+**Marvel Super Heroes (8):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Super-Adaptoid; The Astonishing Ant-Man; Thunderbolts Conspiracy.
 
 ## Method notes
 

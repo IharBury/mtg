@@ -278,7 +278,10 @@ def toTargetKind (f : Selector) : EffectTargetKind :=
   if s.isSpell then .spell
   else if s.nonland && s.shareCardType then .twoNonlandsSharingType
   else if s.nonland then .nonland
-  else if s.opponentControls && s.types.eqTypes [.creature] then .oppCreature
+  else if s.opponentControls && s.types.eqTypes [.creature] then
+    match s.powerAtMost with
+    | some n => .oppCreaturePowerAtMost n
+    | none => .oppCreature
   else if s.sameController then
     if s.other && s.types.eqTypes [.creature] then .anotherCreatureYouControl
     else if s.types.eqTypes [.artifact, .creature] then .artifactOrCreatureYouControl
@@ -3871,6 +3874,8 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
         !among.shape.sameController && !among.shape.opponentControls then
       some TriggeredAbility.onEnterDestroyOtherAmassControllerPower
     else none
+  | .destroy (.target _ sel) =>
+    some (TriggeredAbility.onEnter (Effect.enterDestroy sel.toTargetKind))
   | action =>
     match leftoverMillThenSubtypeToHand? action with
     | some (n, st) => some (TriggeredAbility.onEnterMillThenSubtypeToHand n st)
@@ -6851,6 +6856,14 @@ end TraditionalCardDefinition
     .cardType .creature,
     .controlled (.opponent (.controller .this))])
   == .oppCreature
+
+#guard Selector.toTargetKind
+  (.intersection [
+    .permanent,
+    .cardType .creature,
+    .controlled (.opponent (.controller .this)),
+    .powerAtMost (.int 3)])
+  == .oppCreaturePowerAtMost 3
 
 #guard
   match
@@ -9872,6 +9885,21 @@ end TraditionalCardDefinition
         .returnToHand
           (.intersection [.wasObjectOfAction 1, .subtype .elf])])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterMillThenSubtypeToHand 4 "Elf"
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.destroy
+        (.target 1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.opponent (.controller .this)),
+            .powerAtMost (.int 3)])))).toTriggeredAbility? with
+  | some ab =>
+    ab == TriggeredAbility.onEnter (Effect.enterDestroy (.oppCreaturePowerAtMost 3))
   | none => false
 
 #guard CardAction.toEffect

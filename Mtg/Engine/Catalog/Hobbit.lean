@@ -51,8 +51,9 @@ Mirkwood Meditator, Mirkwood Nurturer, Kíli the Resourceful,
 Dáin's Company, Smaug, Wicked Worm, Glamdring, Foe-hammer,
 Settle the Wreckage, Iron Hills Blacksmith, Gandalf, Goblins' Bane,
 An Unexpected Party, Azog, Moria's Ruin, Balin, Loremaster,
-Boughside Wanderers, Burn, Burn, Tree and Fern, Down in the Valley,
-Gleaming Splendor, Lake-town Toymaker, Orcrist, Goblin-cleaver,
+Boughside Wanderers, Burn, Burn, Tree and Fern, Cantankerous Keepers,
+Down in the Valley, Gleaming Splendor, Lake-town Toymaker,
+Orcrist, Goblin-cleaver,
 Radagast of Rhosgobel, The Misty Mountains Cold, and Through the Forest
 Gate keep their printed characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
@@ -5678,10 +5679,45 @@ def burnBurnTreeAndFern : CardDef :=
       (Effect.chapterDestroyOppArtifact),
     chapter "III, IV" "Add {R}." (Effect.chapterAddMana (.colored .red))] }
 
+/-- Oracle text for Cantankerous Keepers. -/
+def cantankerousKeepersOracle : String :=
+  "Affinity for Elves (This spell costs {1} less to cast for each Elf you control.)\nWhen this creature enters, mill four cards, then put all Elf cards from among them into your hand."
+
+def cantankerousKeepersDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Cantankerous Keepers",
+    .manaCost [.generic 5, .mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .soldier,
+    .power 4,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Cantankerous Keepers") cantankerousKeepersOracle).get!
+
+#guard cantankerousKeepersDefinition == .card [
+  .name "Cantankerous Keepers",
+  .manaCost [.generic 5, .mono .green],
+  .type .creature,
+  .subtype .elf,
+  .subtype .soldier,
+  .power 4,
+  .toughness 3,
+  .ability (.keyword (.affinity [] [.elf])),
+  .ability
+    (.triggered
+      (.enter .this)
+      (.sequence [
+        .actionId 1 (.mill (.controller .this) 4),
+        .returnToHand
+          (.intersection [.wasObjectOfAction 1, .subtype .elf])]))]
+
 def cantankerousKeepers : CardDef :=
-  creature "Cantankerous Keepers" (ManaCost.ofGenericAndColor 5 .green) #["Elf", "Soldier"] 4 3 (oracleText := "Affinity for Elves (This spell costs {1} less to cast for each Elf you control.)\nWhen this creature enters, mill four cards, then put all Elf cards from among them into your hand.")
-    (affinityForSubtype := some "Elves")
-    (triggeredAbilities := #[.onEnterMillThenSubtypeToHand 4 "Elf"])
+  cantankerousKeepersDefinition.toCardDef (oracleText := cantankerousKeepersOracle)
+
+#guard cantankerousKeepers.oracleText == cantankerousKeepersOracle
+#guard cantankerousKeepers.affinityForSubtype == some "Elf"
+#guard cantankerousKeepers.triggeredAbilities ==
+  #[.onEnterMillThenSubtypeToHand 4 "Elf"]
 
 def celebrateTheMountainKing : CardDef :=
   enchantment "Celebrate the Mountain-king" (ManaCost.ofGenericAndColor 3 .white) "When this enchantment enters, for each opponent, exile up to one target nonland permanent that player controls until this enchantment leaves the battlefield.\nWhen this enchantment enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"

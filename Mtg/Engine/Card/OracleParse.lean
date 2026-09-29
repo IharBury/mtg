@@ -476,6 +476,9 @@ Currently recognized:
 - `Mill six cards, then put all instant and sorcery cards from among them into your hand.`
   More than one card uses the plural `cards`. Every instant and sorcery card
   from among them goes to hand.
+- `Mill four cards, then put all Elf cards from among them into your hand.`
+  More than one card uses the plural `cards`. The subtype is singular
+  (`Elf`, not `Elves`). Every card of that subtype from among them goes to hand.
 - `Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle.`
   The player is one target. “That many” is how many of those creatures are
   exiled. That player chooses whether to search, and may find any number
@@ -2436,6 +2439,21 @@ def parseMillThenPutAllInstantsOrSorceries (sentence : String) (n : Nat) :
       " cards, then put all instant and sorcery cards from among them into your hand").map
     fun k => millThen n k fun id => .returnToHand (instantOrSorceryAmong id)
 
+/-- `Mill four cards, then put all Elf cards from among them into your hand.`
+More than one card uses the plural `cards`. The subtype is printed singular
+(`Elf`, not `Elves`). Every card of that subtype from among them goes to
+hand. The milled cards are action `n`. -/
+def parseMillThenPutAllSubtype (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  (after? (normSentence sentence) "mill ").bind fun rest =>
+    (split2? rest " cards, then put all ").bind fun (countText, tail) =>
+      (nounCount? countText true).bind fun k =>
+        ((before? tail " cards from among them into your hand").bind
+            subtypeOfOracle?).map fun st =>
+          millThen n k fun id =>
+            .returnToHand
+              (.intersection [.wasObjectOfAction id, .subtype st])
+
 /-- Two creatures and/or lands this object's controller controls. -/
 def twoCreaturesOrLandsYouControl : Selector :=
   permanentWith [.creature, .land] [youControl]
@@ -2552,6 +2570,7 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
     parseMillThenPutAllInstantsOrSorceries sentence n <|>
     parseMillThenPutInstantOrSorcery sentence n <|>
     parseMillThenPutUpToLands sentence n <|>
+    parseMillThenPutAllSubtype sentence n <|>
     parseMillCards sentence n <|>
     parseExileTwoThenReturn sentence n
 
@@ -10736,6 +10755,40 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
   none
 #guard parseOracleParts (name := "")
   "Mill six cards, then put all instant and sorcery card from among them into your hand." ==
+  none
+#guard parseOracleParts (name := "")
+  "Mill four cards, then put all Elf cards from among them into your hand." ==
+  some [.actions [.sequence [
+    .actionId 1 (.mill (.controller .this) 4),
+    .returnToHand
+      (.intersection [.wasObjectOfAction 1, .subtype .elf])]]]
+#guard parseOracleParts (name := "Cantankerous Keepers")
+  "When this creature enters, mill four cards, then put all Elf cards from among them into your hand." ==
+  some [.ability (.triggered
+    (.enter .this)
+    (.sequence [
+      .actionId 1 (.mill (.controller .this) 4),
+      .returnToHand
+        (.intersection [.wasObjectOfAction 1, .subtype .elf])]))]
+#guard parseOracleParts (name := "")
+  "Mill one cards, then put all Elf cards from among them into your hand." == none
+#guard parseOracleParts (name := "")
+  "Mill four cards, then put all Elves cards from among them into your hand." == none
+#guard parseOracleParts (name := "")
+  "Mill four cards, then put all instant cards from among them into your hand." == none
+#guard parseOracleParts (name := "Elektra, Daughter of the Hand")
+  "When Elektra enters, destroy target creature an opponent controls with power 3 or less." ==
+  some [.ability (.triggered
+    (.enter .this)
+    (.destroy
+      (.target 1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.opponent (.controller .this)),
+          .powerAtMost (Value.int 3)]))))]
+#guard parseOracleParts (name := "Elektra, Daughter of the Hand")
+  "When Gandalf enters, destroy target creature an opponent controls with power 3 or less." ==
   none
 #guard parseOracleParts (name := "Settle the Wreckage")
   "Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle." ==
