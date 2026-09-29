@@ -300,6 +300,16 @@ inductive Keyword where
   `Gift a card`, `Gift a tapped Fish`, `Gift an extra turn`,
   `Gift a Treasure`, or `Gift an Octopus`. -/
   | gift : Gift → Keyword
+  /-- Harness (CR 701.64): a keyword action. “Harness [this permanent]”
+  means “If this permanent isn’t harnessed, it becomes harnessed.”
+  Harnessed is a designation, not a copiable value, and it lasts until
+  the permanent leaves the battlefield. Printed as the effect of an
+  activated ability, e.g. `{5}{W}, {T}: Harness The Mind Stone`. -/
+  | harness
+  /-- ∞ (Infinity) (CR 702.186): a keyword ability. “∞ — [Ability]” means
+  “As long as this permanent is harnessed, it has [ability].” Printed
+  with that ability via `Ability.keywordWithAbility`. -/
+  | infinity
 deriving Repr, Inhabited, BEq
 
 /-- A number that is either a printed constant or computed from game
@@ -678,7 +688,7 @@ def toKeywords : Keyword → Keywords
   | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
   | .connive _ | .chapter _ | .flashback | .ward | .crew _
   | .teamwork _ | .improvise | .kicker | .affinity _ _ | .boast | .cascade
-  | .extort | .sneak | .gift _ =>
+  | .extort | .sneak | .gift _ | .harness | .infinity =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -720,6 +730,8 @@ instance : ToString Keyword where
     | .extort => "extort"
     | .sneak => "sneak"
     | .gift g => g.phrase
+    | .harness => "harness"
+    | .infinity => "∞"
     | k => toString k.toKeywords
 
 #guard pluralName "Elf" == "Elves"
@@ -755,6 +767,10 @@ instance : ToString Keyword where
 #guard toString (Keyword.gift .extraTurn) == "gift an extra turn"
 #guard toString (Keyword.gift .treasure) == "gift a Treasure"
 #guard toString (Keyword.gift .octopus) == "gift an Octopus"
+#guard Keyword.harness.toKeywords == Keywords.none
+#guard Keyword.infinity.toKeywords == Keywords.none
+#guard toString Keyword.harness == "harness"
+#guard toString Keyword.infinity == "∞"
 
 end Keyword
 

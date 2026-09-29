@@ -788,6 +788,10 @@ inductive Ability where
   /-- A keyword ability printed with a resolution, e.g. a Saga chapter
   (CR 714.2). -/
   | keywordWithEffect : Keyword → List CardAction → Ability
+  /-- A keyword ability that grants another ability. `∞ — [ability]`
+  (CR 702.186) is `keywordWithAbility .infinity`: as long as this
+  permanent is harnessed, it has that ability. -/
+  | keywordWithAbility : Keyword → Ability → Ability
   | activated : List Cost → CardAction → Ability
   /-- An activated ability that may be used only when the condition holds. -/
   | activatedIf : Condition → List Cost → CardAction → Ability
@@ -992,7 +996,7 @@ inductive CardAction where
   `addManaInAnyCombination`. -/
   | addMana : Selector → List ManaSymbol → CardAction
   /-- The selected object or player performs a keyword action (CR 701),
-  e.g. recruit, amass Goblins 1, or connive 1. -/
+  e.g. recruit, amass Goblins 1, connive 1, or harness this permanent. -/
   | keyword : Selector → Keyword → CardAction
   /-- The selected player creates that many tokens with the given
   characteristics, entering in the given states (CR 111, CR 110.5).
@@ -2336,7 +2340,26 @@ def leftoverKeywordAction? : Keyword → Option Effect
   | .amass .goblin (.nat n) => some (Effect.amassGoblins n)
   | .amass .orc (.nat n) => some (Effect.ofTrigger (.amassOrcs n))
   | .connive (.nat 1) => some Effect.connive
+  | .harness => some Effect.harnessInfinityStone
   | _ => none
+
+/-- Exile up to one other nonland permanent you control, then return that
+card under its owner's control. The ∞ ability of The Mind Stone. -/
+def leftoverHarnessFlicker? : CardAction → Bool
+  | .sequence [
+      .actionId id (.exile sel),
+      .putOntoBattlefieldInState (.wasCreatedByAction id')
+        [.controlled who]
+    ] =>
+    id == id' && who == .owner (.wasCreatedByAction id) &&
+      match sel with
+      | .targets _ (.range (.nat 0) (.nat 1)) among =>
+        let s := among.shape
+        s.other && s.nonland && s.sameController && s.mustBePermanent &&
+          s.types == .any && !s.token && !s.nontoken && s.subtype.isNone &&
+          !s.opponentControls && !s.tapped && !s.flying && !s.attacking
+      | _ => false
+  | _ => false
 
 /-- Flattened token characteristics used to recover a `TokenKind`. -/
 structure TokenParts where
@@ -4129,7 +4152,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     match leftoverKeywordAction? k with
                     | some e =>
                       match k with
-                      | .connive (.nat 1) =>
+                      | .connive (.nat 1) | .harness =>
                         let ok :=
                           if asAbility then leftoverSourceThis who else leftoverThis who
                         if ok then e else continuousEffect none [] asAbility
@@ -6219,6 +6242,15 @@ def applyAbility (b : CardFace) : Ability → CardFace
         | none => { b with sagaChapters := b.sagaChapters.push ch }
       | none => b
     | _ => b
+  | .keywordWithAbility k inner =>
+    match k, inner with
+    | .infinity, .triggered (.endStep who) action =>
+      if who == .controller .this && CardAction.leftoverHarnessFlicker? action then
+        { b with
+          triggeredAbilities :=
+            b.triggeredAbilities.push (.onStep Effect.stepHarnessedFlicker) }
+      else b
+    | _, _ => b
   | .activated costs action =>
     if CardAction.leftoverTapAddAnyColorEqualToPower? costs action then
       { b with tapAddAnyColorEqualToPower := true }
