@@ -32,7 +32,7 @@ catalog.
 All 374 `TraditionalCardDefinition`s (150 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
-(`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
+(`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
 parsed definition. The Sackville-Bagginses reads “Whenever you sacrifice a
 token” as sacrificing a token permanent you control, and The Thing, Ben Grimm
 reads “Whenever one or more Heroes you control deal damage to a player” as
@@ -521,7 +521,7 @@ The first pass listed 89 cards that the current constructors could spell.
 All 89 are now `TraditionalCardDefinition`s that read their
 Oracle text with `parseOracleParts`, with a `#guard` pinning each parsed
 definition and the modeled `CardDef` fields `toCardDef` produces. The new
-templates are in `OracleParse.lean`, and the leftovers and `CardFace` fields
+templates are in `OracleParse/`, and the leftovers and `CardFace` fields
 they compile to are in `Definition.lean`. Wall, Minion, and Elder are
 `CardSubtype`s. `Trigger.putCountersSimultaneously` names the player who put
 the counters. `Trigger.enterSimultaneously` is one trigger for objects that

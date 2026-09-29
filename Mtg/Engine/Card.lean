@@ -51,6 +51,7 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `CardDef`: the printed card definition and `AdventureFace`.
 - `Definition`: part-based `TraditionalCardDefinition` that compiles to `CardDef`.
 - `OracleParse`: `parseOracleParts`, Oracle text of a named card read into `CardPart`s.
-  The parse fails when any part of the text is not recognized.
+  The parser is split under `OracleParse/`. The parse fails when any part of
+  the text is not recognized.
 - `Guards`: cross-abstraction `#guard` regression tests.
 -/

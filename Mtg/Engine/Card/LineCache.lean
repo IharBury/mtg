@@ -2,8 +2,8 @@
 Caches for Oracle text that is folded many times while a card is parsed.
 
 These refs live in their own module so their initializers run on import.
-`OracleParse` evaluates its own guards while it is still being compiled, and
-an initializer cannot be read from the module that defines it.
+The `parseOracleParts` guards import this module, so these initializers have
+already run. An initializer cannot be read from the module that defines it.
 -/
 namespace Mtg.Engine.OracleParts.Cache
 
