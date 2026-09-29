@@ -755,6 +755,8 @@ inductive Condition where
   | greaterOrEqual : Value → Value → Condition
   /-- True when the two values are equal. -/
   | equal : Value → Value → Condition
+  /-- True when the gift was promised as this spell was cast (CR 702.185). -/
+  | giftPromised
 deriving Repr, Inhabited, BEq
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
@@ -1669,6 +1671,16 @@ def leftoverTapScryDraw? : CardAction → Option (Nat × Nat)
 /-- Return target spell to its owner's hand, then draw a card. -/
 def leftoverReturnSpellDraw? : CardAction → Bool
   | .sequence [.returnToHand sel, .draw _ 1] => sel.toTargetKind == .spell
+  | _ => false
+
+/-- Return target spell to its owner's hand. If the gift was promised,
+players can't cast spells until end of turn. -/
+def leftoverReturnSpellCantCastIfGift? : CardAction → Bool
+  | .sequence [
+      .returnToHand (.target _ .spell),
+      .if .giftPromised [
+        .continuous [.forbid (.castSpell .all)] .endOfTurn]
+    ] => true
   | _ => false
 
 /-- Destroy target artifact or enchantment; you gain life. -/
@@ -3685,6 +3697,8 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
         | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
         | none =>
           if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
+          else if leftoverReturnSpellCantCastIfGift? action then
+            some Effect.returnSpellCantCastIfGift
           else if leftoverDestroyArtOrLandNonflyers? action then
             some Effect.destroyArtifactOrLandNonflyersCantBlock
           else if leftoverDestroyCreatureSurveil? action then
@@ -4280,7 +4294,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
   | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
   | .didNotHappen _ _ | .and _ _ | .not _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
-  | .equal _ _ => none
+  | .equal _ _ | .giftPromised => none
 
 /-- `{k}` less for each Equipment this ability's controller controls.
 `.this` is this ability. Zero is not a reduction. -/
@@ -5329,6 +5343,8 @@ structure CardFace where
   cascade : Nat := 0
   /-- Optional kicker cost (CR 702.32). -/
   kicker : Option ManaCost := none
+  /-- Gift a Treasure (CR 702.185). You may promise an opponent a Treasure. -/
+  giftTreasure : Bool := false
   /-- Affinity for this subtype (CR 702.40). -/
   affinityForSubtype : Option String := none
   /-- Ward cost (CR 702.21). A generic mana cost. -/
@@ -6019,6 +6035,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     | _, _ => b
   | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
   | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
+  | .if .giftPromised _ => b
   | .replace (.enter who) actions =>
     if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersTapped? actions then
@@ -6158,6 +6175,8 @@ def applyAbility (b : CardFace) : Ability → CardFace
     { b with cascade := b.cascade + 1 }
   | .keyword .extort =>
     { b with staticAbilities := b.staticAbilities.push .extort }
+  | .keyword (.gift .treasure) =>
+    { b with giftTreasure := true }
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
   | .keywordWithCost .flashback costs =>
     { b with flashback := some (Cost.manaCost costs) }
@@ -6450,6 +6469,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       teamwork := b.teamwork
       cascade := b.cascade
       kicker := b.kicker
+      giftTreasure := b.giftTreasure
       affinityForSubtype := b.affinityForSubtype
       ward := b.ward
       colorIndicator := b.colorIndicator
@@ -9555,6 +9575,19 @@ end TraditionalCardDefinition
     .ability (.keywordWithCost .sneak [.mana [.generic 1, .mono .black, .mono .black]])
   ]).toCardDef.sneakCost ==
     some (ManaCost.ofGenericAndColors 1 [.black, .black])
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .treasure))
+  ]).toCardDef.giftTreasure
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .returnToHand (.target 1 .spell),
+      .if .giftPromised [
+        .continuous [.forbid (.castSpell .all)] .endOfTurn]]) ==
+    Effect.returnSpellCantCastIfGift
 
 #guard
   (Ability.triggered

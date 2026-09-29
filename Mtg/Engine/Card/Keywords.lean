@@ -180,6 +180,12 @@ inductive CounterKind where
   | vigilance
 deriving Repr, Inhabited, BEq
 
+/-- The gift a spell may promise an opponent (CR 702.185). -/
+inductive Gift where
+  /-- A Treasure artifact token (CR 111.10a). -/
+  | treasure
+deriving Repr, Inhabited, BEq
+
 -- `Keyword.amass` / `Keyword.connive` take a `Value`, `Value` names a
 -- `Selector`, a `Selector` may name a `Keyword` or a `Range`, and
 -- `Range.range` takes `Value` bounds, so these five inductives are
@@ -268,6 +274,11 @@ inductive Keyword where
   blockers step. It enters tapped and attacking. Printed with that cost,
   e.g. Sneak {1}{B}{B}, via `keywordWithCost`. -/
   | sneak
+  /-- Gift (CR 702.185): as an additional cost to cast this spell, you may
+  promise the listed gift to an opponent. If you do, that opponent gets the
+  gift when this spell begins resolving, before its other effects.
+  Printed as `Gift a Treasure`. -/
+  | gift : Gift → Keyword
 deriving Repr, Inhabited, BEq
 
 /-- A number that is either a printed constant or computed from game
@@ -644,7 +655,7 @@ def toKeywords : Keyword → Keywords
   | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
   | .connive _ | .chapter _ | .flashback | .ward | .crew _
   | .teamwork _ | .improvise | .kicker | .affinity _ _ | .boast | .cascade
-  | .extort | .sneak =>
+  | .extort | .sneak | .gift _ =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -685,6 +696,7 @@ instance : ToString Keyword where
     | .cascade => "cascade"
     | .extort => "extort"
     | .sneak => "sneak"
+    | .gift .treasure => "gift a Treasure"
     | k => toString k.toKeywords
 
 #guard pluralName "Elf" == "Elves"
@@ -712,6 +724,8 @@ instance : ToString Keyword where
 #guard toString Keyword.cascade == "cascade"
 #guard toString Keyword.extort == "extort"
 #guard toString Keyword.sneak == "sneak"
+#guard (Keyword.gift .treasure).toKeywords == Keywords.none
+#guard toString (Keyword.gift .treasure) == "gift a Treasure"
 
 end Keyword
 
