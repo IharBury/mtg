@@ -755,7 +755,7 @@ inductive Condition where
   | greaterOrEqual : Value → Value → Condition
   /-- True when the two values are equal. -/
   | equal : Value → Value → Condition
-  /-- True when the gift was promised as this spell was cast (CR 702.185). -/
+  /-- True when the gift was promised as this spell was cast (CR 702.174k). -/
   | giftPromised
 deriving Repr, Inhabited, BEq
 
@@ -5343,8 +5343,8 @@ structure CardFace where
   cascade : Nat := 0
   /-- Optional kicker cost (CR 702.32). -/
   kicker : Option ManaCost := none
-  /-- Gift a Treasure (CR 702.185). You may promise an opponent a Treasure. -/
-  giftTreasure : Bool := false
+  /-- Gift this spell may promise (CR 702.174). -/
+  gift : Option Gift := none
   /-- Affinity for this subtype (CR 702.40). -/
   affinityForSubtype : Option String := none
   /-- Ward cost (CR 702.21). A generic mana cost. -/
@@ -6175,8 +6175,8 @@ def applyAbility (b : CardFace) : Ability → CardFace
     { b with cascade := b.cascade + 1 }
   | .keyword .extort =>
     { b with staticAbilities := b.staticAbilities.push .extort }
-  | .keyword (.gift .treasure) =>
-    { b with giftTreasure := true }
+  | .keyword (.gift g) =>
+    { b with gift := some g }
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
   | .keywordWithCost .flashback costs =>
     { b with flashback := some (Cost.manaCost costs) }
@@ -6469,7 +6469,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       teamwork := b.teamwork
       cascade := b.cascade
       kicker := b.kicker
-      giftTreasure := b.giftTreasure
+      gift := b.gift
       affinityForSubtype := b.affinityForSubtype
       ward := b.ward
       colorIndicator := b.colorIndicator
@@ -9578,8 +9578,33 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .food))
+  ]).toCardDef.gift == some .food
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .card))
+  ]).toCardDef.gift == some .card
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .tappedFish))
+  ]).toCardDef.gift == some .tappedFish
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .extraTurn))
+  ]).toCardDef.gift == some .extraTurn
+
+#guard
+  (TraditionalCardDefinition.card [
     .ability (.keyword (.gift .treasure))
   ]).toCardDef.giftTreasure
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.keyword (.gift .octopus))
+  ]).toCardDef.gift == some .octopus
 
 #guard
   CardAction.toEffect

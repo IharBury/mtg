@@ -3141,6 +3141,7 @@ def giftGivenOnResolve : Game :=
   -- Skip remaining proposal (targets / pay) by resolving a ready stack object.
   let spell := g.object! g.stack.back!.objectId
   g.givePromisedGift (spell.giftPromisedTo.getD ⟨1⟩)
+    (spell.printed.gift.getD .treasure)
 
 #guard giftGivenOnResolve.battlefield.any (fun o => o.name == "Treasure" && o.controlledBy ⟨1⟩)
 
@@ -3157,6 +3158,40 @@ def giftCopied : Game :=
   giftPromised.copyStackSpell spell ⟨0⟩
 
 #guard (giftCopied.object! giftCopied.stack.back!.objectId).giftPromisedTo == some ⟨1⟩
+
+/-- CR 702.174d–i: the chosen player receives the printed gift. -/
+def giftOf (gift : Gift) : Game := afterDraw.givePromisedGift ⟨1⟩ gift
+
+def giftFoodGiven : Game := giftOf .food
+
+#guard giftFoodGiven.battlefield.any (fun o =>
+  o.name == "Food" && o.controlledBy ⟨1⟩ && o.printed.hasSubtype "Food")
+
+def giftCardGiven : Game := giftOf .card
+
+#guard (giftCardGiven.player ⟨1⟩).hand.size ==
+  (afterDraw.player ⟨1⟩).hand.size + 1
+
+def giftFishGiven : Game := giftOf .tappedFish
+
+#guard giftFishGiven.battlefield.any (fun o =>
+  o.name == "Fish" && o.controlledBy ⟨1⟩ && o.status.tapped &&
+    o.printed.power == some 1 && o.printed.toughness == some 1 &&
+    o.printed.hasSubtype "Fish" &&
+    o.printed.colorIndicator == some (ColorSet.singleton .blue))
+
+def giftOctopusGiven : Game := giftOf .octopus
+
+#guard giftOctopusGiven.battlefield.any (fun o =>
+  o.name == "Octopus" && o.controlledBy ⟨1⟩ && !o.status.tapped &&
+    o.printed.power == some 8 && o.printed.toughness == some 8 &&
+    o.printed.hasSubtype "Octopus" &&
+    o.printed.colorIndicator == some (ColorSet.singleton .blue))
+
+def giftExtraTurnGiven : Game := giftOf .extraTurn
+
+#guard giftExtraTurnGiven.extraTurns == #[⟨1⟩]
+#guard giftExtraTurnGiven.extraTurnAfter == some afterDraw.activePlayer
 
 /-!
 ## 67, 168, 235, 245 — shadow

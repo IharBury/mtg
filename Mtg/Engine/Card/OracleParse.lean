@@ -2875,7 +2875,7 @@ def parseVisionQuest (text : String) (n : Nat) : Option (List CardAction × Nat)
 
 /-- `Return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn.`
 The spell is target `n`. Players can't cast spells until end of turn only
-when the gift was promised (CR 702.185). -/
+when the gift was promised (CR 702.174k). -/
 def parseReturnSpellIfGiftCantCast (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   match sentences text with
@@ -4091,12 +4091,20 @@ def parseTeamwork (line : String) : Option CardPart :=
   (after? (normLine line) "teamwork ").bind positiveCount |>.map fun n =>
     .ability (.keyword (.teamwork n))
 
-/-- `Gift a Treasure`. Gift (CR 702.185). A reminder parenthetical is not
-rules text. The promised gift is a Treasure token. -/
+/-- `Gift a Food`, `Gift a card`, `Gift a tapped Fish`, `Gift an extra turn`,
+`Gift a Treasure`, or `Gift an Octopus` (CR 702.174d–i). A reminder
+parenthetical is not rules text. -/
 def parseGift (line : String) : Option CardPart :=
-  if normLine line == "gift a treasure" then
-    some (.ability (.keyword (.gift .treasure)))
-  else none
+  let gift? :=
+    match normLine line with
+    | "gift a food" => some Gift.food
+    | "gift a card" => some Gift.card
+    | "gift a tapped fish" => some Gift.tappedFish
+    | "gift an extra turn" => some Gift.extraTurn
+    | "gift a treasure" => some Gift.treasure
+    | "gift an octopus" => some Gift.octopus
+    | _ => none
+  gift?.map fun g => .ability (.keyword (.gift g))
 
 /-- `him`, `her`, `them`, or `it`: the object named earlier in this ability. -/
 def isObjectPronoun (s : String) : Bool :=
@@ -10229,13 +10237,25 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
   "Sneak {1}{B}{B} (You may cast this spell for {1}{B}{B} if you also return an unblocked attacker you control to hand during the declare blockers step. She enters tapped and attacking.)" ==
   parseOracleParts (name := "") "Sneak {1}{B}{B}"
 #guard parseOracleParts (name := "") "Sneak" == none
+#guard parseOracleParts (name := "") "Gift a Food" ==
+  some [.ability (.keyword (.gift .food))]
+#guard parseOracleParts (name := "")
+  "Gift a Food (You may promise an opponent a gift as you cast this spell. If you do, they create a Food token before its other effects.)" ==
+  parseOracleParts (name := "") "Gift a Food"
+#guard parseOracleParts (name := "") "Gift a card" ==
+  some [.ability (.keyword (.gift .card))]
+#guard parseOracleParts (name := "") "Gift a tapped Fish" ==
+  some [.ability (.keyword (.gift .tappedFish))]
+#guard parseOracleParts (name := "") "Gift an extra turn" ==
+  some [.ability (.keyword (.gift .extraTurn))]
 #guard parseOracleParts (name := "") "Gift a Treasure" ==
   some [.ability (.keyword (.gift .treasure))]
 #guard parseOracleParts (name := "")
   "Gift a Treasure (You may promise an opponent a gift as you cast this spell. If you do, they create a Treasure token before its other effects. It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")" ==
   parseOracleParts (name := "") "Gift a Treasure"
+#guard parseOracleParts (name := "") "Gift an Octopus" ==
+  some [.ability (.keyword (.gift .octopus))]
 #guard parseOracleParts (name := "") "Gift" == none
-#guard parseOracleParts (name := "") "Gift a Food" == none
 #guard parseOracleParts (name := "")
   "Return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn." ==
   some [.actions [

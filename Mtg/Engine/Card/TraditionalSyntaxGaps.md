@@ -68,7 +68,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `shadow`, `changeling`, `equip`, `enchant`, `typecycling`, `recruit`,
   `amass`, `connive`, `chapter`, `flashback`, `ward`, `crew`, `teamwork`,
   `improvise`, `kicker`, `affinity`, `boast`, `cascade`, `extort`, `sneak`,
-  `gift` (`Gift.treasure`).
+  `gift` (`Gift`: a Food, a card, a tapped Fish, an extra turn, a Treasure, an Octopus; CR 702.174d–i).
 - **CounterKind** — `plusOnePlusOne`, and one constructor per other printed
   counter in the supported catalog: `burden`, `deathtouch`, `doubleStrike`,
   `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`,
@@ -261,7 +261,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Ability.keywordCascade` | `Keyword.cascade` (one ability per instance) |
 | `Ability.keywordExtort` | `Keyword.extort` |
 | `Ability.keywordSneak` | `Keyword.sneak` with `Ability.keywordWithCost` |
-| `Ability.gift` | `Keyword.gift .treasure`. “If the gift was promised” is `Condition.giftPromised` (Bilbo's Gambit) |
+| `Ability.gift` | `Keyword.gift` of each gift in CR 702.174d–i. “If the gift was promised” is `Condition.giftPromised` (Bilbo's Gambit) |
 | `Ability.activateFromZone` | `Ability.graveyardActivatedIf` |
 | `Cost.manaX`, `Cost.life`, `Cost.or` | `ManaSymbol.x` in `Cost.mana` with `Value.x`; `Cost.life`; `Cost.or` |
 | `ContinuousEffect.setPowerToughness` | `setBasePower` / `setBaseToughness` of a `Value` |

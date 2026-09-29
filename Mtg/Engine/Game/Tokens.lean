@@ -151,6 +151,15 @@ def orcArmyToken : CardDef := armyToken "Orc"
 /-- A 0/0 black Zombie Army creature token (amass Zombies). -/
 def zombieArmyToken : CardDef := armyToken "Zombie"
 
+/-- A 1/1 blue Fish creature token. Gift a tapped Fish creates it tapped
+(CR 702.174f). -/
+def fishToken : CardDef :=
+  creatureToken "Fish" #["Fish"] 1 1 (some .blue)
+
+/-- An 8/8 blue Octopus creature token (CR 702.174i). -/
+def octopusToken : CardDef :=
+  creatureToken "Octopus" #["Octopus"] 8 8 (some .blue)
+
 /-- A Food token (CR 111 / 701.34). -/
 def foodToken : CardDef := {
   name := "Food"

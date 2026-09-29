@@ -140,7 +140,7 @@ inductive Pending where
   | recruitDiscard (player : PlayerId)
   /-- Announce whether to pay the optional kicker cost (CR 702.32 / 601.2b). -/
   | chooseKicker (player : PlayerId)
-  /-- Announce whether to promise a gift to an opponent (CR 702.185 / 601.2b). -/
+  /-- Announce whether to promise a gift to an opponent (CR 702.174 / 601.2b). -/
   | chooseGift (player : PlayerId)
   /-- Announce whether to pay the optional teamwork cost (CR 702.194 / 601.2b). -/
   | chooseTeamwork (player : PlayerId)
