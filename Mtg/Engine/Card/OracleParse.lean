@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.Definition
+import Mtg.Engine.Card.LineCache
 
 /-!
 # Oracle text to card parts
@@ -567,6 +568,18 @@ namespace Mtg.Engine
 
 namespace OracleParts
 
+open Cache
+
+/-!
+The catalog compiles by evaluating `parseOracleParts` on every card. Each
+candidate parser case-folds and splits the same line, so these helpers remember
+the last result for a string object (`OracleParts.Cache`). A copy with the same
+characters misses and is folded again, which is the same result.
+
+A cache miss runs only the pure body. Those bodies do not call the cached
+wrappers, so one lookup does not re-enter another.
+-/
+
 def lowerAscii : String → String := CardDef.lowerAscii
 
 def stripReminderParenthetical : String → String := CardDef.stripReminderParenthetical
@@ -575,31 +588,78 @@ def stripTrailingPeriod (s : String) : String :=
   let s := s.trimAscii.copy
   if s.endsWith "." then (s.dropEnd 1).trimAscii.copy else s
 
+/-- Trimmed copy of `s`. -/
+private def copiedPure (s : String) : String :=
+  s.trimAscii.copy
+
+private unsafe def copiedFast (s : String) : String :=
+  cachedAt copiedCache s copiedPure
+
+@[noinline, implemented_by copiedFast]
+def copied (s : String) : String :=
+  copiedPure s
+
+/-- Case-folded Oracle text. -/
+private def normPure (s : String) : String :=
+  lowerAscii (copiedPure s)
+
+private unsafe def normFast (s : String) : String :=
+  cachedAt normCache s normPure
+
+@[noinline, implemented_by normFast]
+def norm (s : String) : String :=
+  normPure s
+
 /-- Sentences of `text`. A reminder parenthetical is not part of a sentence,
 and a trailing period is dropped. -/
-def sentences (text : String) : List String :=
+private def sentencesPure (text : String) : List String :=
   (stripReminderParenthetical text).splitOn ". "
     |>.map stripTrailingPeriod
     |>.filter (· != "")
 
+private unsafe def sentencesFast (text : String) : List String :=
+  cachedAt sentencesCache text sentencesPure
+
+@[noinline, implemented_by sentencesFast]
+def sentences (text : String) : List String :=
+  sentencesPure text
+
 /-- Rules text of `line` after a reminder parenthetical is removed.
 Empty when the line is only a reminder. -/
-def rulesText (line : String) : String :=
+private def rulesTextPure (line : String) : String :=
   stripTrailingPeriod (stripReminderParenthetical line)
 
-/-- Trimmed copy of `s`. -/
-def copied (s : String) : String :=
-  s.trimAscii.copy
+private unsafe def rulesTextFast (line : String) : String :=
+  cachedAt rulesTextCache line rulesTextPure
 
-/-- Case-folded Oracle text. -/
-def norm (s : String) : String :=
-  lowerAscii (copied s)
+@[noinline, implemented_by rulesTextFast]
+def rulesText (line : String) : String :=
+  rulesTextPure line
 
+private def normSentencePure (s : String) : String :=
+  normPure (stripTrailingPeriod s)
+
+private unsafe def normSentenceFast (s : String) : String :=
+  cachedAt normSentenceCache s normSentencePure
+
+@[noinline, implemented_by normSentenceFast]
 def normSentence (s : String) : String :=
-  norm (stripTrailingPeriod s)
+  normSentencePure s
 
+private def normLinePure (line : String) : String :=
+  normPure (rulesTextPure line)
+
+private unsafe def normLineFast (line : String) : String :=
+  cachedAt normLineCache line normLinePure
+
+@[noinline, implemented_by normLineFast]
 def normLine (line : String) : String :=
-  norm (rulesText line)
+  normLinePure line
+
+#guard norm "Smaug — X" == "smaug — x"
+#guard normLine "  Flying. " == "flying"
+#guard sentences "Draw a card." == ["Draw a card"]
+#guard sentences "Draw a card. You gain 1 life." == ["Draw a card", "You gain 1 life"]
 
 /-- `s` is the printed sentence `expected`, ignoring case and a trailing period. -/
 def sentenceIs (s expected : String) : Bool :=
@@ -5689,12 +5749,9 @@ def parseTargetPlayerDraws (sentence : String) (n : Nat) : Option (CardAction ×
     (counted " card" false <|> counted " cards" true).map fun k =>
       (.draw (.target n .player) (Value.nat k), n + 1)
 
-/-- One sentence of a catalog effect. A leading `Then` is sequencing only.
-`You create` is `create`. -/
-def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
+/-- Creating, drawing, and pumping sentences of a catalog effect. -/
+private def parseCatalogSentenceCreate (cardName sentence s : String) (n : Nat) :
     Option (CardAction × Nat) :=
-  let s := (after? (normSentence sentence) "then ").getD (normSentence sentence)
-  let s := (after? s "you create ").map ("create " ++ ·) |>.getD s
   (parseCreateNamedCreatureTokens sentence).map (·, n) <|>
     parseYouMay sentence n <|>
     parseTargetPlayerDraws sentence n <|>
@@ -5726,8 +5783,12 @@ def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
     unchanged (parseReturnThisFromGraveyard s) n <|>
     parseTapOrUntap s n <|>
     parseSurveil s n <|>
-    parseConnive cardName s n <|>
-    unchanged (parseCreateCreatureTokens s) n <|>
+    parseConnive cardName s n
+
+/-- Damage, destroy, and mana sentences of a catalog effect. -/
+private def parseCatalogSentenceResolve (cardName s : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  unchanged (parseCreateCreatureTokens s) n <|>
     unchanged (parseCreatePredefinedTokens s) n <|>
     parsePutCountersOn cardName s n <|>
     parseGetsGainsUntilEnd cardName s n <|>
@@ -5760,6 +5821,16 @@ def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
       match action with
       | .attach _ (.target _ _) => some (action, n')
       | _ => none
+
+/-- One sentence of a catalog effect. A leading `Then` is sequencing only.
+`You create` is `create`. -/
+@[noinline]
+def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  let s := (after? (normSentence sentence) "then ").getD (normSentence sentence)
+  let s := (after? s "you create ").map ("create " ++ ·) |>.getD s
+  parseCatalogSentenceCreate cardName sentence s n <|>
+    parseCatalogSentenceResolve cardName s n
 
 /-- One sentence, or two clauses joined by `, then` or `and` when the whole
 sentence is not one action. Existing sentence templates come first. -/
@@ -7191,8 +7262,9 @@ def parseMayPlayLandsFromGraveyard (line : String) : Option CardPart :=
       (.intersection [.inGraveyard, .cardType .land, .owner (.controller .this)]))))
   else none
 
-/-- One catalog line that is not a mode list. -/
-def parseCatalogLine (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
+/-- Static and cost lines of a catalog card, before its triggers. -/
+private def parseCatalogLineStatic (cardName line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
   (parseMayPlayLandsFromGraveyard line).map ([·], n) <|>
     (parseKeywordsThenWard line).map (·, n) <|>
     (parseEntersGreaterThanSelfCounter cardName line).map ([·], n) <|>
@@ -7212,8 +7284,12 @@ def parseCatalogLine (cardName line : String) (n : Nat) : Option (List CardPart 
     (parseAnotherAdditionalLand line).map ([·], n) <|>
     (parseKeywordCantAttackYouOrBlock line).map ([·], n) <|>
     (parseCatalogCantBeBlocked cardName line).map ([·], n) <|>
-    (parseCatalogAsLongAsGraveyard cardName line).map (·, n) <|>
-    parseChapter cardName line n <|>
+    (parseCatalogAsLongAsGraveyard cardName line).map (·, n)
+
+/-- Triggered, activated, and spell lines of a catalog card. -/
+private def parseCatalogLineRest (cardName line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  parseChapter cardName line n <|>
     (parseCatalogTriggered cardName line n).map (fun (p, n') => ([p], n')) <|>
     parseCatalogActivated cardName line n <|>
     (parseCatalogStaticGets cardName line).map (·, n) <|>
@@ -7227,6 +7303,11 @@ def parseCatalogLine (cardName line : String) (n : Nat) : Option (List CardPart 
     else
       spellActions ((catalogActionsFromText cardName line n).map fun (actions, n') =>
         (actions.flatMap flattenAction, n'))
+
+/-- One catalog line that is not a mode list. -/
+@[noinline]
+def parseCatalogLine (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  parseCatalogLineStatic cardName line n <|> parseCatalogLineRest cardName line n
 
 /-- A triggered ability whose effect is a `choose one —` list: the trigger
 event, or `none` when `line` is not such a header. -/
@@ -7376,14 +7457,10 @@ def parseEndStepRemoveHopeDrawSac (line : String) (n : Nat) : Option (CardPart �
     else none
   | _ => none
 
-/-- One non-empty Oracle line. A reminder-only line contributes no parts.
-Anything else that the grammar does not cover fails.
-The first parser that accepts the line wins. -/
-def parseOneLine (cardName : String) (line : String) (n : Nat) :
+/-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
+private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  if (rulesText line).isEmpty then some ([], n)
-  else
-    (keywordParts? line).map (·, n) <|>
+  (keywordParts? line).map (·, n) <|>
     sole (parseCantBeBlockedIfOwnPower cardName line) n <|>
     sole (parseEntersWithCounters cardName line) n <|>
     carry (parseCastCreaturePutCountersEqualMv line n) <|>
@@ -7412,8 +7489,12 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     sole (parseCreaturesWithPlusOneHaveMenace line) n <|>
     sole (parseYouCastNoncreatureAmass line) n <|>
     sole (parseYouCastNoncreaturePumpAndDamage cardName line) n <|>
-    sole (parseYouCastSpellIfTreasureDrawLoseLife line) n <|>
-    sole (parseYouAttackAmass line) n <|>
+    sole (parseYouCastSpellIfTreasureDrawLoseLife line) n
+
+/-- Attack, enters, and other triggered lines. -/
+private def parseOneLineMiddle (cardName : String) (line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  sole (parseYouAttackAmass line) n <|>
     sole (parseYouAttackRecruit line) n <|>
     sole (parseEnterOrAttackRecruit cardName line) n <|>
     sole (parseEnterAmass cardName line) n <|>
@@ -7445,8 +7526,12 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     carry (parseAttackSetBasePT cardName line n) <|>
     sole (parseFerociousThisAttacks line) n <|>
     sole (parseFerociousYouAttack line) n <|>
-    sole (parseFerociousBeginCombat line) n <|>
-    carry (parseEnterGainLifeMaySearchBasicOnTop cardName line n) <|>
+    sole (parseFerociousBeginCombat line) n
+
+/-- Enters, static, equipment, and spell lines, then the catalog grammar. -/
+private def parseOneLineTail (cardName : String) (line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  carry (parseEnterGainLifeMaySearchBasicOnTop cardName line n) <|>
     sole (parseEnterYouGainLife cardName line) n <|>
     sole (parseThresholdGets cardName line) n <|>
     carry (parseEnterUntapPlusOneIfSubtype cardName line n) <|>
@@ -7502,6 +7587,18 @@ def parseOneLine (cardName : String) (line : String) (n : Nat) :
     spellActions (actionsFromText cardName line n) <|>
     parseCatalogLine cardName line n <|>
     (afterAbilityWord? line).bind (parseCatalogLine cardName · n)
+
+/-- One non-empty Oracle line. A reminder-only line contributes no parts.
+Anything else that the grammar does not cover fails.
+The first parser that accepts the line wins. -/
+@[noinline]
+def parseOneLine (cardName : String) (line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  if (rulesText line).isEmpty then some ([], n)
+  else
+    parseOneLineHead cardName line n <|>
+      parseOneLineMiddle cardName line n <|>
+      parseOneLineTail cardName line n
 
 /-- `Landfall — Whenever a land you control enters, choose one —`.
 `Landfall` may be omitted. The em dash after `choose one` keeps this from
