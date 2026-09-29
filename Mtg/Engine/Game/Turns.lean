@@ -206,7 +206,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         -- previously tapped permanent makes the battlefield status change
         -- visible in the demo before the zone reprint.
         let skipUntap :=
-          (o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
+          ((g.staticAbilitiesOf o).any StaticAbility.doesntUntapUnlessEnduringStory? &&
             !g.hasEnduringStory ap) ||
           g.hostCantBecomeUntapped o
         if o.status.tapped && !skipUntap then

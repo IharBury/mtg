@@ -27,6 +27,29 @@ def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
     let (g, _) := g.move src.id (.library owner) none
     g.requestShuffle owner after |>.continueIfShuffled
 
+/-- Until end of turn, each battlefield permanent matching `sel` loses all
+abilities. `sourceId` is the effect's source; a resolving spell with no
+source object uses `controller` as “you”. -/
+def applyRemoveAllAbilities (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (sel : Selector) : Game :=
+  let src? := sourceId.bind g.findObject?
+  let you :=
+    match src? with
+    | some src => src.you
+    | none => controller
+  Id.run do
+    let mut g := g
+    let mut any := false
+    for o in g.battlefield do
+      if g.selectorMatches src? you sel o then
+        let o := g.object! o.id
+        g := g.mapObjectStatus o (fun s => { s with losesAllAbilitiesUntilEot := true })
+        g := g.logMsg s!"{o.name} loses all abilities until end of turn"
+        any := true
+    if !any then
+      g := g.logMsg "No selected object loses abilities"
+    return g
+
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
@@ -51,6 +74,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.beginDiscardCards #[controller] n
   | .onSource a =>
     g.applyOnPermanent controller effect.targetKind targets a
+  | .removeAllAbilities sel =>
+    g.applyRemoveAllAbilities controller none sel
   | _ =>
   match effect.spellResolution with
   | .fight =>
@@ -1127,6 +1152,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     match targets[0]? with
     | some (Target.permanent id) => g.applyConnive controller (some id)
     | _ => g.applyConnive controller none
+  | .removeAllAbilities sel =>
+    g.applyRemoveAllAbilities controller sourceId sel
   | .sequence _ | .shuffleSource | .amassGoblins _ | .discard _ | .spell _ | .trigger _ =>
     g
 

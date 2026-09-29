@@ -97,7 +97,7 @@ has left (MSH / CR 701.47). -/
 def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
   let extraDraw :=
     (g.permanentsOf controller).any (fun o =>
-      o.staticAbilities.any (fun
+      (g.staticAbilitiesOf o).any (fun
         | .extraDrawOnConnive => true
         | _ => false))
   let g := { g with conniveSource := sourceId }

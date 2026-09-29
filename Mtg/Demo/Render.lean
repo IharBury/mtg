@@ -204,7 +204,7 @@ attacker is attacking, CR 508.1), and cards it has exiled until it leaves
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
-  let sick := if o.hasSummoningSickness then " (summoning sickness)" else ""
+  let sick := if g.hasSummoningSickness o then " (summoning sickness)" else ""
   let atk :=
     if o.status.attacking then
       let dest :=

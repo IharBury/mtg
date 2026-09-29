@@ -440,9 +440,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
             keywords := Keyword.haste
             triggeredAbilities := #[]
             activatedAbilities := #[]
-            staticAbilities := #[] }
-          status := { o.status with
-            losesAbilitiesGrantedBy := o.status.losesAbilitiesGrantedBy.push newId } }
+            staticAbilities := #[] } }
         let o := g.object! newId
         let g := g.addPlusOnePlusOneTo o 1
         g.afterPermanentEnters (g.object! newId)

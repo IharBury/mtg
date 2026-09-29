@@ -6,6 +6,7 @@ import Mtg.Engine.Game.Player
 import Mtg.Engine.Game.Core
 import Mtg.Engine.Game.Designations
 import Mtg.Engine.Game.Phasing
+import Mtg.Engine.Game.Abilities
 import Mtg.Engine.Game.BasePT
 import Mtg.Engine.Game.Allocation
 import Mtg.Engine.Game.Tokens

@@ -879,6 +879,12 @@ inductive ContinuousEffect where
   /-- Objects matching the first selector can't attack the second unless
   their controller pays `costs` for each of them. -/
   | cantAttackUnlessPays : Selector → Selector → List Cost → ContinuousEffect
+  /-- The selected objects lose all abilities (CR 613.1f).
+  Abilities added by a later effect still apply. A static ability generates
+  this effect while its source is on the battlefield (CR 611.3a). A resolving
+  spell or ability applies it until end of turn to the objects that match
+  when it resolves (CR 611.2a / 611.2c). -/
+  | removeAllAbilities : Selector → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -1152,6 +1158,7 @@ def selector : ContinuousEffect → Selector
   | .canBeCastAsThoughWithFlashIf card _ => card
   | .doesntUntap who => who
   | .cantAttackUnlessPays who _ _ => who
+  | .removeAllAbilities who => who
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is
@@ -1310,7 +1317,26 @@ def leftoverIncreaseLandPlayLimit? : List ContinuousEffect → Bool
     who == .controller .this
   | _ => false
 
-def compileContinuous (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
+/-- Until end of turn, objects selected by `sel` lose all abilities.
+A numbered target uses the announced permanent. Any other selector is
+matched when the effect resolves. -/
+def removeAllAbilitiesEffect (sel : Selector) (asAbility : Bool) : Effect :=
+  if sel.among?.isSome then
+    let targeting := sel.toTargeting
+    if asAbility then
+      Effect.mkAbility targeting (.onPermanent .removeAllAbilities)
+    else
+      Effect.mkSpell targeting (.onPermanent .removeAllAbilities) (castKind := .pump)
+  else
+    let phrase := "Selected objects lose all abilities until end of turn"
+    if asAbility then
+      Effect.mkAbility ({}) (.removeAllAbilities sel) (phraseOverride := some phrase)
+    else
+      { spellCastKind := .pump
+        resolution := .removeAllAbilities sel
+        phrase }
+
+def compileContinuousBase (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
   if leftoverIncreaseLandPlayLimit? effects then
     Effect.playAdditionalLandThisTurn
   else
@@ -1333,6 +1359,30 @@ def compileContinuous (effects : List ContinuousEffect) (asAbility : Bool) : Eff
         match ContinuousEffect.massSelector? effects with
         | some among => massEffect among effects asAbility
         | none => continuousEffect none effects asAbility
+
+def compileContinuous (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
+  match effects.findSome? fun e =>
+      match e with
+      | .removeAllAbilities sel => some sel
+      | _ => none with
+  | some sel =>
+    let rest := effects.filter fun e =>
+      match e with
+      | .removeAllAbilities _ => false
+      | _ => true
+    let removeE := removeAllAbilitiesEffect sel asAbility
+    if rest.isEmpty then removeE
+    else
+      let restE := compileContinuousBase rest asAbility
+      { removeE with
+        resolution := .sequence [removeE.resolution, restE.resolution]
+        targeting := if removeE.requiresTarget then removeE.targeting else restE.targeting
+        maxTargets := if removeE.requiresTarget then removeE.maxTargets else restE.maxTargets
+        allowsZeroTargets := removeE.allowsZeroTargets || restE.allowsZeroTargets
+        phrase :=
+          if restE.phrase.isEmpty then removeE.phrase
+          else s!"{removeE.phrase}. {restE.phrase}" }
+  | none => compileContinuousBase effects asAbility
 
 def compileTap (s : Selector) (asAbility : Bool) : Effect :=
   match s.among? with
@@ -5422,6 +5472,9 @@ structure CardFace where
   costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none
   /-- As an additional cost, discard a card or pay this much generic mana. -/
   additionalCostDiscardOrPayGeneric : Option Nat := none
+  /-- Static `removeAllAbilities` effects. While this face is on the
+  battlefield, objects matching a selector lose all abilities. -/
+  removesAllAbilitiesFrom : Array Selector := #[]
 deriving Inhabited
 
 namespace CardFace
@@ -6164,6 +6217,8 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       else b
   | .doesntUntap _ => b
   | .cantAttackUnlessPays _ _ _ => b
+  | .removeAllAbilities who =>
+    { b with removesAllAbilitiesFrom := b.removesAllAbilitiesFrom.push who }
   | .alternativeCost _ _ => b
   | .additionalCost _ cs =>
     { b with
@@ -6544,6 +6599,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       tapAddOneOfIfEnteredOrBasic := b.tapAddOneOfIfEnteredOrBasic
       costReductionIfGyCreaturesAtLeast := b.costReductionIfGyCreaturesAtLeast
       additionalCostDiscardOrPayGeneric := b.additionalCostDiscardOrPayGeneric
+      removesAllAbilitiesFrom := b.removesAllAbilitiesFrom
       adventure := adventure
       saga :=
         if b.sagaChapters.isEmpty then none

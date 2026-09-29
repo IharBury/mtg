@@ -193,6 +193,9 @@ structure CardDef where
   activatedAbilities : Array ActivatedAbility := #[]
   /-- Static abilities other than printed keywords (CR 604). -/
   staticAbilities : Array StaticAbility := #[]
+  /-- Static `ContinuousEffect.removeAllAbilities` selectors. While this
+  permanent is on the battlefield, matching objects lose all abilities. -/
+  removesAllAbilitiesFrom : Array Selector := #[]
   /-- Triggered abilities (CR 603). -/
   triggeredAbilities : Array TriggeredAbility := #[]
   /-- If a creature an opponent controls would die, exile it instead

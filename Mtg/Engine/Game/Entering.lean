@@ -78,7 +78,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     g.putControlledTriggers caster .youCastSpell
   let extortN :=
     (g.permanentsOf caster).filter (fun o =>
-      o.staticAbilities.any (fun
+      (g.staticAbilitiesOf o).any (fun
         | .extort => true
         | _ => false)) |>.size
   let g :=
@@ -213,7 +213,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     else g
   let o := g.object! o.id
   let g :=
-    if o.staticAbilities.any (fun
+    if (g.staticAbilitiesOf o).any (fun
         | .entersWithXPlusOne => true
         | _ => false) then
       let n := g.extraCountersOn o.controller (o.chosenX.getD 0)

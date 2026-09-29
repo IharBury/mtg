@@ -260,11 +260,4 @@ structure WaitingTrigger where
   causeId : Option ObjectId := none
 deriving Repr, Inhabited
 
-/-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/
-def GameObject.waitingTriggersFor (source : GameObject) (controller : PlayerId)
-    (event : TriggerEvent) (lastKnownPower : Option Int := none)
-    (lastKnownToughness : Option Int := none) : Array WaitingTrigger :=
-  source.matchingTriggers event |>.map (fun ab =>
-    { controller, source, ability := ab, event, lastKnownPower, lastKnownToughness })
-
 end Mtg.Engine

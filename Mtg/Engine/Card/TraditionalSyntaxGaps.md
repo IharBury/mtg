@@ -126,7 +126,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `increaseLandPlayLimit`, `canBeCastAsThoughWithFlashIf` (the spell can be
   cast as though it had flash when a condition holds; `you` is
   `Selector.caster`; the spell does not gain flash), `doesntUntap`,
-  `cantAttackUnlessPays`.
+  `cantAttackUnlessPays`, `removeAllAbilities` (selected objects lose all
+  abilities; later-granted abilities still apply).
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`,
   `chooseUniqueModes`, `chooseModeRestricted`, `counter`, `preventable`,
@@ -419,7 +420,7 @@ complete.
 
 ### `ContinuousEffect`
 
-- **`loseAbilities`** (5 cards) — Selected object loses all abilities, or a named ability
+- **`loseAbility`** (named ability still open) — Selected object loses one named ability (`removeAllAbilities` removes every ability)
   - Enchanted River's Grasp; Frozen in Ice; Hellcat, Undying Vigilante; Smite the Deathless; The Wondrous Wasp
 - **`setTypes`** (5 cards) — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
   - I Am Iron Man; Iron Man Armor; Reptil, Dinomorpher; Taskmaster, Mercenary Mimic; Tom, Bert, and William
@@ -815,7 +816,7 @@ Converted cards are omitted here.
 
 **Enchanted River's Grasp** (`enchantedRiverSGrasp`)
 
-- `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
+- `ContinuousEffect.loseAbility` — Selected object loses one named ability (`removeAllAbilities` removes every ability)
 
 ### The Hobbit Eternal (HOC) (51 cards)
 
@@ -982,7 +983,7 @@ Converted cards are omitted here.
 
 **Smite the Deathless** (`smiteTheDeathless`)
 
-- `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
+- `ContinuousEffect.loseAbility` — Selected object loses one named ability (`removeAllAbilities` removes every ability)
 
 **Stern Scolding** (`sternScolding`)
 
@@ -1185,7 +1186,7 @@ Converted cards are omitted here.
 
 **Frozen in Ice** (`frozenInIce`)
 
-- `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
+- `ContinuousEffect.loseAbility` — Selected object loses one named ability (`removeAllAbilities` removes every ability)
 - `ContinuousEffect.cantBecomeUntapped` — Can't become untapped (stronger than `doesntUntap`)
 
 **Go Nuts!** (`goNuts`)
@@ -1230,7 +1231,7 @@ Converted cards are omitted here.
 
 **Hellcat, Undying Vigilante** (`hellcatUndyingVigilante`)
 
-- `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
+- `ContinuousEffect.loseAbility` — Selected object loses one named ability (`removeAllAbilities` removes every ability)
 
 **Heroic Feast** (`heroicFeast`)
 
@@ -1501,7 +1502,7 @@ Converted cards are omitted here.
 
 **The Wondrous Wasp** (`theWondrousWasp`)
 
-- `ContinuousEffect.loseAbilities` — Selected object loses all abilities, or a named ability
+- `ContinuousEffect.loseAbility` — Selected object loses one named ability (`removeAllAbilities` removes every ability)
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 
 **Thor, God of Thunder** (`thorGodOfThunder`)

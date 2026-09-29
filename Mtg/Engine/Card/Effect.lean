@@ -184,6 +184,11 @@ inductive Resolution where
   | destroyTargetNoncreatureArtOrEnch
   /-- Target permanent you control of this subtype connives. -/
   | targetSubtypeConnives (subtype : String)
+  /-- Until end of turn, each permanent matching this selector loses all
+  abilities (CR 613.1f / 611.2c). The selector is read from the effect's
+  source, or from the resolving spell's controller when there is no source
+  object. Numbered targets use `PermanentAction.removeAllAbilities` instead. -/
+  | removeAllAbilities (who : Selector)
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -472,6 +477,8 @@ def toPhrase (r : Resolution) (noun : String) : String :=
     "Destroy target noncreature artifact or noncreature enchantment"
   | .targetSubtypeConnives subtype =>
     s!"Target {subtype} you control connives"
+  | .removeAllAbilities _ =>
+    "Selected objects lose all abilities until end of turn"
   | .sequence rs =>
     String.intercalate ". " (rs.map (fun step => toPhrase step noun))
   | .spell r =>

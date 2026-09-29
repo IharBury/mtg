@@ -79,7 +79,7 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
   let frozen :=
     g.battlefield.any (fun aura =>
       aura.attachedTo == some o.id &&
-        aura.staticAbilities.any (fun
+        (g.staticAbilitiesOf aura).any (fun
           | .enchantedLosesAbilitiesDoesntUntap => true
           | .enchantedLosesAbilitiesCantUntap => true
           | _ => false))
