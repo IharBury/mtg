@@ -415,6 +415,10 @@ inductive Trigger where
   | attack : Selector → Selector → Trigger
   /-- When the selected object enters. -/
   | enter : Selector → Trigger
+  /-- When one or more objects matching the selector enter at the same time,
+  with set-wide predicates (CR 603.2c). One trigger for that group.
+  `Trigger.enter` fires once per object. -/
+  | enterSimultaneously : Selector → List SetPredicate → Trigger
   /-- Whenever the selected player draws a card matching the given
   selector. -/
   | draw : Selector → Selector → Trigger
@@ -440,9 +444,10 @@ inductive Trigger where
   | returnToHand : Selector → Trigger
   /-- Whenever the selected player discards a card (CR 701.8). -/
   | discard : Selector → Trigger
-  /-- When one or more counters of the given kind are put on the selected
-  objects at the same time (CR 122). -/
-  | putCountersSimultaneously : Selector → CounterKind → Trigger
+  /-- When the selected player puts one or more counters of the given kind
+  on the selected objects at the same time (CR 122 / 603.2c). The first
+  selector is that player (`Selector.controller .this` is “you”). -/
+  | putCountersSimultaneously : Selector → Selector → CounterKind → Trigger
   /-- The first selector blocks the second (CR 509). -/
   | block : Selector → Selector → Trigger
   /-- When the selected object or objects die (CR 700.4). -/

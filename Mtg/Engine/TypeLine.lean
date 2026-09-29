@@ -124,6 +124,7 @@ inductive CardSubtype where
   | dragon
   | druid
   | dwarf
+  | elder
   | elemental
   | elephant
   | elf
@@ -151,6 +152,7 @@ inductive CardSubtype where
   | kree
   | mercenary
   | merfolk
+  | minion
   | minotaur
   | mountain
   | mutant
@@ -190,6 +192,7 @@ inductive CardSubtype where
   | vampire
   | vehicle
   | villain
+  | wall
   | warlock
   | warrior
   | whale
@@ -234,6 +237,7 @@ def toString : CardSubtype → String
   | .dragon => "Dragon"
   | .druid => "Druid"
   | .dwarf => "Dwarf"
+  | .elder => "Elder"
   | .elemental => "Elemental"
   | .elephant => "Elephant"
   | .elf => "Elf"
@@ -261,6 +265,7 @@ def toString : CardSubtype → String
   | .kree => "Kree"
   | .mercenary => "Mercenary"
   | .merfolk => "Merfolk"
+  | .minion => "Minion"
   | .minotaur => "Minotaur"
   | .mountain => "Mountain"
   | .mutant => "Mutant"
@@ -300,6 +305,7 @@ def toString : CardSubtype → String
   | .vampire => "Vampire"
   | .vehicle => "Vehicle"
   | .villain => "Villain"
+  | .wall => "Wall"
   | .warlock => "Warlock"
   | .warrior => "Warrior"
   | .whale => "Whale"
@@ -435,5 +441,8 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard CardSubtype.toString .treasure == "Treasure"
 #guard CardSubtype.toString .food == "Food"
 #guard CardSubtype.toString .clue == "Clue"
+#guard CardSubtype.toString .wall == "Wall"
+#guard CardSubtype.toString .minion == "Minion"
+#guard CardSubtype.toString .elder == "Elder"
 
 end Mtg.Engine
