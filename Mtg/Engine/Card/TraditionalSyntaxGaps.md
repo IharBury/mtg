@@ -97,15 +97,15 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `attackSimultaneously` (who attacks, who is attacked),
   `abilityWithIdActivated`, `actionWithId`, `triggerId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `spendManaFrom`, `castSpell`,
-  `castSpellFromGraveyard`, `counter`, `activateAbility`, `target` (a spell or
+  `castSpellFromGraveyard`, `giftPromised` (the selected spell's gift was
+  promised), `counter`, `activateAbility`, `target` (a spell or
   ability targets an object), `sequence`, `not`, `or`.
 - **Cost** — `mana` (including `ManaSymbol.x`), `life`, `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
 - **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
   `happened`, `timeToCastSorcery`, `turn`, `enduringStory`, `and`, `not`,
-  `less`, `lessOrEqual`, `greater`, `greaterOrEqual`, `equal`,
-  `giftPromised`.
+  `less`, `lessOrEqual`, `greater`, `greaterOrEqual`, `equal`.
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters), `attachedTo`.
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
   `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`,
@@ -261,7 +261,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Ability.keywordCascade` | `Keyword.cascade` (one ability per instance) |
 | `Ability.keywordExtort` | `Keyword.extort` |
 | `Ability.keywordSneak` | `Keyword.sneak` with `Ability.keywordWithCost` |
-| `Ability.gift` | `Keyword.gift` of each gift in CR 702.174d–i. “If the gift was promised” is `Condition.giftPromised` (Bilbo's Gambit) |
+| `Ability.gift` | `Keyword.gift` of each gift in CR 702.174d–i. “If the gift was promised” is `Condition.happened (.giftPromised .this) .gameStart` (Bilbo's Gambit) |
 | `Ability.activateFromZone` | `Ability.graveyardActivatedIf` |
 | `Cost.manaX`, `Cost.life`, `Cost.or` | `ManaSymbol.x` in `Cost.mana` with `Value.x`; `Cost.life`; `Cost.or` |
 | `ContinuousEffect.setPowerToughness` | `setBasePower` / `setBaseToughness` of a `Value` |

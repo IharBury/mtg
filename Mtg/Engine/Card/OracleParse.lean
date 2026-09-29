@@ -2874,8 +2874,9 @@ def parseVisionQuest (text : String) (n : Nat) : Option (List CardAction × Nat)
   | _ => none
 
 /-- `Return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn.`
-The spell is target `n`. Players can't cast spells until end of turn only
-when the gift was promised (CR 702.174k). -/
+The spell is target `n`. Promising the gift is an event since the start of
+the game (CR 702.174k). Players can't cast spells until end of turn only
+when that event has occurred. -/
 def parseReturnSpellIfGiftCantCast (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   match sentences text with
@@ -2885,7 +2886,7 @@ def parseReturnSpellIfGiftCantCast (text : String) (n : Nat) :
           "if the gift was promised, players can't cast spells this turn" then
       some ([
         .returnToHand (.target n .spell),
-        .if .giftPromised [
+        .if (.happened (.giftPromised .this) .gameStart) [
           .continuous [.forbid (.castSpell .all)] .endOfTurn]
       ], n + 1)
     else none
@@ -10260,7 +10261,7 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
   "Return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn." ==
   some [.actions [
     .returnToHand (.target 1 .spell),
-    .if .giftPromised [
+    .if (.happened (.giftPromised .this) .gameStart) [
       .continuous [.forbid (.castSpell .all)] .endOfTurn]]]
 #guard parseOracleParts (name := "")
   "Draw a card. If this spell was cast from a graveyard, draw two cards instead." ==

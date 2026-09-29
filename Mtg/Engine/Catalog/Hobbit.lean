@@ -5574,7 +5574,7 @@ def bilboSGambitDefinition : TraditionalCardDefinition := .card <|
   .ability (.keyword (.gift .treasure)),
   .actions [
     .returnToHand (.target 1 .spell),
-    .if .giftPromised [
+    .if (.happened (.giftPromised .this) .gameStart) [
       .continuous [.forbid (.castSpell .all)] .endOfTurn]]]
 
 def bilboSGambit : CardDef :=

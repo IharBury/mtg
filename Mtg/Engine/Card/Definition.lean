@@ -755,8 +755,6 @@ inductive Condition where
   | greaterOrEqual : Value → Value → Condition
   /-- True when the two values are equal. -/
   | equal : Value → Value → Condition
-  /-- True when the gift was promised as this spell was cast (CR 702.174k). -/
-  | giftPromised
 deriving Repr, Inhabited, BEq
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
@@ -1674,11 +1672,12 @@ def leftoverReturnSpellDraw? : CardAction → Bool
   | _ => false
 
 /-- Return target spell to its owner's hand. If the gift was promised,
-players can't cast spells until end of turn. -/
+players can't cast spells until end of turn. The promise is an event
+since the start of the game (CR 702.174k). -/
 def leftoverReturnSpellCantCastIfGift? : CardAction → Bool
   | .sequence [
       .returnToHand (.target _ .spell),
-      .if .giftPromised [
+      .if (.happened (.giftPromised .this) .gameStart) [
         .continuous [.forbid (.castSpell .all)] .endOfTurn]
     ] => true
   | _ => false
@@ -4294,7 +4293,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
   | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
   | .didNotHappen _ _ | .and _ _ | .not _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
-  | .equal _ _ | .giftPromised => none
+  | .equal _ _ => none
 
 /-- `{k}` less for each Equipment this ability's controller controls.
 `.this` is this ability. Zero is not a reduction. -/
@@ -6035,7 +6034,6 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     | _, _ => b
   | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
   | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
-  | .if .giftPromised _ => b
   | .replace (.enter who) actions =>
     if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersTapped? actions then
@@ -9610,7 +9608,7 @@ end TraditionalCardDefinition
   CardAction.toEffect
     (.sequence [
       .returnToHand (.target 1 .spell),
-      .if .giftPromised [
+      .if (.happened (.giftPromised .this) .gameStart) [
         .continuous [.forbid (.castSpell .all)] .endOfTurn]]) ==
     Effect.returnSpellCantCastIfGift
 
