@@ -774,15 +774,15 @@ def cardSubtypes : List CardSubtype := [
   .adventure, .advisor, .alien, .ape, .arcane, .archer, .army, .artificer,
   .assassin, .aura, .avatar, .barbarian, .bard, .bat, .bear, .beast,
   .berserker, .bird, .cat, .centaur, .citizen, .cleric, .clue, .demigod,
-  .detective, .dinosaur, .doctor, .dog, .dragon, .druid, .dwarf, .elemental,
+  .detective, .dinosaur, .doctor, .dog, .dragon, .druid, .dwarf, .elder, .elemental,
   .elephant, .elf, .elk, .equipment, .eternal, .food, .forest, .frog, .gamma,
   .gate, .giant, .goblin, .god, .halfling, .hero, .horror, .horse, .human,
   .infinity, .inhuman, .insect, .island, .knight, .kree, .mercenary, .merfolk,
-  .minotaur, .mountain, .mutant, .nightmare, .ninja, .noble, .ogre, .orc,
+  .minion, .minotaur, .mountain, .mutant, .nightmare, .ninja, .noble, .ogre, .orc,
   .peasant, .performer, .pilot, .pirate, .plains, .plan, .rabbit, .ranger,
   .robot, .rogue, .saga, .samurai, .scientist, .scout, .shaman, .shapeshifter,
   .skrull, .snake, .soldier, .sorcerer, .spider, .spirit, .spy, .squirrel,
-  .stone, .swamp, .troll, .treasure, .vampire, .vehicle, .villain, .warlock,
+  .stone, .swamp, .troll, .treasure, .vampire, .vehicle, .villain, .wall, .warlock,
   .warrior, .whale, .wizard, .wolf, .wraith, .wurm, .zombie
 ]
 
@@ -1252,7 +1252,7 @@ def isGenericSelf (subject : String) : Bool :=
       if (rest.splitOn " ").length != 1 then false
       else
         (typeOfOracle? rest).isSome || (subtypeOfOracle? rest).isSome ||
-          rest == "permanent" || rest == "spell"
+          rest == "permanent" || rest == "spell" || rest == "token"
 
 /-- The printed name, the short name before a comma (CR 201.5), and that
 name's first word when it is not an article. `Bilbo Baggins, Burglar` refers
@@ -5590,6 +5590,35 @@ def parseCreateXTokensCount (s : String) (n : Nat) : Option (CardAction × Nat) 
         some (.createTokens who (.count sel) parts kws, n)
       | _, _ => none
 
+/-- `you may draw <count>`, `you may mill <count>`, or
+`you may create <creature tokens>`. The rest of the sentence is that action. -/
+def parseYouMay (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  (after? (normSentence sentence) "you may ").bind fun rest =>
+    let counted (lead tail : String) (plural : Bool) : Option Nat :=
+      (after? rest lead).bind fun afterLead =>
+        (before? afterLead tail).bind fun countText =>
+          if countText ++ tail == afterLead then nounCount? countText plural else none
+    let draw :=
+      (counted "draw " " card" false <|> counted "draw " " cards" true).map fun k =>
+        .optional (.controller .this) (.draw (.controller .this) (Value.nat k))
+    let mill :=
+      (counted "mill " " card" false <|> counted "mill " " cards" true).map fun k =>
+        .optional (.controller .this) (.mill (.controller .this) (Value.nat k))
+    let create :=
+      (parseCreateCreatureTokens rest).map fun action =>
+        .optional (.controller .this) action
+    (draw <|> mill <|> create).map (·, n)
+
+/-- `Target player draws <count>.` The player is target `n`.
+The sentence is that draw and nothing more. -/
+def parseTargetPlayerDraws (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
+  (after? (normSentence sentence) "target player draws ").bind fun rest =>
+    let counted (tail : String) (plural : Bool) : Option Nat :=
+      (before? rest tail).bind fun countText =>
+        if countText ++ tail == rest then nounCount? countText plural else none
+    (counted " card" false <|> counted " cards" true).map fun k =>
+      (.draw (.target n .player) (Value.nat k), n + 1)
+
 /-- One sentence of a catalog effect. A leading `Then` is sequencing only.
 `You create` is `create`. -/
 def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
@@ -5597,6 +5626,8 @@ def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
   let s := (after? (normSentence sentence) "then ").getD (normSentence sentence)
   let s := (after? s "you create ").map ("create " ++ ·) |>.getD s
   (parseCreateNamedCreatureTokens sentence).map (·, n) <|>
+    parseYouMay sentence n <|>
+    parseTargetPlayerDraws sentence n <|>
     parseDoubleTargetPowerToughness s n <|>
     parseGetsSelfStatUntilEnd cardName sentence n <|>
     parseDrawForEachDiscardedThisTurn s n <|>
@@ -6325,8 +6356,20 @@ def parseTriggerEvent (cardName clause : String) : Option Trigger :=
           Trigger.damageSimultaneously sel .player []
   let leaves :=
     (before? c " leaves your graveyard").bind parseGraveyardCard' |>.map Trigger.leaveGraveyard
+  let putCounters :=
+    (after? c "you put one or more +1/+1 counters on ").bind fun obj =>
+      let obj := (after? obj "one or more ").getD obj
+      (parseObjectDesc obj false).map fun sel =>
+        Trigger.putCountersSimultaneously (.controller .this) sel .plusOnePlusOne
+  -- Plural `enter`, so one trigger for the group. Singular `enters` is per object.
+  let enterTogether :=
+    (before? c " enter").bind fun who =>
+      (after? who "one or more ").bind fun obj =>
+        (parseObjectDesc obj false).map fun sel =>
+          Trigger.enterSimultaneously sel []
   selfEvent <|> fixed <|> cast <|> selfOrAnother <|> andOr <|> returned <|>
-    attackTogether <|> combat <|> damageTogether <|> leaves <|> enters
+    attackTogether <|> combat <|> damageTogether <|> leaves <|> putCounters <|>
+    enterTogether <|> enters
 where
   parseGraveyardCard' (s : String) : Option Selector :=
     (dropArticle? s).bind parseGraveyardCard
@@ -6478,9 +6521,14 @@ def quotedTriggered? (name text : String) : Option Ability :=
 and "<ability>"`. The token has that name, supertype, power, toughness, color,
 subtypes, keywords, and quoted triggered ability. -/
 def parseCreateNamedToken (sentence : String) : Option CardAction :=
-  (after? (copied sentence) "create ").bind (split2? · ", a ") |>.bind fun (tokenName, rest) =>
+  let raw := copied sentence
+  (if (norm raw).startsWith "create " then
+      some ((raw.drop "create ".length).trimAscii.copy)
+    else none).bind (split2? · ", a ") |>.bind fun (tokenName, rest) =>
     (split2? rest " creature token with ").bind fun (desc, abilities) =>
-      (split2? abilities " and \"").bind fun (kwText, quotedRest) =>
+        (split2? abilities " and \"").bind fun (kwText, quotedRest) =>
+        let kwText :=
+          if kwText.endsWith "," then (kwText.dropEnd 1).trimAscii.copy else kwText
         let quotedText := (before? quotedRest "\"").getD quotedRest
         let words := desc.splitOn " " |>.map copied |>.filter (· != "")
         let (sups, words) :=
@@ -6533,6 +6581,17 @@ def parseEquippedAttacksCreateInstead (line : String) : Option CardPart :=
         | _, _ => none
       | _ => none
 
+/-- `create a 1/1 green Minion creature token named Moloid with "<ability>"`.
+The token has that name and the quoted triggered ability. -/
+def parseCreateNamedQuotedToken (sentence : String) : Option CardAction :=
+  (split2? (stripTrailingPeriod (copied sentence)) " named ").bind fun (head, rest) =>
+    (split2? rest " with \"").bind fun (tokenName, quotedRest) =>
+      let quotedText := (before? quotedRest "\"").getD quotedRest
+      match parseCreateCreatureTokens head, quotedTriggered? tokenName quotedText with
+      | some (.createTokens who k parts states), some quoted =>
+        some (.createTokens who k (.name tokenName :: parts ++ [.ability quoted]) states)
+      | _, _ => none
+
 /-- A triggered ability, including one that creates a named token with a
 quoted ability. -/
 def parseCatalogTriggered (cardName line : String) (n : Nat) : Option (CardPart × Nat) :=
@@ -6540,7 +6599,8 @@ def parseCatalogTriggered (cardName line : String) (n : Nat) : Option (CardPart 
     (parseEquippedAttacksCreateInstead line).map (·, n) <|>
     ((splitTrigger? line).bind fun (clause, effect) =>
       (parseTriggerEvent cardName clause).bind fun trigger =>
-        (parseCreateNamedToken effect).map fun action => (.ability (.triggered trigger action), n)) <|>
+        ((parseCreateNamedToken effect <|> parseCreateNamedQuotedToken effect).map fun action =>
+          (.ability (.triggered trigger action), n))) <|>
     parseCatalogTriggeredPlain cardName line n
 
 /-- One printed activation cost, including `Discard this card`, `Pay N life`,
@@ -6812,7 +6872,8 @@ def parseChapter (cardName line : String) (n : Nat) : Option (List CardPart × N
       if ks.isEmpty then none
       else
         ks.foldlM (fun (parts, n) k =>
-          ((catalogActionsFromText cardName effect n) <|>
+          (((parseCreateNamedToken effect).map ([·], n)) <|>
+              (catalogActionsFromText cardName effect n) <|>
               (parseSagaGainsQuoted cardName effect).map ([·], n)).map fun (actions, n') =>
             (parts ++ [CardPart.ability (.keywordWithEffect (.chapter k) actions)], n'))
           (([] : List CardPart), n)
@@ -6855,7 +6916,9 @@ def parseKeywordIfCountersPutThisTurn (cardName line : String) : Option CardPart
         if refersToSelf cardName who && damageSource? cardName who' then
           (keywordOfOracle? kw).map fun k =>
             .ability (.static (.if
-              (.happened (.putCountersSimultaneously .this .plusOnePlusOne) .turnStart)
+              (.happened
+                (.putCountersSimultaneously (.controller .this) .this .plusOnePlusOne)
+                .turnStart)
               [.gainAbility .this (.keyword k)]))
         else none
 
@@ -7051,9 +7114,17 @@ def parseWardDiscardOrPay (line : String) : Option CardPart :=
   (after? (normLine line) "ward—").bind discardOrPayCost? |>.map fun cost =>
     .ability (.keywordWithCost .ward [cost])
 
+/-- `You may play lands from your graveyard.` -/
+def parseMayPlayLandsFromGraveyard (line : String) : Option CardPart :=
+  if normLine line == "you may play lands from your graveyard" then
+    some (.ability (.static (.canPlay (.controller .this)
+      (.intersection [.inGraveyard, .cardType .land, .owner (.controller .this)]))))
+  else none
+
 /-- One catalog line that is not a mode list. -/
 def parseCatalogLine (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
-  (parseKeywordsThenWard line).map (·, n) <|>
+  (parseMayPlayLandsFromGraveyard line).map ([·], n) <|>
+    (parseKeywordsThenWard line).map (·, n) <|>
     (parseEntersGreaterThanSelfCounter cardName line).map ([·], n) <|>
     (parseCastTargetsYoursGainsQuoted cardName line n).map (fun (p, n') => ([p], n')) <|>
     (parsePreventAllDamageToSelf cardName line).map ([·], n) <|>

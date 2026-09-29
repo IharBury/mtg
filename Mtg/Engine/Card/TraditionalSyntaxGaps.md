@@ -5,16 +5,13 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**222** catalog cards are still `CardDef` helpers. **203**
+**216** catalog cards are still `CardDef` helpers. **203**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **13** lost
 their last tag when a constructor for each named counter,
 `CardAction.removeCounter`, and enters-with-counters became expressible;
 they are not converted yet (see
-[Tags now spelled](#tags-now-spelled-not-yet-converted)). The other
-**6** were listed as having no constructor gap, but each needs a missing
-`CardSubtype` or `Trigger` constructor; see
-[Cards with no constructor gap](#cards-with-no-constructor-gap).
+[Tags now spelled](#tags-now-spelled-not-yet-converted)).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
 when a constructor already exists but cannot express the printed ability
 without a new constructor.
@@ -28,12 +25,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 147 | 41 | 38 |
+| The Hobbit (HOB) | 188 | 148 | 40 | 37 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 48 |
-| Marvel Super Heroes (MSH) | 281 | 150 | 131 | 123 |
-| **Total** | **586** | **364** | **222** | **209** |
+| Marvel Super Heroes (MSH) | 281 | 155 | 126 | 118 |
+| **Total** | **586** | **370** | **216** | **203** |
 
-All 364 `TraditionalCardDefinition`s (147 HOB, 67 HOC, 150 MSH,
+All 370 `TraditionalCardDefinition`s (148 HOB, 67 HOC, 155 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`). A `#guard` next to each one pins the
@@ -53,10 +50,9 @@ modeled `CardDef` fields, triggered/static/activated constructors, and
 `Ability.keyword` and `CardAction.keyword` are indexed by it. Missing
 `Keyword` constructors are listed under `Ability` / `CardAction`.
 `CounterKind` has a constructor for every named counter in the supported
-catalog, so it no longer blocks a conversion. `CardSubtype` has no Wall,
-Minion, or Elder, which five token-making cards need (see
-[Cards with no constructor gap](#cards-with-no-constructor-gap)); Plan
-enchantments stay blocked by put-counter triggers, not missing subtypes.
+catalog, so it no longer blocks a conversion. `CardSubtype` includes Wall,
+Minion, and Elder. Plan enchantments stay blocked by put-counter triggers,
+not missing subtypes.
 
 ## Current constructors (inventory)
 
@@ -527,36 +523,20 @@ complete.
 ## Cards with no constructor gap
 
 The first pass listed 89 cards that the current constructors could spell.
-83 of them are now `TraditionalCardDefinition`s that read their
+All 89 are now `TraditionalCardDefinition`s that read their
 Oracle text with `parseOracleParts`, with a `#guard` pinning each parsed
 definition and the modeled `CardDef` fields `toCardDef` produces. The new
 templates are in `OracleParse.lean`, and the leftovers and `CardFace` fields
-they compile to are in `Definition.lean`.
+they compile to are in `Definition.lean`. Wall, Minion, and Elder are
+`CardSubtype`s. `Trigger.putCountersSimultaneously` names the player who put
+the counters. `Trigger.enterSimultaneously` is one trigger for objects that
+enter together.
 
-**Hobbit (9):** Boughside Wanderers; Burn, Burn, Tree and Fern; Down in the Valley; Gleaming Splendor; Lake-town Toymaker; Orcrist, Goblin-cleaver; Radagast of Rhosgobel; The Misty Mountains Cold; Through the Forest Gate.
+**Hobbit (10):** Boughside Wanderers; Burn, Burn, Tree and Fern; Down in the Valley; Gleaming Splendor; Lake-town Toymaker; Orcrist, Goblin-cleaver; Radagast of Rhosgobel; Stone-Giant of High Pass; The Misty Mountains Cold; Through the Forest Gate.
 
 **Hobbit Eternal (22):** Bag End Banquet; Bolg, Erebor's Reckoning; Dragon's Desire; Dwarven Warriors; Dáin of the Ancient Halls; Elvish Archdruid; Errand-Rider of Gondor; Flowering of the White Tree; Fíli and Kíli, Joyous; Haunt of the Dead Marshes; Last March of the Ents; Mentor of the Meek; Minas Tirith Garrison; Mirkwood Elk; Mount Doom; Olog-hai Crusher; Orcish Siegemaster; Ori, Plate Stacker; Raise the Palisade; Relic of Sauron; Rivendell; Thranduil the Strategist.
 
-**Marvel Super Heroes (52):** Abomination, Terrifying Titan; Aerial Doombot; Avengers Assemble!; Avengers Disassembled; Avengers Tower; Avengers: Under Siege; Black Panther, Hope Enduring; Bold Biochemist; Brave Brawler; Captain America, Wings of Freedom; Captain Mar-Vell, Space-Born; Castle Doom; Colleen Wing, Street Samurai; Decoy Ploy; Doctor Doom; Epic Fight; Falcon's Wing Harness; H.E.R.B.I.E. Scout Unit; HYDRA Troopers; Hercules, Prince of Power; Hulkling, Burgeoning Bruiser; Human Torch, Johnny Storm; Hydraulic Helper; Iron Fist, Living Weapon; Iron Man, Master of Machines; Misty Knight, Hero for Hire; Ninja of the Hand; Pet Avengers; Punishing Punch; Raft Security Officer; Serpent Specialist; She-Hulk, Jade Defender; Super Intelligence; Super Strength; The Invincible Iron Man; The Unbeatable Squirrel Girl; The Vision; Titania, Rugged Rumbler; Training Regimen; U.S.Agent, John Walker; Ultron Drone; Unliving Legionnaire; Villainous Hideout; Viv Vision, Teen Synthezoid; Volcanic Villain; War Machine, Legacy of Iron; Worlds Within Worlds; Dark Fortress; Gathering Place; Gleaming Bastion; Hidden Lair; Training Compound.
-
-The other 6 stay `CardDef` helpers. A closer reading found a missing
-constructor in each:
-
-- **Stone-Giant of High Pass** (HOB) — its Stone Boulder token is a Wall;
-  `CardSubtype` has no `wall`.
-- **Invisible Woman, Sue Storm** (MSH) — its token is a Wall (no
-  `CardSubtype.wall`). `Trigger.putCountersSimultaneously` also does not
-  say who put the counters.
-- **Super-Skrull** (MSH) — `{2}{W}` creates a 0/4 Wall token (no
-  `CardSubtype.wall`).
-- **Mole Man, Moloid Master** (MSH) — its Moloid token is a Minion; `CardSubtype`
-  has no `minion`.
-- **The Coming of Galactus** (MSH) — chapter IV's Galactus token is an Elder
-  Alien; `CardSubtype` has no `elder`.
-- **Mister Fantastic, Reed Richards** (MSH) — “Whenever one or more tokens you
-  control enter” triggers once for a simultaneous group. `Trigger.enter`
-  triggers per object, and there is no `enterSimultaneously` (like
-  `dieSimultaneously` / `attackSimultaneously`).
+**Marvel Super Heroes (57):** Abomination, Terrifying Titan; Aerial Doombot; Avengers Assemble!; Avengers Disassembled; Avengers Tower; Avengers: Under Siege; Black Panther, Hope Enduring; Bold Biochemist; Brave Brawler; Captain America, Wings of Freedom; Captain Mar-Vell, Space-Born; Castle Doom; Colleen Wing, Street Samurai; Decoy Ploy; Doctor Doom; Epic Fight; Falcon's Wing Harness; H.E.R.B.I.E. Scout Unit; HYDRA Troopers; Hercules, Prince of Power; Hulkling, Burgeoning Bruiser; Human Torch, Johnny Storm; Hydraulic Helper; Invisible Woman, Sue Storm; Iron Fist, Living Weapon; Iron Man, Master of Machines; Mister Fantastic, Reed Richards; Misty Knight, Hero for Hire; Mole Man, Moloid Master; Ninja of the Hand; Pet Avengers; Punishing Punch; Raft Security Officer; Serpent Specialist; She-Hulk, Jade Defender; Super Intelligence; Super Strength; Super-Skrull; The Coming of Galactus; The Invincible Iron Man; The Unbeatable Squirrel Girl; The Vision; Titania, Rugged Rumbler; Training Regimen; U.S.Agent, John Walker; Ultron Drone; Unliving Legionnaire; Villainous Hideout; Viv Vision, Teen Synthezoid; Volcanic Villain; War Machine, Legacy of Iron; Worlds Within Worlds; Dark Fortress; Gathering Place; Gleaming Bastion; Hidden Lair; Training Compound.
 
 ## Earlier conversions
 
@@ -676,7 +656,7 @@ These are not in the requested list but block a conversion of the listed types:
 
 | Inductive | Used by | Missing constructors that remaining cards need |
 | --- | --- | --- |
-| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Wall (Stone-Giant of High Pass; Invisible Woman, Sue Storm; Super-Skrull), Minion (Mole Man, Moloid Master), and Elder (The Coming of Galactus) token subtypes. Army exists (`Selector.subtype .army`). Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers, not missing subtypes. |
+| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | None for the remaining cards. Wall, Minion, and Elder exist. Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers, not missing subtypes. |
 | `Keyword` | `Ability.keyword`, `CardAction.keyword` | Kicker, Cascade, Affinity, Teamwork, Improvise, Extort, Sneak, Boast, Gift, Harness (some of these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Ward, Crew, Flashback, Connive, Amass, Recruit, and Saga chapters exist. Power-up is not a keyword; its once-only activation and cost reduction are spelled with existing constructors. |
 | `CounterKind` | `CardAction.putCounter`, `Selector.hasCounter`, `Trigger.putCountersSimultaneously` | Each named counter in the supported catalog has its own constructor. `Trigger.putCounter` (who put them, any kind) is still missing. Lore counters are Saga chapters. |
 
@@ -689,7 +669,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (44 cards)
+### The Hobbit (HOB) (43 cards)
 
 **Bard, King of Dale** (`bardKingOfDale`)
 
@@ -799,10 +779,6 @@ Converted cards are omitted here.
 **Silvan Reveler** (`silvanReveler`)
 
 - `Ability.graveyardTriggered` — A triggered ability that functions while the card is in a graveyard (`graveyardActivatedIf` is activated only)
-
-**Stone-Giant of High Pass** (`stoneGiantOfHighPass`)
-
-- `CardSubtype.wall` — Stone Boulder is a Wall artifact creature token
 
 **Supper for Spiders** (`supperForSpiders`)
 
@@ -1076,7 +1052,7 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (`gainSubtype` only adds)
 
-### Marvel Super Heroes (MSH) (134 cards)
+### Marvel Super Heroes (MSH) (129 cards)
 
 **Absorbing Man** (`absorbingMan`)
 
@@ -1304,11 +1280,6 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.setTypes` — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
 
-**Invisible Woman, Sue Storm** (`invisibleWomanSueStorm`)
-
-- `CardSubtype.wall` — The 0/4 token is a Wall
-- `Trigger.putCountersSimultaneously` does not say who put the counters (“Whenever you put …”)
-
 **Iron Lad, Diverging Destiny** (`ironLadDivergingDestiny`)
 
 - `ContinuousEffect.mayLookAtTop` — May look at the top card of the selected library any time
@@ -1370,18 +1341,10 @@ Converted cards are omitted here.
 - `Selector.attackingAlone` — A creature attacking alone
 - `Trigger.attackAlone` — When the selected object attacks alone
 
-**Mister Fantastic, Reed Richards** (`misterFantasticReedRichards`)
-
-- `Trigger.enterSimultaneously` — “Whenever one or more tokens you control enter” triggers once per group
-
 **Mjölnir, Hammer of Thor** (`mjLnirHammerOfThor`)
 
 - `Selector.worthy` — Worthy (Marvel)
 - `ContinuousEffect.modifyDamage` — Replacement that changes how much damage is dealt
-
-**Mole Man, Moloid Master** (`moleManMoloidMaster`)
-
-- `CardSubtype.minion` — The Moloid token is a Minion
 
 **Monica Rambeau** (`monicaRambeau`)
 
@@ -1514,10 +1477,6 @@ Converted cards are omitted here.
 - `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
 
-**Super-Skrull** (`superSkrull`)
-
-- `CardSubtype.wall` — The 0/4 token is a Wall
-
 **Super-Soldier Serum** (`superSoldierSerum`)
 
 - `ContinuousEffect.gainSupertype` — Gain a supertype in addition to other types (legendary)
@@ -1539,10 +1498,6 @@ Converted cards are omitted here.
 - `CardAction.chooseOddEven` — Choose odd or even
 - `Condition.manaValueParity` — Mana value is odd/even
 - `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
-
-**The Coming of Galactus** (`theComingOfGalactus`)
-
-- `CardSubtype.elder` — The Galactus token is an Elder Alien
 
 **The Incredible Hulk** (`theIncredibleHulk`)
 

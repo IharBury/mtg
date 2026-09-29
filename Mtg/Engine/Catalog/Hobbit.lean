@@ -6239,12 +6239,53 @@ def stingBilboSSword : CardDef :=
 #guard stingBilboSSword.keywords.flash
 #guard stingBilboSSword.triggeredAbilities == #[.onEnterHonePerOppCreaturesAttach]
 
+/-- Oracle text for Stone-Giant of High Pass. -/
+def stoneGiantOfHighPassOracle : String :=
+  "Whenever this creature enters or attacks, create a 3/1 colorless Wall artifact creature token with defender named Stone Boulder.\n{2}{R}, Sacrifice an artifact: This creature deals 4 damage to any target."
+
+def stoneGiantOfHighPassDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Stone-Giant of High Pass",
+    .manaCost [.generic 5, .mono .red, .mono .red],
+    .type .creature,
+    .subtype .giant,
+    .power 7,
+    .toughness 7
+  ] ++ (parseOracleParts (name := "Stone-Giant of High Pass") stoneGiantOfHighPassOracle).get!
+
+#guard stoneGiantOfHighPassDefinition == .card [
+  .name "Stone-Giant of High Pass",
+  .manaCost [.generic 5, .mono .red, .mono .red],
+  .type .creature,
+  .subtype .giant,
+  .power 7,
+  .toughness 7,
+  .ability
+    (.triggered
+      (.or (.enter .this) (.attack .this .all))
+      (.createTokens (.controller .this) 1 [
+        .name "Stone Boulder",
+        .type .artifact,
+        .type .creature,
+        .subtype .wall,
+        .colorIndicator [],
+        .power 3,
+        .toughness 1,
+        .ability (.keyword .defender)])),
+  .ability
+    (.activated
+      [.mana [.generic 2, .mono .red],
+       .sacrificeCount (.intersection [.permanent, .cardType .artifact]) 1]
+      (.dealDamage .this (.target 1 .all) 4))]
+
 def stoneGiantOfHighPass : CardDef :=
-  creature "Stone-Giant of High Pass" (ManaCost.ofGenericAndColors 5 [.red, .red]) #["Giant"] 7 7 (oracleText := "Whenever this creature enters or attacks, create a 3/1 colorless Wall artifact creature token with defender named Stone Boulder.\n{2}{R}, Sacrifice an artifact: This creature deals 4 damage to any target.")
-    (activatedAbilities := #[
-      activated (Effect.dealDamageToAny 4) (ManaCost.ofGenericAndColor 2 .red)
-        (sacrificeArtifact := true)])
-    (triggeredAbilities := #[.onEnterOrAttackCreateWall])
+  stoneGiantOfHighPassDefinition.toCardDef (oracleText := stoneGiantOfHighPassOracle)
+
+#guard stoneGiantOfHighPass.oracleText == stoneGiantOfHighPassOracle
+#guard stoneGiantOfHighPass.triggeredAbilities == #[.onEnterOrAttackCreateWall]
+#guard stoneGiantOfHighPass.activatedAbilities == #[
+  activated (Effect.dealDamageToAny 4) (ManaCost.ofGenericAndColor 2 .red)
+    (sacrificeArtifact := true)]
 
 def supperForSpiders : CardDef :=
   instant "Supper for Spiders" (ManaCost.ofGenericAndColor 1 .black) "Put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\" (They lose all other types and subtypes.)" (some (Effect.supperForSpiders))

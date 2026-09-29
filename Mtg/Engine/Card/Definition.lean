@@ -3064,6 +3064,12 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
         [.permanent, .cardType .artifact, .controlled (.opponent (.controller .this))] then
       some Effect.chapterDestroyOppArtifact
     else none
+  | .destroy (.targets _ (.range (.nat 0) (.nat 1)) among) =>
+    if among == .intersection [.permanent, .not (.cardType .land)] then
+      some Effect.destroyUpToOneNonland
+    else none
+  | .loseLife (.opponent (.controller .this)) (.nat n) =>
+    some (Effect.eachOpponentLosesLife n)
   | .addMana who [sym] =>
     if leftoverYou who then (addedManaType? sym).map Effect.chapterAddMana else none
   | .searchLibraryThenShuffle who actions =>
@@ -3108,10 +3114,24 @@ def leftoverDamageNonSubtypeAndOpponents? : CardAction → Option (Nat × String
     else none
   | _ => none
 
+/-- Legendary 16/16 black Elder Alien Galactus with flying and trample. -/
+def leftoverGalactusToken? (parts : List CardPart) : Bool :=
+  let p := collectTokenParts parts
+  let legendary :=
+    parts.any fun
+      | .supertype .legendary => true
+      | _ => false
+  p.name == "Galactus" && legendary && p.types.contains .creature &&
+    p.subtypes.contains "Elder" && p.subtypes.contains "Alien" &&
+    leftoverIsColor p .black && p.power == some 16 && p.toughness == some 16 &&
+    p.keywords.flying && p.keywords.trample
+
 /-- `Create N <token>s.` or `Create a <token> for each <subtype> you control.` -/
 def leftoverChapterCreateTokens? : CardAction → Option Effect
   | .createTokens who (.nat n) parts [] =>
-    if leftoverYou who && n != 0 then
+    if leftoverYou who && n == 1 && leftoverGalactusToken? parts then
+      some Effect.createGalactus
+    else if leftoverYou who && n != 0 then
       (leftoverTokenKind? parts).map (Effect.createTokens · n)
     else none
   | .forEachVariable _ (.intersection [.permanent, .subtype st, .controlled (.controller .this)])
@@ -3983,10 +4003,13 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     match valToNat? n with
                     | some n => compileDamage victim n asAbility
                     | none => continuousEffect none [] asAbility
-                  | .draw _who n =>
+                  | .draw who n =>
                     match valToNat? n with
                     | some n =>
-                      if asAbility then Effect.abilityDraw n else Effect.draw n
+                      if asAbility && who.among? == some .player then
+                        Effect.abilityTargetPlayerDraw n
+                      else if asAbility then Effect.abilityDraw n
+                      else Effect.draw n
                     | none => continuousEffect none [] asAbility
                   | .scry _who n =>
                     match valToNat? n with
@@ -4499,8 +4522,26 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
       some .onYourEndStepDrawLoseLife
     else none
   | .triggered (.or (.enter .this) (.attack .this .all)) (.createTokens who (.nat 1) parts []) =>
-    if who == .controller .this && CardAction.leftoverTokenKind? parts == some .squirrel11green then
-      some (.onEnterOrAttack Effect.enterOrAttackCreateSquirrel)
+    if who == .controller .this then
+      match CardAction.leftoverTokenKind? parts with
+      | some .squirrel11green => some (.onEnterOrAttack Effect.enterOrAttackCreateSquirrel)
+      | some .wall => some .onEnterOrAttackCreateWall
+      | _ => none
+    else none
+  | .triggered
+      (.putCountersSimultaneously (.controller .this) heroes .plusOnePlusOne)
+      (.optional (.controller .this) (.createTokens who (.nat 1) parts [])) =>
+    if heroes == .intersection
+        [.not .this, .permanent, .subtype .hero, .controlled (.controller .this)] &&
+        who == .controller .this &&
+        CardAction.leftoverTokenKind? parts == some .wall04defender then
+      some (.onResource Effect.resourcePlusOneOnHeroesCreateWall)
+    else none
+  | .triggered (.enterSimultaneously tokens [])
+      (.optional (.controller .this) (.draw (.controller .this) (.nat 1))) =>
+    if tokens == .intersection
+        [.permanent, .token, .controlled (.controller .this)] then
+      some (.onWatch Effect.watchTokensEnterMayDraw)
     else none
   | .triggered (.combatStart (.controller .this))
       (.putCounter (.target _ sel) .plusOnePlusOne 1) =>
@@ -5739,6 +5780,12 @@ def printedStaticApplied? (b : CardFace) : ContinuousEffect → Option CardFace
         staticAbilities :=
           b.staticAbilities.push (.cantBeBlockedIfPowerAtMost (n : Int)) }
     else none
+  | .canPlay who card =>
+    if who == .controller .this &&
+        card == .intersection
+          [.inGraveyard, .cardType .land, .owner (.controller .this)] then
+      some { b with staticAbilities := b.staticAbilities.push .mayPlayLandsFromGraveyard }
+    else none
   | .if (.targetsIncludeAny .this among) [.reduceCost .this [.mana [.generic n]]] =>
     match among, b.activatedAbilities.back? with
     | .intersection [.permanent, .cardType .creature, .powerAtMost (.int k)], some ab =>
@@ -5855,9 +5902,10 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.didNotHappen _ _) _ => b
   | .if (.happened (.die who) .turnStart) inners =>
     applyIfShape b { who.shape with diedThisTurn := true } inners
-  | .if (.happened (.putCountersSimultaneously who .plusOnePlusOne) .turnStart)
+  | .if (.happened (.putCountersSimultaneously who on .plusOnePlusOne) .turnStart)
       [.gainAbility flyingWho (.keyword .flying)] =>
-    if (who == .this || who == .source .this) &&
+    if who == .controller .this &&
+        (on == .this || on == .source .this) &&
         (flyingWho == .this || flyingWho == .source .this) then
       { b with staticAbilities := b.staticAbilities.push .flyingIfPlusOneThisTurn }
     else b
@@ -10290,7 +10338,9 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.happened (.putCountersSimultaneously .this .plusOnePlusOne) .turnStart)
+          (.happened
+            (.putCountersSimultaneously (.controller .this) .this .plusOnePlusOne)
+            .turnStart)
           [.gainAbility .this (.keyword .flying)]))
   ]).toCardDef.staticAbilities == #[.flyingIfPlusOneThisTurn]
 
@@ -10300,7 +10350,9 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.happened (.putCountersSimultaneously .all .plusOnePlusOne) .turnStart)
+          (.happened
+            (.putCountersSimultaneously (.controller .this) .all .plusOnePlusOne)
+            .turnStart)
           [.gainAbility .this (.keyword .flying)]))
   ]).toCardDef.staticAbilities == #[]
 
@@ -10310,7 +10362,9 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.happened (.putCountersSimultaneously .this .plusOnePlusOne) .gameStart)
+          (.happened
+            (.putCountersSimultaneously (.controller .this) .this .plusOnePlusOne)
+            .gameStart)
           [.gainAbility .this (.keyword .flying)]))
   ]).toCardDef.staticAbilities == #[]
 

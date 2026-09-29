@@ -585,11 +585,56 @@ def heroInTrainingDefinition : TraditionalCardDefinition := .card <|
 def heroInTraining : CardDef :=
   heroInTrainingDefinition.toCardDef (oracleText := heroInTrainingOracle)
 
+/-- Oracle text for Invisible Woman, Sue Storm. -/
+def invisibleWomanSueStormOracle : String :=
+  "Lifelink\nWhenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
+
+def invisibleWomanSueStormDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Invisible Woman, Sue Storm",
+    .manaCost [.generic 4, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .hero,
+    .power 2,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Invisible Woman, Sue Storm") invisibleWomanSueStormOracle).get!
+
+#guard invisibleWomanSueStormDefinition == .card [
+  .name "Invisible Woman, Sue Storm",
+  .manaCost [.generic 4, .mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .hero,
+  .power 2,
+  .toughness 5,
+  .ability (.keyword .lifelink),
+  .ability
+    (.triggered
+      (.putCountersSimultaneously
+        (.controller .this)
+        (.intersection
+          [.not .this, .permanent, .subtype .hero, .controlled (.controller .this)])
+        .plusOnePlusOne)
+      (.optional
+        (.controller .this)
+        (.createTokens (.controller .this) 1 [
+          .type .creature,
+          .subtype .wall,
+          .colorIndicator [],
+          .power 0,
+          .toughness 4,
+          .ability (.keyword .defender)])))]
+
 def invisibleWomanSueStorm : CardDef :=
-  legendaryCreature "Invisible Woman, Sue Storm" (ManaCost.ofGenericAndColor 4 .white) #["Human", "Hero"] 2 5
-    (oracleText := "Lifelink\nWhenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender.")
-    (keywords := Keyword.lifelink)
-    (triggeredAbilities := #[.onResource Effect.resourcePlusOneOnHeroesCreateWall])
+  invisibleWomanSueStormDefinition.toCardDef (oracleText := invisibleWomanSueStormOracle)
+
+#guard invisibleWomanSueStorm.oracleText == invisibleWomanSueStormOracle
+#guard invisibleWomanSueStorm.keywords == Keyword.lifelink
+#guard invisibleWomanSueStorm.triggeredAbilities ==
+  #[.onResource Effect.resourcePlusOneOnHeroesCreateWall]
 
 def jenniferWalters : CardDef :=
   legendaryCreature "Jennifer Walters" (ManaCost.ofGenericAndColor 1 .white) #["Human", "Advisor", "Hero"] 2 3
@@ -1648,11 +1693,48 @@ def lokiGodOfMischief : CardDef :=
     (oracleText := "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn.")
     (triggeredAbilities := #[.onWatch Effect.watchYouTargetDrawOnce])
 
+/-- Oracle text for Mister Fantastic, Reed Richards. -/
+def misterFantasticReedRichardsOracle : String :=
+  "Reach\nWhenever one or more tokens you control enter, you may draw a card."
+
+def misterFantasticReedRichardsDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Mister Fantastic, Reed Richards",
+    .manaCost [.generic 3, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .scientist,
+    .subtype .hero,
+    .power 2,
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Mister Fantastic, Reed Richards") misterFantasticReedRichardsOracle).get!
+
+#guard misterFantasticReedRichardsDefinition == .card [
+  .name "Mister Fantastic, Reed Richards",
+  .manaCost [.generic 3, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .scientist,
+  .subtype .hero,
+  .power 2,
+  .toughness 4,
+  .ability (.keyword .reach),
+  .ability
+    (.triggered
+      (.enterSimultaneously
+        (.intersection [.permanent, .token, .controlled (.controller .this)])
+        [])
+      (.optional (.controller .this) (.draw (.controller .this) 1)))]
+
 def misterFantasticReedRichards : CardDef :=
-  legendaryCreature "Mister Fantastic, Reed Richards" (ManaCost.ofGenericAndColor 3 .blue) #["Human", "Scientist", "Hero"] 2 4
-    (oracleText := "Reach\nWhenever one or more tokens you control enter, you may draw a card.")
-    (keywords := Keyword.reach)
-    (triggeredAbilities := #[.onWatch Effect.watchTokensEnterMayDraw])
+  misterFantasticReedRichardsDefinition.toCardDef (oracleText := misterFantasticReedRichardsOracle)
+
+#guard misterFantasticReedRichards.oracleText == misterFantasticReedRichardsOracle
+#guard misterFantasticReedRichards.keywords == Keyword.reach
+#guard misterFantasticReedRichards.triggeredAbilities ==
+  #[.onWatch Effect.watchTokensEnterMayDraw]
 
 def msMarvelKamalaKhan : CardDef :=
   legendaryCreature "Ms. Marvel, Kamala Khan" (ManaCost.ofGenericAndColor 2 .blue) #["Mutant", "Inhuman", "Hero"] 1 4
@@ -2749,11 +2831,70 @@ def stolenStarkTechDefinition : TraditionalCardDefinition := .card <|
 def stolenStarkTech : CardDef :=
   stolenStarkTechDefinition.toCardDef (oracleText := stolenStarkTechOracle)
 
+/-- Oracle text for Super-Skrull. -/
+def superSkrullOracle : String :=
+  "Flying\n{2}{W}: Create a 0/4 colorless Wall creature token with defender.\n{3}{G}: Super-Skrull gets +4/+4 until end of turn.\n{4}{R}: Super-Skrull deals 4 damage to target creature.\n{5}{U}: Target player draws four cards."
+
+def superSkrullDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Super-Skrull",
+    .manaCost [.generic 1, .mono .black, .mono .black, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .skrull,
+    .subtype .shapeshifter,
+    .subtype .villain,
+    .power 4,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Super-Skrull") superSkrullOracle).get!
+
+#guard superSkrullDefinition == .card [
+  .name "Super-Skrull",
+  .manaCost [.generic 1, .mono .black, .mono .black, .mono .black],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .skrull,
+  .subtype .shapeshifter,
+  .subtype .villain,
+  .power 4,
+  .toughness 5,
+  .ability (.keyword .flying),
+  .ability
+    (.activated
+      [.mana [.generic 2, .mono .white]]
+      (.createTokens (.controller .this) 1 [
+        .type .creature,
+        .subtype .wall,
+        .colorIndicator [],
+        .power 0,
+        .toughness 4,
+        .ability (.keyword .defender)])),
+  .ability
+    (.activated
+      [.mana [.generic 3, .mono .green]]
+      (.continuous
+        [.addPower (.source .this) (Value.int 4),
+         .addToughness (.source .this) (Value.int 4)]
+        .endOfTurn)),
+  .ability
+    (.activated
+      [.mana [.generic 4, .mono .red]]
+      (.dealDamage .this (.target 1 (.intersection [.permanent, .cardType .creature])) 4)),
+  .ability
+    (.activated
+      [.mana [.generic 5, .mono .blue]]
+      (.draw (.target 2 .player) 4))]
+
 def superSkrull : CardDef :=
-  legendaryCreature "Super-Skrull" (ManaCost.ofGenericAndColors 1 [.black, .black, .black]) #["Skrull", "Shapeshifter", "Villain"] 4 5
-    (oracleText := "Flying\n{2}{W}: Create a 0/4 colorless Wall creature token with defender.\n{3}{G}: Super-Skrull gets +4/+4 until end of turn.\n{4}{R}: Super-Skrull deals 4 damage to target creature.\n{5}{U}: Target player draws four cards.")
-    (keywords := Keyword.flying)
-    (activatedAbilities := #[activated (Effect.abilityCreateTokens .wall04defender 1) (ManaCost.ofGenericAndColor 2 .white), activated (Effect.sourceGets 4 4) (ManaCost.ofGenericAndColor 3 .green), activated (Effect.dealDamageToTargetCreature 4) (ManaCost.ofGenericAndColor 4 .red), activated (Effect.abilityTargetPlayerDraw 4) (ManaCost.ofGenericAndColor 5 .blue)])
+  superSkrullDefinition.toCardDef (oracleText := superSkrullOracle)
+
+#guard superSkrull.oracleText == superSkrullOracle
+#guard superSkrull.keywords == Keyword.flying
+#guard superSkrull.activatedAbilities == #[
+  activated (Effect.abilityCreateTokens .wall04defender 1) (ManaCost.ofGenericAndColor 2 .white),
+  activated (Effect.sourceGets 4 4) (ManaCost.ofGenericAndColor 3 .green),
+  activated (Effect.dealDamageToTargetCreature 4) (ManaCost.ofGenericAndColor 4 .red),
+  activated (Effect.abilityTargetPlayerDraw 4) (ManaCost.ofGenericAndColor 5 .blue)]
 
 /-- Oracle text for Swordsman, Sharp Scoundrel. -/
 def swordsmanSharpScoundrelOracle : String :=
@@ -4151,11 +4292,58 @@ def misterHydeMonsterWithin : CardDef :=
     (oracleText := "At the beginning of your upkeep, choose one —\n• Put a +1/+1 counter on Mister Hyde.\n• Remove a counter from a creature you control. If you do, draw a card.")
     (triggeredAbilities := #[.onStep Effect.stepHydeChoose])
 
+/-- Oracle text for Mole Man, Moloid Master. -/
+def moleManMoloidMasterOracle : String :=
+  "You may play lands from your graveyard.\nLandfall — Whenever a land you control enters, create a 1/1 green Minion creature token named Moloid with \"Whenever this token attacks, you may mill a card.\""
+
+def moleManMoloidMasterDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Mole Man, Moloid Master",
+    .manaCost [.generic 2, .mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .villain,
+    .power 1,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Mole Man, Moloid Master") moleManMoloidMasterOracle).get!
+
+#guard moleManMoloidMasterDefinition == .card [
+  .name "Mole Man, Moloid Master",
+  .manaCost [.generic 2, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .villain,
+  .power 1,
+  .toughness 1,
+  .ability
+    (.static
+      (.canPlay
+        (.controller .this)
+        (.intersection [.inGraveyard, .cardType .land, .owner (.controller .this)]))),
+  .ability
+    (.triggered
+      (.enter (.intersection [.permanent, .cardType .land, .controlled (.controller .this)]))
+      (.createTokens (.controller .this) 1 [
+        .name "Moloid",
+        .type .creature,
+        .subtype .minion,
+        .colorIndicator [.green],
+        .power 1,
+        .toughness 1,
+        .ability
+          (.triggered
+            (.attack .this .all)
+            (.optional (.controller .this) (.mill (.controller .this) 1)))]))]
+
 def moleManMoloidMaster : CardDef :=
-  legendaryCreature "Mole Man, Moloid Master" (ManaCost.ofGenericAndColor 2 .green) #["Human", "Villain"] 1 1
-    (oracleText := "You may play lands from your graveyard.\nLandfall — Whenever a land you control enters, create a 1/1 green Minion creature token named Moloid with \"Whenever this token attacks, you may mill a card.\"")
-    (staticAbilities := #[StaticAbility.mayPlayLandsFromGraveyard])
-    (triggeredAbilities := #[.onLandYouControlEntersCreateTokens .moloid 1])
+  moleManMoloidMasterDefinition.toCardDef (oracleText := moleManMoloidMasterOracle)
+
+#guard moleManMoloidMaster.oracleText == moleManMoloidMasterOracle
+#guard moleManMoloidMaster.staticAbilities == #[StaticAbility.mayPlayLandsFromGraveyard]
+#guard moleManMoloidMaster.triggeredAbilities ==
+  #[.onLandYouControlEntersCreateTokens .moloid 1]
 
 /-- Oracle text for Pet Avengers. -/
 def petAvengersOracle : String :=
@@ -5037,7 +5225,9 @@ def beastEruditeAerialistDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.static
       (.if
-        (.happened (.putCountersSimultaneously .this .plusOnePlusOne) .turnStart)
+        (.happened
+          (.putCountersSimultaneously (.controller .this) .this .plusOnePlusOne)
+          .turnStart)
         [.gainAbility .this (.keyword .flying)])),
   .ability
     (.triggered
@@ -5180,11 +5370,70 @@ def cloakAndDaggerEntwined : CardDef :=
     (keywords := (Keyword.deathtouch).merge Keyword.lifelink)
     (triggeredAbilities := #[.onEnter Effect.enterRevealHandExileUntilLeaves])
 
+/-- Oracle text for The Coming of Galactus. -/
+def theComingOfGalactusOracle : String :=
+  "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Destroy up to one target nonland permanent.\nII, III — Each opponent loses 2 life.\nIV — Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
+
+def theComingOfGalactusDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "The Coming of Galactus",
+    .manaCost [.generic 2, .mono .black, .mono .black, .mono .green],
+    .type .enchantment,
+    .subtype .saga
+  ] ++ (parseOracleParts (name := "The Coming of Galactus") theComingOfGalactusOracle).get!
+
+#guard theComingOfGalactusDefinition == .card [
+  .name "The Coming of Galactus",
+  .manaCost [.generic 2, .mono .black, .mono .black, .mono .green],
+  .type .enchantment,
+  .subtype .saga,
+  .ability
+    (.keywordWithEffect
+      (.chapter 1)
+      [.destroy
+        (.targets 1 (.range 0 1)
+          (.intersection [.permanent, .not (.cardType .land)]))]),
+  .ability
+    (.keywordWithEffect
+      (.chapter 2)
+      [.loseLife (.opponent (.controller .this)) 2]),
+  .ability
+    (.keywordWithEffect
+      (.chapter 3)
+      [.loseLife (.opponent (.controller .this)) 2]),
+  .ability
+    (.keywordWithEffect
+      (.chapter 4)
+      [.createTokens (.controller .this) 1 [
+        .name "Galactus",
+        .type .creature,
+        .supertype .legendary,
+        .subtype .elder,
+        .subtype .alien,
+        .colorIndicator [.black],
+        .power 16,
+        .toughness 16,
+        .ability (.keyword .flying),
+        .ability (.keyword .trample),
+        .ability
+          (.triggered
+            (.attack .this .all)
+            (.destroy
+              (.target 1 (.intersection [.permanent, .cardType .land]))))]])]
+
 def theComingOfGalactus : CardDef :=
-  enchantment "The Coming of Galactus" (ManaCost.ofGenericAndColors 2 [.black, .black, .green])
-    "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Destroy up to one target nonland permanent.\nII, III — Each opponent loses 2 life.\nIV — Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
-    (subtypes := #["Saga"])
-    (saga := some { sacrificeAfter := "IV", chapters := #[chapter "I" "Destroy up to one target nonland permanent." (Effect.destroyUpToOneNonland), chapter "II, III" "Each opponent loses 2 life." (Effect.eachOpponentLosesLife 2), chapter "IV" "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\"." (Effect.createGalactus)] })
+  theComingOfGalactusDefinition.toCardDef (oracleText := theComingOfGalactusOracle)
+
+#guard theComingOfGalactus.oracleText == theComingOfGalactusOracle
+#guard theComingOfGalactus.subtypes == #["Saga"]
+#guard theComingOfGalactus.saga == some {
+  sacrificeAfter := "IV"
+  chapters := #[
+    chapter "I" "Destroy up to one target nonland permanent." Effect.destroyUpToOneNonland,
+    chapter "II, III" "Each opponent loses 2 life." (Effect.eachOpponentLosesLife 2),
+    chapter "IV"
+      "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
+      Effect.createGalactus] }
 
 def daredevilManWithoutFear : CardDef :=
   card "Daredevil, Man Without Fear" #[.creature] (ManaCost.ofGenericAndColors 2 [.red, .white])
