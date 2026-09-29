@@ -86,7 +86,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
   `spell`, `ability`, `abilityWithId`, `permanentSpell`, `hasTarget`,
   `isTargetOf`, `player`, `opponent`, `owner`, `attacking`, `blocking`,
   `token`, `wasObjectOfAction`, `wasArgumentOfTrigger`, `replacingObject`,
-  `wasCreatedByAction`, `hostOf`, `inGraveyard`, `wasObjectSince`,
+  `wasCreatedByAction`, `affectedByAction` (the new object a numbered action
+  moved onto the battlefield; CR 400.7), `hostOf`, `inGraveyard`, `wasObjectSince`,
   `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`
   (whose library, how many cards), `hasCreatureTypeChosenByAction` (the
   creature type chosen by a numbered `CardAction.chooseCreatureType`),
@@ -278,7 +279,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `ContinuousEffect.preventDamage` | `replace (Trigger.damage …) []` |
 | `ContinuousEffect.replace`, `canPlay`, `gainAbility` | The constructors of those names |
 | `CardAction.lookAt`, `randomize` (bottom of library), `connive`, `addManaCombination` | `lookAt`, `putOnLibraryBottomInRandomOrder`, `keyword … (.connive n)`, `addManaInAnyCombination` |
-| `CardAction.behold` | `keyword … (.behold st)` (CR 701.4). “If you do” is `happened (actionWithId n)`. Elven Passage searches a basic land, may behold a subtype, and untaps that land |
+| `CardAction.behold` | `keyword … (.behold st)` (CR 701.4). “If you do” is `happened (actionWithId n)`. Elven Passage searches a basic land, puts it onto the battlefield with a numbered `putOntoBattlefieldInState`, may behold a subtype, and untaps `affectedByAction` of that put. The search variable still names the library card (CR 400.7) |
 | `CardAction.chooseModes` (“choose one or both”) | `chooseUniqueModes (.range 1 2)` |
 | `CardAction.chooseCreatureType`, `Selector.chosenType` | `actionId n (chooseCreatureType …)` and `Selector.hasCreatureTypeChosenByAction n` |
 | `TraditionalCardDefinition.asEntersChoice` | `static (replace (enter this) [actionId n (chooseCreatureType (controller this)), keepReplacedAction])` (An Unexpected Party) |

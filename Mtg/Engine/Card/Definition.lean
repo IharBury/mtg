@@ -244,7 +244,7 @@ def shape : Selector → Shape
   | .wasObjectSince (.putToGraveyard _) .turnStart =>
     { putIntoGraveyardThisTurn := true }
   | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasArgumentOfTrigger _ _ | .replacingObject
-  | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inLibrary | .inHand
+  | .wasCreatedByAction _ | .affectedByAction _ | .hostOf _ | .inGraveyard | .inLibrary | .inHand
   | .inExile | .supertype _
   | .variable _ | .topOfLibrary _ _ => {}
   | .hasCreatureTypeChosenByAction _ => { chosenCreatureType := true }
@@ -403,6 +403,7 @@ def referenceTargets : Selector → Selector
   | .wasArgumentOfTrigger id n => .wasArgumentOfTrigger id n
   | .replacingObject => .replacingObject
   | .wasCreatedByAction n => .wasCreatedByAction n
+  | .affectedByAction n => .affectedByAction n
   | .hostOf s => .hostOf (referenceTargets s)
   | .inGraveyard => .inGraveyard
   | .wasObjectSince a b => .wasObjectSince a b
@@ -1207,6 +1208,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .spell | .ability | .abilityWithId _ | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
     | .player
     | .wasObjectOfAction _ | .wasArgumentOfTrigger _ _ | .replacingObject | .wasCreatedByAction _
+    | .affectedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inLibrary | .inHand
     | .inExile | .supertype _
     | .variable _ | .topOfLibrary _ _ => none
@@ -2399,21 +2401,25 @@ def leftoverYou : Selector → Bool
   | _ => false
 
 /-- Search a basic land onto the battlefield tapped. You may behold a subtype.
-If you do, untap that land (CR 701.4 / 701.4b). The land is the selector
-variable; the behold is the numbered action. -/
+If you do, untap that land (CR 701.4 / 701.4b). The selector variable is
+the library card. The land on the battlefield is `affectedByAction` of the
+numbered `putOntoBattlefieldInState`. The behold is the other numbered
+action. -/
 def leftoverSearchBasicBeholdUntap? : CardAction → Option String
   | .sequence [
       .searchLibraryThenShuffle who [
         .defineSelectorVariable id
           (.selected chooser (.range 1 1) among),
-        .putOntoBattlefieldInState (.variable id') [.tapped]],
+        .actionId putId
+          (.putOntoBattlefieldInState (.variable id') [.tapped])],
       .optional who'
         (.actionId beholdId (.keyword actor (.behold st))),
       .if (.happened (.actionWithId beholdId') .gameStart)
-        [.untap (.variable id'')]
+        [.untap (.affectedByAction putId')]
     ] =>
     if leftoverYou who && leftoverYou chooser && leftoverYou who' &&
-        leftoverYou actor && id == id' && id == id'' && beholdId == beholdId' &&
+        leftoverYou actor && id == id' && putId == putId' &&
+        beholdId == beholdId' && putId != beholdId &&
         among.basicLandInLibrary then
       some st.toString
     else none
@@ -8252,11 +8258,12 @@ end TraditionalCardDefinition
               (.controller .this)
               (.range 1 1)
               (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
-          .putOntoBattlefieldInState (.variable 1) [.tapped]],
+          .actionId 2
+            (.putOntoBattlefieldInState (.variable 1) [.tapped])],
       .optional (.controller .this)
-        (.actionId 2 (.keyword (.controller .this) (.behold .elf))),
-      .if (.happened (.actionWithId 2) .gameStart)
-        [.untap (.variable 1)]]
+        (.actionId 3 (.keyword (.controller .this) (.behold .elf))),
+      .if (.happened (.actionWithId 3) .gameStart)
+        [.untap (.affectedByAction 2)]]
   action.toAbilityEffect == Effect.searchBasicBeholdSubtypeUntap "Elf"
 
 #guard

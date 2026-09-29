@@ -518,8 +518,10 @@ def parseMayPutThenAttachEquipment (cardName : String) (ss : List String) (n : N
   | _ => none
 
 /-- `Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land.`
-The found land is variable `n`. Beholding that subtype is action `n + 1`
-(CR 701.4). The land untaps only when that behold happened (CR 701.4b). -/
+Variable `n` is the library card. Putting it onto the battlefield is
+action `n + 1`; the land there is `affectedByAction` of that action
+(CR 400.7). Beholding that subtype is action `n + 2` (CR 701.4). The land
+untaps only when that behold happened (CR 701.4b). -/
 def parseSearchBasicBeholdUntap (ss : List String) (n : Nat) :
     Option (List CardAction × Nat) :=
   match ss with
@@ -533,12 +535,13 @@ def parseSearchBasicBeholdUntap (ss : List String) (n : Nat) :
           .searchLibraryThenShuffle (.controller .this) [
             .defineSelectorVariable n
               (.selected (.controller .this) (.range 1 1) basicLandInLibrary),
-            .putOntoBattlefieldInState (.variable n) [.tapped]],
+            .actionId (n + 1)
+              (.putOntoBattlefieldInState (.variable n) [.tapped])],
           .optional (.controller .this)
-            (.actionId (n + 1) (.keyword (.controller .this) (.behold st))),
-          .if (.happened (.actionWithId (n + 1)) .gameStart)
-            [.untap (.variable n)]],
-          n + 2)
+            (.actionId (n + 2) (.keyword (.controller .this) (.behold st))),
+          .if (.happened (.actionWithId (n + 2)) .gameStart)
+            [.untap (.affectedByAction (n + 1))]],
+          n + 3)
       | _, _ => none
   | _ => none
 

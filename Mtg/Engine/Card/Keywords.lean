@@ -443,6 +443,11 @@ inductive Selector where
   | replacingObject : Selector
   /-- An object created by the numbered action. -/
   | wasCreatedByAction : Nat → Selector
+  /-- An object affected by the numbered action. Moving a card onto the
+  battlefield makes a new object (CR 400.7). This is that permanent.
+  A selector variable bound to the card before the move still names the
+  object that left its previous zone. -/
+  | affectedByAction : Nat → Selector
   /-- The permanent the given object is attached to (CR 301.5 / 303.4). -/
   | hostOf : Selector → Selector
   /-- An object in a graveyard (CR 404). -/

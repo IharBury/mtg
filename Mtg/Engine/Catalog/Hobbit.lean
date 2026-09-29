@@ -5940,11 +5940,12 @@ def elvenPassageDefinition : TraditionalCardDefinition := .card <|
         .defineSelectorVariable 1
           (.selected (.controller .this) (.range 1 1)
             (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
-        .putOntoBattlefieldInState (.variable 1) [.tapped]],
+        .actionId 2
+          (.putOntoBattlefieldInState (.variable 1) [.tapped])],
       .optional (.controller .this)
-        (.actionId 2 (.keyword (.controller .this) (.behold .elf))),
-      .if (.happened (.actionWithId 2) .gameStart)
-        [.untap (.variable 1)]]))]
+        (.actionId 3 (.keyword (.controller .this) (.behold .elf))),
+      .if (.happened (.actionWithId 3) .gameStart)
+        [.untap (.affectedByAction 2)]]))]
 
 def elvenPassage : CardDef :=
   elvenPassageDefinition.toCardDef (oracleText := elvenPassageOracle)
