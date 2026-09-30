@@ -701,6 +701,9 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
       (.forEachVariable n among actions) =>
     if CardAction.leftoverEachPlayerSacrificesCreature? (.forEachVariable n among actions) then
       some TriggeredAbility.onEnterEachPlayerSacrificesCreature
+    else if CardAction.leftoverExileOppNonlandEachUntilLeaves?
+        (.forEachVariable n among actions) then
+      some TriggeredAbility.onEnterExileOppNonlandEachUntilLeaves
     else none
   | .triggered (.enter .this)
       (.sequence [

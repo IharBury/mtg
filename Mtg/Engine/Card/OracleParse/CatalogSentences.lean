@@ -1112,15 +1112,53 @@ private def parseCatalogSentenceResolve (cardName s : String) (n : Nat) :
       | .attach _ (.target _ _) => some (action, n')
       | _ => none
 
+/-- `for each opponent, exile up to one target nonland permanent that player
+controls until <this> leaves the battlefield.`
+Each opponent is variable `n`. The exile is action `n + 1`, and that
+player's permanent is target `n + 1`, from zero through the printed maximum
+(CR 115.1). A continuous replacement effect puts the exiled card onto the
+battlefield when this ability's source leaves, and the leave still happens
+(CR 614). No shorter duration is printed, so the replacement lasts until
+the end of the game (CR 611.2a). -/
+def parseForEachOpponentExileUntilLeaves (cardName sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  (after? (normSentence sentence) "for each opponent, exile up to ").bind
+    (split2? · " target ") |>.bind fun (countText, rest) =>
+      (split2? rest " that player controls until ").bind fun (obj, untilText) =>
+        (before? untilText " leaves the battlefield").bind fun who =>
+          if !refersToSelf cardName who then none
+          else
+            match positiveCount countText, parseTargetObject obj with
+            | some k, some sel =>
+              let controlled :=
+                match sel with
+                | .intersection parts =>
+                  .intersection (parts ++ [.controlled (.variable n)])
+                | other => .intersection [other, .controlled (.variable n)]
+              some (
+                .forEachVariable n (.opponent (.controller .this))
+                  [.sequence [
+                    .actionId (n + 1)
+                      (.exile
+                        (.targets (n + 1) (.range 0 (Value.nat k)) controlled)),
+                    .continuous
+                      [.replace (.leaveBattlefield (.source .this)) [
+                        .putOntoBattlefield (.wasCreatedByAction (n + 1)),
+                        .keepReplacedAction]]
+                      .endOfGame]],
+                n + 2)
+            | _, _ => none
+
 /-- One sentence of a catalog effect. A leading `Then` is sequencing only.
 `You create` is `create`. -/
 @[noinline]
 def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
     Option (CardAction × Nat) :=
-  let s := (after? (normSentence sentence) "then ").getD (normSentence sentence)
-  let s := (after? s "you create ").map ("create " ++ ·) |>.getD s
-  parseCatalogSentenceCreate cardName sentence s n <|>
-    parseCatalogSentenceResolve cardName s n
+  parseForEachOpponentExileUntilLeaves cardName sentence n <|>
+    let s := (after? (normSentence sentence) "then ").getD (normSentence sentence)
+    let s := (after? s "you create ").map ("create " ++ ·) |>.getD s
+    parseCatalogSentenceCreate cardName sentence s n <|>
+      parseCatalogSentenceResolve cardName s n
 
 /-- One sentence, or two clauses joined by `, then` or `and` when the whole
 sentence is not one action. Existing sentence templates come first. -/

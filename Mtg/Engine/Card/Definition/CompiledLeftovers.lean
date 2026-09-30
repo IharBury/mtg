@@ -149,6 +149,29 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
         sel == Selector.intersection [.permanent, .subtype .elf, .controlled (.controller .this)] then
       some (Effect.chapterElvesGetVigilance p)
     else none
+  | .keyword who (.amass .goblin (.nat n)) =>
+    if n != 0 && leftoverYou who then some (Effect.chapterAmassGoblins n) else none
+  | .sequence [
+      .loseLife (.target _ (.opponent who)) (.nat n),
+      .gainLife gainer (.nat n')
+    ] =>
+    if n != 0 && n == n' && leftoverYou who && leftoverYou gainer then
+      some (Effect.chapterOpponentLosesYouGain n)
+    else none
+  | .sequence [
+      .actionId id
+        (.reveal
+          (.intersection [
+            .inHand,
+            .owner (.target _ (.opponent who))])),
+      .defineSelectorVariable v
+        (.selected chooser (.range 1 1)
+          (.intersection [.wasObjectOfAction id', .not (.cardType .land)])),
+      .discard (.variable v') 1
+    ] =>
+    if id == id' && v == v' && leftoverYou who && leftoverYou chooser then
+      some Effect.chapterOpponentDiscardsNonland
+    else none
   | _ => none
 
 /-- This deals N damage to each creature that isn't of a subtype and to each
@@ -849,6 +872,30 @@ def leftoverMayDiscardHandDrawDamageIfStory? : CardAction → Bool
     id == id' && id == id'' && leftoverSourceThis src
   | _ => false
 
+/-- `for each opponent, exile up to one target nonland permanent that player
+controls until this leaves the battlefield.` The exile is numbered. When
+this ability's source leaves the battlefield, a replacement puts that
+exiled card onto the battlefield and the leave still happens. -/
+def leftoverExileOppNonlandEachUntilLeaves? : CardAction → Bool
+  | .forEachVariable v (.opponent who) [
+      .sequence [
+        .actionId id
+          (.exile
+            (.targets _ (.range 0 1)
+              (.intersection [
+                .permanent,
+                .not (.cardType .land),
+                .controlled (.variable v')]))),
+        .continuous
+          [.replace (.leaveBattlefield src) [
+            .putOntoBattlefield (.wasCreatedByAction id'),
+            .keepReplacedAction]]
+          .endOfGame
+      ]
+    ] =>
+    v == v' && id == id' && leftoverYou who && leftoverSourceThis src
+  | _ => false
+
 /-- Enters-the-battlefield actions that compile to a named trigger. -/
 def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
   | .createTokens who n parts states =>
@@ -953,6 +1000,9 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
   | .destroy (.target _ sel) =>
     some (TriggeredAbility.onEnter (Effect.enterDestroy sel.toTargetKind))
   | action =>
+    if leftoverExileOppNonlandEachUntilLeaves? action then
+      some TriggeredAbility.onEnterExileOppNonlandEachUntilLeaves
+    else
     match leftoverMillThenSubtypeToHand? action with
     | some (n, st) => some (TriggeredAbility.onEnterMillThenSubtypeToHand n st)
     | none =>

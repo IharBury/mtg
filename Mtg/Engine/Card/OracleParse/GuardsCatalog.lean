@@ -1231,5 +1231,14 @@ open OracleParts
 #guard parseOracleParts (name := "Other Card")
   "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature." ==
   none
+#guard parseOracleParts (name := "Celebrate the Mountain-king")
+  "When this enchantment enters, for each opponent, exile one target nonland permanent that player controls until this enchantment leaves the battlefield." ==
+  none
+#guard parseOracleParts (name := "Celebrate the Mountain-king")
+  "When this enchantment enters, for each opponent, exile up to one target nonland permanent that player controls until Bilbo leaves the battlefield." ==
+  none
+#guard parseOracleParts (name := "Down, Down to Goblin-town")
+  "I — Target player reveals their hand. You choose a nonland card from it. That player discards that card." ==
+  none
 
 end Mtg.Engine
