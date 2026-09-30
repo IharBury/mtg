@@ -1312,6 +1312,54 @@ namespace Mtg.Engine
     .ability (.keywordWithEffect (.chapter 1) [.draw (.controller .this) 1])
   ]).toCardDef.saga.isNone
 
+-- The Mountain-king's Return: recruit, a graveyard creature of mana value
+-- at most N, and one +1/+1 counter on up to one target creature.
+#guard
+  CardAction.leftoverChapterEffect?
+    [.keyword (.controller .this) .recruit] == some Effect.chapterRecruit
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [.keyword .all .recruit] |>.isNone
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [.putOntoBattlefield
+      (.target 1
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this),
+          .manaValueAtMost (.nat 3)]))] ==
+    some (Effect.chapterReturnCreatureFromGyMvAtMost 3)
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [.putOntoBattlefield
+      (.target 1
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this),
+          .manaValueAtMost (.nat 0)]))] |>.isNone
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [.putCounter
+      (.targets 1 (.range 0 1)
+        (.intersection [.permanent, .cardType .creature]))
+      .plusOnePlusOne
+      1] == some Effect.chapterPlusOneUpToOne
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [.putCounter
+      (.targets 1 (.range 0 1)
+        (.intersection [
+          .permanent, .cardType .creature, .controlled (.controller .this)]))
+      .plusOnePlusOne
+      1] |>.isNone
+
 -- Equipped creature has hexproof and can't be blocked.
 #guard
   (TraditionalCardDefinition.card [

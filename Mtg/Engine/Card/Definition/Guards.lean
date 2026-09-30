@@ -203,6 +203,7 @@ namespace Mtg.Engine
 #guard (valToNat? (Value.count .this)).isNone
 #guard (valToNat? (Value.product (Value.count .this) (Value.int 2))).isNone
 #guard (valToNat? (Value.variable 1)).isNone
+#guard (valToNat? (Value.greatestManaSpent .this)).isNone
 #guard Range.range Value.x 1 != Range.range 0 1
 #guard Range.any != Range.range 0 0
 #guard Range.from Value.x != Range.from 1

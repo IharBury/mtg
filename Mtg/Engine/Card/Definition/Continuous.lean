@@ -14,14 +14,14 @@ def valToInt? : Value → Option Int
   | .int p => some p
   | .nat p => some (Int.ofNat p)
   | .x | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
-  | .greatestPower _ | .product _ _ | .variable _ => none
+  | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
   | .nat n => some n
   | .int n => if n ≥ 0 then some n.toNat else none
   | .x | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
-  | .greatestPower _ | .product _ _ | .variable _ => none
+  | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _ => none
 
 /-- This object, or the source of this ability (CR 113.7). -/
 def isThisOrItsSource : Selector → Bool

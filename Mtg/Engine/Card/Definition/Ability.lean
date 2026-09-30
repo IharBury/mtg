@@ -183,6 +183,18 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
 one named `TriggeredAbility`. -/
 def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.triggerId id (.castSpell among))
+      (.sequence [
+        .optional (.controller .this)
+          (.actionId drawId
+            (.draw drawer (.greatestManaSpent (.wasArgumentOfTrigger spellId 1)))),
+        .if (.happened (.actionWithId ifId) .gameStart)
+          [.discard discarder (.nat 2)]]) =>
+    if id == drawId && id == spellId && id == ifId &&
+        Selector.youCastNoncreatureSpell among &&
+        CardAction.leftoverYou drawer && CardAction.leftoverYou discarder then
+      some TriggeredAbility.onCastNoncreatureMayDrawXDiscard2
+    else none
+  | .triggered (.triggerId id (.castSpell among))
       (.putCounter (.target id' who) .plusOnePlusOne
         (.greatestManaValue (.wasArgumentOfTrigger id'' 1))) =>
     let you := Selector.controlled (.controller .this)

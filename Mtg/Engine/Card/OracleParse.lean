@@ -245,6 +245,16 @@ Currently recognized:
   Amass is a keyword action of this card's controller (CR 701.45). The
   subtype is printed in the plural (`Goblins`). `N` is a positive count.
   A trailing reminder parenthetical is not rules text (CR 207.2).
+- `Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards.`
+  The spell is that cast. X is the greatest amount of mana spent to cast a
+  spell matching that trigger (CR 601.2h), not its mana value. One spell is
+  that amount. Discarding two cards happens only when the draw is taken.
+- `Recruit.`
+  Recruit is a keyword action of this card's controller. A trailing reminder
+  parenthetical is not rules text (CR 207.2).
+- `Return target <card type> card with mana value N or less from your graveyard to the battlefield.`
+  The card is in your graveyard. `N` is a positive printed number. Its mana
+  value is at most `N` (CR 202.3).
 - `When <this card> enters, amass <subtype>s N.`
   The entering object is `this`, `this <type>`, the card's name, or the short
   name before a comma. Amass is the same keyword action.
