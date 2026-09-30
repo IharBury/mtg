@@ -887,7 +887,7 @@ def leftoverExileOppNonlandEachUntilLeaves? : CardAction → Bool
                 .not (.cardType .land),
                 .controlled (.variable v')]))),
         .continuous
-          [.replace (.leave src) [
+          [.replace (.leaveBattlefield src) [
             .putOntoBattlefield (.wasCreatedByAction id'),
             .keepReplacedAction]]
           .endOfGame

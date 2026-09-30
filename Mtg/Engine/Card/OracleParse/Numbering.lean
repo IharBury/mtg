@@ -92,7 +92,7 @@ def collectSelector : Selector → List Nat × List Nat
 def collectTrigger : Trigger → List Nat × List Nat
   | .endOfGame | .endOfTurn | .turnStart | .gameStart => ([], [])
   | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .enter s | .die s
-  | .discard s | .leaveGraveyard s | .leave s | .returnToHand s | .putToGraveyard s
+  | .discard s | .leaveGraveyard s | .leaveBattlefield s | .returnToHand s | .putToGraveyard s
   | .giftPromised s | .counter s | .activateAbility s | .castSpell s
   | .castSpellFromGraveyard s | .precombatMainPhase s =>
     collectSelector s
@@ -350,7 +350,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
     .damageSimultaneously (mapSelector m a) (mapSelector m b) ps
   | .putToGraveyard s => .putToGraveyard (mapSelector m s)
   | .leaveGraveyard s => .leaveGraveyard (mapSelector m s)
-  | .leave s => .leave (mapSelector m s)
+  | .leaveBattlefield s => .leaveBattlefield (mapSelector m s)
   | .returnToHand s => .returnToHand (mapSelector m s)
   | .discard s => .discard (mapSelector m s)
   | .putCountersSimultaneously a b k =>

@@ -5776,7 +5776,7 @@ def celebrateTheMountainKingDefinition : TraditionalCardDefinition := .card <|
                   .not (.cardType .land),
                   .controlled (.variable 1)]))),
           .continuous
-            [.replace (.leave (.source .this)) [
+            [.replace (.leaveBattlefield (.source .this)) [
               .putOntoBattlefield (.wasCreatedByAction 1),
               .keepReplacedAction]]
             .endOfGame]])),

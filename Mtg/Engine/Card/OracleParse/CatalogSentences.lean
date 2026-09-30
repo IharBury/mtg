@@ -1142,7 +1142,7 @@ def parseForEachOpponentExileUntilLeaves (cardName sentence : String) (n : Nat) 
                       (.exile
                         (.targets (n + 1) (.range 0 (Value.nat k)) controlled)),
                     .continuous
-                      [.replace (.leave (.source .this)) [
+                      [.replace (.leaveBattlefield (.source .this)) [
                         .putOntoBattlefield (.wasCreatedByAction (n + 1)),
                         .keepReplacedAction]]
                       .endOfGame]],

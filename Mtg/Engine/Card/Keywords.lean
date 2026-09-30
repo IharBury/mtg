@@ -523,7 +523,7 @@ inductive Trigger where
   /-- Whenever a matching card leaves a graveyard (CR 404). -/
   | leaveGraveyard : Selector → Trigger
   /-- The selected permanent leaves the battlefield. -/
-  | leave : Selector → Trigger
+  | leaveBattlefield : Selector → Trigger
   /-- Whenever the selected object is returned to its owner's hand. -/
   | returnToHand : Selector → Trigger
   /-- Whenever the selected player discards a card (CR 701.8). -/
