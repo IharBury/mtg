@@ -1,7 +1,7 @@
 # TraditionalCardDefinition conversion gaps
 
 This note records what is missing from the part-based printed-card types in
-`Mtg/Engine/Card/Definition.lean` and `Mtg/Engine/Card/Keywords.lean` in
+`Mtg/Engine/Card/Definition.lean` (split under `Definition/`) and `Mtg/Engine/Card/Keywords.lean` in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
@@ -56,7 +56,8 @@ not missing subtypes.
 
 ## Current constructors (inventory)
 
-From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`:
+From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
+(split under `Definition/`):
 
 - **Range** — `range lo hi` (`Value` bounds), `any` (0 unbounded), `from n` (`Value` lower bound, unbounded high).
 - **SetPredicate** — `shareCardType`, `countAtLeast`.
@@ -525,7 +526,7 @@ All 89 are now `TraditionalCardDefinition`s that read their
 Oracle text with `parseOracleParts`, with a `#guard` pinning each parsed
 definition and the modeled `CardDef` fields `toCardDef` produces. The new
 templates are in `OracleParse/`, and the leftovers and `CardFace` fields
-they compile to are in `Definition.lean`. Wall, Minion, and Elder are
+they compile to are in `Definition/`. Wall, Minion, and Elder are
 `CardSubtype`s. `Trigger.putCountersSimultaneously` names the player who put
 the counters. `Trigger.enterSimultaneously` is one trigger for objects that
 enter together.
@@ -570,7 +571,7 @@ Living Light, Pym Particles, Restorative Technique, The Mighty Thor, Jane
 Foster, The Thing, Ben Grimm, Thirst for Knowledge, Vision of Love, Wakandan
 Royal Guard, White Widow, Free Agent, Yellowjacket, Heartless Marauder.
 
-Leftovers added in `Definition.lean` include ferocious attack shapes, landfall
+Leftovers added in `Definition/` include ferocious attack shapes, landfall
 tap/untap, attach-target-equipment, second-draw +1/+1/lifelink, haste-if-other-
 subtype, sacrifice-another-subtype mana, grant-vigilance-unblockable,
 pump-then-exile-top, choose-mode ETB, you-cast-noncreature +1/+1 each other,
