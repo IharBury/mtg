@@ -5526,7 +5526,7 @@ def bardKingOfDaleDefinition : TraditionalCardDefinition := .card <|
   .ability (.keyword .reach),
   .ability (.keyword .vigilance),
   .ability (.static (.replace
-    (.wouldDraw (.controller .this))
+    (.draw (.controller .this) .all)
     [.draw (.controller .this) 2])),
   .ability (.static (.replaceTokenCreation
     (.intersection [.token, .controlled (.controller .this)])

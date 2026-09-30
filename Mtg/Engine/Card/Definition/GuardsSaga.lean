@@ -1490,7 +1490,7 @@ namespace Mtg.Engine
   let c :=
     (TraditionalCardDefinition.card [
       .ability (.static (.replace
-        (.wouldDraw (.controller .this))
+        (.draw (.controller .this) .all)
         [.draw (.controller .this) 2])),
       .ability (.static (.replaceTokenCreation
         (.intersection [.token, .controlled (.controller .this)])
@@ -1503,7 +1503,7 @@ namespace Mtg.Engine
   let c :=
     (TraditionalCardDefinition.card [
       .ability (.static (.replace
-        (.wouldDraw (.controller .this))
+        (.draw (.controller .this) .all)
         [.draw (.controller .this) 3]))
     ]).toCardDef
   !c.drawTwoExceptFirstDrawStep && !c.tokenDoubling

@@ -897,13 +897,14 @@ def tokenYouControl : Selector :=
 
 /-- `If you would draw a card except the first one you draw in each of your
 draw steps, draw two cards instead.`
-The replaced draw is not the first card of this object's controller's draw
-step (CR 121.2). Drawing two cards replaces that draw (CR 614). -/
-def parseWouldDrawExceptFirstDrawStep (line : String) : Option CardPart :=
+`replace` of `Trigger.draw` is that draw (CR 614). The card is any card.
+Drawing two cards replaces it. That shape leaves the first card of each of
+your draw steps as one card (CR 121.2). -/
+def parseDrawExceptFirstDrawStep (line : String) : Option CardPart :=
   if sentenceIs line
       "if you would draw a card except the first one you draw in each of your draw steps, draw two cards instead" then
     some (.ability (.static (.replace
-      (.wouldDraw (.controller .this))
+      (.draw (.controller .this) .all)
       [.draw (.controller .this) 2])))
   else none
 

@@ -792,7 +792,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       { b with staticAbilities := b.staticAbilities.push .healOtherDamageWhenDealt }
     else b
   | .replace (.combatDamage _ _) _ => b
-  | .replace (.wouldDraw who) [.draw drawer (.nat 2)] =>
+  | .replace (.draw who .all) [.draw drawer (.nat 2)] =>
     if who == .controller .this && drawer == .controller .this then
       { b with drawTwoExceptFirstDrawStep := true }
     else b

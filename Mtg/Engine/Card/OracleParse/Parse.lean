@@ -194,7 +194,7 @@ def parseEndStepRemoveHopeDrawSac (line : String) (n : Nat) : Option (CardPart �
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
   (keywordParts? line).map (·, n) <|>
-    sole (parseWouldDrawExceptFirstDrawStep line) n <|>
+    sole (parseDrawExceptFirstDrawStep line) n <|>
     sole (parseTwiceTokensYouWouldCreate line) n <|>
     sole (parseTokenEntersByResolveCount line) n <|>
     sole (parseCantBeBlockedIfOwnPower cardName line) n <|>

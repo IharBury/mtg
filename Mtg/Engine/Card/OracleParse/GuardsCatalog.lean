@@ -1292,7 +1292,7 @@ open OracleParts
 #guard parseOracleParts (name := "Bard, King of Dale")
   "If you would draw a card except the first one you draw in each of your draw steps, draw two cards instead." ==
   some [.ability (.static (.replace
-    (.wouldDraw (.controller .this))
+    (.draw (.controller .this) .all)
     [.draw (.controller .this) 2]))]
 #guard parseOracleParts (name := "Bard, King of Dale")
   "If you would draw a card, draw two cards instead." == none

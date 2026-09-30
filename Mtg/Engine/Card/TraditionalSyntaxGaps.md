@@ -96,7 +96,6 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `turnStart`, `gameStart`, `attack`, `enter`, `draw`,
-  `wouldDraw` (a draw other than the first in each of that player's draw steps),
   `ordinal`, `combatDamage`, `damage`, `damageSimultaneously` (who deals
   damage, who is dealt damage, at the same time), `putToGraveyard`,
   `leaveGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`,
@@ -298,7 +297,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CounterKind.named` | `burden`, `deathtouch`, `doubleStrike`, `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`, `indestructible`, `influence`, `invasion`, `lifelink`, `menace`, `plan`, `quest`, `reach`, `shadow`, `shield`, `stun`, `trample`, `vigilance` |
 | `TraditionalCardDefinition.entersWithCounters` | `static (replace (enter this) [putCounter …, keepReplacedAction])` (Dawn of a New Age, The Ruinous Wrecking Crew) |
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
-| `Trigger.wouldDraw` | `wouldDraw` of the selected player. Bard, King of Dale replaces that draw with drawing two cards |
+| `Trigger.wouldDraw` | `replace` of `Trigger.draw` of any card, drawing two cards instead. Bard, King of Dale; the first card of each of your draw steps is not replaced |
 | `Condition.resolvedThisTurnCount` | `resolvedThisTurnCount n` (`1` is the first resolution this turn, counting this one). Belladonna Took |
 | `ContinuousEffect.replaceTokenCreation` | `replaceTokenCreation` of the tokens and the replacement actions. `createReplacingTokens` of `Value.timesCount 2 .replacingObject` is “twice that many of those tokens” (Bard, King of Dale) |
 
@@ -389,7 +388,7 @@ complete.
   - Leader, Super-Genius
 - **`loseLife`** (1 card) — Whenever the selected player loses life
   - The Master of Lake-town
-- **`opponentDrawsExceptFirst`** (1 card) — An opponent draws except the first card of their draw step (`Trigger.wouldDraw` is that window for the selected player, as a replacement event)
+- **`opponentDrawsExceptFirst`** (1 card) — An opponent draws except the first card of their draw step (`Trigger.draw` is any draw by the selected player, with no draw-step window)
   - Orcish Bowmasters
 
 ### `Cost`
@@ -936,7 +935,7 @@ Converted cards are omitted here.
 
 **Orcish Bowmasters** (`orcishBowmasters`)
 
-- `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step (`Trigger.wouldDraw` is that window for the selected player, as a replacement event)
+- `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step (`Trigger.draw` is any draw by the selected player, with no draw-step window)
 
 **Palantír of Orthanc** (`palantirOfOrthanc`)
 

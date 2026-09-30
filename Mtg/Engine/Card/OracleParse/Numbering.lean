@@ -95,7 +95,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .enter s | .die s
   | .discard s | .leaveGraveyard s | .leaveBattlefield s | .returnToHand s | .putToGraveyard s
   | .giftPromised s | .counter s | .activateAbility s | .castSpell s
-  | .castSpellFromGraveyard s | .precombatMainPhase s | .wouldDraw s =>
+  | .castSpellFromGraveyard s | .precombatMainPhase s =>
     collectSelector s
   | .attack a b | .draw a b | .damage a b | .block a b | .target a b | .combatDamage a b
   | .putCountersSimultaneously a b _ =>
@@ -385,7 +385,6 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .or a b => .or (mapTrigger m a) (mapTrigger m b)
   | .target a b => .target (mapSelector m a) (mapSelector m b)
   | .precombatMainPhase s => .precombatMainPhase (mapSelector m s)
-  | .wouldDraw s => .wouldDraw (mapSelector m s)
 
 def mapCondition (m : IdMaps) : Condition → Condition
   | .any s => .any (mapSelector m s)
