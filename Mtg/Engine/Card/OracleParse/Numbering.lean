@@ -105,7 +105,7 @@ def collectTrigger : Trigger → List Nat × List Nat
     appendIds [collectSelector a, collectSelector b]
   | .ordinal _ inner window => appendIds [collectTrigger inner, collectTrigger window]
   | .sacrifice s => collectSelector s
-  | .abilityWithIdActivated n => ([], [n])
+  | .abilityWithIdActivated n | .abilityWithIdResolved n => ([], [n])
   | .actionWithId n => ([n], [])
   | .triggerId n inner => appendIds [([], [n]), collectTrigger inner]
   | .modeWithIdChosen who _ => collectSelector who
@@ -120,11 +120,11 @@ def collectCondition : Condition → List Nat × List Nat
   | .targetsIncludeAny a b => appendIds [collectSelector a, collectSelector b]
   | .anySubtype s _ => collectSelector s
   | .didNotHappen a b | .happened a b => appendIds [collectTrigger a, collectTrigger b]
+  | .happenedTimes a n b => appendIds [collectTrigger a, collectValue n, collectTrigger b]
   | .and a b => appendIds [collectCondition a, collectCondition b]
   | .not c => collectCondition c
   | .less a b | .lessOrEqual a b | .greater a b | .greaterOrEqual a b | .equal a b =>
     appendIds [collectValue a, collectValue b]
-  | .resolvedThisTurnCount _ => ([], [])
 
 def collectCost : Cost → List Nat × List Nat
   | .mana _ | .life _ | .tapSymbol => ([], [])
@@ -369,6 +369,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .attackSimultaneously a b ps =>
     .attackSimultaneously (mapSelector m a) (mapSelector m b) ps
   | .abilityWithIdActivated n => .abilityWithIdActivated (m.target n)
+  | .abilityWithIdResolved n => .abilityWithIdResolved (m.target n)
   | .actionWithId n => .actionWithId (m.action n)
   | .triggerId n inner => .triggerId (m.target n) (mapTrigger m inner)
   | .modeWithIdChosen who n => .modeWithIdChosen (mapSelector m who) n
@@ -392,6 +393,8 @@ def mapCondition (m : IdMaps) : Condition → Condition
   | .anySubtype s st => .anySubtype (mapSelector m s) st
   | .didNotHappen a b => .didNotHappen (mapTrigger m a) (mapTrigger m b)
   | .happened a b => .happened (mapTrigger m a) (mapTrigger m b)
+  | .happenedTimes a n b =>
+    .happenedTimes (mapTrigger m a) (mapValue m n) (mapTrigger m b)
   | .timeToCastSorcery s => .timeToCastSorcery (mapSelector m s)
   | .turn s => .turn (mapSelector m s)
   | .enduringStory s => .enduringStory (mapSelector m s)
@@ -402,7 +405,6 @@ def mapCondition (m : IdMaps) : Condition → Condition
   | .greater a b => .greater (mapValue m a) (mapValue m b)
   | .greaterOrEqual a b => .greaterOrEqual (mapValue m a) (mapValue m b)
   | .equal a b => .equal (mapValue m a) (mapValue m b)
-  | .resolvedThisTurnCount n => .resolvedThisTurnCount n
 
 def mapCosts (m : IdMaps) : List Cost → List Cost
   | [] => []

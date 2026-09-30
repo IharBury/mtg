@@ -555,6 +555,9 @@ inductive Trigger where
   | attackSimultaneously : Selector → Selector → List SetPredicate → Trigger
   /-- The numbered ability was activated (CR 602.2). -/
   | abilityWithIdActivated : Nat → Trigger
+  /-- The numbered ability resolved (CR 608). `Ability.abilityId` numbers
+  that ability. A condition checked during the resolution counts it. -/
+  | abilityWithIdResolved : Nat → Trigger
   /-- The numbered action occurred. -/
   | actionWithId : Nat → Trigger
   /-- Number this trigger so later clauses can refer to its selector

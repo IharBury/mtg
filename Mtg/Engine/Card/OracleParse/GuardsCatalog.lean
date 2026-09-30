@@ -1306,15 +1306,17 @@ open OracleParts
   none
 #guard parseOracleParts (name := "Belladonna Took")
   "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control." ==
-  some [.ability (.triggered
+  some [.ability (.abilityId 1 (.triggered
     (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
     (.sequence [
-      .if (.resolvedThisTurnCount 1) [.gainLife (.controller .this) 1],
-      .if (.resolvedThisTurnCount 2) [.draw (.controller .this) 1],
-      .if (.resolvedThisTurnCount 3)
+      .if (.happenedTimes (.abilityWithIdResolved 1) 1 .turnStart)
+        [.gainLife (.controller .this) 1],
+      .if (.happenedTimes (.abilityWithIdResolved 1) 2 .turnStart)
+        [.draw (.controller .this) 1],
+      .if (.happenedTimes (.abilityWithIdResolved 1) 3 .turnStart)
         [.putCounter
           (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)])
-          .plusOnePlusOne 1]]))]
+          .plusOnePlusOne 1]])))]
 #guard parseOracleParts (name := "Belladonna Took")
   "Whenever a token you control enters, you gain 2 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control." ==
   none

@@ -5610,15 +5610,17 @@ def belladonnaTookDefinition : TraditionalCardDefinition := .card <|
   .subtype .citizen,
   .power 2,
   .toughness 2,
-  .ability (.triggered
+  .ability (.abilityId 1 (.triggered
     (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
     (.sequence [
-      .if (.resolvedThisTurnCount 1) [.gainLife (.controller .this) 1],
-      .if (.resolvedThisTurnCount 2) [.draw (.controller .this) 1],
-      .if (.resolvedThisTurnCount 3)
+      .if (.happenedTimes (.abilityWithIdResolved 1) 1 .turnStart)
+        [.gainLife (.controller .this) 1],
+      .if (.happenedTimes (.abilityWithIdResolved 1) 2 .turnStart)
+        [.draw (.controller .this) 1],
+      .if (.happenedTimes (.abilityWithIdResolved 1) 3 .turnStart)
         [.putCounter
           (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)])
-          .plusOnePlusOne 1]]))]
+          .plusOnePlusOne 1]])))]
 
 def belladonnaTook : CardDef :=
   belladonnaTookDefinition.toCardDef (oracleText := belladonnaTookOracle)

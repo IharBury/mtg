@@ -27,6 +27,9 @@ inductive Condition where
   | didNotHappen : Trigger → Trigger → Condition
   /-- True when the first trigger has occurred since the second. -/
   | happened : Trigger → Trigger → Condition
+  /-- The first trigger happened exactly this many times after the last
+  occurrence of the second trigger. -/
+  | happenedTimes : Trigger → Value → Trigger → Condition
   /-- True when the selected player could cast a sorcery
   (CR 307.1 / 117.1a). -/
   | timeToCastSorcery : Selector → Condition
@@ -48,9 +51,6 @@ inductive Condition where
   | greaterOrEqual : Value → Value → Condition
   /-- True when the two values are equal. -/
   | equal : Value → Value → Condition
-  /-- This ability has resolved exactly this many times this turn, counting
-  the resolution that checks the condition. `1` is the first time. -/
-  | resolvedThisTurnCount : Nat → Condition
 deriving Repr, Inhabited, BEq
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/

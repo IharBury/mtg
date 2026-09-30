@@ -101,7 +101,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `leaveGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`,
   `block`, `die`, `dieSimultaneously`, `sacrifice` (the permanents sacrificed),
   `attackSimultaneously` (who attacks, who is attacked),
-  `abilityWithIdActivated`, `actionWithId`, `triggerId`, `modeWithIdChosen`,
+  `abilityWithIdActivated`, `abilityWithIdResolved` (the numbered ability resolved),
+  `actionWithId`, `triggerId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `spendManaFrom`, `castSpell`,
   `castSpellFromGraveyard`, `giftPromised` (the selected spell's gift was
   promised), `counter`, `activateAbility`, `target` (a spell or
@@ -110,10 +111,10 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
 - **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
-  `happened`, `timeToCastSorcery`, `turn`, `enduringStory`, `and`, `not`,
-  `less`, `lessOrEqual`, `greater`, `greaterOrEqual`, `equal`,
-  `resolvedThisTurnCount` (this ability has resolved exactly this many times
-  this turn, counting the resolution that checks it).
+  `happened`, `happenedTimes` (the first trigger happened exactly this many
+  times after the last occurrence of the second trigger), `timeToCastSorcery`,
+  `turn`, `enduringStory`, `and`, `not`, `less`, `lessOrEqual`, `greater`,
+  `greaterOrEqual`, `equal`.
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters), `attachedTo`.
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
   `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`,
@@ -298,7 +299,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `TraditionalCardDefinition.entersWithCounters` | `static (replace (enter this) [putCounter …, keepReplacedAction])` (Dawn of a New Age, The Ruinous Wrecking Crew) |
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
 | `Trigger.wouldDraw` | `replace` of `Trigger.draw` of any card, drawing two cards instead. Bard, King of Dale; the first card of each of your draw steps is not replaced |
-| `Condition.resolvedThisTurnCount` | `resolvedThisTurnCount n` (`1` is the first resolution this turn, counting this one). Belladonna Took |
+| `Condition.resolvedThisTurnCount` | `happenedTimes` of `abilityWithIdResolved`, the count, and `turnStart`. `1` is the first resolution this turn, counting this one (Belladonna Took) |
 | `ContinuousEffect.replaceTokenCreation` | `replaceTokenCreation` of the tokens and the replacement actions. `createReplacingTokens` of `Value.timesCount 2 .replacingObject` is “twice that many of those tokens” (Bard, King of Dale) |
 
 ## Missing constructors by type
