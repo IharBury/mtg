@@ -594,6 +594,11 @@ inductive Trigger where
   | target : Selector → Selector → Trigger
   /-- At the beginning of the selected player's precombat main phase (CR 505.1). -/
   | precombatMainPhase : Selector → Trigger
+  /-- The selected player would draw a card, except the first card they draw
+  in each of their draw steps (CR 121.2 / 614). `replace` of `Trigger.draw`
+  is any draw and has no draw-step window. `Selector.controller .this` is
+  “you”. -/
+  | wouldDraw : Selector → Trigger
 deriving Repr, Inhabited, BEq
 end
 

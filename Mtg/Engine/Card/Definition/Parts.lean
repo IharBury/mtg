@@ -48,6 +48,9 @@ inductive Condition where
   | greaterOrEqual : Value → Value → Condition
   /-- True when the two values are equal. -/
   | equal : Value → Value → Condition
+  /-- This ability has resolved exactly this many times this turn, counting
+  the resolution that checks the condition. `1` is the first time. -/
+  | resolvedThisTurnCount : Nat → Condition
 deriving Repr, Inhabited, BEq
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
@@ -177,6 +180,13 @@ inductive ContinuousEffect where
   spell or ability applies it until end of turn to the objects that match
   when it resolves (CR 611.2a / 611.2c). -/
   | removeAllAbilities : Selector → ContinuousEffect
+  /-- If tokens matching the selector would be created, replace that creation
+  with the given actions (CR 614). There is no token-creation event for
+  `replace`. `Selector.replacingObject` is the tokens that would have been
+  created, and `Value.count` of it is how many. “Twice that many of those
+  tokens” is `createReplacingTokens` of `Value.timesCount 2` of that
+  selector. -/
+  | replaceTokenCreation : Selector → List CardAction → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -307,6 +317,11 @@ inductive CardAction where
   An empty state list is the usual “enters as a new object” case. -/
   | createTokens (who : Selector) (n : Value) (parts : List CardPart)
       (states : List CardState := []) : CardAction
+  /-- The selected player creates that many tokens with the same
+  characteristics as the tokens this replacement would have created
+  (CR 614). `Value.timesCount` of `Selector.replacingObject` is how many
+  of those tokens. -/
+  | createReplacingTokens : Selector → Value → CardAction
   /-- The selected player mills that many cards (CR 701.13). -/
   | mill : Selector → Value → CardAction
   /-- The selected player surveils that many cards (CR 701.53). -/

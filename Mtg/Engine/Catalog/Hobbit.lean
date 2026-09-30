@@ -5496,11 +5496,54 @@ def bardTheBowmanDefinition : TraditionalCardDefinition := .card <|
 def bardTheBowman : CardDef :=
   bardTheBowmanDefinition.toCardDef (oracleText := bardTheBowmanOracle)
 
+/-- Gatherer Oracle text for Bard, King of Dale. -/
+def bardKingOfDaleOracle : String :=
+  "Reach, vigilance\nIf you would draw a card except the first one you draw in each of your draw steps, draw two cards instead.\nIf one or more tokens would be created under your control, twice that many of those tokens are created instead."
+
+def bardKingOfDaleDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Bard, King of Dale",
+    .manaCost [.generic 4, .mono .white, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .noble,
+    .subtype .archer,
+    .power 3,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Bard, King of Dale") bardKingOfDaleOracle).get!
+
+#guard bardKingOfDaleDefinition == .card [
+  .name "Bard, King of Dale",
+  .manaCost [.generic 4, .mono .white, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .noble,
+  .subtype .archer,
+  .power 3,
+  .toughness 5,
+  .ability (.keyword .reach),
+  .ability (.keyword .vigilance),
+  .ability (.static (.replace
+    (.wouldDraw (.controller .this))
+    [.draw (.controller .this) 2])),
+  .ability (.static (.replaceTokenCreation
+    (.intersection [.token, .controlled (.controller .this)])
+    [.createReplacingTokens (.controller .this)
+      (Value.timesCount 2 .replacingObject)]))]
+
 def bardKingOfDale : CardDef :=
-  legendaryCreature "Bard, King of Dale" (ManaCost.ofGenericAndColors 4 [.white, .blue]) #["Human", "Noble", "Archer"] 3 5 (oracleText := "Reach, vigilance\nIf you would draw a card except the first one you draw in each of your draw steps, draw two cards instead.\nIf one or more tokens would be created under your control, twice that many of those tokens are created instead.")
-    (keywords := Keyword.reach.merge Keyword.vigilance)
-    (tokenDoubling := true)
-    (drawTwoExceptFirstDrawStep := true)
+  bardKingOfDaleDefinition.toCardDef (oracleText := bardKingOfDaleOracle)
+
+#guard bardKingOfDale.oracleText == bardKingOfDaleOracle
+#guard bardKingOfDale.keywords == Keyword.reach.merge Keyword.vigilance
+#guard bardKingOfDale.tokenDoubling
+#guard bardKingOfDale.drawTwoExceptFirstDrawStep
+#guard bardKingOfDale.manaCost == ManaCost.ofGenericAndColors 4 [.white, .blue]
+#guard bardKingOfDale.supertypes == #[.legendary]
+#guard bardKingOfDale.subtypes == #["Human", "Noble", "Archer"]
+#guard bardKingOfDale.power == some 3 && bardKingOfDale.toughness == some 5
 
 /-- Gatherer Oracle text for Bejeweled Warg. -/
 def bejeweledWargOracle : String :=
@@ -5542,9 +5585,51 @@ def bejeweledWargDefinition : TraditionalCardDefinition := .card <|
 def bejeweledWarg : CardDef :=
   bejeweledWargDefinition.toCardDef (oracleText := bejeweledWargOracle)
 
+/-- Gatherer Oracle text for Belladonna Took. -/
+def belladonnaTookOracle : String :=
+  "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."
+
+def belladonnaTookDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Belladonna Took",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .citizen,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Belladonna Took") belladonnaTookOracle).get!
+
+#guard belladonnaTookDefinition == .card [
+  .name "Belladonna Took",
+  .manaCost [.generic 1, .mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .citizen,
+  .power 2,
+  .toughness 2,
+  .ability (.triggered
+    (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
+    (.sequence [
+      .if (.resolvedThisTurnCount 1) [.gainLife (.controller .this) 1],
+      .if (.resolvedThisTurnCount 2) [.draw (.controller .this) 1],
+      .if (.resolvedThisTurnCount 3)
+        [.putCounter
+          (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)])
+          .plusOnePlusOne 1]]))]
+
 def belladonnaTook : CardDef :=
-  legendaryCreature "Belladonna Took" (ManaCost.ofGenericAndColor 1 .white) #["Halfling", "Citizen"] 2 2 (oracleText := "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control.")
-    (triggeredAbilities := #[.onTokenYouControlEntersBelladonna])
+  belladonnaTookDefinition.toCardDef (oracleText := belladonnaTookOracle)
+
+#guard belladonnaTook.oracleText == belladonnaTookOracle
+#guard belladonnaTook.triggeredAbilities == #[.onTokenYouControlEntersBelladonna]
+#guard belladonnaTook.keywords == Keywords.none
+#guard belladonnaTook.manaCost == ManaCost.ofGenericAndColor 1 .white
+#guard belladonnaTook.supertypes == #[.legendary]
+#guard belladonnaTook.subtypes == #["Halfling", "Citizen"]
+#guard belladonnaTook.power == some 2 && belladonnaTook.toughness == some 2
 
 def beornTheFierce : CardDef :=
   legendaryCreature "Beorn the Fierce" (ManaCost.ofGenericAndColors 3 [.green, .green]) #["Bear", "Shapeshifter", "Warrior"] 6 6 (oracleText := "Trample\nOther Bears you control get +2/+2.\nAt the beginning of combat on your turn, put a trample counter on up to one target creature you control. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards.")

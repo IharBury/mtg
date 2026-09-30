@@ -1484,4 +1484,51 @@ namespace Mtg.Engine
         a.name == "Allure of Power"
     | none => false
 
+-- Bard, King of Dale: a draw outside the first of your draw step becomes two,
+-- and tokens you would create are doubled.
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.static (.replace
+        (.wouldDraw (.controller .this))
+        [.draw (.controller .this) 2])),
+      .ability (.static (.replaceTokenCreation
+        (.intersection [.token, .controlled (.controller .this)])
+        [.createReplacingTokens (.controller .this)
+          (Value.timesCount 2 .replacingObject)]))
+    ]).toCardDef
+  c.drawTwoExceptFirstDrawStep && c.tokenDoubling
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.static (.replace
+        (.wouldDraw (.controller .this))
+        [.draw (.controller .this) 3]))
+    ]).toCardDef
+  !c.drawTwoExceptFirstDrawStep && !c.tokenDoubling
+
+-- Belladonna Took: the first three resolutions this turn are life, a card,
+-- then a +1/+1 counter on each creature you control.
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.triggered
+        (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
+        (.sequence [
+          .if (.resolvedThisTurnCount 1) [.gainLife (.controller .this) 1],
+          .if (.resolvedThisTurnCount 2) [.draw (.controller .this) 1],
+          .if (.resolvedThisTurnCount 3)
+            [.putCounter
+              (.intersection
+                [.permanent, .cardType .creature, .controlled (.controller .this)])
+              .plusOnePlusOne 1]]))
+    ]).toCardDef
+  c.triggeredAbilities == #[.onTokenYouControlEntersBelladonna]
+
+#guard
+  (Ability.triggered
+    (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
+    (.if (.resolvedThisTurnCount 1) [.gainLife (.controller .this) 1])).toTriggeredAbility?.isNone
+
 end Mtg.Engine

@@ -5,9 +5,9 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**209** catalog cards are still `CardDef` helpers. **196**
+**207** catalog cards are still `CardDef` helpers. **193**
 of them need at least one missing constructor listed under
-[Missing constructors by type](#missing-constructors-by-type). **13** lost
+[Missing constructors by type](#missing-constructors-by-type). **14** lost
 their last tag (named counters, `CardAction.removeCounter`, or
 enters-with-counters) and are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
@@ -24,12 +24,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 153 | 35 | 32 |
-| The Hobbit Eternal (HOC) | 117 | 67 | 50 | 48 |
+| The Hobbit (HOB) | 188 | 155 | 33 | 30 |
+| The Hobbit Eternal (HOC) | 117 | 67 | 50 | 47 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 116 |
-| **Total** | **586** | **377** | **209** | **196** |
+| **Total** | **586** | **379** | **207** | **193** |
 
-All 377 `TraditionalCardDefinition`s (153 HOB, 67 HOC, 157 MSH,
+All 379 `TraditionalCardDefinition`s (155 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -96,6 +96,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `turnStart`, `gameStart`, `attack`, `enter`, `draw`,
+  `wouldDraw` (a draw other than the first in each of that player's draw steps),
   `ordinal`, `combatDamage`, `damage`, `damageSimultaneously` (who deals
   damage, who is dealt damage, at the same time), `putToGraveyard`,
   `leaveGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`,
@@ -111,7 +112,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `discard` (what to discard), `or`.
 - **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
   `happened`, `timeToCastSorcery`, `turn`, `enduringStory`, `and`, `not`,
-  `less`, `lessOrEqual`, `greater`, `greaterOrEqual`, `equal`.
+  `less`, `lessOrEqual`, `greater`, `greaterOrEqual`, `equal`,
+  `resolvedThisTurnCount` (this ability has resolved exactly this many times
+  this turn, counting the resolution that checks it).
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters), `attachedTo`.
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
   `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`,
@@ -128,7 +131,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   cast as though it had flash when a condition holds; `you` is
   `Selector.caster`; the spell does not gain flash), `doesntUntap`,
   `cantAttackUnlessPays`, `removeAllAbilities` (selected objects lose all
-  abilities; later-granted abilities still apply).
+  abilities; later-granted abilities still apply), `replaceTokenCreation`
+  (if tokens matching a selector would be created, replace that creation;
+  `Selector.replacingObject` is those tokens).
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`,
   `chooseUniqueModes`, `chooseModeRestricted`, `counter`, `preventable`,
@@ -142,7 +147,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `holdOutInLibrary`, `defineSelectorVariable`, `defineValueVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`,
   `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
-  `createTokens`, `mill`, `surveil`, `copyWithNewTargets`,
+  `createTokens`, `createReplacingTokens` (that many copies of the tokens
+  this replacement would have created), `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`, `shuffleIntoOwnersLibrary`,
   `lookAt`, `putOnLibraryBottomInRandomOrder`, `chooseCreatureType` (the
   selected player chooses a creature type).
@@ -292,6 +298,9 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CounterKind.named` | `burden`, `deathtouch`, `doubleStrike`, `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`, `indestructible`, `influence`, `invasion`, `lifelink`, `menace`, `plan`, `quest`, `reach`, `shadow`, `shield`, `stun`, `trample`, `vigilance` |
 | `TraditionalCardDefinition.entersWithCounters` | `static (replace (enter this) [putCounter …, keepReplacedAction])` (Dawn of a New Age, The Ruinous Wrecking Crew) |
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
+| `Trigger.wouldDraw` | `wouldDraw` of the selected player. Bard, King of Dale replaces that draw with drawing two cards |
+| `Condition.resolvedThisTurnCount` | `resolvedThisTurnCount n` (`1` is the first resolution this turn, counting this one). Belladonna Took |
+| `ContinuousEffect.replaceTokenCreation` | `replaceTokenCreation` of the tokens and the replacement actions. `createReplacingTokens` of `Value.timesCount 2 .replacingObject` is “twice that many of those tokens” (Bard, King of Dale) |
 
 ## Missing constructors by type
 
@@ -380,10 +389,8 @@ complete.
   - Leader, Super-Genius
 - **`loseLife`** (1 card) — Whenever the selected player loses life
   - The Master of Lake-town
-- **`opponentDrawsExceptFirst`** (1 card) — An opponent draws except the first card of their draw step (same missing draw-step window as `wouldDraw`)
+- **`opponentDrawsExceptFirst`** (1 card) — An opponent draws except the first card of their draw step (`Trigger.wouldDraw` is that window for the selected player, as a replacement event)
   - Orcish Bowmasters
-- **`wouldDraw`** (1 card) — A draw other than the first in each draw step. `replace` of `Trigger.draw` is “would draw”; there is no draw-step window
-  - Bard, King of Dale
 
 ### `Cost`
 
@@ -410,8 +417,6 @@ complete.
   - Minas Tirith
 - **`citysBlessing`** (1 card) — You have the city's blessing
   - Andúril, Narsil Reforged
-- **`resolvedThisTurnCount`** (1 card) — This ability has resolved N times this turn
-  - Belladonna Took
 
 ### `Ability`
 
@@ -436,8 +441,6 @@ complete.
   - Ms. Marvel, Kamala Khan; The Ten Rings
 - **`modifyDamage`** (2 cards) — Replacement that changes how much damage is dealt
   - Hawkeye, Young Avenger; Mjölnir, Hammer of Thor
-- **`replaceTokenCreation`** (2 cards) — If tokens would be created, create more or different tokens (no token-creation event for `replace`)
-  - Bard, King of Dale; Bilbo, Fellow Conspirator
 - **`spendManaAsThoughAnyType`** (2 cards) — Mana of any type can be spent to cast the selected spells
   - Black Widow, Super Spy; Shadow of the Enemy
 - **`activateAsThoughHaste`** (1 card) — Activate abilities of the selected creatures as though they had haste
@@ -668,16 +671,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (32 cards)
-
-**Bard, King of Dale** (`bardKingOfDale`)
-
-- `Trigger.wouldDraw` — A draw other than the first in each draw step. `replace` of `Trigger.draw` is “would draw”; there is no draw-step window
-- `ContinuousEffect.replaceTokenCreation` — If tokens would be created, create more or different tokens (no token-creation event for `replace`)
-
-**Belladonna Took** (`belladonnaTook`)
-
-- `Condition.resolvedThisTurnCount` — This ability has resolved N times this turn
+### The Hobbit (HOB) (30 cards)
 
 **Bifur, Melodic Rider** (`bifurMelodicRider`)
 
@@ -812,7 +806,7 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
 
-### The Hobbit Eternal (HOC) (51 cards)
+### The Hobbit Eternal (HOC) (50 cards)
 
 **Andúril, Narsil Reforged** (`andurilNarsilReforged`)
 
@@ -845,10 +839,6 @@ Converted cards are omitted here.
 
 - `Selector.attackingAlone` — A creature attacking alone
 - `Trigger.attackAlone` — When the selected object attacks alone
-
-**Bilbo, Fellow Conspirator** (`bilboFellowConspirator`)
-
-- `ContinuousEffect.replaceTokenCreation` — If tokens would be created, create more or different tokens (no token-creation event for `replace`)
 
 **Bilbo, Unexpected Adventurer** (`bilboUnexpectedAdventurer`)
 
@@ -946,7 +936,7 @@ Converted cards are omitted here.
 
 **Orcish Bowmasters** (`orcishBowmasters`)
 
-- `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step (same missing draw-step window as `wouldDraw`)
+- `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step (`Trigger.wouldDraw` is that window for the selected player, as a replacement event)
 
 **Palantír of Orthanc** (`palantirOfOrthanc`)
 
@@ -1565,14 +1555,15 @@ Converted cards are omitted here.
 
 ## Tags now spelled, not yet converted
 
-These 13 cards lost every tag and are still `CardDef` helpers. They lost
+These 14 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
-`CardAction.putCounter` of a `Value`, and enters-with-counters became
-expressible. A later pass should reread them before conversion.
+`CardAction.putCounter` of a `Value`, enters-with-counters, or
+`ContinuousEffect.replaceTokenCreation` became expressible. A later pass
+should reread them before conversion.
 
 **Hobbit (3):** Beorn the Fierce; Dwalin, Weaponmaster; Last Light of Durin's Day.
 
-**Hobbit Eternal (2):** Arwen, Mortal Queen; Minas Morgul, Dark Fortress.
+**Hobbit Eternal (3):** Arwen, Mortal Queen; Bilbo, Fellow Conspirator; Minas Morgul, Dark Fortress.
 
 **Marvel Super Heroes (8):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Super-Adaptoid; The Astonishing Ant-Man; Thunderbolts Conspiracy.
 

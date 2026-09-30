@@ -42,6 +42,12 @@ structure CardFace where
   additionalCostOrPayGeneric : Option Nat := none
   extraLandIfOtherSubtype : Option String := none
   staticAbilities : Array StaticAbility := #[]
+  /-- If one or more tokens would be created under your control, twice that
+  many of those tokens are created instead. -/
+  tokenDoubling : Bool := false
+  /-- If you would draw a card except the first one you draw in each of your
+  draw steps, draw two cards instead. -/
+  drawTwoExceptFirstDrawStep : Bool := false
   tapAddMana : Array ManaType := #[]
   tapAddAnyColorEqualToPower : Bool := false
   tapAddAnyColorForInstantOrSorcery : Bool := false
@@ -764,7 +770,8 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       else b
     | _, _ => b
   | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
-  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
+  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _
+  | .if (.resolvedThisTurnCount _) _ => b
   | .replace (.enter who) actions =>
     if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersTapped? actions then
@@ -785,7 +792,18 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       { b with staticAbilities := b.staticAbilities.push .healOtherDamageWhenDealt }
     else b
   | .replace (.combatDamage _ _) _ => b
+  | .replace (.wouldDraw who) [.draw drawer (.nat 2)] =>
+    if who == .controller .this && drawer == .controller .this then
+      { b with drawTwoExceptFirstDrawStep := true }
+    else b
   | .replace _ _ => b
+  | .replaceTokenCreation which
+      [.createReplacingTokens who (Value.product (.count .replacingObject) (.int 2))] =>
+    if which == .intersection [.token, .controlled (.controller .this)] &&
+        who == .controller .this then
+      { b with tokenDoubling := true }
+    else b
+  | .replaceTokenCreation _ _ => b
   | .forbid
       (.or
         (.attack who dest)
@@ -1198,6 +1216,8 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       additionalCostOrPayGeneric := b.additionalCostOrPayGeneric
       extraLandIfOtherSubtype := b.extraLandIfOtherSubtype
       staticAbilities := b.staticAbilities
+      tokenDoubling := b.tokenDoubling
+      drawTwoExceptFirstDrawStep := b.drawTwoExceptFirstDrawStep
       tapAddMana := b.tapAddMana
       tapAddAnyColorEqualToPower := b.tapAddAnyColorEqualToPower
       tapAddAnyColorForInstantOrSorcery := b.tapAddAnyColorForInstantOrSorcery

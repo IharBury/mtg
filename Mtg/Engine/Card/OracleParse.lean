@@ -612,4 +612,10 @@ Currently recognized:
   is not rules text.
 - `∞ — At the beginning of <phase>, <effect>.` ∞ is a keyword ability
   (CR 702.186): as long as this permanent is harnessed, it has that ability.
+- `If you would draw a card except the first one you draw in each of your draw steps, draw two cards instead.`
+  The draw that is replaced is not the first card of your draw step (CR 121.2).
+- `If one or more tokens would be created under your control, twice that many of those tokens are created instead.`
+  Those tokens keep their characteristics (CR 614).
+- `Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control.`
+  Each branch is how many times this ability has resolved this turn, counting this resolution.
 -/

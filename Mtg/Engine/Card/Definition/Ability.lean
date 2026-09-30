@@ -75,7 +75,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
   | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
   | .didNotHappen _ _ | .and _ _ | .not _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
-  | .equal _ _ => none
+  | .equal _ _ | .resolvedThisTurnCount _ => none
 
 /-- `{k}` less for each Equipment this ability's controller controls.
 `.this` is this ability. Zero is not a reduction. -/
@@ -461,6 +461,19 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     if id == id' && creatureId == creatureId' &&
         equipId + 1 == creatureId && creatureId + 1 == damageId then
       some TriggeredAbility.onEnterAttachEquipmentThenFight
+    else none
+  | .triggered
+      (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
+      (.sequence [
+        .if (.resolvedThisTurnCount 1) [.gainLife who1 (.nat 1)],
+        .if (.resolvedThisTurnCount 2) [.draw who2 (.nat 1)],
+        .if (.resolvedThisTurnCount 3)
+          [.putCounter
+            (.intersection
+              [.permanent, .cardType .creature, .controlled (.controller .this)])
+            .plusOnePlusOne (.nat 1)]]) =>
+    if who1 == .controller .this && who2 == .controller .this then
+      some .onTokenYouControlEntersBelladonna
     else none
   | _ => none
 

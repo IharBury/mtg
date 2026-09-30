@@ -1289,4 +1289,37 @@ open OracleParts
   "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard a card." ==
   none
 
+#guard parseOracleParts (name := "Bard, King of Dale")
+  "If you would draw a card except the first one you draw in each of your draw steps, draw two cards instead." ==
+  some [.ability (.static (.replace
+    (.wouldDraw (.controller .this))
+    [.draw (.controller .this) 2]))]
+#guard parseOracleParts (name := "Bard, King of Dale")
+  "If you would draw a card, draw two cards instead." == none
+#guard parseOracleParts (name := "Bard, King of Dale")
+  "If one or more tokens would be created under your control, twice that many of those tokens are created instead." ==
+  some [.ability (.static (.replaceTokenCreation
+    (.intersection [.token, .controlled (.controller .this)])
+    [.createReplacingTokens (.controller .this) (Value.timesCount 2 .replacingObject)]))]
+#guard parseOracleParts (name := "Bard, King of Dale")
+  "If a token would be created under your control, twice that many of those tokens are created instead." ==
+  none
+#guard parseOracleParts (name := "Belladonna Took")
+  "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control." ==
+  some [.ability (.triggered
+    (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
+    (.sequence [
+      .if (.resolvedThisTurnCount 1) [.gainLife (.controller .this) 1],
+      .if (.resolvedThisTurnCount 2) [.draw (.controller .this) 1],
+      .if (.resolvedThisTurnCount 3)
+        [.putCounter
+          (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)])
+          .plusOnePlusOne 1]]))]
+#guard parseOracleParts (name := "Belladonna Took")
+  "Whenever a token you control enters, you gain 2 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control." ==
+  none
+#guard parseOracleParts (name := "Belladonna Took")
+  "Whenever a creature you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control." ==
+  none
+
 end Mtg.Engine

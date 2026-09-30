@@ -887,6 +887,66 @@ def parseInstantSorceryCostLessByEquippedPower (line : String) : Option CardPart
       (.greatestPower (.hostOf .this)))))
   else none
 
+/-- Tokens that would be created under this object's controller. -/
+def tokensCreatedUnderYou : Selector :=
+  .intersection [.token, .controlled (.controller .this)]
+
+/-- A token permanent this object's controller controls. -/
+def tokenYouControl : Selector :=
+  .intersection [.permanent, .token, youControl]
+
+/-- `If you would draw a card except the first one you draw in each of your
+draw steps, draw two cards instead.`
+The replaced draw is not the first card of this object's controller's draw
+step (CR 121.2). Drawing two cards replaces that draw (CR 614). -/
+def parseWouldDrawExceptFirstDrawStep (line : String) : Option CardPart :=
+  if sentenceIs line
+      "if you would draw a card except the first one you draw in each of your draw steps, draw two cards instead" then
+    some (.ability (.static (.replace
+      (.wouldDraw (.controller .this))
+      [.draw (.controller .this) 2])))
+  else none
+
+/-- `If one or more tokens would be created under your control, twice that
+many of those tokens are created instead.`
+Those tokens keep their characteristics. Twice that many is two times how
+many would have been created (CR 614). -/
+def parseTwiceTokensYouWouldCreate (line : String) : Option CardPart :=
+  if sentenceIs line
+      "if one or more tokens would be created under your control, twice that many of those tokens are created instead" then
+    some (.ability (.static (.replaceTokenCreation
+      tokensCreatedUnderYou
+      [.createReplacingTokens (.controller .this) (Value.timesCount 2 .replacingObject)])))
+  else none
+
+/-- `Whenever a token you control enters, you gain 1 life if this is the
+first time this ability has resolved this turn. If it's the second time,
+draw a card. If it's the third time, put a +1/+1 counter on each creature
+you control.`
+The trigger fires once for each token. Each branch is that resolution's
+count this turn: one life, then a card, then a +1/+1 counter on each
+creature you control. -/
+def parseTokenEntersByResolveCount (line : String) : Option CardPart :=
+  match sentences (rulesText line) with
+  | [first, second, third] =>
+    match after? (normSentence first) "whenever a token you control enters, " with
+    | some gain =>
+      if sentenceIs gain
+          "you gain 1 life if this is the first time this ability has resolved this turn" &&
+          sentenceIs second "if it's the second time, draw a card" &&
+          sentenceIs third
+            "if it's the third time, put a +1/+1 counter on each creature you control" then
+        some (.ability (.triggered
+          (.enter tokenYouControl)
+          (.sequence [
+            .if (.resolvedThisTurnCount 1) [.gainLife (.controller .this) 1],
+            .if (.resolvedThisTurnCount 2) [.draw (.controller .this) 1],
+            .if (.resolvedThisTurnCount 3)
+              [.putCounter creaturesYouControl .plusOnePlusOne 1]])))
+      else none
+    | none => none
+  | _ => none
+
 /-- Steps of a sequence, in order. A sequence is those steps. -/
 def flattenAction : CardAction → List CardAction
   | .sequence as => as.flatMap flattenAction
