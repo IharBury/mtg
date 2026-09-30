@@ -1,4 +1,4 @@
-import Mtg.Engine.OracleRulings
+import Mtg.Engine.OracleRulings.CosmicCube
 import Mtg.Engine.Tests
 import Mtg.Demo.Render
 

@@ -8,6 +8,9 @@ relaxedAutoImplicit = false
 
 [[lean_lib]]
 name = "Mtg.Engine"
+# Ruling suites stay off the `Mtg.Engine` import chain so the demo does not
+# wait for them. `lake build` still compiles them as library roots.
+roots = ["Mtg.Engine", "Mtg.Engine.OracleRulings.RulingTests", "Mtg.Engine.OracleRulings.MshRulingTests"]
 
 [[lean_lib]]
 name = "MtgDemo"
