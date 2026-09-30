@@ -246,8 +246,9 @@ Currently recognized:
   subtype is printed in the plural (`Goblins`). `N` is a positive count.
   A trailing reminder parenthetical is not rules text (CR 207.2).
 - `Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards.`
-  The spell is that cast. X is the mana spent to cast it (CR 601.2h), not
-  its mana value. Discarding two cards happens only when the draw is taken.
+  The spell is that cast. X is the greatest amount of mana spent to cast a
+  spell matching that trigger (CR 601.2h), not its mana value. One spell is
+  that amount. Discarding two cards happens only when the draw is taken.
 - `Recruit.`
   Recruit is a keyword action of this card's controller. A trailing reminder
   parenthetical is not rules text (CR 207.2).

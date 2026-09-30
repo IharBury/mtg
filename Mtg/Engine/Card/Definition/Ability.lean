@@ -186,7 +186,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
       (.sequence [
         .optional (.controller .this)
           (.actionId drawId
-            (.draw drawer (.manaSpent (.wasArgumentOfTrigger spellId 1)))),
+            (.draw drawer (.greatestManaSpent (.wasArgumentOfTrigger spellId 1)))),
         .if (.happened (.actionWithId ifId) .gameStart)
           [.discard discarder (.nat 2)]]) =>
     if id == drawId && id == spellId && id == ifId &&

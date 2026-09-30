@@ -341,10 +341,11 @@ inductive Value where
   /-- The value recorded by `defineValueVariable` with this number.
   The record is the value when that action resolved. -/
   | variable : Nat → Value
-  /-- The amount of mana spent to cast the selected spell (CR 601.2h).
-  Cost increases, reductions, and alternative costs change this amount.
-  The spell's mana value does not. -/
-  | manaSpent : Selector → Value
+  /-- The greatest amount of mana spent to cast a spell among selected
+  spells (CR 601.2h). Cost increases, reductions, and alternative costs
+  change each amount. A spell's mana value does not. One spell is that
+  amount. Several spells use the greatest. -/
+  | greatestManaSpent : Selector → Value
 deriving Repr, Inhabited, BEq
 
 /-- How many objects a `.targets` selector may choose. -/
@@ -604,7 +605,7 @@ instance : ToString Value where
     | .int n => toString n
     | .x => "X"
     | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
-    | .greatestPower _ | .product _ _ | .variable _ | .manaSpent _ => "X"
+    | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _ => "X"
 
 instance (n : Nat) : OfNat Value n where
   ofNat := .nat n
@@ -625,7 +626,7 @@ def timesCount (n : Int) (among : Selector) : Value :=
 #guard toString (Value.count .this) == "X"
 #guard toString (Value.product (Value.count .this) 2) == "X"
 #guard toString (Value.variable 1) == "X"
-#guard toString (Value.manaSpent .this) == "X"
+#guard toString (Value.greatestManaSpent .this) == "X"
 #guard Value.timesCount 1 .this == Value.count .this
 #guard Value.timesCount 2 .this == Value.product (Value.count .this) (Value.int 2)
 #guard Value.timesCount 0 .this == Value.int 0

@@ -53,7 +53,7 @@ mutual
 def collectValue : Value → List Nat × List Nat
   | .nat _ | .int _ | .x => ([], [])
   | .greatestManaValue s | .greatestToughness s | .greatestPower s | .count s | .totalPower s
-  | .manaSpent s =>
+  | .greatestManaSpent s =>
     collectSelector s
   | .product a b => appendIds [collectValue a, collectValue b]
   | .variable n => ([], [n])
@@ -259,7 +259,7 @@ def mapValue (m : IdMaps) : Value → Value
   | .totalPower s => .totalPower (mapSelector m s)
   | .product a b => .product (mapValue m a) (mapValue m b)
   | .variable n => .variable (m.target n)
-  | .manaSpent s => .manaSpent (mapSelector m s)
+  | .greatestManaSpent s => .greatestManaSpent (mapSelector m s)
 
 def mapRange (m : IdMaps) : Range → Range
   | .range a b => .range (mapValue m a) (mapValue m b)

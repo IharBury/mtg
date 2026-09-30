@@ -7022,7 +7022,7 @@ def uncoverTheMoonLettersDefinition : TraditionalCardDefinition := .card <|
         .optional (.controller .this)
           (.actionId 1
             (.draw (.controller .this)
-              (.manaSpent (.wasArgumentOfTrigger 1 1)))),
+              (.greatestManaSpent (.wasArgumentOfTrigger 1 1)))),
         .if (.happened (.actionWithId 1) .gameStart)
           [.discard (.controller .this) 2]]))]
 

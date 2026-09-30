@@ -39,8 +39,9 @@ def parseCantBeBlockedIfOwnPower (cardName line : String) : Option CardPart :=
 
 /-- `Whenever you cast a noncreature spell, you may draw X cards, where X is
 the amount of mana spent to cast that spell. If you do, discard two cards.`
-The spell is trigger `n`. Drawing is action `n`, and X is the mana spent to
-cast that spell (CR 601.2h), not its mana value. Discarding two cards
+The spell is trigger `n`. Drawing is action `n`, and X is the greatest
+amount of mana spent to cast a spell matching that trigger (CR 601.2h),
+not its mana value. One spell is that amount. Discarding two cards
 happens only when that draw is taken. -/
 def parseCastNoncreatureMayDrawManaSpent (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
@@ -60,7 +61,7 @@ def parseCastNoncreatureMayDrawManaSpent (line : String) (n : Nat) :
               .optional (.controller .this)
                 (.actionId n
                   (.draw (.controller .this)
-                    (.manaSpent (.wasArgumentOfTrigger n 1)))),
+                    (.greatestManaSpent (.wasArgumentOfTrigger n 1)))),
               .if (.happened (.actionWithId n) .gameStart)
                 [.discard (.controller .this) 2]])),
           n + 1)

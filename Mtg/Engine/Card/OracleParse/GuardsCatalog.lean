@@ -1276,7 +1276,7 @@ open OracleParts
     (.sequence [
       .optional (.controller .this)
         (.actionId 1
-          (.draw (.controller .this) (.manaSpent (.wasArgumentOfTrigger 1 1)))),
+          (.draw (.controller .this) (.greatestManaSpent (.wasArgumentOfTrigger 1 1)))),
       .if (.happened (.actionWithId 1) .gameStart)
         [.discard (.controller .this) 2]]))]
 #guard parseOracleParts (name := "Uncover the Moon-Letters")

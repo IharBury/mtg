@@ -316,7 +316,7 @@ namespace Mtg.Engine
     (.sequence [
       .optional (.controller .this)
         (.actionId 1
-          (.draw (.controller .this) (.manaSpent (.wasArgumentOfTrigger 1 1)))),
+          (.draw (.controller .this) (.greatestManaSpent (.wasArgumentOfTrigger 1 1)))),
       .if (.happened (.actionWithId 1) .gameStart)
         [.discard (.controller .this) 2]])).toTriggeredAbility? ==
     some TriggeredAbility.onCastNoncreatureMayDrawXDiscard2
@@ -350,7 +350,7 @@ namespace Mtg.Engine
     (.sequence [
       .optional (.controller .this)
         (.actionId 1
-          (.draw (.controller .this) (.manaSpent (.wasArgumentOfTrigger 1 1)))),
+          (.draw (.controller .this) (.greatestManaSpent (.wasArgumentOfTrigger 1 1)))),
       .if (.happened (.actionWithId 1) .gameStart)
         [.discard (.controller .this) 1]])).toTriggeredAbility?.isNone
 
