@@ -1,7 +1,6 @@
 import Mtg.Engine
 import Mtg.Demo.DeckList
 import Mtg.Demo.Render
-import Mtg.Demo.RenderTests
 import Mtg.Demo.WelcomeDecks
 
 /-!

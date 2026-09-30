@@ -676,25 +676,37 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     else none
   | _ => none
 
-/-- Sequence leftovers that compile to a named `Effect` without taking
-only the first action. -/
-def leftoverCompiled? (action : CardAction) : Option Effect :=
-  leftoverSourcePlusOneSequence? action |>.orElse fun _ =>
-  leftoverPrintedCompiled? action |>.orElse fun _ =>
-  (if leftoverExileAttackersSearchBasics? action then
+/-- First alternatives of `leftoverCompiled?`. Separate from the rest so the
+code generator does not duplicate a long `orElse` chain while simplifying it. -/
+@[noinline]
+private def leftoverCompiledHead? (action : CardAction) : Option Effect :=
+  match leftoverSourcePlusOneSequence? action with
+  | some e => some e
+  | none =>
+  match leftoverPrintedCompiled? action with
+  | some e => some e
+  | none =>
+  if leftoverExileAttackersSearchBasics? action then
     some Effect.exileAttackersSearchBasics
-  else none) |>.orElse fun _ =>
-  leftoverExileTopFaceDownPlayIf? action |>.map
-      (fun (n, st) => Effect.exileTopPlayIfYouControlSubtype n st) |>.orElse fun _ =>
-  leftoverNonDragonThenDragonMana? action |>.map
-      Effect.dealDamageToEachNonDragonThenAddDragonMana |>.orElse fun _ =>
-  leftoverDealDamageExileIfDies? action |>.map
-      Effect.dealDamageToCreatureExileIfDies |>.orElse fun _ =>
-  leftoverDealDamageToEachOppCreature? action |>.map
-      Effect.dealDamageToEachOppCreature |>.orElse fun _ =>
-  (if leftoverDestroyArtifactToken? action then some Effect.destroyArtifactToken else none) |>.orElse
-    fun _ =>
-  leftoverChapterCompiled? action |>.orElse fun _ =>
+  else
+  match leftoverExileTopFaceDownPlayIf? action with
+  | some (n, st) => some (Effect.exileTopPlayIfYouControlSubtype n st)
+  | none =>
+  match leftoverNonDragonThenDragonMana? action with
+  | some n => some (Effect.dealDamageToEachNonDragonThenAddDragonMana n)
+  | none =>
+  match leftoverDealDamageExileIfDies? action with
+  | some n => some (Effect.dealDamageToCreatureExileIfDies n)
+  | none =>
+  match leftoverDealDamageToEachOppCreature? action with
+  | some n => some (Effect.dealDamageToEachOppCreature n)
+  | none =>
+  if leftoverDestroyArtifactToken? action then some Effect.destroyArtifactToken
+  else leftoverChapterCompiled? action
+
+/-- Middle alternatives of `leftoverCompiled?`. -/
+@[noinline]
+private def leftoverCompiledMiddle? (action : CardAction) : Option Effect :=
   if leftoverPlusOneThenEachOtherIfFromGy? action then
     some Effect.plusOneThenEachOtherIfFromGy
   else
@@ -715,9 +727,16 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
             else if leftoverExileThenReturnYouControl? action then
               some Effect.exileThenReturnYouControl
             else
-              (leftoverMillThenPutCompiled? action).orElse fun _ =>
-  (leftoverCreateThenTeamPump? action).orElse fun _ =>
-  (leftoverContinuousCompiled? action).orElse fun _ =>
+              match leftoverMillThenPutCompiled? action with
+              | some e => some e
+              | none =>
+                match leftoverCreateThenTeamPump? action with
+                | some e => some e
+                | none => leftoverContinuousCompiled? action
+
+/-- Last alternatives of `leftoverCompiled?`. -/
+@[noinline]
+private def leftoverCompiledTail? (action : CardAction) : Option Effect :=
   match leftoverDrawLoseLifeThenAmass? action with
   | some n => some (Effect.drawLoseLifeThenAmass n)
   | none =>
@@ -761,8 +780,17 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
                     | none =>
                       match leftoverGainLifeSearchBasicPlusOne? action with
                       | some n => some (Effect.gainLifeSearchBasicPlusOne n)
-                      | none =>
-                        leftoverPlusOneOnEachOtherSubtype? action
+                      | none => leftoverPlusOneOnEachOtherSubtype? action
+
+/-- Sequence leftovers that compile to a named `Effect` without taking
+only the first action. -/
+def leftoverCompiled? (action : CardAction) : Option Effect :=
+  match leftoverCompiledHead? action with
+  | some e => some e
+  | none =>
+    match leftoverCompiledMiddle? action with
+    | some e => some e
+    | none => leftoverCompiledTail? action
 
 /-- The number of artifact permanents opponents of this object's controller
 control. -/
