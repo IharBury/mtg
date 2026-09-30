@@ -873,18 +873,27 @@ def leftoverMayDiscardHandDrawDamageIfStory? : CardAction → Bool
   | _ => false
 
 /-- `for each opponent, exile up to one target nonland permanent that player
-controls until this leaves the battlefield.` -/
+controls until this leaves the battlefield.` The exile is numbered. When
+this ability's source leaves the battlefield, a replacement puts that
+exiled card onto the battlefield and the leave still happens. -/
 def leftoverExileOppNonlandEachUntilLeaves? : CardAction → Bool
   | .forEachVariable v (.opponent who) [
-      .exileUntil
-        (.targets _ (.range 0 1)
-          (.intersection [
-            .permanent,
-            .not (.cardType .land),
-            .controlled (.variable v')]))
-        src
+      .sequence [
+        .actionId id
+          (.exile
+            (.targets _ (.range 0 1)
+              (.intersection [
+                .permanent,
+                .not (.cardType .land),
+                .controlled (.variable v')]))),
+        .continuous
+          [.replace (.leave src) [
+            .putOntoBattlefield (.wasCreatedByAction id'),
+            .keepReplacedAction]]
+          .endOfGame
+      ]
     ] =>
-    v == v' && leftoverYou who && leftoverSourceThis src
+    v == v' && id == id' && leftoverYou who && leftoverSourceThis src
   | _ => false
 
 /-- Enters-the-battlefield actions that compile to a named trigger. -/

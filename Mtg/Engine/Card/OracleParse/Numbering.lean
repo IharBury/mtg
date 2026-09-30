@@ -92,7 +92,7 @@ def collectSelector : Selector → List Nat × List Nat
 def collectTrigger : Trigger → List Nat × List Nat
   | .endOfGame | .endOfTurn | .turnStart | .gameStart => ([], [])
   | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .enter s | .die s
-  | .discard s | .leaveGraveyard s | .returnToHand s | .putToGraveyard s
+  | .discard s | .leaveGraveyard s | .leave s | .returnToHand s | .putToGraveyard s
   | .giftPromised s | .counter s | .activateAbility s | .castSpell s
   | .castSpellFromGraveyard s | .precombatMainPhase s =>
     collectSelector s
@@ -198,8 +198,6 @@ def collectAction : CardAction → List Nat × List Nat
   | .shuffleIntoOwnersLibrary s | .lookAt s | .putOnLibraryBottomInRandomOrder s
   | .chooseCreatureType s | .removeAllCounters s =>
     collectSelector s
-  | .exileUntil objects untilLeaves =>
-    appendIds [collectSelector objects, collectSelector untilLeaves]
   | .dealDamage a b v =>
     appendIds [collectSelector a, collectSelector b, collectValue v]
   | .draw a v | .scry a v | .discard a v | .putCounter a _ v
@@ -352,6 +350,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
     .damageSimultaneously (mapSelector m a) (mapSelector m b) ps
   | .putToGraveyard s => .putToGraveyard (mapSelector m s)
   | .leaveGraveyard s => .leaveGraveyard (mapSelector m s)
+  | .leave s => .leave (mapSelector m s)
   | .returnToHand s => .returnToHand (mapSelector m s)
   | .discard s => .discard (mapSelector m s)
   | .putCountersSimultaneously a b k =>
@@ -530,8 +529,6 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .removeCounter a k v => .removeCounter (mapSelector m a) k (mapValue m v)
   | .removeAllCounters s => .removeAllCounters (mapSelector m s)
   | .exile s => .exile (mapSelector m s)
-  | .exileUntil objects untilLeaves =>
-    .exileUntil (mapSelector m objects) (mapSelector m untilLeaves)
   | .exileFaceDown s => .exileFaceDown (mapSelector m s)
   | .exchangeControl s => .exchangeControl (mapSelector m s)
   | .destroy s => .destroy (mapSelector m s)

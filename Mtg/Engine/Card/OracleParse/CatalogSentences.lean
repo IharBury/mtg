@@ -1114,10 +1114,12 @@ private def parseCatalogSentenceResolve (cardName s : String) (n : Nat) :
 
 /-- `for each opponent, exile up to one target nonland permanent that player
 controls until <this> leaves the battlefield.`
-Each opponent is variable `n`. That player's permanent is target `n + 1`,
-from zero through the printed maximum (CR 115.1). Exile lasts until this
-ability's source leaves the battlefield (CR 610.3). The return is a one-shot
-effect, not a triggered ability. -/
+Each opponent is variable `n`. The exile is action `n + 1`, and that
+player's permanent is target `n + 1`, from zero through the printed maximum
+(CR 115.1). A continuous replacement effect puts the exiled card onto the
+battlefield when this ability's source leaves, and the leave still happens
+(CR 614). No shorter duration is printed, so the replacement lasts until
+the end of the game (CR 611.2a). -/
 def parseForEachOpponentExileUntilLeaves (cardName sentence : String) (n : Nat) :
     Option (CardAction × Nat) :=
   (after? (normSentence sentence) "for each opponent, exile up to ").bind
@@ -1135,9 +1137,15 @@ def parseForEachOpponentExileUntilLeaves (cardName sentence : String) (n : Nat) 
                 | other => .intersection [other, .controlled (.variable n)]
               some (
                 .forEachVariable n (.opponent (.controller .this))
-                  [.exileUntil
-                    (.targets (n + 1) (.range 0 (Value.nat k)) controlled)
-                    (.source .this)],
+                  [.sequence [
+                    .actionId (n + 1)
+                      (.exile
+                        (.targets (n + 1) (.range 0 (Value.nat k)) controlled)),
+                    .continuous
+                      [.replace (.leave (.source .this)) [
+                        .putOntoBattlefield (.wasCreatedByAction (n + 1)),
+                        .keepReplacedAction]]
+                      .endOfGame]],
                 n + 2)
             | _, _ => none
 
