@@ -549,8 +549,10 @@ def parseSearchBasicBeholdUntap (ss : List String) (n : Nat) :
 control. When one or more Equipment become attached to that creature this way,
 that creature deals damage equal to its power to up to one target creature.`
 The Equipment are targets `n` and the creature is target `n + 1`. Attaching
-them is action `n + 2`. One or more of those Equipment is that action's
-objects. The damage target is `n + 3`. -/
+them takes the next number on this counter; `parseOracleParts` then numbers
+that action on its own sequence, so it does not consume a target number.
+One or more of those Equipment is that action's objects. The damage target
+is the next target after the creature. -/
 def parseAttachEquipmentThenDamage (cardName : String) (ss : List String) (n : Nat) :
     Option (List CardAction × Nat) :=
   match ss with

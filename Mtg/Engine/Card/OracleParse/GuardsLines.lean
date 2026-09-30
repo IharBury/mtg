@@ -473,12 +473,12 @@ open OracleParts
         .defineSelectorVariable 1
           (.selected (.controller .this) (.range 1 1)
             (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
-        .actionId 2
+        .actionId 1
           (.putOntoBattlefieldInState (.variable 1) [.tapped])],
       .optional (.controller .this)
-        (.actionId 3 (.keyword (.controller .this) (.behold .elf))),
-      .if (.happened (.actionWithId 3) .gameStart)
-        [.untap (.affectedByAction 2)]]))]
+        (.actionId 2 (.keyword (.controller .this) (.behold .elf))),
+      .if (.happened (.actionWithId 2) .gameStart)
+        [.untap (.affectedByAction 1)]]))]
 #guard parseOracleParts (name := "")
   "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land. (To behold an Elf, choose an Elf you control or reveal an Elf card from your hand.)" ==
   parseOracleParts (name := "")

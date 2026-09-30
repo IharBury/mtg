@@ -3267,9 +3267,9 @@ def blazingCrescendoDefinition : TraditionalCardDefinition := .card <|
         .addToughness
           (.targetReference 1) (Value.int 1)]
       .endOfTurn,
-    .actionId 2 (.exile (.topOfLibrary (.controller .this) 1)),
+    .actionId 1 (.exile (.topOfLibrary (.controller .this) 1)),
     .continuous
-      [.canPlay (.controller .this) (.wasCreatedByAction 2)]
+      [.canPlay (.controller .this) (.wasCreatedByAction 1)]
       (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]]
 
 def blazingCrescendo : CardDef :=
@@ -6336,16 +6336,16 @@ def worldsWithinWorldsDefinition : TraditionalCardDefinition := .card <|
     [
       .actionId 1 (.exile (.intersection [.permanent, .cardType .creature])),
       .forEachVariable
-        2
+        1
         .player
         [
           .optional
-            (.variable 2)
+            (.variable 1)
             (.putOntoBattlefield
               (.selected
-                (.variable 2)
+                (.variable 1)
                 .any
-                (.intersection [.inHand, .owner (.variable 2), .cardType .creature])))],
+                (.intersection [.inHand, .owner (.variable 1), .cardType .creature])))],
       .returnToHand (.wasCreatedByAction 1),
       .exile .this]]
 
@@ -7445,7 +7445,7 @@ def villainousHideoutDefinition : TraditionalCardDefinition := .card <|
       [.mana [.generic 3], .tapSymbol]
       (.keyword
         (.target
-          2
+          1
           (.intersection
             [.permanent, .cardType .creature, .subtype .villain, .controlled (.controller .this)]))
         (.connive (.nat 1))))]

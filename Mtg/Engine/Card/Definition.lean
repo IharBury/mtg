@@ -953,7 +953,9 @@ inductive CardAction where
   ordinal position from the top (CR 401.4). `1` is the top card;
   `2` is second from the top. -/
   | putIntoLibraryFromTop : Selector → Value → CardAction
-  /-- Number this action so later clauses can refer to it. -/
+  /-- Number this action so later clauses can refer to it.
+  The number is unique among action ids in a `TraditionalCardDefinition`.
+  It is not a target number. -/
   | actionId : Nat → CardAction → CardAction
   /-- The selected player loses that much life (CR 118.3). -/
   | loseLife : Selector → Value → CardAction
@@ -4772,7 +4774,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
             (.targets damageId (.range (.nat 0) (.nat 1))
               (.intersection [.permanent, .cardType .creature]))]]) =>
     if id == id' && creatureId == creatureId' &&
-        equipId + 1 == creatureId && creatureId + 1 == id && id + 1 == damageId then
+        equipId + 1 == creatureId && creatureId + 1 == damageId then
       some TriggeredAbility.onEnterAttachEquipmentThenFight
     else none
   | _ => none
@@ -8342,12 +8344,12 @@ end TraditionalCardDefinition
               (.controller .this)
               (.range 1 1)
               (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
-          .actionId 2
+          .actionId 1
             (.putOntoBattlefieldInState (.variable 1) [.tapped])],
       .optional (.controller .this)
-        (.actionId 3 (.keyword (.controller .this) (.behold .elf))),
-      .if (.happened (.actionWithId 3) .gameStart)
-        [.untap (.affectedByAction 2)]]
+        (.actionId 2 (.keyword (.controller .this) (.behold .elf))),
+      .if (.happened (.actionWithId 2) .gameStart)
+        [.untap (.affectedByAction 1)]]
   action.toAbilityEffect == Effect.searchBasicBeholdSubtypeUntap "Elf"
 
 #guard

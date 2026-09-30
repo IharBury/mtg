@@ -5941,12 +5941,12 @@ def elvenPassageDefinition : TraditionalCardDefinition := .card <|
         .defineSelectorVariable 1
           (.selected (.controller .this) (.range 1 1)
             (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
-        .actionId 2
+        .actionId 1
           (.putOntoBattlefieldInState (.variable 1) [.tapped])],
       .optional (.controller .this)
-        (.actionId 3 (.keyword (.controller .this) (.behold .elf))),
-      .if (.happened (.actionWithId 3) .gameStart)
-        [.untap (.affectedByAction 2)]]))]
+        (.actionId 2 (.keyword (.controller .this) (.behold .elf))),
+      .if (.happened (.actionWithId 2) .gameStart)
+        [.untap (.affectedByAction 1)]]))]
 
 def elvenPassage : CardDef :=
   elvenPassageDefinition.toCardDef (oracleText := elvenPassageOracle)
@@ -6160,7 +6160,7 @@ def orcristGoblinCleaverDefinition : TraditionalCardDefinition := .card <|
         [
           .actionId 1 (.chooseCreatureType (.controller .this)),
           .forEachVariable
-            2
+            1
             (.intersection
               [
                 .permanent,
@@ -6716,14 +6716,14 @@ def thorinMountainKingDefinition : TraditionalCardDefinition := .card <|
   .ability (.keyword .trample),
   .ability (.triggered (.enter .this)
     (.sequence [
-      .actionId 3 (.attach
+      .actionId 1 (.attach
         (.targets 1 .any
           (.intersection [.permanent, .subtype .equipment, .controlled (.controller .this)]))
         (.target 2
           (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)]))),
-      .if (.greaterOrEqual (.count (.wasObjectOfAction 3)) (.nat 1))
+      .if (.greaterOrEqual (.count (.wasObjectOfAction 1)) (.nat 1))
         [.dealDamageEqualToPower (.targetReference 2)
-          (.targets 4 (.range 0 1)
+          (.targets 3 (.range 0 1)
             (.intersection [.permanent, .cardType .creature]))]]))]
 
 def thorinMountainKing : CardDef :=
