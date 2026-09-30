@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.OracleParse.CatalogLines
+import Mtg.Engine.Card.OracleParse.Numbering
 
 /-!
 # Oracle lines
@@ -559,7 +560,8 @@ Returns `none` when a line, sentence, mode, or Adventure face is not
 recognized. Reminder parentheticals are not rules text. Empty text is
 `some []`. Successive spell lines are one effect, in printed order.
 `manaCost` is the card's printed mana cost. Only abilities that refer to
-that cost, such as power-up, read it. -/
+that cost, such as power-up, read it.
+Action ids and target numbers are separate sequences. Each starts at 1. -/
 def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol := []) :
     Option (List CardPart) :=
   let lines :=
@@ -568,9 +570,9 @@ def parseOracleParts (name : String) (text : String) (manaCost : List ManaSymbol
   (parseMainLines name manaCost main 1).bind fun (mainParts, n) =>
     let mainParts := mergeConsecutiveActions mainParts
     match adv with
-    | [] => some mainParts
+    | [] => some (separateActionIds mainParts)
     | _ =>
       (parseAdventure name adv n).map fun alt =>
-        mainParts ++ [.alternative alt]
+        separateActionIds (mainParts ++ [.alternative alt])
 
 end Mtg.Engine

@@ -861,7 +861,7 @@ open OracleParts
   "Whenever equipped creature deals combat damage to a player, choose a creature type. Create a Treasure token for each creature you control of that type." ==
   some [.ability (.triggered (.combatDamage (.hostOf .this) .player) (.sequence [
     .actionId 1 (.chooseCreatureType (.controller .this)),
-    .forEachVariable 2
+    .forEachVariable 1
       (.intersection [
         .permanent, .cardType .creature, .controlled (.controller .this),
         .hasCreatureTypeChosenByAction 1])
@@ -1132,8 +1132,8 @@ open OracleParts
   "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds." ==
   some [.actions [
     .actionId 1 (.exile (.intersection [.permanent, .cardType .creature])),
-    .forEachVariable 2 .player [.optional (.variable 2) (.putOntoBattlefield
-      (.selected (.variable 2) .any (.intersection [.inHand, .owner (.variable 2), .cardType .creature])))],
+    .forEachVariable 1 .player [.optional (.variable 1) (.putOntoBattlefield
+      (.selected (.variable 1) .any (.intersection [.inHand, .owner (.variable 1), .cardType .creature])))],
     .returnToHand (.wasCreatedByAction 1),
     .exile .this]]
 #guard parseOracleParts (name := "Worlds")
@@ -1193,6 +1193,43 @@ open OracleParts
   none
 #guard parseOracleParts (name := "Other Card")
   "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing." ==
+  none
+#guard parseOracleParts (name := "Enchanted River's Grasp")
+  "When this Aura enters, tap enchanted creature and remove all counters from it." ==
+  some [.ability (.triggered (.enter .this)
+    (.sequence [
+      .tap (.hostOf .this),
+      .removeAllCounters (.hostOf .this)]))]
+#guard parseOracleParts (name := "Enchanted River's Grasp")
+  "Enchanted creature loses all abilities and doesn't untap during its controller's untap step." ==
+  some [
+    .ability (.static (.removeAllAbilities (.hostOf .this))),
+    .ability (.static (.doesntUntap (.hostOf .this)))]
+#guard parseOracleParts (name := "Enchanted River's Grasp")
+  "Enchanted creature loses all abilities." == none
+#guard parseOracleParts (name := "Enchanted River's Grasp")
+  "When this Aura enters, tap enchanted creature." == none
+#guard parseOracleParts (name := "")
+  "Attach any number of target Equipment you control to target creature you control." ==
+  some [.actions [.attach
+    (.targets 1 .any equipmentYouControl)
+    (.target 2 creaturesYouControl)]]
+#guard parseOracleParts (name := "Thorin, Mountain-king")
+  "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature." ==
+  some [.ability (.triggered (.enter .this)
+    (.sequence [
+      .actionId 1 (.attach
+        (.targets 1 .any equipmentYouControl)
+        (.target 2 creaturesYouControl)),
+      .if (.greaterOrEqual (.count (.wasObjectOfAction 1)) 1)
+        [.dealDamageEqualToPower (.targetReference 2)
+          (.targets 3 (.range 0 1)
+            (.intersection [.permanent, .cardType .creature]))]]))]
+#guard parseOracleParts (name := "Thorin, Mountain-king")
+  "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its toughness to up to one target creature." ==
+  none
+#guard parseOracleParts (name := "Other Card")
+  "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature." ==
   none
 
 end Mtg.Engine

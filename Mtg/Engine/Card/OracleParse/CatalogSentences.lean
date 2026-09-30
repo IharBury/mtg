@@ -171,14 +171,18 @@ def parseTargetObject (s : String) : Option Selector :=
   parseObjectDesc s true
 
 /-- `target <object>`, `another target <object>`, `up to one target <object>`,
-`up to one other target <object>`, `each of up to two target <object>`, or
-`any target`, as target `n`. Up to N is zero through N (CR 115.1). `other`
-excludes this object. `any target` is a player or a permanent that can be
-dealt damage. -/
+`up to one other target <object>`, `each of up to two target <object>`,
+`any number of target <object>`, or `any target`, as target `n`. Up to N is
+zero through N (CR 115.1). `other` excludes this object. `any number` is zero
+to unbounded. `any target` is a player or a permanent that can be dealt
+damage. -/
 def parseTargetDesc (s : String) (n : Nat) : Option Selector :=
   let s := norm s
   if s == "any target" then some (.target n .all)
   else
+    let anyNumber :=
+      (after? s "any number of target ").bind fun obj =>
+        (parseTargetObject obj).map fun sel => .targets n .any sel
     let upTo :=
       (after? s "each of up to " <|> after? s "up to ").bind fun rest =>
         (split2? rest " target ").bind fun (countText, obj) =>
@@ -194,7 +198,7 @@ def parseTargetDesc (s : String) (n : Nat) : Option Selector :=
     let plain :=
       (after? s "target ").bind fun obj =>
         (parseTargetObject obj).map fun sel => .target n sel
-    upTo <|> another <|> plain
+    anyNumber <|> upTo <|> another <|> plain
 
 /-- A card in your graveyard: `creature card` or `artifact or enchantment card`. -/
 def parseGraveyardCard (s : String) : Option Selector :=
@@ -1023,10 +1027,21 @@ def parseTargetPlayerDraws (sentence : String) (n : Nat) : Option (CardAction ×
     (counted " card" false <|> counted " cards" true).map fun k =>
       (.draw (.target n .player) (Value.nat k), n + 1)
 
+/-- `tap enchanted creature and remove all counters from it`. The creature is
+this Aura's host. -/
+def parseTapEnchantedRemoveCounters (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  if sentenceIs sentence "tap enchanted creature and remove all counters from it" then
+    some (.sequence [
+      .tap (.hostOf .this),
+      .removeAllCounters (.hostOf .this)], n)
+  else none
+
 /-- Creating, drawing, and pumping sentences of a catalog effect. -/
 private def parseCatalogSentenceCreate (cardName sentence s : String) (n : Nat) :
     Option (CardAction × Nat) :=
-  (parseCreateNamedCreatureTokens sentence).map (·, n) <|>
+  parseTapEnchantedRemoveCounters sentence n <|>
+    (parseCreateNamedCreatureTokens sentence).map (·, n) <|>
     parseYouMay sentence n <|>
     parseTargetPlayerDraws sentence n <|>
     parseDoubleTargetPowerToughness s n <|>

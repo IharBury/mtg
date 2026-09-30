@@ -367,7 +367,7 @@ inductive Selector where
   /-- A numbered target matching the given selector (CR 115.1). Later
   effects may refer to it with `targetReference`. The number is unique
   within a `TraditionalCardDefinition`, including `targets` /
-  `targetSet`. -/
+  `targetSet`. Action ids are a separate sequence. -/
   | target : Nat → Selector → Selector
   /-- Numbered targets matching the given selector, with a count range.
   The number is unique within a `TraditionalCardDefinition`, including

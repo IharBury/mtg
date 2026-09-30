@@ -55,8 +55,9 @@ An Unexpected Party, Azog, Moria's Ruin, Balin, Loremaster,
 Boughside Wanderers, Burn, Burn, Tree and Fern, Cantankerous Keepers,
 Bilbo's Gambit, Down in the Valley, Gleaming Splendor, Lake-town Toymaker,
 Orcrist, Goblin-cleaver,
-Radagast of Rhosgobel, The Misty Mountains Cold, and Through the Forest
-Gate keep their printed characteristics as parts;
+Radagast of Rhosgobel, The Misty Mountains Cold, Enchanted River's Grasp,
+Thorin, Mountain-king, and Through the Forest Gate keep their printed
+characteristics as parts;
 `parseOracleParts` reads the Oracle text into the rest, using the card
 name for references to itself. These cards' text is fully recognized;
 an unrecognized part fails the parse.
@@ -5940,12 +5941,12 @@ def elvenPassageDefinition : TraditionalCardDefinition := .card <|
         .defineSelectorVariable 1
           (.selected (.controller .this) (.range 1 1)
             (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
-        .actionId 2
+        .actionId 1
           (.putOntoBattlefieldInState (.variable 1) [.tapped])],
       .optional (.controller .this)
-        (.actionId 3 (.keyword (.controller .this) (.behold .elf))),
-      .if (.happened (.actionWithId 3) .gameStart)
-        [.untap (.affectedByAction 2)]]))]
+        (.actionId 2 (.keyword (.controller .this) (.behold .elf))),
+      .if (.happened (.actionWithId 2) .gameStart)
+        [.untap (.affectedByAction 1)]]))]
 
 def elvenPassage : CardDef :=
   elvenPassageDefinition.toCardDef (oracleText := elvenPassageOracle)
@@ -5956,10 +5957,42 @@ def elvenPassage : CardDef :=
   activated (Effect.searchBasicBeholdSubtypeUntap "Elf") (tap := true) (payLife := 1)
     (sacrificeSource := true)]
 
+/-- Oracle text for Enchanted River's Grasp. -/
+def enchantedRiverSGraspOracle : String :=
+  "Enchant creature\nWhen this Aura enters, tap enchanted creature and remove all counters from it.\nEnchanted creature loses all abilities and doesn't untap during its controller's untap step."
+
+def enchantedRiverSGraspDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Enchanted River's Grasp",
+    .manaCost [.generic 2, .mono .blue],
+    .type .enchantment,
+    .subtype .aura
+  ] ++ (parseOracleParts (name := "Enchanted River's Grasp") enchantedRiverSGraspOracle).get!
+
+#guard enchantedRiverSGraspDefinition == .card [
+  .name "Enchanted River's Grasp",
+  .manaCost [.generic 2, .mono .blue],
+  .type .enchantment,
+  .subtype .aura,
+  .ability (.keywordWithTarget .enchant 1
+    (.intersection [.permanent, .cardType .creature])),
+  .ability (.triggered (.enter .this)
+    (.sequence [
+      .tap (.hostOf .this),
+      .removeAllCounters (.hostOf .this)])),
+  .ability (.static (.removeAllAbilities (.hostOf .this))),
+  .ability (.static (.doesntUntap (.hostOf .this)))]
+
 def enchantedRiverSGrasp : CardDef :=
-  aura "Enchanted River's Grasp" (ManaCost.ofGenericAndColor 2 .blue) "Enchant creature\nWhen this Aura enters, tap enchanted creature and remove all counters from it.\nEnchanted creature loses all abilities and doesn't untap during its controller's untap step."
-    (staticAbilities := #[.enchantedLosesAbilitiesDoesntUntap])
-    (triggeredAbilities := #[.onEnterTapEnchantedRemoveCounters])
+  enchantedRiverSGraspDefinition.toCardDef (oracleText := enchantedRiverSGraspOracle)
+
+#guard enchantedRiverSGrasp.types == #[.enchantment]
+#guard enchantedRiverSGrasp.hasSubtype "Aura"
+#guard enchantedRiverSGrasp.manaCost == ManaCost.ofGenericAndColor 2 .blue
+#guard enchantedRiverSGrasp.oracleText == enchantedRiverSGraspOracle
+#guard enchantedRiverSGrasp.staticAbilities == #[.enchantedLosesAbilitiesDoesntUntap]
+#guard enchantedRiverSGrasp.triggeredAbilities == #[.onEnterTapEnchantedRemoveCounters]
+#guard enchantedRiverSGrasp.removesAllAbilitiesFrom == #[.hostOf .this]
 
 def getawayBarrel : CardDef :=
   artifact "Getaway Barrel" (ManaCost.ofGenericAndColor 3 .red) "When this artifact is put into a graveyard from the battlefield, reveal the top thirteen cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."
@@ -6127,7 +6160,7 @@ def orcristGoblinCleaverDefinition : TraditionalCardDefinition := .card <|
         [
           .actionId 1 (.chooseCreatureType (.controller .this)),
           .forEachVariable
-            2
+            1
             (.intersection
               [
                 .permanent,
@@ -6655,10 +6688,56 @@ def theSackvilleBagginses : CardDef :=
   .onEnterMaySacDrawTreasure,
   .onYouSacrificeTokenOppLosesLife]
 
+/-- Oracle text for Thorin, Mountain-king. -/
+def thorinMountainKingOracle : String :=
+  "Trample\nWhen Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature."
+
+def thorinMountainKingDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Thorin, Mountain-king",
+    .manaCost [.generic 3, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .noble,
+    .power 3,
+    .toughness 4
+  ] ++ (parseOracleParts (name := "Thorin, Mountain-king") thorinMountainKingOracle).get!
+
+#guard thorinMountainKingDefinition == .card [
+  .name "Thorin, Mountain-king",
+  .manaCost [.generic 3, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .noble,
+  .power 3,
+  .toughness 4,
+  .ability (.keyword .trample),
+  .ability (.triggered (.enter .this)
+    (.sequence [
+      .actionId 1 (.attach
+        (.targets 1 .any
+          (.intersection [.permanent, .subtype .equipment, .controlled (.controller .this)]))
+        (.target 2
+          (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)]))),
+      .if (.greaterOrEqual (.count (.wasObjectOfAction 1)) (.nat 1))
+        [.dealDamageEqualToPower (.targetReference 2)
+          (.targets 3 (.range 0 1)
+            (.intersection [.permanent, .cardType .creature]))]]))]
+
 def thorinMountainKing : CardDef :=
-  legendaryCreature "Thorin, Mountain-king" (ManaCost.ofGenericAndColor 3 .red) #["Dwarf", "Noble"] 3 4 (oracleText := "Trample\nWhen Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature.")
-    (keywords := Keyword.trample)
-    (triggeredAbilities := #[.onEnterAttachEquipmentThenFight])
+  thorinMountainKingDefinition.toCardDef (oracleText := thorinMountainKingOracle)
+
+#guard thorinMountainKing.keywords.trample
+#guard thorinMountainKing.triggeredAbilities == #[.onEnterAttachEquipmentThenFight]
+#guard thorinMountainKing.power == some 3
+#guard thorinMountainKing.toughness == some 4
+#guard thorinMountainKing.supertypes.any (· == .legendary)
+#guard thorinMountainKing.hasSubtype "Dwarf"
+#guard thorinMountainKing.hasSubtype "Noble"
+#guard thorinMountainKing.manaCost == ManaCost.ofGenericAndColor 3 .red
+#guard thorinMountainKing.oracleText == thorinMountainKingOracle
 
 /-- Gatherer Oracle text for Thranduil's Company. -/
 def thranduilSCompanyOracle : String :=

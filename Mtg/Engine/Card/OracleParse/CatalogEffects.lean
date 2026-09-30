@@ -545,13 +545,46 @@ def parseSearchBasicBeholdUntap (ss : List String) (n : Nat) :
       | _, _ => none
   | _ => none
 
+/-- `attach any number of target Equipment you control to target creature you
+control. When one or more Equipment become attached to that creature this way,
+that creature deals damage equal to its power to up to one target creature.`
+The Equipment are targets `n` and the creature is target `n + 1`. Attaching
+them takes the next number on this counter; `parseOracleParts` then numbers
+that action on its own sequence, so it does not consume a target number.
+One or more of those Equipment is that action's objects. The damage target
+is the next target after the creature. -/
+def parseAttachEquipmentThenDamage (cardName : String) (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [attach, reflex] =>
+    if !sentenceIs reflex
+        "when one or more equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature" then
+      none
+    else
+      match parseCatalogAttach cardName attach n with
+      | some (.attach attached host, nAttach) =>
+        let id := n + 2
+        if attached == .targets n .any equipmentYouControl &&
+            host == .target (n + 1) creaturesYouControl && nAttach == id then
+          some ([
+            .actionId id (.attach attached host),
+            .if (.greaterOrEqual (.count (.wasObjectOfAction id)) (.nat 1))
+              [.dealDamageEqualToPower (.targetReference (n + 1))
+                (.targets (id + 1) (.range 0 1)
+                  (.intersection [.permanent, .cardType .creature]))]],
+            id + 2)
+        else none
+      | _ => none
+  | _ => none
+
 /-- Every sentence of `text` as catalog actions, in order. Multi-sentence
 templates come first. A leading sentence may come before exiling the top card
 to play later. -/
 def catalogActionsFromText (cardName text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   let ss := sentences text
-  parseSearchBasicBeholdUntap ss n <|>
+  parseAttachEquipmentThenDamage cardName ss n <|>
+    parseSearchBasicBeholdUntap ss n <|>
     parseMayIfYouDo cardName ss n <|>
     parseThenIfControlSacrificeIfYouDo cardName ss n <|>
     parseDestroyAmassPowerDrawIfYours ss n <|>
