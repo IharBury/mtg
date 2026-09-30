@@ -172,6 +172,21 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
     if id == id' && v == v' && leftoverYou who && leftoverYou chooser then
       some Effect.chapterOpponentDiscardsNonland
     else none
+  | .keyword who .recruit =>
+    if leftoverYou who then some Effect.chapterRecruit else none
+  | .putOntoBattlefield
+      (.target _ (.intersection [
+        .inGraveyard,
+        .cardType .creature,
+        .owner (.controller .this),
+        .manaValueAtMost (.nat k)])) =>
+    if k != 0 then some (Effect.chapterReturnCreatureFromGyMvAtMost k) else none
+  | .putCounter
+      (.targets _ (.range (.nat 0) (.nat 1))
+        (.intersection [.permanent, .cardType .creature]))
+      .plusOnePlusOne
+      (.nat 1) =>
+    some Effect.chapterPlusOneUpToOne
   | _ => none
 
 /-- This deals N damage to each creature that isn't of a subtype and to each

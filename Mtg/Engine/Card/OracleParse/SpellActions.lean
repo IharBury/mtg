@@ -229,6 +229,11 @@ def parseYouDrawCardLoseLife (sentence : String) : Option CardAction :=
 def amassSubtype? (s : String) : Option CardSubtype :=
   if s.endsWith "s" && s.length > 1 then subtypeOfOracle? (s.dropEnd 1).copy else none
 
+/-- `Recruit.` Recruit is a keyword action of this card's controller
+(CR 701.57). A reminder parenthetical is not rules text. -/
+def parseRecruit (sentence : String) : Option CardAction :=
+  if sentenceIs sentence "recruit" then some (.keyword (.controller .this) .recruit) else none
+
 /-- `Draw a card.` / `Draw two cards.` The player is this spell's controller.
 One card is singular. More than one is plural. -/
 def parseDrawCards (sentence : String) : Option CardAction :=
@@ -443,6 +448,7 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
     parseYouGainLife sentence n <|>
     unchanged (parseYouDrawCardLoseLife sentence) n <|>
     unchanged (parseAmass sentence) n <|>
+    unchanged (parseRecruit sentence) n <|>
     parseReturnUpToOneFromYourGraveyard sentence n <|>
     parseAdditionalLand sentence n <|>
     parseScry sentence n <|>

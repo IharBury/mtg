@@ -6711,14 +6711,66 @@ def theMistyMountainsCold : CardDef :=
     chapter "I, II, III, IV" "Create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying. (A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")"
       (Effect.chapterTreasureThenDragonIfFour)] }
 
+/-- Oracle text for The Mountain-king's Return. -/
+def theMountainKingSReturnOracle : String :=
+  "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)\nII — Return target creature card with mana value 3 or less from your graveyard to the battlefield.\nIII — Put a +1/+1 counter on up to one target creature."
+
+def theMountainKingSReturnDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "The Mountain-king's Return",
+    .manaCost [.generic 2, .mono .white],
+    .type .enchantment,
+    .subtype .saga
+  ] ++ (parseOracleParts (name := "The Mountain-king's Return")
+    theMountainKingSReturnOracle).get!
+
+#guard theMountainKingSReturnDefinition == .card [
+  .name "The Mountain-king's Return",
+  .manaCost [.generic 2, .mono .white],
+  .type .enchantment,
+  .subtype .saga,
+  .ability
+    (.keywordWithEffect
+      (.chapter 1)
+      [.keyword (.controller .this) .recruit]),
+  .ability
+    (.keywordWithEffect
+      (.chapter 2)
+      [.putOntoBattlefield
+        (.target 1
+          (.intersection [
+            .inGraveyard,
+            .cardType .creature,
+            .owner (.controller .this),
+            .manaValueAtMost (.nat 3)]))]),
+  .ability
+    (.keywordWithEffect
+      (.chapter 3)
+      [.putCounter
+        (.targets 2 (.range 0 1)
+          (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1])]
+
 def theMountainKingSReturn : CardDef :=
-  saga "The Mountain-king's Return" (ManaCost.ofGenericAndColor 2 .white) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)\nII — Return target creature card with mana value 3 or less from your graveyard to the battlefield.\nIII — Put a +1/+1 counter on up to one target creature." "III" #[
-    chapter "I" "Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+  theMountainKingSReturnDefinition.toCardDef (oracleText := theMountainKingSReturnOracle)
+
+#guard theMountainKingSReturn.oracleText == theMountainKingSReturnOracle
+#guard theMountainKingSReturn.manaCost == ManaCost.ofGenericAndColor 2 .white
+#guard theMountainKingSReturn.types == #[.enchantment]
+#guard theMountainKingSReturn.hasSubtype "Saga"
+#guard theMountainKingSReturn.saga == some {
+  sacrificeAfter := "III"
+  chapters := #[
+    chapter "I"
+      "Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
       (Effect.chapterRecruit),
-    chapter "II" "Return target creature card with mana value 3 or less from your graveyard to the battlefield."
+    chapter "II"
+      "Return target creature card with mana value 3 or less from your graveyard to the battlefield."
       (Effect.chapterReturnCreatureFromGyMvAtMost 3),
-    chapter "III" "Put a +1/+1 counter on up to one target creature."
-      (Effect.chapterPlusOneUpToOne)]
+    chapter "III"
+      "Put a +1/+1 counter on up to one target creature."
+      (Effect.chapterPlusOneUpToOne)] }
 
 def theNotaryHobbits : CardDef :=
   legendaryCreature "The Notary Hobbits" (ManaCost.ofGenericAndColors 3 [.green, .green]) #["Halfling", "Advisor"] 1 1 (oracleText := "When The Notary Hobbits enter, if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary.\n{T}: Add {C} for each Halfling you control.")
@@ -6942,9 +6994,45 @@ def tomBertAndWilliam : CardDef :=
         (sacrificeAnotherSubtype := some "creature")])
     (triggeredAbilities := #[.onDiesReturnAsArtifact])
 
+/-- Oracle text for Uncover the Moon-Letters. -/
+def uncoverTheMoonLettersOracle : String :=
+  "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
+
+def uncoverTheMoonLettersDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Uncover the Moon-Letters",
+    .manaCost [.generic 3, .mono .blue],
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "Uncover the Moon-Letters")
+    uncoverTheMoonLettersOracle).get!
+
+#guard uncoverTheMoonLettersDefinition == .card [
+  .name "Uncover the Moon-Letters",
+  .manaCost [.generic 3, .mono .blue],
+  .type .enchantment,
+  .ability
+    (.triggered
+      (.triggerId 1
+        (.castSpell
+          (.intersection [
+            .spell,
+            .not (.cardType .creature),
+            .controlled (.controller .this)])))
+      (.sequence [
+        .optional (.controller .this)
+          (.actionId 1
+            (.draw (.controller .this)
+              (.manaSpent (.wasArgumentOfTrigger 1 1)))),
+        .if (.happened (.actionWithId 1) .gameStart)
+          [.discard (.controller .this) 2]]))]
+
 def uncoverTheMoonLetters : CardDef :=
-  enchantment "Uncover the Moon-Letters" (ManaCost.ofGenericAndColor 3 .blue) "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
-    (triggeredAbilities := #[.onCastNoncreatureMayDrawXDiscard2])
+  uncoverTheMoonLettersDefinition.toCardDef (oracleText := uncoverTheMoonLettersOracle)
+
+#guard uncoverTheMoonLetters.oracleText == uncoverTheMoonLettersOracle
+#guard uncoverTheMoonLetters.manaCost == ManaCost.ofGenericAndColor 3 .blue
+#guard uncoverTheMoonLetters.types == #[.enchantment]
+#guard uncoverTheMoonLetters.triggeredAbilities == #[.onCastNoncreatureMayDrawXDiscard2]
 
 def wizardSStaff : CardDef :=
   equipment "Wizard's Staff" (ManaCost.ofGenericAndColor 1 .blue) "Equipped creature has prowess. (Whenever its controller casts a noncreature spell, that creature gets +1/+1 until end of turn.)\nIf a triggered ability of equipped creature triggers, that ability triggers an additional time.\nEquip Wizard {1}\nEquip {3}"

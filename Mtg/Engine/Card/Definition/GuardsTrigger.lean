@@ -306,6 +306,55 @@ namespace Mtg.Engine
   | none => false
 
 #guard
+  (Ability.triggered
+    (.triggerId 1
+      (.castSpell
+        (.intersection [
+          .spell,
+          .not (.cardType .creature),
+          .controlled (.controller .this)])))
+    (.sequence [
+      .optional (.controller .this)
+        (.actionId 1
+          (.draw (.controller .this) (.manaSpent (.wasArgumentOfTrigger 1 1)))),
+      .if (.happened (.actionWithId 1) .gameStart)
+        [.discard (.controller .this) 2]])).toTriggeredAbility? ==
+    some TriggeredAbility.onCastNoncreatureMayDrawXDiscard2
+
+-- Mana value is not mana spent.
+#guard
+  (Ability.triggered
+    (.triggerId 1
+      (.castSpell
+        (.intersection [
+          .spell,
+          .not (.cardType .creature),
+          .controlled (.controller .this)])))
+    (.sequence [
+      .optional (.controller .this)
+        (.actionId 1
+          (.draw (.controller .this)
+            (.greatestManaValue (.wasArgumentOfTrigger 1 1)))),
+      .if (.happened (.actionWithId 1) .gameStart)
+        [.discard (.controller .this) 2]])).toTriggeredAbility?.isNone
+
+-- Discarding one card is not discarding two.
+#guard
+  (Ability.triggered
+    (.triggerId 1
+      (.castSpell
+        (.intersection [
+          .spell,
+          .not (.cardType .creature),
+          .controlled (.controller .this)])))
+    (.sequence [
+      .optional (.controller .this)
+        (.actionId 1
+          (.draw (.controller .this) (.manaSpent (.wasArgumentOfTrigger 1 1)))),
+      .if (.happened (.actionWithId 1) .gameStart)
+        [.discard (.controller .this) 1]])).toTriggeredAbility?.isNone
+
+#guard
   match
     (Ability.triggered
       (.attackSimultaneously

@@ -37,6 +37,35 @@ def parseCantBeBlockedIfOwnPower (cardName line : String) : Option CardPart :=
           (.lessOrEqual (.greatestPower (.source .this)) (.nat p))
           [.forbid (.block .any (.source .this))]))
 
+/-- `Whenever you cast a noncreature spell, you may draw X cards, where X is
+the amount of mana spent to cast that spell. If you do, discard two cards.`
+The spell is trigger `n`. Drawing is action `n`, and X is the mana spent to
+cast that spell (CR 601.2h), not its mana value. Discarding two cards
+happens only when that draw is taken. -/
+def parseCastNoncreatureMayDrawManaSpent (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (splitTrigger? line).bind fun (clause, effect) =>
+    match (sentences effect).map normSentence with
+    | [may, ifYouDo] =>
+      if norm clause != "you cast a noncreature spell" ||
+          may != "you may draw x cards, where x is the amount of mana spent to cast that spell" ||
+          ifYouDo != "if you do, discard two cards" then none
+      else
+        some (
+          .ability (.triggered
+            (.triggerId n
+              (.castSpell (.intersection [
+                .spell, .not (.cardType .creature), youControl])))
+            (.sequence [
+              .optional (.controller .this)
+                (.actionId n
+                  (.draw (.controller .this)
+                    (.manaSpent (.wasArgumentOfTrigger n 1)))),
+              .if (.happened (.actionWithId n) .gameStart)
+                [.discard (.controller .this) 2]])),
+          n + 1)
+    | _ => none
+
 /-- `Whenever you cast a creature spell, put X +1/+1 counters on target
 creature you control, where X is that spell's mana value.` The spell is
 trigger `n` and the creature is target `n`. -/
@@ -194,6 +223,7 @@ private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     sole (parseCreaturesWithPlusOneHaveMenace line) n <|>
     sole (parseYouCastNoncreatureAmass line) n <|>
     sole (parseYouCastNoncreaturePumpAndDamage cardName line) n <|>
+    carry (parseCastNoncreatureMayDrawManaSpent line n) <|>
     sole (parseYouCastSpellIfTreasureDrawLoseLife line) n
 
 /-- Attack, enters, and other triggered lines. -/

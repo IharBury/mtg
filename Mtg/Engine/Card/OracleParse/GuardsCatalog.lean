@@ -1240,5 +1240,53 @@ open OracleParts
 #guard parseOracleParts (name := "Down, Down to Goblin-town")
   "I — Target player reveals their hand. You choose a nonland card from it. That player discards that card." ==
   none
+#guard parseOracleParts (name := "The Mountain-king's Return")
+  "I — Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)" ==
+  some [.ability (.keywordWithEffect (.chapter 1) [.keyword (.controller .this) .recruit])]
+#guard parseOracleParts (name := "")
+  "II — Return target creature card with mana value 3 or less from your graveyard to the battlefield." ==
+  some [.ability (.keywordWithEffect (.chapter 2)
+    [.putOntoBattlefield
+      (.target 1
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this),
+          .manaValueAtMost (.nat 3)]))])]
+#guard parseOracleParts (name := "")
+  "II — Return target creature card with mana value 0 or less from your graveyard to the battlefield." ==
+  none
+#guard parseOracleParts (name := "")
+  "II — Return target creature card with mana value 3 or greater from your graveyard to the battlefield." ==
+  none
+#guard parseOracleParts (name := "")
+  "III — Put a +1/+1 counter on up to one target creature." ==
+  some [.ability (.keywordWithEffect (.chapter 3)
+    [.putCounter
+      (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
+      .plusOnePlusOne
+      1])]
+#guard parseOracleParts (name := "Uncover the Moon-Letters")
+  "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards." ==
+  some [.ability (.triggered
+    (.triggerId 1
+      (.castSpell
+        (.intersection [
+          .spell, .not (.cardType .creature), .controlled (.controller .this)])))
+    (.sequence [
+      .optional (.controller .this)
+        (.actionId 1
+          (.draw (.controller .this) (.manaSpent (.wasArgumentOfTrigger 1 1)))),
+      .if (.happened (.actionWithId 1) .gameStart)
+        [.discard (.controller .this) 2]]))]
+#guard parseOracleParts (name := "Uncover the Moon-Letters")
+  "Whenever you cast a creature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards." ==
+  none
+#guard parseOracleParts (name := "Uncover the Moon-Letters")
+  "Whenever you cast a noncreature spell, you may draw X cards, where X is that spell's mana value. If you do, discard two cards." ==
+  none
+#guard parseOracleParts (name := "Uncover the Moon-Letters")
+  "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard a card." ==
+  none
 
 end Mtg.Engine

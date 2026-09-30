@@ -460,6 +460,20 @@ def parseDestroyTarget (sentence : String) (n : Nat) : Option (CardAction × Nat
   (after? (normSentence sentence) "destroy ").bind fun who =>
     (parseTargetDesc who n).map fun sel => (.destroy sel, n + 1)
 
+/-- `Return target creature card with mana value 3 or less from your graveyard to the battlefield.`
+The card is in your graveyard, and its mana value is at most `N` (CR 202.3).
+`N` is a positive printed number. The target is numbered `n`. -/
+def parseReturnMvAtMostToBattlefield (sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  (between? (normSentence sentence)
+      "return target " " from your graveyard to the battlefield").bind fun obj =>
+    (split2? obj " with mana value ").bind fun (card, bound) =>
+      (before? bound " or less").bind positiveCount |>.bind fun k =>
+        (parseGraveyardCard card).map fun sel =>
+          (.putOntoBattlefield
+            (.target n (extendIntersection [] sel [.manaValueAtMost (.nat k)])),
+           n + 1)
+
 /-- `Return <target card> from your graveyard to your hand`, or
 `Return <target> to its owner's hand`. A spell is on the stack. -/
 def parseReturnToHand (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -1088,6 +1102,7 @@ private def parseCatalogSentenceResolve (cardName s : String) (n : Nat) :
     parseSelfDealsDamageEqualToPower cardName s n <|>
     parseDealsDividedDamage cardName s n <|>
     parseDestroyTarget s n <|>
+    parseReturnMvAtMostToBattlefield s n <|>
     parseReturnToHand s n <|>
     parseTargetPlayerMills s n <|>
     parseLoseLife s n <|>
