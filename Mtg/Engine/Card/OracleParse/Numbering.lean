@@ -198,6 +198,8 @@ def collectAction : CardAction → List Nat × List Nat
   | .shuffleIntoOwnersLibrary s | .lookAt s | .putOnLibraryBottomInRandomOrder s
   | .chooseCreatureType s | .removeAllCounters s =>
     collectSelector s
+  | .exileUntil objects untilLeaves =>
+    appendIds [collectSelector objects, collectSelector untilLeaves]
   | .dealDamage a b v =>
     appendIds [collectSelector a, collectSelector b, collectValue v]
   | .draw a v | .scry a v | .discard a v | .putCounter a _ v
@@ -528,6 +530,8 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .removeCounter a k v => .removeCounter (mapSelector m a) k (mapValue m v)
   | .removeAllCounters s => .removeAllCounters (mapSelector m s)
   | .exile s => .exile (mapSelector m s)
+  | .exileUntil objects untilLeaves =>
+    .exileUntil (mapSelector m objects) (mapSelector m untilLeaves)
   | .exileFaceDown s => .exileFaceDown (mapSelector m s)
   | .exchangeControl s => .exchangeControl (mapSelector m s)
   | .destroy s => .destroy (mapSelector m s)

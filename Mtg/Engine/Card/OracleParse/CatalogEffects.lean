@@ -577,13 +577,39 @@ def parseAttachEquipmentThenDamage (cardName : String) (ss : List String) (n : N
       | _ => none
   | _ => none
 
+/-- `Target opponent reveals their hand. You choose a nonland card from it.
+That player discards that card.`
+The opponent is target `n`. Revealing that hand is action `n`. The chosen
+nonland card, from among the revealed cards, is variable `n + 1`. That
+player discards the chosen card. -/
+def parseOpponentRevealsChooseNonlandDiscard (ss : List String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  match ss with
+  | [reveal, choose, discard] =>
+    if sentenceIs reveal "target opponent reveals their hand" &&
+        sentenceIs choose "you choose a nonland card from it" &&
+        sentenceIs discard "that player discards that card" then
+      some ([
+        .actionId n
+          (.reveal
+            (.intersection [
+              .inHand,
+              .owner (.target n (.opponent (.controller .this)))])),
+        .defineSelectorVariable (n + 1)
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [.wasObjectOfAction n, .not (.cardType .land)])),
+        .discard (.variable (n + 1)) 1], n + 2)
+    else none
+  | _ => none
+
 /-- Every sentence of `text` as catalog actions, in order. Multi-sentence
 templates come first. A leading sentence may come before exiling the top card
 to play later. -/
 def catalogActionsFromText (cardName text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   let ss := sentences text
-  parseAttachEquipmentThenDamage cardName ss n <|>
+  parseOpponentRevealsChooseNonlandDiscard ss n <|>
+    parseAttachEquipmentThenDamage cardName ss n <|>
     parseSearchBasicBeholdUntap ss n <|>
     parseMayIfYouDo cardName ss n <|>
     parseThenIfControlSacrificeIfYouDo cardName ss n <|>

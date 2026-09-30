@@ -1112,15 +1112,45 @@ private def parseCatalogSentenceResolve (cardName s : String) (n : Nat) :
       | .attach _ (.target _ _) => some (action, n')
       | _ => none
 
+/-- `for each opponent, exile up to one target nonland permanent that player
+controls until <this> leaves the battlefield.`
+Each opponent is variable `n`. That player's permanent is target `n + 1`,
+from zero through the printed maximum (CR 115.1). Exile lasts until this
+ability's source leaves the battlefield (CR 610.3). The return is a one-shot
+effect, not a triggered ability. -/
+def parseForEachOpponentExileUntilLeaves (cardName sentence : String) (n : Nat) :
+    Option (CardAction × Nat) :=
+  (after? (normSentence sentence) "for each opponent, exile up to ").bind
+    (split2? · " target ") |>.bind fun (countText, rest) =>
+      (split2? rest " that player controls until ").bind fun (obj, untilText) =>
+        (before? untilText " leaves the battlefield").bind fun who =>
+          if !refersToSelf cardName who then none
+          else
+            match positiveCount countText, parseTargetObject obj with
+            | some k, some sel =>
+              let controlled :=
+                match sel with
+                | .intersection parts =>
+                  .intersection (parts ++ [.controlled (.variable n)])
+                | other => .intersection [other, .controlled (.variable n)]
+              some (
+                .forEachVariable n (.opponent (.controller .this))
+                  [.exileUntil
+                    (.targets (n + 1) (.range 0 (Value.nat k)) controlled)
+                    (.source .this)],
+                n + 2)
+            | _, _ => none
+
 /-- One sentence of a catalog effect. A leading `Then` is sequencing only.
 `You create` is `create`. -/
 @[noinline]
 def parseCatalogSentenceOnce (cardName sentence : String) (n : Nat) :
     Option (CardAction × Nat) :=
-  let s := (after? (normSentence sentence) "then ").getD (normSentence sentence)
-  let s := (after? s "you create ").map ("create " ++ ·) |>.getD s
-  parseCatalogSentenceCreate cardName sentence s n <|>
-    parseCatalogSentenceResolve cardName s n
+  parseForEachOpponentExileUntilLeaves cardName sentence n <|>
+    let s := (after? (normSentence sentence) "then ").getD (normSentence sentence)
+    let s := (after? s "you create ").map ("create " ++ ·) |>.getD s
+    parseCatalogSentenceCreate cardName sentence s n <|>
+      parseCatalogSentenceResolve cardName s n
 
 /-- One sentence, or two clauses joined by `, then` or `and` when the whole
 sentence is not one action. Existing sentence templates come first. -/

@@ -147,7 +147,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
                   | .removeCounter _ _ _ | .removeAllCounters _ =>
                     continuousEffect none [] asAbility
-                  | .exile _ | .exileFaceDown _ =>
+                  | .exile _ | .exileFaceDown _ | .exileUntil _ _ =>
                     continuousEffect none [] asAbility
                   | .exchangeControl _ => Effect.exchangeControlSharingType
                   | .destroy s =>

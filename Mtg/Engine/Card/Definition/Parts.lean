@@ -227,6 +227,11 @@ inductive CardAction where
   | removeAllCounters : Selector → CardAction
   /-- Exile the selected object. -/
   | exile : Selector → CardAction
+  /-- Exile the selected objects until the second permanent leaves the
+  battlefield. They return under their owner's control (CR 610.3). The
+  return is a one-shot effect of the spell or ability that exiled them,
+  not a triggered ability. -/
+  | exileUntil : Selector → Selector → CardAction
   /-- Exile the selected objects face down (CR 406.3). -/
   | exileFaceDown : Selector → CardAction
   /-- Exchange control of the selected objects. -/

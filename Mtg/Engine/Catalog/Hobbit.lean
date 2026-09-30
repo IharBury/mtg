@@ -5747,10 +5747,47 @@ def cantankerousKeepers : CardDef :=
 #guard cantankerousKeepers.triggeredAbilities ==
   #[.onEnterMillThenSubtypeToHand 4 "Elf"]
 
+/-- Oracle text for Celebrate the Mountain-king. -/
+def celebrateTheMountainKingOracle : String :=
+  "When this enchantment enters, for each opponent, exile up to one target nonland permanent that player controls until this enchantment leaves the battlefield.\nWhen this enchantment enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+
+def celebrateTheMountainKingDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Celebrate the Mountain-king",
+    .manaCost [.generic 3, .mono .white],
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "Celebrate the Mountain-king")
+    celebrateTheMountainKingOracle).get!
+
+#guard celebrateTheMountainKingDefinition == .card [
+  .name "Celebrate the Mountain-king",
+  .manaCost [.generic 3, .mono .white],
+  .type .enchantment,
+  .ability
+    (.triggered
+      (.enter .this)
+      (.forEachVariable 1 (.opponent (.controller .this)) [
+        .exileUntil
+          (.targets 2 (.range 0 1)
+            (.intersection [
+              .permanent,
+              .not (.cardType .land),
+              .controlled (.variable 1)]))
+          (.source .this)])),
+  .ability
+    (.triggered
+      (.enter .this)
+      (.keyword (.controller .this) .recruit))]
+
 def celebrateTheMountainKing : CardDef :=
-  enchantment "Celebrate the Mountain-king" (ManaCost.ofGenericAndColor 3 .white) "When this enchantment enters, for each opponent, exile up to one target nonland permanent that player controls until this enchantment leaves the battlefield.\nWhen this enchantment enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
-    (triggeredAbilities := #[.onEnterRecruit,
-      .onEnterExileOppNonlandEachUntilLeaves])
+  celebrateTheMountainKingDefinition.toCardDef
+    (oracleText := celebrateTheMountainKingOracle)
+
+#guard celebrateTheMountainKing.oracleText == celebrateTheMountainKingOracle
+#guard celebrateTheMountainKing.manaCost == ManaCost.ofGenericAndColor 3 .white
+#guard celebrateTheMountainKing.types == #[.enchantment]
+#guard celebrateTheMountainKing.triggeredAbilities ==
+  #[.onEnterExileOppNonlandEachUntilLeaves, .onEnterRecruit]
 
 /-- Oracle text for Dancing from Dark to Dawn. -/
 def dancingFromDarkToDawnOracle : String :=
@@ -5897,14 +5934,70 @@ def downInTheValley : CardDef :=
     chapter "III, IV" "Elves you control get +1/+0 and gain vigilance until end of turn."
       (Effect.chapterElvesGetVigilance 1)] }
 
+/-- Oracle text for Down, Down to Goblin-town. -/
+def downDownToGoblinTownOracle : String :=
+  "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target opponent reveals their hand. You choose a nonland card from it. That player discards that card.\nII — Amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nIII, IV — Target opponent loses 1 life and you gain 1 life."
+
+def downDownToGoblinTownDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Down, Down to Goblin-town",
+    .manaCost [.generic 2, .mono .black],
+    .type .enchantment,
+    .subtype .saga
+  ] ++ (parseOracleParts (name := "Down, Down to Goblin-town")
+    downDownToGoblinTownOracle).get!
+
+#guard downDownToGoblinTownDefinition == .card [
+  .name "Down, Down to Goblin-town",
+  .manaCost [.generic 2, .mono .black],
+  .type .enchantment,
+  .subtype .saga,
+  .ability
+    (.keywordWithEffect
+      (.chapter 1)
+      [
+        .actionId 1
+          (.reveal
+            (.intersection [
+              .inHand,
+              .owner (.target 1 (.opponent (.controller .this)))])),
+        .defineSelectorVariable 2
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [.wasObjectOfAction 1, .not (.cardType .land)])),
+        .discard (.variable 2) 1]),
+  .ability
+    (.keywordWithEffect
+      (.chapter 2)
+      [.keyword (.controller .this) (.amass .goblin (.nat 1))]),
+  .ability
+    (.keywordWithEffect
+      (.chapter 3)
+      [.sequence [
+        .loseLife (.target 3 (.opponent (.controller .this))) (.nat 1),
+        .gainLife (.controller .this) (.nat 1)]]),
+  .ability
+    (.keywordWithEffect
+      (.chapter 4)
+      [.sequence [
+        .loseLife (.target 4 (.opponent (.controller .this))) (.nat 1),
+        .gainLife (.controller .this) (.nat 1)]])]
+
 def downDownToGoblinTown : CardDef :=
-  saga "Down, Down to Goblin-town" (ManaCost.ofGenericAndColor 2 .black) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target opponent reveals their hand. You choose a nonland card from it. That player discards that card.\nII — Amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nIII, IV — Target opponent loses 1 life and you gain 1 life." "IV" #[
-    chapter "I" "Target opponent reveals their hand. You choose a nonland card from it. That player discards that card."
+  downDownToGoblinTownDefinition.toCardDef (oracleText := downDownToGoblinTownOracle)
+
+#guard downDownToGoblinTown.oracleText == downDownToGoblinTownOracle
+#guard downDownToGoblinTown.saga == some {
+  sacrificeAfter := "IV"
+  chapters := #[
+    chapter "I"
+      "Target opponent reveals their hand. You choose a nonland card from it. That player discards that card."
       (Effect.chapterOpponentDiscardsNonland),
-    chapter "II" "Amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+    chapter "II"
+      "Amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
       (Effect.chapterAmassGoblins 1),
-    chapter "III, IV" "Target opponent loses 1 life and you gain 1 life."
-      (Effect.chapterOpponentLosesYouGain 1)]
+    chapter "III, IV"
+      "Target opponent loses 1 life and you gain 1 life."
+      (Effect.chapterOpponentLosesYouGain 1)] }
 
 def dwalinWeaponmaster : CardDef :=
   legendaryCreature "Dwalin, Weaponmaster" (ManaCost.ofGenericAndHybrids 1 .red .white 1) #["Dwarf", "Warrior"] 2 1 (oracleText := "First strike\nWhenever Dwalin enters or attacks, put a hone counter on each Equipment you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)")
