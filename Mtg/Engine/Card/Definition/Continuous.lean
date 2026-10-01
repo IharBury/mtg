@@ -12,13 +12,11 @@ namespace Mtg.Engine
 /-- Convert a Value to an Int if constant. -/
 def valToInt? : Value → Option Int
   | .int p => some p
-  | .nat p => some (Int.ofNat p)
   | .x | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
   | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
-  | .nat n => some n
   | .int n => if n ≥ 0 then some n.toNat else none
   | .x | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
   | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _ => none
@@ -208,8 +206,8 @@ def massEffect (among : Selector) (effects : List ContinuousEffect) (asAbility :
 /-- Apply `maxTargets` / `allowsZeroTargets` from a selector onto a compiled effect. -/
 def withTargetCounts (e : Effect) (sel : Selector) (asAbility : Bool) : Effect :=
   match sel with
-  | .targets _ (.range (.nat lo) (.nat hi)) _
-  | .targetSet _ (.range (.nat lo) (.nat hi)) _ _ =>
+  | .targets _ (.range (.int (.ofNat lo)) (.int (.ofNat hi))) _
+  | .targetSet _ (.range (.int (.ofNat lo)) (.int (.ofNat hi))) _ _ =>
     if asAbility then e
     else
       { e with
@@ -241,7 +239,7 @@ def leftoverTargetPump? (effects : List ContinuousEffect) : Option (Int × Int) 
 
 /-- You may play an additional land this turn. -/
 def leftoverIncreaseLandPlayLimit? : List ContinuousEffect → Bool
-  | [.increaseLandPlayLimit who (Value.nat 1)] =>
+  | [.increaseLandPlayLimit who (Value.int 1)] =>
     who == .controller .this
   | _ => false
 

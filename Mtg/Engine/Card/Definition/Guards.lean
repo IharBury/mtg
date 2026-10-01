@@ -94,7 +94,7 @@ namespace Mtg.Engine
     .dealDamage
       .this
       (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
-      (.nat 5)
+      (.int 5)
   action.toEffect == Effect.dealDamageToCreature 5
 
 #guard Selector.shape
@@ -119,7 +119,7 @@ namespace Mtg.Engine
       .dealDamage
         .this
         (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
-        (.nat 5)]
+        (.int 5)]
   ]).toCardDef.costReductionIfTargetTapped == 3
 
 -- Eagle of the Great Shelf: whenever this attacks, +1/+1 for each other creature.
@@ -697,14 +697,14 @@ namespace Mtg.Engine
 #guard Keyword.equip.toKeywords == Keywords.none
 #guard Keyword.enchant.toKeywords == Keywords.none
 #guard Keyword.recruit.toKeywords == Keywords.none
-#guard (Keyword.amass .goblin (.nat 1)).toKeywords == Keywords.none
-#guard (Keyword.connive (.nat 1)).toKeywords == Keywords.none
+#guard (Keyword.amass .goblin (.int 1)).toKeywords == Keywords.none
+#guard (Keyword.connive (.int 1)).toKeywords == Keywords.none
 #guard (Keyword.chapter 1).toKeywords == Keywords.none
 #guard toString Keyword.recruit == "recruit"
-#guard toString (Keyword.amass .goblin (.nat 1)) == "amass Goblins 1"
-#guard toString (Keyword.amass .orc (.nat 2)) == "amass Orcs 2"
-#guard toString (Keyword.connive (.nat 1)) == "connive 1"
-#guard toString (Keyword.connive (.nat 2)) == "connive 2"
+#guard toString (Keyword.amass .goblin (.int 1)) == "amass Goblins 1"
+#guard toString (Keyword.amass .orc (.int 2)) == "amass Orcs 2"
+#guard toString (Keyword.connive (.int 1)) == "connive 1"
+#guard toString (Keyword.connive (.int 2)) == "connive 2"
 #guard toString (Keyword.chapter 1) == "chapter I"
 #guard toString (Keyword.chapter 3) == "chapter III"
 #guard (Keyword.typecycling [] [] [.halfling]).toKeywords == Keywords.none
@@ -963,7 +963,7 @@ namespace Mtg.Engine
     .dealDamage
       .this
       (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
-      (.nat 5)
+      (.int 5)
   action.toEffect == Effect.dealDamageToCreature 5
 
 -- Gandalf, Spark Starter: enters, 3 damage divided among one to three targets.
@@ -1044,7 +1044,7 @@ namespace Mtg.Engine
     (Ability.activatedIf
       (.turn (.controller .this))
       [.life 3]
-      (.keyword (.source .this) (.connive (.nat 1)))).toActivatedAbility? with
+      (.keyword (.source .this) (.connive (.int 1)))).toActivatedAbility? with
   | some ab =>
     ab.onlyDuringYourTurn &&
       !ab.onceEachTurn &&
@@ -1057,7 +1057,7 @@ namespace Mtg.Engine
     (Ability.activatedIf
       (.turn (.controller .this))
       [.life 3]
-      (.keyword .this (.connive (.nat 1)))).toActivatedAbility? with
+      (.keyword .this (.connive (.int 1)))).toActivatedAbility? with
   | some ab => ab.effect != Effect.connive
   | none => true
 

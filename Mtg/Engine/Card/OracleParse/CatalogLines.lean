@@ -301,7 +301,7 @@ attacker is the host of an Equipment you control. -/
 def parseEquippedAttacksConnives (line : String) : Option CardPart :=
   if normLine line == "whenever an equipped creature you control attacks, it connives" then
     let host := Selector.hostOf equipmentYouControl
-    some (.ability (.triggered (.attack host .all) (.keyword host (.connive (.nat 1)))))
+    some (.ability (.triggered (.attack host .all) (.keyword host (.connive (.int 1)))))
   else none
 
 /-- `Whenever equipped creature attacks, create <tokens>. If that creature is
@@ -317,7 +317,7 @@ def parseEquippedAttacksCreateInstead (line : String) : Option CardPart :=
             between? (normSentence instead) "if that creature is legendary, instead create "
               " of those tokens that are tapped and attacking" with
         | some (.createTokens who k parts [.tapped]), some countText =>
-          if (positiveCount countText).map Value.nat != some k then none
+          if (positiveCount countText).map (fun n => Value.int n) != some k then none
           else
             some (.ability (.triggered (.attack (.hostOf .this) .all)
               (.ifElse (.any (.intersection [.hostOf .this, .supertype .legendary]))
@@ -542,7 +542,7 @@ def parseCatalogAsLongAsGraveyard (cardName line : String) : Option (List CardPa
         | some k, some t =>
           let cond := Condition.greaterOrEqual
             (.count (.intersection [.zone .graveyard, .cardType t, .owner (.controller .this)]))
-            (Value.nat k)
+            (Value.int k)
           let (effect, allTypes) :=
             match before? effect " and is all creature types" with
             | some e => (e, true)
@@ -563,7 +563,7 @@ def parseAnotherAdditionalLand (line : String) : Option CardPart :=
       ", you may play an additional land on each of your turns").bind subtypeOfOracle? |>.map
     fun st =>
       .ability (.static (.if (.any (anotherSubtypeYouControl st))
-        [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]))
+        [.increaseLandPlayLimit (.controller .this) (Value.int 1)]))
 
 /-- `This spell costs {1} less to cast if you control a Villain`, or `… if it
 targets an attacking creature`. The reduction functions on the stack

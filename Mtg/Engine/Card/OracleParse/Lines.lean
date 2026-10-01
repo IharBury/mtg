@@ -322,7 +322,7 @@ def parseEnterExileOppGyLoseLife (cardName : String) (line : String) (n : Nat) :
                   (.intersection [
                     .zone .graveyard,
                     .owner (.opponent (.controller .this))])),
-              .loseLife (.opponent (.controller .this)) (Value.nat k)],
+              .loseLife (.opponent (.controller .this)) (Value.int k)],
            n + 1)
   | _ => none
 
@@ -361,7 +361,7 @@ def parseEnterEachOpponentDiscards (cardName : String) (line : String) :
     Option CardPart :=
   onEnter cardName line fun effect =>
     (after? effect "each opponent discards ").bind parseCardCount |>.map fun k =>
-      .discard (.opponent (.controller .this)) (Value.nat k)
+      .discard (.opponent (.controller .this)) (Value.int k)
 
 /-- A pronoun for the object named earlier in the same ability. -/
 def isPersonalPronoun (s : String) : Bool :=
@@ -388,8 +388,8 @@ def parseEnterDividedDamage (cardName : String) (line : String) (n : Nat) :
                 .divideDamage
                   (.controller .this)
                   (.source .this)
-                  (.targets n (.range (Value.nat lo) (Value.nat hi)) .all)
-                  (Value.nat amount),
+                  (.targets n (.range (Value.int lo) (Value.int hi)) .all)
+                  (Value.int amount),
                 n + 1)
             | _, _ => none
 
@@ -409,10 +409,10 @@ def parseEnterMayDiscardDraw (cardName : String) (line : String) (n : Nat) :
             .sequence [
               .optional (.controller .this)
                 (.actionId n
-                  (.discard (.controller .this) (Value.nat discarded))),
+                  (.discard (.controller .this) (Value.int discarded))),
               .if
                 (.happened (.actionWithId n) .gameStart)
-                [.draw (.controller .this) (Value.nat drawn)]],
+                [.draw (.controller .this) (Value.int drawn)]],
             n + 1)
         | _, _ => none
   | _ => none
@@ -806,7 +806,7 @@ def parseYouCastNoncreaturePumpAndDamage (cardName : String) (line : String) :
                   (.sequence [
                     pumpAction,
                     .dealDamage (.source .this)
-                      (.opponent (.controller .this)) (.nat n)]))
+                      (.opponent (.controller .this)) (.int n)]))
             | _, _ => none
 
 /-- `When <this card> enters, amass Goblins 1.`
@@ -923,7 +923,7 @@ def parseCreateColoredCreatureToken (sentence : String) : Option CardAction :=
         match nounCount? countText plural, parseUnsignedPT pt,
             colorName? colorText, subtypeOfOracle? subtypeText with
         | some n, some (p, t), some c, some st =>
-          some (.createTokens (.controller .this) (Value.nat n) [
+          some (.createTokens (.controller .this) (Value.int n) [
             .type .creature,
             .subtype st,
             .colorIndicator [c],

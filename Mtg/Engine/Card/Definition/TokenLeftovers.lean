@@ -460,7 +460,7 @@ def leftoverSacrificeArtifactOrDiscardNonlandCost? : List Cost → Bool
 /-- You may sacrifice an artifact or discard a nonland card. If you do,
 deal 2 damage to any target. -/
 def leftoverEnterMaySacOrDiscardNonlandThenDamage? : CardAction → Bool
-  | .optionalPayFor who costs [.dealDamage _ dest (.nat 2)] =>
+  | .optionalPayFor who costs [.dealDamage _ dest (.int 2)] =>
     leftoverYou who &&
       leftoverSacrificeArtifactOrDiscardNonlandCost? costs &&
       Selector.leftoverAnyTarget? dest
@@ -602,15 +602,15 @@ def leftoverMilledSubtype? (id : Nat) : Selector → Option String
 /-- Chosen cards from among those milled by `id`. -/
 def leftoverSelectedMilled? (id : Nat) (pred : Selector → Bool) :
     Selector → Option (Nat × Nat)
-  | .selected _ (.range (.nat lo) (.nat hi)) among =>
+  | .selected _ (.range (.int (.ofNat lo)) (.int (.ofNat hi))) among =>
     if leftoverMilledBy id pred among then some (lo, hi) else none
-  | .targets _ (.range (.nat lo) (.nat hi)) among =>
+  | .targets _ (.range (.int (.ofNat lo)) (.int (.ofNat hi))) among =>
     if leftoverMilledBy id pred among then some (lo, hi) else none
   | _ => none
 
 /-- Mill n, then put an instant or sorcery card from among them into hand. -/
 def leftoverMillThenPutInstantOrSorcery? : CardAction → Option Nat
-  | .sequence [.actionId id (.mill who (.nat n)), .returnToHand sel] =>
+  | .sequence [.actionId id (.mill who (.int (.ofNat n))), .returnToHand sel] =>
     match leftoverSelectedMilled? id leftoverInstantOrSorceryFilter sel with
     | some (lo, 1) =>
       if leftoverYou who && lo ≤ 1 then some n else none
@@ -619,7 +619,7 @@ def leftoverMillThenPutInstantOrSorcery? : CardAction → Option Nat
 
 /-- Mill n, then put up to `max` land cards from among them into hand. -/
 def leftoverMillThenPutLands? : CardAction → Option (Nat × Nat)
-  | .sequence [.actionId id (.mill who (.nat n)), .returnToHand sel] =>
+  | .sequence [.actionId id (.mill who (.int (.ofNat n))), .returnToHand sel] =>
     match leftoverSelectedMilled? id leftoverLandFilter sel with
     | some (0, max) =>
       if leftoverYou who then some (n, max) else none
@@ -628,7 +628,7 @@ def leftoverMillThenPutLands? : CardAction → Option (Nat × Nat)
 
 /-- Mill n, then put all instant and sorcery cards from among them into hand. -/
 def leftoverMillThenPutAllInstantsOrSorceries? : CardAction → Option Nat
-  | .sequence [.actionId id (.mill who (.nat n)), .returnToHand among] =>
+  | .sequence [.actionId id (.mill who (.int (.ofNat n))), .returnToHand among] =>
     if leftoverYou who && leftoverMilledBy id leftoverInstantOrSorceryFilter among then
       some n
     else none
@@ -637,9 +637,9 @@ def leftoverMillThenPutAllInstantsOrSorceries? : CardAction → Option Nat
 /-- Mill n, you may put a permanent card from among them into hand, gain life. -/
 def leftoverMillThenPutPermanentGainLife? : CardAction → Option (Nat × Nat)
   | .sequence [
-      .actionId id (.mill who (.nat n)),
+      .actionId id (.mill who (.int (.ofNat n))),
       .optional (.controller .this) (.returnToHand sel),
-      .gainLife gainer (.nat life)
+      .gainLife gainer (.int (.ofNat life))
     ] =>
     match leftoverSelectedMilled? id leftoverPermanentCardFilter sel with
     | some (lo, 1) =>
@@ -650,8 +650,8 @@ def leftoverMillThenPutPermanentGainLife? : CardAction → Option (Nat × Nat)
 /-- Mill n, you may put a subtype or enchantment card from among them into hand. -/
 def leftoverMillThenPutSubtypeOrEnchantment? : CardAction → Option (Nat × String)
   | .sequence [
-      .actionId id (.mill who (.nat n)),
-      .optional (.controller .this) (.returnToHand (.selected _ (.range (.nat lo) 1) among))
+      .actionId id (.mill who (.int (.ofNat n))),
+      .optional (.controller .this) (.returnToHand (.selected _ (.range (.int (.ofNat lo)) 1) among))
     ] =>
     if leftoverYou who && lo ≤ 1 then
       match among with
@@ -662,8 +662,8 @@ def leftoverMillThenPutSubtypeOrEnchantment? : CardAction → Option (Nat × Str
       | _ => none
     else none
   | .sequence [
-      .actionId id (.mill who (.nat n)),
-      .optional (.controller .this) (.returnToHand (.targets _ (.range (.nat lo) 1) among))
+      .actionId id (.mill who (.int (.ofNat n))),
+      .optional (.controller .this) (.returnToHand (.targets _ (.range (.int (.ofNat lo)) 1) among))
     ] =>
     if leftoverYou who && lo ≤ 1 then
       match among with

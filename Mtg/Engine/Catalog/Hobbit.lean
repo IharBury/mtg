@@ -228,7 +228,7 @@ def magnificentEndCard : CardDef :=
     .dealDamage
       .this
       (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
-      (.nat 5)]]
+      (.int 5)]]
 
 /-- Gatherer Oracle text for Eagle of the Great Shelf. -/
 def eagleOfTheGreatShelfOracle : String :=
@@ -1074,7 +1074,7 @@ def smaugTheGreatCalamityCard : CardDef :=
       .dealDamage
         .this
         (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
-        (.nat 5)]]
+        (.int 5)]]
 ]
 
 /-- Gatherer Oracle text for Gandalf, Spark Starter. -/
@@ -1560,7 +1560,7 @@ def beornReluctantHost : CardDef :=
     .subtype .adventure,
     .actions [
       .continuous
-        [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]
+        [.increaseLandPlayLimit (.controller .this) (Value.int 1)]
         .endOfTurn]]
 ]
 
@@ -2811,7 +2811,7 @@ def bothersomeNoisemaker : CardDef :=
           .spell,
           .not (.cardType .creature),
           .controlled (.controller .this)]))
-      (.keyword (.controller .this) (.amass .goblin (.nat 1))))
+      (.keyword (.controller .this) (.amass .goblin (.int 1))))
 ]
 
 #guard bothersomeNoisemaker.triggeredAbilities == #[.onCastNoncreatureAmassGoblins 1]
@@ -2846,7 +2846,7 @@ def fearsomeGoblinPair : CardDef :=
   .ability (
     .triggered
       (.die .this)
-      (.keyword (.controller .this) (.amass .goblin (.nat 4))))
+      (.keyword (.controller .this) (.amass .goblin (.int 4))))
 ]
 
 #guard fearsomeGoblinPair.triggeredAbilities == #[.onDiesAmassGoblins 4]
@@ -2882,7 +2882,7 @@ def goblinTownFlunkies : CardDef :=
   .ability (
     .triggered
       (.enter .this)
-      (.keyword (.controller .this) (.amass .goblin (.nat 1))))
+      (.keyword (.controller .this) (.amass .goblin (.int 1))))
 ]
 
 #guard goblinTownFlunkies.keywords.haste
@@ -2924,7 +2924,7 @@ def mistyMountainsRaider : CardDef :=
           .controlled (.controller .this)])
         .all
         [])
-      (.keyword (.controller .this) (.amass .goblin (.nat 2))))
+      (.keyword (.controller .this) (.amass .goblin (.int 2))))
 ]
 
 #guard mistyMountainsRaider.triggeredAbilities == #[.onYouAttackAmassGoblins 2]
@@ -3006,7 +3006,7 @@ def rageIntoTheValley : CardDef :=
   .actions [
     .draw (.controller .this) 1,
     .loseLife (.controller .this) 1,
-    .keyword (.controller .this) (.amass .goblin (.nat 2))]]
+    .keyword (.controller .this) (.amass .goblin (.int 2))]]
 
 #guard rageIntoTheValley.spellEffect == some (Effect.drawLoseLifeThenAmass 2)
 #guard rageIntoTheValley.oracleText == rageIntoTheValleyOracle
@@ -3039,7 +3039,7 @@ def gatheringOfDarkness : CardDef :=
           .zone .graveyard,
           .cardType .creature,
           .owner (.controller .this)])),
-    .keyword (.controller .this) (.amass .goblin (.nat 3))]]
+    .keyword (.controller .this) (.amass .goblin (.int 3))]]
 
 #guard gatheringOfDarkness.spellEffect == some (Effect.returnCreatureFromGyThenAmass 3)
 #guard gatheringOfDarkness.oracleText == gatheringOfDarknessOracle
@@ -3129,7 +3129,7 @@ def chiefWargsCompany : CardDef :=
     (.less
       (.count (.intersection [
         .not .this, .zone .battlefield, .subtype .wolf, .controlled (.controller .this)]))
-      (Value.nat 2))
+      (Value.int 2))
     [.forbid (.attack .this .all)])),
   .ability (.triggered
     (.upkeep (.controller .this))
@@ -3202,7 +3202,7 @@ def goblinPlateMail : CardDef :=
   .ability (.triggered
     (.enter .this)
     (.sequence [
-      .actionId 1 (.keyword (.controller .this) (.amass .goblin (.nat 1))),
+      .actionId 1 (.keyword (.controller .this) (.amass .goblin (.int 1))),
       .attach .this (.wasObjectOfAction 1)])),
   .ability (.static (.addPower (.hostOf .this) (Value.int 1))),
   .ability (.static (.gainAbility (.hostOf .this) (.keyword .menace))),
@@ -5147,7 +5147,7 @@ def settleTheWreckageDefinition : TraditionalCardDefinition := .card <|
           .putOntoBattlefieldInState
             (.selected
               (.targetReference 1)
-              (.range (.nat 0) (.count (.wasObjectOfAction 1)))
+              (.range (.int 0) (.count (.wasObjectOfAction 1)))
               (.intersection [
                 .zone .library,
                 .cardType .land,
@@ -5355,7 +5355,7 @@ def alongTheCrookedWayDefinition : TraditionalCardDefinition := .card <|
           .zone .graveyard,
           .cardType .creature,
           .owner (.controller .this)]))
-      (.keyword (.controller .this) (.amass .goblin (.nat 1)))),
+      (.keyword (.controller .this) (.amass .goblin (.int 1)))),
   .ability (
     .activated
       [.mana [.generic 1, .mono .black]]
@@ -5544,7 +5544,7 @@ def bardKingOfDaleDefinition : TraditionalCardDefinition := .card <|
       [.draw (.controller .this) 2]])),
   .ability (.static (.replace
     (.createTokens (.intersection [.token, .controlled (.controller .this)]))
-    [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))]))]
+    [.modifyReplacementCreatedTokenCount (fun n => .int (n * 2))]))]
 
 def bardKingOfDale : CardDef :=
   bardKingOfDaleDefinition.toCardDef (oracleText := bardKingOfDaleOracle)
@@ -5861,7 +5861,7 @@ def boughsideWanderersDefinition : TraditionalCardDefinition := .card <|
       (.enter .this)
       (.sequence
         [
-          .actionId 1 (.lookAt (.topOfLibrary (.controller .this) (.nat 4))),
+          .actionId 1 (.lookAt (.topOfLibrary (.controller .this) (.int 4))),
           .optional
             (.controller .this)
             (.sequence
@@ -5871,7 +5871,7 @@ def boughsideWanderersDefinition : TraditionalCardDefinition := .card <|
                   (.reveal
                     (.selected
                       (.controller .this)
-                      (.range (.nat 1) (.nat 1))
+                      (.range (.int 1) (.int 1))
                       (.intersection [.wasObjectOfAction 1, .zone .battlefield]))),
                 .returnToHand (.wasObjectOfAction 2)]),
           .putOnLibraryBottomInRandomOrder
@@ -5918,7 +5918,7 @@ def burnBurnTreeAndFernDefinition : TraditionalCardDefinition := .card <|
             1
             (.intersection
               [.zone .battlefield, .cardType .creature, .controlled (.opponent (.controller .this))]))
-          (.nat 6)]),
+          (.int 6)]),
   .ability
     (.keywordWithEffect
       (.chapter 2)
@@ -6068,7 +6068,7 @@ def dancingFromDarkToDawnDefinition : TraditionalCardDefinition := .card <|
           .zone .battlefield,
           .cardType .land,
           .controlled (.controller .this)]))
-      (.createTokens (.controller .this) (.nat 1) [
+      (.createTokens (.controller .this) (.int 1) [
         .type .creature,
         .subtype .bear,
         .colorIndicator [.green],
@@ -6115,7 +6115,7 @@ def downInTheValleyDefinition : TraditionalCardDefinition := .card <|
               1
               (.selected
                 (.controller .this)
-                (.range (.nat 1) (.nat 1))
+                (.range (.int 1) (.int 1))
                 (.intersection [.zone .library, .cardType .land, .supertype .basic])),
             .reveal (.variable 1),
             .returnToHand (.variable 1)]]),
@@ -6132,7 +6132,7 @@ def downInTheValleyDefinition : TraditionalCardDefinition := .card <|
                   (.intersection [.zone .battlefield, .cardType .land, .controlled (.controller .this)]))
                 (.createTokens
                   (.controller .this)
-                  (.nat 1)
+                  (.int 1)
                   [.type .creature, .subtype .elf, .colorIndicator [.green], .power 1, .toughness 1]
                   []))]
           .endOfGame]),
@@ -6209,19 +6209,19 @@ def downDownToGoblinTownDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.keywordWithEffect
       (.chapter 2)
-      [.keyword (.controller .this) (.amass .goblin (.nat 1))]),
+      [.keyword (.controller .this) (.amass .goblin (.int 1))]),
   .ability
     (.keywordWithEffect
       (.chapter 3)
       [.sequence [
-        .loseLife (.target 3 (.opponent (.controller .this))) (.nat 1),
-        .gainLife (.controller .this) (.nat 1)]]),
+        .loseLife (.target 3 (.opponent (.controller .this))) (.int 1),
+        .gainLife (.controller .this) (.int 1)]]),
   .ability
     (.keywordWithEffect
       (.chapter 4)
       [.sequence [
-        .loseLife (.target 4 (.opponent (.controller .this))) (.nat 1),
-        .gainLife (.controller .this) (.nat 1)]])]
+        .loseLife (.target 4 (.opponent (.controller .this))) (.int 1),
+        .gainLife (.controller .this) (.int 1)]])]
 
 def downDownToGoblinTown : CardDef :=
   downDownToGoblinTownDefinition.toCardDef (oracleText := downDownToGoblinTownOracle)
@@ -6352,7 +6352,7 @@ def gleamingSplendorDefinition : TraditionalCardDefinition := .card <|
       (.ordinal 2 .turnStart (.draw (.opponent (.controller .this)) .all))
       (.createTokens
         (.controller .this)
-        (.nat 1)
+        (.int 1)
         [
           .type .artifact,
           .subtype .treasure,
@@ -6362,12 +6362,12 @@ def gleamingSplendorDefinition : TraditionalCardDefinition := .card <|
               (.addManaOfOneColor
                 (.controller .this)
                 [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
-                (.nat 1)))]
+                (.int 1)))]
         [])),
   .ability
     (.activated
       [.mana [.generic 2, .mono .white]]
-      (.draw (.targets 1 (.range (.nat 2) (.nat 2)) .player) (.nat 1)))]
+      (.draw (.targets 1 (.range (.int 2) (.int 2)) .player) (.int 1)))]
 
 def gleamingSplendor : CardDef :=
   gleamingSplendorDefinition.toCardDef (oracleText := gleamingSplendorOracle)
@@ -6504,7 +6504,7 @@ def orcristGoblinCleaverDefinition : TraditionalCardDefinition := .card <|
             [
               .createTokens
                 (.controller .this)
-                (.nat 1)
+                (.int 1)
                 [
                   .type .artifact,
                   .subtype .treasure,
@@ -6514,7 +6514,7 @@ def orcristGoblinCleaverDefinition : TraditionalCardDefinition := .card <|
                       (.addManaOfOneColor
                         (.controller .this)
                         [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
-                        (.nat 1)))]
+                        (.int 1)))]
                 []]])),
   .ability (.keywordWithCost .equip [.mana [.generic 3]])]
 
@@ -6791,7 +6791,7 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
       [
         .createTokens
           (.controller .this)
-          (.nat 1)
+          (.int 1)
           [
             .type .artifact,
             .subtype .treasure,
@@ -6801,13 +6801,13 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
                 (.addManaOfOneColor
                   (.controller .this)
                   [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
-                  (.nat 1)))]
+                  (.int 1)))]
           [],
         .if
           (.greaterOrEqual
             (.count
               (.intersection [.zone .battlefield, .subtype .treasure, .controlled (.controller .this)]))
-            (.nat 4))
+            (.int 4))
           [
             .actionId 1 (.sacrifice .this),
             .if
@@ -6815,7 +6815,7 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
               [
                 .createTokens
                   (.controller .this)
-                  (.nat 1)
+                  (.int 1)
                   [
                     .type .creature,
                     .subtype .dragon,
@@ -6830,7 +6830,7 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
       [
         .createTokens
           (.controller .this)
-          (.nat 1)
+          (.int 1)
           [
             .type .artifact,
             .subtype .treasure,
@@ -6840,13 +6840,13 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
                 (.addManaOfOneColor
                   (.controller .this)
                   [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
-                  (.nat 1)))]
+                  (.int 1)))]
           [],
         .if
           (.greaterOrEqual
             (.count
               (.intersection [.zone .battlefield, .subtype .treasure, .controlled (.controller .this)]))
-            (.nat 4))
+            (.int 4))
           [
             .actionId 2 (.sacrifice .this),
             .if
@@ -6854,7 +6854,7 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
               [
                 .createTokens
                   (.controller .this)
-                  (.nat 1)
+                  (.int 1)
                   [
                     .type .creature,
                     .subtype .dragon,
@@ -6869,7 +6869,7 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
       [
         .createTokens
           (.controller .this)
-          (.nat 1)
+          (.int 1)
           [
             .type .artifact,
             .subtype .treasure,
@@ -6879,13 +6879,13 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
                 (.addManaOfOneColor
                   (.controller .this)
                   [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
-                  (.nat 1)))]
+                  (.int 1)))]
           [],
         .if
           (.greaterOrEqual
             (.count
               (.intersection [.zone .battlefield, .subtype .treasure, .controlled (.controller .this)]))
-            (.nat 4))
+            (.int 4))
           [
             .actionId 3 (.sacrifice .this),
             .if
@@ -6893,7 +6893,7 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
               [
                 .createTokens
                   (.controller .this)
-                  (.nat 1)
+                  (.int 1)
                   [
                     .type .creature,
                     .subtype .dragon,
@@ -6908,7 +6908,7 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
       [
         .createTokens
           (.controller .this)
-          (.nat 1)
+          (.int 1)
           [
             .type .artifact,
             .subtype .treasure,
@@ -6918,13 +6918,13 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
                 (.addManaOfOneColor
                   (.controller .this)
                   [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
-                  (.nat 1)))]
+                  (.int 1)))]
           [],
         .if
           (.greaterOrEqual
             (.count
               (.intersection [.zone .battlefield, .subtype .treasure, .controlled (.controller .this)]))
-            (.nat 4))
+            (.int 4))
           [
             .actionId 4 (.sacrifice .this),
             .if
@@ -6932,7 +6932,7 @@ def theMistyMountainsColdDefinition : TraditionalCardDefinition := .card <|
               [
                 .createTokens
                   (.controller .this)
-                  (.nat 1)
+                  (.int 1)
                   [
                     .type .creature,
                     .subtype .dragon,
@@ -6981,7 +6981,7 @@ def theMountainKingSReturnDefinition : TraditionalCardDefinition := .card <|
             .zone .graveyard,
             .cardType .creature,
             .owner (.controller .this),
-            .manaValueAtMost (.nat 3)]))]),
+            .manaValueAtMost (.int 3)]))]),
   .ability
     (.keywordWithEffect
       (.chapter 3)
@@ -7111,7 +7111,7 @@ def thorinMountainKingDefinition : TraditionalCardDefinition := .card <|
           (.intersection [.zone .battlefield, .subtype .equipment, .controlled (.controller .this)]))
         (.target 2
           (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))),
-      .if (.greaterOrEqual (.count (.wasObjectOfAction 1)) (.nat 1))
+      .if (.greaterOrEqual (.count (.wasObjectOfAction 1)) (.int 1))
         [.dealDamage (.targetReference 2)
           (.targets 3 (.range 0 1)
             (.intersection [.zone .battlefield, .cardType .creature]))
@@ -7162,7 +7162,7 @@ def thranduilSCompanyDefinition : TraditionalCardDefinition := .card <|
             .zone .battlefield,
             .subtype .elf,
             .controlled (.controller .this)]))
-        [.increaseLandPlayLimit (.controller .this) (Value.nat 1)])),
+        [.increaseLandPlayLimit (.controller .this) (Value.int 1)])),
   .ability (
     .triggered
       (.enter
@@ -7209,7 +7209,7 @@ def throughTheForestGateDefinition : TraditionalCardDefinition := .card <|
   .type .sorcery,
   .actions
     [
-      .actionId 1 (.lookAt (.topOfLibrary (.controller .this) (.nat 20))),
+      .actionId 1 (.lookAt (.topOfLibrary (.controller .this) (.int 20))),
       .searchLibraryThenShuffle
         (.controller .this)
         [
@@ -7219,7 +7219,7 @@ def throughTheForestGateDefinition : TraditionalCardDefinition := .card <|
               .any
               (.intersection [.wasObjectOfAction 1, .cardType .land]))
             [.tapped]],
-      .gainLife (.controller .this) (.nat 8)]]
+      .gainLife (.controller .this) (.int 8)]]
 
 def throughTheForestGate : CardDef :=
   throughTheForestGateDefinition.toCardDef (oracleText := throughTheForestGateOracle)

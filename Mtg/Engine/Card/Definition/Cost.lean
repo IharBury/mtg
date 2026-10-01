@@ -114,7 +114,7 @@ def discardsThis : List Cost → Bool
 
 /-- This object's controller chooses one card they own in a hand. -/
 def discardsOneCardFromHand : Selector → Bool
-  | .selected (.controller .this) (.range (.nat 1) (.nat 1))
+  | .selected (.controller .this) (.range (.int 1) (.int 1))
       (.intersection [.zone .hand, .owner (.controller .this)]) => true
   | _ => false
 

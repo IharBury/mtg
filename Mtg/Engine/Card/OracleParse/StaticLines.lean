@@ -49,7 +49,7 @@ def parseCantAttackUnlessNOther (cardName : String) (line : String) : Option Car
                   .zone .battlefield,
                   .subtype st,
                   youControl]))
-              (Value.nat n))
+              (Value.int n))
             [.forbid (.attack .this .all)])))
         | _, _ => none
 
@@ -69,7 +69,7 @@ def parseEnterCreateThenAttach (cardName : String) (line : String) (n : Nat) :
   onEnterN cardName line fun effect =>
     (split2? effect ", then attach ").bind fun (createText, attachText) =>
       match parseCreateColoredCreatureToken createText with
-      | some (.createTokens who (.nat 1) parts []) =>
+      | some (.createTokens who (.int 1) parts []) =>
         if who == .controller .this && attachSelfToIt? cardName attachText then
           some (
             .sequence [
@@ -264,7 +264,7 @@ def parseOwnerShuffleDraw (cardName : String) (line : String) (n : Nat) :
                     (.sequence [
                       .defineSelectorVariable n (.owner (.source .this)),
                       .shuffleIntoOwnersLibrary (.source .this),
-                      .draw (.variable n) (Value.nat k)])
+                      .draw (.variable n) (Value.int k)])
                     .unlimited
                     (n + 1)
 
@@ -478,7 +478,7 @@ def parseEnterDealDamageDestroyIfSubtype (cardName : String) (line : String)
                         .sequence [
                           .actionId n
                             (.dealDamage (.source .this) (.target n .all)
-                              (.nat amount)),
+                              (.int amount)),
                           .if (.anySubtype (.wasObjectOfAction n) st)
                             [.destroy (.wasObjectOfAction n)]],
                         n + 1)
@@ -797,7 +797,7 @@ def lookAtTopMayRevealToHand (n k : Nat) (kind : Selector)
   let looked := Selector.wasObjectOfAction n
   let revealed := Selector.wasObjectOfAction (n + 1)
   [
-    .actionId n (.lookAt (.topOfLibrary (.controller .this) (.nat k))),
+    .actionId n (.lookAt (.topOfLibrary (.controller .this) (.int k))),
     .optional (.controller .this) (.sequence [
       .actionId (n + 1)
         (.reveal
@@ -913,14 +913,14 @@ def parseDrawExceptFirstDrawStep (line : String) : Option CardPart :=
 /-- `If one or more tokens would be created under your control, twice that
 many of those tokens are created instead.`
 `replace` of `Trigger.createTokens` is that creation (CR 614).
-`modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` keeps creating
+`modifyReplacementCreatedTokenCount (fun n => .int (n * 2))` keeps creating
 those tokens, twice as many. -/
 def parseTwiceTokensYouWouldCreate (line : String) : Option CardPart :=
   if sentenceIs line
       "if one or more tokens would be created under your control, twice that many of those tokens are created instead" then
     some (.ability (.static (.replace
       (.createTokens tokensCreatedUnderYou)
-      [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))])))
+      [.modifyReplacementCreatedTokenCount (fun n => .int (n * 2))])))
   else none
 
 /-- `Whenever a token you control enters, you gain 1 life if this is the

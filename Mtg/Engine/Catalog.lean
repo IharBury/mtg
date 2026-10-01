@@ -973,7 +973,7 @@ def lightningBoltDefinition : TraditionalCardDefinition := .card <|
   .name "Lightning Bolt",
   .manaCost [.mono .red],
   .type .instant,
-  .actions [.dealDamage .this (.target 1 .all) (.nat 3)]]
+  .actions [.dealDamage .this (.target 1 .all) (.int 3)]]
 
 def lightningBolt : CardDef :=
   lightningBoltDefinition.toCardDef (oracleText := lightningBoltOracle)
@@ -993,7 +993,7 @@ def shockDefinition : TraditionalCardDefinition := .card <|
   .name "Shock",
   .manaCost [.mono .red],
   .type .instant,
-  .actions [.dealDamage .this (.target 1 .all) (.nat 2)]]
+  .actions [.dealDamage .this (.target 1 .all) (.int 2)]]
 
 def shock : CardDef :=
   shockDefinition.toCardDef (oracleText := shockOracle)

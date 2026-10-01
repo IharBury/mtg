@@ -320,9 +320,7 @@ deriving Repr, Inhabited, BEq
 /-- A number that is either a printed constant or computed from game
 state. -/
 inductive Value where
-  /-- A printed natural-number amount. -/
-  | nat : Nat → Value
-  /-- A printed integer amount. -/
+  /-- A printed integer amount. A natural number is a non-negative integer. -/
   | int : Int → Value
   /-- The value of X (CR 107.3). -/
   | x : Value
@@ -627,14 +625,13 @@ namespace Value
 
 instance : ToString Value where
   toString
-    | .nat n => toString n
     | .int n => toString n
     | .x => "X"
     | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
     | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _ => "X"
 
 instance (n : Nat) : OfNat Value n where
-  ofNat := .nat n
+  ofNat := .int n
 
 /-- `n` times the number of objects matching the selector.
 Zero is the constant zero and one is the count. Neither is a product. -/
@@ -643,7 +640,7 @@ def timesCount (n : Int) (among : Selector) : Value :=
   else if n == 1 then .count among
   else .product (.count among) (.int n)
 
-#guard toString (Value.nat 3) == "3"
+#guard toString (Value.int 3) == "3"
 #guard toString (Value.int (-2)) == "-2"
 #guard toString Value.x == "X"
 #guard toString (Value.greatestManaValue .this) == "X"
@@ -656,19 +653,19 @@ def timesCount (n : Int) (among : Selector) : Value :=
 #guard Value.timesCount 1 .this == Value.count .this
 #guard Value.timesCount 2 .this == Value.product (Value.count .this) (Value.int 2)
 #guard Value.timesCount 0 .this == Value.int 0
-#guard Value.product 2 3 != Value.nat 6
-#guard (1 : Value) == Value.nat 1
-#guard Value.x != Value.nat 1
+#guard Value.product 2 3 != Value.int 6
+#guard (1 : Value) == Value.int 1
+#guard Value.x != Value.int 1
 
 end Value
 
 namespace Range
 
-#guard Range.range 0 1 == .range (Value.nat 0) (Value.nat 1)
+#guard Range.range 0 1 == .range (Value.int 0) (Value.int 1)
 #guard Range.range Value.x 1 != Range.range 0 1
 #guard Range.any == .any
 #guard Range.any != Range.range 0 0
-#guard Range.from 1 == .from (Value.nat 1)
+#guard Range.from 1 == .from (Value.int 1)
 #guard Range.from Value.x != Range.from 1
 #guard Range.from 1 != Range.range 1 1
 #guard Range.from 0 != Range.any

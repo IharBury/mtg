@@ -22,7 +22,7 @@ open OracleParts
   some [.ability
      (.triggered
        (.attack .this .all)
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "") "When another creature enters, draw a card." ==
   some [.ability
      (.triggered
@@ -31,7 +31,7 @@ open OracleParts
            [.not .this,
             .zone .battlefield,
             .cardType .creature]))
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "") "When Bilbo Baggins enters, draw a card." == none
 #guard parseOracleParts (name := "Gandalf") "When Bilbo Baggins enters, draw a card." == none
 #guard parseOracleParts (name := "Bilbo") "When Bilbo Baggins enters, draw a card." == none
@@ -51,7 +51,7 @@ open OracleParts
          2
          .turnStart
          (.draw (.controller .this) .all))
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "")
   "Whenever you draw your second card each turn, put a +1/+1 counter on target creature." ==
   some [.ability
@@ -76,7 +76,7 @@ open OracleParts
 #guard parseOracleParts (name := "")
   "Whenever you draw a card, draw a card." ==
   some [.ability (
-    .triggered (.draw (.controller .this) .all) (.draw (.controller .this) (.nat 1)))]
+    .triggered (.draw (.controller .this) .all) (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "")
   "Whenever you draw a card, put a +1/+1 counter on target creature." ==
   some [.ability (
@@ -132,20 +132,20 @@ open OracleParts
   some [.ability (
     .triggered (.draw (.controller .this) .all)
       (.if (.any (.intersection [.not .this, .zone .battlefield, .subtype .hero, .controlled (.controller .this)]))
-        [.dealDamage .this (.target 1 (.opponent (.controller .this))) (.nat 1)]))]
+        [.dealDamage .this (.target 1 (.opponent (.controller .this))) (.int 1)]))]
 #guard parseOracleParts (name := "Viv Vision, Teen Synthezoid")
   "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater." ==
   some [.ability (
     .triggered (.attack .this .all)
       (.if (.any (.intersection [.source .this, .powerAtLeast (.int 4)]))
-        [.draw (.controller .this) (.nat 1)]))]
+        [.draw (.controller .this) (.int 1)]))]
 #guard parseOracleParts (name := "")
   "{6}: Each opponent discards a card. Create a 2/2 colorless Robot Villain artifact creature token." ==
   some [.ability (
     .activated [.mana [.generic 6]]
       (.sequence [
-        .discard (.opponent (.controller .this)) (.nat 1),
-        .createTokens (.controller .this) (.nat 1)
+        .discard (.opponent (.controller .this)) (.int 1),
+        .createTokens (.controller .this) (.int 1)
           [.type .artifact, .type .creature, .subtype .robot, .subtype .villain,
             .colorIndicator [], .power 2, .toughness 2]
           []]))]
@@ -241,13 +241,13 @@ open OracleParts
     .dealDamage
       .this
       (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
-      (.nat 5)]]
+      (.int 5)]]
 #guard parseOracleParts (name := "") "This spell deals 5 damage to target creature." ==
   some [.actions [
     .dealDamage
       .this
       (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
-      (.nat 5)]]
+      (.int 5)]]
 #guard parseOracleParts (name := "") "This spell deals 0 damage to target creature." == none
 #guard parseOracleParts (name := "Smaug, the Great Calamity")
     "//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature." ==
@@ -260,7 +260,7 @@ open OracleParts
       .dealDamage
         .this
         (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
-        (.nat 5)]]]
+        (.int 5)]]]
 #guard
   let others : Selector :=
     .intersection [
@@ -332,11 +332,11 @@ open OracleParts
 #guard parseOracleParts (name := "") "Lifelink\nDraw a card." ==
   some [.ability (.keyword .lifelink),
    .actions
-     [.draw (.controller .this) (.nat 1)]]
+     [.draw (.controller .this) (.int 1)]]
 #guard parseOracleParts (name := "") "Scry 2. Draw a card." ==
   some [.actions
-     [.scry (.controller .this) (.nat 2),
-      .draw (.controller .this) (.nat 1)]]
+     [.scry (.controller .this) (.int 2),
+      .draw (.controller .this) (.int 1)]]
 #guard parseOracleParts (name := "")
   "Untap target creature you control. Draw a card." ==
   some [.actions
@@ -347,7 +347,7 @@ open OracleParts
             [.zone .battlefield,
              .cardType .creature,
              .controlled (.controller .this)])),
-      .draw (.controller .this) (.nat 1)]]
+      .draw (.controller .this) (.int 1)]]
 #guard parseOracleParts (name := "")
   "Flying\n//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nDraw a card." == none
 #guard parseOracleParts (name := "") "//ADV//\nSpew Flame {Z}\nSorcery — Adventure" == none
@@ -391,7 +391,7 @@ open OracleParts
   some [.ability
      (.triggered
        (.combatDamage .this .player)
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "")
   "Exchange control of two target nonland permanents that share a card type." ==
   some [.actions [
@@ -528,7 +528,7 @@ open OracleParts
   some [.ability
      (.triggered
        (.die .this)
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "")
   "Whenever one or more other creatures die, scry 1." ==
   some [.ability (
@@ -701,7 +701,7 @@ open OracleParts
   some [.ability
      (.activated
        [.life 2]
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "Ravening Warg")
   "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life." ==
   some [.ability (
@@ -747,7 +747,7 @@ open OracleParts
      [.putCounter
         (.targets
           1
-          (.range (.nat 0) (.nat 1))
+          (.range (.int 0) (.int 1))
           (.intersection
             [.zone .battlefield, .cardType .creature]))
         .plusOnePlusOne
@@ -1079,7 +1079,7 @@ open OracleParts
   some [.ability (
     .triggered
       (.enter (.intersection [.not .this, .zone .battlefield, .cardType .creature]))
-      (.discard (.opponent (.controller .this)) (.nat 1)))]
+      (.discard (.opponent (.controller .this)) (.int 1)))]
 #guard parseOracleParts (name := "")
   "When this creature enters, each opponent discards a card of their choice." == none
 #guard parseOracleParts (name := "Gandalf, Spark Starter")
@@ -1156,7 +1156,7 @@ open OracleParts
         .dealDamage
           .this
           (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
-          (.nat 5)]]]
+          (.int 5)]]]
 
 #guard parseOracleParts (name := "")
   "{5}{G}{G}: Put three +1/+1 counters on this creature." ==

@@ -217,7 +217,7 @@ def applyIfShape (b : CardFace) (s : Selector.Shape)
 def extraLandIfOtherSubtype? (among : Selector) (inners : List ContinuousEffect)
     : Option String :=
   match inners with
-  | [.increaseLandPlayLimit who (Value.nat 1)] =>
+  | [.increaseLandPlayLimit who (Value.int 1)] =>
     if who == .controller .this then among.shape.anotherSubtypeYouControl
     else none
   | _ => none
@@ -506,7 +506,7 @@ controller controls, so that ability triggers twice instead of once. -/
 def extraTriggerSubtypeYouControl? : List ContinuousEffect → Option String
   | [.replace
       (.abilityTriggers (.intersection [.zone .battlefield, .subtype st, ctl]))
-      [.duplicateReplacingTrigger (.nat 2)]] =>
+      [.duplicateReplacingTrigger (.int 2)]] =>
     if ctl == .controlled (.controller .this) then some st.toString else none
   | _ => none
 
@@ -557,7 +557,7 @@ def printedStaticApplied? (b : CardFace) : ContinuousEffect → Option CardFace
     if (who == .this || who == .source .this) && you == .controlled (.controller .this) then
       some { b with staticAbilities := b.staticAbilities.push (.getsPowerPerOtherArtifact 1) }
     else none
-  | .if (.lessOrEqual (.greatestPower who) (.nat n)) [.forbid (.block .any blocked)] =>
+  | .if (.lessOrEqual (.greatestPower who) (.int (.ofNat n))) [.forbid (.block .any blocked)] =>
     if (who == .this || who == .source .this) &&
         (blocked == .this || blocked == .source .this) then
       some { b with
@@ -670,7 +670,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           else applyIfShape b among.shape inners
   | .if (.anySubtype among st) inners =>
     match inners with
-    | [.increaseLandPlayLimit who (Value.nat 1)] =>
+    | [.increaseLandPlayLimit who (Value.int 1)] =>
       if who == .controller .this && among.shape.other &&
           among.shape.sameController then
         { b with extraLandIfOtherSubtype := some st.toString }
@@ -718,7 +718,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.not (.and
       (.drawStep step)
       (.not (.happened (.draw drawer .all) (.drawStep since)))))
-      [.replace (.draw who .all) [.draw instead (.nat 2)]] =>
+      [.replace (.draw who .all) [.draw instead (.int 2)]] =>
     if step == .controller .this && since == .controller .this &&
         drawer == .controller .this && who == .controller .this &&
         instead == .controller .this then

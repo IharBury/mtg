@@ -57,7 +57,7 @@ def mentorOfTheMeekDefinition : TraditionalCardDefinition := .card <|
             .cardType .creature,
             .controlled (.controller .this),
             .powerAtMost (.int 2)]))
-      (.optionalPayFor (.controller .this) [.mana [.generic 1]] [.draw (.controller .this) (.nat 1)]))]
+      (.optionalPayFor (.controller .this) [.mana [.generic 1]] [.draw (.controller .this) (.int 1)]))]
 
 def mentorOfTheMeek : CardDef :=
   mentorOfTheMeekDefinition.toCardDef (oracleText := mentorOfTheMeekOracle)
@@ -98,7 +98,7 @@ def errandRiderOfGondorDefinition : TraditionalCardDefinition := .card <|
       (.enter .this)
       (.sequence
         [
-          .draw (.controller .this) (.nat 1),
+          .draw (.controller .this) (.int 1),
           .if
             (.not
               (.any
@@ -112,7 +112,7 @@ def errandRiderOfGondorDefinition : TraditionalCardDefinition := .card <|
               .putOnBottomOfLibrary
                 (.selected
                   (.controller .this)
-                  (.range (.nat 1) (.nat 1))
+                  (.range (.int 1) (.int 1))
                   (.intersection [.zone .hand, .owner (.controller .this)]))]]))]
 
 def errandRiderOfGondor : CardDef :=
@@ -346,12 +346,12 @@ def dawnOfANewAgeDefinition : TraditionalCardDefinition := .card <|
     (.triggered
       (.endStep (.controller .this))
       (.sequence [
-        .actionId 1 (.removeCounter (.source .this) (.hope) (.nat 1)),
+        .actionId 1 (.removeCounter (.source .this) (.hope) (.int 1)),
         .if (.happened (.actionWithId 1) .gameStart) [
-          .draw (.controller .this) (.nat 1),
+          .draw (.controller .this) (.int 1),
           .if (.not (.any (.intersection [.source .this, .hasCounter (.hope)]))) [
             .sacrifice (.source .this),
-            .gainLife (.controller .this) (.nat 4)]]]))]
+            .gainLife (.controller .this) (.int 4)]]]))]
 
 def dawnOfANewAge : CardDef :=
   dawnOfANewAgeDefinition.toCardDef (oracleText := dawnOfANewAgeOracle)
@@ -768,7 +768,7 @@ def hauntOfTheDeadMarshesDefinition : TraditionalCardDefinition := .card <|
   .subtype .elf,
   .power 1,
   .toughness 1,
-  .ability (.triggered (.enter .this) (.scry (.controller .this) (.nat 1))),
+  .ability (.triggered (.enter .this) (.scry (.controller .this) (.int 1))),
   .ability
     (.graveyardActivatedIf
       (.any
@@ -950,7 +950,7 @@ def battleScarredGoblinDefinition : TraditionalCardDefinition := .card <|
   .ability (
     .triggered
       (.block .all .this)
-      (.dealDamage .this (.blocking .this) (.nat 1)))]
+      (.dealDamage .this (.blocking .this) (.int 1)))]
 
 def battleScarredGoblin : CardDef :=
   battleScarredGoblinDefinition.toCardDef (oracleText := battleScarredGoblinOracle)
@@ -978,7 +978,7 @@ def improvisedClubDefinition : TraditionalCardDefinition := .card <|
             .zone .battlefield,
             .union [.cardType .artifact, .cardType .creature]])
           1])),
-  .actions [.dealDamage .this (.target 1 .all) (.nat 4)]]
+  .actions [.dealDamage .this (.target 1 .all) (.int 4)]]
 
 def improvisedClub : CardDef :=
   improvisedClubDefinition.toCardDef (oracleText := improvisedClubOracle)
@@ -1190,7 +1190,7 @@ def guttersnipeDefinition : TraditionalCardDefinition := .card <|
         (.intersection [
           .union [.cardType .instant, .cardType .sorcery],
           .controlled (.controller .this)]))
-      (.dealDamage .this (.opponent (.controller .this)) (.nat 2)))]
+      (.dealDamage .this (.opponent (.controller .this)) (.int 2)))]
 
 def guttersnipe : CardDef :=
   guttersnipeDefinition.toCardDef (oracleText := guttersnipeOracle)
@@ -1625,7 +1625,7 @@ def greatGoblinFoulHeartedDefinition : TraditionalCardDefinition := .card <|
   .ability (
     .triggered
       (.or (.enter .this) (.attack .this .all))
-      (.keyword (.controller .this) (.amass .goblin (.nat 3)))),
+      (.keyword (.controller .this) (.amass .goblin (.int 3)))),
   .ability (
     .static
       (.gainAbility
@@ -1699,14 +1699,14 @@ def bagEndBanquetDefinition : TraditionalCardDefinition := .card <|
       (.enter .this)
       (.createTokens
         (.controller .this)
-        (.nat 3)
+        (.int 3)
         [
           .type .artifact,
           .subtype .food,
           .ability
             (.activated
               [.mana [.generic 2], .tapSymbol, .sacrifice .this]
-              (.gainLife (.controller .this) (.nat 3)))]
+              (.gainLife (.controller .this) (.int 3)))]
         [])),
   .ability
     (.activated
@@ -1861,7 +1861,7 @@ def rivendellDefinition : TraditionalCardDefinition := .card <|
         (.intersection
           [.zone .battlefield, .cardType .creature, .supertype .legendary, .controlled (.controller .this)]))
       [.mana [.generic 1, .mono .blue], .tapSymbol]
-      (.scry (.controller .this) (.nat 2)))]
+      (.scry (.controller .this) (.int 2)))]
 
 def rivendell : CardDef :=
   rivendellDefinition.toCardDef (oracleText := rivendellOracle)
@@ -1897,11 +1897,11 @@ def relicOfSauronDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.activated
       [.tapSymbol]
-      (.addManaInAnyCombination (.controller .this) [.mono .blue, .mono .black, .mono .red] (.nat 2))),
+      (.addManaInAnyCombination (.controller .this) [.mono .blue, .mono .black, .mono .red] (.int 2))),
   .ability
     (.activated
       [.mana [.generic 3], .tapSymbol]
-      (.sequence [.draw (.controller .this) (.nat 2), .discard (.controller .this) (.nat 1)]))]
+      (.sequence [.draw (.controller .this) (.int 2), .discard (.controller .this) (.int 1)]))]
 
 def relicOfSauron : CardDef :=
   relicOfSauronDefinition.toCardDef (oracleText := relicOfSauronOracle)
@@ -2267,7 +2267,7 @@ def thranduilTheStrategistDefinition : TraditionalCardDefinition := .card <|
           [.tapSymbol]
           (.playerSelectAction
             (.controller .this)
-            (.range (.nat 1) (.nat 1))
+            (.range (.int 1) (.int 1))
             [
               .addMana (.controller .this) [.mono .green],
               .addMana (.controller .this) [.mono .blue]])))),
@@ -2276,7 +2276,7 @@ def thranduilTheStrategistDefinition : TraditionalCardDefinition := .card <|
       (.enter (.intersection [.zone .battlefield, .cardType .land, .controlled (.controller .this)]))
       (.createTokens
         (.controller .this)
-        (.nat 1)
+        (.int 1)
         [.type .creature, .subtype .elf, .colorIndicator [.green], .power 1, .toughness 1]
         []))]
 
@@ -2805,12 +2805,12 @@ def mountDoomDefinition : TraditionalCardDefinition := .card <|
       [.tapSymbol, .life 1]
       (.playerSelectAction
         (.controller .this)
-        (.range (.nat 1) (.nat 1))
+        (.range (.int 1) (.int 1))
         [.addMana (.controller .this) [.mono .black], .addMana (.controller .this) [.mono .red]])),
   .ability
     (.activated
       [.mana [.generic 1, .mono .black, .mono .red], .tapSymbol]
-      (.dealDamage .this (.opponent (.controller .this)) (.nat 1))),
+      (.dealDamage .this (.opponent (.controller .this)) (.int 1))),
   .ability
     (.activatedIf
       (.timeToCastSorcery (.controller .this))
@@ -2825,7 +2825,7 @@ def mountDoomDefinition : TraditionalCardDefinition := .card <|
             1
             (.selected
               (.controller .this)
-              (.range (.nat 0) (.nat 2))
+              (.range (.int 0) (.int 2))
               (.intersection [.zone .battlefield, .cardType .creature])),
           .destroy (.intersection [.zone .battlefield, .cardType .creature, .not (.variable 1)])]))]
 

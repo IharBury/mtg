@@ -130,7 +130,7 @@ def parsePutCountersOnTarget (sentence : String) (n : Nat) : Option (CardAction 
     | some sel =>
       -- A creature type (`Elf`, `Goblin or Orc`), not a card type (`creature`).
       if sel.includedSubtypes.isEmpty then none
-      else some (.putCounter (.target n sel) .plusOnePlusOne (.nat k), n + 1)
+      else some (.putCounter (.target n sel) .plusOnePlusOne (.int k), n + 1)
     | none => none
 
 /-- A basic land card in a library. -/
@@ -335,7 +335,7 @@ def parseDealDamage (cardName : String) (sentence : String) (n : Nat) :
       (split2? rest " damage to target ").bind fun (amt, obj) =>
         match positiveDigits? amt, typesInPhrase obj with
         | some amount, some ts =>
-          some (.dealDamage .this (.target n (permanentWith ts)) (.nat amount), n + 1)
+          some (.dealDamage .this (.target n (permanentWith ts)) (.int amount), n + 1)
         | _, _ => none
 
 /-- `Target … gains … until end of turn.` The target number is `n`. -/
@@ -376,7 +376,7 @@ def graveyardCountCondition? (s : String) : Option Condition :=
       | some k, some t =>
         some (.greaterOrEqual
           (.count (.intersection [.zone .graveyard, .cardType t, .owner (.controller .this)]))
-          (Value.nat k))
+          (Value.int k))
       | _, _ => none
 
 /-- `a card`, `one card`, or `two cards` as how many cards are drawn.
@@ -401,8 +401,8 @@ def parseTargetPlayerDrawsLosesLife (sentence : String) (n : Nat) :
     | some cards, some life =>
       some (
         .sequence [
-          .draw (.target n .player) (Value.nat cards),
-          .loseLife (.targetReference n) (Value.nat life)],
+          .draw (.target n .player) (Value.int cards),
+          .loseLife (.targetReference n) (Value.int life)],
         n + 1)
     | _, _ => none
   | none => none
@@ -411,7 +411,7 @@ def parseTargetPlayerDrawsLosesLife (sentence : String) (n : Nat) :
 def parseEnterDraw (cardName : String) (line : String) : Option CardPart :=
   onEnter cardName line fun effect =>
     (after? effect "draw ").bind parseCardCount |>.map fun k =>
-      .draw (.controller .this) (Value.nat k)
+      .draw (.controller .this) (Value.int k)
 
 /-- `target creature an opponent controls` as the objects a target matches. -/
 def parseOppControlledTarget (s : String) : Option Selector :=
@@ -479,8 +479,8 @@ def parseDrawThenDiscard (sentence : String) (n : Nat) : Option (CardAction × N
     | some d, some c =>
       some (
         .sequence [
-          .draw (.controller .this) (Value.nat d),
-          .discard (.controller .this) (Value.nat c)],
+          .draw (.controller .this) (Value.int d),
+          .discard (.controller .this) (Value.int c)],
         n)
     | _, _ => none
   | none => none
@@ -583,7 +583,7 @@ def parseDestroyThenGainLife (text : String) (n : Nat) : Option (CardAction × N
   | [destroy, gain] =>
     match parseDestroy destroy n, lifeAmount? (normSentence gain) "you gain " with
     | some (destroyed, n'), some k =>
-      some (.sequence [destroyed, .gainLife (.controller .this) (Value.nat k)], n')
+      some (.sequence [destroyed, .gainLife (.controller .this) (Value.int k)], n')
     | _, _ => none
   | _ => none
 

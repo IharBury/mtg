@@ -45,7 +45,7 @@ def leftoverUntapPlusOneIfSubtype? : CardAction → Option String
 
 /-- Draw, then discard a card. -/
 def leftoverDrawDiscard? : CardAction → Option Nat
-  | .sequence [.draw _who (.nat n), .discard _p 1] => some n
+  | .sequence [.draw _who (.int (.ofNat n)), .discard _p 1] => some n
   | _ => none
 
 /-- Put a +1/+1 counter on up to one target creature; a target player gains
@@ -53,7 +53,7 @@ that much life. -/
 def leftoverPlusOneAndGainLife? : CardAction → Option Nat
   | .sequence [
       .putCounter sel .plusOnePlusOne 1,
-      .gainLife who (.nat n)
+      .gainLife who (.int (.ofNat n))
     ] =>
     let upToOneCreature :=
       match sel with
@@ -160,15 +160,15 @@ def leftoverCreaturesTargetPlayerGet? : CardAction → Option (Int × Int)
 
 /-- Target player draws cards and loses life. -/
 def leftoverTargetPlayerDrawLoseLife? : CardAction → Option (Nat × Nat)
-  | .sequence [.draw (.target _ .player) (.nat cards), .loseLife _ (.nat life)] =>
+  | .sequence [.draw (.target _ .player) (.int (.ofNat cards)), .loseLife _ (.int (.ofNat life))] =>
     some (cards, life)
   | _ => none
 
 /-- You draw cards and lose life. -/
 def leftoverDrawLoseLifeSelf? : CardAction → Option (Nat × Nat)
   | .sequence [
-      .draw (.controller .this) (.nat cards),
-      .loseLife (.controller .this) (.nat life)
+      .draw (.controller .this) (.int (.ofNat cards)),
+      .loseLife (.controller .this) (.int (.ofNat life))
     ] =>
     some (cards, life)
   | _ => none
@@ -178,13 +178,13 @@ def leftoverDrawLoseLifeThenAmass? : CardAction → Option Nat
   | .sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1,
-      .keyword (.controller .this) (.amass .goblin (.nat n))
+      .keyword (.controller .this) (.amass .goblin (.int (.ofNat n)))
     ] => some n
   | _ => none
 
 /-- Return up to one creature card from your graveyard, then amass Goblins `n`. -/
 def leftoverReturnCreatureFromGyThenAmass? : CardAction → Option Nat
-  | .sequence [.returnToHand sel, .keyword (.controller .this) (.amass .goblin (.nat n))] =>
+  | .sequence [.returnToHand sel, .keyword (.controller .this) (.amass .goblin (.int (.ofNat n)))] =>
     match sel with
     | .targets _ (.range 0 1) among | .target _ among =>
       if among.shape.types.eqTypes [.creature] && among.includesInGraveyard then
@@ -298,7 +298,7 @@ def leftoverTargetCantBeBlocked? : CardAction → Bool
 
 /-- Tap target creature, then scry and draw. -/
 def leftoverTapScryDraw? : CardAction → Option (Nat × Nat)
-  | .sequence [.tap sel, .scry _ (.nat scryN), .draw _ (.nat drawN)] =>
+  | .sequence [.tap sel, .scry _ (.int (.ofNat scryN)), .draw _ (.int (.ofNat drawN))] =>
     if sel.toTargetKind == .creature then some (scryN, drawN) else none
   | _ => none
 
@@ -320,7 +320,7 @@ def leftoverReturnSpellCantCastIfGift? : CardAction → Bool
 
 /-- Destroy target artifact or enchantment; you gain life. -/
 def leftoverDestroyArtEnchGainLife? : CardAction → Option Nat
-  | .sequence [.destroy sel, .gainLife _ (.nat n)] =>
+  | .sequence [.destroy sel, .gainLife _ (.int (.ofNat n))] =>
     if sel.toTargetKind == .artifactOrEnchantment then some n else none
   | _ => none
 
@@ -379,7 +379,7 @@ def leftoverPlusOnePlusOneTrampleHexproof? : CardAction → Bool
 /-- Put +1/+1 counters on a creature you control; it gains vigilance. -/
 def leftoverPlusOneVigilance? : CardAction → Option Nat
   | .sequence [
-      .putCounter sel .plusOnePlusOne (.nat n),
+      .putCounter sel .plusOnePlusOne (.int (.ofNat n)),
       .continuous effects _
     ] =>
     let youControlCreature :=
@@ -508,7 +508,7 @@ def leftoverTapAddManaForEach? (costs : List Cost) : CardAction → Option TapAd
 
 /-- `{T}: Add two mana in any combination of {U}, {B}, and/or {R}.` -/
 def leftoverTapAddTwoAmong? (costs : List Cost) : CardAction → Option (Array ManaType)
-  | .addManaInAnyCombination who syms (.nat 2) =>
+  | .addManaInAnyCombination who syms (.int 2) =>
     if costs == [.tapSymbol] && who == .controller .this && syms.length >= 2 then
       (syms.mapM addedManaType?).map List.toArray
     else none
@@ -591,9 +591,9 @@ def leftoverEntersWithHopePerCreature? : List CardAction → Bool
 def wreckingCrewModes? : List CardAction → Bool
   | [
       .sequence [
-        .discard (.controller .this) (.nat 1),
-        .draw (.controller .this) (.nat 1)],
-      .loseLife (.target _ (.opponent (.controller .this))) (.nat 2),
+        .discard (.controller .this) (.int 1),
+        .draw (.controller .this) (.int 1)],
+      .loseLife (.target _ (.opponent (.controller .this))) (.int 2),
       .destroy (.target _ (.intersection [.zone .battlefield, .token])),
       .forEachVariable id .player
         [.sacrifice (.selected (.variable id') (.range 1 1) among)]
@@ -612,7 +612,7 @@ def leftoverHealThenKeepReplaced? : List CardAction → Bool
 /-- Put +1/+1 counters on a targeted creature you control, optionally of
 listed subtypes. -/
 def leftoverPlusOneOnTarget? : CardAction → Option Effect
-  | .putCounter sel .plusOnePlusOne (.nat n) =>
+  | .putCounter sel .plusOnePlusOne (.int (.ofNat n)) =>
     match sel.among? with
     | some among =>
       if among.shape.sameController && among.shape.types.eqTypes [.creature] then
@@ -697,7 +697,7 @@ def leftoverEachPlayerSacrificesCreature? : CardAction → Bool
 
 /-- Each opponent loses N life and you gain N life. -/
 def leftoverEachOpponentLoseLifeYouGain? : CardAction → Option Nat
-  | .sequence [.loseLife dest (.nat n), .gainLife who (.nat m)] =>
+  | .sequence [.loseLife dest (.int (.ofNat n)), .gainLife who (.int (.ofNat m))] =>
     if who == .controller .this && n == m then
       match dest with
       | .opponent (.controller .this) => some n
@@ -712,7 +712,7 @@ def leftoverOwnerPutsLibraryThenConnive? : CardAction → Bool
   | .sequence [
       .playerSelectAction chooser (.range 1 1)
         [.putIntoLibraryFromTop t1 2, .putOnBottomOfLibrary t2],
-      .keyword who (.connive (.nat 1))
+      .keyword who (.connive (.int 1))
     ] =>
     match t1 with
     | .target n among =>
@@ -728,7 +728,7 @@ def leftoverOwnerPutsLibraryThenConnive? : CardAction → Bool
 
 /-- Put +1/+1 counters on each other permanent you control of a subtype. -/
 def leftoverPlusOneOnEachOtherSubtype? : CardAction → Option Effect
-  | .putCounter sel .plusOnePlusOne (.nat n) =>
+  | .putCounter sel .plusOnePlusOne (.int (.ofNat n)) =>
     if sel.among?.isNone then
       match sel.shape.anotherSubtypeYouControl with
       | some st => some (Effect.plusOneOnEachOtherSubtype st n)
@@ -749,7 +749,7 @@ def leftoverMaySacArtifactOrDiscardDraw? : CardAction → Option Nat
           (.playerSelectAction _ (.range 1 1) [
             .sacrifice sac,
             .discard _ 1])),
-      .if (.happened (.actionWithId id') _) [.draw _ (.nat n)]
+      .if (.happened (.actionWithId id') _) [.draw _ (.int (.ofNat n))]
     ] =>
     if id == id' && leftoverSacrificeOneArtifact? sac then some n else none
   | _ => none
@@ -780,7 +780,7 @@ def leftoverReturnUpToTwoGyModal? : CardAction → Option Bool
 tapped, and you put a +1/+1 counter on up to one creature. -/
 def leftoverGainLifeSearchBasicPlusOne? : CardAction → Option Nat
   | .sequence [
-      .gainLife who (.nat n),
+      .gainLife who (.int (.ofNat n)),
       .searchLibraryThenShuffle _ actions,
       .putCounter sel .plusOnePlusOne 1
     ] =>
@@ -927,7 +927,7 @@ def leftoverExileThenReturnTapped? : CardAction → Option Selector
 
 /-- Two target creatures and/or lands this object's controller controls. -/
 def leftoverTwoCreaturesOrLandsYouControl? : Selector → Bool
-  | .targets _ (.range (.nat 2) (.nat 2)) among =>
+  | .targets _ (.range (.int 2) (.int 2)) among =>
     let s := among.shape
     s.mustBePermanent && s.sameController &&
       s.types.eqTypes [.creature, .land] &&
@@ -970,9 +970,9 @@ def leftoverSearchBasicOnTop? : CardAction → Bool
 /-- Keyword actions that compile to a named `Effect`. -/
 def leftoverKeywordAction? : Keyword → Option Effect
   | .recruit => some Effect.recruit
-  | .amass .goblin (.nat n) => some (Effect.amassGoblins n)
-  | .amass .orc (.nat n) => some (Effect.ofTrigger (.amassOrcs n))
-  | .connive (.nat 1) => some Effect.connive
+  | .amass .goblin (.int (.ofNat n)) => some (Effect.amassGoblins n)
+  | .amass .orc (.int (.ofNat n)) => some (Effect.ofTrigger (.amassOrcs n))
+  | .connive (.int 1) => some Effect.connive
   | .harness => some Effect.harnessInfinityStone
   | _ => none
 
@@ -986,7 +986,7 @@ def leftoverHarnessFlicker? : CardAction → Bool
     ] =>
     id == id' && who == .owner (.wasCreatedByAction id) &&
       match sel with
-      | .targets _ (.range (.nat 0) (.nat 1)) among =>
+      | .targets _ (.range (.int 0) (.int 1)) among =>
         let s := among.shape
         s.other && s.nonland && s.sameController && s.mustBePermanent &&
           s.types == .any && !s.token && !s.nontoken && s.subtype.isNone &&

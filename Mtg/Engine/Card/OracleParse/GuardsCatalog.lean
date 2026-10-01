@@ -212,7 +212,7 @@ open OracleParts
   some [.ability
      (.activated
        [.mana [.generic 1], .tapSymbol]
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "Fíli the Pathfinder")
   "As long as you have an enduring story, creatures you control get +1/+1." ==
   some [.ability (.static (.if (.enduringStory (.controller .this))
@@ -290,10 +290,10 @@ open OracleParts
        (.sequence
          [.gainLife
             (.controller .this)
-            (.nat 2),
+            (.int 2),
           .draw
             (.controller .this)
-            (.nat 1)]))]
+            (.int 1)]))]
 #guard parseOracleParts (name := "Gandalf")
   "When Old Thrush enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top." ==
   none
@@ -542,7 +542,7 @@ open OracleParts
               [.subtype .dwarf,
                .subtype .equipment],
             .controlled (.controller .this)]))
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "Dáin's Company")
   "This creature has lifelink as long as you control another Dwarf.\nWhen this creature enters, look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into your hand. Put the rest on the bottom of your library in a random order." ==
   some [
@@ -603,10 +603,10 @@ open OracleParts
            [.spell,
             .controlled (.controller .this)]))
        (.sequence
-         [.draw (.controller .this) (.nat 1),
+         [.draw (.controller .this) (.int 1),
           .loseLife
             (.controller .this)
-            (.nat 1)]))]
+            (.int 1)]))]
 #guard parseOracleParts (name := "Glamdring, Foe-hammer")
   "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.\nEquip {2}\n//ADV//\nGleam of Death {3}{U}\nSorcery — Adventure\nMill six cards, then put all instant and sorcery cards from among them into your hand. (Then exile this card. You may cast the artifact later from exile.)" ==
   some [
@@ -686,7 +686,7 @@ open OracleParts
           .putOntoBattlefieldInState
             (.selected
               (.targetReference 1)
-              (.range (.nat 0) (.count (.wasObjectOfAction 1)))
+              (.range (.int 0) (.count (.wasObjectOfAction 1)))
               (.intersection [
                 .zone .library,
                 .cardType .land,
@@ -1254,7 +1254,7 @@ open OracleParts
           .zone .graveyard,
           .cardType .creature,
           .owner (.controller .this),
-          .manaValueAtMost (.nat 3)]))])]
+          .manaValueAtMost (.int 3)]))])]
 #guard parseOracleParts (name := "")
   "II — Return target creature card with mana value 0 or less from your graveyard to the battlefield." ==
   none
@@ -1304,7 +1304,7 @@ open OracleParts
   "If one or more tokens would be created under your control, twice that many of those tokens are created instead." ==
   some [.ability (.static (.replace
     (.createTokens (.intersection [.token, .controlled (.controller .this)]))
-    [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))]))]
+    [.modifyReplacementCreatedTokenCount (fun n => .int (n * 2))]))]
 #guard parseOracleParts (name := "Bard, King of Dale")
   "If a token would be created under your control, twice that many of those tokens are created instead." ==
   none

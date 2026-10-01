@@ -34,7 +34,7 @@ def parseCantBeBlockedIfOwnPower (cardName line : String) : Option CardPart :=
           after? rest "its power is " <|> after? rest "their power is "
       (power?.bind (before? · " or less")).bind positiveCount |>.map fun p =>
         .ability (.static (.if
-          (.lessOrEqual (.greatestPower (.source .this)) (.nat p))
+          (.lessOrEqual (.greatestPower (.source .this)) (.int p))
           [.forbid (.block .any (.source .this))]))
 
 /-- `Whenever you cast a noncreature spell, you may draw X cards, where X is
@@ -180,12 +180,12 @@ def parseEndStepRemoveHopeDrawSac (line : String) (n : Nat) : Option (CardPart �
         thenSac == "then if this enchantment has no hope counters on it, sacrifice it and you gain 4 life" then
       some (
         .ability (.triggered (.endStep (.controller .this)) (.sequence [
-          .actionId n (.removeCounter (.source .this) (.hope) (.nat 1)),
+          .actionId n (.removeCounter (.source .this) (.hope) (.int 1)),
           .if (.happened (.actionWithId n) .gameStart) [
-            .draw (.controller .this) (.nat 1),
+            .draw (.controller .this) (.int 1),
             .if (.not (.any (.intersection [.source .this, .hasCounter (.hope)]))) [
               .sacrifice (.source .this),
-              .gainLife (.controller .this) (.nat 4)]]])),
+              .gainLife (.controller .this) (.int 4)]]])),
         n + 1)
     else none
   | _ => none
@@ -359,7 +359,7 @@ structure ModeList where
 `X` is the value of X (CR 107.3). -/
 def chooseUpToXModes (cardName : String) (trigger : Trigger) : ModeList where
   wrap modes :=
-    [.ability (.triggered trigger (.chooseUniqueModes (.range (.nat 0) .x) modes))]
+    [.ability (.triggered trigger (.chooseUniqueModes (.range (.int 0) .x) modes))]
   mode := parseCatalogMode cardName
 
 /-- A triggered “choose one —” ability: exactly one mode (CR 700.2). -/
@@ -380,7 +380,7 @@ def restrictedModes (cardName : String) (trigger : Trigger) : ModeList where
 Each mode is `Target <type> card.`, a card in your graveyard. -/
 def chooseUpToReturnModes (k : Nat) : ModeList where
   wrap modes :=
-    [.actions [.playerSelectAction (.controller .this) (.range 0 (Value.nat k))
+    [.actions [.playerSelectAction (.controller .this) (.range 0 (Value.int k))
       (modes.map fun sel => sel)]]
   mode text n :=
     (between? (normSentence text) "target " " card").bind typeOfOracle? |>.map fun t =>

@@ -99,7 +99,7 @@ open OracleParts
   "Choose one —\n• Put a +1/+1 counter on target creature you control." ==
   some [.actions
      [.chooseUniqueModes
-        (.range (.nat 1) (.nat 1))
+        (.range (.int 1) (.int 1))
         [.putCounter
            (.target
              1
@@ -381,7 +381,7 @@ open OracleParts
 #guard parseOracleParts (name := "") "You may play an additional land this turn." ==
   some [.actions [
     .continuous
-      [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]
+      [.increaseLandPlayLimit (.controller .this) (Value.int 1)]
       .endOfTurn]]
 #guard parseOracleParts (name := "") "You may play two additional lands this turn." == none
 #guard parseOracleParts (name := "")
@@ -414,7 +414,7 @@ open OracleParts
       .subtype .adventure,
       .actions [
         .continuous
-          [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]
+          [.increaseLandPlayLimit (.controller .this) (Value.int 1)]
           .endOfTurn]]]
 #guard parseOracleParts (name := "Elvenking's Halls") "This land enters tapped." ==
   some [.ability (.static (.replace (.enter .this)
@@ -510,7 +510,7 @@ open OracleParts
        (.enter .this)
        (.gainLife
          (.target 1 .player)
-         (.nat 2)))]
+         (.int 2)))]
 #guard parseOracleParts (name := "")
   "When this creature enters, untap another target creature you control. If that creature is a Bear, put a +1/+1 counter on it." ==
   some [.ability (.triggered (.enter .this)
@@ -709,7 +709,7 @@ open OracleParts
   some [.ability
      (.triggered
        (.die .this)
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "") "When another creature dies, recruit." == none
 #guard parseOracleParts (name := "")
   "When this artifact enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)" ==
@@ -732,7 +732,7 @@ open OracleParts
          .colored .black,
          .colored .red,
          .colored .green]
-        (.nat 1)]]
+        (.int 1)]]
 #guard parseOracleParts (name := "") "{T}: Add one mana of any color." ==
   some [.ability
      (.activated
@@ -744,7 +744,7 @@ open OracleParts
           .colored .black,
           .colored .red,
           .colored .green]
-         (.nat 1)))]
+         (.int 1)))]
 #guard parseOracleParts (name := "Giant's Boulder")
   "{7}, {T}, Sacrifice this artifact: Destroy target permanent." ==
   some [.ability (
@@ -779,7 +779,7 @@ open OracleParts
        (.enter .this)
        (.createTokens
          (.controller .this)
-         (.nat 2)
+         (.int 2)
          [.type .artifact,
           .subtype .treasure,
           .ability
@@ -792,7 +792,7 @@ open OracleParts
                  .colored .black,
                  .colored .red,
                  .colored .green]
-                (.nat 1)))]
+                (.int 1)))]
          []))]
 #guard parseOracleParts (name := "")
   "When this creature enters, create a tapped Food token." == none
@@ -846,7 +846,7 @@ open OracleParts
           .spell,
           .not (.cardType .creature),
           .controlled (.controller .this)]))
-      (.keyword (.controller .this) (.amass .goblin (.nat 1))))]
+      (.keyword (.controller .this) (.amass .goblin (.int 1))))]
 #guard parseOracleParts (name := "")
   "Whenever you cast a creature spell, amass Goblins 1." ==
   some [.ability
@@ -858,7 +858,7 @@ open OracleParts
             .controlled (.controller .this)]))
        (.keyword
          (.controller .this)
-         (.amass .goblin (.nat 1))))]
+         (.amass .goblin (.int 1))))]
 #guard parseOracleParts (name := "") "Whenever you cast a noncreature spell, amass Goblin 1." == none
 #guard parseOracleParts (name := "") "Whenever you cast a noncreature spell, amass Goblins 0." == none
 #guard parseOracleParts (name := "")
@@ -866,7 +866,7 @@ open OracleParts
   some [.ability (
     .triggered
       (.enter .this)
-      (.keyword (.controller .this) (.amass .goblin (.nat 1))))]
+      (.keyword (.controller .this) (.amass .goblin (.int 1))))]
 #guard parseOracleParts (name := "Goblin-town Flunkies")
   "When Goblin-town Flunkies enters, amass Goblins 1." ==
   parseOracleParts (name := "") "When this creature enters, amass Goblins 1."
@@ -877,7 +877,7 @@ open OracleParts
   some [.ability (
     .triggered
       (.die .this)
-      (.keyword (.controller .this) (.amass .goblin (.nat 4))))]
+      (.keyword (.controller .this) (.amass .goblin (.int 4))))]
 #guard parseOracleParts (name := "")
   "Whenever you attack, amass Goblins 2." ==
   some [.ability (
@@ -889,7 +889,7 @@ open OracleParts
           .controlled (.controller .this)])
         .all
         [])
-      (.keyword (.controller .this) (.amass .goblin (.nat 2))))]
+      (.keyword (.controller .this) (.amass .goblin (.int 2))))]
 #guard parseOracleParts (name := "")
   "Whenever you attack while you control a Goblin, amass Goblins 2." == none
 #guard parseOracleParts (name := "")
@@ -960,7 +960,7 @@ open OracleParts
        (.or
          (.enter .this)
          (.attack .this .all))
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "") "You draw a card and lose 1 life." ==
   some [.actions [
     .sequence [
@@ -968,18 +968,18 @@ open OracleParts
       .loseLife (.controller .this) 1]]]
 #guard parseOracleParts (name := "") "You draw two cards and lose 1 life." ==
   some [.actions
-     [.draw (.controller .this) (.nat 2),
+     [.draw (.controller .this) (.int 2),
       .loseLife
         (.controller .this)
-        (.nat 1)]]
+        (.int 1)]]
 #guard parseOracleParts (name := "") "You draw a card and lose 2 life." ==
   some [.actions
-     [.draw (.controller .this) (.nat 1),
+     [.draw (.controller .this) (.int 1),
       .loseLife
         (.controller .this)
-        (.nat 2)]]
+        (.int 2)]]
 #guard parseOracleParts (name := "") "Amass Goblins 2." ==
-  some [.actions [.keyword (.controller .this) (.amass .goblin (.nat 2))]]
+  some [.actions [.keyword (.controller .this) (.amass .goblin (.int 2))]]
 #guard parseOracleParts (name := "")
   "Amass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)" ==
   parseOracleParts (name := "") "Amass Goblins 2."
@@ -990,7 +990,7 @@ open OracleParts
   some [.actions [
     .draw (.controller .this) 1,
     .loseLife (.controller .this) 1,
-    .keyword (.controller .this) (.amass .goblin (.nat 2))]]
+    .keyword (.controller .this) (.amass .goblin (.int 2))]]
 #guard parseOracleParts (name := "")
   "Return up to one target creature card from your graveyard to your hand." ==
   some [.actions [
@@ -1021,7 +1021,7 @@ open OracleParts
           .zone .graveyard,
           .cardType .creature,
           .owner (.controller .this)])),
-    .keyword (.controller .this) (.amass .goblin (.nat 3))]]
+    .keyword (.controller .this) (.amass .goblin (.int 3))]]
 #guard parseOracleParts (name := "")
   "Counter target spell. If that spell's mana value was 2 or less, recruit." ==
   some [.actions [
@@ -1054,7 +1054,7 @@ open OracleParts
            [.zone .battlefield,
             .cardType .artifact,
             .controlled (.controller .this)]))
-       (.draw (.controller .this) (.nat 2)))]
+       (.draw (.controller .this) (.int 2)))]
 #guard parseOracleParts (name := "")
   "Whenever a creature you control enters, draw a card." ==
   some [.ability
@@ -1064,14 +1064,14 @@ open OracleParts
            [.zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this)]))
-       (.draw (.controller .this) (.nat 1)))]
+       (.draw (.controller .this) (.int 1)))]
 #guard parseOracleParts (name := "Chief Warg's Company")
   "This creature can't attack unless you control two or more other Wolves." ==
   some [.ability (.static (.if
     (.less
       (.count (.intersection [
         .not .this, .zone .battlefield, .subtype .wolf, .controlled (.controller .this)]))
-      (Value.nat 2))
+      (Value.int 2))
     [.forbid (.attack .this .all)]))]
 #guard parseOracleParts (name := "Chief Warg's Company")
   "Chief Warg's Company can't attack unless you control two or more other Wolves." ==
@@ -1117,7 +1117,7 @@ open OracleParts
   some [.ability (.triggered
     (.enter .this)
     (.sequence [
-      .actionId 1 (.keyword (.controller .this) (.amass .goblin (.nat 1))),
+      .actionId 1 (.keyword (.controller .this) (.amass .goblin (.int 1))),
       .attach .this (.wasObjectOfAction 1)]))]
 #guard parseOracleParts (name := "")
   "When this Equipment enters, amass Goblins 1, then attach this Equipment to the amassed Army. (To amass Goblins 1, put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)" ==
@@ -1223,7 +1223,7 @@ open OracleParts
       [.keyword (.controller .this) (.amass .goblin 1)]]]
 #guard parseOracleParts (name := "") "Draw a card." ==
   some [.actions
-     [.draw (.controller .this) (.nat 1)]]
+     [.draw (.controller .this) (.int 1)]]
 #guard parseOracleParts (name := "")
   "Draw a card. If this spell was cast from a graveyard, amass Goblins 3 instead." == none
 #guard parseOracleParts (name := "")

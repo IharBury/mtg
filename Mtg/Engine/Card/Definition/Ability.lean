@@ -124,7 +124,7 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
 def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
     Option TriggeredAbility :=
   match k with
-  | .connive (.nat 1) =>
+  | .connive (.int 1) =>
     match w with
     | .enter .this =>
       if CardAction.leftoverSourceThis who then some TriggeredAbility.onEnterConnive
@@ -149,15 +149,15 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
       match w, k with
       | .enter .this, .recruit => some TriggeredAbility.onEnterRecruit
       | .die .this, .recruit => some TriggeredAbility.onDiesRecruit
-      | .enter .this, .amass .goblin (.nat n) => some (TriggeredAbility.onEnterAmassGoblins n)
-      | .die .this, .amass .goblin (.nat n) => some (TriggeredAbility.onDiesAmassGoblins n)
+      | .enter .this, .amass .goblin (.int (.ofNat n)) => some (TriggeredAbility.onEnterAmassGoblins n)
+      | .die .this, .amass .goblin (.int (.ofNat n)) => some (TriggeredAbility.onDiesAmassGoblins n)
       | .die .this, .amass .goblin (.greatestPower (.source .this)) =>
         some TriggeredAbility.onDiesAmassGoblinsEqualPower
       | .or (.enter .this) (.attack .this .all), .recruit =>
         some TriggeredAbility.onEnterOrAttackRecruit
-      | .or (.enter .this) (.attack .this .all), .amass .goblin (.nat n) =>
+      | .or (.enter .this) (.attack .this .all), .amass .goblin (.int (.ofNat n)) =>
         some (TriggeredAbility.onEnterOrAttackAmassGoblins n)
-      | .attackSimultaneously among dest _, .amass .goblin (.nat n) =>
+      | .attackSimultaneously among dest _, .amass .goblin (.int (.ofNat n)) =>
         if dest == .all && among.shape.sameController then
           some (TriggeredAbility.onYouAttackAmassGoblins n)
         else none
@@ -165,7 +165,7 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
         if dest == .all && among.shape.sameController then
           some TriggeredAbility.onYouAttackRecruit
         else none
-      | .castSpell among, .amass .goblin (.nat n) =>
+      | .castSpell among, .amass .goblin (.int (.ofNat n)) =>
         if Selector.youCastNoncreatureSpell among then
           some (TriggeredAbility.onCastNoncreatureAmassGoblins n)
         else none
@@ -173,7 +173,7 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
         if Selector.opponentCastsNoncreatureSpell among then
           some TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit
         else none
-      | .leaveGraveyard among, .amass .goblin (.nat n) =>
+      | .leaveGraveyard among, .amass .goblin (.int (.ofNat n)) =>
         if CardAction.leftoverYourGyCreatures? among then
           some (TriggeredAbility.onCreatureCardLeavesYourGyAmassGoblins n)
         else none
@@ -188,7 +188,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           (.actionId drawId
             (.draw drawer (.greatestManaSpent (.wasArgumentOfTrigger spellId 1)))),
         .if (.happened (.actionWithId ifId) .gameStart)
-          [.discard discarder (.nat 2)]]) =>
+          [.discard discarder (.int 2)]]) =>
     if id == drawId && id == spellId && id == ifId &&
         Selector.youCastNoncreatureSpell among &&
         CardAction.leftoverYou drawer && CardAction.leftoverYou discarder then
@@ -240,12 +240,12 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.endStep (.controller .this))
       (.sequence [
-        .actionId id (.removeCounter (.source .this) (.hope) (.nat 1)),
+        .actionId id (.removeCounter (.source .this) (.hope) (.int 1)),
         .if (.happened (.actionWithId id') .gameStart) [
-          .draw who (.nat 1),
+          .draw who (.int 1),
           .if (.not (.any (.intersection [.source .this, .hasCounter (.hope)]))) [
             .sacrifice (.source .this),
-            .gainLife who' (.nat 4)]]
+            .gainLife who' (.int 4)]]
       ]) =>
     if id == id' && CardAction.leftoverYou who && CardAction.leftoverYou who' then
       some TriggeredAbility.onYourEndStepRemoveHopeDrawSac
@@ -254,7 +254,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
       (.if (.not (.and
           (.not (.happened (.attack attackers .all) .turnStart))
           (.not (.happened (.enter entered) .turnStart))))
-        [.draw who (.nat 1)]) =>
+        [.draw who (.int 1)]) =>
     match Selector.subtypesYouControl? attackers with
     | some (#[st], false) =>
       if attackers == entered && who == .controller .this then
@@ -263,18 +263,18 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     | _ => none
   | .triggered (.enter .this)
       (.sequence [
-        .draw drawer (.nat 1),
+        .draw drawer (.int 1),
         .optional chooser (.putOntoBattlefieldInState
-          (.selected picker (.range (.nat 1) (.nat 1))
+          (.selected picker (.range (.int 1) (.int 1))
             (.intersection [.zone .hand, .owner owner, .cardType .land])) [.tapped])]) =>
     let you := Selector.controller .this
     if drawer == you && chooser == you && picker == you && owner == you then
       some .onEnterDrawMayPutLandTapped
     else none
   | .triggered (.enter .this)
-      (.ifElse (.greaterOrEqual (.count among) (.nat 2))
-        [.createTokens who (.nat 1) parts [.tapped]]
-        [.mill who' (.nat 2)]) =>
+      (.ifElse (.greaterOrEqual (.count among) (.int 2))
+        [.createTokens who (.int 1) parts [.tapped]]
+        [.mill who' (.int 2)]) =>
     if CardAction.leftoverYourGyCreatures? among && who == .controller .this &&
         who' == .controller .this && CardAction.leftoverTokenKind? parts == some .villain21menace then
       some .onEnterVillainIfGyElseMill
@@ -301,13 +301,13 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.attack .this .all)
       (.if (.happened (.enter (.intersection [.zone .battlefield, .cardType .artifact, .controlled (.controller .this)]))
           .turnStart)
-        [.draw who (.nat 1)]) =>
+        [.draw who (.int 1)]) =>
     if who == .controller .this then some (.onThisAttack Effect.thisAttackIfArtifactEnteredDraw) else none
-  | .triggered (.upkeep (.controller (.hostOf .this))) (.draw (.controller (.hostOf .this)) (.nat 1)) =>
+  | .triggered (.upkeep (.controller (.hostOf .this))) (.draw (.controller (.hostOf .this)) (.int 1)) =>
     some (.onStep Effect.stepEnchantedControllerDraws)
   | .triggered (.combatStart (.controller .this))
       (.optional chooser (.sequence [
-        .actionId id (.putOntoBattlefield (.selected picker (.range (.nat 1) (.nat 1))
+        .actionId id (.putOntoBattlefield (.selected picker (.range (.int 1) (.int 1))
           (.intersection [.zone .hand, .owner owner, .cardType .artifact]))),
         .if (.anySubtype (.wasObjectOfAction id') .equipment)
           [.attach (.wasObjectOfAction id'') (.source .this)]])) =>
@@ -321,24 +321,24 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
             [.continuous [.gainAbility (.source .this) (.keyword .doubleStrike)] .endOfTurn]),
          (2, .not (.happened (.modeWithIdChosen .player 2) .turnStart),
             [.continuous [.gainAbility (.source .this) (.keyword .indestructible)] .endOfTurn]),
-         (3, .not (.happened (.modeWithIdChosen .player 3) .turnStart), [.draw drawer (.nat 1)])]) =>
+         (3, .not (.happened (.modeWithIdChosen .player 3) .turnStart), [.draw drawer (.int 1)])]) =>
     if who == .controller .this && drawer == .controller .this then
       some (.onCasting Effect.castingVisionModes)
     else none
   | .triggered (.enter .this)
       (.sequence [
-        .actionId id (.createTokens who (.nat 1) parts []),
+        .actionId id (.createTokens who (.int 1) parts []),
         .attach (.wasCreatedByAction id') (.source .this)]) =>
     if id == id' && who == .controller .this &&
         parts.contains (.name "Sturdy Shield") && parts.contains (.subtype .equipment) then
       some (.onEnter Effect.enterCreateSturdyShieldAttach)
     else none
   | .triggered (.endStep (.controller .this))
-      (.sequence [.draw drawer (.nat 1), .loseLife loser (.nat 1)]) =>
+      (.sequence [.draw drawer (.int 1), .loseLife loser (.int 1)]) =>
     if drawer == .controller .this && loser == .controller .this then
       some .onYourEndStepDrawLoseLife
     else none
-  | .triggered (.or (.enter .this) (.attack .this .all)) (.createTokens who (.nat 1) parts []) =>
+  | .triggered (.or (.enter .this) (.attack .this .all)) (.createTokens who (.int 1) parts []) =>
     if who == .controller .this then
       match CardAction.leftoverTokenKind? parts with
       | some .squirrel11green => some (.onEnterOrAttack Effect.enterOrAttackCreateSquirrel)
@@ -347,7 +347,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered
       (.putCountersSimultaneously (.controller .this) heroes .plusOnePlusOne)
-      (.optional (.controller .this) (.createTokens who (.nat 1) parts [])) =>
+      (.optional (.controller .this) (.createTokens who (.int 1) parts [])) =>
     if heroes == .intersection
         [.not .this, .zone .battlefield, .subtype .hero, .controlled (.controller .this)] &&
         who == .controller .this &&
@@ -355,7 +355,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
       some (.onResource Effect.resourcePlusOneOnHeroesCreateWall)
     else none
   | .triggered (.enterSimultaneously tokens [])
-      (.optional (.controller .this) (.draw (.controller .this) (.nat 1))) =>
+      (.optional (.controller .this) (.draw (.controller .this) (.int 1))) =>
     if tokens == .intersection
         [.zone .battlefield, .token, .controlled (.controller .this)] then
       some (.onWatch Effect.watchTokensEnterMayDraw)
@@ -401,9 +401,9 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     | _ => none
   | .triggered (.enter .this)
       (.sequence [
-        .draw drawer (.nat 1),
+        .draw drawer (.int 1),
         .if (.not (.any among))
-          [.putOnBottomOfLibrary (.selected chooser (.range (.nat 1) (.nat 1))
+          [.putOnBottomOfLibrary (.selected chooser (.range (.int 1) (.int 1))
             (.intersection [.zone .hand, .owner owner]))]]) =>
     if drawer == .controller .this && chooser == .controller .this &&
         owner == .controller .this && among == Selector.aLegendaryCreatureYouControl then
@@ -413,7 +413,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
       (.enter (.intersection [
         .not .this, .zone .battlefield, .cardType .creature, .controlled (.controller .this),
         .powerAtMost (.int p)]))
-      (.optionalPayFor payer [.mana [.generic g]] [.draw drawer (.nat 1)]) =>
+      (.optionalPayFor payer [.mana [.generic g]] [.draw drawer (.int 1)]) =>
     if payer == .controller .this && drawer == .controller .this then
       some (TriggeredAbility.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw p g)
     else none
@@ -459,9 +459,9 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
             (.intersection [.zone .battlefield, .subtype .equipment, .controlled (.controller .this)]))
           (.target creatureId
             (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))),
-        .if (.greaterOrEqual (.count (.wasObjectOfAction id')) (.nat 1))
+        .if (.greaterOrEqual (.count (.wasObjectOfAction id')) (.int 1))
           [.dealDamage (.targetReference creatureId')
-            (.targets damageId (.range (.nat 0) (.nat 1))
+            (.targets damageId (.range (.int 0) (.int 1))
               (.intersection [.zone .battlefield, .cardType .creature]))
             (.greatestPower (.targetReference powerId))]]) =>
     if id == id' && creatureId == creatureId' && creatureId' == powerId &&
@@ -472,18 +472,18 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
       (.enter (.intersection [.zone .battlefield, .token, .controlled (.controller .this)]))
       (.sequence [
         .if (.not (.happened (.abilityWithIdResolved id1) .turnStart))
-          [.gainLife who1 (.nat 1)],
+          [.gainLife who1 (.int 1)],
         .if (.and
             (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved id2)) .turnStart)
             (.not (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved id2b)) .turnStart)))
-          [.draw who2 (.nat 1)],
+          [.draw who2 (.int 1)],
         .if (.and
             (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved id3)) .turnStart)
             (.not (.happened (.ordinal 3 .turnStart (.abilityWithIdResolved id3b)) .turnStart)))
           [.putCounter
             (.intersection
               [.zone .battlefield, .cardType .creature, .controlled (.controller .this)])
-            .plusOnePlusOne (.nat 1)]]) =>
+            .plusOnePlusOne (.int 1)]]) =>
     if id1 == id2 && id2 == id2b && id2 == id3 && id3 == id3b &&
         who1 == .controller .this && who2 == .controller .this then
       some .onTokenYouControlEntersBelladonna
@@ -514,7 +514,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
             some (TriggeredAbility.onAttackTargetGainsKeywords kws)
           else none
         | none => none
-  | .triggeredWhile (.attack .this .all) (.any among) (.gainLife _ (.nat n)) =>
+  | .triggeredWhile (.attack .this .all) (.any among) (.gainLife _ (.int (.ofNat n))) =>
     if among.shape.ferocious then
       some (TriggeredAbility.onAttackFerociousGainLife n)
     else none
@@ -534,27 +534,27 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.attack .this .all)
       (.if (.any (.intersection [.source .this, .powerAtLeast (.int 4)]))
-        [.draw who (.nat 1)]) =>
+        [.draw who (.int 1)]) =>
     if CardAction.leftoverYou who then
       some (TriggeredAbility.onThisAttack Effect.thisAttackDrawIfPower4)
     else none
   | .triggered (.draw who .all)
       (.if (.any (.intersection [.not .this, .zone .battlefield, .subtype .hero, ctl]))
-        [.dealDamage .this (.target _ (.opponent (.controller .this))) (.nat 1)]) =>
+        [.dealDamage .this (.target _ (.opponent (.controller .this))) (.int 1)]) =>
     if CardAction.leftoverYou who && ctl == .controlled (.controller .this) then
       some (TriggeredAbility.onResource Effect.resourceDrawIfAnotherHeroDamage)
     else none
-  | .triggered (.attack .this .all) (.scry _ (.nat n)) =>
+  | .triggered (.attack .this .all) (.scry _ (.int (.ofNat n))) =>
     some (TriggeredAbility.onAttackScry n)
-  | .triggered (.attack .this .all) (.surveil who (.nat n)) =>
+  | .triggered (.attack .this .all) (.surveil who (.int (.ofNat n))) =>
     if CardAction.leftoverYou who then
       some (TriggeredAbility.onAttackScry n)
     else none
-  | .triggered (.block _ src) (.dealDamage dealer dest (.nat 1)) =>
+  | .triggered (.block _ src) (.dealDamage dealer dest (.int 1)) =>
     if src == .this && dealer == .this && dest == .blocking .this then
       some TriggeredAbility.onBecomesBlockedDeal1ToBlockers
     else none
-  | .triggered (.castSpell among) (.dealDamage _ (.opponent _) (.nat n)) =>
+  | .triggered (.castSpell among) (.dealDamage _ (.opponent _) (.int (.ofNat n))) =>
     if among.shape.types.eqTypes [.instant, .sorcery] && among.shape.sameController then
       some (TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent n)
     else none
@@ -575,7 +575,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.castSpell among)
       (.if (.any creatureSel)
-        [.putCounter (.source .this) .plusOnePlusOne 1, .scry who (.nat 1)]) =>
+        [.putCounter (.source .this) .plusOnePlusOne 1, .scry who (.int 1)]) =>
     if among.shape.sameController && Selector.includesSpell among &&
         Selector.includesIsTargetOf creatureSel &&
         creatureSel.shape.sameController &&
@@ -583,15 +583,15 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverYou who then
       some (TriggeredAbility.onCasting Effect.castingPlusOneScry)
     else none
-  | .triggered (.enter .this) (.draw (.controller .this) (.nat n)) =>
+  | .triggered (.enter .this) (.draw (.controller .this) (.int (.ofNat n))) =>
     some (TriggeredAbility.onEnterDraw n)
-  | .triggered (.enter .this) (.scry _ (.nat n)) =>
+  | .triggered (.enter .this) (.scry _ (.int (.ofNat n))) =>
     some (TriggeredAbility.onEnterScry n)
-  | .triggered (.enter .this) (.surveil who (.nat n)) =>
+  | .triggered (.enter .this) (.surveil who (.int (.ofNat n))) =>
     if CardAction.leftoverYou who then
       some (TriggeredAbility.onEnterSurveil n)
     else none
-  | .triggered (.enter .this) (.gainLife _ (.nat n)) =>
+  | .triggered (.enter .this) (.gainLife _ (.int (.ofNat n))) =>
     some (TriggeredAbility.onEnterGainLife n)
   | .triggered (.enter .this)
       (.sequence [
@@ -687,7 +687,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
         | some 1 => some (TriggeredAbility.onResource Effect.resourceSecondDrawDrain)
         | _ =>
           match action with
-          | .mill who (.nat n) =>
+          | .mill who (.int (.ofNat n)) =>
             if CardAction.leftoverTargetPlayer? who then
               some (TriggeredAbility.onDrawSecondMillPlayer n)
             else none
@@ -702,7 +702,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.combatDamage .this .player)
       (.sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]) =>
     some TriggeredAbility.onCombatDamageToPlayerLoot
-  | .triggered (.combatDamage .this .player) (.draw _ (.nat n)) =>
+  | .triggered (.combatDamage .this .player) (.draw _ (.int (.ofNat n))) =>
     some (TriggeredAbility.onCombatDamageDraw n)
   | .triggered (.damageSimultaneously among .player preds)
       (.putCounter (.source .this) .plusOnePlusOne 2) =>
@@ -719,13 +719,13 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
         some (TriggeredAbility.onDiesOppCreatureGets p t)
       else none
     | _, _ => none
-  | .triggered (.die .this) (.draw _ (.nat n)) =>
+  | .triggered (.die .this) (.draw _ (.int (.ofNat n))) =>
     some (TriggeredAbility.onDiesDraw n)
   | .triggered (.die .this) (.dealDamage _ dest (.greatestPower _)) =>
     if dest.toTargetKind == .oppCreature then
       some TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature
     else none
-  | .triggered (.dieSimultaneously among _) (.scry _ (.nat n)) =>
+  | .triggered (.dieSimultaneously among _) (.scry _ (.int (.ofNat n))) =>
     if among.shape.otherCreatures then
       some (TriggeredAbility.onOneOrMoreOtherCreaturesDieScry n)
     else none
@@ -751,21 +751,21 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
           (.targets _
             (.range 0 1)
             (.intersection [.zone .graveyard, .owner (.opponent _)])),
-        .loseLife (.opponent _) (.nat n)]) =>
+        .loseLife (.opponent _) (.int (.ofNat n))]) =>
     some (TriggeredAbility.onEnterExileOppGyCardOppsLoseLife n)
   | .triggered (.enter .this) (.discard (.opponent _) 1) =>
     some TriggeredAbility.onEnterEachOpponentDiscards
   | .triggered (.enter .this)
-      (.divideDamage _ _ (.targets _ (.range 1 (.nat maxTargets)) _) (.nat amount)) =>
+      (.divideDamage _ _ (.targets _ (.range 1 (.int (.ofNat maxTargets))) _) (.int (.ofNat amount))) =>
     some (TriggeredAbility.onEnterDealDividedDamage amount maxTargets)
   | .triggered
       (.or (.enter .this) (.attack .this .all))
-      (.divideDamage _ _ (.targets _ (.range 1 (.nat maxTargets)) _) (.nat amount)) =>
+      (.divideDamage _ _ (.targets _ (.range 1 (.int (.ofNat maxTargets))) _) (.int (.ofNat amount))) =>
     some (TriggeredAbility.onEnterOrAttackDealDividedDamage amount maxTargets)
   | .triggered (.enter .this)
       (.sequence [
         .optional (.controller .this) (.actionId id (.discard _ 1)),
-        .if (.happened (.actionWithId id') _) [.draw _ (.nat n)]]) =>
+        .if (.happened (.actionWithId id') _) [.draw _ (.int (.ofNat n))]]) =>
     if id == id' then some (TriggeredAbility.onEnterMayDiscardDraw n) else none
   | .triggered (.enter among) (.putCounter sel .plusOnePlusOne 1) =>
     if among.shape.landYouControl && sel.toTargetKind == .creatureYouControl then
@@ -859,7 +859,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
       else none
     | _ =>
       match action with
-      | .dealDamage _ dest (.nat 1) =>
+      | .dealDamage _ dest (.int 1) =>
         let opp :=
           dest == .opponent (.controller .this) ||
             match dest with
@@ -1079,7 +1079,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.castSpell among)
       (.sequence [
         .continuous effects .endOfTurn,
-        .dealDamage src (.opponent who) (.nat n)]) =>
+        .dealDamage src (.opponent who) (.int (.ofNat n))]) =>
     if Selector.youCastNoncreatureSpell among && n != 0 &&
         CardAction.leftoverSourcePump? effects == some (1, 1) &&
         (src == .source .this || src == .this) &&
@@ -1131,7 +1131,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverCreateTokensKindN? token == some (.treasure, 1) then
       some TriggeredAbility.onEquippedCombatDamageTreasuresPerChosenType
     else none
-  | .triggered (.endStep who) (.draw drawer (.nat 1)) =>
+  | .triggered (.endStep who) (.draw drawer (.int 1)) =>
     if who == .controller .this && drawer == .controller .this then
       some TriggeredAbility.onYourEndStepDraw
     else none
@@ -1139,7 +1139,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     if who == .controller .this && gainer == .controller .this then
       CardAction.addedManaTypes? syms |>.map TriggeredAbility.onYourFirstMainAddMana
     else none
-  | .triggered (.target spellOrAbility object) (.draw drawer (.nat 1)) =>
+  | .triggered (.target spellOrAbility object) (.draw drawer (.int 1)) =>
     if (object == .this || object == .source .this) &&
         spellOrAbility ==
           .intersection [

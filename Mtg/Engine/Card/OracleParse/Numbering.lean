@@ -51,7 +51,7 @@ def appendIds : List (List Nat × List Nat) → List Nat × List Nat
 mutual
 
 def collectValue : Value → List Nat × List Nat
-  | .nat _ | .int _ | .x => ([], [])
+  | .int _ | .x => ([], [])
   | .greatestManaValue s | .greatestToughness s | .greatestPower s | .count s | .totalPower s
   | .greatestManaSpent s =>
     collectSelector s
@@ -252,7 +252,6 @@ def idMaps (parts : List CardPart) : IdMaps :=
 mutual
 
 def mapValue (m : IdMaps) : Value → Value
-  | .nat n => .nat n
   | .int n => .int n
   | .x => .x
   | .greatestManaValue s => .greatestManaValue (mapSelector m s)

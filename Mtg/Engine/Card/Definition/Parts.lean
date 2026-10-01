@@ -80,7 +80,7 @@ def createdTokenCountCheckBound : Nat := 9
 
 /-- `true` when `f` maps each count `n` below the check bound to `n * 2`. -/
 def doublesCreatedTokenCount (f : Nat → Value) : Bool :=
-  (List.range createdTokenCountCheckBound).all fun n => f n == .nat (n * 2)
+  (List.range createdTokenCountCheckBound).all fun n => f n == .int (n * 2)
 
 instance : BEq (Nat → Value) where
   beq f g := (List.range createdTokenCountCheckBound).all fun n => f n == g n
@@ -336,7 +336,7 @@ inductive CardAction where
   /-- Keep creating the tokens this replacement would have created, with
   the count changed by the function (CR 614). The function maps how many
   would have been created to the `Value` created instead. Twice that
-  many is `fun n => .nat (n * 2)`. -/
+  many is `fun n => .int (n * 2)`. -/
   | modifyReplacementCreatedTokenCount : (Nat → Value) → CardAction
   /-- The trigger this replacement is replacing triggers this many times
   instead of once (CR 603.2d). Two is one additional time. -/
