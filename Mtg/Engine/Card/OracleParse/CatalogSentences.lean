@@ -191,7 +191,7 @@ def parseTargetDesc (s : String) (n : Nat) : Option Selector :=
             | some c => (c, "other " ++ obj)
             | none => (countText, obj)
           (positiveCount countText).bind fun k =>
-            (parseTargetObject obj).map fun sel => .targets n (.range 0 (Value.nat k)) sel
+            (parseTargetObject obj).map fun sel => .targets n (.range 0 (Value.int k)) sel
     let another :=
       (after? s "another target ").bind fun obj =>
         (parseTargetObject ("another " ++ obj)).map fun sel => .target n sel
@@ -293,13 +293,13 @@ def parsePutCountersOn (cardName sentence : String) (n : Nat) :
     let onEach :=
       (after? who "each ").bind fun each =>
         if (after? each "of ").isSome then none
-        else (parseObjectDesc each false).map fun sel => (.putCounter sel .plusOnePlusOne (.nat k), n)
+        else (parseObjectDesc each false).map fun sel => (.putCounter sel .plusOnePlusOne (.int k), n)
     let onTarget :=
       (parseTargetDesc ((after? who "each of ").getD who) n).map fun sel =>
-        (.putCounter sel .plusOnePlusOne (.nat k), n + 1)
+        (.putCounter sel .plusOnePlusOne (.int k), n + 1)
     let onSelf :=
       if refersToSelf cardName who || who == "it" then
-        some (.putCounter (.source .this) .plusOnePlusOne (.nat k), n)
+        some (.putCounter (.source .this) .plusOnePlusOne (.int k), n)
       else none
     onSelf <|> onEach <|> onTarget
 
@@ -329,7 +329,7 @@ def parseCreateCreatureTokens (sentence : String) : Option CardAction :=
           let plural := tokenWord == "tokens"
           let count? : Option Value :=
             if countText == "x" then (if plural then some .x else none)
-            else (nounCount? countText plural).map Value.nat
+            else (nounCount? countText plural).map (fun n => Value.int n)
           let (types, subtypeWordsRev) : List CardType × List String :=
             match subtypeWordsRev with
             | "artifact" :: more => ([.artifact, .creature], more)
@@ -368,7 +368,7 @@ def parseCreatePredefinedTokens (sentence : String) : Option CardAction :=
       named.bind fun (plural, kind) =>
         let count? : Option Value :=
           if countText == "x" then (if plural then some .x else none)
-          else (nounCount? countText plural).map Value.nat
+          else (nounCount? countText plural).map (fun n => Value.int n)
         count?.bind fun k =>
           let parts? : Option (List CardPart) :=
             match kind with
@@ -400,7 +400,7 @@ def parseDealsDamageTo (cardName sentence : String) (n : Nat) :
             | "target opponent" => some (.target n (.opponent (.controller .this)), n + 1)
             | "each creature blocking it" => some (.blocking .this, n)
             | _ => (parseTargetDesc dest n).map (·, n + 1)
-          recipient.map fun (sel, n') => (.dealDamage .this sel (.nat amount), n')
+          recipient.map fun (sel, n') => (.dealDamage .this sel (.int amount), n')
 
 /-- `This Saga deals X damage to target opponent, where X is the greatest mana
 value among artifacts you control.` The opponent is target `n`. -/
@@ -439,8 +439,8 @@ def parseDealsDividedDamage (cardName sentence : String) (n : Nat) :
           | some amount, some (lo, hi) =>
             some (
               .divideDamage (.controller .this) .this
-                (.targets n (.range (Value.nat lo) (Value.nat hi)) .all)
-                (Value.nat amount),
+                (.targets n (.range (Value.int lo) (Value.int hi)) .all)
+                (Value.int amount),
               n + 1)
           | _, _ => none
 
@@ -472,7 +472,7 @@ def parseReturnMvAtMostToBattlefield (sentence : String) (n : Nat) :
       (before? bound " or less").bind positiveCount |>.bind fun k =>
         (parseGraveyardCard card).map fun sel =>
           (.putOntoBattlefield
-            (.target n (extendIntersection [] sel [.manaValueAtMost (.nat k)])),
+            (.target n (extendIntersection [] sel [.manaValueAtMost (.int k)])),
            n + 1)
 
 /-- `Return <target card> from your graveyard to your hand`, or
@@ -491,7 +491,7 @@ def parseReturnToHand (sentence : String) (n : Nat) : Option (CardAction × Nat)
 /-- `Surveil N`. Does not choose a target. -/
 def parseSurveil (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   (after? (normSentence sentence) "surveil ").bind positiveCount |>.map fun k =>
-    (.surveil (.controller .this) (Value.nat k), n)
+    (.surveil (.controller .this) (Value.int k), n)
 
 /-- `<who> connive(s)`: this object with `it`, `he`, `she`, or its name, or
 `up to one target creature you control`. Connive is a keyword action of that
@@ -500,14 +500,14 @@ def parseConnive (cardName sentence : String) (n : Nat) : Option (CardAction × 
   let s := normSentence sentence
   (before? s " connives" <|> before? s " connive").bind fun who =>
     match selfSubject? cardName who with
-    | some sel => some (.keyword sel (.connive (.nat 1)), n)
-    | none => (parseTargetDesc who n).map fun sel => (.keyword sel (.connive (.nat 1)), n + 1)
+    | some sel => some (.keyword sel (.connive (.int 1)), n)
+    | none => (parseTargetDesc who n).map fun sel => (.keyword sel (.connive (.int 1)), n + 1)
 
 /-- `Discard a card.` / `Discard two cards.` The player is this spell's
 controller. One card is singular. More than one is plural. -/
 def parseDiscardCards (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   (after? (normSentence sentence) "discard ").bind parseCardCount |>.map fun k =>
-    (.discard (.controller .this) (Value.nat k), n)
+    (.discard (.controller .this) (Value.int k), n)
 
 /-- `Draw <count>`, or `You draw <count> and lose N life`. -/
 def parseDrawAndLoseLife (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -517,8 +517,8 @@ def parseDrawAndLoseLife (sentence : String) (n : Nat) : Option (CardAction × N
       match parseCardCount drawText, lifeAmount? ("lose " ++ lifeText) "lose " with
       | some k, some life =>
         some (.sequence [
-          .draw (.controller .this) (Value.nat k),
-          .loseLife (.controller .this) (Value.nat life)], n)
+          .draw (.controller .this) (Value.int k),
+          .loseLife (.controller .this) (Value.int life)], n)
       | _, _ => none
   lose <|> unchanged (parseDrawCards s) n
 
@@ -527,16 +527,16 @@ def parseDrawAndLoseLife (sentence : String) (n : Nat) : Option (CardAction × N
 def parseLoseLife (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   let s := normSentence sentence
   ((parseEachOpponentLosesLife s).map fun k =>
-      (.loseLife (.opponent (.controller .this)) (Value.nat k), n)) <|>
+      (.loseLife (.opponent (.controller .this)) (Value.int k), n)) <|>
     ((lifeAmount? s "you lose ").map fun k =>
-      (.loseLife (.controller .this) (Value.nat k), n)) <|>
+      (.loseLife (.controller .this) (Value.int k), n)) <|>
     ((lifeAmount? s "target opponent loses ").map fun k =>
-      (.loseLife (.target n (.opponent (.controller .this))) (Value.nat k), n + 1))
+      (.loseLife (.target n (.opponent (.controller .this))) (Value.int k), n + 1))
 
 /-- `Target player mills <count>`. The player is target `n`. -/
 def parseTargetPlayerMills (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   (after? (normSentence sentence) "target player mills ").bind parseCardCount |>.map fun k =>
-    (.mill (.target n .player) (Value.nat k), n + 1)
+    (.mill (.target n .player) (Value.int k), n + 1)
 
 /-- `Each player sacrifices a creature of their choice.` Each player, bound to
 variable `n`, chooses one creature they control to sacrifice (CR 701.17a). -/
@@ -624,7 +624,7 @@ def parseDiscardUnlessArtifact (sentence : String) (n : Nat) : Option (CardActio
   (between? (normSentence sentence) "discard " " unless you discard an artifact card").bind
     parseCardCount |>.map fun k =>
       (.preventable (.controller .this) [.discard (.cardType .artifact)]
-        (.discard (.controller .this) (Value.nat k)), n)
+        (.discard (.controller .this) (Value.int k)), n)
 
 /-- `Artifact spells you cast this turn cost {1} less to cast.` That many
 generic mana less until end of turn. -/
@@ -652,7 +652,7 @@ def parseIfControlAnotherGainLife (cardName sentence : String) (n : Nat) :
 /-- `Each opponent discards a card.` Each opponent chooses the card. -/
 def parseEachOpponentDiscards (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   (after? (normSentence sentence) "each opponent discards ").bind parseCardCount |>.map fun k =>
-    (.discard (.opponent (.controller .this)) (Value.nat k), n)
+    (.discard (.opponent (.controller .this)) (Value.int k), n)
 
 /-- `Draw a card if her power is 4 or greater.` The power is this object's,
 checked on resolution. -/
@@ -669,14 +669,14 @@ def parseDrawIfPowerAtLeast (cardName sentence : String) (n : Nat) :
         else
           (positiveDigits? p).map fun p =>
             (.if (.any (.intersection [.source .this, .powerAtLeast (Value.int p)]))
-              [.draw (.controller .this) (Value.nat k)], n)
+              [.draw (.controller .this) (Value.int k)], n)
 
 /-- `You gain N life for each <objects>.` Each of those objects is variable `n`. -/
 def parseGainLifeForEach (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   (split2? (normSentence sentence) " life for each ").bind fun (gain, each) =>
     match (after? gain "you gain ").bind positiveCount, parseObjectDesc each false with
     | some k, some sel =>
-      some (.forEachVariable n sel [.gainLife (.controller .this) (Value.nat k)], n + 1)
+      some (.forEachVariable n sel [.gainLife (.controller .this) (Value.int k)], n + 1)
     | _, _ => none
 
 /-- `Target player gains 2 life, then searches their library for a basic land
@@ -688,7 +688,7 @@ def parseTargetGainsThenSearchesBasic (sentence : String) (n : Nat) :
       " life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles").bind
     positiveCount |>.map fun k =>
       (.sequence [
-        .gainLife (.target n .player) (Value.nat k),
+        .gainLife (.target n .player) (Value.int k),
         .searchLibraryThenShuffle (.targetReference n) [
           .putOntoBattlefieldInState
             (.selected (.targetReference n) (.range 1 1) basicLandInLibrary)
@@ -761,7 +761,7 @@ def typeOrSubtypeList? (s : String) : Option Selector :=
 /-- `Two target players each draw a card.` The players are targets `n`. -/
 def parseTwoTargetPlayersEachDraw (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   (after? (normSentence sentence) "two target players each draw ").bind parseCardCount |>.map
-    fun k => (.draw (.targets n (.range 2 2) .player) (Value.nat k), n + 1)
+    fun k => (.draw (.targets n (.range 2 2) .player) (Value.int k), n + 1)
 
 /-- `create a 3/1 colorless Wall artifact creature token with defender named
 Stone Boulder`. The token has that name as printed (CR 111.4). -/
@@ -775,7 +775,7 @@ def parseCreateNamedCreatureTokens (sentence : String) : Option CardAction :=
 token`. -/
 def createOneToken? (s : String) : Option CardAction :=
   match parseCreatePredefinedTokens s <|> parseCreateCreatureTokens s with
-  | some a@(.createTokens _ (.nat 1) _ _) => some a
+  | some a@(.createTokens _ (.int 1) _ _) => some a
   | _ => none
 
 /-- `create a Treasure token for each Villain you control`. One token for each
@@ -795,7 +795,7 @@ def parseLookTopPutLandsShuffle (sentence : String) (n : Nat) : Option (CardActi
       " cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle").bind
     (fun c => (twentyOrSmall? c)) |>.map fun k =>
       (.sequence [
-        .actionId n (.lookAt (.topOfLibrary (.controller .this) (Value.nat k))),
+        .actionId n (.lookAt (.topOfLibrary (.controller .this) (Value.int k))),
         .searchLibraryThenShuffle (.controller .this) [
           .putOntoBattlefieldInState
             (.selected (.controller .this) .any
@@ -820,7 +820,7 @@ def parseAddManaInAnyCombination (sentence : String) (n : Nat) : Option (CardAct
     match (after? add "add ").bind positiveCount,
         ((colors.replace ", and/or " " ").replace ", " " ").splitOn " " |>.mapM addableSymbol? with
     | some k, some syms@(_ :: _ :: _) =>
-      some (.addManaInAnyCombination (.controller .this) syms (Value.nat k), n)
+      some (.addManaInAnyCombination (.controller .this) syms (Value.int k), n)
     | _, _ => none
 
 /-- `add {B} or {R}`: the player chooses one listed symbol. -/
@@ -921,7 +921,7 @@ def parseChooseUpToDestroyRest (sentence : String) (n : Nat) : Option (CardActio
         | some k, some ts =>
           let kind := Selector.intersection [.zone .battlefield, selectorOfTypes ts]
           some (.sequence [
-            .defineSelectorVariable n (.selected (.controller .this) (.range 0 (Value.nat k)) kind),
+            .defineSelectorVariable n (.selected (.controller .this) (.range 0 (Value.int k)) kind),
             .destroy (.intersection [.zone .battlefield, selectorOfTypes ts, .not (.variable n)])], n + 1)
         | _, _ => none
 
@@ -1002,7 +1002,7 @@ def parseCreateXTokensCount (s : String) (n : Nat) : Option (CardAction × Nat) 
   (after? s "create x ").bind (split2? · ", where x is the number of ") |>.bind
     fun (tokenText, among) =>
       match parseCreateCreatureTokens ("create two " ++ tokenText), parseObjectDesc among false with
-      | some (.createTokens who (.nat 2) parts kws), some sel =>
+      | some (.createTokens who (.int 2) parts kws), some sel =>
         some (.createTokens who (.count sel) parts kws, n)
       | _, _ => none
 
@@ -1021,10 +1021,10 @@ def parseYouMay (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
           if countText ++ tail == afterLead then nounCount? countText plural else none
     let draw :=
       (counted "draw " " card" false <|> counted "draw " " cards" true).map fun k =>
-        .optional (.controller .this) (.draw (.controller .this) (Value.nat k))
+        .optional (.controller .this) (.draw (.controller .this) (Value.int k))
     let mill :=
       (counted "mill " " card" false <|> counted "mill " " cards" true).map fun k =>
-        .optional (.controller .this) (.mill (.controller .this) (Value.nat k))
+        .optional (.controller .this) (.mill (.controller .this) (Value.int k))
     let create :=
       (parseCreateCreatureTokens rest).map fun action =>
         .optional (.controller .this) action
@@ -1041,7 +1041,7 @@ def parseTargetPlayerDraws (sentence : String) (n : Nat) : Option (CardAction ×
       (before? rest tail).bind fun countText =>
         if countText ++ tail == rest then nounCount? countText plural else none
     (counted " card" false <|> counted " cards" true).map fun k =>
-      (.draw (.target n .player) (Value.nat k), n + 1)
+      (.draw (.target n .player) (Value.int k), n + 1)
 
 /-- `tap enchanted creature and remove all counters from it`. The creature is
 this Aura's host. -/
@@ -1157,7 +1157,7 @@ def parseForEachOpponentExileUntilLeaves (cardName sentence : String) (n : Nat) 
                   [.sequence [
                     .actionId (n + 1)
                       (.exile
-                        (.targets (n + 1) (.range 0 (Value.nat k)) controlled)),
+                        (.targets (n + 1) (.range 0 (Value.int k)) controlled)),
                     .continuous
                       [.replace (.leaveBattlefield (.source .this)) [
                         .putOntoBattlefield (.wasCreatedByAction (n + 1)),

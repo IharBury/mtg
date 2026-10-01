@@ -113,18 +113,18 @@ def parsePutPlusOneUpToOne (sentence : String) (n : Nat) : Option (CardAction ×
 /-- `Target player gains 2 life.` The player is target `n`. -/
 def parseTargetPlayerGainsLife (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   (lifeAmount? (normSentence sentence) "target player gains ").map fun k =>
-    (.gainLife (.target n .player) (Value.nat k), n + 1)
+    (.gainLife (.target n .player) (Value.int k), n + 1)
 
 /-- `You gain 2 life.` Does not choose a target, so the target number stays `n`. -/
 def parseYouGainLife (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   (lifeAmount? (normSentence sentence) "you gain ").map fun k =>
-    (.gainLife (.controller .this) (Value.nat k), n)
+    (.gainLife (.controller .this) (Value.int k), n)
 
 /-- `Scry 2.` Does not choose a target, so the target number stays `n`. -/
 def parseScry (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   match after? (normSentence sentence) "scry " with
   | some count =>
-    (positiveCount count).map fun k => (.scry (.controller .this) (Value.nat k), n)
+    (positiveCount count).map fun k => (.scry (.controller .this) (Value.int k), n)
   | none => none
 
 /-- `Whenever one or more other creatures die, scry 1.`
@@ -197,7 +197,7 @@ def parseCounterThenRecruitIfMv (text : String) (n : Nat) :
         ([
           .defineValueVariable n (.greatestManaValue (.target n .spell)),
           .counter (.targetReference n),
-          .if (.lessOrEqual (.variable n) (.nat k))
+          .if (.lessOrEqual (.variable n) (.int k))
             [.keyword (.controller .this) .recruit]
         ], n + 1)
   | _ => none
@@ -208,7 +208,7 @@ def parseAdditionalLand (sentence : String) (n : Nat) : Option (CardAction × Na
   if sentenceIs sentence "you may play an additional land this turn" then
     some (
       .continuous
-        [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]
+        [.increaseLandPlayLimit (.controller .this) (Value.int 1)]
         .endOfTurn,
       n)
   else none
@@ -238,7 +238,7 @@ def parseRecruit (sentence : String) : Option CardAction :=
 One card is singular. More than one is plural. -/
 def parseDrawCards (sentence : String) : Option CardAction :=
   (after? (normSentence sentence) "draw ").bind parseCardCount |>.map fun k =>
-    .draw (.controller .this) (Value.nat k)
+    .draw (.controller .this) (Value.int k)
 
 /-- `Amass Goblins 1.` The controller amasses that subtype that many (CR 701.45).
 The subtype is plural. `N` is a positive count. `Amass Goblins X, where X is
@@ -250,7 +250,7 @@ def parseAmass (sentence : String) : Option CardAction :=
       let nText := " ".intercalate nWords
       (amassSubtype? typeText).bind fun st =>
         let amount :=
-          (positiveCount nText).map Value.nat <|>
+          (positiveCount nText).map (fun n => Value.int n) <|>
             ((after? nText "x, where x is ").bind selfPowerAmount?)
         amount.map fun v => .keyword (.controller .this) (.amass st v)
     | [] => none
@@ -299,7 +299,7 @@ def instantOrSorceryAmong (id : Nat) : Selector :=
 def millThen (n k : Nat) (put : Nat → CardAction) : CardAction × Nat :=
   (
     .sequence [
-      .actionId n (.mill (.controller .this) (.nat k)),
+      .actionId n (.mill (.controller .this) (.int k)),
       put n],
     n + 1)
 
@@ -385,13 +385,13 @@ def parseMillThenPutUpToLands (sentence : String) (n : Nat) :
               .returnToHand
                 (.selected
                   (.controller .this)
-                  (.range (Value.nat 0) (Value.nat max))
+                  (.range (Value.int 0) (Value.int max))
                   (.intersection [.wasObjectOfAction id, .cardType .land]))
         | none => none
 
 /-- `Mill two cards.` More than one card uses the plural `cards`. -/
 def parseMillCards (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
-  (millPluralCount? sentence " cards").map fun k => (.mill (.controller .this) (.nat k), n)
+  (millPluralCount? sentence " cards").map fun k => (.mill (.controller .this) (.int k), n)
 
 /-- Each creature an opponent of this object's controller controls. -/
 def eachOppCreature : Selector :=
@@ -427,9 +427,9 @@ def parseDealDamageToEach (cardName : String) (sentence : String) (n : Nat) :
                 .intersection [.zone .battlefield, .cardType .creature, .not (.subtype st)]
           dest.map fun sel =>
             if opponents then
-              (.sequence [.dealDamage .this sel (.nat amount),
-                .dealDamage .this (.opponent (.controller .this)) (.nat amount)], n)
-            else (.dealDamage .this sel (.nat amount), n)
+              (.sequence [.dealDamage .this sel (.int amount),
+                .dealDamage .this (.opponent (.controller .this)) (.int amount)], n)
+            else (.dealDamage .this sel (.int amount), n)
 
 /-- One sentence. The first parser that accepts it wins. -/
 def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction × Nat) :=
@@ -547,7 +547,7 @@ def parsePutPlusOneOnCreatureYouControl (sentence : String) (n : Nat) :
     match parseTargetPhrase who with
     | some sel =>
       if sel == permanentWith [.creature] [youControl] then
-        some (.putCounter (.target n sel) .plusOnePlusOne (.nat k), n + 1)
+        some (.putCounter (.target n sel) .plusOnePlusOne (.int k), n + 1)
       else none
     | none => none
 
@@ -582,7 +582,7 @@ def parseAddManaCombination (text : String) (n : Nat) :
                 ([
                   .actionId n
                     (.addManaInAnyCombination
-                      (.controller .this) ManaSymbol.anyColor (.nat k)),
+                      (.controller .this) ManaSymbol.anyColor (.int k)),
                   .continuous
                     [.forbid
                       (.spendManaCreatedByAction n
@@ -626,7 +626,7 @@ def parseExileAttackersSearchBasics (text : String) (n : Nat) :
               .putOntoBattlefieldInState
                 (.selected
                   (.targetReference n)
-                  (.range (.nat 0) exiled)
+                  (.range (.int 0) exiled)
                   (.intersection [
                     .zone .library,
                     .cardType .land,
@@ -652,7 +652,7 @@ def parseLookAtTopExileFaceDownPlayIf (text : String) (n : Nat) :
               let exileId := n + 1
               ([
                 .actionId n
-                  (.lookAt (.topOfLibrary (.controller .this) (.nat k))),
+                  (.lookAt (.topOfLibrary (.controller .this) (.int k))),
                 .actionId exileId
                   (.exileFaceDown (.wasObjectOfAction n)),
                 .continuous
@@ -693,7 +693,7 @@ def parseVisionQuest (text : String) (n : Nat) : Option (List CardAction × Nat)
       let enter : List CardAction := [
         .putOntoBattlefield (.variable n),
         .putCounter (.variable n) .plusOnePlusOne .x,
-        .if (.greaterOrEqual .x (.nat 4))
+        .if (.greaterOrEqual .x (.int 4))
           [.continuous [.gainAbility (.variable n) (.keyword .haste)] .endOfTurn]]
       some ([
         .playerSelectAction (.controller .this) (.range 1 1) [

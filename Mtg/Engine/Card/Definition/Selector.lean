@@ -213,9 +213,9 @@ def shape : Selector → Shape
   | .keyword .flying => { flying := true }
   | .keyword _ => {}
   | .keywordAbility _ => {}
-  | .powerAtLeast (.int n) | .powerAtLeast (.nat n) => { powerAtLeast := some n }
+  | .powerAtLeast (.int n) => { powerAtLeast := some n }
   | .powerAtLeast _ => {}
-  | .powerAtMost (.int n) | .powerAtMost (.nat n) => { powerAtMost := some n }
+  | .powerAtMost (.int n) => { powerAtMost := some n }
   | .powerAtMost _ => {}
   | .hasCounter .plusOnePlusOne => { hasPlusOneCounter := true }
   | .hasCounter _ => {}

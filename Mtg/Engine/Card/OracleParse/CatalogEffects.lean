@@ -32,7 +32,7 @@ def parseMayAction (s : String) : Option CardAction :=
     match (after? sac "sacrifice ").bind sacrifice, parseCardCount discarded with
     | some sacAction, some k =>
       some (.playerSelectAction (.controller .this) (.range 1 1)
-        [sacAction, .discard (.controller .this) (Value.nat k)])
+        [sacAction, .discard (.controller .this) (Value.int k)])
     | _, _ => none
   | none => (after? s "sacrifice ").bind sacrifice
 
@@ -117,7 +117,7 @@ def parseMillMayPut (ss : List String) (n : Nat) : Option (List CardAction × Li
     | some k, some kind =>
       let among := extendIntersection [.wasObjectOfAction n] kind []
       some ([
-        .actionId n (.mill (.controller .this) (Value.nat k)),
+        .actionId n (.mill (.controller .this) (Value.int k)),
         .optional (.controller .this)
           (.returnToHand (.selected (.controller .this) (.range 1 1) among))],
         rest, n + 1)
@@ -183,9 +183,9 @@ def parsePutCounterMoreIfSubtype (ss : List String) (n : Nat) : Option (List Car
           if k' <= k then none
           else
             some ([
-              .putCounter sel .plusOnePlusOne (.nat k),
+              .putCounter sel .plusOnePlusOne (.int k),
               .if (.anySubtype (.intersection [.targetReference n, .not .this]) st)
-                [.putCounter (.targetReference n) .plusOnePlusOne (.nat (k' - k))]],
+                [.putCounter (.targetReference n) .plusOnePlusOne (.int (k' - k))]],
               n + 1)
         | _, _, _ => none
     | _, _ => none
@@ -267,7 +267,7 @@ def parseThenIfControlSacrificeIfYouDo (cardName : String) (ss : List String) (n
           (parseCatalogSentence cardName effect n1).map fun (last, n2) =>
             (firstActions ++ [
               .if (.greaterOrEqual
-                  (.count (.intersection [.zone .battlefield, .subtype st, youControl])) (Value.nat k))
+                  (.count (.intersection [.zone .battlefield, .subtype st, youControl])) (Value.int k))
                 [.actionId n (.sacrifice .this),
                  .if (.happened (.actionWithId n) .gameStart) (flattenAction last)]],
              n2)
@@ -568,7 +568,7 @@ def parseAttachEquipmentThenDamage (cardName : String) (ss : List String) (n : N
             host == .target (n + 1) creaturesYouControl && nAttach == id then
           some ([
             .actionId id (.attach attached host),
-            .if (.greaterOrEqual (.count (.wasObjectOfAction id)) (.nat 1))
+            .if (.greaterOrEqual (.count (.wasObjectOfAction id)) (.int 1))
               [.dealDamage (.targetReference (n + 1))
                 (.targets (id + 1) (.range 0 1)
                   (.intersection [.zone .battlefield, .cardType .creature]))

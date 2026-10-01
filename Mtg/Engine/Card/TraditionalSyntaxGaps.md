@@ -239,7 +239,7 @@ until end of turn (`artifactSpellsCostLessThisTurn`); and
 (`chapterDealXDamageToTargetOpponentGreatestArtifactMv`). Non-optional draw,
 creature-not-artifact, missing opponent draw, each-player draw, lasting
 (not this-turn) reduction, creature spells, artifact permanents, target
-player, greatest mana value among creatures, or literal `Value.nat` stay
+player, greatest mana value among creatures, or literal `Value.int` stay
 uncompiled. Uncompiled chapter actions produce no `SagaDef`.
 `Trigger.leaveGraveyard` is whenever a matching card leaves a graveyard
 (Along the Crooked Way: creature cards in your graveyard, then amass
@@ -320,7 +320,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
 | `Trigger.wouldDraw` | `replace` of `Trigger.draw`, except while it is the controller's `drawStep` and that draw has not happened since `Trigger.drawStep`. Bard, King of Dale draws two cards instead |
 | `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `not` of `happened` of `abilityWithIdResolved` since `turnStart` is the first resolution; it is not counted while resolving. The second is `happened` of `ordinal 1` and `not` of `happened` of `ordinal 2`. The third is `ordinal 2` and not `ordinal 3` (Belladonna Took) |
-| `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
+| `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .int (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
 | `ContinuousEffect.extraTrigger` | `replace` of `Trigger.abilityTriggers` of that source with `duplicateReplacingTrigger 2`, under `if (enduringStory (controller this))` (Bifur, Melodic Rider) |
 | `Selector.castFromZone`, `ContinuousEffect.reduceCostIfCastFrom` | `reduceCost` of spells you control that are not `castFromZone .hand` (Bilbo, Thief in the Night). “You may cast … from your graveyard” is `mayCast` of one card `selected` from that graveyard; an instant or sorcery cast that way is `replace` of `putToGraveyard` with `exile` |
 | `CardAction.dealDamageEqualToPower` | `dealDamage` of `Value.greatestPower` of the source |

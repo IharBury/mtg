@@ -585,7 +585,7 @@ namespace Mtg.Engine
       (.optionalPayFor
         (.controller .this)
         [.or [sacArt, .discard (.not (.cardType .land))]]
-        [.dealDamage .this (.target 2 .all) (.nat 2)])).toTriggeredAbility? with
+        [.dealDamage .this (.target 2 .all) (.int 2)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage
   | none => false
 
@@ -602,7 +602,7 @@ namespace Mtg.Engine
     (.optionalPayFor
       (.controller .this)
       [.or [sacArt, .discard .all]]
-      [.dealDamage .this (.target 2 .all) (.nat 2)])).toTriggeredAbility?.isNone
+      [.dealDamage .this (.target 2 .all) (.int 2)])).toTriggeredAbility?.isNone
 
 #guard
   let sacArt : Cost :=
@@ -615,7 +615,7 @@ namespace Mtg.Engine
   match
     (Ability.activated
       [.mana [.generic 3], .tapSymbol, .or [sacArt, .discard (.not (.cardType .land))]]
-      (.dealDamage .this (.target 1 .all) (.nat 2))).toActivatedAbility? with
+      (.dealDamage .this (.target 1 .all) (.int 2))).toActivatedAbility? with
   | some ab => ab.cost.sacrificeArtifactOrDiscardNonland
   | none => false
 
@@ -630,7 +630,7 @@ namespace Mtg.Engine
   match
     (Ability.activated
       [.mana [.generic 3], .tapSymbol, .or [sacArt, .discard .all]]
-      (.dealDamage .this (.target 1 .all) (.nat 2))).toActivatedAbility? with
+      (.dealDamage .this (.target 1 .all) (.int 2))).toActivatedAbility? with
   | some ab => !ab.cost.sacrificeArtifactOrDiscardNonland
   | none => false
 
@@ -941,7 +941,7 @@ namespace Mtg.Engine
           .zone .graveyard,
           .cardType .creature,
           .owner (.controller .this)]))
-      (.keyword (.controller .this) (.amass .goblin (.nat 1)))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.int 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCreatureCardLeavesYourGyAmassGoblins 1
   | none => false
 
@@ -953,7 +953,7 @@ namespace Mtg.Engine
         .zone .graveyard,
         .cardType .creature,
         .owner (.opponent (.controller .this))]))
-    (.keyword (.controller .this) (.amass .goblin (.nat 1)))).toTriggeredAbility?.isNone
+    (.keyword (.controller .this) (.amass .goblin (.int 1)))).toTriggeredAbility?.isNone
 
 -- Instant cards leaving the graveyard are not creature cards.
 #guard
@@ -963,7 +963,7 @@ namespace Mtg.Engine
         .zone .graveyard,
         .cardType .instant,
         .owner (.controller .this)]))
-    (.keyword (.controller .this) (.amass .goblin (.nat 1)))).toTriggeredAbility?.isNone
+    (.keyword (.controller .this) (.amass .goblin (.int 1)))).toTriggeredAbility?.isNone
 
 -- Enter: return target creature card from your graveyard.
 #guard
@@ -1206,7 +1206,7 @@ namespace Mtg.Engine
 -- Literal damage is not computed greatest-mana-value damage.
 #guard
   !CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
-    (.dealDamage .this (.target 1 (.opponent (.controller .this))) (.nat 3))
+    (.dealDamage .this (.target 1 (.opponent (.controller .this))) (.int 3))
 
 #guard
   CardAction.leftoverChapterEffect?
@@ -1334,7 +1334,7 @@ namespace Mtg.Engine
           .zone .graveyard,
           .cardType .creature,
           .owner (.controller .this),
-          .manaValueAtMost (.nat 3)]))] ==
+          .manaValueAtMost (.int 3)]))] ==
     some (Effect.chapterReturnCreatureFromGyMvAtMost 3)
 
 #guard
@@ -1345,7 +1345,7 @@ namespace Mtg.Engine
           .zone .graveyard,
           .cardType .creature,
           .owner (.controller .this),
-          .manaValueAtMost (.nat 0)]))] |>.isNone
+          .manaValueAtMost (.int 0)]))] |>.isNone
 
 #guard
   CardAction.leftoverChapterEffect?
@@ -1501,7 +1501,7 @@ namespace Mtg.Engine
           [.draw (.controller .this) 2]])),
       .ability (.static (.replace
         (.createTokens (.intersection [.token, .controlled (.controller .this)]))
-        [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))]))
+        [.modifyReplacementCreatedTokenCount (fun n => .int (n * 2))]))
     ]).toCardDef
   c.drawTwoExceptFirstDrawStep && c.tokenDoubling
 
@@ -1510,7 +1510,7 @@ namespace Mtg.Engine
     (TraditionalCardDefinition.card [
       .ability (.static (.replace
         (.createTokens (.intersection [.token, .controlled (.controller .this)]))
-        [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 3))]))
+        [.modifyReplacementCreatedTokenCount (fun n => .int (n * 3))]))
     ]).toCardDef
   !c.tokenDoubling
 

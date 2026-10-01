@@ -30,7 +30,7 @@ def leftoverMillThenPutCompiled? (action : CardAction) : Option Effect :=
 
 /-- Mill n, then put all cards of a subtype from among them into hand. -/
 def leftoverMillThenSubtypeToHand? : CardAction → Option (Nat × String)
-  | .sequence [.actionId id (.mill who (.nat n)), .returnToHand among] =>
+  | .sequence [.actionId id (.mill who (.int (.ofNat n))), .returnToHand among] =>
     if leftoverYou who then
       leftoverMilledSubtype? id among |>.map (fun st => (n, st))
     else none
@@ -103,7 +103,7 @@ def leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv? :
 /-- Leftovers that compile to a named `Effect` only as a printed Saga chapter. -/
 def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
   match action with
-  | .dealDamage src (.target _ sel) (.nat n) =>
+  | .dealDamage src (.target _ sel) (.int (.ofNat n)) =>
     if (src == Selector.this || leftoverSourceThis src) &&
         sel.toTargetKind == EffectTargetKind.oppCreature then
       some (Effect.chapterDealDamageToOppCreature n)
@@ -113,11 +113,11 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
         [.zone .battlefield, .cardType .artifact, .controlled (.opponent (.controller .this))] then
       some Effect.chapterDestroyOppArtifact
     else none
-  | .destroy (.targets _ (.range (.nat 0) (.nat 1)) among) =>
+  | .destroy (.targets _ (.range (.int 0) (.int 1)) among) =>
     if among == .intersection [.zone .battlefield, .not (.cardType .land)] then
       some Effect.destroyUpToOneNonland
     else none
-  | .loseLife (.opponent (.controller .this)) (.nat n) =>
+  | .loseLife (.opponent (.controller .this)) (.int (.ofNat n)) =>
     some (Effect.eachOpponentLosesLife n)
   | .addMana who [sym] =>
     if leftoverYou who then (addedManaType? sym).map Effect.chapterAddMana else none
@@ -127,14 +127,14 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
     else none
   | .continuous
       [.gainAbility .this
-        (.triggered (.enter lands) (.createTokens who (.nat 1) parts []))] .endOfGame =>
+        (.triggered (.enter lands) (.createTokens who (.int 1) parts []))] .endOfGame =>
     if lands.shape.landYouControl && leftoverYou who &&
         leftoverTokenKind? parts == some TokenKind.elf then
       some Effect.chapterGainLandfallCreateElf
     else none
   | .sequence [
       treasure,
-      .if (.greaterOrEqual (.count sel) (.nat 4)) [
+      .if (.greaterOrEqual (.count sel) (.int 4)) [
         .actionId id (.sacrifice .this),
         .if (.happened (.actionWithId id') .gameStart) [dragon]]] =>
     if id == id' &&
@@ -149,11 +149,11 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
         sel == Selector.intersection [.zone .battlefield, .subtype .elf, .controlled (.controller .this)] then
       some (Effect.chapterElvesGetVigilance p)
     else none
-  | .keyword who (.amass .goblin (.nat n)) =>
+  | .keyword who (.amass .goblin (.int (.ofNat n))) =>
     if n != 0 && leftoverYou who then some (Effect.chapterAmassGoblins n) else none
   | .sequence [
-      .loseLife (.target _ (.opponent who)) (.nat n),
-      .gainLife gainer (.nat n')
+      .loseLife (.target _ (.opponent who)) (.int (.ofNat n)),
+      .gainLife gainer (.int (.ofNat n'))
     ] =>
     if n != 0 && n == n' && leftoverYou who && leftoverYou gainer then
       some (Effect.chapterOpponentLosesYouGain n)
@@ -179,13 +179,13 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
         .zone .graveyard,
         .cardType .creature,
         .owner (.controller .this),
-        .manaValueAtMost (.nat k)])) =>
+        .manaValueAtMost (.int (.ofNat k))])) =>
     if k != 0 then some (Effect.chapterReturnCreatureFromGyMvAtMost k) else none
   | .putCounter
-      (.targets _ (.range (.nat 0) (.nat 1))
+      (.targets _ (.range (.int 0) (.int 1))
         (.intersection [.zone .battlefield, .cardType .creature]))
       .plusOnePlusOne
-      (.nat 1) =>
+      (.int 1) =>
     some Effect.chapterPlusOneUpToOne
   | _ => none
 
@@ -193,8 +193,8 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
 opponent. -/
 def leftoverDamageNonSubtypeAndOpponents? : CardAction → Option (Nat × String)
   | .sequence [
-      .dealDamage src (.intersection [.zone .battlefield, .cardType .creature, .not (.subtype st)]) (.nat n),
-      .dealDamage src' (.opponent who) (.nat n')] =>
+      .dealDamage src (.intersection [.zone .battlefield, .cardType .creature, .not (.subtype st)]) (.int (.ofNat n)),
+      .dealDamage src' (.opponent who) (.int (.ofNat n'))] =>
     if n != 0 && n == n' && (src == .this || src == .source .this) && src == src' &&
         who == .controller .this then
       some (n, st.toString)
@@ -215,14 +215,14 @@ def leftoverGalactusToken? (parts : List CardPart) : Bool :=
 
 /-- `Create N <token>s.` or `Create a <token> for each <subtype> you control.` -/
 def leftoverChapterCreateTokens? : CardAction → Option Effect
-  | .createTokens who (.nat n) parts [] =>
+  | .createTokens who (.int (.ofNat n)) parts [] =>
     if leftoverYou who && n == 1 && leftoverGalactusToken? parts then
       some Effect.createGalactus
     else if leftoverYou who && n != 0 then
       (leftoverTokenKind? parts).map (Effect.createTokens · n)
     else none
   | .forEachVariable _ (.intersection [.zone .battlefield, .subtype st, .controlled (.controller .this)])
-      [.createTokens who (.nat 1) parts []] =>
+      [.createTokens who (.int 1) parts []] =>
     if leftoverYou who then
       (leftoverTokenKind? parts).map (Effect.createTokensPerSubtype · st.toString)
     else none
@@ -296,12 +296,12 @@ the cast-from-graveyard amount. -/
 def leftoverDrawOrAmassIfFromGy? : CardAction → Option Effect
   | .ifElse (.happened (.castSpellFromGraveyard .this) .gameStart) [thenA] [elseA] =>
     match thenA, elseA with
-    | .draw whoFrom (.nat fromGy), .draw who (.nat n) =>
+    | .draw whoFrom (.int (.ofNat fromGy)), .draw who (.int (.ofNat n)) =>
       if leftoverYou who && leftoverYou whoFrom then
         some (Effect.drawIfFromGy n fromGy)
       else none
-    | .keyword whoFrom (.amass .goblin (.nat fromGy)),
-      .keyword who (.amass .goblin (.nat n)) =>
+    | .keyword whoFrom (.amass .goblin (.int (.ofNat fromGy))),
+      .keyword who (.amass .goblin (.int (.ofNat n))) =>
       if leftoverYou who && leftoverYou whoFrom then
         some (Effect.amassGoblinsOrFromGy n fromGy)
       else none
@@ -312,7 +312,7 @@ def leftoverDrawOrAmassIfFromGy? : CardAction → Option Effect
 target creature an opponent controls. -/
 def leftoverPlusOneThenFight? : CardAction → Option Nat
   | .sequence [
-      .putCounter (.target id among) .plusOnePlusOne (.nat k),
+      .putCounter (.target id among) .plusOnePlusOne (.int (.ofNat k)),
       .fight (.targetReference id') (.target id2 dest)
     ] =>
     if id == id' && id2 == id + 1 &&
@@ -328,7 +328,7 @@ def leftoverOwnerShuffleSourceDraw? : CardAction → Option Nat
   | .sequence [
       .defineSelectorVariable id (.owner who),
       .shuffleIntoOwnersLibrary who',
-      .draw (.variable id') (.nat n)
+      .draw (.variable id') (.int (.ofNat n))
     ] =>
     if id == id' && who == who' && (who == .this || who == .source .this) then
       some n
@@ -386,7 +386,7 @@ def leftoverArtifactTokenTarget? : Selector → Bool
 /-- Deal damage to target creature; if it would die this turn, exile it. -/
 def leftoverDealDamageExileIfDies? : CardAction → Option Nat
   | .sequence [
-      .dealDamage src (.target id among) (.nat n),
+      .dealDamage src (.target id among) (.int (.ofNat n)),
       .continuous
         [.replace (.putToGraveyard (.targetReference id')) [.exile .replacingObject]] _
     ] =>
@@ -404,7 +404,7 @@ def leftoverDestroyArtifactToken? : CardAction → Bool
 
 /-- Deal damage to each creature opponents control. -/
 def leftoverDealDamageToEachOppCreature? : CardAction → Option Nat
-  | .dealDamage src dest (.nat n) =>
+  | .dealDamage src dest (.int (.ofNat n)) =>
     if n != 0 && (src == .this || src == .source .this) &&
         leftoverEachOppCreature? dest then
       some n
@@ -420,8 +420,8 @@ def leftoverDragonSpellSpend? : Trigger → Bool
 of colors that can be spent only on Dragon spells. -/
 def leftoverNonDragonThenDragonMana? : CardAction → Option Nat
   | .sequence [
-      .dealDamage src dest (.nat n),
-      .actionId id (.addManaInAnyCombination who syms (.nat k)),
+      .dealDamage src dest (.int (.ofNat n)),
+      .actionId id (.addManaInAnyCombination who syms (.int (.ofNat k))),
       .continuous [.forbid (.spendManaCreatedByAction id' restriction)] _
     ] =>
     if id == id' && n != 0 && k == 4 &&
@@ -452,7 +452,7 @@ def leftoverExileAttackersSearchBasics? : CardAction → Bool
             .putOntoBattlefieldInState
               (.selected
                 (.targetReference sid')
-                (.range (.nat 0) (.count (.wasObjectOfAction cid)))
+                (.range (.int 0) (.count (.wasObjectOfAction cid)))
                 (.intersection [
                   .zone .library,
                   .cardType .land,
@@ -467,7 +467,7 @@ def leftoverExileAttackersSearchBasics? : CardAction → Bool
 exiled if you control this subtype. -/
 def leftoverExileTopFaceDownPlayIf? : CardAction → Option (Nat × String)
   | .sequence [
-      .actionId lookId (.lookAt (.topOfLibrary who (.nat n))),
+      .actionId lookId (.lookAt (.topOfLibrary who (.int (.ofNat n)))),
       .actionId exileId
         (.exileFaceDown (.wasObjectOfAction looked)),
       .continuous
@@ -509,7 +509,7 @@ def leftoverAxeToken? (parts : List CardPart) : Bool :=
 /-- Sequences that put +1/+1 counters on this creature alongside another
 action, as printed on power-up abilities. -/
 def leftoverSourcePlusOneSequence? : CardAction → Option Effect
-  | .sequence [.putCounter (.source .this) .plusOnePlusOne (.nat k), .draw who (.nat n)] =>
+  | .sequence [.putCounter (.source .this) .plusOnePlusOne (.int (.ofNat k)), .draw who (.int (.ofNat n))] =>
     if leftoverYou who then some (Effect.plusOneAndDraw k n) else none
   | .sequence [.putCounter (.source .this) .plusOnePlusOne 1, .fight src dest] =>
     match dest with
@@ -524,11 +524,11 @@ def leftoverSourcePlusOneSequence? : CardAction → Option Effect
       | _ => false
     if onSelf && !effects.isEmpty then some (Effect.plusOneAndGrant (grantedKeywords effects))
     else none
-  | .sequence [.putCounter (.source .this) .plusOnePlusOne (.nat k), create] =>
+  | .sequence [.putCounter (.source .this) .plusOnePlusOne (.int (.ofNat k)), create] =>
     match leftoverCreateTokensKindN? create with
     | some (kind, 1) => some (Effect.plusOneAndCreateTokens k kind)
     | _ => none
-  | .sequence [.discard (.opponent (.controller .this)) (.nat 1),
+  | .sequence [.discard (.opponent (.controller .this)) (.int 1),
       .putCounter (.source .this) .plusOnePlusOne 1] =>
     some Effect.eachOppDiscardThenPlusOne
   | .sequence [.destroy (.targets _ (.range 0 1) among),
@@ -537,7 +537,7 @@ def leftoverSourcePlusOneSequence? : CardAction → Option Effect
       some Effect.destroyUpToOneThenPlusOne
     else none
   | .sequence [.returnToHand (.targets _ (.range 0 1) among),
-      .putCounter (.source .this) .plusOnePlusOne (.nat k)] =>
+      .putCounter (.source .this) .plusOnePlusOne (.int (.ofNat k))] =>
     if leftoverYourGyCreatures? among then
       some (Effect.returnGyCreatureThenPlusOne k)
     else none
@@ -557,7 +557,7 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
               .manaValueAtMost .x])),
         .putOntoBattlefield (.variable id1),
         .putCounter (.variable id2) .plusOnePlusOne .x,
-        .if (.greaterOrEqual .x (.nat 4))
+        .if (.greaterOrEqual .x (.int 4))
           [.continuous [.gainAbility (.variable id3) (.keyword .haste)] .endOfTurn]],
       .sequence [
         .defineSelectorVariable id4
@@ -569,7 +569,7 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
               .manaValueAtMost .x])),
         .putOntoBattlefield (.variable id5),
         .putCounter (.variable id6) .plusOnePlusOne .x,
-        .if (.greaterOrEqual .x (.nat 4))
+        .if (.greaterOrEqual .x (.int 4))
           [.continuous [.gainAbility (.variable id7) (.keyword .haste)] .endOfTurn]]
     ] =>
     if CardAction.leftoverYou who && CardAction.leftoverYou searcher &&
@@ -578,14 +578,14 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
         id == id4 && id == id5 && id == id6 && id == id7 then
       some Effect.searchLibraryOrGyArtifactCreatureX
     else none
-  | .draw (.targets _ (.range (.nat 2) (.nat 2)) .player) (.nat 1) => some Effect.twoPlayersDraw
+  | .draw (.targets _ (.range (.int 2) (.int 2)) .player) (.int 1) => some Effect.twoPlayersDraw
   | .sequence [
-      .actionId id (.lookAt (.topOfLibrary who (.nat k))),
+      .actionId id (.lookAt (.topOfLibrary who (.int (.ofNat k)))),
       .searchLibraryThenShuffle searcher [
         .putOntoBattlefieldInState
           (.selected chooser .any (.intersection [.wasObjectOfAction id', .cardType .land]))
           [.tapped]],
-      .gainLife gainer (.nat life)] =>
+      .gainLife gainer (.int (.ofNat life))] =>
     if id == id' && leftoverYou who && leftoverYou searcher && leftoverYou chooser &&
         leftoverYou gainer then
       some (Effect.lookAtTopLandsGainLife k life)
@@ -616,19 +616,19 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     some (Effect.targetCantBeBlockedPowerAtMost k)
   | .putOntoBattlefieldInState (.intersection [.zone .graveyard, .source .this]) [.tapped] =>
     some Effect.returnFromGraveyardTapped
-  | .dealDamage src (.opponent who) (.nat n) =>
+  | .dealDamage src (.opponent who) (.int (.ofNat n)) =>
     if (src == .this || leftoverSourceThis src) && leftoverYou who then
       some (Effect.damageEachOpponent n)
     else none
   | .sequence [
-      .defineSelectorVariable n (.selected who (.range (.nat 0) (.nat 2)) kind),
+      .defineSelectorVariable n (.selected who (.range (.int 0) (.int 2)) kind),
       .destroy (.intersection [.zone .battlefield, .cardType .creature, .not (.variable n')])] =>
     if n == n' && leftoverYou who &&
         kind == .intersection [.zone .battlefield, .cardType .creature] then
       some Effect.chooseTwoDestroyRest
     else none
   | .sequence [
-      .actionId id (.addManaOfOneColor who syms (.nat 1)),
+      .actionId id (.addManaOfOneColor who syms (.int 1)),
       .continuous [.forbid (.spendManaCreatedByAction id' restriction)] .endOfTurn] =>
     if id != id' || !leftoverYou who || syms != ManaSymbol.anyColor then none
     else
@@ -645,10 +645,10 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
         (.castSpell (.intersection [.spell, .not (.cardType .artifact)])))] .endOfTurn] =>
     if id == id' && leftoverYou who then some Effect.addBlueCantNonartifact else none
   | .sequence [
-      .actionId lookId (.lookAt (.topOfLibrary who (.nat k))),
+      .actionId lookId (.lookAt (.topOfLibrary who (.int (.ofNat k)))),
       .optional chooser (.sequence [
         .actionId revealId
-          (.reveal (.selected picker (.range (.nat 1) (.nat 1))
+          (.reveal (.selected picker (.range (.int 1) (.int 1))
             (.intersection [.wasObjectOfAction looked, .subtype st]))),
         .returnToHand (.wasObjectOfAction revealed)]),
       .putOnBottomOfLibrary
@@ -658,7 +658,7 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
       some (Effect.lookAtTopRevealSubtype k st.toString)
     else none
   | .keyword (.target _ (.intersection [.zone .battlefield, .cardType .creature, .subtype st, you]))
-      (.connive (.nat 1)) =>
+      (.connive (.int 1)) =>
     if you == .controlled (.controller .this) then
       some (Effect.targetSubtypeConnives st.toString)
     else none
@@ -671,14 +671,14 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     | some (#[st], false), some kind =>
       if leftoverYou who then some (Effect.createTokensEqualSubtype kind st) else none
     | _, _ => none
-  | .dealDamage src (.intersection [.zone .battlefield, .cardType .creature]) (.nat n) =>
+  | .dealDamage src (.intersection [.zone .battlefield, .cardType .creature]) (.int (.ofNat n)) =>
     if n != 0 && (src == .this || leftoverSourceThis src) then
       some (Effect.dealDamageToEachCreature n)
     else none
   | .sequence [
       .destroy (.target t (.intersection [.zone .battlefield, .cardType .land])),
       .optional who (.searchLibraryThenShuffle searcher [
-        .putOntoBattlefieldInState (.selected chooser (.range (.nat 1) (.nat 1))
+        .putOntoBattlefieldInState (.selected chooser (.range (.int 1) (.int 1))
           (.intersection [.zone .library, .cardType .land, .supertype .basic])) [.tapped]])] =>
     let controller := Selector.controller (.targetReference t)
     if who == controller && searcher == controller && chooser == controller then
@@ -844,7 +844,7 @@ def isOpponentArtifactsCount : Value → Bool
 and put the rest on the bottom in a random order. -/
 def leftoverLookAtTopReveal? : CardAction → Option (Nat × Array String)
   | .sequence [
-      .actionId lookId (.lookAt (.topOfLibrary who (.nat n))),
+      .actionId lookId (.lookAt (.topOfLibrary who (.int (.ofNat n)))),
       .optional (.controller .this) (.sequence [
         .actionId revealId
           (.reveal
@@ -947,9 +947,9 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
     else none
   | .keyword who .recruit =>
     if leftoverYou who then some TriggeredAbility.onEnterRecruit else none
-  | .keyword who (.amass .goblin (.nat n)) =>
+  | .keyword who (.amass .goblin (.int (.ofNat n))) =>
     if leftoverYou who then some (TriggeredAbility.onEnterAmassGoblins n) else none
-  | .keyword who (.connive (.nat 1)) =>
+  | .keyword who (.connive (.int 1)) =>
     if leftoverSourceThis who then some TriggeredAbility.onEnterConnive else none
   | .sequence [
       .actionId id (.returnToHand sel),
@@ -965,7 +965,7 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
       | _ => none
     else none
   | .sequence [
-      .gainLife _ (.nat n),
+      .gainLife _ (.int (.ofNat n)),
       .optional (.controller .this) search
     ] =>
     if leftoverSearchBasicOnTop? search then
@@ -991,7 +991,7 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
       some TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
     else none
   | .sequence [
-      .actionId id (.keyword who (.amass .goblin (.nat n))),
+      .actionId id (.keyword who (.amass .goblin (.int (.ofNat n)))),
       .attach .this (.wasObjectOfAction id')
     ] =>
     if id == id' && leftoverYou who then

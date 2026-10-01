@@ -47,7 +47,7 @@ def parsePutCountersOnThis (sentence : String) : Option CardAction :=
     match parsePumpWho who with
     | some sel =>
       if sel == .source .this then
-        some (.putCounter (.source .this) .plusOnePlusOne (.nat k))
+        some (.putCounter (.source .this) .plusOnePlusOne (.int k))
       else none
     | none => none
 
@@ -308,10 +308,10 @@ def parseCountRange (s : String) : Option Range :=
   | some (a, b) =>
     match positiveCount a, positiveCount b with
     | some lo, some hi =>
-      if lo <= hi then some (.range (Value.nat lo) (Value.nat hi)) else none
+      if lo <= hi then some (.range (Value.int lo) (Value.int hi)) else none
     | _, _ => none
   | none =>
-    (positiveCount s).map fun n => .range (Value.nat n) (Value.nat n)
+    (positiveCount s).map fun n => .range (Value.int n) (Value.int n)
 
 /-- `one, two, or three` as an inclusive contiguous range.
 The numbers are positive and listed from low to high with no gaps. -/

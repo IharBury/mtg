@@ -117,7 +117,7 @@ def theInvincibleIronManDefinition : TraditionalCardDefinition := .card <|
               (.putOntoBattlefield
                 (.selected
                   (.controller .this)
-                  (.range (.nat 1) (.nat 1))
+                  (.range (.int 1) (.int 1))
                   (.intersection [.zone .hand, .owner (.controller .this), .cardType .artifact]))),
             .if
               (.anySubtype (.wasObjectOfAction 1) .equipment)
@@ -160,7 +160,7 @@ def blackPantherHopeEnduringDefinition : TraditionalCardDefinition := .card <|
   .ability (.keyword .flash),
   .ability (.keyword .doubleStrike),
   .ability (.static (.replace (.damage .all .this) [])),
-  .ability (.triggered (.combatDamage .this .player) (.draw (.controller .this) (.nat 1)))]
+  .ability (.triggered (.combatDamage .this .player) (.draw (.controller .this) (.int 1)))]
 
 def blackPantherHopeEnduring : CardDef :=
   blackPantherHopeEnduringDefinition.toCardDef (oracleText := blackPantherHopeEnduringOracle)
@@ -303,7 +303,7 @@ def avengersAssembleDefinition : TraditionalCardDefinition := .card <|
                 (.enter
                   (.intersection [.zone .battlefield, .subtype .hero, .controlled (.controller .this)]))
                 .turnStart))))
-        [.draw (.controller .this) (.nat 1)]))]
+        [.draw (.controller .this) (.int 1)]))]
 
 def avengersAssemble : CardDef :=
   avengersAssembleDefinition.toCardDef (oracleText := avengersAssembleOracle)
@@ -529,7 +529,7 @@ def colleenWingStreetSamuraiDefinition : TraditionalCardDefinition := .card <|
             .cardType .creature,
             .controlled (.controller .this),
             .isTargetOf .this]))
-        [.putCounter (.source .this) .plusOnePlusOne 1, .scry (.controller .this) (.nat 1)]))]
+        [.putCounter (.source .this) .plusOnePlusOne 1, .scry (.controller .this) (.int 1)]))]
 
 def colleenWingStreetSamurai : CardDef :=
   colleenWingStreetSamuraiDefinition.toCardDef (oracleText := colleenWingStreetSamuraiOracle)
@@ -1250,7 +1250,7 @@ def aIMScientistsDefinition : TraditionalCardDefinition := .card <|
   .subtype .villain,
   .power 3,
   .toughness 3,
-  .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive (.nat 1)))),
+  .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive (.int 1)))),
   .ability
     (.keywordWithCost
       (.typecycling [.basic] [.land] [])
@@ -1384,7 +1384,7 @@ def boldBiochemistDefinition : TraditionalCardDefinition := .card <|
         (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 5, .mono .blue]]
         (.sequence
-          [.putCounter (.source .this) .plusOnePlusOne 1, .draw (.controller .this) (.nat 2)])
+          [.putCounter (.source .this) .plusOnePlusOne 1, .draw (.controller .this) (.int 2)])
         (.if
           (.happened (.enter (.source .this)) .turnStart)
           [.reduceCost .this [.mana [.generic 1, .mono .blue]]])))]
@@ -1927,7 +1927,7 @@ def statureSizeShifterDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.static
       (.if
-        (.lessOrEqual (.greatestPower (.source .this)) (.nat 1))
+        (.lessOrEqual (.greatestPower (.source .this)) (.int 1))
         [.forbid (.block .any (.source .this))])),
   .ability
     (.abilityId 1
@@ -1969,7 +1969,7 @@ def superIntelligenceDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.triggered
       (.upkeep (.controller (.hostOf .this)))
-      (.draw (.controller (.hostOf .this)) (.nat 1)))]
+      (.draw (.controller (.hostOf .this)) (.int 1)))]
 
 def superIntelligence : CardDef :=
   superIntelligenceDefinition.toCardDef (oracleText := superIntelligenceOracle)
@@ -2081,7 +2081,7 @@ def tricksterSStratagemDefinition : TraditionalCardDefinition := .card <|
           .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)]))
-      (.connive (.nat 1))]]
+      (.connive (.int 1))]]
 
 def tricksterSStratagem : CardDef :=
   tricksterSStratagemDefinition.toCardDef (oracleText := tricksterSStratagemOracle)
@@ -2268,7 +2268,7 @@ def decoyPloyDefinition : TraditionalCardDefinition := .card <|
   .actions
     [
       .chooseUniqueModes
-        (.range (.nat 1) (.nat 2))
+        (.range (.int 1) (.int 2))
         [
           .returnToHand
             (.target 1 (.intersection [.zone .graveyard, .subtype .villain, .owner (.controller .this)])),
@@ -2314,7 +2314,7 @@ def doctorDoomDefinition : TraditionalCardDefinition := .card <|
       (.enter .this)
       (.createTokens
         (.controller .this)
-        (.nat 2)
+        (.int 2)
         [
           .name "Doombot",
           .type .artifact,
@@ -2344,7 +2344,7 @@ def doctorDoomDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.triggered
       (.endStep (.controller .this))
-      (.sequence [.draw (.controller .this) (.nat 1), .loseLife (.controller .this) (.nat 1)]))]
+      (.sequence [.draw (.controller .this) (.int 1), .loseLife (.controller .this) (.int 1)]))]
 
 def doctorDoom : CardDef :=
   doctorDoomDefinition.toCardDef (oracleText := doctorDoomOracle)
@@ -2474,11 +2474,11 @@ def hYDRATroopersDefinition : TraditionalCardDefinition := .card <|
       (.ifElse
         (.greaterOrEqual
           (.count (.intersection [.zone .graveyard, .cardType .creature, .owner (.controller .this)]))
-          (.nat 2))
+          (.int 2))
         [
           .createTokens
             (.controller .this)
-            (.nat 1)
+            (.int 1)
             [
               .type .creature,
               .subtype .villain,
@@ -2487,7 +2487,7 @@ def hYDRATroopersDefinition : TraditionalCardDefinition := .card <|
               .toughness 1,
               .ability (.keyword .menace)]
             [.tapped]]
-        [.mill (.controller .this) (.nat 2)]))]
+        [.mill (.controller .this) (.int 2)]))]
 
 def hYDRATroopers : CardDef :=
   hYDRATroopersDefinition.toCardDef (oracleText := hYDRATroopersOracle)
@@ -2562,7 +2562,7 @@ def madameMasqueDefinition : TraditionalCardDefinition := .card <|
   .subtype .villain,
   .power 3,
   .toughness 2,
-  .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive (.nat 1)))),
+  .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive (.int 1)))),
   .ability
     (.triggered
       (.ordinal 2 .turnStart (.draw (.controller .this) .all))
@@ -2660,7 +2660,7 @@ def mODOKDefinition : TraditionalCardDefinition := .card <|
     (.activatedIf
       (.turn (.controller .this))
       [.life 3]
-      (.keyword (.source .this) (.connive (.nat 1)))),
+      (.keyword (.source .this) (.connive (.int 1)))),
   .ability (.static (.addPower
         (.intersection [
           .zone .battlefield,
@@ -2754,7 +2754,7 @@ def ninjaOfTheHandDefinition : TraditionalCardDefinition := .card <|
         [.mana [.generic 4, .mono .black]]
         (.sequence
           [
-            .discard (.opponent (.controller .this)) (.nat 1),
+            .discard (.opponent (.controller .this)) (.int 1),
             .putCounter (.source .this) .plusOnePlusOne 1])
         (.if
           (.happened (.enter (.source .this)) .turnStart)
@@ -2825,7 +2825,7 @@ def redRoomRecruitDefinition : TraditionalCardDefinition := .card <|
   .subtype .villain,
   .power 1,
   .toughness 2,
-  .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive (.nat 1))))]
+  .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive (.int 1))))]
 
 def redRoomRecruit : CardDef :=
   redRoomRecruitDefinition.toCardDef (oracleText := redRoomRecruitOracle)
@@ -3052,7 +3052,7 @@ def swordsmanSharpScoundrelDefinition : TraditionalCardDefinition := .card <|
             .zone .battlefield,
             .subtype .equipment,
             .controlled (.controller .this)]))
-        (.connive (.nat 1))))]
+        (.connive (.int 1))))]
 
 def swordsmanSharpScoundrel : CardDef :=
   swordsmanSharpScoundrelDefinition.toCardDef (oracleText := swordsmanSharpScoundrelOracle)
@@ -3104,7 +3104,7 @@ def unlivingLegionnaireDefinition : TraditionalCardDefinition := .card <|
             .returnToHand
               (.targets
                 1
-                (.range (.nat 0) (.nat 1))
+                (.range (.int 0) (.int 1))
                 (.intersection [.zone .graveyard, .cardType .creature, .owner (.controller .this)])),
             .putCounter (.source .this) .plusOnePlusOne 2])
         (.if
@@ -3225,9 +3225,9 @@ def avengersDisassembledDefinition : TraditionalCardDefinition := .card <|
   .actions
     [
       .chooseUniqueModes
-        (.range (.nat 1) (.nat 2))
+        (.range (.int 1) (.int 2))
         [
-          .dealDamage .this (.intersection [.zone .battlefield, .cardType .creature]) (.nat 3),
+          .dealDamage .this (.intersection [.zone .battlefield, .cardType .creature]) (.int 3),
           .sequence
             [
               .destroy (.target 1 (.intersection [.zone .battlefield, .cardType .land])),
@@ -3239,7 +3239,7 @@ def avengersDisassembledDefinition : TraditionalCardDefinition := .card <|
                     .putOntoBattlefieldInState
                       (.selected
                         (.controller (.targetReference 1))
-                        (.range (.nat 1) (.nat 1))
+                        (.range (.int 1) (.int 1))
                         (.intersection [.zone .library, .cardType .land, .supertype .basic]))
                       [.tapped]])]]]]
 
@@ -3472,7 +3472,7 @@ def humanTorchJohnnyStormDefinition : TraditionalCardDefinition := .card <|
       (.if
         (.any
           (.intersection [.not .this, .zone .battlefield, .subtype .hero, .controlled (.controller .this)]))
-        [.dealDamage .this (.target 1 (.opponent (.controller .this))) (.nat 1)])),
+        [.dealDamage .this (.target 1 (.opponent (.controller .this))) (.int 1)])),
   .ability
     (.abilityId
       2
@@ -3531,7 +3531,7 @@ def hYDRAAssaultRobotDefinition : TraditionalCardDefinition := .card <|
             .zone .battlefield,
             .cardType .artifact,
             .controlled (.controller .this)]]))
-      (.dealDamage .this (.target 1 (.opponent (.controller .this))) (.nat 1)))]
+      (.dealDamage .this (.target 1 (.opponent (.controller .this))) (.int 1)))]
 
 def hYDRAAssaultRobot : CardDef :=
   hYDRAAssaultRobotDefinition.toCardDef (oracleText := hYDRAAssaultRobotOracle)
@@ -3695,7 +3695,7 @@ def lightningStrikeDefinition : TraditionalCardDefinition := .card <|
   .name "Lightning Strike",
   .manaCost [.generic 1, .mono .red],
   .type .instant,
-  .actions [.dealDamage .this (.target 1 .all) (.nat 3)]]
+  .actions [.dealDamage .this (.target 1 .all) (.int 3)]]
 
 def lightningStrike : CardDef :=
   lightningStrikeDefinition.toCardDef (oracleText := lightningStrikeOracle)
@@ -3779,7 +3779,7 @@ def mistyKnightHeroForHireDefinition : TraditionalCardDefinition := .card <|
         .discard
           (.selected
             (.controller .this)
-            (.range (.nat 1) (.nat 1))
+            (.range (.int 1) (.int 1))
             (.intersection [.zone .hand, .owner (.controller .this)]))]
       (.draw
         (.controller .this)
@@ -3983,7 +3983,7 @@ def truckTossDefinition : TraditionalCardDefinition := .card <|
       (.if
         (.anySubtype (.controlled (.controller .this)) .vehicle)
         [.reduceCost .this [.mana [.generic 2]]])),
-  .actions [.dealDamage .this (.target 1 .all) (.nat 4)]]
+  .actions [.dealDamage .this (.target 1 .all) (.int 4)]]
 
 def truckToss : CardDef :=
   truckTossDefinition.toCardDef (oracleText := truckTossOracle)
@@ -4175,7 +4175,7 @@ def epicFightDefinition : TraditionalCardDefinition := .card <|
   .actions
     [
       .chooseUniqueModes
-        (.range (.nat 1) (.nat 2))
+        (.range (.int 1) (.int 2))
         [
           .continuous
             [
@@ -4484,7 +4484,7 @@ def petAvengersDefinition : TraditionalCardDefinition := .card <|
             .putCounter (.source .this) .plusOnePlusOne 1,
             .createTokens
               (.controller .this)
-              (.nat 1)
+              (.int 1)
               [
                 .type .creature,
                 .subtype .hero,
@@ -4529,7 +4529,7 @@ def punishingPunchDefinition : TraditionalCardDefinition := .card <|
       (.if
         (.greaterOrEqual
           (.count (.intersection [.zone .graveyard, .cardType .creature, .owner (.controller .this)]))
-          (.nat 2))
+          (.int 2))
         [.reduceCost .this [.mana [.generic 2]]])),
   .actions
     [
@@ -4781,7 +4781,7 @@ def sheHulkJadeDefenderDefinition : TraditionalCardDefinition := .card <|
             .destroy
               (.targets
                 1
-                (.range (.nat 0) (.nat 1))
+                (.range (.int 0) (.int 1))
                 (.intersection [.zone .battlefield, .union [.cardType .artifact, .cardType .enchantment]])),
             .putCounter (.source .this) .plusOnePlusOne 1])
         (.if
@@ -4952,7 +4952,7 @@ def theUnbeatableSquirrelGirlDefinition : TraditionalCardDefinition := .card <|
       (.or (.enter .this) (.attack .this .all))
       (.createTokens
         (.controller .this)
-        (.nat 1)
+        (.int 1)
         [.type .creature, .subtype .squirrel, .colorIndicator [.green], .power 1, .toughness 1]
         [])),
   .ability
@@ -5111,7 +5111,7 @@ def abominationTerrifyingTitanDefinition : TraditionalCardDefinition := .card <|
               .this
               (.targets
                 1
-                (.range (.nat 0) (.nat 1))
+                (.range (.int 0) (.int 1))
                 (.intersection
                   [.zone .battlefield, .cardType .creature, .controlled (.opponent (.controller .this))]))])
         (.if
@@ -5241,7 +5241,7 @@ def avengersUnderSiegeDefinition : TraditionalCardDefinition := .card <|
       [
         .createTokens
           (.controller .this)
-          (.nat 2)
+          (.int 2)
           [
             .type .creature,
             .subtype .villain,
@@ -5259,8 +5259,8 @@ def avengersUnderSiegeDefinition : TraditionalCardDefinition := .card <|
             .dealDamage
               .this
               (.intersection [.zone .battlefield, .cardType .creature, .not (.subtype .villain)])
-              (.nat 2),
-            .dealDamage .this (.opponent (.controller .this)) (.nat 2)]]),
+              (.int 2),
+            .dealDamage .this (.opponent (.controller .this)) (.int 2)]]),
   .ability
     (.keywordWithEffect
       (.chapter 3)
@@ -5271,7 +5271,7 @@ def avengersUnderSiegeDefinition : TraditionalCardDefinition := .card <|
           [
             .createTokens
               (.controller .this)
-              (.nat 1)
+              (.int 1)
               [
                 .type .artifact,
                 .subtype .treasure,
@@ -5281,7 +5281,7 @@ def avengersUnderSiegeDefinition : TraditionalCardDefinition := .card <|
                     (.addManaOfOneColor
                       (.controller .this)
                       [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
-                      (.nat 1)))]
+                      (.int 1)))]
               []]])]
 
 def avengersUnderSiege : CardDef :=
@@ -5435,7 +5435,7 @@ def bullseyeDeathDealerDefinition : TraditionalCardDefinition := .card <|
               .controlled (.controller .this)])
             1,
           .discard (.not (.cardType .land))]]
-        [.dealDamage .this (.target 1 .all) (.nat 2)])),
+        [.dealDamage .this (.target 1 .all) (.int 2)])),
   .ability
     (.activated
       [
@@ -5449,7 +5449,7 @@ def bullseyeDeathDealerDefinition : TraditionalCardDefinition := .card <|
               .controlled (.controller .this)])
             1,
           .discard (.not (.cardType .land))]]
-      (.dealDamage .this (.target 2 .all) (.nat 2)))]
+      (.dealDamage .this (.target 2 .all) (.int 2)))]
 
 def bullseyeDeathDealer : CardDef :=
   bullseyeDeathDealerDefinition.toCardDef (oracleText := bullseyeDeathDealerOracle)
@@ -5625,7 +5625,7 @@ def ironManMasterOfMachinesDefinition : TraditionalCardDefinition := .card <|
         (.happened
           (.enter (.intersection [.zone .battlefield, .cardType .artifact, .controlled (.controller .this)]))
           .turnStart)
-        [.draw (.controller .this) (.nat 1)]))]
+        [.draw (.controller .this) (.int 1)]))]
 
 def ironManMasterOfMachines : CardDef :=
   ironManMasterOfMachinesDefinition.toCardDef (oracleText := ironManMasterOfMachinesOracle)
@@ -5660,7 +5660,7 @@ def kangTemporalTyrantDefinition : TraditionalCardDefinition := .card <|
   .subtype .villain,
   .power 3,
   .toughness 4,
-  .ability (.triggered (.attack .this .all) (.keyword (.source .this) (.connive (.nat 1)))),
+  .ability (.triggered (.attack .this .all) (.keyword (.source .this) (.connive (.int 1)))),
   .ability
     (.triggered
       (.ordinal 2 .turnStart (.draw (.controller .this) .all))
@@ -5888,11 +5888,11 @@ def theRuinousWreckingCrewDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.triggered
       (.enter .this)
-      (.chooseUniqueModes (.range (.nat 0) .x) [
+      (.chooseUniqueModes (.range (.int 0) .x) [
         .sequence [
-          .discard (.controller .this) (.nat 1),
-          .draw (.controller .this) (.nat 1)],
-        .loseLife (.target 1 (.opponent (.controller .this))) (.nat 2),
+          .discard (.controller .this) (.int 1),
+          .draw (.controller .this) (.int 1)],
+        .loseLife (.target 1 (.opponent (.controller .this))) (.int 2),
         .destroy (.target 2 (.intersection [.zone .battlefield, .token])),
         .forEachVariable 3 .player [
           .sacrifice
@@ -6090,7 +6090,7 @@ def titaniaRuggedRumblerDefinition : TraditionalCardDefinition := .card <|
               .discard
                 (.selected
                   (.controller .this)
-                  (.range (.nat 1) (.nat 1))
+                  (.range (.int 1) (.int 1))
                   (.intersection [.zone .hand, .owner (.controller .this)])),
               .mana [.generic 2]]])),
   .ability
@@ -6102,7 +6102,7 @@ def titaniaRuggedRumblerDefinition : TraditionalCardDefinition := .card <|
             .discard
               (.selected
                 (.controller .this)
-                (.range (.nat 1) (.nat 1))
+                (.range (.int 1) (.int 1))
                 (.intersection [.zone .hand, .owner (.controller .this)])),
             .mana [.generic 2]]])]
 
@@ -6156,7 +6156,7 @@ def uSAgentJohnWalkerDefinition : TraditionalCardDefinition := .card <|
             1
             (.createTokens
               (.controller .this)
-              (.nat 1)
+              (.int 1)
               [
                 .name "Sturdy Shield",
                 .type .artifact,
@@ -6201,7 +6201,7 @@ def visionQuestDefinition : TraditionalCardDefinition := .card <|
               .manaValueAtMost .x])),
         .putOntoBattlefield (.variable 1),
         .putCounter (.variable 1) .plusOnePlusOne .x,
-        .if (.greaterOrEqual .x (.nat 4))
+        .if (.greaterOrEqual .x (.int 4))
           [.continuous [.gainAbility (.variable 1) (.keyword .haste)] .endOfTurn]],
       .sequence [
         .defineSelectorVariable 1
@@ -6213,7 +6213,7 @@ def visionQuestDefinition : TraditionalCardDefinition := .card <|
               .manaValueAtMost .x])),
         .putOntoBattlefield (.variable 1),
         .putCounter (.variable 1) .plusOnePlusOne .x,
-        .if (.greaterOrEqual .x (.nat 4))
+        .if (.greaterOrEqual .x (.int 4))
           [.continuous [.gainAbility (.variable 1) (.keyword .haste)] .endOfTurn]]]]]
 
 def visionQuest : CardDef :=
@@ -6442,7 +6442,7 @@ def dependableQuinjetDefinition : TraditionalCardDefinition := .card <|
   .ability (.activated [.tapSymbol]
     (.addManaOfOneColor (.controller .this)
       [.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
-      (.nat 1))),
+      (.int 1))),
   .ability (.keyword (.crew 4))]
 
 def dependableQuinjet : CardDef :=
@@ -6484,13 +6484,13 @@ def hERBIEScoutUnitDefinition : TraditionalCardDefinition := .card <|
       (.enter .this)
       (.sequence
         [
-          .draw (.controller .this) (.nat 1),
+          .draw (.controller .this) (.int 1),
           .optional
             (.controller .this)
             (.putOntoBattlefieldInState
               (.selected
                 (.controller .this)
-                (.range (.nat 1) (.nat 1))
+                (.range (.int 1) (.int 1))
                 (.intersection [.zone .hand, .owner (.controller .this), .cardType .land]))
               [.tapped])]))]
 
@@ -6605,7 +6605,7 @@ def ultronDroneDefinition : TraditionalCardDefinition := .card <|
             .putCounter (.source .this) .plusOnePlusOne 2,
             .createTokens
               (.controller .this)
-              (.nat 1)
+              (.int 1)
               [
                 .type .artifact,
                 .type .creature,
@@ -6688,7 +6688,7 @@ def theVisionDefinition : TraditionalCardDefinition := .card <|
         (2, .not (.happened (.modeWithIdChosen .player 2) .turnStart),
           [.continuous [.gainAbility (.source .this) (.keyword .indestructible)] .endOfTurn]),
         (3, .not (.happened (.modeWithIdChosen .player 3) .turnStart),
-          [.draw (.controller .this) (.nat 1)])]))]
+          [.draw (.controller .this) (.int 1)])]))]
 
 def theVision : CardDef :=
   theVisionDefinition.toCardDef (oracleText := theVisionOracle)
@@ -6731,7 +6731,7 @@ def vivVisionTeenSynthezoidDefinition : TraditionalCardDefinition := .card <|
       (.attack .this .all)
       (.if
         (.any (.intersection [.source .this, .powerAtLeast (.int 4)]))
-        [.draw (.controller .this) (.nat 1)])),
+        [.draw (.controller .this) (.int 1)])),
   .ability
     (.abilityId
       1
@@ -6877,7 +6877,7 @@ def avengersTowerDefinition : TraditionalCardDefinition := .card <|
             (.addManaOfOneColor
               (.controller .this)
               [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
-              (.nat 1)),
+              (.int 1)),
           .continuous
             [
               .forbid
@@ -6893,7 +6893,7 @@ def avengersTowerDefinition : TraditionalCardDefinition := .card <|
       [.mana [.generic 4], .tapSymbol]
       (.sequence
         [
-          .actionId 2 (.lookAt (.topOfLibrary (.controller .this) (.nat 3))),
+          .actionId 2 (.lookAt (.topOfLibrary (.controller .this) (.int 3))),
           .optional
             (.controller .this)
             (.sequence
@@ -6903,7 +6903,7 @@ def avengersTowerDefinition : TraditionalCardDefinition := .card <|
                   (.reveal
                     (.selected
                       (.controller .this)
-                      (.range (.nat 1) (.nat 1))
+                      (.range (.int 1) (.int 1))
                       (.intersection [.wasObjectOfAction 2, .subtype .hero]))),
                 .returnToHand (.wasObjectOfAction 3)]),
           .putOnBottomOfLibrary (.intersection [.wasObjectOfAction 2, .not (.wasObjectOfAction 3)])]))]
@@ -6980,7 +6980,7 @@ def castleDoomDefinition : TraditionalCardDefinition := .card <|
             (.addManaOfOneColor
               (.controller .this)
               [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
-              (.nat 1)),
+              (.int 1)),
           .continuous
             [
               .forbid
@@ -6997,7 +6997,7 @@ def castleDoomDefinition : TraditionalCardDefinition := .card <|
         .sacrificeCount (.intersection [.zone .battlefield, .cardType .artifact]) 1]
       (.createTokens
         (.controller .this)
-        (.nat 1)
+        (.int 1)
         [
           .name "Doombot",
           .type .artifact,
@@ -7044,7 +7044,7 @@ def darkFortressDefinition : TraditionalCardDefinition := .card <|
       [.tapSymbol]
       (.playerSelectAction
         (.controller .this)
-        (.range (.nat 1) (.nat 1))
+        (.range (.int 1) (.int 1))
         [.addMana (.controller .this) [.mono .black], .addMana (.controller .this) [.mono .red]]))]
 
 def darkFortress : CardDef :=
@@ -7112,7 +7112,7 @@ def gatheringPlaceDefinition : TraditionalCardDefinition := .card <|
       [.tapSymbol]
       (.playerSelectAction
         (.controller .this)
-        (.range (.nat 1) (.nat 1))
+        (.range (.int 1) (.int 1))
         [.addMana (.controller .this) [.mono .green], .addMana (.controller .this) [.mono .white]]))]
 
 def gatheringPlace : CardDef :=
@@ -7148,7 +7148,7 @@ def gleamingBastionDefinition : TraditionalCardDefinition := .card <|
       [.tapSymbol]
       (.playerSelectAction
         (.controller .this)
-        (.range (.nat 1) (.nat 1))
+        (.range (.int 1) (.int 1))
         [.addMana (.controller .this) [.mono .white], .addMana (.controller .this) [.mono .blue]]))]
 
 def gleamingBastion : CardDef :=
@@ -7216,7 +7216,7 @@ def hiddenLairDefinition : TraditionalCardDefinition := .card <|
       [.tapSymbol]
       (.playerSelectAction
         (.controller .this)
-        (.range (.nat 1) (.nat 1))
+        (.range (.int 1) (.int 1))
         [.addMana (.controller .this) [.mono .blue], .addMana (.controller .this) [.mono .black]]))]
 
 def hiddenLair : CardDef :=
@@ -7404,7 +7404,7 @@ def trainingCompoundDefinition : TraditionalCardDefinition := .card <|
       [.tapSymbol]
       (.playerSelectAction
         (.controller .this)
-        (.range (.nat 1) (.nat 1))
+        (.range (.int 1) (.int 1))
         [.addMana (.controller .this) [.mono .red], .addMana (.controller .this) [.mono .green]]))]
 
 def trainingCompound : CardDef :=
@@ -7438,7 +7438,7 @@ def villainousHideoutDefinition : TraditionalCardDefinition := .card <|
             (.addManaOfOneColor
               (.controller .this)
               [.mono .white, .mono .blue, .mono .black, .mono .red, .mono .green]
-              (.nat 1)),
+              (.int 1)),
           .continuous
             [
               .forbid
@@ -7458,7 +7458,7 @@ def villainousHideoutDefinition : TraditionalCardDefinition := .card <|
           1
           (.intersection
             [.zone .battlefield, .cardType .creature, .subtype .villain, .controlled (.controller .this)]))
-        (.connive (.nat 1))))]
+        (.connive (.int 1))))]
 
 def villainousHideout : CardDef :=
   villainousHideoutDefinition.toCardDef (oracleText := villainousHideoutOracle)

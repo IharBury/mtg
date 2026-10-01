@@ -93,7 +93,6 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .continuous effects _duration => compileContinuous effects asAbility
                   | .tap s => compileTap s asAbility
                   | .untap s => compileUntap s asAbility
-                  | .dealDamage _source victim (.nat n) => compileDamage victim n asAbility
                   | .dealDamage _source victim (.int n) =>
                     if n >= 0 then compileDamage victim n.toNat asAbility
                     else continuousEffect none [] asAbility
@@ -140,7 +139,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     match valToNat? n with
                     | some n => Effect.drawThenDiscard n
                     | none => continuousEffect none [] asAbility
-                  | .putCounter (.source .this) .plusOnePlusOne (.nat n) =>
+                  | .putCounter (.source .this) .plusOnePlusOne (.int (.ofNat n)) =>
                     Effect.putPlusOnePlusOneOnSource n
                   | .putCounter (.source .this) .plusOnePlusOne .x =>
                     Effect.plusOneX
@@ -212,7 +211,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     match leftoverKeywordAction? k with
                     | some e =>
                       match k with
-                      | .connive (.nat 1) | .harness =>
+                      | .connive (.int 1) | .harness =>
                         let ok :=
                           if asAbility then leftoverSourceThis who else leftoverThis who
                         if ok then e else continuousEffect none [] asAbility
@@ -301,7 +300,7 @@ def leftoverDamageEqualTreasures? : CardAction → Bool
 that damage was dealt to it and it has this subtype. -/
 def leftoverDealDamageDestroyIfSubtype? : CardAction → Option (Nat × String)
   | .sequence [
-      .actionId id (.dealDamage src victim (.nat n)),
+      .actionId id (.dealDamage src victim (.int (.ofNat n))),
       .if (.anySubtype (.wasObjectOfAction id') st)
         [.destroy (.wasObjectOfAction id'')]
     ] =>

@@ -89,24 +89,24 @@ namespace Mtg.Engine
 
 #guard
   match
-    (Ability.triggered (.enter .this) (.keyword (.source .this) (.connive (.nat 1)))).toTriggeredAbility? with
+    (Ability.triggered (.enter .this) (.keyword (.source .this) (.connive (.int 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterConnive
   | none => false
 
 #guard
-  (Ability.triggered (.enter .this) (.keyword .this (.connive (.nat 1)))).toTriggeredAbility?.isNone
+  (Ability.triggered (.enter .this) (.keyword .this (.connive (.int 1)))).toTriggeredAbility?.isNone
 
 #guard
-  (Ability.triggered (.enter .this) (.keyword (.controller .this) (.connive (.nat 1)))).toTriggeredAbility?.isNone
+  (Ability.triggered (.enter .this) (.keyword (.controller .this) (.connive (.int 1)))).toTriggeredAbility?.isNone
 
 #guard
   match
-    (Ability.triggered (.attack .this .all) (.keyword (.source .this) (.connive (.nat 1)))).toTriggeredAbility? with
+    (Ability.triggered (.attack .this .all) (.keyword (.source .this) (.connive (.int 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackConnive
   | none => false
 
 #guard
-  (Ability.triggered (.attack .this .all) (.keyword .this (.connive (.nat 1)))).toTriggeredAbility?.isNone
+  (Ability.triggered (.attack .this .all) (.keyword .this (.connive (.int 1)))).toTriggeredAbility?.isNone
 
 #guard
   match
@@ -119,7 +119,7 @@ namespace Mtg.Engine
             .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this)]))
-        (.connive (.nat 1)))).toTriggeredAbility? with
+        (.connive (.int 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCombatTargetYouControlConnives
   | none => false
 
@@ -133,7 +133,7 @@ namespace Mtg.Engine
           .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)]))
-      (.connive (.nat 1)))).toTriggeredAbility?.isNone
+      (.connive (.int 1)))).toTriggeredAbility?.isNone
 
 #guard
   match
@@ -151,7 +151,7 @@ namespace Mtg.Engine
             .zone .battlefield,
             .subtype .equipment,
             .controlled (.controller .this)]))
-        (.connive (.nat 1)))).toTriggeredAbility? with
+        (.connive (.int 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEquippedCreatureYouControlAttacksConnive
   | none => false
 
@@ -223,7 +223,7 @@ namespace Mtg.Engine
             .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this)]))
-        (.connive (.nat 1))])
+        (.connive (.int 1))])
 
 #guard
   CardAction.leftoverOwnerPutsLibraryThenConnive?
@@ -246,7 +246,7 @@ namespace Mtg.Engine
             .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this)]))
-        (.connive (.nat 1))])
+        (.connive (.int 1))])
 
 #guard
   CardAction.toEffect
@@ -269,7 +269,7 @@ namespace Mtg.Engine
             .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this)]))
-        (.connive (.nat 1))]) == Effect.ownerPutsLibraryThenConnive
+        (.connive (.int 1))]) == Effect.ownerPutsLibraryThenConnive
 
 #guard
   match
@@ -281,7 +281,7 @@ namespace Mtg.Engine
   match
     (Ability.triggered
       (.enter .this)
-      (.keyword (.controller .this) (.amass .goblin (.nat 1)))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.int 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterAmassGoblins 1
   | none => false
 
@@ -289,7 +289,7 @@ namespace Mtg.Engine
   match
     (Ability.triggered
       (.die .this)
-      (.keyword (.controller .this) (.amass .goblin (.nat 4)))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.int 4)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesAmassGoblins 4
   | none => false
 
@@ -301,7 +301,7 @@ namespace Mtg.Engine
           .spell,
           .not (.cardType .creature),
           .controlled (.controller .this)]))
-      (.keyword (.controller .this) (.amass .goblin (.nat 1)))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.int 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCastNoncreatureAmassGoblins 1
   | none => false
 
@@ -364,7 +364,7 @@ namespace Mtg.Engine
           .controlled (.controller .this)])
         .all
         [])
-      (.keyword (.controller .this) (.amass .goblin (.nat 2)))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.int 2)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onYouAttackAmassGoblins 2
   | none => false
 
@@ -386,7 +386,7 @@ namespace Mtg.Engine
     (Ability.triggered
       (.enter .this)
       (.sequence [
-        .actionId 1 (.keyword (.controller .this) (.amass .goblin (.nat 1))),
+        .actionId 1 (.keyword (.controller .this) (.amass .goblin (.int 1))),
         .attach .this (.wasObjectOfAction 1)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterAmassThenAttach 1
   | none => false
@@ -411,7 +411,7 @@ namespace Mtg.Engine
             .zone .battlefield,
             .subtype .wolf,
             .controlled (.controller .this)]))
-        (Value.nat 2))
+        (Value.int 2))
       [.forbid (.attack .this .all)]))
   ]).toCardDef.staticAbilities == #[.cantAttackUnlessYouControlNOther 2 "Wolf"]
 
@@ -534,7 +534,7 @@ namespace Mtg.Engine
   (Ability.triggered
     (.enter .this)
     (.sequence [
-      .keyword (.controller .this) (.amass .goblin (.nat 1)),
+      .keyword (.controller .this) (.amass .goblin (.int 1)),
       .attach
         .this
         (.intersection [
@@ -546,7 +546,7 @@ namespace Mtg.Engine
   (Ability.triggered
     (.enter .this)
     (.sequence [
-      .actionId 1 (.keyword (.controller .this) (.amass .goblin (.nat 1))),
+      .actionId 1 (.keyword (.controller .this) (.amass .goblin (.int 1))),
       .attach .this (.wasObjectOfAction 2)])).toTriggeredAbility?.isNone
 
 #guard
@@ -554,14 +554,14 @@ namespace Mtg.Engine
     (.sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1,
-      .keyword (.controller .this) (.amass .goblin (.nat 2))]) == some 2
+      .keyword (.controller .this) (.amass .goblin (.int 2))]) == some 2
 
 #guard
   CardAction.toEffect
     (.sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1,
-      .keyword (.controller .this) (.amass .goblin (.nat 2))]) == Effect.drawLoseLifeThenAmass 2
+      .keyword (.controller .this) (.amass .goblin (.int 2))]) == Effect.drawLoseLifeThenAmass 2
 
 #guard
   CardAction.toEffect
@@ -574,7 +574,7 @@ namespace Mtg.Engine
             .zone .graveyard,
             .cardType .creature,
             .owner (.controller .this)])),
-      .keyword (.controller .this) (.amass .goblin (.nat 3))]) == Effect.returnCreatureFromGyThenAmass 3
+      .keyword (.controller .this) (.amass .goblin (.int 3))]) == Effect.returnCreatureFromGyThenAmass 3
 
 #guard
   CardAction.toEffect
@@ -612,11 +612,11 @@ namespace Mtg.Engine
     Effect.counterThenRecruitIfMvAtMost 2
 
 #guard CardAction.toEffect (.keyword (.controller .this) .recruit) == Effect.recruit
-#guard CardAction.toEffect (.keyword (.controller .this) (.amass .goblin (.nat 1))) == Effect.amassGoblins 1
-#guard CardAction.toEffect (.keyword .this (.connive (.nat 1))) == Effect.connive
-#guard CardAction.toEffect (.keyword (.source .this) (.connive (.nat 1))) == Effect.connive
-#guard CardAction.toAbilityEffect (.keyword (.source .this) (.connive (.nat 1))) == Effect.connive
-#guard CardAction.toAbilityEffect (.keyword .this (.connive (.nat 1))) != Effect.connive
+#guard CardAction.toEffect (.keyword (.controller .this) (.amass .goblin (.int 1))) == Effect.amassGoblins 1
+#guard CardAction.toEffect (.keyword .this (.connive (.int 1))) == Effect.connive
+#guard CardAction.toEffect (.keyword (.source .this) (.connive (.int 1))) == Effect.connive
+#guard CardAction.toAbilityEffect (.keyword (.source .this) (.connive (.int 1))) == Effect.connive
+#guard CardAction.toAbilityEffect (.keyword .this (.connive (.int 1))) != Effect.connive
 #guard CardAction.leftoverSourceThis (.source .this)
 #guard !CardAction.leftoverSourceThis .this
 
@@ -754,7 +754,7 @@ namespace Mtg.Engine
   match
     (Ability.triggered
       (.or (.enter .this) (.attack .this .all))
-      (.keyword (.controller .this) (.amass .goblin (.nat 3)))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.int 3)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterOrAttackAmassGoblins 3
   | none => false
 
@@ -1075,7 +1075,7 @@ namespace Mtg.Engine
           .not .this,
           .zone .battlefield,
           .cardType .creature]))
-      (.nat 3))).toTriggeredAbility?.isNone
+      (.int 3))).toTriggeredAbility?.isNone
 
 #guard
   let others : Selector :=

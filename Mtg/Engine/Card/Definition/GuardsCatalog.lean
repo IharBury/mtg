@@ -188,7 +188,7 @@ namespace Mtg.Engine
 
 #guard
   let action : CardAction :=
-    .continuous [.increaseLandPlayLimit (.controller .this) (Value.nat 1)] .endOfTurn
+    .continuous [.increaseLandPlayLimit (.controller .this) (Value.int 1)] .endOfTurn
   action.toEffect == Effect.playAdditionalLandThisTurn
 
 #guard
@@ -212,7 +212,7 @@ namespace Mtg.Engine
               .zone .battlefield,
               .subtype .elf,
               .controlled (.controller .this)]))
-          [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]))
+          [.increaseLandPlayLimit (.controller .this) (Value.int 1)]))
   ]).toCardDef.extraLandIfOtherSubtype == some "Elf"
 
 #guard
@@ -743,7 +743,7 @@ namespace Mtg.Engine
   ]).toCardDef.tapAddMana == #[.colored .green]
 
 #guard
-  let action : CardAction := .dealDamage .this (.target 1 .all) (.nat 3)
+  let action : CardAction := .dealDamage .this (.target 1 .all) (.int 3)
   action.toEffect == Effect.dealDamage 3
 
 #guard
@@ -951,7 +951,7 @@ namespace Mtg.Engine
   match
     (Ability.triggered
       (.block .all .this)
-      (.dealDamage .this (.blocking .this) (.nat 1))).toTriggeredAbility? with
+      (.dealDamage .this (.blocking .this) (.int 1))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onBecomesBlockedDeal1ToBlockers
   | none => false
 
@@ -962,14 +962,14 @@ namespace Mtg.Engine
         (.intersection [
           .union [.cardType .instant, .cardType .sorcery],
           .controlled (.controller .this)]))
-      (.dealDamage .this (.opponent (.controller .this)) (.nat 2))).toTriggeredAbility? with
+      (.dealDamage .this (.opponent (.controller .this)) (.int 2))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent 2
   | none => false
 
 #guard
   (Ability.triggered
     (.castSpell (.union [.cardType .instant, .cardType .sorcery]))
-    (.dealDamage .this (.opponent (.controller .this)) (.nat 2))).toTriggeredAbility?.isNone
+    (.dealDamage .this (.opponent (.controller .this)) (.int 2))).toTriggeredAbility?.isNone
 
 #guard
   match
