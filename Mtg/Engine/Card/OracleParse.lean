@@ -617,5 +617,5 @@ Currently recognized:
 - `If one or more tokens would be created under your control, twice that many of those tokens are created instead.`
   Those tokens keep their characteristics (CR 614).
 - `Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control.`
-  Each branch is how many times this ability has resolved since the start of the turn, counting this resolution.
+  Each branch is how many times this ability has finished resolving since the start of the turn. The resolution in progress is not counted.
 -/

@@ -5618,17 +5618,15 @@ def belladonnaTookDefinition : TraditionalCardDefinition := .card <|
   .ability (.abilityId 1 (.triggered
     (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
     (.sequence [
+      .if (.didNotHappen (.abilityWithIdResolved 1) .turnStart)
+        [.gainLife (.controller .this) 1],
       .if (.and
           (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved 1)) .turnStart)
           (.didNotHappen (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart))
-        [.gainLife (.controller .this) 1],
+        [.draw (.controller .this) 1],
       .if (.and
           (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart)
           (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved 1)) .turnStart))
-        [.draw (.controller .this) 1],
-      .if (.and
-          (.happened (.ordinal 3 .turnStart (.abilityWithIdResolved 1)) .turnStart)
-          (.didNotHappen (.ordinal 4 .turnStart (.abilityWithIdResolved 1)) .turnStart))
         [.putCounter
           (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)])
           .plusOnePlusOne 1]])))]

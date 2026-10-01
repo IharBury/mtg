@@ -106,7 +106,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `attackSimultaneously` (who attacks, who is attacked),
   `createTokens` (one or more tokens matching the selector would be created
   at the same time),
-  `abilityWithIdActivated`, `abilityWithIdResolved` (the numbered ability resolved),
+  `abilityWithIdActivated`, `abilityWithIdResolved` (the numbered ability has
+  finished resolving; the resolution in progress does not count),
   `actionWithId`, `triggerId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `spendManaFrom`, `castSpell`,
   `castSpellFromGraveyard`, `giftPromised` (the selected spell's gift was
@@ -306,7 +307,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `TraditionalCardDefinition.entersWithCounters` | `static (replace (enter this) [putCounter …, keepReplacedAction])` (Dawn of a New Age, The Ruinous Wrecking Crew) |
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
 | `Trigger.wouldDraw` | `replace` of `Trigger.draw`, except while it is the controller's `drawStep` and that draw has not happened since `Trigger.drawStep`. Bard, King of Dale draws two cards instead |
-| `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `happened` of `Trigger.ordinal` of `abilityWithIdResolved` since `turnStart`, and `didNotHappen` of the next ordinal. `1` is the first resolution this turn, counting this one (Belladonna Took) |
+| `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `didNotHappen` of `abilityWithIdResolved` since `turnStart` is the first resolution; it is not counted while resolving. The second is `happened` of `ordinal 1` and `didNotHappen` of `ordinal 2`. The third is `ordinal 2` and not `ordinal 3` (Belladonna Took) |
 | `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
 
 ## Missing constructors by type

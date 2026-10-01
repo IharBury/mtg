@@ -465,22 +465,20 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered
       (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
       (.sequence [
-        .if (.and
-            (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved id1)) .turnStart)
-            (.didNotHappen (.ordinal 2 .turnStart (.abilityWithIdResolved id1b)) .turnStart))
+        .if (.didNotHappen (.abilityWithIdResolved id1) .turnStart)
           [.gainLife who1 (.nat 1)],
         .if (.and
-            (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved id2)) .turnStart)
-            (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved id2b)) .turnStart))
+            (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved id2)) .turnStart)
+            (.didNotHappen (.ordinal 2 .turnStart (.abilityWithIdResolved id2b)) .turnStart))
           [.draw who2 (.nat 1)],
         .if (.and
-            (.happened (.ordinal 3 .turnStart (.abilityWithIdResolved id3)) .turnStart)
-            (.didNotHappen (.ordinal 4 .turnStart (.abilityWithIdResolved id3b)) .turnStart))
+            (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved id3)) .turnStart)
+            (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved id3b)) .turnStart))
           [.putCounter
             (.intersection
               [.permanent, .cardType .creature, .controlled (.controller .this)])
             .plusOnePlusOne (.nat 1)]]) =>
-    if id1 == id1b && id1 == id2 && id2 == id2b && id2 == id3 && id3 == id3b &&
+    if id1 == id2 && id2 == id2b && id2 == id3 && id3 == id3b &&
         who1 == .controller .this && who2 == .controller .this then
       some .onTokenYouControlEntersBelladonna
     else none
