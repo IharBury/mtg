@@ -12,9 +12,35 @@ namespace Mtg.Engine
 
 namespace CardAction
 
+/-- Spells and activated effects from the remaining Hobbit cards. -/
+def leftoverHobbitSpell? : CardAction → Option Effect
+  | .separatePiles who (.int 4) =>
+    if leftoverYou who then some Effect.riddlesInTheDark else none
+  | .sequence [
+      .actionId _ (.putOntoBattlefieldInState _ _),
+      .becomeWith _ _] =>
+    some Effect.supperForSpiders
+  | .sequence [
+      .ifElse .kicked _ _,
+      .delayed (.upkeep .player) _] =>
+    some Effect.eaglesAreComing
+  | .sequence [
+      .actionId id (.exile (.topOfLibrary (.target _ _) .x)),
+      .continuous [.canPlay _ (.wasCreatedByAction id')] .endOfTurn,
+      .castPayingLifeInstead (.wasCreatedByAction id'')] =>
+    if id == id' && id == id'' then some Effect.exileTopXOppPlayForLife else none
+  | .exileThenReturn
+      (.targets _ (.range (.int 0) (.int 2)) _)
+      (.endStep .player) =>
+    some Effect.exileThenReturnNextEnd
+  | _ => none
+
 /-- Compile `continuous` effects, reading targeting from `target`
 and mass application from constraint selectors. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
+  match leftoverHobbitSpell? action with
+  | some e => e
+  | none =>
   match leftoverSearchBasicBeholdUntap? action with
   | some st => Effect.searchBasicBeholdSubtypeUntap st
   | none =>
@@ -254,8 +280,22 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     continuousEffect none [] asAbility
                   | .shuffleIntoOwnersLibrary _ | .lookAt _
                   | .putOnLibraryBottomInRandomOrder _ | .chooseCreatureType _
-                  | .mayCast _ _ =>
+                  | .mayCast _ _ | .reflexive _ _ | .extraCombat | .chooseRandom _
+                  | .separatePiles _ _ | .copyTokens _ _ _ | .becomeWith _ _
+                  | .exileThenReturn _ _ | .chooseOddEven _ | .searchHandOrLibrary _ _
+                  | .delayed _ _ | .revealUntil _ _ | .castPayingLifeInstead _ =>
                     continuousEffect none [] asAbility
+
+/-- If a creature an opponent controls would die, exile it instead and
+create a 2/2 green Wolf when you do. -/
+def exileOppDeathCreateWolf? (who : Selector) (actions : List CardAction) : Bool :=
+  who == .intersection [
+    .zone .battlefield, .cardType .creature,
+    .controlled (.opponent (.controller .this))] &&
+    match actions with
+    | [.actionId id (.exile .replacingObject), .reflexive id' [wolf]] =>
+      id == id' && leftoverCreateTokensKindN? wolf == some (.wolf, 1)
+    | _ => false
 
 /-- “Choose one or both”: one or two distinct modes (CR 700.2). -/
 def isChooseOneOrBoth : CardAction → Bool

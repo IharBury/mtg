@@ -344,6 +344,14 @@ inductive Value where
   change each amount. A spell's mana value does not. One spell is that
   amount. Several spells use the greatest. -/
   | greatestManaSpent : Selector → Value
+  /-- How many counters of the given kind are on the selected objects
+  (CR 122.1). -/
+  | counterCount : Selector → CounterKind → Value
+  /-- The amount of the trigger numbered by `Trigger.triggerId`: life
+  lost, damage dealt, or another quantity that event produced. -/
+  | triggerAmount : Nat → Value
+  /-- Excess damage dealt by the numbered damage action (CR 120.4a). -/
+  | excessDamage : Nat → Value
 deriving Repr, Inhabited, BEq
 
 /-- How many objects a `.targets` selector may choose. -/
@@ -485,6 +493,24 @@ inductive Selector where
   `.hand` is “from your hand”. `.not (.castFromZone .hand)` is “from
   anywhere other than your hand”. -/
   | castFromZone : ZoneKind → Selector
+  /-- Cards exiled by the selected object (CR 406 / 607). “A card exiled
+  with this Saga” is `.exiledWith .this`. -/
+  | exiledWith : Selector → Selector
+  /-- Graveyards that contain at least this many cards (CR 404). -/
+  | graveyardsAtLeast : Value → Selector
+  /-- The object sacrificed to pay the cost of this ability (CR 118.10). -/
+  | sacrificedAsCost
+  /-- An object whose mana value has the odd or even quality chosen as
+  this object entered. Zero is even. -/
+  | manaValueChosenParity
+  /-- A permanent that has an Equipment attached to it (CR 301.5). -/
+  | equipped
+  /-- An object that shares a name with an object matching the selector
+  (CR 201.2). -/
+  | sharesNameWith : Selector → Selector
+  /-- Objects affected by the numbered action other than that action's
+  primary object. “Put the rest on the bottom” after a reveal is these. -/
+  | restOfAction : Nat → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
@@ -618,6 +644,14 @@ inductive Trigger where
   | target : Selector → Selector → Trigger
   /-- At the beginning of the selected player's precombat main phase (CR 505.1). -/
   | precombatMainPhase : Selector → Trigger
+  /-- Whenever the selected player loses life (CR 119.3). Damage causes
+  loss of life. `Value.triggerAmount` of a `triggerId` around this event
+  is how much life was lost. -/
+  | loseLife : Selector → Trigger
+  /-- Whenever the selected player puts one or more counters of any kind
+  on the selected objects (CR 122 / 603.2c). The first selector is that
+  player. -/
+  | putAnyCounters : Selector → Selector → Trigger
 deriving Repr, Inhabited, BEq
 end
 
@@ -628,7 +662,8 @@ instance : ToString Value where
     | .int n => toString n
     | .x => "X"
     | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
-    | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _ => "X"
+    | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _
+    | .counterCount _ _ | .triggerAmount _ | .excessDamage _ => "X"
 
 instance (n : Nat) : OfNat Value n where
   ofNat := .int n

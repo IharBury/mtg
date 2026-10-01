@@ -1313,8 +1313,21 @@ namespace Mtg.Engine
 #guard
   (TraditionalCardDefinition.card [
     .subtype .saga,
-    .ability (.keywordWithEffect (.chapter 1) [.draw (.controller .this) 1])
+    .ability (.keywordWithEffect (.chapter 1) [.extraCombat])
   ]).toCardDef.saga.isNone
+
+-- A chapter that is only “draw a card” is that draw.
+#guard
+  match (TraditionalCardDefinition.card [
+    .subtype .saga,
+    .ability (.keywordWithEffect (.chapter 1) [.draw (.controller .this) 1])
+  ]).toCardDef.saga with
+  | some s =>
+    s.sacrificeAfter == "I" && s.chapters.size == 1 &&
+      s.chapters[0]!.roman == "I" &&
+      s.chapters[0]!.effect == "draw a card" &&
+      s.chapters[0]!.chapterEffect == some (Effect.chapterDraw 1)
+  | none => false
 
 -- The Mountain-king's Return: recruit, a graveyard creature of mana value
 -- at most N, and one +1/+1 counter on up to one target creature.

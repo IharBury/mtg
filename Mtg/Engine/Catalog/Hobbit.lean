@@ -5656,18 +5656,6 @@ def beornTheFierceOracle : String :=
 
 def beornTheFierceDefinition : TraditionalCardDefinition := .card <|
   [
-    .name "Beorn the Fierce",
-    .manaCost [.generic 3, .mono .green, .mono .green],
-    .type .creature,
-    .supertype .legendary,
-    .subtype .bear,
-    .subtype .shapeshifter,
-    .subtype .warrior,
-    .power 6,
-    .toughness 6
-  ] ++ (parseOracleParts (name := "Beorn the Fierce") beornTheFierceOracle).get!
-
-#guard beornTheFierceDefinition == .card [
   .name "Beorn the Fierce",
   .manaCost [.generic 3, .mono .green, .mono .green],
   .type .creature,
@@ -5676,52 +5664,77 @@ def beornTheFierceDefinition : TraditionalCardDefinition := .card <|
   .subtype .shapeshifter,
   .subtype .warrior,
   .power 6,
-  .toughness 6,
-  .ability (.keyword .trample),
-  .ability (.static (.addPower
-    (.intersection [
-      .not .this,
-      .zone .battlefield,
-      .cardType .creature,
-      .subtype .bear,
-      .controlled (.controller .this)])
-    (.int 2))),
-  .ability (.static (.addToughness
-    (.intersection [
-      .not .this,
-      .zone .battlefield,
-      .cardType .creature,
-      .subtype .bear,
-      .controlled (.controller .this)])
-    (.int 2))),
-  .ability (.triggered
-    (.combatStart (.controller .this))
-    (.sequence [
-      .putCounter
-        (.targets 1 (.range (.int 0) (.int 1))
-          (.intersection [
-            .zone .battlefield,
-            .cardType .creature,
-            .controlled (.controller .this)]))
-        .trample
-        (.int 1),
-      .continuous
-        [.gainSubtype (.targetReference 1) .bear]
-        .endOfGame,
-      .if
-        (.greaterOrEqual
-          (.count
-            (.intersection [
-              .zone .battlefield,
-              .subtype .bear,
-              .controlled (.controller .this)]))
-          (.int 3))
-        [.draw (.controller .this) (.int 2)]]))]
+  .toughness 6
+  ] ++ (parseOracleParts (name := "Beorn the Fierce") beornTheFierceOracle).get!
+
+#guard beornTheFierceDefinition == .card (
+  [
+  .name "Beorn the Fierce",
+  .manaCost [.generic 3, .mono .green, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .bear,
+  .subtype .shapeshifter,
+  .subtype .warrior,
+  .power 6,
+  .toughness 6
+  ] ++ [.ability (.keyword (.trample)),
+ .ability
+   (.static
+     (.addPower
+       (.intersection
+         [.not (.this),
+          .zone (.battlefield),
+          .cardType (.creature),
+          .subtype (.bear),
+          .controlled (.controller (.this))])
+       (.int 2))),
+ .ability
+   (.static
+     (.addToughness
+       (.intersection
+         [.not (.this),
+          .zone (.battlefield),
+          .cardType (.creature),
+          .subtype (.bear),
+          .controlled (.controller (.this))])
+       (.int 2))),
+ .ability
+   (.triggered
+     (.combatStart (.controller (.this)))
+     (.sequence
+       [.putCounter
+          (.targets
+            1
+            (.range (.int 0) (.int 1))
+            (.intersection
+              [.zone (.battlefield),
+               .cardType (.creature),
+               .controlled (.controller (.this))]))
+          (.trample)
+          (.int 1),
+        .continuous
+          [.gainSubtype
+             (.targetReference 1)
+             (.bear)]
+          (.endOfGame),
+        .if
+          (.greaterOrEqual
+            (.count
+              (.intersection
+                [.zone (.battlefield),
+                 .subtype (.bear),
+                 .controlled (.controller (.this))]))
+            (.int 3))
+          [.draw
+             (.controller (.this))
+             (.int 2)]]))])
 
 def beornTheFierce : CardDef :=
   beornTheFierceDefinition.toCardDef (oracleText := beornTheFierceOracle)
 
 #guard beornTheFierce.oracleText == beornTheFierceOracle
+
 #guard beornTheFierce.keywords.trample
 #guard beornTheFierce.staticAbilities == #[.otherCreaturesGet #["Bear"] 2 2]
 #guard beornTheFierce.triggeredAbilities == #[.onYourBeginCombatTrampleCounterBecomeBear]
@@ -5903,9 +5916,82 @@ def bilboThiefInTheNight : CardDef :=
 #guard bilboThiefInTheNight.subtypes == #["Halfling", "Rogue"]
 #guard bilboThiefInTheNight.power == some 2 && bilboThiefInTheNight.toughness == some 2
 
+/-- Oracle text for Bolg of the North. -/
+def bolgOfTheNorthOracle : String :=
+  "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+
+def bolgOfTheNorthDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Bolg of the North",
+  .manaCost [.generic 3, .mono .black, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .goblin,
+  .subtype .soldier,
+  .power 5,
+  .toughness 5
+  ] ++ (parseOracleParts (name := "Bolg of the North") bolgOfTheNorthOracle).get!
+
+#guard bolgOfTheNorthDefinition == .card (
+  [
+  .name "Bolg of the North",
+  .manaCost [.generic 3, .mono .black, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .goblin,
+  .subtype .soldier,
+  .power 5,
+  .toughness 5
+  ] ++ [.ability
+   (.triggered
+     (.enter (.this))
+     (.sequence
+       [.optional
+          (.controller (.this))
+          (.sequence
+            [.defineSelectorVariable
+               1
+               (.selected
+                 (.controller (.this))
+                 (.range (.int 1) (.int 1))
+                 (.intersection
+                   [.not (.this),
+                    .zone (.battlefield),
+                    .cardType (.creature),
+                    .controlled (.controller (.this))])),
+             .defineValueVariable
+               2
+               (.greatestPower (.variable 1)),
+             .actionId 1 (.sacrifice (.variable 1))]),
+        .reflexive
+          1
+          [.actionId
+             2
+             (.dealDamage
+               (.this)
+               (.target
+                 1
+                 (.intersection
+                   [.not (.wasObjectOfAction 1),
+                    .zone (.battlefield),
+                    .cardType (.creature)]))
+               (.variable 2)),
+           .if
+             (.greater (.excessDamage 2) (.int 0))
+             [.keyword
+                (.controller (.this))
+                (.amass (.goblin) (.excessDamage 2))]]]))])
+
 def bolgOfTheNorth : CardDef :=
-  legendaryCreature "Bolg of the North" (ManaCost.ofGenericAndColors 3 [.black, .red]) #["Goblin", "Soldier"] 5 5 (oracleText := "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
-    (triggeredAbilities := #[.onEnterBolgMaySacrifice])
+  bolgOfTheNorthDefinition.toCardDef (oracleText := bolgOfTheNorthOracle)
+
+#guard bolgOfTheNorth.oracleText == bolgOfTheNorthOracle
+
+#guard bolgOfTheNorth.triggeredAbilities == #[.onEnterBolgMaySacrifice]
+#guard bolgOfTheNorth.manaCost == ManaCost.ofGenericAndColors 3 [.black, .red]
+#guard bolgOfTheNorth.supertypes == #[.legendary]
+#guard bolgOfTheNorth.subtypes == #["Goblin", "Soldier"]
+#guard bolgOfTheNorth.power == some 5 && bolgOfTheNorth.toughness == some 5
 
 /-- Oracle text for Boughside Wanderers. -/
 def boughsideWanderersOracle : String :=
@@ -6156,10 +6242,75 @@ def dancingFromDarkToDawn : CardDef :=
 #guard dancingFromDarkToDawn.triggeredAbilities ==
   #[.onCastCreaturePlusOneEqualMv, .onLandYouControlEntersCreateTokens .bear 1]
 
+/-- Oracle text for Desert Were-Worm. -/
+def desertWereWormOracle : String :=
+  "This creature gets +2/+0 for each Mountain you control.\nWhenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."
+
+def desertWereWormDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Desert Were-Worm",
+  .manaCost [.generic 4, .mono .red, .mono .red],
+  .type .creature,
+  .subtype .dragon,
+  .subtype .wurm,
+  .power 0,
+  .toughness 5
+  ] ++ (parseOracleParts (name := "Desert Were-Worm") desertWereWormOracle).get!
+
+#guard desertWereWormDefinition == .card (
+  [
+  .name "Desert Were-Worm",
+  .manaCost [.generic 4, .mono .red, .mono .red],
+  .type .creature,
+  .subtype .dragon,
+  .subtype .wurm,
+  .power 0,
+  .toughness 5
+  ] ++ [.ability
+   (.static
+     (.addPower
+       (.this)
+       (.product
+         (.count
+           (.intersection
+             [.zone (.battlefield),
+              .subtype (.mountain),
+              .controlled (.controller (.this))]))
+         (.int 2)))),
+ .ability
+   (.triggeredOnce
+     (.attackSimultaneously
+       (.intersection
+         [.zone (.battlefield),
+          .cardType (.creature),
+          .controlled (.controller (.this))])
+       (.all)
+       [])
+     (.sequence
+       [.if
+          (.greaterOrEqual
+            (.totalPower
+              (.intersection
+                [.zone (.battlefield),
+                 .cardType (.creature),
+                 .attacking (.all)]))
+            (.int 12))
+          [.untap
+             (.intersection
+               [.zone (.battlefield),
+                .cardType (.creature),
+                .attacking (.all)]),
+           .extraCombat]]))])
+
 def desertWereWorm : CardDef :=
-  creature "Desert Were-Worm" (ManaCost.ofGenericAndColors 4 [.red, .red]) #["Dragon", "Wurm"] 0 5 (oracleText := "This creature gets +2/+0 for each Mountain you control.\nWhenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase.")
-    (powerPerMountain := 2)
-    (triggeredAbilities := #[.onAttackWithTotalPowerUntapExtraCombat 12])
+  desertWereWormDefinition.toCardDef (oracleText := desertWereWormOracle)
+
+#guard desertWereWorm.oracleText == desertWereWormOracle
+
+#guard desertWereWorm.powerPerMountain == 2
+#guard desertWereWorm.triggeredAbilities == #[.onAttackWithTotalPowerUntapExtraCombat 12]
+#guard desertWereWorm.subtypes == #["Dragon", "Wurm"]
+#guard desertWereWorm.power == some 0 && desertWereWorm.toughness == some 5
 
 /-- Oracle text for Down in the Valley. -/
 def downInTheValleyOracle : String :=
@@ -6314,20 +6465,202 @@ def downDownToGoblinTown : CardDef :=
       "Target opponent loses 1 life and you gain 1 life."
       (Effect.chapterOpponentLosesYouGain 1)] }
 
+/-- Oracle text for Dwalin, Weaponmaster. -/
+def dwalinWeaponmasterOracle : String :=
+  "First strike\nWhenever Dwalin enters or attacks, put a hone counter on each Equipment you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)"
+
+def dwalinWeaponmasterDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Dwalin, Weaponmaster",
+  .manaCost [.generic 1, .hybrid .red .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 2,
+  .toughness 1
+  ] ++ (parseOracleParts (name := "Dwalin, Weaponmaster") dwalinWeaponmasterOracle).get!
+
+#guard dwalinWeaponmasterDefinition == .card (
+  [
+  .name "Dwalin, Weaponmaster",
+  .manaCost [.generic 1, .hybrid .red .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 2,
+  .toughness 1
+  ] ++ [.ability (.keyword (.firstStrike)),
+ .ability
+   (.triggered
+     (.or
+       (.enter (.this))
+       (.attack (.this) (.all)))
+     (.putCounter
+       (.intersection
+         [.zone (.battlefield),
+          .subtype (.equipment),
+          .controlled (.controller (.this))])
+       (.hone)
+       (.int 1)))])
+
 def dwalinWeaponmaster : CardDef :=
-  legendaryCreature "Dwalin, Weaponmaster" (ManaCost.ofGenericAndHybrids 1 .red .white 1) #["Dwarf", "Warrior"] 2 1 (oracleText := "First strike\nWhenever Dwalin enters or attacks, put a hone counter on each Equipment you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)")
-    (keywords := Keyword.firstStrike)
-    (triggeredAbilities := #[.onEnterOrAttackHoneEachEquipment])
+  dwalinWeaponmasterDefinition.toCardDef (oracleText := dwalinWeaponmasterOracle)
+
+#guard dwalinWeaponmaster.oracleText == dwalinWeaponmasterOracle
+
+#guard dwalinWeaponmaster.keywords.firstStrike
+#guard dwalinWeaponmaster.triggeredAbilities == #[.onEnterOrAttackHoneEachEquipment]
+#guard dwalinWeaponmaster.manaCost == ManaCost.ofGenericAndHybrids 1 .red .white 1
+#guard dwalinWeaponmaster.supertypes == #[.legendary]
+#guard dwalinWeaponmaster.subtypes == #["Dwarf", "Warrior"]
+#guard dwalinWeaponmaster.power == some 2 && dwalinWeaponmaster.toughness == some 1
+
+/-- Oracle text for Dáin Ironfoot. -/
+def dainIronfootOracle : String :=
+  "When Dáin enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control.\nWhenever Dáin attacks, each equipped attacking creature gains double strike until end of turn."
+
+def dainIronfootDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Dáin Ironfoot",
+  .manaCost [.generic 2, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 1,
+  .toughness 4
+  ] ++ (parseOracleParts (name := "Dáin Ironfoot") dainIronfootOracle).get!
+
+#guard dainIronfootDefinition == .card (
+  [
+  .name "Dáin Ironfoot",
+  .manaCost [.generic 2, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 1,
+  .toughness 4
+  ] ++ [.ability
+   (.triggered
+     (.enter (.this))
+     (.sequence
+       [.actionId
+          1
+          (.createTokens
+            (.controller (.this))
+            (.int 1)
+            [.name "Axe",
+             .type (.artifact),
+             .subtype (.equipment),
+             .colorIndicator [],
+             .ability
+               (.static
+                 (.addPower
+                   (.hostOf (.this))
+                   (.int 1))),
+             .ability
+               (.keywordWithCost
+                 (.equip)
+                 [.mana [.generic 2]])]
+            []),
+        .reflexive
+          1
+          [.attach
+             (.wasCreatedByAction 1)
+             (.target
+               1
+               (.intersection
+                 [.zone (.battlefield),
+                  .cardType (.creature),
+                  .controlled (.controller (.this))]))]])),
+ .ability
+   (.triggered
+     (.attack (.this) (.all))
+     (.continuous
+       [.gainAbility
+          (.intersection
+            [.zone (.battlefield),
+             .cardType (.creature),
+             .attacking (.all),
+             .equipped])
+          (.keyword (.doubleStrike))]
+       (.endOfTurn)))])
 
 def dainIronfoot : CardDef :=
-  legendaryCreature "Dáin Ironfoot" (ManaCost.ofGenericAndColor 2 .red) #["Dwarf", "Warrior"] 1 4 (oracleText := "When Dáin enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control.\nWhenever Dáin attacks, each equipped attacking creature gains double strike until end of turn.")
-    (triggeredAbilities := #[.onEnterCreateAxeAttach, .onAttackEquippedGainDoubleStrike])
+  dainIronfootDefinition.toCardDef (oracleText := dainIronfootOracle)
+
+#guard dainIronfoot.oracleText == dainIronfootOracle
+
+#guard dainIronfoot.triggeredAbilities == #[.onEnterCreateAxeAttach, .onAttackEquippedGainDoubleStrike]
+#guard dainIronfoot.manaCost == ManaCost.ofGenericAndColor 2 .red
+#guard dainIronfoot.supertypes == #[.legendary]
+#guard dainIronfoot.subtypes == #["Dwarf", "Warrior"]
+#guard dainIronfoot.power == some 1 && dainIronfoot.toughness == some 4
+
+/-- Oracle text for Elrond, Moon-Reader. -/
+def elrondMoonReaderOracle : String :=
+  "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn.\n{5}{U}{U}: Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step."
+
+def elrondMoonReaderDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Elrond, Moon-Reader",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .elf,
+  .subtype .noble,
+  .power 3,
+  .toughness 3
+  ] ++ (parseOracleParts (name := "Elrond, Moon-Reader") elrondMoonReaderOracle).get!
+
+#guard elrondMoonReaderDefinition == .card (
+  [
+  .name "Elrond, Moon-Reader",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .elf,
+  .subtype .noble,
+  .power 3,
+  .toughness 3
+  ] ++ [.ability
+   (.triggeredOnce
+     (.activateAbility
+       (.intersection
+         [.zone (.battlefield),
+          .cardType (.creature)]))
+     (.draw (.controller (.this)) (.int 1))),
+ .ability
+   (.activated
+     [.mana
+        [.generic 5,
+         .mono (.blue),
+         .mono (.blue)]]
+     (.exileThenReturn
+       (.targets
+         1
+         (.range (.int 0) (.int 2))
+         (.intersection
+           [.not (.this),
+            .zone (.battlefield),
+            .not (.cardType (.land)),
+            .controlled (.controller (.this))]))
+       (.endStep (.player))))])
 
 def elrondMoonReader : CardDef :=
-  legendaryCreature "Elrond, Moon-Reader" (ManaCost.ofGenericAndColor 2 .blue) #["Elf", "Noble"] 3 3 (oracleText := "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn.\n{5}{U}{U}: Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step.")
-    (activatedAbilities := #[
-      activated (Effect.exileThenReturnNextEnd) (ManaCost.ofGenericAndColors 5 [.blue, .blue])])
-    (triggeredAbilities := #[.onActivateCreatureAbilityDrawOnce])
+  elrondMoonReaderDefinition.toCardDef (oracleText := elrondMoonReaderOracle)
+
+#guard elrondMoonReader.oracleText == elrondMoonReaderOracle
+
+#guard elrondMoonReader.triggeredAbilities == #[.onActivateCreatureAbilityDrawOnce]
+#guard elrondMoonReader.activatedAbilities == #[activated (Effect.exileThenReturnNextEnd) (ManaCost.ofGenericAndColors 5 [.blue, .blue])]
+#guard elrondMoonReader.manaCost == ManaCost.ofGenericAndColor 2 .blue
+#guard elrondMoonReader.supertypes == #[.legendary]
+#guard elrondMoonReader.subtypes == #["Elf", "Noble"]
+#guard elrondMoonReader.power == some 3 && elrondMoonReader.toughness == some 3
 
 /-- Oracle text for Elven Passage. -/
 def elvenPassageOracle : String :=
@@ -6402,9 +6735,51 @@ def enchantedRiverSGrasp : CardDef :=
 #guard enchantedRiverSGrasp.triggeredAbilities == #[.onEnterTapEnchantedRemoveCounters]
 #guard enchantedRiverSGrasp.removesAllAbilitiesFrom == #[.hostOf .this]
 
+/-- Oracle text for Getaway Barrel. -/
+def getawayBarrelOracle : String :=
+  "When this artifact is put into a graveyard from the battlefield, reveal the top thirteen cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."
+
+def getawayBarrelDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Getaway Barrel",
+  .manaCost [.generic 3, .mono .red],
+  .type .artifact
+  ] ++ (parseOracleParts (name := "Getaway Barrel") getawayBarrelOracle).get!
+
+#guard getawayBarrelDefinition == .card (
+  [
+  .name "Getaway Barrel",
+  .manaCost [.generic 3, .mono .red],
+  .type .artifact
+  ] ++ [.ability
+   (.triggered
+     (.putToGraveyard (.this))
+     (.sequence
+       [.actionId
+          1
+          (.reveal
+            (.topOfLibrary
+              (.controller (.this))
+              (.int 13))),
+        .actionId
+          2
+          (.chooseRandom
+            (.intersection
+              [.wasObjectOfAction 1, .cardType (.creature)])),
+        .putOntoBattlefield (.wasObjectOfAction 2),
+        .putOnLibraryBottomInRandomOrder
+          (.intersection
+            [.wasObjectOfAction 1,
+             .not (.wasObjectOfAction 2)])]))])
+
 def getawayBarrel : CardDef :=
-  artifact "Getaway Barrel" (ManaCost.ofGenericAndColor 3 .red) "When this artifact is put into a graveyard from the battlefield, reveal the top thirteen cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."
-    (triggeredAbilities := #[.onDiesRevealTopPutRandomCreature 13])
+  getawayBarrelDefinition.toCardDef (oracleText := getawayBarrelOracle)
+
+#guard getawayBarrel.oracleText == getawayBarrelOracle
+
+#guard getawayBarrel.triggeredAbilities == #[.onDiesRevealTopPutRandomCreature 13]
+#guard getawayBarrel.types == #[.artifact]
+#guard getawayBarrel.manaCost == ManaCost.ofGenericAndColor 3 .red
 
 /-- Oracle text for Gleaming Splendor. -/
 def gleamingSplendorOracle : String :=
@@ -6451,28 +6826,245 @@ def gleamingSplendor : CardDef :=
       activated (Effect.twoPlayersDraw) (ManaCost.ofGenericAndColor 2 .white)]
 #guard gleamingSplendor.triggeredAbilities == #[.onOpponentDrawsSecondCreateTreasure]
 
+/-- Oracle text for Gollum, Riddle Master. -/
+def gollumRiddleMasterOracle : String :=
+  "As Gollum enters, choose odd or even. (Zero is even.)\nWhenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen —\n• Put a +1/+1 counter on Gollum.\n• Each opponent loses 2 life and you gain 2 life.\n• Draw a card."
+
+def gollumRiddleMasterDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Gollum, Riddle Master",
+  .manaCost [.generic 1, .mono .black],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .horror,
+  .power 3,
+  .toughness 1
+  ] ++ (parseOracleParts (name := "Gollum, Riddle Master") gollumRiddleMasterOracle).get!
+
+#guard gollumRiddleMasterDefinition == .card (
+  [
+  .name "Gollum, Riddle Master",
+  .manaCost [.generic 1, .mono .black],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .horror,
+  .power 3,
+  .toughness 1
+  ] ++ [.ability
+   (.static
+     (.replace
+       (.enter (.this))
+       [.chooseOddEven (.controller (.this)),
+        .keepReplacedAction])),
+ .ability
+   (.triggered
+     (.castSpell
+       (.intersection
+         [.spell,
+          .controlled
+            (.opponent (.controller (.this))),
+          .manaValueChosenParity]))
+     (.chooseModeRestricted
+       (.controller (.this))
+       [        (1,
+         .not
+           (.happened
+             (.modeWithIdChosen (.player) 1)
+             (.gameStart)),
+         [.putCounter
+            (.source (.this))
+            (.plusOnePlusOne)
+            (.int 1)]),
+        (2,
+         .not
+           (.happened
+             (.modeWithIdChosen (.player) 2)
+             (.gameStart)),
+         [.sequence
+            [.loseLife
+               (.opponent (.controller (.this)))
+               (.int 2),
+             .gainLife
+               (.controller (.this))
+               (.int 2)]]),
+        (3,
+         .not
+           (.happened
+             (.modeWithIdChosen (.player) 3)
+             (.gameStart)),
+         [.draw
+            (.controller (.this))
+            (.int 1)])]))])
+
 def gollumRiddleMaster : CardDef :=
-  let c :=
-    legendaryCreature "Gollum, Riddle Master" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 3 1 (oracleText := "As Gollum enters, choose odd or even. (Zero is even.)\nWhenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen —\n• Put a +1/+1 counter on Gollum.\n• Each opponent loses 2 life and you gain 2 life.\n• Draw a card.")
-      (triggeredAbilities := #[.onOpponentCastsChosenParityModes])
-  { c with asEntersChooseOddEven := true }
+  gollumRiddleMasterDefinition.toCardDef (oracleText := gollumRiddleMasterOracle)
+
+#guard gollumRiddleMaster.oracleText == gollumRiddleMasterOracle
+
+#guard gollumRiddleMaster.asEntersChooseOddEven
+#guard gollumRiddleMaster.triggeredAbilities == #[.onOpponentCastsChosenParityModes]
+#guard gollumRiddleMaster.supertypes == #[.legendary]
+#guard gollumRiddleMaster.subtypes == #["Halfling", "Horror"]
+#guard gollumRiddleMaster.power == some 3 && gollumRiddleMaster.toughness == some 1
+
+/-- Oracle text for Head of the Hunt. -/
+def headOfTheHuntOracle : String :=
+  "Flash\nIf a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token."
+
+def headOfTheHuntDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Head of the Hunt",
+  .manaCost [.generic 2, .mono .black, .mono .black],
+  .type .creature,
+  .subtype .wolf,
+  .power 4,
+  .toughness 3
+  ] ++ (parseOracleParts (name := "Head of the Hunt") headOfTheHuntOracle).get!
+
+#guard headOfTheHuntDefinition == .card (
+  [
+  .name "Head of the Hunt",
+  .manaCost [.generic 2, .mono .black, .mono .black],
+  .type .creature,
+  .subtype .wolf,
+  .power 4,
+  .toughness 3
+  ] ++ [.ability (.keyword (.flash)),
+ .ability
+   (.static
+     (.replace
+       (.die
+         (.intersection
+           [.zone (.battlefield),
+            .cardType (.creature),
+            .controlled
+              (.opponent (.controller (.this)))]))
+       [.actionId 1 (.exile (.replacingObject)),
+        .reflexive
+          1
+          [.createTokens
+             (.controller (.this))
+             (.int 1)
+             [.type (.creature),
+              .subtype (.wolf),
+              .colorIndicator [.green],
+              .power 2,
+              .toughness 2]
+             []]]))])
 
 def headOfTheHunt : CardDef :=
-  let c :=
-    creature "Head of the Hunt" (ManaCost.ofGenericAndColors 2 [.black, .black]) #["Wolf"] 4 3 (oracleText := "Flash\nIf a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token.")
-      (keywords := Keyword.flash)
-      (staticAbilities := #[.exileOppDeathCreateWolf])
-  { c with exileOppCreaturesInstead := true }
+  headOfTheHuntDefinition.toCardDef (oracleText := headOfTheHuntOracle)
+
+#guard headOfTheHunt.oracleText == headOfTheHuntOracle
+
+#guard headOfTheHunt.keywords.flash
+#guard headOfTheHunt.exileOppCreaturesInstead
+#guard headOfTheHunt.staticAbilities == #[.exileOppDeathCreateWolf]
+#guard headOfTheHunt.subtypes == #["Wolf"]
+#guard headOfTheHunt.power == some 4 && headOfTheHunt.toughness == some 3
+
+/-- Oracle text for Inside Information. -/
+def insideInformationOracle : String :=
+  "Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost."
+
+def insideInformationDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Inside Information",
+  .manaCost [.x, .mono .black, .mono .black],
+  .type .sorcery
+  ] ++ (parseOracleParts (name := "Inside Information") insideInformationOracle).get!
+
+#guard insideInformationDefinition == .card (
+  [
+  .name "Inside Information",
+  .manaCost [.x, .mono .black, .mono .black],
+  .type .sorcery
+  ] ++ [.actions
+   [.actionId
+      1
+      (.exile
+        (.topOfLibrary
+          (.target
+            1
+            (.opponent (.controller (.this))))
+          (.x))),
+    .continuous
+      [.canPlay
+         (.controller (.this))
+         (.wasCreatedByAction 1)]
+      (.endOfTurn),
+    .castPayingLifeInstead (.wasCreatedByAction 1)]])
 
 def insideInformation : CardDef :=
-  sorcery "Inside Information" ({ symbols := #[.x, .colored .black, .colored .black] }) "Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost." (some (Effect.exileTopXOppPlayForLife))
+  insideInformationDefinition.toCardDef (oracleText := insideInformationOracle)
+
+#guard insideInformation.oracleText == insideInformationOracle
+
+#guard insideInformation.spellEffect == some Effect.exileTopXOppPlayForLife
+#guard insideInformation.manaValue == 2
+#guard insideInformation.types == #[.sorcery]
+
+/-- Oracle text for Key to the Side-Door. -/
+def keyToTheSideDoorOracle : String :=
+  "{2}, {T}: Target creature can't be blocked this turn.\n{1}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards."
+
+def keyToTheSideDoorDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Key to the Side-Door",
+  .manaCost [.generic 1],
+  .type .artifact
+  ] ++ (parseOracleParts (name := "Key to the Side-Door") keyToTheSideDoorOracle).get!
+
+#guard keyToTheSideDoorDefinition == .card (
+  [
+  .name "Key to the Side-Door",
+  .manaCost [.generic 1],
+  .type .artifact
+  ] ++ [.ability
+   (.activated
+     [.mana [.generic 2], .tapSymbol]
+     (.continuous
+       [.forbid
+          (.block
+            (.all)
+            (.target
+              1
+              (.intersection
+                [.zone (.battlefield),
+                 .cardType (.creature)])))]
+       (.endOfTurn))),
+ .ability
+   (.activated
+     [.mana [.generic 1],
+      .tapSymbol,
+      .discard
+        (.selected
+          (.controller (.this))
+          (.range (.int 1) (.int 1))
+          (.intersection
+            [.zone (.hand),
+             .supertype (.legendary),
+             .owner (.controller (.this)),
+             .sharesNameWith
+               (.intersection
+                 [.zone (.battlefield),
+                  .supertype (.legendary),
+                  .controlled (.controller (.this))])]))]
+     (.draw (.controller (.this)) (.int 2)))])
 
 def keyToTheSideDoor : CardDef :=
-  artifact "Key to the Side-Door" (ManaCost.ofGeneric 1) "{2}, {T}: Target creature can't be blocked this turn.\n{1}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards."
-    (activatedAbilities := #[
-      activated (Effect.targetCantBeBlockedThisTurn) (ManaCost.ofGeneric 2) (tap := true),
-      activated (Effect.discardLegendarySameNameDraw) (ManaCost.ofGeneric 1) (tap := true)
-        (discardLegendarySameName := true)])
+  keyToTheSideDoorDefinition.toCardDef (oracleText := keyToTheSideDoorOracle)
+
+#guard keyToTheSideDoor.oracleText == keyToTheSideDoorOracle
+
+#guard keyToTheSideDoor.activatedAbilities == #[
+  activated (Effect.targetCantBeBlockedThisTurn) (ManaCost.ofGeneric 2) (tap := true),
+  activated (Effect.discardLegendarySameNameDraw) (ManaCost.ofGeneric 1) (tap := true)
+    (discardLegendarySameName := true)]
+#guard keyToTheSideDoor.types == #[.artifact]
+#guard keyToTheSideDoor.manaCost == ManaCost.ofGeneric 1
 
 /-- Oracle text for Lake-town Toymaker. -/
 def lakeTownToymakerOracle : String :=
@@ -6520,24 +7112,185 @@ def lakeTownToymaker : CardDef :=
 #guard lakeTownToymaker.oracleText == lakeTownToymakerOracle
 #guard lakeTownToymaker.triggeredAbilities == #[.onYourBeginCombatIfDrawnTwoPumpFirstStrike]
 
+/-- Oracle text for Last Light of Durin's Day. -/
+def lastLightOfDurinSDayOracle : String :=
+  "Whenever a Mountain you control enters, put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle.\nMountaincycling {2} ({2}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)"
+
+def lastLightOfDurinSDayDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Last Light of Durin's Day",
+  .manaCost [.generic 1, .mono .red],
+  .type .enchantment
+  ] ++ (parseOracleParts (name := "Last Light of Durin's Day") lastLightOfDurinSDayOracle).get!
+
+#guard lastLightOfDurinSDayDefinition == .card (
+  [
+  .name "Last Light of Durin's Day",
+  .manaCost [.generic 1, .mono .red],
+  .type .enchantment
+  ] ++ [.ability
+   (.triggered
+     (.enter
+       (.intersection
+         [.zone (.battlefield),
+          .subtype (.mountain),
+          .controlled (.controller (.this))]))
+     (.sequence
+       [.putCounter
+          (.source (.this))
+          (.quest)
+          (.int 1),
+        .if
+          (.greaterOrEqual
+            (.counterCount
+              (.source (.this))
+              (.quest))
+            (.int 6))
+          [.actionId
+             1
+             (.sacrifice (.source (.this))),
+           .if
+             (.happened (.actionWithId 1) (.gameStart))
+             [.searchHandOrLibrary
+                (.controller (.this))
+                [.putOntoBattlefield
+                   (.selected
+                     (.controller (.this))
+                     (.range (.int 1) (.int 1))
+                     (.subtype (.dragon)))]]]])),
+ .ability
+   (.keywordWithCost
+     (.typecycling [] [] [.mountain])
+     [.mana [.generic 2]])])
+
 def lastLightOfDurinSDay : CardDef :=
-  enchantment "Last Light of Durin's Day" (ManaCost.ofGenericAndColor 1 .red) "Whenever a Mountain you control enters, put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle.\nMountaincycling {2} ({2}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)"
-    (triggeredAbilities := #[.onMountainEntersQuestThenDragon])
-    (activatedAbilities := #[typecyclingAbility "Mountain" (ManaCost.ofGeneric 2)])
+  lastLightOfDurinSDayDefinition.toCardDef (oracleText := lastLightOfDurinSDayOracle)
+
+#guard lastLightOfDurinSDay.oracleText == lastLightOfDurinSDayOracle
+
+#guard lastLightOfDurinSDay.triggeredAbilities == #[.onMountainEntersQuestThenDragon]
+#guard lastLightOfDurinSDay.activatedAbilities == #[typecyclingAbility "Mountain" (ManaCost.ofGeneric 2)]
+#guard lastLightOfDurinSDay.types == #[.enchantment]
+#guard lastLightOfDurinSDay.manaCost == ManaCost.ofGenericAndColor 1 .red
+
+/-- Oracle text for Master's Councillors. -/
+def masterSCouncillorsOracle : String :=
+  "Vigilance\nThis creature gets +2/+0 for each graveyard with seven or more cards in it.\nWhenever you draw your second card each turn, target player mills three cards. (They put the top three cards of their library into their graveyard.)"
+
+def masterSCouncillorsDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Master's Councillors",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .advisor,
+  .power 1,
+  .toughness 3
+  ] ++ (parseOracleParts (name := "Master's Councillors") masterSCouncillorsOracle).get!
+
+#guard masterSCouncillorsDefinition == .card (
+  [
+  .name "Master's Councillors",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .advisor,
+  .power 1,
+  .toughness 3
+  ] ++ [.ability (.keyword (.vigilance)),
+ .ability
+   (.static
+     (.addPower
+       (.this)
+       (.product
+         (.count (.graveyardsAtLeast (.int 7)))
+         (.int 2)))),
+ .ability
+   (.triggered
+     (.ordinal
+       2
+       (.turnStart)
+       (.draw (.controller (.this)) (.all)))
+     (.mill (.target 1 (.player)) (.int 3)))])
 
 def masterSCouncillors : CardDef :=
-  creature "Master's Councillors" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Advisor"] 1 3 (oracleText := "Vigilance\nThis creature gets +2/+0 for each graveyard with seven or more cards in it.\nWhenever you draw your second card each turn, target player mills three cards. (They put the top three cards of their library into their graveyard.)")
-    (keywords := Keyword.vigilance)
-    (staticAbilities := #[.powerPerFatGraveyard 2])
-    (triggeredAbilities := #[.onDrawSecondMillPlayer 3])
+  masterSCouncillorsDefinition.toCardDef (oracleText := masterSCouncillorsOracle)
+
+#guard masterSCouncillors.oracleText == masterSCouncillorsOracle
+
+#guard masterSCouncillors.keywords.vigilance
+#guard masterSCouncillors.staticAbilities == #[.powerPerFatGraveyard 2]
+#guard masterSCouncillors.triggeredAbilities == #[.onDrawSecondMillPlayer 3]
+#guard masterSCouncillors.subtypes == #["Human", "Advisor"]
+#guard masterSCouncillors.power == some 1 && masterSCouncillors.toughness == some 3
+
+/-- Oracle text for Old Fat Spider Can't See Me. -/
+def oldFatSpiderCanTSeeMeOracle : String :=
+  "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target creature you control gains hexproof for as long as this Saga remains on the battlefield.\nII — Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield.\nIII, IV — Draw a card."
+
+def oldFatSpiderCanTSeeMeDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Old Fat Spider Can't See Me",
+  .manaCost [.generic 2, .mono .blue],
+  .type .enchantment,
+  .subtype .saga
+  ] ++ (parseOracleParts (name := "Old Fat Spider Can't See Me") oldFatSpiderCanTSeeMeOracle).get!
+
+#guard oldFatSpiderCanTSeeMeDefinition == .card (
+  [
+  .name "Old Fat Spider Can't See Me",
+  .manaCost [.generic 2, .mono .blue],
+  .type .enchantment,
+  .subtype .saga
+  ] ++ [.ability
+   (.keywordWithEffect
+     (.chapter 1)
+     [.continuous
+        [.gainAbility
+           (.target
+             1
+             (.intersection
+               [.zone (.battlefield),
+                .cardType (.creature),
+                .controlled (.controller (.this))]))
+           (.keyword (.hexproof))]
+        (.leaveBattlefield (.this))]),
+ .ability
+   (.keywordWithEffect
+     (.chapter 2)
+     [.continuous
+        [.replace
+           (.damage
+             (.targets
+               2
+               (.range (.int 0) (.int 1))
+               (.intersection
+                 [.zone (.battlefield),
+                  .cardType (.creature)]))
+             (.all))
+           []]
+        (.leaveBattlefield (.this))]),
+ .ability
+   (.keywordWithEffect
+     (.chapter 3)
+     [.draw (.controller (.this)) (.int 1)]),
+ .ability
+   (.keywordWithEffect
+     (.chapter 4)
+     [.draw (.controller (.this)) (.int 1)])])
 
 def oldFatSpiderCanTSeeMe : CardDef :=
-  saga "Old Fat Spider Can't See Me" (ManaCost.ofGenericAndColor 2 .blue) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target creature you control gains hexproof for as long as this Saga remains on the battlefield.\nII — Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield.\nIII, IV — Draw a card." "IV" #[
-    chapter "I" "Target creature you control gains hexproof for as long as this Saga remains on the battlefield."
-      (Effect.chapterGrantHexproofWhileRemains),
-    chapter "II" "Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield."
-      (Effect.chapterPreventDamageWhileRemains),
-    chapter "III, IV" "Draw a card." (Effect.chapterDraw 1)]
+  oldFatSpiderCanTSeeMeDefinition.toCardDef (oracleText := oldFatSpiderCanTSeeMeOracle)
+
+#guard oldFatSpiderCanTSeeMe.oracleText == oldFatSpiderCanTSeeMeOracle
+
+#guard oldFatSpiderCanTSeeMe.saga == some { sacrificeAfter := "IV", chapters := #[
+  chapter "I" "Target creature you control gains hexproof for as long as this Saga remains on the battlefield."
+    (Effect.chapterGrantHexproofWhileRemains),
+  chapter "II" "Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield."
+    (Effect.chapterPreventDamageWhileRemains),
+  chapter "III, IV" "Draw a card." (Effect.chapterDraw 1)] }
+#guard oldFatSpiderCanTSeeMe.hasSubtype "Saga"
 
 /-- Oracle text for Orcrist, Goblin-cleaver. -/
 def orcristGoblinCleaverOracle : String :=
@@ -6600,9 +7353,56 @@ def orcristGoblinCleaver : CardDef :=
 #guard orcristGoblinCleaver.staticAbilities == #[.equippedCreatureGetsAndHas 2 2 Keyword.trample]
 #guard orcristGoblinCleaver.triggeredAbilities == #[.onEquippedCombatDamageTreasuresPerChosenType]
 
+/-- Oracle text for Part in Friendship. -/
+def partInFriendshipOracle : String :=
+  "Whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order. This ability triggers only once each turn."
+
+def partInFriendshipDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Part in Friendship",
+  .manaCost [.generic 4, .mono .green],
+  .type .enchantment
+  ] ++ (parseOracleParts (name := "Part in Friendship") partInFriendshipOracle).get!
+
+#guard partInFriendshipDefinition == .card (
+  [
+  .name "Part in Friendship",
+  .manaCost [.generic 4, .mono .green],
+  .type .enchantment
+  ] ++ [.ability
+   (.triggeredOnce
+     (.die
+       (.intersection
+         [.zone (.battlefield),
+          .cardType (.creature),
+          .not (.token),
+          .controlled (.controller (.this))]))
+     (.sequence
+       [.actionId
+          1
+          (.revealUntil
+            (.controller (.this))
+            (.cardType (.creature))),
+        .ifElse
+          (.lessOrEqual
+            (.greatestManaValue (.wasObjectOfAction 1))
+            (.count
+              (.intersection
+                [.zone (.battlefield),
+                 .cardType (.land),
+                 .controlled (.controller (.this))])))
+          [.putOntoBattlefield (.wasObjectOfAction 1)]
+          [.returnToHand (.wasObjectOfAction 1)],
+        .putOnLibraryBottomInRandomOrder (.restOfAction 1)]))])
+
 def partInFriendship : CardDef :=
-  enchantment "Part in Friendship" (ManaCost.ofGenericAndColor 4 .green) "Whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order. This ability triggers only once each turn."
-    (triggeredAbilities := #[.onNontokenYouControlDiesRevealCreature])
+  partInFriendshipDefinition.toCardDef (oracleText := partInFriendshipOracle)
+
+#guard partInFriendship.oracleText == partInFriendshipOracle
+
+#guard partInFriendship.triggeredAbilities == #[.onNontokenYouControlDiesRevealCreature]
+#guard partInFriendship.types == #[.enchantment]
+#guard partInFriendship.manaCost == ManaCost.ofGenericAndColor 4 .green
 
 /-- Oracle text for Radagast of Rhosgobel. -/
 def radagastOfRhosgobelOracle : String :=
@@ -6708,27 +7508,316 @@ def rhovanionRampager : CardDef :=
 #guard rhovanionRampager.triggeredAbilities ==
   #[.onAttackMaySacAnotherPlusOneEqualPower, .onDiesAmassGoblinsEqualPower]
 
+/-- Oracle text for Riddles in the Dark. -/
+def riddlesInTheDarkOracle : String :=
+  "Look at the top four cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard."
+
+def riddlesInTheDarkDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Riddles in the Dark",
+  .manaCost [.generic 2, .mono .blue],
+  .type .instant
+  ] ++ (parseOracleParts (name := "Riddles in the Dark") riddlesInTheDarkOracle).get!
+
+#guard riddlesInTheDarkDefinition == .card (
+  [
+  .name "Riddles in the Dark",
+  .manaCost [.generic 2, .mono .blue],
+  .type .instant
+  ] ++ [.actions
+   [.separatePiles
+      (.controller (.this))
+      (.int 4)]])
+
 def riddlesInTheDark : CardDef :=
-  instant "Riddles in the Dark" (ManaCost.ofGenericAndColor 2 .blue) "Look at the top four cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard." (some (Effect.riddlesInTheDark))
+  riddlesInTheDarkDefinition.toCardDef (oracleText := riddlesInTheDarkOracle)
+
+#guard riddlesInTheDark.oracleText == riddlesInTheDarkOracle
+
+#guard riddlesInTheDark.spellEffect == some Effect.riddlesInTheDark
+#guard riddlesInTheDark.types == #[.instant]
+#guard riddlesInTheDark.manaCost == ManaCost.ofGenericAndColor 2 .blue
+
+/-- Oracle text for Roads Go Ever, Ever On. -/
+def roadsGoEverEverOnOracle : String :=
+  "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Search your library for up to two basic Plains cards, exile them, then shuffle. You gain 2 life.\nII, III — Put a card exiled with this Saga into its owner's hand.\nIV — Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control."
+
+def roadsGoEverEverOnDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Roads Go Ever, Ever On",
+  .manaCost [.generic 1, .mono .white],
+  .type .enchantment,
+  .subtype .saga
+  ] ++ (parseOracleParts (name := "Roads Go Ever, Ever On") roadsGoEverEverOnOracle).get!
+
+#guard roadsGoEverEverOnDefinition == .card (
+  [
+  .name "Roads Go Ever, Ever On",
+  .manaCost [.generic 1, .mono .white],
+  .type .enchantment,
+  .subtype .saga
+  ] ++ [.ability
+   (.keywordWithEffect
+     (.chapter 1)
+     [.sequence
+        [.searchLibraryThenShuffle
+           (.controller (.this))
+           [.exile
+              (.selected
+                (.controller (.this))
+                (.range (.int 0) (.int 2))
+                (.intersection
+                  [.supertype (.basic),
+                   .subtype (.plains)]))],
+         .gainLife
+           (.controller (.this))
+           (.int 2)]]),
+ .ability
+   (.keywordWithEffect
+     (.chapter 2)
+     [.returnToHand
+        (.selected
+          (.controller (.this))
+          (.range (.int 1) (.int 1))
+          (.exiledWith (.this)))]),
+ .ability
+   (.keywordWithEffect
+     (.chapter 3)
+     [.returnToHand
+        (.selected
+          (.controller (.this))
+          (.range (.int 1) (.int 1))
+          (.exiledWith (.this)))]),
+ .ability
+   (.keywordWithEffect
+     (.chapter 4)
+     [.continuous
+        [.gainAbility
+           (.this)
+           (.triggered
+             (.attackSimultaneously
+               (.intersection
+                 [.zone (.battlefield),
+                  .cardType (.creature),
+                  .controlled (.controller (.this))])
+               (.all)
+               [])
+             (.continuous
+               [.addPower
+                  (.target
+                    1
+                    (.intersection
+                      [.zone (.battlefield),
+                       .cardType (.creature),
+                       .controlled (.controller (.this))]))
+                  (.count
+                    (.intersection
+                      [.zone (.battlefield),
+                       .subtype (.plains),
+                       .controlled (.controller (.this))])),
+                .addToughness
+                  (.targetReference 1)
+                  (.count
+                    (.intersection
+                      [.zone (.battlefield),
+                       .subtype (.plains),
+                       .controlled (.controller (.this))]))]
+               (.endOfTurn)))]
+        (.endOfTurn)])])
 
 def roadsGoEverEverOn : CardDef :=
-  saga "Roads Go Ever, Ever On" (ManaCost.ofGenericAndColor 1 .white) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Search your library for up to two basic Plains cards, exile them, then shuffle. You gain 2 life.\nII, III — Put a card exiled with this Saga into its owner's hand.\nIV — Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control." "IV" #[
-    chapter "I" "Search your library for up to two basic Plains cards, exile them, then shuffle. You gain 2 life."
-      (Effect.chapterSearchBasicPlainsExileGainLife 2 2),
-    chapter "II, III" "Put a card exiled with this Saga into its owner's hand."
-      (Effect.chapterReturnLinkedExileToHand),
-    chapter "IV" "Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control."
-      (Effect.chapterGrantAttackPumpPerPlainsThisTurn)]
+  roadsGoEverEverOnDefinition.toCardDef (oracleText := roadsGoEverEverOnOracle)
+
+#guard roadsGoEverEverOn.oracleText == roadsGoEverEverOnOracle
+
+#guard roadsGoEverEverOn.saga == some { sacrificeAfter := "IV", chapters := #[
+  chapter "I" "Search your library for up to two basic Plains cards, exile them, then shuffle. You gain 2 life."
+    (Effect.chapterSearchBasicPlainsExileGainLife 2 2),
+  chapter "II, III" "Put a card exiled with this Saga into its owner's hand."
+    (Effect.chapterReturnLinkedExileToHand),
+  chapter "IV" "Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control."
+    (Effect.chapterGrantAttackPumpPerPlainsThisTurn)] }
+
+/-- Oracle text for Roll-Roll-Roll-Roll. -/
+def rollRollRollRollOracle : String :=
+  "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI, II, III, IV — Exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step."
+
+def rollRollRollRollDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Roll-Roll-Roll-Roll",
+  .manaCost [.generic 2, .mono .blue],
+  .type .enchantment,
+  .subtype .saga
+  ] ++ (parseOracleParts (name := "Roll-Roll-Roll-Roll") rollRollRollRollOracle).get!
+
+#guard rollRollRollRollDefinition == .card (
+  [
+  .name "Roll-Roll-Roll-Roll",
+  .manaCost [.generic 2, .mono .blue],
+  .type .enchantment,
+  .subtype .saga
+  ] ++ [.ability
+   (.keywordWithEffect
+     (.chapter 1)
+     [.sequence
+        [.actionId
+           1
+           (.exile
+             (.targets
+               1
+               (.range (.int 0) (.int 1))
+               (.intersection
+                 [.zone (.battlefield),
+                  .union
+                    [.cardType (.creature),
+                     .cardType (.land)],
+                  .controlled (.controller (.this))]))),
+         .if
+           (.happened (.actionWithId 1) (.gameStart))
+           [.delayed
+              (.endStep (.player))
+              [.putOntoBattlefield (.wasObjectOfAction 1)]]]]),
+ .ability
+   (.keywordWithEffect
+     (.chapter 2)
+     [.sequence
+        [.actionId
+           2
+           (.exile
+             (.targets
+               2
+               (.range (.int 0) (.int 1))
+               (.intersection
+                 [.zone (.battlefield),
+                  .union
+                    [.cardType (.creature),
+                     .cardType (.land)],
+                  .controlled (.controller (.this))]))),
+         .if
+           (.happened (.actionWithId 2) (.gameStart))
+           [.delayed
+              (.endStep (.player))
+              [.putOntoBattlefield (.wasObjectOfAction 2)]]]]),
+ .ability
+   (.keywordWithEffect
+     (.chapter 3)
+     [.sequence
+        [.actionId
+           3
+           (.exile
+             (.targets
+               3
+               (.range (.int 0) (.int 1))
+               (.intersection
+                 [.zone (.battlefield),
+                  .union
+                    [.cardType (.creature),
+                     .cardType (.land)],
+                  .controlled (.controller (.this))]))),
+         .if
+           (.happened (.actionWithId 3) (.gameStart))
+           [.delayed
+              (.endStep (.player))
+              [.putOntoBattlefield (.wasObjectOfAction 3)]]]]),
+ .ability
+   (.keywordWithEffect
+     (.chapter 4)
+     [.sequence
+        [.actionId
+           4
+           (.exile
+             (.targets
+               4
+               (.range (.int 0) (.int 1))
+               (.intersection
+                 [.zone (.battlefield),
+                  .union
+                    [.cardType (.creature),
+                     .cardType (.land)],
+                  .controlled (.controller (.this))]))),
+         .if
+           (.happened (.actionWithId 4) (.gameStart))
+           [.delayed
+              (.endStep (.player))
+              [.putOntoBattlefield (.wasObjectOfAction 4)]]]])])
 
 def rollRollRollRoll : CardDef :=
-  saga "Roll-Roll-Roll-Roll" (ManaCost.ofGenericAndColor 2 .blue) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI, II, III, IV — Exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step." "IV" #[
-    chapter "I, II, III, IV" "Exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step."
-      (Effect.chapterBlinkUntilEndStep)]
+  rollRollRollRollDefinition.toCardDef (oracleText := rollRollRollRollOracle)
+
+#guard rollRollRollRoll.oracleText == rollRollRollRollOracle
+
+#guard rollRollRollRoll.saga == some { sacrificeAfter := "IV", chapters := #[
+  chapter "I, II, III, IV" "Exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step."
+    (Effect.chapterBlinkUntilEndStep)] }
+
+/-- Oracle text for Silvan Reveler. -/
+def silvanRevelerOracle : String :=
+  "When this creature enters, draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped.\nLandfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand."
+
+def silvanRevelerDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Silvan Reveler",
+  .manaCost [.generic 2, .mono .green, .mono .blue],
+  .type .creature,
+  .subtype .elf,
+  .subtype .citizen,
+  .power 3,
+  .toughness 2
+  ] ++ (parseOracleParts (name := "Silvan Reveler") silvanRevelerOracle).get!
+
+#guard silvanRevelerDefinition == .card (
+  [
+  .name "Silvan Reveler",
+  .manaCost [.generic 2, .mono .green, .mono .blue],
+  .type .creature,
+  .subtype .elf,
+  .subtype .citizen,
+  .power 3,
+  .toughness 2
+  ] ++ [.ability
+   (.triggered
+     (.enter (.this))
+     (.sequence
+       [.draw (.controller (.this)) (.int 1),
+        .actionId
+          1
+          (.discard
+            (.controller (.this))
+            (.int 1)),
+        .if
+          (.any
+            (.intersection
+              [.wasObjectOfAction 1, .cardType (.land)]))
+          [.putOntoBattlefieldInState
+             (.intersection
+               [.zone (.graveyard), .wasObjectOfAction 1])
+             [.tapped]]])),
+ .ability
+   (.triggered
+     (.enter
+       (.intersection
+         [.zone (.battlefield),
+          .cardType (.land),
+          .controlled (.controller (.this))]))
+     (.optionalPayFor
+       (.controller (.this))
+       [.mana
+          [.generic 1,
+           .mono (.green),
+           .mono (.blue)]]
+       [.returnToHand
+          (.intersection
+            [.zone (.graveyard), .this])]))])
 
 def silvanReveler : CardDef :=
-  creature "Silvan Reveler" (ManaCost.ofGenericAndColors 2 [.green, .blue]) #["Elf", "Citizen"] 3 2 (oracleText := "When this creature enters, draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped.\nLandfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand.")
-    (triggeredAbilities := #[.onEnterLootLandEntersTapped,
-      .onLandYouControlEntersPayReturnFromGy])
+  silvanRevelerDefinition.toCardDef (oracleText := silvanRevelerOracle)
+
+#guard silvanReveler.oracleText == silvanRevelerOracle
+
+#guard silvanReveler.triggeredAbilities == #[.onEnterLootLandEntersTapped, .onLandYouControlEntersPayReturnFromGy]
+#guard silvanReveler.subtypes == #["Elf", "Citizen"]
+#guard silvanReveler.power == some 3 && silvanReveler.toughness == some 2
+#guard silvanReveler.manaCost == ManaCost.ofGenericAndColors 2 [.green, .blue]
 
 /-- Oracle text for Sting, Bilbo's Sword. -/
 def stingBilboSSwordOracle : String :=
@@ -6825,22 +7914,256 @@ def stoneGiantOfHighPass : CardDef :=
   activated (Effect.dealDamageToAny 4) (ManaCost.ofGenericAndColor 2 .red)
     (sacrificeArtifact := true)]
 
+/-- Oracle text for Supper for Spiders. -/
+def supperForSpidersOracle : String :=
+  "Put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\" (They lose all other types and subtypes.)"
+
+def supperForSpidersDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Supper for Spiders",
+  .manaCost [.generic 1, .mono .black],
+  .type .instant
+  ] ++ (parseOracleParts (name := "Supper for Spiders") supperForSpidersOracle).get!
+
+#guard supperForSpidersDefinition == .card (
+  [
+  .name "Supper for Spiders",
+  .manaCost [.generic 1, .mono .black],
+  .type .instant
+  ] ++ [.actions
+   [.actionId
+      1
+      (.putOntoBattlefieldInState
+        (.intersection
+          [.zone (.graveyard),
+           .cardType (.creature),
+           .owner
+             (.opponent (.controller (.this))),
+           .wasObjectSince
+             (.putToGraveyard (.all))
+             (.turnStart)])
+        [.controlled (.controller (.this))]),
+    .becomeWith
+      (.affectedByAction 1)
+      [.type (.artifact),
+       .subtype (.food),
+       .ability
+         (.activated
+           [.mana [.generic 2],
+            .tapSymbol,
+            .sacrifice (.this)]
+           (.gainLife
+             (.controller (.this))
+             (.int 3)))]]])
+
 def supperForSpiders : CardDef :=
-  instant "Supper for Spiders" (ManaCost.ofGenericAndColor 1 .black) "Put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\" (They lose all other types and subtypes.)" (some (Effect.supperForSpiders))
+  supperForSpidersDefinition.toCardDef (oracleText := supperForSpidersOracle)
+
+#guard supperForSpiders.oracleText == supperForSpidersOracle
+
+#guard supperForSpiders.spellEffect == some Effect.supperForSpiders
+#guard supperForSpiders.types == #[.instant]
+#guard supperForSpiders.manaCost == ManaCost.ofGenericAndColor 1 .black
+
+/-- Oracle text for The Eagles Are Coming!. -/
+def theEaglesAreComingOracle : String :=
+  "Kicker {2}{W}{W} (You may pay an additional {2}{W}{W} as you cast this spell.)\nChoose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand. At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way."
+
+def theEaglesAreComingDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "The Eagles Are Coming!",
+  .manaCost [.generic 1, .mono .white],
+  .type .instant
+  ] ++ (parseOracleParts (name := "The Eagles Are Coming!") theEaglesAreComingOracle).get!
+
+#guard theEaglesAreComingDefinition == .card (
+  [
+  .name "The Eagles Are Coming!",
+  .manaCost [.generic 1, .mono .white],
+  .type .instant
+  ] ++ [.ability
+   (.keywordWithCost
+     (.kicker)
+     [.mana
+        [.generic 2,
+         .mono (.white),
+         .mono (.white)]]),
+ .actions
+   [.ifElse
+      (.kicked)
+      [.actionId
+         1
+         (.returnToHand
+           (.targets
+             1
+             (.any)
+             (.intersection
+               [.zone (.battlefield),
+                .cardType (.creature),
+                .owner (.controller (.this))])))]
+      [.actionId
+         1
+         (.returnToHand
+           (.target
+             2
+             (.intersection
+               [.zone (.battlefield),
+                .cardType (.creature),
+                .owner (.controller (.this))])))],
+    .delayed
+      (.upkeep (.player))
+      [.createTokens
+         (.controller (.this))
+         (.count (.wasObjectOfAction 1))
+         [.type (.creature),
+          .subtype (.bird),
+          .subtype (.soldier),
+          .colorIndicator [.white],
+          .power 4,
+          .toughness 4,
+          .ability (.keyword (.flying))]
+         []]]])
 
 def theEaglesAreComing : CardDef :=
-  instant "The Eagles Are Coming!" (ManaCost.ofGenericAndColor 1 .white) "Kicker {2}{W}{W} (You may pay an additional {2}{W}{W} as you cast this spell.)\nChoose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand. At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way." (some (Effect.eaglesAreComing))
-    (kicker := some (ManaCost.ofGenericAndColors 2 [.white, .white]))
+  theEaglesAreComingDefinition.toCardDef (oracleText := theEaglesAreComingOracle)
+
+#guard theEaglesAreComing.oracleText == theEaglesAreComingOracle
+
+#guard theEaglesAreComing.spellEffect == some Effect.eaglesAreComing
+#guard theEaglesAreComing.kicker == some (ManaCost.ofGenericAndColors 2 [.white, .white])
+#guard theEaglesAreComing.types == #[.instant]
+#guard theEaglesAreComing.manaCost == ManaCost.ofGenericAndColor 1 .white
+
+/-- Oracle text for The Great Goblin. -/
+def theGreatGoblinOracle : String :=
+  "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent.\nWhenever another Goblin, Orc, or Army you control dies, exile the top card of your library. You may play it until the end of your next turn."
+
+def theGreatGoblinDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "The Great Goblin",
+  .manaCost [.generic 1, .hybrid .black .red, .hybrid .black .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .goblin,
+  .subtype .noble,
+  .power 3,
+  .toughness 2
+  ] ++ (parseOracleParts (name := "The Great Goblin") theGreatGoblinOracle).get!
+
+#guard theGreatGoblinDefinition == .card (
+  [
+  .name "The Great Goblin",
+  .manaCost [.generic 1, .hybrid .black .red, .hybrid .black .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .goblin,
+  .subtype .noble,
+  .power 3,
+  .toughness 2
+  ] ++ [.ability
+   (.triggered
+     (.putAnyCounters
+       (.controller (.this))
+       (.intersection
+         [.zone (.battlefield),
+          .union
+            [.subtype (.goblin),
+             .subtype (.orc),
+             .subtype (.army)],
+          .controlled (.controller (.this))]))
+     (.dealDamage
+       (.this)
+       (.target
+         1
+         (.opponent (.controller (.this))))
+       (.int 2))),
+ .ability
+   (.triggered
+     (.die
+       (.intersection
+         [.not (.this),
+          .intersection
+            [.zone (.battlefield),
+             .union
+               [.subtype (.goblin),
+                .subtype (.orc),
+                .subtype (.army)],
+             .controlled (.controller (.this))]]))
+     (.sequence
+       [.actionId
+          1
+          (.exile
+            (.topOfLibrary
+              (.controller (.this))
+              (.int 1))),
+        .continuous
+          [.canPlay
+             (.controller (.this))
+             (.wasCreatedByAction 1)]
+          (.sequence
+            [.turnStart,
+             .endOfPlayerTurn (.controller (.this))])]))])
 
 def theGreatGoblin : CardDef :=
-  legendaryCreature "The Great Goblin" (ManaCost.ofGenericAndHybrids 1 .black .red 2) #["Goblin", "Noble"] 3 2 (oracleText := "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent.\nWhenever another Goblin, Orc, or Army you control dies, exile the top card of your library. You may play it until the end of your next turn.")
-    (triggeredAbilities := #[.onPutCountersOnGoblinOrcArmyDamageOpp,
-      .onAnotherGoblinOrcArmyDiesExileTop])
+  theGreatGoblinDefinition.toCardDef (oracleText := theGreatGoblinOracle)
+
+#guard theGreatGoblin.oracleText == theGreatGoblinOracle
+
+#guard theGreatGoblin.triggeredAbilities == #[.onPutCountersOnGoblinOrcArmyDamageOpp, .onAnotherGoblinOrcArmyDiesExileTop]
+#guard theGreatGoblin.manaCost == ManaCost.ofGenericAndHybrids 1 .black .red 2
+#guard theGreatGoblin.supertypes == #[.legendary]
+#guard theGreatGoblin.subtypes == #["Goblin", "Noble"]
+#guard theGreatGoblin.power == some 3 && theGreatGoblin.toughness == some 2
+
+/-- Oracle text for The Master of Lake-town. -/
+def theMasterOfLakeTownOracle : String :=
+  "Deathtouch\nWhenever a player loses life, that player mills that many cards. (Damage causes loss of life.)\nWhen The Master of Lake-town dies, draw a card for each graveyard with seven or more cards in it."
+
+def theMasterOfLakeTownDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "The Master of Lake-town",
+  .manaCost [.generic 1, .mono .black, .mono .black],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .advisor,
+  .power 3,
+  .toughness 2
+  ] ++ (parseOracleParts (name := "The Master of Lake-town") theMasterOfLakeTownOracle).get!
+
+#guard theMasterOfLakeTownDefinition == .card (
+  [
+  .name "The Master of Lake-town",
+  .manaCost [.generic 1, .mono .black, .mono .black],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .human,
+  .subtype .advisor,
+  .power 3,
+  .toughness 2
+  ] ++ [.ability (.keyword (.deathtouch)),
+ .ability
+   (.triggered
+     (.triggerId 1 (.loseLife (.player)))
+     (.mill (.wasArgumentOfTrigger 1 1) (.triggerAmount 1))),
+ .ability
+   (.triggered
+     (.die (.this))
+     (.draw
+       (.controller (.this))
+       (.count (.graveyardsAtLeast (.int 7)))))])
 
 def theMasterOfLakeTown : CardDef :=
-  legendaryCreature "The Master of Lake-town" (ManaCost.ofGenericAndColors 1 [.black, .black]) #["Human", "Advisor"] 3 2 (oracleText := "Deathtouch\nWhenever a player loses life, that player mills that many cards. (Damage causes loss of life.)\nWhen The Master of Lake-town dies, draw a card for each graveyard with seven or more cards in it.")
-    (keywords := Keyword.deathtouch)
-    (triggeredAbilities := #[.onPlayerLosesLifeMillThatMany, .onDiesDrawPerFatGraveyard])
+  theMasterOfLakeTownDefinition.toCardDef (oracleText := theMasterOfLakeTownOracle)
+
+#guard theMasterOfLakeTown.oracleText == theMasterOfLakeTownOracle
+
+#guard theMasterOfLakeTown.keywords.deathtouch
+#guard theMasterOfLakeTown.triggeredAbilities == #[.onPlayerLosesLifeMillThatMany, .onDiesDrawPerFatGraveyard]
+#guard theMasterOfLakeTown.manaCost == ManaCost.ofGenericAndColors 1 [.black, .black]
+#guard theMasterOfLakeTown.supertypes == #[.legendary]
+#guard theMasterOfLakeTown.subtypes == #["Human", "Advisor"]
+#guard theMasterOfLakeTown.power == some 3 && theMasterOfLakeTown.toughness == some 2
 
 /-- Oracle text for The Misty Mountains Cold. -/
 def theMistyMountainsColdOracle : String :=
@@ -7085,10 +8408,69 @@ def theMountainKingSReturn : CardDef :=
       "Put a +1/+1 counter on up to one target creature."
       (Effect.chapterPlusOneUpToOne)] }
 
+/-- Oracle text for The Notary Hobbits. -/
+def theNotaryHobbitsOracle : String :=
+  "When The Notary Hobbits enter, if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary.\n{T}: Add {C} for each Halfling you control."
+
+def theNotaryHobbitsDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "The Notary Hobbits",
+  .manaCost [.generic 3, .mono .green, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .advisor,
+  .power 1,
+  .toughness 1
+  ] ++ (parseOracleParts (name := "The Notary Hobbits") theNotaryHobbitsOracle).get!
+
+#guard theNotaryHobbitsDefinition == .card (
+  [
+  .name "The Notary Hobbits",
+  .manaCost [.generic 3, .mono .green, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .advisor,
+  .power 1,
+  .toughness 1
+  ] ++ [.ability
+   (.triggered
+     (.enter (.this))
+     (.if
+       (.not
+         (.any
+           (.intersection
+             [.source (.this), .token])))
+       [.copyTokens
+          (.this)
+          (.int 2)
+          [.removeSupertype (.this) (.legendary)]])),
+ .ability
+   (.activated
+     [.tapSymbol]
+     (.forEachVariable
+       1
+       (.intersection
+         [.zone (.battlefield),
+          .subtype (.halfling),
+          .controlled (.controller (.this))])
+       [.addMana
+          (.controller (.this))
+          [.colorless]]))])
+
 def theNotaryHobbits : CardDef :=
-  legendaryCreature "The Notary Hobbits" (ManaCost.ofGenericAndColors 3 [.green, .green]) #["Halfling", "Advisor"] 1 1 (oracleText := "When The Notary Hobbits enter, if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary.\n{T}: Add {C} for each Halfling you control.")
-    (tapAddColorlessPerSubtype := some "Halfling")
-    (triggeredAbilities := #[.onEnterIfNotTokenCopySelf])
+  theNotaryHobbitsDefinition.toCardDef (oracleText := theNotaryHobbitsOracle)
+
+#guard theNotaryHobbits.oracleText == theNotaryHobbitsOracle
+
+#guard theNotaryHobbits.triggeredAbilities == #[.onEnterIfNotTokenCopySelf]
+#guard theNotaryHobbits.tapAddColorlessPerSubtype == some "Halfling"
+#guard theNotaryHobbits.tapAddManaForEach == #[{ mana := .colorless, subtype := "Halfling" }]
+#guard theNotaryHobbits.manaCost == ManaCost.ofGenericAndColors 3 [.green, .green]
+#guard theNotaryHobbits.supertypes == #[.legendary]
+#guard theNotaryHobbits.subtypes == #["Halfling", "Advisor"]
+#guard theNotaryHobbits.power == some 1 && theNotaryHobbits.toughness == some 1
 
 /-- Oracle text for The Sackville-Bagginses. -/
 def theSackvilleBagginsesOracle : String :=
@@ -7261,10 +8643,67 @@ def thranduilSCompanyDefinition : TraditionalCardDefinition := .card <|
 def thranduilSCompany : CardDef :=
   thranduilSCompanyDefinition.toCardDef (oracleText := thranduilSCompanyOracle)
 
+/-- Oracle text for Thranduil, the Elvenking. -/
+def thranduilTheElvenkingOracle : String :=
+  "Thranduil has all activated abilities of all Elf cards in your graveyard.\nWhenever another legendary Elf you control enters, draw two cards, then discard a card."
+
+def thranduilTheElvenkingDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Thranduil, the Elvenking",
+  .manaCost [.generic 2, .mono .black, .mono .green, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .elf,
+  .subtype .noble,
+  .power 5,
+  .toughness 6
+  ] ++ (parseOracleParts (name := "Thranduil, the Elvenking") thranduilTheElvenkingOracle).get!
+
+#guard thranduilTheElvenkingDefinition == .card (
+  [
+  .name "Thranduil, the Elvenking",
+  .manaCost [.generic 2, .mono .black, .mono .green, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .elf,
+  .subtype .noble,
+  .power 5,
+  .toughness 6
+  ] ++ [.ability
+   (.static
+     (.copyActivatedAbilities
+       (.this)
+       (.intersection
+         [.zone (.graveyard),
+          .subtype (.elf),
+          .owner (.controller (.this))]))),
+ .ability
+   (.triggered
+     (.enter
+       (.intersection
+         [.not (.this),
+          .zone (.battlefield),
+          .cardType (.creature),
+          .subtype (.elf),
+          .supertype (.legendary),
+          .controlled (.controller (.this))]))
+     (.sequence
+       [.draw (.controller (.this)) (.int 2),
+        .discard
+          (.controller (.this))
+          (.int 1)]))])
+
 def thranduilTheElvenking : CardDef :=
-  legendaryCreature "Thranduil, the Elvenking" (ManaCost.ofGenericAndColors 2 [.black, .green, .blue]) #["Elf", "Noble"] 5 6 (oracleText := "Thranduil has all activated abilities of all Elf cards in your graveyard.\nWhenever another legendary Elf you control enters, draw two cards, then discard a card.")
-    (staticAbilities := #[.copyActivatedFromGySubtype "Elf"])
-    (triggeredAbilities := #[.onAnotherLegendarySubtypeEntersLoot "Elf"])
+  thranduilTheElvenkingDefinition.toCardDef (oracleText := thranduilTheElvenkingOracle)
+
+#guard thranduilTheElvenking.oracleText == thranduilTheElvenkingOracle
+
+#guard thranduilTheElvenking.staticAbilities == #[.copyActivatedFromGySubtype "Elf"]
+#guard thranduilTheElvenking.triggeredAbilities == #[.onAnotherLegendarySubtypeEntersLoot "Elf"]
+#guard thranduilTheElvenking.manaCost == ManaCost.ofGenericAndColors 2 [.black, .green, .blue]
+#guard thranduilTheElvenking.supertypes == #[.legendary]
+#guard thranduilTheElvenking.subtypes == #["Elf", "Noble"]
+#guard thranduilTheElvenking.power == some 5 && thranduilTheElvenking.toughness == some 6
 
 /-- Oracle text for Through the Forest Gate. -/
 def throughTheForestGateOracle : String :=
@@ -7301,12 +8740,69 @@ def throughTheForestGate : CardDef :=
 #guard throughTheForestGate.oracleText == throughTheForestGateOracle
 #guard throughTheForestGate.spellEffect == (some (Effect.lookAtTopLandsGainLife 20 8))
 
+/-- Oracle text for Tom, Bert, and William. -/
+def tomBertAndWilliamOracle : String :=
+  "{1}, Sacrifice another creature: Draw cards equal to the sacrificed creature's power, then discard a card.\nWhen Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact. (They're no longer a creature.)"
+
+def tomBertAndWilliamDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Tom, Bert, and William",
+  .manaCost [.generic 3, .mono .black, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .troll,
+  .power 5,
+  .toughness 5
+  ] ++ (parseOracleParts (name := "Tom, Bert, and William") tomBertAndWilliamOracle).get!
+
+#guard tomBertAndWilliamDefinition == .card (
+  [
+  .name "Tom, Bert, and William",
+  .manaCost [.generic 3, .mono .black, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .troll,
+  .power 5,
+  .toughness 5
+  ] ++ [.ability
+   (.activated
+     [.mana [.generic 1],
+      .sacrifice
+        (.intersection
+          [.not (.this),
+           .zone (.battlefield),
+           .cardType (.creature),
+           .controlled (.controller (.this))])]
+     (.sequence
+       [.draw
+          (.controller (.this))
+          (.greatestPower (.sacrificedAsCost)),
+        .discard
+          (.controller (.this))
+          (.int 1)])),
+ .ability
+   (.triggered
+     (.die (.this))
+     (.if
+       (.wasCreature (.this))
+       [.putOntoBattlefield (.this),
+        .continuous
+          [.setCardTypes (.this) [.artifact]]
+          (.endOfGame)]))])
+
 def tomBertAndWilliam : CardDef :=
-  legendaryCreature "Tom, Bert, and William" (ManaCost.ofGenericAndColors 3 [.black, .green]) #["Troll"] 5 5 (oracleText := "{1}, Sacrifice another creature: Draw cards equal to the sacrificed creature's power, then discard a card.\nWhen Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact. (They're no longer a creature.)")
-    (activatedAbilities := #[
-      activated (Effect.drawEqualSacrificedPowerThenDiscard) (ManaCost.ofGeneric 1)
-        (sacrificeAnotherSubtype := some "creature")])
-    (triggeredAbilities := #[.onDiesReturnAsArtifact])
+  tomBertAndWilliamDefinition.toCardDef (oracleText := tomBertAndWilliamOracle)
+
+#guard tomBertAndWilliam.oracleText == tomBertAndWilliamOracle
+
+#guard tomBertAndWilliam.activatedAbilities == #[
+  activated (Effect.drawEqualSacrificedPowerThenDiscard) (ManaCost.ofGeneric 1)
+    (sacrificeAnotherSubtype := some "creature")]
+#guard tomBertAndWilliam.triggeredAbilities == #[.onDiesReturnAsArtifact]
+#guard tomBertAndWilliam.manaCost == ManaCost.ofGenericAndColors 3 [.black, .green]
+#guard tomBertAndWilliam.supertypes == #[.legendary]
+#guard tomBertAndWilliam.subtypes == #["Troll"]
+#guard tomBertAndWilliam.power == some 5 && tomBertAndWilliam.toughness == some 5
 
 /-- Oracle text for Uncover the Moon-Letters. -/
 def uncoverTheMoonLettersOracle : String :=
@@ -7348,13 +8844,56 @@ def uncoverTheMoonLetters : CardDef :=
 #guard uncoverTheMoonLetters.types == #[.enchantment]
 #guard uncoverTheMoonLetters.triggeredAbilities == #[.onCastNoncreatureMayDrawXDiscard2]
 
+/-- Oracle text for Wizard's Staff. -/
+def wizardSStaffOracle : String :=
+  "Equipped creature has prowess. (Whenever its controller casts a noncreature spell, that creature gets +1/+1 until end of turn.)\nIf a triggered ability of equipped creature triggers, that ability triggers an additional time.\nEquip Wizard {1}\nEquip {3}"
+
+def wizardSStaffDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Wizard's Staff",
+  .manaCost [.generic 1, .mono .blue],
+  .type .artifact,
+  .subtype .equipment
+  ] ++ (parseOracleParts (name := "Wizard's Staff") wizardSStaffOracle).get!
+
+#guard wizardSStaffDefinition == .card (
+  [
+  .name "Wizard's Staff",
+  .manaCost [.generic 1, .mono .blue],
+  .type .artifact,
+  .subtype .equipment
+  ] ++ [.ability
+   (.static
+     (.gainAbility
+       (.hostOf (.this))
+       (.keyword (.prowess)))),
+ .ability
+   (.static
+     (.replace
+       (.abilityTriggers (.hostOf (.this)))
+       [.duplicateReplacingTrigger (.int 2)])),
+ .ability
+   (.keywordWithSubtypeAndCost
+     (.equip)
+     (.wizard)
+     (.mana [.generic 1])),
+ .ability
+   (.keywordWithCost
+     (.equip)
+     [.mana [.generic 3]])])
+
 def wizardSStaff : CardDef :=
-  equipment "Wizard's Staff" (ManaCost.ofGenericAndColor 1 .blue) "Equipped creature has prowess. (Whenever its controller casts a noncreature spell, that creature gets +1/+1 until end of turn.)\nIf a triggered ability of equipped creature triggers, that ability triggers an additional time.\nEquip Wizard {1}\nEquip {3}"
-    (ManaCost.ofGeneric 1)
-    (equipSubtype := some "Wizard")
-    (moreEquips := #[equipAbility (ManaCost.ofGeneric 3)])
-    (staticAbilities := #[.equippedTriggersAgain,
-      .equippedCreatureHasKeywords Keyword.prowess])
+  wizardSStaffDefinition.toCardDef (oracleText := wizardSStaffOracle)
+
+#guard wizardSStaff.oracleText == wizardSStaffOracle
+
+#guard wizardSStaff.staticAbilities == #[.equippedCreatureHasKeywords Keyword.prowess, .equippedTriggersAgain]
+#guard wizardSStaff.activatedAbilities == #[
+  equipAbility (ManaCost.ofGeneric 1) (some "Wizard"),
+  equipAbility (ManaCost.ofGeneric 3)]
+#guard wizardSStaff.types == #[.artifact]
+#guard wizardSStaff.hasSubtype "Equipment"
+#guard wizardSStaff.manaCost == ManaCost.ofGenericAndColor 1 .blue
 
 /-- Every unique card in The Hobbit (HOB), including Journey basic lands
 that are also in the core catalog. -/

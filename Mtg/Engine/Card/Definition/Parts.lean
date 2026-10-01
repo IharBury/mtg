@@ -48,6 +48,11 @@ inductive Condition where
   | greaterOrEqual : Value → Value → Condition
   /-- True when the two values are equal. -/
   | equal : Value → Value → Condition
+  /-- True when this spell was kicked (CR 702.32). -/
+  | kicked
+  /-- True when the selected object was a creature. Used for “if they were
+  a creature” after that object has died (CR 603.6c / 608.2h). -/
+  | wasCreature : Selector → Condition
 deriving Repr, Inhabited, BEq
 
 /-- A draw by `who` other than the first card of their current draw step
@@ -132,6 +137,11 @@ inductive Ability where
   resolves. Printed “while …” uses this; `CardAction.if` is the resolution
   check. -/
   | triggeredWhile : Trigger → Condition → CardAction → Ability
+  /-- A triggered ability that triggers only once each turn (CR 603.2d).
+  The restriction is part of the ability. Compiling unwraps it to
+  `.triggered`; a named `TriggeredAbility` that already fires once keeps
+  that limit. -/
+  | triggeredOnce : Trigger → CardAction → Ability
   | static : ContinuousEffect → Ability
   /-- A static ability that functions while this spell is on the stack
   (CR 604.2), e.g. a cost reduction. -/
@@ -205,6 +215,16 @@ inductive ContinuousEffect where
   spell or ability applies it until end of turn to the objects that match
   when it resolves (CR 611.2a / 611.2c). -/
   | removeAllAbilities : Selector → ContinuousEffect
+  /-- The selected object becomes exactly those card types, losing its other
+  types (CR 205.1). “They're an artifact” is artifact and not a creature. -/
+  | setCardTypes : Selector → List CardType → ContinuousEffect
+  /-- The first objects have all activated abilities of the second
+  (CR 113.1b). “Has all activated abilities of all Elf cards in your
+  graveyard” is this permanent and those cards. -/
+  | copyActivatedAbilities : Selector → Selector → ContinuousEffect
+  /-- The selected objects lose the given supertype (CR 205.4). “The tokens
+  aren't legendary” is this on each copy. -/
+  | removeSupertype : Selector → CardSupertype → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -368,6 +388,51 @@ inductive CardAction where
   many. `wasObjectOfAction` of an `actionId` around this action is each
   spell that was cast. -/
   | mayCast : Selector → Selector → CardAction
+  /-- When the numbered action is performed, perform these actions as a
+  reflexive triggered ability (CR 603.12). “When you do” after a may or
+  an optional cost is this, not an “if you do” checked in the same
+  resolution. -/
+  | reflexive : Nat → List CardAction → CardAction
+  /-- After this phase, there is an additional combat phase (CR 506.6). -/
+  | extraCombat
+  /-- Choose an object at random from those matching the selector.
+  Number it with `actionId` so `wasObjectOfAction` is the chosen object. -/
+  | chooseRandom : Selector → CardAction
+  /-- Look at the selected cards and separate them into a face-down pile
+  and a face-up pile. An opponent chooses one pile. That pile goes to
+  its owner's hand and the other to its owner's graveyard. The value is
+  how many cards. -/
+  | separatePiles : Selector → Value → CardAction
+  /-- Create that many tokens that are copies of the selected object,
+  except for the listed continuous effects (CR 707.2). “The tokens aren't
+  legendary” is `remove` of the legendary supertype, spelled as
+  `.not (.supertype .legendary)` on the copy via `setCardTypes` or a
+  listed exception. The exceptions are applied to each token. -/
+  | copyTokens : Selector → Value → List ContinuousEffect → CardAction
+  /-- The selected objects become the printed characteristics, losing
+  their other card types and subtypes (CR 205.1). A quoted ability in
+  `parts` is an ability they have. -/
+  | becomeWith : Selector → List CardPart → CardAction
+  /-- Exile the selected objects. Return those cards to the battlefield
+  under their owner's control at the next occurrence of the trigger. -/
+  | exileThenReturn : Selector → Trigger → CardAction
+  /-- The selected player chooses odd or even. Zero is even. -/
+  | chooseOddEven : Selector → CardAction
+  /-- Search the selected player's hand and/or library for cards the
+  nested actions act on. Shuffle if the library was searched (CR 701.19). -/
+  | searchHandOrLibrary : Selector → List CardAction → CardAction
+  /-- At the next occurrence of the trigger, perform the actions once
+  (CR 603.7). “At the beginning of the next upkeep” is this, not a
+  permanent trigger. -/
+  | delayed : Trigger → List CardAction → CardAction
+  /-- Reveal cards from the top of the selected player's library until a
+  card matching the selector is revealed (CR 701.16). `wasObjectOfAction`
+  of an `actionId` around this action is that card. `restOfAction` is
+  the other revealed cards. -/
+  | revealUntil : Selector → Selector → CardAction
+  /-- If you cast a spell matching the selector, pay life equal to its mana
+  value rather than pay its mana cost (CR 118.9). -/
+  | castPayingLifeInstead : Selector → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token

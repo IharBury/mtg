@@ -100,8 +100,36 @@ def leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv? :
     leftoverThis src && leftoverTargetOpponent? dest && among.shape.artifactYouControl
   | _ => false
 
+/-- Saga chapters from the remaining Hobbit cards. -/
+def leftoverHobbitChapter? : CardAction → Option Effect
+  | .draw who (.int (.ofNat n)) =>
+    if n != 0 && leftoverYou who then some (Effect.chapterDraw n) else none
+  | .continuous [.gainAbility (.target _ _) (.keyword .hexproof)] (.leaveBattlefield .this) =>
+    some Effect.chapterGrantHexproofWhileRemains
+  | .continuous [.replace (.damage (.targets _ (.range (.int 0) (.int 1)) _) .all) []]
+      (.leaveBattlefield .this) =>
+    some Effect.chapterPreventDamageWhileRemains
+  | .sequence [
+      .searchLibraryThenShuffle who [.exile _],
+      .gainLife gainer (.int 2)] =>
+    if leftoverYou who && leftoverYou gainer then
+      some (Effect.chapterSearchBasicPlainsExileGainLife 2 2)
+    else none
+  | .returnToHand (.selected who (.range (.int 1) (.int 1)) (.exiledWith .this)) =>
+    if leftoverYou who then some Effect.chapterReturnLinkedExileToHand else none
+  | .continuous [.gainAbility .this (.triggered _ _)] .endOfTurn =>
+    some Effect.chapterGrantAttackPumpPerPlainsThisTurn
+  | .sequence [
+      .actionId id (.exile (.targets _ (.range (.int 0) (.int 1)) _)),
+      .if (.happened (.actionWithId id') .gameStart) [.delayed _ _]] =>
+    if id == id' then some Effect.chapterBlinkUntilEndStep else none
+  | _ => none
+
 /-- Leftovers that compile to a named `Effect` only as a printed Saga chapter. -/
 def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
+  match leftoverHobbitChapter? action with
+  | some e => some e
+  | none =>
   match action with
   | .dealDamage src (.target _ sel) (.int (.ofNat n)) =>
     if (src == Selector.this || leftoverSourceThis src) &&
