@@ -5650,11 +5650,85 @@ def belladonnaTook : CardDef :=
 #guard belladonnaTook.subtypes == #["Halfling", "Citizen"]
 #guard belladonnaTook.power == some 2 && belladonnaTook.toughness == some 2
 
+/-- Oracle text for Beorn the Fierce. -/
+def beornTheFierceOracle : String :=
+  "Trample\nOther Bears you control get +2/+2.\nAt the beginning of combat on your turn, put a trample counter on up to one target creature you control. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards."
+
+def beornTheFierceDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Beorn the Fierce",
+    .manaCost [.generic 3, .mono .green, .mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .bear,
+    .subtype .shapeshifter,
+    .subtype .warrior,
+    .power 6,
+    .toughness 6
+  ] ++ (parseOracleParts (name := "Beorn the Fierce") beornTheFierceOracle).get!
+
+#guard beornTheFierceDefinition == .card [
+  .name "Beorn the Fierce",
+  .manaCost [.generic 3, .mono .green, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .bear,
+  .subtype .shapeshifter,
+  .subtype .warrior,
+  .power 6,
+  .toughness 6,
+  .ability (.keyword .trample),
+  .ability (.static (.addPower
+    (.intersection [
+      .not .this,
+      .zone .battlefield,
+      .cardType .creature,
+      .subtype .bear,
+      .controlled (.controller .this)])
+    (.int 2))),
+  .ability (.static (.addToughness
+    (.intersection [
+      .not .this,
+      .zone .battlefield,
+      .cardType .creature,
+      .subtype .bear,
+      .controlled (.controller .this)])
+    (.int 2))),
+  .ability (.triggered
+    (.combatStart (.controller .this))
+    (.sequence [
+      .putCounter
+        (.targets 1 (.range (.int 0) (.int 1))
+          (.intersection [
+            .zone .battlefield,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        .trample
+        (.int 1),
+      .continuous
+        [.gainSubtype (.targetReference 1) .bear]
+        .endOfGame,
+      .if
+        (.greaterOrEqual
+          (.count
+            (.intersection [
+              .zone .battlefield,
+              .subtype .bear,
+              .controlled (.controller .this)]))
+          (.int 3))
+        [.draw (.controller .this) (.int 2)]]))]
+
 def beornTheFierce : CardDef :=
-  legendaryCreature "Beorn the Fierce" (ManaCost.ofGenericAndColors 3 [.green, .green]) #["Bear", "Shapeshifter", "Warrior"] 6 6 (oracleText := "Trample\nOther Bears you control get +2/+2.\nAt the beginning of combat on your turn, put a trample counter on up to one target creature you control. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards.")
-    (keywords := Keyword.trample)
-    (staticAbilities := #[.otherCreaturesGet #["Bear"] 2 2])
-    (triggeredAbilities := #[.onYourBeginCombatTrampleCounterBecomeBear])
+  beornTheFierceDefinition.toCardDef (oracleText := beornTheFierceOracle)
+
+#guard beornTheFierce.oracleText == beornTheFierceOracle
+#guard beornTheFierce.keywords.trample
+#guard beornTheFierce.staticAbilities == #[.otherCreaturesGet #["Bear"] 2 2]
+#guard beornTheFierce.triggeredAbilities == #[.onYourBeginCombatTrampleCounterBecomeBear]
+#guard beornTheFierce.manaCost == ManaCost.ofGenericAndColors 3 [.green, .green]
+#guard beornTheFierce.supertypes == #[.legendary]
+#guard beornTheFierce.subtypes == #["Bear", "Shapeshifter", "Warrior"]
+#guard beornTheFierce.power == some 6 && beornTheFierce.toughness == some 6
 
 /-- Gatherer Oracle text for Bifur, Melodic Rider. -/
 def bifurMelodicRiderOracle : String :=
