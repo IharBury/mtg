@@ -1329,5 +1329,60 @@ open OracleParts
 #guard parseOracleParts (name := "Belladonna Took")
   "Whenever a creature you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control." ==
   none
+#guard parseOracleParts (name := "Bifur, Melodic Rider")
+  "Whenever Bifur enters or attacks, put a +1/+1 counter on target creature." ==
+  some [
+    .ability (.triggered
+      (.or (.enter .this) (.attack .this .all))
+      (.putCounter
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne 1))]
+#guard parseOracleParts (name := "Bifur, Melodic Rider")
+  "As long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time." ==
+  some [
+    .ability (.static (.if (.enduringStory (.controller .this)) [
+      .extraTrigger (.intersection [
+        .permanent, .subtype .dwarf, .controlled (.controller .this)])]))]
+#guard parseOracleParts (name := "Bifur, Melodic Rider")
+  "As long as you have an enduring story, if a triggered ability of a Dwarf triggers, that ability triggers an additional time." ==
+  none
+#guard parseOracleParts (name := "Bilbo, Thief in the Night")
+  "Spells you cast from anywhere other than your hand cost {1} less to cast." ==
+  some [
+    .ability (.static (.reduceCost
+      (.intersection [
+        .spell,
+        .controlled (.controller .this),
+        .not (.castFromZone .hand)])
+      [.mana [.generic 1]]))]
+#guard parseOracleParts (name := "Bilbo, Thief in the Night")
+  "Spells you cast from your hand cost {1} less to cast." == none
+#guard parseOracleParts (name := "Bilbo, Thief in the Night")
+  "Whenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead." ==
+  some [
+    .ability (.triggered
+      (.attack .this .all)
+      (.sequence [
+        .actionId 1
+          (.mayCast
+            (.controller .this)
+            (.intersection [
+              .inGraveyard,
+              .owner (.controller .this),
+              .union [
+                .cardType .artifact,
+                .cardType .instant,
+                .cardType .sorcery]])),
+        .continuous
+          [.replace
+            (.putToGraveyard
+              (.intersection [
+                .wasObjectOfAction 1,
+                .union [.cardType .instant, .cardType .sorcery]]))
+            [.exile .replacingObject]]
+          .endOfTurn]))]
+#guard parseOracleParts (name := "Bilbo, Thief in the Night")
+  "Whenever Bilbo attacks, you may cast an artifact spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead." ==
+  none
 
 end Mtg.Engine

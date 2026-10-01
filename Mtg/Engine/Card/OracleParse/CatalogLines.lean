@@ -884,10 +884,86 @@ def parseEnchantedLosesAbilitiesDoesntUntap (line : String) : Option (List CardP
       .ability (.static (.doesntUntap (.hostOf .this)))]
   else none
 
+/-- `Whenever <this> enters or attacks, put a +1/+1 counter on target creature.`
+The entering or attacking object is this card. The creature is target `n`. -/
+def parseEnterOrAttackPlusOne (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (triggerSelfEffect? cardName "whenever" (normLine line) " enters or attacks, ").bind
+    (parsePutPlusOneOnTarget · n) |>.map fun (action, n') =>
+      (.ability (.triggered (.or (.enter .this) (.attack .this .all)) action), n')
+
+/-- `As long as you have an enduring story, if a triggered ability of a <subtype> you control triggers, that ability triggers an additional time.`
+The source is a permanent of that subtype this object's controller controls. -/
+def parseExtraTriggerIfEnduringStory (line : String) : Option CardPart :=
+  (after? (normLine line)
+      "as long as you have an enduring story, if a triggered ability of ").bind fun rest =>
+    (before? rest " triggers, that ability triggers an additional time").bind fun who =>
+      let (obj, controlled) := splitYouControl who
+      if !controlled then none
+      else
+        (dropArticle? obj).bind subtypeOfOracle? |>.map fun st =>
+          .ability (.static (.if (.enduringStory (.controller .this)) [
+            .extraTrigger (.intersection [.permanent, .subtype st, youControl])]))
+
+/-- `Spells you cast from anywhere other than your hand cost {N} less to cast.`
+`{N}` is generic mana and is not zero. Those spells are ones this object's
+controller casts. `castFromZone .hand` is that player's hand. -/
+def parseNotFromHandCostLess (line : String) : Option CardPart :=
+  (between? (normLine line)
+      "spells you cast from anywhere other than your hand cost "
+      " less to cast").bind positiveGeneric? |>.map fun k =>
+    .ability (.static (.reduceCost
+      (.intersection [
+        .spell,
+        youControl,
+        .not (.castFromZone .hand)])
+      [.mana [.generic k]]))
+
+/-- An artifact, instant, or sorcery card in this object's controller's graveyard. -/
+def artifactInstantOrSorceryInYourGraveyard : Selector :=
+  .intersection [
+    .inGraveyard,
+    .owner (.controller .this),
+    .union [.cardType .artifact, .cardType .instant, .cardType .sorcery]]
+
+/-- `Whenever <this> attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead.`
+The cast is action `n` and pays that spell's cost. An instant or sorcery
+that was that action is exiled instead of being put into a graveyard.
+The replacement lasts until end of turn, which covers the spell resolving
+after this ability. -/
+def parseAttackMayCastFromGraveyard (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match sentences line with
+  | [cast, exile] =>
+    match triggerSelfEffect? cardName "whenever" (normSentence cast) " attacks, " with
+    | some effect =>
+      if sentenceIs effect
+          "you may cast an artifact, instant, or sorcery spell from your graveyard" &&
+          sentenceIs exile
+            "if an instant or sorcery spell cast this way would be put into your graveyard, exile it instead" then
+        some (
+          .ability (.triggered (.attack .this .all) (.sequence [
+            .actionId n
+              (.mayCast (.controller .this) artifactInstantOrSorceryInYourGraveyard),
+            .continuous
+              [.replace
+                (.putToGraveyard
+                  (.intersection [
+                    .wasObjectOfAction n,
+                    .union [.cardType .instant, .cardType .sorcery]]))
+                [.exile .replacingObject]]
+              .endOfTurn])),
+          n + 1)
+      else none
+    | none => none
+  | _ => none
+
 /-- Static and cost lines of a catalog card, before its triggers. -/
 private def parseCatalogLineStatic (cardName line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  (parseEnchantedLosesAbilitiesDoesntUntap line).map (·, n) <|>
+  (parseExtraTriggerIfEnduringStory line).map ([·], n) <|>
+    (parseNotFromHandCostLess line).map ([·], n) <|>
+    (parseEnchantedLosesAbilitiesDoesntUntap line).map (·, n) <|>
     (parseMayPlayLandsFromGraveyard line).map ([·], n) <|>
     (parseKeywordsThenWard line).map (·, n) <|>
     (parseEntersGreaterThanSelfCounter cardName line).map ([·], n) <|>
@@ -912,7 +988,9 @@ private def parseCatalogLineStatic (cardName line : String) (n : Nat) :
 /-- Triggered, activated, and spell lines of a catalog card. -/
 private def parseCatalogLineRest (cardName line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  parseChapter cardName line n <|>
+  (parseEnterOrAttackPlusOne cardName line n).map (fun (p, n') => ([p], n')) <|>
+    (parseAttackMayCastFromGraveyard cardName line n).map (fun (p, n') => ([p], n')) <|>
+    parseChapter cardName line n <|>
     (parseCatalogTriggered cardName line n).map (fun (p, n') => ([p], n')) <|>
     parseCatalogActivated cardName line n <|>
     (parseCatalogStaticGets cardName line).map (·, n) <|>

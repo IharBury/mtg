@@ -83,6 +83,7 @@ def collectSelector : Selector → List Nat × List Nat
   | .cardType _ | .hasCounter _ | .subtype _ | .supertype _ => ([], [])
   | .keyword k | .keywordAbility k => collectKeyword k
   | .powerAtLeast v | .powerAtMost v | .manaValueAtMost v => collectValue v
+  | .castFromZone _ => ([], [])
   | .wasObjectOfAction n | .wasCreatedByAction n | .affectedByAction n
   | .hasCreatureTypeChosenByAction n =>
     ([n], [])
@@ -182,7 +183,8 @@ def collectEffect : ContinuousEffect → List Nat × List Nat
   | .setBasePower s v | .setBaseToughness s v | .setPower s v | .setToughness s v
   | .addPower s v | .addToughness s v | .increaseLandPlayLimit s v =>
     appendIds [collectSelector s, collectValue v]
-  | .gainType s _ | .gainSubtype s _ | .gainAllSubtypes s _ | .doesntUntap s | .removeAllAbilities s =>
+  | .gainType s _ | .gainSubtype s _ | .gainAllSubtypes s _ | .doesntUntap s | .removeAllAbilities s
+  | .extraTrigger s =>
     collectSelector s
   | .canBeCastAsThoughWithFlashIf s c => appendIds [collectSelector s, collectCondition c]
 
@@ -212,7 +214,8 @@ def collectAction : CardAction → List Nat × List Nat
   | .ifElse c a b =>
     appendIds [collectCondition c, appendIds (a.map collectAction), appendIds (b.map collectAction)]
   | .optional who action => appendIds [collectSelector who, collectAction action]
-  | .attach a b | .copyWithNewTargets a b | .fight a b | .dealDamageEqualToPower a b =>
+  | .attach a b | .copyWithNewTargets a b | .fight a b | .dealDamageEqualToPower a b
+  | .mayCast a b =>
     appendIds [collectSelector a, collectSelector b]
   | .chooseModeRestricted who modes => appendIds [collectSelector who, collectModes modes]
   | .counter s => collectSelector s
@@ -328,6 +331,7 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .topOfLibrary s v => .topOfLibrary (mapSelector m s) (mapValue m v)
   | .hasCreatureTypeChosenByAction n => .hasCreatureTypeChosenByAction (m.action n)
   | .manaValueAtMost v => .manaValueAtMost (mapValue m v)
+  | .castFromZone z => .castFromZone z
 
 def mapTriggers (m : IdMaps) : List Trigger → List Trigger
   | [] => []
@@ -499,6 +503,7 @@ def mapEffect (m : IdMaps) : ContinuousEffect → ContinuousEffect
   | .cantAttackUnlessPays a b cs =>
     .cantAttackUnlessPays (mapSelector m a) (mapSelector m b) (mapCosts m cs)
   | .removeAllAbilities s => .removeAllAbilities (mapSelector m s)
+  | .extraTrigger s => .extraTrigger (mapSelector m s)
 
 def mapActions (m : IdMaps) : List CardAction → List CardAction
   | [] => []
@@ -581,6 +586,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .lookAt s => .lookAt (mapSelector m s)
   | .putOnLibraryBottomInRandomOrder s => .putOnLibraryBottomInRandomOrder (mapSelector m s)
   | .chooseCreatureType s => .chooseCreatureType (mapSelector m s)
+  | .mayCast a b => .mayCast (mapSelector m a) (mapSelector m b)
 
 end
 

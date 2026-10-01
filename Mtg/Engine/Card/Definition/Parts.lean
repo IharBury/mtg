@@ -207,6 +207,10 @@ inductive ContinuousEffect where
   spell or ability applies it until end of turn to the objects that match
   when it resolves (CR 611.2a / 611.2c). -/
   | removeAllAbilities : Selector → ContinuousEffect
+  /-- If a triggered ability of an object matching the selector triggers,
+  that ability triggers an additional time. The selector is the source of
+  the ability, not the ability itself. -/
+  | extraTrigger : Selector → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -364,6 +368,10 @@ inductive CardAction where
   Number it with `actionId` so `Selector.hasCreatureTypeChosenByAction` can
   refer to the choice. -/
   | chooseCreatureType : Selector → CardAction
+  /-- The selected player may cast one spell from among the selected cards,
+  paying its cost (CR 601.2 / 608.2g). `wasObjectOfAction` of an `actionId`
+  around this action is the spell that was cast. -/
+  | mayCast : Selector → Selector → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token

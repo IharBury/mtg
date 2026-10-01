@@ -5648,11 +5648,54 @@ def beornTheFierce : CardDef :=
     (staticAbilities := #[.otherCreaturesGet #["Bear"] 2 2])
     (triggeredAbilities := #[.onYourBeginCombatTrampleCounterBecomeBear])
 
+/-- Gatherer Oracle text for Bifur, Melodic Rider. -/
+def bifurMelodicRiderOracle : String :=
+  "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nWhenever Bifur enters or attacks, put a +1/+1 counter on target creature.\nAs long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time."
+
+def bifurMelodicRiderDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Bifur, Melodic Rider",
+    .manaCost [.generic 4, .hybrid .red .white, .hybrid .red .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .bard,
+    .power 4,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Bifur, Melodic Rider") bifurMelodicRiderOracle).get!
+
+#guard bifurMelodicRiderDefinition == .card [
+  .name "Bifur, Melodic Rider",
+  .manaCost [.generic 4, .hybrid .red .white, .hybrid .red .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .bard,
+  .power 4,
+  .toughness 5,
+  .ability (.keyword .storied),
+  .ability (.triggered
+    (.or (.enter .this) (.attack .this .all))
+    (.putCounter
+      (.target 1 (.intersection [.permanent, .cardType .creature]))
+      .plusOnePlusOne 1)),
+  .ability (.static (.if (.enduringStory (.controller .this)) [
+    .extraTrigger (.intersection [
+      .permanent,
+      .subtype .dwarf,
+      .controlled (.controller .this)])]))]
+
 def bifurMelodicRider : CardDef :=
-  legendaryCreature "Bifur, Melodic Rider" (ManaCost.ofGenericAndHybrids 4 .red .white 2) #["Dwarf", "Bard"] 4 5 (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nWhenever Bifur enters or attacks, put a +1/+1 counter on target creature.\nAs long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time.")
-    (keywords := Keyword.storied)
-    (staticAbilities := #[.extraTriggerIfEnduringStorySubtype "Dwarf"])
-    (triggeredAbilities := #[.onEnterOrAttackPlusOneOnCreature])
+  bifurMelodicRiderDefinition.toCardDef (oracleText := bifurMelodicRiderOracle)
+
+#guard bifurMelodicRider.oracleText == bifurMelodicRiderOracle
+#guard bifurMelodicRider.keywords.storied
+#guard bifurMelodicRider.staticAbilities == #[.extraTriggerIfEnduringStorySubtype "Dwarf"]
+#guard bifurMelodicRider.triggeredAbilities == #[.onEnterOrAttackPlusOneOnCreature]
+#guard bifurMelodicRider.manaCost == ManaCost.ofGenericAndHybrids 4 .red .white 2
+#guard bifurMelodicRider.supertypes == #[.legendary]
+#guard bifurMelodicRider.subtypes == #["Dwarf", "Bard"]
+#guard bifurMelodicRider.power == some 4 && bifurMelodicRider.toughness == some 5
 
 /-- Oracle text for Bilbo's Gambit. -/
 def bilboSGambitOracle : String :=
@@ -5684,11 +5727,71 @@ def bilboSGambit : CardDef :=
 #guard bilboSGambit.manaCost == ManaCost.ofGenericAndColor 1 .white
 #guard bilboSGambit.types == #[.instant]
 
+/-- Gatherer Oracle text for Bilbo, Thief in the Night. -/
+def bilboThiefInTheNightOracle : String :=
+  "Spells you cast from anywhere other than your hand cost {1} less to cast.\nWhenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead."
+
+def bilboThiefInTheNightDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Bilbo, Thief in the Night",
+    .manaCost [.generic 1, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .rogue,
+    .power 2,
+    .toughness 2
+  ] ++ (parseOracleParts (name := "Bilbo, Thief in the Night") bilboThiefInTheNightOracle).get!
+
+#guard bilboThiefInTheNightDefinition == .card [
+  .name "Bilbo, Thief in the Night",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .rogue,
+  .power 2,
+  .toughness 2,
+  .ability (.static (.reduceCost
+    (.intersection [
+      .spell,
+      .controlled (.controller .this),
+      .not (.castFromZone .hand)])
+    [.mana [.generic 1]])),
+  .ability (.triggered
+    (.attack .this .all)
+    (.sequence [
+      .actionId 1
+        (.mayCast
+          (.controller .this)
+          (.intersection [
+            .inGraveyard,
+            .owner (.controller .this),
+            .union [
+              .cardType .artifact,
+              .cardType .instant,
+              .cardType .sorcery]])),
+      .continuous
+        [.replace
+          (.putToGraveyard
+            (.intersection [
+              .wasObjectOfAction 1,
+              .union [.cardType .instant, .cardType .sorcery]]))
+          [.exile .replacingObject]]
+        .endOfTurn]))]
+
 def bilboThiefInTheNight : CardDef :=
-  let c :=
-    legendaryCreature "Bilbo, Thief in the Night" (ManaCost.ofGenericAndColor 1 .blue) #["Halfling", "Rogue"] 2 2 (oracleText := "Spells you cast from anywhere other than your hand cost {1} less to cast.\nWhenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead.")
-      (triggeredAbilities := #[.onAttackCastFromGyArtifactInstantSorcery])
-  { c with costReductionNotFromHand := 1 }
+  bilboThiefInTheNightDefinition.toCardDef (oracleText := bilboThiefInTheNightOracle)
+
+#guard bilboThiefInTheNight.oracleText == bilboThiefInTheNightOracle
+#guard bilboThiefInTheNight.costReductionNotFromHand == 1
+#guard bilboThiefInTheNight.triggeredAbilities == #[.onAttackCastFromGyArtifactInstantSorcery]
+#guard bilboThiefInTheNight.staticAbilities == #[]
+#guard bilboThiefInTheNight.keywords == Keywords.none
+#guard bilboThiefInTheNight.manaCost == ManaCost.ofGenericAndColor 1 .blue
+#guard bilboThiefInTheNight.supertypes == #[.legendary]
+#guard bilboThiefInTheNight.subtypes == #["Halfling", "Rogue"]
+#guard bilboThiefInTheNight.power == some 2 && bilboThiefInTheNight.toughness == some 2
 
 def bolgOfTheNorth : CardDef :=
   legendaryCreature "Bolg of the North" (ManaCost.ofGenericAndColors 3 [.black, .red]) #["Goblin", "Soldier"] 5 5 (oracleText := "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")

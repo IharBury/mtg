@@ -402,6 +402,16 @@ Currently recognized:
   `you` is this object's controller. `N` is a positive generic cost.
 - `<this> doesn't untap during your untap step unless you have an enduring story.`
   `<this>` is this card. `your` is its controller (CR 502.3).
+- `Whenever <this> enters or attacks, put a +1/+1 counter on target creature.`
+  The entering or attacking object is this card. The creature is one target.
+- `As long as you have an enduring story, if a triggered ability of a <subtype> you control triggers, that ability triggers an additional time.`
+  The source is a permanent of that subtype this object's controller controls.
+- `Spells you cast from anywhere other than your hand cost {N} less to cast.`
+  `{N}` is generic mana and is not zero. Those spells are ones this object's
+  controller casts from a zone other than that player's hand.
+- `Whenever <this> attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead.`
+  One spell, paying its cost. An instant or sorcery cast by that action is
+  exiled instead of being put into a graveyard, until end of turn.
 - `Whenever <this> or another nontoken <subtype> you control enters, create a <P>/<T> <color> <subtype> creature token.`
   `<this>` is this card. `another` excludes this object. One token is created.
 - `{cost}, Discard a card: Draw a card.`

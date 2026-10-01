@@ -885,6 +885,29 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
             CardAction.leftoverAttachTargetEquipment? action then
           some (TriggeredAbility.onWatch Effect.watchVillainAttachEquipment)
         else none
+  | .triggered (.attack .this .all)
+      (.sequence [
+        .actionId id (.mayCast who among),
+        .continuous
+          [.replace
+            (.putToGraveyard
+              (.intersection [
+                .wasObjectOfAction id',
+                .union [.cardType .instant, .cardType .sorcery]]))
+            [.exile .replacingObject]]
+          .endOfTurn]) =>
+    -- An instant or sorcery cast from the graveyard this way is exiled
+    -- instead of being put into its owner's graveyard.
+    if id == id' && who == .controller .this &&
+        among == .intersection [
+          .inGraveyard,
+          .owner (.controller .this),
+          .union [
+            .cardType .artifact,
+            .cardType .instant,
+            .cardType .sorcery]] then
+      some TriggeredAbility.onAttackCastFromGyArtifactInstantSorcery
+    else none
   | .triggered (.attack .this .all) action =>
     if CardAction.leftoverDamageEqualTreasures? action then
       some TriggeredAbility.onAttackDamageEqualTreasures
@@ -968,7 +991,13 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.or (.enter .this) (.attack .this .all)) action =>
     if CardAction.leftoverPlusOneEachOtherGainLife? action then
       some TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife
-    else none
+    else
+      match action with
+      | .putCounter sel .plusOnePlusOne 1 =>
+        if sel.toTargetKind == .creature then
+          some TriggeredAbility.onEnterOrAttackPlusOneOnCreature
+        else none
+      | _ => none
   | .triggered (.attackSimultaneously among dest preds) action =>
     if dest == .player && among.shape.sameController &&
         among.shape.types.eqTypes [.creature] &&

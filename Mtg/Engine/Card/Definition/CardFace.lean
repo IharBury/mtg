@@ -36,6 +36,9 @@ structure CardFace where
   control with flying. -/
   costReductionEqualFlyingPower : Bool := false
   costReductionIfYouControl : Option (Nat × String) := none
+  /-- Spells this object's controller casts from anywhere other than their
+  hand cost this much generic mana less. -/
+  costReductionNotFromHand : Nat := 0
   additionalCostSacrificeArtifactOrCreature : Bool := false
   /-- Additional cost: sacrifice a creature. -/
   additionalCostSacrificeCreature : Bool := false
@@ -498,6 +501,19 @@ def addEquipmentCostReduction (b : CardFace) (k : Nat) : CardFace :=
             { ab with
               costReductionPerEquipment := ab.costReductionPerEquipment + k } }
 
+/-- `extraTrigger` of one subtype of permanent this object's controller controls. -/
+def extraTriggerSubtypeYouControl? : List ContinuousEffect → Option String
+  | [.extraTrigger (.intersection [.permanent, .subtype st, ctl])] =>
+    if ctl == .controlled (.controller .this) then some st.toString else none
+  | _ => none
+
+/-- Spells this object's controller casts from anywhere other than their hand. -/
+def spellsYouCastNotFromHand (who : Selector) : Bool :=
+  who == .intersection [
+    .spell,
+    .controlled (.controller .this),
+    .not (.castFromZone .hand)]
+
 /-- Creatures can't attack this object's controller unless their controller
 pays `{n}` for each. Zero is not a cost. -/
 def attackTaxIfEnduringStory? : List ContinuousEffect → Option Nat
@@ -736,7 +752,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
                 staticAbilities :=
                   b.staticAbilities.push
                     (.creaturesCantAttackYouUnlessPayIfEnduringStory n) }
-            | none => b
+            | none =>
+              match extraTriggerSubtypeYouControl? inners with
+              | some st =>
+                { b with
+                  staticAbilities :=
+                    b.staticAbilities.push (.extraTriggerIfEnduringStorySubtype st) }
+              | none => b
     else b
   | .if
       (.and
@@ -868,6 +890,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .cantAttackUnlessPays _ _ _ => b
   | .removeAllAbilities who =>
     { b with removesAllAbilitiesFrom := b.removesAllAbilitiesFrom.push who }
+  | .extraTrigger _ => b
   | .alternativeCost _ _ => b
   | .additionalCost _ cs =>
     { b with
@@ -904,15 +927,20 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         | _ => b
       | _, _ => b
   | .reduceCost who costs =>
-    match leftoverEquipAbilitiesTargetingThisCostLess? who costs with
-    | some n =>
+    if spellsYouCastNotFromHand who then
       { b with
-        staticAbilities :=
-          b.staticAbilities.push (.equipAbilitiesTargetingThisCostLess n) }
-    | none =>
-      { b with
-        costReductionIfTargetTapped :=
-          b.costReductionIfTargetTapped + ManaCost.manaValue (Cost.manaCost costs) }
+        costReductionNotFromHand :=
+          b.costReductionNotFromHand + ManaCost.manaValue (Cost.manaCost costs) }
+    else
+      match leftoverEquipAbilitiesTargetingThisCostLess? who costs with
+      | some n =>
+        { b with
+          staticAbilities :=
+            b.staticAbilities.push (.equipAbilitiesTargetingThisCostLess n) }
+      | none =>
+        { b with
+          costReductionIfTargetTapped :=
+            b.costReductionIfTargetTapped + ManaCost.manaValue (Cost.manaCost costs) }
 
 def applyAbility (b : CardFace) : Ability → CardFace
   | .keyword (.crew n) =>
@@ -1212,6 +1240,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       costReductionIfCreatureDied := b.costReductionIfCreatureDied
       costReductionEqualFlyingPower := b.costReductionEqualFlyingPower
       costReductionIfYouControl := b.costReductionIfYouControl
+      costReductionNotFromHand := b.costReductionNotFromHand
       additionalCostSacrificeArtifactOrCreature :=
         b.additionalCostSacrificeArtifactOrCreature
       additionalCostSacrificeCreature := b.additionalCostSacrificeCreature

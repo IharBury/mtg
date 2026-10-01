@@ -358,6 +358,18 @@ inductive Range where
   | from : Value → Range
 deriving Repr, Inhabited, BEq
 
+/-- A zone named in Oracle text, without a player (CR 400.1).
+`your hand` is the hand of this object's controller. -/
+inductive ZoneKind where
+  | library
+  | hand
+  | battlefield
+  | graveyard
+  | stack
+  | exile
+  | command
+deriving Repr, Inhabited, BEq
+
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
 inductive Selector where
   /-- This spell or ability (CR 113.7). -/
@@ -478,6 +490,10 @@ inductive Selector where
   | hasCreatureTypeChosenByAction : Nat → Selector
   /-- Objects whose mana value is at most this value (CR 202.3). -/
   | manaValueAtMost : Value → Selector
+  /-- This spell was cast from the named zone (CR 601.2).
+  `.hand` is “from your hand”. `.not (.castFromZone .hand)` is “from
+  anywhere other than your hand”. -/
+  | castFromZone : ZoneKind → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
