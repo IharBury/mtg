@@ -570,15 +570,21 @@ def printedStaticApplied? (b : CardFace) : ContinuousEffect → Option CardFace
           [.zone .graveyard, .cardType .land, .owner (.controller .this)] then
       some { b with staticAbilities := b.staticAbilities.push .mayPlayLandsFromGraveyard }
     else none
-  | .if (.targetsIncludeAny .this among) [.reduceCost .this [.mana [.generic n]]] =>
-    match among, b.activatedAbilities.back? with
-    | .intersection [.zone .battlefield, .cardType .creature, .powerAtMost (.int k)], some ab =>
+  | .if (.any (.intersection [
+        .zone .battlefield,
+        .cardType .creature,
+        .powerAtMost (.int k),
+        .isTargetOf .this]))
+      [.reduceCost .this [.mana [.generic n]]] =>
+    match b.activatedAbilities.back? with
+    | some ab =>
       if n != 0 then
         some { b with
           activatedAbilities :=
-            b.activatedAbilities.pop.push { ab with costReductionIfTargetPowerAtMost := some (n, k) } }
+            b.activatedAbilities.pop.push
+              { ab with costReductionIfTargetPowerAtMost := some (n, k) } }
       else none
-    | _, _ => none
+    | none => none
   | _ => none
 
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
@@ -662,7 +668,6 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
                           ab.costReductionIfYouControlLegendary + n } })
               b
           else applyIfShape b among.shape inners
-  | .if (.targetsIncludeAny _ among) inners => applyIfShape b among.shape inners
   | .if (.anySubtype among st) inners =>
     match inners with
     | [.increaseLandPlayLimit who (Value.nat 1)] =>

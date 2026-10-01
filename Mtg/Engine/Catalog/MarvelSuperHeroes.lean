@@ -523,9 +523,12 @@ def colleenWingStreetSamuraiDefinition : TraditionalCardDefinition := .card <|
     (.triggered
       (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
       (.if
-        (.targetsIncludeAny
-          .this
-          (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))
+        (.any
+          (.intersection [
+            .zone .battlefield,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .isTargetOf .this]))
         [.putCounter (.source .this) .plusOnePlusOne 1, .scry (.controller .this) (.nat 1)]))]
 
 def colleenWingStreetSamurai : CardDef :=
@@ -764,12 +767,12 @@ def mockingbirdAceAgentDefinition : TraditionalCardDefinition := .card <|
       (.castSpell
         (.intersection [.spell, .controlled (.controller .this)]))
       (.if
-        (.targetsIncludeAny
-          .this
+        (.any
           (.intersection [
             .zone .battlefield,
             .cardType .creature,
-            .controlled (.controller .this)]))
+            .controlled (.controller .this),
+            .isTargetOf .this]))
         [.putCounter (.source .this) .plusOnePlusOne 1]))]
 
 def mockingbirdAceAgent : CardDef :=
@@ -1019,9 +1022,12 @@ def raftSecurityOfficerDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.static
       (.if
-        (.targetsIncludeAny
-          .this
-          (.intersection [.zone .battlefield, .cardType .creature, .powerAtMost (.int 3)]))
+        (.any
+          (.intersection [
+            .zone .battlefield,
+            .cardType .creature,
+            .powerAtMost (.int 3),
+            .isTargetOf .this]))
         [.reduceCost .this [.mana [.generic 1]]]))]
 
 def raftSecurityOfficer : CardDef :=
@@ -1413,12 +1419,12 @@ def depowerDefinition : TraditionalCardDefinition := .card <|
   .ability (
     .stackStatic
       (.if
-        (.targetsIncludeAny
-          .this
+        (.any
           (.intersection [
             .zone .battlefield,
             .cardType .creature,
-            .attacking .all]))
+            .attacking .all,
+            .isTargetOf .this]))
         [.reduceCost .this [.mana [.generic 2]]])),
   .actions [
     .continuous
@@ -3561,9 +3567,12 @@ def ironFistLivingWeaponDefinition : TraditionalCardDefinition := .card <|
     (.triggered
       (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
       (.if
-        (.targetsIncludeAny
-          .this
-          (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))
+        (.any
+          (.intersection [
+            .zone .battlefield,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .isTargetOf .this]))
         [
           .continuous
             [

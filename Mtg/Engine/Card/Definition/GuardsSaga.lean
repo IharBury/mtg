@@ -401,12 +401,14 @@ namespace Mtg.Engine
         .union [.cardType .instant, .cardType .sorcery],
         .controlled (.controller .this)]))
     (.if
-      (.targetsIncludeAny
+      (.any
         (.intersection [
-          .spell,
-          .union [.cardType .instant, .cardType .sorcery],
-          .controlled (.controller .this)])
-        (.union [.cardType .artifact, .cardType .land]))
+          .union [.cardType .artifact, .cardType .land],
+          .isTargetOf
+            (.intersection [
+              .spell,
+              .union [.cardType .instant, .cardType .sorcery],
+              .controlled (.controller .this)])]))
       [.putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility?.isNone
 
 #guard
@@ -679,9 +681,11 @@ namespace Mtg.Engine
   (Ability.triggered
     (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
     (.if
-      (.targetsIncludeAny
-        .this
-        (.intersection [.zone .battlefield, .cardType .creature]))
+      (.any
+        (.intersection [
+          .zone .battlefield,
+          .cardType .creature,
+          .isTargetOf .this]))
       [
         .continuous
           [

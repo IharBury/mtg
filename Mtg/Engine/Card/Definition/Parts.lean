@@ -15,11 +15,10 @@ namespace Mtg.Engine
 
 /-- A boolean check used by a conditional effect or action. -/
 inductive Condition where
-  /-- True when any object matching the selector exists. -/
+  /-- True when any object matching the selector exists. A target of
+  `src` that matches `among` is `any` of `among` intersected with
+  `isTargetOf src` (CR 115.1). -/
   | any : Selector → Condition
-  /-- True when any target of the first selector matches the second
-  (CR 115.1 / 601.2c). -/
-  | targetsIncludeAny : Selector → Selector → Condition
   /-- True when any object matching the selector has the given subtype
   (CR 205.3). -/
   | anySubtype : Selector → CardSubtype → Condition

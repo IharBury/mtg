@@ -476,6 +476,14 @@ def leftoverKeywordAbility? : Selector → Option Keyword
     | none => leftoverKeywordAbility? (.intersection fs)
   | _ => none
 
+/-- True when this selector includes an object that is a target of something
+(CR 115.1). -/
+def includesIsTargetOf : Selector → Bool
+  | .isTargetOf _ => true
+  | .intersection (f :: fs) =>
+    includesIsTargetOf f || includesIsTargetOf (.intersection fs)
+  | _ => false
+
 /-- True when this selector is a target of an argument of a numbered trigger. -/
 def leftoverIsTargetOfThisSpell? : Selector → Bool
   | .isTargetOf (.wasArgumentOfTrigger _ _) => true

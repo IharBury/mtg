@@ -121,7 +121,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
 - **Cost** — `mana` (including `ManaSymbol.x`), `life`, `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
-- **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
+- **Condition** — `any` (a target of `src` matching `among` is `any` of
+  `among` intersected with `isTargetOf src`), `anySubtype`, `didNotHappen`,
   `happened`, `timeToCastSorcery`,
   `turn`, `drawStep` (it is the selected player's draw step), `enduringStory`,
   `and`, `not`, `less`, `lessOrEqual`, `greater`,
@@ -205,7 +206,8 @@ is “whenever you discard” (Moonstone). The leftover exiles `Selector.wasArgu
 of that discard from the graveyard (that discarded card); any graveyard card stays uncompiled.
 `Selector.hasTarget` is “has a target matching …” (Fin Fang Foom: artifact or
 land). `CardAction.copyWithNewTargets` is who copies and what is copied (you,
-that spell). Intervening `targetsIncludeAny` without copy stays uncompiled.
+that spell). An intervening `any` of an `intersection` with `isTargetOf`,
+without copy, stays uncompiled.
 Justice’s bounce-watch leftover is `Trigger.returnToHand` of
 another nonland you control (tokens included). Put-to-graveyard leftovers stay
 uncompiled.
@@ -220,8 +222,8 @@ heal stay uncompiled. `Trigger.putCountersSimultaneously` is
 one or more counters of a kind on the selected objects at the same time
 (Beast: +1/+1 this turn). Storm’s leftover is `hasTarget` of a creature on the spell you cast, then
 flying on creatures that are `isTargetOf` argument 1 of that cast (`wasArgumentOfTrigger`).
-Treating the spell as those creatures stays uncompiled. Intervening
-`targetsIncludeAny` or flying on all creatures stays uncompiled. Storm’s
+Treating the spell as those creatures stays uncompiled. An intervening
+`any` of targets, or flying on all creatures, stays uncompiled. Storm’s
 flying restriction is
 `forbid` of attack-or-block, not attack alone.
 `Selector.keywordAbility` is a keyword ability of that keyword (Dwarven

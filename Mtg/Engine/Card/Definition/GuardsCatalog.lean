@@ -168,12 +168,12 @@ namespace Mtg.Engine
     .ability (
       .static
         (.if
-          (.targetsIncludeAny
-            .this
+          (.any
             (.intersection [
               .zone .battlefield,
               .cardType .creature,
-              .attacking .all]))
+              .attacking .all,
+              .isTargetOf .this]))
           [.reduceCost .this [.mana [.generic 2]]]))
   ]).toCardDef.costReductionIfTargetAttacking == 2
 

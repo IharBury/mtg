@@ -217,12 +217,12 @@ def magnificentEndCard : CardDef :=
   .ability (
     .stackStatic
       (.if
-        (.targetsIncludeAny
-          .this
+        (.any
           (.intersection [
             .zone .battlefield,
             .cardType .creature,
-            .tapped]))
+            .tapped,
+            .isTargetOf .this]))
         [.reduceCost .this [.mana [.generic 3]]])),
   .actions [
     .dealDamage
@@ -546,13 +546,13 @@ def uneasyPartingsCard : CardDef :=
   .ability (
     .stackStatic
       (.if
-        (.targetsIncludeAny
-          .this
+        (.any
           (.intersection [
             .zone .battlefield,
             .cardType .creature,
             .attacking .all,
-            .not .token]))
+            .not .token,
+            .isTargetOf .this]))
         [.reduceCost .this [.mana [.generic 1]]])),
   .actions [
     .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
