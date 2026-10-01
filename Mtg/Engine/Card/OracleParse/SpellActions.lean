@@ -34,7 +34,7 @@ def parseCantBeBlockedByPower (cardName : String) (line : String) : Option CardP
         (before? rest " or less").bind positiveCount |>.map fun p =>
           .ability (.static (.forbid (.block
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .powerAtMost (Value.int (p : Int))])
             .this)))
@@ -73,7 +73,7 @@ def parseExchangeControlSharingCardType (sentence : String) (n : Nat) :
               (.targetSet
                 n
                 r
-                (.intersection [.permanent, .not .land])
+                (.intersection [.zone .battlefield, .not .land])
                 [.shareCardType]),
             n + 1)
       | none => none
@@ -267,7 +267,7 @@ def parseReturnUpToOneFromYourGraveyard (sentence : String) (n : Nat) :
         (.returnToHand
           (.targets n (.range 0 1)
             (.intersection [
-              .inGraveyard,
+              .zone .graveyard,
               .cardType t,
               .owner (.controller .this)])),
          n + 1)
@@ -280,7 +280,7 @@ def parseSearchLegendaryCreatureToHand (sentence : String) (n : Nat) :
   if sentenceIs sentence
       "search your library for a legendary creature card, reveal it, put it into your hand, then shuffle" then
     some (searchRevealToHand n
-      (.intersection [.inLibrary, .cardType .creature, .supertype .legendary]))
+      (.intersection [.zone .library, .cardType .creature, .supertype .legendary]))
   else none
 
 /-- A parsed action that does not choose a new target. -/
@@ -396,14 +396,14 @@ def parseMillCards (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
 /-- Each creature an opponent of this object's controller controls. -/
 def eachOppCreature : Selector :=
   .intersection [
-    .permanent,
+    .zone .battlefield,
     .cardType .creature,
     .controlled (.opponent (.controller .this))]
 
 /-- Each creature that is not a Dragon. -/
 def eachNonDragonCreature : Selector :=
   .intersection [
-    .permanent, .cardType .creature, .not (.subtype .dragon)]
+    .zone .battlefield, .cardType .creature, .not (.subtype .dragon)]
 
 /-- `<this card> deals 1 damage to each creature your opponents control.`
 Also `… to each non-Dragon creature.` The source is this card. -/
@@ -421,10 +421,10 @@ def parseDealDamageToEach (cardName : String) (sentence : String) (n : Nat) :
           let dest :=
             if obj == "creature your opponents control" then some eachOppCreature
             else if obj == "non-dragon creature" then some eachNonDragonCreature
-            else if obj == "creature" then some (.intersection [.permanent, .cardType .creature])
+            else if obj == "creature" then some (.intersection [.zone .battlefield, .cardType .creature])
             else
               (between? obj "non-" " creature").bind subtypeOfOracle? |>.map fun st =>
-                .intersection [.permanent, .cardType .creature, .not (.subtype st)]
+                .intersection [.zone .battlefield, .cardType .creature, .not (.subtype st)]
           dest.map fun sel =>
             if opponents then
               (.sequence [.dealDamage .this sel (.nat amount),
@@ -469,7 +469,7 @@ def parseSentence (cardName sentence : String) (n : Nat) : Option (CardAction ×
 def eachOtherCreatureThanTarget (n : Nat) : Selector :=
   .intersection [
     .not (.targetReference n),
-    .permanent,
+    .zone .battlefield,
     .cardType .creature,
     youControl]
 
@@ -615,7 +615,7 @@ def parseExileAttackersSearchBasics (text : String) (n : Nat) :
         .actionId n
           (.exile
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .attacking .all,
               .controlled (.target n .player)])),
@@ -628,7 +628,7 @@ def parseExileAttackersSearchBasics (text : String) (n : Nat) :
                   (.targetReference n)
                   (.range (.nat 0) exiled)
                   (.intersection [
-                    .inLibrary,
+                    .zone .library,
                     .cardType .land,
                     .supertype .basic]))
                 [.tapped]])],
@@ -659,13 +659,13 @@ def parseLookAtTopExileFaceDownPlayIf (text : String) (n : Nat) :
                   [.if
                     (.any
                       (.intersection [
-                        .permanent,
+                        .zone .battlefield,
                         .subtype st,
                         youControl]))
                     [.canPlay
                       (.controller .this)
                       (.intersection [
-                        .inExile,
+                        .zone .exile,
                         .wasCreatedByAction exileId])]]
                   .endOfGame],
                 exileId + 1)
@@ -698,8 +698,8 @@ def parseVisionQuest (text : String) (n : Nat) : Option (List CardAction × Nat)
       some ([
         .playerSelectAction (.controller .this) (.range 1 1) [
           .searchLibraryThenShuffle (.controller .this)
-            (found (.union [.inLibrary, .inGraveyard]) :: enter),
-          .sequence (found .inGraveyard :: enter)]],
+            (found (.union [.zone .library, .zone .graveyard]) :: enter),
+          .sequence (found (.zone .graveyard) :: enter)]],
         n + 1)
     else none
   | _ => none

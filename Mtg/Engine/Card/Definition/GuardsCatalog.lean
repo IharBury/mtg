@@ -13,7 +13,7 @@ namespace Mtg.Engine
 #guard Selector.shape
   (.intersection [
     .not .this,
-    .permanent,
+    .zone .battlefield,
     .subtype .elf,
     .controlled (.controller .this)]) |>.anotherElfYouControl
 
@@ -23,7 +23,7 @@ namespace Mtg.Engine
       (.enter
         (.intersection [
           .not .this,
-          .permanent,
+          .zone .battlefield,
           .subtype .elf,
           .controlled (.controller .this)]))
       (.continuous [.addPower (.source .this) (Value.int 1),
@@ -56,7 +56,7 @@ namespace Mtg.Engine
   let action : CardAction :=
     .continuous
       [.addPower
-        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) (Value.int 3),
        .addToughness
         (.targetReference 1) (Value.int 3)]
       .endOfTurn
@@ -73,9 +73,9 @@ namespace Mtg.Engine
   let action : CardAction :=
     .continuous
       [.addPower
-        (.intersection [.permanent, .cardType .creature]) (Value.int (-4)),
+        (.intersection [.zone .battlefield, .cardType .creature]) (Value.int (-4)),
        .addToughness
-        (.intersection [.permanent, .cardType .creature]) (Value.int (-4))]
+        (.intersection [.zone .battlefield, .cardType .creature]) (Value.int (-4))]
       .endOfTurn
   action.toEffect == Effect.allCreaturesGet (-4) (-4)
 
@@ -103,7 +103,7 @@ namespace Mtg.Engine
           .this
           (.count
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .land,
               .controlled (.controller .this)])))),
     .ability
@@ -112,7 +112,7 @@ namespace Mtg.Engine
           .this
           (.count
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .land,
               .controlled (.controller .this)]))))
   ]).toCardDef.staticAbilities == #[.powerToughnessEqualLandsYouControl]
@@ -125,7 +125,7 @@ namespace Mtg.Engine
           .this
           (.count
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .land,
               .controlled (.controller .this)]))))
   ]).toCardDef.staticAbilities == #[]
@@ -138,7 +138,7 @@ namespace Mtg.Engine
           .this
           (.count
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)]))))
   ]).toCardDef.staticAbilities == #[.powerEqualCreaturesYouControl]
@@ -158,7 +158,7 @@ namespace Mtg.Engine
     .sequence [
       .continuous
         [.addPower
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int (-4))]
+          (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) (Value.int (-4))]
         .endOfTurn,
       .draw (.controller .this) 1]
   action.toEffect == Effect.pumpThenDraw (-4) 0
@@ -171,7 +171,7 @@ namespace Mtg.Engine
           (.targetsIncludeAny
             .this
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .attacking .all]))
           [.reduceCost .this [.mana [.generic 2]]]))
@@ -196,7 +196,7 @@ namespace Mtg.Engine
     Selector.shape
       (.intersection [
         .not .this,
-        .permanent,
+        .zone .battlefield,
         .subtype .elf,
         .controlled (.controller .this)])
   s.anotherSubtypeYouControl == some "Elf"
@@ -209,7 +209,7 @@ namespace Mtg.Engine
           (.any
             (.intersection [
               .not .this,
-              .permanent,
+              .zone .battlefield,
               .subtype .elf,
               .controlled (.controller .this)]))
           [.increaseLandPlayLimit (.controller .this) (Value.nat 1)]))
@@ -220,7 +220,7 @@ namespace Mtg.Engine
     (Ability.triggered
       (.enter
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .land,
           .controlled (.controller .this)]))
       (.sequence [
@@ -228,7 +228,7 @@ namespace Mtg.Engine
           (.target
             1
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)]))
           .plusOnePlusOne
@@ -245,7 +245,7 @@ namespace Mtg.Engine
       (.enter .this)
       (.continuous
         [.addPower
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 2)]
+          (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) (Value.int 2)]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterTargetGets 2 0
   | none => false
@@ -255,7 +255,7 @@ namespace Mtg.Engine
     (Ability.triggered
       (.enter .this)
       (.putCounter
-        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
         .plusOnePlusOne
         1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterPlusOneOnCreature
@@ -270,7 +270,7 @@ namespace Mtg.Engine
           (.target
             1
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .attacking .all]))
           (.keyword .firstStrike)]
@@ -299,7 +299,7 @@ namespace Mtg.Engine
         (.target
           1
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.opponent (.controller .this))])))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature
@@ -315,7 +315,7 @@ namespace Mtg.Engine
           (.target
             1
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)])),
         .untap (.targetReference 1)])).toTriggeredAbility? with
@@ -353,14 +353,14 @@ namespace Mtg.Engine
   ]).toCardDef.activatedAbilities[0]!.cost.sacrificeSource
 
 #guard Selector.basicLandInLibrary
-  (.intersection [.inLibrary, .cardType .land, .supertype .basic])
+  (.intersection [.zone .library, .cardType .land, .supertype .basic])
 
-#guard Selector.includesInLibrary .inLibrary
-#guard !Selector.includesInLibrary .inHand
-#guard !Selector.includesInLibrary .inExile
-#guard Selector.inHand != .inExile
-#guard (Selector.shape .inHand) == {}
-#guard (Selector.shape .inExile) == {}
+#guard Selector.includesInLibrary (.zone .library)
+#guard !Selector.includesInLibrary (.zone .hand)
+#guard !Selector.includesInLibrary (.zone .exile)
+#guard Selector.zone .hand != .zone .exile
+#guard (Selector.shape (.zone .hand)) == {}
+#guard (Selector.shape (.zone .exile)) == {}
 
 #guard
   let action : CardAction :=
@@ -372,7 +372,7 @@ namespace Mtg.Engine
             (.controller .this)
             (.range 1 1)
             (.intersection [
-              .inLibrary,
+              .zone .library,
               .cardType .land,
               .supertype .basic])),
         .reveal (.variable 1),
@@ -388,7 +388,7 @@ namespace Mtg.Engine
           (.selected
             (.controller .this)
             (.range 1 1)
-            (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
+            (.intersection [.zone .library, .cardType .land, .supertype .basic]))
           [.tapped]]
   action.toAbilityEffect == Effect.searchBasicLandTapped
 
@@ -402,7 +402,7 @@ namespace Mtg.Engine
             (.selected
               (.controller .this)
               (.range 1 1)
-              (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+              (.intersection [.zone .library, .cardType .land, .supertype .basic])),
           .actionId 1
             (.putOntoBattlefieldInState (.variable 1) [.tapped])],
       .optional (.controller .this)
@@ -422,7 +422,7 @@ namespace Mtg.Engine
             (.selected
               (.controller .this)
               (.range 1 1)
-              (.intersection [.inLibrary, .subtype .forest]))])).toTriggeredAbility? with
+              (.intersection [.zone .library, .subtype .forest]))])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterSearchForest
   | none => false
 
@@ -438,7 +438,7 @@ namespace Mtg.Engine
               (.controller .this)
               (.range 1 1)
               (.intersection [
-                .inLibrary,
+                .zone .library,
                 .cardType .land,
                 .supertype .basic])),
           .reveal (.variable 1),
@@ -451,7 +451,7 @@ namespace Mtg.Engine
   (TraditionalCardDefinition.card [
     .ability (.static (.if
       (.greaterOrEqual
-        (.count (.intersection [.inGraveyard, .owner (.controller .this)]))
+        (.count (.intersection [.zone .graveyard, .owner (.controller .this)]))
         7)
       [.addPower .this (Value.int 1), .addToughness .this (Value.int 1)]))
   ]).toCardDef.staticAbilities == #[.thresholdGets 1 1]
@@ -472,7 +472,7 @@ namespace Mtg.Engine
   (CardAction.sequence [
     .actionId 1 (.exile (.targets 1 (.range 2 2)
       (.intersection [
-        .permanent,
+        .zone .battlefield,
         .union [.cardType .creature, .cardType .land],
         .controlled (.controller .this)]))),
     .putOntoBattlefieldInState (.wasCreatedByAction 1)
@@ -496,7 +496,7 @@ namespace Mtg.Engine
                     (.controller .this)
                     (.range 1 1)
                     (.intersection [
-                      .inLibrary,
+                      .zone .library,
                       .cardType .land,
                       .supertype .basic])),
                 .reveal (.variable 1),
@@ -519,7 +519,7 @@ namespace Mtg.Engine
                 (.controller .this)
                 (.range 1 1)
                 (.intersection [
-                  .inLibrary,
+                  .zone .library,
                   .cardType .land,
                   .supertype .basic])),
             .reveal (.variable 1),
@@ -540,7 +540,7 @@ namespace Mtg.Engine
                   (.controller .this)
                   (.range 1 1)
                   (.intersection [
-                    .inLibrary,
+                    .zone .library,
                     .cardType .land,
                     .supertype .basic])),
               .reveal (.variable 1)],
@@ -550,7 +550,7 @@ namespace Mtg.Engine
 #guard Selector.toTargetKind
   (.intersection [
     .not .this,
-    .permanent,
+    .zone .battlefield,
     .cardType .creature,
     .controlled (.controller .this)])
   == .anotherCreatureYouControl
@@ -565,7 +565,7 @@ namespace Mtg.Engine
             1
             (.intersection [
               .not .this,
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)])),
         .if
@@ -582,7 +582,7 @@ namespace Mtg.Engine
       (.enter .this)
       (.sequence [
         .putCounter
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
           .plusOnePlusOne
           1,
         .if
@@ -597,7 +597,7 @@ namespace Mtg.Engine
       (.enter .this)
       (.sequence [
         .putCounter
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
           .plusOnePlusOne
           1,
         .if
@@ -611,7 +611,7 @@ namespace Mtg.Engine
     (.enter .this)
     (.sequence [
       .putCounter
-        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
         .plusOnePlusOne
         1,
       .if
@@ -623,7 +623,7 @@ namespace Mtg.Engine
     (.enter .this)
     (.sequence [
       .putCounter
-        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
         .plusOnePlusOne
         1,
       .if
@@ -667,7 +667,7 @@ namespace Mtg.Engine
       (.target
         1
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .subtype .elf,
           .controlled (.controller .this)]))
@@ -681,7 +681,7 @@ namespace Mtg.Engine
       (.target
         1
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .union [.subtype .goblin, .subtype .orc],
           .controlled (.controller .this)]))
@@ -701,7 +701,7 @@ namespace Mtg.Engine
         (.target
           1
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .subtype .elf,
             .controlled (.controller .this)]))
@@ -726,7 +726,7 @@ namespace Mtg.Engine
             (.selected
               (.controller .this)
               (.range 1 1)
-              (.intersection [.inLibrary, .subtype .halfling])),
+              (.intersection [.zone .library, .subtype .halfling])),
           .reveal (.variable 1),
           .returnToHand (.variable 1)])).toActivatedAbility? with
   | some ab =>
@@ -757,7 +757,7 @@ namespace Mtg.Engine
   action.toAbilityEffect == Effect.destroyTargetArtifactOrEnchantment
 
 #guard
-  let action : CardAction := .destroy (.target 1 .permanent)
+  let action : CardAction := .destroy (.target 1 (.zone .battlefield))
   action.toAbilityEffect == Effect.destroyTargetPermanent
 
 #guard
@@ -785,7 +785,7 @@ namespace Mtg.Engine
     (Ability.triggered
       (.enter
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .artifact,
           .controlled (.controller .this)]))
       (.draw (.controller .this) 1)).toTriggeredAbility? with
@@ -798,7 +798,7 @@ namespace Mtg.Engine
       (.enter
         (.intersection [
           .not .this,
-          .permanent,
+          .zone .battlefield,
           .cardType .artifact,
           .controlled (.controller .this)]))
       (.putCounter (.source .this) .plusOnePlusOne 1)).toTriggeredAbility? with
@@ -811,7 +811,7 @@ namespace Mtg.Engine
       (.attack .this .all)
       (.any
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this),
           .powerAtLeast (Value.int 4)]))
@@ -827,7 +827,7 @@ namespace Mtg.Engine
       (.if
         (.any
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this),
             .powerAtLeast (Value.int 4)]))
@@ -841,7 +841,7 @@ namespace Mtg.Engine
     (.if
       (.any
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this),
           .powerAtLeast (Value.int 4)]))
@@ -863,7 +863,7 @@ namespace Mtg.Engine
               1
               (.intersection [
                 .not .this,
-                .permanent,
+                .zone .battlefield,
                 .cardType .creature,
                 .controlled (.controller .this)])) (Value.int 2),
           .gainAbility (.targetReference 1) (.keyword .trample)]
@@ -879,12 +879,12 @@ namespace Mtg.Engine
         [
           .addPower
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)]) (Value.int 1),
           .gainAbility
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)])
             (.keyword .firstStrike)]
@@ -902,7 +902,7 @@ namespace Mtg.Engine
             (.variable 1)
             (.range 1 1)
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.variable 1)]))])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterEachPlayerSacrificesCreature
@@ -923,7 +923,7 @@ namespace Mtg.Engine
                   (.controller .this)
                   (.range 1 1)
                   (.intersection [
-                    .permanent,
+                    .zone .battlefield,
                     .cardType .artifact,
                     .controlled (.controller .this)])),
               .discard (.controller .this) 1])),
@@ -940,7 +940,7 @@ namespace Mtg.Engine
             [
               .sacrifice
                 (.intersection [
-                  .permanent,
+                  .zone .battlefield,
                   .cardType .artifact,
                   .controlled (.controller .this)]),
               .discard (.controller .this) 1])),
@@ -979,7 +979,7 @@ namespace Mtg.Engine
         (.target
           1
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this),
             .supertype .legendary])))).toTriggeredAbility? with
@@ -1011,13 +1011,13 @@ namespace Mtg.Engine
 
 #guard Selector.toTargetKind
   (.intersection [
-    .permanent,
+    .zone .battlefield,
     .union [.cardType .artifact, .cardType .land]])
   == .artifactOrLand
 
 #guard Selector.toTargetKind
   (.intersection [
-    .permanent,
+    .zone .battlefield,
     .cardType .creature,
     .powerAtLeast (Value.int 4)])
   == .creaturePowerAtLeast 4
@@ -1026,7 +1026,7 @@ namespace Mtg.Engine
   let action : CardAction :=
     .sequence [
       .tap
-        (.target 1 (.intersection [.permanent, .cardType .creature])),
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature])),
       .scry (.controller .this) 1,
       .draw (.controller .this) 1]
   action.toEffect == Effect.tapScryDraw 1 1
@@ -1045,7 +1045,7 @@ namespace Mtg.Engine
         (.target
           1
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .union [.cardType .artifact, .cardType .enchantment]])),
       .gainLife (.controller .this) 2]
   action.toEffect == Effect.destroyArtifactOrEnchantmentGainLife 2
@@ -1057,7 +1057,7 @@ namespace Mtg.Engine
         (.target
           1
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .union [.cardType .artifact, .cardType .land]])),
       .continuous
         [.forbid (.block (.not (.keyword .flying)) .all)]
@@ -1070,7 +1070,7 @@ namespace Mtg.Engine
       (.target
         1
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .powerAtLeast (Value.int 4)]))
   action.toEffect == Effect.destroyCreaturePowerAtLeast 4
@@ -1080,7 +1080,7 @@ namespace Mtg.Engine
     .continuous
       [
         .gainType
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
           .artifact,
         .gainAbility (.targetReference 1) (.keyword .indestructible)]
       .endOfTurn
@@ -1090,7 +1090,7 @@ namespace Mtg.Engine
   let action : CardAction :=
     .sequence [
       .putCounter
-        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
         .plusOnePlusOne
         1,
       .continuous
@@ -1109,7 +1109,7 @@ namespace Mtg.Engine
             1
             (.intersection [
               .not .this,
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)])) (Value.int 2),
         .gainAbility (.targetReference 1) (.keyword .hexproof)]
@@ -1121,7 +1121,7 @@ namespace Mtg.Engine
     (Ability.triggered
       (.attackSimultaneously
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)])
         .all
@@ -1135,7 +1135,7 @@ namespace Mtg.Engine
     (Ability.triggered
       (.attackSimultaneously
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .subtype .merfolk,
           .controlled (.controller .this)])
@@ -1149,7 +1149,7 @@ namespace Mtg.Engine
   (Ability.triggered
     (.attackSimultaneously
       (.intersection [
-        .permanent,
+        .zone .battlefield,
         .cardType .creature,
         .subtype .merfolk,
         .controlled (.controller .this)])
@@ -1161,7 +1161,7 @@ namespace Mtg.Engine
   (Ability.triggered
     (.attackSimultaneously
       (.intersection [
-        .permanent,
+        .zone .battlefield,
         .cardType .creature,
         .controlled (.controller .this)])
       .player
@@ -1173,7 +1173,7 @@ namespace Mtg.Engine
     (Ability.triggered
       (.attackSimultaneously
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)])
         .player
@@ -1184,7 +1184,7 @@ namespace Mtg.Engine
             (.target
               1
               (.intersection [
-                .permanent,
+                .zone .battlefield,
                 .cardType .creature,
                 .attacking .all,
                 .not (.keyword .flying)]))
@@ -1197,7 +1197,7 @@ namespace Mtg.Engine
   (Ability.triggered
     (.attackSimultaneously
       (.intersection [
-        .permanent,
+        .zone .battlefield,
         .cardType .creature,
         .controlled (.controller .this)])
       .player
@@ -1208,7 +1208,7 @@ namespace Mtg.Engine
           (.target
             1
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .attacking .all,
               .not (.keyword .flying)]))
@@ -1235,7 +1235,7 @@ namespace Mtg.Engine
           (.target
             1
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)])),
         .continuous
@@ -1250,13 +1250,13 @@ namespace Mtg.Engine
     .ability (.static (.addPower
           (.intersection [
             .not .this,
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this)]) (Value.int 1))),
     .ability (.static (.addToughness
           (.intersection [
             .not .this,
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this)]) (Value.int 1)))
   ]).toCardDef.staticAbilities == #[.otherCreaturesGet #[] 1 1]
@@ -1268,7 +1268,7 @@ namespace Mtg.Engine
         .canBeCastAsThoughWithFlashIf
           .this
           (.any (.intersection [
-            .permanent, .subtype .human, .controlled .caster]))))
+            .zone .battlefield, .subtype .human, .controlled .caster]))))
     ]).toCardDef
   card.flashIfYouControlSubtype == some "Human" && !card.keywords.flash
 
@@ -1282,7 +1282,7 @@ namespace Mtg.Engine
         (.target
           1
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this),
             .subtype .human])))).toActivatedAbility? with
@@ -1304,7 +1304,7 @@ namespace Mtg.Engine
               (.controller .this)
               (.range 1 1)
               (.intersection [
-                .inLibrary,
+                .zone .library,
                 .cardType .land,
                 .supertype .basic])),
           .reveal (.variable 1),
@@ -1321,7 +1321,7 @@ namespace Mtg.Engine
       (.attack .this .all)
       (.any
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this),
           .powerAtLeast (Value.int 4)]))
@@ -1330,7 +1330,7 @@ namespace Mtg.Engine
           .addPower (.source .this) (Value.int 1),
           .gainAbility
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)])
             (.keyword .trample)]
@@ -1344,7 +1344,7 @@ namespace Mtg.Engine
       .continuous
         [
           .gainAbility
-            (.target 1 (.intersection [.permanent, .cardType .creature]))
+            (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
             (.keyword .vigilance),
           .forbid
             (.block
@@ -1359,7 +1359,7 @@ namespace Mtg.Engine
       .continuous
         [
           .addPower
-            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
+            (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) (Value.int 3),
           .addToughness
             (.targetReference 1) (Value.int 1)]
         .endOfTurn,

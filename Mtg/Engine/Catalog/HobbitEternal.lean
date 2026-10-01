@@ -53,7 +53,7 @@ def mentorOfTheMeekDefinition : TraditionalCardDefinition := .card <|
         (.intersection
           [
             .not .this,
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this),
             .powerAtMost (.int 2)]))
@@ -104,7 +104,7 @@ def errandRiderOfGondorDefinition : TraditionalCardDefinition := .card <|
               (.any
                 (.intersection
                   [
-                    .permanent,
+                    .zone .battlefield,
                     .cardType .creature,
                     .supertype .legendary,
                     .controlled (.controller .this)])))
@@ -113,7 +113,7 @@ def errandRiderOfGondorDefinition : TraditionalCardDefinition := .card <|
                 (.selected
                   (.controller .this)
                   (.range (.nat 1) (.nat 1))
-                  (.intersection [.inHand, .owner (.controller .this)]))]]))]
+                  (.intersection [.zone .hand, .owner (.controller .this)]))]]))]
 
 def errandRiderOfGondor : CardDef :=
   errandRiderOfGondorDefinition.toCardDef (oracleText := errandRiderOfGondorOracle)
@@ -151,7 +151,7 @@ def landrovalHorizonWitnessDefinition : TraditionalCardDefinition := .card <|
     (.triggered
       (.attackSimultaneously
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)])
         .player
@@ -162,7 +162,7 @@ def landrovalHorizonWitnessDefinition : TraditionalCardDefinition := .card <|
             (.target
               1
               (.intersection [
-                .permanent,
+                .zone .battlefield,
                 .cardType .creature,
                 .attacking .all,
                 .not (.keyword .flying)]))
@@ -194,7 +194,7 @@ def roguesPassageDefinition : TraditionalCardDefinition := .card <|
         [.forbid
           (.block
             .any
-            (.target 1 (.intersection [.permanent, .cardType .creature])))]
+            (.target 1 (.intersection [.zone .battlefield, .cardType .creature])))]
         .endOfTurn))]
 
 def roguesPassage : CardDef :=
@@ -230,7 +230,7 @@ def soldierOfTheGreyHostDefinition : TraditionalCardDefinition := .card <|
       (.enter .this)
       (.continuous
         [.addPower
-          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 2)]
+          (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) (Value.int 2)]
         .endOfTurn))]
 
 def soldierOfTheGreyHost : CardDef :=
@@ -267,12 +267,12 @@ def eaglesOfTheNorthDefinition : TraditionalCardDefinition := .card <|
         [
           .addPower
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)]) (Value.int 1),
           .gainAbility
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)])
             (.keyword .firstStrike)]
@@ -338,7 +338,7 @@ def dawnOfANewAgeDefinition : TraditionalCardDefinition := .card <|
         .putCounter (.source .this) (.hope)
           (.count
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)])),
         .keepReplacedAction])),
@@ -391,7 +391,7 @@ def westfoldRiderDefinition : TraditionalCardDefinition := .card <|
         (.target
           1
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .union [.cardType .artifact, .cardType .enchantment]]))))]
 
 def westfoldRider : CardDef :=
@@ -427,12 +427,12 @@ def esquireOfTheKingDefinition : TraditionalCardDefinition := .card <|
         [
           .addPower
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)]) (Value.int 1),
           .addToughness
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)]) (Value.int 1)]
         .endOfTurn)),
@@ -441,7 +441,7 @@ def esquireOfTheKingDefinition : TraditionalCardDefinition := .card <|
       (.if
         (.any
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .supertype .legendary,
             .controlled (.controller .this)]))
@@ -618,7 +618,7 @@ def hithlainKnotsDefinition : TraditionalCardDefinition := .card <|
   .manaCost [.generic 1, .mono .blue],
   .type .instant,
   .actions [
-    .tap (.target 1 (.intersection [.permanent, .cardType .creature])),
+    .tap (.target 1 (.intersection [.zone .battlefield, .cardType .creature])),
     .scry (.controller .this) 1,
     .draw (.controller .this) 1]]
 
@@ -678,7 +678,7 @@ def minasTirithGarrisonDefinition : TraditionalCardDefinition := .card <|
   .subtype .soldier,
   .toughness 5,
   .ability
-    (.static (.setPower .this (.count (.intersection [.inHand, .owner (.controller .this)])))),
+    (.static (.setPower .this (.count (.intersection [.zone .hand, .owner (.controller .this)])))),
   .ability
     (.triggered
       (.attack .this .all)
@@ -691,7 +691,7 @@ def minasTirithGarrisonDefinition : TraditionalCardDefinition := .card <|
                 (.controller .this)
                 .any
                 (.intersection
-                  [.permanent, .subtype .human, .not .tapped, .controlled (.controller .this)]))),
+                  [.zone .battlefield, .subtype .human, .not .tapped, .controlled (.controller .this)]))),
           .draw (.controller .this) (.count (.wasObjectOfAction 1))]))]
 
 def minasTirithGarrison : CardDef :=
@@ -773,9 +773,9 @@ def hauntOfTheDeadMarshesDefinition : TraditionalCardDefinition := .card <|
     (.graveyardActivatedIf
       (.any
         (.intersection
-          [.permanent, .cardType .creature, .supertype .legendary, .controlled (.controller .this)]))
+          [.zone .battlefield, .cardType .creature, .supertype .legendary, .controlled (.controller .this)]))
       [.mana [.generic 2, .mono .black]]
-      (.putOntoBattlefieldInState (.intersection [.inGraveyard, .source .this]) [.tapped]))]
+      (.putOntoBattlefieldInState (.intersection [.zone .graveyard, .source .this]) [.tapped]))]
 
 def hauntOfTheDeadMarshes : CardDef :=
   hauntOfTheDeadMarshesDefinition.toCardDef (oracleText := hauntOfTheDeadMarshesOracle)
@@ -804,9 +804,9 @@ def languishDefinition : TraditionalCardDefinition := .card <|
   .actions [
     .continuous
       [.addPower
-        (.intersection [.permanent, .cardType .creature]) (Value.int (-4)),
+        (.intersection [.zone .battlefield, .cardType .creature]) (Value.int (-4)),
        .addToughness
-        (.intersection [.permanent, .cardType .creature]) (Value.int (-4))]
+        (.intersection [.zone .battlefield, .cardType .creature]) (Value.int (-4))]
       .endOfTurn]]
 
 def languish : CardDef :=
@@ -855,7 +855,7 @@ def mercilessExecutionerDefinition : TraditionalCardDefinition := .card <|
             (.variable 1)
             (.range 1 1)
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.variable 1)]))]))]
 
@@ -916,7 +916,7 @@ def wayfarersBaubleDefinition : TraditionalCardDefinition := .card <|
               (.controller .this)
               (.range 1 1)
               (.intersection [
-                .inLibrary,
+                .zone .library,
                 .cardType .land,
                 .supertype .basic]))
             [.tapped]]))]
@@ -975,7 +975,7 @@ def improvisedClubDefinition : TraditionalCardDefinition := .card <|
       (.additionalCost .this
         [.sacrificeCount
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .union [.cardType .artifact, .cardType .creature]])
           1])),
   .actions [.dealDamage .this (.target 1 .all) (.nat 4)]]
@@ -1014,7 +1014,7 @@ def ologHaiCrusherDefinition : TraditionalCardDefinition := .card <|
           (.any
             (.intersection
               [
-                .permanent,
+                .zone .battlefield,
                 .union [.subtype .goblin, .subtype .orc],
                 .controlled (.controller .this)])))
         [.forbid (.block .this .all)]))]
@@ -1066,7 +1066,7 @@ def goblinFireleaperDefinition : TraditionalCardDefinition := .card <|
         (.target
           1
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.opponent (.controller .this))]))))]
 
@@ -1105,7 +1105,7 @@ def oliphauntDefinition : TraditionalCardDefinition := .card <|
               1
               (.intersection [
                 .not .this,
-                .permanent,
+                .zone .battlefield,
                 .cardType .creature,
                 .controlled (.controller .this)])) (Value.int 2),
           .gainAbility (.targetReference 1) (.keyword .trample)]
@@ -1224,7 +1224,7 @@ def orcishSiegemasterDefinition : TraditionalCardDefinition := .card <|
         (.intersection
           [
             .not .this,
-            .permanent,
+            .zone .battlefield,
             .union [.subtype .orc, .subtype .goblin],
             .controlled (.controller .this)])
         (.keyword .trample))),
@@ -1236,7 +1236,7 @@ def orcishSiegemasterDefinition : TraditionalCardDefinition := .card <|
           .addPower
             (.source .this)
             (.greatestPower
-              (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)]))]
+              (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))]
         .endOfTurn))]
 
 def orcishSiegemaster : CardDef :=
@@ -1267,7 +1267,7 @@ def fireOfOrthancDefinition : TraditionalCardDefinition := .card <|
       (.target
         1
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .union [.cardType .artifact, .cardType .land]])),
     .continuous
       [.forbid (.block (.not (.keyword .flying)) .all)]
@@ -1360,7 +1360,7 @@ def mirkwoodElkDefinition : TraditionalCardDefinition := .card <|
       (.sequence
         [
           .returnToHand
-            (.target 1 (.intersection [.inGraveyard, .subtype .elf, .owner (.controller .this)])),
+            (.target 1 (.intersection [.zone .graveyard, .subtype .elf, .owner (.controller .this)])),
           .gainLife (.controller .this) (.greatestPower (.targetReference 1))]))]
 
 def mirkwoodElk : CardDef :=
@@ -1397,7 +1397,7 @@ def giftOfStrandsDefinition : TraditionalCardDefinition := .card <|
     .keywordWithTarget
       .enchant
       1
-      (.intersection [.permanent, .cardType .creature])),
+      (.intersection [.zone .battlefield, .cardType .creature])),
   .ability (.triggered (.enter .this) (.scry (.controller .this) 2)),
   .ability (.static (.addPower (.hostOf .this) (Value.int 3))),
   .ability (.static (.addToughness (.hostOf .this) (Value.int 3)))]
@@ -1434,7 +1434,7 @@ def elvishArchdruidDefinition : TraditionalCardDefinition := .card <|
         (.intersection
           [
             .not .this,
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .subtype .elf,
             .controlled (.controller .this)])
@@ -1445,7 +1445,7 @@ def elvishArchdruidDefinition : TraditionalCardDefinition := .card <|
         (.intersection
           [
             .not .this,
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .subtype .elf,
             .controlled (.controller .this)])
@@ -1455,7 +1455,7 @@ def elvishArchdruidDefinition : TraditionalCardDefinition := .card <|
       [.tapSymbol]
       (.forEachVariable
         1
-        (.intersection [.permanent, .subtype .elf, .controlled (.controller .this)])
+        (.intersection [.zone .battlefield, .subtype .elf, .controlled (.controller .this)])
         [.addMana (.controller .this) [.mono .green]]))]
 
 def elvishArchdruid : CardDef :=
@@ -1551,20 +1551,20 @@ def bardHeirOfGirionDefinition : TraditionalCardDefinition := .card <|
   .ability (.static (.addPower
         (.intersection [
           .not .this,
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)]) (Value.int 1))),
   .ability (.static (.addToughness
         (.intersection [
           .not .this,
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)]) (Value.int 1))),
   .ability
     (.triggered
       (.attackSimultaneously
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)])
         .all
@@ -1629,7 +1629,7 @@ def greatGoblinFoulHeartedDefinition : TraditionalCardDefinition := .card <|
     .static
       (.gainAbility
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .subtype .army,
           .controlled (.controller .this)])
         (.keyword .trample)))]
@@ -1668,7 +1668,7 @@ def dwarvenWarriorsDefinition : TraditionalCardDefinition := .card <|
           .forbid
             (.block
               .all
-              (.target 1 (.intersection [.permanent, .cardType .creature, .powerAtMost (.int 2)])))]
+              (.target 1 (.intersection [.zone .battlefield, .cardType .creature, .powerAtMost (.int 2)])))]
         .endOfTurn))]
 
 def dwarvenWarriors : CardDef :=
@@ -1712,7 +1712,7 @@ def bagEndBanquetDefinition : TraditionalCardDefinition := .card <|
       [.tapSymbol]
       (.forEachVariable
         1
-        (.intersection [.permanent, .subtype .food, .controlled (.controller .this)])
+        (.intersection [.zone .battlefield, .subtype .food, .controlled (.controller .this)])
         [.addMana (.controller .this) [.colorless]]))]
 
 def bagEndBanquet : CardDef :=
@@ -1743,26 +1743,26 @@ def floweringOfTheWhiteTreeDefinition : TraditionalCardDefinition := .card <|
     (.static
       (.addPower
         (.intersection
-          [.permanent, .cardType .creature, .controlled (.controller .this), .supertype .legendary])
+          [.zone .battlefield, .cardType .creature, .controlled (.controller .this), .supertype .legendary])
         (.int 2))),
   .ability
     (.static
       (.addToughness
         (.intersection
-          [.permanent, .cardType .creature, .controlled (.controller .this), .supertype .legendary])
+          [.zone .battlefield, .cardType .creature, .controlled (.controller .this), .supertype .legendary])
         (.int 1))),
   .ability
     (.static
       (.gainAbility
         (.intersection
-          [.permanent, .cardType .creature, .controlled (.controller .this), .supertype .legendary])
+          [.zone .battlefield, .cardType .creature, .controlled (.controller .this), .supertype .legendary])
         (.keywordWithCost .ward [.mana [.generic 1]]))),
   .ability
     (.static
       (.addPower
         (.intersection
           [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .not (.supertype .legendary),
             .controlled (.controller .this)])
@@ -1772,7 +1772,7 @@ def floweringOfTheWhiteTreeDefinition : TraditionalCardDefinition := .card <|
       (.addToughness
         (.intersection
           [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .not (.supertype .legendary),
             .controlled (.controller .this)])
@@ -1816,7 +1816,7 @@ def mithrilCoatDefinition : TraditionalCardDefinition := .card <|
         (.target
           1
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this),
             .supertype .legendary])))),
@@ -1848,7 +1848,7 @@ def rivendellDefinition : TraditionalCardDefinition := .card <|
           (.any
             (.intersection
               [
-                .permanent,
+                .zone .battlefield,
                 .cardType .creature,
                 .supertype .legendary,
                 .controlled (.controller .this)])))
@@ -1858,7 +1858,7 @@ def rivendellDefinition : TraditionalCardDefinition := .card <|
     (.activatedIf
       (.any
         (.intersection
-          [.permanent, .cardType .creature, .supertype .legendary, .controlled (.controller .this)]))
+          [.zone .battlefield, .cardType .creature, .supertype .legendary, .controlled (.controller .this)]))
       [.mana [.generic 1, .mono .blue], .tapSymbol]
       (.scry (.controller .this) (.nat 2)))]
 
@@ -1981,12 +1981,12 @@ def lastMarchOfTheEntsDefinition : TraditionalCardDefinition := .card <|
       .draw
         (.controller .this)
         (.greatestToughness
-          (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)])),
+          (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)])),
       .putOntoBattlefield
         (.selected
           (.controller .this)
           .any
-          (.intersection [.inHand, .owner (.controller .this), .cardType .creature]))]]
+          (.intersection [.zone .hand, .owner (.controller .this), .cardType .creature]))]]
 
 def lastMarchOfTheEnts : CardDef :=
   lastMarchOfTheEntsDefinition.toCardDef (oracleText := lastMarchOfTheEntsOracle)
@@ -2014,7 +2014,7 @@ def raiseThePalisadeDefinition : TraditionalCardDefinition := .card <|
     [
       .actionId 1 (.chooseCreatureType (.controller .this)),
       .returnToHand
-        (.intersection [.permanent, .cardType .creature, .not (.hasCreatureTypeChosenByAction 1)])]]
+        (.intersection [.zone .battlefield, .cardType .creature, .not (.hasCreatureTypeChosenByAction 1)])]]
 
 def raiseThePalisade : CardDef :=
   raiseThePalisadeDefinition.toCardDef (oracleText := raiseThePalisadeOracle)
@@ -2042,7 +2042,7 @@ def dragonsDesireDefinition : TraditionalCardDefinition := .card <|
       .forEachVariable
         1
         (.intersection
-          [.permanent, .cardType .artifact, .controlled (.opponent (.controller .this))])
+          [.zone .battlefield, .cardType .artifact, .controlled (.opponent (.controller .this))])
         [.addMana (.controller .this) [.mono .red]]]]
 
 def dragonsDesire : CardDef :=
@@ -2086,7 +2086,7 @@ def oriPlateStackerDefinition : TraditionalCardDefinition := .card <|
             (.destroy
               (.intersection
                 [
-                  .permanent,
+                  .zone .battlefield,
                   .union [.cardType .artifact, .cardType .enchantment],
                   .controlled (.opponent (.controller .this))])),
           .gainLife (.controller .this) (.count (.wasObjectOfAction 1))]))]
@@ -2130,7 +2130,7 @@ def dainOfTheAncientHallsDefinition : TraditionalCardDefinition := .card <|
       (.dealDamage
         .this
         (.opponent (.controller .this))
-        (.count (.intersection [.permanent, .subtype .dwarf, .controlled (.controller .this)]))))]
+        (.count (.intersection [.zone .battlefield, .subtype .dwarf, .controlled (.controller .this)]))))]
 
 def dainOfTheAncientHalls : CardDef :=
   dainOfTheAncientHallsDefinition.toCardDef (oracleText := dainOfTheAncientHallsOracle)
@@ -2190,7 +2190,7 @@ def aragornAndArwenWedDefinition : TraditionalCardDefinition := .card <|
   let others : Selector :=
     .intersection [
       .not .this,
-      .permanent,
+      .zone .battlefield,
       .cardType .creature,
       .controlled (.controller .this)]
 
@@ -2261,7 +2261,7 @@ def thranduilTheStrategistDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.static
       (.gainAbility
-        (.intersection [.not .this, .permanent, .subtype .elf, .controlled (.controller .this)])
+        (.intersection [.not .this, .zone .battlefield, .subtype .elf, .controlled (.controller .this)])
         (.activated
           [.tapSymbol]
           (.playerSelectAction
@@ -2272,7 +2272,7 @@ def thranduilTheStrategistDefinition : TraditionalCardDefinition := .card <|
               .addMana (.controller .this) [.mono .blue]])))),
   .ability
     (.triggered
-      (.enter (.intersection [.permanent, .cardType .land, .controlled (.controller .this)]))
+      (.enter (.intersection [.zone .battlefield, .cardType .land, .controlled (.controller .this)]))
       (.createTokens
         (.controller .this)
         (.nat 1)
@@ -2415,7 +2415,7 @@ def bolgEreborsReckoningDefinition : TraditionalCardDefinition := .card <|
                 (.intersection
                   [
                     .not .this,
-                    .permanent,
+                    .zone .battlefield,
                     .union [.subtype .goblin, .subtype .orc],
                     .controlled (.controller .this)])
                 (.int 2),
@@ -2423,7 +2423,7 @@ def bolgEreborsReckoningDefinition : TraditionalCardDefinition := .card <|
                 (.intersection
                   [
                     .not .this,
-                    .permanent,
+                    .zone .battlefield,
                     .union [.subtype .goblin, .subtype .orc],
                     .controlled (.controller .this)])
                 (.int 2)]
@@ -2432,11 +2432,11 @@ def bolgEreborsReckoningDefinition : TraditionalCardDefinition := .card <|
             [
               .addPower
                 (.intersection
-                  [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))])
+                  [.zone .battlefield, .cardType .creature, .controlled (.opponent (.controller .this))])
                 (.int (-1)),
               .addToughness
                 (.intersection
-                  [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))])
+                  [.zone .battlefield, .cardType .creature, .controlled (.opponent (.controller .this))])
                 (.int (-1))]
             .endOfTurn]))]
 
@@ -2467,13 +2467,13 @@ def thorinKingOfDurinsFolkDefinition : TraditionalCardDefinition := .card <|
   let otherDwarves : Selector :=
     .intersection [
       .not .this,
-      .permanent,
+      .zone .battlefield,
       .cardType .creature,
       .subtype .dwarf,
       .controlled (.controller .this)]
   let artifactTokens : Selector :=
     .intersection [
-      .permanent,
+      .zone .battlefield,
       .cardType .artifact,
       .token,
       .controlled (.controller .this)]
@@ -2626,7 +2626,7 @@ def dragonCursedHallsDefinition : TraditionalCardDefinition := .card <|
       (.continuous
         [
           .gainAbility
-            (.target 1 (.intersection [.permanent, .cardType .creature]))
+            (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
             (.triggered
               (.combatDamage .this .player)
               (.createTokens (.controller .this) 1 PredefinedToken.treasureToken))]
@@ -2682,7 +2682,7 @@ def galadrielLightOfValinorDefinition : TraditionalCardDefinition := .card <|
         (.enter
           (.intersection [
             .not .this,
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled you]))
         (.chooseModeRestricted you [
@@ -2691,7 +2691,7 @@ def galadrielLightOfValinorDefinition : TraditionalCardDefinition := .card <|
           (2, unchosen 2,
             [.putCounter
               (.intersection [
-                .permanent,
+                .zone .battlefield,
                 .cardType .creature,
                 .controlled you])
               .plusOnePlusOne
@@ -2742,7 +2742,7 @@ def gandalfShadowSFoeDefinition : TraditionalCardDefinition := .card <|
               1
               (.range 0 3)
               (.intersection [
-                .permanent,
+                .zone .battlefield,
                 .cardType .land,
                 .controlled (.controller .this)]))),
         .putOntoBattlefieldInState
@@ -2754,7 +2754,7 @@ def gandalfShadowSFoeDefinition : TraditionalCardDefinition := .card <|
     .triggered
       (.enter
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .land,
           .controlled (.controller .this)]))
       (.sequence [
@@ -2817,7 +2817,7 @@ def mountDoomDefinition : TraditionalCardDefinition := .card <|
         .mana [.generic 5, .mono .black, .mono .red],
         .tapSymbol,
         .sacrifice .this,
-        .sacrificeCount (.intersection [.permanent, .cardType .artifact, .supertype .legendary]) 1]
+        .sacrificeCount (.intersection [.zone .battlefield, .cardType .artifact, .supertype .legendary]) 1]
       (.sequence
         [
           .defineSelectorVariable
@@ -2825,8 +2825,8 @@ def mountDoomDefinition : TraditionalCardDefinition := .card <|
             (.selected
               (.controller .this)
               (.range (.nat 0) (.nat 2))
-              (.intersection [.permanent, .cardType .creature])),
-          .destroy (.intersection [.permanent, .cardType .creature, .not (.variable 1)])]))]
+              (.intersection [.zone .battlefield, .cardType .creature])),
+          .destroy (.intersection [.zone .battlefield, .cardType .creature, .not (.variable 1)])]))]
 
 def mountDoom : CardDef :=
   mountDoomDefinition.toCardDef (oracleText := mountDoomOracle)
@@ -2918,7 +2918,7 @@ def thorinCompanySLeaderDefinition : TraditionalCardDefinition := .card <|
     .triggered
       (.combatDamage
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .subtype .dwarf,
           .controlled (.controller .this)])
@@ -2931,7 +2931,7 @@ def thorinCompanySLeaderDefinition : TraditionalCardDefinition := .card <|
         [
           .gainAbility
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)])
             (.keyword .doubleStrike)]

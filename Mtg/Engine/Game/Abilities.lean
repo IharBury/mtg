@@ -115,6 +115,17 @@ def inZone (o : GameObject) : Zone → Bool
   | .command => o.zone == .command
   | .ante => o.zone == .ante
 
+/-- The runtime zone of this kind. Library, hand, and graveyard belong to
+`owner`. Battlefield, stack, exile, and command are shared. -/
+def zoneOfKind : ZoneKind → PlayerId → Zone
+  | .library, p => .library p
+  | .hand, p => .hand p
+  | .battlefield, _ => .battlefield
+  | .graveyard, p => .graveyard p
+  | .stack, _ => .stack
+  | .exile, _ => .exile
+  | .command, _ => .command
+
 /-- Combine two optional Booleans with and. A `false` decides the result. -/
 def andMatch (a b : Option Bool) : Option Bool :=
   match a, b with
@@ -144,7 +155,7 @@ partial def selectorMatches? (g : Game) (src : Option GameObject) (you : PlayerI
     | some named => some (named.id == o.id)
     | none => some false
   | .all => some true
-  | .permanent => some o.isOnBattlefield
+  | .zone z => some (inZone o (zoneOfKind z o.owner))
   | .cardType t => some (o.types.contains t)
   | .subtype st => some (o.hasSubtype st.toString)
   | .supertype st => some (o.printed.hasSupertype st)
@@ -160,10 +171,6 @@ partial def selectorMatches? (g : Game) (src : Option GameObject) (you : PlayerI
         t == .creature || t == .artifact || t == .enchantment ||
           t == .land || t == .planeswalker || t == .battle)
     else some false
-  | .inGraveyard => some (inZone o (.graveyard o.owner))
-  | .inLibrary => some (inZone o (.library o.owner))
-  | .inHand => some (inZone o (.hand o.owner))
-  | .inExile => some (o.zone == .exile)
   | .keyword k =>
     printedKeyword (Keywords.merge o.printed.keywords o.grantedUntilEot) k
   | .hasCounter k => some (hasCounterKind o k)
@@ -210,7 +217,7 @@ partial def selectorMatches? (g : Game) (src : Option GameObject) (you : PlayerI
   | .wasObjectOfAction _ | .wasArgumentOfTrigger _ _ | .replacingObject
   | .wasCreatedByAction _ | .affectedByAction _ | .wasObjectSince _ _
   | .variable _ | .topOfLibrary _ _ | .hasCreatureTypeChosenByAction _
-  | .manaValueAtMost _ => none
+  | .manaValueAtMost _ | .castFromZone _ => none
 
 /-- Whether `o` matches `sel` from `src`. Unknown selectors do not match. -/
 def selectorMatches (g : Game) (src : Option GameObject) (you : PlayerId)

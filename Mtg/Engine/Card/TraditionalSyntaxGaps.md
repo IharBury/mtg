@@ -5,9 +5,9 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**207** catalog cards are still `CardDef` helpers. **193**
+**205** catalog cards are still `CardDef` helpers. **189**
 of them need at least one missing constructor listed under
-[Missing constructors by type](#missing-constructors-by-type). **14** lost
+[Missing constructors by type](#missing-constructors-by-type). **16** lost
 their last tag (named counters, `CardAction.removeCounter`, or
 enters-with-counters) and are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
@@ -24,12 +24,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 155 | 33 | 30 |
-| The Hobbit Eternal (HOC) | 117 | 67 | 50 | 47 |
+| The Hobbit (HOB) | 188 | 157 | 31 | 27 |
+| The Hobbit Eternal (HOC) | 117 | 67 | 50 | 46 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 116 |
-| **Total** | **586** | **379** | **207** | **193** |
+| **Total** | **586** | **381** | **205** | **189** |
 
-All 379 `TraditionalCardDefinition`s (155 HOB, 67 HOC, 157 MSH,
+All 381 `TraditionalCardDefinition`s (157 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -82,17 +82,20 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   Lore counters are Saga chapters. Poison counters as a Ward cost stay
   `Cost.getPoisonCounters`.
 - **Selector** — `this`, `source`, `controller`, `caster` (the player who would cast this spell), `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
-  `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
+  `cardType`, `union`, `zone` (an object in that zone; `.battlefield` is a
+  permanent), `controlled`, `tapped`, `keyword`,
   `keywordAbility`, `powerAtLeast`, `powerAtMost`, `hasCounter`, `subtype`,
   `spell`, `ability`, `abilityWithId`, `permanentSpell`, `hasTarget`,
   `isTargetOf`, `player`, `opponent`, `owner`, `attacking`, `blocking`,
   `token`, `wasObjectOfAction`, `wasArgumentOfTrigger`, `replacingObject`,
   `wasCreatedByAction`, `affectedByAction` (the new object a numbered action
-  moved onto the battlefield; CR 400.7), `hostOf`, `inGraveyard`, `wasObjectSince`,
-  `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`
+  moved onto the battlefield; CR 400.7), `hostOf`, `wasObjectSince`,
+  `supertype`, `variable`, `topOfLibrary`
   (whose library, how many cards), `hasCreatureTypeChosenByAction` (the
   creature type chosen by a numbered `CardAction.chooseCreatureType`),
-  `manaValueAtMost` (mana value at most a `Value`).
+  `manaValueAtMost` (mana value at most a `Value`), `castFromZone` (the zone
+  this spell was cast from; `.not (.castFromZone .hand)` is “from anywhere
+  other than your hand”).
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `drawStep` (the selected player's draw step; also a
@@ -106,6 +109,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `attackSimultaneously` (who attacks, who is attacked),
   `createTokens` (one or more tokens matching the selector would be created
   at the same time),
+  `abilityTriggers` (a triggered ability of a source matching the selector
+  triggers; `replace` of it replaces that triggering),
   `abilityWithIdActivated`, `abilityWithIdResolved` (the numbered ability has
   finished resolving; the resolution in progress does not count),
   `actionWithId`, `triggerId`, `modeWithIdChosen`,
@@ -137,7 +142,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   cast as though it had flash when a condition holds; `you` is
   `Selector.caster`; the spell does not gain flash), `doesntUntap`,
   `cantAttackUnlessPays`, `removeAllAbilities` (selected objects lose all
-  abilities; later-granted abilities still apply). `replace` of
+  abilities; later-granted abilities still apply).
+  `replace` of
   `Trigger.createTokens` replaces that creation; `Selector.replacingObject`
   is those tokens. `modifyReplacementCreatedTokenCount` changes how many
   of those tokens are created.
@@ -154,12 +160,16 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `holdOutInLibrary`, `defineSelectorVariable`, `defineValueVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`,
   `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
-  `createTokens`, `modifyReplacementCreatedTokenCount` (keep creating the
+  `createTokens`,   `modifyReplacementCreatedTokenCount` (keep creating the
   tokens being replaced, with the count changed by a `Nat → Value` function),
+  `duplicateReplacingTrigger` (the trigger being replaced triggers that many
+  times instead of once; two is one additional time),
   `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`, `shuffleIntoOwnersLibrary`,
   `lookAt`, `putOnLibraryBottomInRandomOrder`, `chooseCreatureType` (the
-  selected player chooses a creature type).
+  selected player chooses a creature type), `mayCast` (the selected player
+  may cast any number of spells matching the selector, paying their costs;
+  `selected` limits how many).
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -255,7 +265,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | --- | --- |
 | `Selector.topNOfLibrary` | `Selector.topOfLibrary` of a player and a `Value` count |
 | `Selector.countOf`, `CardAction.repeatN`, `CardAction.addManaPer` | `Value.count`, `totalPower`, `greatestPower`, `greatestToughness`, `greatestManaValue`, `product`; `draw`, `dealDamage`, `gainLife`, `loseLife`, `mill`, `createTokens`, `addManaOfOneColor`, and `Keyword.amass` take a `Value` |
-| `Selector.inHand`, `inExile`, `powerAtMost`, `hasCounter` | The `Selector` constructors of those names |
+| `Selector.inHand`, `inExile`, `powerAtMost`, `hasCounter` | `Selector.zone` of `.hand` and `.exile`; `powerAtMost` and `hasCounter` |
 | `Selector.eachPlayer` | `Selector.player` / `Selector.opponent`, with `forEachVariable` |
 | `Selector.named`, colorless tokens under `Selector.color` | `CardPart.name` and `CardPart.colorIndicator []` on `createTokens` |
 | `Selector.putFromBattlefieldThisTurn` | `Selector.wasObjectSince` of `Trigger.putToGraveyard` of permanents, since `Trigger.turnStart` |
@@ -309,6 +319,8 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Trigger.wouldDraw` | `replace` of `Trigger.draw`, except while it is the controller's `drawStep` and that draw has not happened since `Trigger.drawStep`. Bard, King of Dale draws two cards instead |
 | `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `didNotHappen` of `abilityWithIdResolved` since `turnStart` is the first resolution; it is not counted while resolving. The second is `happened` of `ordinal 1` and `didNotHappen` of `ordinal 2`. The third is `ordinal 2` and not `ordinal 3` (Belladonna Took) |
 | `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
+| `ContinuousEffect.extraTrigger` | `replace` of `Trigger.abilityTriggers` of that source with `duplicateReplacingTrigger 2`, under `if (enduringStory (controller this))` (Bifur, Melodic Rider) |
+| `Selector.castFromZone`, `ContinuousEffect.reduceCostIfCastFrom` | `reduceCost` of spells you control that are not `castFromZone .hand` (Bilbo, Thief in the Night). “You may cast … from your graveyard” is `mayCast` of one card `selected` from that graveyard; an instant or sorcery cast that way is `replace` of `putToGraveyard` with `exile` |
 
 ## Missing constructors by type
 
@@ -354,8 +366,6 @@ complete.
   - Bitter Downfall; Red Guardian, Super-Soldier
 - **`graveyardSizeAtLeast`** (2 cards) — Graveyards (or their owners) with at least N cards, so they can be counted
   - Master's Councillors; The Master of Lake-town
-- **`castFromZone`** (1 card) — Zone a spell is cast from (only `Trigger.castSpellFromGraveyard` exists)
-  - Bilbo, Thief in the Night
 - **`commander`** (1 card) — The selected player's commander
   - Arcane Signet
 - **`mostLife`** (1 card) — A player with the most life or tied for most life
@@ -443,8 +453,6 @@ complete.
   - Daredevil, Man Without Fear; Elven Chorus; Iron Lad, Diverging Destiny; Ka-Zar of the Savage Land
 - **`attacksEachCombat`** (3 cards) — Attacks each combat if able (“can't attack” is `forbid` of `Trigger.attack`)
   - Alien Invasion; Ares, God of War; The Sentry, Golden Guardian
-- **`extraTrigger`** (3 cards) — Matching triggered abilities trigger an additional time
-  - Bifur, Melodic Rider; Chief of the Wilds; Wizard's Staff
 - **`handSize`** (2 cards) — Set / remove maximum hand size
   - Ms. Marvel, Kamala Khan; The Ten Rings
 - **`modifyDamage`** (2 cards) — Replacement that changes how much damage is dealt
@@ -469,8 +477,6 @@ complete.
   - Super-Soldier Serum
 - **`reduceCost`** (1 card) — `reduceCost` + `if` exists; missing the damaged-this-turn target shape
   - Bitter Downfall
-- **`reduceCostIfCastFrom`** (1 card) — Spells you cast from matching zones cost less
-  - Bilbo, Thief in the Night
 - **`replaceEnterCounters`** (1 card) — As matching other objects enter, they enter with extra counters
   - Arwen, Weaver of Hope
 - **`setSubtypes`** (1 card) — Overwrite subtypes (`gainSubtype` only adds)
@@ -600,6 +606,17 @@ Since the previous revision of this index, 52 more listed cards became
 
 **Marvel Super Heroes (9):** A.I.M. Scientists; Dependable Quinjet; Kang, Temporal Tyrant; M.O.D.O.K.; Madame Masque; Red Room Recruit; S.H.I.E.L.D. Helicarrier; Swordsman, Sharp Scoundrel; Trickster's Stratagem.
 
+Bifur, Melodic Rider and Bilbo, Thief in the Night are
+`TraditionalCardDefinition`s read with `parseOracleParts`. While Bifur's
+controller has an enduring story, a triggered ability of a Dwarf that
+player controls triggers an additional time: `replace` of `abilityTriggers`
+of that Dwarf with `duplicateReplacingTrigger 2`.
+Bilbo reduces the cost of spells that
+controller casts from a zone other than their hand. When Bilbo attacks, that
+player may cast one artifact, instant, or sorcery they select from their graveyard, and
+an instant or sorcery cast that way is exiled instead of being put into a
+graveyard, until the end of the game.
+
 ## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. Evidence is the
@@ -625,7 +642,7 @@ in the catalog as `CardDef` helpers.
   `Value.count (Selector.wasObjectOfAction n)`. Converted.
 - **Black Widow, Super Spy** — Combat-damage exile from the top until a
   nonland, then an optional +1/+1 or cast-the-exiled-card.
-  `Selector.topOfLibrary` and `Selector.inExile` exist. Exile-until and
+  `Selector.topOfLibrary` and `Selector.zone .exile` exist. Exile-until and
   “mana of any type can be spent” are missing.
 - **Captain Mar-Vell, Space-Born** — As long as an opponent has cast a spell
   this turn, you may cast spells as though they had flash. Now spellable:
@@ -679,16 +696,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (30 cards)
-
-**Bifur, Melodic Rider** (`bifurMelodicRider`)
-
-- `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
-
-**Bilbo, Thief in the Night** (`bilboThiefInTheNight`)
-
-- `Selector.castFromZone` — Zone a spell is cast from (only `Trigger.castSpellFromGraveyard` exists)
-- `ContinuousEffect.reduceCostIfCastFrom` — Spells you cast from matching zones cost less
+### The Hobbit (HOB) (27 cards)
 
 **Bolg of the North** (`bolgOfTheNorth`)
 
@@ -810,10 +818,6 @@ Converted cards are omitted here.
 
 - `Value.manaSpent` — The amount of mana spent to cast a spell
 
-**Wizard's Staff** (`wizardSStaff`)
-
-- `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
-
 ### The Hobbit Eternal (HOC) (50 cards)
 
 **Andúril, Narsil Reforged** (`andurilNarsilReforged`)
@@ -869,10 +873,6 @@ Converted cards are omitted here.
 **Celeborn the Wise** (`celebornTheWise`)
 
 - `Trigger.scry` — Whenever the selected player scries
-
-**Chief of the Wilds** (`chiefOfTheWilds`)
-
-- `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
 
 **Colossal Whale** (`colossalWhale`)
 
@@ -1563,15 +1563,16 @@ Converted cards are omitted here.
 
 ## Tags now spelled, not yet converted
 
-These 14 cards lost every tag and are still `CardDef` helpers. They lost
+These 16 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
-`CardAction.putCounter` of a `Value`, enters-with-counters, or
-`replace` of `Trigger.createTokens` became expressible. A later pass
+`CardAction.putCounter` of a `Value`, enters-with-counters,
+`replace` of `Trigger.createTokens`, or `replace` of `Trigger.abilityTriggers`
+became expressible. A later pass
 should reread them before conversion.
 
-**Hobbit (3):** Beorn the Fierce; Dwalin, Weaponmaster; Last Light of Durin's Day.
+**Hobbit (4):** Beorn the Fierce; Dwalin, Weaponmaster; Last Light of Durin's Day; Wizard's Staff.
 
-**Hobbit Eternal (3):** Arwen, Mortal Queen; Bilbo, Fellow Conspirator; Minas Morgul, Dark Fortress.
+**Hobbit Eternal (4):** Arwen, Mortal Queen; Bilbo, Fellow Conspirator; Chief of the Wilds; Minas Morgul, Dark Fortress.
 
 **Marvel Super Heroes (8):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Super-Adaptoid; The Astonishing Ant-Man; Thunderbolts Conspiracy.
 

@@ -224,7 +224,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                       if asAbility then Effect.abilityCreateTokensX kind
                       else Effect.createTokensX kind
                     | none => continuousEffect none [] asAbility
-                  | .modifyReplacementCreatedTokenCount _ =>
+                  | .modifyReplacementCreatedTokenCount _
+                  | .duplicateReplacingTrigger _ =>
                     continuousEffect none [] asAbility
                   | .createTokens _ n parts states =>
                     match leftoverTokenKind? parts, valToNat? n with
@@ -253,7 +254,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .keepReplacedAction | .healAllDamage _ =>
                     continuousEffect none [] asAbility
                   | .shuffleIntoOwnersLibrary _ | .lookAt _
-                  | .putOnLibraryBottomInRandomOrder _ | .chooseCreatureType _ =>
+                  | .putOnLibraryBottomInRandomOrder _ | .chooseCreatureType _
+                  | .mayCast _ _ =>
                     continuousEffect none [] asAbility
 
 /-- “Choose one or both”: one or two distinct modes (CR 700.2). -/

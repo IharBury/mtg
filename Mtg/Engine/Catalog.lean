@@ -1016,7 +1016,7 @@ def giantGrowthDefinition : TraditionalCardDefinition := .card <|
   .actions [
     .continuous
       [.addPower
-        (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3),
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) (Value.int 3),
        .addToughness
         (.targetReference 1) (Value.int 3)]
       .endOfTurn]]

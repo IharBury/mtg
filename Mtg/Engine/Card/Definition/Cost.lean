@@ -88,13 +88,13 @@ def sacrificesThis : List Cost → Bool
 def sacrificesLegendaryArtifact (costs : List Cost) : Bool :=
   costs.any fun
     | .sacrificeCount s 1 =>
-      s == .intersection [.permanent, .cardType .artifact, .supertype .legendary]
+      s == .intersection [.zone .battlefield, .cardType .artifact, .supertype .legendary]
     | _ => false
 
 /-- Sacrifice one artifact as part of the cost. -/
 def sacrificesArtifact (costs : List Cost) : Bool :=
   costs.any fun
-    | .sacrificeCount s 1 => s == .intersection [.permanent, .cardType .artifact]
+    | .sacrificeCount s 1 => s == .intersection [.zone .battlefield, .cardType .artifact]
     | _ => false
 
 /-- Sacrifice another permanent you control of a printed subtype. -/
@@ -115,7 +115,7 @@ def discardsThis : List Cost → Bool
 /-- This object's controller chooses one card they own in a hand. -/
 def discardsOneCardFromHand : Selector → Bool
   | .selected (.controller .this) (.range (.nat 1) (.nat 1))
-      (.intersection [.inHand, .owner (.controller .this)]) => true
+      (.intersection [.zone .hand, .owner (.controller .this)]) => true
   | _ => false
 
 /-- `Discard a card or pay {N}` as one cost. -/

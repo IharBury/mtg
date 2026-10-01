@@ -13,7 +13,7 @@ open OracleParts
 
 #guard parseOracleParts (name := "") "Enchant creature" ==
   some [.ability (.keywordWithTarget .enchant 1
-    (.intersection [.permanent, .cardType .creature]))]
+    (.intersection [.zone .battlefield, .cardType .creature]))]
 #guard parseOracleParts (name := "") "Ward {3}" ==
   some [.ability (.keywordWithCost .ward [.mana [.generic 3]])]
 #guard parseOracleParts (name := "") "Ward {U}" == none
@@ -43,23 +43,23 @@ open OracleParts
     (.timeToCastSorcery (.controller .this))
     [.mana [.generic 2, .hybrid .white .blue, .hybrid .white .blue]]
     (.putOntoBattlefieldInState
-      (.intersection [.inGraveyard, .source .this])
+      (.intersection [.zone .graveyard, .source .this])
       [.attachedTo
         (.target 1 (.intersection [
-          .permanent, .cardType .creature, .controlled (.controller .this),
+          .zone .battlefield, .cardType .creature, .controlled (.controller .this),
           .powerAtMost (Value.int 1)]))]))]
 #guard parseOracleParts (name := "")
   "When this Equipment enters, attach it to target Dwarf you control." ==
   some [.ability (.triggered (.enter .this)
     (.attach .this
       (.target 1 (.intersection [
-        .permanent, .cardType .creature, .subtype .dwarf,
+        .zone .battlefield, .cardType .creature, .subtype .dwarf,
         .controlled (.controller .this)]))))]
 #guard parseOracleParts (name := "")
   "Each creature you control with a +1/+1 counter on it has menace." ==
   some [.ability (.static (.gainAbility
     (.intersection [
-      .permanent, .cardType .creature, .controlled (.controller .this),
+      .zone .battlefield, .cardType .creature, .controlled (.controller .this),
       .hasCounter .plusOnePlusOne])
     (.keyword .menace)))]
 #guard parseOracleParts (name := "")
@@ -79,24 +79,24 @@ open OracleParts
       .defineSelectorVariable 1
         (.selected (.controller .this) (.range 1 1)
           (.intersection [
-            .inLibrary, .cardType .creature, .supertype .legendary])),
+            .zone .library, .cardType .creature, .supertype .legendary])),
       .reveal (.variable 1),
       .returnToHand (.variable 1)]]]
 #guard parseOracleParts (name := "") "Creatures you control get +1/+1." ==
   some [
     .ability (.static (.addPower
       (.intersection [
-        .permanent, .cardType .creature, .controlled (.controller .this)])
+        .zone .battlefield, .cardType .creature, .controlled (.controller .this)])
       (Value.int 1))),
     .ability (.static (.addToughness
       (.intersection [
-        .permanent, .cardType .creature, .controlled (.controller .this)])
+        .zone .battlefield, .cardType .creature, .controlled (.controller .this)])
       (Value.int 1)))]
 #guard parseOracleParts (name := "")
   "This creature has haste as long as you control another Goblin." ==
   some [.ability (.static (.if
     (.any (.intersection [
-      .not .this, .permanent, .subtype .goblin,
+      .not .this, .zone .battlefield, .subtype .goblin,
       .controlled (.controller .this)]))
     [.gainAbility .this (.keyword .haste)]))]
 #guard parseOracleParts (name := "Bolg's Company")
@@ -105,7 +105,7 @@ open OracleParts
     [.tapSymbol,
       .sacrificeCount
         (.intersection [
-          .not .this, .permanent, .subtype .goblin,
+          .not .this, .zone .battlefield, .subtype .goblin,
           .controlled (.controller .this)])
         1]
     (.addMana (.controller .this) [.colored .black, .colored .red]))]
@@ -123,7 +123,7 @@ open OracleParts
     (.continuous
       [.gainAbility
         (.target 1 (.intersection [
-          .permanent, .cardType .creature, .attacking .all]))
+          .zone .battlefield, .cardType .creature, .attacking .all]))
         (.keyword .firstStrike)]
       .endOfTurn))]
 #guard parseOracleParts (name := "Gandalf")
@@ -134,7 +134,7 @@ open OracleParts
   some [.ability (.stackStatic
     (.reduceCostWithX .this [.mana [.x]]
       (.totalPower (.intersection [
-        .permanent, .cardType .creature, .keyword .flying,
+        .zone .battlefield, .cardType .creature, .keyword .flying,
         .controlled (.controller .this)]))))]
 #guard parseOracleParts (name := "")
   "This spell costs {2} less to cast, where X is the total power of creatures you control with flying." ==
@@ -145,7 +145,7 @@ open OracleParts
     (.searchLibraryThenShuffle (.controller .this) [
       .defineSelectorVariable 1
         (.selected (.controller .this) (.range 1 1)
-          (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+          (.intersection [.zone .library, .cardType .land, .supertype .basic])),
       .reveal (.variable 1),
       .returnToHand (.variable 1)]))]
 #guard parseOracleParts (name := "")
@@ -171,7 +171,7 @@ open OracleParts
   some [.ability (.triggered (.attack .this .all)
     (.dealDamage (.source .this) (.target 1 .all)
       (.count (.intersection [
-        .permanent, .cardType .artifact, .subtype .treasure,
+        .zone .battlefield, .cardType .artifact, .subtype .treasure,
         .controlled (.controller .this)]))))]
 #guard parseOracleParts (name := "")
   "At the beginning of your upkeep, create a Treasure token." ==
@@ -205,7 +205,7 @@ open OracleParts
         (.selected
           (.controller .this)
           (.range 1 1)
-          (.intersection [.inHand, .owner (.controller .this)]))]
+          (.intersection [.zone .hand, .owner (.controller .this)]))]
     (.draw (.controller .this) 1))]
 #guard parseOracleParts (name := "Óin the Brave")
   "{1}, {T}: Draw a card." ==
@@ -252,7 +252,7 @@ open OracleParts
         (.intersection [
           .not .this,
           .not .token,
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .subtype .dwarf,
           youControl])))
@@ -275,7 +275,7 @@ open OracleParts
           .searchLibraryThenShuffle (.controller .this) [
             .defineSelectorVariable 1
               (.selected (.controller .this) (.range 1 1)
-                (.intersection [.inLibrary, .cardType .land, .supertype .basic])),
+                (.intersection [.zone .library, .cardType .land, .supertype .basic])),
             .reveal (.variable 1),
             .holdOutInLibrary (.variable 1)],
           .putOnTopOfLibrary (.variable 1)])]))]
@@ -301,7 +301,7 @@ open OracleParts
   "Threshold — This creature gets +1/+1 as long as there are seven or more cards in your graveyard." ==
   some [.ability (.static (.if
     (.greaterOrEqual
-      (.count (.intersection [.inGraveyard, .owner (.controller .this)]))
+      (.count (.intersection [.zone .graveyard, .owner (.controller .this)]))
       7)
     [.addPower .this (Value.int 1), .addToughness .this (Value.int 1)]))]
 #guard parseOracleParts (name := "Most Decrepit Old Bird")
@@ -335,7 +335,7 @@ open OracleParts
   some [.actions [.sequence [
     .actionId 1 (.exile (.targets 1 (.range 2 2)
       (.intersection [
-        .permanent,
+        .zone .battlefield,
         .union [.cardType .creature, .cardType .land],
         .controlled (.controller .this)]))),
     .putOntoBattlefieldInState (.wasCreatedByAction 1)
@@ -348,7 +348,7 @@ open OracleParts
   some [.actions [.chooseUniqueModes (.range 1 2) [
     .sequence [
       .dealDamage .this
-        (.target 1 (.intersection [.permanent, .cardType .creature])) 3,
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) 3,
       .continuous
         [.replace (.putToGraveyard (.targetReference 1)) [.exile .replacingObject]]
         .endOfTurn],
@@ -382,11 +382,11 @@ open OracleParts
   some [
     .ability (.static (.addPower
       (.intersection [
-        .not .this, .permanent, .cardType .creature, .subtype .elf, youControl])
+        .not .this, .zone .battlefield, .cardType .creature, .subtype .elf, youControl])
       (Value.int 1))),
     .ability (.static (.addToughness
       (.intersection [
-        .not .this, .permanent, .cardType .creature, .subtype .elf, youControl])
+        .not .this, .zone .battlefield, .cardType .creature, .subtype .elf, youControl])
       (Value.int 1)))]
 #guard parseOracleParts (name := "The Lonely Mountain")
   "({T}: Add {R}.)\nThis land enters tapped unless you control an Equipment." ==
@@ -406,7 +406,7 @@ open OracleParts
   "This creature can't be blocked by creatures with power 2 or less.\nWhenever this creature becomes the target of a spell or ability an opponent controls, draw a card." ==
   some [
     .ability (.static (.forbid (.block
-      (.intersection [.permanent, .cardType .creature, .powerAtMost (Value.int 2)])
+      (.intersection [.zone .battlefield, .cardType .creature, .powerAtMost (Value.int 2)])
       .this))),
     .ability (.triggered
       (.target spellOrAbilityOpponentControls .this)
@@ -464,7 +464,7 @@ open OracleParts
             (.controller .this)
             (.range 0 2)
             (.intersection [
-              .inLibrary, .cardType .land, .supertype .basic])),
+              .zone .library, .cardType .land, .supertype .basic])),
         .reveal (.variable 1),
         .putOntoBattlefieldInState
           (.selected (.controller .this) (.range 1 1) (.variable 1))
@@ -499,7 +499,7 @@ open OracleParts
       .actionId 1
         (.returnToHand
           (.targets 1 (.range 0 1)
-            (.intersection [.not .this, .permanent, youControl]))),
+            (.intersection [.not .this, .zone .battlefield, youControl]))),
       .if (.happened (.actionWithId 1) .gameStart)
         [.putCounter (.source .this) .plusOnePlusOne 1]]))]
 #guard parseOracleParts (name := "Kíli the Resourceful")
@@ -522,7 +522,7 @@ open OracleParts
     .ability (.triggered
       (.enter (.intersection [
         .not .this,
-        .permanent,
+        .zone .battlefield,
         .union [.subtype .dwarf, .subtype .equipment],
         youControl]))
       (.draw (.controller .this) 1))]
@@ -536,7 +536,7 @@ open OracleParts
        (.enter
          (.intersection
            [.not .this,
-            .permanent,
+            .zone .battlefield,
             .union
               [.subtype .dwarf,
                .subtype .equipment],
@@ -546,7 +546,7 @@ open OracleParts
   "This creature has lifelink as long as you control another Dwarf.\nWhen this creature enters, look at the top four cards of your library. You may reveal a Dwarf or Equipment card from among them and put it into your hand. Put the rest on the bottom of your library in a random order." ==
   some [
     .ability (.static (.if
-      (.any (.intersection [.not .this, .permanent, .subtype .dwarf, youControl]))
+      (.any (.intersection [.not .this, .zone .battlefield, .subtype .dwarf, youControl]))
       [.gainAbility .this (.keyword .lifelink)])),
     .ability (.triggered (.enter .this) (.sequence [
       .actionId 1
@@ -575,7 +575,7 @@ open OracleParts
     .ability (.triggered (.enter .this)
       (.createTokens (.controller .this)
         (.count (.intersection [
-          .permanent, .cardType .artifact,
+          .zone .battlefield, .cardType .artifact,
           .controlled (.opponent (.controller .this))]))
         PredefinedToken.treasureToken
         [.tapped])),
@@ -661,7 +661,7 @@ open OracleParts
     (.destroy
       (.target 1
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.opponent (.controller .this)),
           .powerAtMost (Value.int 3)]))))]
@@ -674,7 +674,7 @@ open OracleParts
     .actionId 1
       (.exile
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .attacking .all,
           .controlled (.target 1 .player)])),
@@ -687,7 +687,7 @@ open OracleParts
               (.targetReference 1)
               (.range (.nat 0) (.count (.wasObjectOfAction 1)))
               (.intersection [
-                .inLibrary,
+                .zone .library,
                 .cardType .land,
                 .supertype .basic]))
             [.tapped]])]]
@@ -733,10 +733,10 @@ open OracleParts
     .continuous
       [.if
         (.any (.intersection [
-          .permanent, .subtype .wizard, .controlled (.controller .this)]))
+          .zone .battlefield, .subtype .wizard, .controlled (.controller .this)]))
         [.canPlay
           (.controller .this)
-          (.intersection [.inExile, .wasCreatedByAction 2])]]
+          (.intersection [.zone .exile, .wasCreatedByAction 2])]]
       .endOfGame]]
 #guard parseOracleParts (name := "")
   "Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard. (Then exile this card. You may cast the creature later from exile.)" ==
@@ -749,13 +749,13 @@ open OracleParts
   "Look at the top two cards of your library and exile them face up. For as long as they remain exiled, you may play them if you control a Wizard." ==
   none
 #guard OracleParts.parseTargetDesc "up to one other target creature" 1 ==
-  some (.targets 1 (.range 0 1) (.intersection [.not .this, .permanent, .cardType .creature]))
+  some (.targets 1 (.range 0 1) (.intersection [.not .this, .zone .battlefield, .cardType .creature]))
 #guard parseOracleParts (name := "Azog, Moria's Ruin")
   "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)" ==
   some [.ability (.triggered (.enter .this) (.sequence [
     .defineValueVariable 1
       (.greatestPower
-        (.targets 1 (.range 0 1) (.intersection [.not .this, .permanent, .cardType .creature]))),
+        (.targets 1 (.range 0 1) (.intersection [.not .this, .zone .battlefield, .cardType .creature]))),
     .defineSelectorVariable 2 (.controller (.targetReference 1)),
     .destroy (.targetReference 1),
     .keyword (.variable 2) (.amass .goblin (.variable 1)),
@@ -774,13 +774,13 @@ open OracleParts
     (.or
       (.enter .this)
       (.enter (.intersection [
-        .not .this, .permanent, .cardType .creature, .subtype .dwarf,
+        .not .this, .zone .battlefield, .cardType .creature, .subtype .dwarf,
         .controlled (.controller .this)])))
     (.sequence [
       .optional (.controller .this)
         (.actionId 1
           (.discard (.controller .this)
-            (.count (.intersection [.inHand, .owner (.controller .this)])))),
+            (.count (.intersection [.zone .hand, .owner (.controller .this)])))),
       .draw (.controller .this) (.count (.wasObjectOfAction 1)),
       .if (.enduringStory (.controller .this))
         [.dealDamage (.source .this) (.opponent (.controller .this))
@@ -795,12 +795,12 @@ open OracleParts
       [.actionId 1 (.chooseCreatureType (.controller .this)), .keepReplacedAction])),
     .ability (.static (.addPower
       (.intersection [
-        .permanent, .cardType .creature, .controlled (.controller .this),
+        .zone .battlefield, .cardType .creature, .controlled (.controller .this),
         .hasCreatureTypeChosenByAction 1])
       (Value.int 2))),
     .ability (.static (.addToughness
       (.intersection [
-        .permanent, .cardType .creature, .controlled (.controller .this),
+        .zone .battlefield, .cardType .creature, .controlled (.controller .this),
         .hasCreatureTypeChosenByAction 1])
       (Value.int 2)))]
 #guard parseOracleParts (name := "")
@@ -834,7 +834,7 @@ open OracleParts
   some [.ability (.keywordWithEffect (.chapter 2) [
     .continuous
       [.gainAbility .this (.triggered
-        (.enter (.intersection [.permanent, .cardType .land, .controlled (.controller .this)]))
+        (.enter (.intersection [.zone .battlefield, .cardType .land, .controlled (.controller .this)]))
         (.draw (.controller .this) 1))]
       .endOfGame])]
 #guard parseOracleParts (name := "")
@@ -853,7 +853,7 @@ open OracleParts
 #guard parseOracleParts (name := "")
   "Create a Treasure token for each Villain you control." ==
   some [.actions [.forEachVariable 1
-    (.intersection [.permanent, .subtype .villain, .controlled (.controller .this)])
+    (.intersection [.zone .battlefield, .subtype .villain, .controlled (.controller .this)])
     [.createTokens (.controller .this) 1 PredefinedToken.treasureToken]]]
 #guard parseOracleParts (name := "")
   "Create two Treasure tokens for each Villain you control." == none
@@ -863,7 +863,7 @@ open OracleParts
     .actionId 1 (.chooseCreatureType (.controller .this)),
     .forEachVariable 1
       (.intersection [
-        .permanent, .cardType .creature, .controlled (.controller .this),
+        .zone .battlefield, .cardType .creature, .controlled (.controller .this),
         .hasCreatureTypeChosenByAction 1])
       [.createTokens (.controller .this) 1 PredefinedToken.treasureToken]]))]
 #guard parseOracleParts (name := "")
@@ -900,38 +900,38 @@ open OracleParts
 #guard parseOracleParts (name := "")
   "{T}: Add {C} for each Food you control." ==
   some [.ability (.activated [.tapSymbol]
-    (.forEachVariable 1 (.intersection [.permanent, .subtype .food, youControl])
+    (.forEachVariable 1 (.intersection [.zone .battlefield, .subtype .food, youControl])
       [.addMana (.controller .this) [.colorless]]))]
 #guard parseOracleParts (name := "")
   "Add {R} for each artifact your opponents control." ==
   some [.actions [.forEachVariable 1
-    (.intersection [.permanent, .cardType .artifact, .controlled (.opponent (.controller .this))])
+    (.intersection [.zone .battlefield, .cardType .artifact, .controlled (.opponent (.controller .this))])
     [.addMana (.controller .this) [.colored .red]]]]
 #guard parseOracleParts (name := "")
   "{T}: Target creature with power 2 or less can't be blocked this turn." ==
   some [.ability (.activated [.tapSymbol]
     (.continuous [.forbid (.block .all (.target 1
-      (.intersection [.permanent, .cardType .creature, .powerAtMost (Value.int 2)])))] .endOfTurn))]
+      (.intersection [.zone .battlefield, .cardType .creature, .powerAtMost (Value.int 2)])))] .endOfTurn))]
 #guard parseOracleParts (name := "")
   "Whenever this creature attacks, it deals damage equal to the number of Dwarves you control to each opponent." ==
   some [.ability (.triggered (.attack .this .all)
     (.dealDamage .this (.opponent (.controller .this))
-      (.count (.intersection [.permanent, .subtype .dwarf, youControl]))))]
+      (.count (.intersection [.zone .battlefield, .subtype .dwarf, youControl]))))]
 #guard parseOracleParts (name := "")
   "When this creature enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library." ==
   some [.ability (.triggered (.enter .this) (.sequence [
     .draw (.controller .this) 1,
     .if (.not (.any (.intersection
-        [.permanent, .cardType .creature, .supertype .legendary, youControl])))
+        [.zone .battlefield, .cardType .creature, .supertype .legendary, youControl])))
       [.putOnBottomOfLibrary (.selected (.controller .this) (.range 1 1)
-        (.intersection [.inHand, .owner (.controller .this)]))]]))]
+        (.intersection [.zone .hand, .owner (.controller .this)]))]]))]
 #guard parseOracleParts (name := "")
   "When this creature enters, draw a card. Then if you don't control a legendary creature, put two cards from your hand on the bottom of your library." ==
   none
 #guard parseOracleParts (name := "")
   "Legendary creatures you control get +2/+1 and have ward {1}." ==
   let legendary := Selector.intersection
-    [.permanent, .cardType .creature, youControl, .supertype .legendary]
+    [.zone .battlefield, .cardType .creature, youControl, .supertype .legendary]
   some [
     .ability (.static (.addPower legendary (Value.int 2))),
     .ability (.static (.addToughness legendary (Value.int 1))),
@@ -939,7 +939,7 @@ open OracleParts
 #guard parseOracleParts (name := "")
   "Nonlegendary creatures you control get +1/+1." ==
   let nonlegendary := Selector.intersection
-    [.permanent, .cardType .creature, .not (.supertype .legendary), youControl]
+    [.zone .battlefield, .cardType .creature, .not (.supertype .legendary), youControl]
   some [
     .ability (.static (.addPower nonlegendary (Value.int 1))),
     .ability (.static (.addToughness nonlegendary (Value.int 1)))]
@@ -953,9 +953,9 @@ open OracleParts
 #guard parseOracleParts (name := "")
   "{2}{B}: Return this card from your graveyard to the battlefield tapped. Activate only if you control a legendary creature." ==
   some [.ability (.graveyardActivatedIf
-    (.any (.intersection [.permanent, .cardType .creature, .supertype .legendary, youControl]))
+    (.any (.intersection [.zone .battlefield, .cardType .creature, .supertype .legendary, youControl]))
     [.mana [.generic 2, .colored .black]]
-    (.putOntoBattlefieldInState (.intersection [.inGraveyard, .source .this]) [.tapped]))]
+    (.putOntoBattlefieldInState (.intersection [.zone .graveyard, .source .this]) [.tapped]))]
 #guard parseOracleParts (name := "")
   "{2}{B}: Return this card from your graveyard to the battlefield tapped." == none
 #guard parseOracleParts (name := "")
@@ -963,12 +963,12 @@ open OracleParts
   some [.actions [
     .draw (.controller .this) (.greatestToughness creaturesYouControl),
     .putOntoBattlefield (.selected (.controller .this) .any
-      (.intersection [.inHand, .owner (.controller .this), .cardType .creature]))]]
+      (.intersection [.zone .hand, .owner (.controller .this), .cardType .creature]))]]
 #guard parseOracleParts (name := "")
   "Whenever another creature you control with power 2 or less enters, you may pay {1}. If you do, draw a card." ==
   some [.ability (.triggered
     (.enter (.intersection [
-      .not .this, .permanent, .cardType .creature, youControl, .powerAtMost (Value.int 2)]))
+      .not .this, .zone .battlefield, .cardType .creature, youControl, .powerAtMost (Value.int 2)]))
     (.optionalPayFor (.controller .this) [.mana [.generic 1]] [.draw (.controller .this) 1]))]
 #guard parseOracleParts (name := "")
   "Whenever another creature you control with power 2 or less enters, you may pay {1}. If you don't, draw a card." ==
@@ -976,19 +976,19 @@ open OracleParts
 #guard parseOracleParts (name := "Minas Tirith Garrison")
   "Minas Tirith Garrison's power is equal to the number of cards in your hand." ==
   some [.ability (.static (.setPower .this
-    (.count (.intersection [.inHand, .owner (.controller .this)]))))]
+    (.count (.intersection [.zone .hand, .owner (.controller .this)]))))]
 #guard parseOracleParts (name := "Minas Tirith Garrison")
   "Minas Tirith Garrison's power is equal to the number of cards in your graveyard." == none
 #guard parseOracleParts (name := "")
   "Whenever this creature attacks, you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way." ==
   some [.ability (.triggered (.attack .this .all) (.sequence [
     .actionId 1 (.tap (.selected (.controller .this) .any
-      (.intersection [.permanent, .subtype .human, .not .tapped, youControl]))),
+      (.intersection [.zone .battlefield, .subtype .human, .not .tapped, youControl]))),
     .draw (.controller .this) (.count (.wasObjectOfAction 1))]))]
 #guard parseOracleParts (name := "")
   "Whenever this creature enters or attacks, return target Elf card from your graveyard to your hand. You gain life equal to that card's power." ==
   some [.ability (.triggered (.or (.enter .this) (.attack .this .all)) (.sequence [
-    .returnToHand (.target 1 (.intersection [.inGraveyard, .subtype .elf, .owner (.controller .this)])),
+    .returnToHand (.target 1 (.intersection [.zone .graveyard, .subtype .elf, .owner (.controller .this)])),
     .gainLife (.controller .this) (.greatestPower (.targetReference 1))]))]
 #guard parseOracleParts (name := "")
   "{T}, Pay 1 life: Add {B} or {R}." ==
@@ -999,23 +999,23 @@ open OracleParts
   "{5}{B}{R}, {T}, Sacrifice Mount Doom and a legendary artifact: Choose up to two creatures, then destroy the rest. Activate only as a sorcery." ==
   some [.ability (.activatedIf (.timeToCastSorcery (.controller .this))
     [.mana [.generic 5, .colored .black, .colored .red], .tapSymbol, .sacrifice .this,
-      .sacrificeCount (.intersection [.permanent, .cardType .artifact, .supertype .legendary]) 1]
+      .sacrificeCount (.intersection [.zone .battlefield, .cardType .artifact, .supertype .legendary]) 1]
     (.sequence [
       .defineSelectorVariable 1
-        (.selected (.controller .this) (.range 0 2) (.intersection [.permanent, .cardType .creature])),
-      .destroy (.intersection [.permanent, .cardType .creature, .not (.variable 1)])]))]
+        (.selected (.controller .this) (.range 0 2) (.intersection [.zone .battlefield, .cardType .creature])),
+      .destroy (.intersection [.zone .battlefield, .cardType .creature, .not (.variable 1)])]))]
 #guard parseOracleParts (name := "Mount Doom")
   "{5}{B}{R}, {T}, Sacrifice Rivendell and a legendary artifact: Choose up to two creatures, then destroy the rest. Activate only as a sorcery." ==
   none
 #guard parseOracleParts (name := "")
   "This creature can't block unless you control a Goblin or Orc." ==
   some [.ability (.static (.if
-    (.not (.any (.intersection [.permanent, .union [.subtype .goblin, .subtype .orc], youControl])))
+    (.not (.any (.intersection [.zone .battlefield, .union [.subtype .goblin, .subtype .orc], youControl])))
     [.forbid (.block .this .any)]))]
 #guard parseOracleParts (name := "")
   "Other Orcs and Goblins you control have trample." ==
   some [.ability (.static (.gainAbility
-    (.intersection [.not .this, .permanent, .union [.subtype .orc, .subtype .goblin], youControl])
+    (.intersection [.not .this, .zone .battlefield, .union [.subtype .orc, .subtype .goblin], youControl])
     (.keyword .trample)))]
 #guard parseOracleParts (name := "")
   "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control." ==
@@ -1025,14 +1025,14 @@ open OracleParts
   "When this creature enters, destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way." ==
   some [.ability (.triggered (.enter .this) (.sequence [
     .actionId 1 (.destroy (.intersection [
-      .permanent, .union [.cardType .artifact, .cardType .enchantment],
+      .zone .battlefield, .union [.cardType .artifact, .cardType .enchantment],
       .controlled (.opponent (.controller .this))])),
     .gainLife (.controller .this) (.count (.wasObjectOfAction 1))]))]
 #guard parseOracleParts (name := "")
   "Choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands." ==
   some [.actions [
     .actionId 1 (.chooseCreatureType (.controller .this)),
-    .returnToHand (.intersection [.permanent, .cardType .creature, .not (.hasCreatureTypeChosenByAction 1)])]]
+    .returnToHand (.intersection [.zone .battlefield, .cardType .creature, .not (.hasCreatureTypeChosenByAction 1)])]]
 #guard parseOracleParts (name := "")
   "{T}: Add two mana in any combination of {U}, {B}, and/or {R}." ==
   some [.ability (.activated [.tapSymbol] (.addManaInAnyCombination (.controller .this)
@@ -1040,18 +1040,18 @@ open OracleParts
 #guard parseOracleParts (name := "Rivendell")
   "Rivendell enters tapped unless you control a legendary creature." ==
   some [.ability (.everywhereStatic (.if
-    (.not (.any (.intersection [.permanent, .cardType .creature, .supertype .legendary, youControl])))
+    (.not (.any (.intersection [.zone .battlefield, .cardType .creature, .supertype .legendary, youControl])))
     [.replace (.enter .this) [.putOntoBattlefieldInState .this [.tapped]]]))]
 #guard parseOracleParts (name := "")
   "{1}{U}, {T}: Scry 2. Activate only if you control a legendary creature." ==
   some [.ability (.activatedIf
-    (.any (.intersection [.permanent, .cardType .creature, .supertype .legendary, youControl]))
+    (.any (.intersection [.zone .battlefield, .cardType .creature, .supertype .legendary, youControl]))
     [.mana [.generic 1, .colored .blue], .tapSymbol]
     (.scry (.controller .this) 2))]
 #guard parseOracleParts (name := "")
   "Other Elves you control have \"{T}: Add {G} or {U}.\"" ==
   some [.ability (.static (.gainAbility
-    (.intersection [.not .this, .permanent, .subtype .elf, youControl])
+    (.intersection [.not .this, .zone .battlefield, .subtype .elf, youControl])
     (.activated [.tapSymbol] (.playerSelectAction (.controller .this) (.range 1 1)
       [.addMana (.controller .this) [.colored .green], .addMana (.controller .this) [.colored .blue]]))))]
 #guard parseOracleParts (name := "") "Other Elves you control have \"Flying.\"" == none
@@ -1081,7 +1081,7 @@ open OracleParts
   "{T}: Add {B} or {R}. Activate only if this land entered this turn or if you control a basic land." ==
   some [.ability (.activatedIf
     (.not (.and (.not (.happened (.enter (.source .this)) .turnStart))
-      (.not (.any (.intersection [.permanent, .cardType .land, .supertype .basic, youControl])))))
+      (.not (.any (.intersection [.zone .battlefield, .cardType .land, .supertype .basic, youControl])))))
     [.tapSymbol]
     (.playerSelectAction (.controller .this) (.range 1 1)
       [.addMana (.controller .this) [.colored .black], .addMana (.controller .this) [.colored .red]]))]
@@ -1099,41 +1099,41 @@ open OracleParts
   none
 
 #guard parseOracleParts (name := "Quake") "Quake deals 3 damage to each creature." ==
-  some [.actions [.dealDamage .this (.intersection [.permanent, .cardType .creature]) 3]]
+  some [.actions [.dealDamage .this (.intersection [.zone .battlefield, .cardType .creature]) 3]]
 #guard parseOracleParts (name := "")
   "Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle." ==
   some [.actions [
-    .destroy (.target 1 (.intersection [.permanent, .cardType .land])),
+    .destroy (.target 1 (.intersection [.zone .battlefield, .cardType .land])),
     .optional (.controller (.targetReference 1)) (.searchLibraryThenShuffle (.controller (.targetReference 1)) [
       .putOntoBattlefieldInState (.selected (.controller (.targetReference 1)) (.range 1 1)
-        (.intersection [.inLibrary, .cardType .land, .supertype .basic])) [.tapped]])]]
+        (.intersection [.zone .library, .cardType .land, .supertype .basic])) [.tapped]])]]
 #guard parseOracleParts (name := "")
   "Double target creature's power and toughness until end of turn." ==
   some [.actions [.continuous [
-    .addPower (.target 1 (.intersection [.permanent, .cardType .creature])) (.greatestPower (.targetReference 1)),
+    .addPower (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) (.greatestPower (.targetReference 1)),
     .addToughness (.targetReference 1) (.greatestToughness (.targetReference 1))] .endOfTurn]]
 #guard parseOracleParts (name := "")
   "Target creature you control fights target creature an opponent controls." ==
   some [.actions [.fight
-    (.target 1 (.intersection [.permanent, .cardType .creature, youControl]))
-    (.target 2 (.intersection [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))]))]]
+    (.target 1 (.intersection [.zone .battlefield, .cardType .creature, youControl]))
+    (.target 2 (.intersection [.zone .battlefield, .cardType .creature, .controlled (.opponent (.controller .this))]))]]
 #guard parseOracleParts (name := "")
   "Target creature you control deals damage equal to twice its power to target creature an opponent controls." ==
   some [.actions [.dealDamage
-    (.target 1 (.intersection [.permanent, .cardType .creature, youControl]))
-    (.target 2 (.intersection [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))]))
+    (.target 1 (.intersection [.zone .battlefield, .cardType .creature, youControl]))
+    (.target 2 (.intersection [.zone .battlefield, .cardType .creature, .controlled (.opponent (.controller .this))]))
     (.product (.totalPower (.targetReference 1)) (.int 2))]]
 #guard parseOracleParts (name := "")
   "This spell costs {2} less to cast if there are two or more creature cards in your graveyard." ==
   some [.ability (.stackStatic (.if
-    (.greaterOrEqual (.count (.intersection [.inGraveyard, .cardType .creature, .owner (.controller .this)])) 2)
+    (.greaterOrEqual (.count (.intersection [.zone .graveyard, .cardType .creature, .owner (.controller .this)])) 2)
     [.reduceCost .this [.mana [.generic 2]]]))]
 #guard parseOracleParts (name := "Worlds")
   "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds." ==
   some [.actions [
-    .actionId 1 (.exile (.intersection [.permanent, .cardType .creature])),
+    .actionId 1 (.exile (.intersection [.zone .battlefield, .cardType .creature])),
     .forEachVariable 1 .player [.optional (.variable 1) (.putOntoBattlefield
-      (.selected (.variable 1) .any (.intersection [.inHand, .owner (.variable 1), .cardType .creature])))],
+      (.selected (.variable 1) .any (.intersection [.zone .hand, .owner (.variable 1), .cardType .creature])))],
     .returnToHand (.wasCreatedByAction 1),
     .exile .this]]
 #guard parseOracleParts (name := "Worlds")
@@ -1145,7 +1145,7 @@ open OracleParts
 #guard parseOracleParts (name := "HYDRA Troopers")
   "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards. (Put the top two cards of your library into your graveyard.)" ==
   some [.ability (.triggered (.enter .this)
-    (.ifElse (.greaterOrEqual (.count (.intersection [.inGraveyard, .cardType .creature, .owner (.controller .this)])) 2)
+    (.ifElse (.greaterOrEqual (.count (.intersection [.zone .graveyard, .cardType .creature, .owner (.controller .this)])) 2)
       [.createTokens (.controller .this) 1
         [.type .creature, .subtype .villain, .colorIndicator [.black], .power 2, .toughness 1,
           .ability (.keyword .menace)] [.tapped]]
@@ -1153,7 +1153,7 @@ open OracleParts
 #guard parseOracleParts (name := "Iron Man, Master of Machines")
   "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card." ==
   some [.ability (.triggered (.attack .this .all)
-    (.if (.happened (.enter (.intersection [.permanent, .cardType .artifact, youControl])) .turnStart)
+    (.if (.happened (.enter (.intersection [.zone .battlefield, .cardType .artifact, youControl])) .turnStart)
       [.draw (.controller .this) 1]))]
 #guard parseOracleParts (name := "Super Intelligence")
   "At the beginning of the upkeep of enchanted creature's controller, that player draws a card." ==
@@ -1161,7 +1161,7 @@ open OracleParts
 #guard parseOracleParts (name := "Hulkling, Burgeoning Bruiser")
   "Whenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling." ==
   some [.ability (.triggered
-    (.triggerId 1 (.enter (.intersection [.not .this, .permanent, .cardType .creature, youControl])))
+    (.triggerId 1 (.enter (.intersection [.not .this, .zone .battlefield, .cardType .creature, youControl])))
     (.if (.not (.and
         (.not (.greater (.greatestPower (.wasArgumentOfTrigger 1 1)) (.greatestPower (.source .this))))
         (.not (.greater (.greatestToughness (.wasArgumentOfTrigger 1 1)) (.greatestToughness (.source .this))))))
@@ -1173,7 +1173,7 @@ open OracleParts
 #guard parseOracleParts (name := "The Sackville-Bagginses")
   "Whenever you sacrifice a token, target opponent loses 1 life." ==
   some [.ability (.triggered
-    (.sacrifice (.intersection [.permanent, .token, youControl]))
+    (.sacrifice (.intersection [.zone .battlefield, .token, youControl]))
     (.loseLife (.target 1 (.opponent (.controller .this))) 1))]
 #guard parseOracleParts (name := "The Sackville-Bagginses")
   "Whenever you sacrifice a creature, target opponent loses 1 life." == none
@@ -1184,7 +1184,7 @@ open OracleParts
   some [.ability (.triggered
     (.damageSimultaneously
       (.intersection [
-        .permanent, .cardType .creature, .subtype .hero, youControl])
+        .zone .battlefield, .cardType .creature, .subtype .hero, youControl])
       .player
       [])
     (.putCounter (.source .this) .plusOnePlusOne 2))]
@@ -1224,7 +1224,7 @@ open OracleParts
       .if (.greaterOrEqual (.count (.wasObjectOfAction 1)) 1)
         [.dealDamageEqualToPower (.targetReference 2)
           (.targets 3 (.range 0 1)
-            (.intersection [.permanent, .cardType .creature]))]]))]
+            (.intersection [.zone .battlefield, .cardType .creature]))]]))]
 #guard parseOracleParts (name := "Thorin, Mountain-king")
   "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its toughness to up to one target creature." ==
   none
@@ -1249,7 +1249,7 @@ open OracleParts
     [.putOntoBattlefield
       (.target 1
         (.intersection [
-          .inGraveyard,
+          .zone .graveyard,
           .cardType .creature,
           .owner (.controller .this),
           .manaValueAtMost (.nat 3)]))])]
@@ -1263,7 +1263,7 @@ open OracleParts
   "III — Put a +1/+1 counter on up to one target creature." ==
   some [.ability (.keywordWithEffect (.chapter 3)
     [.putCounter
-      (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
+      (.targets 1 (.range 0 1) (.intersection [.zone .battlefield, .cardType .creature]))
       .plusOnePlusOne
       1])]
 #guard parseOracleParts (name := "Uncover the Moon-Letters")
@@ -1309,7 +1309,7 @@ open OracleParts
 #guard parseOracleParts (name := "Belladonna Took")
   "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control." ==
   some [.ability (.abilityId 1 (.triggered
-    (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
+    (.enter (.intersection [.zone .battlefield, .token, .controlled (.controller .this)]))
     (.sequence [
       .if (.didNotHappen (.abilityWithIdResolved 1) .turnStart)
         [.gainLife (.controller .this) 1],
@@ -1321,13 +1321,72 @@ open OracleParts
           (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart)
           (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved 1)) .turnStart))
         [.putCounter
-          (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)])
+          (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)])
           .plusOnePlusOne 1]])))]
 #guard parseOracleParts (name := "Belladonna Took")
   "Whenever a token you control enters, you gain 2 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control." ==
   none
 #guard parseOracleParts (name := "Belladonna Took")
   "Whenever a creature you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control." ==
+  none
+#guard parseOracleParts (name := "Bifur, Melodic Rider")
+  "Whenever Bifur enters or attacks, put a +1/+1 counter on target creature." ==
+  some [
+    .ability (.triggered
+      (.or (.enter .this) (.attack .this .all))
+      (.putCounter
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
+        .plusOnePlusOne 1))]
+#guard parseOracleParts (name := "Bifur, Melodic Rider")
+  "As long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time." ==
+  some [
+    .ability (.static (.if (.enduringStory (.controller .this)) [
+      .replace
+        (.abilityTriggers
+          (.intersection [
+            .zone .battlefield, .subtype .dwarf, .controlled (.controller .this)]))
+        [.duplicateReplacingTrigger 2]]))]
+#guard parseOracleParts (name := "Bifur, Melodic Rider")
+  "As long as you have an enduring story, if a triggered ability of a Dwarf triggers, that ability triggers an additional time." ==
+  none
+#guard parseOracleParts (name := "Bilbo, Thief in the Night")
+  "Spells you cast from anywhere other than your hand cost {1} less to cast." ==
+  some [
+    .ability (.static (.reduceCost
+      (.intersection [
+        .spell,
+        .controlled (.controller .this),
+        .not (.castFromZone .hand)])
+      [.mana [.generic 1]]))]
+#guard parseOracleParts (name := "Bilbo, Thief in the Night")
+  "Spells you cast from your hand cost {1} less to cast." == none
+#guard parseOracleParts (name := "Bilbo, Thief in the Night")
+  "Whenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead." ==
+  some [
+    .ability (.triggered
+      (.attack .this .all)
+      (.sequence [
+        .actionId 1
+          (.mayCast
+            (.controller .this)
+            (.selected (.controller .this) (.range 1 1)
+              (.intersection [
+                .zone .graveyard,
+                .owner (.controller .this),
+                .union [
+                  .cardType .artifact,
+                  .cardType .instant,
+                  .cardType .sorcery]]))),
+        .continuous
+          [.replace
+            (.putToGraveyard
+              (.intersection [
+                .wasObjectOfAction 1,
+                .union [.cardType .instant, .cardType .sorcery]]))
+            [.exile .replacingObject]]
+          .endOfGame]))]
+#guard parseOracleParts (name := "Bilbo, Thief in the Night")
+  "Whenever Bilbo attacks, you may cast an artifact spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead." ==
   none
 
 end Mtg.Engine

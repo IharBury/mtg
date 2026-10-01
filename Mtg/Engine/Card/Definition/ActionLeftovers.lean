@@ -498,7 +498,7 @@ def leftoverTapAddOneOf? (costs : List Cost) : CardAction → Option (Array Mana
 
 /-- `{T}: Add {C} for each Food you control.` -/
 def leftoverTapAddManaForEach? (costs : List Cost) : CardAction → Option TapAddForEach
-  | .forEachVariable _ (.intersection [.permanent, .subtype st, .controlled (.controller .this)])
+  | .forEachVariable _ (.intersection [.zone .battlefield, .subtype st, .controlled (.controller .this)])
       [.addMana who [sym]] =>
     if costs == [.tapSymbol] && who == .controller .this then
       (addedManaType? sym).map fun m => { mana := m, subtype := st.toString }
@@ -524,7 +524,7 @@ def leftoverTapPayLifeAddOneOf? (costs : List Cost) (action : CardAction) :
 /-- This land entered this turn or you control a basic land. -/
 def leftoverEnteredThisTurnOrBasic? : Condition → Bool
   | .not (.and (.not (.happened (.enter (.source .this)) .turnStart))
-      (.not (.any (.intersection [.permanent, .cardType .land, .supertype .basic, you])))) =>
+      (.not (.any (.intersection [.zone .battlefield, .cardType .land, .supertype .basic, you])))) =>
     you == .controlled (.controller .this)
   | _ => false
 
@@ -583,7 +583,7 @@ def leftoverEntersWithHopePerCreature? : List CardAction → Bool
   | [.putCounter who (.hope) (.count among), .keepReplacedAction] =>
     (who == .this || who == .source .this) &&
       among == .intersection [
-        .permanent, .cardType .creature, .controlled (.controller .this)]
+        .zone .battlefield, .cardType .creature, .controlled (.controller .this)]
   | _ => false
 
 /-- The Ruinous Wrecking Crew's four “choose up to X” modes, in printed order. -/
@@ -593,13 +593,13 @@ def wreckingCrewModes? : List CardAction → Bool
         .discard (.controller .this) (.nat 1),
         .draw (.controller .this) (.nat 1)],
       .loseLife (.target _ (.opponent (.controller .this))) (.nat 2),
-      .destroy (.target _ (.intersection [.permanent, .token])),
+      .destroy (.target _ (.intersection [.zone .battlefield, .token])),
       .forEachVariable id .player
         [.sacrifice (.selected (.variable id') (.range 1 1) among)]
     ] =>
     id == id' &&
       among == .intersection [
-        .permanent, .cardType .creature, .controlled (.variable id)]
+        .zone .battlefield, .cardType .creature, .controlled (.variable id)]
   | _ => false
 
 /-- Heal all marked damage on this, then perform the replaced action. -/

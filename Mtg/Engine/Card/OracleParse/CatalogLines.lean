@@ -57,7 +57,7 @@ def parseTriggerEvent (cardName clause : String) : Option Trigger :=
     | "equipped creature deals combat damage to a player" =>
       some (.combatDamage (.hostOf .this) .player)
     | "you sacrifice a token" =>
-      some (.sacrifice (.intersection [.permanent, .token, youControl]))
+      some (.sacrifice (.intersection [.zone .battlefield, .token, youControl]))
     | _ => none
   let cast := (after? c "you cast ").bind parseSpellYouCast |>.map Trigger.castSpell
   let selfOrAnother :=
@@ -171,7 +171,7 @@ def parseThoseCreaturesGain (id : Nat) (sentence : String) : Option CardAction :
   (between? (normSentence sentence) "those creatures gain " " until end of turn").bind
     parseKeywordPhrase |>.bind fun kws =>
       gainUntilEnd
-        (.intersection [.permanent, .cardType .creature, .isTargetOf (.wasArgumentOfTrigger id 1)])
+        (.intersection [.zone .battlefield, .cardType .creature, .isTargetOf (.wasArgumentOfTrigger id 1)])
         kws
 
 /-- A cast trigger whose spell targets something, with its effect. -/
@@ -429,7 +429,7 @@ def parseCatalogActivated (cardName line : String) (n : Nat) : Option (List Card
           | _, _ => none
         gyCond?.map fun cond =>
           ([.ability (.graveyardActivatedIf cond costs
-            (.putOntoBattlefieldInState (.intersection [.inGraveyard, .source .this])
+            (.putOntoBattlefieldInState (.intersection [.zone .graveyard, .source .this])
               [.tapped]))] ++ extra, n)
       else
         let effect? :=
@@ -540,7 +540,7 @@ def parseCatalogAsLongAsGraveyard (cardName line : String) : Option (List CardPa
         match positiveCount k, (before? cards " cards").bind typeOfOracle? with
         | some k, some t =>
           let cond := Condition.greaterOrEqual
-            (.count (.intersection [.inGraveyard, .cardType t, .owner (.controller .this)]))
+            (.count (.intersection [.zone .graveyard, .cardType t, .owner (.controller .this)]))
             (Value.nat k)
           let (effect, allTypes) :=
             match before? effect " and is all creature types" with
@@ -595,7 +595,7 @@ def parseEquipSubtype (line : String) : Option CardPart :=
 def parseKeywordCantAttackYouOrBlock (line : String) : Option CardPart :=
   (between? (normLine line) "creatures with " " can't attack you or block creatures you control").bind
     keywordOfOracle? |>.map fun k =>
-      let with_ := Selector.intersection [.permanent, .cardType .creature, .keyword k]
+      let with_ := Selector.intersection [.zone .battlefield, .cardType .creature, .keyword k]
       .ability (.static (.forbid (.or
         (.attack with_ (.controller .this))
         (.block with_ creaturesYouControl))))
@@ -646,7 +646,7 @@ def parseDiscardMayExilePlay (line : String) (n : Nat) : Option (CardPart × Nat
     some (.ability (.triggered (.triggerId n (.discard (.controller .this)))
       (.optional (.controller .this) (.sequence [
         .actionId n (.exile (.intersection [
-          .inGraveyard, .wasArgumentOfTrigger n 1, .owner (.controller .this)])),
+          .zone .graveyard, .wasArgumentOfTrigger n 1, .owner (.controller .this)])),
         .continuous [.canPlay (.controller .this) (.wasCreatedByAction n)]
           (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))), n + 1)
   else none
@@ -827,7 +827,7 @@ object of several card types has all of them. -/
 def youControlPiece? (obj : String) : Option Condition :=
   youControlCondition? obj <|>
     ((dropArticle? obj).bind (fun o => ((norm o).splitOn " ").mapM typeOfOracle?) |>.map fun ts =>
-      .any (.intersection ([.permanent] ++ ts.map Selector.cardType ++ [youControl])))
+      .any (.intersection ([.zone .battlefield] ++ ts.map Selector.cardType ++ [youControl])))
 
 /-- `As long as you control an artifact creature or a Plan, <this> has
 indestructible.` Either permanent satisfies the condition. -/
@@ -855,7 +855,7 @@ def discardOrPayCost? (s : String) : Option Cost :=
     if discard != "discard a card" then none
     else (nonemptyMana? pay).map fun syms =>
       .or [.discard (.selected (.controller .this) (.range 1 1)
-        (.intersection [.inHand, .owner (.controller .this)])), .mana syms]
+        (.intersection [.zone .hand, .owner (.controller .this)])), .mana syms]
 
 /-- `As an additional cost to cast this spell, discard a card or pay {2}.` -/
 def parseAdditionalCostDiscardOrPay (line : String) : Option CardPart :=
@@ -871,7 +871,7 @@ def parseWardDiscardOrPay (line : String) : Option CardPart :=
 def parseMayPlayLandsFromGraveyard (line : String) : Option CardPart :=
   if normLine line == "you may play lands from your graveyard" then
     some (.ability (.static (.canPlay (.controller .this)
-      (.intersection [.inGraveyard, .cardType .land, .owner (.controller .this)]))))
+      (.intersection [.zone .graveyard, .cardType .land, .owner (.controller .this)]))))
   else none
 
 /-- `Enchanted creature loses all abilities and doesn't untap during its
@@ -884,10 +884,96 @@ def parseEnchantedLosesAbilitiesDoesntUntap (line : String) : Option (List CardP
       .ability (.static (.doesntUntap (.hostOf .this)))]
   else none
 
+/-- `Whenever <this> enters or attacks, put a +1/+1 counter on target creature.`
+The entering or attacking object is this card. The creature is target `n`. -/
+def parseEnterOrAttackPlusOne (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  (triggerSelfEffect? cardName "whenever" (normLine line) " enters or attacks, ").bind
+    (parsePutPlusOneOnTarget · n) |>.map fun (action, n') =>
+      (.ability (.triggered (.or (.enter .this) (.attack .this .all)) action), n')
+
+/-- `As long as you have an enduring story, if a triggered ability of a <subtype> you control triggers, that ability triggers an additional time.`
+The source is a permanent of that subtype this object's controller controls.
+`replace` of `abilityTriggers` is that triggering.
+`duplicateReplacingTrigger 2` is that ability triggering twice instead of
+once, which is one additional time (CR 603.2d). -/
+def parseExtraTriggerIfEnduringStory (line : String) : Option CardPart :=
+  (after? (normLine line)
+      "as long as you have an enduring story, if a triggered ability of ").bind fun rest =>
+    (before? rest " triggers, that ability triggers an additional time").bind fun who =>
+      let (obj, controlled) := splitYouControl who
+      if !controlled then none
+      else
+        (dropArticle? obj).bind subtypeOfOracle? |>.map fun st =>
+          .ability (.static (.if (.enduringStory (.controller .this)) [
+            .replace
+              (.abilityTriggers
+                (.intersection [.zone .battlefield, .subtype st, youControl]))
+              [.duplicateReplacingTrigger 2]]))
+
+/-- `Spells you cast from anywhere other than your hand cost {N} less to cast.`
+`{N}` is generic mana and is not zero. Those spells are ones this object's
+controller casts. `castFromZone .hand` is that player's hand. -/
+def parseNotFromHandCostLess (line : String) : Option CardPart :=
+  (between? (normLine line)
+      "spells you cast from anywhere other than your hand cost "
+      " less to cast").bind positiveGeneric? |>.map fun k =>
+    .ability (.static (.reduceCost
+      (.intersection [
+        .spell,
+        youControl,
+        .not (.castFromZone .hand)])
+      [.mana [.generic k]]))
+
+/-- An artifact, instant, or sorcery card in this object's controller's graveyard. -/
+def artifactInstantOrSorceryInYourGraveyard : Selector :=
+  .intersection [
+    .zone .graveyard,
+    .owner (.controller .this),
+    .union [.cardType .artifact, .cardType .instant, .cardType .sorcery]]
+
+/-- `Whenever <this> attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead.`
+The cast is action `n` and pays that spell's cost. `mayCast` allows any
+number of matching spells; `selected` with range 1–1 is this one spell.
+An instant or sorcery that was that action is exiled instead of being put
+into a graveyard. The printed text states no shorter duration, so the
+replacement lasts until the end of the game (CR 611.2a). -/
+def parseAttackMayCastFromGraveyard (cardName : String) (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
+  match sentences line with
+  | [cast, exile] =>
+    match triggerSelfEffect? cardName "whenever" (normSentence cast) " attacks, " with
+    | some effect =>
+      if sentenceIs effect
+          "you may cast an artifact, instant, or sorcery spell from your graveyard" &&
+          sentenceIs exile
+            "if an instant or sorcery spell cast this way would be put into your graveyard, exile it instead" then
+        some (
+          .ability (.triggered (.attack .this .all) (.sequence [
+            .actionId n
+              (.mayCast
+                (.controller .this)
+                (.selected (.controller .this) (.range 1 1)
+                  artifactInstantOrSorceryInYourGraveyard)),
+            .continuous
+              [.replace
+                (.putToGraveyard
+                  (.intersection [
+                    .wasObjectOfAction n,
+                    .union [.cardType .instant, .cardType .sorcery]]))
+                [.exile .replacingObject]]
+              .endOfGame])),
+          n + 1)
+      else none
+    | none => none
+  | _ => none
+
 /-- Static and cost lines of a catalog card, before its triggers. -/
 private def parseCatalogLineStatic (cardName line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  (parseEnchantedLosesAbilitiesDoesntUntap line).map (·, n) <|>
+  (parseExtraTriggerIfEnduringStory line).map ([·], n) <|>
+    (parseNotFromHandCostLess line).map ([·], n) <|>
+    (parseEnchantedLosesAbilitiesDoesntUntap line).map (·, n) <|>
     (parseMayPlayLandsFromGraveyard line).map ([·], n) <|>
     (parseKeywordsThenWard line).map (·, n) <|>
     (parseEntersGreaterThanSelfCounter cardName line).map ([·], n) <|>
@@ -912,7 +998,9 @@ private def parseCatalogLineStatic (cardName line : String) (n : Nat) :
 /-- Triggered, activated, and spell lines of a catalog card. -/
 private def parseCatalogLineRest (cardName line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  parseChapter cardName line n <|>
+  (parseEnterOrAttackPlusOne cardName line n).map (fun (p, n') => ([p], n')) <|>
+    (parseAttackMayCastFromGraveyard cardName line n).map (fun (p, n') => ([p], n')) <|>
+    parseChapter cardName line n <|>
     (parseCatalogTriggered cardName line n).map (fun (p, n') => ([p], n')) <|>
     parseCatalogActivated cardName line n <|>
     (parseCatalogStaticGets cardName line).map (·, n) <|>

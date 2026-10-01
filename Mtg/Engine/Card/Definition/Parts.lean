@@ -342,6 +342,9 @@ inductive CardAction where
   would have been created to the `Value` created instead. Twice that
   many is `fun n => .nat (n * 2)`. -/
   | modifyReplacementCreatedTokenCount : (Nat → Value) → CardAction
+  /-- The trigger this replacement is replacing triggers this many times
+  instead of once (CR 603.2d). Two is one additional time. -/
+  | duplicateReplacingTrigger : Value → CardAction
   /-- The selected player mills that many cards (CR 701.13). -/
   | mill : Selector → Value → CardAction
   /-- The selected player surveils that many cards (CR 701.53). -/
@@ -364,6 +367,11 @@ inductive CardAction where
   Number it with `actionId` so `Selector.hasCreatureTypeChosenByAction` can
   refer to the choice. -/
   | chooseCreatureType : Selector → CardAction
+  /-- The selected player may cast any number of spells matching the selector,
+  paying their costs (CR 601.2 / 608.2g). A `selected` choice limits how
+  many. `wasObjectOfAction` of an `actionId` around this action is each
+  spell that was cast. -/
+  | mayCast : Selector → Selector → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token

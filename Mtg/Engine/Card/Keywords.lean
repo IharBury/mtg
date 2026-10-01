@@ -358,6 +358,18 @@ inductive Range where
   | from : Value → Range
 deriving Repr, Inhabited, BEq
 
+/-- A zone named in Oracle text, without a player (CR 400.1).
+`your hand` is the hand of this object's controller. -/
+inductive ZoneKind where
+  | library
+  | hand
+  | battlefield
+  | graveyard
+  | stack
+  | exile
+  | command
+deriving Repr, Inhabited, BEq
+
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
 inductive Selector where
   /-- This spell or ability (CR 113.7). -/
@@ -395,8 +407,9 @@ inductive Selector where
   | all
   | cardType : CardType → Selector
   | union : List Selector → Selector
-  /-- A permanent (CR 110.1). -/
-  | permanent
+  /-- An object in the named zone (CR 400.1). `.battlefield` is a permanent
+  (CR 110.1). -/
+  | zone : ZoneKind → Selector
   /-- Objects whose controller is the given player. -/
   | controlled : Selector → Selector
   /-- A tapped permanent (CR 110.5). -/
@@ -455,17 +468,9 @@ inductive Selector where
   | affectedByAction : Nat → Selector
   /-- The permanent the given object is attached to (CR 301.5 / 303.4). -/
   | hostOf : Selector → Selector
-  /-- An object in a graveyard (CR 404). -/
-  | inGraveyard
   /-- An object that was the object of the first event since the second
   event. -/
   | wasObjectSince : Trigger → Trigger → Selector
-  /-- An object in a library (CR 401). -/
-  | inLibrary
-  /-- An object in a hand (CR 402). -/
-  | inHand
-  /-- An object in exile (CR 406). -/
-  | inExile
   /-- Objects with the given supertype (CR 205.4). -/
   | supertype : CardSupertype → Selector
   /-- Objects bound to this numbered variable. -/
@@ -478,6 +483,10 @@ inductive Selector where
   | hasCreatureTypeChosenByAction : Nat → Selector
   /-- Objects whose mana value is at most this value (CR 202.3). -/
   | manaValueAtMost : Value → Selector
+  /-- This spell was cast from the named zone (CR 601.2).
+  `.hand` is “from your hand”. `.not (.castFromZone .hand)` is “from
+  anywhere other than your hand”. -/
+  | castFromZone : ZoneKind → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
@@ -513,6 +522,11 @@ inductive Trigger where
   that creation. `replace` of this trigger replaces it (CR 614).
   `Selector.replacingObject` is those tokens. -/
   | createTokens : Selector → Trigger
+  /-- A triggered ability of a source matching the selector triggers
+  (CR 603.2). `replace` of this trigger replaces that triggering.
+  `duplicateReplacingTrigger` makes that ability trigger the given number
+  of times instead of once. -/
+  | abilityTriggers : Selector → Trigger
   /-- Whenever the selected player draws a card matching the given
   selector. `replace` of this trigger is “if that player would draw” that
   card (CR 614). `Selector.all` is any card. -/

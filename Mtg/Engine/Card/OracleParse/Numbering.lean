@@ -68,8 +68,8 @@ def collectKeyword : Keyword → List Nat × List Nat
   | _ => ([], [])
 
 def collectSelector : Selector → List Nat × List Nat
-  | .this | .caster | .all | .permanent | .tapped | .spell | .ability | .permanentSpell
-  | .player | .token | .replacingObject | .inGraveyard | .inLibrary | .inHand | .inExile =>
+  | .this | .caster | .all | .zone _ | .tapped | .spell | .ability | .permanentSpell
+  | .player | .token | .replacingObject =>
     ([], [])
   | .source s | .controller s | .not s | .controlled s | .hasTarget s | .isTargetOf s
   | .opponent s | .owner s | .attacking s | .blocking s | .hostOf s =>
@@ -83,6 +83,7 @@ def collectSelector : Selector → List Nat × List Nat
   | .cardType _ | .hasCounter _ | .subtype _ | .supertype _ => ([], [])
   | .keyword k | .keywordAbility k => collectKeyword k
   | .powerAtLeast v | .powerAtMost v | .manaValueAtMost v => collectValue v
+  | .castFromZone _ => ([], [])
   | .wasObjectOfAction n | .wasCreatedByAction n | .affectedByAction n
   | .hasCreatureTypeChosenByAction n =>
     ([n], [])
@@ -95,7 +96,8 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .drawStep s | .enter s | .die s
   | .discard s | .leaveGraveyard s | .leaveBattlefield s | .returnToHand s | .putToGraveyard s
   | .giftPromised s | .counter s | .activateAbility s | .castSpell s
-  | .castSpellFromGraveyard s | .precombatMainPhase s | .createTokens s =>
+  | .castSpellFromGraveyard s | .precombatMainPhase s | .createTokens s
+  | .abilityTriggers s =>
     collectSelector s
   | .attack a b | .draw a b | .damage a b | .block a b | .target a b | .combatDamage a b
   | .putCountersSimultaneously a b _ =>
@@ -212,7 +214,8 @@ def collectAction : CardAction → List Nat × List Nat
   | .ifElse c a b =>
     appendIds [collectCondition c, appendIds (a.map collectAction), appendIds (b.map collectAction)]
   | .optional who action => appendIds [collectSelector who, collectAction action]
-  | .attach a b | .copyWithNewTargets a b | .fight a b | .dealDamageEqualToPower a b =>
+  | .attach a b | .copyWithNewTargets a b | .fight a b | .dealDamageEqualToPower a b
+  | .mayCast a b =>
     appendIds [collectSelector a, collectSelector b]
   | .chooseModeRestricted who modes => appendIds [collectSelector who, collectModes modes]
   | .counter s => collectSelector s
@@ -239,6 +242,7 @@ def collectAction : CardAction → List Nat × List Nat
     appendIds [
       collectSelector who, collectValue n, collectParts parts, appendIds (states.map collectState)]
   | .modifyReplacementCreatedTokenCount _ => ([], [])
+  | .duplicateReplacingTrigger v => collectValue v
   | .keepReplacedAction => ([], [])
 
 end
@@ -291,7 +295,7 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .all => .all
   | .cardType t => .cardType t
   | .union ss => .union (mapSelectors m ss)
-  | .permanent => .permanent
+  | .zone z => .zone z
   | .controlled s => .controlled (mapSelector m s)
   | .tapped => .tapped
   | .keyword k => .keyword (mapKeyword m k)
@@ -318,16 +322,13 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .wasCreatedByAction n => .wasCreatedByAction (m.action n)
   | .affectedByAction n => .affectedByAction (m.action n)
   | .hostOf s => .hostOf (mapSelector m s)
-  | .inGraveyard => .inGraveyard
   | .wasObjectSince a b => .wasObjectSince (mapTrigger m a) (mapTrigger m b)
-  | .inLibrary => .inLibrary
-  | .inHand => .inHand
-  | .inExile => .inExile
   | .supertype s => .supertype s
   | .variable n => .variable (m.target n)
   | .topOfLibrary s v => .topOfLibrary (mapSelector m s) (mapValue m v)
   | .hasCreatureTypeChosenByAction n => .hasCreatureTypeChosenByAction (m.action n)
   | .manaValueAtMost v => .manaValueAtMost (mapValue m v)
+  | .castFromZone z => .castFromZone z
 
 def mapTriggers (m : IdMaps) : List Trigger → List Trigger
   | [] => []
@@ -384,6 +385,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .target a b => .target (mapSelector m a) (mapSelector m b)
   | .precombatMainPhase s => .precombatMainPhase (mapSelector m s)
   | .createTokens s => .createTokens (mapSelector m s)
+  | .abilityTriggers s => .abilityTriggers (mapSelector m s)
 
 def mapCondition (m : IdMaps) : Condition → Condition
   | .any s => .any (mapSelector m s)
@@ -572,6 +574,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .createTokens who n parts states =>
     .createTokens (mapSelector m who) (mapValue m n) (mapParts m parts) (mapStates m states)
   | .modifyReplacementCreatedTokenCount f => .modifyReplacementCreatedTokenCount f
+  | .duplicateReplacingTrigger v => .duplicateReplacingTrigger (mapValue m v)
   | .mill a v => .mill (mapSelector m a) (mapValue m v)
   | .surveil a v => .surveil (mapSelector m a) (mapValue m v)
   | .copyWithNewTargets a b => .copyWithNewTargets (mapSelector m a) (mapSelector m b)
@@ -581,6 +584,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .lookAt s => .lookAt (mapSelector m s)
   | .putOnLibraryBottomInRandomOrder s => .putOnLibraryBottomInRandomOrder (mapSelector m s)
   | .chooseCreatureType s => .chooseCreatureType (mapSelector m s)
+  | .mayCast a b => .mayCast (mapSelector m a) (mapSelector m b)
 
 end
 
@@ -592,15 +596,15 @@ def separateActionIds (parts : List CardPart) : List CardPart :=
 #guard separateActionIds [
     .ability (.triggered (.enter .this)
       (.sequence [
-        .actionId 3 (.attach (.targets 1 Range.any .permanent) (.target 2 .permanent)),
+        .actionId 3 (.attach (.targets 1 Range.any (.zone .battlefield)) (.target 2 (.zone .battlefield))),
         .dealDamageEqualToPower (.targetReference 2)
-          (.targets 4 (.range 0 1) .permanent)]))] ==
+          (.targets 4 (.range 0 1) (.zone .battlefield))]))] ==
   [
     .ability (.triggered (.enter .this)
       (.sequence [
-        .actionId 1 (.attach (.targets 1 Range.any .permanent) (.target 2 .permanent)),
+        .actionId 1 (.attach (.targets 1 Range.any (.zone .battlefield)) (.target 2 (.zone .battlefield))),
         .dealDamageEqualToPower (.targetReference 2)
-          (.targets 3 (.range 0 1) .permanent)]))]
+          (.targets 3 (.range 0 1) (.zone .battlefield))]))]
 #guard separateActionIds [.actions [
     .actionId 1 (.counter (.target 1 .spell)),
     .actionId 2 (.exile .replacingObject)]] ==
@@ -608,10 +612,10 @@ def separateActionIds (parts : List CardPart) : List CardPart :=
     .actionId 1 (.counter (.target 1 .spell)),
     .actionId 2 (.exile .replacingObject)]]
 #guard separateActionIds [.actions [
-    .continuous [.addPower (.target 1 .permanent) 3] .endOfTurn,
+    .continuous [.addPower (.target 1 (.zone .battlefield)) 3] .endOfTurn,
     .actionId 2 (.exile (.topOfLibrary (.controller .this) 1))]] ==
   [.actions [
-    .continuous [.addPower (.target 1 .permanent) 3] .endOfTurn,
+    .continuous [.addPower (.target 1 (.zone .battlefield)) 3] .endOfTurn,
     .actionId 1 (.exile (.topOfLibrary (.controller .this) 1))]]
 
 end OracleParts

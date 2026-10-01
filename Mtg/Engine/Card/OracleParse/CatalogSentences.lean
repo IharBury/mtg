@@ -149,7 +149,7 @@ def parseObjectDesc (s : String) (withCreature : Bool) : Option Selector :=
     intersectionOf (
       (if other then [.not .this] else []) ++
       mods.filter isTokenNeg ++
-      [.permanent] ++
+      [.zone .battlefield] ++
       mods.filter isTypeNeg ++
       noun ++
       (if tokens then [.token] else []) ++
@@ -204,7 +204,7 @@ def parseTargetDesc (s : String) (n : Nat) : Option Selector :=
 def parseGraveyardCard (s : String) : Option Selector :=
   (before? (norm s) " card").bind (fun kind =>
     ((typesInPhrase kind).map selectorOfTypes) <|> ((subtypeOfOracle? kind).map .subtype)) |>.map
-    fun k => .intersection [.inGraveyard, k, .owner (.controller .this)]
+    fun k => .intersection [.zone .graveyard, k, .owner (.controller .this)]
 
 /-- The trigger or the spell's controller plays each keyword action: `it`,
 `he`, `she`, or this card's name is this object. -/
@@ -565,7 +565,7 @@ def parseSearchLibrary (sentence : String) (n : Nat) : Option (CardAction × Nat
         if kind == "basic land" then some (searchRevealToHand n basicLandInLibrary)
         else
           (subtypeOfOracle? kind).map fun st =>
-            searchRevealToHand n (.intersection [.inLibrary, .subtype st])
+            searchRevealToHand n (.intersection [.zone .library, .subtype st])
   tapped <|> reveal
 
 /-- `<who> fights up to one other target creature`. This object fights that
@@ -751,7 +751,7 @@ def typeOrSubtypeList? (s : String) : Option Selector :=
   if parts.isEmpty then none
   else
     (parts.mapM fun w =>
-        (if w == "permanent" then some Selector.permanent else none) <|>
+        (if w == "permanent" then some (Selector.zone .battlefield) else none) <|>
         ((typeOfOracle? w).map Selector.cardType) <|> ((subtypeOfOracle? w).map Selector.subtype)) |>.map
       fun
         | [one] => one
@@ -850,7 +850,7 @@ def parsePutHandCardOnBottom (sentence : String) (n : Nat) : Option (CardAction 
   if sentenceIs sentence "put a card from your hand on the bottom of your library" then
     some (.putOnBottomOfLibrary
       (.selected (.controller .this) (.range 1 1)
-        (.intersection [.inHand, .owner (.controller .this)])), n)
+        (.intersection [.zone .hand, .owner (.controller .this)])), n)
   else none
 
 /-- `draw cards equal to the greatest toughness among creatures you control`. -/
@@ -867,7 +867,7 @@ def parsePutAnyFromHandOntoBattlefield (sentence : String) (n : Nat) :
       " cards from your hand onto the battlefield").bind typesInPhrase |>.map fun ts =>
     (.putOntoBattlefield
       (.selected (.controller .this) .any
-        (.intersection [.inHand, .owner (.controller .this), selectorOfTypes ts])), n)
+        (.intersection [.zone .hand, .owner (.controller .this), selectorOfTypes ts])), n)
 
 /-- `it gets +X/+0 until end of turn, where X is the greatest power among
 creatures you control`. -/
@@ -918,10 +918,10 @@ def parseChooseUpToDestroyRest (sentence : String) (n : Nat) : Option (CardActio
       (split2? rest " ").bind fun (countText, noun) =>
         match positiveCount countText, typesInPhrase noun with
         | some k, some ts =>
-          let kind := Selector.intersection [.permanent, selectorOfTypes ts]
+          let kind := Selector.intersection [.zone .battlefield, selectorOfTypes ts]
           some (.sequence [
             .defineSelectorVariable n (.selected (.controller .this) (.range 0 (Value.nat k)) kind),
-            .destroy (.intersection [.permanent, selectorOfTypes ts, .not (.variable n)])], n + 1)
+            .destroy (.intersection [.zone .battlefield, selectorOfTypes ts, .not (.variable n)])], n + 1)
         | _, _ => none
 
 /-- `Double target creature's power and toughness until end of turn.` It gets
@@ -962,7 +962,7 @@ def parseMayPutFromHand (s : String) (n : Nat) : Option (CardAction × Nat) :=
   (between? s "you may put " " card from your hand onto the battlefield").bind dropArticle? |>.bind
     typeOfOracle? |>.map fun t =>
       let card := Selector.selected (.controller .this) (.range 1 1)
-        (.intersection [.inHand, .owner (.controller .this), .cardType t])
+        (.intersection [.zone .hand, .owner (.controller .this), .cardType t])
       (.optional (.controller .this)
         (if tapped then .putOntoBattlefieldInState card [.tapped] else .putOntoBattlefield card), n)
 

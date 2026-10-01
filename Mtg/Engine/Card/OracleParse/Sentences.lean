@@ -59,7 +59,7 @@ def parseIfItsSubtypeMayAttach (sentence : String) (n : Nat) : Option (CardActio
                       (.controller .this)
                       (.range 1 1)
                       (.intersection [
-                        .permanent,
+                        .zone .battlefield,
                         .subtype attachSt,
                         youControl]))
                     host)
@@ -135,7 +135,7 @@ def parsePutCountersOnTarget (sentence : String) (n : Nat) : Option (CardAction 
 
 /-- A basic land card in a library. -/
 def basicLandInLibrary : Selector :=
-  .intersection [.inLibrary, .cardType .land, .supertype .basic]
+  .intersection [.zone .library, .cardType .land, .supertype .basic]
 
 /-- Search for one card matching `among`, reveal it, and put it into hand.
 The found card is variable `n`. -/
@@ -193,7 +193,7 @@ def parseAddOneManaOfAnyColor (sentence : String) (n : Nat) : Option (CardAction
 /-- `Destroy target permanent.` The target number is `n`. -/
 def parseDestroyTargetPermanent (sentence : String) (n : Nat) : Option (CardAction × Nat) :=
   if sentenceIs sentence "destroy target permanent" then
-    some (.destroy (.target n .permanent), n + 1)
+    some (.destroy (.target n (.zone .battlefield)), n + 1)
   else none
 
 /-- This creature's power, including the pronouns a card uses for itself. -/
@@ -375,7 +375,7 @@ def graveyardCountCondition? (s : String) : Option Condition :=
       match positiveCount countText, (before? cards " cards").bind typeOfOracle? with
       | some k, some t =>
         some (.greaterOrEqual
-          (.count (.intersection [.inGraveyard, .cardType t, .owner (.controller .this)]))
+          (.count (.intersection [.zone .graveyard, .cardType t, .owner (.controller .this)]))
           (Value.nat k))
       | _, _ => none
 
@@ -501,7 +501,7 @@ def parsePumpExileIfDies (text : String) (n : Nat) : Option (CardAction × Nat) 
       match parseTargetGetsUntilEndOfTurn pump n with
       | some (.continuous effects .endOfTurn, n') =>
         match ContinuousEffect.addedPT? effects, ContinuousEffect.targetingSelector? effects with
-        | some _, some (.target m (.intersection [.permanent, .cardType .creature])) =>
+        | some _, some (.target m (.intersection [.zone .battlefield, .cardType .creature])) =>
           some (.continuous (effects ++ [exileIfWouldDie m]) .endOfTurn, n')
         | _, _ => none
       | _ => none
@@ -611,7 +611,7 @@ def parseBecomeArtifactIndestructible (sentence : String) (n : Nat) :
 
 /-- Target artifact token, with no further restriction. -/
 def artifactTokenPermanent : Selector :=
-  .intersection [.permanent, .cardType .artifact, .token]
+  .intersection [.zone .battlefield, .cardType .artifact, .token]
 
 /-- `Destroy target artifact token.` The token is target `n`. -/
 def parseDestroyArtifactToken (sentence : String) (n : Nat) : Option (CardAction × Nat) :=

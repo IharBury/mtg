@@ -110,7 +110,7 @@ def splitActivateLimit : List String → List String × ActivateLimit
 
 /-- Another permanent of subtype `st` that this object's controller controls. -/
 def anotherSubtypeYouControl (st : CardSubtype) : Selector :=
-  .intersection [.not .this, .permanent, .subtype st, youControl]
+  .intersection [.not .this, .zone .battlefield, .subtype st, youControl]
 
 /-- `Sacrifice another creature or artifact`: one other permanent of those
 types. `Sacrifice another Goblin`: one other permanent of that subtype you
@@ -121,7 +121,7 @@ def parseSacrificeAnother (s : String) : Option Cost :=
     match typesInPhrase obj with
     | some ts =>
       some (.sacrificeCount
-        (.intersection [.not .this, .permanent, selectorOfTypes ts])
+        (.intersection [.not .this, .zone .battlefield, selectorOfTypes ts])
         1)
     | none =>
       (subtypeOfOracle? obj).map fun st =>
@@ -189,7 +189,7 @@ def discardOneCardFromHand : Cost :=
     (.selected
       (.controller .this)
       (.range 1 1)
-      (.intersection [.inHand, .owner (.controller .this)]))
+      (.intersection [.zone .hand, .owner (.controller .this)]))
 
 /-- `Discard a card` as a printed cost. -/
 def parseDiscardACard (s : String) : Option Cost :=
@@ -257,10 +257,10 @@ def parseActivationCost (cardName costText : String) : Option (List Cost) :=
 def costReductionTarget? (s : String) : Option Selector :=
   match norm s with
   | "a tapped creature" =>
-    some (.intersection [.permanent, .cardType .creature, .tapped])
+    some (.intersection [.zone .battlefield, .cardType .creature, .tapped])
   | "an attacking nontoken creature" =>
     some (.intersection [
-      .permanent,
+      .zone .battlefield,
       .cardType .creature,
       .attacking .all,
       .not .token])
