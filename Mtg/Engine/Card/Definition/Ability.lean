@@ -75,7 +75,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
   | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
   | .didNotHappen _ _ | .and _ _ | .not _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
-  | .equal _ _ | .happenedTimes _ _ _ => none
+  | .equal _ _ => none
 
 /-- `{k}` less for each Equipment this ability's controller controls.
 `.this` is this ability. Zero is not a reduction. -/
@@ -465,16 +465,23 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered
       (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
       (.sequence [
-        .if (.happenedTimes (.abilityWithIdResolved id1) (.nat 1) .turnStart)
+        .if (.and
+            (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved id1)) .turnStart)
+            (.didNotHappen (.ordinal 2 .turnStart (.abilityWithIdResolved id1b)) .turnStart))
           [.gainLife who1 (.nat 1)],
-        .if (.happenedTimes (.abilityWithIdResolved id2) (.nat 2) .turnStart)
+        .if (.and
+            (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved id2)) .turnStart)
+            (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved id2b)) .turnStart))
           [.draw who2 (.nat 1)],
-        .if (.happenedTimes (.abilityWithIdResolved id3) (.nat 3) .turnStart)
+        .if (.and
+            (.happened (.ordinal 3 .turnStart (.abilityWithIdResolved id3)) .turnStart)
+            (.didNotHappen (.ordinal 4 .turnStart (.abilityWithIdResolved id3b)) .turnStart))
           [.putCounter
             (.intersection
               [.permanent, .cardType .creature, .controlled (.controller .this)])
             .plusOnePlusOne (.nat 1)]]) =>
-    if id1 == id2 && id2 == id3 && who1 == .controller .this && who2 == .controller .this then
+    if id1 == id1b && id1 == id2 && id2 == id2b && id2 == id3 && id3 == id3b &&
+        who1 == .controller .this && who2 == .controller .this then
       some .onTokenYouControlEntersBelladonna
     else none
   | _ => none

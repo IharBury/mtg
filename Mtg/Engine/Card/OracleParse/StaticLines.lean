@@ -926,10 +926,14 @@ first time this ability has resolved this turn. If it's the second time,
 draw a card. If it's the third time, put a +1/+1 counter on each creature
 you control.`
 The ability is numbered. The trigger fires once for each token. Each branch
-is how many times that ability has resolved since the start of the turn,
-counting this resolution: one life, then a card, then a +1/+1 counter on
-each creature you control. -/
+is that resolution's place since the start of the turn, counting this one:
+`ordinal` of `abilityWithIdResolved` has happened, and the next one has not.
+One life, then a card, then a +1/+1 counter on each creature you control. -/
 def parseTokenEntersByResolveCount (line : String) (n : Nat) : Option (CardPart × Nat) :=
+  let nth (k : Nat) : Condition :=
+    .and
+      (.happened (.ordinal k .turnStart (.abilityWithIdResolved n)) .turnStart)
+      (.didNotHappen (.ordinal (k + 1) .turnStart (.abilityWithIdResolved n)) .turnStart)
   match sentences (rulesText line) with
   | [first, second, third] =>
     match after? (normSentence first) "whenever a token you control enters, " with
@@ -943,12 +947,9 @@ def parseTokenEntersByResolveCount (line : String) (n : Nat) : Option (CardPart 
           .ability (.abilityId n (.triggered
             (.enter tokenYouControl)
             (.sequence [
-              .if (.happenedTimes (.abilityWithIdResolved n) 1 .turnStart)
-                [.gainLife (.controller .this) 1],
-              .if (.happenedTimes (.abilityWithIdResolved n) 2 .turnStart)
-                [.draw (.controller .this) 1],
-              .if (.happenedTimes (.abilityWithIdResolved n) 3 .turnStart)
-                [.putCounter creaturesYouControl .plusOnePlusOne 1]]))),
+              .if (nth 1) [.gainLife (.controller .this) 1],
+              .if (nth 2) [.draw (.controller .this) 1],
+              .if (nth 3) [.putCounter creaturesYouControl .plusOnePlusOne 1]]))),
           n + 1)
       else none
     | none => none

@@ -770,8 +770,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       else b
     | _, _ => b
   | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
-  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _
-  | .if (.happenedTimes _ _ _) _ => b
+  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
   | .replace (.enter who) actions =>
     if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersTapped? actions then

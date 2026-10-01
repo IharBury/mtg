@@ -27,9 +27,6 @@ inductive Condition where
   | didNotHappen : Trigger → Trigger → Condition
   /-- True when the first trigger has occurred since the second. -/
   | happened : Trigger → Trigger → Condition
-  /-- The first trigger happened exactly this many times after the last
-  occurrence of the second trigger. -/
-  | happenedTimes : Trigger → Value → Trigger → Condition
   /-- True when the selected player could cast a sorcery
   (CR 307.1 / 117.1a). -/
   | timeToCastSorcery : Selector → Condition

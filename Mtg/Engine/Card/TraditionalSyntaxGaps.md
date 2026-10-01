@@ -96,7 +96,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `turnStart`, `gameStart`, `attack`, `enter`, `draw`,
-  `ordinal`, `combatDamage`, `damage`, `damageSimultaneously` (who deals
+  `ordinal` (the nth time the third trigger has occurred since the second),
+  `combatDamage`, `damage`, `damageSimultaneously` (who deals
   damage, who is dealt damage, at the same time), `putToGraveyard`,
   `leaveGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`,
   `block`, `die`, `dieSimultaneously`, `sacrifice` (the permanents sacrificed),
@@ -113,8 +114,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
 - **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
-  `happened`, `happenedTimes` (the first trigger happened exactly this many
-  times after the last occurrence of the second trigger), `timeToCastSorcery`,
+  `happened`, `timeToCastSorcery`,
   `turn`, `enduringStory`, `and`, `not`, `less`, `lessOrEqual`, `greater`,
   `greaterOrEqual`, `equal`.
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters), `attachedTo`.
@@ -303,7 +303,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `TraditionalCardDefinition.entersWithCounters` | `static (replace (enter this) [putCounter …, keepReplacedAction])` (Dawn of a New Age, The Ruinous Wrecking Crew) |
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
 | `Trigger.wouldDraw` | `replace` of `Trigger.draw` of any card, drawing two cards instead. Bard, King of Dale; the first card of each of your draw steps is not replaced |
-| `Condition.resolvedThisTurnCount` | `happenedTimes` of `abilityWithIdResolved`, the count, and `turnStart`. `1` is the first resolution this turn, counting this one (Belladonna Took) |
+| `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `happened` of `Trigger.ordinal` of `abilityWithIdResolved` since `turnStart`, and `didNotHappen` of the next ordinal. `1` is the first resolution this turn, counting this one (Belladonna Took) |
 | `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
 
 ## Missing constructors by type

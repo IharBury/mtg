@@ -120,7 +120,6 @@ def collectCondition : Condition → List Nat × List Nat
   | .targetsIncludeAny a b => appendIds [collectSelector a, collectSelector b]
   | .anySubtype s _ => collectSelector s
   | .didNotHappen a b | .happened a b => appendIds [collectTrigger a, collectTrigger b]
-  | .happenedTimes a n b => appendIds [collectTrigger a, collectValue n, collectTrigger b]
   | .and a b => appendIds [collectCondition a, collectCondition b]
   | .not c => collectCondition c
   | .less a b | .lessOrEqual a b | .greater a b | .greaterOrEqual a b | .equal a b =>
@@ -391,8 +390,6 @@ def mapCondition (m : IdMaps) : Condition → Condition
   | .anySubtype s st => .anySubtype (mapSelector m s) st
   | .didNotHappen a b => .didNotHappen (mapTrigger m a) (mapTrigger m b)
   | .happened a b => .happened (mapTrigger m a) (mapTrigger m b)
-  | .happenedTimes a n b =>
-    .happenedTimes (mapTrigger m a) (mapValue m n) (mapTrigger m b)
   | .timeToCastSorcery s => .timeToCastSorcery (mapSelector m s)
   | .turn s => .turn (mapSelector m s)
   | .enduringStory s => .enduringStory (mapSelector m s)
