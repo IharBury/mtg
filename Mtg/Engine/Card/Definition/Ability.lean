@@ -182,6 +182,16 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
 /-- Triggered abilities of cards read with `parseOracleParts` that compile to
 one named `TriggeredAbility`. -/
 def printedTriggeredAbility? : Ability → Option TriggeredAbility
+  -- Beorn the Fierce: a trample counter, a Bear subtype, then a draw.
+  | .triggered (.combatStart (.controller .this)) (.sequence [
+      .putCounter (.targets _ (.range (.int 0) (.int 1)) who) .trample (.int 1),
+      .continuous [.gainSubtype (.targetReference _) .bear] .endOfGame,
+      .if (.greaterOrEqual (.count bears) (.int 3)) [.draw drawer (.int 2)]]) =>
+    if who == .intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)] &&
+        bears == .intersection [.zone .battlefield, .subtype .bear, .controlled (.controller .this)] &&
+        drawer == .controller .this then
+      some TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear
+    else none
   | .triggered (.triggerId id (.castSpell among))
       (.sequence [
         .optional (.controller .this)

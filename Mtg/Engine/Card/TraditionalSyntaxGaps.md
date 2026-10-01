@@ -5,9 +5,9 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**205** catalog cards are still `CardDef` helpers. **189**
+**204** catalog cards are still `CardDef` helpers. **189**
 of them need at least one missing constructor listed under
-[Missing constructors by type](#missing-constructors-by-type). **16** lost
+[Missing constructors by type](#missing-constructors-by-type). **15** lost
 their last tag (named counters, `CardAction.removeCounter`, or
 enters-with-counters) and are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
@@ -24,12 +24,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 157 | 31 | 27 |
+| The Hobbit (HOB) | 188 | 158 | 30 | 27 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 46 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 116 |
-| **Total** | **586** | **381** | **205** | **189** |
+| **Total** | **586** | **382** | **204** | **189** |
 
-All 381 `TraditionalCardDefinition`s (157 HOB, 67 HOC, 157 MSH,
+All 382 `TraditionalCardDefinition`s (158 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -1566,14 +1566,14 @@ Converted cards are omitted here.
 
 ## Tags now spelled, not yet converted
 
-These 16 cards lost every tag and are still `CardDef` helpers. They lost
+These 15 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, enters-with-counters,
 `replace` of `Trigger.createTokens`, or `replace` of `Trigger.abilityTriggers`
 became expressible. A later pass
 should reread them before conversion.
 
-**Hobbit (4):** Beorn the Fierce; Dwalin, Weaponmaster; Last Light of Durin's Day; Wizard's Staff.
+**Hobbit (3):** Dwalin, Weaponmaster; Last Light of Durin's Day; Wizard's Staff.
 
 **Hobbit Eternal (4):** Arwen, Mortal Queen; Bilbo, Fellow Conspirator; Chief of the Wilds; Minas Morgul, Dark Fortress.
 

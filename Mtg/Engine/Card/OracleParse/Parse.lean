@@ -190,10 +190,30 @@ def parseEndStepRemoveHopeDrawSac (line : String) (n : Nat) : Option (CardPart �
     else none
   | _ => none
 
+/-- `At the beginning of combat on your turn, put a trample counter on up to
+one target creature you control. It becomes a Bear in addition to its other
+types. Then if you control three or more Bears, draw two cards.` -/
+def parseBeornCombat (line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  if normLine line !=
+      "at the beginning of combat on your turn, put a trample counter on up to one target creature you control. it becomes a bear in addition to its other types. then if you control three or more bears, draw two cards" then
+    none
+  else
+    some ([.ability (.triggered (.combatStart (.controller .this)) (.sequence [
+      .putCounter
+        (.targets n (.range 0 1)
+          (.intersection [.zone .battlefield, .cardType .creature, youControl]))
+        .trample 1,
+      .continuous [.gainSubtype (.targetReference n) .bear] .endOfGame,
+      .if (.greaterOrEqual
+          (.count (.intersection [.zone .battlefield, .subtype .bear, youControl]))
+          3)
+        [.draw (.controller .this) 2]]))], n + 1)
+
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  (keywordParts? line).map (·, n) <|>
+  parseBeornCombat line n <|>
+    (keywordParts? line).map (·, n) <|>
     sole (parseDrawExceptFirstDrawStep line) n <|>
     sole (parseTwiceTokensYouWouldCreate line) n <|>
     carry (parseTokenEntersByResolveCount line n) <|>
