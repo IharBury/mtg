@@ -50,7 +50,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
         onlyIfGyCreaturesAtLeast := 2
         activateFromGraveyard := fromGraveyard }
     else none
-  | .didNotHappen (.abilityWithIdActivated _) .turnStart =>
+  | .not (.happened (.abilityWithIdActivated _) .turnStart) =>
     some { activatedAbility costs action true with
       activateFromGraveyard := fromGraveyard }
   | .timeToCastSorcery _ =>
@@ -58,7 +58,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
       onlyAsSorcery := true
       equipSubtype := CardAction.leftoverEquipSubtype? action
       activateFromGraveyard := fromGraveyard }
-  | .and (.turn _) (.didNotHappen (.abilityWithIdActivated _) .turnStart) =>
+  | .and (.turn _) (.not (.happened (.abilityWithIdActivated _) .turnStart)) =>
     some { activatedAbility costs action true with
       onlyDuringYourTurn := true
       activateFromGraveyard := fromGraveyard }
@@ -73,7 +73,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
         activateFromGraveyard := fromGraveyard }
     else none
   | .anySubtype _ _ | .happened _ _
-  | .didNotHappen _ _ | .and _ _ | .not _ | .drawStep _ | .enduringStory _
+  | .and _ _ | .not _ | .drawStep _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
   | .equal _ _ => none
 
@@ -317,11 +317,11 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.castSpell (.intersection [.spell, .not (.cardType .creature), .controlled (.controller .this)]))
       (.chooseModeRestricted who
-        [(1, .didNotHappen (.modeWithIdChosen .player 1) .turnStart,
+        [(1, .not (.happened (.modeWithIdChosen .player 1) .turnStart),
             [.continuous [.gainAbility (.source .this) (.keyword .doubleStrike)] .endOfTurn]),
-         (2, .didNotHappen (.modeWithIdChosen .player 2) .turnStart,
+         (2, .not (.happened (.modeWithIdChosen .player 2) .turnStart),
             [.continuous [.gainAbility (.source .this) (.keyword .indestructible)] .endOfTurn]),
-         (3, .didNotHappen (.modeWithIdChosen .player 3) .turnStart, [.draw drawer (.nat 1)])]) =>
+         (3, .not (.happened (.modeWithIdChosen .player 3) .turnStart), [.draw drawer (.nat 1)])]) =>
     if who == .controller .this && drawer == .controller .this then
       some (.onCasting Effect.castingVisionModes)
     else none
@@ -471,15 +471,15 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered
       (.enter (.intersection [.zone .battlefield, .token, .controlled (.controller .this)]))
       (.sequence [
-        .if (.didNotHappen (.abilityWithIdResolved id1) .turnStart)
+        .if (.not (.happened (.abilityWithIdResolved id1) .turnStart))
           [.gainLife who1 (.nat 1)],
         .if (.and
             (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved id2)) .turnStart)
-            (.didNotHappen (.ordinal 2 .turnStart (.abilityWithIdResolved id2b)) .turnStart))
+            (.not (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved id2b)) .turnStart)))
           [.draw who2 (.nat 1)],
         .if (.and
             (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved id3)) .turnStart)
-            (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved id3b)) .turnStart))
+            (.not (.happened (.ordinal 3 .turnStart (.abilityWithIdResolved id3b)) .turnStart)))
           [.putCounter
             (.intersection
               [.zone .battlefield, .cardType .creature, .controlled (.controller .this)])

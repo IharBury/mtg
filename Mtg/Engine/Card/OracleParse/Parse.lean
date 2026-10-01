@@ -373,7 +373,7 @@ def restrictedModes (cardName : String) (trigger : Trigger) : ModeList where
   wrap modes :=
     [.ability (.triggered trigger (.chooseModeRestricted (.controller .this)
       ((List.range modes.length).zip modes |>.map fun (i, action) =>
-        (i + 1, .didNotHappen (.modeWithIdChosen .player (i + 1)) .turnStart, [action]))))]
+        (i + 1, .not (.happened (.modeWithIdChosen .player (i + 1)) .turnStart), [action]))))]
   mode := parseCatalogMode cardName
 
 /-- `Choose up to two. Return those cards from your graveyard to your hand.`
@@ -419,7 +419,7 @@ def parsePowerUp (cardName : String) (manaCost : List ManaSymbol) (line : String
       (parseOneLine cardName rest n).bind fun
         | ([.ability (.activated costs action)], n') =>
           some ([.ability (.abilityId n' (.activatedWithStaticIf
-            (.didNotHappen (.abilityWithIdActivated n') .gameStart) costs action
+            (.not (.happened (.abilityWithIdActivated n') .gameStart)) costs action
             (.if (.happened (.enter (.source .this)) .turnStart)
               [.reduceCost .this [.mana manaCost]])))], n' + 1)
         | _ => none

@@ -757,7 +757,7 @@ def parseFirstCreatureSpellCostsLessFlash (line : String) : Option (List CardPar
       " less to cast and can be cast as though it had flash").bind parseManaSymbols |>.map
     fun syms =>
       let creatureSpell := Selector.intersection [.spell, .cardType .creature, youControl]
-      let first := Condition.didNotHappen (.castSpell creatureSpell) .turnStart
+      let first := Condition.not (.happened (.castSpell creatureSpell) .turnStart)
       [.ability (.static (.if first [.reduceCost creatureSpell [.mana syms]])),
        .ability (.static (.canBeCastAsThoughWithFlashIf creatureSpell first))]
 

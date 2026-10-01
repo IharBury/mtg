@@ -693,7 +693,7 @@ def desolationProwlerCard : CardDef :=
   .ability (
     .abilityId 1
       (.activatedIf
-        (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
+        (.not (.happened (.abilityWithIdActivated 1) .turnStart))
         [.life 2]
         (.continuous
           [.addPower (.source .this) (Value.int 2),
@@ -1181,7 +1181,7 @@ def snowslopeHunterCard : CardDef :=
       (.activatedIf
         (.and
           (.turn (.controller .this))
-          (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
+          (.not (.happened (.abilityWithIdActivated 1) .turnStart)))
         [.sacrificeCount
           (.intersection [
             .not .this,
@@ -4924,12 +4924,13 @@ def kiliTheResourcefulDefinition : TraditionalCardDefinition := .card <|
   .ability (.static (.if
     (.and
       (.enduringStory (.controller .this))
-      (.didNotHappen
-        (.activateAbility
-          (.intersection [
-            Selector.keywordAbility .equip,
-            .controlled (.controller .this)]))
-        .turnStart))
+      (.not
+        (.happened
+          (.activateAbility
+            (.intersection [
+              Selector.keywordAbility .equip,
+              .controlled (.controller .this)]))
+          .turnStart)))
     [.alternativeCost
       (.intersection [
         Selector.keywordAbility .equip,
@@ -5534,9 +5535,10 @@ def bardKingOfDaleDefinition : TraditionalCardDefinition := .card <|
   .ability (.static (.if
     (.not (.and
       (.drawStep (.controller .this))
-      (.didNotHappen
-        (.draw (.controller .this) .all)
-        (.drawStep (.controller .this)))))
+      (.not
+        (.happened
+          (.draw (.controller .this) .all)
+          (.drawStep (.controller .this))))))
     [.replace
       (.draw (.controller .this) .all)
       [.draw (.controller .this) 2]])),
@@ -5624,15 +5626,15 @@ def belladonnaTookDefinition : TraditionalCardDefinition := .card <|
   .ability (.abilityId 1 (.triggered
     (.enter (.intersection [.zone .battlefield, .token, .controlled (.controller .this)]))
     (.sequence [
-      .if (.didNotHappen (.abilityWithIdResolved 1) .turnStart)
+      .if (.not (.happened (.abilityWithIdResolved 1) .turnStart))
         [.gainLife (.controller .this) 1],
       .if (.and
           (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved 1)) .turnStart)
-          (.didNotHappen (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart))
+          (.not (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart)))
         [.draw (.controller .this) 1],
       .if (.and
           (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart)
-          (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved 1)) .turnStart))
+          (.not (.happened (.ordinal 3 .turnStart (.abilityWithIdResolved 1)) .turnStart)))
         [.putCounter
           (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)])
           .plusOnePlusOne 1]])))]
@@ -6556,9 +6558,11 @@ def radagastOfRhosgobelDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.static
       (.if
-        (.didNotHappen
-          (.castSpell (.intersection [.spell, .cardType .creature, .controlled (.controller .this)]))
-          .turnStart)
+        (.not
+          (.happened
+            (.castSpell
+              (.intersection [.spell, .cardType .creature, .controlled (.controller .this)]))
+            .turnStart))
         [
           .reduceCost
             (.intersection [.spell, .cardType .creature, .controlled (.controller .this)])
@@ -6567,9 +6571,11 @@ def radagastOfRhosgobelDefinition : TraditionalCardDefinition := .card <|
     (.static
       (.canBeCastAsThoughWithFlashIf
         (.intersection [.spell, .cardType .creature, .controlled (.controller .this)])
-        (.didNotHappen
-          (.castSpell (.intersection [.spell, .cardType .creature, .controlled (.controller .this)]))
-          .turnStart)))]
+        (.not
+          (.happened
+            (.castSpell
+              (.intersection [.spell, .cardType .creature, .controlled (.controller .this)]))
+            .turnStart))))]
 
 def radagastOfRhosgobel : CardDef :=
   radagastOfRhosgobelDefinition.toCardDef (oracleText := radagastOfRhosgobelOracle)

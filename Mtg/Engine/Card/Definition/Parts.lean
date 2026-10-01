@@ -22,9 +22,8 @@ inductive Condition where
   /-- True when any object matching the selector has the given subtype
   (CR 205.3). -/
   | anySubtype : Selector → CardSubtype → Condition
-  /-- True when the first trigger has not occurred since the second. -/
-  | didNotHappen : Trigger → Trigger → Condition
-  /-- True when the first trigger has occurred since the second. -/
+  /-- True when the first trigger has occurred since the second.
+  `not` of this is the trigger not having occurred. -/
   | happened : Trigger → Trigger → Condition
   /-- True when the selected player could cast a sorcery
   (CR 307.1 / 117.1a). -/
@@ -57,7 +56,7 @@ deriving Repr, Inhabited, BEq
 def notFirstCardOfDrawStep (who : Selector) : Condition :=
   .not (.and
     (.drawStep who)
-    (.didNotHappen (.draw who .all) (.drawStep who)))
+    (.not (.happened (.draw who .all) (.drawStep who))))
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
 inductive CardState where

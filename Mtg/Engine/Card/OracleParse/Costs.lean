@@ -224,7 +224,7 @@ def activatedWithCost (n : Nat) (costs : List Cost) (action : CardAction)
   | .unlimited | .onceEachTurn | .duringYourTurn | .duringYourTurnOnce =>
     let once := limit.limitsOnce
     let onYourTurn := limit.limitsToYourTurn
-    let notYet := Condition.didNotHappen (.abilityWithIdActivated n) .turnStart
+    let notYet := Condition.not (.happened (.abilityWithIdActivated n) .turnStart)
     let yourTurn := Condition.turn (.controller .this)
     let cond? : Option Condition :=
       match onYourTurn, once with

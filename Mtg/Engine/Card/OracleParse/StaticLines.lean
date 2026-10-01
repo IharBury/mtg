@@ -684,7 +684,7 @@ def parseFirstEquipFreeIfEnduringStory (line : String) : Option CardPart :=
     staticWhile
       (.and
         controllerHasEnduringStory
-        (.didNotHappen (.activateAbility equipAbilitiesYouControl) .turnStart))
+        (.not (.happened (.activateAbility equipAbilitiesYouControl) .turnStart)))
       [.alternativeCost equipAbilitiesYouControl [.mana [.generic 0]]]
   else none
 
@@ -934,11 +934,11 @@ and two is a +1/+1 counter on each creature you control. -/
 def parseTokenEntersByResolveCount (line : String) (n : Nat) : Option (CardPart × Nat) :=
   let finished (k : Nat) : Condition :=
     if k == 0 then
-      .didNotHappen (.abilityWithIdResolved n) .turnStart
+      .not (.happened (.abilityWithIdResolved n) .turnStart)
     else
       .and
         (.happened (.ordinal k .turnStart (.abilityWithIdResolved n)) .turnStart)
-        (.didNotHappen (.ordinal (k + 1) .turnStart (.abilityWithIdResolved n)) .turnStart)
+        (.not (.happened (.ordinal (k + 1) .turnStart (.abilityWithIdResolved n)) .turnStart))
   match sentences (rulesText line) with
   | [first, second, third] =>
     match after? (normSentence first) "whenever a token you control enters, " with

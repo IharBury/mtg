@@ -518,7 +518,7 @@ namespace Mtg.Engine
   match
     (Ability.abilityId 1
       (.activatedIf
-        (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
+        (.not (.happened (.abilityWithIdActivated 1) .turnStart))
         [.life 2]
         (.continuous [.addPower (.source .this) (Value.int 2),
                       .addToughness (.source .this) (Value.int 2)] .endOfTurn))).toActivatedAbility? with
@@ -1020,7 +1020,7 @@ namespace Mtg.Engine
       (.activatedIf
         (.and
           (.turn (.controller .this))
-          (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
+          (.not (.happened (.abilityWithIdActivated 1) .turnStart)))
         [.sacrificeCount
           (.intersection [
             .not .this,

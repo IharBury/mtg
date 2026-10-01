@@ -122,8 +122,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
 - **Condition** — `any` (a target of `src` matching `among` is `any` of
-  `among` intersected with `isTargetOf src`), `anySubtype`, `didNotHappen`,
-  `happened`, `timeToCastSorcery`,
+  `among` intersected with `isTargetOf src`), `anySubtype`,
+  `happened` (`not` of it is the trigger not having occurred), `timeToCastSorcery`,
   `turn`, `drawStep` (it is the selected player's draw step), `enduringStory`,
   `and`, `not`, `less`, `lessOrEqual`, `greater`,
   `greaterOrEqual`, `equal`.
@@ -278,11 +278,11 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Trigger.dealtDamage` | `Trigger.damage .all` of the damaged object |
 | `Trigger.sagaChapter`, `TraditionalCardDefinition.sagaChapters`, `CounterKind.lore` | `Ability.keywordWithEffect (.chapter n)` (Armor Wars) |
 | `Condition.enteredThisTurn`, `sourceEnteredThisTurn` | `Condition.happened (Trigger.enter …) .turnStart` |
-| `Condition.firstThisTurn` | `Condition.didNotHappen … .turnStart` or `Trigger.ordinal` |
+| `Condition.firstThisTurn` | `Condition.not (Condition.happened … .turnStart)` or `Trigger.ordinal` |
 | `Condition.not`, `enduringStory`, `any` | The `Condition` constructors of those names |
 | `Condition.controlCount`, `greaterOrEqual` of `Value.count` | `Condition.greaterOrEqual (Value.count …)` |
 | `Condition.or` | `Condition.not (.and (.not a) (.not b))` |
-| `Ability.activatedOnce` (power-up) | `Ability.abilityId` with `activatedWithStaticIf (didNotHappen (abilityWithIdActivated n) gameStart)` and a static `if (happened (enter this) turnStart) [reduceCost .this …]` |
+| `Ability.activatedOnce` (power-up) | `Ability.abilityId` with `activatedWithStaticIf (not (happened (abilityWithIdActivated n) gameStart))` and a static `if (happened (enter this) turnStart) [reduceCost .this …]` |
 | `TraditionalCardDefinition.entersTappedUnless` | `static (if (not c) [replace (enter this) [putOntoBattlefieldInState this [tapped]]])` (The Lonely Mountain) |
 | `Ability.keywordWard`, `Cost.wardNonmana` | `Ability.keywordWithCost .ward` with `Cost.mana`, `discard`, `sacrificeCount`, or `or` (poison stays a gap) |
 | `Ability.keywordCrew`, `Cost.tapPowerTotal` on Vehicles | `Keyword.crew n` |
@@ -319,7 +319,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `TraditionalCardDefinition.entersWithCounters` | `static (replace (enter this) [putCounter …, keepReplacedAction])` (Dawn of a New Age, The Ruinous Wrecking Crew) |
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
 | `Trigger.wouldDraw` | `replace` of `Trigger.draw`, except while it is the controller's `drawStep` and that draw has not happened since `Trigger.drawStep`. Bard, King of Dale draws two cards instead |
-| `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `didNotHappen` of `abilityWithIdResolved` since `turnStart` is the first resolution; it is not counted while resolving. The second is `happened` of `ordinal 1` and `didNotHappen` of `ordinal 2`. The third is `ordinal 2` and not `ordinal 3` (Belladonna Took) |
+| `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `not` of `happened` of `abilityWithIdResolved` since `turnStart` is the first resolution; it is not counted while resolving. The second is `happened` of `ordinal 1` and `not` of `happened` of `ordinal 2`. The third is `ordinal 2` and not `ordinal 3` (Belladonna Took) |
 | `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
 | `ContinuousEffect.extraTrigger` | `replace` of `Trigger.abilityTriggers` of that source with `duplicateReplacingTrigger 2`, under `if (enduringStory (controller this))` (Bifur, Melodic Rider) |
 | `Selector.castFromZone`, `ContinuousEffect.reduceCostIfCastFrom` | `reduceCost` of spells you control that are not `castFromZone .hand` (Bilbo, Thief in the Night). “You may cast … from your graveyard” is `mayCast` of one card `selected` from that graveyard; an instant or sorcery cast that way is `replace` of `putToGraveyard` with `exile` |
@@ -386,7 +386,7 @@ complete.
   - Ant-Man, Colony Commander; Bolg of the North; Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Dáin Ironfoot; Grim Reaper, Lethal Legionnaire; Hawkeye, Master Marksman; Head of the Hunt; … (4 more)
 - **`leaveBattlefield`** (11 cards) — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Old Fat Spider Can't See Me; Secret Invasion; Super Villain Lockup; The Super Hero Civil War; The Wondrous Wasp; … (1 more)
-- **`onceEachTurn`** (11 cards) — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- **`onceEachTurn`** (11 cards) — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
   - Ant-Man, Colony Commander; Baron Strucker, HYDRA Overlord; Crossbones, Malicious Mercenary; Elrond, Moon-Reader; Knight of Wundagore; Loki, God of Mischief; Moon Girl and Devil Dinosaur; Nimrodel Watcher; Part in Friendship; The Sensational She-Hulk; … (1 more)
 - **`attackAlone`** (8 cards) — When the selected object attacks alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
@@ -726,7 +726,7 @@ Converted cards are omitted here.
 
 **Elrond, Moon-Reader** (`elrondMoonReader`)
 
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 - `CardAction.exileThenReturn` — Exile, then return at a later event (a delayed trigger such as the next end step)
 
 **Getaway Barrel** (`getawayBarrel`)
@@ -761,7 +761,7 @@ Converted cards are omitted here.
 
 **Part in Friendship** (`partInFriendship`)
 
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Riddles in the Dark** (`riddlesInTheDark`)
 
@@ -943,7 +943,7 @@ Converted cards are omitted here.
 **Nimrodel Watcher** (`nimrodelWatcher`)
 
 - `Trigger.scry` — Whenever the selected player scries
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Orcish Bowmasters** (`orcishBowmasters`)
 
@@ -1008,7 +1008,7 @@ Converted cards are omitted here.
 
 **Tom Bombadil** (`tomBombadil`)
 
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 - `Value.counterCount` — The number of counters of a kind on an object
 - `Trigger.chapterResolves` — Whenever the final chapter ability of a Saga resolves
 
@@ -1058,7 +1058,7 @@ Converted cards are omitted here.
 
 **Ant-Man, Colony Commander** (`antManColonyCommander`)
 
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 - `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Arc Reactor** (`arcReactor`)
@@ -1081,7 +1081,7 @@ Converted cards are omitted here.
 
 **Baron Strucker, HYDRA Overlord** (`baronStruckerHYDRAOverlord`)
 
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Baxter Building** (`baxterBuilding`)
 
@@ -1132,7 +1132,7 @@ Converted cards are omitted here.
 
 **Crossbones, Malicious Mercenary** (`crossbonesMaliciousMercenary`)
 
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Crowd of True Believers** (`crowdOfTrueBelievers`)
 
@@ -1286,7 +1286,7 @@ Converted cards are omitted here.
 
 **Knight of Wundagore** (`knightOfWundagore`)
 
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Leader, Super-Genius** (`leaderSuperGenius`)
 
@@ -1298,7 +1298,7 @@ Converted cards are omitted here.
 
 **Loki, God of Mischief** (`lokiGodOfMischief`)
 
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Luke Cage, Power Man** (`lukeCagePowerMan`)
 
@@ -1317,7 +1317,7 @@ Converted cards are omitted here.
 
 **Moon Girl and Devil Dinosaur** (`moonGirlAndDevilDinosaur`)
 
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Ms. Marvel, Kamala Khan** (`msMarvelKamalaKhan`)
 
@@ -1475,7 +1475,7 @@ Converted cards are omitted here.
 **The Sensational She-Hulk** (`theSensationalSheHulk`)
 
 - `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
-- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `didNotHappen (abilityWithIdActivated n) turnStart`
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **The Sentry, Golden Guardian** (`theSentryGoldenGuardian`)
 

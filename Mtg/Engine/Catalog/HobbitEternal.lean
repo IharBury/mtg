@@ -2667,7 +2667,7 @@ def galadrielLightOfValinorDefinition : TraditionalCardDefinition := .card <|
 #guard galadrielLightOfValinorDefinition == (
   let you : Selector := .controller .this
   let unchosen (id : Nat) : Condition :=
-    .didNotHappen (.modeWithIdChosen .player id) .turnStart
+    .not (.happened (.modeWithIdChosen .player id) .turnStart)
 
   .card [
     .name "Galadriel, Light of Valinor",

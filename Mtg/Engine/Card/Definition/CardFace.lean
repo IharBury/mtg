@@ -682,13 +682,12 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
             { b with costReductionIfYouControl := some (n, st.toString) })
           b
       else b
-  | .if (.didNotHappen (.castSpell cast) .turnStart) [.reduceCost cast' costs] =>
+  | .if (.not (.happened (.castSpell cast) .turnStart)) [.reduceCost cast' costs] =>
     if cast == cast' && firstCreatureSpellYouCast? cast then
       { b with
         firstCreatureCostsLess :=
           b.firstCreatureCostsLess + ManaCost.manaValue (Cost.manaCost costs) }
     else b
-  | .if (.didNotHappen _ _) _ => b
   | .if (.happened (.die who) .turnStart) inners =>
     applyIfShape b { who.shape with diedThisTurn := true } inners
   | .if (.happened (.putCountersSimultaneously who on .plusOnePlusOne) .turnStart)
@@ -718,7 +717,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else b
   | .if (.not (.and
       (.drawStep step)
-      (.didNotHappen (.draw drawer .all) (.drawStep since))))
+      (.not (.happened (.draw drawer .all) (.drawStep since)))))
       [.replace (.draw who .all) [.draw instead (.nat 2)]] =>
     if step == .controller .this && since == .controller .this &&
         drawer == .controller .this && who == .controller .this &&
@@ -771,7 +770,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if
       (.and
         (.enduringStory who)
-        (.didNotHappen (.activateAbility among) .turnStart))
+        (.not (.happened (.activateAbility among) .turnStart)))
       [.alternativeCost who' costs] =>
     if who == .controller .this &&
         among == equipAbilitiesYouControl &&
@@ -886,7 +885,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     | some t => { b with flashIfYouControlSubtype := some t }
     | none =>
       if firstCreatureSpellYouCast? card &&
-          cond == .didNotHappen (.castSpell card) .turnStart then
+          cond == .not (.happened (.castSpell card) .turnStart) then
         { b with firstCreatureHasFlash := true }
       else b
   | .doesntUntap who =>
@@ -1065,7 +1064,7 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
   | .abilityId n
-      (.activatedWithStaticIf (.didNotHappen (.abilityWithIdActivated n') .gameStart) costs action
+      (.activatedWithStaticIf (.not (.happened (.abilityWithIdActivated n') .gameStart)) costs action
         (.if (.happened (.enter (.source .this)) .turnStart) [.reduceCost .this [.mana syms]])) =>
     -- Power-up: once, and this card's mana cost less the turn it entered.
     if n == n' && (syms : ManaCost) == b.manaCost then

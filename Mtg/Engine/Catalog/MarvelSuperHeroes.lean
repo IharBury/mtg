@@ -370,7 +370,7 @@ def braveBrawlerDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 4, .mono .white]]
         (.putCounter (.source .this) .plusOnePlusOne 2)
         (.if
@@ -1211,7 +1211,7 @@ def aerialDoombotDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 5, .mono .blue]]
         (.putCounter (.source .this) .plusOnePlusOne 3)
         (.if
@@ -1381,7 +1381,7 @@ def boldBiochemistDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 5, .mono .blue]]
         (.sequence
           [.putCounter (.source .this) .plusOnePlusOne 1, .draw (.controller .this) (.nat 2)])
@@ -1932,7 +1932,7 @@ def statureSizeShifterDefinition : TraditionalCardDefinition := .card <|
   .ability
     (.abilityId 1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.x, .mono .blue, .mono .blue]]
         (.putCounter (.source .this) .plusOnePlusOne .x)
         (.if (.happened (.enter (.source .this)) .turnStart)
@@ -2750,7 +2750,7 @@ def ninjaOfTheHandDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 4, .mono .black]]
         (.sequence
           [
@@ -3097,7 +3097,7 @@ def unlivingLegionnaireDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       2
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 2) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 2) .gameStart))
         [.mana [.generic 5, .mono .black, .mono .black]]
         (.sequence
           [
@@ -3477,7 +3477,7 @@ def humanTorchJohnnyStormDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       2
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 2) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 2) .gameStart))
         [.mana [.generic 6, .mono .red]]
         (.putCounter (.source .this) .plusOnePlusOne 3)
         (.if
@@ -4052,7 +4052,7 @@ def volcanicVillainDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 5, .mono .red]]
         (.putCounter (.source .this) .plusOnePlusOne 2)
         (.if
@@ -4285,7 +4285,7 @@ def herculesPrinceOfPowerDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 4, .mono .green]]
         (.sequence
           [
@@ -4477,7 +4477,7 @@ def petAvengersDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 6, .mono .green]]
         (.sequence
           [
@@ -4723,7 +4723,7 @@ def serpentSpecialistDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 3, .mono .green]]
         (.putCounter (.source .this) .plusOnePlusOne 2)
         (.if
@@ -4774,7 +4774,7 @@ def sheHulkJadeDefenderDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       2
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 2) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 2) .gameStart))
         [.mana [.generic 4, .mono .green, .mono .green]]
         (.sequence
           [
@@ -5102,7 +5102,7 @@ def abominationTerrifyingTitanDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       2
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 2) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 2) .gameStart))
         [.mana [.generic 5, .hybrid .red .green, .hybrid .red .green]]
         (.sequence
           [
@@ -6598,7 +6598,7 @@ def ultronDroneDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 6]]
         (.sequence
           [
@@ -6683,11 +6683,11 @@ def theVisionDefinition : TraditionalCardDefinition := .card <|
     (.triggered
       (.castSpell (.intersection [.spell, .not (.cardType .creature), .controlled (.controller .this)]))
       (.chooseModeRestricted (.controller .this) [
-        (1, .didNotHappen (.modeWithIdChosen .player 1) .turnStart,
+        (1, .not (.happened (.modeWithIdChosen .player 1) .turnStart),
           [.continuous [.gainAbility (.source .this) (.keyword .doubleStrike)] .endOfTurn]),
-        (2, .didNotHappen (.modeWithIdChosen .player 2) .turnStart,
+        (2, .not (.happened (.modeWithIdChosen .player 2) .turnStart),
           [.continuous [.gainAbility (.source .this) (.keyword .indestructible)] .endOfTurn]),
-        (3, .didNotHappen (.modeWithIdChosen .player 3) .turnStart,
+        (3, .not (.happened (.modeWithIdChosen .player 3) .turnStart),
           [.draw (.controller .this) (.nat 1)])]))]
 
 def theVision : CardDef :=
@@ -6736,7 +6736,7 @@ def vivVisionTeenSynthezoidDefinition : TraditionalCardDefinition := .card <|
     (.abilityId
       1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 7]]
         (.putCounter (.source .this) .plusOnePlusOne 2)
         (.if
