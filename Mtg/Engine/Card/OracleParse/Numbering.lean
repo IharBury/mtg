@@ -214,8 +214,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .ifElse c a b =>
     appendIds [collectCondition c, appendIds (a.map collectAction), appendIds (b.map collectAction)]
   | .optional who action => appendIds [collectSelector who, collectAction action]
-  | .attach a b | .copyWithNewTargets a b | .fight a b | .dealDamageEqualToPower a b
-  | .mayCast a b =>
+  | .attach a b | .copyWithNewTargets a b | .fight a b | .mayCast a b =>
     appendIds [collectSelector a, collectSelector b]
   | .chooseModeRestricted who modes => appendIds [collectSelector who, collectModes modes]
   | .counter s => collectSelector s
@@ -562,8 +561,6 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .forEachVariable n s as =>
     .forEachVariable (m.target n) (mapSelector m s) (mapActions m as)
   | .reveal s => .reveal (mapSelector m s)
-  | .dealDamageEqualToPower a b =>
-    .dealDamageEqualToPower (mapSelector m a) (mapSelector m b)
   | .fight a b => .fight (mapSelector m a) (mapSelector m b)
   | .addManaOfOneColor who syms v =>
     .addManaOfOneColor (mapSelector m who) syms (mapValue m v)
@@ -597,14 +594,16 @@ def separateActionIds (parts : List CardPart) : List CardPart :=
     .ability (.triggered (.enter .this)
       (.sequence [
         .actionId 3 (.attach (.targets 1 Range.any (.zone .battlefield)) (.target 2 (.zone .battlefield))),
-        .dealDamageEqualToPower (.targetReference 2)
-          (.targets 4 (.range 0 1) (.zone .battlefield))]))] ==
+        .dealDamage (.targetReference 2)
+          (.targets 4 (.range 0 1) (.zone .battlefield))
+          (.greatestPower (.targetReference 2))]))] ==
   [
     .ability (.triggered (.enter .this)
       (.sequence [
         .actionId 1 (.attach (.targets 1 Range.any (.zone .battlefield)) (.target 2 (.zone .battlefield))),
-        .dealDamageEqualToPower (.targetReference 2)
-          (.targets 3 (.range 0 1) (.zone .battlefield))]))]
+        .dealDamage (.targetReference 2)
+          (.targets 3 (.range 0 1) (.zone .battlefield))
+          (.greatestPower (.targetReference 2))]))]
 #guard separateActionIds [.actions [
     .actionId 1 (.counter (.target 1 .spell)),
     .actionId 2 (.exile .replacingObject)]] ==

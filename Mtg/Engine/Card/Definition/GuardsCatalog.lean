@@ -294,14 +294,15 @@ namespace Mtg.Engine
   match
     (Ability.triggered
       (.die .this)
-      (.dealDamageEqualToPower
+      (.dealDamage
         .this
         (.target
           1
           (.intersection [
             .zone .battlefield,
             .cardType .creature,
-            .controlled (.opponent (.controller .this))])))).toTriggeredAbility? with
+            .controlled (.opponent (.controller .this))]))
+        (.greatestPower .this))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature
   | none => false
 

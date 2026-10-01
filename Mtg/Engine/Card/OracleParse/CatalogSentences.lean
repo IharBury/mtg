@@ -422,7 +422,8 @@ def parseSelfDealsDamageEqualToPower (cardName sentence : String) (n : Nat) :
     fun (who, dest) =>
       if !damageSource? cardName who then none
       else
-        (parseTargetDesc dest n).map fun sel => (.dealDamageEqualToPower .this sel, n + 1)
+        (parseTargetDesc dest n).map fun sel =>
+          (.dealDamage .this sel (.greatestPower .this), n + 1)
 
 /-- `<this card> deals 3 damage divided as you choose among one, two, or three
 targets.` Its controller divides the damage (CR 601.2d). The counts are a
@@ -974,7 +975,8 @@ def parseSelfDealsPowerToAnyOther (cardName s : String) (n : Nat) : Option (Card
     " deals damage equal to its power to any other target"]
   (ends.findSome? (before? s ·)).bind fun who =>
     if refersToSelf cardName who then
-      some (.dealDamageEqualToPower (.source .this) (.target n (.not .this)), n + 1)
+      some (.dealDamage (.source .this) (.target n (.not .this))
+        (.greatestPower (.source .this)), n + 1)
     else none
 
 /-- `<this> gains "<ability>" until end of turn.` The quoted text is an

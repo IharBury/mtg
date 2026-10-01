@@ -290,7 +290,8 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
       (.if (.targetsIncludeAny .this (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))
         [.continuous [.gainAbility (.source .this)
-          (.activated [.tapSymbol] (.dealDamageEqualToPower (.source .this) (.target _ (.not .this))))]
+          (.activated [.tapSymbol]
+            (.dealDamage (.source .this) (.target _ (.not .this)) (.greatestPower (.source .this))))]
           .endOfTurn]) =>
     some (.onCasting Effect.castingIronFistTap)
   | .triggered (.attack .this .all)
@@ -455,10 +456,11 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           (.target creatureId
             (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))),
         .if (.greaterOrEqual (.count (.wasObjectOfAction id')) (.nat 1))
-          [.dealDamageEqualToPower (.targetReference creatureId')
+          [.dealDamage (.targetReference creatureId')
             (.targets damageId (.range (.nat 0) (.nat 1))
-              (.intersection [.zone .battlefield, .cardType .creature]))]]) =>
-    if id == id' && creatureId == creatureId' &&
+              (.intersection [.zone .battlefield, .cardType .creature]))
+            (.greatestPower (.targetReference powerId))]]) =>
+    if id == id' && creatureId == creatureId' && creatureId' == powerId &&
         equipId + 1 == creatureId && creatureId + 1 == damageId then
       some TriggeredAbility.onEnterAttachEquipmentThenFight
     else none
@@ -713,7 +715,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     | _, _ => none
   | .triggered (.die .this) (.draw _ (.nat n)) =>
     some (TriggeredAbility.onDiesDraw n)
-  | .triggered (.die .this) (.dealDamageEqualToPower _ dest) =>
+  | .triggered (.die .this) (.dealDamage _ dest (.greatestPower _)) =>
     if dest.toTargetKind == .oppCreature then
       some TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature
     else none

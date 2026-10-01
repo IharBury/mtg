@@ -191,7 +191,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .defineSelectorVariable _ _ => continuousEffect none [] asAbility
                   | .forEachVariable _ _ _ => continuousEffect none [] asAbility
                   | .reveal _ => continuousEffect none [] asAbility
-                  | .dealDamageEqualToPower _ _ | .fight _ _ =>
+                  | .fight _ _ =>
                     continuousEffect none [] asAbility
                   | .addManaOfOneColor who syms n =>
                     if leftoverAddAnyColor? (.addManaOfOneColor who syms n) then
