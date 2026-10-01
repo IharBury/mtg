@@ -1298,8 +1298,8 @@ open OracleParts
   "If you would draw a card, draw two cards instead." == none
 #guard parseOracleParts (name := "Bard, King of Dale")
   "If one or more tokens would be created under your control, twice that many of those tokens are created instead." ==
-  some [.ability (.static (.replaceTokenCreation
-    (.intersection [.token, .controlled (.controller .this)])
+  some [.ability (.static (.replace
+    (.createTokens (.intersection [.token, .controlled (.controller .this)]))
     [.createReplacingTokens (.controller .this) (Value.timesCount 2 .replacingObject)]))]
 #guard parseOracleParts (name := "Bard, King of Dale")
   "If a token would be created under your control, twice that many of those tokens are created instead." ==

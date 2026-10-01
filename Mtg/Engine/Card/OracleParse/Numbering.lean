@@ -95,7 +95,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .enter s | .die s
   | .discard s | .leaveGraveyard s | .leaveBattlefield s | .returnToHand s | .putToGraveyard s
   | .giftPromised s | .counter s | .activateAbility s | .castSpell s
-  | .castSpellFromGraveyard s | .precombatMainPhase s =>
+  | .castSpellFromGraveyard s | .precombatMainPhase s | .createTokens s =>
     collectSelector s
   | .attack a b | .draw a b | .damage a b | .block a b | .target a b | .combatDamage a b
   | .putCountersSimultaneously a b _ =>
@@ -185,8 +185,6 @@ def collectEffect : ContinuousEffect → List Nat × List Nat
     appendIds [collectSelector s, collectValue v]
   | .gainType s _ | .gainSubtype s _ | .gainAllSubtypes s _ | .doesntUntap s | .removeAllAbilities s =>
     collectSelector s
-  | .replaceTokenCreation s as =>
-    appendIds [collectSelector s, appendIds (as.map collectAction)]
   | .canBeCastAsThoughWithFlashIf s c => appendIds [collectSelector s, collectCondition c]
 
 def collectModes : List (Nat × Condition × List CardAction) → List Nat × List Nat
@@ -386,6 +384,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .or a b => .or (mapTrigger m a) (mapTrigger m b)
   | .target a b => .target (mapSelector m a) (mapSelector m b)
   | .precombatMainPhase s => .precombatMainPhase (mapSelector m s)
+  | .createTokens s => .createTokens (mapSelector m s)
 
 def mapCondition (m : IdMaps) : Condition → Condition
   | .any s => .any (mapSelector m s)
@@ -502,8 +501,6 @@ def mapEffect (m : IdMaps) : ContinuousEffect → ContinuousEffect
   | .cantAttackUnlessPays a b cs =>
     .cantAttackUnlessPays (mapSelector m a) (mapSelector m b) (mapCosts m cs)
   | .removeAllAbilities s => .removeAllAbilities (mapSelector m s)
-  | .replaceTokenCreation s as =>
-    .replaceTokenCreation (mapSelector m s) (mapActions m as)
 
 def mapActions (m : IdMaps) : List CardAction → List CardAction
   | [] => []

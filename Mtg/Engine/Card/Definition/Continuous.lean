@@ -86,7 +86,6 @@ def selector : ContinuousEffect → Selector
   | .doesntUntap who => who
   | .cantAttackUnlessPays who _ _ => who
   | .removeAllAbilities who => who
-  | .replaceTokenCreation who _ => who
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is

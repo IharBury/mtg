@@ -1492,8 +1492,8 @@ namespace Mtg.Engine
       .ability (.static (.replace
         (.draw (.controller .this) .all)
         [.draw (.controller .this) 2])),
-      .ability (.static (.replaceTokenCreation
-        (.intersection [.token, .controlled (.controller .this)])
+      .ability (.static (.replace
+        (.createTokens (.intersection [.token, .controlled (.controller .this)]))
         [.createReplacingTokens (.controller .this)
           (Value.timesCount 2 .replacingObject)]))
     ]).toCardDef

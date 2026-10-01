@@ -506,6 +506,10 @@ inductive Trigger where
   with set-wide predicates (CR 603.2c). One trigger for that group.
   `Trigger.enter` fires once per object. -/
   | enterSimultaneously : Selector → List SetPredicate → Trigger
+  /-- Tokens matching the selector would be created (CR 111). One event for
+  that creation. `replace` of this trigger replaces it (CR 614).
+  `Selector.replacingObject` is those tokens. -/
+  | createTokens : Selector → Trigger
   /-- Whenever the selected player draws a card matching the given
   selector. `replace` of this trigger is “if that player would draw” that
   card (CR 614). `Selector.all` is any card. -/

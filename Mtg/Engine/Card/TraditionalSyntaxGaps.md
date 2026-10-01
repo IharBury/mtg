@@ -101,6 +101,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `leaveGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`,
   `block`, `die`, `dieSimultaneously`, `sacrifice` (the permanents sacrificed),
   `attackSimultaneously` (who attacks, who is attacked),
+  `createTokens` (tokens matching the selector would be created),
   `abilityWithIdActivated`, `abilityWithIdResolved` (the numbered ability resolved),
   `actionWithId`, `triggerId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `spendManaFrom`, `castSpell`,
@@ -131,9 +132,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   cast as though it had flash when a condition holds; `you` is
   `Selector.caster`; the spell does not gain flash), `doesntUntap`,
   `cantAttackUnlessPays`, `removeAllAbilities` (selected objects lose all
-  abilities; later-granted abilities still apply), `replaceTokenCreation`
-  (if tokens matching a selector would be created, replace that creation;
-  `Selector.replacingObject` is those tokens).
+  abilities; later-granted abilities still apply). `replace` of
+  `Trigger.createTokens` replaces that creation; `Selector.replacingObject`
+  is those tokens.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`,
   `chooseUniqueModes`, `chooseModeRestricted`, `counter`, `preventable`,
@@ -300,7 +301,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
 | `Trigger.wouldDraw` | `replace` of `Trigger.draw` of any card, drawing two cards instead. Bard, King of Dale; the first card of each of your draw steps is not replaced |
 | `Condition.resolvedThisTurnCount` | `happenedTimes` of `abilityWithIdResolved`, the count, and `turnStart`. `1` is the first resolution this turn, counting this one (Belladonna Took) |
-| `ContinuousEffect.replaceTokenCreation` | `replaceTokenCreation` of the tokens and the replacement actions. `createReplacingTokens` of `Value.timesCount 2 .replacingObject` is “twice that many of those tokens” (Bard, King of Dale) |
+| `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `createReplacingTokens` of `Value.timesCount 2 .replacingObject` is “twice that many of those tokens” (Bard, King of Dale) |
 
 ## Missing constructors by type
 
@@ -1558,7 +1559,7 @@ Converted cards are omitted here.
 These 14 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, enters-with-counters, or
-`ContinuousEffect.replaceTokenCreation` became expressible. A later pass
+`replace` of `Trigger.createTokens` became expressible. A later pass
 should reread them before conversion.
 
 **Hobbit (3):** Beorn the Fierce; Dwalin, Weaponmaster; Last Light of Durin's Day.

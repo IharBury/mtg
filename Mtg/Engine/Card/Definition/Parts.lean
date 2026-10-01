@@ -180,13 +180,6 @@ inductive ContinuousEffect where
   spell or ability applies it until end of turn to the objects that match
   when it resolves (CR 611.2a / 611.2c). -/
   | removeAllAbilities : Selector → ContinuousEffect
-  /-- If tokens matching the selector would be created, replace that creation
-  with the given actions (CR 614). There is no token-creation event for
-  `replace`. `Selector.replacingObject` is the tokens that would have been
-  created, and `Value.count` of it is how many. “Twice that many of those
-  tokens” is `createReplacingTokens` of `Value.timesCount 2` of that
-  selector. -/
-  | replaceTokenCreation : Selector → List CardAction → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
