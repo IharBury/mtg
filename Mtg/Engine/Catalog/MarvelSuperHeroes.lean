@@ -3571,7 +3571,8 @@ def ironFistLivingWeaponDefinition : TraditionalCardDefinition := .card <|
                 (.source .this)
                 (.activated
                   [.tapSymbol]
-                  (.dealDamageEqualToPower (.source .this) (.target 1 (.not .this))))]
+                  (.dealDamage (.source .this) (.target 1 (.not .this))
+                    (.greatestPower (.source .this))))]
             .endOfTurn]))]
 
 def ironFistLivingWeapon : CardDef :=

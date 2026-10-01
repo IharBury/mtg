@@ -569,9 +569,10 @@ def parseAttachEquipmentThenDamage (cardName : String) (ss : List String) (n : N
           some ([
             .actionId id (.attach attached host),
             .if (.greaterOrEqual (.count (.wasObjectOfAction id)) (.nat 1))
-              [.dealDamageEqualToPower (.targetReference (n + 1))
+              [.dealDamage (.targetReference (n + 1))
                 (.targets (id + 1) (.range 0 1)
-                  (.intersection [.zone .battlefield, .cardType .creature]))]],
+                  (.intersection [.zone .battlefield, .cardType .creature]))
+                (.greatestPower (.targetReference (n + 1)))]],
             id + 2)
         else none
       | _ => none

@@ -106,10 +106,11 @@ def parseBolgEnters (cardName line : String) (n : Nat) : Option (List CardPart Ã
         .optional (.controller .this) (.actionId n (.sacrifice anotherCreatureYouSacrifice)),
         .reflexive n [
           .actionId (n + 1)
-            (.dealDamageEqualToPower (.wasObjectOfAction n)
+            (.dealDamage (.wasObjectOfAction n)
               (.target n
                 (.intersection [
-                  .not (.wasObjectOfAction n), .zone .battlefield, .cardType .creature]))),
+                  .not (.wasObjectOfAction n), .zone .battlefield, .cardType .creature]))
+              (.greatestPower (.wasObjectOfAction n))),
           .if (.greater (.excessDamage (n + 1)) 0) [
             .keyword (.controller .this) (.amass .goblin (.excessDamage (n + 1)))]]]))],
         n + 2)

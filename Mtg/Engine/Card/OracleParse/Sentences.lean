@@ -518,9 +518,10 @@ def parseDealsDamageEqualToPower (sentence : String) (n : Nat) :
       match parseTargetPhrase src, parseOppControlledTarget dest with
       | some srcSel, some destSel =>
         some (
-          .dealDamageEqualToPower
+          .dealDamage
             (.target n srcSel)
-            (.target (n + 1) destSel),
+            (.target (n + 1) destSel)
+            (.greatestPower (.target n srcSel)),
           n + 2)
       | _, _ => none
   | none => none

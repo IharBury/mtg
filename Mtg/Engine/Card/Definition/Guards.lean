@@ -1097,7 +1097,7 @@ namespace Mtg.Engine
 
 #guard
   let action : CardAction :=
-    .dealDamageEqualToPower
+    .dealDamage
       (.target
         1
         (.intersection [
@@ -1110,6 +1110,13 @@ namespace Mtg.Engine
           .zone .battlefield,
           .cardType .creature,
           .controlled (.opponent (.controller .this))]))
+      (.greatestPower
+        (.target
+          1
+          (.intersection [
+            .zone .battlefield,
+            .cardType .creature,
+            .controlled (.controller .this)])))
   action.toEffect == Effect.creatureYouControlDealsPowerToOppCreature
 
 -- Galion: attack, set another creature's base P/T.
