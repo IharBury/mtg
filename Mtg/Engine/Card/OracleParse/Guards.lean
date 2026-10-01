@@ -103,7 +103,7 @@ open OracleParts
   some [.ability (
     .abilityId 1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 4, .mono .white]]
         (.putCounter (.source .this) .plusOnePlusOne 2)
         (.if (.happened (.enter (.source .this)) .turnStart)
@@ -116,7 +116,7 @@ open OracleParts
   some [.ability (
     .abilityId 1
       (.activatedWithStaticIf
-        (.didNotHappen (.abilityWithIdActivated 1) .gameStart)
+        (.not (.happened (.abilityWithIdActivated 1) .gameStart))
         [.mana [.generic 4, .mono .green]]
         (.sequence [
           .putCounter (.source .this) .plusOnePlusOne 1,
@@ -678,7 +678,7 @@ open OracleParts
   some [.ability (
     .abilityId 1
       (.activatedIf
-        (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
+        (.not (.happened (.abilityWithIdActivated 1) .turnStart))
         [.life 2]
         (.continuous
           [.addPower (.source .this) (Value.int 2),
@@ -1191,7 +1191,7 @@ open OracleParts
       (.activatedIf
         (.and
           (.turn (.controller .this))
-          (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
+          (.not (.happened (.abilityWithIdActivated 1) .turnStart)))
         [.sacrificeCount
           (.intersection [
             .not .this,

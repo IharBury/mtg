@@ -20,7 +20,7 @@ namespace Mtg.Engine
       .cardType .creature,
       .controlled you]
   let unchosen (id : Nat) : Condition :=
-    .didNotHappen (.modeWithIdChosen .player id) .turnStart
+    .not (.happened (.modeWithIdChosen .player id) .turnStart)
   let modes : List (Nat × Condition × List CardAction) :=
     [
       (1, unchosen 1,
@@ -72,7 +72,7 @@ namespace Mtg.Engine
       .cardType .creature,
       .controlled you]
   let unchosen (id : Nat) : Condition :=
-    .didNotHappen (.modeWithIdChosen .player id) .turnStart
+    .not (.happened (.modeWithIdChosen .player id) .turnStart)
   let modes : List (Nat × Condition × List CardAction) :=
     [
       (1, unchosen 1,
@@ -100,7 +100,7 @@ namespace Mtg.Engine
       .cardType .creature,
       .controlled you]
   let unchosenYou (id : Nat) : Condition :=
-    .didNotHappen (.modeWithIdChosen you id) .turnStart
+    .not (.happened (.modeWithIdChosen you id) .turnStart)
   let modes : List (Nat × Condition × List CardAction) :=
     [
       (1, unchosenYou 1,
@@ -128,7 +128,7 @@ namespace Mtg.Engine
       .cardType .creature,
       .controlled you]
   let unchosenGame (id : Nat) : Condition :=
-    .didNotHappen (.modeWithIdChosen .player id) .gameStart
+    .not (.happened (.modeWithIdChosen .player id) .gameStart)
   let modes : List (Nat × Condition × List CardAction) :=
     [
       (1, unchosenGame 1,
@@ -156,7 +156,7 @@ namespace Mtg.Engine
       .cardType .creature,
       .controlled you]
   let unchosen1 : Condition :=
-    .didNotHappen (.modeWithIdChosen .player 1) .turnStart
+    .not (.happened (.modeWithIdChosen .player 1) .turnStart)
   let modes : List (Nat × Condition × List CardAction) :=
     [
       (1, unchosen1,
@@ -1385,12 +1385,13 @@ namespace Mtg.Engine
     .ability (.static (.if
       (.and
         (.enduringStory (.controller .this))
-        (.didNotHappen
-          (.activateAbility
-            (.intersection [
-              Selector.keywordAbility .equip,
-              .controlled (.controller .this)]))
-          .turnStart))
+        (.not
+          (.happened
+            (.activateAbility
+              (.intersection [
+                Selector.keywordAbility .equip,
+                .controlled (.controller .this)]))
+            .turnStart)))
       [.alternativeCost
         (.intersection [
           Selector.keywordAbility .equip,
@@ -1566,15 +1567,15 @@ namespace Mtg.Engine
       .ability (.abilityId 1 (.triggered
         (.enter (.intersection [.zone .battlefield, .token, .controlled (.controller .this)]))
         (.sequence [
-          .if (.didNotHappen (.abilityWithIdResolved 1) .turnStart)
+          .if (.not (.happened (.abilityWithIdResolved 1) .turnStart))
             [.gainLife (.controller .this) 1],
           .if (.and
               (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved 1)) .turnStart)
-              (.didNotHappen (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart))
+              (.not (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart)))
             [.draw (.controller .this) 1],
           .if (.and
               (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart)
-              (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved 1)) .turnStart))
+              (.not (.happened (.ordinal 3 .turnStart (.abilityWithIdResolved 1)) .turnStart)))
             [.putCounter
               (.intersection
                 [.zone .battlefield, .cardType .creature, .controlled (.controller .this)])
@@ -1585,7 +1586,7 @@ namespace Mtg.Engine
 #guard
   (Ability.triggered
     (.enter (.intersection [.zone .battlefield, .token, .controlled (.controller .this)]))
-    (.if (.didNotHappen (.abilityWithIdResolved 1) .turnStart)
+    (.if (.not (.happened (.abilityWithIdResolved 1) .turnStart))
       [.gainLife (.controller .this) 1])).toTriggeredAbility?.isNone
 
 end Mtg.Engine

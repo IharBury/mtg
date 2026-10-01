@@ -120,7 +120,7 @@ def collectTrigger : Trigger → List Nat × List Nat
 def collectCondition : Condition → List Nat × List Nat
   | .any s | .timeToCastSorcery s | .turn s | .drawStep s | .enduringStory s => collectSelector s
   | .anySubtype s _ => collectSelector s
-  | .didNotHappen a b | .happened a b => appendIds [collectTrigger a, collectTrigger b]
+  | .happened a b => appendIds [collectTrigger a, collectTrigger b]
   | .and a b => appendIds [collectCondition a, collectCondition b]
   | .not c => collectCondition c
   | .less a b | .lessOrEqual a b | .greater a b | .greaterOrEqual a b | .equal a b =>
@@ -388,7 +388,6 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
 def mapCondition (m : IdMaps) : Condition → Condition
   | .any s => .any (mapSelector m s)
   | .anySubtype s st => .anySubtype (mapSelector m s) st
-  | .didNotHappen a b => .didNotHappen (mapTrigger m a) (mapTrigger m b)
   | .happened a b => .happened (mapTrigger m a) (mapTrigger m b)
   | .timeToCastSorcery s => .timeToCastSorcery (mapSelector m s)
   | .turn s => .turn (mapSelector m s)

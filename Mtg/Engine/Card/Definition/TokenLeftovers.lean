@@ -396,7 +396,7 @@ def leftoverGrantFlyingToThose? : List ContinuousEffect → Bool
 
 /-- This mode has not been chosen this turn by any player. -/
 def leftoverModeUnchosenThisTurn? (id : Nat) : Condition → Bool
-  | .didNotHappen (.modeWithIdChosen chooser id') .turnStart =>
+  | .not (.happened (.modeWithIdChosen chooser id') .turnStart) =>
     chooser == .player && id == id'
   | _ => false
 

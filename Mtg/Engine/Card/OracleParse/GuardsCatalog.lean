@@ -508,12 +508,13 @@ open OracleParts
     .ability (.static (.if
       (.and
         (.enduringStory (.controller .this))
-        (.didNotHappen
-          (.activateAbility
-            (.intersection [
-              Selector.keywordAbility .equip,
-              .controlled (.controller .this)]))
-          .turnStart))
+        (.not
+          (.happened
+            (.activateAbility
+              (.intersection [
+                Selector.keywordAbility .equip,
+                .controlled (.controller .this)]))
+            .turnStart)))
       [.alternativeCost
         (.intersection [
           Selector.keywordAbility .equip,
@@ -891,7 +892,7 @@ open OracleParts
 #guard parseOracleParts (name := "")
   "The first creature spell you cast each turn costs {1} less to cast and can be cast as though it had flash." ==
   let creatureSpell := Selector.intersection [.spell, .cardType .creature, .controlled (.controller .this)]
-  let first := Condition.didNotHappen (.castSpell creatureSpell) .turnStart
+  let first := Condition.not (.happened (.castSpell creatureSpell) .turnStart)
   some [
     .ability (.static (.if first [.reduceCost creatureSpell [.mana [.generic 1]]])),
     .ability (.static (.canBeCastAsThoughWithFlashIf creatureSpell first))]
@@ -1312,15 +1313,15 @@ open OracleParts
   some [.ability (.abilityId 1 (.triggered
     (.enter (.intersection [.zone .battlefield, .token, .controlled (.controller .this)]))
     (.sequence [
-      .if (.didNotHappen (.abilityWithIdResolved 1) .turnStart)
+      .if (.not (.happened (.abilityWithIdResolved 1) .turnStart))
         [.gainLife (.controller .this) 1],
       .if (.and
           (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved 1)) .turnStart)
-          (.didNotHappen (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart))
+          (.not (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart)))
         [.draw (.controller .this) 1],
       .if (.and
           (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart)
-          (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved 1)) .turnStart))
+          (.not (.happened (.ordinal 3 .turnStart (.abilityWithIdResolved 1)) .turnStart)))
         [.putCounter
           (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)])
           .plusOnePlusOne 1]])))]
