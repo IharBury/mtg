@@ -373,9 +373,10 @@ inductive CardAction where
   Number it with `actionId` so `Selector.hasCreatureTypeChosenByAction` can
   refer to the choice. -/
   | chooseCreatureType : Selector → CardAction
-  /-- The selected player may cast one spell from among the selected cards,
-  paying its cost (CR 601.2 / 608.2g). `wasObjectOfAction` of an `actionId`
-  around this action is the spell that was cast. -/
+  /-- The selected player may cast any number of spells matching the selector,
+  paying their costs (CR 601.2 / 608.2g). A `selected` choice limits how
+  many. `wasObjectOfAction` of an `actionId` around this action is each
+  spell that was cast. -/
   | mayCast : Selector → Selector → CardAction
 deriving Repr, Inhabited, BEq
 

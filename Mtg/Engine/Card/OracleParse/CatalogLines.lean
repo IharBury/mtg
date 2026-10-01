@@ -932,10 +932,11 @@ def artifactInstantOrSorceryInYourGraveyard : Selector :=
     .union [.cardType .artifact, .cardType .instant, .cardType .sorcery]]
 
 /-- `Whenever <this> attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead.`
-The cast is action `n` and pays that spell's cost. An instant or sorcery
-that was that action is exiled instead of being put into a graveyard.
-The replacement lasts until end of turn, which covers the spell resolving
-after this ability. -/
+The cast is action `n` and pays that spell's cost. `mayCast` allows any
+number of matching spells; `selected` with range 1–1 is this one spell.
+An instant or sorcery that was that action is exiled instead of being put
+into a graveyard. The replacement lasts until end of turn, which covers
+the spell resolving after this ability. -/
 def parseAttackMayCastFromGraveyard (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   match sentences line with
@@ -949,7 +950,10 @@ def parseAttackMayCastFromGraveyard (cardName : String) (line : String) (n : Nat
         some (
           .ability (.triggered (.attack .this .all) (.sequence [
             .actionId n
-              (.mayCast (.controller .this) artifactInstantOrSorceryInYourGraveyard),
+              (.mayCast
+                (.controller .this)
+                (.selected (.controller .this) (.range 1 1)
+                  artifactInstantOrSorceryInYourGraveyard)),
             .continuous
               [.replace
                 (.putToGraveyard

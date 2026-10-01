@@ -412,8 +412,9 @@ Currently recognized:
   `{N}` is generic mana and is not zero. Those spells are ones this object's
   controller casts from a zone other than that player's hand.
 - `Whenever <this> attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead.`
-  One spell, paying its cost. An instant or sorcery cast by that action is
-  exiled instead of being put into a graveyard, until end of turn.
+  `mayCast` allows any number of matching spells. This line selects one
+  (`selected` with range 1–1) and pays its cost. An instant or sorcery cast
+  by that action is exiled instead of being put into a graveyard, until end of turn.
 - `Whenever <this> or another nontoken <subtype> you control enters, create a <P>/<T> <color> <subtype> creature token.`
   `<this>` is this card. `another` excludes this object. One token is created.
 - `{cost}, Discard a card: Draw a card.`

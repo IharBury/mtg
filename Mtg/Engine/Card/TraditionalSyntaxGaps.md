@@ -168,7 +168,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `keepReplacedAction`, `healAllDamage`, `shuffleIntoOwnersLibrary`,
   `lookAt`, `putOnLibraryBottomInRandomOrder`, `chooseCreatureType` (the
   selected player chooses a creature type), `mayCast` (the selected player
-  may cast one spell from among the selected cards, paying its cost).
+  may cast any number of spells matching the selector, paying their costs;
+  `selected` limits how many).
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -319,7 +320,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `didNotHappen` of `abilityWithIdResolved` since `turnStart` is the first resolution; it is not counted while resolving. The second is `happened` of `ordinal 1` and `didNotHappen` of `ordinal 2`. The third is `ordinal 2` and not `ordinal 3` (Belladonna Took) |
 | `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
 | `ContinuousEffect.extraTrigger` | `replace` of `Trigger.abilityTriggers` of that source with `modifyReplacementTriggerCount (fun n => .nat (n + 1))`, under `if (enduringStory (controller this))` (Bifur, Melodic Rider) |
-| `Selector.castFromZone`, `ContinuousEffect.reduceCostIfCastFrom` | `reduceCost` of spells you control that are not `castFromZone .hand` (Bilbo, Thief in the Night). “You may cast … from your graveyard” is `mayCast`; an instant or sorcery cast that way is `replace` of `putToGraveyard` with `exile` |
+| `Selector.castFromZone`, `ContinuousEffect.reduceCostIfCastFrom` | `reduceCost` of spells you control that are not `castFromZone .hand` (Bilbo, Thief in the Night). “You may cast … from your graveyard” is `mayCast` of one card `selected` from that graveyard; an instant or sorcery cast that way is `replace` of `putToGraveyard` with `exile` |
 
 ## Missing constructors by type
 
@@ -612,7 +613,7 @@ player controls triggers an additional time: `replace` of `abilityTriggers`
 of that Dwarf with `modifyReplacementTriggerCount (fun n => .nat (n + 1))`.
 Bilbo reduces the cost of spells that
 controller casts from a zone other than their hand. When Bilbo attacks, that
-player may cast an artifact, instant, or sorcery from their graveyard, and
+player may cast one artifact, instant, or sorcery they select from their graveyard, and
 an instant or sorcery cast that way is exiled instead of being put into a
 graveyard.
 

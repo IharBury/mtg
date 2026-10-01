@@ -1369,13 +1369,14 @@ open OracleParts
         .actionId 1
           (.mayCast
             (.controller .this)
-            (.intersection [
-              .inGraveyard,
-              .owner (.controller .this),
-              .union [
-                .cardType .artifact,
-                .cardType .instant,
-                .cardType .sorcery]])),
+            (.selected (.controller .this) (.range 1 1)
+              (.intersection [
+                .inGraveyard,
+                .owner (.controller .this),
+                .union [
+                  .cardType .artifact,
+                  .cardType .instant,
+                  .cardType .sorcery]]))),
         .continuous
           [.replace
             (.putToGraveyard

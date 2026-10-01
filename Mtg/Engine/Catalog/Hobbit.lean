@@ -5767,13 +5767,14 @@ def bilboThiefInTheNightDefinition : TraditionalCardDefinition := .card <|
       .actionId 1
         (.mayCast
           (.controller .this)
-          (.intersection [
-            .inGraveyard,
-            .owner (.controller .this),
-            .union [
-              .cardType .artifact,
-              .cardType .instant,
-              .cardType .sorcery]])),
+          (.selected (.controller .this) (.range 1 1)
+            (.intersection [
+              .inGraveyard,
+              .owner (.controller .this),
+              .union [
+                .cardType .artifact,
+                .cardType .instant,
+                .cardType .sorcery]]))),
       .continuous
         [.replace
           (.putToGraveyard
@@ -5789,6 +5790,30 @@ def bilboThiefInTheNight : CardDef :=
 #guard bilboThiefInTheNight.oracleText == bilboThiefInTheNightOracle
 #guard bilboThiefInTheNight.costReductionNotFromHand == 1
 #guard bilboThiefInTheNight.triggeredAbilities == #[.onAttackCastFromGyArtifactInstantSorcery]
+#guard
+  let unrestricted :=
+    (TraditionalCardDefinition.card [
+      .ability (.triggered (.attack .this .all) (.sequence [
+        .actionId 1
+          (.mayCast
+            (.controller .this)
+            (.intersection [
+              .inGraveyard,
+              .owner (.controller .this),
+              .union [
+                .cardType .artifact,
+                .cardType .instant,
+                .cardType .sorcery]])),
+        .continuous
+          [.replace
+            (.putToGraveyard
+              (.intersection [
+                .wasObjectOfAction 1,
+                .union [.cardType .instant, .cardType .sorcery]]))
+            [.exile .replacingObject]]
+          .endOfTurn]))
+    ]).toCardDef
+  unrestricted.triggeredAbilities == #[]
 #guard bilboThiefInTheNight.staticAbilities == #[]
 #guard bilboThiefInTheNight.keywords == Keywords.none
 #guard bilboThiefInTheNight.manaCost == ManaCost.ofGenericAndColor 1 .blue

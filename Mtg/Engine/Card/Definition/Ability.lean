@@ -899,13 +899,13 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     -- An instant or sorcery cast from the graveyard this way is exiled
     -- instead of being put into its owner's graveyard.
     if id == id' && who == .controller .this &&
-        among == .intersection [
+        among == .selected (.controller .this) (.range 1 1) (.intersection [
           .inGraveyard,
           .owner (.controller .this),
           .union [
             .cardType .artifact,
             .cardType .instant,
-            .cardType .sorcery]] then
+            .cardType .sorcery]]) then
       some TriggeredAbility.onAttackCastFromGyArtifactInstantSorcery
     else none
   | .triggered (.attack .this .all) action =>
