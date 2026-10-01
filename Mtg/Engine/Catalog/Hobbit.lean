@@ -5530,7 +5530,7 @@ def bardKingOfDaleDefinition : TraditionalCardDefinition := .card <|
     [.draw (.controller .this) 2])),
   .ability (.static (.replace
     (.createTokens (.intersection [.token, .controlled (.controller .this)]))
-    [.modifyReplacementCreatedTokenCount (· * 2)]))]
+    [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))]))]
 
 def bardKingOfDale : CardDef :=
   bardKingOfDaleDefinition.toCardDef (oracleText := bardKingOfDaleOracle)

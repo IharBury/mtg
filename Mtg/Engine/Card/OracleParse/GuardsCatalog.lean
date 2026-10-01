@@ -1300,7 +1300,7 @@ open OracleParts
   "If one or more tokens would be created under your control, twice that many of those tokens are created instead." ==
   some [.ability (.static (.replace
     (.createTokens (.intersection [.token, .controlled (.controller .this)]))
-    [.modifyReplacementCreatedTokenCount (· * 2)]))]
+    [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))]))]
 #guard parseOracleParts (name := "Bard, King of Dale")
   "If a token would be created under your control, twice that many of those tokens are created instead." ==
   none

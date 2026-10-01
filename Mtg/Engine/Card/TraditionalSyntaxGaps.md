@@ -151,7 +151,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`,
   `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
   `createTokens`, `modifyReplacementCreatedTokenCount` (keep creating the
-  tokens being replaced, with the count changed by a `Nat → Nat` function),
+  tokens being replaced, with the count changed by a `Nat → Value` function),
   `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`, `shuffleIntoOwnersLibrary`,
   `lookAt`, `putOnLibraryBottomInRandomOrder`, `chooseCreatureType` (the
@@ -304,7 +304,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
 | `Trigger.wouldDraw` | `replace` of `Trigger.draw` of any card, drawing two cards instead. Bard, King of Dale; the first card of each of your draw steps is not replaced |
 | `Condition.resolvedThisTurnCount` | `happenedTimes` of `abilityWithIdResolved`, the count, and `turnStart`. `1` is the first resolution this turn, counting this one (Belladonna Took) |
-| `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (· * 2)` is “twice that many of those tokens” (Bard, King of Dale) |
+| `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
 
 ## Missing constructors by type
 

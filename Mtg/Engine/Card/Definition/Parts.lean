@@ -66,23 +66,23 @@ inductive CardState where
 deriving Repr, Inhabited, BEq
 
 /-!
-`Nat → Nat` has no decidable equality. Printed count changes (`n * 2`)
-are compared on `0` through `8`, which is what the card guards need.
+`Nat → Value` has no decidable equality. Printed count changes are
+compared on `0` through `8`, which is what the card guards need.
 -/
 
-/-- How many counts to compare when a printed `Nat → Nat` is stored on a card. -/
+/-- How many counts to compare when a printed `Nat → Value` is stored on a card. -/
 def createdTokenCountCheckBound : Nat := 9
 
 /-- `true` when `f` maps each count `n` below the check bound to `n * 2`. -/
-def doublesCreatedTokenCount (f : Nat → Nat) : Bool :=
-  (List.range createdTokenCountCheckBound).all fun n => f n == n * 2
+def doublesCreatedTokenCount (f : Nat → Value) : Bool :=
+  (List.range createdTokenCountCheckBound).all fun n => f n == .nat (n * 2)
 
-instance : BEq (Nat → Nat) where
+instance : BEq (Nat → Value) where
   beq f g := (List.range createdTokenCountCheckBound).all fun n => f n == g n
 
-instance : Repr (Nat → Nat) where
+instance : Repr (Nat → Value) where
   reprPrec f _ :=
-    let samples := (List.range 4).map fun n => s!"{n}↦{f n}"
+    let samples := (List.range 4).map fun n => s!"{n}↦{reprStr (f n)}"
     Std.Format.text ("⟨" ++ String.intercalate ", " samples ++ "⟩")
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -332,9 +332,9 @@ inductive CardAction where
       (states : List CardState := []) : CardAction
   /-- Keep creating the tokens this replacement would have created, with
   the count changed by the function (CR 614). The function maps how many
-  would have been created to how many are created instead. Twice that
-  many is `(· * 2)`. -/
-  | modifyReplacementCreatedTokenCount : (Nat → Nat) → CardAction
+  would have been created to the `Value` created instead. Twice that
+  many is `fun n => .nat (n * 2)`. -/
+  | modifyReplacementCreatedTokenCount : (Nat → Value) → CardAction
   /-- The selected player mills that many cards (CR 701.13). -/
   | mill : Selector → Value → CardAction
   /-- The selected player surveils that many cards (CR 701.53). -/
