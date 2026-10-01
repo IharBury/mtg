@@ -796,7 +796,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     if who == .controller .this && drawer == .controller .this then
       { b with drawTwoExceptFirstDrawStep := true }
     else b
-  | .replace (.createTokens which)
+  | .replace (.tokenCreatingSimultaneously which)
       [.createReplacingTokens who (Value.product (.count .replacingObject) (.int 2))] =>
     if which == .intersection [.token, .controlled (.controller .this)] &&
         who == .controller .this then

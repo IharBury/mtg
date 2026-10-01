@@ -5529,7 +5529,7 @@ def bardKingOfDaleDefinition : TraditionalCardDefinition := .card <|
     (.draw (.controller .this) .all)
     [.draw (.controller .this) 2])),
   .ability (.static (.replace
-    (.createTokens (.intersection [.token, .controlled (.controller .this)]))
+    (.tokenCreatingSimultaneously (.intersection [.token, .controlled (.controller .this)]))
     [.createReplacingTokens (.controller .this)
       (Value.timesCount 2 .replacingObject)]))]
 

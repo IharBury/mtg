@@ -910,14 +910,14 @@ def parseDrawExceptFirstDrawStep (line : String) : Option CardPart :=
 
 /-- `If one or more tokens would be created under your control, twice that
 many of those tokens are created instead.`
-`replace` of `Trigger.createTokens` is that creation (CR 614). Those tokens
+`replace` of `Trigger.tokenCreatingSimultaneously` is that creation (CR 614). Those tokens
 keep their characteristics. Twice that many is two times how many would
 have been created. -/
 def parseTwiceTokensYouWouldCreate (line : String) : Option CardPart :=
   if sentenceIs line
       "if one or more tokens would be created under your control, twice that many of those tokens are created instead" then
     some (.ability (.static (.replace
-      (.createTokens tokensCreatedUnderYou)
+      (.tokenCreatingSimultaneously tokensCreatedUnderYou)
       [.createReplacingTokens (.controller .this) (Value.timesCount 2 .replacingObject)])))
   else none
 
