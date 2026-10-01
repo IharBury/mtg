@@ -5782,7 +5782,7 @@ def bilboThiefInTheNightDefinition : TraditionalCardDefinition := .card <|
               .wasObjectOfAction 1,
               .union [.cardType .instant, .cardType .sorcery]]))
           [.exile .replacingObject]]
-        .endOfTurn]))]
+        .endOfGame]))]
 
 def bilboThiefInTheNight : CardDef :=
   bilboThiefInTheNightDefinition.toCardDef (oracleText := bilboThiefInTheNightOracle)
@@ -5811,7 +5811,7 @@ def bilboThiefInTheNight : CardDef :=
                 .wasObjectOfAction 1,
                 .union [.cardType .instant, .cardType .sorcery]]))
             [.exile .replacingObject]]
-          .endOfTurn]))
+          .endOfGame]))
     ]).toCardDef
   unrestricted.triggeredAbilities == #[]
 #guard bilboThiefInTheNight.staticAbilities == #[]

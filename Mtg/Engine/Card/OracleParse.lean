@@ -414,7 +414,8 @@ Currently recognized:
 - `Whenever <this> attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead.`
   `mayCast` allows any number of matching spells. This line selects one
   (`selected` with range 1–1) and pays its cost. An instant or sorcery cast
-  by that action is exiled instead of being put into a graveyard, until end of turn.
+  by that action is exiled instead of being put into a graveyard. That
+  replacement lasts until the end of the game.
 - `Whenever <this> or another nontoken <subtype> you control enters, create a <P>/<T> <color> <subtype> creature token.`
   `<this>` is this card. `another` excludes this object. One token is created.
 - `{cost}, Discard a card: Draw a card.`

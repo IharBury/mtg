@@ -1384,7 +1384,7 @@ open OracleParts
                 .wasObjectOfAction 1,
                 .union [.cardType .instant, .cardType .sorcery]]))
             [.exile .replacingObject]]
-          .endOfTurn]))]
+          .endOfGame]))]
 #guard parseOracleParts (name := "Bilbo, Thief in the Night")
   "Whenever Bilbo attacks, you may cast an artifact spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead." ==
   none

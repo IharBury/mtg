@@ -935,8 +935,8 @@ def artifactInstantOrSorceryInYourGraveyard : Selector :=
 The cast is action `n` and pays that spell's cost. `mayCast` allows any
 number of matching spells; `selected` with range 1–1 is this one spell.
 An instant or sorcery that was that action is exiled instead of being put
-into a graveyard. The replacement lasts until end of turn, which covers
-the spell resolving after this ability. -/
+into a graveyard. The printed text states no shorter duration, so the
+replacement lasts until the end of the game (CR 611.2a). -/
 def parseAttackMayCastFromGraveyard (cardName : String) (line : String) (n : Nat) :
     Option (CardPart × Nat) :=
   match sentences line with
@@ -961,7 +961,7 @@ def parseAttackMayCastFromGraveyard (cardName : String) (line : String) (n : Nat
                     .wasObjectOfAction n,
                     .union [.cardType .instant, .cardType .sorcery]]))
                 [.exile .replacingObject]]
-              .endOfTurn])),
+              .endOfGame])),
           n + 1)
       else none
     | none => none

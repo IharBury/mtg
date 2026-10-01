@@ -615,7 +615,7 @@ Bilbo reduces the cost of spells that
 controller casts from a zone other than their hand. When Bilbo attacks, that
 player may cast one artifact, instant, or sorcery they select from their graveyard, and
 an instant or sorcery cast that way is exiled instead of being put into a
-graveyard.
+graveyard, until the end of the game.
 
 ## Cards that still cannot convert
 

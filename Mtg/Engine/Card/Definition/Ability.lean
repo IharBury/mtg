@@ -895,9 +895,10 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
                 .wasObjectOfAction id',
                 .union [.cardType .instant, .cardType .sorcery]]))
             [.exile .replacingObject]]
-          .endOfTurn]) =>
+          .endOfGame]) =>
     -- An instant or sorcery cast from the graveyard this way is exiled
-    -- instead of being put into its owner's graveyard.
+    -- instead of being put into its owner's graveyard. The replacement
+    -- lasts until the end of the game.
     if id == id' && who == .controller .this &&
         among == .selected (.controller .this) (.range 1 1) (.intersection [
           .inGraveyard,
