@@ -5946,30 +5946,34 @@ def bolgOfTheNorthDefinition : TraditionalCardDefinition := .card <|
      (.sequence
        [.optional
           (.controller (.this))
-          (.actionId
-            1
-            (.sacrifice
-              (.selected
-                (.controller (.this))
-                (.range (.nat 1) (.nat 1))
-                (.intersection
-                  [.not (.this),
-                   .zone (.battlefield),
-                   .cardType (.creature),
-                   .controlled (.controller (.this))])))),
+          (.sequence
+            [.defineSelectorVariable
+               1
+               (.selected
+                 (.controller (.this))
+                 (.range (.nat 1) (.nat 1))
+                 (.intersection
+                   [.not (.this),
+                    .zone (.battlefield),
+                    .cardType (.creature),
+                    .controlled (.controller (.this))])),
+             .defineValueVariable
+               2
+               (.greatestPower (.variable 1)),
+             .actionId 1 (.sacrifice (.variable 1))]),
         .reflexive
           1
           [.actionId
              2
              (.dealDamage
-               (.wasObjectOfAction 1)
+               (.this)
                (.target
                  1
                  (.intersection
                    [.not (.wasObjectOfAction 1),
                     .zone (.battlefield),
                     .cardType (.creature)]))
-               (.greatestPower (.wasObjectOfAction 1))),
+               (.variable 2)),
            .if
              (.greater (.excessDamage 2) (.nat 0))
              [.keyword

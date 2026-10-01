@@ -1169,12 +1169,18 @@ def hobbitPrintedTrigger? : Ability → Option TriggeredAbility
       some TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear
     else none
   | .triggered (.enter .this) (.sequence [
-      .optional who (.actionId id (.sacrifice _)),
+      .optional who (.sequence [
+        .defineSelectorVariable _ _,
+        .defineValueVariable power (.greatestPower _),
+        .actionId id (.sacrifice _)]),
       .reflexive id' [
-        .actionId _ (.dealDamage _ _ (.greatestPower _)),
+        .actionId _ (.dealDamage _ _ (.variable power')),
         .if (.greater (.excessDamage _) _) [
           .keyword amasser (.amass .goblin (.excessDamage _))]]]) =>
-    if id == id' && who == .controller .this && amasser == .controller .this then
+    -- Power is the value recorded before the sacrifice, not the
+    -- creature's power after it has left the battlefield.
+    if id == id' && power == power' && who == .controller .this &&
+        amasser == .controller .this then
       some TriggeredAbility.onEnterBolgMaySacrifice
     else none
   | .triggered

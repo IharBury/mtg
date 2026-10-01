@@ -2608,20 +2608,48 @@ def bolgAfterSacrifice : Game :=
   mustApply bolgMaySacPending ⟨0⟩
     (.sacrifice (namedPermanent bolgMaySacPending "Hill Giant").id)
 
+def bolgSacrificedPowerOnStack (g : Game) : Option Int :=
+  g.stack.findSome? fun e =>
+    match g.findObject? e.objectId with
+    | some o =>
+      if o.triggeredAbility == some .onBolgDealSacrificedPower then
+        o.lastKnownPower
+      else none
+    | none => none
+
 def bolgAfterSacrificeOk : Bool :=
-  let onStack :=
-    bolgAfterSacrifice.stack.any (fun e =>
-      (bolgAfterSacrifice.object! e.objectId).triggeredAbility ==
-        some .onBolgDealSacrificedPower)
-  let waiting :=
-    bolgAfterSacrifice.waitingTriggers.any (fun wt =>
-      wt.ability == .onBolgDealSacrificedPower &&
-        wt.lastKnownPower == some 3)
-  (onStack || waiting) &&
+  bolgSacrificedPowerOnStack bolgAfterSacrifice == some 3 &&
     !bolgAfterSacrifice.battlefield.any (fun o => o.name == "Hill Giant") &&
     (ruling 98).comment.contains "second ability triggers"
 
 #guard bolgAfterSacrificeOk
+
+/-- +1/+1 counters are part of the power remembered at sacrifice (ruling 296). -/
+def bolgPumpedReady : Game :=
+  let g := addPermanent afterDraw bolgOfTheNorth ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  g.addPlusOnePlusOneTo (namedPermanent g "Hill Giant") 2
+
+def bolgPumpedSacrifice : Game :=
+  let g := bolgPumpedReady.applyTriggeredAbility ⟨0⟩ .onEnterBolgMaySacrifice
+    (some (namedPermanent bolgPumpedReady "Bolg of the North").id)
+  mustApply g ⟨0⟩ (.sacrifice (namedPermanent g "Hill Giant").id)
+
+def bolgPumpedResolved : Game :=
+  let ogre := namedPermanent bolgPumpedSacrifice "Gray Ogre"
+  let g := mustApply bolgPumpedSacrifice ⟨0⟩ (.target (Target.permanent ogre.id))
+  g.resolveTop
+
+def bolgPumpedSacrificeOk : Bool :=
+  bolgPumpedReady.power (namedPermanent bolgPumpedReady "Hill Giant") == 5 &&
+    bolgSacrificedPowerOnStack bolgPumpedSacrifice == some 5 &&
+    (namedPermanent bolgPumpedResolved "Gray Ogre").status.damage == 5 &&
+    bolgPumpedResolved.battlefield.any (fun o =>
+      bolgPumpedResolved.hasSubtype o "Army" && o.status.plusOnePlusOne == 3) &&
+    (ruling 296).comment.contains "last known existence"
+
+#guard bolgPumpedSacrificeOk
 
 def bolgDeclineNoDamage : Game :=
   mustApply bolgMaySacPending ⟨0⟩ .decline

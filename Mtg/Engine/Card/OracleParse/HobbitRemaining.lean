@@ -94,7 +94,9 @@ def parseBeornCombat (line : String) (n : Nat) : Option (List CardPart × Nat) :
           3)
         [.draw (.controller .this) 2]]))], n + 1)
 
-/-- Bolg's enter ability, including the reflexive “when you do”. -/
+/-- Bolg's enter ability, including the reflexive “when you do”.
+The sacrificed creature's power is recorded before it leaves the
+battlefield (CR 608.2h). Bolg deals that much damage. -/
 def parseBolgEnters (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
   (splitTrigger? line).bind fun (clause, effect) =>
     if parseTriggerEvent cardName clause != some (.enter .this) then none
@@ -102,18 +104,24 @@ def parseBolgEnters (cardName line : String) (n : Nat) : Option (List CardPart �
         "you may sacrifice another creature. when you do, bolg deals damage equal to that creature's power to another target creature. if excess damage was dealt this way, amass goblins x, where x is that excess damage" then
       none
     else
+      let chosen := n
+      let power := n + 1
+      let damage := n + 2
       some ([.ability (.triggered (.enter .this) (.sequence [
-        .optional (.controller .this) (.actionId n (.sacrifice anotherCreatureYouSacrifice)),
-        .reflexive n [
-          .actionId (n + 1)
-            (.dealDamage (.wasObjectOfAction n)
-              (.target n
+        .optional (.controller .this) (.sequence [
+          .defineSelectorVariable chosen anotherCreatureYouSacrifice,
+          .defineValueVariable power (.greatestPower (.variable chosen)),
+          .actionId chosen (.sacrifice (.variable chosen))]),
+        .reflexive chosen [
+          .actionId damage
+            (.dealDamage .this
+              (.target chosen
                 (.intersection [
-                  .not (.wasObjectOfAction n), .zone .battlefield, .cardType .creature]))
-              (.greatestPower (.wasObjectOfAction n))),
-          .if (.greater (.excessDamage (n + 1)) 0) [
-            .keyword (.controller .this) (.amass .goblin (.excessDamage (n + 1)))]]]))],
-        n + 2)
+                  .not (.wasObjectOfAction chosen), .zone .battlefield, .cardType .creature]))
+              (.variable power)),
+          .if (.greater (.excessDamage damage) 0) [
+            .keyword (.controller .this) (.amass .goblin (.excessDamage damage))]]]))],
+        damage + 1)
 
 def attackingCreatures : Selector :=
   .intersection [.zone .battlefield, .cardType .creature, .attacking .all]
