@@ -290,7 +290,7 @@ def parseCostReduction (line : String) : Option CardPart :=
       match after? cond "it targets " with
       | some targetText =>
         (costReductionTarget? targetText).map fun among =>
-          .targetsIncludeAny .this among
+          .any (extendIntersection [] among [.isTargetOf .this])
       | none =>
         if cond == "a creature died this turn" then
           some (.happened (.die (.cardType .creature)) .turnStart)

@@ -72,7 +72,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
         onlyIfYouControlLegendary := true
         activateFromGraveyard := fromGraveyard }
     else none
-  | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
+  | .anySubtype _ _ | .happened _ _
   | .didNotHappen _ _ | .and _ _ | .not _ | .drawStep _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
   | .equal _ _ => none
@@ -288,7 +288,11 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         [.putCounter (.source .this) .plusOnePlusOne 1]) =>
     some (.onWatch Effect.watchHulklingCompare)
   | .triggered (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
-      (.if (.targetsIncludeAny .this (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))
+      (.if (.any (.intersection [
+          .zone .battlefield,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .isTargetOf .this]))
         [.continuous [.gainAbility (.source .this)
           (.activated [.tapSymbol]
             (.dealDamage (.source .this) (.target _ (.not .this)) (.greatestPower (.source .this))))]
@@ -561,17 +565,19 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
       some (TriggeredAbility.onCasting Effect.castingPlusOneEachOther)
     else none
   | .triggered (.castSpell among)
-      (.if (.targetsIncludeAny _ creatureSel)
+      (.if (.any creatureSel)
         [.putCounter (.source .this) .plusOnePlusOne 1]) =>
     if among.shape.sameController && Selector.includesSpell among &&
+        Selector.includesIsTargetOf creatureSel &&
         creatureSel.shape.sameController &&
         creatureSel.shape.types.eqTypes [.creature] then
       some (TriggeredAbility.onCasting Effect.castingPlusOneThis)
     else none
   | .triggered (.castSpell among)
-      (.if (.targetsIncludeAny _ creatureSel)
+      (.if (.any creatureSel)
         [.putCounter (.source .this) .plusOnePlusOne 1, .scry who (.nat 1)]) =>
     if among.shape.sameController && Selector.includesSpell among &&
+        Selector.includesIsTargetOf creatureSel &&
         creatureSel.shape.sameController &&
         creatureSel.shape.types.eqTypes [.creature] &&
         CardAction.leftoverYou who then

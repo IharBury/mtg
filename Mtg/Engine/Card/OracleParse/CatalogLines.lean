@@ -198,7 +198,8 @@ def parseCastTargetsYoursLine (cardName line : String) (n : Nat) : Option (CardP
       (parseObjectDesc obj false).bind fun target =>
         (parseCatalogEffect cardName effect n).map fun (action, n') =>
           (.ability (.triggered (.castSpell (.intersection [.spell, youControl]))
-            (.if (.targetsIncludeAny .this target) (flattenAction action))), n')
+            (.if (.any (extendIntersection [] target [.isTargetOf .this]))
+              (flattenAction action))), n')
 
 /-- `a` or `b`. `Condition` spells disjunction as the negation of both failing. -/
 def either (a b : Condition) : Condition :=
@@ -399,7 +400,7 @@ def parseAbilityCostsLessIf (s : String) : Option CardPart :=
       (split2? · " less to activate if it targets ") |>.bind fun (costText, obj) =>
         (nonemptyMana? costText).bind fun syms =>
           (dropArticle? obj).bind parseTargetObject |>.map fun sel =>
-            (syms, Condition.targetsIncludeAny .this sel)
+            (syms, .any (extendIntersection [] sel [.isTargetOf .this]))
   (controls <|> targets).map fun (syms, cond) =>
     .ability (.static (.if cond [.reduceCost .this [.mana syms]]))
 
@@ -574,7 +575,7 @@ def parseCatalogCostReduction (line : String) : Option CardPart :=
         Condition.anySubtype youControl st
     let targets :=
       (after? cond "it targets ").bind dropArticle? |>.bind parseTargetObject |>.map fun sel =>
-        Condition.targetsIncludeAny .this sel
+        .any (extendIntersection [] sel [.isTargetOf .this])
     (controls <|> targets <|> graveyardCountCondition? cond).map (reduceOnStack · syms)
 
 /-- `As an additional cost to cast this spell, sacrifice an artifact or
@@ -789,7 +790,7 @@ def parseCastTargetsYoursGainsQuoted (cardName line : String) (n : Nat) : Option
           | _ => none
         (parseGainsQuotedActivatedUntilEnd cardName effect n quoted).map fun (action, n') =>
           (.ability (.triggered (.castSpell (.intersection [.spell, youControl]))
-            (.if (.targetsIncludeAny .this target) [action])), n')
+            (.if (.any (extendIntersection [] target [.isTargetOf .this])) [action])), n')
 
 /-- `Flying, first strike, ward {1}`: keywords, then generic ward last. -/
 def parseKeywordsThenWard (line : String) : Option (List CardPart) :=
