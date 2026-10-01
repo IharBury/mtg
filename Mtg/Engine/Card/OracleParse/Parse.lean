@@ -222,7 +222,6 @@ def parseBolgEnters (cardName line : String) (n : Nat) : Option (List CardPart Ã
       let chosen := n
       let power := n + 1
       let damage := n + 2
-      let excess := n + 3
       let another :=
         .selected (.controller .this) (.range 1 1)
           (.intersection [.not .this, .zone .battlefield, .cardType .creature, youControl])
@@ -238,10 +237,10 @@ def parseBolgEnters (cardName line : String) (n : Nat) : Option (List CardPart Ã
                 (.intersection [
                   .not (.wasObjectOfAction chosen), .zone .battlefield, .cardType .creature]))
               (.variable power)),
-          .if (.happened
-              (.triggerId excess (.actionWithIdDealtExcessDamage damage)) .gameStart) [
-            .keyword (.controller .this) (.amass .goblin (.triggerAmount excess))]]]))],
-        excess + 1)
+          .if (.happened (.actionWithIdDealtExcessDamage damage) .gameStart) [
+            .keyword (.controller .this)
+              (.amass .goblin (.excessDamageOfActionWithId damage))]]]))],
+        damage + 1)
 
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :

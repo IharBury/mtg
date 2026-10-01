@@ -201,9 +201,9 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         .actionId id (.sacrifice _)]),
       .reflexive id' [
         .actionId damageId (.dealDamage _ _ (.variable power')),
-        .if (.happened (.triggerId excess (.actionWithIdDealtExcessDamage dealt)) _) [
-          .keyword amasser (.amass .goblin (.triggerAmount excess'))]]]) =>
-    if id == id' && power == power' && damageId == dealt && excess == excess' &&
+        .if (.happened (.actionWithIdDealtExcessDamage dealt) _) [
+          .keyword amasser (.amass .goblin (.excessDamageOfActionWithId excess))]]]) =>
+    if id == id' && power == power' && damageId == dealt && damageId == excess &&
         who == .controller .this && amasser == .controller .this then
       some TriggeredAbility.onEnterBolgMaySacrifice
     else none

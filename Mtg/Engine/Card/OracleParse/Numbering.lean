@@ -56,7 +56,8 @@ def collectValue : Value → List Nat × List Nat
   | .greatestManaSpent s =>
     collectSelector s
   | .product a b => appendIds [collectValue a, collectValue b]
-  | .variable n | .triggerAmount n => ([], [n])
+  | .variable n => ([], [n])
+  | .excessDamageOfActionWithId n => ([n], [])
 
 def collectRange : Range → List Nat × List Nat
   | .range a b => appendIds [collectValue a, collectValue b]
@@ -263,7 +264,7 @@ def mapValue (m : IdMaps) : Value → Value
   | .product a b => .product (mapValue m a) (mapValue m b)
   | .variable n => .variable (m.target n)
   | .greatestManaSpent s => .greatestManaSpent (mapSelector m s)
-  | .triggerAmount n => .triggerAmount (m.target n)
+  | .excessDamageOfActionWithId n => .excessDamageOfActionWithId (m.action n)
 
 def mapRange (m : IdMaps) : Range → Range
   | .range a b => .range (mapValue m a) (mapValue m b)
