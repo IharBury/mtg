@@ -107,6 +107,7 @@ def parseBolgEnters (cardName line : String) (n : Nat) : Option (List CardPart Ã
       let chosen := n
       let power := n + 1
       let damage := n + 2
+      let excess := n + 3
       some ([.ability (.triggered (.enter .this) (.sequence [
         .optional (.controller .this) (.sequence [
           .defineSelectorVariable chosen anotherCreatureYouSacrifice,
@@ -119,9 +120,10 @@ def parseBolgEnters (cardName line : String) (n : Nat) : Option (List CardPart Ã
                 (.intersection [
                   .not (.wasObjectOfAction chosen), .zone .battlefield, .cardType .creature]))
               (.variable power)),
-          .if (.greater (.excessDamage damage) 0) [
-            .keyword (.controller .this) (.amass .goblin (.excessDamage damage))]]]))],
-        damage + 1)
+          .if (.happened
+              (.triggerId excess (.actionWithIdDealtExcessDamage damage)) .gameStart) [
+            .keyword (.controller .this) (.amass .goblin (.triggerAmount excess))]]]))],
+        excess + 1)
 
 def attackingCreatures : Selector :=
   .intersection [.zone .battlefield, .cardType .creature, .attacking .all]

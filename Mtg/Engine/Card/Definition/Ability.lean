@@ -1180,13 +1180,14 @@ def hobbitPrintedTrigger? : Ability → Option TriggeredAbility
         .defineValueVariable power (.greatestPower _),
         .actionId id (.sacrifice _)]),
       .reflexive id' [
-        .actionId _ (.dealDamage _ _ (.variable power')),
-        .if (.greater (.excessDamage _) _) [
-          .keyword amasser (.amass .goblin (.excessDamage _))]]]) =>
+        .actionId damageId (.dealDamage _ _ (.variable power')),
+        .if (.happened (.triggerId excess (.actionWithIdDealtExcessDamage dealt)) _) [
+          .keyword amasser (.amass .goblin (.triggerAmount excess'))]]]) =>
     -- Power is the value recorded before the sacrifice, not the
-    -- creature's power after it has left the battlefield.
-    if id == id' && power == power' && who == .controller .this &&
-        amasser == .controller .this then
+    -- creature's power after it has left the battlefield. Excess damage
+    -- is the amount of that numbered damage action.
+    if id == id' && power == power' && damageId == dealt && excess == excess' &&
+        who == .controller .this && amasser == .controller .this then
       some TriggeredAbility.onEnterBolgMaySacrifice
     else none
   | .triggered
