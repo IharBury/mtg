@@ -5903,9 +5903,82 @@ def bilboThiefInTheNight : CardDef :=
 #guard bilboThiefInTheNight.subtypes == #["Halfling", "Rogue"]
 #guard bilboThiefInTheNight.power == some 2 && bilboThiefInTheNight.toughness == some 2
 
+/-- Oracle text for Bolg of the North. -/
+def bolgOfTheNorthOracle : String :=
+  "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+
+def bolgOfTheNorthDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Bolg of the North",
+    .manaCost [.generic 3, .mono .black, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .goblin,
+    .subtype .soldier,
+    .power 5,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Bolg of the North") bolgOfTheNorthOracle).get!
+
+#guard bolgOfTheNorthDefinition == .card [
+  .name "Bolg of the North",
+  .manaCost [.generic 3, .mono .black, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .goblin,
+  .subtype .soldier,
+  .power 5,
+  .toughness 5,
+  .ability
+    (.triggered
+      (.enter .this)
+      (.sequence
+        [
+          .optional
+            (.controller .this)
+            (.sequence
+              [
+                .defineSelectorVariable
+                  1
+                  (.selected
+                    (.controller .this)
+                    (.range (.int 1) (.int 1))
+                    (.intersection
+                      [
+                        .not .this,
+                        .zone .battlefield,
+                        .cardType .creature,
+                        .controlled (.controller .this)])),
+                .defineValueVariable 2 (.greatestPower (.variable 1)),
+                .actionId 1 (.sacrifice (.variable 1))]),
+          .reflexive
+            1
+            [
+              .actionId
+                2
+                (.dealDamage
+                  .this
+                  (.target
+                    1
+                    (.intersection
+                      [
+                        .not (.wasObjectOfAction 1),
+                        .zone .battlefield,
+                        .cardType .creature]))
+                  (.variable 2)),
+              .if
+                (.happened (.actionWithIdDealtExcessDamage 2) .gameStart)
+                [.keyword (.controller .this)
+                  (.amass .goblin (.excessDamageOfActionWithId 2))]]]))]
+
 def bolgOfTheNorth : CardDef :=
-  legendaryCreature "Bolg of the North" (ManaCost.ofGenericAndColors 3 [.black, .red]) #["Goblin", "Soldier"] 5 5 (oracleText := "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
-    (triggeredAbilities := #[.onEnterBolgMaySacrifice])
+  bolgOfTheNorthDefinition.toCardDef (oracleText := bolgOfTheNorthOracle)
+
+#guard bolgOfTheNorth.oracleText == bolgOfTheNorthOracle
+#guard bolgOfTheNorth.triggeredAbilities == #[.onEnterBolgMaySacrifice]
+#guard bolgOfTheNorth.manaCost == ManaCost.ofGenericAndColors 3 [.black, .red]
+#guard bolgOfTheNorth.supertypes == #[.legendary]
+#guard bolgOfTheNorth.subtypes == #["Goblin", "Soldier"]
+#guard bolgOfTheNorth.power == some 5 && bolgOfTheNorth.toughness == some 5
 
 /-- Oracle text for Boughside Wanderers. -/
 def boughsideWanderersOracle : String :=

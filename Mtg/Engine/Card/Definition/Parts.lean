@@ -368,6 +368,11 @@ inductive CardAction where
   many. `wasObjectOfAction` of an `actionId` around this action is each
   spell that was cast. -/
   | mayCast : Selector → Selector → CardAction
+  /-- When the numbered action is performed, perform these actions as a
+  reflexive triggered ability (CR 603.12). “When you do” after a may or
+  an optional cost is this, not an “if you do” checked in the same
+  resolution. -/
+  | reflexive : Nat → List CardAction → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token

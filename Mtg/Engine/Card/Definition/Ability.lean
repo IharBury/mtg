@@ -192,6 +192,21 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         drawer == .controller .this then
       some TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear
     else none
+  -- Bolg of the North: record the sacrificed creature's power, then a
+  -- reflexive damage ability. Excess damage of that damage action is amassed.
+  | .triggered (.enter .this) (.sequence [
+      .optional who (.sequence [
+        .defineSelectorVariable _ _,
+        .defineValueVariable power (.greatestPower _),
+        .actionId id (.sacrifice _)]),
+      .reflexive id' [
+        .actionId damageId (.dealDamage _ _ (.variable power')),
+        .if (.happened (.actionWithIdDealtExcessDamage dealt) _) [
+          .keyword amasser (.amass .goblin (.excessDamageOfActionWithId excess))]]]) =>
+    if id == id' && power == power' && damageId == dealt && damageId == excess &&
+        who == .controller .this && amasser == .controller .this then
+      some TriggeredAbility.onEnterBolgMaySacrifice
+    else none
   | .triggered (.triggerId id (.castSpell among))
       (.sequence [
         .optional (.controller .this)

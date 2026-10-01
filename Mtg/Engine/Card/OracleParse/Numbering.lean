@@ -57,6 +57,7 @@ def collectValue : Value → List Nat × List Nat
     collectSelector s
   | .product a b => appendIds [collectValue a, collectValue b]
   | .variable n => ([], [n])
+  | .excessDamageOfActionWithId n => ([n], [])
 
 def collectRange : Range → List Nat × List Nat
   | .range a b => appendIds [collectValue a, collectValue b]
@@ -108,7 +109,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .ordinal _ inner window => appendIds [collectTrigger inner, collectTrigger window]
   | .sacrifice s => collectSelector s
   | .abilityWithIdActivated n | .abilityWithIdResolved n => ([], [n])
-  | .actionWithId n => ([n], [])
+  | .actionWithId n | .actionWithIdDealtExcessDamage n => ([n], [])
   | .triggerId n inner => appendIds [([], [n]), collectTrigger inner]
   | .modeWithIdChosen who _ => collectSelector who
   | .spendManaCreatedByAction n inner => appendIds [([n], []), collectTrigger inner]
@@ -242,6 +243,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .modifyReplacementCreatedTokenCount _ => ([], [])
   | .duplicateReplacingTrigger v => collectValue v
   | .keepReplacedAction => ([], [])
+  | .reflexive n as => appendIds [([n], []), appendIds (as.map collectAction)]
 
 end
 
@@ -262,6 +264,7 @@ def mapValue (m : IdMaps) : Value → Value
   | .product a b => .product (mapValue m a) (mapValue m b)
   | .variable n => .variable (m.target n)
   | .greatestManaSpent s => .greatestManaSpent (mapSelector m s)
+  | .excessDamageOfActionWithId n => .excessDamageOfActionWithId (m.action n)
 
 def mapRange (m : IdMaps) : Range → Range
   | .range a b => .range (mapValue m a) (mapValue m b)
@@ -366,6 +369,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .abilityWithIdActivated n => .abilityWithIdActivated (m.target n)
   | .abilityWithIdResolved n => .abilityWithIdResolved (m.target n)
   | .actionWithId n => .actionWithId (m.action n)
+  | .actionWithIdDealtExcessDamage n => .actionWithIdDealtExcessDamage (m.action n)
   | .triggerId n inner => .triggerId (m.target n) (mapTrigger m inner)
   | .modeWithIdChosen who n => .modeWithIdChosen (mapSelector m who) n
   | .spendManaCreatedByAction n inner =>
@@ -578,6 +582,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .putOnLibraryBottomInRandomOrder s => .putOnLibraryBottomInRandomOrder (mapSelector m s)
   | .chooseCreatureType s => .chooseCreatureType (mapSelector m s)
   | .mayCast a b => .mayCast (mapSelector m a) (mapSelector m b)
+  | .reflexive n as => .reflexive (m.action n) (mapActions m as)
 
 end
 

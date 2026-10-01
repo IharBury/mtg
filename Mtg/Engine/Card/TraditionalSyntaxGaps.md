@@ -5,11 +5,12 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**204** catalog cards are still `CardDef` helpers. **189**
+**203** catalog cards are still `CardDef` helpers. **184**
 of them need at least one missing constructor listed under
-[Missing constructors by type](#missing-constructors-by-type). **15** lost
-their last tag (named counters, `CardAction.removeCounter`, or
-enters-with-counters) and are not converted yet (see
+[Missing constructors by type](#missing-constructors-by-type). **19** lost
+their last tag (named counters, `CardAction.removeCounter`,
+enters-with-counters, or `CardAction.reflexive`) and
+are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
 when a constructor already exists but cannot express the printed ability
@@ -24,12 +25,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 158 | 30 | 27 |
+| The Hobbit (HOB) | 188 | 159 | 29 | 24 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 46 |
-| Marvel Super Heroes (MSH) | 281 | 157 | 124 | 116 |
-| **Total** | **586** | **382** | **204** | **189** |
+| Marvel Super Heroes (MSH) | 281 | 157 | 124 | 114 |
+| **Total** | **586** | **383** | **203** | **184** |
 
-All 382 `TraditionalCardDefinition`s (158 HOB, 67 HOC, 157 MSH,
+All 383 `TraditionalCardDefinition`s (159 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -63,7 +64,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
 - **SetPredicate** — `shareCardType`, `countAtLeast`.
 - **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
   `greatestPower`, `count`, `totalPower`, `product`, `variable` (recorded by
-  `CardAction.defineValueVariable`).
+  `CardAction.defineValueVariable`), `excessDamageOfActionWithId` (excess
+  damage dealt by the numbered action; CR 120.4a).
 - **Keyword** — `flash`, `haste`, `vigilance`, `flying`, `menace`, `hexproof`,
   `indestructible`, `reach`, `trample`, `deathtouch`, `defender`, `lifelink`,
   `firstStrike`, `islandwalk`, `storied`, `doubleStrike`, `prowess`, `ascend`,
@@ -113,7 +115,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   triggers; `replace` of it replaces that triggering),
   `abilityWithIdActivated`, `abilityWithIdResolved` (the numbered ability has
   finished resolving; the resolution in progress does not count),
-  `actionWithId`, `triggerId`, `modeWithIdChosen`,
+  `actionWithId`, `actionWithIdDealtExcessDamage` (the numbered action dealt
+  excess damage; how much is `Value.excessDamageOfActionWithId` of that
+  action), `triggerId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `spendManaFrom`, `castSpell`,
   `castSpellFromGraveyard`, `giftPromised` (the selected spell's gift was
   promised), `counter`, `activateAbility`, `target` (a spell or
@@ -170,7 +174,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `lookAt`, `putOnLibraryBottomInRandomOrder`, `chooseCreatureType` (the
   selected player chooses a creature type), `mayCast` (the selected player
   may cast any number of spells matching the selector, paying their costs;
-  `selected` limits how many).
+  `selected` limits how many), `reflexive` (when the numbered action is
+  performed, these actions are a reflexive triggered ability; CR 603.12).
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -324,6 +329,8 @@ constructors now spell them, so the tags are gone from the lists below.
 | `ContinuousEffect.extraTrigger` | `replace` of `Trigger.abilityTriggers` of that source with `duplicateReplacingTrigger 2`, under `if (enduringStory (controller this))` (Bifur, Melodic Rider) |
 | `Selector.castFromZone`, `ContinuousEffect.reduceCostIfCastFrom` | `reduceCost` of spells you control that are not `castFromZone .hand` (Bilbo, Thief in the Night). “You may cast … from your graveyard” is `mayCast` of one card `selected` from that graveyard; an instant or sorcery cast that way is `replace` of `putToGraveyard` with `exile` |
 | `CardAction.dealDamageEqualToPower` | `dealDamage` of `Value.greatestPower` of the source |
+| `Trigger.whenYouDo` | `CardAction.reflexive` after the numbered action (CR 603.12). Bolg of the North records the sacrificed creature's power with `defineValueVariable` before that sacrifice |
+| `CardAction.eventAmount` for excess damage | `Value.excessDamageOfActionWithId` of that action. “If excess damage was dealt this way” is `happened` of `Trigger.actionWithIdDealtExcessDamage` (Bolg of the North) |
 
 ## Missing constructors by type
 
@@ -382,8 +389,6 @@ complete.
 
 ### `Trigger`
 
-- **`whenYouDo`** (14 cards) — Reflexive trigger after an action (“When you do, …”, CR 603.12)
-  - Ant-Man, Colony Commander; Bolg of the North; Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Dáin Ironfoot; Grim Reaper, Lethal Legionnaire; Hawkeye, Master Marksman; Head of the Hunt; … (4 more)
 - **`leaveBattlefield`** (11 cards) — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Old Fat Spider Can't See Me; Secret Invasion; Super Villain Lockup; The Super Hero Civil War; The Wondrous Wasp; … (1 more)
 - **`onceEachTurn`** (11 cards) — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
@@ -489,8 +494,8 @@ complete.
 
 - **`copy`** (10 cards) — Copy a permanent, spell, or ability, or create token copies (`copyWithNewTargets` copies a spell with new targets only)
   - Absorbing Man; Echo, Perceptive Prodigy; Multiversal Incursion; Photon Blast Barrage; Scientist Supreme of A.I.M.; Secret Invasion; Shuri, Wakandan Inventor; Taskmaster, Mercenary Mimic; The Notary Hobbits; Ultron, Artificial Malevolence
-- **`eventAmount`** (8 cards) — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
-  - Bolg of the North; Doc Samson, Super Psychiatrist; Hawkeye, Young Avenger; Heroic Feast; Smaug the Impenetrable; The Master of Lake-town; The Reaver Cleaver; The Sensational She-Hulk
+- **`eventAmount`** (7 cards) — Use the amount from the triggering event or a previous action (“that much”, “that many”). Excess damage of a numbered action is `Value.excessDamageOfActionWithId`. `defineValueVariable` records a value computed on resolution, not an event's amount
+  - Doc Samson, Super Psychiatrist; Hawkeye, Young Avenger; Heroic Feast; Smaug the Impenetrable; The Master of Lake-town; The Reaver Cleaver; The Sensational She-Hulk
 - **`returnExiled`** (8 cards) — Return objects exiled by a linked action
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Roads Go Ever, Ever On; Super Villain Lockup; Web Up
 - **`chooseModes`** (6 cards) — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
@@ -620,14 +625,23 @@ player may cast one artifact, instant, or sorcery they select from their graveya
 an instant or sorcery cast that way is exiled instead of being put into a
 graveyard, until the end of the game.
 
+Bolg of the North is a `TraditionalCardDefinition` read with
+`parseOracleParts`. When it enters, its controller may sacrifice another
+creature. That creature's power, including +1/+1 counters, is recorded
+before it leaves the battlefield. `CardAction.reflexive` is the “when you
+do”. “If excess damage was dealt this way” is `happened` of
+`Trigger.actionWithIdDealtExcessDamage`, and Bolg amasses
+`Value.excessDamageOfActionWithId` of that damage action.
+
 ## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. Evidence is the
 printed ability vs the current inductives (not a missing leftover for an
 expressible spelling). Three of them could later be spelled and are now
 `TraditionalCardDefinition`s read with `parseOracleParts`: Ori, Plate
-Stacker; Captain Mar-Vell, Space-Born; and The Vision. The other nine stay
-in the catalog as `CardDef` helpers.
+Stacker; Captain Mar-Vell, Space-Born; and The Vision. Spider-Man, To the
+Rescue is spellable with `CardAction.reflexive` and is not converted yet.
+The other eight stay in the catalog as `CardDef` helpers.
 
 - **Supper for Spiders** — Put onto the battlefield all creature cards in
   opponents' graveyards that were put there *from the battlefield this turn*;
@@ -664,8 +678,8 @@ in the catalog as `CardDef` helpers.
   `Trigger.target` (or `castSpell` of a spell that `hasTarget` Speedball);
   changing targets of another spell is not a `CardAction`.
 - **Spider-Man, To the Rescue** — You may tap him. *When you do*, another
-  target nonattacking creature gains indestructible. Nested “when you do”
-  delayed trigger is not a `Trigger` constructor.
+  target nonattacking creature gains indestructible. Now spellable:
+  `CardAction.reflexive` after that tap. Not converted yet.
 - **Spider-Woman, Secret Agent** — Tap target opponent creature; it can't
   become untapped for as long as you control Spider-Woman.
   `ContinuousEffect.doesntUntap` covers only the untap step, and no
@@ -699,12 +713,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (27 cards)
-
-**Bolg of the North** (`bolgOfTheNorth`)
-
-- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
+### The Hobbit (HOB) (24 cards)
 
 **Celebrate the Mountain-king** (`celebrateTheMountainKing`)
 
@@ -720,10 +729,6 @@ Converted cards are omitted here.
 
 - `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
 
-**Dáin Ironfoot** (`dainIronfoot`)
-
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
-
 **Elrond, Moon-Reader** (`elrondMoonReader`)
 
 - `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
@@ -738,10 +743,6 @@ Converted cards are omitted here.
 - `CardAction.chooseOddEven` — Choose odd or even
 - `Condition.manaValueParity` — Mana value is odd/even
 - `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
-
-**Head of the Hunt** (`headOfTheHunt`)
-
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Inside Information** (`insideInformation`)
 
@@ -796,7 +797,7 @@ Converted cards are omitted here.
 
 **The Master of Lake-town** (`theMasterOfLakeTown`)
 
-- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”). Excess damage of a numbered action is `Value.excessDamageOfActionWithId`. `defineValueVariable` records a value computed on resolution, not an event's amount
 - `Trigger.loseLife` — Whenever the selected player loses life
 - `Selector.graveyardSizeAtLeast` — Graveyards (or their owners) with at least N cards, so they can be counted
 
@@ -821,7 +822,7 @@ Converted cards are omitted here.
 
 - `Value.manaSpent` — The amount of mana spent to cast a spell
 
-### The Hobbit Eternal (HOC) (50 cards)
+### The Hobbit Eternal (HOC) (46 cards)
 
 **Andúril, Narsil Reforged** (`andurilNarsilReforged`)
 
@@ -957,7 +958,6 @@ Converted cards are omitted here.
 **Saruman of Many Colors** (`sarumanOfManyColors`)
 
 - `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Sauron, the Dark Lord** (`sauronTheDarkLord`)
 
@@ -974,7 +974,7 @@ Converted cards are omitted here.
 
 **Smaug the Impenetrable** (`smaugTheImpenetrable`)
 
-- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”). Excess damage of a numbered action is `Value.excessDamageOfActionWithId`. `defineValueVariable` records a value computed on resolution, not an event's amount
 
 **Smite the Deathless** (`smiteTheDeathless`)
 
@@ -1000,7 +1000,7 @@ Converted cards are omitted here.
 
 **The Reaver Cleaver** (`theReaverCleaver`)
 
-- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”). Excess damage of a numbered action is `Value.excessDamageOfActionWithId`. `defineValueVariable` records a value computed on resolution, not an event's amount
 
 **The Shire** (`theShire`)
 
@@ -1029,7 +1029,7 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (`gainSubtype` only adds)
 
-### Marvel Super Heroes (MSH) (127 cards)
+### Marvel Super Heroes (MSH) (114 cards)
 
 **Absorbing Man** (`absorbingMan`)
 
@@ -1059,7 +1059,6 @@ Converted cards are omitted here.
 **Ant-Man, Colony Commander** (`antManColonyCommander`)
 
 - `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Arc Reactor** (`arcReactor`)
 
@@ -1113,7 +1112,6 @@ Converted cards are omitted here.
 **Claim the Kingdom** (`claimTheKingdom`)
 
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Cloak and Dagger, Entwined** (`cloakAndDaggerEntwined`)
 
@@ -1124,7 +1122,6 @@ Converted cards are omitted here.
 **Construct a Cosmic Cube** (`constructACosmicCube`)
 
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Cosmic Cube** (`cosmicCube`)
 
@@ -1152,17 +1149,15 @@ Converted cards are omitted here.
 **Death to Our Enemies** (`deathToOurEnemies`)
 
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Doc Samson, Super Psychiatrist** (`docSamsonSuperPsychiatrist`)
 
 - `Trigger.putCounter` — Whenever counters of any kind are put on matching objects (`putCountersSimultaneously` takes one `CounterKind`)
-- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”). Excess damage of a numbered action is `Value.excessDamageOfActionWithId`. `defineValueVariable` records a value computed on resolution, not an event's amount
 
 **Doom Reigns Supreme** (`doomReignsSupreme`)
 
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Earth's Mightiest Heroes** (`earthSMightiestHeroes`)
 
@@ -1190,10 +1185,6 @@ Converted cards are omitted here.
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 - `CardAction.chooseModes` — The number of modes depends on a condition known as the spell is cast (teamwork, controlling a Wizard). `chooseUniqueModes` takes a fixed `Range`
 
-**Grim Reaper, Lethal Legionnaire** (`grimReaperLethalLegionnaire`)
-
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
-
 **HULK SMASH!** (`hULKSMASH`)
 
 - `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork). Crew is `Keyword.crew`
@@ -1212,12 +1203,11 @@ Converted cards are omitted here.
 **Hawkeye, Master Marksman** (`hawkeyeMasterMarksman`)
 
 - `Trigger.becomeTapped` — When the selected object becomes tapped (including tapped to pay a cost)
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Hawkeye, Young Avenger** (`hawkeyeYoungAvenger`)
 
 - `ContinuousEffect.modifyDamage` — Replacement that changes how much damage is dealt
-- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”). Excess damage of a numbered action is `Value.excessDamageOfActionWithId`. `defineValueVariable` records a value computed on resolution, not an event's amount
 
 **Helicarrier Strike** (`helicarrierStrike`)
 
@@ -1231,7 +1221,7 @@ Converted cards are omitted here.
 **Heroic Feast** (`heroicFeast`)
 
 - `Trigger.gainLife` — Whenever the selected player gains life
-- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”). Excess damage of a numbered action is `Value.excessDamageOfActionWithId`. `defineValueVariable` records a value computed on resolution, not an event's amount
 
 **Hex Magic** (`hexMagic`)
 
@@ -1371,7 +1361,6 @@ Converted cards are omitted here.
 **Red Hulk** (`redHulk`)
 
 - `Value.counterCount` — The number of counters of a kind on an object
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Reptil, Dinomorpher** (`reptilDinomorpher`)
 
@@ -1385,7 +1374,6 @@ Converted cards are omitted here.
 **Rewrite History** (`rewriteHistory`)
 
 - `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object (`Trigger.ordinal` counts events, not counters)
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Robot Domination** (`robotDomination`)
 
@@ -1424,10 +1412,6 @@ Converted cards are omitted here.
 **Speedball, New Warrior** (`speedballNewWarrior`)
 
 - `CardAction.changeTargets` — Choose new targets for another spell or ability
-
-**Spider-Man, To the Rescue** (`spiderManToTheRescue`)
-
-- `Trigger.whenYouDo` — Reflexive trigger after an action (“When you do, …”, CR 603.12)
 
 **Spider-Woman, Secret Agent** (`spiderWomanSecretAgent`)
 
@@ -1474,7 +1458,7 @@ Converted cards are omitted here.
 
 **The Sensational She-Hulk** (`theSensationalSheHulk`)
 
-- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”, excess damage). `defineValueVariable` records a value computed on resolution, not an event's amount
+- `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”). Excess damage of a numbered action is `Value.excessDamageOfActionWithId`. `defineValueVariable` records a value computed on resolution, not an event's amount
 - `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **The Sentry, Golden Guardian** (`theSentryGoldenGuardian`)
@@ -1566,18 +1550,18 @@ Converted cards are omitted here.
 
 ## Tags now spelled, not yet converted
 
-These 15 cards lost every tag and are still `CardDef` helpers. They lost
+These 19 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, enters-with-counters,
-`replace` of `Trigger.createTokens`, or `replace` of `Trigger.abilityTriggers`
-became expressible. A later pass
+`replace` of `Trigger.createTokens`, `replace` of `Trigger.abilityTriggers`,
+or `CardAction.reflexive` became expressible. A later pass
 should reread them before conversion.
 
-**Hobbit (3):** Dwalin, Weaponmaster; Last Light of Durin's Day; Wizard's Staff.
+**Hobbit (5):** Dwalin, Weaponmaster; Dáin Ironfoot; Head of the Hunt; Last Light of Durin's Day; Wizard's Staff.
 
 **Hobbit Eternal (4):** Arwen, Mortal Queen; Bilbo, Fellow Conspirator; Chief of the Wilds; Minas Morgul, Dark Fortress.
 
-**Marvel Super Heroes (8):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Super-Adaptoid; The Astonishing Ant-Man; Thunderbolts Conspiracy.
+**Marvel Super Heroes (10):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Spider-Man, To the Rescue; Super-Adaptoid; The Astonishing Ant-Man; Thunderbolts Conspiracy.
 
 ## Method notes
 
