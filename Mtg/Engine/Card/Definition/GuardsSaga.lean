@@ -1493,11 +1493,19 @@ namespace Mtg.Engine
         (.draw (.controller .this) .all)
         [.draw (.controller .this) 2])),
       .ability (.static (.replace
-        (.tokensCreatingSimultaneously (.intersection [.token, .controlled (.controller .this)]))
-        [.createReplacingTokens (.controller .this)
-          (Value.timesCount 2 .replacingObject)]))
+        (.createTokens (.intersection [.token, .controlled (.controller .this)]))
+        [.modifyReplacementCreatedTokenCount (· * 2)]))
     ]).toCardDef
   c.drawTwoExceptFirstDrawStep && c.tokenDoubling
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.static (.replace
+        (.createTokens (.intersection [.token, .controlled (.controller .this)]))
+        [.modifyReplacementCreatedTokenCount (· * 3)]))
+    ]).toCardDef
+  !c.tokenDoubling
 
 #guard
   let c :=

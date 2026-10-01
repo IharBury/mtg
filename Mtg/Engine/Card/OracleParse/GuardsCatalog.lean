@@ -1299,8 +1299,8 @@ open OracleParts
 #guard parseOracleParts (name := "Bard, King of Dale")
   "If one or more tokens would be created under your control, twice that many of those tokens are created instead." ==
   some [.ability (.static (.replace
-    (.tokensCreatingSimultaneously (.intersection [.token, .controlled (.controller .this)]))
-    [.createReplacingTokens (.controller .this) (Value.timesCount 2 .replacingObject)]))]
+    (.createTokens (.intersection [.token, .controlled (.controller .this)]))
+    [.modifyReplacementCreatedTokenCount (· * 2)]))]
 #guard parseOracleParts (name := "Bard, King of Dale")
   "If a token would be created under your control, twice that many of those tokens are created instead." ==
   none

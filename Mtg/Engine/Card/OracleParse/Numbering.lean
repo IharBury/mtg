@@ -95,7 +95,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .enter s | .die s
   | .discard s | .leaveGraveyard s | .leaveBattlefield s | .returnToHand s | .putToGraveyard s
   | .giftPromised s | .counter s | .activateAbility s | .castSpell s
-  | .castSpellFromGraveyard s | .precombatMainPhase s | .tokensCreatingSimultaneously s =>
+  | .castSpellFromGraveyard s | .precombatMainPhase s | .createTokens s =>
     collectSelector s
   | .attack a b | .draw a b | .damage a b | .block a b | .target a b | .combatDamage a b
   | .putCountersSimultaneously a b _ =>
@@ -239,8 +239,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .createTokens who n parts states =>
     appendIds [
       collectSelector who, collectValue n, collectParts parts, appendIds (states.map collectState)]
-  | .createReplacingTokens who n =>
-    appendIds [collectSelector who, collectValue n]
+  | .modifyReplacementCreatedTokenCount _ => ([], [])
   | .keepReplacedAction => ([], [])
 
 end
@@ -384,7 +383,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .or a b => .or (mapTrigger m a) (mapTrigger m b)
   | .target a b => .target (mapSelector m a) (mapSelector m b)
   | .precombatMainPhase s => .precombatMainPhase (mapSelector m s)
-  | .tokensCreatingSimultaneously s => .tokensCreatingSimultaneously (mapSelector m s)
+  | .createTokens s => .createTokens (mapSelector m s)
 
 def mapCondition (m : IdMaps) : Condition → Condition
   | .any s => .any (mapSelector m s)
@@ -573,8 +572,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .keyword who k => .keyword (mapSelector m who) (mapKeyword m k)
   | .createTokens who n parts states =>
     .createTokens (mapSelector m who) (mapValue m n) (mapParts m parts) (mapStates m states)
-  | .createReplacingTokens who n =>
-    .createReplacingTokens (mapSelector m who) (mapValue m n)
+  | .modifyReplacementCreatedTokenCount f => .modifyReplacementCreatedTokenCount f
   | .mill a v => .mill (mapSelector m a) (mapValue m v)
   | .surveil a v => .surveil (mapSelector m a) (mapValue m v)
   | .copyWithNewTargets a b => .copyWithNewTargets (mapSelector m a) (mapSelector m b)

@@ -65,6 +65,26 @@ inductive CardState where
   | attachedTo : Selector → CardState
 deriving Repr, Inhabited, BEq
 
+/-!
+`Nat → Nat` has no decidable equality. Printed count changes (`n * 2`)
+are compared on `0` through `8`, which is what the card guards need.
+-/
+
+/-- How many counts to compare when a printed `Nat → Nat` is stored on a card. -/
+def createdTokenCountCheckBound : Nat := 9
+
+/-- `true` when `f` maps each count `n` below the check bound to `n * 2`. -/
+def doublesCreatedTokenCount (f : Nat → Nat) : Bool :=
+  (List.range createdTokenCountCheckBound).all fun n => f n == n * 2
+
+instance : BEq (Nat → Nat) where
+  beq f g := (List.range createdTokenCountCheckBound).all fun n => f n == g n
+
+instance : Repr (Nat → Nat) where
+  reprPrec f _ :=
+    let samples := (List.range 4).map fun n => s!"{n}↦{f n}"
+    Std.Format.text ("⟨" ++ String.intercalate ", " samples ++ "⟩")
+
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
 -- ability.
@@ -310,11 +330,11 @@ inductive CardAction where
   An empty state list is the usual “enters as a new object” case. -/
   | createTokens (who : Selector) (n : Value) (parts : List CardPart)
       (states : List CardState := []) : CardAction
-  /-- The selected player creates that many tokens with the same
-  characteristics as the tokens this replacement would have created
-  (CR 614). `Value.timesCount` of `Selector.replacingObject` is how many
-  of those tokens. -/
-  | createReplacingTokens : Selector → Value → CardAction
+  /-- Keep creating the tokens this replacement would have created, with
+  the count changed by the function (CR 614). The function maps how many
+  would have been created to how many are created instead. Twice that
+  many is `(· * 2)`. -/
+  | modifyReplacementCreatedTokenCount : (Nat → Nat) → CardAction
   /-- The selected player mills that many cards (CR 701.13). -/
   | mill : Selector → Value → CardAction
   /-- The selected player surveils that many cards (CR 701.53). -/
