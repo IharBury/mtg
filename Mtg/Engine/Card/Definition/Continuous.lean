@@ -13,13 +13,15 @@ namespace Mtg.Engine
 def valToInt? : Value → Option Int
   | .int p => some p
   | .x | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
-  | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _ => none
+  | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _
+  | .counterCount _ _ | .triggerAmount _ => none
 
 /-- Convert a Value to a Nat if it is a non-negative constant. -/
 def valToNat? : Value → Option Nat
   | .int n => if n ≥ 0 then some n.toNat else none
   | .x | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
-  | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _ => none
+  | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _
+  | .counterCount _ _ | .triggerAmount _ => none
 
 /-- This object, or the source of this ability (CR 113.7). -/
 def isThisOrItsSource : Selector → Bool
@@ -84,6 +86,8 @@ def selector : ContinuousEffect → Selector
   | .doesntUntap who => who
   | .cantAttackUnlessPays who _ _ => who
   | .removeAllAbilities who => who
+  | .setCardTypes who _ | .removeSupertype who _ => who
+  | .copyActivatedAbilities who _ => who
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is

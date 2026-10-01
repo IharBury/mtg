@@ -108,6 +108,14 @@ structure CardFace where
   /-- Static `removeAllAbilities` effects. While this face is on the
   battlefield, objects matching a selector lose all abilities. -/
   removesAllAbilitiesFrom : Array Selector := #[]
+  /-- This gets +N/+0 for each Mountain you control. -/
+  powerPerMountain : Nat := 0
+  /-- As this enters, its controller chooses odd or even. Zero is even. -/
+  asEntersChooseOddEven : Bool := false
+  /-- If a creature an opponent controls would die, exile it instead. -/
+  exileOppCreaturesInstead : Bool := false
+  /-- `{T}: Add {C} for each permanent you control of this subtype`. -/
+  tapAddColorlessPerSubtype : Option String := none
 deriving Inhabited
 
 namespace CardFace
@@ -587,6 +595,23 @@ def printedStaticApplied? (b : CardFace) : ContinuousEffect → Option CardFace
     | none => none
   | _ => none
 
+/-- `+N` for each object of a counted kind: a subtype you control, or a
+graveyard with at least seven cards. -/
+def powerPerCountedSubtype? (sel : Selector) (v : Value) : Option (String × Nat) :=
+  let counted : Option (Selector × Nat) :=
+    match v with
+    | .product (.count among) (.int n) =>
+      if n > 0 then some (among, n.toNat) else none
+    | .count among => some (among, 1)
+    | _ => none
+  counted.bind fun (among, n) =>
+    match among with
+    | .intersection [.zone .battlefield, .subtype st, .controlled (.controller .this)] =>
+      if sel == .this || sel == .source .this then some (st.toString, n) else none
+    | .graveyardsAtLeast (.int 7) =>
+      if sel == .this || sel == .source .this then some ("graveyard", n) else none
+    | _ => none
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
@@ -633,9 +658,20 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     | _, _ => b
   | .gainAbility _ _ => b
   | .addPower sel v =>
-    match valToInt? v with
-    | some p => applyIntegerPowerToughness b sel p 0
-    | none => b
+    match powerPerCountedSubtype? sel v with
+    | some (st, n) =>
+      if st == "Mountain" && (sel == .this || sel == .source .this) then
+        { b with powerPerMountain := n }
+      else if st == "graveyard" && (sel == .this || sel == .source .this) then
+        { b with staticAbilities := b.staticAbilities.push (.powerPerFatGraveyard (Int.ofNat n)) }
+      else
+        match valToInt? v with
+        | some p => applyIntegerPowerToughness b sel p 0
+        | none => b
+    | none =>
+      match valToInt? v with
+      | some p => applyIntegerPowerToughness b sel p 0
+      | none => b
   | .addToughness sel v =>
     match valToInt? v with
     | some t => applyIntegerPowerToughness b sel 0 t
@@ -808,9 +844,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       else b
     | _, _ => b
   | .if (.less _ _) _ | .if (.lessOrEqual _ _) _ | .if (.greater _ _) _
-  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ => b
+  | .if (.greaterOrEqual _ _) _ | .if (.equal _ _) _ | .if .kicked _
+  | .if (.wasCreature _) _ => b
   | .replace (.enter who) actions =>
     if (who == .this || who == .source .this) &&
+        actions == [.chooseOddEven (.controller .this), .keepReplacedAction] then
+      { b with asEntersChooseOddEven := true }
+    else if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersTapped? actions then
       { b with entersTapped := true }
     else if (who == .this || who == .source .this) &&
@@ -829,6 +869,22 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       { b with staticAbilities := b.staticAbilities.push .healOtherDamageWhenDealt }
     else b
   | .replace (.combatDamage _ _) _ => b
+  | .replace (.die who) actions =>
+    if CardAction.exileOppDeathCreateWolf? who actions then
+      { b with
+        exileOppCreaturesInstead := true
+        staticAbilities := b.staticAbilities.push .exileOppDeathCreateWolf }
+    else b
+  | .replace (.abilityTriggers (.hostOf .this))
+      [.duplicateReplacingTrigger (.int 2)] =>
+    { b with staticAbilities := b.staticAbilities.push .equippedTriggersAgain }
+  | .copyActivatedAbilities who among =>
+    if (who == .this || who == .source .this) &&
+        among == .intersection
+          [.zone .graveyard, .subtype .elf, .owner (.controller .this)] then
+      { b with staticAbilities := b.staticAbilities.push (.copyActivatedFromGySubtype "Elf") }
+    else b
+  | .setCardTypes _ _ | .removeSupertype _ _ => b
   | .replace (.createTokens which) [.modifyReplacementCreatedTokenCount f] =>
     if which == .intersection [.token, .controlled (.controller .this)] &&
         doublesCreatedTokenCount f then
@@ -948,6 +1004,32 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           costReductionIfTargetTapped :=
             b.costReductionIfTargetTapped + ManaCost.manaValue (Cost.manaCost costs) }
 
+/-- Activated abilities from the remaining Hobbit cards whose cost flags are
+not implied by a generic cost. -/
+def hobbitActivated? (costs : List Cost) (action : CardAction) : Option ActivatedAbility :=
+  match costs, action with
+  | [.mana _, .tapSymbol, .discard (.selected _ _ (.intersection parts))], .draw who (.int 2) =>
+    let sharesName :=
+      parts.any fun
+        | .sharesNameWith _ => true
+        | _ => false
+    if who == .controller .this && sharesName then
+      let base := Ability.activatedAbility costs action
+      some { base with
+        cost := { base.cost with discardLegendarySameName := true }
+        effect := Effect.discardLegendarySameNameDraw }
+    else none
+  | [.mana _, .sacrifice _], .sequence [
+      .draw who (.greatestPower .sacrificedAsCost),
+      .discard who' (.int 1)] =>
+    if who == .controller .this && who' == .controller .this then
+      let base := Ability.activatedAbility costs action
+      some { base with
+        cost := { base.cost with sacrificeAnotherSubtype := some "creature" }
+        effect := Effect.drawEqualSacrificedPowerThenDiscard }
+    else none
+  | _, _ => none
+
 def applyAbility (b : CardFace) : Ability → CardFace
   | .keyword (.crew n) =>
     if n == 0 then b else { b with crew := some n }
@@ -1021,7 +1103,9 @@ def applyAbility (b : CardFace) : Ability → CardFace
       else b
     | _, _ => b
   | .activated costs action =>
-    if CardAction.leftoverTapAddAnyColorEqualToPower? costs action then
+    if let some ab := hobbitActivated? costs action then
+      { b with activatedAbilities := b.activatedAbilities.push ab }
+    else if CardAction.leftoverTapAddAnyColorEqualToPower? costs action then
       { b with tapAddAnyColorEqualToPower := true }
     else if CardAction.leftoverTapAddAnyColorForInstantOrSorcery? costs action then
       { b with tapAddAnyColorForInstantOrSorcery := true }
@@ -1033,7 +1117,12 @@ def applyAbility (b : CardFace) : Ability → CardFace
         | some types => { b with tapAddOneOf := types }
         | none =>
         match CardAction.leftoverTapAddManaForEach? costs action with
-        | some each => { b with tapAddManaForEach := b.tapAddManaForEach.push each }
+        | some each =>
+          { b with
+            tapAddManaForEach := b.tapAddManaForEach.push each
+            tapAddColorlessPerSubtype :=
+              if each.mana == .colorless then some each.subtype
+              else b.tapAddColorlessPerSubtype }
         | none =>
         match CardAction.leftoverTapAddTwoAmong? costs action with
         | some types => { b with tapAddTwoAmong := types }
@@ -1077,6 +1166,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => applyAbility b a
   | .triggered w action =>
+    match (Ability.triggered w action).toTriggeredAbility? with
+    | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
+    | none => b
+  | .triggeredOnce w action =>
     match (Ability.triggered w action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
@@ -1286,6 +1379,10 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       costReductionIfGyCreaturesAtLeast := b.costReductionIfGyCreaturesAtLeast
       additionalCostDiscardOrPayGeneric := b.additionalCostDiscardOrPayGeneric
       removesAllAbilitiesFrom := b.removesAllAbilitiesFrom
+      powerPerMountain := b.powerPerMountain
+      asEntersChooseOddEven := b.asEntersChooseOddEven
+      exileOppCreaturesInstead := b.exileOppCreaturesInstead
+      tapAddColorlessPerSubtype := b.tapAddColorlessPerSubtype
       adventure := adventure
       saga :=
         if b.sagaChapters.isEmpty then none
