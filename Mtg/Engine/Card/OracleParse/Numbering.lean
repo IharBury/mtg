@@ -92,7 +92,7 @@ def collectSelector : Selector → List Nat × List Nat
 
 def collectTrigger : Trigger → List Nat × List Nat
   | .endOfGame | .endOfTurn | .turnStart | .gameStart => ([], [])
-  | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .enter s | .die s
+  | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .drawStep s | .enter s | .die s
   | .discard s | .leaveGraveyard s | .leaveBattlefield s | .returnToHand s | .putToGraveyard s
   | .giftPromised s | .counter s | .activateAbility s | .castSpell s
   | .castSpellFromGraveyard s | .precombatMainPhase s | .createTokens s =>
@@ -116,7 +116,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .or a b => appendIds [collectTrigger a, collectTrigger b]
 
 def collectCondition : Condition → List Nat × List Nat
-  | .any s | .timeToCastSorcery s | .turn s | .enduringStory s => collectSelector s
+  | .any s | .timeToCastSorcery s | .turn s | .drawStep s | .enduringStory s => collectSelector s
   | .targetsIncludeAny a b => appendIds [collectSelector a, collectSelector b]
   | .anySubtype s _ => collectSelector s
   | .didNotHappen a b | .happened a b => appendIds [collectTrigger a, collectTrigger b]
@@ -340,6 +340,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .combatStart s => .combatStart (mapSelector m s)
   | .upkeep s => .upkeep (mapSelector m s)
   | .endStep s => .endStep (mapSelector m s)
+  | .drawStep s => .drawStep (mapSelector m s)
   | .turnStart => .turnStart
   | .gameStart => .gameStart
   | .attack a b => .attack (mapSelector m a) (mapSelector m b)
@@ -392,6 +393,7 @@ def mapCondition (m : IdMaps) : Condition → Condition
   | .happened a b => .happened (mapTrigger m a) (mapTrigger m b)
   | .timeToCastSorcery s => .timeToCastSorcery (mapSelector m s)
   | .turn s => .turn (mapSelector m s)
+  | .drawStep s => .drawStep (mapSelector m s)
   | .enduringStory s => .enduringStory (mapSelector m s)
   | .and a b => .and (mapCondition m a) (mapCondition m b)
   | .not c => .not (mapCondition m c)

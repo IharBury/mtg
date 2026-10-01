@@ -73,7 +73,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
         activateFromGraveyard := fromGraveyard }
     else none
   | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
-  | .didNotHappen _ _ | .and _ _ | .not _ | .enduringStory _
+  | .didNotHappen _ _ | .and _ _ | .not _ | .drawStep _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
   | .equal _ _ => none
 

@@ -5525,9 +5525,11 @@ def bardKingOfDaleDefinition : TraditionalCardDefinition := .card <|
   .toughness 5,
   .ability (.keyword .reach),
   .ability (.keyword .vigilance),
-  .ability (.static (.replace
-    (.draw (.controller .this) .all)
-    [.draw (.controller .this) 2])),
+  .ability (.static (.if
+    (notFirstCardOfDrawStep (.controller .this))
+    [.replace
+      (.draw (.controller .this) .all)
+      [.draw (.controller .this) 2]])),
   .ability (.static (.replace
     (.createTokens (.intersection [.token, .controlled (.controller .this)]))
     [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))]))]

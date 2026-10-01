@@ -32,6 +32,8 @@ inductive Condition where
   | timeToCastSorcery : Selector → Condition
   /-- True when it is the selected player's turn (CR 500.1). -/
   | turn : Selector → Condition
+  /-- True during the selected player's draw step (CR 504). -/
+  | drawStep : Selector → Condition
   /-- True when the selected player has an enduring story. -/
   | enduringStory : Selector → Condition
   /-- True when both conditions hold. -/
@@ -49,6 +51,16 @@ inductive Condition where
   /-- True when the two values are equal. -/
   | equal : Value → Value → Condition
 deriving Repr, Inhabited, BEq
+
+/-- A draw by `who` other than the first card of their current draw step
+(CR 121.2 / 504). The first card is `ordinal 1` of that draw since
+`Trigger.drawStep`. Draws outside that step are included. -/
+def notFirstCardOfDrawStep (who : Selector) : Condition :=
+  .not (.and
+    (.drawStep who)
+    (.didNotHappen
+      (.ordinal 1 (.drawStep who) (.draw who .all))
+      (.drawStep who)))
 
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
 inductive CardState where

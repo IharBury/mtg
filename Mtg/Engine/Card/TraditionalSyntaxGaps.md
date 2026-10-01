@@ -95,7 +95,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `manaValueAtMost` (mana value at most a `Value`).
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
-  `precombatMainPhase`, `turnStart`, `gameStart`, `attack`, `enter`, `draw`,
+  `precombatMainPhase`, `drawStep` (the selected player's draw step; also a
+  window for the cards drawn in that step), `turnStart`, `gameStart`,
+  `attack`, `enter`, `draw`,
   `ordinal` (the nth time the third trigger has occurred since the second),
   `combatDamage`, `damage`, `damageSimultaneously` (who deals
   damage, who is dealt damage, at the same time), `putToGraveyard`,
@@ -115,7 +117,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `discard` (what to discard), `or`.
 - **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
   `happened`, `timeToCastSorcery`,
-  `turn`, `enduringStory`, `and`, `not`, `less`, `lessOrEqual`, `greater`,
+  `turn`, `drawStep` (it is the selected player's draw step), `enduringStory`,
+  `and`, `not`, `less`, `lessOrEqual`, `greater`,
   `greaterOrEqual`, `equal`.
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters), `attachedTo`.
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
@@ -302,7 +305,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CounterKind.named` | `burden`, `deathtouch`, `doubleStrike`, `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`, `indestructible`, `influence`, `invasion`, `lifelink`, `menace`, `plan`, `quest`, `reach`, `shadow`, `shield`, `stun`, `trample`, `vigilance` |
 | `TraditionalCardDefinition.entersWithCounters` | `static (replace (enter this) [putCounter …, keepReplacedAction])` (Dawn of a New Age, The Ruinous Wrecking Crew) |
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
-| `Trigger.wouldDraw` | `replace` of `Trigger.draw` of any card, drawing two cards instead. Bard, King of Dale; the first card of each of your draw steps is not replaced |
+| `Trigger.wouldDraw` | `replace` of `Trigger.draw`, except while it is the controller's `drawStep` and `ordinal 1` of that draw since `Trigger.drawStep` has not happened. Bard, King of Dale draws two cards instead |
 | `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `happened` of `Trigger.ordinal` of `abilityWithIdResolved` since `turnStart`, and `didNotHappen` of the next ordinal. `1` is the first resolution this turn, counting this one (Belladonna Took) |
 | `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
 
@@ -393,7 +396,7 @@ complete.
   - Leader, Super-Genius
 - **`loseLife`** (1 card) — Whenever the selected player loses life
   - The Master of Lake-town
-- **`opponentDrawsExceptFirst`** (1 card) — An opponent draws except the first card of their draw step (`Trigger.draw` is any draw by the selected player, with no draw-step window)
+- **`opponentDrawsExceptFirst`** (1 card) — An opponent draws except the first card of their draw step (`Trigger.drawStep` is that step; the draw that is not its first card is not one trigger)
   - Orcish Bowmasters
 
 ### `Cost`
@@ -940,7 +943,7 @@ Converted cards are omitted here.
 
 **Orcish Bowmasters** (`orcishBowmasters`)
 
-- `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step (`Trigger.draw` is any draw by the selected player, with no draw-step window)
+- `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step (`Trigger.drawStep` is that step; the draw that is not its first card is not one trigger)
 
 **Palantír of Orthanc** (`palantirOfOrthanc`)
 

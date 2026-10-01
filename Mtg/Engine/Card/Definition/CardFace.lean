@@ -676,7 +676,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else b
   | .if (.happened _ _) _ => b
   | .if (.timeToCastSorcery _) _ => b
-  | .if (.turn _) _ => b
+  | .if (.turn _) _ | .if (.drawStep _) _ => b
   | .if (.not (.enduringStory who)) [.doesntUntap self] =>
     if who == .controller .this && (self == .this || self == .source .this) then
       { b with staticAbilities := b.staticAbilities.push .doesntUntapUnlessEnduringStory }
@@ -691,6 +691,17 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         CardAction.leftoverEntersTapped? actions &&
         among == Selector.aLegendaryCreatureYouControl then
       { b with entersTappedUnlessLegendary := true }
+    else b
+  | .if (.not (.and
+      (.drawStep step)
+      (.didNotHappen
+        (.ordinal 1 (.drawStep window) (.draw drawer .all))
+        (.drawStep since))))
+      [.replace (.draw who .all) [.draw instead (.nat 2)]] =>
+    if step == .controller .this && window == .controller .this &&
+        since == .controller .this && drawer == .controller .this &&
+        who == .controller .this && instead == .controller .this then
+      { b with drawTwoExceptFirstDrawStep := true }
     else b
   | .if (.not (.any among)) [.forbid (.block who .all)] =>
     match Selector.subtypesYouControl? among with
@@ -791,10 +802,6 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       { b with staticAbilities := b.staticAbilities.push .healOtherDamageWhenDealt }
     else b
   | .replace (.combatDamage _ _) _ => b
-  | .replace (.draw who .all) [.draw drawer (.nat 2)] =>
-    if who == .controller .this && drawer == .controller .this then
-      { b with drawTwoExceptFirstDrawStep := true }
-    else b
   | .replace (.createTokens which) [.modifyReplacementCreatedTokenCount f] =>
     if which == .intersection [.token, .controlled (.controller .this)] &&
         doublesCreatedTokenCount f then

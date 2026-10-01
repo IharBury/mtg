@@ -493,6 +493,9 @@ inductive Trigger where
   | upkeep : Selector → Trigger
   /-- At the beginning of the selected player's end step (CR 513.1). -/
   | endStep : Selector → Trigger
+  /-- At the beginning of the selected player's draw step (CR 504.1).
+  A window for the cards drawn in that step. -/
+  | drawStep : Selector → Trigger
   /-- From the start of the turn (a window bound for `happened`). -/
   | turnStart
   /-- From the start of the game (a window bound for `happened`). -/

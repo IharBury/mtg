@@ -1489,9 +1489,11 @@ namespace Mtg.Engine
 #guard
   let c :=
     (TraditionalCardDefinition.card [
-      .ability (.static (.replace
-        (.draw (.controller .this) .all)
-        [.draw (.controller .this) 2])),
+      .ability (.static (.if
+        (notFirstCardOfDrawStep (.controller .this))
+        [.replace
+          (.draw (.controller .this) .all)
+          [.draw (.controller .this) 2]])),
       .ability (.static (.replace
         (.createTokens (.intersection [.token, .controlled (.controller .this)]))
         [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))]))
@@ -1506,6 +1508,15 @@ namespace Mtg.Engine
         [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 3))]))
     ]).toCardDef
   !c.tokenDoubling
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.static (.replace
+        (.draw (.controller .this) .all)
+        [.draw (.controller .this) 2]))
+    ]).toCardDef
+  !c.drawTwoExceptFirstDrawStep
 
 #guard
   let c :=

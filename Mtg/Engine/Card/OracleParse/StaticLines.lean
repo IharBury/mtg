@@ -897,15 +897,17 @@ def tokenYouControl : Selector :=
 
 /-- `If you would draw a card except the first one you draw in each of your
 draw steps, draw two cards instead.`
-`replace` of `Trigger.draw` is that draw (CR 614). The card is any card.
-Drawing two cards replaces it. That shape leaves the first card of each of
-your draw steps as one card (CR 121.2). -/
+`replace` of `Trigger.draw` is that draw (CR 614). It applies except while
+it is your draw step and the first card of that step has not been drawn
+(CR 121.2). -/
 def parseDrawExceptFirstDrawStep (line : String) : Option CardPart :=
   if sentenceIs line
       "if you would draw a card except the first one you draw in each of your draw steps, draw two cards instead" then
-    some (.ability (.static (.replace
-      (.draw (.controller .this) .all)
-      [.draw (.controller .this) 2])))
+    some (.ability (.static (.if
+      (notFirstCardOfDrawStep (.controller .this))
+      [.replace
+        (.draw (.controller .this) .all)
+        [.draw (.controller .this) 2]])))
   else none
 
 /-- `If one or more tokens would be created under your control, twice that
