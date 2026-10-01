@@ -6229,10 +6229,69 @@ def dancingFromDarkToDawn : CardDef :=
 #guard dancingFromDarkToDawn.triggeredAbilities ==
   #[.onCastCreaturePlusOneEqualMv, .onLandYouControlEntersCreateTokens .bear 1]
 
+/-- Oracle text for Desert Were-Worm. -/
+def desertWereWormOracle : String :=
+  "This creature gets +2/+0 for each Mountain you control.\nWhenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."
+
+def desertWereWormDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Desert Were-Worm",
+    .manaCost [.generic 4, .mono .red, .mono .red],
+    .type .creature,
+    .subtype .dragon,
+    .subtype .wurm,
+    .power 0,
+    .toughness 5
+  ] ++ (parseOracleParts (name := "Desert Were-Worm") desertWereWormOracle).get!
+
+#guard desertWereWormDefinition == .card [
+  .name "Desert Were-Worm",
+  .manaCost [.generic 4, .mono .red, .mono .red],
+  .type .creature,
+  .subtype .dragon,
+  .subtype .wurm,
+  .power 0,
+  .toughness 5,
+  .ability (.static (.addPower .this
+    (.product
+      (.count
+        (.intersection [
+          .zone .battlefield,
+          .subtype .mountain,
+          .controlled (.controller .this)]))
+      (.int 2)))),
+  .ability (.triggeredOnce
+    (.attackSimultaneously
+      (.intersection [
+        .zone .battlefield,
+        .cardType .creature,
+        .controlled (.controller .this)])
+      .all
+      [])
+    (.sequence [
+      .if
+        (.greaterOrEqual
+          (.totalPower
+            (.intersection [
+              .zone .battlefield,
+              .cardType .creature,
+              .attacking .all]))
+          (.int 12))
+        [.untap
+           (.intersection [
+             .zone .battlefield,
+             .cardType .creature,
+             .attacking .all]),
+         .extraCombat]]))]
+
 def desertWereWorm : CardDef :=
-  creature "Desert Were-Worm" (ManaCost.ofGenericAndColors 4 [.red, .red]) #["Dragon", "Wurm"] 0 5 (oracleText := "This creature gets +2/+0 for each Mountain you control.\nWhenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase.")
-    (powerPerMountain := 2)
-    (triggeredAbilities := #[.onAttackWithTotalPowerUntapExtraCombat 12])
+  desertWereWormDefinition.toCardDef (oracleText := desertWereWormOracle)
+
+#guard desertWereWorm.oracleText == desertWereWormOracle
+#guard desertWereWorm.powerPerMountain == 2
+#guard desertWereWorm.triggeredAbilities == #[.onAttackWithTotalPowerUntapExtraCombat 12]
+#guard desertWereWorm.subtypes == #["Dragon", "Wurm"]
+#guard desertWereWorm.power == some 0 && desertWereWorm.toughness == some 5
 
 /-- Oracle text for Down in the Valley. -/
 def downInTheValleyOracle : String :=

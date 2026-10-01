@@ -242,10 +242,28 @@ def parseBolgEnters (cardName line : String) (n : Nat) : Option (List CardPart �
               (.amass .goblin (.excessDamageOfActionWithId damage))]]]))],
         damage + 1)
 
+/-- `Whenever you attack with creatures with total power 12 or greater for the
+first time each turn, untap all attacking creatures. After this phase, there
+is an additional combat phase.`
+The static `+2/+0 for each Mountain` line is the shared grammar. -/
+def parseAttackTotalPowerExtraCombat (line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  if normLine line !=
+      "whenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. after this phase, there is an additional combat phase" then
+    none
+  else
+    let attacking :=
+      .intersection [.zone .battlefield, .cardType .creature, .attacking .all]
+    some ([.ability (.triggeredOnce youAttack (.sequence [
+      .if (.greaterOrEqual (.totalPower attacking) 12) [
+        .untap attacking,
+        .extraCombat]]))], n)
+
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  parseBolgEnters cardName line n <|>
+  parseAttackTotalPowerExtraCombat line n <|>
+    parseBolgEnters cardName line n <|>
     parseBeornCombat line n <|>
     (keywordParts? line).map (·, n) <|>
     sole (parseDrawExceptFirstDrawStep line) n <|>

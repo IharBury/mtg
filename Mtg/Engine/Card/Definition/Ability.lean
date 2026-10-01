@@ -207,6 +207,20 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         who == .controller .this && amasser == .controller .this then
       some TriggeredAbility.onEnterBolgMaySacrifice
     else none
+  -- Desert Were-Worm: the first attack each turn whose creatures have
+  -- total power 12 or greater untaps those attackers and adds a combat.
+  | .triggered
+      (.attackSimultaneously
+        (.intersection [.zone .battlefield, .cardType .creature, ctl]) .all [])
+      (.sequence [
+        .if (.greaterOrEqual (.totalPower attackers) (.int 12)) [
+          .untap attackers',
+          .extraCombat]]) =>
+    if ctl == .controlled (.controller .this) && attackers == attackers' &&
+        attackers == .intersection [
+          .zone .battlefield, .cardType .creature, .attacking .all] then
+      some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)
+    else none
   | .triggered (.triggerId id (.castSpell among))
       (.sequence [
         .optional (.controller .this)
@@ -1175,9 +1189,14 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | _ => none
 
-/-- Compile a `.triggered` ability. -/
+/-- Compile a `.triggered` ability. `triggeredOnce` is the printed
+once-each-turn restriction; the named ability keeps that limit. -/
 def toTriggeredAbility? (a : Ability) : Option TriggeredAbility :=
-  a.printedTriggeredAbility?.orElse fun _ => a.compileTriggeredAbility?
+  let unwrapped :=
+    match a with
+    | .triggeredOnce t action => Ability.triggered t action
+    | other => other
+  unwrapped.printedTriggeredAbility?.orElse fun _ => unwrapped.compileTriggeredAbility?
 
 end Ability
 

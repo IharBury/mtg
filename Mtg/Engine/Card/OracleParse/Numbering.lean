@@ -166,6 +166,7 @@ def collectAbility : Ability → List Nat × List Nat
     appendIds [collectCondition c, appendIds (cs.map collectCost), collectAction action]
   | .abilityId n a => appendIds [([], [n]), collectAbility a]
   | .triggered t action => appendIds [collectTrigger t, collectAction action]
+  | .triggeredOnce t action => appendIds [collectTrigger t, collectAction action]
   | .triggeredWhile t c action =>
     appendIds [collectTrigger t, collectCondition c, collectAction action]
   | .static e | .stackStatic e | .everywhereStatic e => collectEffect e
@@ -244,6 +245,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .duplicateReplacingTrigger v => collectValue v
   | .keepReplacedAction => ([], [])
   | .reflexive n as => appendIds [([n], []), appendIds (as.map collectAction)]
+  | .extraCombat => ([], [])
 
 end
 
@@ -461,6 +463,7 @@ def mapAbility (m : IdMaps) : Ability → Ability
     .graveyardActivatedIf (mapCondition m c) (mapCosts m cs) (mapAction m action)
   | .abilityId n a => .abilityId (m.target n) (mapAbility m a)
   | .triggered t action => .triggered (mapTrigger m t) (mapAction m action)
+  | .triggeredOnce t action => .triggeredOnce (mapTrigger m t) (mapAction m action)
   | .triggeredWhile t c action =>
     .triggeredWhile (mapTrigger m t) (mapCondition m c) (mapAction m action)
   | .static e => .static (mapEffect m e)
@@ -583,6 +586,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .chooseCreatureType s => .chooseCreatureType (mapSelector m s)
   | .mayCast a b => .mayCast (mapSelector m a) (mapSelector m b)
   | .reflexive n as => .reflexive (m.action n) (mapActions m as)
+  | .extraCombat => .extraCombat
 
 end
 

@@ -132,6 +132,11 @@ inductive Ability where
   resolves. Printed “while …” uses this; `CardAction.if` is the resolution
   check. -/
   | triggeredWhile : Trigger → Condition → CardAction → Ability
+  /-- A triggered ability that triggers only once each turn (CR 603.2d).
+  The restriction is part of the ability. Compiling unwraps it to
+  `.triggered`; a named `TriggeredAbility` that already fires once keeps
+  that limit. “For the first time each turn” is this. -/
+  | triggeredOnce : Trigger → CardAction → Ability
   | static : ContinuousEffect → Ability
   /-- A static ability that functions while this spell is on the stack
   (CR 604.2), e.g. a cost reduction. -/
@@ -373,6 +378,8 @@ inductive CardAction where
   an optional cost is this, not an “if you do” checked in the same
   resolution. -/
   | reflexive : Nat → List CardAction → CardAction
+  /-- After this phase, there is an additional combat phase (CR 506.6). -/
+  | extraCombat
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token

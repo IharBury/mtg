@@ -108,6 +108,8 @@ structure CardFace where
   /-- Static `removeAllAbilities` effects. While this face is on the
   battlefield, objects matching a selector lose all abilities. -/
   removesAllAbilitiesFrom : Array Selector := #[]
+  /-- This gets +N/+0 for each Mountain you control. -/
+  powerPerMountain : Nat := 0
 deriving Inhabited
 
 namespace CardFace
@@ -587,6 +589,21 @@ def printedStaticApplied? (b : CardFace) : ContinuousEffect → Option CardFace
     | none => none
   | _ => none
 
+/-- `+N/+0` for each Mountain this object's controller controls. -/
+def powerPerMountain? (sel : Selector) (v : Value) : Option Nat :=
+  let counted : Option (Selector × Nat) :=
+    match v with
+    | .product (.count among) (.int n) =>
+      if n > 0 then some (among, n.toNat) else none
+    | .count among => some (among, 1)
+    | _ => none
+  counted.bind fun (among, n) =>
+    if (sel == .this || sel == .source .this) &&
+        among == .intersection [
+          .zone .battlefield, .subtype .mountain, .controlled (.controller .this)] then
+      some n
+    else none
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
@@ -633,9 +650,12 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     | _, _ => b
   | .gainAbility _ _ => b
   | .addPower sel v =>
-    match valToInt? v with
-    | some p => applyIntegerPowerToughness b sel p 0
-    | none => b
+    match powerPerMountain? sel v with
+    | some n => { b with powerPerMountain := n }
+    | none =>
+      match valToInt? v with
+      | some p => applyIntegerPowerToughness b sel p 0
+      | none => b
   | .addToughness sel v =>
     match valToInt? v with
     | some t => applyIntegerPowerToughness b sel 0 t
@@ -1080,6 +1100,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.triggered w action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
+  | .triggeredOnce w action =>
+    match (Ability.triggeredOnce w action).toTriggeredAbility? with
+    | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
+    | none => b
   | .triggeredWhile w cond action =>
     match (Ability.triggeredWhile w cond action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
@@ -1286,6 +1310,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       costReductionIfGyCreaturesAtLeast := b.costReductionIfGyCreaturesAtLeast
       additionalCostDiscardOrPayGeneric := b.additionalCostDiscardOrPayGeneric
       removesAllAbilitiesFrom := b.removesAllAbilitiesFrom
+      powerPerMountain := b.powerPerMountain
       adventure := adventure
       saga :=
         if b.sagaChapters.isEmpty then none
