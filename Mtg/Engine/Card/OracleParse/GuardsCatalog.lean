@@ -1222,9 +1222,10 @@ open OracleParts
         (.targets 1 .any equipmentYouControl)
         (.target 2 creaturesYouControl)),
       .if (.greaterOrEqual (.count (.wasObjectOfAction 1)) 1)
-        [.dealDamageEqualToPower (.targetReference 2)
+        [.dealDamage (.targetReference 2)
           (.targets 3 (.range 0 1)
-            (.intersection [.zone .battlefield, .cardType .creature]))]]))]
+            (.intersection [.zone .battlefield, .cardType .creature]))
+          (.greatestPower (.targetReference 2))]]))]
 #guard parseOracleParts (name := "Thorin, Mountain-king")
   "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its toughness to up to one target creature." ==
   none

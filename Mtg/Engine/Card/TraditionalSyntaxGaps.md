@@ -158,7 +158,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `actionId`, `loseLife`, `sacrifice`, `returnToHand`, `putOntoBattlefield`,
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
   `holdOutInLibrary`, `defineSelectorVariable`, `defineValueVariable`,
-  `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`,
+  `forEachVariable`, `reveal`, `fight`,
   `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
   `createTokens`,   `modifyReplacementCreatedTokenCount` (keep creating the
   tokens being replaced, with the count changed by a `Nat → Value` function),
@@ -321,6 +321,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
 | `ContinuousEffect.extraTrigger` | `replace` of `Trigger.abilityTriggers` of that source with `duplicateReplacingTrigger 2`, under `if (enduringStory (controller this))` (Bifur, Melodic Rider) |
 | `Selector.castFromZone`, `ContinuousEffect.reduceCostIfCastFrom` | `reduceCost` of spells you control that are not `castFromZone .hand` (Bilbo, Thief in the Night). “You may cast … from your graveyard” is `mayCast` of one card `selected` from that graveyard; an instant or sorcery cast that way is `replace` of `putToGraveyard` with `exile` |
+| `CardAction.dealDamageEqualToPower` | `dealDamage` of `Value.greatestPower` of the source |
 
 ## Missing constructors by type
 

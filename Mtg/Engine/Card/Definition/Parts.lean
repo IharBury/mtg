@@ -216,7 +216,8 @@ inductive CardAction where
   | tap : Selector → CardAction
   | untap : Selector → CardAction
   /-- The selected source deals the given amount of damage to the selected
-  objects. The amount may be a printed number or a computed value. -/
+  objects. The amount may be a printed number or a computed value. Damage
+  equal to the source's power is `Value.greatestPower` of that source. -/
   | dealDamage : Selector → Selector → Value → CardAction
   /-- The selected player divides that much damage from the source among
   the selected objects (CR 601.2d). -/
@@ -311,9 +312,6 @@ inductive CardAction where
   | forEachVariable : Nat → Selector → List CardAction → CardAction
   /-- Reveal the selected object (CR 701.19a). -/
   | reveal : Selector → CardAction
-  /-- The first selected object deals damage equal to its power to the
-  second (CR 701.13). -/
-  | dealDamageEqualToPower : Selector → Selector → CardAction
   /-- The selected objects fight (CR 701.12). -/
   | fight : Selector → Selector → CardAction
   /-- The selected player chooses one of the listed mana symbols and adds
