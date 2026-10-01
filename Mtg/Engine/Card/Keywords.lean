@@ -509,7 +509,7 @@ inductive Trigger where
   /-- One or more tokens matching the selector would be created at the same
   time (CR 111 / 614). One event for that creation. `replace` of this
   trigger replaces it. `Selector.replacingObject` is those tokens. -/
-  | tokenCreatingSimultaneously : Selector → Trigger
+  | tokensCreatingSimultaneously : Selector → Trigger
   /-- Whenever the selected player draws a card matching the given
   selector. `replace` of this trigger is “if that player would draw” that
   card (CR 614). `Selector.all` is any card. -/
