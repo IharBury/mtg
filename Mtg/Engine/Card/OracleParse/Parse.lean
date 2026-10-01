@@ -1,4 +1,4 @@
-import Mtg.Engine.Card.OracleParse.CatalogLines
+import Mtg.Engine.Card.OracleParse.HobbitRemaining
 import Mtg.Engine.Card.OracleParse.Numbering
 
 /-!
@@ -20,7 +20,8 @@ def triggeredChooseOne? (cardName line : String) : Option Trigger :=
 
 /-- One mode of a catalog modal ability. -/
 def parseCatalogMode (cardName text : String) (n : Nat) : Option (CardAction × Nat) :=
-  parseModeAction cardName text n <|> parseCatalogEffect cardName text n <|>
+  hobbitModeAction text n <|>
+    parseModeAction cardName text n <|> parseCatalogEffect cardName text n <|>
     (afterAbilityWord? text).bind fun rest =>
       parseModeAction cardName rest n <|> parseCatalogEffect cardName rest n
 
@@ -193,7 +194,8 @@ def parseEndStepRemoveHopeDrawSac (line : String) (n : Nat) : Option (CardPart �
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  (keywordParts? line).map (·, n) <|>
+  hobbitRemainingLine cardName line n <|>
+    (keywordParts? line).map (·, n) <|>
     sole (parseDrawExceptFirstDrawStep line) n <|>
     sole (parseTwiceTokensYouWouldCreate line) n <|>
     carry (parseTokenEntersByResolveCount line n) <|>
@@ -367,14 +369,20 @@ def triggeredModes (cardName : String) (trigger : Trigger) : ModeList where
   wrap modes := [.ability (.triggered trigger (.chooseUniqueModes (.range 1 1) modes))]
   mode := parseCatalogMode cardName
 
-/-- `<trigger>, choose one that hasn't been chosen this turn —`. Mode `i` may be
-chosen only if no player chose it this turn. -/
-def restrictedModes (cardName : String) (trigger : Trigger) : ModeList where
+/-- `<trigger>, choose one that hasn't been chosen —`. Mode `i` may be chosen
+only if no player chose it since `since`. `.turnStart` is “this turn”.
+`.gameStart` is “hasn't been chosen” with no turn limit. -/
+def restrictedModesSince (since : Trigger) (cardName : String) (trigger : Trigger) : ModeList where
   wrap modes :=
     [.ability (.triggered trigger (.chooseModeRestricted (.controller .this)
       ((List.range modes.length).zip modes |>.map fun (i, action) =>
-        (i + 1, .didNotHappen (.modeWithIdChosen .player (i + 1)) .turnStart, [action]))))]
+        (i + 1, .didNotHappen (.modeWithIdChosen .player (i + 1)) since, [action]))))]
   mode := parseCatalogMode cardName
+
+/-- `<trigger>, choose one that hasn't been chosen this turn —`. Mode `i` may be
+chosen only if no player chose it this turn. -/
+def restrictedModes (cardName : String) (trigger : Trigger) : ModeList :=
+  restrictedModesSince .turnStart cardName trigger
 
 /-- `Choose up to two. Return those cards from your graveyard to your hand.`
 Each mode is `Target <type> card.`, a card in your graveyard. -/
@@ -392,6 +400,15 @@ def chooseUpToReturnModes (k : Nat) : ModeList where
 triggered `choose up to X —`, or
 `Choose up to N. Return those cards from your graveyard to your hand.` -/
 def modeListHeader? (cardName line : String) : Option ModeList :=
+  let gollum :=
+    if normLine line ==
+        "whenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen —" then
+      some (restrictedModesSince .gameStart cardName
+        (.castSpell (.intersection [
+          .spell,
+          .controlled (.opponent (.controller .this)),
+          .manaValueChosenParity])))
+    else none
   let line' := (afterAbilityWord? line).getD line
   let restricted :=
     (splitTrigger? line').bind fun (clause, effect) =>
@@ -403,7 +420,8 @@ def modeListHeader? (cardName line : String) : Option ModeList :=
   let returnCards :=
     (between? (normLine line) "choose up to " ". return those cards from your graveyard to your hand").bind
       positiveCount |>.map chooseUpToReturnModes
-  ((triggeredChooseOne? cardName line).map (triggeredModes cardName)) <|> restricted <|> returnCards
+  gollum <|> ((triggeredChooseOne? cardName line).map (triggeredModes cardName)) <|>
+    restricted <|> returnCards
 
 /-- `Power-up — <cost>: <effect>` (CR 702.193). The ability is number `n'`,
 the next number after its effect. It may be activated only if it has not

@@ -55,8 +55,10 @@ def collectValue : Value → List Nat × List Nat
   | .greatestManaValue s | .greatestToughness s | .greatestPower s | .count s | .totalPower s
   | .greatestManaSpent s =>
     collectSelector s
+  | .counterCount s _ => collectSelector s
   | .product a b => appendIds [collectValue a, collectValue b]
-  | .variable n => ([], [n])
+  | .variable n | .triggerAmount n => ([], [n])
+  | .excessDamage n => ([n], [])
 
 def collectRange : Range → List Nat × List Nat
   | .range a b => appendIds [collectValue a, collectValue b]
@@ -90,6 +92,10 @@ def collectSelector : Selector → List Nat × List Nat
   | .wasArgumentOfTrigger n _ => ([], [n])
   | .wasObjectSince a b => appendIds [collectTrigger a, collectTrigger b]
   | .topOfLibrary s v => appendIds [collectSelector s, collectValue v]
+  | .exiledWith s | .sharesNameWith s => collectSelector s
+  | .graveyardsAtLeast v => collectValue v
+  | .sacrificedAsCost | .manaValueChosenParity | .equipped => ([], [])
+  | .restOfAction n => ([n], [])
 
 def collectTrigger : Trigger → List Nat × List Nat
   | .endOfGame | .endOfTurn | .turnStart | .gameStart => ([], [])
@@ -116,6 +122,8 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .sequence ts => appendIds (ts.map collectTrigger)
   | .not t => collectTrigger t
   | .or a b => appendIds [collectTrigger a, collectTrigger b]
+  | .loseLife s => collectSelector s
+  | .putAnyCounters a b => appendIds [collectSelector a, collectSelector b]
 
 def collectCondition : Condition → List Nat × List Nat
   | .any s | .timeToCastSorcery s | .turn s | .drawStep s | .enduringStory s => collectSelector s
@@ -126,6 +134,8 @@ def collectCondition : Condition → List Nat × List Nat
   | .not c => collectCondition c
   | .less a b | .lessOrEqual a b | .greater a b | .greaterOrEqual a b | .equal a b =>
     appendIds [collectValue a, collectValue b]
+  | .kicked => ([], [])
+  | .wasCreature s => collectSelector s
 
 def collectCost : Cost → List Nat × List Nat
   | .mana _ | .life _ | .tapSymbol => ([], [])
@@ -165,7 +175,8 @@ def collectAbility : Ability → List Nat × List Nat
   | .graveyardActivatedIf c cs action =>
     appendIds [collectCondition c, appendIds (cs.map collectCost), collectAction action]
   | .abilityId n a => appendIds [([], [n]), collectAbility a]
-  | .triggered t action => appendIds [collectTrigger t, collectAction action]
+  | .triggered t action | .triggeredOnce t action =>
+    appendIds [collectTrigger t, collectAction action]
   | .triggeredWhile t c action =>
     appendIds [collectTrigger t, collectCondition c, collectAction action]
   | .static e | .stackStatic e | .everywhereStatic e => collectEffect e
@@ -187,6 +198,8 @@ def collectEffect : ContinuousEffect → List Nat × List Nat
   | .gainType s _ | .gainSubtype s _ | .gainAllSubtypes s _ | .doesntUntap s | .removeAllAbilities s =>
     collectSelector s
   | .canBeCastAsThoughWithFlashIf s c => appendIds [collectSelector s, collectCondition c]
+  | .setCardTypes s _ | .removeSupertype s _ => collectSelector s
+  | .copyActivatedAbilities a b => appendIds [collectSelector a, collectSelector b]
 
 def collectModes : List (Nat × Condition × List CardAction) → List Nat × List Nat
   | [] => ([], [])
@@ -243,7 +256,19 @@ def collectAction : CardAction → List Nat × List Nat
       collectSelector who, collectValue n, collectParts parts, appendIds (states.map collectState)]
   | .modifyReplacementCreatedTokenCount _ => ([], [])
   | .duplicateReplacingTrigger v => collectValue v
-  | .keepReplacedAction => ([], [])
+  | .keepReplacedAction | .extraCombat => ([], [])
+  | .reflexive n as => appendIds [([n], []), appendIds (as.map collectAction)]
+  | .chooseRandom s | .chooseOddEven s => collectSelector s
+  | .separatePiles s v => appendIds [collectSelector s, collectValue v]
+  | .copyTokens s v es =>
+    appendIds [collectSelector s, collectValue v, appendIds (es.map collectEffect)]
+  | .becomeWith s parts => appendIds [collectSelector s, collectParts parts]
+  | .exileThenReturn s t => appendIds [collectSelector s, collectTrigger t]
+  | .searchHandOrLibrary who as =>
+    appendIds [collectSelector who, appendIds (as.map collectAction)]
+  | .delayed t as => appendIds [collectTrigger t, appendIds (as.map collectAction)]
+  | .revealUntil who stop => appendIds [collectSelector who, collectSelector stop]
+  | .castPayingLifeInstead s => collectSelector s
 
 end
 
@@ -265,6 +290,9 @@ def mapValue (m : IdMaps) : Value → Value
   | .product a b => .product (mapValue m a) (mapValue m b)
   | .variable n => .variable (m.target n)
   | .greatestManaSpent s => .greatestManaSpent (mapSelector m s)
+  | .counterCount s k => .counterCount (mapSelector m s) k
+  | .triggerAmount n => .triggerAmount (m.target n)
+  | .excessDamage n => .excessDamage (m.action n)
 
 def mapRange (m : IdMaps) : Range → Range
   | .range a b => .range (mapValue m a) (mapValue m b)
@@ -329,6 +357,13 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .hasCreatureTypeChosenByAction n => .hasCreatureTypeChosenByAction (m.action n)
   | .manaValueAtMost v => .manaValueAtMost (mapValue m v)
   | .castFromZone z => .castFromZone z
+  | .exiledWith s => .exiledWith (mapSelector m s)
+  | .graveyardsAtLeast v => .graveyardsAtLeast (mapValue m v)
+  | .sacrificedAsCost => .sacrificedAsCost
+  | .manaValueChosenParity => .manaValueChosenParity
+  | .equipped => .equipped
+  | .sharesNameWith s => .sharesNameWith (mapSelector m s)
+  | .restOfAction n => .restOfAction (m.action n)
 
 def mapTriggers (m : IdMaps) : List Trigger → List Trigger
   | [] => []
@@ -386,6 +421,8 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .precombatMainPhase s => .precombatMainPhase (mapSelector m s)
   | .createTokens s => .createTokens (mapSelector m s)
   | .abilityTriggers s => .abilityTriggers (mapSelector m s)
+  | .loseLife s => .loseLife (mapSelector m s)
+  | .putAnyCounters a b => .putAnyCounters (mapSelector m a) (mapSelector m b)
 
 def mapCondition (m : IdMaps) : Condition → Condition
   | .any s => .any (mapSelector m s)
@@ -404,6 +441,8 @@ def mapCondition (m : IdMaps) : Condition → Condition
   | .greater a b => .greater (mapValue m a) (mapValue m b)
   | .greaterOrEqual a b => .greaterOrEqual (mapValue m a) (mapValue m b)
   | .equal a b => .equal (mapValue m a) (mapValue m b)
+  | .kicked => .kicked
+  | .wasCreature s => .wasCreature (mapSelector m s)
 
 def mapCosts (m : IdMaps) : List Cost → List Cost
   | [] => []
@@ -462,6 +501,7 @@ def mapAbility (m : IdMaps) : Ability → Ability
     .graveyardActivatedIf (mapCondition m c) (mapCosts m cs) (mapAction m action)
   | .abilityId n a => .abilityId (m.target n) (mapAbility m a)
   | .triggered t action => .triggered (mapTrigger m t) (mapAction m action)
+  | .triggeredOnce t action => .triggeredOnce (mapTrigger m t) (mapAction m action)
   | .triggeredWhile t c action =>
     .triggeredWhile (mapTrigger m t) (mapCondition m c) (mapAction m action)
   | .static e => .static (mapEffect m e)
@@ -501,6 +541,10 @@ def mapEffect (m : IdMaps) : ContinuousEffect → ContinuousEffect
   | .cantAttackUnlessPays a b cs =>
     .cantAttackUnlessPays (mapSelector m a) (mapSelector m b) (mapCosts m cs)
   | .removeAllAbilities s => .removeAllAbilities (mapSelector m s)
+  | .setCardTypes s ts => .setCardTypes (mapSelector m s) ts
+  | .copyActivatedAbilities a b =>
+    .copyActivatedAbilities (mapSelector m a) (mapSelector m b)
+  | .removeSupertype s st => .removeSupertype (mapSelector m s) st
 
 def mapActions (m : IdMaps) : List CardAction → List CardAction
   | [] => []
@@ -585,6 +629,20 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .putOnLibraryBottomInRandomOrder s => .putOnLibraryBottomInRandomOrder (mapSelector m s)
   | .chooseCreatureType s => .chooseCreatureType (mapSelector m s)
   | .mayCast a b => .mayCast (mapSelector m a) (mapSelector m b)
+  | .reflexive n as => .reflexive (m.action n) (mapActions m as)
+  | .extraCombat => .extraCombat
+  | .chooseRandom s => .chooseRandom (mapSelector m s)
+  | .separatePiles s v => .separatePiles (mapSelector m s) (mapValue m v)
+  | .copyTokens s v es =>
+    .copyTokens (mapSelector m s) (mapValue m v) (mapEffects m es)
+  | .becomeWith s parts => .becomeWith (mapSelector m s) (mapParts m parts)
+  | .exileThenReturn s t => .exileThenReturn (mapSelector m s) (mapTrigger m t)
+  | .chooseOddEven s => .chooseOddEven (mapSelector m s)
+  | .searchHandOrLibrary who as =>
+    .searchHandOrLibrary (mapSelector m who) (mapActions m as)
+  | .delayed t as => .delayed (mapTrigger m t) (mapActions m as)
+  | .revealUntil who stop => .revealUntil (mapSelector m who) (mapSelector m stop)
+  | .castPayingLifeInstead s => .castPayingLifeInstead (mapSelector m s)
 
 end
 

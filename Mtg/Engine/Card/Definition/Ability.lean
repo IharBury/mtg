@@ -75,7 +75,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
   | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
   | .didNotHappen _ _ | .and _ _ | .not _ | .drawStep _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
-  | .equal _ _ => none
+  | .equal _ _ | .kicked | .wasCreature _ => none
 
 /-- `{k}` less for each Equipment this ability's controller controls.
 `.this` is this ability. Zero is not a reduction. -/
@@ -180,8 +180,8 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
       | _, _ => none
 
 /-- Triggered abilities of cards read with `parseOracleParts` that compile to
-one named `TriggeredAbility`. -/
-def printedTriggeredAbility? : Ability → Option TriggeredAbility
+one named `TriggeredAbility`, other than the remaining Hobbit lines. -/
+def printedTriggeredAbilityRest? : Ability → Option TriggeredAbility
   | .triggered (.triggerId id (.castSpell among))
       (.sequence [
         .optional (.controller .this)
@@ -1142,9 +1142,147 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | _ => none
 
+def youCtl : Selector :=
+  .controlled (.controller .this)
+
+def creatureYou : Selector :=
+  .intersection [.zone .battlefield, .cardType .creature, youCtl]
+
+def bearsYou : Selector :=
+  .intersection [.zone .battlefield, .subtype .bear, youCtl]
+
+def goblinOrcArmyYou : Selector :=
+  .intersection [
+    .zone .battlefield,
+    .union [.subtype .goblin, .subtype .orc, .subtype .army],
+    youCtl]
+
+/-- Hobbit triggered abilities spelled from Oracle text. -/
+def hobbitPrintedTrigger? : Ability → Option TriggeredAbility
+  | .triggered (.combatStart (.controller .this)) (.sequence [
+      .putCounter (.targets _ (.range (.nat 0) (.nat 1)) who) .trample (.nat 1),
+      .continuous [.gainSubtype (.targetReference _) .bear] .endOfGame,
+      .if (.greaterOrEqual (.count bears) (.nat 3)) [.draw drawer (.nat 2)]]) =>
+    if who == creatureYou && bears == bearsYou && drawer == .controller .this then
+      some TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear
+    else none
+  | .triggered (.enter .this) (.sequence [
+      .optional who (.actionId id (.sacrifice _)),
+      .reflexive id' [
+        .actionId _ (.dealDamageEqualToPower _ _),
+        .if (.greater (.excessDamage _) _) [
+          .keyword amasser (.amass .goblin (.excessDamage _))]]]) =>
+    if id == id' && who == .controller .this && amasser == .controller .this then
+      some TriggeredAbility.onEnterBolgMaySacrifice
+    else none
+  | .triggered
+      (.attackSimultaneously
+        (.intersection [.zone .battlefield, .cardType .creature, ctl]) .all [])
+      (.sequence [
+        .if (.greaterOrEqual (.totalPower _) (.nat 12)) [
+          .untap _,
+          .extraCombat]]) =>
+    if ctl == youCtl then
+      some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)
+    else none
+  | .triggered (.or (.enter .this) (.attack .this .all))
+      (.putCounter
+        (.intersection [.zone .battlefield, .subtype .equipment, ctl]) .hone (.nat 1)) =>
+    if ctl == youCtl then some TriggeredAbility.onEnterOrAttackHoneEachEquipment else none
+  | .triggered (.enter .this) (.sequence [
+      .actionId id (.createTokens _ _ _),
+      .reflexive id' [.attach _ _]]) =>
+    if id == id' then some TriggeredAbility.onEnterCreateAxeAttach else none
+  | .triggered (.attack .this .all)
+      (.continuous [
+        .gainAbility
+          (.intersection [.zone .battlefield, .cardType .creature, .attacking .all, .equipped])
+          (.keyword .doubleStrike)]
+        .endOfTurn) =>
+    some TriggeredAbility.onAttackEquippedGainDoubleStrike
+  | .triggered
+      (.activateAbility (.intersection [.zone .battlefield, .cardType .creature]))
+      (.draw who (.nat 1)) =>
+    if who == .controller .this then
+      some TriggeredAbility.onActivateCreatureAbilityDrawOnce
+    else none
+  | .triggered (.putToGraveyard .this) (.sequence [
+      .actionId _ (.reveal (.topOfLibrary who (.nat 13))),
+      .actionId _ (.chooseRandom _),
+      .putOntoBattlefield _,
+      .putOnLibraryBottomInRandomOrder _]) =>
+    if who == .controller .this then
+      some (TriggeredAbility.onDiesRevealTopPutRandomCreature 13)
+    else none
+  | .triggered
+      (.castSpell (.intersection [.spell, .controlled (.opponent (.controller .this)), .manaValueChosenParity]))
+      (.chooseModeRestricted _ _) =>
+    some TriggeredAbility.onOpponentCastsChosenParityModes
+  | .triggered (.enter mountain) (.sequence [
+      .putCounter (.source .this) .quest (.nat 1),
+      .if (.greaterOrEqual (.counterCount (.source .this) .quest) (.nat 6)) _]) =>
+    if mountain == .intersection [.zone .battlefield, .subtype .mountain, youCtl] then
+      some TriggeredAbility.onMountainEntersQuestThenDragon
+    else none
+  | .triggered
+      (.die (.intersection [.zone .battlefield, .cardType .creature, .not .token, ctl]))
+      (.sequence [.actionId _ (.revealUntil _ (.cardType .creature)), .ifElse _ _ _, _]) =>
+    if ctl == youCtl then some TriggeredAbility.onNontokenYouControlDiesRevealCreature else none
+  | .triggered (.enter .this) (.sequence [
+      .draw who (.nat 1),
+      .actionId _ (.discard who' (.nat 1)),
+      .if _ _]) =>
+    if who == .controller .this && who' == .controller .this then
+      some TriggeredAbility.onEnterLootLandEntersTapped
+    else none
+  | .triggered (.enter lands) (.optionalPayFor who _ [.returnToHand _]) =>
+    if lands == .intersection [.zone .battlefield, .cardType .land, youCtl] &&
+        who == .controller .this then
+      some TriggeredAbility.onLandYouControlEntersPayReturnFromGy
+    else none
+  | .triggered (.putAnyCounters who army) (.dealDamage _ _ (.nat 2)) =>
+    if who == .controller .this && army == goblinOrcArmyYou then
+      some TriggeredAbility.onPutCountersOnGoblinOrcArmyDamageOpp
+    else none
+  | .triggered (.die (.intersection [.not .this, army])) (.sequence [
+      .actionId _ (.exile (.topOfLibrary _ _)),
+      .continuous _ _]) =>
+    if army == goblinOrcArmyYou then
+      some TriggeredAbility.onAnotherGoblinOrcArmyDiesExileTop
+    else none
+  | .triggered (.triggerId _ (.loseLife .player)) (.mill _ (.triggerAmount _)) =>
+    some TriggeredAbility.onPlayerLosesLifeMillThatMany
+  | .triggered (.die .this) (.draw who (.count (.graveyardsAtLeast (.nat 7)))) =>
+    if who == .controller .this then some TriggeredAbility.onDiesDrawPerFatGraveyard else none
+  | .triggered (.enter .this)
+      (.if (.not (.any (.intersection [.source .this, .token])))
+        [.copyTokens .this _ _]) =>
+    some TriggeredAbility.onEnterIfNotTokenCopySelf
+  | .triggered (.enter elf) (.sequence [
+      .draw who (.nat 2),
+      .discard who' (.nat 1)]) =>
+    if who == .controller .this && who' == .controller .this &&
+        elf == .intersection [
+          .not .this, .zone .battlefield, .cardType .creature, .subtype .elf,
+          .supertype .legendary, youCtl] then
+      some (TriggeredAbility.onAnotherLegendarySubtypeEntersLoot "Elf")
+    else none
+  | .triggered (.die .this) (.if (.wasCreature .this) _) =>
+    some TriggeredAbility.onDiesReturnAsArtifact
+  | _ => none
+
+/-- Triggered abilities of cards read with `parseOracleParts` that compile to
+one named `TriggeredAbility`. -/
+def printedTriggeredAbility? (a : Ability) : Option TriggeredAbility :=
+  (hobbitPrintedTrigger? a).orElse fun _ => printedTriggeredAbilityRest? a
+
 /-- Compile a `.triggered` ability. -/
 def toTriggeredAbility? (a : Ability) : Option TriggeredAbility :=
-  a.printedTriggeredAbility?.orElse fun _ => a.compileTriggeredAbility?
+  let unwrapped :=
+    match a with
+    | .triggeredOnce t action => Ability.triggered t action
+    | other => other
+  unwrapped.printedTriggeredAbility?.orElse fun _ => unwrapped.compileTriggeredAbility?
 
 end Ability
 
