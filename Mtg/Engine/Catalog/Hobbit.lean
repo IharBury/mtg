@@ -5680,10 +5680,13 @@ def bifurMelodicRiderDefinition : TraditionalCardDefinition := .card <|
       (.target 1 (.intersection [.permanent, .cardType .creature]))
       .plusOnePlusOne 1)),
   .ability (.static (.if (.enduringStory (.controller .this)) [
-    .extraTrigger (.intersection [
-      .permanent,
-      .subtype .dwarf,
-      .controlled (.controller .this)])]))]
+    .replace
+      (.abilityTriggers
+        (.intersection [
+          .permanent,
+          .subtype .dwarf,
+          .controlled (.controller .this)]))
+      [.modifyReplacementTriggerCount (fun n => .nat (n + 1))]]))]
 
 def bifurMelodicRider : CardDef :=
   bifurMelodicRiderDefinition.toCardDef (oracleText := bifurMelodicRiderOracle)

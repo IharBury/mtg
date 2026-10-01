@@ -96,7 +96,8 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .drawStep s | .enter s | .die s
   | .discard s | .leaveGraveyard s | .leaveBattlefield s | .returnToHand s | .putToGraveyard s
   | .giftPromised s | .counter s | .activateAbility s | .castSpell s
-  | .castSpellFromGraveyard s | .precombatMainPhase s | .createTokens s =>
+  | .castSpellFromGraveyard s | .precombatMainPhase s | .createTokens s
+  | .abilityTriggers s =>
     collectSelector s
   | .attack a b | .draw a b | .damage a b | .block a b | .target a b | .combatDamage a b
   | .putCountersSimultaneously a b _ =>
@@ -183,8 +184,7 @@ def collectEffect : ContinuousEffect → List Nat × List Nat
   | .setBasePower s v | .setBaseToughness s v | .setPower s v | .setToughness s v
   | .addPower s v | .addToughness s v | .increaseLandPlayLimit s v =>
     appendIds [collectSelector s, collectValue v]
-  | .gainType s _ | .gainSubtype s _ | .gainAllSubtypes s _ | .doesntUntap s | .removeAllAbilities s
-  | .extraTrigger s =>
+  | .gainType s _ | .gainSubtype s _ | .gainAllSubtypes s _ | .doesntUntap s | .removeAllAbilities s =>
     collectSelector s
   | .canBeCastAsThoughWithFlashIf s c => appendIds [collectSelector s, collectCondition c]
 
@@ -241,7 +241,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .createTokens who n parts states =>
     appendIds [
       collectSelector who, collectValue n, collectParts parts, appendIds (states.map collectState)]
-  | .modifyReplacementCreatedTokenCount _ => ([], [])
+  | .modifyReplacementCreatedTokenCount _ | .modifyReplacementTriggerCount _ => ([], [])
   | .keepReplacedAction => ([], [])
 
 end
@@ -388,6 +388,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .target a b => .target (mapSelector m a) (mapSelector m b)
   | .precombatMainPhase s => .precombatMainPhase (mapSelector m s)
   | .createTokens s => .createTokens (mapSelector m s)
+  | .abilityTriggers s => .abilityTriggers (mapSelector m s)
 
 def mapCondition (m : IdMaps) : Condition → Condition
   | .any s => .any (mapSelector m s)
@@ -503,7 +504,6 @@ def mapEffect (m : IdMaps) : ContinuousEffect → ContinuousEffect
   | .cantAttackUnlessPays a b cs =>
     .cantAttackUnlessPays (mapSelector m a) (mapSelector m b) (mapCosts m cs)
   | .removeAllAbilities s => .removeAllAbilities (mapSelector m s)
-  | .extraTrigger s => .extraTrigger (mapSelector m s)
 
 def mapActions (m : IdMaps) : List CardAction → List CardAction
   | [] => []
@@ -577,6 +577,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .createTokens who n parts states =>
     .createTokens (mapSelector m who) (mapValue m n) (mapParts m parts) (mapStates m states)
   | .modifyReplacementCreatedTokenCount f => .modifyReplacementCreatedTokenCount f
+  | .modifyReplacementTriggerCount f => .modifyReplacementTriggerCount f
   | .mill a v => .mill (mapSelector m a) (mapValue m v)
   | .surveil a v => .surveil (mapSelector m a) (mapValue m v)
   | .copyWithNewTargets a b => .copyWithNewTargets (mapSelector m a) (mapSelector m b)

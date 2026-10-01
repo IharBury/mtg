@@ -85,7 +85,7 @@ def selector : ContinuousEffect → Selector
   | .canBeCastAsThoughWithFlashIf card _ => card
   | .doesntUntap who => who
   | .cantAttackUnlessPays who _ _ => who
-  | .removeAllAbilities who | .extraTrigger who => who
+  | .removeAllAbilities who => who
 
 /-- Combined integer +P/+T when every effect is `addPower` or `addToughness`.
 A side that is absent is zero. Any other effect, or a non-integer value, is

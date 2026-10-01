@@ -84,6 +84,10 @@ def createdTokenCountCheckBound : Nat := 9
 def doublesCreatedTokenCount (f : Nat → Value) : Bool :=
   (List.range createdTokenCountCheckBound).all fun n => f n == .nat (n * 2)
 
+/-- `true` when `f` maps each count `n` below the check bound to `n + 1`. -/
+def addsOneTrigger (f : Nat → Value) : Bool :=
+  (List.range createdTokenCountCheckBound).all fun n => f n == .nat (n + 1)
+
 instance : BEq (Nat → Value) where
   beq f g := (List.range createdTokenCountCheckBound).all fun n => f n == g n
 
@@ -207,10 +211,6 @@ inductive ContinuousEffect where
   spell or ability applies it until end of turn to the objects that match
   when it resolves (CR 611.2a / 611.2c). -/
   | removeAllAbilities : Selector → ContinuousEffect
-  /-- If a triggered ability of an object matching the selector triggers,
-  that ability triggers an additional time. The selector is the source of
-  the ability, not the ability itself. -/
-  | extraTrigger : Selector → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -346,6 +346,11 @@ inductive CardAction where
   would have been created to the `Value` created instead. Twice that
   many is `fun n => .nat (n * 2)`. -/
   | modifyReplacementCreatedTokenCount : (Nat → Value) → CardAction
+  /-- The ability that would trigger still triggers, with how many times
+  changed by the function (CR 603.2d). The function maps how many times it
+  would have triggered to the `Value` it triggers instead. An additional
+  time is `fun n => .nat (n + 1)`. -/
+  | modifyReplacementTriggerCount : (Nat → Value) → CardAction
   /-- The selected player mills that many cards (CR 701.13). -/
   | mill : Selector → Value → CardAction
   /-- The selected player surveils that many cards (CR 701.53). -/

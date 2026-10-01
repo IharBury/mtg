@@ -529,6 +529,11 @@ inductive Trigger where
   that creation. `replace` of this trigger replaces it (CR 614).
   `Selector.replacingObject` is those tokens. -/
   | createTokens : Selector → Trigger
+  /-- A triggered ability of a source matching the selector triggers
+  (CR 603.2). `replace` of this trigger replaces that triggering.
+  `modifyReplacementTriggerCount` changes how many times that ability
+  triggers. -/
+  | abilityTriggers : Selector → Trigger
   /-- Whenever the selected player draws a card matching the given
   selector. `replace` of this trigger is “if that player would draw” that
   card (CR 614). `Selector.all` is any card. -/

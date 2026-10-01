@@ -1509,6 +1509,33 @@ namespace Mtg.Engine
     ]).toCardDef
   !c.tokenDoubling
 
+-- Bifur, Melodic Rider: one additional triggering of a Dwarf you control,
+-- while you have an enduring story. Twice as many triggerings is a different
+-- count.
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.static (.if (.enduringStory (.controller .this)) [
+        .replace
+          (.abilityTriggers
+            (.intersection [
+              .permanent, .subtype .dwarf, .controlled (.controller .this)]))
+          [.modifyReplacementTriggerCount (fun n => .nat (n + 1))]]))
+    ]).toCardDef
+  c.staticAbilities == #[.extraTriggerIfEnduringStorySubtype "Dwarf"]
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.static (.if (.enduringStory (.controller .this)) [
+        .replace
+          (.abilityTriggers
+            (.intersection [
+              .permanent, .subtype .dwarf, .controlled (.controller .this)]))
+          [.modifyReplacementTriggerCount (fun n => .nat (n * 2))]]))
+    ]).toCardDef
+  c.staticAbilities == #[]
+
 #guard
   let c :=
     (TraditionalCardDefinition.card [

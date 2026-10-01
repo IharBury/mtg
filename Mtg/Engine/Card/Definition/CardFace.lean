@@ -501,10 +501,15 @@ def addEquipmentCostReduction (b : CardFace) (k : Nat) : CardFace :=
             { ab with
               costReductionPerEquipment := ab.costReductionPerEquipment + k } }
 
-/-- `extraTrigger` of one subtype of permanent this object's controller controls. -/
+/-- `replace` of a triggered ability of one subtype of permanent this object's
+controller controls, so that ability triggers one additional time. -/
 def extraTriggerSubtypeYouControl? : List ContinuousEffect → Option String
-  | [.extraTrigger (.intersection [.permanent, .subtype st, ctl])] =>
-    if ctl == .controlled (.controller .this) then some st.toString else none
+  | [.replace
+      (.abilityTriggers (.intersection [.permanent, .subtype st, ctl]))
+      [.modifyReplacementTriggerCount f]] =>
+    if ctl == .controlled (.controller .this) && addsOneTrigger f then
+      some st.toString
+    else none
   | _ => none
 
 /-- Spells this object's controller casts from anywhere other than their hand. -/
@@ -890,7 +895,6 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .cantAttackUnlessPays _ _ _ => b
   | .removeAllAbilities who =>
     { b with removesAllAbilitiesFrom := b.removesAllAbilitiesFrom.push who }
-  | .extraTrigger _ => b
   | .alternativeCost _ _ => b
   | .additionalCost _ cs =>
     { b with

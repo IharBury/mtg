@@ -406,6 +406,8 @@ Currently recognized:
   The entering or attacking object is this card. The creature is one target.
 - `As long as you have an enduring story, if a triggered ability of a <subtype> you control triggers, that ability triggers an additional time.`
   The source is a permanent of that subtype this object's controller controls.
+  That triggering is `replace` of `abilityTriggers`, and an additional time is
+  `modifyReplacementTriggerCount (fun n => .nat (n + 1))`.
 - `Spells you cast from anywhere other than your hand cost {N} less to cast.`
   `{N}` is generic mana and is not zero. Those spells are ones this object's
   controller casts from a zone other than that player's hand.

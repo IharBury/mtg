@@ -5,9 +5,9 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**205** catalog cards are still `CardDef` helpers. **191**
+**205** catalog cards are still `CardDef` helpers. **189**
 of them need at least one missing constructor listed under
-[Missing constructors by type](#missing-constructors-by-type). **14** lost
+[Missing constructors by type](#missing-constructors-by-type). **16** lost
 their last tag (named counters, `CardAction.removeCounter`, or
 enters-with-counters) and are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
@@ -24,10 +24,10 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 157 | 31 | 28 |
-| The Hobbit Eternal (HOC) | 117 | 67 | 50 | 47 |
+| The Hobbit (HOB) | 188 | 157 | 31 | 27 |
+| The Hobbit Eternal (HOC) | 117 | 67 | 50 | 46 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 116 |
-| **Total** | **586** | **381** | **205** | **191** |
+| **Total** | **586** | **381** | **205** | **189** |
 
 All 381 `TraditionalCardDefinition`s (157 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
@@ -108,6 +108,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `attackSimultaneously` (who attacks, who is attacked),
   `createTokens` (one or more tokens matching the selector would be created
   at the same time),
+  `abilityTriggers` (a triggered ability of a source matching the selector
+  triggers; `replace` of it replaces that triggering),
   `abilityWithIdActivated`, `abilityWithIdResolved` (the numbered ability has
   finished resolving; the resolution in progress does not count),
   `actionWithId`, `triggerId`, `modeWithIdChosen`,
@@ -139,8 +141,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   cast as though it had flash when a condition holds; `you` is
   `Selector.caster`; the spell does not gain flash), `doesntUntap`,
   `cantAttackUnlessPays`, `removeAllAbilities` (selected objects lose all
-  abilities; later-granted abilities still apply), `extraTrigger` (a
-  triggered ability of the selected object triggers an additional time).
+  abilities; later-granted abilities still apply).
   `replace` of
   `Trigger.createTokens` replaces that creation; `Selector.replacingObject`
   is those tokens. `modifyReplacementCreatedTokenCount` changes how many
@@ -158,8 +159,11 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `holdOutInLibrary`, `defineSelectorVariable`, `defineValueVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`,
   `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
-  `createTokens`, `modifyReplacementCreatedTokenCount` (keep creating the
+  `createTokens`,   `modifyReplacementCreatedTokenCount` (keep creating the
   tokens being replaced, with the count changed by a `Nat → Value` function),
+  `modifyReplacementTriggerCount` (the triggering ability still triggers,
+  with how many times changed by a `Nat → Value` function; an additional
+  time is `fun n => .nat (n + 1)`),
   `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`, `shuffleIntoOwnersLibrary`,
   `lookAt`, `putOnLibraryBottomInRandomOrder`, `chooseCreatureType` (the
@@ -314,7 +318,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Trigger.wouldDraw` | `replace` of `Trigger.draw`, except while it is the controller's `drawStep` and that draw has not happened since `Trigger.drawStep`. Bard, King of Dale draws two cards instead |
 | `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `didNotHappen` of `abilityWithIdResolved` since `turnStart` is the first resolution; it is not counted while resolving. The second is `happened` of `ordinal 1` and `didNotHappen` of `ordinal 2`. The third is `ordinal 2` and not `ordinal 3` (Belladonna Took) |
 | `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
-| `ContinuousEffect.extraTrigger` | `extraTrigger` of the source, under `if (enduringStory (controller this))` (Bifur, Melodic Rider) |
+| `ContinuousEffect.extraTrigger` | `replace` of `Trigger.abilityTriggers` of that source with `modifyReplacementTriggerCount (fun n => .nat (n + 1))`, under `if (enduringStory (controller this))` (Bifur, Melodic Rider) |
 | `Selector.castFromZone`, `ContinuousEffect.reduceCostIfCastFrom` | `reduceCost` of spells you control that are not `castFromZone .hand` (Bilbo, Thief in the Night). “You may cast … from your graveyard” is `mayCast`; an instant or sorcery cast that way is `replace` of `putToGraveyard` with `exile` |
 
 ## Missing constructors by type
@@ -448,8 +452,6 @@ complete.
   - Daredevil, Man Without Fear; Elven Chorus; Iron Lad, Diverging Destiny; Ka-Zar of the Savage Land
 - **`attacksEachCombat`** (3 cards) — Attacks each combat if able (“can't attack” is `forbid` of `Trigger.attack`)
   - Alien Invasion; Ares, God of War; The Sentry, Golden Guardian
-- **`extraTrigger`** (2 cards) — Matching triggered abilities trigger an additional time
-  - Chief of the Wilds; Wizard's Staff
 - **`handSize`** (2 cards) — Set / remove maximum hand size
   - Ms. Marvel, Kamala Khan; The Ten Rings
 - **`modifyDamage`** (2 cards) — Replacement that changes how much damage is dealt
@@ -604,9 +606,11 @@ Since the previous revision of this index, 52 more listed cards became
 **Marvel Super Heroes (9):** A.I.M. Scientists; Dependable Quinjet; Kang, Temporal Tyrant; M.O.D.O.K.; Madame Masque; Red Room Recruit; S.H.I.E.L.D. Helicarrier; Swordsman, Sharp Scoundrel; Trickster's Stratagem.
 
 Bifur, Melodic Rider and Bilbo, Thief in the Night are
-`TraditionalCardDefinition`s read with `parseOracleParts`. Bifur's extra
-trigger is `extraTrigger` of a Dwarf its controller controls, while that
-player has an enduring story. Bilbo reduces the cost of spells that
+`TraditionalCardDefinition`s read with `parseOracleParts`. While Bifur's
+controller has an enduring story, a triggered ability of a Dwarf that
+player controls triggers an additional time: `replace` of `abilityTriggers`
+of that Dwarf with `modifyReplacementTriggerCount (fun n => .nat (n + 1))`.
+Bilbo reduces the cost of spells that
 controller casts from a zone other than their hand. When Bilbo attacks, that
 player may cast an artifact, instant, or sorcery from their graveyard, and
 an instant or sorcery cast that way is exiled instead of being put into a
@@ -691,7 +695,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (28 cards)
+### The Hobbit (HOB) (27 cards)
 
 **Bolg of the North** (`bolgOfTheNorth`)
 
@@ -813,10 +817,6 @@ Converted cards are omitted here.
 
 - `Value.manaSpent` — The amount of mana spent to cast a spell
 
-**Wizard's Staff** (`wizardSStaff`)
-
-- `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
-
 ### The Hobbit Eternal (HOC) (50 cards)
 
 **Andúril, Narsil Reforged** (`andurilNarsilReforged`)
@@ -872,10 +872,6 @@ Converted cards are omitted here.
 **Celeborn the Wise** (`celebornTheWise`)
 
 - `Trigger.scry` — Whenever the selected player scries
-
-**Chief of the Wilds** (`chiefOfTheWilds`)
-
-- `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
 
 **Colossal Whale** (`colossalWhale`)
 
@@ -1566,15 +1562,16 @@ Converted cards are omitted here.
 
 ## Tags now spelled, not yet converted
 
-These 14 cards lost every tag and are still `CardDef` helpers. They lost
+These 16 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
-`CardAction.putCounter` of a `Value`, enters-with-counters, or
-`replace` of `Trigger.createTokens` became expressible. A later pass
+`CardAction.putCounter` of a `Value`, enters-with-counters,
+`replace` of `Trigger.createTokens`, or `replace` of `Trigger.abilityTriggers`
+became expressible. A later pass
 should reread them before conversion.
 
-**Hobbit (3):** Beorn the Fierce; Dwalin, Weaponmaster; Last Light of Durin's Day.
+**Hobbit (4):** Beorn the Fierce; Dwalin, Weaponmaster; Last Light of Durin's Day; Wizard's Staff.
 
-**Hobbit Eternal (3):** Arwen, Mortal Queen; Bilbo, Fellow Conspirator; Minas Morgul, Dark Fortress.
+**Hobbit Eternal (4):** Arwen, Mortal Queen; Bilbo, Fellow Conspirator; Chief of the Wilds; Minas Morgul, Dark Fortress.
 
 **Marvel Super Heroes (8):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Super-Adaptoid; The Astonishing Ant-Man; Thunderbolts Conspiracy.
 

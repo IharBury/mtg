@@ -1341,8 +1341,11 @@ open OracleParts
   "As long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time." ==
   some [
     .ability (.static (.if (.enduringStory (.controller .this)) [
-      .extraTrigger (.intersection [
-        .permanent, .subtype .dwarf, .controlled (.controller .this)])]))]
+      .replace
+        (.abilityTriggers
+          (.intersection [
+            .permanent, .subtype .dwarf, .controlled (.controller .this)]))
+        [.modifyReplacementTriggerCount (fun n => .nat (n + 1))]]))]
 #guard parseOracleParts (name := "Bifur, Melodic Rider")
   "As long as you have an enduring story, if a triggered ability of a Dwarf triggers, that ability triggers an additional time." ==
   none
