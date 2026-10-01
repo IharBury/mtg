@@ -5526,7 +5526,11 @@ def bardKingOfDaleDefinition : TraditionalCardDefinition := .card <|
   .ability (.keyword .reach),
   .ability (.keyword .vigilance),
   .ability (.static (.if
-    (notFirstCardOfDrawStep (.controller .this))
+    (.not (.and
+      (.drawStep (.controller .this))
+      (.didNotHappen
+        (.ordinal 1 (.drawStep (.controller .this)) (.draw (.controller .this) .all))
+        (.drawStep (.controller .this)))))
     [.replace
       (.draw (.controller .this) .all)
       [.draw (.controller .this) 2]])),
