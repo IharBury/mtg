@@ -241,7 +241,8 @@ def collectAction : CardAction → List Nat × List Nat
   | .createTokens who n parts states =>
     appendIds [
       collectSelector who, collectValue n, collectParts parts, appendIds (states.map collectState)]
-  | .modifyReplacementCreatedTokenCount _ | .modifyReplacementTriggerCount _ => ([], [])
+  | .modifyReplacementCreatedTokenCount _ => ([], [])
+  | .duplicateReplacingTrigger v => collectValue v
   | .keepReplacedAction => ([], [])
 
 end
@@ -577,7 +578,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .createTokens who n parts states =>
     .createTokens (mapSelector m who) (mapValue m n) (mapParts m parts) (mapStates m states)
   | .modifyReplacementCreatedTokenCount f => .modifyReplacementCreatedTokenCount f
-  | .modifyReplacementTriggerCount f => .modifyReplacementTriggerCount f
+  | .duplicateReplacingTrigger v => .duplicateReplacingTrigger (mapValue m v)
   | .mill a v => .mill (mapSelector m a) (mapValue m v)
   | .surveil a v => .surveil (mapSelector m a) (mapValue m v)
   | .copyWithNewTargets a b => .copyWithNewTargets (mapSelector m a) (mapSelector m b)

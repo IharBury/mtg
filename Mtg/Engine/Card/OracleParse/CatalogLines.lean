@@ -894,8 +894,9 @@ def parseEnterOrAttackPlusOne (cardName : String) (line : String) (n : Nat) :
 
 /-- `As long as you have an enduring story, if a triggered ability of a <subtype> you control triggers, that ability triggers an additional time.`
 The source is a permanent of that subtype this object's controller controls.
-`replace` of `abilityTriggers` is that triggering. `fun n => .nat (n + 1)`
-is one additional time (CR 603.2d). -/
+`replace` of `abilityTriggers` is that triggering.
+`duplicateReplacingTrigger 2` is that ability triggering twice instead of
+once, which is one additional time (CR 603.2d). -/
 def parseExtraTriggerIfEnduringStory (line : String) : Option CardPart :=
   (after? (normLine line)
       "as long as you have an enduring story, if a triggered ability of ").bind fun rest =>
@@ -908,7 +909,7 @@ def parseExtraTriggerIfEnduringStory (line : String) : Option CardPart :=
             .replace
               (.abilityTriggers
                 (.intersection [.permanent, .subtype st, youControl]))
-              [.modifyReplacementTriggerCount (fun n => .nat (n + 1))]]))
+              [.duplicateReplacingTrigger 2]]))
 
 /-- `Spells you cast from anywhere other than your hand cost {N} less to cast.`
 `{N}` is generic mana and is not zero. Those spells are ones this object's

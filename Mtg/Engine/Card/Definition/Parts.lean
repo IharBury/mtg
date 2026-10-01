@@ -84,10 +84,6 @@ def createdTokenCountCheckBound : Nat := 9
 def doublesCreatedTokenCount (f : Nat → Value) : Bool :=
   (List.range createdTokenCountCheckBound).all fun n => f n == .nat (n * 2)
 
-/-- `true` when `f` maps each count `n` below the check bound to `n + 1`. -/
-def addsOneTrigger (f : Nat → Value) : Bool :=
-  (List.range createdTokenCountCheckBound).all fun n => f n == .nat (n + 1)
-
 instance : BEq (Nat → Value) where
   beq f g := (List.range createdTokenCountCheckBound).all fun n => f n == g n
 
@@ -346,11 +342,9 @@ inductive CardAction where
   would have been created to the `Value` created instead. Twice that
   many is `fun n => .nat (n * 2)`. -/
   | modifyReplacementCreatedTokenCount : (Nat → Value) → CardAction
-  /-- The ability that would trigger still triggers, with how many times
-  changed by the function (CR 603.2d). The function maps how many times it
-  would have triggered to the `Value` it triggers instead. An additional
-  time is `fun n => .nat (n + 1)`. -/
-  | modifyReplacementTriggerCount : (Nat → Value) → CardAction
+  /-- The trigger this replacement is replacing triggers this many times
+  instead of once (CR 603.2d). Two is one additional time. -/
+  | duplicateReplacingTrigger : Value → CardAction
   /-- The selected player mills that many cards (CR 701.13). -/
   | mill : Selector → Value → CardAction
   /-- The selected player surveils that many cards (CR 701.53). -/

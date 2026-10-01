@@ -5686,7 +5686,7 @@ def bifurMelodicRiderDefinition : TraditionalCardDefinition := .card <|
           .permanent,
           .subtype .dwarf,
           .controlled (.controller .this)]))
-      [.modifyReplacementTriggerCount (fun n => .nat (n + 1))]]))]
+      [.duplicateReplacingTrigger 2]]))]
 
 def bifurMelodicRider : CardDef :=
   bifurMelodicRiderDefinition.toCardDef (oracleText := bifurMelodicRiderOracle)

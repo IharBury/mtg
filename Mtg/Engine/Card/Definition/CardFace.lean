@@ -502,14 +502,12 @@ def addEquipmentCostReduction (b : CardFace) (k : Nat) : CardFace :=
               costReductionPerEquipment := ab.costReductionPerEquipment + k } }
 
 /-- `replace` of a triggered ability of one subtype of permanent this object's
-controller controls, so that ability triggers one additional time. -/
+controller controls, so that ability triggers twice instead of once. -/
 def extraTriggerSubtypeYouControl? : List ContinuousEffect → Option String
   | [.replace
       (.abilityTriggers (.intersection [.permanent, .subtype st, ctl]))
-      [.modifyReplacementTriggerCount f]] =>
-    if ctl == .controlled (.controller .this) && addsOneTrigger f then
-      some st.toString
-    else none
+      [.duplicateReplacingTrigger (.nat 2)]] =>
+    if ctl == .controlled (.controller .this) then some st.toString else none
   | _ => none
 
 /-- Spells this object's controller casts from anywhere other than their hand. -/

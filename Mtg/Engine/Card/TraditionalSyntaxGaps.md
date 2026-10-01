@@ -161,9 +161,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
   `createTokens`,   `modifyReplacementCreatedTokenCount` (keep creating the
   tokens being replaced, with the count changed by a `Nat → Value` function),
-  `modifyReplacementTriggerCount` (the triggering ability still triggers,
-  with how many times changed by a `Nat → Value` function; an additional
-  time is `fun n => .nat (n + 1)`),
+  `duplicateReplacingTrigger` (the trigger being replaced triggers that many
+  times instead of once; two is one additional time),
   `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`, `shuffleIntoOwnersLibrary`,
   `lookAt`, `putOnLibraryBottomInRandomOrder`, `chooseCreatureType` (the
@@ -319,7 +318,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Trigger.wouldDraw` | `replace` of `Trigger.draw`, except while it is the controller's `drawStep` and that draw has not happened since `Trigger.drawStep`. Bard, King of Dale draws two cards instead |
 | `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `didNotHappen` of `abilityWithIdResolved` since `turnStart` is the first resolution; it is not counted while resolving. The second is `happened` of `ordinal 1` and `didNotHappen` of `ordinal 2`. The third is `ordinal 2` and not `ordinal 3` (Belladonna Took) |
 | `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
-| `ContinuousEffect.extraTrigger` | `replace` of `Trigger.abilityTriggers` of that source with `modifyReplacementTriggerCount (fun n => .nat (n + 1))`, under `if (enduringStory (controller this))` (Bifur, Melodic Rider) |
+| `ContinuousEffect.extraTrigger` | `replace` of `Trigger.abilityTriggers` of that source with `duplicateReplacingTrigger 2`, under `if (enduringStory (controller this))` (Bifur, Melodic Rider) |
 | `Selector.castFromZone`, `ContinuousEffect.reduceCostIfCastFrom` | `reduceCost` of spells you control that are not `castFromZone .hand` (Bilbo, Thief in the Night). “You may cast … from your graveyard” is `mayCast` of one card `selected` from that graveyard; an instant or sorcery cast that way is `replace` of `putToGraveyard` with `exile` |
 
 ## Missing constructors by type
@@ -610,7 +609,7 @@ Bifur, Melodic Rider and Bilbo, Thief in the Night are
 `TraditionalCardDefinition`s read with `parseOracleParts`. While Bifur's
 controller has an enduring story, a triggered ability of a Dwarf that
 player controls triggers an additional time: `replace` of `abilityTriggers`
-of that Dwarf with `modifyReplacementTriggerCount (fun n => .nat (n + 1))`.
+of that Dwarf with `duplicateReplacingTrigger 2`.
 Bilbo reduces the cost of spells that
 controller casts from a zone other than their hand. When Bilbo attacks, that
 player may cast one artifact, instant, or sorcery they select from their graveyard, and

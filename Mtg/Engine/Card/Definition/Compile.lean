@@ -225,7 +225,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                       else Effect.createTokensX kind
                     | none => continuousEffect none [] asAbility
                   | .modifyReplacementCreatedTokenCount _
-                  | .modifyReplacementTriggerCount _ =>
+                  | .duplicateReplacingTrigger _ =>
                     continuousEffect none [] asAbility
                   | .createTokens _ n parts states =>
                     match leftoverTokenKind? parts, valToNat? n with
