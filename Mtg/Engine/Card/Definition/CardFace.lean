@@ -694,13 +694,11 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else b
   | .if (.not (.and
       (.drawStep step)
-      (.didNotHappen
-        (.ordinal 1 (.drawStep window) (.draw drawer .all))
-        (.drawStep since))))
+      (.didNotHappen (.draw drawer .all) (.drawStep since))))
       [.replace (.draw who .all) [.draw instead (.nat 2)]] =>
-    if step == .controller .this && window == .controller .this &&
-        since == .controller .this && drawer == .controller .this &&
-        who == .controller .this && instead == .controller .this then
+    if step == .controller .this && since == .controller .this &&
+        drawer == .controller .this && who == .controller .this &&
+        instead == .controller .this then
       { b with drawTwoExceptFirstDrawStep := true }
     else b
   | .if (.not (.any among)) [.forbid (.block who .all)] =>

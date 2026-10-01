@@ -5529,7 +5529,7 @@ def bardKingOfDaleDefinition : TraditionalCardDefinition := .card <|
     (.not (.and
       (.drawStep (.controller .this))
       (.didNotHappen
-        (.ordinal 1 (.drawStep (.controller .this)) (.draw (.controller .this) .all))
+        (.draw (.controller .this) .all)
         (.drawStep (.controller .this)))))
     [.replace
       (.draw (.controller .this) .all)

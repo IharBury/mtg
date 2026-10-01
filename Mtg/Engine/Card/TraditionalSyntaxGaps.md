@@ -305,7 +305,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CounterKind.named` | `burden`, `deathtouch`, `doubleStrike`, `finality`, `firstStrike`, `flying`, `haste`, `hone`, `hope`, `indestructible`, `influence`, `invasion`, `lifelink`, `menace`, `plan`, `quest`, `reach`, `shadow`, `shield`, `stun`, `trample`, `vigilance` |
 | `TraditionalCardDefinition.entersWithCounters` | `static (replace (enter this) [putCounter …, keepReplacedAction])` (Dawn of a New Age, The Ruinous Wrecking Crew) |
 | `Selector.manaValue` at most | `Selector.manaValueAtMost` (at least, and a total mana value, stay gaps) |
-| `Trigger.wouldDraw` | `replace` of `Trigger.draw`, except while it is the controller's `drawStep` and `ordinal 1` of that draw since `Trigger.drawStep` has not happened. Bard, King of Dale draws two cards instead |
+| `Trigger.wouldDraw` | `replace` of `Trigger.draw`, except while it is the controller's `drawStep` and that draw has not happened since `Trigger.drawStep`. Bard, King of Dale draws two cards instead |
 | `Condition.resolvedThisTurnCount`, `Condition.happenedTimes` | `happened` of `Trigger.ordinal` of `abilityWithIdResolved` since `turnStart`, and `didNotHappen` of the next ordinal. `1` is the first resolution this turn, counting this one (Belladonna Took) |
 | `ContinuousEffect.replaceTokenCreation` | `replace` of `Trigger.createTokens`. `modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))` is “twice that many of those tokens” (Bard, King of Dale) |
 
