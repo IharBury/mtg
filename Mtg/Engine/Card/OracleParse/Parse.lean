@@ -209,10 +209,45 @@ def parseBeornCombat (line : String) (n : Nat) : Option (List CardPart × Nat) :
           3)
         [.draw (.controller .this) 2]]))], n + 1)
 
+/-- Bolg's enter ability, including the reflexive “when you do”.
+The sacrificed creature's power is recorded before it leaves the
+battlefield (CR 608.2h). Bolg deals that much damage. -/
+def parseBolgEnters (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  (splitTrigger? line).bind fun (clause, effect) =>
+    if parseTriggerEvent cardName clause != some (.enter .this) then none
+    else if norm effect !=
+        "you may sacrifice another creature. when you do, bolg deals damage equal to that creature's power to another target creature. if excess damage was dealt this way, amass goblins x, where x is that excess damage" then
+      none
+    else
+      let chosen := n
+      let power := n + 1
+      let damage := n + 2
+      let excess := n + 3
+      let another :=
+        .selected (.controller .this) (.range 1 1)
+          (.intersection [.not .this, .zone .battlefield, .cardType .creature, youControl])
+      some ([.ability (.triggered (.enter .this) (.sequence [
+        .optional (.controller .this) (.sequence [
+          .defineSelectorVariable chosen another,
+          .defineValueVariable power (.greatestPower (.variable chosen)),
+          .actionId chosen (.sacrifice (.variable chosen))]),
+        .reflexive chosen [
+          .actionId damage
+            (.dealDamage .this
+              (.target chosen
+                (.intersection [
+                  .not (.wasObjectOfAction chosen), .zone .battlefield, .cardType .creature]))
+              (.variable power)),
+          .if (.happened
+              (.triggerId excess (.actionWithIdDealtExcessDamage damage)) .gameStart) [
+            .keyword (.controller .this) (.amass .goblin (.triggerAmount excess))]]]))],
+        excess + 1)
+
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  parseBeornCombat line n <|>
+  parseBolgEnters cardName line n <|>
+    parseBeornCombat line n <|>
     (keywordParts? line).map (·, n) <|>
     sole (parseDrawExceptFirstDrawStep line) n <|>
     sole (parseTwiceTokensYouWouldCreate line) n <|>

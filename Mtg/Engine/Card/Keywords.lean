@@ -344,6 +344,10 @@ inductive Value where
   change each amount. A spell's mana value does not. One spell is that
   amount. Several spells use the greatest. -/
   | greatestManaSpent : Selector → Value
+  /-- The amount of the trigger numbered by `Trigger.triggerId`: life
+  lost, damage dealt, excess damage, or another quantity that event
+  produced. -/
+  | triggerAmount : Nat → Value
 deriving Repr, Inhabited, BEq
 
 /-- How many objects a `.targets` selector may choose. -/
@@ -580,6 +584,9 @@ inductive Trigger where
   | abilityWithIdResolved : Nat → Trigger
   /-- The numbered action occurred. -/
   | actionWithId : Nat → Trigger
+  /-- The numbered action dealt excess damage (CR 120.4a).
+  `Value.triggerAmount` of a `triggerId` around this event is that excess. -/
+  | actionWithIdDealtExcessDamage : Nat → Trigger
   /-- Number this trigger so later clauses can refer to its selector
   arguments. -/
   | triggerId : Nat → Trigger → Trigger
@@ -628,7 +635,8 @@ instance : ToString Value where
     | .int n => toString n
     | .x => "X"
     | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
-    | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _ => "X"
+    | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _
+    | .triggerAmount _ => "X"
 
 instance (n : Nat) : OfNat Value n where
   ofNat := .int n
@@ -650,6 +658,7 @@ def timesCount (n : Int) (among : Selector) : Value :=
 #guard toString (Value.product (Value.count .this) 2) == "X"
 #guard toString (Value.variable 1) == "X"
 #guard toString (Value.greatestManaSpent .this) == "X"
+#guard toString (Value.triggerAmount 1) == "X"
 #guard Value.timesCount 1 .this == Value.count .this
 #guard Value.timesCount 2 .this == Value.product (Value.count .this) (Value.int 2)
 #guard Value.timesCount 0 .this == Value.int 0
