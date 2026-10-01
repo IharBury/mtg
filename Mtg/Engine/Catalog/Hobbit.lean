@@ -5977,10 +5977,12 @@ def bolgOfTheNorthDefinition : TraditionalCardDefinition := .card <|
                     .cardType (.creature)]))
                (.variable 2)),
            .if
-             (.greater (.excessDamage 2) (.int 0))
+             (.happened
+               (.triggerId 3 (.actionWithIdDealtExcessDamage 2))
+               (.gameStart))
              [.keyword
                 (.controller (.this))
-                (.amass (.goblin) (.excessDamage 2))]]]))])
+                (.amass (.goblin) (.triggerAmount 3))]]]))])
 
 def bolgOfTheNorth : CardDef :=
   bolgOfTheNorthDefinition.toCardDef (oracleText := bolgOfTheNorthOracle)

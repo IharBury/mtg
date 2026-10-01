@@ -112,7 +112,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   triggers; `replace` of it replaces that triggering),
   `abilityWithIdActivated`, `abilityWithIdResolved` (the numbered ability has
   finished resolving; the resolution in progress does not count),
-  `actionWithId`, `triggerId`, `modeWithIdChosen`,
+  `actionWithId`, `actionWithIdDealtExcessDamage` (the numbered action dealt
+  excess damage; `Value.triggerAmount` of a `triggerId` around it is that
+  excess), `triggerId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `spendManaFrom`, `castSpell`,
   `castSpellFromGraveyard`, `giftPromised` (the selected spell's gift was
   promised), `counter`, `activateAbility`, `target` (a spell or
@@ -335,7 +337,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Condition.kicked` | `Condition.kicked` |
 | `Ability.graveyardTriggered` | Silvan Reveler's return from the graveyard is the effect of a landfall `enter` trigger |
 | `ContinuousEffect.copyActivatedAbilities` | `ContinuousEffect.copyActivatedAbilities` |
-| `CardAction.eventAmount` | `Value.triggerAmount` of the numbered trigger, or `Value.excessDamage` of the numbered damage action |
+| `CardAction.eventAmount` | `Value.triggerAmount` of the numbered trigger. Excess damage dealt by a numbered action is `Trigger.actionWithIdDealtExcessDamage` |
 | `CardAction.exileThenReturn` | `CardAction.exileThenReturn` |
 | `CardAction.extraCombat` | `CardAction.extraCombat` |
 | `CardAction.chooseOddEven` | `CardAction.chooseOddEven`. Mana value of the chosen quality is `Selector.manaValueChosenParity` |

@@ -348,10 +348,9 @@ inductive Value where
   (CR 122.1). -/
   | counterCount : Selector → CounterKind → Value
   /-- The amount of the trigger numbered by `Trigger.triggerId`: life
-  lost, damage dealt, or another quantity that event produced. -/
+  lost, damage dealt, excess damage, or another quantity that event
+  produced. -/
   | triggerAmount : Nat → Value
-  /-- Excess damage dealt by the numbered damage action (CR 120.4a). -/
-  | excessDamage : Nat → Value
 deriving Repr, Inhabited, BEq
 
 /-- How many objects a `.targets` selector may choose. -/
@@ -606,6 +605,9 @@ inductive Trigger where
   | abilityWithIdResolved : Nat → Trigger
   /-- The numbered action occurred. -/
   | actionWithId : Nat → Trigger
+  /-- The numbered action dealt excess damage (CR 120.4a).
+  `Value.triggerAmount` of a `triggerId` around this event is that excess. -/
+  | actionWithIdDealtExcessDamage : Nat → Trigger
   /-- Number this trigger so later clauses can refer to its selector
   arguments. -/
   | triggerId : Nat → Trigger → Trigger
@@ -663,7 +665,7 @@ instance : ToString Value where
     | .x => "X"
     | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
     | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _
-    | .counterCount _ _ | .triggerAmount _ | .excessDamage _ => "X"
+    | .counterCount _ _ | .triggerAmount _ => "X"
 
 instance (n : Nat) : OfNat Value n where
   ofNat := .int n

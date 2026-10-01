@@ -58,7 +58,6 @@ def collectValue : Value → List Nat × List Nat
   | .counterCount s _ => collectSelector s
   | .product a b => appendIds [collectValue a, collectValue b]
   | .variable n | .triggerAmount n => ([], [n])
-  | .excessDamage n => ([n], [])
 
 def collectRange : Range → List Nat × List Nat
   | .range a b => appendIds [collectValue a, collectValue b]
@@ -114,7 +113,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .ordinal _ inner window => appendIds [collectTrigger inner, collectTrigger window]
   | .sacrifice s => collectSelector s
   | .abilityWithIdActivated n | .abilityWithIdResolved n => ([], [n])
-  | .actionWithId n => ([n], [])
+  | .actionWithId n | .actionWithIdDealtExcessDamage n => ([n], [])
   | .triggerId n inner => appendIds [([], [n]), collectTrigger inner]
   | .modeWithIdChosen who _ => collectSelector who
   | .spendManaCreatedByAction n inner => appendIds [([n], []), collectTrigger inner]
@@ -289,7 +288,6 @@ def mapValue (m : IdMaps) : Value → Value
   | .greatestManaSpent s => .greatestManaSpent (mapSelector m s)
   | .counterCount s k => .counterCount (mapSelector m s) k
   | .triggerAmount n => .triggerAmount (m.target n)
-  | .excessDamage n => .excessDamage (m.action n)
 
 def mapRange (m : IdMaps) : Range → Range
   | .range a b => .range (mapValue m a) (mapValue m b)
@@ -401,6 +399,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .abilityWithIdActivated n => .abilityWithIdActivated (m.target n)
   | .abilityWithIdResolved n => .abilityWithIdResolved (m.target n)
   | .actionWithId n => .actionWithId (m.action n)
+  | .actionWithIdDealtExcessDamage n => .actionWithIdDealtExcessDamage (m.action n)
   | .triggerId n inner => .triggerId (m.target n) (mapTrigger m inner)
   | .modeWithIdChosen who n => .modeWithIdChosen (mapSelector m who) n
   | .spendManaCreatedByAction n inner =>
