@@ -46,7 +46,7 @@ def parseCantAttackUnlessNOther (cardName : String) (line : String) : Option Car
               (.count
                 (.intersection [
                   .not .this,
-                  .permanent,
+                  .zone .battlefield,
                   .subtype st,
                   youControl]))
               (Value.nat n))
@@ -117,7 +117,7 @@ def parseCreaturesWithPlusOneHaveMenace (line : String) : Option CardPart :=
       "each creature you control with a +1/+1 counter on it has menace" then
     some (.ability (.static (.gainAbility
       (.intersection [
-        .permanent, .cardType .creature, youControl, .hasCounter .plusOnePlusOne])
+        .zone .battlefield, .cardType .creature, youControl, .hasCounter .plusOnePlusOne])
       (.keyword .menace))))
   else none
 
@@ -127,7 +127,7 @@ def parseCreaturesWithPlusOneHave (line : String) : Option (List CardPart) :=
     parseKeywordPhrase |>.map fun kws =>
       kws.map fun k => .ability (.static (.gainAbility
         (.intersection [
-          .permanent, .cardType .creature, youControl, .hasCounter .plusOnePlusOne])
+          .zone .battlefield, .cardType .creature, youControl, .hasCounter .plusOnePlusOne])
         (.keyword k)))
 
 /-- `At the beginning of your end step, draw a card.`
@@ -285,7 +285,7 @@ def parseReturnAttachedPowerAtMost (sentence : String) (n : Nat) :
                 extendIntersection [] sel [.powerAtMost (Value.int (p : Int))]
               some (
                 .putOntoBattlefieldInState
-                  (.intersection [.inGraveyard, .source .this])
+                  (.intersection [.zone .graveyard, .source .this])
                   [.attachedTo (.target n among)],
                 n + 1)
 
@@ -342,16 +342,16 @@ def parseAffinity (line : String) : Option CardPart :=
 
 /-- Creature permanents with flying that this object's controller controls. -/
 def flyingCreaturesYouControl : Selector :=
-  .intersection [.permanent, .cardType .creature, .keyword .flying, youControl]
+  .intersection [.zone .battlefield, .cardType .creature, .keyword .flying, youControl]
 
 /-- Treasure artifacts this object's controller controls. -/
 def treasuresYouControl : Selector :=
   .intersection [
-    .permanent, .cardType .artifact, .subtype .treasure, youControl]
+    .zone .battlefield, .cardType .artifact, .subtype .treasure, youControl]
 
 /-- An attacking creature. -/
 def attackingCreatureTarget : Selector :=
-  .intersection [.permanent, .cardType .creature, .attacking .all]
+  .intersection [.zone .battlefield, .cardType .creature, .attacking .all]
 
 /-- `he`, `she`, `it`, `they`, or another reference to this card. -/
 def damageSource? (cardName who : String) : Bool :=
@@ -614,7 +614,7 @@ def parseThisOrNontokenSubtypeEntersCreate (cardName line : String) : Option Car
                   (.intersection [
                     .not .this,
                     .not .token,
-                    .permanent,
+                    .zone .battlefield,
                     .cardType .creature,
                     .subtype st,
                     youControl])))
@@ -633,11 +633,11 @@ def parseActivatedDiscardDraw (cardName : String) (line : String) (n : Nat) :
 
 /-- Cards in this object's controller's hand. -/
 def cardsInYourHand : Selector :=
-  .intersection [.inHand, .owner (.controller .this)]
+  .intersection [.zone .hand, .owner (.controller .this)]
 
 /-- Cards in this object's controller's graveyard. -/
 def cardsInYourGraveyard : Selector :=
-  .intersection [.inGraveyard, .owner (.controller .this)]
+  .intersection [.zone .graveyard, .owner (.controller .this)]
 
 /-- `Threshold — This creature gets +1/+1 as long as there are seven or more cards in your graveyard.`
 `Threshold` is an ability word (CR 207.2c / 702.62) and may be omitted.
@@ -706,7 +706,7 @@ def parseAnotherSubtypeOrEquipmentEntersDraw (line : String) : Option CardPart :
               some (.ability (.triggered
                 (.enter (.intersection [
                   .not .this,
-                  .permanent,
+                  .zone .battlefield,
                   .union [.subtype st, .subtype .equipment],
                   youControl]))
                 (.draw (.controller .this) 1)))
@@ -732,7 +732,7 @@ def parseEnterReturnOtherPlusOne (cardName : String) (line : String) (n : Nat) :
               .actionId n
                 (.returnToHand
                   (.targets n (.range 0 1)
-                    (.intersection [.not .this, .permanent, youControl]))),
+                    (.intersection [.not .this, .zone .battlefield, youControl]))),
               .if (.happened (.actionWithId n) .gameStart)
                 [.putCounter (.source .this) .plusOnePlusOne 1]],
             n + 1)
@@ -824,7 +824,7 @@ def parseEnterLookAtTopReveal (cardName : String) (line : String) (n : Nat) :
                 (fun kind =>
                   (twoSubtypesCard? kind).map (fun (a, b) =>
                     Selector.union [.subtype a, .subtype b]) <|>
-                  (if kind == "a permanent card" then some .permanent else none))
+                  (if kind == "a permanent card" then some (.zone .battlefield) else none))
                 |>.map fun kindSel =>
                   (.sequence (lookAtTopMayRevealToHand n k kindSel
                     .putOnLibraryBottomInRandomOrder),
@@ -838,7 +838,7 @@ def parseCreateTappedTreasuresEqualOppArtifacts (sentence : String) :
       "create x tapped treasure tokens, where x is the number of artifacts your opponents control" then
     some (.createTokens (.controller .this)
       (.count (.intersection [
-        .permanent, .cardType .artifact,
+        .zone .battlefield, .cardType .artifact,
         .controlled (.opponent (.controller .this))]))
       PredefinedToken.treasureToken
       [.tapped])
@@ -893,7 +893,7 @@ def tokensCreatedUnderYou : Selector :=
 
 /-- A token permanent this object's controller controls. -/
 def tokenYouControl : Selector :=
-  .intersection [.permanent, .token, youControl]
+  .intersection [.zone .battlefield, .token, youControl]
 
 /-- `If you would draw a card except the first one you draw in each of your
 draw steps, draw two cards instead.`

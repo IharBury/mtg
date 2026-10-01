@@ -320,14 +320,14 @@ def parseEnterExileOppGyLoseLife (cardName : String) (line : String) (n : Nat) :
               .exile
                 (.targets n (.range 0 1)
                   (.intersection [
-                    .inGraveyard,
+                    .zone .graveyard,
                     .owner (.opponent (.controller .this))])),
               .loseLife (.opponent (.controller .this)) (Value.nat k)],
            n + 1)
   | _ => none
 
 def returnThisFromGraveyardToHand : CardAction :=
-  .returnToHand (.intersection [.inGraveyard, .source .this])
+  .returnToHand (.intersection [.zone .graveyard, .source .this])
 
 def parseReturnThisFromGraveyard (sentence : String) : Option CardAction :=
   if sentenceIs sentence "return this card from your graveyard to your hand" then
@@ -459,7 +459,7 @@ def parseAnotherElfEntersGets (line : String) : Option CardPart :=
     (.enter
       (.intersection [
         .not .this,
-        .permanent,
+        .zone .battlefield,
         .subtype .elf,
         youControl]))
     (· == (1, 1))
@@ -533,7 +533,7 @@ def parseCardsInHandPowerCharacteristic (cardName : String) (line : String) :
     fun whose =>
       if possessiveSelf cardName whose then
         some [.ability (.static (.setPower .this
-          (.count (.intersection [.inHand, .owner (.controller .this)]))))]
+          (.count (.intersection [.zone .hand, .owner (.controller .this)]))))]
       else none
 
 /-- `When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle.`
@@ -548,7 +548,7 @@ def parseEnterSearchForest (cardName : String) (line : String) : Option CardPart
           (.selected
             (.controller .this)
             (.range 1 1)
-            (.intersection [.inLibrary, .subtype .forest]))])
+            (.intersection [.zone .library, .subtype .forest]))])
     else none
 
 /-- One card part that does not advance the target number. -/
@@ -842,7 +842,7 @@ def parseCastAsThoughFlash (line : String) : Option CardPart :=
       .ability (.everywhereStatic (
         .canBeCastAsThoughWithFlashIf
           .this
-          (.any (.intersection [.permanent, .subtype st, .controlled .caster]))))
+          (.any (.intersection [.zone .battlefield, .subtype st, .controlled .caster]))))
 
 /-- `<permanents> get +P/+T.` No duration is printed, so this is a static
 ability (CR 604.2 / 613.4c). A zero bonus is omitted. `+0/+0` is not an
@@ -905,7 +905,7 @@ def parseOtherSubtypeYouControlGets (line : String) : Option (List CardPart) :=
         | some st, some (p, t) =>
           staticPowerToughness
             (.intersection [
-              .not .this, .permanent, .cardType .creature, .subtype st, youControl])
+              .not .this, .zone .battlefield, .cardType .creature, .subtype st, youControl])
             p t
         | _, _ => none
 

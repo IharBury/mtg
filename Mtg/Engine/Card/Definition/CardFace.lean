@@ -249,9 +249,9 @@ def casterControlsPermanentSubtype? : Selector → Option String
       | .subtype st => some st.toString
       | _ => none
     let only := parts.all fun
-      | .permanent | .controlled .caster | .subtype _ => true
+      | .zone .battlefield | .controlled .caster | .subtype _ => true
       | _ => false
-    if only && parts.contains .permanent && parts.contains (.controlled .caster) then
+    if only && parts.contains (.zone .battlefield) && parts.contains (.controlled .caster) then
       match subtypes with
       | [t] => some t
       | _ => none
@@ -330,7 +330,7 @@ def mergeCreaturesYouControlGet (b : CardFace) (p t : Int) : CardFace :=
 by an action. -/
 def chosenTypeCreaturesYouControl? : Selector → Bool
   | .intersection [
-      .permanent,
+      .zone .battlefield,
       .cardType .creature,
       .controlled (.controller .this),
       .hasCreatureTypeChosenByAction _] => true
@@ -347,12 +347,12 @@ def mergeChosenTypeCreaturesGet (b : CardFace) (p t : Int) : CardFace :=
 
 /-- Legendary creatures this object's controller controls. -/
 def legendaryCreaturesYouControl : Selector :=
-  .intersection [.permanent, .cardType .creature, .controlled (.controller .this), .supertype .legendary]
+  .intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this), .supertype .legendary]
 
 /-- Nonlegendary creatures this object's controller controls. -/
 def nonlegendaryCreaturesYouControl : Selector :=
   .intersection
-    [.permanent, .cardType .creature, .not (.supertype .legendary), .controlled (.controller .this)]
+    [.zone .battlefield, .cardType .creature, .not (.supertype .legendary), .controlled (.controller .this)]
 
 def mergeLegendaryCreaturesGet (b : CardFace) (p t : Int) : CardFace :=
   match b.staticAbilities.back? with
@@ -392,7 +392,7 @@ def applyIntegerPowerToughness (b : CardFace) (sel : Selector) (p t : Int) : Car
       mergeCreaturesYouControlGet b p t
     else
       match sel with
-      | .intersection [.permanent, .cardType .creature, .subtype st, .controlled (.controller .this)] =>
+      | .intersection [.zone .battlefield, .cardType .creature, .subtype st, .controlled (.controller .this)] =>
         mergeSubtypeCreaturesYouControlGet b st.toString p t
       | _ => b
 
@@ -463,7 +463,7 @@ def teamGetsIfEnduringStory? (effects : List ContinuousEffect) : Option (Int × 
 /-- Artifacts and creatures this object's controller controls. -/
 def artifactsAndCreaturesYouControl? : Selector → Bool
   | .intersection
-      [.permanent,
+      [.zone .battlefield,
         .union [.cardType .artifact, .cardType .creature],
         .controlled (.controller .this)] => true
   | _ => false
@@ -477,12 +477,12 @@ def teamWardIfEnduringStory? : List ContinuousEffect → Option Nat
 
 /-- Creature permanents, with no further restriction. -/
 def allCreaturePermanents? : Selector → Bool
-  | .intersection [.permanent, .cardType .creature] => true
+  | .intersection [.zone .battlefield, .cardType .creature] => true
   | _ => false
 
 /-- Creatures with power at most `n`, and nothing else. -/
 def powerAtMostCreatureBlocker? : Selector → Option Int
-  | .intersection [.permanent, .cardType .creature, .powerAtMost v] =>
+  | .intersection [.zone .battlefield, .cardType .creature, .powerAtMost v] =>
     valToInt? v
   | _ => none
 
@@ -505,7 +505,7 @@ def addEquipmentCostReduction (b : CardFace) (k : Nat) : CardFace :=
 controller controls, so that ability triggers twice instead of once. -/
 def extraTriggerSubtypeYouControl? : List ContinuousEffect → Option String
   | [.replace
-      (.abilityTriggers (.intersection [.permanent, .subtype st, ctl]))
+      (.abilityTriggers (.intersection [.zone .battlefield, .subtype st, ctl]))
       [.duplicateReplacingTrigger (.nat 2)]] =>
     if ctl == .controlled (.controller .this) then some st.toString else none
   | _ => none
@@ -549,11 +549,11 @@ def printedStaticApplied? (b : CardFace) : ContinuousEffect → Option CardFace
   | .if (.not (.and (.not (.any a)) (.not (.any p)))) [.gainAbility who (.keyword .indestructible)] =>
     let you := Selector.controlled (.controller .this)
     if (who == .this || who == .source .this) &&
-        a == .intersection [.permanent, .cardType .artifact, .cardType .creature, you] &&
-        p == .intersection [.permanent, .subtype .plan, you] then
+        a == .intersection [.zone .battlefield, .cardType .artifact, .cardType .creature, you] &&
+        p == .intersection [.zone .battlefield, .subtype .plan, you] then
       some { b with staticAbilities := b.staticAbilities.push .indestructibleIfArtifactCreatureOrPlan }
     else none
-  | .addPower who (.count (.intersection [.not .this, .permanent, .cardType .artifact, you])) =>
+  | .addPower who (.count (.intersection [.not .this, .zone .battlefield, .cardType .artifact, you])) =>
     if (who == .this || who == .source .this) && you == .controlled (.controller .this) then
       some { b with staticAbilities := b.staticAbilities.push (.getsPowerPerOtherArtifact 1) }
     else none
@@ -567,12 +567,12 @@ def printedStaticApplied? (b : CardFace) : ContinuousEffect → Option CardFace
   | .canPlay who card =>
     if who == .controller .this &&
         card == .intersection
-          [.inGraveyard, .cardType .land, .owner (.controller .this)] then
+          [.zone .graveyard, .cardType .land, .owner (.controller .this)] then
       some { b with staticAbilities := b.staticAbilities.push .mayPlayLandsFromGraveyard }
     else none
   | .if (.targetsIncludeAny .this among) [.reduceCost .this [.mana [.generic n]]] =>
     match among, b.activatedAbilities.back? with
-    | .intersection [.permanent, .cardType .creature, .powerAtMost (.int k)], some ab =>
+    | .intersection [.zone .battlefield, .cardType .creature, .powerAtMost (.int k)], some ab =>
       if n != 0 then
         some { b with
           activatedAbilities :=
@@ -1122,7 +1122,7 @@ def partSetsCreaturesYouControlPower : CardPart → Bool
 its controller's hand. -/
 def partSetsCardsInHandPower : CardPart → Bool
   | .ability (.static (.setPower .this (.count among))) =>
-    among == .intersection [.inHand, .owner (.controller .this)]
+    among == .intersection [.zone .hand, .owner (.controller .this)]
   | _ => false
 
 /-- A static continuous effect, if this part is one. -/

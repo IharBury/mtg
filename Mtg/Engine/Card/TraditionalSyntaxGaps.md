@@ -82,14 +82,15 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   Lore counters are Saga chapters. Poison counters as a Ward cost stay
   `Cost.getPoisonCounters`.
 - **Selector** — `this`, `source`, `controller`, `caster` (the player who would cast this spell), `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
-  `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
+  `cardType`, `union`, `zone` (an object in that zone; `.battlefield` is a
+  permanent), `controlled`, `tapped`, `keyword`,
   `keywordAbility`, `powerAtLeast`, `powerAtMost`, `hasCounter`, `subtype`,
   `spell`, `ability`, `abilityWithId`, `permanentSpell`, `hasTarget`,
   `isTargetOf`, `player`, `opponent`, `owner`, `attacking`, `blocking`,
   `token`, `wasObjectOfAction`, `wasArgumentOfTrigger`, `replacingObject`,
   `wasCreatedByAction`, `affectedByAction` (the new object a numbered action
-  moved onto the battlefield; CR 400.7), `hostOf`, `inGraveyard`, `wasObjectSince`,
-  `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`
+  moved onto the battlefield; CR 400.7), `hostOf`, `wasObjectSince`,
+  `supertype`, `variable`, `topOfLibrary`
   (whose library, how many cards), `hasCreatureTypeChosenByAction` (the
   creature type chosen by a numbered `CardAction.chooseCreatureType`),
   `manaValueAtMost` (mana value at most a `Value`), `castFromZone` (the zone
@@ -264,7 +265,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | --- | --- |
 | `Selector.topNOfLibrary` | `Selector.topOfLibrary` of a player and a `Value` count |
 | `Selector.countOf`, `CardAction.repeatN`, `CardAction.addManaPer` | `Value.count`, `totalPower`, `greatestPower`, `greatestToughness`, `greatestManaValue`, `product`; `draw`, `dealDamage`, `gainLife`, `loseLife`, `mill`, `createTokens`, `addManaOfOneColor`, and `Keyword.amass` take a `Value` |
-| `Selector.inHand`, `inExile`, `powerAtMost`, `hasCounter` | The `Selector` constructors of those names |
+| `Selector.inHand`, `inExile`, `powerAtMost`, `hasCounter` | `Selector.zone` of `.hand` and `.exile`; `powerAtMost` and `hasCounter` |
 | `Selector.eachPlayer` | `Selector.player` / `Selector.opponent`, with `forEachVariable` |
 | `Selector.named`, colorless tokens under `Selector.color` | `CardPart.name` and `CardPart.colorIndicator []` on `createTokens` |
 | `Selector.putFromBattlefieldThisTurn` | `Selector.wasObjectSince` of `Trigger.putToGraveyard` of permanents, since `Trigger.turnStart` |
@@ -641,7 +642,7 @@ in the catalog as `CardDef` helpers.
   `Value.count (Selector.wasObjectOfAction n)`. Converted.
 - **Black Widow, Super Spy** — Combat-damage exile from the top until a
   nonland, then an optional +1/+1 or cast-the-exiled-card.
-  `Selector.topOfLibrary` and `Selector.inExile` exist. Exile-until and
+  `Selector.topOfLibrary` and `Selector.zone .exile` exist. Exile-until and
   “mana of any type can be spent” are missing.
 - **Captain Mar-Vell, Space-Born** — As long as an opponent has cast a spell
   this turn, you may cast spells as though they had flash. Now spellable:

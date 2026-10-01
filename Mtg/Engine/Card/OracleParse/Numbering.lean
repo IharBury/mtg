@@ -68,8 +68,8 @@ def collectKeyword : Keyword → List Nat × List Nat
   | _ => ([], [])
 
 def collectSelector : Selector → List Nat × List Nat
-  | .this | .caster | .all | .permanent | .tapped | .spell | .ability | .permanentSpell
-  | .player | .token | .replacingObject | .inGraveyard | .inLibrary | .inHand | .inExile =>
+  | .this | .caster | .all | .zone _ | .tapped | .spell | .ability | .permanentSpell
+  | .player | .token | .replacingObject =>
     ([], [])
   | .source s | .controller s | .not s | .controlled s | .hasTarget s | .isTargetOf s
   | .opponent s | .owner s | .attacking s | .blocking s | .hostOf s =>
@@ -295,7 +295,7 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .all => .all
   | .cardType t => .cardType t
   | .union ss => .union (mapSelectors m ss)
-  | .permanent => .permanent
+  | .zone z => .zone z
   | .controlled s => .controlled (mapSelector m s)
   | .tapped => .tapped
   | .keyword k => .keyword (mapKeyword m k)
@@ -322,11 +322,7 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .wasCreatedByAction n => .wasCreatedByAction (m.action n)
   | .affectedByAction n => .affectedByAction (m.action n)
   | .hostOf s => .hostOf (mapSelector m s)
-  | .inGraveyard => .inGraveyard
   | .wasObjectSince a b => .wasObjectSince (mapTrigger m a) (mapTrigger m b)
-  | .inLibrary => .inLibrary
-  | .inHand => .inHand
-  | .inExile => .inExile
   | .supertype s => .supertype s
   | .variable n => .variable (m.target n)
   | .topOfLibrary s v => .topOfLibrary (mapSelector m s) (mapValue m v)
@@ -600,15 +596,15 @@ def separateActionIds (parts : List CardPart) : List CardPart :=
 #guard separateActionIds [
     .ability (.triggered (.enter .this)
       (.sequence [
-        .actionId 3 (.attach (.targets 1 Range.any .permanent) (.target 2 .permanent)),
+        .actionId 3 (.attach (.targets 1 Range.any (.zone .battlefield)) (.target 2 (.zone .battlefield))),
         .dealDamageEqualToPower (.targetReference 2)
-          (.targets 4 (.range 0 1) .permanent)]))] ==
+          (.targets 4 (.range 0 1) (.zone .battlefield))]))] ==
   [
     .ability (.triggered (.enter .this)
       (.sequence [
-        .actionId 1 (.attach (.targets 1 Range.any .permanent) (.target 2 .permanent)),
+        .actionId 1 (.attach (.targets 1 Range.any (.zone .battlefield)) (.target 2 (.zone .battlefield))),
         .dealDamageEqualToPower (.targetReference 2)
-          (.targets 3 (.range 0 1) .permanent)]))]
+          (.targets 3 (.range 0 1) (.zone .battlefield))]))]
 #guard separateActionIds [.actions [
     .actionId 1 (.counter (.target 1 .spell)),
     .actionId 2 (.exile .replacingObject)]] ==
@@ -616,10 +612,10 @@ def separateActionIds (parts : List CardPart) : List CardPart :=
     .actionId 1 (.counter (.target 1 .spell)),
     .actionId 2 (.exile .replacingObject)]]
 #guard separateActionIds [.actions [
-    .continuous [.addPower (.target 1 .permanent) 3] .endOfTurn,
+    .continuous [.addPower (.target 1 (.zone .battlefield)) 3] .endOfTurn,
     .actionId 2 (.exile (.topOfLibrary (.controller .this) 1))]] ==
   [.actions [
-    .continuous [.addPower (.target 1 .permanent) 3] .endOfTurn,
+    .continuous [.addPower (.target 1 (.zone .battlefield)) 3] .endOfTurn,
     .actionId 1 (.exile (.topOfLibrary (.controller .this) 1))]]
 
 end OracleParts

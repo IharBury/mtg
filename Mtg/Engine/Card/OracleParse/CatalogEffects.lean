@@ -26,7 +26,7 @@ def parseMayAction (s : String) : Option CardAction :=
         (.selected (.controller .this) (.range 1 1)
           (.intersection (
             (if other then [.not .this] else []) ++
-            [.permanent, selectorOfTypes ts, youControl])))
+            [.zone .battlefield, selectorOfTypes ts, youControl])))
   match split2? s " or discard " with
   | some (sac, discarded) =>
     match (after? sac "sacrifice ").bind sacrifice, parseCardCount discarded with
@@ -95,10 +95,10 @@ def parseChooseGraveyardCardReturn (ss : List String) (n : Nat) :
           " card in your graveyard that was put there from anywhere this turn").bind
         fun kind =>
           let kindSel? : Option Selector :=
-            if kind == "permanent" then some .permanent else (typeOfOracle? kind).map Selector.cardType
+            if kind == "permanent" then some (.zone .battlefield) else (typeOfOracle? kind).map Selector.cardType
           kindSel?.map fun kindSel =>
             ([.returnToHand (.target n (.intersection [
-                .inGraveyard, kindSel, .owner (.controller .this),
+                .zone .graveyard, kindSel, .owner (.controller .this),
                 .wasObjectSince (.putToGraveyard .all) .turnStart]))], n + 1)
     else none
   | _ => none
@@ -267,7 +267,7 @@ def parseThenIfControlSacrificeIfYouDo (cardName : String) (ss : List String) (n
           (parseCatalogSentence cardName effect n1).map fun (last, n2) =>
             (firstActions ++ [
               .if (.greaterOrEqual
-                  (.count (.intersection [.permanent, .subtype st, youControl])) (Value.nat k))
+                  (.count (.intersection [.zone .battlefield, .subtype st, youControl])) (Value.nat k))
                 [.actionId n (.sacrifice .this),
                  .if (.happened (.actionWithId n) .gameStart) (flattenAction last)]],
              n2)
@@ -340,7 +340,7 @@ def parseChooseTypeReturnOthers (ss : List String) (n : Nat) :
         sentenceIs ret "return all creatures that aren't of the chosen type to their owners' hands" then
       some ([.actionId n (.chooseCreatureType (.controller .this)),
         .returnToHand (.intersection [
-          .permanent, .cardType .creature, .not (.hasCreatureTypeChosenByAction n)])], n + 1)
+          .zone .battlefield, .cardType .creature, .not (.hasCreatureTypeChosenByAction n)])], n + 1)
     else none
   | _ => none
 
@@ -432,7 +432,7 @@ def parseChooseTypeCreateForEach (ss : List String) (n : Nat) :
           ([.actionId n (.chooseCreatureType (.controller .this)),
             .forEachVariable (n + 1)
               (.intersection [
-                .permanent, .cardType .creature, youControl, .hasCreatureTypeChosenByAction n])
+                .zone .battlefield, .cardType .creature, youControl, .hasCreatureTypeChosenByAction n])
               [token]], n + 2)
   | _ => none
 
@@ -480,7 +480,7 @@ def parseExileAllPutFromHandReturnExiled (cardName : String) (ss : List String) 
           .actionId n (.exile (permanentWith ts [])),
           .forEachVariable (n + 1) .player [
             .optional p (.putOntoBattlefield
-              (.selected p .any (.intersection [.inHand, .owner p, .cardType t])))],
+              (.selected p .any (.intersection [.zone .hand, .owner p, .cardType t])))],
           .returnToHand (.wasCreatedByAction n),
           .exile .this], n + 2)
     | _, _ => none
@@ -571,7 +571,7 @@ def parseAttachEquipmentThenDamage (cardName : String) (ss : List String) (n : N
             .if (.greaterOrEqual (.count (.wasObjectOfAction id)) (.nat 1))
               [.dealDamageEqualToPower (.targetReference (n + 1))
                 (.targets (id + 1) (.range 0 1)
-                  (.intersection [.permanent, .cardType .creature]))]],
+                  (.intersection [.zone .battlefield, .cardType .creature]))]],
             id + 2)
         else none
       | _ => none
@@ -593,7 +593,7 @@ def parseOpponentRevealsChooseNonlandDiscard (ss : List String) (n : Nat) :
         .actionId n
           (.reveal
             (.intersection [
-              .inHand,
+              .zone .hand,
               .owner (.target n (.opponent (.controller .this)))])),
         .defineSelectorVariable (n + 1)
           (.selected (.controller .this) (.range 1 1)

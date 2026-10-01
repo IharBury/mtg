@@ -307,7 +307,7 @@ def leftoverMaySacDrawTreasure? : CardAction → Bool
 /-- Creature cards in this object's controller's graveyard. -/
 def leftoverYourGyCreatures? : Selector → Bool
   | .intersection fs =>
-    fs.any (fun s => s == .inGraveyard) &&
+    fs.any (fun s => s == .zone .graveyard) &&
       fs.any (fun
         | .cardType .creature => true
         | _ => false) &&
@@ -503,7 +503,7 @@ def leftoverMayPayHasteUnblockable? : CardAction → Bool
 def leftoverYourGraveyardCards? : Selector → Bool
   | .intersection fs =>
     fs.length == 2 &&
-      fs.any (· == .inGraveyard) &&
+      fs.any (· == .zone .graveyard) &&
       fs.any (· == .owner (.controller .this))
   | _ => false
 
@@ -574,7 +574,7 @@ def leftoverLandFilter : Selector → Bool
 
 /-- A permanent card (among milled cards). -/
 def leftoverPermanentCardFilter : Selector → Bool
-  | .permanent => true
+  | .zone .battlefield => true
   | _ => false
 
 /-- A subtype card or an enchantment card. -/

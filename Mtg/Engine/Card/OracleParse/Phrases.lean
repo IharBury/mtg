@@ -17,7 +17,7 @@ def selectorOfTypes : List CardType → Selector
 
 /-- A permanent of `ts`, plus any further constraints. -/
 def permanentWith (ts : List CardType) (more : List Selector := []) : Selector :=
-  .intersection ([.permanent, selectorOfTypes ts] ++ more)
+  .intersection ([.zone .battlefield, selectorOfTypes ts] ++ more)
 
 /-- Controlled by this object's controller (`you control`). -/
 def youControl : Selector :=
@@ -38,7 +38,7 @@ def andYouControl (sel : Selector) : Selector :=
 
 /-- Equipment this object's controller controls. -/
 def equipmentYouControl : Selector :=
-  .intersection [.permanent, .subtype .equipment, youControl]
+  .intersection [.zone .battlefield, .subtype .equipment, youControl]
 
 /-- Text before a trailing `you control`, and whether that phrase was present. -/
 def splitYouControl (s : String) : String × Bool :=
@@ -87,7 +87,7 @@ def parseBattlefieldTarget (s : String) : Option Selector :=
   opened.bind fun (another, rest) =>
     let (obj, controlled) := splitYouControl rest
     let head : List Selector :=
-      (if another then [.not .this] else []) ++ [.permanent]
+      (if another then [.not .this] else []) ++ [.zone .battlefield]
     let tail : List Selector := if controlled then [youControl] else []
     match typesInPhrase obj with
     | some ts => some (.intersection (head ++ [selectorOfTypes ts] ++ tail))
@@ -153,7 +153,7 @@ def parseControlledPhrase (s : String) : Option Selector :=
   | none => none
   | some ts =>
     let head : List Selector :=
-      (if other then [.not .this] else []) ++ [.permanent, selectorOfTypes ts]
+      (if other then [.not .this] else []) ++ [.zone .battlefield, selectorOfTypes ts]
     let tail : List Selector :=
       if controlled then [youControl] else []
     some (.intersection (head ++ tail))

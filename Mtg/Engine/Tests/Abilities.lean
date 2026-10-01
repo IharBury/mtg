@@ -1111,7 +1111,7 @@ def massAbilityStrip : CardDef := {
   name := "Mass Ability Strip"
   types := #[.enchantment]
   removesAllAbilitiesFrom := #[.intersection
-    [.permanent, .cardType .creature, .controlled (.controller .this)]]
+    [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]]
 }
 
 def selfAbilityStrip : CardDef := {
@@ -1122,7 +1122,7 @@ def selfAbilityStrip : CardDef := {
   keywords := Keyword.flying.toKeywords
   staticAbilities := #[.creaturesYouControlGet 1 1]
   removesAllAbilitiesFrom := #[.intersection
-    [.permanent, .cardType .creature]]
+    [.zone .battlefield, .cardType .creature]]
 }
 
 /-- Targeted “loses all abilities” compiles to the permanent action. -/
@@ -1136,7 +1136,7 @@ def targetedRemoveAllAbilitiesCompiles : Bool :=
 /-- A selector with no announced target is matched when the effect resolves. -/
 def massRemoveAllAbilitiesCompiles : Bool :=
   let sel := Selector.intersection
-    [.permanent, .cardType .creature, .controlled (.controller .this)]
+    [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]
   (CardAction.toEffect
     (.continuous [.removeAllAbilities sel] .endOfTurn)).resolution ==
     .removeAllAbilities sel
@@ -1210,7 +1210,7 @@ def untilEotAbilityStrip : Game :=
   let g := addPermanent afterDraw giantSpider ⟨0⟩ ⟨0⟩
   g.applyAbilityEffect ⟨0⟩
     (Effect.mkAbility ({})
-      (.removeAllAbilities (.intersection [.permanent, .cardType .creature]))) #[]
+      (.removeAllAbilities (.intersection [.zone .battlefield, .cardType .creature]))) #[]
 
 def untilEotThenTrample : Game :=
   let spider := namedPermanent untilEotAbilityStrip "Giant Spider"

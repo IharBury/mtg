@@ -407,8 +407,9 @@ inductive Selector where
   | all
   | cardType : CardType → Selector
   | union : List Selector → Selector
-  /-- A permanent (CR 110.1). -/
-  | permanent
+  /-- An object in the named zone (CR 400.1). `.battlefield` is a permanent
+  (CR 110.1). -/
+  | zone : ZoneKind → Selector
   /-- Objects whose controller is the given player. -/
   | controlled : Selector → Selector
   /-- A tapped permanent (CR 110.5). -/
@@ -467,17 +468,9 @@ inductive Selector where
   | affectedByAction : Nat → Selector
   /-- The permanent the given object is attached to (CR 301.5 / 303.4). -/
   | hostOf : Selector → Selector
-  /-- An object in a graveyard (CR 404). -/
-  | inGraveyard
   /-- An object that was the object of the first event since the second
   event. -/
   | wasObjectSince : Trigger → Trigger → Selector
-  /-- An object in a library (CR 401). -/
-  | inLibrary
-  /-- An object in a hand (CR 402). -/
-  | inHand
-  /-- An object in exile (CR 406). -/
-  | inExile
   /-- Objects with the given supertype (CR 205.4). -/
   | supertype : CardSupertype → Selector
   /-- Objects bound to this numbered variable. -/

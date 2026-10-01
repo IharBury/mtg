@@ -33,7 +33,7 @@ def activatedAbility (costs : List Cost) (action : CardAction)
           CardAction.leftoverSacrificeArtifactOrDiscardNonlandCost? costs }
     effect :=
       if cyclingBasic then Effect.searchLandTypeToHand "Basic land"
-      else if action == .tap (.target 1 (.intersection [.permanent, .cardType .creature])) then
+      else if action == .tap (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) then
         Effect.tapTargetCreature
       else action.toAbilityEffect
     onceEachTurn
@@ -200,7 +200,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     let you := Selector.controlled (.controller .this)
     if id == id' && id == id'' &&
         among == .intersection [.spell, .cardType .creature, you] &&
-        who == .intersection [.permanent, .cardType .creature, you] then
+        who == .intersection [.zone .battlefield, .cardType .creature, you] then
       some TriggeredAbility.onCastCreaturePlusOneEqualMv
     else none
   | .triggered (.attack .this .all)
@@ -210,7 +210,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
             (.sacrifice
               (.selected picker (.range 1 1)
                 (.intersection [
-                  .not .this, .permanent, .cardType .creature, you])))),
+                  .not .this, .zone .battlefield, .cardType .creature, you])))),
         .if (.happened (.actionWithId id') .gameStart)
           [.putCounter (.source .this) .plusOnePlusOne
             (.greatestPower (.wasObjectOfAction id''))]
@@ -225,13 +225,13 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         .putCounter (.source .this) (.hone)
           (.count
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.target id (.opponent (.controller .this)))])),
         .attach .this
           (.targets id2 (.range 0 1)
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.controller .this)]))
       ]) =>
@@ -266,7 +266,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         .draw drawer (.nat 1),
         .optional chooser (.putOntoBattlefieldInState
           (.selected picker (.range (.nat 1) (.nat 1))
-            (.intersection [.inHand, .owner owner, .cardType .land])) [.tapped])]) =>
+            (.intersection [.zone .hand, .owner owner, .cardType .land])) [.tapped])]) =>
     let you := Selector.controller .this
     if drawer == you && chooser == you && picker == you && owner == you then
       some .onEnterDrawMayPutLandTapped
@@ -280,7 +280,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
       some .onEnterVillainIfGyElseMill
     else none
   | .triggered (.triggerId 1
-      (.enter (.intersection [.not .this, .permanent, .cardType .creature, .controlled (.controller .this)])))
+      (.enter (.intersection [.not .this, .zone .battlefield, .cardType .creature, .controlled (.controller .this)])))
       (.if (.not (.and
           (.not (.greater (.greatestPower (.wasArgumentOfTrigger 1 1)) (.greatestPower (.source .this))))
           (.not (.greater (.greatestToughness (.wasArgumentOfTrigger 1 1))
@@ -288,13 +288,13 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         [.putCounter (.source .this) .plusOnePlusOne 1]) =>
     some (.onWatch Effect.watchHulklingCompare)
   | .triggered (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
-      (.if (.targetsIncludeAny .this (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)]))
+      (.if (.targetsIncludeAny .this (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))
         [.continuous [.gainAbility (.source .this)
           (.activated [.tapSymbol] (.dealDamageEqualToPower (.source .this) (.target _ (.not .this))))]
           .endOfTurn]) =>
     some (.onCasting Effect.castingIronFistTap)
   | .triggered (.attack .this .all)
-      (.if (.happened (.enter (.intersection [.permanent, .cardType .artifact, .controlled (.controller .this)]))
+      (.if (.happened (.enter (.intersection [.zone .battlefield, .cardType .artifact, .controlled (.controller .this)]))
           .turnStart)
         [.draw who (.nat 1)]) =>
     if who == .controller .this then some (.onThisAttack Effect.thisAttackIfArtifactEnteredDraw) else none
@@ -303,7 +303,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.combatStart (.controller .this))
       (.optional chooser (.sequence [
         .actionId id (.putOntoBattlefield (.selected picker (.range (.nat 1) (.nat 1))
-          (.intersection [.inHand, .owner owner, .cardType .artifact]))),
+          (.intersection [.zone .hand, .owner owner, .cardType .artifact]))),
         .if (.anySubtype (.wasObjectOfAction id') .equipment)
           [.attach (.wasObjectOfAction id'') (.source .this)]])) =>
     let you := Selector.controller .this
@@ -344,7 +344,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
       (.putCountersSimultaneously (.controller .this) heroes .plusOnePlusOne)
       (.optional (.controller .this) (.createTokens who (.nat 1) parts [])) =>
     if heroes == .intersection
-        [.not .this, .permanent, .subtype .hero, .controlled (.controller .this)] &&
+        [.not .this, .zone .battlefield, .subtype .hero, .controlled (.controller .this)] &&
         who == .controller .this &&
         CardAction.leftoverTokenKind? parts == some .wall04defender then
       some (.onResource Effect.resourcePlusOneOnHeroesCreateWall)
@@ -352,12 +352,12 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.enterSimultaneously tokens [])
       (.optional (.controller .this) (.draw (.controller .this) (.nat 1))) =>
     if tokens == .intersection
-        [.permanent, .token, .controlled (.controller .this)] then
+        [.zone .battlefield, .token, .controlled (.controller .this)] then
       some (.onWatch Effect.watchTokensEnterMayDraw)
     else none
   | .triggered (.combatStart (.controller .this))
       (.putCounter (.target _ sel) .plusOnePlusOne 1) =>
-    if sel == .intersection [.permanent, .cardType .creature, .controlled (.controller .this)] then
+    if sel == .intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)] then
       some .onCombatPlusOneOnCreatureYouControl
     else none
   | .triggered (.attack .this .all)
@@ -372,7 +372,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.combatStart (.controller .this))
       (.continuous [.addPower (.target _ sel) (.greatestPower src)] .endOfTurn) =>
     if CardAction.leftoverSourceThis src &&
-        sel == .intersection [.not .this, .permanent, .cardType .creature, .controlled (.controller .this)] then
+        sel == .intersection [.not .this, .zone .battlefield, .cardType .creature, .controlled (.controller .this)] then
       some TriggeredAbility.onCombatAnotherGetsSourcePower
     else none
   | .triggered (.combatStart .player)
@@ -380,7 +380,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         .continuous [.addPower others (.int p), .addToughness others' (.int t)] .endOfTurn,
         .continuous [.addPower opps (.int op), .addToughness opps' (.int ot)] .endOfTurn]) =>
     let oppCreatures : Selector :=
-      .intersection [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))]
+      .intersection [.zone .battlefield, .cardType .creature, .controlled (.opponent (.controller .this))]
     match Selector.subtypesYouControl? others with
     | some (subtypes, true) =>
       if others == others' && opps == oppCreatures && opps' == oppCreatures then
@@ -399,14 +399,14 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         .draw drawer (.nat 1),
         .if (.not (.any among))
           [.putOnBottomOfLibrary (.selected chooser (.range (.nat 1) (.nat 1))
-            (.intersection [.inHand, .owner owner]))]]) =>
+            (.intersection [.zone .hand, .owner owner]))]]) =>
     if drawer == .controller .this && chooser == .controller .this &&
         owner == .controller .this && among == Selector.aLegendaryCreatureYouControl then
       some TriggeredAbility.onEnterDrawThenBottomIfNoLegendary
     else none
   | .triggered
       (.enter (.intersection [
-        .not .this, .permanent, .cardType .creature, .controlled (.controller .this),
+        .not .this, .zone .battlefield, .cardType .creature, .controlled (.controller .this),
         .powerAtMost (.int p)]))
       (.optionalPayFor payer [.mana [.generic g]] [.draw drawer (.nat 1)]) =>
     if payer == .controller .this && drawer == .controller .this then
@@ -415,7 +415,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.attack .this .all)
       (.sequence [
         .actionId id (.tap (.selected chooser .any
-          (.intersection [.permanent, .subtype .human, .not .tapped, .controlled (.controller .this)]))),
+          (.intersection [.zone .battlefield, .subtype .human, .not .tapped, .controlled (.controller .this)]))),
         .draw drawer (.count (.wasObjectOfAction id'))]) =>
     if id == id' && chooser == .controller .this && drawer == .controller .this then
       some TriggeredAbility.onAttackTapHumansDraw
@@ -423,20 +423,20 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.or (.enter .this) (.attack .this .all))
       (.sequence [
         .returnToHand (.target id
-          (.intersection [.inGraveyard, .subtype .elf, .owner owner])),
+          (.intersection [.zone .graveyard, .subtype .elf, .owner owner])),
         .gainLife gainer (.greatestPower (.targetReference id'))]) =>
     if id == id' && owner == .controller .this && gainer == .controller .this then
       some TriggeredAbility.onEnterOrAttackReturnElfGainLife
     else none
   | .triggered (.attack .this .all)
       (.continuous [.addPower (.source .this) (.greatestPower among)] .endOfTurn) =>
-    if among == .intersection [.permanent, .cardType .creature, .controlled (.controller .this)] then
+    if among == .intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)] then
       some TriggeredAbility.onAttackPumpByGreatestPower
     else none
   | .triggered (.enter .this)
       (.sequence [
         .actionId id (.destroy (.intersection [
-          .permanent, .union [.cardType .artifact, .cardType .enchantment],
+          .zone .battlefield, .union [.cardType .artifact, .cardType .enchantment],
           .controlled (.opponent (.controller .this))])),
         .gainLife gainer (.count (.wasObjectOfAction id'))]) =>
     if id == id' && gainer == .controller .this then
@@ -451,19 +451,19 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
       (.sequence [
         .actionId id (.attach
           (.targets equipId .any
-            (.intersection [.permanent, .subtype .equipment, .controlled (.controller .this)]))
+            (.intersection [.zone .battlefield, .subtype .equipment, .controlled (.controller .this)]))
           (.target creatureId
-            (.intersection [.permanent, .cardType .creature, .controlled (.controller .this)]))),
+            (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))),
         .if (.greaterOrEqual (.count (.wasObjectOfAction id')) (.nat 1))
           [.dealDamageEqualToPower (.targetReference creatureId')
             (.targets damageId (.range (.nat 0) (.nat 1))
-              (.intersection [.permanent, .cardType .creature]))]]) =>
+              (.intersection [.zone .battlefield, .cardType .creature]))]]) =>
     if id == id' && creatureId == creatureId' &&
         equipId + 1 == creatureId && creatureId + 1 == damageId then
       some TriggeredAbility.onEnterAttachEquipmentThenFight
     else none
   | .triggered
-      (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
+      (.enter (.intersection [.zone .battlefield, .token, .controlled (.controller .this)]))
       (.sequence [
         .if (.didNotHappen (.abilityWithIdResolved id1) .turnStart)
           [.gainLife who1 (.nat 1)],
@@ -476,7 +476,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
             (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved id3b)) .turnStart))
           [.putCounter
             (.intersection
-              [.permanent, .cardType .creature, .controlled (.controller .this)])
+              [.zone .battlefield, .cardType .creature, .controlled (.controller .this)])
             .plusOnePlusOne (.nat 1)]]) =>
     if id1 == id2 && id2 == id2b && id2 == id3 && id3 == id3b &&
         who1 == .controller .this && who2 == .controller .this then
@@ -533,7 +533,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
       some (TriggeredAbility.onThisAttack Effect.thisAttackDrawIfPower4)
     else none
   | .triggered (.draw who .all)
-      (.if (.any (.intersection [.not .this, .permanent, .subtype .hero, ctl]))
+      (.if (.any (.intersection [.not .this, .zone .battlefield, .subtype .hero, ctl]))
         [.dealDamage .this (.target _ (.opponent (.controller .this))) (.nat 1)]) =>
     if CardAction.leftoverYou who && ctl == .controlled (.controller .this) then
       some (TriggeredAbility.onResource Effect.resourceDrawIfAnotherHeroDamage)
@@ -725,7 +725,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
       (.sacrifice
         (.selected (.target _ (.opponent _)) _
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.targetReference _)]))) =>
     some TriggeredAbility.onEnterTargetOpponentSacrificesCreature
@@ -742,7 +742,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
         .exile
           (.targets _
             (.range 0 1)
-            (.intersection [.inGraveyard, .owner (.opponent _)])),
+            (.intersection [.zone .graveyard, .owner (.opponent _)])),
         .loseLife (.opponent _) (.nat n)]) =>
     some (TriggeredAbility.onEnterExileOppGyCardOppsLoseLife n)
   | .triggered (.enter .this) (.discard (.opponent _) 1) =>
@@ -901,7 +901,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     -- lasts until the end of the game.
     if id == id' && who == .controller .this &&
         among == .selected (.controller .this) (.range 1 1) (.intersection [
-          .inGraveyard,
+          .zone .graveyard,
           .owner (.controller .this),
           .union [
             .cardType .artifact,
@@ -1109,7 +1109,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
           [.addPower (.target id sel) (.int 3), .gainAbility (.targetReference id') (.keyword .firstStrike)]
           .endOfTurn]) =>
     if who == .controller .this && drawer == .controller .this && id == id' &&
-        sel == .intersection [.not .this, .permanent, .cardType .creature, .controlled (.controller .this)] then
+        sel == .intersection [.not .this, .zone .battlefield, .cardType .creature, .controlled (.controller .this)] then
       some TriggeredAbility.onYourBeginCombatIfDrawnTwoPumpFirstStrike
     else none
   | .triggered (.combatDamage (.hostOf .this) .player)
@@ -1118,7 +1118,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
         .forEachVariable _ sel [token]]) =>
     if CardAction.leftoverYou chooser &&
         sel == .intersection [
-          .permanent, .cardType .creature, .controlled (.controller .this),
+          .zone .battlefield, .cardType .creature, .controlled (.controller .this),
           .hasCreatureTypeChosenByAction id] &&
         CardAction.leftoverCreateTokensKindN? token == some (.treasure, 1) then
       some TriggeredAbility.onEquippedCombatDamageTreasuresPerChosenType

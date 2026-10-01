@@ -29,7 +29,7 @@ open OracleParts
        (.enter
          (.intersection
            [.not .this,
-            .permanent,
+            .zone .battlefield,
             .cardType .creature]))
        (.draw (.controller .this) (.nat 1)))]
 #guard parseOracleParts (name := "") "When Bilbo Baggins enters, draw a card." == none
@@ -64,7 +64,7 @@ open OracleParts
          (.target
            1
            (.intersection
-             [.permanent, .cardType .creature]))
+             [.zone .battlefield, .cardType .creature]))
          .plusOnePlusOne
          1))]
 #guard parseOracleParts (name := "Lakeshore Apothecary")
@@ -81,7 +81,7 @@ open OracleParts
   "Whenever you draw a card, put a +1/+1 counter on target creature." ==
   some [.ability (
     .triggered (.draw (.controller .this) .all)
-      (.putCounter (.target 1 (.intersection [.permanent, .cardType .creature])) .plusOnePlusOne 1))]
+      (.putCounter (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) .plusOnePlusOne 1))]
 #guard parseOracleParts (name := "")
   "Whenever you draw a card, if you control another Hero, put a +1/+1 counter on this creature." == none
 #guard parseOracleParts (name := "Ravenhill Flock")
@@ -131,7 +131,7 @@ open OracleParts
   "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent." ==
   some [.ability (
     .triggered (.draw (.controller .this) .all)
-      (.if (.any (.intersection [.not .this, .permanent, .subtype .hero, .controlled (.controller .this)]))
+      (.if (.any (.intersection [.not .this, .zone .battlefield, .subtype .hero, .controlled (.controller .this)]))
         [.dealDamage .this (.target 1 (.opponent (.controller .this))) (.nat 1)]))]
 #guard parseOracleParts (name := "Viv Vision, Teen Synthezoid")
   "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater." ==
@@ -160,7 +160,7 @@ open OracleParts
     .continuous
       [.gainAbility
         (.target 1 (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)]))
         (.keyword .hexproof)]
@@ -173,18 +173,18 @@ open OracleParts
       (.continuous
         [.addPower
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this)]) (Value.int 1),
          .addToughness
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.controller .this)]) (Value.int 1)]
         .endOfTurn))]
 #guard parseOracleParts (name := "") "Tap one or two target creatures." ==
   some [.actions [
-    .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature]))]]
+    .tap (.targets 1 (.range 1 2) (.intersection [.zone .battlefield, .cardType .creature]))]]
 #guard parseOracleParts (name := "") "Tap two or one target creatures." == none
 #guard parseOracleParts (name := "") "Tap 0 target creatures." == none
 #guard parseOracleParts (name := "") "Tap 0 or 1 target creatures." == none
@@ -202,7 +202,7 @@ open OracleParts
         (.targetsIncludeAny
           .this
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .tapped]))
         [.reduceCost .this [.mana [.generic 3]]]))]
@@ -214,7 +214,7 @@ open OracleParts
         (.targetsIncludeAny
           .this
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .attacking .all,
             .not .token]))
@@ -227,7 +227,7 @@ open OracleParts
          (.targetsIncludeAny
            .this
            (.intersection
-             [.permanent,
+             [.zone .battlefield,
               .cardType .creature,
               .attacking .all]))
          [.reduceCost
@@ -240,13 +240,13 @@ open OracleParts
   some [.actions [
     .dealDamage
       .this
-      (.target 1 (.intersection [.permanent, .cardType .creature]))
+      (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
       (.nat 5)]]
 #guard parseOracleParts (name := "") "This spell deals 5 damage to target creature." ==
   some [.actions [
     .dealDamage
       .this
-      (.target 1 (.intersection [.permanent, .cardType .creature]))
+      (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
       (.nat 5)]]
 #guard parseOracleParts (name := "") "This spell deals 0 damage to target creature." == none
 #guard parseOracleParts (name := "Smaug, the Great Calamity")
@@ -259,13 +259,13 @@ open OracleParts
     .actions [
       .dealDamage
         .this
-        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
         (.nat 5)]]]
 #guard
   let others : Selector :=
     .intersection [
       .not .this,
-      .permanent,
+      .zone .battlefield,
       .cardType .creature,
       .controlled (.controller .this)]
   parseOracleParts (name := "")
@@ -285,7 +285,7 @@ open OracleParts
       (.target
         1
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)]))]]
 #guard parseOracleParts (name := "")
@@ -295,7 +295,7 @@ open OracleParts
       (.target
         1
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this)])),
     .continuous [.addPower (.targetReference 1) (Value.int 2),
@@ -309,7 +309,7 @@ open OracleParts
                 (.controller .this)
                 (.range 1 1)
                 (.intersection [
-                  .permanent,
+                  .zone .battlefield,
                   .subtype .equipment,
                   .controlled (.controller .this)]))
               (.targetReference 1))
@@ -344,7 +344,7 @@ open OracleParts
         (.target
           1
           (.intersection
-            [.permanent,
+            [.zone .battlefield,
              .cardType .creature,
              .controlled (.controller .this)])),
       .draw (.controller .this) (.nat 1)]]
@@ -399,7 +399,7 @@ open OracleParts
       (.targetSet
         1
         (.range 2 2)
-        (.intersection [.permanent, .not .land])
+        (.intersection [.zone .battlefield, .not .land])
         [.shareCardType])]]
 #guard parseOracleParts (name := "")
   "Exchange control of one target nonland permanent that share a card type." == none
@@ -427,14 +427,14 @@ open OracleParts
           (.targetSet
             1
             (.range 2 2)
-            (.intersection [.permanent, .not .land])
+            (.intersection [.zone .battlefield, .not .land])
             [.shareCardType])]]]
 #guard parseOracleParts (name := "")
   "Target creature's owner puts it on their choice of the top or bottom of their library." ==
   some [.actions [
     .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
       [.putOnTopOfLibrary
-        (.target 1 (.intersection [.permanent, .cardType .creature])),
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature])),
         .putOnBottomOfLibrary (.targetReference 1)]]]
 #guard parseOracleParts (name := "")
   "When this creature dies, target creature an opponent controls gets -1/-1 until end of turn." ==
@@ -446,7 +446,7 @@ open OracleParts
           (.target
             1
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.opponent (.controller .this))])) (Value.int (-1)),
          .addToughness
@@ -462,7 +462,7 @@ open OracleParts
           (.target
             1
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.opponent (.controller .this))])) (Value.int (-1)),
          .addToughness
@@ -478,7 +478,7 @@ open OracleParts
           (.target
             1
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.opponent (.controller .this))])) (Value.int 1),
          .addToughness
@@ -498,7 +498,7 @@ open OracleParts
             (.target
               1
               (.intersection
-                [.permanent,
+                [.zone .battlefield,
                  .cardType .creature,
                  .controlled
                    (.opponent (.controller .this))]))
@@ -515,7 +515,7 @@ open OracleParts
             (.target
               1
               (.intersection
-                [.permanent,
+                [.zone .battlefield,
                  .cardType .creature,
                  .controlled (.controller .this)]))
             (.int (-1)),
@@ -533,19 +533,19 @@ open OracleParts
   "Whenever one or more other creatures die, scry 1." ==
   some [.ability (
     .triggered
-      (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
+      (.dieSimultaneously (.intersection [.not .this, .zone .battlefield, .cardType .creature]) [])
       (.scry (.controller .this) 1))]
 #guard parseOracleParts (name := "Great Fierce Bee")
   "Whenever one or more other creatures die, scry 1. (Look at the top card of your library. You may put that card on the bottom.)" ==
   some [.ability (
     .triggered
-      (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
+      (.dieSimultaneously (.intersection [.not .this, .zone .battlefield, .cardType .creature]) [])
       (.scry (.controller .this) 1))]
 #guard parseOracleParts (name := "")
   "Whenever one or more other creatures die, scry 2." ==
   some [.ability (
     .triggered
-      (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
+      (.dieSimultaneously (.intersection [.not .this, .zone .battlefield, .cardType .creature]) [])
       (.scry (.controller .this) 2))]
 #guard parseOracleParts (name := "Great Fierce Bee")
   "Flying\nWhenever one or more other creatures die, scry 1. (Look at the top card of your library. You may put that card on the bottom.)" ==
@@ -553,7 +553,7 @@ open OracleParts
     .ability (.keyword .flying),
     .ability (
       .triggered
-        (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
+        (.dieSimultaneously (.intersection [.not .this, .zone .battlefield, .cardType .creature]) [])
         (.scry (.controller .this) 1))]
 #guard parseOracleParts (name := "")
   "Whenever one or more creatures die, scry 1." == none
@@ -582,7 +582,7 @@ open OracleParts
           (.targetsIncludeAny
             .this
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .attacking .all,
               .not .token]))
@@ -590,18 +590,18 @@ open OracleParts
     .actions [
       .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
         [.putOnTopOfLibrary
-          (.target 1 (.intersection [.permanent, .cardType .creature])),
+          (.target 1 (.intersection [.zone .battlefield, .cardType .creature])),
           .putOnBottomOfLibrary (.targetReference 1)]]]
 #guard parseOracleParts (name := "") "Destroy target creature." ==
   some [.actions [
-    .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))]]
+    .destroy (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))]]
 #guard parseOracleParts (name := "") "Destroy target spell." == none
 #guard parseOracleParts (name := "") "Destroy target creature with flying." ==
   some [.actions [
     .destroy
       (.target 1
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .keyword .flying]))]]
 #guard parseOracleParts (name := "") "Destroy target creature with power 4 or greater." ==
@@ -609,7 +609,7 @@ open OracleParts
     .destroy
       (.target 1
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .powerAtLeast (Value.int 4)]))]]
 #guard parseOracleParts (name := "") "Destroy target creature with power 0 or greater." == none
@@ -618,7 +618,7 @@ open OracleParts
     .destroy
       (.target 1
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .powerAtMost (Value.int 4)]))]]
 #guard parseOracleParts (name := "") "Destroy target creature with power 4." == none
@@ -630,7 +630,7 @@ open OracleParts
       [.or [
         .sacrificeCount
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .union [.cardType .artifact, .cardType .creature]])
           1,
         .mana [.generic 4]]]))]
@@ -642,7 +642,7 @@ open OracleParts
          .this
          [.sacrificeCount
             (.intersection
-              [.permanent,
+              [.zone .battlefield,
                .union
                  [.cardType .artifact,
                   .cardType .creature]])
@@ -652,7 +652,7 @@ open OracleParts
 #guard parseOracleParts (name := "")
   "As an additional cost to cast this spell, discard a card or pay {4}." ==
   some [.ability (.stackStatic (.additionalCost .this [.or [
-    .discard (.selected (.controller .this) (.range 1 1) (.intersection [.inHand, .owner (.controller .this)])),
+    .discard (.selected (.controller .this) (.range 1 1) (.intersection [.zone .hand, .owner (.controller .this)])),
     .mana [.generic 4]]]))]
 #guard parseOracleParts (name := "")
   "As an additional cost to cast this spell, discard two cards or pay {4}." == none
@@ -666,13 +666,13 @@ open OracleParts
         [.or [
           .sacrificeCount
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .union [.cardType .artifact, .cardType .creature]])
             1,
           .mana [.generic 4]]])),
     .actions [
       .destroy
-        (.target 1 (.intersection [.permanent, .cardType .creature]))]]
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))]]
 #guard parseOracleParts (name := "Desolation Prowler")
   "Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn." ==
   some [.ability (
@@ -709,7 +709,7 @@ open OracleParts
       (.attack .this .all)
       (.any
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.controller .this),
           .powerAtLeast (Value.int 4)]))
@@ -728,7 +728,7 @@ open OracleParts
   "Put a +1/+1 counter on up to one target creature. Target player gains 2 life." ==
   some [.actions [
     .putCounter
-      (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
+      (.targets 1 (.range 0 1) (.intersection [.zone .battlefield, .cardType .creature]))
       .plusOnePlusOne
       1,
     .gainLife (.target 2 .player) 2]]
@@ -738,7 +738,7 @@ open OracleParts
         (.target
           1
           (.intersection
-            [.permanent, .cardType .creature]))
+            [.zone .battlefield, .cardType .creature]))
         .plusOnePlusOne
         1]]
 #guard parseOracleParts (name := "")
@@ -749,7 +749,7 @@ open OracleParts
           1
           (.range (.nat 0) (.nat 1))
           (.intersection
-            [.permanent, .cardType .creature]))
+            [.zone .battlefield, .cardType .creature]))
         .plusOnePlusOne
         2]]
 #guard parseOracleParts (name := "") "Target opponent gains 2 life." == none
@@ -767,7 +767,7 @@ open OracleParts
       .subtype .adventure,
       .actions [
         .putCounter
-          (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
+          (.targets 1 (.range 0 1) (.intersection [.zone .battlefield, .cardType .creature]))
           .plusOnePlusOne
           1,
         .gainLife (.target 2 .player) 2]]]
@@ -795,7 +795,7 @@ open OracleParts
           (.target 1 (.opponent (.controller .this)))
           (.range 1 1)
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.targetReference 1)]))))]
 #guard parseOracleParts (name := "Crude Bent Blade")
@@ -808,7 +808,7 @@ open OracleParts
           (.target 1 (.opponent (.controller .this)))
           (.range 1 1)
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.targetReference 1)]))))]
 #guard parseOracleParts (name := "Gandalf")
@@ -854,7 +854,7 @@ open OracleParts
             (.target 1 (.opponent (.controller .this)))
             (.range 1 1)
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .cardType .creature,
               .controlled (.targetReference 1)])))),
     .ability (.static (.addPower (.hostOf .this) (Value.int 2))),
@@ -871,7 +871,7 @@ open OracleParts
   some [.ability (.static (.forbid (.block .this .any)))]
 #guard parseOracleParts (name := "") "This creature can't block unless you control a Goblin." ==
   some [.ability (.static (.if
-    (.not (.any (.intersection [.permanent, .subtype .goblin, .controlled (.controller .this)])))
+    (.not (.any (.intersection [.zone .battlefield, .subtype .goblin, .controlled (.controller .this)])))
     [.forbid (.block .this .any)]))]
 #guard parseOracleParts (name := "") "This creature can't block unless you control a Gandalf." ==
   none
@@ -883,7 +883,7 @@ open OracleParts
       (.sequence [
         .exile
           (.targets 1 (.range 0 1)
-            (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
+            (.intersection [.zone .graveyard, .owner (.opponent (.controller .this))])),
         .loseLife (.opponent (.controller .this)) 2]))]
 #guard parseOracleParts (name := "")
   "When this creature enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life." ==
@@ -893,7 +893,7 @@ open OracleParts
       (.sequence [
         .exile
           (.targets 1 (.range 0 1)
-            (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
+            (.intersection [.zone .graveyard, .owner (.opponent (.controller .this))])),
         .loseLife (.opponent (.controller .this)) 2]))]
 #guard parseOracleParts (name := "Gollum the Abandoned")
   "When Bilbo enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life." ==
@@ -909,10 +909,10 @@ open OracleParts
       [.mana [.generic 2],
         .sacrificeCount
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .union [.cardType .artifact, .cardType .creature]])
           1]
-      (.returnToHand (.intersection [.inGraveyard, .source .this])))]
+      (.returnToHand (.intersection [.zone .graveyard, .source .this])))]
 #guard parseOracleParts (name := "")
   "{2}, Sacrifice an artifact or creature: Return this card from your graveyard to your hand." ==
   some [.ability
@@ -920,14 +920,14 @@ open OracleParts
        [.mana [.generic 2],
         .sacrificeCount
           (.intersection
-            [.permanent,
+            [.zone .battlefield,
              .union
                [.cardType .artifact,
                 .cardType .creature]])
           1]
        (.returnToHand
          (.intersection
-           [.inGraveyard, .source .this])))]
+           [.zone .graveyard, .source .this])))]
 #guard parseOracleParts (name := "")
   "{2}: Return this card from your graveyard to the battlefield." == none
 #guard parseOracleParts (name := "Gollum the Abandoned")
@@ -940,7 +940,7 @@ open OracleParts
         (.sequence [
           .exile
             (.targets 1 (.range 0 1)
-              (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
+              (.intersection [.zone .graveyard, .owner (.opponent (.controller .this))])),
           .loseLife (.opponent (.controller .this)) 2])),
     .ability (
       .graveyardActivatedIf
@@ -948,17 +948,17 @@ open OracleParts
         [.mana [.generic 2],
           .sacrificeCount
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .union [.cardType .artifact, .cardType .creature]])
             1]
-        (.returnToHand (.intersection [.inGraveyard, .source .this])))]
+        (.returnToHand (.intersection [.zone .graveyard, .source .this])))]
 
 #guard parseOracleParts (name := "")
   "Target creature gets +2/+2 and gains lifelink until end of turn." ==
   some [.actions [
     .continuous
       [.addPower
-        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
         (Value.int 2),
        .addToughness
         (.targetReference 1)
@@ -972,7 +972,7 @@ open OracleParts
   some [.actions [
     .continuous
       [.addToughness
-        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
         (Value.int 1)]
       .endOfTurn]]
 #guard parseOracleParts (name := "")
@@ -982,7 +982,7 @@ open OracleParts
   some [.actions [
     .continuous
       [.addPower
-        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
         (Value.int (-5)),
        .addToughness
         (.targetReference 1)
@@ -999,13 +999,13 @@ open OracleParts
     .continuous
       [.addPower
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.target 1 .player)])
         (Value.int (-1)),
        .addToughness
         (.intersection [
-          .permanent,
+          .zone .battlefield,
           .cardType .creature,
           .controlled (.targetReference 1)])
         (Value.int (-1))]
@@ -1026,7 +1026,7 @@ open OracleParts
     .chooseUniqueModes (.range 1 1) [
       .continuous
         [.addPower
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
           (Value.int (-5)),
          .addToughness
           (.targetReference 1)
@@ -1038,13 +1038,13 @@ open OracleParts
       .continuous
         [.addPower
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.target 2 .player)])
           (Value.int (-1)),
          .addToughness
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .controlled (.targetReference 2)])
           (Value.int (-1))]
@@ -1058,7 +1058,7 @@ open OracleParts
         .loseLife (.targetReference 1) 2],
       .continuous
         [.addPower
-          (.target 2 (.intersection [.permanent, .cardType .creature]))
+          (.target 2 (.intersection [.zone .battlefield, .cardType .creature]))
           (Value.int 2),
          .addToughness
           (.targetReference 2)
@@ -1078,7 +1078,7 @@ open OracleParts
   "When another creature enters, each opponent discards a card." ==
   some [.ability (
     .triggered
-      (.enter (.intersection [.not .this, .permanent, .cardType .creature]))
+      (.enter (.intersection [.not .this, .zone .battlefield, .cardType .creature]))
       (.discard (.opponent (.controller .this)) (.nat 1)))]
 #guard parseOracleParts (name := "")
   "When this creature enters, each opponent discards a card of their choice." == none
@@ -1155,7 +1155,7 @@ open OracleParts
       .actions [
         .dealDamage
           .this
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (.target 1 (.intersection [.zone .battlefield, .cardType .creature]))
           (.nat 5)]]]
 
 #guard parseOracleParts (name := "")
@@ -1181,7 +1181,7 @@ open OracleParts
          (.target
            1
            (.intersection
-             [.permanent, .cardType .creature]))
+             [.zone .battlefield, .cardType .creature]))
          .plusOnePlusOne
          3))]
 #guard parseOracleParts (name := "")
@@ -1195,7 +1195,7 @@ open OracleParts
         [.sacrificeCount
           (.intersection [
             .not .this,
-            .permanent,
+            .zone .battlefield,
             .union [.cardType .creature, .cardType .artifact]])
           1]
         (.sequence [

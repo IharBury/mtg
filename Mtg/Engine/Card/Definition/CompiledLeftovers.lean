@@ -110,11 +110,11 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
     else none
   | .destroy (.target _ sel) =>
     if sel == Selector.intersection
-        [.permanent, .cardType .artifact, .controlled (.opponent (.controller .this))] then
+        [.zone .battlefield, .cardType .artifact, .controlled (.opponent (.controller .this))] then
       some Effect.chapterDestroyOppArtifact
     else none
   | .destroy (.targets _ (.range (.nat 0) (.nat 1)) among) =>
-    if among == .intersection [.permanent, .not (.cardType .land)] then
+    if among == .intersection [.zone .battlefield, .not (.cardType .land)] then
       some Effect.destroyUpToOneNonland
     else none
   | .loseLife (.opponent (.controller .this)) (.nat n) =>
@@ -139,14 +139,14 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
         .if (.happened (.actionWithId id') .gameStart) [dragon]]] =>
     if id == id' &&
         sel == Selector.intersection
-          [.permanent, .subtype .treasure, .controlled (.controller .this)] &&
+          [.zone .battlefield, .subtype .treasure, .controlled (.controller .this)] &&
         leftoverCreateTokensKindN? treasure == some (TokenKind.treasure, 1) &&
         leftoverCreateTokensKindN? dragon == some (TokenKind.dragon, 1) then
       some Effect.chapterTreasureThenDragonIfFour
     else none
   | .continuous [.addPower sel (.int p), .gainAbility sel' (.keyword .vigilance)] .endOfTurn =>
     if sel == sel' &&
-        sel == Selector.intersection [.permanent, .subtype .elf, .controlled (.controller .this)] then
+        sel == Selector.intersection [.zone .battlefield, .subtype .elf, .controlled (.controller .this)] then
       some (Effect.chapterElvesGetVigilance p)
     else none
   | .keyword who (.amass .goblin (.nat n)) =>
@@ -162,7 +162,7 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
       .actionId id
         (.reveal
           (.intersection [
-            .inHand,
+            .zone .hand,
             .owner (.target _ (.opponent who))])),
       .defineSelectorVariable v
         (.selected chooser (.range 1 1)
@@ -176,14 +176,14 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
     if leftoverYou who then some Effect.chapterRecruit else none
   | .putOntoBattlefield
       (.target _ (.intersection [
-        .inGraveyard,
+        .zone .graveyard,
         .cardType .creature,
         .owner (.controller .this),
         .manaValueAtMost (.nat k)])) =>
     if k != 0 then some (Effect.chapterReturnCreatureFromGyMvAtMost k) else none
   | .putCounter
       (.targets _ (.range (.nat 0) (.nat 1))
-        (.intersection [.permanent, .cardType .creature]))
+        (.intersection [.zone .battlefield, .cardType .creature]))
       .plusOnePlusOne
       (.nat 1) =>
     some Effect.chapterPlusOneUpToOne
@@ -193,7 +193,7 @@ def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
 opponent. -/
 def leftoverDamageNonSubtypeAndOpponents? : CardAction → Option (Nat × String)
   | .sequence [
-      .dealDamage src (.intersection [.permanent, .cardType .creature, .not (.subtype st)]) (.nat n),
+      .dealDamage src (.intersection [.zone .battlefield, .cardType .creature, .not (.subtype st)]) (.nat n),
       .dealDamage src' (.opponent who) (.nat n')] =>
     if n != 0 && n == n' && (src == .this || src == .source .this) && src == src' &&
         who == .controller .this then
@@ -221,7 +221,7 @@ def leftoverChapterCreateTokens? : CardAction → Option Effect
     else if leftoverYou who && n != 0 then
       (leftoverTokenKind? parts).map (Effect.createTokens · n)
     else none
-  | .forEachVariable _ (.intersection [.permanent, .subtype st, .controlled (.controller .this)])
+  | .forEachVariable _ (.intersection [.zone .battlefield, .subtype st, .controlled (.controller .this)])
       [.createTokens who (.nat 1) parts []] =>
     if leftoverYou who then
       (leftoverTokenKind? parts).map (Effect.createTokensPerSubtype · st.toString)
@@ -341,7 +341,7 @@ with power at most N. It enters the battlefield already attached
 def leftoverReturnFromGyAttachPowerAtMost? : CardAction → Option Int
   | .putOntoBattlefieldInState src [.attachedTo (.target _ among)] =>
     let s := among.shape
-    if src == .intersection [.inGraveyard, .source .this] &&
+    if src == .intersection [.zone .graveyard, .source .this] &&
         s.sameController && s.types.eqTypes [.creature] && s.subtype.isNone then
       s.powerAtMost
     else none
@@ -363,24 +363,24 @@ def leftoverPlusOneThenEachOtherIfFromGy? : CardAction → Bool
 
 /-- Target creature, with no further restriction. -/
 def leftoverCreaturePermanent? : Selector → Bool
-  | .intersection [.permanent, .cardType .creature] => true
+  | .intersection [.zone .battlefield, .cardType .creature] => true
   | _ => false
 
 /-- Each creature an opponent of this object's controller controls. -/
 def leftoverEachOppCreature? : Selector → Bool
   | .intersection
-      [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))] => true
+      [.zone .battlefield, .cardType .creature, .controlled (.opponent (.controller .this))] => true
   | _ => false
 
 /-- Each creature that is not a Dragon. -/
 def leftoverEachNonDragonCreature? : Selector → Bool
   | .intersection
-      [.permanent, .cardType .creature, .not (.subtype .dragon)] => true
+      [.zone .battlefield, .cardType .creature, .not (.subtype .dragon)] => true
   | _ => false
 
 /-- Target artifact token. -/
 def leftoverArtifactTokenTarget? : Selector → Bool
-  | .target _ (.intersection [.permanent, .cardType .artifact, .token]) => true
+  | .target _ (.intersection [.zone .battlefield, .cardType .artifact, .token]) => true
   | _ => false
 
 /-- Deal damage to target creature; if it would die this turn, exile it. -/
@@ -441,7 +441,7 @@ def leftoverExileAttackersSearchBasics? : CardAction → Bool
       .actionId id
         (.exile
           (.intersection [
-            .permanent,
+            .zone .battlefield,
             .cardType .creature,
             .attacking .all,
             .controlled (.target tid .player)])),
@@ -454,7 +454,7 @@ def leftoverExileAttackersSearchBasics? : CardAction → Bool
                 (.targetReference sid')
                 (.range (.nat 0) (.count (.wasObjectOfAction cid)))
                 (.intersection [
-                  .inLibrary,
+                  .zone .library,
                   .cardType .land,
                   .supertype .basic]))
               [.tapped]])
@@ -474,11 +474,11 @@ def leftoverExileTopFaceDownPlayIf? : CardAction → Option (Nat × String)
         [.if
           (.any
             (.intersection [
-              .permanent,
+              .zone .battlefield,
               .subtype st,
               .controlled (.controller .this)]))
           [.canPlay permit
-            (.intersection [.inExile, .wasCreatedByAction exiled])]]
+            (.intersection [.zone .exile, .wasCreatedByAction exiled])]]
         .endOfGame
     ] =>
     if n != 0 && lookId == looked && exileId == exiled &&
@@ -551,7 +551,7 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
         .defineSelectorVariable id
           (.selected chooser (.range 1 1)
             (.intersection [
-              .union [.inLibrary, .inGraveyard],
+              .union [.zone .library, .zone .graveyard],
               .cardType .artifact,
               .cardType .creature,
               .manaValueAtMost .x])),
@@ -563,7 +563,7 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
         .defineSelectorVariable id4
           (.selected chooser2 (.range 1 1)
             (.intersection [
-              .inGraveyard,
+              .zone .graveyard,
               .cardType .artifact,
               .cardType .creature,
               .manaValueAtMost .x])),
@@ -593,28 +593,28 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
   | .forEachVariable _ sel [.addMana who [.colored .red]] =>
     if leftoverYou who &&
         sel == .intersection
-          [.permanent, .cardType .artifact, .controlled (.opponent (.controller .this))] then
+          [.zone .battlefield, .cardType .artifact, .controlled (.opponent (.controller .this))] then
       some Effect.addRedPerOppArtifacts
     else none
   | .sequence [
       .draw who (.greatestToughness among),
       .putOntoBattlefield (.selected chooser .any
-        (.intersection [.inHand, .owner owner, .cardType .creature]))] =>
+        (.intersection [.zone .hand, .owner owner, .cardType .creature]))] =>
     if leftoverYou who && leftoverYou chooser && leftoverYou owner &&
-        among == .intersection [.permanent, .cardType .creature, .controlled (.controller .this)] then
+        among == .intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)] then
       some Effect.drawEqualToughnessThenPutCreatures
     else none
   | .sequence [
       .actionId id (.chooseCreatureType who),
       .returnToHand
-        (.intersection [.permanent, .cardType .creature, .not (.hasCreatureTypeChosenByAction id')])] =>
+        (.intersection [.zone .battlefield, .cardType .creature, .not (.hasCreatureTypeChosenByAction id')])] =>
     if id == id' && leftoverYou who then some Effect.chooseTypeReturnOthers else none
   | .continuous
       [.forbid (.block .all
-        (.target _ (.intersection [.permanent, .cardType .creature, .powerAtMost (.int k)])))]
+        (.target _ (.intersection [.zone .battlefield, .cardType .creature, .powerAtMost (.int k)])))]
       .endOfTurn =>
     some (Effect.targetCantBeBlockedPowerAtMost k)
-  | .putOntoBattlefieldInState (.intersection [.inGraveyard, .source .this]) [.tapped] =>
+  | .putOntoBattlefieldInState (.intersection [.zone .graveyard, .source .this]) [.tapped] =>
     some Effect.returnFromGraveyardTapped
   | .dealDamage src (.opponent who) (.nat n) =>
     if (src == .this || leftoverSourceThis src) && leftoverYou who then
@@ -622,9 +622,9 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     else none
   | .sequence [
       .defineSelectorVariable n (.selected who (.range (.nat 0) (.nat 2)) kind),
-      .destroy (.intersection [.permanent, .cardType .creature, .not (.variable n')])] =>
+      .destroy (.intersection [.zone .battlefield, .cardType .creature, .not (.variable n')])] =>
     if n == n' && leftoverYou who &&
-        kind == .intersection [.permanent, .cardType .creature] then
+        kind == .intersection [.zone .battlefield, .cardType .creature] then
       some Effect.chooseTwoDestroyRest
     else none
   | .sequence [
@@ -657,12 +657,12 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
         revealId == revealed' && leftoverYou who && leftoverYou chooser && leftoverYou picker then
       some (Effect.lookAtTopRevealSubtype k st.toString)
     else none
-  | .keyword (.target _ (.intersection [.permanent, .cardType .creature, .subtype st, you]))
+  | .keyword (.target _ (.intersection [.zone .battlefield, .cardType .creature, .subtype st, you]))
       (.connive (.nat 1)) =>
     if you == .controlled (.controller .this) then
       some (Effect.targetSubtypeConnives st.toString)
     else none
-  | .returnToHand (.target _ (.intersection [.inGraveyard, .subtype st, .owner owner])) =>
+  | .returnToHand (.target _ (.intersection [.zone .graveyard, .subtype st, .owner owner])) =>
     if leftoverYou owner then some (Effect.returnGySubtypeToHand st.toString) else none
   | .draw who (.count (.wasObjectSince (.discard who') .turnStart)) =>
     if leftoverYou who && leftoverYou who' then some Effect.drawPerDiscardedThisTurn else none
@@ -671,42 +671,42 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     | some (#[st], false), some kind =>
       if leftoverYou who then some (Effect.createTokensEqualSubtype kind st) else none
     | _, _ => none
-  | .dealDamage src (.intersection [.permanent, .cardType .creature]) (.nat n) =>
+  | .dealDamage src (.intersection [.zone .battlefield, .cardType .creature]) (.nat n) =>
     if n != 0 && (src == .this || leftoverSourceThis src) then
       some (Effect.dealDamageToEachCreature n)
     else none
   | .sequence [
-      .destroy (.target t (.intersection [.permanent, .cardType .land])),
+      .destroy (.target t (.intersection [.zone .battlefield, .cardType .land])),
       .optional who (.searchLibraryThenShuffle searcher [
         .putOntoBattlefieldInState (.selected chooser (.range (.nat 1) (.nat 1))
-          (.intersection [.inLibrary, .cardType .land, .supertype .basic])) [.tapped]])] =>
+          (.intersection [.zone .library, .cardType .land, .supertype .basic])) [.tapped]])] =>
     let controller := Selector.controller (.targetReference t)
     if who == controller && searcher == controller && chooser == controller then
       some Effect.destroyLandSearchBasic
     else none
   | .continuous [
-      .addPower (.target t (.intersection [.permanent, .cardType .creature]))
+      .addPower (.target t (.intersection [.zone .battlefield, .cardType .creature]))
         (.greatestPower (.targetReference t1)),
       .addToughness (.targetReference t2) (.greatestToughness (.targetReference t3))] .endOfTurn =>
     if t == t1 && t == t2 && t == t3 then some Effect.doublePowerAndToughness else none
   | .fight (.target _ src) (.target _ dest) =>
-    if src == .intersection [.permanent, .cardType .creature, .controlled (.controller .this)] &&
+    if src == .intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)] &&
         dest == .intersection
-          [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))] then
+          [.zone .battlefield, .cardType .creature, .controlled (.opponent (.controller .this))] then
       some Effect.fight
     else none
   | .dealDamage (.target t src) (.target _ dest) (.product (.totalPower (.targetReference t')) (.int 2)) =>
     if t == t' &&
-        src == .intersection [.permanent, .cardType .creature, .controlled (.controller .this)] &&
+        src == .intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)] &&
         dest == .intersection
-          [.permanent, .cardType .creature, .controlled (.opponent (.controller .this))] then
+          [.zone .battlefield, .cardType .creature, .controlled (.opponent (.controller .this))] then
       some Effect.creatureYouControlDealsTwicePower
     else none
   | .sequence [
-      .actionId id (.exile (.intersection [.permanent, .cardType .creature])),
+      .actionId id (.exile (.intersection [.zone .battlefield, .cardType .creature])),
       .forEachVariable v .player [
         .optional p (.putOntoBattlefield (.selected p' .any
-          (.intersection [.inHand, .owner p'', .cardType .creature])))],
+          (.intersection [.zone .hand, .owner p'', .cardType .creature])))],
       .returnToHand (.wasCreatedByAction id'),
       .exile .this] =>
     if id == id' && p == .variable v && p' == p && p'' == p then
@@ -861,7 +861,7 @@ def leftoverLookAtTopReveal? : CardAction → Option (Nat × Array String)
     let types : Option (Array String) :=
       match kind with
       | .union [.subtype a, .subtype b] => some #[a.toString, b.toString]
-      | .permanent => some #["permanent"]
+      | .zone .battlefield => some #["permanent"]
       | _ => none
     if lookId == looked && lookId == bottomFrom &&
         revealId == returned && revealId == excluded &&
@@ -878,7 +878,7 @@ def leftoverMayDiscardHandDrawDamageIfStory? : CardAction → Bool
       .optional (.controller .this)
         (.actionId id
           (.discard (.controller .this)
-            (.count (.intersection [.inHand, .owner (.controller .this)])))),
+            (.count (.intersection [.zone .hand, .owner (.controller .this)])))),
       .draw (.controller .this) (.count (.wasObjectOfAction id')),
       .if (.enduringStory (.controller .this))
         [.dealDamage src (.opponent (.controller .this))
@@ -898,7 +898,7 @@ def leftoverExileOppNonlandEachUntilLeaves? : CardAction → Bool
           (.exile
             (.targets _ (.range 0 1)
               (.intersection [
-                .permanent,
+                .zone .battlefield,
                 .not (.cardType .land),
                 .controlled (.variable v')]))),
         .continuous

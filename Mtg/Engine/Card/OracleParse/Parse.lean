@@ -82,7 +82,7 @@ def parseCastCreaturePutCountersEqualMv (line : String) (n : Nat) :
         .ability (.triggered
           (.triggerId n (.castSpell (.intersection [.spell, .cardType .creature, youControl])))
           (.putCounter
-            (.target n (.intersection [.permanent, .cardType .creature, youControl]))
+            (.target n (.intersection [.zone .battlefield, .cardType .creature, youControl]))
             .plusOnePlusOne
             (.greatestManaValue (.wasArgumentOfTrigger n 1)))),
         n + 1)
@@ -103,7 +103,7 @@ def parseAttackMaySacrificePlusOneEqualPower (cardName line : String) (n : Nat) 
               (.actionId n
                 (.sacrifice
                   (.selected (.controller .this) (.range 1 1)
-                    (.intersection [.not .this, .permanent, .cardType .creature, youControl])))),
+                    (.intersection [.not .this, .zone .battlefield, .cardType .creature, youControl])))),
             .if (.happened (.actionWithId n) .gameStart)
               [.putCounter (.source .this) .plusOnePlusOne
                 (.greatestPower (.wasObjectOfAction n))]],
@@ -132,12 +132,12 @@ def parseEnterHonePerOppAttach (cardName line : String) (n : Nat) :
                   .putCounter (.source .this) (.hone)
                     (.count
                       (.intersection [
-                        .permanent,
+                        .zone .battlefield,
                         .cardType .creature,
                         .controlled (.target n (.opponent (.controller .this)))])),
                   .attach .this
                     (.targets (n + 1) (.range 0 1)
-                      (.intersection [.permanent, .cardType .creature, youControl]))],
+                      (.intersection [.zone .battlefield, .cardType .creature, youControl]))],
                 n + 2)
             else none
           | none => none
@@ -156,7 +156,7 @@ def parseEntersWithCounters (cardName line : String) : Option CardPart :=
             .putCounter (.source .this) (.hope)
               (.count
                 (.intersection [
-                  .permanent,
+                  .zone .battlefield,
                   .cardType .creature,
                   youControl])),
             .keepReplacedAction])))
@@ -384,7 +384,7 @@ def chooseUpToReturnModes (k : Nat) : ModeList where
       (modes.map fun sel => sel)]]
   mode text n :=
     (between? (normSentence text) "target " " card").bind typeOfOracle? |>.map fun t =>
-      (.returnToHand (.target n (.intersection [.inGraveyard, .cardType t, .owner (.controller .this)])),
+      (.returnToHand (.target n (.intersection [.zone .graveyard, .cardType t, .owner (.controller .this)])),
         n + 1)
 
 /-- A header whose `•` modes follow: a triggered `choose one —`, a triggered

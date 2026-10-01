@@ -205,7 +205,7 @@ end Shape
 
 def shape : Selector → Shape
   | .all => {}
-  | .permanent => { mustBePermanent := true }
+  | .zone .battlefield => { mustBePermanent := true }
   | .controlled (.controller .this) => { sameController := true }
   | .controlled (.opponent _) => { opponentControls := true }
   | .controlled _ => {}
@@ -241,8 +241,8 @@ def shape : Selector → Shape
   | .wasObjectSince (.putToGraveyard _) .turnStart =>
     { putIntoGraveyardThisTurn := true }
   | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasArgumentOfTrigger _ _ | .replacingObject
-  | .wasCreatedByAction _ | .affectedByAction _ | .hostOf _ | .inGraveyard | .inLibrary | .inHand
-  | .inExile | .supertype _
+  | .wasCreatedByAction _ | .affectedByAction _ | .hostOf _ | .zone _
+  | .supertype _
   | .variable _ | .topOfLibrary _ _ => {}
   | .hasCreatureTypeChosenByAction _ => { chosenCreatureType := true }
   | .manaValueAtMost _ | .castFromZone _ => {}
@@ -339,9 +339,9 @@ def any : Selector := .all
 /-- A land (CR 305). -/
 def land : Selector := .cardType .land
 
-/-- True when this selector includes `inLibrary`. -/
+/-- True when this selector includes `.zone .library`. -/
 def includesInLibrary : Selector → Bool
-  | .inLibrary => true
+  | .zone .library => true
   | .intersection (f :: fs) =>
     includesInLibrary f || includesInLibrary (.intersection fs)
   | _ => false
@@ -375,7 +375,7 @@ def referenceTargets : Selector → Selector
   | .all => .all
   | .cardType t => .cardType t
   | .union ss => .union (ss.map referenceTargets)
-  | .permanent => .permanent
+  | .zone z => .zone z
   | .controlled s => .controlled (referenceTargets s)
   | .tapped => .tapped
   | .keyword k => .keyword k
@@ -402,11 +402,7 @@ def referenceTargets : Selector → Selector
   | .wasCreatedByAction n => .wasCreatedByAction n
   | .affectedByAction n => .affectedByAction n
   | .hostOf s => .hostOf (referenceTargets s)
-  | .inGraveyard => .inGraveyard
   | .wasObjectSince a b => .wasObjectSince a b
-  | .inLibrary => .inLibrary
-  | .inHand => .inHand
-  | .inExile => .inExile
   | .supertype st => .supertype st
   | .variable n => .variable n
   | .topOfLibrary s n => .topOfLibrary (referenceTargets s) n
@@ -415,16 +411,16 @@ def referenceTargets : Selector → Selector
   | .castFromZone z => .castFromZone z
 
 #guard
-  (Selector.target 1 (.intersection [.permanent, .cardType .creature])).referenceTargets ==
+  (Selector.target 1 (.intersection [.zone .battlefield, .cardType .creature])).referenceTargets ==
     .targetReference 1
 
 #guard
   (Selector.intersection [
-    .permanent,
+    .zone .battlefield,
     .cardType .creature,
     .controlled (.target 1 .player)]).referenceTargets ==
     .intersection [
-      .permanent,
+      .zone .battlefield,
       .cardType .creature,
       .controlled (.targetReference 1)]
 
@@ -449,7 +445,7 @@ def includesLand : Selector → Bool
 
 /-- True when this selector includes the graveyard zone. -/
 def includesInGraveyard : Selector → Bool
-  | .inGraveyard => true
+  | .zone .graveyard => true
   | .intersection (f :: fs) =>
     includesInGraveyard f || includesInGraveyard (.intersection fs)
   | .target _ among | .targets _ _ among => includesInGraveyard among
@@ -574,14 +570,14 @@ def toTargeting (s : Selector) : EffectTargeting :=
 
 /-- `you control a legendary creature`, as a condition reads it. -/
 def aLegendaryCreatureYouControl : Selector :=
-  .intersection [.permanent, .cardType .creature, .supertype .legendary, .controlled (.controller .this)]
+  .intersection [.zone .battlefield, .cardType .creature, .supertype .legendary, .controlled (.controller .this)]
 
 /-- Permanents of these subtypes that this object's controller controls, and
 whether `other` excludes this object: `Goblins and Orcs you control`. -/
 def subtypesYouControl? : Selector → Option (Array String × Bool)
-  | .intersection [.permanent, kinds, .controlled (.controller .this)] =>
+  | .intersection [.zone .battlefield, kinds, .controlled (.controller .this)] =>
     (subtypeNames? kinds).map (·, false)
-  | .intersection [.not .this, .permanent, kinds, .controlled (.controller .this)] =>
+  | .intersection [.not .this, .zone .battlefield, kinds, .controlled (.controller .this)] =>
     (subtypeNames? kinds).map (·, true)
   | _ => none
 where

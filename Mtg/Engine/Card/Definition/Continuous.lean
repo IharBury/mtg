@@ -143,8 +143,9 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .player
     | .wasObjectOfAction _ | .wasArgumentOfTrigger _ _ | .replacingObject | .wasCreatedByAction _
     | .affectedByAction _
-    | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inLibrary | .inHand
-    | .inExile | .supertype _
+    | .hostOf _ | .wasObjectSince _ _
+    | .zone .graveyard | .zone .library | .zone .hand | .zone .exile
+    | .zone .stack | .zone .command | .supertype _
     | .variable _ | .topOfLibrary _ _ => none
     | s => some s
 
