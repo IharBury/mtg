@@ -1484,4 +1484,77 @@ namespace Mtg.Engine
         a.name == "Allure of Power"
     | none => false
 
+-- Bard, King of Dale: a draw outside the first of your draw step becomes two,
+-- and tokens you would create are doubled.
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.static (.if
+        (notFirstCardOfDrawStep (.controller .this))
+        [.replace
+          (.draw (.controller .this) .all)
+          [.draw (.controller .this) 2]])),
+      .ability (.static (.replace
+        (.createTokens (.intersection [.token, .controlled (.controller .this)]))
+        [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 2))]))
+    ]).toCardDef
+  c.drawTwoExceptFirstDrawStep && c.tokenDoubling
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.static (.replace
+        (.createTokens (.intersection [.token, .controlled (.controller .this)]))
+        [.modifyReplacementCreatedTokenCount (fun n => .nat (n * 3))]))
+    ]).toCardDef
+  !c.tokenDoubling
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.static (.replace
+        (.draw (.controller .this) .all)
+        [.draw (.controller .this) 2]))
+    ]).toCardDef
+  !c.drawTwoExceptFirstDrawStep
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.static (.replace
+        (.draw (.controller .this) .all)
+        [.draw (.controller .this) 3]))
+    ]).toCardDef
+  !c.drawTwoExceptFirstDrawStep && !c.tokenDoubling
+
+-- Belladonna Took: the first three resolutions this turn are life, a card,
+-- then a +1/+1 counter on each creature you control.
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.abilityId 1 (.triggered
+        (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
+        (.sequence [
+          .if (.didNotHappen (.abilityWithIdResolved 1) .turnStart)
+            [.gainLife (.controller .this) 1],
+          .if (.and
+              (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved 1)) .turnStart)
+              (.didNotHappen (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart))
+            [.draw (.controller .this) 1],
+          .if (.and
+              (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved 1)) .turnStart)
+              (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved 1)) .turnStart))
+            [.putCounter
+              (.intersection
+                [.permanent, .cardType .creature, .controlled (.controller .this)])
+              .plusOnePlusOne 1]])))
+    ]).toCardDef
+  c.triggeredAbilities == #[.onTokenYouControlEntersBelladonna]
+
+#guard
+  (Ability.triggered
+    (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
+    (.if (.didNotHappen (.abilityWithIdResolved 1) .turnStart)
+      [.gainLife (.controller .this) 1])).toTriggeredAbility?.isNone
+
 end Mtg.Engine

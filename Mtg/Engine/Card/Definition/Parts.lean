@@ -32,6 +32,8 @@ inductive Condition where
   | timeToCastSorcery : Selector → Condition
   /-- True when it is the selected player's turn (CR 500.1). -/
   | turn : Selector → Condition
+  /-- True during the selected player's draw step (CR 504). -/
+  | drawStep : Selector → Condition
   /-- True when the selected player has an enduring story. -/
   | enduringStory : Selector → Condition
   /-- True when both conditions hold. -/
@@ -50,6 +52,14 @@ inductive Condition where
   | equal : Value → Value → Condition
 deriving Repr, Inhabited, BEq
 
+/-- A draw by `who` other than the first card of their current draw step
+(CR 121.2 / 504). The first card is a draw that has not happened since
+`Trigger.drawStep`. Draws outside that step are included. -/
+def notFirstCardOfDrawStep (who : Selector) : Condition :=
+  .not (.and
+    (.drawStep who)
+    (.didNotHappen (.draw who .all) (.drawStep who)))
+
 /-- Status a permanent has as it enters the battlefield (CR 110.5). -/
 inductive CardState where
   /-- The permanent enters tapped. -/
@@ -61,6 +71,26 @@ inductive CardState where
   /-- The permanent enters attached to the selected object (CR 303.4f). -/
   | attachedTo : Selector → CardState
 deriving Repr, Inhabited, BEq
+
+/-!
+`Nat → Value` has no decidable equality. Printed count changes are
+compared on `0` through `8`, which is what the card guards need.
+-/
+
+/-- How many counts to compare when a printed `Nat → Value` is stored on a card. -/
+def createdTokenCountCheckBound : Nat := 9
+
+/-- `true` when `f` maps each count `n` below the check bound to `n * 2`. -/
+def doublesCreatedTokenCount (f : Nat → Value) : Bool :=
+  (List.range createdTokenCountCheckBound).all fun n => f n == .nat (n * 2)
+
+instance : BEq (Nat → Value) where
+  beq f g := (List.range createdTokenCountCheckBound).all fun n => f n == g n
+
+instance : Repr (Nat → Value) where
+  reprPrec f _ :=
+    let samples := (List.range 4).map fun n => s!"{n}↦{reprStr (f n)}"
+    Std.Format.text ("⟨" ++ String.intercalate ", " samples ++ "⟩")
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
@@ -307,6 +337,11 @@ inductive CardAction where
   An empty state list is the usual “enters as a new object” case. -/
   | createTokens (who : Selector) (n : Value) (parts : List CardPart)
       (states : List CardState := []) : CardAction
+  /-- Keep creating the tokens this replacement would have created, with
+  the count changed by the function (CR 614). The function maps how many
+  would have been created to the `Value` created instead. Twice that
+  many is `fun n => .nat (n * 2)`. -/
+  | modifyReplacementCreatedTokenCount : (Nat → Value) → CardAction
   /-- The selected player mills that many cards (CR 701.13). -/
   | mill : Selector → Value → CardAction
   /-- The selected player surveils that many cards (CR 701.53). -/

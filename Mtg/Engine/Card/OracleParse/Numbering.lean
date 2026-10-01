@@ -92,10 +92,10 @@ def collectSelector : Selector → List Nat × List Nat
 
 def collectTrigger : Trigger → List Nat × List Nat
   | .endOfGame | .endOfTurn | .turnStart | .gameStart => ([], [])
-  | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .enter s | .die s
+  | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .drawStep s | .enter s | .die s
   | .discard s | .leaveGraveyard s | .leaveBattlefield s | .returnToHand s | .putToGraveyard s
   | .giftPromised s | .counter s | .activateAbility s | .castSpell s
-  | .castSpellFromGraveyard s | .precombatMainPhase s =>
+  | .castSpellFromGraveyard s | .precombatMainPhase s | .createTokens s =>
     collectSelector s
   | .attack a b | .draw a b | .damage a b | .block a b | .target a b | .combatDamage a b
   | .putCountersSimultaneously a b _ =>
@@ -105,7 +105,7 @@ def collectTrigger : Trigger → List Nat × List Nat
     appendIds [collectSelector a, collectSelector b]
   | .ordinal _ inner window => appendIds [collectTrigger inner, collectTrigger window]
   | .sacrifice s => collectSelector s
-  | .abilityWithIdActivated n => ([], [n])
+  | .abilityWithIdActivated n | .abilityWithIdResolved n => ([], [n])
   | .actionWithId n => ([n], [])
   | .triggerId n inner => appendIds [([], [n]), collectTrigger inner]
   | .modeWithIdChosen who _ => collectSelector who
@@ -116,7 +116,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .or a b => appendIds [collectTrigger a, collectTrigger b]
 
 def collectCondition : Condition → List Nat × List Nat
-  | .any s | .timeToCastSorcery s | .turn s | .enduringStory s => collectSelector s
+  | .any s | .timeToCastSorcery s | .turn s | .drawStep s | .enduringStory s => collectSelector s
   | .targetsIncludeAny a b => appendIds [collectSelector a, collectSelector b]
   | .anySubtype s _ => collectSelector s
   | .didNotHappen a b | .happened a b => appendIds [collectTrigger a, collectTrigger b]
@@ -238,6 +238,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .createTokens who n parts states =>
     appendIds [
       collectSelector who, collectValue n, collectParts parts, appendIds (states.map collectState)]
+  | .modifyReplacementCreatedTokenCount _ => ([], [])
   | .keepReplacedAction => ([], [])
 
 end
@@ -339,6 +340,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .combatStart s => .combatStart (mapSelector m s)
   | .upkeep s => .upkeep (mapSelector m s)
   | .endStep s => .endStep (mapSelector m s)
+  | .drawStep s => .drawStep (mapSelector m s)
   | .turnStart => .turnStart
   | .gameStart => .gameStart
   | .attack a b => .attack (mapSelector m a) (mapSelector m b)
@@ -364,6 +366,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .attackSimultaneously a b ps =>
     .attackSimultaneously (mapSelector m a) (mapSelector m b) ps
   | .abilityWithIdActivated n => .abilityWithIdActivated (m.target n)
+  | .abilityWithIdResolved n => .abilityWithIdResolved (m.target n)
   | .actionWithId n => .actionWithId (m.action n)
   | .triggerId n inner => .triggerId (m.target n) (mapTrigger m inner)
   | .modeWithIdChosen who n => .modeWithIdChosen (mapSelector m who) n
@@ -380,6 +383,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .or a b => .or (mapTrigger m a) (mapTrigger m b)
   | .target a b => .target (mapSelector m a) (mapSelector m b)
   | .precombatMainPhase s => .precombatMainPhase (mapSelector m s)
+  | .createTokens s => .createTokens (mapSelector m s)
 
 def mapCondition (m : IdMaps) : Condition → Condition
   | .any s => .any (mapSelector m s)
@@ -389,6 +393,7 @@ def mapCondition (m : IdMaps) : Condition → Condition
   | .happened a b => .happened (mapTrigger m a) (mapTrigger m b)
   | .timeToCastSorcery s => .timeToCastSorcery (mapSelector m s)
   | .turn s => .turn (mapSelector m s)
+  | .drawStep s => .drawStep (mapSelector m s)
   | .enduringStory s => .enduringStory (mapSelector m s)
   | .and a b => .and (mapCondition m a) (mapCondition m b)
   | .not c => .not (mapCondition m c)
@@ -566,6 +571,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .keyword who k => .keyword (mapSelector m who) (mapKeyword m k)
   | .createTokens who n parts states =>
     .createTokens (mapSelector m who) (mapValue m n) (mapParts m parts) (mapStates m states)
+  | .modifyReplacementCreatedTokenCount f => .modifyReplacementCreatedTokenCount f
   | .mill a v => .mill (mapSelector m a) (mapValue m v)
   | .surveil a v => .surveil (mapSelector m a) (mapValue m v)
   | .copyWithNewTargets a b => .copyWithNewTargets (mapSelector m a) (mapSelector m b)

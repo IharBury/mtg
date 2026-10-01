@@ -73,7 +73,7 @@ def compileConditional (cond : Condition) (costs : List Cost) (action : CardActi
         activateFromGraveyard := fromGraveyard }
     else none
   | .anySubtype _ _ | .targetsIncludeAny _ _ | .happened _ _
-  | .didNotHappen _ _ | .and _ _ | .not _ | .enduringStory _
+  | .didNotHappen _ _ | .and _ _ | .not _ | .drawStep _ | .enduringStory _
   | .less _ _ | .lessOrEqual _ _ | .greater _ _ | .greaterOrEqual _ _
   | .equal _ _ => none
 
@@ -461,6 +461,26 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     if id == id' && creatureId == creatureId' &&
         equipId + 1 == creatureId && creatureId + 1 == damageId then
       some TriggeredAbility.onEnterAttachEquipmentThenFight
+    else none
+  | .triggered
+      (.enter (.intersection [.permanent, .token, .controlled (.controller .this)]))
+      (.sequence [
+        .if (.didNotHappen (.abilityWithIdResolved id1) .turnStart)
+          [.gainLife who1 (.nat 1)],
+        .if (.and
+            (.happened (.ordinal 1 .turnStart (.abilityWithIdResolved id2)) .turnStart)
+            (.didNotHappen (.ordinal 2 .turnStart (.abilityWithIdResolved id2b)) .turnStart))
+          [.draw who2 (.nat 1)],
+        .if (.and
+            (.happened (.ordinal 2 .turnStart (.abilityWithIdResolved id3)) .turnStart)
+            (.didNotHappen (.ordinal 3 .turnStart (.abilityWithIdResolved id3b)) .turnStart))
+          [.putCounter
+            (.intersection
+              [.permanent, .cardType .creature, .controlled (.controller .this)])
+            .plusOnePlusOne (.nat 1)]]) =>
+    if id1 == id2 && id2 == id2b && id2 == id3 && id3 == id3b &&
+        who1 == .controller .this && who2 == .controller .this then
+      some .onTokenYouControlEntersBelladonna
     else none
   | _ => none
 

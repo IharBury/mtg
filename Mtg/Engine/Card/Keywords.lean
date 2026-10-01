@@ -493,6 +493,9 @@ inductive Trigger where
   | upkeep : Selector → Trigger
   /-- At the beginning of the selected player's end step (CR 513.1). -/
   | endStep : Selector → Trigger
+  /-- At the beginning of the selected player's draw step (CR 504.1).
+  A window for the cards drawn in that step. -/
+  | drawStep : Selector → Trigger
   /-- From the start of the turn (a window bound for `happened`). -/
   | turnStart
   /-- From the start of the game (a window bound for `happened`). -/
@@ -506,8 +509,13 @@ inductive Trigger where
   with set-wide predicates (CR 603.2c). One trigger for that group.
   `Trigger.enter` fires once per object. -/
   | enterSimultaneously : Selector → List SetPredicate → Trigger
+  /-- Tokens matching the selector would be created (CR 111). One event for
+  that creation. `replace` of this trigger replaces it (CR 614).
+  `Selector.replacingObject` is those tokens. -/
+  | createTokens : Selector → Trigger
   /-- Whenever the selected player draws a card matching the given
-  selector. -/
+  selector. `replace` of this trigger is “if that player would draw” that
+  card (CR 614). `Selector.all` is any card. -/
   | draw : Selector → Selector → Trigger
   /-- The nth occurrence of the inner trigger, counted from the given
   window. -/
@@ -554,6 +562,10 @@ inductive Trigger where
   | attackSimultaneously : Selector → Selector → List SetPredicate → Trigger
   /-- The numbered ability was activated (CR 602.2). -/
   | abilityWithIdActivated : Nat → Trigger
+  /-- The numbered ability has finished resolving (CR 608). `Ability.abilityId`
+  numbers that ability. A condition checked while that ability is resolving
+  does not count this resolution. -/
+  | abilityWithIdResolved : Nat → Trigger
   /-- The numbered action occurred. -/
   | actionWithId : Nat → Trigger
   /-- Number this trigger so later clauses can refer to its selector

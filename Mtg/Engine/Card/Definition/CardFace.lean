@@ -42,6 +42,12 @@ structure CardFace where
   additionalCostOrPayGeneric : Option Nat := none
   extraLandIfOtherSubtype : Option String := none
   staticAbilities : Array StaticAbility := #[]
+  /-- If one or more tokens would be created under your control, twice that
+  many of those tokens are created instead. -/
+  tokenDoubling : Bool := false
+  /-- If you would draw a card except the first one you draw in each of your
+  draw steps, draw two cards instead. -/
+  drawTwoExceptFirstDrawStep : Bool := false
   tapAddMana : Array ManaType := #[]
   tapAddAnyColorEqualToPower : Bool := false
   tapAddAnyColorForInstantOrSorcery : Bool := false
@@ -670,7 +676,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else b
   | .if (.happened _ _) _ => b
   | .if (.timeToCastSorcery _) _ => b
-  | .if (.turn _) _ => b
+  | .if (.turn _) _ | .if (.drawStep _) _ => b
   | .if (.not (.enduringStory who)) [.doesntUntap self] =>
     if who == .controller .this && (self == .this || self == .source .this) then
       { b with staticAbilities := b.staticAbilities.push .doesntUntapUnlessEnduringStory }
@@ -685,6 +691,15 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         CardAction.leftoverEntersTapped? actions &&
         among == Selector.aLegendaryCreatureYouControl then
       { b with entersTappedUnlessLegendary := true }
+    else b
+  | .if (.not (.and
+      (.drawStep step)
+      (.didNotHappen (.draw drawer .all) (.drawStep since))))
+      [.replace (.draw who .all) [.draw instead (.nat 2)]] =>
+    if step == .controller .this && since == .controller .this &&
+        drawer == .controller .this && who == .controller .this &&
+        instead == .controller .this then
+      { b with drawTwoExceptFirstDrawStep := true }
     else b
   | .if (.not (.any among)) [.forbid (.block who .all)] =>
     match Selector.subtypesYouControl? among with
@@ -785,6 +800,11 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
       { b with staticAbilities := b.staticAbilities.push .healOtherDamageWhenDealt }
     else b
   | .replace (.combatDamage _ _) _ => b
+  | .replace (.createTokens which) [.modifyReplacementCreatedTokenCount f] =>
+    if which == .intersection [.token, .controlled (.controller .this)] &&
+        doublesCreatedTokenCount f then
+      { b with tokenDoubling := true }
+    else b
   | .replace _ _ => b
   | .forbid
       (.or
@@ -1198,6 +1218,8 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       additionalCostOrPayGeneric := b.additionalCostOrPayGeneric
       extraLandIfOtherSubtype := b.extraLandIfOtherSubtype
       staticAbilities := b.staticAbilities
+      tokenDoubling := b.tokenDoubling
+      drawTwoExceptFirstDrawStep := b.drawTwoExceptFirstDrawStep
       tapAddMana := b.tapAddMana
       tapAddAnyColorEqualToPower := b.tapAddAnyColorEqualToPower
       tapAddAnyColorForInstantOrSorcery := b.tapAddAnyColorForInstantOrSorcery
