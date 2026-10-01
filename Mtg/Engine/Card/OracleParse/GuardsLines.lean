@@ -21,7 +21,7 @@ open OracleParts
 #guard parseOracleParts (name := "")
   "Target creature you control deals damage equal to its power to target creature an opponent controls." ==
   some [.actions [
-    .dealDamageEqualToPower
+    .dealDamage
       (.target 1
         (.intersection [
           .zone .battlefield,
@@ -31,7 +31,13 @@ open OracleParts
         (.intersection [
           .zone .battlefield,
           .cardType .creature,
-          .controlled (.opponent (.controller .this))]))]]
+          .controlled (.opponent (.controller .this))]))
+    (.greatestPower
+      (.target 1
+        (.intersection [
+          .zone .battlefield,
+          .cardType .creature,
+          .controlled (.controller .this)])))]]
 #guard parseOracleParts (name := "")
   "Target creature deals damage equal to its power to target creature an opponent controls." ==
   none

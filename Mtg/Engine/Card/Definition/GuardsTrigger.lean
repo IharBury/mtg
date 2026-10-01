@@ -1052,7 +1052,7 @@ namespace Mtg.Engine
 #guard
   (Ability.triggered
     (.enter .this)
-    (.dealDamageEqualToPower
+    (.dealDamage
       .this
       (.targets
         1
@@ -1060,7 +1060,8 @@ namespace Mtg.Engine
         (.intersection [
           .not .this,
           .zone .battlefield,
-          .cardType .creature])))).toTriggeredAbility?.isNone
+          .cardType .creature]))
+      (.greatestPower .this))).toTriggeredAbility?.isNone
 
 #guard
   (Ability.triggered

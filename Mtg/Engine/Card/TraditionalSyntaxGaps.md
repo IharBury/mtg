@@ -157,7 +157,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `actionId`, `loseLife`, `sacrifice`, `returnToHand`, `putOntoBattlefield`,
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
   `holdOutInLibrary`, `defineSelectorVariable`, `defineValueVariable`,
-  `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`,
+  `forEachVariable`, `reveal`, `fight`,
   `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
   `createTokens`,   `modifyReplacementCreatedTokenCount` (keep creating the
   tokens being replaced, with the count changed by a `Nat → Value` function),
@@ -340,6 +340,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.randomize` | `CardAction.chooseRandom` |
 | `CardAction.separatePiles` | `CardAction.separatePiles` |
 | `CardAction.becomeWithAbility` | `CardAction.becomeWith` (Supper for Spiders) |
+| `CardAction.dealDamageEqualToPower` | `dealDamage` of `Value.greatestPower` of the source |
 
 ## Missing constructors by type
 

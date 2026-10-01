@@ -1249,7 +1249,7 @@ def quarrelCard : CardDef :=
   .manaCost [.generic 1, .mono .green],
   .type .instant,
   .actions [
-    .dealDamageEqualToPower
+    .dealDamage
       (.target 1
         (.intersection [
           .zone .battlefield,
@@ -1259,7 +1259,13 @@ def quarrelCard : CardDef :=
         (.intersection [
           .zone .battlefield,
           .cardType .creature,
-          .controlled (.opponent (.controller .this))]))]
+          .controlled (.opponent (.controller .this))]))
+      (.greatestPower
+        (.target 1
+          (.intersection [
+            .zone .battlefield,
+            .cardType .creature,
+            .controlled (.controller .this)])))]
 ]
 
 /-- Gatherer Oracle text for Galion, Elvenking's Butler. -/
@@ -5955,14 +5961,15 @@ def bolgOfTheNorthDefinition : TraditionalCardDefinition := .card <|
           1
           [.actionId
              2
-             (.dealDamageEqualToPower
+             (.dealDamage
                (.wasObjectOfAction 1)
                (.target
                  1
                  (.intersection
                    [.not (.wasObjectOfAction 1),
                     .zone (.battlefield),
-                    .cardType (.creature)]))),
+                    .cardType (.creature)]))
+               (.greatestPower (.wasObjectOfAction 1))),
            .if
              (.greater (.excessDamage 2) (.nat 0))
              [.keyword
@@ -8548,9 +8555,10 @@ def thorinMountainKingDefinition : TraditionalCardDefinition := .card <|
         (.target 2
           (.intersection [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))),
       .if (.greaterOrEqual (.count (.wasObjectOfAction 1)) (.nat 1))
-        [.dealDamageEqualToPower (.targetReference 2)
+        [.dealDamage (.targetReference 2)
           (.targets 3 (.range 0 1)
-            (.intersection [.zone .battlefield, .cardType .creature]))]]))]
+            (.intersection [.zone .battlefield, .cardType .creature]))
+          (.greatestPower (.targetReference 2))]]))]
 
 def thorinMountainKing : CardDef :=
   thorinMountainKingDefinition.toCardDef (oracleText := thorinMountainKingOracle)

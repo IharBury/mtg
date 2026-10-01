@@ -354,8 +354,9 @@ def leftoverPlusOneLifelinkIndestructible? : CardAction → Bool
 /-- A creature you control deals damage equal to its power to an opponent's
 creature. -/
 def leftoverCreatureYouControlDealsPowerToOppCreature? : CardAction → Bool
-  | .dealDamageEqualToPower src dest =>
-    src.toTargetKind == .creatureYouControl && dest.toTargetKind == .oppCreature
+  | .dealDamage src dest amount =>
+    amount == .greatestPower src &&
+      src.toTargetKind == .creatureYouControl && dest.toTargetKind == .oppCreature
   | _ => false
 
 /-- Put a +1/+1 counter on a creature you control; it gains trample and
