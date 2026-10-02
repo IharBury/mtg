@@ -6869,12 +6869,54 @@ def gollumRiddleMaster : CardDef :=
 #guard gollumRiddleMaster.subtypes == #["Halfling", "Horror"]
 #guard gollumRiddleMaster.power == some 3 && gollumRiddleMaster.toughness == some 1
 
+/-- Oracle text for Head of the Hunt. -/
+def headOfTheHuntOracle : String :=
+  "Flash\nIf a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token."
+
+def headOfTheHuntDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Head of the Hunt",
+    .manaCost [.generic 2, .mono .black, .mono .black],
+    .type .creature,
+    .subtype .wolf,
+    .power 4,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Head of the Hunt") headOfTheHuntOracle).get!
+
+#guard headOfTheHuntDefinition == .card (
+  [
+    .name "Head of the Hunt",
+    .manaCost [.generic 2, .mono .black, .mono .black],
+    .type .creature,
+    .subtype .wolf,
+    .power 4,
+    .toughness 3
+  ] ++ [
+    .ability (.keyword .flash),
+    .ability (.static (.replace
+      (.die (.intersection [
+        .zone .battlefield,
+        .cardType .creature,
+        .controlled (.opponent (.controller .this))]))
+      [
+        .actionId 1 (.exile .replacingObject),
+        .reflexive 1 [
+          .createTokens (.controller .this) 1 [
+            .type .creature,
+            .subtype .wolf,
+            .colorIndicator [.green],
+            .power 2,
+            .toughness 2]]]))])
+
 def headOfTheHunt : CardDef :=
-  let c :=
-    creature "Head of the Hunt" (ManaCost.ofGenericAndColors 2 [.black, .black]) #["Wolf"] 4 3 (oracleText := "Flash\nIf a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token.")
-      (keywords := Keyword.flash)
-      (staticAbilities := #[.exileOppDeathCreateWolf])
-  { c with exileOppCreaturesInstead := true }
+  headOfTheHuntDefinition.toCardDef (oracleText := headOfTheHuntOracle)
+
+#guard headOfTheHunt.oracleText == headOfTheHuntOracle
+#guard headOfTheHunt.keywords.flash
+#guard headOfTheHunt.exileOppCreaturesInstead
+#guard headOfTheHunt.staticAbilities == #[.exileOppDeathCreateWolf]
+#guard headOfTheHunt.subtypes == #["Wolf"]
+#guard headOfTheHunt.power == some 4 && headOfTheHunt.toughness == some 3
 
 def insideInformation : CardDef :=
   sorcery "Inside Information" ({ symbols := #[.x, .colored .black, .colored .black] }) "Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost." (some (Effect.exileTopXOppPlayForLife))

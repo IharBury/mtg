@@ -5,9 +5,9 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**196** catalog cards are still `CardDef` helpers. **170**
+**195** catalog cards are still `CardDef` helpers. **170**
 of them need at least one missing constructor listed under
-[Missing constructors by type](#missing-constructors-by-type). **26** lost
+[Missing constructors by type](#missing-constructors-by-type). **25** lost
 their last tag (named counters, `CardAction.removeCounter`,
 enters-with-counters, `CardAction.reflexive`,
 `CardAction.addPhaseAfterThisPhase`,
@@ -27,12 +27,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 166 | 22 | 18 |
+| The Hobbit (HOB) | 188 | 167 | 21 | 18 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 44 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 108 |
-| **Total** | **586** | **390** | **196** | **170** |
+| **Total** | **586** | **391** | **195** | **170** |
 
-All 390 `TraditionalCardDefinition`s (166 HOB, 67 HOC, 157 MSH,
+All 391 `TraditionalCardDefinition`s (167 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -709,6 +709,14 @@ equals the variable. His controller then chooses one mode that has not
 been chosen since the game began (`chooseModeRestricted` with
 `modeWithIdChosen` since `gameStart`). Compiling those abilities still
 yields `asEntersChooseOddEven` and `onOpponentCastsChosenParityModes`.
+
+Head of the Hunt is a `TraditionalCardDefinition` read with
+`parseOracleParts`. Flash is a keyword. If a creature an opponent controls
+would die, that death is replaced: the creature is exiled (`replace` of
+`Trigger.die` with `exile` of `Selector.replacingObject`), and the die event
+never happens (CR 614.6). “When you do” is `CardAction.reflexive`, which
+creates a 2/2 green Wolf creature token. Compiling that ability still yields
+`exileOppCreaturesInstead` and `StaticAbility.exileOppDeathCreateWolf`.
 
 ## Cards that still cannot convert
 
@@ -1554,7 +1562,7 @@ Converted cards are omitted here.
 
 ## Tags now spelled, not yet converted
 
-These 26 cards lost every tag and are still `CardDef` helpers. They lost
+These 25 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, enters-with-counters,
 `replace` of `Trigger.createTokens`, `replace` of `Trigger.abilityTriggers`,
@@ -1563,7 +1571,7 @@ them when a constructor for each named counter, `CardAction.removeCounter`,
 became expressible. A later pass
 should reread them before conversion.
 
-**Hobbit (4):** Head of the Hunt; Last Light of Durin's Day; Roll-Roll-Roll-Roll; Wizard's Staff.
+**Hobbit (3):** Last Light of Durin's Day; Roll-Roll-Roll-Roll; Wizard's Staff.
 
 **Hobbit Eternal (6):** Arwen, Mortal Queen; Banishing Light; Bilbo, Fellow Conspirator; Chief of the Wilds; Long-Lost Lances; Minas Morgul, Dark Fortress.
 

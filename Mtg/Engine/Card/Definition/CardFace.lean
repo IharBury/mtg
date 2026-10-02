@@ -112,6 +112,9 @@ structure CardFace where
   powerPerMountain : Nat := 0
   /-- As this enters, its controller chooses odd or even. Zero is even. -/
   asEntersChooseOddEven : Bool := false
+  /-- If a creature an opponent controls would die, exile it instead
+  (CR 614.6). The original die event never happens. -/
+  exileOppCreaturesInstead : Bool := false
 deriving Inhabited
 
 namespace CardFace
@@ -860,6 +863,12 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         doublesCreatedTokenCount f then
       { b with tokenDoubling := true }
     else b
+  | .replace (.die who) actions =>
+    if CardAction.exileOppDeathCreateWolf? who actions then
+      { b with
+        exileOppCreaturesInstead := true
+        staticAbilities := b.staticAbilities.push .exileOppDeathCreateWolf }
+    else b
   | .replace _ _ => b
   | .forbid
       (.or
@@ -1266,6 +1275,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
         | none => none
       activatedAbilities := b.activatedAbilities
       triggeredAbilities := b.triggeredAbilities
+      exileOppCreaturesInstead := b.exileOppCreaturesInstead
       costReductionIfTargetTapped := b.costReductionIfTargetTapped
       costReductionIfTargetAttackingNontoken := b.costReductionIfTargetAttackingNontoken
       costReductionIfTargetAttacking := b.costReductionIfTargetAttacking
