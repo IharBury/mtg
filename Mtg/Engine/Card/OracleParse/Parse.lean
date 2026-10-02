@@ -383,6 +383,35 @@ def parseExileReturnEndStep (cardName line : String) (n : Nat) : Option (List Ca
             .delayedTrigger (.endStep .player)
               [.putOntoBattlefield (.wasCreatedByAction n)]]))], n + 1)
 
+/-- `Whenever a nontoken creature you control dies, reveal cards from the top
+of your library until you reveal a creature card. If its mana value is less
+than or equal to the number of lands you control, put it onto the
+battlefield. Otherwise, put it into your hand. Put the rest on the bottom of
+your library in a random order. This ability triggers only once each turn.`
+The reveal is action `n`. That action's object is the creature card.
+`restOfAction` is the other revealed cards. “Only once each turn” is not
+the first death since turn start: a creature that dies after this enchantment
+enters still triggers it. -/
+def parseRevealUntilCreature (line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  if normLine line !=
+      "whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. if its mana value is less than or equal to the number of lands you control, put it onto the battlefield. otherwise, put it into your hand. put the rest on the bottom of your library in a random order. this ability triggers only once each turn" then
+    none
+  else
+    let dies :=
+      .die (.intersection [
+        .zone .battlefield, .cardType .creature, .not .token, youControl])
+    let lands :=
+      .intersection [.zone .battlefield, .cardType .land, youControl]
+    some ([.ability (.triggered (.onceEachTurn dies) (.sequence [
+      .actionId n (.revealUntil (.controller .this) (.cardType .creature)),
+      .ifElse
+        (.lessOrEqual
+          (.greatestManaValue (.wasObjectOfAction n))
+          (.count lands))
+        [.putOntoBattlefield (.wasObjectOfAction n)]
+        [.returnToHand (.wasObjectOfAction n)],
+      .putOnLibraryBottomInRandomOrder (.restOfAction n)]))], n + 1)
+
 /-- `When this artifact is put into a graveyard from the battlefield, reveal
 the top thirteen cards of your library. Put a random creature card from among
 them onto the battlefield. Put the rest on the bottom of your library in a
@@ -508,6 +537,7 @@ private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     parseDiscardLegendaryDraw line n <|>
     parseExileOppDeathWolf line n <|>
     parseChooseOddEven cardName line n <|>
+    parseRevealUntilCreature line n <|>
     parseRevealRandomCreature line n <|>
     parseAttackTotalPowerExtraCombat line n <|>
     parseBolgEnters cardName line n <|>

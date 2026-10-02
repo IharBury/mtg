@@ -217,7 +217,8 @@ partial def selectorMatches? (g : Game) (src : Option GameObject) (you : PlayerI
   | .wasObjectOfAction _ | .wasArgumentOfTrigger _ _ | .replacingObject
   | .wasCreatedByAction _ | .affectedByAction _ | .wasObjectSince _ _
   | .variable _ | .topOfLibrary _ _ | .hasCreatureTypeChosenByAction _
-  | .manaValueAtMost _ | .castFromZone _ | .chooseRandom _ | .sharesNameWith _ => none
+  | .manaValueAtMost _ | .castFromZone _ | .chooseRandom _ | .sharesNameWith _
+  | .restOfAction _ => none
 
 /-- Whether `o` matches `sel` from `src`. Unknown selectors do not match. -/
 def selectorMatches (g : Game) (src : Option GameObject) (you : PlayerId)

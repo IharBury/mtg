@@ -231,6 +231,31 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           .zone .battlefield, .cardType .creature, .attacking .all] then
       some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)
     else none
+  -- Part in Friendship: a nontoken creature you control dies. Reveal until
+  -- a creature card. Its mana value, compared with the number of lands you
+  -- control, decides the battlefield or your hand. The other revealed
+  -- cards go on the bottom in a random order. The ability triggers only
+  -- once each turn, which is not the first death of the turn.
+  | .triggered
+      (.onceEachTurn
+        (.die
+          (.intersection
+            [.zone .battlefield, .cardType .creature, .not .token, ctl])))
+      (.sequence [
+        .actionId id (.revealUntil who (.cardType .creature)),
+        .ifElse
+          (.lessOrEqual
+            (.greatestManaValue (.wasObjectOfAction mv))
+            (.count lands))
+          [.putOntoBattlefield (.wasObjectOfAction put)]
+          [.returnToHand (.wasObjectOfAction hand)],
+        .putOnLibraryBottomInRandomOrder (.restOfAction rest)]) =>
+    if ctl == .controlled (.controller .this) && who == .controller .this &&
+        id == mv && id == put && id == hand && id == rest &&
+        lands == .intersection [
+          .zone .battlefield, .cardType .land, .controlled (.controller .this)] then
+      some TriggeredAbility.onNontokenYouControlDiesRevealCreature
+    else none
   -- Getaway Barrel: reveal the top thirteen cards, bind the random
   -- creature to a selector variable, put that card onto the battlefield,
   -- and put the rest on the bottom in a random order.

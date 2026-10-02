@@ -7268,9 +7268,56 @@ def orcristGoblinCleaver : CardDef :=
 #guard orcristGoblinCleaver.staticAbilities == #[.equippedCreatureGetsAndHas 2 2 Keyword.trample]
 #guard orcristGoblinCleaver.triggeredAbilities == #[.onEquippedCombatDamageTreasuresPerChosenType]
 
+/-- Oracle text for Part in Friendship. -/
+def partInFriendshipOracle : String :=
+  "Whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order. This ability triggers only once each turn."
+
+def partInFriendshipDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Part in Friendship",
+    .manaCost [.generic 4, .mono .green],
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "Part in Friendship") partInFriendshipOracle).get!
+
+#guard partInFriendshipDefinition == .card [
+  .name "Part in Friendship",
+  .manaCost [.generic 4, .mono .green],
+  .type .enchantment,
+  .ability
+    (.triggered
+      (.onceEachTurn
+        (.die
+          (.intersection
+            [
+              .zone .battlefield,
+              .cardType .creature,
+              .not .token,
+              .controlled (.controller .this)])))
+      (.sequence
+        [
+          .actionId
+            1
+            (.revealUntil (.controller .this) (.cardType .creature)),
+          .ifElse
+            (.lessOrEqual
+              (.greatestManaValue (.wasObjectOfAction 1))
+              (.count
+                (.intersection
+                  [
+                    .zone .battlefield,
+                    .cardType .land,
+                    .controlled (.controller .this)])))
+            [.putOntoBattlefield (.wasObjectOfAction 1)]
+            [.returnToHand (.wasObjectOfAction 1)],
+          .putOnLibraryBottomInRandomOrder (.restOfAction 1)]))]
+
 def partInFriendship : CardDef :=
-  enchantment "Part in Friendship" (ManaCost.ofGenericAndColor 4 .green) "Whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order. This ability triggers only once each turn."
-    (triggeredAbilities := #[.onNontokenYouControlDiesRevealCreature])
+  partInFriendshipDefinition.toCardDef (oracleText := partInFriendshipOracle)
+
+#guard partInFriendship.oracleText == partInFriendshipOracle
+#guard partInFriendship.triggeredAbilities == #[.onNontokenYouControlDiesRevealCreature]
+#guard partInFriendship.types == #[.enchantment]
+#guard partInFriendship.manaCost == ManaCost.ofGenericAndColor 4 .green
 
 /-- Oracle text for Radagast of Rhosgobel. -/
 def radagastOfRhosgobelOracle : String :=

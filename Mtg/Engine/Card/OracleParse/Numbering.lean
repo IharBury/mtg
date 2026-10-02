@@ -87,7 +87,7 @@ def collectSelector : Selector → List Nat × List Nat
   | .powerAtLeast v | .powerAtMost v | .manaValueAtMost v => collectValue v
   | .castFromZone _ => ([], [])
   | .wasObjectOfAction n | .wasCreatedByAction n | .affectedByAction n
-  | .hasCreatureTypeChosenByAction n =>
+  | .hasCreatureTypeChosenByAction n | .restOfAction n =>
     ([n], [])
   | .wasArgumentOfTrigger n _ => ([], [n])
   | .wasObjectSince a b => appendIds [collectTrigger a, collectTrigger b]
@@ -109,6 +109,7 @@ def collectTrigger : Trigger → List Nat × List Nat
     appendIds [collectSelector a, collectSelector b]
   | .activateAbility who src => appendIds [collectSelector who, collectSelector src]
   | .ordinal _ inner window => appendIds [collectTrigger inner, collectTrigger window]
+  | .onceEachTurn inner => collectTrigger inner
   | .sacrifice s => collectSelector s
   | .abilityWithIdActivated n | .abilityWithIdResolved n => ([], [n])
   | .actionWithId n | .actionWithIdDealtExcessDamage n => ([n], [])
@@ -207,6 +208,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .shuffleIntoOwnersLibrary s | .lookAt s | .putOnLibraryBottomInRandomOrder s
   | .chooseCreatureType s | .removeAllCounters s =>
     collectSelector s
+  | .revealUntil who stop => appendIds [collectSelector who, collectSelector stop]
   | .dealDamage a b v =>
     appendIds [collectSelector a, collectSelector b, collectValue v]
   | .draw a v | .scry a v | .discard a v | .putCounter a _ v
@@ -343,6 +345,7 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .castFromZone z => .castFromZone z
   | .chooseRandom s => .chooseRandom (mapSelector m s)
   | .sharesNameWith s => .sharesNameWith (mapSelector m s)
+  | .restOfAction n => .restOfAction (m.action n)
 
 def mapTriggers (m : IdMaps) : List Trigger → List Trigger
   | [] => []
@@ -363,6 +366,7 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .enterSimultaneously s ps => .enterSimultaneously (mapSelector m s) ps
   | .draw a b => .draw (mapSelector m a) (mapSelector m b)
   | .ordinal n inner window => .ordinal n (mapTrigger m inner) (mapTrigger m window)
+  | .onceEachTurn inner => .onceEachTurn (mapTrigger m inner)
   | .combatDamage a b => .combatDamage (mapSelector m a) (mapSelector m b)
   | .damage a b => .damage (mapSelector m a) (mapSelector m b)
   | .damageSimultaneously a b ps =>
@@ -579,6 +583,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .forEachVariable n s as =>
     .forEachVariable (m.target n) (mapSelector m s) (mapActions m as)
   | .reveal s => .reveal (mapSelector m s)
+  | .revealUntil who stop => .revealUntil (mapSelector m who) (mapSelector m stop)
   | .fight a b => .fight (mapSelector m a) (mapSelector m b)
   | .addManaOfOneColor who syms v =>
     .addManaOfOneColor (mapSelector m who) syms (mapValue m v)

@@ -506,6 +506,10 @@ inductive Selector where
   /-- An object that shares a name with an object matching the selector
   (CR 201.2). -/
   | sharesNameWith : Selector → Selector
+  /-- Objects affected by the numbered action other than that action's
+  primary object. “Put the rest on the bottom” after a reveal-until is
+  these cards. -/
+  | restOfAction : Nat → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
@@ -553,6 +557,11 @@ inductive Trigger where
   /-- The nth occurrence of the inner trigger, counted from the given
   window. -/
   | ordinal : Nat → Trigger → Trigger → Trigger
+  /-- This ability triggers only once each turn (CR 603.2d). The inner
+  trigger is the event. `ordinal 1` since `turnStart` is the first event
+  of the turn, which does not fire when this object enters after that
+  event has already happened. -/
+  | onceEachTurn : Trigger → Trigger
   /-- Whenever the selected object deals combat damage to objects matching
   the given selector. -/
   | combatDamage : Selector → Selector → Trigger

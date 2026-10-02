@@ -327,6 +327,11 @@ inductive CardAction where
   | forEachVariable : Nat → Selector → List CardAction → CardAction
   /-- Reveal the selected object (CR 701.19a). -/
   | reveal : Selector → CardAction
+  /-- Reveal cards from the top of the selected player's library until a
+  card matching the selector is revealed (CR 701.16). `wasObjectOfAction`
+  of an `actionId` around this action is that card. `restOfAction` is
+  the other revealed cards. -/
+  | revealUntil : Selector → Selector → CardAction
   /-- The selected objects fight (CR 701.12). -/
   | fight : Selector → Selector → CardAction
   /-- The selected player chooses one of the listed mana symbols and adds
