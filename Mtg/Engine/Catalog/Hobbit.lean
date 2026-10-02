@@ -107,13 +107,56 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card [
     c.activatedAbilities == #[
       activated (Effect.abilityCreaturesYouControlGet 1 1) (ManaCost.ofGenericAndColor 3 .white)]
 
-def velvetwingButterflies : CardDef :=
-  creature "Velvetwing Butterflies" (ManaCost.ofGenericAndColor 2 .white) #["Insect"] 2 2
-    (oracleText := "Flying\n//ADV//\nGaze in Wonder {1}{W}\nInstant — Adventure\nTap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)")
-    (keywords := Keyword.flying)
-    (adventure := some (adventure "Gaze in Wonder" (ManaCost.ofGenericAndColor 1 .white)
-      "Tap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.tapOneOrTwoCreatures) .instant))
+def velvetwingButterflies : TraditionalCardDefinition := .card [
+  .name "Velvetwing Butterflies",
+  .manaCost [.generic 2, .mono .white],
+  .type .creature,
+  .subtype .insect,
+  .power 2,
+  .toughness 2,
+  .textBox [.keyword .flying],
+  .alternative [
+    .name "Gaze in Wonder",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant,
+    .subtype .adventure,
+    .textBox [
+      .tap [.targets (.or 1 2) [.cardType .creature]]
+    ]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Velvetwing Butterflies {2}{W}",
+  "Creature — Insect",
+  "2/2",
+  "Flying",
+  "//ADV//",
+  "Gaze in Wonder {1}{W}",
+  "Instant — Adventure",
+  "Tap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)"
+]) == some velvetwingButterflies
+
+#guard
+  let c := velvetwingButterflies.toCardDef
+  c.name == "Velvetwing Butterflies" &&
+    c.types == #[.creature] &&
+    c.subtypes == #["Insect"] &&
+    c.power == some 2 &&
+    c.toughness == some 2 &&
+    c.manaCost == ManaCost.ofGenericAndColor 2 .white &&
+    c.keywords == Keyword.flying &&
+    c.spellEffect == none &&
+    c.oracleText == "Flying\n//ADV//\nGaze in Wonder {1}{W}\nInstant — Adventure\nTap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)" &&
+    match c.adventure with
+    | some adv =>
+      adv.name == "Gaze in Wonder" &&
+        adv.manaCost == ManaCost.ofGenericAndColor 1 .white &&
+        adv.types == #[.instant] &&
+        adv.subtypes == #["Adventure"] &&
+        adv.oracleText == "Tap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)" &&
+        adv.spellEffect == some Effect.tapOneOrTwoCreatures
+    | none => false
 
 def magnificentEnd : CardDef :=
   instant "Magnificent End" (ManaCost.ofGenericAndColor 4 .white)
@@ -1302,8 +1345,7 @@ that are also in the core catalog. -/
 def hobbitCards : Array CardDef :=
   #[plains, island, swamp, mountain, forest] ++
   -- `++` compiles a run of DSL cards into `CardDef`s.
-  (#[bofurReliableGuardian, dwarvenProvisioner] ++ #[
-  velvetwingButterflies,
+  (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies] ++ #[
   magnificentEnd,
   eagleOfTheGreatShelf,
   vowToErebor,
