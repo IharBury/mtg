@@ -4937,14 +4937,15 @@ def kiliTheResourcefulDefinition : TraditionalCardDefinition := .card <|
         Selector.keywordAbility .equip,
         .controlled (.controller .this)])
       [.mana [.generic 0]]])),
-  .ability (.triggered
+  .ability (.abilityId 1 (.triggeredWhile
     (.enter
       (.intersection [
         .not .this,
         .zone .battlefield,
         .union [.subtype .dwarf, .subtype .equipment],
         .controlled (.controller .this)]))
-    (.draw (.controller .this) 1))]
+    (.not (.happened (.abilityTriggers (.abilityWithId 1)) .turnStart))
+    (.draw (.controller .this) 1)))]
 
 def kiliTheResourceful : CardDef :=
   kiliTheResourcefulDefinition.toCardDef (oracleText := kiliTheResourcefulOracle)
@@ -6598,16 +6599,19 @@ def elrondMoonReaderDefinition : TraditionalCardDefinition := .card <|
   .power 3,
   .toughness 3
   ] ++ [.ability
-   (.triggered
-     (.ordinal
-       1
-       .turnStart
+   (.abilityId
+     1
+     (.triggeredWhile
        (.activateAbility
          (.controller .this)
          (.intersection
            [.zone .battlefield,
-            .cardType .creature])))
-     (.draw (.controller .this) (.int 1))),
+            .cardType .creature]))
+       (.not
+         (.happened
+           (.abilityTriggers (.abilityWithId 1))
+           .turnStart))
+       (.draw (.controller .this) (.int 1)))),
  .ability
    (.activated
      [.mana
@@ -6619,7 +6623,7 @@ def elrondMoonReaderDefinition : TraditionalCardDefinition := .card <|
          1
          (.exile
            (.targets
-             1
+             2
              (.range (.int 0) (.int 2))
              (.intersection
                [.not .this,
@@ -7284,17 +7288,21 @@ def partInFriendshipDefinition : TraditionalCardDefinition := .card <|
   .manaCost [.generic 4, .mono .green],
   .type .enchantment,
   .ability
-    (.triggered
-      (.ordinal 1 .turnStart
+    (.abilityId 1
+      (.triggeredWhile
         (.die
           (.intersection
             [
               .zone .battlefield,
               .cardType .creature,
               .not .token,
-              .controlled (.controller .this)])))
-      (.sequence
-        [
+              .controlled (.controller .this)]))
+        (.not
+          (.happened
+            (.abilityTriggers (.abilityWithId 1))
+            .turnStart))
+        (.sequence
+          [
           .actionId
             1
             (.revealFromLibraryTopUntil (.controller .this) (.cardType .creature) []),
@@ -7314,7 +7322,7 @@ def partInFriendshipDefinition : TraditionalCardDefinition := .card <|
               (.intersection [.wasObjectOfAction 1, .cardType .creature])],
           .putOnLibraryBottomInRandomOrder
             (.intersection
-              [.wasObjectOfAction 1, .not (.cardType .creature)])]))]
+              [.wasObjectOfAction 1, .not (.cardType .creature)])])))]
 
 def partInFriendship : CardDef :=
   partInFriendshipDefinition.toCardDef (oracleText := partInFriendshipOracle)

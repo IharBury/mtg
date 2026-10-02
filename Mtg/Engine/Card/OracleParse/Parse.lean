@@ -351,13 +351,12 @@ def parseActivateCreatureDrawOnce (line : String) (n : Nat) : Option (List CardP
       none
     else
       -- “You” is this ability's controller. Another player's activation
-      -- is not this event. “This ability triggers only once each turn” is
-      -- the first such activation since turn start.
-      some ([.ability (.triggered
-        (.ordinal 1 .turnStart
-          (.activateAbility (.controller .this)
-            (.intersection [.zone .battlefield, .cardType .creature])))
-        (.draw (.controller .this) 1))], n)
+      -- is not this event. “This ability triggers only once each turn”
+      -- is this ability not having triggered since turn start.
+      some ([.ability (triggersOnceEachTurn n
+        (.activateAbility (.controller .this)
+          (.intersection [.zone .battlefield, .cardType .creature]))
+        (.draw (.controller .this) 1))], n + 1)
   | _ => none
 
 /-- `{5}{U}{U}: Exile up to two other target nonland permanents you control.
@@ -390,8 +389,8 @@ battlefield. Otherwise, put it into your hand. Put the rest on the bottom of
 your library in a random order. This ability triggers only once each turn.`
 The reveal is action `n`. `wasObjectOfAction` of that action is every
 revealed card. The creature card is the revealed card that is a creature,
-and the rest are the revealed cards that are not. “This ability triggers
-only once each turn” is the first such death since turn start. -/
+and the rest are the revealed cards that are not. Ability `n` is that
+trigger, and it fires only while it has not triggered since `.turnStart`. -/
 def parseRevealUntilCreature (line : String) (n : Nat) : Option (List CardPart × Nat) :=
   if normLine line !=
       "whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. if its mana value is less than or equal to the number of lands you control, put it onto the battlefield. otherwise, put it into your hand. put the rest on the bottom of your library in a random order. this ability triggers only once each turn" then
@@ -405,7 +404,7 @@ def parseRevealUntilCreature (line : String) (n : Nat) : Option (List CardPart �
     let revealed := Selector.wasObjectOfAction n
     let creature := .intersection [revealed, .cardType .creature]
     let rest := .intersection [revealed, .not (.cardType .creature)]
-    some ([.ability (.triggered (.ordinal 1 .turnStart dies) (.sequence [
+    some ([.ability (triggersOnceEachTurn n dies (.sequence [
       .actionId n (.revealFromLibraryTopUntil (.controller .this) (.cardType .creature) []),
       .ifElse
         (.lessOrEqual (.greatestManaValue creature) (.count lands))
@@ -655,7 +654,7 @@ private def parseOneLineTail (cardName : String) (line : String) (n : Nat) :
     sole (parseBecomesTargetDraw cardName line) n <|>
     sole (parseFirstMainAddMana line) n <|>
     sole (parseCantAttackUnlessNOther cardName line) n <|>
-    sole (parseAnotherSubtypeOrEquipmentEntersDraw line) n <|>
+    carry (parseAnotherSubtypeOrEquipmentEntersDraw line n) <|>
     sole (parseArtifactYouControlEntersDraw line) n <|>
     sole (parseUpkeepCreateCreature line) n <|>
     sole (parseYourEndStepDraw line) n <|>

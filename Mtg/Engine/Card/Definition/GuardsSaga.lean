@@ -1451,15 +1451,18 @@ namespace Mtg.Engine
     some (TriggeredAbility.onLandYouControlEntersBecomePT 4 2)
 
 -- Another Dwarf or Equipment you control entering draws once each turn.
+-- The ability fires while it has not triggered since turn start.
 #guard
-  (Ability.triggered
-    (.enter
-      (.intersection [
-        .not .this,
-        .zone .battlefield,
-        .union [.subtype .dwarf, .subtype .equipment],
-        .controlled (.controller .this)]))
-    (.draw (.controller .this) 1)).toTriggeredAbility? ==
+  (Ability.abilityId 1
+    (.triggeredWhile
+      (.enter
+        (.intersection [
+          .not .this,
+          .zone .battlefield,
+          .union [.subtype .dwarf, .subtype .equipment],
+          .controlled (.controller .this)]))
+      (.not (.happened (.abilityTriggers (.abilityWithId 1)) .turnStart))
+      (.draw (.controller .this) 1))).toTriggeredAbility? ==
     some (TriggeredAbility.onAnotherSubtypeOrEquipmentEntersDrawOnce "Dwarf")
 
 -- Sacrifice a creature is its own additional cost.

@@ -545,13 +545,14 @@ open OracleParts
           Selector.keywordAbility .equip,
           .controlled (.controller .this)])
         [.mana [.generic 0]]])),
-    .ability (.triggered
+    .ability (.abilityId 1 (.triggeredWhile
       (.enter (.intersection [
         .not .this,
         .zone .battlefield,
         .union [.subtype .dwarf, .subtype .equipment],
         youControl]))
-      (.draw (.controller .this) 1))]
+      (.not (.happened (.abilityTriggers (.abilityWithId 1)) .turnStart))
+      (.draw (.controller .this) 1)))]
 #guard parseOracleParts (name := "")
   "As long as you have an enduring story, you may pay {1} rather than pay the equip cost of the first equip ability you activate each turn." ==
   none
