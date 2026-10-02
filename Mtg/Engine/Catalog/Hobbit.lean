@@ -6739,15 +6739,17 @@ def getawayBarrelDefinition : TraditionalCardDefinition := .card <|
             (.topOfLibrary
               (.controller .this)
               (.int 13))),
-        .actionId 2
+        .putOntoBattlefield
           (.chooseRandom
             (.intersection
               [.wasObjectOfAction 1, .cardType .creature])),
-        .putOntoBattlefield (.wasObjectOfAction 2),
         .putOnLibraryBottomInRandomOrder
           (.intersection
             [.wasObjectOfAction 1,
-             .not (.wasObjectOfAction 2)])]))]
+             .not
+               (.chooseRandom
+                 (.intersection
+                   [.wasObjectOfAction 1, .cardType .creature]))])]))]
 
 def getawayBarrel : CardDef :=
   getawayBarrelDefinition.toCardDef (oracleText := getawayBarrelOracle)

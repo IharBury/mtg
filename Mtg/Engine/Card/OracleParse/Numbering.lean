@@ -73,7 +73,7 @@ def collectSelector : Selector → List Nat × List Nat
   | .player | .token | .replacingObject =>
     ([], [])
   | .source s | .controller s | .not s | .controlled s | .hasTarget s | .isTargetOf s
-  | .opponent s | .owner s | .attacking s | .blocking s | .hostOf s =>
+  | .opponent s | .owner s | .attacking s | .blocking s | .hostOf s | .chooseRandom s =>
     collectSelector s
   | .target n s => appendIds [([], [n]), collectSelector s]
   | .targets n r s | .targetSet n r s _ =>
@@ -249,7 +249,6 @@ def collectAction : CardAction → List Nat × List Nat
   | .delayedTrigger t as => appendIds [collectTrigger t, appendIds (as.map collectAction)]
   | .exileUntil s t => appendIds [collectSelector s, collectTrigger t]
   | .addPhaseAfterThisPhase _ => ([], [])
-  | .chooseRandom s => collectSelector s
 
 end
 
@@ -335,6 +334,7 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .hasCreatureTypeChosenByAction n => .hasCreatureTypeChosenByAction (m.action n)
   | .manaValueAtMost v => .manaValueAtMost (mapValue m v)
   | .castFromZone z => .castFromZone z
+  | .chooseRandom s => .chooseRandom (mapSelector m s)
 
 def mapTriggers (m : IdMaps) : List Trigger → List Trigger
   | [] => []
@@ -593,7 +593,6 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .delayedTrigger t as => .delayedTrigger (mapTrigger m t) (mapActions m as)
   | .exileUntil s t => .exileUntil (mapSelector m s) (mapTrigger m t)
   | .addPhaseAfterThisPhase p => .addPhaseAfterThisPhase p
-  | .chooseRandom s => .chooseRandom (mapSelector m s)
 
 end
 

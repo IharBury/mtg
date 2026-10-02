@@ -391,9 +391,6 @@ inductive CardAction where
   /-- After the current phase, add this phase to the turn (CR 500.7).
   `.combat` is an additional combat phase. -/
   | addPhaseAfterThisPhase : Phase → CardAction
-  /-- Choose an object at random from those matching the selector.
-  Number it with `actionId` so `wasObjectOfAction` is the chosen object. -/
-  | chooseRandom : Selector → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token

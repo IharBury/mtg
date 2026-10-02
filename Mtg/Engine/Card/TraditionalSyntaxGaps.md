@@ -101,7 +101,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   creature type chosen by a numbered `CardAction.chooseCreatureType`),
   `manaValueAtMost` (mana value at most a `Value`), `castFromZone` (the zone
   this spell was cast from; `.not (.castFromZone .hand)` is “from anywhere
-  other than your hand”). `hostOf` an Equipment is a creature that is
+  other than your hand”), `chooseRandom` (one object chosen at random from
+  those matching the selector; the same selector in one effect is that one
+  object). `hostOf` an Equipment is a creature that is
   equipped.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
@@ -191,10 +193,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   the next time the event occurs; CR 603.7; `.endStep .player` is the next
   end step),
   `addPhaseAfterThisPhase` (after the current phase, add the given phase
-  to the turn; `.combat` is an additional combat phase),
-  `chooseRandom` (choose an object at random from those matching the
-  selector; number it with `actionId` so `wasObjectOfAction` is the chosen
-  object).
+  to the turn; `.combat` is an additional combat phase).
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -357,7 +356,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.exileThenReturn` | Exile, then `CardAction.delayedTrigger` of `.endStep .player`. The delayed trigger puts `wasCreatedByAction` of the exile onto the battlefield the next time an end step begins (CR 603.7b). Elrond, Moon-Reader. Roll-Roll-Roll-Roll, S.H.I.E.L.D. Flying Car, and Wiccan, Rising Magician spell the same return and are not converted yet |
 | `CardAction.exileUntil` | Exile the selected objects until the event (CR 610.3). Immediately after that event, a one-shot returns each object that is still exiled to the zone it left. Celebrate the Mountain-king exiles, for each opponent, up to one target nonland permanent that player controls until the enchantment leaves the battlefield. Banishing Light, Cloak and Dagger, Entwined, Super Villain Lockup, and Web Up spell the same return and are not converted yet |
 | `Selector.attached` for “that are equipped” | `Selector.hostOf` of Equipment on the battlefield. “Equipment attached to” an object stays open. Dáin Ironfoot grants double strike to attacking creatures that are hosts of Equipment |
-| `CardAction.randomize` | `CardAction.chooseRandom`, numbered with `actionId` so `wasObjectOfAction` is the chosen object. Getaway Barrel reveals the top thirteen cards, chooses a random creature card from among them, puts that creature onto the battlefield, and puts the rest on the bottom in a random order |
+| `CardAction.randomize` | `Selector.chooseRandom` of the objects to choose from. The same selector in one effect is that one object, so `.not` of it is the rest. Getaway Barrel reveals the top thirteen cards, puts a random creature card from among them onto the battlefield, and puts the rest on the bottom in a random order |
 
 ## Missing constructors by type
 
@@ -691,10 +690,11 @@ still yields `onEnterExileOppNonlandEachUntilLeaves`.
 
 Getaway Barrel is a `TraditionalCardDefinition` read with `parseOracleParts`.
 When it is put into a graveyard from the battlefield, it reveals the top
-thirteen cards of its controller's library. `CardAction.chooseRandom` picks
-a creature card from among those revealed cards. That creature is put onto
-the battlefield, and the rest go on the bottom of the library in a random
-order. Compiling that ability still yields `onDiesRevealTopPutRandomCreature`.
+thirteen cards of its controller's library. `Selector.chooseRandom` is one
+creature card from among those revealed cards. That creature is put onto
+the battlefield. The same selector is that one card, so `.not` of it is
+the rest, which go on the bottom of the library in a random order.
+Compiling that ability still yields `onDiesRevealTopPutRandomCreature`.
 
 ## Cards that still cannot convert
 
