@@ -714,8 +714,8 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     if id == id' && p == .variable v && p' == p && p'' == p then
       some Effect.worldsWithinWorlds
     else none
-  -- Elrond, Moon-Reader: exile, then a replacement returns those cards at
-  -- the first end step after that exile. The end step still happens.
+  -- Elrond, Moon-Reader: exile, then a delayed trigger returns those cards
+  -- at the beginning of the next end step.
   | .sequence [
       .actionId id
         (.exile
@@ -725,14 +725,9 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
               .zone .battlefield,
               .not (.cardType .land),
               .controlled (.controller .this)]))),
-      .continuous
-        [.replace
-          (.ordinal 1 (.actionWithId since) (.endStep .player))
-          [
-            .putOntoBattlefield (.wasCreatedByAction returned),
-            .keepReplacedAction]]
-        .endOfGame] =>
-    if id == since && id == returned then
+      .delayed (.endStep .player)
+        [.putOntoBattlefield (.wasCreatedByAction returned)]] =>
+    if id == returned then
       some Effect.exileThenReturnNextEnd
     else none
   | _ => none

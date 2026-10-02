@@ -363,11 +363,9 @@ def parseActivateCreatureDrawOnce (line : String) (n : Nat) : Option (List CardP
 /-- `{5}{U}{U}: Exile up to two other target nonland permanents you control.
 Return those cards to the battlefield under their owner's control at the
 beginning of the next end step.`
-The exile is action `n`. A continuous replacement effect puts those cards
-onto the battlefield at the first end step after that exile, and the end
-step still happens (CR 614). Later end steps are not that first one.
-The replacement lasts until the end of the game (CR 611.2a). They return
-under their owner's control. -/
+The exile is action `n`. Resolving this ability creates a delayed triggered
+ability (CR 603.7). That ability puts those cards onto the battlefield the
+next time an end step begins (CR 603.7b), under their owner's control. -/
 def parseExileReturnEndStep (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
   (splitPrintedAbility? line).bind fun (costText, effect) =>
     (parsePrintedCosts cardName costText).bind fun costs =>
@@ -382,13 +380,8 @@ def parseExileReturnEndStep (cardName line : String) (n : Nat) : Option (List Ca
                 (.targets n (.range 0 2)
                   (.intersection [
                     .not .this, .zone .battlefield, .not (.cardType .land), youControl]))),
-            .continuous
-              [.replace
-                (.ordinal 1 (.actionWithId n) (.endStep .player))
-                [
-                  .putOntoBattlefield (.wasCreatedByAction n),
-                  .keepReplacedAction]]
-              .endOfGame]))], n + 1)
+            .delayed (.endStep .player)
+              [.putOntoBattlefield (.wasCreatedByAction n)]]))], n + 1)
 
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
