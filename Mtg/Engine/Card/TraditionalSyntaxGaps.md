@@ -5,13 +5,14 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**193** catalog cards are still `CardDef` helpers. **168**
+**192** catalog cards are still `CardDef` helpers. **167**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **25** lost
 their last tag (named counters, `CardAction.removeCounter`,
 enters-with-counters, `CardAction.reflexive`,
 `CardAction.addPhaseAfterThisPhase`,
-`CardAction.delayedTrigger`, `CardAction.exileUntil`, or `hostOf` of Equipment) and
+`CardAction.delayedTrigger`, `CardAction.exileUntil`, `hostOf` of Equipment, or
+`Value.greatestCounterCount`) and
 are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
@@ -27,12 +28,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 169 | 19 | 16 |
+| The Hobbit (HOB) | 188 | 170 | 18 | 16 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 44 |
-| Marvel Super Heroes (MSH) | 281 | 157 | 124 | 108 |
-| **Total** | **586** | **393** | **193** | **168** |
+| Marvel Super Heroes (MSH) | 281 | 157 | 124 | 107 |
+| **Total** | **586** | **394** | **192** | **167** |
 
-All 393 `TraditionalCardDefinition`s (169 HOB, 67 HOC, 157 MSH,
+All 394 `TraditionalCardDefinition`s (170 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -72,7 +73,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   and 1 for odd), `remainder` (the remainder when the first value is
   divided by the second; a mana value divided by 2 is 0 when even and 1
   when odd), `excessDamageOfActionWithId` (excess
-  damage dealt by the numbered action; CR 120.4a).
+  damage dealt by the numbered action; CR 120.4a), `greatestCounterCount` (the
+  greatest number of counters of a kind on any one of the selected objects;
+  CR 122.1).
 - **Keyword** — `flash`, `haste`, `vigilance`, `flying`, `menace`, `hexproof`,
   `indestructible`, `reach`, `trample`, `deathtouch`, `defender`, `lifelink`,
   `firstStrike`, `islandwalk`, `storied`, `doubleStrike`, `prowess`, `ascend`,
@@ -369,6 +372,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.randomize` | `Selector.chooseRandom` of the objects to choose from. Getaway Barrel reveals the top thirteen cards, binds one random creature card from among them with `defineSelectorVariable`, puts that variable onto the battlefield, and puts the rest on the bottom in a random order |
 | `CardAction.chooseOddEven` | `CardAction.chooseOddEven` records the choice as `Value.variable`: 0 is even and 1 is odd. A spell has mana value of that quality when `Value.remainder` of its mana value and 2 equals that variable. Gollum, Riddle Master. Thanos, the Mad Titan spells the same choice and is not converted yet |
 | `SetPredicate.shareName` | `Selector.sharesNameWith` of the objects that have that name. Key to the Side-Door discards one legendary card from a hand that shares a name with a legendary permanent its controller controls |
+| `Value.greatestCounterCount` | The greatest number of counters of a kind on any one of the selected objects (CR 122.1). Last Light of Durin's Day checks six or more quest counters. Red Hulk's only remaining tag was this count and is not converted yet |
 
 ## Missing constructors by type
 
@@ -378,8 +382,6 @@ complete.
 
 ### `Value`
 
-- **`counterCount`** (5 cards) — The number of counters of a kind on an object
-  - Alien Invasion; Palantír of Orthanc; Red Hulk; The One Ring; Tom Bombadil
 - **`greatestCountAmongPlayers`** (1 card) — The greatest count over players (greatest number of artifacts an opponent controls)
   - Cavern-Hoard Dragon
 - **`lifeGainedThisTurn`** (1 card) — How much life a player gained this turn
@@ -733,6 +735,18 @@ draws two cards. That card is `Selector.sharesNameWith` a legendary permanent
 its controller controls (CR 201.2). Compiling those abilities still yields
 `Effect.targetCantBeBlockedThisTurn` and `Effect.discardLegendarySameNameDraw`.
 
+Last Light of Durin's Day is a `TraditionalCardDefinition` read with
+`parseOracleParts`. Whenever a Mountain its controller controls enters, it
+puts a quest counter on itself. Six or more is `Value.greatestCounterCount` of those
+quest counters. The sacrifice is numbered, and “if you do” is that sacrifice
+having happened. The player then chooses one search. Searching only that
+player's hand puts one Dragon card from that hand onto the battlefield.
+Searching both that hand and that library is `searchLibraryThenShuffle`, so
+the library is shuffled (CR 701.19), and the Dragon card is one card from
+those zones. Mountaincycling `{2}` is `Keyword.typecycling` of Mountain.
+Compiling those abilities still yields `onMountainEntersQuestThenDragon` and
+Mountain typecycling.
+
 ## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. Evidence is the
@@ -1003,7 +1017,6 @@ Converted cards are omitted here.
 **Palantír of Orthanc** (`palantirOfOrthanc`)
 
 - `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
-- `Value.counterCount` — The number of counters of a kind on an object
 
 **Saruman of Many Colors** (`sarumanOfManyColors`)
 
@@ -1044,7 +1057,6 @@ Converted cards are omitted here.
 
 **The One Ring** (`theOneRing`)
 
-- `Value.counterCount` — The number of counters of a kind on an object
 - `CardAction.gainProtection` — A player gains protection from everything
 - `Trigger.nextTurnOf` — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
 
@@ -1059,7 +1071,6 @@ Converted cards are omitted here.
 **Tom Bombadil** (`tomBombadil`)
 
 - `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
-- `Value.counterCount` — The number of counters of a kind on an object
 - `Trigger.chapterResolves` — Whenever the final chapter ability of a Saga resolves
 
 **Troll of Khazad-dûm** (`trollOfKhazadDum`)
@@ -1079,7 +1090,7 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (`gainSubtype` only adds)
 
-### Marvel Super Heroes (MSH) (108 cards)
+### Marvel Super Heroes (MSH) (107 cards)
 
 **Absorbing Man** (`absorbingMan`)
 
@@ -1104,7 +1115,6 @@ Converted cards are omitted here.
 **Alien Invasion** (`alienInvasion`)
 
 - `ContinuousEffect.attacksEachCombat` — Attacks each combat if able (“can't attack” is `forbid` of `Trigger.attack`)
-- `Value.counterCount` — The number of counters of a kind on an object
 
 **Ant-Man, Colony Commander** (`antManColonyCommander`)
 
@@ -1402,10 +1412,6 @@ Converted cards are omitted here.
 
 - `Selector.damagedThisTurn` — Objects that were dealt damage / dealt damage this turn
 
-**Red Hulk** (`redHulk`)
-
-- `Value.counterCount` — The number of counters of a kind on an object
-
 **Reptil, Dinomorpher** (`reptilDinomorpher`)
 
 - `ContinuousEffect.setTypes` — Set card types/subtypes rather than only gain them (“becomes an artifact creature”, “is an artifact”, copy exceptions)
@@ -1574,15 +1580,16 @@ them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, enters-with-counters,
 `replace` of `Trigger.createTokens`, `replace` of `Trigger.abilityTriggers`,
 `CardAction.reflexive`, `CardAction.addPhaseAfterThisPhase`,
-`CardAction.delayedTrigger`, `CardAction.exileUntil`, or `hostOf` of Equipment
+`CardAction.delayedTrigger`, `CardAction.exileUntil`, `hostOf` of Equipment, or
+`Value.greatestCounterCount`
 became expressible. A later pass
 should reread them before conversion.
 
-**Hobbit (3):** Last Light of Durin's Day; Roll-Roll-Roll-Roll; Wizard's Staff.
+**Hobbit (2):** Roll-Roll-Roll-Roll; Wizard's Staff.
 
 **Hobbit Eternal (6):** Arwen, Mortal Queen; Banishing Light; Bilbo, Fellow Conspirator; Chief of the Wilds; Long-Lost Lances; Minas Morgul, Dark Fortress.
 
-**Marvel Super Heroes (16):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Cloak and Dagger, Entwined; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; S.H.I.E.L.D. Flying Car; Spider-Man, To the Rescue; Super Villain Lockup; Super-Adaptoid; The Astonishing Ant-Man; The Incredible Hulk; Thunderbolts Conspiracy; Web Up; Wiccan, Rising Magician.
+**Marvel Super Heroes (17):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Cloak and Dagger, Entwined; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Red Hulk; S.H.I.E.L.D. Flying Car; Spider-Man, To the Rescue; Super Villain Lockup; Super-Adaptoid; The Astonishing Ant-Man; The Incredible Hulk; Thunderbolts Conspiracy; Web Up; Wiccan, Rising Magician.
 
 ## Method notes
 

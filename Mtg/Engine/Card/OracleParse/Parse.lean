@@ -468,10 +468,44 @@ def parseDiscardLegendaryDraw (line : String) (n : Nat) : Option (List CardPart 
               (.draw (.controller .this) 2))], n)
       | _ => none
 
+/-- `Whenever a Mountain you control enters, put a quest counter on this
+enchantment. If it has six or more quest counters on it, sacrifice it. If
+you do, search your hand and/or library for a Dragon card and put it onto
+the battlefield. If you search your library this way, shuffle.`
+The sacrifice is action `n`. “If you do” is that action having happened.
+The player chooses one search. Searching only that player's hand puts one
+Dragon card from that hand onto the battlefield and does not shuffle.
+Searching both that hand and that library is `searchLibraryThenShuffle`,
+so the library is shuffled (CR 701.19). The Dragon card is one card from
+the zones that search looked at. -/
+def parseMountainQuestDragon (line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  if normLine line !=
+      "whenever a mountain you control enters, put a quest counter on this enchantment. if it has six or more quest counters on it, sacrifice it. if you do, search your hand and/or library for a dragon card and put it onto the battlefield. if you search your library this way, shuffle" then
+    none
+  else
+    let you := .controller .this
+    let dragonIn (zone : ZoneKind) : Selector :=
+      .intersection [.zone zone, .owner you, .subtype .dragon]
+    let mountain :=
+      .intersection [.zone .battlefield, .subtype .mountain, youControl]
+    some ([.ability (.triggered (.enter mountain) (.sequence [
+      .putCounter (.source .this) .quest 1,
+      .if (.greaterOrEqual (.greatestCounterCount (.source .this) .quest) 6) [
+        .actionId n (.sacrifice (.source .this)),
+        .if (.happened (.actionWithId n) .gameStart) [
+          .playerSelectAction you (.range 1 1) [
+            .putOntoBattlefield
+              (.selected you (.range 1 1) (dragonIn .hand)),
+            .searchLibraryThenShuffle you [
+              .putOntoBattlefield
+                (.selected you (.range 1 1)
+                  (.union [dragonIn .hand, dragonIn .library]))]]]]])),], n + 1)
+
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  parseDiscardLegendaryDraw line n <|>
+  parseMountainQuestDragon line n <|>
+    parseDiscardLegendaryDraw line n <|>
     parseExileOppDeathWolf line n <|>
     parseChooseOddEven cardName line n <|>
     parseRevealRandomCreature line n <|>

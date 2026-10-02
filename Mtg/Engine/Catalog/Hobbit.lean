@@ -7041,10 +7041,73 @@ def lakeTownToymaker : CardDef :=
 #guard lakeTownToymaker.oracleText == lakeTownToymakerOracle
 #guard lakeTownToymaker.triggeredAbilities == #[.onYourBeginCombatIfDrawnTwoPumpFirstStrike]
 
+/-- Oracle text for Last Light of Durin's Day. -/
+def lastLightOfDurinSDayOracle : String :=
+  "Whenever a Mountain you control enters, put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle.\nMountaincycling {2} ({2}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)"
+
+def lastLightOfDurinSDayDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Last Light of Durin's Day",
+    .manaCost [.generic 1, .mono .red],
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "Last Light of Durin's Day") lastLightOfDurinSDayOracle).get!
+
+#guard lastLightOfDurinSDayDefinition == .card [
+  .name "Last Light of Durin's Day",
+  .manaCost [.generic 1, .mono .red],
+  .type .enchantment,
+  .ability
+    (.triggered
+      (.enter
+        (.intersection
+          [.zone .battlefield, .subtype .mountain, .controlled (.controller .this)]))
+      (.sequence
+        [
+          .putCounter (.source .this) .quest (.int 1),
+          .if
+            (.greaterOrEqual (.greatestCounterCount (.source .this) .quest) (.int 6))
+            [
+              .actionId 1 (.sacrifice (.source .this)),
+              .if
+                (.happened (.actionWithId 1) .gameStart)
+                [
+                  .playerSelectAction
+                    (.controller .this)
+                    (.range 1 1)
+                    [
+                      .putOntoBattlefield
+                        (.selected
+                          (.controller .this)
+                          (.range 1 1)
+                          (.intersection
+                            [.zone .hand, .owner (.controller .this), .subtype .dragon])),
+                      .searchLibraryThenShuffle
+                        (.controller .this)
+                        [
+                          .putOntoBattlefield
+                            (.selected
+                              (.controller .this)
+                              (.range 1 1)
+                              (.union
+                                [
+                                  .intersection
+                                    [.zone .hand, .owner (.controller .this), .subtype .dragon],
+                                  .intersection
+                                    [
+                                      .zone .library,
+                                      .owner (.controller .this),
+                                      .subtype .dragon]]))]]]]])),
+  .ability
+    (.keywordWithCost (.typecycling [] [] [.mountain]) [.mana [.generic 2]])]
+
 def lastLightOfDurinSDay : CardDef :=
-  enchantment "Last Light of Durin's Day" (ManaCost.ofGenericAndColor 1 .red) "Whenever a Mountain you control enters, put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle.\nMountaincycling {2} ({2}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)"
-    (triggeredAbilities := #[.onMountainEntersQuestThenDragon])
-    (activatedAbilities := #[typecyclingAbility "Mountain" (ManaCost.ofGeneric 2)])
+  lastLightOfDurinSDayDefinition.toCardDef (oracleText := lastLightOfDurinSDayOracle)
+
+#guard lastLightOfDurinSDay.oracleText == lastLightOfDurinSDayOracle
+#guard lastLightOfDurinSDay.triggeredAbilities == #[.onMountainEntersQuestThenDragon]
+#guard lastLightOfDurinSDay.activatedAbilities == #[typecyclingAbility "Mountain" (ManaCost.ofGeneric 2)]
+#guard lastLightOfDurinSDay.types == #[.enchantment]
+#guard lastLightOfDurinSDay.manaCost == ManaCost.ofGenericAndColor 1 .red
 
 def masterSCouncillors : CardDef :=
   creature "Master's Councillors" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Advisor"] 1 3 (oracleText := "Vigilance\nThis creature gets +2/+0 for each graveyard with seven or more cards in it.\nWhenever you draw your second card each turn, target player mills three cards. (They put the top three cards of their library into their graveyard.)")
