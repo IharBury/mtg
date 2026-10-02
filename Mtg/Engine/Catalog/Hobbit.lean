@@ -16,13 +16,58 @@ namespace Mtg.Engine.Catalog
 
 open Mtg.Engine
 
-def bofurReliableGuardian : CardDef :=
-  legendaryCreature "Bofur, Reliable Guardian" (ManaCost.ofColor .white) #["Dwarf", "Scout"] 1 1
-    (oracleText := "Lifelink\n//ADV//\nConcerted Care {1}{W}\nInstant — Adventure\nTarget artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)")
-    (keywords := Keyword.lifelink)
-    (adventure := some (adventure "Concerted Care" (ManaCost.ofGenericAndColor 1 .white)
-      "Target artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.grantHexproofIndestructible) .instant))
+def bofurReliableGuardian : TraditionalCardDefinition := .card [
+  .name "Bofur, Reliable Guardian",
+  .manaCost [.mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .scout,
+  .power 1,
+  .toughness 1,
+  .ability (.keyword .lifelink),
+  .alternative [
+    .name "Concerted Care",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant,
+    .subtype .adventure,
+    .textBox [
+      .gainUntil
+        [.target [.or [.cardType .artifact, .cardType .creature], .controlledBy .you]]
+        [.keyword .hexproof, .keyword .indestructible]
+        .endOfTurn
+    ]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Bofur, Reliable Guardian {W}",
+  "Legendary Creature — Dwarf Scout",
+  "1/1",
+  "Lifelink",
+  "//ADV//",
+  "Concerted Care {1}{W}",
+  "Instant — Adventure",
+  "Target artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)"
+]) == some bofurReliableGuardian
+
+#guard
+  let c := bofurReliableGuardian.toCardDef
+  c.keywords == Keyword.lifelink &&
+    c.subtypes == #["Dwarf", "Scout"] &&
+    c.hasSupertype .legendary &&
+    c.power == some 1 &&
+    c.toughness == some 1 &&
+    c.manaCost == ManaCost.ofColor .white &&
+    c.oracleText == "Lifelink\n//ADV//\nConcerted Care {1}{W}\nInstant — Adventure\nTarget artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)" &&
+    match c.adventure with
+    | some adv =>
+      adv.name == "Concerted Care" &&
+        adv.manaCost == ManaCost.ofGenericAndColor 1 .white &&
+        adv.types == #[.instant] &&
+        adv.subtypes == #["Adventure"] &&
+        adv.spellEffect == some Effect.grantHexproofIndestructible
+    | none => false
 
 def dwarvenProvisioner : CardDef :=
   creature "Dwarven Provisioner" (ManaCost.ofGenericAndColor 1 .white) #["Dwarf", "Citizen"] 2 2
