@@ -468,10 +468,34 @@ def parseDiscardLegendaryDraw (line : String) (n : Nat) : Option (List CardPart 
               (.draw (.controller .this) 2))], n)
       | _ => none
 
+/-- `Whenever a Mountain you control enters, put a quest counter on this
+enchantment. If it has six or more quest counters on it, sacrifice it. If
+you do, search your hand and/or library for a Dragon card and put it onto
+the battlefield. If you search your library this way, shuffle.`
+The sacrifice is action `n`. “If you do” is that action having happened.
+The search covers a hand and a library. Searching the library shuffles
+(CR 701.19). -/
+def parseMountainQuestDragon (line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  if normLine line !=
+      "whenever a mountain you control enters, put a quest counter on this enchantment. if it has six or more quest counters on it, sacrifice it. if you do, search your hand and/or library for a dragon card and put it onto the battlefield. if you search your library this way, shuffle" then
+    none
+  else
+    let mountain :=
+      .intersection [.zone .battlefield, .subtype .mountain, youControl]
+    some ([.ability (.triggered (.enter mountain) (.sequence [
+      .putCounter (.source .this) .quest 1,
+      .if (.greaterOrEqual (.counterCount (.source .this) .quest) 6) [
+        .actionId n (.sacrifice (.source .this)),
+        .if (.happened (.actionWithId n) .gameStart) [
+          .searchHandOrLibrary (.controller .this) [
+            .putOntoBattlefield
+              (.selected (.controller .this) (.range 1 1) (.subtype .dragon))]]]]))], n + 1)
+
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  parseDiscardLegendaryDraw line n <|>
+  parseMountainQuestDragon line n <|>
+    parseDiscardLegendaryDraw line n <|>
     parseExileOppDeathWolf line n <|>
     parseChooseOddEven cardName line n <|>
     parseRevealRandomCreature line n <|>

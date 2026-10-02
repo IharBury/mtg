@@ -184,7 +184,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .returnToHand _ => Effect.returnFromGraveyardToHand
                   | .putOntoBattlefield _ => continuousEffect none [] asAbility
                   | .putOntoBattlefieldInState _ _ => continuousEffect none [] asAbility
-                  | .searchLibraryThenShuffle _ _ =>
+                  | .searchLibraryThenShuffle _ _ | .searchHandOrLibrary _ _ =>
                     continuousEffect none [] asAbility
                   | .holdOutInLibrary _ => continuousEffect none [] asAbility
                   | .defineSelectorVariable _ _ => continuousEffect none [] asAbility

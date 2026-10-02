@@ -309,6 +309,9 @@ inductive CardAction where
   library but out of the shuffle; act on them after this action.
   Nested `putOnTopOfLibrary` would be shuffled in. -/
   | searchLibraryThenShuffle : Selector → List CardAction → CardAction
+  /-- Search the selected player's hand and/or library for cards the
+  nested actions act on. Shuffle if the library was searched (CR 701.19). -/
+  | searchHandOrLibrary : Selector → List CardAction → CardAction
   /-- Temporarily exclude the selected cards from a library shuffle.
   Held-out cards are still in the library, but not at the top, bottom,
   or among the shuffled cards. -/

@@ -956,6 +956,23 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
       | some (p, t) => some (TriggeredAbility.onLandYouControlEntersBecomePT p t)
       | none => none
     else none
+  -- Last Light of Durin's Day: a Mountain you control enters, then a quest
+  -- counter. Six or more is that counter count. The sacrifice is numbered.
+  -- “If you do” is that sacrifice having happened. The search is a hand
+  -- and/or library; a library search shuffles (CR 701.19).
+  | .triggered (.enter mountain) (.sequence [
+      .putCounter (.source .this) .quest (.int 1),
+      .if (.greaterOrEqual (.counterCount (.source .this) .quest) (.int 6)) [
+        .actionId id (.sacrifice (.source .this)),
+        .if (.happened (.actionWithId id') .gameStart) [
+          .searchHandOrLibrary who [
+            .putOntoBattlefield
+              (.selected who' (.range (.int 1) (.int 1)) (.subtype .dragon))]]]]) =>
+    if id == id' && who == who' && who == .controller .this &&
+        mountain == .intersection
+          [.zone .battlefield, .subtype .mountain, .controlled (.controller .this)] then
+      some TriggeredAbility.onMountainEntersQuestThenDragon
+    else none
   | .triggered (.enter among) action =>
     match CardAction.leftoverPlusOneVigilance? action with
     | some 2 =>

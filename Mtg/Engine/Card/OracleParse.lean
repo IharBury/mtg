@@ -224,6 +224,11 @@ Currently recognized:
   Typecycling (CR 702.29). `<type>` is a subtype (`Halflingcycling`), a card
   type, or supertypes plus a type (`Basic landcycling`). A trailing reminder
   parenthetical is not rules text.
+- `Whenever a Mountain you control enters, put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle.`
+  Six or more is `Value.counterCount` of quest counters. The sacrifice is
+  numbered. “If you do” is that sacrifice having happened. The search is
+  `CardAction.searchHandOrLibrary`. Searching the library shuffles
+  (CR 701.19).
 - `When <this> enters, you gain N life.`
 - `When <this> enters, untap another target creature you control. If that creature is a <subtype>, put a +1/+1 counter on it.`
 - `When <this card> dies, recruit.`
