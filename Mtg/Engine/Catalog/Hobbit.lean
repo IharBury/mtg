@@ -265,7 +265,7 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card [
   .toughness 1,
   .textBox [
     .when
-      [.enters [.thisCardName]]
+      [.enter [.thisCardName]]
       [.draw 1]
   ],
   .alternative [

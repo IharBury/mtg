@@ -296,10 +296,10 @@ inductive PrintedName where
 /-- One event in `.whenever` or `.when`.
 `[.attack [.this, .cardType .creature] []]` is “this creature attacks”.
 The second list is a further restriction on that attack; empty means any
-attack. `[.enters [.thisCardName]]` is “{name} enters”. -/
+attack. `[.enter [.thisCardName]]` is “{name} enters”. -/
 inductive TriggerExpr where
   | attack (who : List ObjectQualifier) (restrictions : List ObjectQualifier)
-  | enters (who : List PrintedName)
+  | enter (who : List PrintedName)
   deriving Repr, BEq
 
 /-- A printed power and toughness change. `.plusPowerToughness +1 +1` is `+1/+1`. -/
@@ -377,7 +377,7 @@ inductive TextEffect where
   `[.attack [.this, .cardType .creature] []]` is “this creature attacks”. -/
   | whenever (events : List TriggerExpr) (effects : List TextEffect)
   /-- When `events` happen, follow `effects`.
-  `[.enters [.thisCardName]]` with `[.draw 1]` is “When {name} enters, draw a card”. -/
+  `[.enter [.thisCardName]]` with `[.draw 1]` is “When {name} enters, draw a card”. -/
   | when (events : List TriggerExpr) (effects : List TextEffect)
   /-- Draw `n` cards (`draw a card`). -/
   | draw (n : Nat)
@@ -538,7 +538,7 @@ private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
       if restrictions.isEmpty then ""
       else s!" {qualifierWords restrictions}"
     s!"{qualifierWords who} attacks{extra}"
-  | .enters who =>
+  | .enter who =>
     let name := String.intercalate " and " (who.map (printedNamePhrase cardName))
     s!"{name} enters"
 
@@ -789,7 +789,7 @@ private def textEffectToTriggered : TextEffect → Option TriggeredAbility
         [.other, .cardType .creature, .controlledBy .you] .endOfTurn] =>
     some .onAttackPumpForEachOtherCreature
   | .when
-      [.enters [.thisCardName]]
+      [.enter [.thisCardName]]
       [.draw n] =>
     some (.onEnterDraw n)
   | _ => none
@@ -1341,7 +1341,7 @@ private def parseEntersTrigger (cardName : String) (s : String) : Option Trigger
   let (who, rest) ← splitOnce " enters" s
   guard (rest.trimAscii.copy.isEmpty)
   guard (who == shortCardName cardName)
-  return .enters [.thisCardName]
+  return .enter [.thisCardName]
 
 /-- `draw a card` or `draw N cards`. -/
 private def parseDrawClause (s : String) : Option TextEffect := do
@@ -1567,7 +1567,7 @@ instructions in that text box. `Tap one or two target …` becomes `.tap`.
 `.dealDamage` with `.thisCardName` when the subject is the card’s name.
 `Whenever this creature attacks, it gets … for each other creature you control`
 becomes `.whenever` with `.attack` and `getForEachUntil`.
-`When {name} enters, draw a card.` becomes `.when` with `.enters` and `.draw`.
+`When {name} enters, draw a card.` becomes `.when` with `.enter` and `.draw`.
 `Scry N.` becomes `.scry`.
 `Untap target creature you control. It gets … If it's a Dwarf, you may attach
 an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`,
@@ -1665,12 +1665,12 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
       [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]])
 #guard shortCardName "Bilbo Baggins, Burglar" == "Bilbo Baggins"
 #guard textEffectSentence "Bilbo Baggins, Burglar" (.when
-    [.enters [.thisCardName]]
+    [.enter [.thisCardName]]
     [.draw 1]) ==
   "When Bilbo Baggins enters, draw a card."
 #guard parseWhen "Bilbo Baggins, Burglar"
     "When Bilbo Baggins enters, draw a card." ==
-  some (.when [.enters [.thisCardName]] [.draw 1])
+  some (.when [.enter [.thisCardName]] [.draw 1])
 #guard textEffectSentence "Take a Glance" (.scry 2) == "Scry 2."
 #guard parseScry
     "Scry 2. (Then exile this card. You may cast the creature later from exile.)" ==
