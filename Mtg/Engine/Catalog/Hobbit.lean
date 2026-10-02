@@ -6275,7 +6275,7 @@ def desertWereWormDefinition : TraditionalCardDefinition := .card <|
           .zone .battlefield,
           .cardType .creature,
           .attacking .all]),
-      .extraCombat]))]
+      .addPhaseAfterThisPhase .combat]))]
 
 def desertWereWorm : CardDef :=
   desertWereWormDefinition.toCardDef (oracleText := desertWereWormOracle)

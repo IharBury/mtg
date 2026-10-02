@@ -262,7 +262,7 @@ def parseAttackTotalPowerExtraCombat (line : String) (n : Nat) :
         (.attackSimultaneously creaturesYouControl .all [.totalPowerAtLeast 12]))
       (.sequence [
         .untap attacking,
-        .extraCombat]))], n)
+        .addPhaseAfterThisPhase .combat]))], n)
 
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :

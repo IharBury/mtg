@@ -10,7 +10,7 @@ of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **20** lost
 their last tag (named counters, `CardAction.removeCounter`,
 enters-with-counters, `CardAction.reflexive`,
-or `CardAction.extraCombat`) and
+or `CardAction.addPhaseAfterThisPhase`) and
 are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
@@ -44,7 +44,7 @@ Evidence for each remaining card is its catalog definition (Oracle text plus
 modeled `CardDef` fields, triggered/static/activated constructors, and
 `Effect` names) compared with the current constructors of `Range`,
 `SetPredicate`, `Value`, `Selector`, `Trigger`, `Cost`, `Condition`,
-`Ability`, `ContinuousEffect`, `CardAction`, and `TraditionalCardDefinition`
+`Phase`, `Ability`, `ContinuousEffect`, `CardAction`, and `TraditionalCardDefinition`
 (including `CardPart`).
 
 `Keyword` is not in the requested list. It still blocks because
@@ -135,6 +135,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `and`, `not`, `less`, `lessOrEqual`, `greater`,
   `greaterOrEqual`, `equal`.
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters), `attachedTo`.
+- **Phase** — `beginning`, `precombatMain`, `combat`, `postcombatMain`, `ending`
+  (the five phases of a turn, CR 500.1).
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
   `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`,
   `activatedWithStaticIf` (with a static effect of that ability, such as its
@@ -177,9 +179,10 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `lookAt`, `putOnLibraryBottomInRandomOrder`, `chooseCreatureType` (the
   selected player chooses a creature type), `mayCast` (the selected player
   may cast any number of spells matching the selector, paying their costs;
-  `selected` limits how many), `reflexive` (when the numbered action is
+  `selected` limits how many),   `reflexive` (when the numbered action is
   performed, these actions are a reflexive triggered ability; CR 603.12),
-  `extraCombat` (after this phase, there is an additional combat phase).
+  `addPhaseAfterThisPhase` (after the current phase, add the given phase
+  to the turn; `.combat` is an additional combat phase).
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -338,7 +341,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.dealDamageEqualToPower` | `dealDamage` of `Value.greatestPower` of the source |
 | `Trigger.whenYouDo` | `CardAction.reflexive` after the numbered action (CR 603.12). Bolg of the North records the sacrificed creature's power with `defineValueVariable` before that sacrifice |
 | `CardAction.eventAmount` for excess damage | `Value.excessDamageOfActionWithId` of that action. “If excess damage was dealt this way” is `happened` of `Trigger.actionWithIdDealtExcessDamage` (Bolg of the North) |
-| `CardAction.extraCombat` | `CardAction.extraCombat` (Desert Were-Worm) |
+| `CardAction.extraCombat` | `CardAction.addPhaseAfterThisPhase .combat`. The phase is an argument, so the action can add any phase of the turn after the current phase (Desert Were-Worm) |
 
 ## Missing constructors by type
 
@@ -647,7 +650,8 @@ of “whenever you attack”, with `SetPredicate.totalPowerAtLeast 12` on that
 attack. That is the first such attack each turn. The ability does not
 trigger when the attackers' total power is lower. Power is the power at
 attack time. The effect untaps those attackers, and
-`CardAction.extraCombat` adds a combat phase. Compiling that ability still
+`CardAction.addPhaseAfterThisPhase .combat` adds a combat phase after this
+phase. Compiling that ability still
 yields `onAttackWithTotalPowerUntapExtraCombat`.
 
 ## Cards that still cannot convert
@@ -1563,7 +1567,7 @@ These 20 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, enters-with-counters,
 `replace` of `Trigger.createTokens`, `replace` of `Trigger.abilityTriggers`,
-`CardAction.reflexive`, or `CardAction.extraCombat`
+`CardAction.reflexive`, or `CardAction.addPhaseAfterThisPhase`
 became expressible. A later pass
 should reread them before conversion.
 

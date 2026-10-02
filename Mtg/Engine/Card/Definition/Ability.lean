@@ -219,7 +219,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           [.totalPowerAtLeast 12]))
       (.sequence [
         .untap attackers,
-        .extraCombat]) =>
+        .addPhaseAfterThisPhase .combat]) =>
     if ctl == .controlled (.controller .this) &&
         attackers == .intersection [
           .zone .battlefield, .cardType .creature, .attacking .all] then

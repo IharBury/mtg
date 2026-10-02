@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.Definition.Cost
+import Mtg.Engine.Turn
 
 /-!
 # Printed card parts
@@ -373,8 +374,9 @@ inductive CardAction where
   an optional cost is this, not an “if you do” checked in the same
   resolution. -/
   | reflexive : Nat → List CardAction → CardAction
-  /-- After this phase, there is an additional combat phase (CR 506.6). -/
-  | extraCombat
+  /-- After the current phase, add this phase to the turn (CR 500.7).
+  `.combat` is an additional combat phase. -/
+  | addPhaseAfterThisPhase : Phase → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
