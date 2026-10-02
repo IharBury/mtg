@@ -6802,11 +6802,72 @@ def gleamingSplendor : CardDef :=
       activated (Effect.twoPlayersDraw) (ManaCost.ofGenericAndColor 2 .white)]
 #guard gleamingSplendor.triggeredAbilities == #[.onOpponentDrawsSecondCreateTreasure]
 
+/-- Oracle text for Gollum, Riddle Master. -/
+def gollumRiddleMasterOracle : String :=
+  "As Gollum enters, choose odd or even. (Zero is even.)\nWhenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen —\n• Put a +1/+1 counter on Gollum.\n• Each opponent loses 2 life and you gain 2 life.\n• Draw a card."
+
+def gollumRiddleMasterDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Gollum, Riddle Master",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .horror,
+    .power 3,
+    .toughness 1
+  ] ++ (parseOracleParts (name := "Gollum, Riddle Master") gollumRiddleMasterOracle).get!
+
+#guard gollumRiddleMasterDefinition == .card (
+  [
+    .name "Gollum, Riddle Master",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .horror,
+    .power 3,
+    .toughness 1
+  ] ++ [
+    .ability
+      (.static
+        (.replace
+          (.enter .this)
+          [.chooseOddEven 1 (.controller .this), .keepReplacedAction])),
+    .ability
+      (.triggeredWhile
+        (.triggerId 2
+          (.castSpell
+            (.intersection [
+              .spell,
+              .controlled (.opponent (.controller .this))])))
+        (.equal
+          (.remainder (.greatestManaValue (.wasArgumentOfTrigger 2 1)) 2)
+          (.variable 1))
+        (.chooseModeRestricted
+          (.controller .this)
+          [
+            (1,
+              .not (.happened (.modeWithIdChosen .player 1) .gameStart),
+              [.putCounter (.source .this) .plusOnePlusOne (.int 1)]),
+            (2,
+              .not (.happened (.modeWithIdChosen .player 2) .gameStart),
+              [.sequence [
+                .loseLife (.opponent (.controller .this)) (.int 2),
+                .gainLife (.controller .this) (.int 2)]]),
+            (3,
+              .not (.happened (.modeWithIdChosen .player 3) .gameStart),
+              [.draw (.controller .this) (.int 1)])]))])
+
 def gollumRiddleMaster : CardDef :=
-  let c :=
-    legendaryCreature "Gollum, Riddle Master" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 3 1 (oracleText := "As Gollum enters, choose odd or even. (Zero is even.)\nWhenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen —\n• Put a +1/+1 counter on Gollum.\n• Each opponent loses 2 life and you gain 2 life.\n• Draw a card.")
-      (triggeredAbilities := #[.onOpponentCastsChosenParityModes])
-  { c with asEntersChooseOddEven := true }
+  gollumRiddleMasterDefinition.toCardDef (oracleText := gollumRiddleMasterOracle)
+
+#guard gollumRiddleMaster.oracleText == gollumRiddleMasterOracle
+#guard gollumRiddleMaster.asEntersChooseOddEven
+#guard gollumRiddleMaster.triggeredAbilities == #[.onOpponentCastsChosenParityModes]
+#guard gollumRiddleMaster.supertypes == #[.legendary]
+#guard gollumRiddleMaster.subtypes == #["Halfling", "Horror"]
+#guard gollumRiddleMaster.power == some 3 && gollumRiddleMaster.toughness == some 1
 
 def headOfTheHunt : CardDef :=
   let c :=

@@ -406,10 +406,25 @@ def parseRevealRandomCreature (line : String) (n : Nat) :
       .putOnLibraryBottomInRandomOrder
         (.intersection [.wasObjectOfAction n, .not (.variable creature)])]))], n + 2)
 
+/-- `As <this> enters, choose odd or even.` A reminder that zero is even is
+not rules text. The choice is variable `n`: 0 is even and 1 is odd.
+The counter stays `n` so the following trigger can name that same
+variable. That trigger reserves the next number for the spell. -/
+def parseChooseOddEven (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  let s := (after? (normLine line) "as ").getD (normLine line)
+  let lead :=
+    (before? s " enters, choose odd or even").bind fun who =>
+      if refersToSelf cardName who then some () else none
+  if lead.isSome then
+    some ([.ability (.static (.replace (.enter .this)
+      [.chooseOddEven n (.controller .this), .keepReplacedAction]))], n)
+  else none
+
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  parseRevealRandomCreature line n <|>
+  parseChooseOddEven cardName line n <|>
+    parseRevealRandomCreature line n <|>
     parseAttackTotalPowerExtraCombat line n <|>
     parseBolgEnters cardName line n <|>
     parseBeornCombat line n <|>
@@ -592,13 +607,39 @@ def triggeredModes (cardName : String) (trigger : Trigger) : ModeList where
   wrap modes := [.ability (.triggered trigger (.chooseUniqueModes (.range 1 1) modes))]
   mode := parseCatalogMode cardName
 
-/-- `<trigger>, choose one that hasn't been chosen this turn —`. Mode `i` may be
-chosen only if no player chose it this turn. -/
-def restrictedModes (cardName : String) (trigger : Trigger) : ModeList where
+/-- `<trigger>, choose one that hasn't been chosen —`. Mode `i` may be chosen
+only if no player chose it since `since`. `.turnStart` is “this turn”.
+`.gameStart` is “hasn't been chosen” with no turn limit. -/
+def restrictedModesSince (since : Trigger) (cardName : String) (trigger : Trigger) : ModeList where
   wrap modes :=
     [.ability (.triggered trigger (.chooseModeRestricted (.controller .this)
       ((List.range modes.length).zip modes |>.map fun (i, action) =>
-        (i + 1, .not (.happened (.modeWithIdChosen .player (i + 1)) .turnStart), [action]))))]
+        (i + 1, .not (.happened (.modeWithIdChosen .player (i + 1)) since), [action]))))]
+  mode := parseCatalogMode cardName
+
+/-- `<trigger>, choose one that hasn't been chosen this turn —`. Mode `i` may be
+chosen only if no player chose it this turn. -/
+def restrictedModes (cardName : String) (trigger : Trigger) : ModeList :=
+  restrictedModesSince .turnStart cardName trigger
+
+/-- Gollum's modal trigger. `parity` is the `chooseOddEven` variable:
+0 is even and 1 is odd. `spell` numbers the cast trigger so the spell
+is its first selector argument. The spell's mana value has the chosen
+quality when the remainder of that mana value divided by 2 equals
+`parity`. -/
+def gollumParityModes (cardName : String) (parity spell : Nat) : ModeList where
+  wrap modes :=
+    [.ability (.triggeredWhile
+      (.triggerId spell
+        (.castSpell (.intersection [
+          .spell,
+          .controlled (.opponent (.controller .this))])))
+      (.equal
+        (.remainder (.greatestManaValue (.wasArgumentOfTrigger spell 1)) 2)
+        (.variable parity))
+      (.chooseModeRestricted (.controller .this)
+        ((List.range modes.length).zip modes |>.map fun (i, action) =>
+          (i + 1, .not (.happened (.modeWithIdChosen .player (i + 1)) .gameStart), [action]))))]
   mode := parseCatalogMode cardName
 
 /-- `Choose up to two. Return those cards from your graveyard to your hand.`
@@ -612,11 +653,19 @@ def chooseUpToReturnModes (k : Nat) : ModeList where
       (.returnToHand (.target n (.intersection [.zone .graveyard, .cardType t, .owner (.controller .this)])),
         n + 1)
 
-/-- A header whose `•` modes follow: a triggered `choose one —`, a triggered
+/-- A header whose `•` modes follow, and how many numbers that header
+reserves after `n`. The headers are a triggered `choose one —`, a triggered
 `choose one that hasn't been chosen this turn —` (after an ability word), a
 triggered `choose up to X —`, or
-`Choose up to N. Return those cards from your graveyard to your hand.` -/
-def modeListHeader? (cardName line : String) : Option ModeList :=
+`Choose up to N. Return those cards from your graveyard to your hand.`
+`chooseOddEven` leaves the counter on its variable, so Gollum's header
+uses `n` for that variable and `n + 1` for the spell. -/
+def modeListHeader? (cardName line : String) (n : Nat) : Option (ModeList × Nat) :=
+  let gollum :=
+    if normLine line ==
+        "whenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen —" then
+      some (gollumParityModes cardName n (n + 1), 2)
+    else none
   let line' := (afterAbilityWord? line).getD line
   let restricted :=
     (splitTrigger? line').bind fun (clause, effect) =>
@@ -628,7 +677,10 @@ def modeListHeader? (cardName line : String) : Option ModeList :=
   let returnCards :=
     (between? (normLine line) "choose up to " ". return those cards from your graveyard to your hand").bind
       positiveCount |>.map chooseUpToReturnModes
-  ((triggeredChooseOne? cardName line).map (triggeredModes cardName)) <|> restricted <|> returnCards
+  gollum <|>
+    ((triggeredChooseOne? cardName line).map fun t => (triggeredModes cardName t, 0)) <|>
+    (restricted.map (·, 0)) <|>
+    (returnCards.map (·, 0))
 
 /-- `Power-up — <cost>: <effect>` (CR 702.193). The ability is number `n'`,
 the next number after its effect. It may be activated only if it has not
@@ -664,8 +716,9 @@ def parseBodyLines (cardName : String) (manaCost : List ManaSymbol) :
       parseListedModes cardName manaCost (triggeredModes cardName (.enter landsYouControl))
         rest n []
     else
-      match modeListHeader? cardName line with
-      | some list => parseListedModes cardName manaCost list rest n []
+      match modeListHeader? cardName line n with
+      | some (list, reserved) =>
+        parseListedModes cardName manaCost list rest (n + reserved) []
       | none =>
       match chooseHeader? line with
       | some orBoth => parseModeLines cardName manaCost rest n [] orBoth

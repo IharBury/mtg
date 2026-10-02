@@ -391,6 +391,10 @@ inductive CardAction where
   /-- After the current phase, add this phase to the turn (CR 500.7).
   `.combat` is an additional combat phase. -/
   | addPhaseAfterThisPhase : Phase → CardAction
+  /-- The selected player chooses odd or even and records it as this
+  numbered value variable. Even is 0. Odd is 1. Zero is even.
+  `Value.variable` of this number is that choice. -/
+  | chooseOddEven : Nat → Selector → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
