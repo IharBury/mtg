@@ -465,7 +465,7 @@ def leftoverExileAttackersSearchBasics? : CardAction → Bool
 
 /-- Exile the top X cards of a target opponent's library. You may play them
 this turn, paying life equal to mana value rather than the mana cost. -/
-def leftoverExileTopXOppPlayForLife? : CardAction → Bool :=
+def leftoverExileTopXOppPlayForLife? : CardAction → Bool
   | .sequence [
       .actionId id
         (.exile (.topOfLibrary (.target tid (.opponent (.controller .this))) .x)),
