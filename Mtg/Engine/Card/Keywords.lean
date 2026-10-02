@@ -341,8 +341,13 @@ inductive Value where
   /-- The product of two values. -/
   | product : Value → Value → Value
   /-- The value recorded by `defineValueVariable` with this number.
-  The record is the value when that action resolved. -/
+  The record is the value when that action resolved. `chooseOddEven`
+  records 0 for even and 1 for odd under its number. -/
   | variable : Nat → Value
+  /-- The remainder when the first value is divided by the second.
+  The remainder of a mana value divided by 2 is 0 when that mana value
+  is even and 1 when it is odd. Zero is even. -/
+  | remainder : Value → Value → Value
   /-- The greatest amount of mana spent to cast a spell among selected
   spells (CR 601.2h). Cost increases, reductions, and alternative costs
   change each amount. A spell's mana value does not. One spell is that
@@ -495,9 +500,6 @@ inductive Selector where
   A later reference to that same object is `Selector.variable` after
   `CardAction.defineSelectorVariable`, not another `chooseRandom`. -/
   | chooseRandom : Selector → Selector
-  /-- An object whose mana value has the odd or even quality chosen as
-  this object entered. Zero is even. -/
-  | manaValueChosenParity
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
@@ -645,8 +647,8 @@ instance : ToString Value where
     | .int n => toString n
     | .x => "X"
     | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
-    | .greatestPower _ | .product _ _ | .variable _ | .greatestManaSpent _
-    | .excessDamageOfActionWithId _ => "X"
+    | .greatestPower _ | .product _ _ | .variable _ | .remainder _ _
+    | .greatestManaSpent _ | .excessDamageOfActionWithId _ => "X"
 
 instance (n : Nat) : OfNat Value n where
   ofNat := .int n

@@ -574,9 +574,10 @@ def leftoverChooseCreatureTypeAsEnters? : List CardAction → Bool
     who == .controller .this
   | _ => false
 
-/-- Replacement “as this enters, choose odd or even”. Zero is even. -/
+/-- Replacement “as this enters, choose odd or even”. The choice is
+recorded as the numbered variable: 0 is even and 1 is odd. -/
 def leftoverChooseOddEvenAsEnters? : List CardAction → Bool
-  | [.chooseOddEven who, .keepReplacedAction] =>
+  | [.chooseOddEven _ who, .keepReplacedAction] =>
     who == .controller .this
   | _ => false
 

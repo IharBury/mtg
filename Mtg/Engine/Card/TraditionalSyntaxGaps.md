@@ -67,8 +67,11 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   (the set's total power when the simultaneous event happens; a lower total
   does not trigger the ability).
 - **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
-  `greatestPower`, `count`, `totalPower`, `product`, `variable` (recorded by
-  `CardAction.defineValueVariable`), `excessDamageOfActionWithId` (excess
+  `greatestPower`, `count`, `totalPower`,   `product`, `variable` (recorded by
+  `CardAction.defineValueVariable`, or by `chooseOddEven` as 0 for even
+  and 1 for odd), `remainder` (the remainder when the first value is
+  divided by the second; a mana value divided by 2 is 0 when even and 1
+  when odd), `excessDamageOfActionWithId` (excess
   damage dealt by the numbered action; CR 120.4a).
 - **Keyword** — `flash`, `haste`, `vigilance`, `flying`, `menace`, `hexproof`,
   `indestructible`, `reach`, `trample`, `deathtouch`, `defender`, `lifelink`,
@@ -103,10 +106,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   this spell was cast from; `.not (.castFromZone .hand)` is “from anywhere
   other than your hand”), `chooseRandom` (one object chosen at random from
   those matching the selector; a later reference to that same object is
-  `variable` after `defineSelectorVariable`), `manaValueChosenParity` (an
-  object whose mana value has the odd or even quality chosen as this object
-  entered; zero is even). `hostOf` an Equipment is a creature that is
-  equipped.
+  `variable` after `defineSelectorVariable`). `hostOf` an Equipment is a
+  creature that is equipped.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `drawStep` (the selected player's draw step; also a
@@ -196,7 +197,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   end step),
   `addPhaseAfterThisPhase` (after the current phase, add the given phase
   to the turn; `.combat` is an additional combat phase),
-  `chooseOddEven` (the selected player chooses odd or even; zero is even).
+  `chooseOddEven` (the selected player chooses odd or even and records it
+  as the numbered value variable; even is 0 and odd is 1; zero is even).
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -360,7 +362,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.exileUntil` | Exile the selected objects until the event (CR 610.3). Immediately after that event, a one-shot returns each object that is still exiled to the zone it left. Celebrate the Mountain-king exiles, for each opponent, up to one target nonland permanent that player controls until the enchantment leaves the battlefield. Banishing Light, Cloak and Dagger, Entwined, Super Villain Lockup, and Web Up spell the same return and are not converted yet |
 | `Selector.attached` for “that are equipped” | `Selector.hostOf` of Equipment on the battlefield. “Equipment attached to” an object stays open. Dáin Ironfoot grants double strike to attacking creatures that are hosts of Equipment |
 | `CardAction.randomize` | `Selector.chooseRandom` of the objects to choose from. Getaway Barrel reveals the top thirteen cards, binds one random creature card from among them with `defineSelectorVariable`, puts that variable onto the battlefield, and puts the rest on the bottom in a random order |
-| `CardAction.chooseOddEven` | `CardAction.chooseOddEven`. Mana value of the chosen quality is `Selector.manaValueChosenParity`. Gollum, Riddle Master chooses as he enters. An opponent's spell of that quality offers a mode that has not been chosen since the game began. Thanos, the Mad Titan spells the same choice and is not converted yet |
+| `CardAction.chooseOddEven` | `CardAction.chooseOddEven` records the choice as `Value.variable`: 0 is even and 1 is odd. A spell has mana value of that quality when `Value.remainder` of its mana value and 2 equals that variable. Gollum, Riddle Master. Thanos, the Mad Titan spells the same choice and is not converted yet |
 
 ## Missing constructors by type
 
@@ -699,13 +701,14 @@ go on the bottom of the library in a random order. Compiling that ability
 still yields `onDiesRevealTopPutRandomCreature`.
 
 Gollum, Riddle Master is a `TraditionalCardDefinition` read with
-`parseOracleParts`. As he enters, his controller chooses odd or even
-(`CardAction.chooseOddEven`). Zero is even. Whenever an opponent casts a
-spell with mana value of that quality (`Selector.manaValueChosenParity`),
-his controller chooses one mode that has not been chosen since the game
-began. That restriction is `chooseModeRestricted` with `modeWithIdChosen`
-since `gameStart`. Compiling those abilities still yields
-`asEntersChooseOddEven` and `onOpponentCastsChosenParityModes`.
+`parseOracleParts`. As he enters, his controller chooses odd or even.
+`CardAction.chooseOddEven` records that choice as a value variable: 0 is
+even and 1 is odd. Zero is even. Whenever an opponent casts a spell, the
+ability triggers when `Value.remainder` of that spell's mana value and 2
+equals the variable. His controller then chooses one mode that has not
+been chosen since the game began (`chooseModeRestricted` with
+`modeWithIdChosen` since `gameStart`). Compiling those abilities still
+yields `asEntersChooseOddEven` and `onOpponentCastsChosenParityModes`.
 
 ## Cards that still cannot convert
 

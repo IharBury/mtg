@@ -6833,14 +6833,17 @@ def gollumRiddleMasterDefinition : TraditionalCardDefinition := .card <|
       (.static
         (.replace
           (.enter .this)
-          [.chooseOddEven (.controller .this), .keepReplacedAction])),
+          [.chooseOddEven 1 (.controller .this), .keepReplacedAction])),
     .ability
-      (.triggered
-        (.castSpell
-          (.intersection [
-            .spell,
-            .controlled (.opponent (.controller .this)),
-            .manaValueChosenParity]))
+      (.triggeredWhile
+        (.triggerId 2
+          (.castSpell
+            (.intersection [
+              .spell,
+              .controlled (.opponent (.controller .this))])))
+        (.equal
+          (.remainder (.greatestManaValue (.wasArgumentOfTrigger 2 1)) 2)
+          (.variable 1))
         (.chooseModeRestricted
           (.controller .this)
           [

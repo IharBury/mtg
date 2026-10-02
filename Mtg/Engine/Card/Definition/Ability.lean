@@ -1185,13 +1185,22 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverYou who then
       some (TriggeredAbility.onCastNoncreaturePumpAndDamageOpponents n)
     else none
-  | .triggered
-      (.castSpell (.intersection [
-        .spell,
-        .controlled (.opponent (.controller .this)),
-        .manaValueChosenParity]))
+  -- Gollum, Riddle Master: an opponent casts a spell whose mana value
+  -- has the chosen parity. Even is 0 and odd is 1, the value recorded
+  -- by `chooseOddEven`. The remainder of that mana value divided by 2
+  -- is the same number.
+  | .triggeredWhile
+      (.triggerId id
+        (.castSpell (.intersection [
+          .spell,
+          .controlled (.opponent (.controller .this))])))
+      (.equal
+        (.remainder (.greatestManaValue (.wasArgumentOfTrigger id' 1)) 2)
+        (.variable _))
       (.chooseModeRestricted _ _) =>
-    some TriggeredAbility.onOpponentCastsChosenParityModes
+    if id == id' then
+      some TriggeredAbility.onOpponentCastsChosenParityModes
+    else none
   | .triggered (.castSpell among) action =>
     if Selector.youCastNoncreatureSpell among &&
         CardAction.leftoverMayPayHasteUnblockable? action then

@@ -55,7 +55,7 @@ def collectValue : Value → List Nat × List Nat
   | .greatestManaValue s | .greatestToughness s | .greatestPower s | .count s | .totalPower s
   | .greatestManaSpent s =>
     collectSelector s
-  | .product a b => appendIds [collectValue a, collectValue b]
+  | .product a b | .remainder a b => appendIds [collectValue a, collectValue b]
   | .variable n => ([], [n])
   | .excessDamageOfActionWithId n => ([n], [])
 
@@ -84,7 +84,7 @@ def collectSelector : Selector → List Nat × List Nat
   | .cardType _ | .hasCounter _ | .subtype _ | .supertype _ => ([], [])
   | .keyword k | .keywordAbility k => collectKeyword k
   | .powerAtLeast v | .powerAtMost v | .manaValueAtMost v => collectValue v
-  | .castFromZone _ | .manaValueChosenParity => ([], [])
+  | .castFromZone _ => ([], [])
   | .wasObjectOfAction n | .wasCreatedByAction n | .affectedByAction n
   | .hasCreatureTypeChosenByAction n =>
     ([n], [])
@@ -249,7 +249,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .delayedTrigger t as => appendIds [collectTrigger t, appendIds (as.map collectAction)]
   | .exileUntil s t => appendIds [collectSelector s, collectTrigger t]
   | .addPhaseAfterThisPhase _ => ([], [])
-  | .chooseOddEven s => collectSelector s
+  | .chooseOddEven n s => appendIds [([], [n]), collectSelector s]
 
 end
 
@@ -269,6 +269,7 @@ def mapValue (m : IdMaps) : Value → Value
   | .totalPower s => .totalPower (mapSelector m s)
   | .product a b => .product (mapValue m a) (mapValue m b)
   | .variable n => .variable (m.target n)
+  | .remainder a b => .remainder (mapValue m a) (mapValue m b)
   | .greatestManaSpent s => .greatestManaSpent (mapSelector m s)
   | .excessDamageOfActionWithId n => .excessDamageOfActionWithId (m.action n)
 
@@ -336,7 +337,6 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .manaValueAtMost v => .manaValueAtMost (mapValue m v)
   | .castFromZone z => .castFromZone z
   | .chooseRandom s => .chooseRandom (mapSelector m s)
-  | .manaValueChosenParity => .manaValueChosenParity
 
 def mapTriggers (m : IdMaps) : List Trigger → List Trigger
   | [] => []
@@ -595,7 +595,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .delayedTrigger t as => .delayedTrigger (mapTrigger m t) (mapActions m as)
   | .exileUntil s t => .exileUntil (mapSelector m s) (mapTrigger m t)
   | .addPhaseAfterThisPhase p => .addPhaseAfterThisPhase p
-  | .chooseOddEven s => .chooseOddEven (mapSelector m s)
+  | .chooseOddEven n s => .chooseOddEven (m.target n) (mapSelector m s)
 
 end
 
