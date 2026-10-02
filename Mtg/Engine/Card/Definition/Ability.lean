@@ -1185,6 +1185,13 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverYou who then
       some (TriggeredAbility.onCastNoncreaturePumpAndDamageOpponents n)
     else none
+  | .triggered
+      (.castSpell (.intersection [
+        .spell,
+        .controlled (.opponent (.controller .this)),
+        .manaValueChosenParity]))
+      (.chooseModeRestricted _ _) =>
+    some TriggeredAbility.onOpponentCastsChosenParityModes
   | .triggered (.castSpell among) action =>
     if Selector.youCastNoncreatureSpell among &&
         CardAction.leftoverMayPayHasteUnblockable? action then

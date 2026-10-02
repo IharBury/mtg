@@ -495,6 +495,9 @@ inductive Selector where
   A later reference to that same object is `Selector.variable` after
   `CardAction.defineSelectorVariable`, not another `chooseRandom`. -/
   | chooseRandom : Selector → Selector
+  /-- An object whose mana value has the odd or even quality chosen as
+  this object entered. Zero is even. -/
+  | manaValueChosenParity
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or

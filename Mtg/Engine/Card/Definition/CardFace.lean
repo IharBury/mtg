@@ -110,6 +110,8 @@ structure CardFace where
   removesAllAbilitiesFrom : Array Selector := #[]
   /-- This gets +N/+0 for each Mountain you control. -/
   powerPerMountain : Nat := 0
+  /-- As this enters, its controller chooses odd or even. Zero is even. -/
+  asEntersChooseOddEven : Bool := false
 deriving Inhabited
 
 namespace CardFace
@@ -838,6 +840,9 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         CardAction.leftoverChooseCreatureTypeAsEnters? actions then
       { b with asEntersChooseCreatureType := true }
     else if (who == .this || who == .source .this) &&
+        CardAction.leftoverChooseOddEvenAsEnters? actions then
+      { b with asEntersChooseOddEven := true }
+    else if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersWithXPlusOne? actions then
       { b with staticAbilities := b.staticAbilities.push .entersWithXPlusOne }
     else if (who == .this || who == .source .this) &&
@@ -1283,6 +1288,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       entersTapped := b.entersTapped
       entersWithHopePerCreature := b.entersWithHopePerCreature
       asEntersChooseCreatureType := b.asEntersChooseCreatureType
+      asEntersChooseOddEven := b.asEntersChooseOddEven
       entersTappedUnlessEquipment := b.entersTappedUnlessEquipment
       crew := b.crew
       chooseOneOrBoth := b.chooseOneOrBoth

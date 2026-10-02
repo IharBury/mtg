@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**197** catalog cards are still `CardDef` helpers. **171**
+**196** catalog cards are still `CardDef` helpers. **170**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **26** lost
 their last tag (named counters, `CardAction.removeCounter`,
@@ -27,12 +27,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 165 | 23 | 19 |
+| The Hobbit (HOB) | 188 | 166 | 22 | 18 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 44 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 108 |
-| **Total** | **586** | **389** | **197** | **171** |
+| **Total** | **586** | **390** | **196** | **170** |
 
-All 389 `TraditionalCardDefinition`s (165 HOB, 67 HOC, 157 MSH,
+All 390 `TraditionalCardDefinition`s (166 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -103,8 +103,10 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   this spell was cast from; `.not (.castFromZone .hand)` is “from anywhere
   other than your hand”), `chooseRandom` (one object chosen at random from
   those matching the selector; a later reference to that same object is
-  `variable` after `defineSelectorVariable`). `hostOf` an Equipment is a
-  creature that is equipped.
+  `variable` after `defineSelectorVariable`), `manaValueChosenParity` (an
+  object whose mana value has the odd or even quality chosen as this object
+  entered; zero is even). `hostOf` an Equipment is a creature that is
+  equipped.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `drawStep` (the selected player's draw step; also a
@@ -193,7 +195,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   the next time the event occurs; CR 603.7; `.endStep .player` is the next
   end step),
   `addPhaseAfterThisPhase` (after the current phase, add the given phase
-  to the turn; `.combat` is an additional combat phase).
+  to the turn; `.combat` is an additional combat phase),
+  `chooseOddEven` (the selected player chooses odd or even; zero is even).
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -357,6 +360,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.exileUntil` | Exile the selected objects until the event (CR 610.3). Immediately after that event, a one-shot returns each object that is still exiled to the zone it left. Celebrate the Mountain-king exiles, for each opponent, up to one target nonland permanent that player controls until the enchantment leaves the battlefield. Banishing Light, Cloak and Dagger, Entwined, Super Villain Lockup, and Web Up spell the same return and are not converted yet |
 | `Selector.attached` for “that are equipped” | `Selector.hostOf` of Equipment on the battlefield. “Equipment attached to” an object stays open. Dáin Ironfoot grants double strike to attacking creatures that are hosts of Equipment |
 | `CardAction.randomize` | `Selector.chooseRandom` of the objects to choose from. Getaway Barrel reveals the top thirteen cards, binds one random creature card from among them with `defineSelectorVariable`, puts that variable onto the battlefield, and puts the rest on the bottom in a random order |
+| `CardAction.chooseOddEven` | `CardAction.chooseOddEven`. Mana value of the chosen quality is `Selector.manaValueChosenParity`. Gollum, Riddle Master chooses as he enters. An opponent's spell of that quality offers a mode that has not been chosen since the game began. Thanos, the Mad Titan spells the same choice and is not converted yet |
 
 ## Missing constructors by type
 
@@ -384,8 +388,8 @@ complete.
 
 ### `Selector`
 
-- **`manaValue`** (19 cards) — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
-  - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Evil's Thrall; Gandalf, Party Guest; Glamdring; Gollum, Riddle Master; Inside Information; Loki Laufeyson; … (10 more)
+- **`manaValue`** (18 cards) — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+  - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Evil's Thrall; Gandalf, Party Guest; Glamdring; Inside Information; Loki Laufeyson; Murdock's Crusade; … (8 more)
 - **`attackingAlone`** (8 cards) — A creature attacking alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
 - **`attached`** (3 cards) — Objects attached to a given object (inverse of `hostOf`). “That are equipped” is `hostOf` an Equipment
@@ -463,8 +467,8 @@ complete.
   - Atlantis Attacks; Cruel Alliance; Earth's Mightiest Heroes; Go Nuts!; Helicarrier Strike; HULK SMASH!; Murdock's Crusade; Repulsor Blast; Team Tactics; Too Evil to Stay Dead; … (2 more)
 - **`kicked`** (2 cards) — This spell was kicked
   - Galadriel's Dismissal; The Eagles Are Coming!
-- **`manaValueParity`** (2 cards) — Mana value is odd/even
-  - Gollum, Riddle Master; Thanos, the Mad Titan
+- **`manaValueParity`** (1 card) — Mana value is odd/even
+  - Thanos, the Mad Titan
 - **`attackedThisTurn`** (1 card) — You attacked with N or more creatures this turn (over every combat, not one `attackSimultaneously`)
   - Minas Tirith
 - **`citysBlessing`** (1 card) — You have the city's blessing
@@ -532,8 +536,6 @@ complete.
   - Bilbo's Burglaring; Evil's Thrall; Sauron, the Lidless Eye; The Super Hero Civil War
 - **`addManaOfColorAmong`** (2 cards) — Add one mana of any color among selected objects or a commander's color identity
   - Arcane Signet; Mox Amber
-- **`chooseOddEven`** (2 cards) — Choose odd or even
-  - Gollum, Riddle Master; Thanos, the Mad Titan
 - **`discardChosen`** (2 cards) — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
   - Down, Down to Goblin-town; Klaw, Sonic Subjugator
 - **`exileFromTopUntil`** (2 cards) — Exile from the top of a library until a matching card. `CardAction.exileUntil` is the CR 610.3 zone change
@@ -696,6 +698,15 @@ put onto the battlefield, and the revealed cards other than that variable
 go on the bottom of the library in a random order. Compiling that ability
 still yields `onDiesRevealTopPutRandomCreature`.
 
+Gollum, Riddle Master is a `TraditionalCardDefinition` read with
+`parseOracleParts`. As he enters, his controller chooses odd or even
+(`CardAction.chooseOddEven`). Zero is even. Whenever an opponent casts a
+spell with mana value of that quality (`Selector.manaValueChosenParity`),
+his controller chooses one mode that has not been chosen since the game
+began. That restriction is `chooseModeRestricted` with `modeWithIdChosen`
+since `gameStart`. Compiling those abilities still yields
+`asEntersChooseOddEven` and `onOpponentCastsChosenParityModes`.
+
 ## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. Evidence is the
@@ -776,17 +787,11 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (19 cards)
+### The Hobbit (HOB) (18 cards)
 
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
 - `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
-
-**Gollum, Riddle Master** (`gollumRiddleMaster`)
-
-- `CardAction.chooseOddEven` — Choose odd or even
-- `Condition.manaValueParity` — Mana value is odd/even
-- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Inside Information** (`insideInformation`)
 
@@ -1451,7 +1456,6 @@ Converted cards are omitted here.
 
 **Thanos, the Mad Titan** (`thanosTheMadTitan`)
 
-- `CardAction.chooseOddEven` — Choose odd or even
 - `Condition.manaValueParity` — Mana value is odd/even
 - `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
