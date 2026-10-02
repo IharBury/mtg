@@ -103,6 +103,13 @@ def leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv? :
 /-- Leftovers that compile to a named `Effect` only as a printed Saga chapter. -/
 def leftoverSagaChapterOnly? (action : CardAction) : Option Effect :=
   match action with
+  | .draw who (.int (.ofNat n)) =>
+    if n != 0 && leftoverYou who then some (Effect.chapterDraw n) else none
+  | .continuous [.gainAbility (.target _ _) (.keyword .hexproof)] (.leaveBattlefield .this) =>
+    some Effect.chapterGrantHexproofWhileRemains
+  | .continuous [.replace (.damage (.targets _ (.range (.int 0) (.int 1)) _) .all) []]
+      (.leaveBattlefield .this) =>
+    some Effect.chapterPreventDamageWhileRemains
   | .dealDamage src (.target _ sel) (.int (.ofNat n)) =>
     if (src == Selector.this || leftoverSourceThis src) &&
         sel.toTargetKind == EffectTargetKind.oppCreature then

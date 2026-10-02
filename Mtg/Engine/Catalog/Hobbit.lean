@@ -7154,13 +7154,58 @@ def masterSCouncillors : CardDef :=
 #guard masterSCouncillors.staticAbilities == #[.powerPerFatGraveyard 2]
 #guard masterSCouncillors.triggeredAbilities == #[.onDrawSecondMillPlayer 3]
 
+/-- Oracle text for Old Fat Spider Can't See Me. -/
+def oldFatSpiderCanTSeeMeOracle : String :=
+  "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target creature you control gains hexproof for as long as this Saga remains on the battlefield.\nII — Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield.\nIII, IV — Draw a card."
+
+def oldFatSpiderCanTSeeMeDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Old Fat Spider Can't See Me",
+    .manaCost [.generic 2, .mono .blue],
+    .type .enchantment,
+    .subtype .saga
+  ] ++ (parseOracleParts (name := "Old Fat Spider Can't See Me") oldFatSpiderCanTSeeMeOracle).get!
+
+#guard oldFatSpiderCanTSeeMeDefinition == .card [
+  .name "Old Fat Spider Can't See Me",
+  .manaCost [.generic 2, .mono .blue],
+  .type .enchantment,
+  .subtype .saga,
+  .ability
+    (.keywordWithEffect
+      (.chapter 1)
+      [.continuous
+        [.gainAbility
+          (.target 1
+            (.intersection
+              [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))
+          (.keyword .hexproof)]
+        (.leaveBattlefield .this)]),
+  .ability
+    (.keywordWithEffect
+      (.chapter 2)
+      [.continuous
+        [.replace
+          (.damage
+            (.targets 2 (.range 0 1)
+              (.intersection [.zone .battlefield, .cardType .creature]))
+            .all)
+          []]
+        (.leaveBattlefield .this)]),
+  .ability (.keywordWithEffect (.chapter 3) [.draw (.controller .this) 1]),
+  .ability (.keywordWithEffect (.chapter 4) [.draw (.controller .this) 1])]
+
 def oldFatSpiderCanTSeeMe : CardDef :=
-  saga "Old Fat Spider Can't See Me" (ManaCost.ofGenericAndColor 2 .blue) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target creature you control gains hexproof for as long as this Saga remains on the battlefield.\nII — Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield.\nIII, IV — Draw a card." "IV" #[
-    chapter "I" "Target creature you control gains hexproof for as long as this Saga remains on the battlefield."
-      (Effect.chapterGrantHexproofWhileRemains),
-    chapter "II" "Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield."
-      (Effect.chapterPreventDamageWhileRemains),
-    chapter "III, IV" "Draw a card." (Effect.chapterDraw 1)]
+  oldFatSpiderCanTSeeMeDefinition.toCardDef (oracleText := oldFatSpiderCanTSeeMeOracle)
+
+#guard oldFatSpiderCanTSeeMe.oracleText == oldFatSpiderCanTSeeMeOracle
+#guard oldFatSpiderCanTSeeMe.saga == some { sacrificeAfter := "IV", chapters := #[
+  chapter "I" "Target creature you control gains hexproof for as long as this Saga remains on the battlefield."
+    (Effect.chapterGrantHexproofWhileRemains),
+  chapter "II" "Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield."
+    (Effect.chapterPreventDamageWhileRemains),
+  chapter "III, IV" "Draw a card." (Effect.chapterDraw 1)] }
+#guard oldFatSpiderCanTSeeMe.hasSubtype "Saga"
 
 /-- Oracle text for Orcrist, Goblin-cleaver. -/
 def orcristGoblinCleaverOracle : String :=

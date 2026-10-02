@@ -1416,5 +1416,34 @@ open OracleParts
 #guard parseOracleParts (name := "Bilbo, Thief in the Night")
   "Whenever Bilbo attacks, you may cast an artifact spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead." ==
   none
+#guard parseOracleParts (name := "Old Fat Spider Can't See Me")
+  "I — Target creature you control gains hexproof for as long as this Saga remains on the battlefield." ==
+  some [.ability (.keywordWithEffect (.chapter 1)
+    [.continuous
+      [.gainAbility
+        (.target 1
+          (.intersection
+            [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))
+        (.keyword .hexproof)]
+      (.leaveBattlefield .this)])]
+#guard parseOracleParts (name := "Old Fat Spider Can't See Me")
+  "II — Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield." ==
+  some [.ability (.keywordWithEffect (.chapter 2)
+    [.continuous
+      [.replace
+        (.damage
+          (.targets 1 (.range 0 1)
+            (.intersection [.zone .battlefield, .cardType .creature]))
+          .all)
+        []]
+      (.leaveBattlefield .this)])]
+#guard parseOracleParts (name := "")
+  "III, IV — Draw a card." ==
+  some [
+    .ability (.keywordWithEffect (.chapter 3) [.draw (.controller .this) 1]),
+    .ability (.keywordWithEffect (.chapter 4) [.draw (.controller .this) 1])]
+#guard parseOracleParts (name := "")
+  "I — Target creature gains hexproof for as long as this Saga remains on the battlefield." ==
+  none
 
 end Mtg.Engine

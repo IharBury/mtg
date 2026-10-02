@@ -1309,12 +1309,18 @@ namespace Mtg.Engine
         some Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv
   | none => false
 
--- Uncompiled chapter actions do not produce a Saga.
+-- A chapter that is only “draw a card” is that draw.
 #guard
-  (TraditionalCardDefinition.card [
+  match (TraditionalCardDefinition.card [
     .subtype .saga,
     .ability (.keywordWithEffect (.chapter 1) [.draw (.controller .this) 1])
-  ]).toCardDef.saga.isNone
+  ]).toCardDef.saga with
+  | some s =>
+    s.sacrificeAfter == "I" && s.chapters.size == 1 &&
+      s.chapters[0]!.roman == "I" &&
+      s.chapters[0]!.effect == "draw a card" &&
+      s.chapters[0]!.chapterEffect == some (Effect.chapterDraw 1)
+  | none => false
 
 -- The Mountain-king's Return: recruit, a graveyard creature of mana value
 -- at most N, and one +1/+1 counter on up to one target creature.
@@ -1589,5 +1595,38 @@ namespace Mtg.Engine
     (.enter (.intersection [.zone .battlefield, .token, .controlled (.controller .this)]))
     (.if (.not (.happened (.abilityWithIdResolved 1) .turnStart))
       [.gainLife (.controller .this) 1])).toTriggeredAbility?.isNone
+
+-- Old Fat Spider Can't See Me: hexproof and damage prevention last until
+-- this Saga leaves the battlefield. A draw chapter is that draw.
+#guard
+  CardAction.leftoverChapterEffect?
+    [.continuous
+      [.gainAbility
+        (.target 1
+          (.intersection
+            [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]))
+        (.keyword .hexproof)]
+      (.leaveBattlefield .this)] ==
+    some Effect.chapterGrantHexproofWhileRemains
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [.continuous
+      [.replace
+        (.damage
+          (.targets 1 (.range 0 1)
+            (.intersection [.zone .battlefield, .cardType .creature]))
+          .all)
+        []]
+      (.leaveBattlefield .this)] ==
+    some Effect.chapterPreventDamageWhileRemains
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [.draw (.controller .this) 1] == some (Effect.chapterDraw 1)
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [.draw (.opponent (.controller .this)) 1] |>.isNone
 
 end Mtg.Engine

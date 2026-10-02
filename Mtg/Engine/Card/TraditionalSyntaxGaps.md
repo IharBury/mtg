@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**191** catalog cards are still `CardDef` helpers. **166**
+**190** catalog cards are still `CardDef` helpers. **165**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **25** lost
 their last tag (named counters, `CardAction.removeCounter`,
@@ -28,12 +28,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 171 | 17 | 15 |
+| The Hobbit (HOB) | 188 | 172 | 16 | 14 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 44 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 107 |
-| **Total** | **586** | **395** | **191** | **166** |
+| **Total** | **586** | **396** | **190** | **165** |
 
-All 395 `TraditionalCardDefinition`s (171 HOB, 67 HOC, 157 MSH,
+All 396 `TraditionalCardDefinition`s (172 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -426,8 +426,8 @@ complete.
 
 ### `Trigger`
 
-- **`leaveBattlefield`** (5 cards) — When the selected object leaves the battlefield, and as a duration bound (“for as long as this remains on the battlefield”, “until this leaves” for an effect other than exile). Exile until that event is `CardAction.exileUntil`
-  - Fiend Hunter; Old Fat Spider Can't See Me; Secret Invasion; The Super Hero Civil War; The Wondrous Wasp
+- **`leaveBattlefield`** (4 cards) — When the selected object leaves the battlefield, and as a duration bound (“for as long as this remains on the battlefield”, “until this leaves” for an effect other than exile). Exile until that event is `CardAction.exileUntil`
+  - Fiend Hunter; Secret Invasion; The Super Hero Civil War; The Wondrous Wasp
 - **`onceEachTurn`** (10 cards) — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
   - Ant-Man, Colony Commander; Baron Strucker, HYDRA Overlord; Crossbones, Malicious Mercenary; Knight of Wundagore; Loki, God of Mischief; Moon Girl and Devil Dinosaur; Nimrodel Watcher; Part in Friendship; The Sensational She-Hulk; Tom Bombadil
 - **`attackAlone`** (8 cards) — When the selected object attacks alone
@@ -756,6 +756,15 @@ more cards (CR 404.1). Whenever its controller draws their second card each
 turn, one target player mills three cards. Compiling those abilities still
 yields vigilance, `powerPerFatGraveyard 2`, and `onDrawSecondMillPlayer 3`.
 
+Old Fat Spider Can't See Me is a `TraditionalCardDefinition` read with
+`parseOracleParts`. Chapter I grants hexproof to target creature its
+controller controls until this Saga leaves the battlefield. That duration
+is `Trigger.leaveBattlefield` of this Saga. Chapter II prevents all damage
+that would be dealt by up to one target creature until that same event.
+Chapters III and IV each draw a card, printed as one line. Compiling those
+chapters still yields `chapterGrantHexproofWhileRemains`,
+`chapterPreventDamageWhileRemains`, and `chapterDraw 1`.
+
 ## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. Evidence is the
@@ -836,15 +845,11 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (15 cards)
+### The Hobbit (HOB) (14 cards)
 
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
 - `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
-
-**Old Fat Spider Can't See Me** (`oldFatSpiderCanTSeeMe`)
-
-- `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, and as a duration bound (“for as long as this remains on the battlefield”, “until this leaves” for an effect other than exile). Exile until that event is `CardAction.exileUntil`
 
 **Part in Friendship** (`partInFriendship`)
 
