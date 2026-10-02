@@ -73,7 +73,7 @@ def collectSelector : Selector → List Nat × List Nat
   | .player | .token | .replacingObject =>
     ([], [])
   | .source s | .controller s | .not s | .controlled s | .hasTarget s | .isTargetOf s
-  | .opponent s | .owner s | .attacking s | .blocking s | .hostOf s =>
+  | .opponent s | .owner s | .attacking s | .blocking s | .hostOf s | .chooseRandom s =>
     collectSelector s
   | .target n s => appendIds [([], [n]), collectSelector s]
   | .targets n r s | .targetSet n r s _ =>
@@ -334,6 +334,7 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .hasCreatureTypeChosenByAction n => .hasCreatureTypeChosenByAction (m.action n)
   | .manaValueAtMost v => .manaValueAtMost (mapValue m v)
   | .castFromZone z => .castFromZone z
+  | .chooseRandom s => .chooseRandom (mapSelector m s)
 
 def mapTriggers (m : IdMaps) : List Trigger → List Trigger
   | [] => []

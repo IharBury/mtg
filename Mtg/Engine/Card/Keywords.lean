@@ -491,6 +491,10 @@ inductive Selector where
   `.hand` is “from your hand”. `.not (.castFromZone .hand)` is “from
   anywhere other than your hand”. -/
   | castFromZone : ZoneKind → Selector
+  /-- One object chosen at random from those matching the selector.
+  A later reference to that same object is `Selector.variable` after
+  `CardAction.defineSelectorVariable`, not another `chooseRandom`. -/
+  | chooseRandom : Selector → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or

@@ -6715,9 +6715,47 @@ def enchantedRiverSGrasp : CardDef :=
 #guard enchantedRiverSGrasp.triggeredAbilities == #[.onEnterTapEnchantedRemoveCounters]
 #guard enchantedRiverSGrasp.removesAllAbilitiesFrom == #[.hostOf .this]
 
+/-- Oracle text for Getaway Barrel. -/
+def getawayBarrelOracle : String :=
+  "When this artifact is put into a graveyard from the battlefield, reveal the top thirteen cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."
+
+def getawayBarrelDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Getaway Barrel",
+    .manaCost [.generic 3, .mono .red],
+    .type .artifact
+  ] ++ (parseOracleParts (name := "Getaway Barrel") getawayBarrelOracle).get!
+
+#guard getawayBarrelDefinition == .card [
+  .name "Getaway Barrel",
+  .manaCost [.generic 3, .mono .red],
+  .type .artifact,
+  .ability
+    (.triggered
+      (.putToGraveyard .this)
+      (.sequence [
+        .actionId 1
+          (.reveal
+            (.topOfLibrary
+              (.controller .this)
+              (.int 13))),
+        .defineSelectorVariable 1
+          (.chooseRandom
+            (.intersection
+              [.wasObjectOfAction 1, .cardType .creature])),
+        .putOntoBattlefield (.variable 1),
+        .putOnLibraryBottomInRandomOrder
+          (.intersection
+            [.wasObjectOfAction 1,
+             .not (.variable 1)])]))]
+
 def getawayBarrel : CardDef :=
-  artifact "Getaway Barrel" (ManaCost.ofGenericAndColor 3 .red) "When this artifact is put into a graveyard from the battlefield, reveal the top thirteen cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."
-    (triggeredAbilities := #[.onDiesRevealTopPutRandomCreature 13])
+  getawayBarrelDefinition.toCardDef (oracleText := getawayBarrelOracle)
+
+#guard getawayBarrel.oracleText == getawayBarrelOracle
+#guard getawayBarrel.triggeredAbilities == #[.onDiesRevealTopPutRandomCreature 13]
+#guard getawayBarrel.types == #[.artifact]
+#guard getawayBarrel.manaCost == ManaCost.ofGenericAndColor 3 .red
 
 /-- Oracle text for Gleaming Splendor. -/
 def gleamingSplendorOracle : String :=

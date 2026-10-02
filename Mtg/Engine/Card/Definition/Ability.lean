@@ -225,6 +225,23 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           .zone .battlefield, .cardType .creature, .attacking .all] then
       some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)
     else none
+  -- Getaway Barrel: reveal the top thirteen cards, bind the random
+  -- creature to a selector variable, put that card onto the battlefield,
+  -- and put the rest on the bottom in a random order.
+  | .triggered (.putToGraveyard .this) (.sequence [
+      .actionId revealId (.reveal (.topOfLibrary who (.int 13))),
+      .defineSelectorVariable varId
+        (.chooseRandom
+          (.intersection [.wasObjectOfAction revealed, .cardType .creature])),
+      .putOntoBattlefield (.variable put),
+      .putOnLibraryBottomInRandomOrder
+        (.intersection [
+          .wasObjectOfAction rest,
+          .not (.variable excluded)])]) =>
+    if who == .controller .this && revealId == revealed && revealId == rest &&
+        varId == put && varId == excluded then
+      some (TriggeredAbility.onDiesRevealTopPutRandomCreature 13)
+    else none
   -- Dwalin, Weaponmaster: a hone counter on each Equipment you control.
   | .triggered (.or (.enter .this) (.attack .this .all))
       (.putCounter
