@@ -16,7 +16,8 @@ abilities are a `.costFor` instruction in `.textBox`, tapping spells
 are a `.tap` instruction in `.textBox`, cost reductions are a
 `.costLessToCastIf` instruction in `.textBox`, damage is a
 `.dealDamage` instruction in `.textBox`, triggered abilities are a
-`.whenever` instruction in `.textBox`, and a spell that resolves as
+`.whenever` or `.when` instruction in `.textBox`, scry spells are a
+`.scry` instruction in `.textBox`, and a spell that resolves as
 several sentences is a `.sequence` in `.textBox`. `parseOracleText` reads a
 printed card (name, mana cost, type line, power/toughness, rules text,
 and an Adventure face) back into that clause list.
@@ -62,6 +63,8 @@ inductive CardSubtype where
   | adventure
   | bird
   | soldier
+  | halfling
+  | rogue
   deriving Repr, BEq, DecidableEq
 
 namespace CardSubtype
@@ -74,6 +77,8 @@ def printed : CardSubtype → String
   | .adventure => "Adventure"
   | .bird => "Bird"
   | .soldier => "Soldier"
+  | .halfling => "Halfling"
+  | .rogue => "Rogue"
 
 end CardSubtype
 
@@ -282,11 +287,19 @@ inductive Duration where
   | endOfTurn
   deriving Repr, BEq
 
-/-- One event in `.whenever`. `[.attack [.this, .cardType .creature] []]` is
-“this creature attacks”. The second list is a further restriction on that
-attack; empty means any attack. -/
+/-- A card name printed in rules text. `.thisCardName` is this card’s name,
+shortened before a comma (`Bilbo Baggins` on Bilbo Baggins, Burglar). -/
+inductive PrintedName where
+  | thisCardName
+  deriving Repr, BEq
+
+/-- One event in `.whenever` or `.when`.
+`[.attack [.this, .cardType .creature] []]` is “this creature attacks”.
+The second list is a further restriction on that attack; empty means any
+attack. `[.enters [.thisCardName]]` is “{name} enters”. -/
 inductive TriggerExpr where
   | attack (who : List ObjectQualifier) (restrictions : List ObjectQualifier)
+  | enters (who : List PrintedName)
   deriving Repr, BEq
 
 /-- A printed power and toughness change. `.plusPowerToughness +1 +1` is `+1/+1`. -/
@@ -363,6 +376,13 @@ inductive TextEffect where
   /-- When `events` happen, follow `effects`.
   `[.attack [.this, .cardType .creature] []]` is “this creature attacks”. -/
   | whenever (events : List TriggerExpr) (effects : List TextEffect)
+  /-- When `events` happen, follow `effects`.
+  `[.enters [.thisCardName]]` with `[.draw 1]` is “When {name} enters, draw a card”. -/
+  | when (events : List TriggerExpr) (effects : List TextEffect)
+  /-- Draw `n` cards (`draw a card`). -/
+  | draw (n : Nat)
+  /-- Look at the top `n` cards of your library (`Scry 2`). -/
+  | scry (n : Nat)
   /-- `who` gets `mods` until `dur` for each object matching `each`.
   `[.it]` is “it”. `[.other, .cardType .creature, .controlledBy .you]` is
   “each other creature you control”. -/
@@ -503,12 +523,24 @@ private def pluralQualifier : ObjectQualifier → String
 private def qualifierWords (qs : List ObjectQualifier) : String :=
   String.intercalate " " (qs.map ObjectQualifier.toPhrase)
 
-private def TriggerExpr.toPhrase : TriggerExpr → String
+/-- Legendary short name: the printed name before the first comma (CR 201.3). -/
+private def shortCardName (cardName : String) : String :=
+  match cardName.splitOn ", " with
+  | head :: _ => if head.isEmpty then cardName else head
+  | [] => cardName
+
+private def printedNamePhrase (cardName : String) : PrintedName → String
+  | .thisCardName => shortCardName cardName
+
+private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
   | .attack who restrictions =>
     let extra :=
       if restrictions.isEmpty then ""
       else s!" {qualifierWords restrictions}"
     s!"{qualifierWords who} attacks{extra}"
+  | .enters who =>
+    let name := String.intercalate " and " (who.map (printedNamePhrase cardName))
+    s!"{name} enters"
 
 private def targetNoun (plural : Bool) (qs : List ObjectQualifier) : String :=
   if plural then String.intercalate " " (qs.map pluralQualifier)
@@ -631,10 +663,27 @@ private def wheneverBody : TextEffect → Option String
   | .getForEachUntil who mods each dur => some (getForEachClause who mods each dur)
   | _ => none
 
-private def wheneverSentence (events : List TriggerExpr) (effects : List TextEffect) : String :=
-  let trig := String.intercalate " and " (events.map TriggerExpr.toPhrase)
+private def wheneverSentence (cardName : String) (events : List TriggerExpr)
+    (effects : List TextEffect) : String :=
+  let trig := String.intercalate " and " (events.map (TriggerExpr.phrase cardName))
   let body := String.intercalate " " (effects.filterMap wheneverBody)
   s!"Whenever {trig}, {body}."
+
+private def drawClause (n : Nat) : String :=
+  s!"draw {cardPhrase n}"
+
+private def whenBody : TextEffect → Option String
+  | .draw n => some (drawClause n)
+  | _ => none
+
+private def whenSentence (cardName : String) (events : List TriggerExpr)
+    (effects : List TextEffect) : String :=
+  let trig := String.intercalate " and " (events.map (TriggerExpr.phrase cardName))
+  let body := String.intercalate " " (effects.filterMap whenBody)
+  s!"When {trig}, {body}."
+
+private def scrySentence (n : Nat) : String :=
+  s!"Scry {n}."
 
 /-- A text-box effect nested under `.costFor`, printed without a further cost. -/
 private def nestedEffectSentence (cardName : String) : TextEffect → Option String
@@ -647,7 +696,10 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
     some (costLessSentence subjects discount cond)
   | .dealDamage subjects n targets =>
     some (dealDamageSentence cardName subjects n targets)
-  | .whenever events effects => some (wheneverSentence events effects)
+  | .whenever events effects => some (wheneverSentence cardName events effects)
+  | .when events effects => some (whenSentence cardName events effects)
+  | .draw n => some s!"Draw {cardPhrase n}."
+  | .scry n => some (scrySentence n)
   | .getForEachUntil who mods each dur =>
     some s!"{capitalizeAscii (getForEachClause who mods each dur)}."
   | .sequence es =>
@@ -679,7 +731,10 @@ where
       costLessSentence subjects discount cond
     | .dealDamage subjects n targets =>
       dealDamageSentence cardName subjects n targets
-    | .whenever events effects => wheneverSentence events effects
+    | .whenever events effects => wheneverSentence cardName events effects
+    | .when events effects => whenSentence cardName events effects
+    | .draw n => s!"Draw {cardPhrase n}."
+    | .scry n => scrySentence n
     | .getForEachUntil who mods each dur =>
       s!"{capitalizeAscii (getForEachClause who mods each dur)}."
     | .sequence es => String.intercalate " " (es.map go)
@@ -699,6 +754,7 @@ private def textEffectToEffect : TextEffect → Option Effect
     some Effect.tapOneOrTwoCreatures
   | .dealDamage [.thisCardName] n [.target [.cardType .creature]] =>
     some (Effect.dealDamageToCreature n)
+  | .scry n => some (Effect.scry n)
   | .sequence
       [.untap [.target [.cardType .creature, .controlledBy .you]],
        .getUntil [.it] [.plusPowerToughness p t] .endOfTurn,
@@ -725,13 +781,17 @@ private def costsToActivation (costs : List PrintedCost) : ActivationCost :=
         mana := { symbols := acc.mana.symbols ++ (CostSymbol.toManaCost ms).symbols } })
     {}
 
-/-- Map `.whenever` onto a triggered ability the engine already resolves. -/
+/-- Map `.whenever` and `.when` onto a triggered ability the engine already resolves. -/
 private def textEffectToTriggered : TextEffect → Option TriggeredAbility
   | .whenever
       [.attack [.this, .cardType .creature] []]
       [.getForEachUntil [.it] [.plusPowerToughness 1 1]
         [.other, .cardType .creature, .controlledBy .you] .endOfTurn] =>
     some .onAttackPumpForEachOtherCreature
+  | .when
+      [.enters [.thisCardName]]
+      [.draw n] =>
+    some (.onEnterDraw n)
   | _ => none
 
 /-- Map `.costFor` onto a non-mana activated ability. -/
@@ -876,6 +936,8 @@ private def parseCardSubtype (s : String) : Option CardSubtype :=
   | "adventure" => some .adventure
   | "bird" => some .bird
   | "soldier" => some .soldier
+  | "halfling" => some .halfling
+  | "rogue" => some .rogue
   | _ => none
 
 private def colorOfLetter : String → Option Color
@@ -1274,6 +1336,41 @@ private def parseWhenever (line : String) : Option TextEffect := do
   let effect ← parseGetForEachUntil effectText
   return .whenever [trig] [effect]
 
+/-- `{short name} enters`, where the short name is the card name before a comma. -/
+private def parseEntersTrigger (cardName : String) (s : String) : Option TriggerExpr := do
+  let (who, rest) ← splitOnce " enters" s
+  guard (rest.trimAscii.copy.isEmpty)
+  guard (who == shortCardName cardName)
+  return .enters [.thisCardName]
+
+/-- `draw a card` or `draw N cards`. -/
+private def parseDrawClause (s : String) : Option TextEffect := do
+  let rest ← dropPrefixCI s "draw "
+  if rest == "a card" then
+    return .draw 1
+  else
+    let (nText, tail) ← splitOnce " " rest
+    guard (tail == "cards")
+    let n ← nText.toNat?
+    guard (n != 1)
+    return .draw n
+
+/-- `When Bilbo Baggins enters, draw a card.` -/
+private def parseWhen (cardName : String) (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let rest ← dropPrefixCI line "When "
+  let (trigText, effectText) ← splitOnce ", " rest
+  let trig ← parseEntersTrigger cardName trigText
+  let effect ← parseDrawClause effectText
+  return .when [trig] [effect]
+
+/-- `Scry 2.` -/
+private def parseScry (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let rest ← dropPrefixCI line "Scry "
+  let n ← rest.toNat?
+  return .scry n
+
 private def parseTypeName (s : String) : Option TypeName :=
   match s.trimAscii.copy.map Char.toLower with
   | "equipment" => some .equipment
@@ -1380,29 +1477,35 @@ private def parseBody (cardName : String) (lines : List String) : Option (List T
       | some e => pure (effects ++ [e])
       | none =>
         match parseWhenever cleaned with
-      | some e => pure (effects ++ [e])
-      | none =>
-        match parseCostFor cleaned with
         | some e => pure (effects ++ [e])
         | none =>
-          match parseGetUntil cleaned with
-        | some e => pure (effects ++ [e])
-        | none =>
-          match parseGainUntil cleaned with
+          match parseWhen cardName cleaned with
           | some e => pure (effects ++ [e])
           | none =>
-            match parseTap cleaned with
+            match parseScry cleaned with
             | some e => pure (effects ++ [e])
             | none =>
-              match parseCostLess cleaned with
+              match parseCostFor cleaned with
               | some e => pure (effects ++ [e])
               | none =>
-                match parseDealDamage cardName cleaned with
+                match parseGetUntil cleaned with
                 | some e => pure (effects ++ [e])
                 | none =>
-                  match parseKeywordLine cleaned with
-                  | some ks => pure (effects ++ ks)
-                  | none => none) []
+                  match parseGainUntil cleaned with
+                  | some e => pure (effects ++ [e])
+                  | none =>
+                    match parseTap cleaned with
+                    | some e => pure (effects ++ [e])
+                    | none =>
+                      match parseCostLess cleaned with
+                      | some e => pure (effects ++ [e])
+                      | none =>
+                        match parseDealDamage cardName cleaned with
+                        | some e => pure (effects ++ [e])
+                        | none =>
+                          match parseKeywordLine cleaned with
+                          | some ks => pure (effects ++ ks)
+                          | none => none) []
 
 private def faceClauses (name : String) (cost : List CostSymbol)
     (supers : List Supertype) (tys : List CardType) (subs : List CardSubtype)
@@ -1464,6 +1567,8 @@ instructions in that text box. `Tap one or two target …` becomes `.tap`.
 `.dealDamage` with `.thisCardName` when the subject is the card’s name.
 `Whenever this creature attacks, it gets … for each other creature you control`
 becomes `.whenever` with `.attack` and `getForEachUntil`.
+`When {name} enters, draw a card.` becomes `.when` with `.enters` and `.draw`.
+`Scry N.` becomes `.scry`.
 `Untap target creature you control. It gets … If it's a Dwarf, you may attach
 an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`,
 and `.if` with `[.cardSubtype .dwarf]`.
@@ -1558,5 +1663,17 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     .if
       [.is [.it] [.cardSubtype .dwarf]]
       [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]])
+#guard shortCardName "Bilbo Baggins, Burglar" == "Bilbo Baggins"
+#guard textEffectSentence "Bilbo Baggins, Burglar" (.when
+    [.enters [.thisCardName]]
+    [.draw 1]) ==
+  "When Bilbo Baggins enters, draw a card."
+#guard parseWhen "Bilbo Baggins, Burglar"
+    "When Bilbo Baggins enters, draw a card." ==
+  some (.when [.enters [.thisCardName]] [.draw 1])
+#guard textEffectSentence "Take a Glance" (.scry 2) == "Scry 2."
+#guard parseScry
+    "Scry 2. (Then exile this card. You may cast the creature later from exile.)" ==
+  some (.scry 2)
 
 end Mtg.Engine
