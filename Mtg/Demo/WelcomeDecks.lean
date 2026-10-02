@@ -29,8 +29,9 @@ def hobbitWhite : Array CardDef :=
   copies 2 errandRiderOfGondor ++
   #[landrovalHorizonWitness, roguesPassage] ++
   copies 2 soldierOfTheGreyHost ++
-  #[eaglesOfTheNorth, dunedainBlade, fogOnTheBarrowDowns, eagleOfTheGreatShelf,
-    banishingLight, dawnOfANewAge, vowToErebor] ++
+  #[eaglesOfTheNorth, dunedainBlade, fogOnTheBarrowDowns] ++
+  #[eagleOfTheGreatShelf] ++
+  #[banishingLight, dawnOfANewAge, vowToErebor] ++
   copies 2 westfoldRider ++
   #[esquireOfTheKing]
 
