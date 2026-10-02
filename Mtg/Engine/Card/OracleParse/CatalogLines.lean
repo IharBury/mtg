@@ -642,11 +642,42 @@ def parseChapter (cardName line : String) (n : Nat) : Option (List CardPart × N
       else
         ks.foldlM (fun (parts, n) k =>
           (((parseCreateNamedToken effect).map ([·], n)) <|>
+              parseHexproofWhileSaga effect n <|>
+              parsePreventWhileSaga effect n <|>
               (catalogActionsFromText cardName effect n) <|>
               (parseSagaGainsQuoted cardName effect).map ([·], n)).map fun (actions, n') =>
             (parts ++ [CardPart.ability (.keywordWithEffect (.chapter k) actions)], n'))
           (([] : List CardPart), n)
 where
+  /-- `Target creature you control gains hexproof for as long as this Saga
+  remains on the battlefield.` The creature is target `n`. The duration is
+  this Saga leaving the battlefield. -/
+  parseHexproofWhileSaga (effect : String) (n : Nat) : Option (List CardAction × Nat) :=
+    if normSentence effect !=
+        "target creature you control gains hexproof for as long as this saga remains on the battlefield" then
+      none
+    else
+      some ([.continuous
+        [.gainAbility (.target n creaturesYouControl) (.keyword .hexproof)]
+        (.leaveBattlefield .this)], n + 1)
+
+  /-- `Prevent all damage that would be dealt by up to one target creature
+  for as long as this Saga remains on the battlefield.` That creature is
+  up to one target `n`. The duration is this Saga leaving the battlefield. -/
+  parsePreventWhileSaga (effect : String) (n : Nat) : Option (List CardAction × Nat) :=
+    if normSentence effect !=
+        "prevent all damage that would be dealt by up to one target creature for as long as this saga remains on the battlefield" then
+      none
+    else
+      some ([.continuous [
+        .replace
+          (.damage
+            (.targets n (.range 0 1)
+              (.intersection [.zone .battlefield, .cardType .creature]))
+            .all)
+          []]
+        (.leaveBattlefield .this)], n + 1)
+
   /-- `This Saga gains "<triggered ability>".` No duration is printed, so the
   ability lasts until the end of the game (CR 611.2a). -/
   parseSagaGainsQuoted (cardName effect : String) : Option CardAction :=
