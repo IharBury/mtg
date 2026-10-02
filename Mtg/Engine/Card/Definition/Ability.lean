@@ -209,12 +209,14 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   -- Desert Were-Worm: the first attack each turn whose creatures have
   -- total power 12 or greater untaps those attackers and adds a combat.
+  -- “For the first time each turn” is `ordinal` 1 since turn start.
   -- The power predicate is part of the attack, so a lower total does not
   -- trigger the ability.
   | .triggered
-      (.attackSimultaneously
-        (.intersection [.zone .battlefield, .cardType .creature, ctl]) .all
-        [.totalPowerAtLeast 12])
+      (.ordinal 1 .turnStart
+        (.attackSimultaneously
+          (.intersection [.zone .battlefield, .cardType .creature, ctl]) .all
+          [.totalPowerAtLeast 12]))
       (.sequence [
         .untap attackers,
         .extraCombat]) =>
@@ -1191,14 +1193,8 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | _ => none
 
-/-- Compile a `.triggered` ability. `triggeredOnce` is the printed
-once-each-turn restriction; the named ability keeps that limit. -/
 def toTriggeredAbility? (a : Ability) : Option TriggeredAbility :=
-  let unwrapped :=
-    match a with
-    | .triggeredOnce t action => Ability.triggered t action
-    | other => other
-  unwrapped.printedTriggeredAbility?.orElse fun _ => unwrapped.compileTriggeredAbility?
+  a.printedTriggeredAbility?.orElse fun _ => a.compileTriggeredAbility?
 
 end Ability
 

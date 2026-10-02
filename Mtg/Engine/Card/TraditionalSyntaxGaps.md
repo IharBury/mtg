@@ -5,11 +5,11 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**202** catalog cards are still `CardDef` helpers. **175**
+**202** catalog cards are still `CardDef` helpers. **182**
 of them need at least one missing constructor listed under
-[Missing constructors by type](#missing-constructors-by-type). **27** lost
+[Missing constructors by type](#missing-constructors-by-type). **20** lost
 their last tag (named counters, `CardAction.removeCounter`,
-enters-with-counters, `CardAction.reflexive`, `Ability.triggeredOnce`,
+enters-with-counters, `CardAction.reflexive`,
 or `CardAction.extraCombat`) and
 are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
@@ -26,10 +26,10 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 160 | 28 | 22 |
+| The Hobbit (HOB) | 188 | 160 | 28 | 23 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 46 |
-| Marvel Super Heroes (MSH) | 281 | 157 | 124 | 107 |
-| **Total** | **586** | **384** | **202** | **175** |
+| Marvel Super Heroes (MSH) | 281 | 157 | 124 | 113 |
+| **Total** | **586** | **384** | **202** | **182** |
 
 All 384 `TraditionalCardDefinition`s (160 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
@@ -140,7 +140,6 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `activatedWithStaticIf` (with a static effect of that ability, such as its
   own cost reduction), `graveyardActivatedIf`, `abilityId`, `triggered`,
   `triggeredWhile` (condition checked when the trigger event occurs, not on resolution),
-  `triggeredOnce` (triggers only once each turn; compiling unwraps it to `triggered`, and a named ability that already fires once keeps that limit),
   `static`, `stackStatic`, `everywhereStatic` (functions in every zone, including before the card is put onto the stack).
 - **ContinuousEffect** — `gainAbility`, `if`, `reduceCost`, `reduceCostWithX`
   (substitutes `{X}` with a `Value`), `additionalCost`, `alternativeCost`,
@@ -339,7 +338,6 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.dealDamageEqualToPower` | `dealDamage` of `Value.greatestPower` of the source |
 | `Trigger.whenYouDo` | `CardAction.reflexive` after the numbered action (CR 603.12). Bolg of the North records the sacrificed creature's power with `defineValueVariable` before that sacrifice |
 | `CardAction.eventAmount` for excess damage | `Value.excessDamageOfActionWithId` of that action. “If excess damage was dealt this way” is `happened` of `Trigger.actionWithIdDealtExcessDamage` (Bolg of the North) |
-| `Trigger.onceEachTurn` | `Ability.triggeredOnce`. Desert Were-Worm's “for the first time each turn” is this on “whenever you attack” |
 | `CardAction.extraCombat` | `CardAction.extraCombat` (Desert Were-Worm) |
 
 ## Missing constructors by type
@@ -401,6 +399,8 @@ complete.
 
 - **`leaveBattlefield`** (11 cards) — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Old Fat Spider Can't See Me; Secret Invasion; Super Villain Lockup; The Super Hero Civil War; The Wondrous Wasp; … (1 more)
+- **`onceEachTurn`** (11 cards) — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
+  - Ant-Man, Colony Commander; Baron Strucker, HYDRA Overlord; Crossbones, Malicious Mercenary; Elrond, Moon-Reader; Knight of Wundagore; Loki, God of Mischief; Moon Girl and Devil Dinosaur; Nimrodel Watcher; Part in Friendship; The Sensational She-Hulk; … (1 more)
 - **`attackAlone`** (8 cards) — When the selected object attacks alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
 - **`nextTurnOf`** (7 cards) — Duration bound “until your next turn” / “until the end of your next turn” (`endOfPlayerTurn` ends at the current turn's end)
@@ -642,8 +642,9 @@ do”. “If excess damage was dealt this way” is `happened` of
 Desert Were-Worm is a `TraditionalCardDefinition` read with
 `parseOracleParts`. `+2/+0 for each Mountain you control` is a static
 `addPower` of twice the Mountain count, and it compiles to
-`powerPerMountain`. The attack line is `Ability.triggeredOnce` of “whenever you attack”, with
-`SetPredicate.totalPowerAtLeast 12` on that attack. The ability does not
+`powerPerMountain`. The attack line is `Trigger.ordinal 1` since `turnStart`
+of “whenever you attack”, with `SetPredicate.totalPowerAtLeast 12` on that
+attack. That is the first such attack each turn. The ability does not
 trigger when the attackers' total power is lower. Power is the power at
 attack time. The effect untaps those attackers, and
 `CardAction.extraCombat` adds a combat phase. Compiling that ability still
@@ -729,7 +730,7 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (22 cards)
+### The Hobbit (HOB) (23 cards)
 
 **Celebrate the Mountain-king** (`celebrateTheMountainKing`)
 
@@ -743,6 +744,7 @@ Converted cards are omitted here.
 
 **Elrond, Moon-Reader** (`elrondMoonReader`)
 
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 - `CardAction.exileThenReturn` — Exile, then return at a later event (a delayed trigger such as the next end step)
 
 **Getaway Barrel** (`getawayBarrel`)
@@ -770,6 +772,10 @@ Converted cards are omitted here.
 **Old Fat Spider Can't See Me** (`oldFatSpiderCanTSeeMe`)
 
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
+
+**Part in Friendship** (`partInFriendship`)
+
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Riddles in the Dark** (`riddlesInTheDark`)
 
@@ -951,6 +957,7 @@ Converted cards are omitted here.
 **Nimrodel Watcher** (`nimrodelWatcher`)
 
 - `Trigger.scry` — Whenever the selected player scries
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Orcish Bowmasters** (`orcishBowmasters`)
 
@@ -1014,6 +1021,7 @@ Converted cards are omitted here.
 
 **Tom Bombadil** (`tomBombadil`)
 
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 - `Value.counterCount` — The number of counters of a kind on an object
 - `Trigger.chapterResolves` — Whenever the final chapter ability of a Saga resolves
 
@@ -1034,7 +1042,7 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (`gainSubtype` only adds)
 
-### Marvel Super Heroes (MSH) (107 cards)
+### Marvel Super Heroes (MSH) (113 cards)
 
 **Absorbing Man** (`absorbingMan`)
 
@@ -1061,6 +1069,10 @@ Converted cards are omitted here.
 - `ContinuousEffect.attacksEachCombat` — Attacks each combat if able (“can't attack” is `forbid` of `Trigger.attack`)
 - `Value.counterCount` — The number of counters of a kind on an object
 
+**Ant-Man, Colony Commander** (`antManColonyCommander`)
+
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
+
 **Arc Reactor** (`arcReactor`)
 
 - `Cost.tapArtifactsForGeneric` — Tap artifacts to pay generic (Improvise)
@@ -1078,6 +1090,10 @@ Converted cards are omitted here.
 **Baron Helmut Zemo** (`baronHelmutZemo`)
 
 - `Selector.color` — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
+
+**Baron Strucker, HYDRA Overlord** (`baronStruckerHYDRAOverlord`)
+
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Baxter Building** (`baxterBuilding`)
 
@@ -1123,6 +1139,10 @@ Converted cards are omitted here.
 **Cosmic Cube** (`cosmicCube`)
 
 - `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+
+**Crossbones, Malicious Mercenary** (`crossbonesMaliciousMercenary`)
+
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Crowd of True Believers** (`crowdOfTrueBelievers`)
 
@@ -1267,6 +1287,10 @@ Converted cards are omitted here.
 
 - `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
 
+**Knight of Wundagore** (`knightOfWundagore`)
+
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
+
 **Leader, Super-Genius** (`leaderSuperGenius`)
 
 - `Trigger.connive` — When the selected creature would connive (a keyword-action event for `replace`)
@@ -1274,6 +1298,10 @@ Converted cards are omitted here.
 **Loki Laufeyson** (`lokiLaufeyson`)
 
 - `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+
+**Loki, God of Mischief** (`lokiGodOfMischief`)
+
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Luke Cage, Power Man** (`lukeCagePowerMan`)
 
@@ -1289,6 +1317,10 @@ Converted cards are omitted here.
 
 - `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (`CardPart.alternative` is Adventure-only)
 - `CardAction.transform` — Transform this permanent
+
+**Moon Girl and Devil Dinosaur** (`moonGirlAndDevilDinosaur`)
+
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **Ms. Marvel, Kamala Khan** (`msMarvelKamalaKhan`)
 
@@ -1436,6 +1468,7 @@ Converted cards are omitted here.
 **The Sensational She-Hulk** (`theSensationalSheHulk`)
 
 - `CardAction.eventAmount` — Use the amount from the triggering event or a previous action (“that much”, “that many”). Excess damage of a numbered action is `Value.excessDamageOfActionWithId`. `defineValueVariable` records a value computed on resolution, not an event's amount
+- `Trigger.onceEachTurn` — “This ability triggers only once each turn” / “Do this only once each turn”. `Trigger.ordinal 1 … .turnStart` is the first event, which differs when the source arrives mid-turn. Activated “only once each turn” is `not (happened (abilityWithIdActivated n) turnStart)`
 
 **The Sentry, Golden Guardian** (`theSentryGoldenGuardian`)
 
@@ -1526,19 +1559,19 @@ Converted cards are omitted here.
 
 ## Tags now spelled, not yet converted
 
-These 27 cards lost every tag and are still `CardDef` helpers. They lost
+These 20 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, enters-with-counters,
 `replace` of `Trigger.createTokens`, `replace` of `Trigger.abilityTriggers`,
-`CardAction.reflexive`, `Ability.triggeredOnce`, or `CardAction.extraCombat`
+`CardAction.reflexive`, or `CardAction.extraCombat`
 became expressible. A later pass
 should reread them before conversion.
 
-**Hobbit (6):** Dwalin, Weaponmaster; Dáin Ironfoot; Head of the Hunt; Last Light of Durin's Day; Part in Friendship; Wizard's Staff.
+**Hobbit (5):** Dwalin, Weaponmaster; Dáin Ironfoot; Head of the Hunt; Last Light of Durin's Day; Wizard's Staff.
 
 **Hobbit Eternal (4):** Arwen, Mortal Queen; Bilbo, Fellow Conspirator; Chief of the Wilds; Minas Morgul, Dark Fortress.
 
-**Marvel Super Heroes (17):** Ant-Man, Colony Commander; Baron Strucker, HYDRA Overlord; Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Crossbones, Malicious Mercenary; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Knight of Wundagore; Loki, God of Mischief; Mister Hyde, Monster Within; Moon Girl and Devil Dinosaur; Quicksilver, Brash Blur; Spider-Man, To the Rescue; Super-Adaptoid; The Astonishing Ant-Man; The Incredible Hulk; Thunderbolts Conspiracy.
+**Marvel Super Heroes (11):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Spider-Man, To the Rescue; Super-Adaptoid; The Astonishing Ant-Man; The Incredible Hulk; Thunderbolts Conspiracy.
 
 ## Method notes
 

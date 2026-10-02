@@ -6260,14 +6260,15 @@ def desertWereWormDefinition : TraditionalCardDefinition := .card <|
           .subtype .mountain,
           .controlled (.controller .this)]))
       (.int 2)))),
-  .ability (.triggeredOnce
-    (.attackSimultaneously
-      (.intersection [
-        .zone .battlefield,
-        .cardType .creature,
-        .controlled (.controller .this)])
-      .all
-      [.totalPowerAtLeast 12])
+  .ability (.triggered
+    (.ordinal 1 .turnStart
+      (.attackSimultaneously
+        (.intersection [
+          .zone .battlefield,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .all
+        [.totalPowerAtLeast 12]))
     (.sequence [
       .untap
         (.intersection [

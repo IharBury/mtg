@@ -256,8 +256,10 @@ def parseAttackTotalPowerExtraCombat (line : String) (n : Nat) :
       .intersection [.zone .battlefield, .cardType .creature, .attacking .all]
     -- Total power is a predicate of the attack, so the ability does not
     -- trigger when that total is lower. It is not checked again on resolution.
-    some ([.ability (.triggeredOnce
-      (.attackSimultaneously creaturesYouControl .all [.totalPowerAtLeast 12])
+    -- “For the first time each turn” is the first such attack since turn start.
+    some ([.ability (.triggered
+      (.ordinal 1 .turnStart
+        (.attackSimultaneously creaturesYouControl .all [.totalPowerAtLeast 12]))
       (.sequence [
         .untap attacking,
         .extraCombat]))], n)
