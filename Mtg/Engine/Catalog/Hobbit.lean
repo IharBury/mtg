@@ -25,7 +25,9 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
   .subtype .scout,
   .power 1,
   .toughness 1,
-  .ability (.keyword .lifelink),
+  .textBox [
+    .keyword .lifelink
+  ],
   .alternative [
     .name "Concerted Care",
     .manaCost [.generic 1, .mono .white],

@@ -10,7 +10,8 @@ import Mtg.Engine.Card.SpellEffects
 
 A list-shaped definition language for a traditional Magic card: one face,
 plus an optional Adventure. `TraditionalCardDefinition.card` is the clause
-list. `toCardDef` compiles it into the engine's `CardDef`. Activated
+list. `toCardDef` compiles it into the engine's `CardDef`. Printed
+keywords are a `.keyword` instruction in `.textBox`, and activated
 abilities are a `.costFor` instruction in `.textBox`. `parseOracleText`
 reads a printed card (name, mana cost, type line, power/toughness, rules
 text, and an Adventure face) back into that clause list.
@@ -151,11 +152,6 @@ def parse (s : String) : Option PrintedKeyword :=
 
 end PrintedKeyword
 
-/-- An ability of the card itself, as opposed to a spell effect in the text box. -/
-inductive CardAbility where
-  | keyword (k : PrintedKeyword)
-  deriving Repr, BEq
-
 /-- Whose control a target predicate talks about. -/
 inductive PlayerRef where
   | you
@@ -212,6 +208,8 @@ inductive PrintedCost where
 
 /-- One instruction in a `.textBox`. -/
 inductive TextEffect where
+  /-- A printed keyword ability of this face (`Lifelink`). -/
+  | keyword (k : PrintedKeyword)
   | gainUntil (targets : List TargetExpr) (gains : List GrantedAbility) (dur : Duration)
   /-- Matching objects get these changes until `dur`. -/
   | getUntil (qs : List ObjectQualifier) (mods : List StatMod) (dur : Duration)
@@ -228,7 +226,6 @@ inductive CardClause where
   | subtype (s : CardSubtype)
   | power (n : Int)
   | toughness (n : Int)
-  | ability (a : CardAbility)
   | textBox (effects : List TextEffect)
   | alternative (clauses : List CardClause)
   deriving Repr, BEq
@@ -248,7 +245,6 @@ private structure FaceBuild where
   subtypes : List CardSubtype := []
   power : Option Int := none
   toughness : Option Int := none
-  abilities : List CardAbility := []
   textBox : List TextEffect := []
 
 private def FaceBuild.add (f : FaceBuild) : CardClause → FaceBuild
@@ -259,7 +255,6 @@ private def FaceBuild.add (f : FaceBuild) : CardClause → FaceBuild
   | .subtype s => { f with subtypes := f.subtypes ++ [s] }
   | .power n => { f with power := some n }
   | .toughness n => { f with toughness := some n }
-  | .ability a => { f with abilities := f.abilities ++ [a] }
   | .textBox es => { f with textBox := f.textBox ++ es }
   | .alternative _ => f
 
@@ -272,10 +267,12 @@ private def lastAlternative (clauses : List CardClause) : Option (List CardClaus
     | .alternative inner => some inner
     | _ => acc) none
 
-private def keywordsOfAbilities (abilities : List CardAbility) : Keywords :=
-  abilities.foldl (fun acc a =>
-    match a with
-    | .keyword k => acc.merge k.toKeywords) Keywords.none
+/-- Keyword abilities printed on this face. -/
+private def keywordsOfText (es : List TextEffect) : Keywords :=
+  es.foldl (fun acc e =>
+    match e with
+    | .keyword k => acc.merge k.toKeywords
+    | _ => acc) Keywords.none
 
 private def keywordsOfGranted (gs : List GrantedAbility) : Keywords :=
   gs.foldl (fun acc g =>
@@ -335,12 +332,18 @@ private def getUntilSentence (qs : List ObjectQualifier) (mods : List StatMod)
 
 /-- A text-box effect nested under `.costFor`, printed without a further cost. -/
 private def nestedEffectSentence : TextEffect → Option String
+  | .keyword _ => none
   | .gainUntil targets gains dur => some (gainUntilSentence targets gains dur)
   | .getUntil qs mods dur => some (getUntilSentence qs mods dur)
   | .costFor _ _ => none
 
+/-- One Oracle line for consecutive printed keywords (`Flying, lifelink`). -/
+private def keywordRunLine (ks : List PrintedKeyword) : String :=
+  capitalizeAscii (String.intercalate ", " (ks.map PrintedKeyword.oracleName))
+
 /-- Oracle sentence for a text-box effect, without reminder text. -/
 private def textEffectSentence : TextEffect → String
+  | .keyword k => keywordRunLine [k]
   | .gainUntil targets gains dur => gainUntilSentence targets gains dur
   | .getUntil qs mods dur => getUntilSentence qs mods dur
   | .costFor costs effects =>
@@ -384,9 +387,16 @@ private def textEffectToActivated : TextEffect → Option ActivatedAbility
 private def adventureReminder : String :=
   "(Then exile this card. You may cast the creature later from exile.)"
 
-private def keywordLine (k : Keywords) : Option String :=
-  let s := toString k
-  if s.isEmpty then none else some (capitalizeAscii s)
+/-- Rules-text lines for a text box. Consecutive keywords share one line. -/
+private def renderText (es : List TextEffect) : List String :=
+  let (lines, pending) := es.foldl (fun (acc : List String × List PrintedKeyword) e =>
+    let (lines, ks) := acc
+    match e with
+    | .keyword k => (lines, ks ++ [k])
+    | other =>
+      let lines := if ks.isEmpty then lines else lines ++ [keywordRunLine ks]
+      (lines ++ [textEffectSentence other], [])) ([], [])
+  if pending.isEmpty then lines else lines ++ [keywordRunLine pending]
 
 private def headerLines (f : FaceBuild) : List String :=
   let cost := (CostSymbol.toManaCost f.manaCost).toNotation
@@ -397,7 +407,7 @@ private def headerLines (f : FaceBuild) : List String :=
   [nameLine, typeLine]
 
 private def effectLines (f : FaceBuild) : List String :=
-  let lines := f.textBox.map textEffectSentence
+  let lines := renderText f.textBox
   let remind := f.subtypes.any (· == .adventure)
   match lines.dropLast, lines.getLast? with
   | _, none => []
@@ -407,15 +417,11 @@ private def effectLines (f : FaceBuild) : List String :=
 
 /-- Rules text stored on the creature face, including the `//ADV//` block. -/
 private def rulesOracle (main : FaceBuild) (alt : Option FaceBuild) : String :=
-  let kw :=
-    match keywordLine (keywordsOfAbilities main.abilities) with
-    | some s => [s]
-    | none => []
   let adv :=
     match alt with
     | none => []
     | some a => ["//ADV//"] ++ headerLines a ++ effectLines a
-  String.intercalate "\n" (kw ++ main.textBox.map textEffectSentence ++ adv)
+  String.intercalate "\n" (renderText main.textBox ++ adv)
 
 private def FaceBuild.toAdventure (f : FaceBuild) : AdventureFace :=
   { name := f.name
@@ -437,7 +443,7 @@ private def FaceBuild.toCard (f : FaceBuild) (oracleText : String)
     oracleText
     power := f.power
     toughness := f.toughness
-    keywords := keywordsOfAbilities f.abilities
+    keywords := keywordsOfText f.textBox
     spellEffect := (f.textBox.filterMap textEffectToEffect).head?
     activatedAbilities := (f.textBox.filterMap textEffectToActivated).toArray
     adventure }
@@ -761,38 +767,35 @@ private def parseGainUntil (line : String) : Option TextEffect := do
         return .gainUntil [.target quals] (kws.map GrantedAbility.keyword) dur
   | _ => none
 
-private def parseKeywordLine (line : String) : Option (List CardAbility) := do
+private def parseKeywordLine (line : String) : Option (List TextEffect) := do
   let parts := splitEnglishList line
   if parts.isEmpty then none
   else
     let kws ← parts.mapM PrintedKeyword.parse
-    return kws.map CardAbility.keyword
+    return kws.map TextEffect.keyword
 
-private def parseBody (lines : List String) :
-    Option (List CardAbility × List TextEffect) :=
-  lines.foldlM (fun acc line =>
-    let (abilities, effects) := acc
+private def parseBody (lines : List String) : Option (List TextEffect) :=
+  lines.foldlM (fun effects line =>
     let cleaned := stripTrailingDot (stripParens line)
     if cleaned.isEmpty then
-      pure acc
+      pure effects
     else
       match parseCostFor cleaned with
-      | some e => pure (abilities, effects ++ [e])
+      | some e => pure (effects ++ [e])
       | none =>
         match parseGetUntil cleaned with
-        | some e => pure (abilities, effects ++ [e])
+        | some e => pure (effects ++ [e])
         | none =>
           match parseGainUntil cleaned with
-          | some e => pure (abilities, effects ++ [e])
+          | some e => pure (effects ++ [e])
           | none =>
             match parseKeywordLine cleaned with
-            | some ks => pure (abilities ++ ks, effects)
-            | none => none) ([], [])
+            | some ks => pure (effects ++ ks)
+            | none => none) []
 
 private def faceClauses (name : String) (cost : List CostSymbol)
     (supers : List Supertype) (tys : List CardType) (subs : List CardSubtype)
-    (pt : Option (Int × Int)) (abilities : List CardAbility)
-    (effects : List TextEffect) : List CardClause :=
+    (pt : Option (Int × Int)) (effects : List TextEffect) : List CardClause :=
   [.name name, .manaCost cost]
     ++ tys.map CardClause.type
     ++ supers.map CardClause.supertype
@@ -800,7 +803,6 @@ private def faceClauses (name : String) (cost : List CostSymbol)
     ++ (match pt with
         | some (p, t) => [CardClause.power p, .toughness t]
         | none => [])
-    ++ abilities.map CardClause.ability
     ++ (match effects with
         | [] => []
         | es => [.textBox es])
@@ -818,8 +820,8 @@ private def parseFace (lines : List String) : Option (List CardClause) := do
         | some pt => (some pt, more)
         | none => (none, rest)
       | [] => (none, [])
-    let (abilities, effects) ← parseBody body
-    return faceClauses name cost supers tys subs pt abilities effects
+    let effects ← parseBody body
+    return faceClauses name cost supers tys subs pt effects
   | _ => none
 
 private def splitAdventure (lines : List String) :
@@ -843,8 +845,9 @@ The text is the Oracle card as printed: name and mana cost, type line,
 optional `power/toughness`, rules text, then an optional `//ADV//` Adventure
 face in the same shape. Reminder parentheticals are ignored. The clause list
 is emitted in canonical order (name, mana cost, types, supertypes, subtypes,
-power, toughness, abilities, text box, alternative) so it can be compared to
-a definition written in that order.
+power, toughness, text box, alternative) so it can be compared to
+a definition written in that order. Keyword lines become `.keyword`
+instructions in that text box.
 -/
 def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   let lines :=
@@ -887,5 +890,9 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     [.mana [.generic 3, .mono .white]]
     [.getUntil [.cardType .creature, .controlledBy .you]
       [.plusPowerToughness 1 1] .endOfTurn])
+#guard keywordRunLine [.lifelink] == "Lifelink"
+#guard renderText [.keyword .flying, .keyword .lifelink] == ["Flying, lifelink"]
+#guard parseKeywordLine "Lifelink" == some [.keyword .lifelink]
+#guard parseKeywordLine "Flying, lifelink" == some [.keyword .flying, .keyword .lifelink]
 
 end Mtg.Engine
