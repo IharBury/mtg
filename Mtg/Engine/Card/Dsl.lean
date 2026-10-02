@@ -11,8 +11,9 @@ import Mtg.Engine.Card.SpellEffects
 A list-shaped definition language for a traditional Magic card: one face,
 plus an optional Adventure. `TraditionalCardDefinition.card` is the clause
 list. `toCardDef` compiles it into the engine's `CardDef`. Printed
-keywords are a `.keyword` instruction in `.textBox`, and activated
-abilities are a `.costFor` instruction in `.textBox`. `parseOracleText`
+keywords are a `.keyword` instruction in `.textBox`, activated
+abilities are a `.costFor` instruction in `.textBox`, and tapping
+spells are a `.tap` instruction in `.textBox`. `parseOracleText`
 reads a printed card (name, mana cost, type line, power/toughness, rules
 text, and an Adventure face) back into that clause list.
 -/
@@ -53,6 +54,7 @@ inductive CardSubtype where
   | dwarf
   | citizen
   | scout
+  | insect
   | adventure
   deriving Repr, BEq, DecidableEq
 
@@ -62,6 +64,7 @@ def printed : CardSubtype → String
   | .dwarf => "Dwarf"
   | .citizen => "Citizen"
   | .scout => "Scout"
+  | .insect => "Insect"
   | .adventure => "Adventure"
 
 end CardSubtype
@@ -173,9 +176,16 @@ def creature : ObjectQualifier := .cardType .creature
 
 end ObjectQualifier
 
-/-- One instance of the word “target”. -/
+/-- How many objects one targeting phrase names. `.or 1 2` is “one or two”. -/
+inductive TargetCount where
+  | or (lo hi : Nat)
+  deriving Repr, BEq
+
+/-- One instance of the word “target”. `.targets (.or 1 2) [.cardType .creature]`
+is “one or two target creatures”. -/
 inductive TargetExpr where
   | target (qs : List ObjectQualifier)
+  | targets (count : TargetCount) (qs : List ObjectQualifier)
   deriving Repr, BEq
 
 /-- A keyword the text box grants. -/
@@ -215,6 +225,8 @@ inductive TextEffect where
   | getUntil (qs : List ObjectQualifier) (mods : List StatMod) (dur : Duration)
   /-- An activated ability: pay `costs`, then follow `effects` (`{3}{W}: …`). -/
   | costFor (costs : List PrintedCost) (effects : List TextEffect)
+  /-- Tap the named targets (`Tap one or two target creatures`). -/
+  | tap (targets : List TargetExpr)
   deriving Repr, BEq
 
 /-- One clause in `.card` or `.alternative`. -/
@@ -291,8 +303,15 @@ private def ObjectQualifier.toPhrase : ObjectQualifier → String
 private def qualifiersPhrase (qs : List ObjectQualifier) : String :=
   String.intercalate " " (qs.map ObjectQualifier.toPhrase)
 
-private def TargetExpr.toPhrase : TargetExpr → String
-  | .target qs => s!"target {qualifiersPhrase qs}"
+/-- English word for a targeting count. `1` is “one”; larger counts reuse
+`englishNumber`. -/
+private def countWord (n : Nat) : String :=
+  match n with
+  | 1 => "one"
+  | n => englishNumber n
+
+private def countPhrase : TargetCount → String
+  | .or lo hi => s!"{countWord lo} or {countWord hi}"
 
 private def joinTargets (ts : List String) : String :=
   match ts with
@@ -311,6 +330,21 @@ private def pluralQualifier : ObjectQualifier → String
   | .controlledBy .you => "you control"
   | .controlledBy .opponent => "an opponent controls"
   | .or qs => orJoin (qs.map pluralQualifier)
+
+private def targetNoun (plural : Bool) (qs : List ObjectQualifier) : String :=
+  if plural then String.intercalate " " (qs.map pluralQualifier)
+  else qualifiersPhrase qs
+
+private def TargetExpr.toPhrase : TargetExpr → String
+  | .target qs => s!"target {qualifiersPhrase qs}"
+  | .targets count qs =>
+    let plural :=
+      match count with
+      | .or _ hi => hi > 1
+    s!"{countPhrase count} target {targetNoun plural qs}"
+
+private def tapSentence (ts : List TargetExpr) : String :=
+  s!"Tap {joinTargets (ts.map TargetExpr.toPhrase)}."
 
 private def statModPhrase : StatMod → String
   | .plusPowerToughness p t => s!"{signedStat p}/{signedStat t}"
@@ -336,6 +370,7 @@ private def nestedEffectSentence : TextEffect → Option String
   | .gainUntil targets gains dur => some (gainUntilSentence targets gains dur)
   | .getUntil qs mods dur => some (getUntilSentence qs mods dur)
   | .costFor _ _ => none
+  | .tap targets => some (tapSentence targets)
 
 /-- One Oracle line for consecutive printed keywords (`Flying, lifelink`). -/
 private def keywordRunLine (ks : List PrintedKeyword) : String :=
@@ -350,6 +385,7 @@ private def textEffectSentence : TextEffect → String
     let cost := String.intercalate ", " (costs.map printedCostPhrase)
     let body := String.intercalate " " (effects.filterMap nestedEffectSentence)
     s!"{cost}: {body}"
+  | .tap targets => tapSentence targets
 
 /-- Map a spell text-box effect onto the engine's `Effect` vocabulary. -/
 private def textEffectToEffect : TextEffect → Option Effect
@@ -358,6 +394,8 @@ private def textEffectToEffect : TextEffect → Option Effect
       [.keyword .hexproof, .keyword .indestructible]
       .endOfTurn =>
     some Effect.grantHexproofIndestructible
+  | .tap [.targets (.or 1 2) [.cardType .creature]] =>
+    some Effect.tapOneOrTwoCreatures
   | _ => none
 
 private def creaturesYouControl (qs : List ObjectQualifier) : Bool :=
@@ -463,6 +501,10 @@ element coercions run, so this instance compiles the left-hand array. -/
 instance : HAppend (Array TraditionalCardDefinition) (Array CardDef) (Array CardDef) where
   hAppend as bs := as.map (·.toCardDef) ++ bs
 
+/-- Append engine cards to DSL cards. Deck lists interleave the two. -/
+instance : HAppend (Array CardDef) (Array TraditionalCardDefinition) (Array CardDef) where
+  hAppend as bs := as ++ bs.map (·.toCardDef)
+
 def TraditionalCardDefinition.oracleText (c : TraditionalCardDefinition) : String :=
   c.toCardDef.oracleText
 
@@ -492,6 +534,7 @@ private def parseCardSubtype (s : String) : Option CardSubtype :=
   | "dwarf" => some .dwarf
   | "citizen" => some .citizen
   | "scout" => some .scout
+  | "insect" => some .insect
   | "adventure" => some .adventure
   | _ => none
 
@@ -767,6 +810,32 @@ private def parseGainUntil (line : String) : Option TextEffect := do
         return .gainUntil [.target quals] (kws.map GrantedAbility.keyword) dur
   | _ => none
 
+private def parseCountWord (s : String) : Option Nat :=
+  match s.trimAscii.copy.map Char.toLower with
+  | "one" => some 1
+  | "two" => some 2
+  | "three" => some 3
+  | "four" => some 4
+  | "five" => some 5
+  | _ => s.toNat?
+
+private def parseTargetCount (s : String) : Option TargetCount := do
+  match s.splitOn " or " |>.map (·.trimAscii.copy) |>.filter (· != "") with
+  | [a, b] =>
+    let lo ← parseCountWord a
+    let hi ← parseCountWord b
+    return .or lo hi
+  | _ => none
+
+/-- `Tap one or two target creatures.` -/
+private def parseTap (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let rest ← dropPrefixCI line "Tap "
+  let (countText, noun) ← splitOnce " target " rest
+  let count ← parseTargetCount countText
+  let quals ← parseGetSubject noun
+  return .tap [.targets count quals]
+
 private def parseKeywordLine (line : String) : Option (List TextEffect) := do
   let parts := splitEnglishList line
   if parts.isEmpty then none
@@ -789,9 +858,12 @@ private def parseBody (lines : List String) : Option (List TextEffect) :=
           match parseGainUntil cleaned with
           | some e => pure (effects ++ [e])
           | none =>
-            match parseKeywordLine cleaned with
-            | some ks => pure (effects ++ ks)
-            | none => none) []
+            match parseTap cleaned with
+            | some e => pure (effects ++ [e])
+            | none =>
+              match parseKeywordLine cleaned with
+              | some ks => pure (effects ++ ks)
+              | none => none) []
 
 private def faceClauses (name : String) (cost : List CostSymbol)
     (supers : List Supertype) (tys : List CardType) (subs : List CardSubtype)
@@ -847,7 +919,7 @@ face in the same shape. Reminder parentheticals are ignored. The clause list
 is emitted in canonical order (name, mana cost, types, supertypes, subtypes,
 power, toughness, text box, alternative) so it can be compared to
 a definition written in that order. Keyword lines become `.keyword`
-instructions in that text box.
+instructions in that text box. `Tap one or two target …` becomes `.tap`.
 -/
 def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   let lines :=
@@ -894,5 +966,10 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 #guard renderText [.keyword .flying, .keyword .lifelink] == ["Flying, lifelink"]
 #guard parseKeywordLine "Lifelink" == some [.keyword .lifelink]
 #guard parseKeywordLine "Flying, lifelink" == some [.keyword .flying, .keyword .lifelink]
+#guard textEffectSentence (.tap [.targets (.or 1 2) [.cardType .creature]]) ==
+  "Tap one or two target creatures."
+#guard parseTap
+    "Tap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)" ==
+  some (.tap [.targets (.or 1 2) [.cardType .creature]])
 
 end Mtg.Engine

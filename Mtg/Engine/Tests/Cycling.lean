@@ -583,7 +583,7 @@ def gazeSetup : Game :=
 
 #guard Effect.tapOneOrTwoCreatures.maxTargetCount == 2
 #guard
-  match velvetwingButterflies.adventure with
+  match velvetwingButterflies.toCardDef.adventure with
   | some adv => adv.spellEffect == some (Effect.tapOneOrTwoCreatures)
   | none => false
 
