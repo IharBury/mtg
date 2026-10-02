@@ -5,11 +5,12 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**203** catalog cards are still `CardDef` helpers. **184**
+**202** catalog cards are still `CardDef` helpers. **182**
 of them need at least one missing constructor listed under
-[Missing constructors by type](#missing-constructors-by-type). **19** lost
+[Missing constructors by type](#missing-constructors-by-type). **20** lost
 their last tag (named counters, `CardAction.removeCounter`,
-enters-with-counters, or `CardAction.reflexive`) and
+enters-with-counters, `CardAction.reflexive`,
+or `CardAction.addPhaseAfterThisPhase`) and
 are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
@@ -25,12 +26,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 159 | 29 | 24 |
+| The Hobbit (HOB) | 188 | 160 | 28 | 23 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 46 |
-| Marvel Super Heroes (MSH) | 281 | 157 | 124 | 114 |
-| **Total** | **586** | **383** | **203** | **184** |
+| Marvel Super Heroes (MSH) | 281 | 157 | 124 | 113 |
+| **Total** | **586** | **384** | **202** | **182** |
 
-All 383 `TraditionalCardDefinition`s (159 HOB, 67 HOC, 157 MSH,
+All 384 `TraditionalCardDefinition`s (160 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -43,7 +44,7 @@ Evidence for each remaining card is its catalog definition (Oracle text plus
 modeled `CardDef` fields, triggered/static/activated constructors, and
 `Effect` names) compared with the current constructors of `Range`,
 `SetPredicate`, `Value`, `Selector`, `Trigger`, `Cost`, `Condition`,
-`Ability`, `ContinuousEffect`, `CardAction`, and `TraditionalCardDefinition`
+`Phase`, `Ability`, `ContinuousEffect`, `CardAction`, and `TraditionalCardDefinition`
 (including `CardPart`).
 
 `Keyword` is not in the requested list. It still blocks because
@@ -61,7 +62,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
 (split under `Definition/`):
 
 - **Range** — `range lo hi` (`Value` bounds), `any` (0 unbounded), `from n` (`Value` lower bound, unbounded high).
-- **SetPredicate** — `shareCardType`, `countAtLeast`.
+- **SetPredicate** — `shareCardType`, `countAtLeast`, `totalPowerAtLeast`
+  (the set's total power when the simultaneous event happens; a lower total
+  does not trigger the ability).
 - **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
   `greatestPower`, `count`, `totalPower`, `product`, `variable` (recorded by
   `CardAction.defineValueVariable`), `excessDamageOfActionWithId` (excess
@@ -132,6 +135,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `and`, `not`, `less`, `lessOrEqual`, `greater`,
   `greaterOrEqual`, `equal`.
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters), `attachedTo`.
+- **Phase** — `beginning`, `precombatMain`, `combat`, `postcombatMain`, `ending`
+  (the five phases of a turn, CR 500.1).
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
   `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`,
   `activatedWithStaticIf` (with a static effect of that ability, such as its
@@ -174,8 +179,10 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `lookAt`, `putOnLibraryBottomInRandomOrder`, `chooseCreatureType` (the
   selected player chooses a creature type), `mayCast` (the selected player
   may cast any number of spells matching the selector, paying their costs;
-  `selected` limits how many), `reflexive` (when the numbered action is
-  performed, these actions are a reflexive triggered ability; CR 603.12).
+  `selected` limits how many),   `reflexive` (when the numbered action is
+  performed, these actions are a reflexive triggered ability; CR 603.12),
+  `addPhaseAfterThisPhase` (after the current phase, add the given phase
+  to the turn; `.combat` is an additional combat phase).
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -195,6 +202,9 @@ cards (enter triggers, destroy-then-surveil, and Redwing token creation
 through leftovers).
 `SetPredicate.countAtLeast` is the set-wide size of a simultaneous event
 (Landroval’s two or more creatures attacking a player).
+`SetPredicate.totalPowerAtLeast` is that set's total power when the event
+happens (Desert Were-Worm's attack with total power 12 or greater). A lower
+total does not trigger the ability, and power gained afterward does not count.
 `ContinuousEffect.addPower` of `Value.count` compiles other-subtype +1/+0 for
 each artifact token you control (Thorin). A factor of one is the count.
 Zero toughness is omitted.
@@ -331,6 +341,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.dealDamageEqualToPower` | `dealDamage` of `Value.greatestPower` of the source |
 | `Trigger.whenYouDo` | `CardAction.reflexive` after the numbered action (CR 603.12). Bolg of the North records the sacrificed creature's power with `defineValueVariable` before that sacrifice |
 | `CardAction.eventAmount` for excess damage | `Value.excessDamageOfActionWithId` of that action. “If excess damage was dealt this way” is `happened` of `Trigger.actionWithIdDealtExcessDamage` (Bolg of the North) |
+| `CardAction.extraCombat` | `CardAction.addPhaseAfterThisPhase .combat`. The phase is an argument, so the action can add any phase of the turn after the current phase (Desert Were-Worm) |
 
 ## Missing constructors by type
 
@@ -514,8 +525,6 @@ complete.
   - Down, Down to Goblin-town; Klaw, Sonic Subjugator
 - **`exileUntil`** (2 cards) — Exile from the top of a library until a matching card
   - Black Widow, Super Spy; Gríma, Saruman's Footman
-- **`extraCombat`** (2 cards) — An additional combat phase; typically with untap attackers
-  - Desert Were-Worm; The Incredible Hulk
 - **`investigate`** (2 cards) — Investigate / create a Clue
   - Agent 13, Sharon Carter; Panther Pounce
 - **`theRingTemptsYou`** (2 cards) — The Ring tempts you
@@ -633,6 +642,18 @@ do”. “If excess damage was dealt this way” is `happened` of
 `Trigger.actionWithIdDealtExcessDamage`, and Bolg amasses
 `Value.excessDamageOfActionWithId` of that damage action.
 
+Desert Were-Worm is a `TraditionalCardDefinition` read with
+`parseOracleParts`. `+2/+0 for each Mountain you control` is a static
+`addPower` of twice the Mountain count, and it compiles to
+`powerPerMountain`. The attack line is `Trigger.ordinal 1` since `turnStart`
+of “whenever you attack”, with `SetPredicate.totalPowerAtLeast 12` on that
+attack. That is the first such attack each turn. The ability does not
+trigger when the attackers' total power is lower. Power is the power at
+attack time. The effect untaps those attackers, and
+`CardAction.addPhaseAfterThisPhase .combat` adds a combat phase after this
+phase. Compiling that ability still
+yields `onAttackWithTotalPowerUntapExtraCombat`.
+
 ## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. Evidence is the
@@ -713,17 +734,13 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (24 cards)
+### The Hobbit (HOB) (23 cards)
 
 **Celebrate the Mountain-king** (`celebrateTheMountainKing`)
 
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield, also as a duration bound (“until this leaves the battlefield”, “for as long as this remains on the battlefield”)
 - `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects), or cards “exiled with this” across abilities
 - `CardAction.returnExiled` — Return objects exiled by a linked action
-
-**Desert Were-Worm** (`desertWereWorm`)
-
-- `CardAction.extraCombat` — An additional combat phase; typically with untap attackers
 
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
@@ -1029,7 +1046,7 @@ Converted cards are omitted here.
 
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (`gainSubtype` only adds)
 
-### Marvel Super Heroes (MSH) (114 cards)
+### Marvel Super Heroes (MSH) (113 cards)
 
 **Absorbing Man** (`absorbingMan`)
 
@@ -1444,10 +1461,6 @@ Converted cards are omitted here.
 - `Condition.manaValueParity` — Mana value is odd/even
 - `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
-**The Incredible Hulk** (`theIncredibleHulk`)
-
-- `CardAction.extraCombat` — An additional combat phase; typically with untap attackers
-
 **The Kingpin of Crime** (`theKingpinOfCrime`)
 
 - `Selector.toughness` — Toughness comparisons (`Value.greatestToughness` exists; `powerAtLeast` / `powerAtMost` have no toughness counterpart)
@@ -1550,18 +1563,19 @@ Converted cards are omitted here.
 
 ## Tags now spelled, not yet converted
 
-These 19 cards lost every tag and are still `CardDef` helpers. They lost
+These 20 cards lost every tag and are still `CardDef` helpers. They lost
 them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, enters-with-counters,
 `replace` of `Trigger.createTokens`, `replace` of `Trigger.abilityTriggers`,
-or `CardAction.reflexive` became expressible. A later pass
+`CardAction.reflexive`, or `CardAction.addPhaseAfterThisPhase`
+became expressible. A later pass
 should reread them before conversion.
 
 **Hobbit (5):** Dwalin, Weaponmaster; Dáin Ironfoot; Head of the Hunt; Last Light of Durin's Day; Wizard's Staff.
 
 **Hobbit Eternal (4):** Arwen, Mortal Queen; Bilbo, Fellow Conspirator; Chief of the Wilds; Minas Morgul, Dark Fortress.
 
-**Marvel Super Heroes (10):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Spider-Man, To the Rescue; Super-Adaptoid; The Astonishing Ant-Man; Thunderbolts Conspiracy.
+**Marvel Super Heroes (11):** Captain America, Super-Soldier; Captain Marvel, Earth's Protector; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Mister Hyde, Monster Within; Quicksilver, Brash Blur; Spider-Man, To the Rescue; Super-Adaptoid; The Astonishing Ant-Man; The Incredible Hulk; Thunderbolts Conspiracy.
 
 ## Method notes
 

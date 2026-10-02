@@ -207,6 +207,24 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         who == .controller .this && amasser == .controller .this then
       some TriggeredAbility.onEnterBolgMaySacrifice
     else none
+  -- Desert Were-Worm: the first attack each turn whose creatures have
+  -- total power 12 or greater untaps those attackers and adds a combat.
+  -- “For the first time each turn” is `ordinal` 1 since turn start.
+  -- The power predicate is part of the attack, so a lower total does not
+  -- trigger the ability.
+  | .triggered
+      (.ordinal 1 .turnStart
+        (.attackSimultaneously
+          (.intersection [.zone .battlefield, .cardType .creature, ctl]) .all
+          [.totalPowerAtLeast 12]))
+      (.sequence [
+        .untap attackers,
+        .addPhaseAfterThisPhase .combat]) =>
+    if ctl == .controlled (.controller .this) &&
+        attackers == .intersection [
+          .zone .battlefield, .cardType .creature, .attacking .all] then
+      some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)
+    else none
   | .triggered (.triggerId id (.castSpell among))
       (.sequence [
         .optional (.controller .this)
@@ -1175,7 +1193,6 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | _ => none
 
-/-- Compile a `.triggered` ability. -/
 def toTriggeredAbility? (a : Ability) : Option TriggeredAbility :=
   a.printedTriggeredAbility?.orElse fun _ => a.compileTriggeredAbility?
 
