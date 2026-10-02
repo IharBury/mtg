@@ -640,7 +640,8 @@ cards this turn. If you cast a spell this way, pay life equal to its mana
 value rather than pay its mana cost.`
 The opponent is target `n`, and the exile is action `n`. You may play those
 cards until end of turn. Casting one replaces its mana cost with life equal
-to its mana value. That replacement is not optional. -/
+to its mana value. That amount is the mana value of the exiled card. The
+replacement is not optional. -/
 def parseExileTopXOppPlayForLife (text : String) (n : Nat) :
     Option (List CardAction × Nat) :=
   if normLine text !=
@@ -652,7 +653,8 @@ def parseExileTopXOppPlayForLife (text : String) (n : Nat) :
         (.exile (.topOfLibrary (.target n (.opponent (.controller .this))) .x)),
       .continuous [
         .canPlay (.controller .this) (.wasCreatedByAction n),
-        .replaceCost (.wasCreatedByAction n) [.lifeEqualToManaValue]]
+        .replaceCost (.wasCreatedByAction n)
+          [.life (.greatestManaValue (.wasCreatedByAction n))]]
       .endOfTurn],
       n + 1)
 

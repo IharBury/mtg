@@ -555,7 +555,7 @@ Currently recognized:
 - `Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost.`
   The opponent is one target. X is how many cards. You may play those cards
   until end of turn. Casting one replaces its mana cost with life equal to
-  its mana value (`replaceCost` of `Cost.lifeEqualToManaValue`). That
+  its mana value (`Cost.life` of `Value.greatestManaValue` of those cards). That
   payment is not optional.
 - `When <this> enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card.`
   The power and controller are the creature's last-known information

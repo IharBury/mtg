@@ -471,7 +471,8 @@ def leftoverExileTopXOppPlayForLife? : CardAction → Bool
         (.exile (.topOfLibrary (.target tid (.opponent (.controller .this))) .x)),
       .continuous [
         .canPlay permit (.wasCreatedByAction created),
-        .replaceCost (.wasCreatedByAction replaced) [.lifeEqualToManaValue]]
+        .replaceCost (.wasCreatedByAction replaced)
+          [.life (.greatestManaValue (.wasCreatedByAction replaced))]]
       .endOfTurn
     ] =>
     id == created && id == replaced && id == tid && permit == .controller .this

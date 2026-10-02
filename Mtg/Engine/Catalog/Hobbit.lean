@@ -6941,7 +6941,8 @@ def insideInformationDefinition : TraditionalCardDefinition := .card <|
           .x)),
     .continuous [
       .canPlay (.controller .this) (.wasCreatedByAction 1),
-      .replaceCost (.wasCreatedByAction 1) [.lifeEqualToManaValue]]
+      .replaceCost (.wasCreatedByAction 1)
+        [.life (.greatestManaValue (.wasCreatedByAction 1))]]
     .endOfTurn]]
 
 def insideInformation : CardDef :=

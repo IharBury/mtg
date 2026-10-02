@@ -133,8 +133,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   promised), `counter`, `activateAbility` (the selected player activates an
   ability of a source matching the second selector), `target` (a spell or
   ability targets an object), `sequence`, `not`, `or`.
-- **Cost** — `mana` (including `ManaSymbol.x`), `life`, `lifeEqualToManaValue`
-  (life equal to the spell's mana value), `sacrifice` (every selected permanent),
+- **Cost** — `mana` (including `ManaSymbol.x`), `life` (a `Value`; a printed
+  number is `Value.int`, and life equal to a mana value is
+  `Value.greatestManaValue`), `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
 - **Condition** — `any` (a target of `src` matching `among` is `any` of
@@ -724,8 +725,8 @@ creates a 2/2 green Wolf creature token. Compiling that ability still yields
 Inside Information is a `TraditionalCardDefinition` read with
 `parseOracleParts`. It exiles the top X cards of a target opponent's library.
 Its controller may play those cards until end of turn. Casting one of them
-replaces its mana cost: `replaceCost` of those cards with
-`Cost.lifeEqualToManaValue`. That payment is not optional. Compiling the
+replaces its mana cost: `replaceCost` of those cards with `Cost.life` of
+`Value.greatestManaValue` of those cards. That payment is not optional. Compiling the
 spell still yields `Effect.exileTopXOppPlayForLife`.
 
 ## Cards that still cannot convert

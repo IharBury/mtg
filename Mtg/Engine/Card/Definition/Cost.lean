@@ -11,11 +11,10 @@ namespace Mtg.Engine
 /-- A payment in an activated-ability or additional cost (CR 601.2b / 602.1). -/
 inductive Cost where
   | mana : List ManaSymbol → Cost
-  /-- Pay that much life (CR 118.3). -/
-  | life : Nat → Cost
-  /-- Pay life equal to the spell's mana value (CR 202.3). The amount is
-  that spell's mana value, not a printed number. -/
-  | lifeEqualToManaValue
+  /-- Pay that much life (CR 118.3). A printed number is `Value.int`.
+  Life equal to a spell's mana value is `Value.greatestManaValue` of that
+  spell (CR 202.3). -/
+  | life : Value → Cost
   /-- Sacrifice every selected permanent (CR 701.17). -/
   | sacrifice : Selector → Cost
   /-- Sacrifice that many permanents matching the selector (CR 701.17).
@@ -38,9 +37,12 @@ def manaCost : List Cost → ManaCost
     { symbols := (syms : ManaCost).symbols ++ (manaCost rest).symbols }
   | _ :: rest => manaCost rest
 
+/-- Life from costs whose amount is a non-negative integer.
+A computed amount, such as a mana value, is not included. -/
 def lifePaid : List Cost → Nat
   | [] => 0
-  | .life n :: rest => n + lifePaid rest
+  | .life (.int n) :: rest =>
+    if n ≥ 0 then n.toNat + lifePaid rest else lifePaid rest
   | _ :: rest => lifePaid rest
 
 def isSacArtifactOrCreature : Cost → Bool

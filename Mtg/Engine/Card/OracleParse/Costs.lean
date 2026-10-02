@@ -247,7 +247,7 @@ that is not `another` or `this`, and is not one item of a comma-separated
 list, is not an activation cost here. -/
 def parseActivationCost (cardName costText : String) : Option (List Cost) :=
   (nonemptyMana? costText).map (fun syms => [.mana syms]) <|>
-    (parsePayLife costText).map (fun life => [.life life]) <|>
+    (parsePayLife costText).map (fun life => [.life (.int life)]) <|>
     (parseSacrificeAnother costText).map (fun c => [c]) <|>
     if (costText.splitOn ", ").length < 2 then none
     else parsePrintedCosts cardName costText

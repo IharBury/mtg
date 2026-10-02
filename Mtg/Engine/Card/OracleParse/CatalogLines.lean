@@ -353,7 +353,7 @@ and `Sacrifice an artifact or discard a nonland card`. -/
 def parseCatalogCost (cardName s : String) : Option Cost :=
   parseSacrificeOrDiscardCost s <|>
     parsePrintedCost cardName s <|>
-    (parsePayLife s).map Cost.life <|>
+    (parsePayLife s).map (fun n => Cost.life (.int n)) <|>
     ((after? (norm s) "discard ").bind fun obj =>
       if refersToSelf cardName obj || obj == "this card" then some (.discard .this) else none)
 

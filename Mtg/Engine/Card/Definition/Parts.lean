@@ -158,8 +158,8 @@ inductive ContinuousEffect where
   | alternativeCost : Selector → List Cost → ContinuousEffect
   /-- Pay `costs` rather than pay the mana cost of casting the selected
   spell (CR 118.9). This replaces that mana cost. It is not optional, and
-  it is not a cost reduction. `Cost.lifeEqualToManaValue` is life equal to
-  that spell's mana value. -/
+  it is not a cost reduction. Life equal to that spell's mana value is
+  `Cost.life` of `Value.greatestManaValue` of the spell. -/
   | replaceCost : Selector → List Cost → ContinuousEffect
   /-- Replace the trigger with the given actions (CR 614). -/
   | replace : Trigger → List CardAction → ContinuousEffect

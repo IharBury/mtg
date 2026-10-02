@@ -129,7 +129,8 @@ def collectCondition : Condition → List Nat × List Nat
     appendIds [collectValue a, collectValue b]
 
 def collectCost : Cost → List Nat × List Nat
-  | .mana _ | .life _ | .lifeEqualToManaValue | .tapSymbol => ([], [])
+  | .mana _ | .tapSymbol => ([], [])
+  | .life v => collectValue v
   | .sacrifice s | .discard s => collectSelector s
   | .sacrificeCount s _ => collectSelector s
   | .or cs => appendIds (cs.map collectCost)
@@ -419,8 +420,7 @@ def mapCosts (m : IdMaps) : List Cost → List Cost
 
 def mapCost (m : IdMaps) : Cost → Cost
   | .mana syms => .mana syms
-  | .life n => .life n
-  | .lifeEqualToManaValue => .lifeEqualToManaValue
+  | .life v => .life (mapValue m v)
   | .sacrifice s => .sacrifice (mapSelector m s)
   | .sacrificeCount s n => .sacrificeCount (mapSelector m s) n
   | .tapSymbol => .tapSymbol
