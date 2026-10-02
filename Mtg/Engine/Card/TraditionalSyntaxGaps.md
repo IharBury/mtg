@@ -11,7 +11,7 @@ of them need at least one missing constructor listed under
 their last tag (named counters, `CardAction.removeCounter`,
 enters-with-counters, `CardAction.reflexive`,
 `CardAction.addPhaseAfterThisPhase`,
-`CardAction.delayed`, or `hostOf` of Equipment) and
+`CardAction.delayedTrigger`, or `hostOf` of Equipment) and
 are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
@@ -184,7 +184,7 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   may cast any number of spells matching the selector, paying their costs;
   `selected` limits how many),   `reflexive` (when the numbered action is
   performed, these actions are a reflexive triggered ability; CR 603.12),
-  `delayed` (create a delayed triggered ability that performs these actions
+  `delayedTrigger` (create a delayed triggered ability that performs these actions
   the next time the event occurs; CR 603.7; `.endStep .player` is the next
   end step),
   `addPhaseAfterThisPhase` (after the current phase, add the given phase
@@ -348,7 +348,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Trigger.whenYouDo` | `CardAction.reflexive` after the numbered action (CR 603.12). Bolg of the North records the sacrificed creature's power with `defineValueVariable` before that sacrifice |
 | `CardAction.eventAmount` for excess damage | `Value.excessDamageOfActionWithId` of that action. “If excess damage was dealt this way” is `happened` of `Trigger.actionWithIdDealtExcessDamage` (Bolg of the North) |
 | `CardAction.extraCombat` | `CardAction.addPhaseAfterThisPhase .combat`. The phase is an argument, so the action can add any phase of the turn after the current phase (Desert Were-Worm) |
-| `CardAction.exileThenReturn` | Exile, then `CardAction.delayed` of `.endStep .player`. The delayed trigger puts `wasCreatedByAction` of the exile onto the battlefield the next time an end step begins (CR 603.7b). Elrond, Moon-Reader. Roll-Roll-Roll-Roll, S.H.I.E.L.D. Flying Car, and Wiccan, Rising Magician spell the same return and are not converted yet |
+| `CardAction.exileThenReturn` | Exile, then `CardAction.delayedTrigger` of `.endStep .player`. The delayed trigger puts `wasCreatedByAction` of the exile onto the battlefield the next time an end step begins (CR 603.7b). Elrond, Moon-Reader. Roll-Roll-Roll-Roll, S.H.I.E.L.D. Flying Car, and Wiccan, Rising Magician spell the same return and are not converted yet |
 | `Selector.attached` for “that are equipped” | `Selector.hostOf` of Equipment on the battlefield. “Equipment attached to” an object stays open. Dáin Ironfoot grants double strike to attacking creatures that are hosts of Equipment |
 
 ## Missing constructors by type
@@ -671,7 +671,7 @@ strike until end of turn (`Selector.hostOf`). Elrond's draw is `Trigger.ordinal 
 player's activation does not trigger it. Compiling it still yields
 `onActivateCreatureAbilityDrawOnce`. His activated ability exiles up to
 two other nonland permanents he controls. Resolving it creates a delayed
-triggered ability (`CardAction.delayed`) that puts those cards onto the
+triggered ability (`CardAction.delayedTrigger`) that puts those cards onto the
 battlefield at the beginning of the next end step. Compiling it still yields
 `Effect.exileThenReturnNextEnd`.
 
@@ -1568,7 +1568,7 @@ them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, enters-with-counters,
 `replace` of `Trigger.createTokens`, `replace` of `Trigger.abilityTriggers`,
 `CardAction.reflexive`, `CardAction.addPhaseAfterThisPhase`,
-`CardAction.delayed`, or `hostOf` of Equipment
+`CardAction.delayedTrigger`, or `hostOf` of Equipment
 became expressible. A later pass
 should reread them before conversion.
 

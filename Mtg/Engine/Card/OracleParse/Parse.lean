@@ -380,7 +380,7 @@ def parseExileReturnEndStep (cardName line : String) (n : Nat) : Option (List Ca
                 (.targets n (.range 0 2)
                   (.intersection [
                     .not .this, .zone .battlefield, .not (.cardType .land), youControl]))),
-            .delayed (.endStep .player)
+            .delayedTrigger (.endStep .player)
               [.putOntoBattlefield (.wasCreatedByAction n)]]))], n + 1)
 
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/

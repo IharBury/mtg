@@ -725,7 +725,7 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
               .zone .battlefield,
               .not (.cardType .land),
               .controlled (.controller .this)]))),
-      .delayed (.endStep .player)
+      .delayedTrigger (.endStep .player)
         [.putOntoBattlefield (.wasCreatedByAction returned)]] =>
     if id == returned then
       some Effect.exileThenReturnNextEnd

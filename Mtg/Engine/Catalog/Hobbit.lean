@@ -6632,7 +6632,7 @@ def elrondMoonReaderDefinition : TraditionalCardDefinition := .card <|
                 .zone .battlefield,
                 .not (.cardType .land),
                 .controlled (.controller .this)]))),
-       .delayed
+       .delayedTrigger
          (.endStep .player)
          [.putOntoBattlefield (.wasCreatedByAction 1)]]))])
 

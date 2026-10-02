@@ -376,9 +376,10 @@ inductive CardAction where
   | reflexive : Nat → List CardAction → CardAction
   /-- Create a delayed triggered ability (CR 603.7). It performs these
   actions the next time the event occurs, once, unless a duration is
-  stated (CR 603.7b). `.delayed (.endStep .player) …` is “at the beginning
-  of the next end step”. The ability is created when this action resolves. -/
-  | delayed : Trigger → List CardAction → CardAction
+  stated (CR 603.7b). `.delayedTrigger (.endStep .player) …` is “at the
+  beginning of the next end step”. The ability is created when this action
+  resolves. -/
+  | delayedTrigger : Trigger → List CardAction → CardAction
   /-- After the current phase, add this phase to the turn (CR 500.7).
   `.combat` is an additional combat phase. -/
   | addPhaseAfterThisPhase : Phase → CardAction
