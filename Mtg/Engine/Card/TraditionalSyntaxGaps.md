@@ -62,7 +62,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
 (split under `Definition/`):
 
 - **Range** — `range lo hi` (`Value` bounds), `any` (0 unbounded), `from n` (`Value` lower bound, unbounded high).
-- **SetPredicate** — `shareCardType`, `countAtLeast`.
+- **SetPredicate** — `shareCardType`, `countAtLeast`, `totalPowerAtLeast`
+  (the set's total power when the simultaneous event happens; a lower total
+  does not trigger the ability).
 - **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
   `greatestPower`, `count`, `totalPower`, `product`, `variable` (recorded by
   `CardAction.defineValueVariable`), `excessDamageOfActionWithId` (excess
@@ -198,6 +200,9 @@ cards (enter triggers, destroy-then-surveil, and Redwing token creation
 through leftovers).
 `SetPredicate.countAtLeast` is the set-wide size of a simultaneous event
 (Landroval’s two or more creatures attacking a player).
+`SetPredicate.totalPowerAtLeast` is that set's total power when the event
+happens (Desert Were-Worm's attack with total power 12 or greater). A lower
+total does not trigger the ability, and power gained afterward does not count.
 `ContinuousEffect.addPower` of `Value.count` compiles other-subtype +1/+0 for
 each artifact token you control (Thorin). A factor of one is the count.
 Zero toughness is omitted.
@@ -637,11 +642,12 @@ do”. “If excess damage was dealt this way” is `happened` of
 Desert Were-Worm is a `TraditionalCardDefinition` read with
 `parseOracleParts`. `+2/+0 for each Mountain you control` is a static
 `addPower` of twice the Mountain count, and it compiles to
-`powerPerMountain`. The attack line is `Ability.triggeredOnce` of
-“whenever you attack”. When those attackers' total power is 12 or greater,
-it untaps them and there is an additional combat phase
-(`CardAction.extraCombat`). Compiling that ability still yields
-`onAttackWithTotalPowerUntapExtraCombat`.
+`powerPerMountain`. The attack line is `Ability.triggeredOnce` of “whenever you attack”, with
+`SetPredicate.totalPowerAtLeast 12` on that attack. The ability does not
+trigger when the attackers' total power is lower. Power is the power at
+attack time. The effect untaps those attackers, and
+`CardAction.extraCombat` adds a combat phase. Compiling that ability still
+yields `onAttackWithTotalPowerUntapExtraCombat`.
 
 ## Cards that still cannot convert
 

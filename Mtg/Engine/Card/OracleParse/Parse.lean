@@ -254,10 +254,13 @@ def parseAttackTotalPowerExtraCombat (line : String) (n : Nat) :
   else
     let attacking :=
       .intersection [.zone .battlefield, .cardType .creature, .attacking .all]
-    some ([.ability (.triggeredOnce youAttack (.sequence [
-      .if (.greaterOrEqual (.totalPower attacking) 12) [
+    -- Total power is a predicate of the attack, so the ability does not
+    -- trigger when that total is lower. It is not checked again on resolution.
+    some ([.ability (.triggeredOnce
+      (.attackSimultaneously creaturesYouControl .all [.totalPowerAtLeast 12])
+      (.sequence [
         .untap attacking,
-        .extraCombat]]))], n)
+        .extraCombat]))], n)
 
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :

@@ -209,14 +209,16 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   -- Desert Were-Worm: the first attack each turn whose creatures have
   -- total power 12 or greater untaps those attackers and adds a combat.
+  -- The power predicate is part of the attack, so a lower total does not
+  -- trigger the ability.
   | .triggered
       (.attackSimultaneously
-        (.intersection [.zone .battlefield, .cardType .creature, ctl]) .all [])
+        (.intersection [.zone .battlefield, .cardType .creature, ctl]) .all
+        [.totalPowerAtLeast 12])
       (.sequence [
-        .if (.greaterOrEqual (.totalPower attackers) (.int 12)) [
-          .untap attackers',
-          .extraCombat]]) =>
-    if ctl == .controlled (.controller .this) && attackers == attackers' &&
+        .untap attackers,
+        .extraCombat]) =>
+    if ctl == .controlled (.controller .this) &&
         attackers == .intersection [
           .zone .battlefield, .cardType .creature, .attacking .all] then
       some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)

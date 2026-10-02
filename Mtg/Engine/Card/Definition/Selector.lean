@@ -252,7 +252,8 @@ def applySetPredicates (s : Shape) : List SetPredicate → Shape
   | [] => s
   | .shareCardType :: rest =>
     applySetPredicates { s with shareCardType := true } rest
-  | .countAtLeast _ :: rest => applySetPredicates s rest
+  | .countAtLeast _ :: rest | .totalPowerAtLeast _ :: rest =>
+    applySetPredicates s rest
 
 /-- Shape used for targeting: unwrap `target` / `targets` / `targetSet`
 and fold in set predicates. -/

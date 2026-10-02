@@ -125,6 +125,10 @@ inductive SetPredicate where
   | shareCardType
   /-- The set contains at least this many objects. -/
   | countAtLeast : Nat → SetPredicate
+  /-- The objects' total power is at least this number.
+  Checked when the simultaneous event happens, so the ability does not
+  trigger when the total is lower. Power after that event does not count. -/
+  | totalPowerAtLeast : Nat → SetPredicate
 deriving Repr, Inhabited, BEq
 
 /-- Kind of counter (CR 122.1). Used by `CardAction.putCounter` and

@@ -6267,22 +6267,14 @@ def desertWereWormDefinition : TraditionalCardDefinition := .card <|
         .cardType .creature,
         .controlled (.controller .this)])
       .all
-      [])
+      [.totalPowerAtLeast 12])
     (.sequence [
-      .if
-        (.greaterOrEqual
-          (.totalPower
-            (.intersection [
-              .zone .battlefield,
-              .cardType .creature,
-              .attacking .all]))
-          (.int 12))
-        [.untap
-           (.intersection [
-             .zone .battlefield,
-             .cardType .creature,
-             .attacking .all]),
-         .extraCombat]]))]
+      .untap
+        (.intersection [
+          .zone .battlefield,
+          .cardType .creature,
+          .attacking .all]),
+      .extraCombat]))]
 
 def desertWereWorm : CardDef :=
   desertWereWormDefinition.toCardDef (oracleText := desertWereWormOracle)
