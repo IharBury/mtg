@@ -333,7 +333,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Ability.gift` | `Keyword.gift` of each gift in CR 702.174d–i. “If the gift was promised” is `Condition.happened (.giftPromised .this) .gameStart` (Bilbo's Gambit) |
 | `Ability.harness` | `Keyword.harness` as `CardAction.keyword` of this permanent, and `Keyword.infinity` via `Ability.keywordWithAbility` (The Mind Stone; CR 701.64 / 702.186) |
 | `Ability.activateFromZone` | `Ability.graveyardActivatedIf` |
-| `Cost.manaX`, `Cost.life`, `Cost.or` | `ManaSymbol.x` in `Cost.mana` with `Value.x`; `Cost.life`; `Cost.or` |
+| `Cost.manaX`, `Cost.life`, `Cost.or` | `ManaSymbol.x` in `Cost.mana` with `Value.x`; `Cost.life` of a `Value`; `Cost.or` |
 | `ContinuousEffect.setPowerToughness` | `setBasePower` / `setBaseToughness` of a `Value` |
 | `ContinuousEffect.addPower` / `addToughness`, `reduceCostByValue`, `reduceCostPer` | `addPower`, `addToughness`, `setPower` of a `Value`; `reduceCostWithX` |
 | `ContinuousEffect.restrictManaSpend` | `actionId n` on the mana action plus `forbid (spendManaCreatedByAction n (.not …))` (Desolation of Smaug) |

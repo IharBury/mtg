@@ -472,10 +472,11 @@ def leftoverExileTopXOppPlayForLife? : CardAction → Bool
       .continuous [
         .canPlay permit (.wasCreatedByAction created),
         .replaceCost (.wasCreatedByAction replaced)
-          [.life (.greatestManaValue (.wasCreatedByAction replaced))]]
+          [.life (.greatestManaValue (.wasCreatedByAction mv))]]
       .endOfTurn
     ] =>
-    id == created && id == replaced && id == tid && permit == .controller .this
+    id == created && id == replaced && replaced == mv && id == tid &&
+      permit == .controller .this
   | _ => false
 
 /-- Look at the top `n` cards, exile them face down, and play them while
