@@ -440,10 +440,39 @@ def parseExileOppDeathWolf (line : String) (n : Nat) : Option (List CardPart × 
           .type .creature, .subtype .wolf, .colorIndicator [.green],
           .power 2, .toughness 2]]]))], n + 1)
 
+/-- `{cost}, {T}, Discard a legendary card with the same name as a legendary
+permanent you control: Draw two cards.` The discarded card is one legendary
+card from a hand. It shares a name with a legendary permanent this object's
+controller controls (CR 201.2). -/
+def parseDiscardLegendaryDraw (line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  (splitPrintedAbility? line).bind fun (costText, effect) =>
+    if normSentence effect != "draw two cards" then none
+    else
+      let parts := costText.splitOn ", " |>.map copied |>.filter (· != "")
+      match parts with
+      | [manaText, tapText, discardText] =>
+        if norm tapText != "{t}" ||
+            norm discardText !=
+              "discard a legendary card with the same name as a legendary permanent you control" then
+          none
+        else
+          let legendaryYouControl :=
+            .intersection [.zone .battlefield, .supertype .legendary, youControl]
+          (nonemptyMana? manaText).bind fun syms =>
+            some ([.ability (.activated
+              [.mana syms, .tapSymbol,
+               .discard (.selected (.controller .this) (.range 1 1)
+                 (.intersection [
+                   .zone .hand, .supertype .legendary, .owner (.controller .this),
+                   .sharesNameWith legendaryYouControl]))]
+              (.draw (.controller .this) 2))], n)
+      | _ => none
+
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  parseExileOppDeathWolf line n <|>
+  parseDiscardLegendaryDraw line n <|>
+    parseExileOppDeathWolf line n <|>
     parseChooseOddEven cardName line n <|>
     parseRevealRandomCreature line n <|>
     parseAttackTotalPowerExtraCombat line n <|>

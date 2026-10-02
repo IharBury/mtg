@@ -500,6 +500,9 @@ inductive Selector where
   A later reference to that same object is `Selector.variable` after
   `CardAction.defineSelectorVariable`, not another `chooseRandom`. -/
   | chooseRandom : Selector → Selector
+  /-- An object that shares a name with an object matching the selector
+  (CR 201.2). -/
+  | sharesNameWith : Selector → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or

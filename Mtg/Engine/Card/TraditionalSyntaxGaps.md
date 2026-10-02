@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**194** catalog cards are still `CardDef` helpers. **169**
+**193** catalog cards are still `CardDef` helpers. **168**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **25** lost
 their last tag (named counters, `CardAction.removeCounter`,
@@ -27,12 +27,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 168 | 20 | 17 |
+| The Hobbit (HOB) | 188 | 169 | 19 | 16 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 44 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 108 |
-| **Total** | **586** | **392** | **194** | **169** |
+| **Total** | **586** | **393** | **193** | **168** |
 
-All 392 `TraditionalCardDefinition`s (168 HOB, 67 HOC, 157 MSH,
+All 393 `TraditionalCardDefinition`s (169 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -106,8 +106,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   this spell was cast from; `.not (.castFromZone .hand)` is “from anywhere
   other than your hand”), `chooseRandom` (one object chosen at random from
   those matching the selector; a later reference to that same object is
-  `variable` after `defineSelectorVariable`). `hostOf` an Equipment is a
-  creature that is equipped.
+  `variable` after `defineSelectorVariable`), `sharesNameWith` (an object
+  that shares a name with an object matching the selector; CR 201.2).
+  `hostOf` an Equipment is a creature that is equipped.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `drawStep` (the selected player's draw step; also a
@@ -367,17 +368,13 @@ constructors now spell them, so the tags are gone from the lists below.
 | `Selector.attached` for “that are equipped” | `Selector.hostOf` of Equipment on the battlefield. “Equipment attached to” an object stays open. Dáin Ironfoot grants double strike to attacking creatures that are hosts of Equipment |
 | `CardAction.randomize` | `Selector.chooseRandom` of the objects to choose from. Getaway Barrel reveals the top thirteen cards, binds one random creature card from among them with `defineSelectorVariable`, puts that variable onto the battlefield, and puts the rest on the bottom in a random order |
 | `CardAction.chooseOddEven` | `CardAction.chooseOddEven` records the choice as `Value.variable`: 0 is even and 1 is odd. A spell has mana value of that quality when `Value.remainder` of its mana value and 2 equals that variable. Gollum, Riddle Master. Thanos, the Mad Titan spells the same choice and is not converted yet |
+| `SetPredicate.shareName` | `Selector.sharesNameWith` of the objects that have that name. Key to the Side-Door discards one legendary card from a hand that shares a name with a legendary permanent its controller controls |
 
 ## Missing constructors by type
 
 Each subsection lists constructors that at least one remaining supported card
 needs. Card names are examples; the [per-card index](#per-card-index) is
 complete.
-
-### `SetPredicate`
-
-- **`shareName`** (1 card) — The selected objects share a name
-  - Key to the Side-Door
 
 ### `Value`
 
@@ -729,6 +726,13 @@ replaces its mana cost: `replaceCost` of those cards with `Cost.life` of
 `Value.greatestManaValue` of those cards. That payment is not optional. Compiling the
 spell still yields `Effect.exileTopXOppPlayForLife`.
 
+Key to the Side-Door is a `TraditionalCardDefinition` read with
+`parseOracleParts`. `{2}, {T}` makes target creature unable to be blocked
+until end of turn. `{1}, {T}` and discarding one legendary card from a hand
+draws two cards. That card is `Selector.sharesNameWith` a legendary permanent
+its controller controls (CR 201.2). Compiling those abilities still yields
+`Effect.targetCantBeBlockedThisTurn` and `Effect.discardLegendarySameNameDraw`.
+
 ## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. Evidence is the
@@ -809,15 +813,11 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (17 cards)
+### The Hobbit (HOB) (16 cards)
 
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
 - `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
-
-**Key to the Side-Door** (`keyToTheSideDoor`)
-
-- `SetPredicate.shareName` — The selected objects share a name
 
 **Master's Councillors** (`masterSCouncillors`)
 
