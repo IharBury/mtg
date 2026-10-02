@@ -420,10 +420,31 @@ def parseChooseOddEven (cardName line : String) (n : Nat) : Option (List CardPar
       [.chooseOddEven n (.controller .this), .keepReplacedAction]))], n)
   else none
 
+/-- `If a creature an opponent controls would die, exile it instead. When you
+do, create a 2/2 green Wolf creature token.` The exile is numbered. “When you
+do” is a reflexive trigger of that replacement (CR 603.12). The die event
+never happens (CR 614.6). -/
+def parseExileOppDeathWolf (line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  if normLine line !=
+      "if a creature an opponent controls would die, exile it instead. when you do, create a 2/2 green wolf creature token" then
+    none
+  else
+    let oppCreature :=
+      .intersection [
+        .zone .battlefield, .cardType .creature,
+        .controlled (.opponent (.controller .this))]
+    some ([.ability (.static (.replace (.die oppCreature) [
+      .actionId n (.exile .replacingObject),
+      .reflexive n [
+        .createTokens (.controller .this) 1 [
+          .type .creature, .subtype .wolf, .colorIndicator [.green],
+          .power 2, .toughness 2]]]))], n + 1)
+
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  parseChooseOddEven cardName line n <|>
+  parseExileOppDeathWolf line n <|>
+    parseChooseOddEven cardName line n <|>
     parseRevealRandomCreature line n <|>
     parseAttackTotalPowerExtraCombat line n <|>
     parseBolgEnters cardName line n <|>

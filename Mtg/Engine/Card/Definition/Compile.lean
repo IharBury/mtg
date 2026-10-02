@@ -259,6 +259,17 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .addPhaseAfterThisPhase _ | .chooseOddEven _ _ =>
                     continuousEffect none [] asAbility
 
+/-- If a creature an opponent controls would die, exile it instead and
+create a 2/2 green Wolf when you do. -/
+def exileOppDeathCreateWolf? (who : Selector) (actions : List CardAction) : Bool :=
+  who == .intersection [
+    .zone .battlefield, .cardType .creature,
+    .controlled (.opponent (.controller .this))] &&
+    match actions with
+    | [.actionId id (.exile .replacingObject), .reflexive id' [wolf]] =>
+      id == id' && leftoverCreateTokensKindN? wolf == some (.wolf, 1)
+    | _ => false
+
 /-- “Choose one or both”: one or two distinct modes (CR 700.2). -/
 def isChooseOneOrBoth : CardAction → Bool
   | .chooseUniqueModes r _ => r == .range 1 2
