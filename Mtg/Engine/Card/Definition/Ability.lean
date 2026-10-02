@@ -957,13 +957,13 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
       | none => none
     else none
   -- Last Light of Durin's Day: a Mountain you control enters, then a quest
-  -- counter. Six or more is that counter count. The sacrifice is numbered.
+  -- counter. Six or more is the greatest quest-counter count on it. The sacrifice is numbered.
   -- “If you do” is that sacrifice having happened. The player chooses to
   -- search only that hand, or both that hand and that library. The library
   -- search shuffles (CR 701.19).
   | .triggered (.enter mountain) (.sequence [
       .putCounter (.source .this) .quest (.int 1),
-      .if (.greaterOrEqual (.counterCount (.source .this) .quest) (.int 6)) [
+      .if (.greaterOrEqual (.greatestCounterCount (.source .this) .quest) (.int 6)) [
         .actionId id (.sacrifice (.source .this)),
         .if (.happened (.actionWithId id') .gameStart) [
           .playerSelectAction who (.range 1 1) [

@@ -7065,7 +7065,7 @@ def lastLightOfDurinSDayDefinition : TraditionalCardDefinition := .card <|
         [
           .putCounter (.source .this) .quest (.int 1),
           .if
-            (.greaterOrEqual (.counterCount (.source .this) .quest) (.int 6))
+            (.greaterOrEqual (.greatestCounterCount (.source .this) .quest) (.int 6))
             [
               .actionId 1 (.sacrifice (.source .this)),
               .if

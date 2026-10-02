@@ -225,7 +225,7 @@ Currently recognized:
   type, or supertypes plus a type (`Basic landcycling`). A trailing reminder
   parenthetical is not rules text.
 - `Whenever a Mountain you control enters, put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle.`
-  Six or more is `Value.counterCount` of quest counters. The sacrifice is
+  Six or more is `Value.greatestCounterCount` of quest counters. The sacrifice is
   numbered. “If you do” is that sacrifice having happened. The player
   chooses to search only that player's hand, or to search both that hand
   and that library. The library search is `searchLibraryThenShuffle`

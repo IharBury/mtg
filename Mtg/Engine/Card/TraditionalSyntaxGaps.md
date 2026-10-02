@@ -12,7 +12,7 @@ their last tag (named counters, `CardAction.removeCounter`,
 enters-with-counters, `CardAction.reflexive`,
 `CardAction.addPhaseAfterThisPhase`,
 `CardAction.delayedTrigger`, `CardAction.exileUntil`, `hostOf` of Equipment, or
-`Value.counterCount`) and
+`Value.greatestCounterCount`) and
 are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
@@ -73,8 +73,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   and 1 for odd), `remainder` (the remainder when the first value is
   divided by the second; a mana value divided by 2 is 0 when even and 1
   when odd), `excessDamageOfActionWithId` (excess
-  damage dealt by the numbered action; CR 120.4a), `counterCount` (how many
-  counters of a kind are on the selected objects; CR 122.1).
+  damage dealt by the numbered action; CR 120.4a), `greatestCounterCount` (the
+  greatest number of counters of a kind on any one of the selected objects;
+  CR 122.1).
 - **Keyword** — `flash`, `haste`, `vigilance`, `flying`, `menace`, `hexproof`,
   `indestructible`, `reach`, `trample`, `deathtouch`, `defender`, `lifelink`,
   `firstStrike`, `islandwalk`, `storied`, `doubleStrike`, `prowess`, `ascend`,
@@ -371,7 +372,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.randomize` | `Selector.chooseRandom` of the objects to choose from. Getaway Barrel reveals the top thirteen cards, binds one random creature card from among them with `defineSelectorVariable`, puts that variable onto the battlefield, and puts the rest on the bottom in a random order |
 | `CardAction.chooseOddEven` | `CardAction.chooseOddEven` records the choice as `Value.variable`: 0 is even and 1 is odd. A spell has mana value of that quality when `Value.remainder` of its mana value and 2 equals that variable. Gollum, Riddle Master. Thanos, the Mad Titan spells the same choice and is not converted yet |
 | `SetPredicate.shareName` | `Selector.sharesNameWith` of the objects that have that name. Key to the Side-Door discards one legendary card from a hand that shares a name with a legendary permanent its controller controls |
-| `Value.counterCount` | How many counters of a kind are on the selected objects (CR 122.1). Last Light of Durin's Day checks six or more quest counters. Red Hulk's only remaining tag was this count and is not converted yet |
+| `Value.greatestCounterCount` | The greatest number of counters of a kind on any one of the selected objects (CR 122.1). Last Light of Durin's Day checks six or more quest counters. Red Hulk's only remaining tag was this count and is not converted yet |
 
 ## Missing constructors by type
 
@@ -736,7 +737,7 @@ its controller controls (CR 201.2). Compiling those abilities still yields
 
 Last Light of Durin's Day is a `TraditionalCardDefinition` read with
 `parseOracleParts`. Whenever a Mountain its controller controls enters, it
-puts a quest counter on itself. Six or more is `Value.counterCount` of those
+puts a quest counter on itself. Six or more is `Value.greatestCounterCount` of those
 quest counters. The sacrifice is numbered, and “if you do” is that sacrifice
 having happened. The player then chooses one search. Searching only that
 player's hand puts one Dragon card from that hand onto the battlefield.
@@ -1580,7 +1581,7 @@ them when a constructor for each named counter, `CardAction.removeCounter`,
 `replace` of `Trigger.createTokens`, `replace` of `Trigger.abilityTriggers`,
 `CardAction.reflexive`, `CardAction.addPhaseAfterThisPhase`,
 `CardAction.delayedTrigger`, `CardAction.exileUntil`, `hostOf` of Equipment, or
-`Value.counterCount`
+`Value.greatestCounterCount`
 became expressible. A later pass
 should reread them before conversion.
 

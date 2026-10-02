@@ -355,9 +355,9 @@ inductive Value where
   | greatestManaSpent : Selector → Value
   /-- Excess damage dealt by the numbered action (CR 120.4a). -/
   | excessDamageOfActionWithId : Nat → Value
-  /-- How many counters of the given kind are on the selected objects
-  (CR 122.1). -/
-  | counterCount : Selector → CounterKind → Value
+  /-- The greatest number of counters of the given kind on any one of the
+  selected objects (CR 122.1). One object is that object's count. -/
+  | greatestCounterCount : Selector → CounterKind → Value
 deriving Repr, Inhabited, BEq
 
 /-- How many objects a `.targets` selector may choose. -/
@@ -654,7 +654,7 @@ instance : ToString Value where
     | .x => "X"
     | .count _ | .totalPower _ | .greatestManaValue _ | .greatestToughness _
     | .greatestPower _ | .product _ _ | .variable _ | .remainder _ _
-    | .greatestManaSpent _ | .excessDamageOfActionWithId _ | .counterCount _ _ => "X"
+    | .greatestManaSpent _ | .excessDamageOfActionWithId _ | .greatestCounterCount _ _ => "X"
 
 instance (n : Nat) : OfNat Value n where
   ofNat := .int n
@@ -677,7 +677,7 @@ def timesCount (n : Int) (among : Selector) : Value :=
 #guard toString (Value.variable 1) == "X"
 #guard toString (Value.greatestManaSpent .this) == "X"
 #guard toString (Value.excessDamageOfActionWithId 1) == "X"
-#guard toString (Value.counterCount .this .quest) == "X"
+#guard toString (Value.greatestCounterCount .this .quest) == "X"
 #guard Value.timesCount 1 .this == Value.count .this
 #guard Value.timesCount 2 .this == Value.product (Value.count .this) (Value.int 2)
 #guard Value.timesCount 0 .this == Value.int 0

@@ -490,7 +490,7 @@ def parseMountainQuestDragon (line : String) (n : Nat) : Option (List CardPart Ã
       .intersection [.zone .battlefield, .subtype .mountain, youControl]
     some ([.ability (.triggered (.enter mountain) (.sequence [
       .putCounter (.source .this) .quest 1,
-      .if (.greaterOrEqual (.counterCount (.source .this) .quest) 6) [
+      .if (.greaterOrEqual (.greatestCounterCount (.source .this) .quest) 6) [
         .actionId n (.sacrifice (.source .this)),
         .if (.happened (.actionWithId n) .gameStart) [
           .playerSelectAction you (.range 1 1) [
