@@ -552,6 +552,11 @@ Currently recognized:
 - `Look at the top <count> cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a <subtype>.`
   One card uses the singular. Those cards are exiled face down. You may play
   them while they remain exiled and you control a permanent of that subtype.
+- `Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost.`
+  The opponent is one target. X is how many cards. You may play those cards
+  until end of turn. Casting one replaces its mana cost with life equal to
+  its mana value (`Cost.life` of `Value.greatestManaValue` of those cards). That
+  payment is not optional.
 - `When <this> enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card.`
   The power and controller are the creature's last-known information
   (CR 608.2h). With no target, no player amasses and no card is drawn.

@@ -519,8 +519,11 @@ def leftoverTapAddTwoAmong? (costs : List Cost) : CardAction → Option (Array M
 def leftoverTapPayLifeAddOneOf? (costs : List Cost) (action : CardAction) :
     Option (Nat × Array ManaType) :=
   match costs with
-  | [.tapSymbol, .life k] =>
-    if k == 0 then none else (leftoverTapAddOneOf? [.tapSymbol] action).map (k, ·)
+  | [.tapSymbol, .life v] =>
+    match valToNat? v with
+    | some k =>
+      if k == 0 then none else (leftoverTapAddOneOf? [.tapSymbol] action).map (k, ·)
+    | none => none
   | _ => none
 
 /-- This land entered this turn or you control a basic land. -/

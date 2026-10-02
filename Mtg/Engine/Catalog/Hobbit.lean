@@ -6918,8 +6918,40 @@ def headOfTheHunt : CardDef :=
 #guard headOfTheHunt.subtypes == #["Wolf"]
 #guard headOfTheHunt.power == some 4 && headOfTheHunt.toughness == some 3
 
+/-- Oracle text for Inside Information. -/
+def insideInformationOracle : String :=
+  "Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost."
+
+def insideInformationDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Inside Information",
+    .manaCost [.x, .mono .black, .mono .black],
+    .type .sorcery
+  ] ++ (parseOracleParts (name := "Inside Information") insideInformationOracle).get!
+
+#guard insideInformationDefinition == .card [
+  .name "Inside Information",
+  .manaCost [.x, .mono .black, .mono .black],
+  .type .sorcery,
+  .actions [
+    .actionId 1
+      (.exile
+        (.topOfLibrary
+          (.target 1 (.opponent (.controller .this)))
+          .x)),
+    .continuous [
+      .canPlay (.controller .this) (.wasCreatedByAction 1),
+      .replaceCost (.wasCreatedByAction 1)
+        [.life (.greatestManaValue (.wasCreatedByAction 1))]]
+    .endOfTurn]]
+
 def insideInformation : CardDef :=
-  sorcery "Inside Information" ({ symbols := #[.x, .colored .black, .colored .black] }) "Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost." (some (Effect.exileTopXOppPlayForLife))
+  insideInformationDefinition.toCardDef (oracleText := insideInformationOracle)
+
+#guard insideInformation.oracleText == insideInformationOracle
+#guard insideInformation.spellEffect == some Effect.exileTopXOppPlayForLife
+#guard insideInformation.manaValue == 2
+#guard insideInformation.types == #[.sorcery]
 
 def keyToTheSideDoor : CardDef :=
   artifact "Key to the Side-Door" (ManaCost.ofGeneric 1) "{2}, {T}: Target creature can't be blocked this turn.\n{1}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards."

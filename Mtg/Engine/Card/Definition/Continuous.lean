@@ -70,7 +70,7 @@ def selector : ContinuousEffect → Selector
   | .if _ (inner :: _) => selector inner
   | .if _ [] => .this
   | .reduceCost who _ | .reduceCostWithX who _ _ => who
-  | .additionalCost who _ | .alternativeCost who _ => who
+  | .additionalCost who _ | .alternativeCost who _ | .replaceCost who _ => who
   | .replace _ _ => .this
   | .forbid _ => .this
   | .canCastWithoutPayingManaCost _ who => who

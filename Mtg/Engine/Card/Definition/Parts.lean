@@ -156,6 +156,11 @@ inductive ContinuousEffect where
   /-- You may pay `costs` rather than pay the cost of the selected ability
   (CR 118.9). This is an alternative cost, not a cost reduction (CR 118.7). -/
   | alternativeCost : Selector → List Cost → ContinuousEffect
+  /-- Pay `costs` rather than pay the mana cost of casting the selected
+  spell (CR 118.9). This replaces that mana cost. It is not optional, and
+  it is not a cost reduction. Life equal to that spell's mana value is
+  `Cost.life` of `Value.greatestManaValue` of the spell. -/
+  | replaceCost : Selector → List Cost → ContinuousEffect
   /-- Replace the trigger with the given actions (CR 614). -/
   | replace : Trigger → List CardAction → ContinuousEffect
   /-- The selected trigger is forbidden (CR 509 / 614). -/

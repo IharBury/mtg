@@ -129,7 +129,8 @@ def collectCondition : Condition → List Nat × List Nat
     appendIds [collectValue a, collectValue b]
 
 def collectCost : Cost → List Nat × List Nat
-  | .mana _ | .life _ | .tapSymbol => ([], [])
+  | .mana _ | .tapSymbol => ([], [])
+  | .life v => collectValue v
   | .sacrifice s | .discard s => collectSelector s
   | .sacrificeCount s _ => collectSelector s
   | .or cs => appendIds (cs.map collectCost)
@@ -175,7 +176,7 @@ def collectAbility : Ability → List Nat × List Nat
 def collectEffect : ContinuousEffect → List Nat × List Nat
   | .gainAbility s a => appendIds [collectSelector s, collectAbility a]
   | .if c es => appendIds [collectCondition c, appendIds (es.map collectEffect)]
-  | .reduceCost s cs | .additionalCost s cs | .alternativeCost s cs =>
+  | .reduceCost s cs | .additionalCost s cs | .alternativeCost s cs | .replaceCost s cs =>
     appendIds [collectSelector s, appendIds (cs.map collectCost)]
   | .reduceCostWithX s cs v =>
     appendIds [collectSelector s, appendIds (cs.map collectCost), collectValue v]
@@ -419,7 +420,7 @@ def mapCosts (m : IdMaps) : List Cost → List Cost
 
 def mapCost (m : IdMaps) : Cost → Cost
   | .mana syms => .mana syms
-  | .life n => .life n
+  | .life v => .life (mapValue m v)
   | .sacrifice s => .sacrifice (mapSelector m s)
   | .sacrificeCount s n => .sacrificeCount (mapSelector m s) n
   | .tapSymbol => .tapSymbol
@@ -488,6 +489,7 @@ def mapEffect (m : IdMaps) : ContinuousEffect → ContinuousEffect
     .reduceCostWithX (mapSelector m s) (mapCosts m cs) (mapValue m v)
   | .additionalCost s cs => .additionalCost (mapSelector m s) (mapCosts m cs)
   | .alternativeCost s cs => .alternativeCost (mapSelector m s) (mapCosts m cs)
+  | .replaceCost s cs => .replaceCost (mapSelector m s) (mapCosts m cs)
   | .replace t as => .replace (mapTrigger m t) (mapActions m as)
   | .forbid t => .forbid (mapTrigger m t)
   | .canCastWithoutPayingManaCost a b =>

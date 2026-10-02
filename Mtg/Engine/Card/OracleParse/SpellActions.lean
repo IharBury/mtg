@@ -635,6 +635,29 @@ def parseExileAttackersSearchBasics (text : String) (n : Nat) :
         n + 1)
   | _ => none
 
+/-- `Exile the top X cards of target opponent's library. You may play those
+cards this turn. If you cast a spell this way, pay life equal to its mana
+value rather than pay its mana cost.`
+The opponent is target `n`, and the exile is action `n`. You may play those
+cards until end of turn. Casting one replaces its mana cost with life equal
+to its mana value. That amount is the mana value of the exiled card. The
+replacement is not optional. -/
+def parseExileTopXOppPlayForLife (text : String) (n : Nat) :
+    Option (List CardAction × Nat) :=
+  if normLine text !=
+      "exile the top x cards of target opponent's library. you may play those cards this turn. if you cast a spell this way, pay life equal to its mana value rather than pay its mana cost" then
+    none
+  else
+    some ([
+      .actionId n
+        (.exile (.topOfLibrary (.target n (.opponent (.controller .this))) .x)),
+      .continuous [
+        .canPlay (.controller .this) (.wasCreatedByAction n),
+        .replaceCost (.wasCreatedByAction n)
+          [.life (.greatestManaValue (.wasCreatedByAction n))]]
+      .endOfTurn],
+      n + 1)
+
 /-- `Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard.`
 The looked-at cards are action `n`. The exile is action `n + 1`. One card
 uses the singular. Those cards are exiled face down. You may play them
@@ -732,6 +755,7 @@ def actionsFromText (cardName : String) (text : String) (n : Nat) :
     parsed.map fun (action, n') => ([action], n')
   parseReturnSpellIfGiftCantCast text n <|>
     parseVisionQuest text n <|>
+    parseExileTopXOppPlayForLife text n <|>
     parseExileAttackersSearchBasics text n <|>
     parseLookAtTopExileFaceDownPlayIf text n <|>
     parseCounterExilePermanentMayCast text n <|>

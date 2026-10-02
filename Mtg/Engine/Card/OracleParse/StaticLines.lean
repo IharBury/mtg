@@ -762,7 +762,7 @@ def parseEquipPayLife (line : String) : Option CardPart :=
     | some (costText, lifeText) =>
       match nonemptyMana? costText, parsePayLife lifeText with
       | some syms, some life =>
-        some (.ability (.keywordWithCost .equip [.mana syms, .life life]))
+        some (.ability (.keywordWithCost .equip [.mana syms, .life (.int life)]))
       | _, _ => none
     | none => none
 
