@@ -232,7 +232,7 @@ def vowToErebor : TraditionalCardDefinition := .card [
       .untap [.target [.cardType .creature, .controlledBy .you]],
       .getUntil [.it] [.plusPowerToughness +2 +2] .endOfTurn,
       .if
-        [.is [.it] [.cardType .dwarf]]
+        [.is [.it] [.cardSubtype .dwarf]]
         [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]
     ]
   ]

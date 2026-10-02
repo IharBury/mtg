@@ -169,9 +169,9 @@ inductive PlayerRef where
   | opponent
   deriving Repr, BEq
 
-/-- A type word in `.cardType`. Card types (`.creature`) and the subtypes this
-DSL names (`.dwarf`, `.equipment`) share the constructor, so
-`.cardType .creature` and `.cardType .dwarf` both elaborate. -/
+/-- A type word in `.cardType`. Card types (`.creature`) and `.equipment`
+share the constructor. Creature subtypes use `.cardSubtype` instead
+(`[.cardSubtype .dwarf]`). -/
 inductive TypeName where
   | artifact
   | battle
@@ -188,7 +188,6 @@ inductive TypeName where
   | vanguard
   | scheme
   | conspiracy
-  | dwarf
   | equipment
   deriving Repr, BEq, DecidableEq
 
@@ -227,13 +226,11 @@ def toCard? : TypeName → Option CardType
   | .vanguard => some .vanguard
   | .scheme => some .scheme
   | .conspiracy => some .conspiracy
-  | .dwarf => none
   | .equipment => none
 
-/-- Printed word. Card types stay lowercase (`creature`); subtypes keep Oracle
-capitalization (`Dwarf`, `Equipment`). -/
+/-- Printed word. Card types stay lowercase (`creature`); `.equipment` keeps
+Oracle capitalization (`Equipment`). -/
 def phrase : TypeName → String
-  | .dwarf => "Dwarf"
   | .equipment => "Equipment"
   | t =>
     match t.toCard? with
@@ -247,6 +244,7 @@ these is a conjunction. `.this` is this object; `.other` excludes it.
 `.it` is the object named earlier (`It gets +2/+2`). -/
 inductive ObjectQualifier where
   | cardType (t : TypeName)
+  | cardSubtype (s : CardSubtype)
   | controlledBy (p : PlayerRef)
   | or (qs : List ObjectQualifier)
   | tapped
@@ -340,7 +338,7 @@ inductive ObjectExpr where
   | it
   deriving Repr, BEq
 
-/-- A condition in `.if`. `[.is [.it] [.cardType .dwarf]]` is “it's a Dwarf”. -/
+/-- A condition in `.if`. `[.is [.it] [.cardSubtype .dwarf]]` is “it's a Dwarf”. -/
 inductive TextCondition where
   | is (subj : List ConditionRef) (qs : List ObjectQualifier)
   deriving Repr, BEq
@@ -375,7 +373,7 @@ inductive TextEffect where
   /-- Untap the named targets (`Untap target creature you control`). -/
   | untap (targets : List TargetExpr)
   /-- When `conds` hold, follow `effects`.
-  `[.is [.it] [.cardType .dwarf]]` is “if it's a Dwarf”. -/
+  `[.is [.it] [.cardSubtype .dwarf]]` is “if it's a Dwarf”. -/
   | «if» (conds : List TextCondition) (effects : List TextEffect)
   /-- `who` may do `effects` (`you may …`). -/
   | may (who : List PlayerRef) (effects : List TextEffect)
@@ -453,6 +451,7 @@ private def keywordsOfGranted (gs : List GrantedAbility) : Keywords :=
 
 private def ObjectQualifier.toPhrase : ObjectQualifier → String
   | .cardType t => t.phrase
+  | .cardSubtype s => s.printed
   | .controlledBy .you => "you control"
   | .controlledBy .opponent => "an opponent controls"
   | .or qs => orJoin (qs.map toPhrase)
@@ -491,6 +490,7 @@ private def pluralQualifier : ObjectQualifier → String
       let n := t.phrase
       if n.endsWith "s" then n else s!"{n}s"
     | none => t.phrase
+  | .cardSubtype s => s.printed
   | .controlledBy .you => "you control"
   | .controlledBy .opponent => "an opponent controls"
   | .or qs => orJoin (qs.map pluralQualifier)
@@ -703,7 +703,7 @@ private def textEffectToEffect : TextEffect → Option Effect
       [.untap [.target [.cardType .creature, .controlledBy .you]],
        .getUntil [.it] [.plusPowerToughness p t] .endOfTurn,
        .if
-         [.is [.it] [.cardType .dwarf]]
+         [.is [.it] [.cardSubtype .dwarf]]
          [.may [.you]
            [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]] =>
     some (Effect.untapPumpMaybeAttach p t)
@@ -1276,9 +1276,14 @@ private def parseWhenever (line : String) : Option TextEffect := do
 
 private def parseTypeName (s : String) : Option TypeName :=
   match s.trimAscii.copy.map Char.toLower with
-  | "dwarf" => some .dwarf
   | "equipment" => some .equipment
   | other => (parseCardType other).map TypeName.ofCard
+
+/-- A card type, `.equipment`, or a named subtype such as `.cardSubtype .dwarf`. -/
+private def parseQualifierWord (s : String) : Option ObjectQualifier :=
+  match parseCardSubtype s with
+  | some sub => some (.cardSubtype sub)
+  | none => (parseTypeName s).map ObjectQualifier.cardType
 
 private def dropArticle (s : String) : Option String :=
   if let some r := dropPrefixCI s "an " then some r
@@ -1295,12 +1300,12 @@ private def parseTypedControlled (s : String) : Option (List ObjectQualifier) :=
       (core, some PlayerRef.opponent)
     else
       (noun, none)
-  let t ← parseTypeName core
+  let qual ← parseQualifierWord core
   let tail :=
     match who with
     | some p => [ObjectQualifier.controlledBy p]
     | none => []
-  return [.cardType t] ++ tail
+  return [qual] ++ tail
 
 /-- `Untap target creature you control`. -/
 private def parseUntap (s : String) : Option TextEffect := do
@@ -1461,7 +1466,7 @@ instructions in that text box. `Tap one or two target …` becomes `.tap`.
 becomes `.whenever` with `.attack` and `getForEachUntil`.
 `Untap target creature you control. It gets … If it's a Dwarf, you may attach
 an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`,
-and `.if`.
+and `.if` with `[.cardSubtype .dwarf]`.
 -/
 def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   let lines :=
@@ -1542,7 +1547,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     .untap [.target [.cardType .creature, .controlledBy .you]],
     .getUntil [.it] [.plusPowerToughness +2 +2] .endOfTurn,
     .if
-      [.is [.it] [.cardType .dwarf]]
+      [.is [.it] [.cardSubtype .dwarf]]
       [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]]) ==
   "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
 #guard parseSequence
@@ -1551,7 +1556,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     .untap [.target [.cardType .creature, .controlledBy .you]],
     .getUntil [.it] [.plusPowerToughness 2 2] .endOfTurn,
     .if
-      [.is [.it] [.cardType .dwarf]]
+      [.is [.it] [.cardSubtype .dwarf]]
       [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]])
 
 end Mtg.Engine
