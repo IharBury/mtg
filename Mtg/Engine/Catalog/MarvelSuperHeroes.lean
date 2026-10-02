@@ -10,8 +10,7 @@ import Mtg.Engine.Catalog
 
 Official *Magic: The Gathering | Marvel Super Heroes* set: 276 draft-legal
 cards (collector numbers 1–276) plus the five basic lands printed in the set.
-Oracle text is taken from Scryfall (`set:msh unique:cards`). Ability words
-(Power-up) and reminder text are stripped by `CardDef.reconstructOracle`.
+Oracle text is taken from Scryfall (`set:msh unique:cards`).
 -/
 
 namespace Mtg.Engine.Catalog

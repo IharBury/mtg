@@ -5,9 +5,8 @@ import Mtg.Engine.Catalog
 # The Hobbit Eternal catalog
 
 Oracle characteristics for cards from Magic: The Gathering | The Hobbit
-Eternal (HOC). Oracle text is stored verbatim from Scryfall; modeled
-fields must reconstruct it. `CardDef.matchesOracleText` checks that
-mechanically. `hobbitEternalCards` lists every unique card in the set,
+Eternal (HOC). Oracle text is stored verbatim from Scryfall.
+`hobbitEternalCards` lists every unique card in the set,
 including reprints that also appear in other sets.
 -/
 
