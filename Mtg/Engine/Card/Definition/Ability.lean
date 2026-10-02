@@ -225,6 +225,40 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           .zone .battlefield, .cardType .creature, .attacking .all] then
       some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)
     else none
+  -- Dwalin, Weaponmaster: a hone counter on each Equipment you control.
+  | .triggered (.or (.enter .this) (.attack .this .all))
+      (.putCounter
+        (.intersection [.zone .battlefield, .subtype .equipment, ctl]) .hone (.int 1)) =>
+    if ctl == .controlled (.controller .this) then
+      some TriggeredAbility.onEnterOrAttackHoneEachEquipment
+    else none
+  -- Dáin Ironfoot: create an Axe, then attach it when you do.
+  | .triggered (.enter .this) (.sequence [
+      .actionId id (.createTokens _ _ parts _),
+      .reflexive id' [
+        .attach (.wasCreatedByAction created)
+          (.target _ (.intersection [
+            .zone .battlefield, .cardType .creature, .controlled (.controller .this)]))]]) =>
+    if id == id' && id == created && CardAction.leftoverAxeToken? parts then
+      some TriggeredAbility.onEnterCreateAxeAttach
+    else none
+  -- Dáin Ironfoot: equipped attackers gain double strike.
+  | .triggered (.attack .this .all)
+      (.continuous [
+        .gainAbility
+          (.intersection [
+            .zone .battlefield, .cardType .creature, .attacking .all, .equipped])
+          (.keyword .doubleStrike)]
+        .endOfTurn) =>
+    some TriggeredAbility.onAttackEquippedGainDoubleStrike
+  -- Elrond, Moon-Reader: draw once when you activate a creature ability.
+  -- `triggeredOnce` unwraps to this before compilation.
+  | .triggered
+      (.activateAbility (.intersection [.zone .battlefield, .cardType .creature]))
+      (.draw who (.int 1)) =>
+    if who == .controller .this then
+      some TriggeredAbility.onActivateCreatureAbilityDrawOnce
+    else none
   | .triggered (.triggerId id (.castSpell among))
       (.sequence [
         .optional (.controller .this)
@@ -1194,7 +1228,11 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
   | _ => none
 
 def toTriggeredAbility? (a : Ability) : Option TriggeredAbility :=
-  a.printedTriggeredAbility?.orElse fun _ => a.compileTriggeredAbility?
+  let unwrapped :=
+    match a with
+    | .triggeredOnce t action => Ability.triggered t action
+    | other => other
+  unwrapped.printedTriggeredAbility?.orElse fun _ => unwrapped.compileTriggeredAbility?
 
 end Ability
 

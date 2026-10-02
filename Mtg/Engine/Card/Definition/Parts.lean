@@ -133,6 +133,11 @@ inductive Ability where
   resolves. Printed “while …” uses this; `CardAction.if` is the resolution
   check. -/
   | triggeredWhile : Trigger → Condition → CardAction → Ability
+  /-- A triggered ability that triggers only once each turn (CR 603.2d).
+  The restriction is part of the ability. Compiling unwraps it to
+  `.triggered`; a named `TriggeredAbility` that already fires once keeps
+  that limit. -/
+  | triggeredOnce : Trigger → CardAction → Ability
   | static : ContinuousEffect → Ability
   /-- A static ability that functions while this spell is on the stack
   (CR 604.2), e.g. a cost reduction. -/
@@ -374,6 +379,9 @@ inductive CardAction where
   an optional cost is this, not an “if you do” checked in the same
   resolution. -/
   | reflexive : Nat → List CardAction → CardAction
+  /-- Exile the selected objects. Return those cards to the battlefield
+  under their owner's control at the next occurrence of the trigger. -/
+  | exileThenReturn : Selector → Trigger → CardAction
   /-- After the current phase, add this phase to the turn (CR 500.7).
   `.combat` is an additional combat phase. -/
   | addPhaseAfterThisPhase : Phase → CardAction

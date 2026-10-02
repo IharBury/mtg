@@ -254,7 +254,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     continuousEffect none [] asAbility
                   | .shuffleIntoOwnersLibrary _ | .lookAt _
                   | .putOnLibraryBottomInRandomOrder _ | .chooseCreatureType _
-                  | .mayCast _ _ | .reflexive _ _ | .addPhaseAfterThisPhase _ =>
+                  | .mayCast _ _ | .reflexive _ _ | .exileThenReturn _ _
+                  | .addPhaseAfterThisPhase _ =>
                     continuousEffect none [] asAbility
 
 /-- “Choose one or both”: one or two distinct modes (CR 700.2). -/

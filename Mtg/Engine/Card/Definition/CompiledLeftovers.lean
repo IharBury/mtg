@@ -712,6 +712,10 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     if id == id' && p == .variable v && p' == p && p'' == p then
       some Effect.worldsWithinWorlds
     else none
+  | .exileThenReturn
+      (.targets _ (.range (.int 0) (.int 2)) _)
+      (.endStep .player) =>
+    some Effect.exileThenReturnNextEnd
   | _ => none
 
 /-- First alternatives of `leftoverCompiled?`. Separate from the rest so the

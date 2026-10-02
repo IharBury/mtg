@@ -84,7 +84,7 @@ def collectSelector : Selector → List Nat × List Nat
   | .cardType _ | .hasCounter _ | .subtype _ | .supertype _ => ([], [])
   | .keyword k | .keywordAbility k => collectKeyword k
   | .powerAtLeast v | .powerAtMost v | .manaValueAtMost v => collectValue v
-  | .castFromZone _ => ([], [])
+  | .castFromZone _ | .equipped => ([], [])
   | .wasObjectOfAction n | .wasCreatedByAction n | .affectedByAction n
   | .hasCreatureTypeChosenByAction n =>
     ([n], [])
@@ -165,7 +165,8 @@ def collectAbility : Ability → List Nat × List Nat
   | .graveyardActivatedIf c cs action =>
     appendIds [collectCondition c, appendIds (cs.map collectCost), collectAction action]
   | .abilityId n a => appendIds [([], [n]), collectAbility a]
-  | .triggered t action => appendIds [collectTrigger t, collectAction action]
+  | .triggered t action | .triggeredOnce t action =>
+    appendIds [collectTrigger t, collectAction action]
   | .triggeredWhile t c action =>
     appendIds [collectTrigger t, collectCondition c, collectAction action]
   | .static e | .stackStatic e | .everywhereStatic e => collectEffect e
@@ -244,6 +245,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .duplicateReplacingTrigger v => collectValue v
   | .keepReplacedAction => ([], [])
   | .reflexive n as => appendIds [([n], []), appendIds (as.map collectAction)]
+  | .exileThenReturn s t => appendIds [collectSelector s, collectTrigger t]
   | .addPhaseAfterThisPhase _ => ([], [])
 
 end
@@ -330,6 +332,7 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .hasCreatureTypeChosenByAction n => .hasCreatureTypeChosenByAction (m.action n)
   | .manaValueAtMost v => .manaValueAtMost (mapValue m v)
   | .castFromZone z => .castFromZone z
+  | .equipped => .equipped
 
 def mapTriggers (m : IdMaps) : List Trigger → List Trigger
   | [] => []
@@ -462,6 +465,7 @@ def mapAbility (m : IdMaps) : Ability → Ability
     .graveyardActivatedIf (mapCondition m c) (mapCosts m cs) (mapAction m action)
   | .abilityId n a => .abilityId (m.target n) (mapAbility m a)
   | .triggered t action => .triggered (mapTrigger m t) (mapAction m action)
+  | .triggeredOnce t action => .triggeredOnce (mapTrigger m t) (mapAction m action)
   | .triggeredWhile t c action =>
     .triggeredWhile (mapTrigger m t) (mapCondition m c) (mapAction m action)
   | .static e => .static (mapEffect m e)
@@ -584,6 +588,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .chooseCreatureType s => .chooseCreatureType (mapSelector m s)
   | .mayCast a b => .mayCast (mapSelector m a) (mapSelector m b)
   | .reflexive n as => .reflexive (m.action n) (mapActions m as)
+  | .exileThenReturn s t => .exileThenReturn (mapSelector m s) (mapTrigger m t)
   | .addPhaseAfterThisPhase p => .addPhaseAfterThisPhase p
 
 end

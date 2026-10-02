@@ -1100,6 +1100,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.triggered w action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
+  | .triggeredOnce w action =>
+    match (Ability.triggered w action).toTriggeredAbility? with
+    | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
+    | none => b
   | .triggeredWhile w cond action =>
     match (Ability.triggeredWhile w cond action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
