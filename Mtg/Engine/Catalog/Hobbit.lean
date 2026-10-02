@@ -4937,14 +4937,15 @@ def kiliTheResourcefulDefinition : TraditionalCardDefinition := .card <|
         Selector.keywordAbility .equip,
         .controlled (.controller .this)])
       [.mana [.generic 0]]])),
-  .ability (.triggered
+  .ability (.abilityId 1 (.triggeredWhile
     (.enter
       (.intersection [
         .not .this,
         .zone .battlefield,
         .union [.subtype .dwarf, .subtype .equipment],
         .controlled (.controller .this)]))
-    (.draw (.controller .this) 1))]
+    (.not (.happened (.abilityTriggers (.abilityWithId 1)) .turnStart))
+    (.draw (.controller .this) 1)))]
 
 def kiliTheResourceful : CardDef :=
   kiliTheResourcefulDefinition.toCardDef (oracleText := kiliTheResourcefulOracle)
@@ -6598,16 +6599,19 @@ def elrondMoonReaderDefinition : TraditionalCardDefinition := .card <|
   .power 3,
   .toughness 3
   ] ++ [.ability
-   (.triggered
-     (.ordinal
-       1
-       .turnStart
+   (.abilityId
+     1
+     (.triggeredWhile
        (.activateAbility
          (.controller .this)
          (.intersection
            [.zone .battlefield,
-            .cardType .creature])))
-     (.draw (.controller .this) (.int 1))),
+            .cardType .creature]))
+       (.not
+         (.happened
+           (.abilityTriggers (.abilityWithId 1))
+           .turnStart))
+       (.draw (.controller .this) (.int 1)))),
  .ability
    (.activated
      [.mana
@@ -6619,7 +6623,7 @@ def elrondMoonReaderDefinition : TraditionalCardDefinition := .card <|
          1
          (.exile
            (.targets
-             1
+             2
              (.range (.int 0) (.int 2))
              (.intersection
                [.not .this,
@@ -7268,9 +7272,65 @@ def orcristGoblinCleaver : CardDef :=
 #guard orcristGoblinCleaver.staticAbilities == #[.equippedCreatureGetsAndHas 2 2 Keyword.trample]
 #guard orcristGoblinCleaver.triggeredAbilities == #[.onEquippedCombatDamageTreasuresPerChosenType]
 
+/-- Oracle text for Part in Friendship. -/
+def partInFriendshipOracle : String :=
+  "Whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order. This ability triggers only once each turn."
+
+def partInFriendshipDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Part in Friendship",
+    .manaCost [.generic 4, .mono .green],
+    .type .enchantment
+  ] ++ (parseOracleParts (name := "Part in Friendship") partInFriendshipOracle).get!
+
+#guard partInFriendshipDefinition == .card [
+  .name "Part in Friendship",
+  .manaCost [.generic 4, .mono .green],
+  .type .enchantment,
+  .ability
+    (.abilityId 1
+      (.triggeredWhile
+        (.die
+          (.intersection
+            [
+              .zone .battlefield,
+              .cardType .creature,
+              .not .token,
+              .controlled (.controller .this)]))
+        (.not
+          (.happened
+            (.abilityTriggers (.abilityWithId 1))
+            .turnStart))
+        (.sequence
+          [
+          .actionId
+            1
+            (.revealFromLibraryTopUntil (.controller .this) (.cardType .creature) []),
+          .ifElse
+            (.lessOrEqual
+              (.greatestManaValue
+                (.intersection [.wasObjectOfAction 1, .cardType .creature]))
+              (.count
+                (.intersection
+                  [
+                    .zone .battlefield,
+                    .cardType .land,
+                    .controlled (.controller .this)])))
+            [.putOntoBattlefield
+              (.intersection [.wasObjectOfAction 1, .cardType .creature])]
+            [.returnToHand
+              (.intersection [.wasObjectOfAction 1, .cardType .creature])],
+          .putOnLibraryBottomInRandomOrder
+            (.intersection
+              [.wasObjectOfAction 1, .not (.cardType .creature)])])))]
+
 def partInFriendship : CardDef :=
-  enchantment "Part in Friendship" (ManaCost.ofGenericAndColor 4 .green) "Whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order. This ability triggers only once each turn."
-    (triggeredAbilities := #[.onNontokenYouControlDiesRevealCreature])
+  partInFriendshipDefinition.toCardDef (oracleText := partInFriendshipOracle)
+
+#guard partInFriendship.oracleText == partInFriendshipOracle
+#guard partInFriendship.triggeredAbilities == #[.onNontokenYouControlDiesRevealCreature]
+#guard partInFriendship.types == #[.enchantment]
+#guard partInFriendship.manaCost == ManaCost.ofGenericAndColor 4 .green
 
 /-- Oracle text for Radagast of Rhosgobel. -/
 def radagastOfRhosgobelOracle : String :=

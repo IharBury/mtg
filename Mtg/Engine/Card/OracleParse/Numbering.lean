@@ -207,6 +207,8 @@ def collectAction : CardAction → List Nat × List Nat
   | .shuffleIntoOwnersLibrary s | .lookAt s | .putOnLibraryBottomInRandomOrder s
   | .chooseCreatureType s | .removeAllCounters s =>
     collectSelector s
+  | .revealFromLibraryTopUntil who stop _ =>
+    appendIds [collectSelector who, collectSelector stop]
   | .dealDamage a b v =>
     appendIds [collectSelector a, collectSelector b, collectValue v]
   | .draw a v | .scry a v | .discard a v | .putCounter a _ v
@@ -579,6 +581,8 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .forEachVariable n s as =>
     .forEachVariable (m.target n) (mapSelector m s) (mapActions m as)
   | .reveal s => .reveal (mapSelector m s)
+  | .revealFromLibraryTopUntil who stop ps =>
+    .revealFromLibraryTopUntil (mapSelector m who) (mapSelector m stop) ps
   | .fight a b => .fight (mapSelector m a) (mapSelector m b)
   | .addManaOfOneColor who syms v =>
     .addManaOfOneColor (mapSelector m who) syms (mapValue m v)

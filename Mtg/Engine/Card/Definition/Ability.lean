@@ -231,6 +231,35 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           .zone .battlefield, .cardType .creature, .attacking .all] then
       some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)
     else none
+  -- Part in Friendship: a nontoken creature you control dies. Reveal until
+  -- a creature card. Its mana value, compared with the number of lands
+  -- you control, decides the battlefield or your hand. The other revealed
+  -- cards go on the bottom in a random order. “This ability triggers only
+  -- once each turn” is this ability not having triggered since turn start.
+  | .triggeredWhile
+      (.die
+        (.intersection
+          [.zone .battlefield, .cardType .creature, .not .token, ctl]))
+      (.not (.happened (.abilityTriggers (.abilityWithId _)) .turnStart))
+      (.sequence [
+        .actionId id (.revealFromLibraryTopUntil who (.cardType .creature) []),
+        .ifElse
+          (.lessOrEqual
+            (.greatestManaValue creature)
+            (.count lands))
+          [.putOntoBattlefield put]
+          [.returnToHand hand],
+        .putOnLibraryBottomInRandomOrder rest]) =>
+    let you := .controlled (.controller .this)
+    let revealedCreature := .intersection [.wasObjectOfAction id, .cardType .creature]
+    let revealedRest :=
+      .intersection [.wasObjectOfAction id, .not (.cardType .creature)]
+    if ctl == you && who == .controller .this &&
+        creature == revealedCreature && put == revealedCreature && hand == revealedCreature &&
+        rest == revealedRest &&
+        lands == .intersection [.zone .battlefield, .cardType .land, you] then
+      some TriggeredAbility.onNontokenYouControlDiesRevealCreature
+    else none
   -- Getaway Barrel: reveal the top thirteen cards, bind the random
   -- creature to a selector variable, put that card onto the battlefield,
   -- and put the rest on the bottom in a random order.
@@ -275,14 +304,14 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           (.keyword .doubleStrike)]
         .endOfTurn) =>
     some TriggeredAbility.onAttackEquippedGainDoubleStrike
-  -- Elrond, Moon-Reader: the first time each turn this ability's controller
-  -- activates an ability of a creature, draw a card. Another player's
-  -- activation does not trigger it. “This ability triggers only once each
-  -- turn” is `ordinal` 1 since turn start.
-  | .triggered
-      (.ordinal 1 .turnStart
-        (.activateAbility activator
-          (.intersection [.zone .battlefield, .cardType .creature])))
+  -- Elrond, Moon-Reader: this ability's controller activates an ability of
+  -- a creature, and draws a card. Another player's activation does not
+  -- trigger it. “This ability triggers only once each turn” is this
+  -- ability not having triggered since turn start.
+  | .triggeredWhile
+      (.activateAbility activator
+        (.intersection [.zone .battlefield, .cardType .creature]))
+      (.not (.happened (.abilityTriggers (.abilityWithId _)) .turnStart))
       (.draw who (.int 1)) =>
     if activator == .controller .this && who == .controller .this then
       some TriggeredAbility.onActivateCreatureAbilityDrawOnce
@@ -881,16 +910,22 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
         (sel == .source .this || sel == .this) then
       some TriggeredAbility.onAnotherArtifactEntersPlusOne
     else none
-  | .triggered (.enter among) (.draw (.controller .this) 1) =>
+  -- Kíli the Resourceful: another Dwarf or Equipment you control enters,
+  -- and you draw a card. “This ability triggers only once each turn” is
+  -- this ability not having triggered since turn start.
+  | .triggeredWhile (.enter among)
+      (.not (.happened (.abilityTriggers (.abilityWithId _)) .turnStart))
+      (.draw (.controller .this) 1) =>
     match among.anotherSubtypeOrEquipment? with
     | some st =>
       some (TriggeredAbility.onAnotherSubtypeOrEquipmentEntersDrawOnce st)
-    | none =>
-      if among.includedSubtype? == some "Equipment" && among.shape.sameController then
-        some TriggeredAbility.onEquipmentYouControlEntersDraw
-      else if among.shape.artifactYouControl then
-        some TriggeredAbility.onArtifactYouControlEntersDraw
-      else none
+    | none => none
+  | .triggered (.enter among) (.draw (.controller .this) 1) =>
+    if among.includedSubtype? == some "Equipment" && among.shape.sameController then
+      some TriggeredAbility.onEquipmentYouControlEntersDraw
+    else if among.shape.artifactYouControl then
+      some TriggeredAbility.onArtifactYouControlEntersDraw
+    else none
   | .triggered (.enter among) (.continuous effects _duration) =>
     if among.shape.anotherElfYouControl then
       match CardAction.leftoverSourcePump? effects with
@@ -1297,8 +1332,9 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | _ => none
 
-def toTriggeredAbility? (a : Ability) : Option TriggeredAbility :=
-  a.printedTriggeredAbility?.orElse fun _ => a.compileTriggeredAbility?
+def toTriggeredAbility? : Ability → Option TriggeredAbility
+  | .abilityId _ inner => toTriggeredAbility? inner
+  | a => a.printedTriggeredAbility?.orElse fun _ => a.compileTriggeredAbility?
 
 end Ability
 

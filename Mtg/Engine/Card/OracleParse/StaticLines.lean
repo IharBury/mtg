@@ -689,10 +689,22 @@ def parseFirstEquipFreeIfEnduringStory (line : String) : Option CardPart :=
       [.alternativeCost equipAbilitiesYouControl [.mana [.generic 0]]]
   else none
 
+/-- “This ability triggers only once each turn” (CR 603.2).
+Ability `n` fires for `event` only while that ability has not triggered
+since `.turnStart`. That is not the first occurrence of `event`: the
+ability can still trigger when its source arrives after that event. -/
+def triggersOnceEachTurn (n : Nat) (event : Trigger) (action : CardAction) : Ability :=
+  .abilityId n
+    (.triggeredWhile event
+      (.not (.happened (.abilityTriggers (.abilityWithId n)) .turnStart))
+      action)
+
 /-- `Whenever another <subtype> or Equipment you control enters, draw a card. This ability triggers only once each turn.`
 The entering permanent is another permanent of that subtype or an Equipment.
-One card. The second sentence is the once-each-turn restriction (CR 603.2i). -/
-def parseAnotherSubtypeOrEquipmentEntersDraw (line : String) : Option CardPart :=
+One card. Ability `n` is that trigger, and it fires only while it has not
+triggered since `.turnStart`. -/
+def parseAnotherSubtypeOrEquipmentEntersDraw (line : String) (n : Nat) :
+    Option (CardPart × Nat) :=
   match sentences line with
   | [enter, once] =>
     if !sentenceIs once "this ability triggers only once each turn" then none
@@ -704,13 +716,15 @@ def parseAnotherSubtypeOrEquipmentEntersDraw (line : String) : Option CardPart :
           else
             match parseSubtypeList obj with
             | some [st, .equipment] =>
-              some (.ability (.triggered
-                (.enter (.intersection [
-                  .not .this,
-                  .zone .battlefield,
-                  .union [.subtype st, .subtype .equipment],
-                  youControl]))
-                (.draw (.controller .this) 1)))
+              some (
+                .ability (triggersOnceEachTurn n
+                  (.enter (.intersection [
+                    .not .this,
+                    .zone .battlefield,
+                    .union [.subtype st, .subtype .equipment],
+                    youControl]))
+                  (.draw (.controller .this) 1)),
+                n + 1)
             | _ => none
   | _ => none
 

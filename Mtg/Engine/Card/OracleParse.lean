@@ -532,8 +532,8 @@ Currently recognized:
 - `As long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn.`
   An alternative cost of `{0}` for Equip abilities of permanents that player controls (CR 118.9), not a cost reduction. It is available only when that player has not activated one since the turn began.
 - `Whenever another Dwarf or Equipment you control enters, draw a card. This ability triggers only once each turn.`
-  Another permanent that is a Dwarf or an Equipment. The trigger happens at
-  most once each turn.
+  Another permanent that is a Dwarf or an Equipment. The ability is numbered,
+  and it fires only while that ability has not triggered since `.turnStart`.
 - `<this> has lifelink as long as you control another <subtype>.`
   This has lifelink while its controller controls another permanent of that
   subtype. The subtype is singular.
