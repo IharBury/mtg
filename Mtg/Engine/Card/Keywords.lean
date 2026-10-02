@@ -491,8 +491,6 @@ inductive Selector where
   `.hand` is “from your hand”. `.not (.castFromZone .hand)` is “from
   anywhere other than your hand”. -/
   | castFromZone : ZoneKind → Selector
-  /-- A permanent that has an Equipment attached to it (CR 301.5). -/
-  | equipped
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or

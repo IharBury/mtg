@@ -84,7 +84,7 @@ def collectSelector : Selector → List Nat × List Nat
   | .cardType _ | .hasCounter _ | .subtype _ | .supertype _ => ([], [])
   | .keyword k | .keywordAbility k => collectKeyword k
   | .powerAtLeast v | .powerAtMost v | .manaValueAtMost v => collectValue v
-  | .castFromZone _ | .equipped => ([], [])
+  | .castFromZone _ => ([], [])
   | .wasObjectOfAction n | .wasCreatedByAction n | .affectedByAction n
   | .hasCreatureTypeChosenByAction n =>
     ([n], [])
@@ -331,7 +331,6 @@ def mapSelector (m : IdMaps) : Selector → Selector
   | .hasCreatureTypeChosenByAction n => .hasCreatureTypeChosenByAction (m.action n)
   | .manaValueAtMost v => .manaValueAtMost (mapValue m v)
   | .castFromZone z => .castFromZone z
-  | .equipped => .equipped
 
 def mapTriggers (m : IdMaps) : List Trigger → List Trigger
   | [] => []

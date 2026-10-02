@@ -6558,7 +6558,10 @@ def dainIronfootDefinition : TraditionalCardDefinition := .card <|
             [.zone .battlefield,
              .cardType .creature,
              .attacking .all,
-             .equipped])
+             .hostOf
+               (.intersection
+                 [.zone .battlefield,
+                  .subtype .equipment])])
           (.keyword .doubleStrike)]
        .endOfTurn))])
 

@@ -324,7 +324,8 @@ def parseCreateAxeWhenYouDo (cardName line : String) (n : Nat) : Option (List Ca
                   | _, _ => none
 
 /-- `Whenever <this> attacks, each equipped attacking creature gains double
-strike until end of turn.` -/
+strike until end of turn.`
+An equipped creature is the host of an Equipment. -/
 def parseEquippedAttackersDoubleStrike (cardName line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
   (splitTrigger? line).bind fun (clause, effect) =>
@@ -336,7 +337,8 @@ def parseEquippedAttackersDoubleStrike (cardName line : String) (n : Nat) :
         (.continuous [
           .gainAbility
             (.intersection [
-              .zone .battlefield, .cardType .creature, .attacking .all, .equipped])
+              .zone .battlefield, .cardType .creature, .attacking .all,
+              .hostOf (.intersection [.zone .battlefield, .subtype .equipment])])
             (.keyword .doubleStrike)]
           .endOfTurn))], n)
 

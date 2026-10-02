@@ -242,12 +242,13 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
     if id == id' && id == created && CardAction.leftoverAxeToken? parts then
       some TriggeredAbility.onEnterCreateAxeAttach
     else none
-  -- Dáin Ironfoot: equipped attackers gain double strike.
+  -- Dáin Ironfoot: attacking hosts of Equipment gain double strike.
   | .triggered (.attack .this .all)
       (.continuous [
         .gainAbility
           (.intersection [
-            .zone .battlefield, .cardType .creature, .attacking .all, .equipped])
+            .zone .battlefield, .cardType .creature, .attacking .all,
+            .hostOf (.intersection [.zone .battlefield, .subtype .equipment])])
           (.keyword .doubleStrike)]
         .endOfTurn) =>
     some TriggeredAbility.onAttackEquippedGainDoubleStrike

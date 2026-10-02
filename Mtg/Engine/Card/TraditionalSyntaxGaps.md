@@ -11,7 +11,7 @@ of them need at least one missing constructor listed under
 their last tag (named counters, `CardAction.removeCounter`,
 enters-with-counters, `CardAction.reflexive`,
 `CardAction.addPhaseAfterThisPhase`,
-`replace` of the next end step, or `Selector.equipped`) and
+`replace` of the next end step, or `hostOf` of Equipment) and
 are not converted yet (see
 [Tags now spelled](#tags-now-spelled-not-yet-converted)).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
@@ -101,8 +101,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   creature type chosen by a numbered `CardAction.chooseCreatureType`),
   `manaValueAtMost` (mana value at most a `Value`), `castFromZone` (the zone
   this spell was cast from; `.not (.castFromZone .hand)` is “from anywhere
-  other than your hand”), `equipped` (a permanent that has an Equipment
-  attached to it).
+  other than your hand”). `hostOf` an Equipment is a creature that is
+  equipped.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `drawStep` (the selected player's draw step; also a
@@ -345,7 +345,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.eventAmount` for excess damage | `Value.excessDamageOfActionWithId` of that action. “If excess damage was dealt this way” is `happened` of `Trigger.actionWithIdDealtExcessDamage` (Bolg of the North) |
 | `CardAction.extraCombat` | `CardAction.addPhaseAfterThisPhase .combat`. The phase is an argument, so the action can add any phase of the turn after the current phase (Desert Were-Worm) |
 | `CardAction.exileThenReturn` | Exile, then a `continuous` `replace` of the first `endStep` since that exile (`ordinal` 1 of `endStep` counted from `actionWithId`). The replacement puts `wasCreatedByAction` of the exile onto the battlefield and `keepReplacedAction`, so the end step still happens. It lasts until the end of the game. Elrond, Moon-Reader. Roll-Roll-Roll-Roll, S.H.I.E.L.D. Flying Car, and Wiccan, Rising Magician spell the same return and are not converted yet |
-| `Selector.attached` for “that are equipped” | `Selector.equipped`. “Equipment attached to” an object stays open. Dáin Ironfoot grants double strike to equipped attackers |
+| `Selector.attached` for “that are equipped” | `Selector.hostOf` of Equipment on the battlefield. “Equipment attached to” an object stays open. Dáin Ironfoot grants double strike to attacking creatures that are hosts of Equipment |
 
 ## Missing constructors by type
 
@@ -377,7 +377,7 @@ complete.
   - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Evil's Thrall; Gandalf, Party Guest; Glamdring; Gollum, Riddle Master; Inside Information; Loki Laufeyson; … (10 more)
 - **`attackingAlone`** (8 cards) — A creature attacking alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
-- **`attached`** (3 cards) — Objects attached to a given object (inverse of `hostOf`). “That are equipped” is `Selector.equipped`
+- **`attached`** (3 cards) — Objects attached to a given object (inverse of `hostOf`). “That are equipped” is `hostOf` an Equipment
   - Ronin, Shadow Stalker; Whiplash, Vengeful Engineer; Winter Soldier, Icy Assassin
 - **`color`** (5 cards) — Objects of a color (spells and permanents). Token colors are `CardPart.colorIndicator`
   - Aragorn, the Uniter; Baron Helmut Zemo; Goblin Cratermaker; Necklace of Girion; World War Hulk
@@ -661,8 +661,8 @@ Dwalin, Weaponmaster, Dáin Ironfoot, and Elrond, Moon-Reader are
 hone counter on each Equipment his controller controls whenever he enters
 or attacks. Dáin creates a colorless Axe Equipment token, and a reflexive
 trigger attaches it to target creature that controller controls. When Dáin
-attacks, equipped attacking creatures gain double strike until end of turn
-(`Selector.equipped`). Elrond's draw is `Trigger.ordinal 1` since
+attacks, attacking creatures that are hosts of Equipment gain double
+strike until end of turn (`Selector.hostOf`). Elrond's draw is `Trigger.ordinal 1` since
 `turnStart` of activating an ability of a creature; compiling it still yields
 `onActivateCreatureAbilityDrawOnce`. His activated ability exiles up to
 two other nonland permanents he controls. A replacement effect puts those
@@ -688,7 +688,7 @@ The other eight stay in the catalog as `CardDef` helpers.
   other types, and grant an ability.
 - **Long-Lost Lances** — During your turn, *creatures you control that are
   equipped* have first strike and vigilance. Now spellable:
-  `Selector.equipped`. Not converted yet. “Equipment attached to” an object
+  `Selector.hostOf` of Equipment. Not converted yet. “Equipment attached to” an object
   is still `Selector.attached`.
 - **Ori, Plate Stacker** — Destroy all artifacts and enchantments opponents
   control; gain 1 life *for each permanent destroyed this way*. Now
@@ -1563,7 +1563,7 @@ them when a constructor for each named counter, `CardAction.removeCounter`,
 `CardAction.putCounter` of a `Value`, enters-with-counters,
 `replace` of `Trigger.createTokens`, `replace` of `Trigger.abilityTriggers`,
 `CardAction.reflexive`, `CardAction.addPhaseAfterThisPhase`,
-`replace` of the next end step, or `Selector.equipped`
+`replace` of the next end step, or `hostOf` of Equipment
 became expressible. A later pass
 should reread them before conversion.
 
