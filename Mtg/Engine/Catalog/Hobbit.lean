@@ -7071,14 +7071,32 @@ def lastLightOfDurinSDayDefinition : TraditionalCardDefinition := .card <|
               .if
                 (.happened (.actionWithId 1) .gameStart)
                 [
-                  .searchHandOrLibrary
+                  .playerSelectAction
                     (.controller .this)
+                    (.range 1 1)
                     [
                       .putOntoBattlefield
                         (.selected
                           (.controller .this)
-                          (.range (.int 1) (.int 1))
-                          (.subtype .dragon))]]]])),
+                          (.range 1 1)
+                          (.intersection
+                            [.zone .hand, .owner (.controller .this), .subtype .dragon])),
+                      .searchLibraryThenShuffle
+                        (.controller .this)
+                        [
+                          .putOntoBattlefield
+                            (.selected
+                              (.controller .this)
+                              (.range 1 1)
+                              (.union
+                                [
+                                  .intersection
+                                    [.zone .hand, .owner (.controller .this), .subtype .dragon],
+                                  .intersection
+                                    [
+                                      .zone .library,
+                                      .owner (.controller .this),
+                                      .subtype .dragon]]))]]]]])),
   .ability
     (.keywordWithCost (.typecycling [] [] [.mountain]) [.mana [.generic 2]])]
 

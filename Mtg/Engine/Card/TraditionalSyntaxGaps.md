@@ -185,9 +185,6 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `putIntoLibraryFromTop`,
   `actionId`, `loseLife`, `sacrifice`, `returnToHand`, `putOntoBattlefield`,
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
-  `searchHandOrLibrary` (search the selected player's hand and/or library;
-  nested actions act on the found cards; shuffle if the library was
-  searched; CR 701.19),
   `holdOutInLibrary`, `defineSelectorVariable`, `defineValueVariable`,
   `forEachVariable`, `reveal`, `fight`,
   `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
@@ -375,7 +372,6 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.chooseOddEven` | `CardAction.chooseOddEven` records the choice as `Value.variable`: 0 is even and 1 is odd. A spell has mana value of that quality when `Value.remainder` of its mana value and 2 equals that variable. Gollum, Riddle Master. Thanos, the Mad Titan spells the same choice and is not converted yet |
 | `SetPredicate.shareName` | `Selector.sharesNameWith` of the objects that have that name. Key to the Side-Door discards one legendary card from a hand that shares a name with a legendary permanent its controller controls |
 | `Value.counterCount` | How many counters of a kind are on the selected objects (CR 122.1). Last Light of Durin's Day checks six or more quest counters. Red Hulk's only remaining tag was this count and is not converted yet |
-| `CardAction.searchHandOrLibrary` | Search the selected player's hand and/or library. Nested actions act on the found cards, and the library is shuffled when it was searched (CR 701.19). Last Light of Durin's Day searches for a Dragon card and puts it onto the battlefield |
 
 ## Missing constructors by type
 
@@ -742,11 +738,13 @@ Last Light of Durin's Day is a `TraditionalCardDefinition` read with
 `parseOracleParts`. Whenever a Mountain its controller controls enters, it
 puts a quest counter on itself. Six or more is `Value.counterCount` of those
 quest counters. The sacrifice is numbered, and “if you do” is that sacrifice
-having happened. `CardAction.searchHandOrLibrary` then finds a Dragon card in
-that player's hand and/or library and puts it onto the battlefield. Searching
-the library shuffles (CR 701.19). Mountaincycling `{2}` is `Keyword.typecycling`
-of Mountain. Compiling those abilities still yields
-`onMountainEntersQuestThenDragon` and Mountain typecycling.
+having happened. The player then chooses one search. Searching only that
+player's hand puts one Dragon card from that hand onto the battlefield.
+Searching both that hand and that library is `searchLibraryThenShuffle`, so
+the library is shuffled (CR 701.19), and the Dragon card is one card from
+those zones. Mountaincycling `{2}` is `Keyword.typecycling` of Mountain.
+Compiling those abilities still yields `onMountainEntersQuestThenDragon` and
+Mountain typecycling.
 
 ## Cards that still cannot convert
 

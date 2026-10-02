@@ -231,7 +231,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .actionId n action => appendIds [([n], []), collectAction action]
   | .putOntoBattlefieldInState s states =>
     appendIds [collectSelector s, appendIds (states.map collectState)]
-  | .searchLibraryThenShuffle who as | .searchHandOrLibrary who as =>
+  | .searchLibraryThenShuffle who as =>
     appendIds [collectSelector who, appendIds (as.map collectAction)]
   | .defineSelectorVariable n s => appendIds [([], [n]), collectSelector s]
   | .defineValueVariable n v => appendIds [([], [n]), collectValue v]
@@ -569,8 +569,6 @@ def mapAction (m : IdMaps) : CardAction → CardAction
     .putOntoBattlefieldInState (mapSelector m s) (mapStates m states)
   | .searchLibraryThenShuffle who as =>
     .searchLibraryThenShuffle (mapSelector m who) (mapActions m as)
-  | .searchHandOrLibrary who as =>
-    .searchHandOrLibrary (mapSelector m who) (mapActions m as)
   | .holdOutInLibrary s => .holdOutInLibrary (mapSelector m s)
   | .defineSelectorVariable n s => .defineSelectorVariable (m.target n) (mapSelector m s)
   | .defineValueVariable n v => .defineValueVariable (m.target n) (mapValue m v)

@@ -226,9 +226,11 @@ Currently recognized:
   parenthetical is not rules text.
 - `Whenever a Mountain you control enters, put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle.`
   Six or more is `Value.counterCount` of quest counters. The sacrifice is
-  numbered. “If you do” is that sacrifice having happened. The search is
-  `CardAction.searchHandOrLibrary`. Searching the library shuffles
-  (CR 701.19).
+  numbered. “If you do” is that sacrifice having happened. The player
+  chooses to search only that player's hand, or to search both that hand
+  and that library. The library search is `searchLibraryThenShuffle`
+  (CR 701.19). Either choice puts one Dragon card from the searched zones
+  onto the battlefield.
 - `When <this> enters, you gain N life.`
 - `When <this> enters, untap another target creature you control. If that creature is a <subtype>, put a +1/+1 counter on it.`
 - `When <this card> dies, recruit.`
