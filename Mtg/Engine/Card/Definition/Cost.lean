@@ -135,6 +135,16 @@ def discardsACard : List Cost → Bool
   | .discard s :: rest => discardsOneCardFromHand s || discardsACard rest
   | _ :: rest => discardsACard rest
 
+/-- Discard one card that shares a name with another object. -/
+def discardsCardSharingName : List Cost → Bool
+  | [] => false
+  | .discard (.selected _ _ (.intersection parts)) :: rest =>
+    parts.any (fun
+      | .sharesNameWith _ => true
+      | _ => false) ||
+      discardsCardSharingName rest
+  | _ :: rest => discardsCardSharingName rest
+
 end Cost
 
 end Mtg.Engine

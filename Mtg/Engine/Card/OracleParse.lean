@@ -203,6 +203,10 @@ Currently recognized:
   the cost (CR 107.5). The player adds one of them.
 - `{cost}: Target creature can't be blocked this turn.`
   The restriction lasts until end of turn.
+- `{cost}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards.`
+  The discarded card is one legendary card from a hand. It shares a name
+  with a legendary permanent this object's controller controls
+  (`Selector.sharesNameWith`, CR 201.2).
 - `Put <count> +1/+1 counters on target <creature type> [you control].`
   One counter is `a` or `one` with the singular noun; more than one uses the
   plural. A creature type is `Elf`, `Goblin or Orc`, or `Bear, Spider, or Wolf`:

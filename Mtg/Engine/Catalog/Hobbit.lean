@@ -6953,12 +6953,47 @@ def insideInformation : CardDef :=
 #guard insideInformation.manaValue == 2
 #guard insideInformation.types == #[.sorcery]
 
+/-- Oracle text for Key to the Side-Door. -/
+def keyToTheSideDoorOracle : String :=
+  "{2}, {T}: Target creature can't be blocked this turn.\n{1}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards."
+
+def keyToTheSideDoorDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Key to the Side-Door",
+    .manaCost [.generic 1],
+    .type .artifact
+  ] ++ (parseOracleParts (name := "Key to the Side-Door") keyToTheSideDoorOracle).get!
+
+#guard keyToTheSideDoorDefinition == .card [
+  .name "Key to the Side-Door",
+  .manaCost [.generic 1],
+  .type .artifact,
+  .ability (.activated
+    [.mana [.generic 2], .tapSymbol]
+    (.continuous
+      [.forbid (.block .any
+        (.target 1 (.intersection [.zone .battlefield, .cardType .creature])))]
+      .endOfTurn)),
+  .ability (.activated
+    [.mana [.generic 1], .tapSymbol,
+     .discard (.selected (.controller .this) (.range 1 1)
+       (.intersection [
+         .zone .hand, .supertype .legendary, .owner (.controller .this),
+         .sharesNameWith (.intersection [
+           .zone .battlefield, .supertype .legendary,
+           .controlled (.controller .this)])]))]
+    (.draw (.controller .this) 2))]
+
 def keyToTheSideDoor : CardDef :=
-  artifact "Key to the Side-Door" (ManaCost.ofGeneric 1) "{2}, {T}: Target creature can't be blocked this turn.\n{1}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards."
-    (activatedAbilities := #[
-      activated (Effect.targetCantBeBlockedThisTurn) (ManaCost.ofGeneric 2) (tap := true),
-      activated (Effect.discardLegendarySameNameDraw) (ManaCost.ofGeneric 1) (tap := true)
-        (discardLegendarySameName := true)])
+  keyToTheSideDoorDefinition.toCardDef (oracleText := keyToTheSideDoorOracle)
+
+#guard keyToTheSideDoor.oracleText == keyToTheSideDoorOracle
+#guard keyToTheSideDoor.activatedAbilities == #[
+  activated (Effect.targetCantBeBlockedThisTurn) (ManaCost.ofGeneric 2) (tap := true),
+  activated (Effect.discardLegendarySameNameDraw) (ManaCost.ofGeneric 1) (tap := true)
+    (discardLegendarySameName := true)]
+#guard keyToTheSideDoor.types == #[.artifact]
+#guard keyToTheSideDoor.manaCost == ManaCost.ofGeneric 1
 
 /-- Oracle text for Lake-town Toymaker. -/
 def lakeTownToymakerOracle : String :=

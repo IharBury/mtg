@@ -18,6 +18,9 @@ def activatedAbility (costs : List Cost) (action : CardAction)
     Cost.discardsThis costs &&
       CardAction.leftoverSearchLibraryThenShuffle? action ==
         some Effect.searchBasicLandToHand
+  let discardLegendaryDraw :=
+    Cost.discardsCardSharingName costs &&
+      action == .draw (.controller .this) 2
   { cost :=
       { mana := Cost.manaCost costs
         payLife := Cost.lifePaid costs
@@ -29,12 +32,15 @@ def activatedAbility (costs : List Cost) (action : CardAction)
         discardSource := Cost.discardsThis costs
         sacrificeAnotherSubtype := Cost.sacrificeAnotherSubtype? costs
         discardACard := Cost.discardsACard costs
+        discardLegendarySameName := discardLegendaryDraw
         sacrificeArtifactOrDiscardNonland :=
           CardAction.leftoverSacrificeArtifactOrDiscardNonlandCost? costs }
     effect :=
       if cyclingBasic then Effect.searchLandTypeToHand "Basic land"
       else if action == .tap (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) then
         Effect.tapTargetCreature
+      else if discardLegendaryDraw then
+        Effect.discardLegendarySameNameDraw
       else action.toAbilityEffect
     onceEachTurn
     activateFromHand := Cost.discardsThis costs }
