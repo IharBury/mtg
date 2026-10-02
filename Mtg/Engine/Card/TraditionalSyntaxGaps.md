@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**192** catalog cards are still `CardDef` helpers. **167**
+**191** catalog cards are still `CardDef` helpers. **166**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **25** lost
 their last tag (named counters, `CardAction.removeCounter`,
@@ -28,12 +28,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 170 | 18 | 16 |
+| The Hobbit (HOB) | 188 | 171 | 17 | 15 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 44 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 107 |
-| **Total** | **586** | **394** | **192** | **167** |
+| **Total** | **586** | **395** | **191** | **166** |
 
-All 394 `TraditionalCardDefinition`s (170 HOB, 67 HOC, 157 MSH,
+All 395 `TraditionalCardDefinition`s (171 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -168,7 +168,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   cast as though it had flash when a condition holds; `you` is
   `Selector.caster`; the spell does not gain flash), `doesntUntap`,
   `cantAttackUnlessPays`, `removeAllAbilities` (selected objects lose all
-  abilities; later-granted abilities still apply).
+  abilities; later-granted abilities still apply), `forEachVariable` (apply
+  the given continuous effects once for each object matching a selector,
+  binding that object to the numbered variable).
   `replace` of
   `Trigger.createTokens` replaces that creation; `Selector.replacingObject`
   is those tokens. `modifyReplacementCreatedTokenCount` changes how many
@@ -409,8 +411,8 @@ complete.
   - Hulk, Gamma Goliath; Kang the Conqueror; Wonder Man, Hollywood Hero
 - **`damagedThisTurn`** (2 cards) — Objects that were dealt damage / dealt damage this turn
   - Bitter Downfall; Red Guardian, Super-Soldier
-- **`graveyardSizeAtLeast`** (2 cards) — Graveyards (or their owners) with at least N cards, so they can be counted
-  - Master's Councillors; The Master of Lake-town
+- **`graveyardSizeAtLeast`** (1 card) — Graveyards (or their owners) with at least N cards, so they can be counted
+  - The Master of Lake-town
 - **`commander`** (1 card) — The selected player's commander
   - Arcane Signet
 - **`mostLife`** (1 card) — A player with the most life or tied for most life
@@ -747,6 +749,13 @@ those zones. Mountaincycling `{2}` is `Keyword.typecycling` of Mountain.
 Compiling those abilities still yields `onMountainEntersQuestThenDragon` and
 Mountain typecycling.
 
+Master's Councillors is a `TraditionalCardDefinition` read with
+`parseOracleParts`. Vigilance is a keyword. `ContinuousEffect.forEachVariable`
+over each player applies +2/+0 while that player's graveyard has seven or
+more cards (CR 404.1). Whenever its controller draws their second card each
+turn, one target player mills three cards. Compiling those abilities still
+yields vigilance, `powerPerFatGraveyard 2`, and `onDrawSecondMillPlayer 3`.
+
 ## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. Evidence is the
@@ -827,15 +836,11 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (16 cards)
+### The Hobbit (HOB) (15 cards)
 
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
 - `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
-
-**Master's Councillors** (`masterSCouncillors`)
-
-- `Selector.graveyardSizeAtLeast` — Graveyards (or their owners) with at least N cards, so they can be counted
 
 **Old Fat Spider Can't See Me** (`oldFatSpiderCanTSeeMe`)
 

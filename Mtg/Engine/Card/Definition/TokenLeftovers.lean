@@ -507,6 +507,24 @@ def leftoverYourGraveyardCards? : Selector → Bool
       fs.any (· == .owner (.controller .this))
   | _ => false
 
+/-- +P/+0 on this for each graveyard with seven or more cards.
+Each player is variable `n`. That player's graveyard is the cards they own
+there (CR 404.1). Toughness is unchanged. -/
+def leftoverPowerPerFatGraveyard? (n : Nat) (among : Selector)
+    (inners : List ContinuousEffect) : Option Int :=
+  if among != .player then none
+  else
+    match inners with
+    | [.if (.greaterOrEqual (.count gy) threshold) [.addPower who v]] =>
+      match valToNat? threshold, valToInt? v with
+      | some 7, some p =>
+        if gy == .intersection [.zone .graveyard, .owner (.variable n)] &&
+            isThisOrItsSource who && p != 0 then
+          some p
+        else none
+      | _, _ => none
+    | _ => none
+
 /-- +P/+T on this while your graveyard has at least seven cards. -/
 def leftoverThresholdGets?
     (among : Selector) (inners : List ContinuousEffect) : Option StaticAbility :=

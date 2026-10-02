@@ -487,6 +487,30 @@ def parseCatalogStaticGets (cardName line : String) : Option (List CardPart) :=
               parts ++ abilities.map fun a => .ability (.static (.gainAbility sel a))
       | _, _ => none
 
+/-- `<this> gets +P/+0 for each graveyard with seven or more cards in it.`
+Each player is variable `n`. That player's graveyard is the cards they own
+in a graveyard (CR 404.1). Seven or more of those cards is that graveyard.
+This object gets +P/+0 once for each such graveyard. A zero power is not
+an effect. A non-zero toughness is a different ability. No duration is
+printed, so this is a static ability (CR 604.2). -/
+def parseGetsPerFatGraveyard (cardName line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  (splitGetsOnly? (normLine line)).bind fun (who, rest) =>
+    if !refersToSelf cardName who then none
+    else
+      (before? rest " for each graveyard with seven or more cards in it").bind fun pt =>
+        match parsePowerToughness pt with
+        | some (p, 0) =>
+          if p == 0 then none
+          else
+            some ([.ability (.static (.forEachVariable n .player [
+              .if
+                (.greaterOrEqual
+                  (.count (.intersection [.zone .graveyard, .owner (.variable n)]))
+                  (Value.int 7))
+                [.addPower .this (Value.int p)]]))], n + 1)
+        | _ => none
+
 /-- `<objects> have <keywords>` or `Equipped creature has <keywords>`: a static
 ability. -/
 def parseCatalogStaticHas (cardName line : String) : Option (List CardPart) :=
@@ -1004,6 +1028,7 @@ private def parseCatalogLineRest (cardName line : String) (n : Nat) :
     parseChapter cardName line n <|>
     (parseCatalogTriggered cardName line n).map (fun (p, n') => ([p], n')) <|>
     parseCatalogActivated cardName line n <|>
+    parseGetsPerFatGraveyard cardName line n <|>
     (parseCatalogStaticGets cardName line).map (·, n) <|>
     (parseCatalogStaticHasQuoted cardName line).map (·, n) <|>
     (parseEntersTappedUnlessYouControl cardName line).map ([·], n) <|>

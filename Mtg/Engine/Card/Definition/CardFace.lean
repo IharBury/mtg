@@ -932,6 +932,11 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .cantAttackUnlessPays _ _ _ => b
   | .removeAllAbilities who =>
     { b with removesAllAbilitiesFrom := b.removesAllAbilitiesFrom.push who }
+  | .forEachVariable n among inners =>
+    match CardAction.leftoverPowerPerFatGraveyard? n among inners with
+    | some p =>
+      { b with staticAbilities := b.staticAbilities.push (.powerPerFatGraveyard p) }
+    | none => b
   | .alternativeCost _ _ | .replaceCost _ _ => b
   | .additionalCost _ cs =>
     { b with

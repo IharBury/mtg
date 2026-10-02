@@ -54,7 +54,7 @@ Settle the Wreckage, Iron Hills Blacksmith, Gandalf, Goblins' Bane,
 An Unexpected Party, Azog, Moria's Ruin, Balin, Loremaster,
 Boughside Wanderers, Burn, Burn, Tree and Fern, Cantankerous Keepers,
 Bilbo's Gambit, Down in the Valley, Gleaming Splendor, Lake-town Toymaker,
-Orcrist, Goblin-cleaver,
+Master's Councillors, Orcrist, Goblin-cleaver,
 Radagast of Rhosgobel, The Misty Mountains Cold, Enchanted River's Grasp,
 Thorin, Mountain-king, and Through the Forest Gate keep their printed
 characteristics as parts;
@@ -7109,11 +7109,50 @@ def lastLightOfDurinSDay : CardDef :=
 #guard lastLightOfDurinSDay.types == #[.enchantment]
 #guard lastLightOfDurinSDay.manaCost == ManaCost.ofGenericAndColor 1 .red
 
+/-- Oracle text for Master's Councillors. -/
+def masterSCouncillorsOracle : String :=
+  "Vigilance\nThis creature gets +2/+0 for each graveyard with seven or more cards in it.\nWhenever you draw your second card each turn, target player mills three cards. (They put the top three cards of their library into their graveyard.)"
+
+def masterSCouncillorsDefinition : TraditionalCardDefinition := .card <|
+  [
+    .name "Master's Councillors",
+    .manaCost [.generic 1, .mono .blue],
+    .type .creature,
+    .subtype .human,
+    .subtype .advisor,
+    .power 1,
+    .toughness 3
+  ] ++ (parseOracleParts (name := "Master's Councillors") masterSCouncillorsOracle).get!
+
+#guard masterSCouncillorsDefinition == .card [
+  .name "Master's Councillors",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .advisor,
+  .power 1,
+  .toughness 3,
+  .ability (.keyword .vigilance),
+  .ability
+    (.static
+      (.forEachVariable 1 .player [
+        .if
+          (.greaterOrEqual
+            (.count (.intersection [.zone .graveyard, .owner (.variable 1)]))
+            7)
+          [.addPower .this (.int 2)]])),
+  .ability
+    (.triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.mill (.target 2 .player) 3))]
+
 def masterSCouncillors : CardDef :=
-  creature "Master's Councillors" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Advisor"] 1 3 (oracleText := "Vigilance\nThis creature gets +2/+0 for each graveyard with seven or more cards in it.\nWhenever you draw your second card each turn, target player mills three cards. (They put the top three cards of their library into their graveyard.)")
-    (keywords := Keyword.vigilance)
-    (staticAbilities := #[.powerPerFatGraveyard 2])
-    (triggeredAbilities := #[.onDrawSecondMillPlayer 3])
+  masterSCouncillorsDefinition.toCardDef (oracleText := masterSCouncillorsOracle)
+
+#guard masterSCouncillors.oracleText == masterSCouncillorsOracle
+#guard masterSCouncillors.keywords == Keyword.vigilance
+#guard masterSCouncillors.staticAbilities == #[.powerPerFatGraveyard 2]
+#guard masterSCouncillors.triggeredAbilities == #[.onDrawSecondMillPlayer 3]
 
 def oldFatSpiderCanTSeeMe : CardDef :=
   saga "Old Fat Spider Can't See Me" (ManaCost.ofGenericAndColor 2 .blue) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target creature you control gains hexproof for as long as this Saga remains on the battlefield.\nII — Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield.\nIII, IV — Draw a card." "IV" #[

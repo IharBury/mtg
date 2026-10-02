@@ -191,6 +191,8 @@ def collectEffect : ContinuousEffect → List Nat × List Nat
   | .gainType s _ | .gainSubtype s _ | .gainAllSubtypes s _ | .doesntUntap s | .removeAllAbilities s =>
     collectSelector s
   | .canBeCastAsThoughWithFlashIf s c => appendIds [collectSelector s, collectCondition c]
+  | .forEachVariable n s es =>
+    appendIds [([], [n]), collectSelector s, appendIds (es.map collectEffect)]
 
 def collectModes : List (Nat × Condition × List CardAction) → List Nat × List Nat
   | [] => ([], [])
@@ -514,6 +516,8 @@ def mapEffect (m : IdMaps) : ContinuousEffect → ContinuousEffect
   | .cantAttackUnlessPays a b cs =>
     .cantAttackUnlessPays (mapSelector m a) (mapSelector m b) (mapCosts m cs)
   | .removeAllAbilities s => .removeAllAbilities (mapSelector m s)
+  | .forEachVariable n s es =>
+    .forEachVariable (m.target n) (mapSelector m s) (mapEffects m es)
 
 def mapActions (m : IdMaps) : List CardAction → List CardAction
   | [] => []
