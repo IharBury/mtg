@@ -223,10 +223,36 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
     c.oracleText == "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." &&
     c.triggeredAbilities == #[.onAttackPumpForEachOtherCreature]
 
-def vowToErebor : CardDef :=
-  instant "Vow to Erebor" (ManaCost.ofGenericAndColor 1 .white)
-    "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
-    (some (Effect.untapPumpMaybeAttach 2 2))
+def vowToErebor : TraditionalCardDefinition := .card [
+  .name "Vow to Erebor",
+  .manaCost [.generic 1, .mono .white],
+  .type .instant,
+  .textBox [
+    .sequence [
+      .untap [.target [.cardType .creature, .controlledBy .you]],
+      .getUntil [.it] [.plusPowerToughness +2 +2] .endOfTurn,
+      .if
+        [.is [.it] [.cardType .dwarf]]
+        [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]
+    ]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Vow to Erebor {1}{W}",
+  "Instant",
+  "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
+]) == some vowToErebor
+
+#guard
+  let c := vowToErebor.toCardDef
+  c.name == "Vow to Erebor" &&
+    c.types == #[.instant] &&
+    c.subtypes == #[] &&
+    c.manaCost == ManaCost.ofGenericAndColor 1 .white &&
+    c.keywords == Keywords.none &&
+    c.spellEffect == some (Effect.untapPumpMaybeAttach 2 2) &&
+    c.oracleText == "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
 
 def bilboBagginsBurglar : CardDef :=
   legendaryCreature "Bilbo Baggins, Burglar" (ManaCost.ofGenericAndColor 2 .blue) #["Halfling", "Rogue"] 2 1
@@ -1399,8 +1425,7 @@ def hobbitCards : Array CardDef :=
   #[plains, island, swamp, mountain, forest] ++
   -- `++` compiles a run of DSL cards into `CardDef`s.
   (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
-     magnificentEnd, eagleOfTheGreatShelf] ++ #[
-  vowToErebor,
+     magnificentEnd, eagleOfTheGreatShelf, vowToErebor] ++ #[
   bilboBagginsBurglar,
   lakeshoreApothecary,
   confusticateAndBebother,

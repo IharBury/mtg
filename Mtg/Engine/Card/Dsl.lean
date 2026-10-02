@@ -15,8 +15,9 @@ keywords are a `.keyword` instruction in `.textBox`, activated
 abilities are a `.costFor` instruction in `.textBox`, tapping spells
 are a `.tap` instruction in `.textBox`, cost reductions are a
 `.costLessToCastIf` instruction in `.textBox`, damage is a
-`.dealDamage` instruction in `.textBox`, and triggered abilities are a
-`.whenever` instruction in `.textBox`. `parseOracleText` reads a
+`.dealDamage` instruction in `.textBox`, triggered abilities are a
+`.whenever` instruction in `.textBox`, and a spell that resolves as
+several sentences is a `.sequence` in `.textBox`. `parseOracleText` reads a
 printed card (name, mana cost, type line, power/toughness, rules text,
 and an Adventure face) back into that clause list.
 -/
@@ -168,15 +169,90 @@ inductive PlayerRef where
   | opponent
   deriving Repr, BEq
 
+/-- A type word in `.cardType`. Card types (`.creature`) and the subtypes this
+DSL names (`.dwarf`, `.equipment`) share the constructor, so
+`.cardType .creature` and `.cardType .dwarf` both elaborate. -/
+inductive TypeName where
+  | artifact
+  | battle
+  | creature
+  | enchantment
+  | instant
+  | land
+  | planeswalker
+  | sorcery
+  | kindred
+  | dungeon
+  | plane
+  | phenomenon
+  | vanguard
+  | scheme
+  | conspiracy
+  | dwarf
+  | equipment
+  deriving Repr, BEq, DecidableEq
+
+namespace TypeName
+
+def ofCard : CardType → TypeName
+  | .artifact => .artifact
+  | .battle => .battle
+  | .creature => .creature
+  | .enchantment => .enchantment
+  | .instant => .instant
+  | .land => .land
+  | .planeswalker => .planeswalker
+  | .sorcery => .sorcery
+  | .kindred => .kindred
+  | .dungeon => .dungeon
+  | .plane => .plane
+  | .phenomenon => .phenomenon
+  | .vanguard => .vanguard
+  | .scheme => .scheme
+  | .conspiracy => .conspiracy
+
+def toCard? : TypeName → Option CardType
+  | .artifact => some .artifact
+  | .battle => some .battle
+  | .creature => some .creature
+  | .enchantment => some .enchantment
+  | .instant => some .instant
+  | .land => some .land
+  | .planeswalker => some .planeswalker
+  | .sorcery => some .sorcery
+  | .kindred => some .kindred
+  | .dungeon => some .dungeon
+  | .plane => some .plane
+  | .phenomenon => some .phenomenon
+  | .vanguard => some .vanguard
+  | .scheme => some .scheme
+  | .conspiracy => some .conspiracy
+  | .dwarf => none
+  | .equipment => none
+
+/-- Printed word. Card types stay lowercase (`creature`); subtypes keep Oracle
+capitalization (`Dwarf`, `Equipment`). -/
+def phrase : TypeName → String
+  | .dwarf => "Dwarf"
+  | .equipment => "Equipment"
+  | t =>
+    match t.toCard? with
+    | some c => c.englishName.map Char.toLower
+    | none => ""
+
+end TypeName
+
 /-- A predicate inside `.target`, `.getUntil`, `.or`, or `.attack`. A list of
-these is a conjunction. `.this` is this object; `.other` excludes it. -/
+these is a conjunction. `.this` is this object; `.other` excludes it.
+`.it` is the object named earlier (`It gets +2/+2`). -/
 inductive ObjectQualifier where
-  | cardType (t : CardType)
+  | cardType (t : TypeName)
   | controlledBy (p : PlayerRef)
   | or (qs : List ObjectQualifier)
   | tapped
   | this
   | other
+  | it
   deriving Repr, BEq
 
 namespace ObjectQualifier
@@ -256,12 +332,26 @@ inductive DamageSubject where
   | thisCardName
   deriving Repr, BEq
 
+/-- An object named without the word “target”.
+`.oneOf [.cardType .equipment, .controlledBy .you]` is “an Equipment you control”.
+`.it` is the object named earlier. -/
+inductive ObjectExpr where
+  | oneOf (qs : List ObjectQualifier)
+  | it
+  deriving Repr, BEq
+
+/-- A condition in `.if`. `[.is [.it] [.cardType .dwarf]]` is “it's a Dwarf”. -/
+inductive TextCondition where
+  | is (subj : List ConditionRef) (qs : List ObjectQualifier)
+  deriving Repr, BEq
+
 /-- One instruction in a `.textBox`. -/
 inductive TextEffect where
   /-- A printed keyword ability of this face (`Lifelink`). -/
   | keyword (k : PrintedKeyword)
   | gainUntil (targets : List TargetExpr) (gains : List GrantedAbility) (dur : Duration)
-  /-- Matching objects get these changes until `dur`. -/
+  /-- Matching objects get these changes until `dur`.
+  `[.it]` is the object named earlier (`It gets +2/+2`). -/
   | getUntil (qs : List ObjectQualifier) (mods : List StatMod) (dur : Duration)
   /-- An activated ability: pay `costs`, then follow `effects` (`{3}{W}: …`). -/
   | costFor (costs : List PrintedCost) (effects : List TextEffect)
@@ -280,6 +370,17 @@ inductive TextEffect where
   “each other creature you control”. -/
   | getForEachUntil (who : List ConditionRef) (mods : List StatMod)
       (each : List ObjectQualifier) (dur : Duration)
+  /-- Do these effects in order, printed as one paragraph. -/
+  | sequence (effects : List TextEffect)
+  /-- Untap the named targets (`Untap target creature you control`). -/
+  | untap (targets : List TargetExpr)
+  /-- When `conds` hold, follow `effects`.
+  `[.is [.it] [.cardType .dwarf]]` is “if it's a Dwarf”. -/
+  | «if» (conds : List TextCondition) (effects : List TextEffect)
+  /-- `who` may do `effects` (`you may …`). -/
+  | may (who : List PlayerRef) (effects : List TextEffect)
+  /-- Attach `what` to `dest`. -/
+  | attachTo (what dest : List ObjectExpr)
   deriving Repr, BEq
 
 /-- `getForEachUntil [.it] mods each dur` is “it gets … until … for each …”.
@@ -350,17 +451,15 @@ private def keywordsOfGranted (gs : List GrantedAbility) : Keywords :=
     match g with
     | .keyword k => acc.merge k.toKeywords) Keywords.none
 
-private def cardTypeNoun (t : CardType) : String :=
-  t.englishName.map Char.toLower
-
 private def ObjectQualifier.toPhrase : ObjectQualifier → String
-  | .cardType t => cardTypeNoun t
+  | .cardType t => t.phrase
   | .controlledBy .you => "you control"
   | .controlledBy .opponent => "an opponent controls"
   | .or qs => orJoin (qs.map toPhrase)
   | .tapped => "tapped"
   | .this => "this"
   | .other => "other"
+  | .it => "it"
 
 private def qualifiersPhrase (qs : List ObjectQualifier) : String :=
   String.intercalate " " (qs.map ObjectQualifier.toPhrase)
@@ -387,14 +486,18 @@ private def durationPhrase : Duration → String
 
 private def pluralQualifier : ObjectQualifier → String
   | .cardType t =>
-    let n := cardTypeNoun t
-    if n.endsWith "s" then n else s!"{n}s"
+    match t.toCard? with
+    | some _ =>
+      let n := t.phrase
+      if n.endsWith "s" then n else s!"{n}s"
+    | none => t.phrase
   | .controlledBy .you => "you control"
   | .controlledBy .opponent => "an opponent controls"
   | .or qs => orJoin (qs.map pluralQualifier)
   | .tapped => "tapped"
   | .this => "this"
   | .other => "other"
+  | .it => "it"
 
 /-- Singular words of a qualifier list, in order (`this creature`). -/
 private def qualifierWords (qs : List ObjectQualifier) : String :=
@@ -422,6 +525,9 @@ private def TargetExpr.toPhrase : TargetExpr → String
 private def tapSentence (ts : List TargetExpr) : String :=
   s!"Tap {joinTargets (ts.map TargetExpr.toPhrase)}."
 
+private def untapSentence (ts : List TargetExpr) : String :=
+  s!"Untap {joinTargets (ts.map TargetExpr.toPhrase)}."
+
 private def statModPhrase : StatMod → String
   | .plusPowerToughness p t => s!"{signedStat p}/{signedStat t}"
 
@@ -436,9 +542,12 @@ private def gainUntilSentence (targets : List TargetExpr) (gains : List GrantedA
 
 private def getUntilSentence (qs : List ObjectQualifier) (mods : List StatMod)
     (dur : Duration) : String :=
-  let subject := capitalizeAscii (String.intercalate " " (qs.map pluralQualifier))
   let bonus := String.intercalate " and " (mods.map statModPhrase)
-  s!"{subject} get {bonus} {durationPhrase dur}."
+  if qs == [.it] then
+    s!"It gets {bonus} {durationPhrase dur}."
+  else
+    let subject := capitalizeAscii (String.intercalate " " (qs.map pluralQualifier))
+    s!"{subject} get {bonus} {durationPhrase dur}."
 
 private def costSubjectWord : CostSubject → String
   | .this => "this"
@@ -465,6 +574,50 @@ private def dealDamageSentence (cardName : String) (subjects : List DamageSubjec
 
 private def conditionRefWord : ConditionRef → String
   | .it => "it"
+
+private def playerPhrase : PlayerRef → String
+  | .you => "you"
+  | .opponent => "an opponent"
+
+private def objectExprPhrase : ObjectExpr → String
+  | .it => "it"
+  | .oneOf qs =>
+    let noun := qualifiersPhrase qs
+    s!"{indefinite noun} {noun}"
+
+private def objectExprsPhrase (xs : List ObjectExpr) : String :=
+  String.intercalate " and " (xs.map objectExprPhrase)
+
+private def attachClause (what dest : List ObjectExpr) : String :=
+  s!"attach {objectExprsPhrase what} to {objectExprsPhrase dest}"
+
+/-- An action inside `.may`, without the actor and without a final period. -/
+private def optionalAction : TextEffect → String
+  | .attachTo what dest => attachClause what dest
+  | .untap targets => s!"untap {joinTargets (targets.map TargetExpr.toPhrase)}"
+  | _ => ""
+
+private def mayClause (who : List PlayerRef) (effects : List TextEffect) : String :=
+  let actor := String.intercalate " and " (who.map playerPhrase)
+  let action := String.intercalate " " (effects.map optionalAction)
+  s!"{actor} may {action}"
+
+private def isClause : TextCondition → String
+  | .is subj qs =>
+    let who := String.intercalate " " (subj.map conditionRefWord)
+    let noun := qualifiersPhrase qs
+    if who == "it" then s!"it's {indefinite noun} {noun}"
+    else s!"{who} is {indefinite noun} {noun}"
+
+private def thenClause : TextEffect → String
+  | .may who es => mayClause who es
+  | .attachTo what dest => attachClause what dest
+  | _ => ""
+
+private def ifSentence (conds : List TextCondition) (effects : List TextEffect) : String :=
+  let cond := String.intercalate " and " (conds.map isClause)
+  let body := String.intercalate " " (effects.map thenClause)
+  s!"If {cond}, {body}."
 
 /-- “it gets +1/+1 until end of turn for each other creature you control”. -/
 private def getForEachClause (who : List ConditionRef) (mods : List StatMod)
@@ -497,6 +650,12 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .whenever events effects => some (wheneverSentence events effects)
   | .getForEachUntil who mods each dur =>
     some s!"{capitalizeAscii (getForEachClause who mods each dur)}."
+  | .sequence es =>
+    some (String.intercalate " " (es.filterMap (nestedEffectSentence cardName)))
+  | .untap targets => some (untapSentence targets)
+  | .if conds effects => some (ifSentence conds effects)
+  | .may who effects => some s!"{capitalizeAscii (mayClause who effects)}."
+  | .attachTo what dest => some s!"{capitalizeAscii (attachClause what dest)}."
 
 /-- One Oracle line for consecutive printed keywords (`Flying, lifelink`). -/
 private def keywordRunLine (ks : List PrintedKeyword) : String :=
@@ -504,22 +663,30 @@ private def keywordRunLine (ks : List PrintedKeyword) : String :=
 
 /-- Oracle sentence for a text-box effect, without reminder text.
 `cardName` is substituted for `.thisCardName`. -/
-private def textEffectSentence (cardName : String) : TextEffect → String
-  | .keyword k => keywordRunLine [k]
-  | .gainUntil targets gains dur => gainUntilSentence targets gains dur
-  | .getUntil qs mods dur => getUntilSentence qs mods dur
-  | .costFor costs effects =>
-    let cost := String.intercalate ", " (costs.map printedCostPhrase)
-    let body := String.intercalate " " (effects.filterMap (nestedEffectSentence cardName))
-    s!"{cost}: {body}"
-  | .tap targets => tapSentence targets
-  | .costLessToCastIf subjects discount cond =>
-    costLessSentence subjects discount cond
-  | .dealDamage subjects n targets =>
-    dealDamageSentence cardName subjects n targets
-  | .whenever events effects => wheneverSentence events effects
-  | .getForEachUntil who mods each dur =>
-    s!"{capitalizeAscii (getForEachClause who mods each dur)}."
+private def textEffectSentence (cardName : String) : TextEffect → String :=
+  go
+where
+  go : TextEffect → String
+    | .keyword k => keywordRunLine [k]
+    | .gainUntil targets gains dur => gainUntilSentence targets gains dur
+    | .getUntil qs mods dur => getUntilSentence qs mods dur
+    | .costFor costs effects =>
+      let cost := String.intercalate ", " (costs.map printedCostPhrase)
+      let body := String.intercalate " " (effects.filterMap (nestedEffectSentence cardName))
+      s!"{cost}: {body}"
+    | .tap targets => tapSentence targets
+    | .costLessToCastIf subjects discount cond =>
+      costLessSentence subjects discount cond
+    | .dealDamage subjects n targets =>
+      dealDamageSentence cardName subjects n targets
+    | .whenever events effects => wheneverSentence events effects
+    | .getForEachUntil who mods each dur =>
+      s!"{capitalizeAscii (getForEachClause who mods each dur)}."
+    | .sequence es => String.intercalate " " (es.map go)
+    | .untap targets => untapSentence targets
+    | .if conds effects => ifSentence conds effects
+    | .may who effects => s!"{capitalizeAscii (mayClause who effects)}."
+    | .attachTo what dest => s!"{capitalizeAscii (attachClause what dest)}."
 
 /-- Map a spell text-box effect onto the engine's `Effect` vocabulary. -/
 private def textEffectToEffect : TextEffect → Option Effect
@@ -532,6 +699,14 @@ private def textEffectToEffect : TextEffect → Option Effect
     some Effect.tapOneOrTwoCreatures
   | .dealDamage [.thisCardName] n [.target [.cardType .creature]] =>
     some (Effect.dealDamageToCreature n)
+  | .sequence
+      [.untap [.target [.cardType .creature, .controlledBy .you]],
+       .getUntil [.it] [.plusPowerToughness p t] .endOfTurn,
+       .if
+         [.is [.it] [.cardType .dwarf]]
+         [.may [.you]
+           [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]] =>
+    some (Effect.untapPumpMaybeAttach p t)
   | _ => none
 
 private def creaturesYouControl (qs : List ObjectQualifier) : Bool :=
@@ -862,10 +1037,10 @@ private def parseDisjunction (s : String) : Option (List ObjectQualifier) := do
   | [] => none
   | [one] =>
     let t ← parseCardType one
-    return [.cardType t]
+    return [.cardType (TypeName.ofCard t)]
   | many =>
     let ts ← many.mapM parseCardType
-    return [.or (ts.map ObjectQualifier.cardType)]
+    return [.or (ts.map (fun t => ObjectQualifier.cardType (TypeName.ofCard t)))]
 
 private def parseNoun (noun : String) : Option (List ObjectQualifier) := do
   let (core, who) :=
@@ -897,10 +1072,10 @@ private def parsePluralDisjunction (s : String) : Option (List ObjectQualifier) 
   | [] => none
   | [one] =>
     let t ← parseCardType (singularize one)
-    return [.cardType t]
+    return [.cardType (TypeName.ofCard t)]
   | many =>
     let ts ← many.mapM (fun w => parseCardType (singularize w))
-    return [.or (ts.map ObjectQualifier.cardType)]
+    return [.or (ts.map (fun t => ObjectQualifier.cardType (TypeName.ofCard t)))]
 
 private def parseGetSubject (noun : String) : Option (List ObjectQualifier) := do
   let (core, who) :=
@@ -1046,7 +1221,7 @@ private def parseDealDamage (cardName : String) (line : String) : Option TextEff
 private def parseAttackSubject (s : String) : Option (List ObjectQualifier) := do
   if let some rest := dropPrefixCI s "this " then
     let t ← parseCardType rest
-    return [.this, .cardType t]
+    return [.this, .cardType (TypeName.ofCard t)]
   else
     parseNoun s
 
@@ -1099,6 +1274,90 @@ private def parseWhenever (line : String) : Option TextEffect := do
   let effect ← parseGetForEachUntil effectText
   return .whenever [trig] [effect]
 
+private def parseTypeName (s : String) : Option TypeName :=
+  match s.trimAscii.copy.map Char.toLower with
+  | "dwarf" => some .dwarf
+  | "equipment" => some .equipment
+  | other => (parseCardType other).map TypeName.ofCard
+
+private def dropArticle (s : String) : Option String :=
+  if let some r := dropPrefixCI s "an " then some r
+  else if let some r := dropPrefixCI s "a " then some r
+  else some s
+
+/-- `Equipment you control` or `Dwarf`, including a leading article. -/
+private def parseTypedControlled (s : String) : Option (List ObjectQualifier) := do
+  let noun ← dropArticle s
+  let (core, who) :=
+    if let some core := stripSuffixCI? noun " you control" then
+      (core, some PlayerRef.you)
+    else if let some core := stripSuffixCI? noun " an opponent controls" then
+      (core, some PlayerRef.opponent)
+    else
+      (noun, none)
+  let t ← parseTypeName core
+  let tail :=
+    match who with
+    | some p => [ObjectQualifier.controlledBy p]
+    | none => []
+  return [.cardType t] ++ tail
+
+/-- `Untap target creature you control`. -/
+private def parseUntap (s : String) : Option TextEffect := do
+  let rest ← dropPrefixCI s "Untap "
+  let tgt ← parseTargetExpr rest
+  return .untap [tgt]
+
+/-- `It gets +2/+2 until end of turn`, with no “for each” tail. -/
+private def parseItGets (s : String) : Option TextEffect := do
+  let (subject, after) ← splitOnce " gets " s
+  guard (subject.trimAscii.copy.map Char.toLower == "it")
+  let (bonus, durText) ← splitOnce " until " after
+  guard !((durText.splitOn " ").contains "for")
+  let dur ← parseDuration durText
+  let mod ← parseStatMod bonus
+  return .getUntil [.it] [mod] dur
+
+/-- `you may attach an Equipment you control to it`. -/
+private def parseYouMayAttach (s : String) : Option TextEffect := do
+  let rest ← dropPrefixCI s "you may attach "
+  let (objText, destText) ← splitOnce " to " rest
+  let quals ← parseTypedControlled objText
+  guard (destText.trimAscii.copy.map Char.toLower == "it")
+  return .may [.you] [.attachTo [.oneOf quals] [.it]]
+
+/-- `If it's a Dwarf, you may attach an Equipment you control to it`. -/
+private def parseIfMay (s : String) : Option TextEffect := do
+  let rest ← dropPrefixCI s "If "
+  let (condText, thenText) ← splitOnce ", " rest
+  let condRest ←
+    match dropPrefixCI condText "it's " with
+    | some r => some r
+    | none =>
+      match dropPrefixCI condText "it’s " with
+      | some r => some r
+      | none => dropPrefixCI condText "it is "
+  let quals ← parseTypedControlled condRest
+  let act ← parseYouMayAttach thenText
+  return .if [.is [.it] quals] [act]
+
+private def parseSequenceStep (s : String) : Option TextEffect :=
+  let s := stripTrailingDot s
+  match parseUntap s with
+  | some e => some e
+  | none =>
+    match parseItGets s with
+    | some e => some e
+    | none => parseIfMay s
+
+/-- Several Oracle sentences in one rules line, as a `.sequence`. -/
+private def parseSequence (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let parts := line.splitOn ". " |>.map (·.trimAscii.copy) |>.filter (· != "")
+  guard (parts.length ≥ 2)
+  let steps ← parts.mapM parseSequenceStep
+  return .sequence steps
+
 private def parseKeywordLine (line : String) : Option (List TextEffect) := do
   let parts := splitEnglishList line
   if parts.isEmpty then none
@@ -1112,7 +1371,10 @@ private def parseBody (cardName : String) (lines : List String) : Option (List T
     if cleaned.isEmpty then
       pure effects
     else
-      match parseWhenever cleaned with
+      match parseSequence cleaned with
+      | some e => pure (effects ++ [e])
+      | none =>
+        match parseWhenever cleaned with
       | some e => pure (effects ++ [e])
       | none =>
         match parseCostFor cleaned with
@@ -1197,6 +1459,9 @@ instructions in that text box. `Tap one or two target …` becomes `.tap`.
 `.dealDamage` with `.thisCardName` when the subject is the card’s name.
 `Whenever this creature attacks, it gets … for each other creature you control`
 becomes `.whenever` with `.attack` and `getForEachUntil`.
+`Untap target creature you control. It gets … If it's a Dwarf, you may attach
+an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`,
+and `.if`.
 -/
 def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   let lines :=
@@ -1273,5 +1538,20 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     [.attack [.this, .cardType .creature] []]
     [.getForEachUntil [.it] [.plusPowerToughness 1 1]
       [.other, .cardType .creature, .controlledBy .you] .endOfTurn])
+#guard textEffectSentence "Vow to Erebor" (.sequence [
+    .untap [.target [.cardType .creature, .controlledBy .you]],
+    .getUntil [.it] [.plusPowerToughness +2 +2] .endOfTurn,
+    .if
+      [.is [.it] [.cardType .dwarf]]
+      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]]) ==
+  "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
+#guard parseSequence
+    "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it." ==
+  some (.sequence [
+    .untap [.target [.cardType .creature, .controlledBy .you]],
+    .getUntil [.it] [.plusPowerToughness 2 2] .endOfTurn,
+    .if
+      [.is [.it] [.cardType .dwarf]]
+      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]])
 
 end Mtg.Engine
