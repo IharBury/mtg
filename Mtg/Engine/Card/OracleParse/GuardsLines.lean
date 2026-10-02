@@ -341,7 +341,7 @@ open OracleParts
               (.not
                 (.or
                   (.castSpell (.subtype .elf))
-                  (.activateAbility (.subtype .elf)))))]
+                  (.activateAbility (.controller .this) (.subtype .elf)))))]
           .endOfTurn]))]
 #guard parseOracleParts (name := "Woodland Weavemaster")
   "{T}: Add X mana of any one color, where X is Woodland Weavemaster's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources." ==

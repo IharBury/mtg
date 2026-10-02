@@ -6886,7 +6886,7 @@ def avengersTowerDefinition : TraditionalCardDefinition := .card <|
                   (.not
                     (.or
                       (.castSpell (.intersection [.spell, .subtype .hero]))
-                      (.activateAbility (.subtype .hero)))))]
+                      (.activateAbility (.controller .this) (.subtype .hero)))))]
             .endOfTurn])),
   .ability
     (.activated
@@ -7447,7 +7447,7 @@ def villainousHideoutDefinition : TraditionalCardDefinition := .card <|
                   (.not
                     (.or
                       (.castSpell (.intersection [.spell, .subtype .villain]))
-                      (.activateAbility (.subtype .villain)))))]
+                      (.activateAbility (.controller .this) (.subtype .villain)))))]
             .endOfTurn])),
   .ability
     (.activatedIf

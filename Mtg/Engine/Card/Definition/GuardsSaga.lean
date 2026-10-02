@@ -1388,6 +1388,7 @@ namespace Mtg.Engine
         (.not
           (.happened
             (.activateAbility
+              (.controller .this)
               (.intersection [
                 Selector.keywordAbility .equip,
                 .controlled (.controller .this)]))

@@ -612,9 +612,10 @@ inductive Trigger where
   | giftPromised : Selector → Trigger
   /-- The selected spell is countered (CR 701.5). -/
   | counter : Selector → Trigger
-  /-- An activated ability of a source matching the selector is activated
-  (CR 602). -/
-  | activateAbility : Selector → Trigger
+  /-- The selected player activates an activated ability of a source
+  matching the given selector (CR 602). The first selector is that player.
+  Another player's activation is a different event. -/
+  | activateAbility : Selector → Selector → Trigger
   /-- After the listed triggers have occurred in order. -/
   | sequence : List Trigger → Trigger
   /-- The given trigger does not occur. -/

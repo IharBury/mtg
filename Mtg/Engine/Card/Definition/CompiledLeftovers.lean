@@ -634,8 +634,10 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     else
       match restriction with
       | .not (.or (.castSpell (.intersection [.spell, .subtype st]))
-          (.activateAbility (.subtype st'))) =>
-        if st == st' then some (Effect.addAnyColorSpendOnlySubtype st.toString) else none
+          (.activateAbility who (.subtype st'))) =>
+        if st == st' && leftoverYou who then
+          some (Effect.addAnyColorSpendOnlySubtype st.toString)
+        else none
       | .not (.castSpell (.intersection [.spell, .cardType .artifact])) =>
         some Effect.addAnyColorSpendOnlyArtifactSpell
       | _ => none
@@ -711,6 +713,22 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
       .exile .this] =>
     if id == id' && p == .variable v && p' == p && p'' == p then
       some Effect.worldsWithinWorlds
+    else none
+  -- Elrond, Moon-Reader: exile, then a delayed trigger returns those cards
+  -- at the beginning of the next end step.
+  | .sequence [
+      .actionId id
+        (.exile
+          (.targets _ (.range (.int 0) (.int 2))
+            (.intersection [
+              .not .this,
+              .zone .battlefield,
+              .not (.cardType .land),
+              .controlled (.controller .this)]))),
+      .delayedTrigger (.endStep .player)
+        [.putOntoBattlefield (.wasCreatedByAction returned)]] =>
+    if id == returned then
+      some Effect.exileThenReturnNextEnd
     else none
   | _ => none
 
@@ -888,27 +906,19 @@ def leftoverMayDiscardHandDrawDamageIfStory? : CardAction → Bool
   | _ => false
 
 /-- `for each opponent, exile up to one target nonland permanent that player
-controls until this leaves the battlefield.` The exile is numbered. When
-this ability's source leaves the battlefield, a replacement puts that
-exiled card onto the battlefield and the leave still happens. -/
+controls until this leaves the battlefield.` Immediately after that leave,
+a one-shot returns the exiled card to the battlefield (CR 610.3). -/
 def leftoverExileOppNonlandEachUntilLeaves? : CardAction → Bool
   | .forEachVariable v (.opponent who) [
-      .sequence [
-        .actionId id
-          (.exile
-            (.targets _ (.range 0 1)
-              (.intersection [
-                .zone .battlefield,
-                .not (.cardType .land),
-                .controlled (.variable v')]))),
-        .continuous
-          [.replace (.leaveBattlefield src) [
-            .putOntoBattlefield (.wasCreatedByAction id'),
-            .keepReplacedAction]]
-          .endOfGame
-      ]
+      .exileUntil
+        (.targets _ (.range 0 1)
+          (.intersection [
+            .zone .battlefield,
+            .not (.cardType .land),
+            .controlled (.variable v')]))
+        (.leaveBattlefield src)
     ] =>
-    v == v' && id == id' && leftoverYou who && leftoverSourceThis src
+    v == v' && leftoverYou who && leftoverSourceThis src
   | _ => false
 
 /-- Enters-the-battlefield actions that compile to a named trigger. -/

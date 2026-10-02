@@ -225,6 +225,45 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           .zone .battlefield, .cardType .creature, .attacking .all] then
       some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)
     else none
+  -- Dwalin, Weaponmaster: a hone counter on each Equipment you control.
+  | .triggered (.or (.enter .this) (.attack .this .all))
+      (.putCounter
+        (.intersection [.zone .battlefield, .subtype .equipment, ctl]) .hone (.int 1)) =>
+    if ctl == .controlled (.controller .this) then
+      some TriggeredAbility.onEnterOrAttackHoneEachEquipment
+    else none
+  -- Dáin Ironfoot: create an Axe, then attach it when you do.
+  | .triggered (.enter .this) (.sequence [
+      .actionId id (.createTokens _ _ parts _),
+      .reflexive id' [
+        .attach (.wasCreatedByAction created)
+          (.target _ (.intersection [
+            .zone .battlefield, .cardType .creature, .controlled (.controller .this)]))]]) =>
+    if id == id' && id == created && CardAction.leftoverAxeToken? parts then
+      some TriggeredAbility.onEnterCreateAxeAttach
+    else none
+  -- Dáin Ironfoot: attacking hosts of Equipment gain double strike.
+  | .triggered (.attack .this .all)
+      (.continuous [
+        .gainAbility
+          (.intersection [
+            .zone .battlefield, .cardType .creature, .attacking .all,
+            .hostOf (.intersection [.zone .battlefield, .subtype .equipment])])
+          (.keyword .doubleStrike)]
+        .endOfTurn) =>
+    some TriggeredAbility.onAttackEquippedGainDoubleStrike
+  -- Elrond, Moon-Reader: the first time each turn this ability's controller
+  -- activates an ability of a creature, draw a card. Another player's
+  -- activation does not trigger it. “This ability triggers only once each
+  -- turn” is `ordinal` 1 since turn start.
+  | .triggered
+      (.ordinal 1 .turnStart
+        (.activateAbility activator
+          (.intersection [.zone .battlefield, .cardType .creature])))
+      (.draw who (.int 1)) =>
+    if activator == .controller .this && who == .controller .this then
+      some TriggeredAbility.onActivateCreatureAbilityDrawOnce
+    else none
   | .triggered (.triggerId id (.castSpell among))
       (.sequence [
         .optional (.controller .this)

@@ -496,7 +496,7 @@ def parseTapAddAnyColorEqualToPower (cardName : String) (line : String) (n : Nat
                             (.not
                               (.or
                                 (.castSpell (.subtype .elf))
-                                (.activateAbility (.subtype .elf)))))]
+                                (.activateAbility (.controller .this) (.subtype .elf)))))]
                         .endOfTurn])),
                 n + 1)
             else none

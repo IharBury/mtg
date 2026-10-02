@@ -257,6 +257,14 @@ inductive CardAction where
   | removeAllCounters : Selector → CardAction
   /-- Exile the selected object. -/
   | exile : Selector → CardAction
+  /-- Exile the selected objects until the event (CR 610.3). Immediately
+  after that event, a one-shot effect returns each object that is still
+  exiled to the zone it left. The return does not use the stack, and
+  nothing happens between the event and the return, including state-based
+  actions. A permanent returns to the battlefield under its owner's
+  control. `.exileUntil sel (.leaveBattlefield (.source .this))` is
+  “exile … until this leaves the battlefield”. -/
+  | exileUntil : Selector → Trigger → CardAction
   /-- Exile the selected objects face down (CR 406.3). -/
   | exileFaceDown : Selector → CardAction
   /-- Exchange control of the selected objects. -/
@@ -374,6 +382,12 @@ inductive CardAction where
   an optional cost is this, not an “if you do” checked in the same
   resolution. -/
   | reflexive : Nat → List CardAction → CardAction
+  /-- Create a delayed triggered ability (CR 603.7). It performs these
+  actions the next time the event occurs, once, unless a duration is
+  stated (CR 603.7b). `.delayedTrigger (.endStep .player) …` is “at the
+  beginning of the next end step”. The ability is created when this action
+  resolves. -/
+  | delayedTrigger : Trigger → List CardAction → CardAction
   /-- After the current phase, add this phase to the turn (CR 500.7).
   `.combat` is an additional combat phase. -/
   | addPhaseAfterThisPhase : Phase → CardAction

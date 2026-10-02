@@ -96,7 +96,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .endOfGame | .endOfTurn | .turnStart | .gameStart => ([], [])
   | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .drawStep s | .enter s | .die s
   | .discard s | .leaveGraveyard s | .leaveBattlefield s | .returnToHand s | .putToGraveyard s
-  | .giftPromised s | .counter s | .activateAbility s | .castSpell s
+  | .giftPromised s | .counter s | .castSpell s
   | .castSpellFromGraveyard s | .precombatMainPhase s | .createTokens s
   | .abilityTriggers s =>
     collectSelector s
@@ -106,6 +106,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .enterSimultaneously s _ | .dieSimultaneously s _ => collectSelector s
   | .damageSimultaneously a b _ | .attackSimultaneously a b _ =>
     appendIds [collectSelector a, collectSelector b]
+  | .activateAbility who src => appendIds [collectSelector who, collectSelector src]
   | .ordinal _ inner window => appendIds [collectTrigger inner, collectTrigger window]
   | .sacrifice s => collectSelector s
   | .abilityWithIdActivated n | .abilityWithIdResolved n => ([], [n])
@@ -165,7 +166,8 @@ def collectAbility : Ability → List Nat × List Nat
   | .graveyardActivatedIf c cs action =>
     appendIds [collectCondition c, appendIds (cs.map collectCost), collectAction action]
   | .abilityId n a => appendIds [([], [n]), collectAbility a]
-  | .triggered t action => appendIds [collectTrigger t, collectAction action]
+  | .triggered t action =>
+    appendIds [collectTrigger t, collectAction action]
   | .triggeredWhile t c action =>
     appendIds [collectTrigger t, collectCondition c, collectAction action]
   | .static e | .stackStatic e | .everywhereStatic e => collectEffect e
@@ -244,6 +246,8 @@ def collectAction : CardAction → List Nat × List Nat
   | .duplicateReplacingTrigger v => collectValue v
   | .keepReplacedAction => ([], [])
   | .reflexive n as => appendIds [([n], []), appendIds (as.map collectAction)]
+  | .delayedTrigger t as => appendIds [collectTrigger t, appendIds (as.map collectAction)]
+  | .exileUntil s t => appendIds [collectSelector s, collectTrigger t]
   | .addPhaseAfterThisPhase _ => ([], [])
 
 end
@@ -380,7 +384,8 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .castSpellFromGraveyard s => .castSpellFromGraveyard (mapSelector m s)
   | .giftPromised s => .giftPromised (mapSelector m s)
   | .counter s => .counter (mapSelector m s)
-  | .activateAbility s => .activateAbility (mapSelector m s)
+  | .activateAbility who src =>
+    .activateAbility (mapSelector m who) (mapSelector m src)
   | .sequence ts => .sequence (mapTriggers m ts)
   | .not t => .not (mapTrigger m t)
   | .or a b => .or (mapTrigger m a) (mapTrigger m b)
@@ -584,6 +589,8 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .chooseCreatureType s => .chooseCreatureType (mapSelector m s)
   | .mayCast a b => .mayCast (mapSelector m a) (mapSelector m b)
   | .reflexive n as => .reflexive (m.action n) (mapActions m as)
+  | .delayedTrigger t as => .delayedTrigger (mapTrigger m t) (mapActions m as)
+  | .exileUntil s t => .exileUntil (mapSelector m s) (mapTrigger m t)
   | .addPhaseAfterThisPhase p => .addPhaseAfterThisPhase p
 
 end

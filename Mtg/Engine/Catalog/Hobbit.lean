@@ -1474,7 +1474,7 @@ def woodlandWeavemasterCard : CardDef :=
               (.not
                 (.or
                   (.castSpell (.subtype .elf))
-                  (.activateAbility (.subtype .elf)))))]
+                  (.activateAbility (.controller .this) (.subtype .elf)))))]
           .endOfTurn]))
 ]
 
@@ -4927,6 +4927,7 @@ def kiliTheResourcefulDefinition : TraditionalCardDefinition := .card <|
       (.not
         (.happened
           (.activateAbility
+            (.controller .this)
             (.intersection [
               Selector.keywordAbility .equip,
               .controlled (.controller .this)]))
@@ -6149,19 +6150,13 @@ def celebrateTheMountainKingDefinition : TraditionalCardDefinition := .card <|
     (.triggered
       (.enter .this)
       (.forEachVariable 1 (.opponent (.controller .this)) [
-        .sequence [
-          .actionId 1
-            (.exile
-              (.targets 2 (.range 0 1)
-                (.intersection [
-                  .zone .battlefield,
-                  .not (.cardType .land),
-                  .controlled (.variable 1)]))),
-          .continuous
-            [.replace (.leaveBattlefield (.source .this)) [
-              .putOntoBattlefield (.wasCreatedByAction 1),
-              .keepReplacedAction]]
-            .endOfGame]])),
+        .exileUntil
+          (.targets 2 (.range 0 1)
+            (.intersection [
+              .zone .battlefield,
+              .not (.cardType .land),
+              .controlled (.variable 1)]))
+          (.leaveBattlefield (.source .this))])),
   .ability
     (.triggered
       (.enter .this)
@@ -6439,20 +6434,213 @@ def downDownToGoblinTown : CardDef :=
       "Target opponent loses 1 life and you gain 1 life."
       (Effect.chapterOpponentLosesYouGain 1)] }
 
+/-- Oracle text for Dwalin, Weaponmaster. -/
+def dwalinWeaponmasterOracle : String :=
+  "First strike\nWhenever Dwalin enters or attacks, put a hone counter on each Equipment you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)"
+
+def dwalinWeaponmasterDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Dwalin, Weaponmaster",
+  .manaCost [.generic 1, .hybrid .red .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 2,
+  .toughness 1
+  ] ++ (parseOracleParts (name := "Dwalin, Weaponmaster") dwalinWeaponmasterOracle).get!
+
+#guard dwalinWeaponmasterDefinition == .card (
+  [
+  .name "Dwalin, Weaponmaster",
+  .manaCost [.generic 1, .hybrid .red .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 2,
+  .toughness 1
+  ] ++ [.ability (.keyword .firstStrike),
+ .ability
+   (.triggered
+     (.or
+       (.enter .this)
+       (.attack .this .all))
+     (.putCounter
+       (.intersection
+         [.zone .battlefield,
+          .subtype .equipment,
+          .controlled (.controller .this)])
+       .hone
+       (.int 1)))])
+
 def dwalinWeaponmaster : CardDef :=
-  legendaryCreature "Dwalin, Weaponmaster" (ManaCost.ofGenericAndHybrids 1 .red .white 1) #["Dwarf", "Warrior"] 2 1 (oracleText := "First strike\nWhenever Dwalin enters or attacks, put a hone counter on each Equipment you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)")
-    (keywords := Keyword.firstStrike)
-    (triggeredAbilities := #[.onEnterOrAttackHoneEachEquipment])
+  dwalinWeaponmasterDefinition.toCardDef (oracleText := dwalinWeaponmasterOracle)
+
+#guard dwalinWeaponmaster.oracleText == dwalinWeaponmasterOracle
+
+#guard dwalinWeaponmaster.keywords.firstStrike
+#guard dwalinWeaponmaster.triggeredAbilities == #[.onEnterOrAttackHoneEachEquipment]
+#guard dwalinWeaponmaster.manaCost == ManaCost.ofGenericAndHybrids 1 .red .white 1
+#guard dwalinWeaponmaster.supertypes == #[.legendary]
+#guard dwalinWeaponmaster.subtypes == #["Dwarf", "Warrior"]
+#guard dwalinWeaponmaster.power == some 2 && dwalinWeaponmaster.toughness == some 1
+
+/-- Oracle text for Dáin Ironfoot. -/
+def dainIronfootOracle : String :=
+  "When Dáin enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control.\nWhenever Dáin attacks, each equipped attacking creature gains double strike until end of turn."
+
+def dainIronfootDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Dáin Ironfoot",
+  .manaCost [.generic 2, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 1,
+  .toughness 4
+  ] ++ (parseOracleParts (name := "Dáin Ironfoot") dainIronfootOracle).get!
+
+#guard dainIronfootDefinition == .card (
+  [
+  .name "Dáin Ironfoot",
+  .manaCost [.generic 2, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .warrior,
+  .power 1,
+  .toughness 4
+  ] ++ [.ability
+   (.triggered
+     (.enter .this)
+     (.sequence
+       [.actionId
+          1
+          (.createTokens
+            (.controller .this)
+            (.int 1)
+            [.name "Axe",
+             .type .artifact,
+             .subtype .equipment,
+             .colorIndicator [],
+             .ability
+               (.static
+                 (.addPower
+                   (.hostOf .this)
+                   (.int 1))),
+             .ability
+               (.keywordWithCost
+                 .equip
+                 [.mana [.generic 2]])]),
+        .reflexive
+          1
+          [.attach
+             (.wasCreatedByAction 1)
+             (.target
+               1
+               (.intersection
+                 [.zone .battlefield,
+                  .cardType .creature,
+                  .controlled (.controller .this)]))]])),
+ .ability
+   (.triggered
+     (.attack .this .all)
+     (.continuous
+       [.gainAbility
+          (.intersection
+            [.zone .battlefield,
+             .cardType .creature,
+             .attacking .all,
+             .hostOf
+               (.intersection
+                 [.zone .battlefield,
+                  .subtype .equipment])])
+          (.keyword .doubleStrike)]
+       .endOfTurn))])
 
 def dainIronfoot : CardDef :=
-  legendaryCreature "Dáin Ironfoot" (ManaCost.ofGenericAndColor 2 .red) #["Dwarf", "Warrior"] 1 4 (oracleText := "When Dáin enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control.\nWhenever Dáin attacks, each equipped attacking creature gains double strike until end of turn.")
-    (triggeredAbilities := #[.onEnterCreateAxeAttach, .onAttackEquippedGainDoubleStrike])
+  dainIronfootDefinition.toCardDef (oracleText := dainIronfootOracle)
+
+#guard dainIronfoot.oracleText == dainIronfootOracle
+
+#guard dainIronfoot.triggeredAbilities == #[.onEnterCreateAxeAttach, .onAttackEquippedGainDoubleStrike]
+#guard dainIronfoot.manaCost == ManaCost.ofGenericAndColor 2 .red
+#guard dainIronfoot.supertypes == #[.legendary]
+#guard dainIronfoot.subtypes == #["Dwarf", "Warrior"]
+#guard dainIronfoot.power == some 1 && dainIronfoot.toughness == some 4
+
+/-- Oracle text for Elrond, Moon-Reader. -/
+def elrondMoonReaderOracle : String :=
+  "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn.\n{5}{U}{U}: Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step."
+
+def elrondMoonReaderDefinition : TraditionalCardDefinition := .card <|
+  [
+  .name "Elrond, Moon-Reader",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .elf,
+  .subtype .noble,
+  .power 3,
+  .toughness 3
+  ] ++ (parseOracleParts (name := "Elrond, Moon-Reader") elrondMoonReaderOracle).get!
+
+#guard elrondMoonReaderDefinition == .card (
+  [
+  .name "Elrond, Moon-Reader",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .elf,
+  .subtype .noble,
+  .power 3,
+  .toughness 3
+  ] ++ [.ability
+   (.triggered
+     (.ordinal
+       1
+       .turnStart
+       (.activateAbility
+         (.controller .this)
+         (.intersection
+           [.zone .battlefield,
+            .cardType .creature])))
+     (.draw (.controller .this) (.int 1))),
+ .ability
+   (.activated
+     [.mana
+        [.generic 5,
+         .mono .blue,
+         .mono .blue]]
+     (.sequence [
+       .actionId
+         1
+         (.exile
+           (.targets
+             1
+             (.range (.int 0) (.int 2))
+             (.intersection
+               [.not .this,
+                .zone .battlefield,
+                .not (.cardType .land),
+                .controlled (.controller .this)]))),
+       .delayedTrigger
+         (.endStep .player)
+         [.putOntoBattlefield (.wasCreatedByAction 1)]]))])
 
 def elrondMoonReader : CardDef :=
-  legendaryCreature "Elrond, Moon-Reader" (ManaCost.ofGenericAndColor 2 .blue) #["Elf", "Noble"] 3 3 (oracleText := "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn.\n{5}{U}{U}: Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step.")
-    (activatedAbilities := #[
-      activated (Effect.exileThenReturnNextEnd) (ManaCost.ofGenericAndColors 5 [.blue, .blue])])
-    (triggeredAbilities := #[.onActivateCreatureAbilityDrawOnce])
+  elrondMoonReaderDefinition.toCardDef (oracleText := elrondMoonReaderOracle)
+
+#guard elrondMoonReader.oracleText == elrondMoonReaderOracle
+
+#guard elrondMoonReader.triggeredAbilities == #[.onActivateCreatureAbilityDrawOnce]
+#guard elrondMoonReader.activatedAbilities == #[activated (Effect.exileThenReturnNextEnd) (ManaCost.ofGenericAndColors 5 [.blue, .blue])]
+#guard elrondMoonReader.manaCost == ManaCost.ofGenericAndColor 2 .blue
+#guard elrondMoonReader.supertypes == #[.legendary]
+#guard elrondMoonReader.subtypes == #["Elf", "Noble"]
+#guard elrondMoonReader.power == some 3 && elrondMoonReader.toughness == some 3
 
 /-- Oracle text for Elven Passage. -/
 def elvenPassageOracle : String :=

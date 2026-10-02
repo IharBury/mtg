@@ -264,12 +264,136 @@ def parseAttackTotalPowerExtraCombat (line : String) (n : Nat) :
         .untap attacking,
         .addPhaseAfterThisPhase .combat]))], n)
 
+/-- Sentences of `line` except a trailing “this ability triggers only once
+each turn”. -/
+def onceEachTurn? (line : String) : Option (List String) :=
+  match sentences line with
+  | [] => none
+  | ss =>
+    match ss.getLast? with
+    | some last =>
+      if sentenceIs last "this ability triggers only once each turn" then
+        some ss.dropLast
+      else none
+    | none => none
+
+/-- `Whenever <this> enters or attacks, put a hone counter on each Equipment
+you control.` The reminder that each hone counter grants +1/+0 is not rules
+text. -/
+def parseHoneEachEquipment (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  (splitTrigger? line).bind fun (clause, effect) =>
+    if parseTriggerEvent cardName clause != some (.or (.enter .this) (.attack .this .all)) then
+      none
+    else if normSentence effect != "put a hone counter on each equipment you control" then none
+    else
+      some ([.ability (.triggered
+        (.or (.enter .this) (.attack .this .all))
+        (.putCounter
+          (.intersection [.zone .battlefield, .subtype .equipment, youControl])
+          .hone 1))], n)
+
+/-- `When <this> enters, create a colorless Equipment artifact token named Axe
+with "Equipped creature gets +1/+0" and equip {2}. When you do, attach it to
+target creature you control.` The create is numbered. “When you do” is a
+reflexive trigger of that action (CR 603.12), not an “if you do” in the same
+resolution. -/
+def parseCreateAxeWhenYouDo (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  (splitTrigger? line).bind fun (clause, effect) =>
+    if parseTriggerEvent cardName clause != some (.enter .this) then none
+    else
+      (before? effect ". When you do, attach it to target creature you control").bind
+        fun createText =>
+          (split2? createText " named ").bind fun (lead, rest) =>
+            (split2? rest " with \"").bind fun (tokenName, afterName) =>
+              (split2? afterName "\" and ").bind fun (quoted, equipText) =>
+                if norm lead != "create a colorless equipment artifact token" ||
+                    tokenName != "Axe" then none
+                else
+                  match parseEquippedGets quoted, parseEquip equipText with
+                  | some quotedParts, some equipPart =>
+                    let parts :=
+                      [.name tokenName, .type .artifact, .subtype .equipment,
+                        .colorIndicator []] ++ quotedParts ++ [equipPart]
+                    some ([.ability (.triggered (.enter .this) (.sequence [
+                      .actionId n (.createTokens (.controller .this) 1 parts),
+                      .reflexive n [
+                        .attach (.wasCreatedByAction n)
+                          (.target n (.intersection [
+                            .zone .battlefield, .cardType .creature, youControl]))]]))],
+                      n + 1)
+                  | _, _ => none
+
+/-- `Whenever <this> attacks, each equipped attacking creature gains double
+strike until end of turn.`
+An equipped creature is the host of an Equipment. -/
+def parseEquippedAttackersDoubleStrike (cardName line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  (splitTrigger? line).bind fun (clause, effect) =>
+    if parseTriggerEvent cardName clause != some (.attack .this .all) then none
+    else if normSentence effect !=
+        "each equipped attacking creature gains double strike until end of turn" then none
+    else
+      some ([.ability (.triggered (.attack .this .all)
+        (.continuous [
+          .gainAbility
+            (.intersection [
+              .zone .battlefield, .cardType .creature, .attacking .all,
+              .hostOf (.intersection [.zone .battlefield, .subtype .equipment])])
+            (.keyword .doubleStrike)]
+          .endOfTurn))], n)
+
+/-- `Whenever you activate an ability of a creature, draw a card. This ability
+triggers only once each turn.` -/
+def parseActivateCreatureDrawOnce (line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  match onceEachTurn? line with
+  | some [draw] =>
+    if normSentence draw != "whenever you activate an ability of a creature, draw a card" then
+      none
+    else
+      -- “You” is this ability's controller. Another player's activation
+      -- is not this event. “This ability triggers only once each turn” is
+      -- the first such activation since turn start.
+      some ([.ability (.triggered
+        (.ordinal 1 .turnStart
+          (.activateAbility (.controller .this)
+            (.intersection [.zone .battlefield, .cardType .creature])))
+        (.draw (.controller .this) 1))], n)
+  | _ => none
+
+/-- `{5}{U}{U}: Exile up to two other target nonland permanents you control.
+Return those cards to the battlefield under their owner's control at the
+beginning of the next end step.`
+The exile is action `n`. Resolving this ability creates a delayed triggered
+ability (CR 603.7). That ability puts those cards onto the battlefield the
+next time an end step begins (CR 603.7b), under their owner's control. -/
+def parseExileReturnEndStep (cardName line : String) (n : Nat) : Option (List CardPart × Nat) :=
+  (splitPrintedAbility? line).bind fun (costText, effect) =>
+    (parsePrintedCosts cardName costText).bind fun costs =>
+      if norm effect !=
+          "exile up to two other target nonland permanents you control. return those cards to the battlefield under their owner's control at the beginning of the next end step" then
+        none
+      else
+        some ([.ability (.activated costs
+          (.sequence [
+            .actionId n
+              (.exile
+                (.targets n (.range 0 2)
+                  (.intersection [
+                    .not .this, .zone .battlefield, .not (.cardType .land), youControl]))),
+            .delayedTrigger (.endStep .player)
+              [.putOntoBattlefield (.wasCreatedByAction n)]]))], n + 1)
+
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
   parseAttackTotalPowerExtraCombat line n <|>
     parseBolgEnters cardName line n <|>
     parseBeornCombat line n <|>
+    parseHoneEachEquipment cardName line n <|>
+    parseCreateAxeWhenYouDo cardName line n <|>
+    parseEquippedAttackersDoubleStrike cardName line n <|>
+    parseActivateCreatureDrawOnce line n <|>
+    parseExileReturnEndStep cardName line n <|>
     (keywordParts? line).map (·, n) <|>
     sole (parseDrawExceptFirstDrawStep line) n <|>
     sole (parseTwiceTokensYouWouldCreate line) n <|>
