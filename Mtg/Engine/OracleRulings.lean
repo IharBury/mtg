@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests
 
 /-!
@@ -2267,7 +2266,7 @@ def uniqueMshOracleRulingCount : Nat := uniqueMshOracleRulings.size
 #guard (uniqueOracleRulings.map (·.id)).toList ==
   (List.range uniqueOracleRulingCount).map (· + 1)
 #guard
-  (CardDef.uniqueStrings (uniqueOracleRulings.toList.map (·.comment))).length ==
+  (uniqueOracleRulings.toList.map (·.comment)).eraseDups.length ==
     uniqueOracleRulingCount
 #guard uniqueOracleRulings.all (fun r => !r.cards.isEmpty)
 #guard uniqueOracleRulings.all (fun r => !r.sets.isEmpty)
@@ -2285,10 +2284,9 @@ end Mtg.Engine
 # Engine behavior for unique HOB / HOC judge rulings
 
 These tests check Gatherer / Scryfall `wotc` comments — rulings issued by
-judges — not the rules text printed on the cards and not
-`CardDef.matchesOracleText`. Each `#guard` is tagged with the ruling id
-from `uniqueOracleRulings`. Comments shared with MSH cards keep this same
-id so the ruling is set-independent.
+judges — not the rules text printed on the cards. Each `#guard` is tagged
+with the ruling id from `uniqueOracleRulings`. Comments shared with MSH
+cards keep this same id so the ruling is set-independent.
 -/
 
 namespace Mtg.Engine.RulingTests
@@ -7166,9 +7164,9 @@ end Mtg.Engine.RulingTests
 
 These tests check official MSH release-note and Gatherer / Scryfall `wotc`
 comments — rulings issued by judges — not the rules text printed on the
-cards and not `CardDef.matchesOracleText`. Each `#guard` is tagged with the
-ruling id from `uniqueOracleRulings`. Comments that also appear on HOB or
-HOC cards keep that shared id so the same ruling applies across sets.
+cards. Each `#guard` is tagged with the ruling id from `uniqueOracleRulings`.
+Comments that also appear on HOB or HOC cards keep that shared id so the
+same ruling applies across sets.
 -/
 
 namespace Mtg.Engine.MshRulingTests
