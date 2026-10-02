@@ -225,19 +225,21 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           .zone .battlefield, .cardType .creature, .attacking .all] then
       some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)
     else none
-  -- Getaway Barrel: reveal the top thirteen cards, put a random creature
-  -- from among them onto the battlefield, and put the rest on the bottom
-  -- in a random order. `chooseRandom` is that one creature. The same
-  -- selector again is the same card, so `.not` of it is the rest.
+  -- Getaway Barrel: reveal the top thirteen cards, bind the random
+  -- creature to a selector variable, put that card onto the battlefield,
+  -- and put the rest on the bottom in a random order.
   | .triggered (.putToGraveyard .this) (.sequence [
       .actionId revealId (.reveal (.topOfLibrary who (.int 13))),
-      .putOntoBattlefield (.chooseRandom among),
+      .defineSelectorVariable varId
+        (.chooseRandom
+          (.intersection [.wasObjectOfAction revealed, .cardType .creature])),
+      .putOntoBattlefield (.variable put),
       .putOnLibraryBottomInRandomOrder
         (.intersection [
           .wasObjectOfAction rest,
-          .not (.chooseRandom excluded)])]) =>
-    if who == .controller .this && revealId == rest && among == excluded &&
-        among == .intersection [.wasObjectOfAction revealId, .cardType .creature] then
+          .not (.variable excluded)])]) =>
+    if who == .controller .this && revealId == revealed && revealId == rest &&
+        varId == put && varId == excluded then
       some (TriggeredAbility.onDiesRevealTopPutRandomCreature 13)
     else none
   -- Dwalin, Weaponmaster: a hone counter on each Equipment you control.

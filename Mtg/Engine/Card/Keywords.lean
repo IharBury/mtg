@@ -492,8 +492,8 @@ inductive Selector where
   anywhere other than your hand”. -/
   | castFromZone : ZoneKind → Selector
   /-- One object chosen at random from those matching the selector.
-  Each occurrence of the same `chooseRandom` selector in one effect is
-  that one object. `.not` of it is the other objects. -/
+  A later reference to that same object is `Selector.variable` after
+  `CardAction.defineSelectorVariable`, not another `chooseRandom`. -/
   | chooseRandom : Selector → Selector
 deriving Repr, Inhabited, BEq
 

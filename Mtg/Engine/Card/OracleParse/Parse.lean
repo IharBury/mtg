@@ -387,22 +387,24 @@ def parseExileReturnEndStep (cardName line : String) (n : Nat) : Option (List Ca
 the top thirteen cards of your library. Put a random creature card from among
 them onto the battlefield. Put the rest on the bottom of your library in a
 random order.`
-The reveal is action `n`. The creature is `Selector.chooseRandom` of the
-creature cards among those revealed cards. That same selector is the one
-chosen card, so `.not` of it is the rest. -/
+The reveal is action `n`. The random creature is variable `n + 1`:
+`defineSelectorVariable` of `Selector.chooseRandom` of the creature cards
+among those revealed cards. Later actions use that variable. -/
 def parseRevealRandomCreature (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
   if normLine line !=
       "when this artifact is put into a graveyard from the battlefield, reveal the top thirteen cards of your library. put a random creature card from among them onto the battlefield. put the rest on the bottom of your library in a random order" then
     none
   else
-    let revealed := .wasObjectOfAction n
-    let creature := .chooseRandom (.intersection [revealed, .cardType .creature])
+    let creature := n + 1
     some ([.ability (.triggered (.putToGraveyard .this) (.sequence [
       .actionId n (.reveal (.topOfLibrary (.controller .this) 13)),
-      .putOntoBattlefield creature,
+      .defineSelectorVariable creature
+        (.chooseRandom
+          (.intersection [.wasObjectOfAction n, .cardType .creature])),
+      .putOntoBattlefield (.variable creature),
       .putOnLibraryBottomInRandomOrder
-        (.intersection [revealed, .not creature])]))], n + 1)
+        (.intersection [.wasObjectOfAction n, .not (.variable creature)])]))], n + 2)
 
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :

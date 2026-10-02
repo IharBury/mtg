@@ -102,9 +102,9 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `manaValueAtMost` (mana value at most a `Value`), `castFromZone` (the zone
   this spell was cast from; `.not (.castFromZone .hand)` is “from anywhere
   other than your hand”), `chooseRandom` (one object chosen at random from
-  those matching the selector; the same selector in one effect is that one
-  object). `hostOf` an Equipment is a creature that is
-  equipped.
+  those matching the selector; a later reference to that same object is
+  `variable` after `defineSelectorVariable`). `hostOf` an Equipment is a
+  creature that is equipped.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `upkeep`, `endStep`,
   `precombatMainPhase`, `drawStep` (the selected player's draw step; also a
@@ -356,7 +356,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.exileThenReturn` | Exile, then `CardAction.delayedTrigger` of `.endStep .player`. The delayed trigger puts `wasCreatedByAction` of the exile onto the battlefield the next time an end step begins (CR 603.7b). Elrond, Moon-Reader. Roll-Roll-Roll-Roll, S.H.I.E.L.D. Flying Car, and Wiccan, Rising Magician spell the same return and are not converted yet |
 | `CardAction.exileUntil` | Exile the selected objects until the event (CR 610.3). Immediately after that event, a one-shot returns each object that is still exiled to the zone it left. Celebrate the Mountain-king exiles, for each opponent, up to one target nonland permanent that player controls until the enchantment leaves the battlefield. Banishing Light, Cloak and Dagger, Entwined, Super Villain Lockup, and Web Up spell the same return and are not converted yet |
 | `Selector.attached` for “that are equipped” | `Selector.hostOf` of Equipment on the battlefield. “Equipment attached to” an object stays open. Dáin Ironfoot grants double strike to attacking creatures that are hosts of Equipment |
-| `CardAction.randomize` | `Selector.chooseRandom` of the objects to choose from. The same selector in one effect is that one object, so `.not` of it is the rest. Getaway Barrel reveals the top thirteen cards, puts a random creature card from among them onto the battlefield, and puts the rest on the bottom in a random order |
+| `CardAction.randomize` | `Selector.chooseRandom` of the objects to choose from. Getaway Barrel reveals the top thirteen cards, binds one random creature card from among them with `defineSelectorVariable`, puts that variable onto the battlefield, and puts the rest on the bottom in a random order |
 
 ## Missing constructors by type
 
@@ -690,11 +690,11 @@ still yields `onEnterExileOppNonlandEachUntilLeaves`.
 
 Getaway Barrel is a `TraditionalCardDefinition` read with `parseOracleParts`.
 When it is put into a graveyard from the battlefield, it reveals the top
-thirteen cards of its controller's library. `Selector.chooseRandom` is one
-creature card from among those revealed cards. That creature is put onto
-the battlefield. The same selector is that one card, so `.not` of it is
-the rest, which go on the bottom of the library in a random order.
-Compiling that ability still yields `onDiesRevealTopPutRandomCreature`.
+thirteen cards of its controller's library. `defineSelectorVariable` binds
+`Selector.chooseRandom` of the creature cards among them. That variable is
+put onto the battlefield, and the revealed cards other than that variable
+go on the bottom of the library in a random order. Compiling that ability
+still yields `onDiesRevealTopPutRandomCreature`.
 
 ## Cards that still cannot convert
 
