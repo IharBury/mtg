@@ -932,7 +932,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .cantAttackUnlessPays _ _ _ => b
   | .removeAllAbilities who =>
     { b with removesAllAbilitiesFrom := b.removesAllAbilitiesFrom.push who }
-  | .alternativeCost _ _ => b
+  | .alternativeCost _ _ | .replaceCost _ _ => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=

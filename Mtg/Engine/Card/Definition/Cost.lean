@@ -13,6 +13,9 @@ inductive Cost where
   | mana : List ManaSymbol → Cost
   /-- Pay that much life (CR 118.3). -/
   | life : Nat → Cost
+  /-- Pay life equal to the spell's mana value (CR 202.3). The amount is
+  that spell's mana value, not a printed number. -/
+  | lifeEqualToManaValue
   /-- Sacrifice every selected permanent (CR 701.17). -/
   | sacrifice : Selector → Cost
   /-- Sacrifice that many permanents matching the selector (CR 701.17).

@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**195** catalog cards are still `CardDef` helpers. **170**
+**194** catalog cards are still `CardDef` helpers. **169**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **25** lost
 their last tag (named counters, `CardAction.removeCounter`,
@@ -27,12 +27,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 167 | 21 | 18 |
+| The Hobbit (HOB) | 188 | 168 | 20 | 17 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 44 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 108 |
-| **Total** | **586** | **391** | **195** | **170** |
+| **Total** | **586** | **392** | **194** | **169** |
 
-All 391 `TraditionalCardDefinition`s (167 HOB, 67 HOC, 157 MSH,
+All 392 `TraditionalCardDefinition`s (168 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -133,7 +133,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   promised), `counter`, `activateAbility` (the selected player activates an
   ability of a source matching the second selector), `target` (a spell or
   ability targets an object), `sequence`, `not`, `or`.
-- **Cost** — `mana` (including `ManaSymbol.x`), `life`, `sacrifice` (every selected permanent),
+- **Cost** — `mana` (including `ManaSymbol.x`), `life`, `lifeEqualToManaValue`
+  (life equal to the spell's mana value), `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
 - **Condition** — `any` (a target of `src` matching `among` is `any` of
@@ -153,6 +154,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `static`, `stackStatic`, `everywhereStatic` (functions in every zone, including before the card is put onto the stack).
 - **ContinuousEffect** — `gainAbility`, `if`, `reduceCost`, `reduceCostWithX`
   (substitutes `{X}` with a `Value`), `additionalCost`, `alternativeCost`,
+  `replaceCost` (pay the given costs rather than the selected spell's mana
+  cost; not optional),
   `replace`, `forbid`, `canCastWithoutPayingManaCost`, `canPlay`,
   `setBasePower`, `setBaseToughness`, `gainType`, `gainSubtype`,
   `gainAllSubtypes`, `setPower`, `setToughness`, `addPower`, `addToughness`,
@@ -390,8 +393,8 @@ complete.
 
 ### `Selector`
 
-- **`manaValue`** (18 cards) — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
-  - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Evil's Thrall; Gandalf, Party Guest; Glamdring; Inside Information; Loki Laufeyson; Murdock's Crusade; … (8 more)
+- **`manaValue`** (17 cards) — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
+  - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Evil's Thrall; Gandalf, Party Guest; Glamdring; Loki Laufeyson; Murdock's Crusade; … (8 more)
 - **`attackingAlone`** (8 cards) — A creature attacking alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
 - **`attached`** (3 cards) — Objects attached to a given object (inverse of `hostOf`). “That are equipped” is `hostOf` an Equipment
@@ -718,6 +721,13 @@ never happens (CR 614.6). “When you do” is `CardAction.reflexive`, which
 creates a 2/2 green Wolf creature token. Compiling that ability still yields
 `exileOppCreaturesInstead` and `StaticAbility.exileOppDeathCreateWolf`.
 
+Inside Information is a `TraditionalCardDefinition` read with
+`parseOracleParts`. It exiles the top X cards of a target opponent's library.
+Its controller may play those cards until end of turn. Casting one of them
+replaces its mana cost: `replaceCost` of those cards with
+`Cost.lifeEqualToManaValue`. That payment is not optional. Compiling the
+spell still yields `Effect.exileTopXOppPlayForLife`.
+
 ## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. Evidence is the
@@ -798,15 +808,11 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (18 cards)
+### The Hobbit (HOB) (17 cards)
 
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
 - `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
-
-**Inside Information** (`insideInformation`)
-
-- `Selector.manaValue` — Mana value at least N, or a total mana value. At most is `Selector.manaValueAtMost`. `Value.greatestManaValue` names one mana value; nothing compares it inside a selector or sums it
 
 **Key to the Side-Door** (`keyToTheSideDoor`)
 

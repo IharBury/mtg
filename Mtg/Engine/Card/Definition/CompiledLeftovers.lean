@@ -463,6 +463,20 @@ def leftoverExileAttackersSearchBasics? : CardAction → Bool
       chooser == .targetReference sid
   | _ => false
 
+/-- Exile the top X cards of a target opponent's library. You may play them
+this turn, paying life equal to mana value rather than the mana cost. -/
+def leftoverExileTopXOppPlayForLife? : CardAction → Bool :=
+  | .sequence [
+      .actionId id
+        (.exile (.topOfLibrary (.target tid (.opponent (.controller .this))) .x)),
+      .continuous [
+        .canPlay permit (.wasCreatedByAction created),
+        .replaceCost (.wasCreatedByAction replaced) [.lifeEqualToManaValue]]
+      .endOfTurn
+    ] =>
+    id == created && id == replaced && id == tid && permit == .controller .this
+  | _ => false
+
 /-- Look at the top `n` cards, exile them face down, and play them while
 exiled if you control this subtype. -/
 def leftoverExileTopFaceDownPlayIf? : CardAction → Option (Nat × String)
@@ -736,6 +750,9 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
 code generator does not duplicate a long `orElse` chain while simplifying it. -/
 @[noinline]
 private def leftoverCompiledHead? (action : CardAction) : Option Effect :=
+  if leftoverExileTopXOppPlayForLife? action then
+    some Effect.exileTopXOppPlayForLife
+  else
   match leftoverSourcePlusOneSequence? action with
   | some e => some e
   | none =>
