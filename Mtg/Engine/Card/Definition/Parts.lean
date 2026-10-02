@@ -330,9 +330,9 @@ inductive CardAction where
   /-- Reveal cards from the top of the selected player's library until the
   revealed cards matching the selector satisfy the set-wide predicates
   (CR 701.16). No predicate stops at the first matching card.
-  `wasObjectOfAction` of an `actionId` around this action is each matching
-  card revealed to satisfy those predicates. `restOfAction` is the other
-  revealed cards. -/
+  `wasObjectOfAction` of an `actionId` around this action is every revealed
+  card. The cards that stopped the reveal match the selector. The other
+  revealed cards are that action's objects that do not match it. -/
   | revealFromLibraryTopUntil : Selector → Selector → List SetPredicate → CardAction
   /-- The selected objects fight (CR 701.12). -/
   | fight : Selector → Selector → CardAction

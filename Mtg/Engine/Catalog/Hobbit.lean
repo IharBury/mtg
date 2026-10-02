@@ -7285,7 +7285,7 @@ def partInFriendshipDefinition : TraditionalCardDefinition := .card <|
   .type .enchantment,
   .ability
     (.triggered
-      (.onceEachTurn
+      (.ordinal 1 .turnStart
         (.die
           (.intersection
             [
@@ -7300,16 +7300,21 @@ def partInFriendshipDefinition : TraditionalCardDefinition := .card <|
             (.revealFromLibraryTopUntil (.controller .this) (.cardType .creature) []),
           .ifElse
             (.lessOrEqual
-              (.greatestManaValue (.wasObjectOfAction 1))
+              (.greatestManaValue
+                (.intersection [.wasObjectOfAction 1, .cardType .creature]))
               (.count
                 (.intersection
                   [
                     .zone .battlefield,
                     .cardType .land,
                     .controlled (.controller .this)])))
-            [.putOntoBattlefield (.wasObjectOfAction 1)]
-            [.returnToHand (.wasObjectOfAction 1)],
-          .putOnLibraryBottomInRandomOrder (.restOfAction 1)]))]
+            [.putOntoBattlefield
+              (.intersection [.wasObjectOfAction 1, .cardType .creature])]
+            [.returnToHand
+              (.intersection [.wasObjectOfAction 1, .cardType .creature])],
+          .putOnLibraryBottomInRandomOrder
+            (.intersection
+              [.wasObjectOfAction 1, .not (.cardType .creature)])]))]
 
 def partInFriendship : CardDef :=
   partInFriendshipDefinition.toCardDef (oracleText := partInFriendshipOracle)

@@ -231,13 +231,13 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           .zone .battlefield, .cardType .creature, .attacking .all] then
       some (TriggeredAbility.onAttackWithTotalPowerUntapExtraCombat 12)
     else none
-  -- Part in Friendship: a nontoken creature you control dies. Reveal until
-  -- a creature card. Its mana value, compared with the number of lands you
-  -- control, decides the battlefield or your hand. The other revealed
-  -- cards go on the bottom in a random order. The ability triggers only
-  -- once each turn, which is not the first death of the turn.
+  -- Part in Friendship: the first nontoken creature you control to die each
+  -- turn. Reveal until a creature card. Its mana value, compared with the
+  -- number of lands you control, decides the battlefield or your hand.
+  -- The other revealed cards go on the bottom in a random order.
+  -- “This ability triggers only once each turn” is `ordinal` 1 since turn start.
   | .triggered
-      (.onceEachTurn
+      (.ordinal 1 .turnStart
         (.die
           (.intersection
             [.zone .battlefield, .cardType .creature, .not .token, ctl])))
@@ -245,15 +245,19 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
         .actionId id (.revealFromLibraryTopUntil who (.cardType .creature) []),
         .ifElse
           (.lessOrEqual
-            (.greatestManaValue (.wasObjectOfAction mv))
+            (.greatestManaValue creature)
             (.count lands))
-          [.putOntoBattlefield (.wasObjectOfAction put)]
-          [.returnToHand (.wasObjectOfAction hand)],
-        .putOnLibraryBottomInRandomOrder (.restOfAction rest)]) =>
-    if ctl == .controlled (.controller .this) && who == .controller .this &&
-        id == mv && id == put && id == hand && id == rest &&
-        lands == .intersection [
-          .zone .battlefield, .cardType .land, .controlled (.controller .this)] then
+          [.putOntoBattlefield put]
+          [.returnToHand hand],
+        .putOnLibraryBottomInRandomOrder rest]) =>
+    let you := .controlled (.controller .this)
+    let revealedCreature := .intersection [.wasObjectOfAction id, .cardType .creature]
+    let revealedRest :=
+      .intersection [.wasObjectOfAction id, .not (.cardType .creature)]
+    if ctl == you && who == .controller .this &&
+        creature == revealedCreature && put == revealedCreature && hand == revealedCreature &&
+        rest == revealedRest &&
+        lands == .intersection [.zone .battlefield, .cardType .land, you] then
       some TriggeredAbility.onNontokenYouControlDiesRevealCreature
     else none
   -- Getaway Barrel: reveal the top thirteen cards, bind the random

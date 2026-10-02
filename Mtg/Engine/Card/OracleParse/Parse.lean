@@ -388,10 +388,10 @@ of your library until you reveal a creature card. If its mana value is less
 than or equal to the number of lands you control, put it onto the
 battlefield. Otherwise, put it into your hand. Put the rest on the bottom of
 your library in a random order. This ability triggers only once each turn.`
-The reveal is action `n`. That action's object is the creature card.
-`restOfAction` is the other revealed cards. “Only once each turn” is not
-the first death since turn start: a creature that dies after this enchantment
-enters still triggers it. -/
+The reveal is action `n`. `wasObjectOfAction` of that action is every
+revealed card. The creature card is the revealed card that is a creature,
+and the rest are the revealed cards that are not. “This ability triggers
+only once each turn” is the first such death since turn start. -/
 def parseRevealUntilCreature (line : String) (n : Nat) : Option (List CardPart × Nat) :=
   if normLine line !=
       "whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. if its mana value is less than or equal to the number of lands you control, put it onto the battlefield. otherwise, put it into your hand. put the rest on the bottom of your library in a random order. this ability triggers only once each turn" then
@@ -402,15 +402,16 @@ def parseRevealUntilCreature (line : String) (n : Nat) : Option (List CardPart �
         .zone .battlefield, .cardType .creature, .not .token, youControl])
     let lands :=
       .intersection [.zone .battlefield, .cardType .land, youControl]
-    some ([.ability (.triggered (.onceEachTurn dies) (.sequence [
+    let revealed := Selector.wasObjectOfAction n
+    let creature := .intersection [revealed, .cardType .creature]
+    let rest := .intersection [revealed, .not (.cardType .creature)]
+    some ([.ability (.triggered (.ordinal 1 .turnStart dies) (.sequence [
       .actionId n (.revealFromLibraryTopUntil (.controller .this) (.cardType .creature) []),
       .ifElse
-        (.lessOrEqual
-          (.greatestManaValue (.wasObjectOfAction n))
-          (.count lands))
-        [.putOntoBattlefield (.wasObjectOfAction n)]
-        [.returnToHand (.wasObjectOfAction n)],
-      .putOnLibraryBottomInRandomOrder (.restOfAction n)]))], n + 1)
+        (.lessOrEqual (.greatestManaValue creature) (.count lands))
+        [.putOntoBattlefield creature]
+        [.returnToHand creature],
+      .putOnLibraryBottomInRandomOrder rest]))], n + 1)
 
 /-- `When this artifact is put into a graveyard from the battlefield, reveal
 the top thirteen cards of your library. Put a random creature card from among

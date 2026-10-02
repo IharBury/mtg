@@ -245,7 +245,7 @@ def shape : Selector → Shape
   | .supertype _
   | .variable _ | .topOfLibrary _ _ => {}
   | .hasCreatureTypeChosenByAction _ => { chosenCreatureType := true }
-  | .manaValueAtMost _ | .castFromZone _ | .sharesNameWith _ | .restOfAction _ => {}
+  | .manaValueAtMost _ | .castFromZone _ | .sharesNameWith _ => {}
   | .chooseRandom s => s.shape
 
 /-- Apply set-wide predicates onto an object-level shape. -/
@@ -413,7 +413,6 @@ def referenceTargets : Selector → Selector
   | .castFromZone z => .castFromZone z
   | .chooseRandom s => .chooseRandom (referenceTargets s)
   | .sharesNameWith s => .sharesNameWith (referenceTargets s)
-  | .restOfAction n => .restOfAction n
 
 #guard
   (Selector.target 1 (.intersection [.zone .battlefield, .cardType .creature])).referenceTargets ==
