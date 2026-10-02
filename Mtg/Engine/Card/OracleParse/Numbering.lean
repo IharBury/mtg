@@ -165,7 +165,7 @@ def collectAbility : Ability → List Nat × List Nat
   | .graveyardActivatedIf c cs action =>
     appendIds [collectCondition c, appendIds (cs.map collectCost), collectAction action]
   | .abilityId n a => appendIds [([], [n]), collectAbility a]
-  | .triggered t action | .triggeredOnce t action =>
+  | .triggered t action =>
     appendIds [collectTrigger t, collectAction action]
   | .triggeredWhile t c action =>
     appendIds [collectTrigger t, collectCondition c, collectAction action]
@@ -465,7 +465,6 @@ def mapAbility (m : IdMaps) : Ability → Ability
     .graveyardActivatedIf (mapCondition m c) (mapCosts m cs) (mapAction m action)
   | .abilityId n a => .abilityId (m.target n) (mapAbility m a)
   | .triggered t action => .triggered (mapTrigger m t) (mapAction m action)
-  | .triggeredOnce t action => .triggeredOnce (mapTrigger m t) (mapAction m action)
   | .triggeredWhile t c action =>
     .triggeredWhile (mapTrigger m t) (mapCondition m c) (mapAction m action)
   | .static e => .static (mapEffect m e)

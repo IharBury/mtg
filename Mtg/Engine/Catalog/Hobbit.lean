@@ -6600,11 +6600,14 @@ def elrondMoonReaderDefinition : TraditionalCardDefinition := .card <|
   .power 3,
   .toughness 3
   ] ++ [.ability
-   (.triggeredOnce
-     (.activateAbility
-       (.intersection
-         [.zone .battlefield,
-          .cardType .creature]))
+   (.triggered
+     (.ordinal
+       1
+       .turnStart
+       (.activateAbility
+         (.intersection
+           [.zone .battlefield,
+            .cardType .creature])))
      (.draw (.controller .this) (.int 1))),
  .ability
    (.activated

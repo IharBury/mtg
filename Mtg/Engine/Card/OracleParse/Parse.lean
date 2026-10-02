@@ -348,8 +348,11 @@ def parseActivateCreatureDrawOnce (line : String) (n : Nat) : Option (List CardP
     if normSentence draw != "whenever you activate an ability of a creature, draw a card" then
       none
     else
-      some ([.ability (.triggeredOnce
-        (.activateAbility (.intersection [.zone .battlefield, .cardType .creature]))
+      -- “This ability triggers only once each turn” is the first such
+      -- activation since turn start.
+      some ([.ability (.triggered
+        (.ordinal 1 .turnStart
+          (.activateAbility (.intersection [.zone .battlefield, .cardType .creature])))
         (.draw (.controller .this) 1))], n)
   | _ => none
 

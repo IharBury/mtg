@@ -251,10 +251,12 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           (.keyword .doubleStrike)]
         .endOfTurn) =>
     some TriggeredAbility.onAttackEquippedGainDoubleStrike
-  -- Elrond, Moon-Reader: draw once when you activate a creature ability.
-  -- `triggeredOnce` unwraps to this before compilation.
+  -- Elrond, Moon-Reader: the first time each turn you activate an ability
+  -- of a creature, draw a card. “This ability triggers only once each turn”
+  -- is `ordinal` 1 since turn start.
   | .triggered
-      (.activateAbility (.intersection [.zone .battlefield, .cardType .creature]))
+      (.ordinal 1 .turnStart
+        (.activateAbility (.intersection [.zone .battlefield, .cardType .creature])))
       (.draw who (.int 1)) =>
     if who == .controller .this then
       some TriggeredAbility.onActivateCreatureAbilityDrawOnce
@@ -1228,11 +1230,7 @@ def compileTriggeredAbility? : Ability → Option TriggeredAbility
   | _ => none
 
 def toTriggeredAbility? (a : Ability) : Option TriggeredAbility :=
-  let unwrapped :=
-    match a with
-    | .triggeredOnce t action => Ability.triggered t action
-    | other => other
-  unwrapped.printedTriggeredAbility?.orElse fun _ => unwrapped.compileTriggeredAbility?
+  a.printedTriggeredAbility?.orElse fun _ => a.compileTriggeredAbility?
 
 end Ability
 
