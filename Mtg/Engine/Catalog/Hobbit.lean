@@ -254,13 +254,64 @@ def vowToErebor : TraditionalCardDefinition := .card [
     c.spellEffect == some (Effect.untapPumpMaybeAttach 2 2) &&
     c.oracleText == "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
 
-def bilboBagginsBurglar : CardDef :=
-  legendaryCreature "Bilbo Baggins, Burglar" (ManaCost.ofGenericAndColor 2 .blue) #["Halfling", "Rogue"] 2 1
-    (oracleText := "When Bilbo Baggins enters, draw a card.\n//ADV//\nTake a Glance {U}\nSorcery — Adventure\nScry 2. (Then exile this card. You may cast the creature later from exile.)")
-    (triggeredAbilities := #[.onEnterDraw 1])
-    (adventure := some (adventure "Take a Glance" (ManaCost.ofColor .blue)
-      "Scry 2. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.scry 2)))
+def bilboBagginsBurglar : TraditionalCardDefinition := .card [
+  .name "Bilbo Baggins, Burglar",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .rogue,
+  .power 2,
+  .toughness 1,
+  .textBox [
+    .when
+      [.enter [.thisCardName]]
+      [.draw 1]
+  ],
+  .alternative [
+    .name "Take a Glance",
+    .manaCost [.mono .blue],
+    .type .sorcery,
+    .subtype .adventure,
+    .textBox [
+      .scry 2
+    ]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Bilbo Baggins, Burglar {2}{U}",
+  "Legendary Creature — Halfling Rogue",
+  "2/1",
+  "When Bilbo Baggins enters, draw a card.",
+  "//ADV//",
+  "Take a Glance {U}",
+  "Sorcery — Adventure",
+  "Scry 2. (Then exile this card. You may cast the creature later from exile.)"
+]) == some bilboBagginsBurglar
+
+#guard
+  let c := bilboBagginsBurglar.toCardDef
+  c.name == "Bilbo Baggins, Burglar" &&
+    c.types == #[.creature] &&
+    c.subtypes == #["Halfling", "Rogue"] &&
+    c.hasSupertype .legendary &&
+    c.power == some 2 &&
+    c.toughness == some 1 &&
+    c.manaCost == ManaCost.ofGenericAndColor 2 .blue &&
+    c.keywords == Keywords.none &&
+    c.spellEffect == none &&
+    c.triggeredAbilities == #[.onEnterDraw 1] &&
+    c.oracleText == "When Bilbo Baggins enters, draw a card.\n//ADV//\nTake a Glance {U}\nSorcery — Adventure\nScry 2. (Then exile this card. You may cast the creature later from exile.)" &&
+    match c.adventure with
+    | some adv =>
+      adv.name == "Take a Glance" &&
+        adv.manaCost == ManaCost.ofColor .blue &&
+        adv.types == #[.sorcery] &&
+        adv.subtypes == #["Adventure"] &&
+        adv.oracleText == "Scry 2. (Then exile this card. You may cast the creature later from exile.)" &&
+        adv.spellEffect == some (Effect.scry 2)
+    | none => false
 
 def lakeshoreApothecary : CardDef :=
   creature "Lakeshore Apothecary" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Cleric"] 1 2
@@ -1425,8 +1476,7 @@ def hobbitCards : Array CardDef :=
   #[plains, island, swamp, mountain, forest] ++
   -- `++` compiles a run of DSL cards into `CardDef`s.
   (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
-     magnificentEnd, eagleOfTheGreatShelf, vowToErebor] ++ #[
-  bilboBagginsBurglar,
+     magnificentEnd, eagleOfTheGreatShelf, vowToErebor, bilboBagginsBurglar] ++ #[
   lakeshoreApothecary,
   confusticateAndBebother,
   ravenhillFlock,
