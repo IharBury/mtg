@@ -445,7 +445,7 @@ def magnificentEndSetup (tapped : Bool) : Game :=
 def magnificentEndFull : Game := magnificentEndSetup false
 def magnificentEndCheap : Game := magnificentEndSetup true
 
-#guard magnificentEnd.costReductionIfTargetTapped == 3
+#guard magnificentEnd.toCardDef.costReductionIfTargetTapped == 3
 #guard
   match magnificentEndFull.apply ⟨0⟩
       (.cast (handCardNamed magnificentEndFull ⟨0⟩ "Magnificent End").id) with

@@ -12,10 +12,12 @@ A list-shaped definition language for a traditional Magic card: one face,
 plus an optional Adventure. `TraditionalCardDefinition.card` is the clause
 list. `toCardDef` compiles it into the engine's `CardDef`. Printed
 keywords are a `.keyword` instruction in `.textBox`, activated
-abilities are a `.costFor` instruction in `.textBox`, and tapping
-spells are a `.tap` instruction in `.textBox`. `parseOracleText`
-reads a printed card (name, mana cost, type line, power/toughness, rules
-text, and an Adventure face) back into that clause list.
+abilities are a `.costFor` instruction in `.textBox`, tapping spells
+are a `.tap` instruction in `.textBox`, cost reductions are a
+`.costLessToCastIf` instruction in `.textBox`, and damage is a
+`.dealDamage` instruction in `.textBox`. `parseOracleText` reads a
+printed card (name, mana cost, type line, power/toughness, rules text,
+and an Adventure face) back into that clause list.
 -/
 
 namespace Mtg.Engine
@@ -167,6 +169,7 @@ inductive ObjectQualifier where
   | cardType (t : CardType)
   | controlledBy (p : PlayerRef)
   | or (qs : List ObjectQualifier)
+  | tapped
   deriving Repr, BEq
 
 namespace ObjectQualifier
@@ -216,6 +219,29 @@ inductive PrintedCost where
   | mana (ms : List CostSymbol)
   deriving Repr, BEq
 
+/-- A word of the subject a cost reduction describes.
+`[.this, .spell]` is “this spell”. -/
+inductive CostSubject where
+  | this
+  | spell
+  deriving Repr, BEq
+
+/-- The object a casting condition names. `.it` is the spell’s target. -/
+inductive ConditionRef where
+  | it
+  deriving Repr, BEq
+
+/-- When a cost reduction applies.
+`.targeting .it [.tapped, .cardType .creature]` is “if it targets a tapped creature”. -/
+inductive CastIf where
+  | targeting (obj : ConditionRef) (qs : List ObjectQualifier)
+  deriving Repr, BEq
+
+/-- Who deals damage. `.thisCardName` prints the card’s name. -/
+inductive DamageSubject where
+  | thisCardName
+  deriving Repr, BEq
+
 /-- One instruction in a `.textBox`. -/
 inductive TextEffect where
   /-- A printed keyword ability of this face (`Lifelink`). -/
@@ -227,6 +253,11 @@ inductive TextEffect where
   | costFor (costs : List PrintedCost) (effects : List TextEffect)
   /-- Tap the named targets (`Tap one or two target creatures`). -/
   | tap (targets : List TargetExpr)
+  /-- These words cost `discount` less to cast when `cond` holds.
+  `[.this, .spell]` is “This spell costs …”. -/
+  | costLessToCastIf (subjects : List CostSubject) (discount : List CostSymbol) (cond : CastIf)
+  /-- `subjects` deal `n` damage to `targets`. -/
+  | dealDamage (subjects : List DamageSubject) (n : Nat) (targets : List TargetExpr)
   deriving Repr, BEq
 
 /-- One clause in `.card` or `.alternative`. -/
@@ -299,6 +330,7 @@ private def ObjectQualifier.toPhrase : ObjectQualifier → String
   | .controlledBy .you => "you control"
   | .controlledBy .opponent => "an opponent controls"
   | .or qs => orJoin (qs.map toPhrase)
+  | .tapped => "tapped"
 
 private def qualifiersPhrase (qs : List ObjectQualifier) : String :=
   String.intercalate " " (qs.map ObjectQualifier.toPhrase)
@@ -330,6 +362,7 @@ private def pluralQualifier : ObjectQualifier → String
   | .controlledBy .you => "you control"
   | .controlledBy .opponent => "an opponent controls"
   | .or qs => orJoin (qs.map pluralQualifier)
+  | .tapped => "tapped"
 
 private def targetNoun (plural : Bool) (qs : List ObjectQualifier) : String :=
   if plural then String.intercalate " " (qs.map pluralQualifier)
@@ -364,28 +397,60 @@ private def getUntilSentence (qs : List ObjectQualifier) (mods : List StatMod)
   let bonus := String.intercalate " and " (mods.map statModPhrase)
   s!"{subject} get {bonus} {durationPhrase dur}."
 
+private def costSubjectWord : CostSubject → String
+  | .this => "this"
+  | .spell => "spell"
+
+private def castIfPhrase : CastIf → String
+  | .targeting .it qs =>
+    let noun := qualifiersPhrase qs
+    s!"it targets {indefinite noun} {noun}"
+
+private def costLessSentence (subjects : List CostSubject) (discount : List CostSymbol)
+    (cond : CastIf) : String :=
+  let subject := capitalizeAscii (String.intercalate " " (subjects.map costSubjectWord))
+  let cost := (CostSymbol.toManaCost discount).toNotation
+  s!"{subject} costs {cost} less to cast if {castIfPhrase cond}."
+
+private def damageSubjectPhrase (cardName : String) : DamageSubject → String
+  | .thisCardName => cardName
+
+private def dealDamageSentence (cardName : String) (subjects : List DamageSubject)
+    (n : Nat) (targets : List TargetExpr) : String :=
+  let source := String.intercalate " and " (subjects.map (damageSubjectPhrase cardName))
+  s!"{source} deals {n} damage to {joinTargets (targets.map TargetExpr.toPhrase)}."
+
 /-- A text-box effect nested under `.costFor`, printed without a further cost. -/
-private def nestedEffectSentence : TextEffect → Option String
+private def nestedEffectSentence (cardName : String) : TextEffect → Option String
   | .keyword _ => none
   | .gainUntil targets gains dur => some (gainUntilSentence targets gains dur)
   | .getUntil qs mods dur => some (getUntilSentence qs mods dur)
   | .costFor _ _ => none
   | .tap targets => some (tapSentence targets)
+  | .costLessToCastIf subjects discount cond =>
+    some (costLessSentence subjects discount cond)
+  | .dealDamage subjects n targets =>
+    some (dealDamageSentence cardName subjects n targets)
 
 /-- One Oracle line for consecutive printed keywords (`Flying, lifelink`). -/
 private def keywordRunLine (ks : List PrintedKeyword) : String :=
   capitalizeAscii (String.intercalate ", " (ks.map PrintedKeyword.oracleName))
 
-/-- Oracle sentence for a text-box effect, without reminder text. -/
-private def textEffectSentence : TextEffect → String
+/-- Oracle sentence for a text-box effect, without reminder text.
+`cardName` is substituted for `.thisCardName`. -/
+private def textEffectSentence (cardName : String) : TextEffect → String
   | .keyword k => keywordRunLine [k]
   | .gainUntil targets gains dur => gainUntilSentence targets gains dur
   | .getUntil qs mods dur => getUntilSentence qs mods dur
   | .costFor costs effects =>
     let cost := String.intercalate ", " (costs.map printedCostPhrase)
-    let body := String.intercalate " " (effects.filterMap nestedEffectSentence)
+    let body := String.intercalate " " (effects.filterMap (nestedEffectSentence cardName))
     s!"{cost}: {body}"
   | .tap targets => tapSentence targets
+  | .costLessToCastIf subjects discount cond =>
+    costLessSentence subjects discount cond
+  | .dealDamage subjects n targets =>
+    dealDamageSentence cardName subjects n targets
 
 /-- Map a spell text-box effect onto the engine's `Effect` vocabulary. -/
 private def textEffectToEffect : TextEffect → Option Effect
@@ -396,6 +461,8 @@ private def textEffectToEffect : TextEffect → Option Effect
     some Effect.grantHexproofIndestructible
   | .tap [.targets (.or 1 2) [.cardType .creature]] =>
     some Effect.tapOneOrTwoCreatures
+  | .dealDamage [.thisCardName] n [.target [.cardType .creature]] =>
+    some (Effect.dealDamageToCreature n)
   | _ => none
 
 private def creaturesYouControl (qs : List ObjectQualifier) : Bool :=
@@ -425,15 +492,31 @@ private def textEffectToActivated : TextEffect → Option ActivatedAbility
 private def adventureReminder : String :=
   "(Then exile this card. You may cast the creature later from exile.)"
 
+/-- Generic mana in a discount such as `[.generic 3]`. -/
+private def genericMana (ms : List CostSymbol) : Nat :=
+  ms.foldl (fun n s =>
+    match s with
+    | .generic k => n + k
+    | _ => n) 0
+
+/-- `{n}` less when the spell targets a tapped creature. -/
+private def tappedCreatureReduction (es : List TextEffect) : Nat :=
+  es.foldl (fun n e =>
+    match e with
+    | .costLessToCastIf [.this, .spell] discount
+        (.targeting .it [.tapped, .cardType .creature]) =>
+      n + genericMana discount
+    | _ => n) 0
+
 /-- Rules-text lines for a text box. Consecutive keywords share one line. -/
-private def renderText (es : List TextEffect) : List String :=
+private def renderText (cardName : String) (es : List TextEffect) : List String :=
   let (lines, pending) := es.foldl (fun (acc : List String × List PrintedKeyword) e =>
     let (lines, ks) := acc
     match e with
     | .keyword k => (lines, ks ++ [k])
     | other =>
       let lines := if ks.isEmpty then lines else lines ++ [keywordRunLine ks]
-      (lines ++ [textEffectSentence other], [])) ([], [])
+      (lines ++ [textEffectSentence cardName other], [])) ([], [])
   if pending.isEmpty then lines else lines ++ [keywordRunLine pending]
 
 private def headerLines (f : FaceBuild) : List String :=
@@ -445,7 +528,7 @@ private def headerLines (f : FaceBuild) : List String :=
   [nameLine, typeLine]
 
 private def effectLines (f : FaceBuild) : List String :=
-  let lines := renderText f.textBox
+  let lines := renderText f.name f.textBox
   let remind := f.subtypes.any (· == .adventure)
   match lines.dropLast, lines.getLast? with
   | _, none => []
@@ -459,7 +542,7 @@ private def rulesOracle (main : FaceBuild) (alt : Option FaceBuild) : String :=
     match alt with
     | none => []
     | some a => ["//ADV//"] ++ headerLines a ++ effectLines a
-  String.intercalate "\n" (renderText main.textBox ++ adv)
+  String.intercalate "\n" (renderText main.name main.textBox ++ adv)
 
 private def FaceBuild.toAdventure (f : FaceBuild) : AdventureFace :=
   { name := f.name
@@ -483,6 +566,7 @@ private def FaceBuild.toCard (f : FaceBuild) (oracleText : String)
     toughness := f.toughness
     keywords := keywordsOfText f.textBox
     spellEffect := (f.textBox.filterMap textEffectToEffect).head?
+    costReductionIfTargetTapped := tappedCreatureReduction f.textBox
     activatedAbilities := (f.textBox.filterMap textEffectToActivated).toArray
     adventure }
 
@@ -836,6 +920,48 @@ private def parseTap (line : String) : Option TextEffect := do
   let quals ← parseGetSubject noun
   return .tap [.targets count quals]
 
+private def parseMaybeTappedNoun (noun : String) : Option (List ObjectQualifier) := do
+  let (tapped, core) :=
+    if let some core := dropPrefixCI noun "tapped " then
+      (true, core)
+    else
+      (false, noun)
+  let quals ← parseNoun core
+  return (if tapped then [ObjectQualifier.tapped] else []) ++ quals
+
+private def parseCastIf (s : String) : Option CastIf := do
+  let rest ← dropPrefixCI s "it targets "
+  let noun :=
+    if let some n := dropPrefixCI rest "an " then n
+    else if let some n := dropPrefixCI rest "a " then n
+    else rest
+  let qs ← parseMaybeTappedNoun noun
+  return .targeting .it qs
+
+/-- `This spell costs {3} less to cast if it targets a tapped creature.` -/
+private def parseCostLess (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let rest ← dropPrefixCI line "This spell costs "
+  let (costText, condText) ← splitOnce " less to cast if " rest
+  let cost ← parseManaRun costText
+  let cond ← parseCastIf condText
+  return .costLessToCastIf [.this, .spell] cost cond
+
+private def parseTargetExpr (s : String) : Option TargetExpr := do
+  let rest ← dropPrefixCI s "target "
+  let qs ← parseMaybeTappedNoun rest
+  return .target qs
+
+/-- `{Name} deals 5 damage to target creature.` The subject is `.thisCardName`
+when it is the card’s name. -/
+private def parseDealDamage (cardName : String) (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let rest ← dropPrefixCI line s!"{cardName} deals "
+  let (nText, tgtText) ← splitOnce " damage to " rest
+  let n ← nText.toNat?
+  let tgt ← parseTargetExpr tgtText
+  return .dealDamage [.thisCardName] n [tgt]
+
 private def parseKeywordLine (line : String) : Option (List TextEffect) := do
   let parts := splitEnglishList line
   if parts.isEmpty then none
@@ -843,7 +969,7 @@ private def parseKeywordLine (line : String) : Option (List TextEffect) := do
     let kws ← parts.mapM PrintedKeyword.parse
     return kws.map TextEffect.keyword
 
-private def parseBody (lines : List String) : Option (List TextEffect) :=
+private def parseBody (cardName : String) (lines : List String) : Option (List TextEffect) :=
   lines.foldlM (fun effects line =>
     let cleaned := stripTrailingDot (stripParens line)
     if cleaned.isEmpty then
@@ -861,9 +987,15 @@ private def parseBody (lines : List String) : Option (List TextEffect) :=
             match parseTap cleaned with
             | some e => pure (effects ++ [e])
             | none =>
-              match parseKeywordLine cleaned with
-              | some ks => pure (effects ++ ks)
-              | none => none) []
+              match parseCostLess cleaned with
+              | some e => pure (effects ++ [e])
+              | none =>
+                match parseDealDamage cardName cleaned with
+                | some e => pure (effects ++ [e])
+                | none =>
+                  match parseKeywordLine cleaned with
+                  | some ks => pure (effects ++ ks)
+                  | none => none) []
 
 private def faceClauses (name : String) (cost : List CostSymbol)
     (supers : List Supertype) (tys : List CardType) (subs : List CardSubtype)
@@ -892,7 +1024,7 @@ private def parseFace (lines : List String) : Option (List CardClause) := do
         | some pt => (some pt, more)
         | none => (none, rest)
       | [] => (none, [])
-    let effects ← parseBody body
+    let effects ← parseBody name body
     return faceClauses name cost supers tys subs pt effects
   | _ => none
 
@@ -920,6 +1052,9 @@ is emitted in canonical order (name, mana cost, types, supertypes, subtypes,
 power, toughness, text box, alternative) so it can be compared to
 a definition written in that order. Keyword lines become `.keyword`
 instructions in that text box. `Tap one or two target …` becomes `.tap`.
+`This spell costs {N} less to cast if it targets …` becomes
+`.costLessToCastIf` with `[.this, .spell]`. `{Name} deals N damage to target …` becomes
+`.dealDamage` with `.thisCardName` when the subject is the card’s name.
 -/
 def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   let lines :=
@@ -939,7 +1074,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 #guard PrintedKeyword.all.all (fun k => PrintedKeyword.parse k.oracleName == some k)
 #guard parseManaRun "{1}{W}" == some [.generic 1, .mono .white]
 #guard parseManaRun "{W}" == some [.mono .white]
-#guard textEffectSentence (.gainUntil
+#guard textEffectSentence "" (.gainUntil
     [.target [.or [.cardType .artifact, .cardType .creature], .controlledBy .you]]
     [.keyword .hexproof, .keyword .indestructible]
     .endOfTurn) ==
@@ -951,7 +1086,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     [.keyword .hexproof, .keyword .indestructible]
     .endOfTurn)
 #guard (.plusPowerToughness +1 +1 : StatMod) == .plusPowerToughness 1 1
-#guard textEffectSentence (.costFor
+#guard textEffectSentence "" (.costFor
     [.mana [.generic 3, .mono .white]]
     [.getUntil [.creature, .controlledBy .you]
       [.plusPowerToughness +1 +1] .endOfTurn]) ==
@@ -963,13 +1098,27 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     [.getUntil [.cardType .creature, .controlledBy .you]
       [.plusPowerToughness 1 1] .endOfTurn])
 #guard keywordRunLine [.lifelink] == "Lifelink"
-#guard renderText [.keyword .flying, .keyword .lifelink] == ["Flying, lifelink"]
+#guard renderText "" [.keyword .flying, .keyword .lifelink] == ["Flying, lifelink"]
 #guard parseKeywordLine "Lifelink" == some [.keyword .lifelink]
 #guard parseKeywordLine "Flying, lifelink" == some [.keyword .flying, .keyword .lifelink]
-#guard textEffectSentence (.tap [.targets (.or 1 2) [.cardType .creature]]) ==
+#guard textEffectSentence "" (.tap [.targets (.or 1 2) [.cardType .creature]]) ==
   "Tap one or two target creatures."
 #guard parseTap
     "Tap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)" ==
   some (.tap [.targets (.or 1 2) [.cardType .creature]])
+#guard textEffectSentence "Magnificent End"
+    (.costLessToCastIf [.this, .spell] [.generic 3]
+      (.targeting .it [.tapped, .cardType .creature])) ==
+  "This spell costs {3} less to cast if it targets a tapped creature."
+#guard textEffectSentence "Magnificent End"
+    (.dealDamage [.thisCardName] 5 [.target [.cardType .creature]]) ==
+  "Magnificent End deals 5 damage to target creature."
+#guard parseCostLess
+    "This spell costs {3} less to cast if it targets a tapped creature." ==
+  some (.costLessToCastIf [.this, .spell] [.generic 3]
+    (.targeting .it [.tapped, .cardType .creature]))
+#guard parseDealDamage "Magnificent End"
+    "Magnificent End deals 5 damage to target creature." ==
+  some (.dealDamage [.thisCardName] 5 [.target [.cardType .creature]])
 
 end Mtg.Engine

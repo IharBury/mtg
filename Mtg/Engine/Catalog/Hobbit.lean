@@ -158,11 +158,33 @@ def velvetwingButterflies : TraditionalCardDefinition := .card [
         adv.spellEffect == some Effect.tapOneOrTwoCreatures
     | none => false
 
-def magnificentEnd : CardDef :=
-  instant "Magnificent End" (ManaCost.ofGenericAndColor 4 .white)
-    "This spell costs {3} less to cast if it targets a tapped creature.\nMagnificent End deals 5 damage to target creature."
-    (some (Effect.dealDamageToCreature 5))
-    (costReductionIfTargetTapped := 3)
+def magnificentEnd : TraditionalCardDefinition := .card [
+  .name "Magnificent End",
+  .manaCost [.generic 4, .mono .white],
+  .type .instant,
+  .textBox [
+    .costLessToCastIf [.this, .spell] [.generic 3] (.targeting .it [.tapped, .cardType .creature]),
+    .dealDamage [.thisCardName] 5 [.target [.cardType .creature]]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Magnificent End {4}{W}",
+  "Instant",
+  "This spell costs {3} less to cast if it targets a tapped creature.",
+  "Magnificent End deals 5 damage to target creature."
+]) == some magnificentEnd
+
+#guard
+  let c := magnificentEnd.toCardDef
+  c.name == "Magnificent End" &&
+    c.types == #[.instant] &&
+    c.subtypes == #[] &&
+    c.manaCost == ManaCost.ofGenericAndColor 4 .white &&
+    c.keywords == Keywords.none &&
+    c.spellEffect == some (Effect.dealDamageToCreature 5) &&
+    c.costReductionIfTargetTapped == 3 &&
+    c.oracleText == "This spell costs {3} less to cast if it targets a tapped creature.\nMagnificent End deals 5 damage to target creature."
 
 def eagleOfTheGreatShelf : CardDef :=
   creature "Eagle of the Great Shelf" (ManaCost.ofGenericAndColor 4 .white) #["Bird", "Soldier"] 2 5
@@ -1345,8 +1367,8 @@ that are also in the core catalog. -/
 def hobbitCards : Array CardDef :=
   #[plains, island, swamp, mountain, forest] ++
   -- `++` compiles a run of DSL cards into `CardDef`s.
-  (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies] ++ #[
-  magnificentEnd,
+  (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
+     magnificentEnd] ++ #[
   eagleOfTheGreatShelf,
   vowToErebor,
   bilboBagginsBurglar,
