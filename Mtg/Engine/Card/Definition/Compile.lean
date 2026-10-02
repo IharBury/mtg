@@ -255,6 +255,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .shuffleIntoOwnersLibrary _ | .lookAt _
                   | .putOnLibraryBottomInRandomOrder _ | .chooseCreatureType _
                   | .mayCast _ _ | .reflexive _ _ | .delayedTrigger _ _
+                  | .exileUntil _ _
                   | .addPhaseAfterThisPhase _ =>
                     continuousEffect none [] asAbility
 

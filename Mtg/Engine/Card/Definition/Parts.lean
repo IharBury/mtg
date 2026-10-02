@@ -257,6 +257,14 @@ inductive CardAction where
   | removeAllCounters : Selector → CardAction
   /-- Exile the selected object. -/
   | exile : Selector → CardAction
+  /-- Exile the selected objects until the event (CR 610.3). Immediately
+  after that event, a one-shot effect returns each object that is still
+  exiled to the zone it left. The return does not use the stack, and
+  nothing happens between the event and the return, including state-based
+  actions. A permanent returns to the battlefield under its owner's
+  control. `.exileUntil sel (.leaveBattlefield (.source .this))` is
+  “exile … until this leaves the battlefield”. -/
+  | exileUntil : Selector → Trigger → CardAction
   /-- Exile the selected objects face down (CR 406.3). -/
   | exileFaceDown : Selector → CardAction
   /-- Exchange control of the selected objects. -/

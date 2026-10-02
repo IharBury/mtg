@@ -247,6 +247,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .keepReplacedAction => ([], [])
   | .reflexive n as => appendIds [([n], []), appendIds (as.map collectAction)]
   | .delayedTrigger t as => appendIds [collectTrigger t, appendIds (as.map collectAction)]
+  | .exileUntil s t => appendIds [collectSelector s, collectTrigger t]
   | .addPhaseAfterThisPhase _ => ([], [])
 
 end
@@ -589,6 +590,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .mayCast a b => .mayCast (mapSelector m a) (mapSelector m b)
   | .reflexive n as => .reflexive (m.action n) (mapActions m as)
   | .delayedTrigger t as => .delayedTrigger (mapTrigger m t) (mapActions m as)
+  | .exileUntil s t => .exileUntil (mapSelector m s) (mapTrigger m t)
   | .addPhaseAfterThisPhase p => .addPhaseAfterThisPhase p
 
 end

@@ -6150,19 +6150,13 @@ def celebrateTheMountainKingDefinition : TraditionalCardDefinition := .card <|
     (.triggered
       (.enter .this)
       (.forEachVariable 1 (.opponent (.controller .this)) [
-        .sequence [
-          .actionId 1
-            (.exile
-              (.targets 2 (.range 0 1)
-                (.intersection [
-                  .zone .battlefield,
-                  .not (.cardType .land),
-                  .controlled (.variable 1)]))),
-          .continuous
-            [.replace (.leaveBattlefield (.source .this)) [
-              .putOntoBattlefield (.wasCreatedByAction 1),
-              .keepReplacedAction]]
-            .endOfGame]])),
+        .exileUntil
+          (.targets 2 (.range 0 1)
+            (.intersection [
+              .zone .battlefield,
+              .not (.cardType .land),
+              .controlled (.variable 1)]))
+          (.leaveBattlefield (.source .this))])),
   .ability
     (.triggered
       (.enter .this)
