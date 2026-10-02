@@ -7297,7 +7297,7 @@ def partInFriendshipDefinition : TraditionalCardDefinition := .card <|
         [
           .actionId
             1
-            (.revealUntil (.controller .this) (.cardType .creature)),
+            (.revealFromLibraryTopUntil (.controller .this) (.cardType .creature) []),
           .ifElse
             (.lessOrEqual
               (.greatestManaValue (.wasObjectOfAction 1))

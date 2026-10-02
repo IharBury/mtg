@@ -327,11 +327,13 @@ inductive CardAction where
   | forEachVariable : Nat → Selector → List CardAction → CardAction
   /-- Reveal the selected object (CR 701.19a). -/
   | reveal : Selector → CardAction
-  /-- Reveal cards from the top of the selected player's library until a
-  card matching the selector is revealed (CR 701.16). `wasObjectOfAction`
-  of an `actionId` around this action is that card. `restOfAction` is
-  the other revealed cards. -/
-  | revealUntil : Selector → Selector → CardAction
+  /-- Reveal cards from the top of the selected player's library until the
+  revealed cards matching the selector satisfy the set-wide predicates
+  (CR 701.16). No predicate stops at the first matching card.
+  `wasObjectOfAction` of an `actionId` around this action is each matching
+  card revealed to satisfy those predicates. `restOfAction` is the other
+  revealed cards. -/
+  | revealFromLibraryTopUntil : Selector → Selector → List SetPredicate → CardAction
   /-- The selected objects fight (CR 701.12). -/
   | fight : Selector → Selector → CardAction
   /-- The selected player chooses one of the listed mana symbols and adds

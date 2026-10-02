@@ -403,7 +403,7 @@ def parseRevealUntilCreature (line : String) (n : Nat) : Option (List CardPart Ã
     let lands :=
       .intersection [.zone .battlefield, .cardType .land, youControl]
     some ([.ability (.triggered (.onceEachTurn dies) (.sequence [
-      .actionId n (.revealUntil (.controller .this) (.cardType .creature)),
+      .actionId n (.revealFromLibraryTopUntil (.controller .this) (.cardType .creature) []),
       .ifElse
         (.lessOrEqual
           (.greatestManaValue (.wasObjectOfAction n))

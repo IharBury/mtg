@@ -194,10 +194,11 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   `actionId`, `loseLife`, `sacrifice`, `returnToHand`, `putOntoBattlefield`,
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
   `holdOutInLibrary`, `defineSelectorVariable`, `defineValueVariable`,
-  `forEachVariable`, `reveal`, `revealUntil` (reveal cards from the top of
-  the selected player's library until a card matching the selector; CR 701.16;
-  `wasObjectOfAction` is that card and `restOfAction` is the other revealed
-  cards), `fight`,
+  `forEachVariable`, `reveal`, `revealFromLibraryTopUntil` (reveal cards
+  from the top of the selected player's library until the revealed cards
+  matching the selector satisfy the set-wide predicates; CR 701.16; no
+  predicate stops at the first matching card; `wasObjectOfAction` is each
+  matching card and `restOfAction` is the other revealed cards), `fight`,
   `addManaOfOneColor`, `addManaInAnyCombination`, `addMana`, `keyword`,
   `createTokens`,   `modifyReplacementCreatedTokenCount` (keep creating the
   tokens being replaced, with the count changed by a `Nat → Value` function),
@@ -384,7 +385,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `SetPredicate.shareName` | `Selector.sharesNameWith` of the objects that have that name. Key to the Side-Door discards one legendary card from a hand that shares a name with a legendary permanent its controller controls |
 | `Value.greatestCounterCount` | The greatest number of counters of a kind on any one of the selected objects (CR 122.1). Last Light of Durin's Day checks six or more quest counters. Red Hulk's only remaining tag was this count and is not converted yet |
 | `Trigger.onceEachTurn` | `Trigger.onceEachTurn` of the event (CR 603.2d). `Trigger.ordinal 1` since `turnStart` is the first event of the turn, which does not fire when the source enters after that event. Part in Friendship. Ant-Man, Colony Commander; Baron Strucker, HYDRA Overlord; Crossbones, Malicious Mercenary; Knight of Wundagore; Loki, God of Mischief; and Moon Girl and Devil Dinosaur spell the same restriction and are not converted yet |
-| `CardAction.revealUntil` | Reveal cards from the top of the selected player's library until a card matching the selector (CR 701.16). `wasObjectOfAction` of that action is the card that stopped the reveal. `Selector.restOfAction` is the other revealed cards. Part in Friendship puts that creature onto the battlefield when its mana value is at most the number of lands its controller controls, and into hand otherwise. Tom Bombadil spells the same reveal and is not converted yet |
+| `CardAction.revealFromLibraryTopUntil` | Reveal cards from the top of the selected player's library until the revealed cards matching the selector satisfy the set-wide predicates (CR 701.16). No predicate stops at the first matching card. `wasObjectOfAction` of that action is each matching card. `Selector.restOfAction` is the other revealed cards. Part in Friendship puts that creature onto the battlefield when its mana value is at most the number of lands its controller controls, and into hand otherwise. Tom Bombadil spells the same reveal and is not converted yet |
 
 ## Missing constructors by type
 
@@ -776,8 +777,9 @@ chapters still yields `chapterGrantHexproofWhileRemains`,
 Part in Friendship is a `TraditionalCardDefinition` read with
 `parseOracleParts`. Whenever a nontoken creature its controller controls
 dies, it reveals cards from the top of that library until it reveals a
-creature card. `CardAction.revealUntil` names that player and a creature
-card. `wasObjectOfAction` of that reveal is the creature card, and
+creature card. `CardAction.revealFromLibraryTopUntil` names that player,
+a creature card, and no set-wide predicate, so the first creature card
+stops the reveal. `wasObjectOfAction` of that reveal is the creature card, and
 `Selector.restOfAction` is the other revealed cards. The creature goes onto
 the battlefield when its mana value is less than or equal to the number of
 lands that player controls, and into that player's hand otherwise. The

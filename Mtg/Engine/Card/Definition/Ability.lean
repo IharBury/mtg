@@ -242,7 +242,7 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           (.intersection
             [.zone .battlefield, .cardType .creature, .not .token, ctl])))
       (.sequence [
-        .actionId id (.revealUntil who (.cardType .creature)),
+        .actionId id (.revealFromLibraryTopUntil who (.cardType .creature) []),
         .ifElse
           (.lessOrEqual
             (.greatestManaValue (.wasObjectOfAction mv))
