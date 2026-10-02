@@ -10,7 +10,8 @@ import Mtg.Engine.Card.SpellEffects
 
 A list-shaped definition language for a traditional Magic card: one face,
 plus an optional Adventure. `TraditionalCardDefinition.card` is the clause
-list. `toCardDef` compiles it into the engine's `CardDef`. `parseOracleText`
+list. `toCardDef` compiles it into the engine's `CardDef`. Activated
+abilities are a `.costFor` instruction in `.textBox`. `parseOracleText`
 reads a printed card (name, mana cost, type line, power/toughness, rules
 text, and an Adventure face) back into that clause list.
 -/
@@ -49,6 +50,7 @@ end CostSymbol
 another subtype in the DSL. -/
 inductive CardSubtype where
   | dwarf
+  | citizen
   | scout
   | adventure
   deriving Repr, BEq, DecidableEq
@@ -57,6 +59,7 @@ namespace CardSubtype
 
 def printed : CardSubtype → String
   | .dwarf => "Dwarf"
+  | .citizen => "Citizen"
   | .scout => "Scout"
   | .adventure => "Adventure"
 
@@ -159,12 +162,20 @@ inductive PlayerRef where
   | opponent
   deriving Repr, BEq
 
-/-- A predicate inside `.target` or `.or`. A list of these is a conjunction. -/
+/-- A predicate inside `.target`, `.getUntil`, or `.or`. A list of these is
+a conjunction. -/
 inductive ObjectQualifier where
   | cardType (t : CardType)
   | controlledBy (p : PlayerRef)
   | or (qs : List ObjectQualifier)
   deriving Repr, BEq
+
+namespace ObjectQualifier
+
+/-- `.creature` in a qualifier list. -/
+def creature : ObjectQualifier := .cardType .creature
+
+end ObjectQualifier
 
 /-- One instance of the word “target”. -/
 inductive TargetExpr where
@@ -181,9 +192,31 @@ inductive Duration where
   | endOfTurn
   deriving Repr, BEq
 
+/-- A printed power and toughness change. `.plusPowerToughness +1 +1` is `+1/+1`. -/
+inductive StatMod where
+  | plusPowerToughness (power toughness : Int)
+  deriving Repr, BEq
+
+/-- `+n` in `.plusPowerToughness +1 +1` is the positive integer `n`.
+Ordinary constructor application (`.plusPowerToughness p t`) still works. -/
+syntax plusBonus := "+" num
+scoped syntax ".plusPowerToughness" (plusBonus <|> term:max) (plusBonus <|> term:max) : term
+macro_rules
+  | `(.plusPowerToughness +$p:num +$t:num) => `(StatMod.plusPowerToughness $p $t)
+  | `(.plusPowerToughness $p:term $t:term) => `(StatMod.plusPowerToughness $p $t)
+
+/-- One cost of an activated ability written in `.costFor`. -/
+inductive PrintedCost where
+  | mana (ms : List CostSymbol)
+  deriving Repr, BEq
+
 /-- One instruction in a `.textBox`. -/
 inductive TextEffect where
   | gainUntil (targets : List TargetExpr) (gains : List GrantedAbility) (dur : Duration)
+  /-- Matching objects get these changes until `dur`. -/
+  | getUntil (qs : List ObjectQualifier) (mods : List StatMod) (dur : Duration)
+  /-- An activated ability: pay `costs`, then follow `effects` (`{3}{W}: …`). -/
+  | costFor (costs : List PrintedCost) (effects : List TextEffect)
   deriving Repr, BEq
 
 /-- One clause in `.card` or `.alternative`. -/
@@ -274,20 +307,78 @@ private def joinTargets (ts : List String) : String :=
 private def durationPhrase : Duration → String
   | .endOfTurn => "until end of turn"
 
+private def pluralQualifier : ObjectQualifier → String
+  | .cardType t =>
+    let n := cardTypeNoun t
+    if n.endsWith "s" then n else s!"{n}s"
+  | .controlledBy .you => "you control"
+  | .controlledBy .opponent => "an opponent controls"
+  | .or qs => orJoin (qs.map pluralQualifier)
+
+private def statModPhrase : StatMod → String
+  | .plusPowerToughness p t => s!"{signedStat p}/{signedStat t}"
+
+private def printedCostPhrase : PrintedCost → String
+  | .mana ms => (CostSymbol.toManaCost ms).toNotation
+
+private def gainUntilSentence (targets : List TargetExpr) (gains : List GrantedAbility)
+    (dur : Duration) : String :=
+  let subject := capitalizeAscii (joinTargets (targets.map TargetExpr.toPhrase))
+  let kws := (keywordsOfGranted gains).joinedAnd
+  s!"{subject} gains {kws} {durationPhrase dur}."
+
+private def getUntilSentence (qs : List ObjectQualifier) (mods : List StatMod)
+    (dur : Duration) : String :=
+  let subject := capitalizeAscii (String.intercalate " " (qs.map pluralQualifier))
+  let bonus := String.intercalate " and " (mods.map statModPhrase)
+  s!"{subject} get {bonus} {durationPhrase dur}."
+
+/-- A text-box effect nested under `.costFor`, printed without a further cost. -/
+private def nestedEffectSentence : TextEffect → Option String
+  | .gainUntil targets gains dur => some (gainUntilSentence targets gains dur)
+  | .getUntil qs mods dur => some (getUntilSentence qs mods dur)
+  | .costFor _ _ => none
+
 /-- Oracle sentence for a text-box effect, without reminder text. -/
 private def textEffectSentence : TextEffect → String
-  | .gainUntil targets gains dur =>
-    let subject := capitalizeAscii (joinTargets (targets.map TargetExpr.toPhrase))
-    let kws := (keywordsOfGranted gains).joinedAnd
-    s!"{subject} gains {kws} {durationPhrase dur}."
+  | .gainUntil targets gains dur => gainUntilSentence targets gains dur
+  | .getUntil qs mods dur => getUntilSentence qs mods dur
+  | .costFor costs effects =>
+    let cost := String.intercalate ", " (costs.map printedCostPhrase)
+    let body := String.intercalate " " (effects.filterMap nestedEffectSentence)
+    s!"{cost}: {body}"
 
-/-- Map a text-box effect onto the engine's `Effect` vocabulary. -/
+/-- Map a spell text-box effect onto the engine's `Effect` vocabulary. -/
 private def textEffectToEffect : TextEffect → Option Effect
   | .gainUntil
       [.target [.or [.cardType .artifact, .cardType .creature], .controlledBy .you]]
       [.keyword .hexproof, .keyword .indestructible]
       .endOfTurn =>
     some Effect.grantHexproofIndestructible
+  | _ => none
+
+private def creaturesYouControl (qs : List ObjectQualifier) : Bool :=
+  qs == [.cardType .creature, .controlledBy .you]
+
+private def pumpEffect : TextEffect → Option Effect
+  | .getUntil qs [.plusPowerToughness p t] .endOfTurn =>
+    if creaturesYouControl qs then some (Effect.abilityCreaturesYouControlGet p t) else none
+  | _ => none
+
+private def costsToActivation (costs : List PrintedCost) : ActivationCost :=
+  costs.foldl (fun acc c =>
+    match c with
+    | .mana ms =>
+      { acc with
+        mana := { symbols := acc.mana.symbols ++ (CostSymbol.toManaCost ms).symbols } })
+    {}
+
+/-- Map `.costFor` onto a non-mana activated ability. -/
+private def textEffectToActivated : TextEffect → Option ActivatedAbility
+  | .costFor costs effects =>
+    match effects.filterMap pumpEffect with
+    | effect :: _ => some { cost := costsToActivation costs, effect }
+    | [] => none
   | _ => none
 
 private def adventureReminder : String :=
@@ -348,6 +439,7 @@ private def FaceBuild.toCard (f : FaceBuild) (oracleText : String)
     toughness := f.toughness
     keywords := keywordsOfAbilities f.abilities
     spellEffect := (f.textBox.filterMap textEffectToEffect).head?
+    activatedAbilities := (f.textBox.filterMap textEffectToActivated).toArray
     adventure }
 
 /-- Compiled engine card. Adventure rules text keeps the CR 715 reminder. -/
@@ -392,6 +484,7 @@ private def parseSupertype (s : String) : Option Supertype :=
 private def parseCardSubtype (s : String) : Option CardSubtype :=
   match s.trimAscii.copy.map Char.toLower with
   | "dwarf" => some .dwarf
+  | "citizen" => some .citizen
   | "scout" => some .scout
   | "adventure" => some .adventure
   | _ => none
@@ -580,6 +673,76 @@ private def parseDuration (s : String) : Option Duration :=
   | "end of turn" => some .endOfTurn
   | _ => none
 
+private def singularize (s : String) : String :=
+  let s := s.trimAscii.copy.map Char.toLower
+  if s.endsWith "s" && s.length > 1 then (s.dropEnd 1).copy else s
+
+private def parsePluralDisjunction (s : String) : Option (List ObjectQualifier) := do
+  let parts := s.splitOn " or " |>.map (·.trimAscii.copy) |>.filter (· != "")
+  match parts with
+  | [] => none
+  | [one] =>
+    let t ← parseCardType (singularize one)
+    return [.cardType t]
+  | many =>
+    let ts ← many.mapM (fun w => parseCardType (singularize w))
+    return [.or (ts.map ObjectQualifier.cardType)]
+
+private def parseGetSubject (noun : String) : Option (List ObjectQualifier) := do
+  let (core, who) :=
+    if let some core := stripSuffixCI? noun " you control" then
+      (core, some PlayerRef.you)
+    else if let some core := stripSuffixCI? noun " an opponent controls" then
+      (core, some PlayerRef.opponent)
+    else
+      (noun, none)
+  let quals ← parsePluralDisjunction core
+  let tail :=
+    match who with
+    | some p => [ObjectQualifier.controlledBy p]
+    | none => []
+  return quals ++ tail
+
+private def parseSignedStat (s : String) : Option Int :=
+  let s := s.trimAscii.copy
+  if s.startsWith "+" then
+    match (s.drop 1).toNat? with
+    | some n => some (Int.ofNat n)
+    | none => none
+  else
+    parseIntToken s
+
+private def parseStatMod (s : String) : Option StatMod := do
+  match s.splitOn "/" with
+  | [a, b] =>
+    let p ← parseSignedStat a
+    let t ← parseSignedStat b
+    return .plusPowerToughness p t
+  | _ => none
+
+private def splitOnce (sep : String) (s : String) : Option (String × String) :=
+  match s.splitOn sep with
+  | head :: tail =>
+    if tail.isEmpty then none
+    else some (head, String.intercalate sep tail)
+  | [] => none
+
+private def parseGetUntil (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let (subject, after) ← splitOnce " get " line
+  let (bonus, durText) ← splitOnce " until " after
+  let dur ← parseDuration durText
+  let mod ← parseStatMod bonus
+  let quals ← parseGetSubject subject
+  return .getUntil quals [mod] dur
+
+private def parseCostFor (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let (costText, effectText) ← splitOnce ": " line
+  let cost ← parseManaRun costText
+  let effect ← parseGetUntil effectText
+  return .costFor [.mana cost] [effect]
+
 private def parseGainUntil (line : String) : Option TextEffect := do
   let line := stripTrailingDot (stripParens line)
   let rest ← dropPrefixCI line "target "
@@ -613,12 +776,18 @@ private def parseBody (lines : List String) :
     if cleaned.isEmpty then
       pure acc
     else
-      match parseGainUntil cleaned with
+      match parseCostFor cleaned with
       | some e => pure (abilities, effects ++ [e])
       | none =>
-        match parseKeywordLine cleaned with
-        | some ks => pure (abilities ++ ks, effects)
-        | none => none) ([], [])
+        match parseGetUntil cleaned with
+        | some e => pure (abilities, effects ++ [e])
+        | none =>
+          match parseGainUntil cleaned with
+          | some e => pure (abilities, effects ++ [e])
+          | none =>
+            match parseKeywordLine cleaned with
+            | some ks => pure (abilities ++ ks, effects)
+            | none => none) ([], [])
 
 private def faceClauses (name : String) (cost : List CostSymbol)
     (supers : List Supertype) (tys : List CardType) (subs : List CardSubtype)
@@ -706,5 +875,17 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     [.target [.or [.cardType .artifact, .cardType .creature], .controlledBy .you]]
     [.keyword .hexproof, .keyword .indestructible]
     .endOfTurn)
+#guard (.plusPowerToughness +1 +1 : StatMod) == .plusPowerToughness 1 1
+#guard textEffectSentence (.costFor
+    [.mana [.generic 3, .mono .white]]
+    [.getUntil [.creature, .controlledBy .you]
+      [.plusPowerToughness +1 +1] .endOfTurn]) ==
+  "{3}{W}: Creatures you control get +1/+1 until end of turn."
+#guard parseCostFor
+    "{3}{W}: Creatures you control get +1/+1 until end of turn." ==
+  some (.costFor
+    [.mana [.generic 3, .mono .white]]
+    [.getUntil [.cardType .creature, .controlledBy .you]
+      [.plusPowerToughness 1 1] .endOfTurn])
 
 end Mtg.Engine

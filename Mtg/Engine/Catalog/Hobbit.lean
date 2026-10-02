@@ -69,11 +69,41 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
         adv.spellEffect == some Effect.grantHexproofIndestructible
     | none => false
 
-def dwarvenProvisioner : CardDef :=
-  creature "Dwarven Provisioner" (ManaCost.ofGenericAndColor 1 .white) #["Dwarf", "Citizen"] 2 2
-    (oracleText := "{3}{W}: Creatures you control get +1/+1 until end of turn.")
-    (activatedAbilities := #[
-      activated (Effect.abilityCreaturesYouControlGet 1 1) (ManaCost.ofGenericAndColor 3 .white)])
+def dwarvenProvisioner : TraditionalCardDefinition := .card [
+  .name "Dwarven Provisioner",
+  .manaCost [.generic 1, .mono .white],
+  .type .creature,
+  .subtype .dwarf,
+  .subtype .citizen,
+  .power 2,
+  .toughness 2,
+  .textBox [
+    .costFor
+      [.mana [.generic 3, .mono .white]]
+      [.getUntil [.creature, .controlledBy .you] [.plusPowerToughness +1 +1] .endOfTurn]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Dwarven Provisioner {1}{W}",
+  "Creature — Dwarf Citizen",
+  "2/2",
+  "{3}{W}: Creatures you control get +1/+1 until end of turn."
+]) == some dwarvenProvisioner
+
+#guard
+  let c := dwarvenProvisioner.toCardDef
+  c.name == "Dwarven Provisioner" &&
+    c.types == #[.creature] &&
+    c.subtypes == #["Dwarf", "Citizen"] &&
+    c.power == some 2 &&
+    c.toughness == some 2 &&
+    c.manaCost == ManaCost.ofGenericAndColor 1 .white &&
+    c.keywords == Keywords.none &&
+    c.spellEffect == none &&
+    c.oracleText == "{3}{W}: Creatures you control get +1/+1 until end of turn." &&
+    c.activatedAbilities == #[
+      activated (Effect.abilityCreaturesYouControlGet 1 1) (ManaCost.ofGenericAndColor 3 .white)]
 
 def velvetwingButterflies : CardDef :=
   creature "Velvetwing Butterflies" (ManaCost.ofGenericAndColor 2 .white) #["Insect"] 2 2
@@ -1267,14 +1297,10 @@ def wizardSStaff : CardDef :=
 
 /-- Every unique card in The Hobbit (HOB), including Journey basic lands
 that are also in the core catalog. -/
-def hobbitCards : Array CardDef := #[
-  plains,
-  island,
-  swamp,
-  mountain,
-  forest,
-  bofurReliableGuardian,
-  dwarvenProvisioner,
+def hobbitCards : Array CardDef :=
+  #[plains, island, swamp, mountain, forest] ++
+  -- `++` compiles a run of DSL cards into `CardDef`s.
+  (#[bofurReliableGuardian, dwarvenProvisioner] ++ #[
   velvetwingButterflies,
   magnificentEnd,
   eagleOfTheGreatShelf,
@@ -1461,7 +1487,7 @@ def hobbitCards : Array CardDef := #[
   tomBertAndWilliam,
   uncoverTheMoonLetters,
   wizardSStaff
-]
+])
 
 #guard bofurReliableGuardian.colors.isMonocolored
 #guard (attercop.summary.splitOn "Landfall").length > 1
