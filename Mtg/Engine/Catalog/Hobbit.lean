@@ -1474,7 +1474,7 @@ def woodlandWeavemasterCard : CardDef :=
               (.not
                 (.or
                   (.castSpell (.subtype .elf))
-                  (.activateAbility (.subtype .elf)))))]
+                  (.activateAbility (.controller .this) (.subtype .elf)))))]
           .endOfTurn]))
 ]
 
@@ -4927,6 +4927,7 @@ def kiliTheResourcefulDefinition : TraditionalCardDefinition := .card <|
       (.not
         (.happened
           (.activateAbility
+            (.controller .this)
             (.intersection [
               Selector.keywordAbility .equip,
               .controlled (.controller .this)]))
@@ -6608,6 +6609,7 @@ def elrondMoonReaderDefinition : TraditionalCardDefinition := .card <|
        1
        .turnStart
        (.activateAbility
+         (.controller .this)
          (.intersection
            [.zone .battlefield,
             .cardType .creature])))

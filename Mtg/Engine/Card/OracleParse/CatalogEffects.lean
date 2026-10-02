@@ -383,7 +383,7 @@ def parseAddManaSpendRestricted (ss : List String) (n : Nat) :
         if k != k' then none
         else (subtypeOfOracle? k).map fun st =>
           .not (.or (.castSpell (.intersection [.spell, .subtype st]))
-            (.activateAbility (.subtype st)))
+            (.activateAbility (.controller .this) (.subtype st)))
     let spellType? : Option Trigger :=
       (between? s "spend this mana only to cast an " " spell").bind typeOfOracle? |>.map fun t =>
         .not (.castSpell (.intersection [.spell, .cardType t]))

@@ -634,8 +634,10 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     else
       match restriction with
       | .not (.or (.castSpell (.intersection [.spell, .subtype st]))
-          (.activateAbility (.subtype st'))) =>
-        if st == st' then some (Effect.addAnyColorSpendOnlySubtype st.toString) else none
+          (.activateAbility who (.subtype st'))) =>
+        if st == st' && leftoverYou who then
+          some (Effect.addAnyColorSpendOnlySubtype st.toString)
+        else none
       | .not (.castSpell (.intersection [.spell, .cardType .artifact])) =>
         some Effect.addAnyColorSpendOnlyArtifactSpell
       | _ => none

@@ -125,7 +125,8 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   action), `triggerId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `spendManaFrom`, `castSpell`,
   `castSpellFromGraveyard`, `giftPromised` (the selected spell's gift was
-  promised), `counter`, `activateAbility`, `target` (a spell or
+  promised), `counter`, `activateAbility` (the selected player activates an
+  ability of a source matching the second selector), `target` (a spell or
   ability targets an object), `sequence`, `not`, `or`.
 - **Cost** — `mana` (including `ManaSymbol.x`), `life`, `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
@@ -663,7 +664,8 @@ or attacks. Dáin creates a colorless Axe Equipment token, and a reflexive
 trigger attaches it to target creature that controller controls. When Dáin
 attacks, attacking creatures that are hosts of Equipment gain double
 strike until end of turn (`Selector.hostOf`). Elrond's draw is `Trigger.ordinal 1` since
-`turnStart` of activating an ability of a creature; compiling it still yields
+`turnStart` of his controller activating an ability of a creature. Another
+player's activation does not trigger it. Compiling it still yields
 `onActivateCreatureAbilityDrawOnce`. His activated ability exiles up to
 two other nonland permanents he controls. A replacement effect puts those
 cards onto the battlefield at the first end step since that exile, and the

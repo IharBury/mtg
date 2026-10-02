@@ -684,7 +684,8 @@ def parseFirstEquipFreeIfEnduringStory (line : String) : Option CardPart :=
     staticWhile
       (.and
         controllerHasEnduringStory
-        (.not (.happened (.activateAbility equipAbilitiesYouControl) .turnStart)))
+        (.not (.happened
+          (.activateAbility (.controller .this) equipAbilitiesYouControl) .turnStart)))
       [.alternativeCost equipAbilitiesYouControl [.mana [.generic 0]]]
   else none
 

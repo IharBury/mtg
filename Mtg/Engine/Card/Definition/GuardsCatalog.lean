@@ -48,7 +48,7 @@ namespace Mtg.Engine
                 (.not
                   (.or
                     (.castSpell (.subtype .elf))
-                    (.activateAbility (.subtype .elf)))))]
+                    (.activateAbility (.controller .this) (.subtype .elf)))))]
             .endOfTurn]))
   ]).toCardDef.tapAddAnyColorEqualToPower
 

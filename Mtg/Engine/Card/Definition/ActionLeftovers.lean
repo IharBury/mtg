@@ -416,7 +416,8 @@ def leftoverElfRestrictedSpend? : Trigger → Bool
   | .not
       (.or
         (.castSpell (.subtype .elf))
-        (.activateAbility (.subtype .elf))) => true
+        (.activateAbility who (.subtype .elf))) =>
+    who == .controller .this
   | _ => false
 
 /-- Spend this mana only to cast an instant or sorcery spell. -/

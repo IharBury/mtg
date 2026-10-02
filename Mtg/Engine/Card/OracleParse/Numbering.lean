@@ -96,7 +96,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .endOfGame | .endOfTurn | .turnStart | .gameStart => ([], [])
   | .endOfPlayerTurn s | .combatStart s | .upkeep s | .endStep s | .drawStep s | .enter s | .die s
   | .discard s | .leaveGraveyard s | .leaveBattlefield s | .returnToHand s | .putToGraveyard s
-  | .giftPromised s | .counter s | .activateAbility s | .castSpell s
+  | .giftPromised s | .counter s | .castSpell s
   | .castSpellFromGraveyard s | .precombatMainPhase s | .createTokens s
   | .abilityTriggers s =>
     collectSelector s
@@ -106,6 +106,7 @@ def collectTrigger : Trigger → List Nat × List Nat
   | .enterSimultaneously s _ | .dieSimultaneously s _ => collectSelector s
   | .damageSimultaneously a b _ | .attackSimultaneously a b _ =>
     appendIds [collectSelector a, collectSelector b]
+  | .activateAbility who src => appendIds [collectSelector who, collectSelector src]
   | .ordinal _ inner window => appendIds [collectTrigger inner, collectTrigger window]
   | .sacrifice s => collectSelector s
   | .abilityWithIdActivated n | .abilityWithIdResolved n => ([], [n])
@@ -381,7 +382,8 @@ def mapTrigger (m : IdMaps) : Trigger → Trigger
   | .castSpellFromGraveyard s => .castSpellFromGraveyard (mapSelector m s)
   | .giftPromised s => .giftPromised (mapSelector m s)
   | .counter s => .counter (mapSelector m s)
-  | .activateAbility s => .activateAbility (mapSelector m s)
+  | .activateAbility who src =>
+    .activateAbility (mapSelector m who) (mapSelector m src)
   | .sequence ts => .sequence (mapTriggers m ts)
   | .not t => .not (mapTrigger m t)
   | .or a b => .or (mapTrigger m a) (mapTrigger m b)

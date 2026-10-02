@@ -511,6 +511,7 @@ open OracleParts
         (.not
           (.happened
             (.activateAbility
+              (.controller .this)
               (.intersection [
                 Selector.keywordAbility .equip,
                 .controlled (.controller .this)]))
@@ -1061,7 +1062,8 @@ open OracleParts
   some [.ability (.activated [.tapSymbol] (.sequence [
     .actionId 1 (.addManaOfOneColor (.controller .this) ManaSymbol.anyColor 1),
     .continuous [.forbid (.spendManaCreatedByAction 1 (.not (.or
-      (.castSpell (.intersection [.spell, .subtype .hero])) (.activateAbility (.subtype .hero)))))]
+      (.castSpell (.intersection [.spell, .subtype .hero]))
+      (.activateAbility (.controller .this) (.subtype .hero)))))]
       .endOfTurn]))]
 #guard parseOracleParts (name := "")
   "{T}: Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Villain source." ==

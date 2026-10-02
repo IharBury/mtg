@@ -790,9 +790,10 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if
       (.and
         (.enduringStory who)
-        (.not (.happened (.activateAbility among) .turnStart)))
+        (.not (.happened (.activateAbility activator among) .turnStart)))
       [.alternativeCost who' costs] =>
     if who == .controller .this &&
+        activator == .controller .this &&
         among == equipAbilitiesYouControl &&
         who' == equipAbilitiesYouControl &&
         costs == [.mana [.generic 0]] then

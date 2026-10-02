@@ -252,14 +252,16 @@ def printedTriggeredAbility? : Ability → Option TriggeredAbility
           (.keyword .doubleStrike)]
         .endOfTurn) =>
     some TriggeredAbility.onAttackEquippedGainDoubleStrike
-  -- Elrond, Moon-Reader: the first time each turn you activate an ability
-  -- of a creature, draw a card. “This ability triggers only once each turn”
-  -- is `ordinal` 1 since turn start.
+  -- Elrond, Moon-Reader: the first time each turn this ability's controller
+  -- activates an ability of a creature, draw a card. Another player's
+  -- activation does not trigger it. “This ability triggers only once each
+  -- turn” is `ordinal` 1 since turn start.
   | .triggered
       (.ordinal 1 .turnStart
-        (.activateAbility (.intersection [.zone .battlefield, .cardType .creature])))
+        (.activateAbility activator
+          (.intersection [.zone .battlefield, .cardType .creature])))
       (.draw who (.int 1)) =>
-    if who == .controller .this then
+    if activator == .controller .this && who == .controller .this then
       some TriggeredAbility.onActivateCreatureAbilityDrawOnce
     else none
   | .triggered (.triggerId id (.castSpell among))
