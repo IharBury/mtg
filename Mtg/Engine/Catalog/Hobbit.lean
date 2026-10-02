@@ -186,11 +186,42 @@ def magnificentEnd : TraditionalCardDefinition := .card [
     c.costReductionIfTargetTapped == 3 &&
     c.oracleText == "This spell costs {3} less to cast if it targets a tapped creature.\nMagnificent End deals 5 damage to target creature."
 
-def eagleOfTheGreatShelf : CardDef :=
-  creature "Eagle of the Great Shelf" (ManaCost.ofGenericAndColor 4 .white) #["Bird", "Soldier"] 2 5
-    (oracleText := "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onAttackPumpForEachOtherCreature])
+def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
+  .name "Eagle of the Great Shelf",
+  .manaCost [.generic 4, .mono .white],
+  .type .creature,
+  .subtype .bird,
+  .subtype .soldier,
+  .power 2,
+  .toughness 5,
+  .textBox [
+    .keyword .flying,
+    .whenever
+      [.attack [.this, .cardType .creature] []]
+      [getForEachUntil [.it] [.plusPowerToughness +1 +1] [.other, .cardType .creature, .controlledBy .you] .endOfTurn]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Eagle of the Great Shelf {4}{W}",
+  "Creature — Bird Soldier",
+  "2/5",
+  "Flying",
+  "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control."
+]) == some eagleOfTheGreatShelf
+
+#guard
+  let c := eagleOfTheGreatShelf.toCardDef
+  c.name == "Eagle of the Great Shelf" &&
+    c.types == #[.creature] &&
+    c.subtypes == #["Bird", "Soldier"] &&
+    c.power == some 2 &&
+    c.toughness == some 5 &&
+    c.manaCost == ManaCost.ofGenericAndColor 4 .white &&
+    c.keywords == Keyword.flying &&
+    c.spellEffect == none &&
+    c.oracleText == "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." &&
+    c.triggeredAbilities == #[.onAttackPumpForEachOtherCreature]
 
 def vowToErebor : CardDef :=
   instant "Vow to Erebor" (ManaCost.ofGenericAndColor 1 .white)
@@ -1368,8 +1399,7 @@ def hobbitCards : Array CardDef :=
   #[plains, island, swamp, mountain, forest] ++
   -- `++` compiles a run of DSL cards into `CardDef`s.
   (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
-     magnificentEnd] ++ #[
-  eagleOfTheGreatShelf,
+     magnificentEnd, eagleOfTheGreatShelf] ++ #[
   vowToErebor,
   bilboBagginsBurglar,
   lakeshoreApothecary,
