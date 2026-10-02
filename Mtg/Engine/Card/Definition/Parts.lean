@@ -374,9 +374,6 @@ inductive CardAction where
   an optional cost is this, not an “if you do” checked in the same
   resolution. -/
   | reflexive : Nat → List CardAction → CardAction
-  /-- Exile the selected objects. Return those cards to the battlefield
-  under their owner's control at the next occurrence of the trigger. -/
-  | exileThenReturn : Selector → Trigger → CardAction
   /-- After the current phase, add this phase to the turn (CR 500.7).
   `.combat` is an additional combat phase. -/
   | addPhaseAfterThisPhase : Phase → CardAction

@@ -6615,16 +6615,27 @@ def elrondMoonReaderDefinition : TraditionalCardDefinition := .card <|
         [.generic 5,
          .mono .blue,
          .mono .blue]]
-     (.exileThenReturn
-       (.targets
+     (.sequence [
+       .actionId
          1
-         (.range (.int 0) (.int 2))
-         (.intersection
-           [.not .this,
-            .zone .battlefield,
-            .not (.cardType .land),
-            .controlled (.controller .this)]))
-       (.endStep .player)))])
+         (.exile
+           (.targets
+             1
+             (.range (.int 0) (.int 2))
+             (.intersection
+               [.not .this,
+                .zone .battlefield,
+                .not (.cardType .land),
+                .controlled (.controller .this)]))),
+       .continuous
+         [.replace
+           (.ordinal
+             1
+             (.actionWithId 1)
+             (.endStep .player))
+           [.putOntoBattlefield (.wasCreatedByAction 1),
+            .keepReplacedAction]]
+         .endOfGame]))])
 
 def elrondMoonReader : CardDef :=
   elrondMoonReaderDefinition.toCardDef (oracleText := elrondMoonReaderOracle)

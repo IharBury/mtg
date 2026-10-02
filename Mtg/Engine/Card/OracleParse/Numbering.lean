@@ -245,7 +245,6 @@ def collectAction : CardAction → List Nat × List Nat
   | .duplicateReplacingTrigger v => collectValue v
   | .keepReplacedAction => ([], [])
   | .reflexive n as => appendIds [([n], []), appendIds (as.map collectAction)]
-  | .exileThenReturn s t => appendIds [collectSelector s, collectTrigger t]
   | .addPhaseAfterThisPhase _ => ([], [])
 
 end
@@ -587,7 +586,6 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .chooseCreatureType s => .chooseCreatureType (mapSelector m s)
   | .mayCast a b => .mayCast (mapSelector m a) (mapSelector m b)
   | .reflexive n as => .reflexive (m.action n) (mapActions m as)
-  | .exileThenReturn s t => .exileThenReturn (mapSelector m s) (mapTrigger m t)
   | .addPhaseAfterThisPhase p => .addPhaseAfterThisPhase p
 
 end

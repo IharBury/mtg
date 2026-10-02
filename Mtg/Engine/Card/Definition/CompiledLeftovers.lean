@@ -712,10 +712,27 @@ def leftoverPrintedCompiled? : CardAction → Option Effect
     if id == id' && p == .variable v && p' == p && p'' == p then
       some Effect.worldsWithinWorlds
     else none
-  | .exileThenReturn
-      (.targets _ (.range (.int 0) (.int 2)) _)
-      (.endStep .player) =>
-    some Effect.exileThenReturnNextEnd
+  -- Elrond, Moon-Reader: exile, then a replacement returns those cards at
+  -- the first end step after that exile. The end step still happens.
+  | .sequence [
+      .actionId id
+        (.exile
+          (.targets _ (.range (.int 0) (.int 2))
+            (.intersection [
+              .not .this,
+              .zone .battlefield,
+              .not (.cardType .land),
+              .controlled (.controller .this)]))),
+      .continuous
+        [.replace
+          (.ordinal 1 (.actionWithId since) (.endStep .player))
+          [
+            .putOntoBattlefield (.wasCreatedByAction returned),
+            .keepReplacedAction]]
+        .endOfGame] =>
+    if id == since && id == returned then
+      some Effect.exileThenReturnNextEnd
+    else none
   | _ => none
 
 /-- First alternatives of `leftoverCompiled?`. Separate from the rest so the
