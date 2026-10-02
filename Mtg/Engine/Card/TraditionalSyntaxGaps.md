@@ -5,7 +5,7 @@ This note records what is missing from the part-based printed-card types in
 order to convert every **currently supported catalog card** that is not yet
 written as a `TraditionalCardDefinition`.
 
-**198** catalog cards are still `CardDef` helpers. **172**
+**197** catalog cards are still `CardDef` helpers. **171**
 of them need at least one missing constructor listed under
 [Missing constructors by type](#missing-constructors-by-type). **26** lost
 their last tag (named counters, `CardAction.removeCounter`,
@@ -27,12 +27,12 @@ catalog.
 
 | Set | Catalog cards | `TraditionalCardDefinition` | Remaining `CardDef` | Remaining with a constructor gap |
 | --- | ---: | ---: | ---: | ---: |
-| The Hobbit (HOB) | 188 | 164 | 24 | 20 |
+| The Hobbit (HOB) | 188 | 165 | 23 | 19 |
 | The Hobbit Eternal (HOC) | 117 | 67 | 50 | 44 |
 | Marvel Super Heroes (MSH) | 281 | 157 | 124 | 108 |
-| **Total** | **586** | **388** | **198** | **172** |
+| **Total** | **586** | **389** | **197** | **171** |
 
-All 388 `TraditionalCardDefinition`s (164 HOB, 67 HOC, 157 MSH,
+All 389 `TraditionalCardDefinition`s (165 HOB, 67 HOC, 157 MSH,
 including Giant Growth) spell only their printed characteristics as parts
 and read the rest of their Oracle text with `parseOracleParts`
 (`Mtg/Engine/Card/OracleParse.lean`, split under `OracleParse/`). A `#guard` next to each one pins the
@@ -191,7 +191,10 @@ From `Mtg/Engine/Card/Keywords.lean` and `Mtg/Engine/Card/Definition.lean`
   the next time the event occurs; CR 603.7; `.endStep .player` is the next
   end step),
   `addPhaseAfterThisPhase` (after the current phase, add the given phase
-  to the turn; `.combat` is an additional combat phase).
+  to the turn; `.combat` is an additional combat phase),
+  `chooseRandom` (choose an object at random from those matching the
+  selector; number it with `actionId` so `wasObjectOfAction` is the chosen
+  object).
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -354,6 +357,7 @@ constructors now spell them, so the tags are gone from the lists below.
 | `CardAction.exileThenReturn` | Exile, then `CardAction.delayedTrigger` of `.endStep .player`. The delayed trigger puts `wasCreatedByAction` of the exile onto the battlefield the next time an end step begins (CR 603.7b). Elrond, Moon-Reader. Roll-Roll-Roll-Roll, S.H.I.E.L.D. Flying Car, and Wiccan, Rising Magician spell the same return and are not converted yet |
 | `CardAction.exileUntil` | Exile the selected objects until the event (CR 610.3). Immediately after that event, a one-shot returns each object that is still exiled to the zone it left. Celebrate the Mountain-king exiles, for each opponent, up to one target nonland permanent that player controls until the enchantment leaves the battlefield. Banishing Light, Cloak and Dagger, Entwined, Super Villain Lockup, and Web Up spell the same return and are not converted yet |
 | `Selector.attached` for “that are equipped” | `Selector.hostOf` of Equipment on the battlefield. “Equipment attached to” an object stays open. Dáin Ironfoot grants double strike to attacking creatures that are hosts of Equipment |
+| `CardAction.randomize` | `CardAction.chooseRandom`, numbered with `actionId` so `wasObjectOfAction` is the chosen object. Getaway Barrel reveals the top thirteen cards, chooses a random creature card from among them, puts that creature onto the battlefield, and puts the rest on the bottom in a random order |
 
 ## Missing constructors by type
 
@@ -553,8 +557,6 @@ complete.
   - The One Ring
 - **`phaseOut`** (1 card) — Phase out
   - Galadriel's Dismissal
-- **`randomize`** (1 card) — Pick a random card among (`putOnLibraryBottomInRandomOrder` exists)
-  - Getaway Barrel
 - **`separatePiles`** (1 card) — Separate cards into piles for an opponent to choose
   - Riddles in the Dark
 
@@ -687,6 +689,13 @@ the enchantment leaves, a one-shot effect returns those cards to the
 battlefield under their owner's control (CR 610.3). Compiling that ability
 still yields `onEnterExileOppNonlandEachUntilLeaves`.
 
+Getaway Barrel is a `TraditionalCardDefinition` read with `parseOracleParts`.
+When it is put into a graveyard from the battlefield, it reveals the top
+thirteen cards of its controller's library. `CardAction.chooseRandom` picks
+a creature card from among those revealed cards. That creature is put onto
+the battlefield, and the rest go on the bottom of the library in a random
+order. Compiling that ability still yields `onDiesRevealTopPutRandomCreature`.
+
 ## Cards that still cannot convert
 
 Closer reading of the remaining 12 found constructor gaps. Evidence is the
@@ -767,15 +776,11 @@ Saga chapters are `Ability.keywordWithEffect (.chapter n)`.
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards are omitted here.
 
-### The Hobbit (HOB) (20 cards)
+### The Hobbit (HOB) (19 cards)
 
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
 - `CardAction.discardChosen` — Discard a card another player chose (`discard` makes a player discard that many cards of their choice)
-
-**Getaway Barrel** (`getawayBarrel`)
-
-- `CardAction.randomize` — Pick a random card among (`putOnLibraryBottomInRandomOrder` exists)
 
 **Gollum, Riddle Master** (`gollumRiddleMaster`)
 

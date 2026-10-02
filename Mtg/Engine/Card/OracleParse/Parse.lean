@@ -383,10 +383,30 @@ def parseExileReturnEndStep (cardName line : String) (n : Nat) : Option (List Ca
             .delayedTrigger (.endStep .player)
               [.putOntoBattlefield (.wasCreatedByAction n)]]))], n + 1)
 
+/-- `When this artifact is put into a graveyard from the battlefield, reveal
+the top thirteen cards of your library. Put a random creature card from among
+them onto the battlefield. Put the rest on the bottom of your library in a
+random order.`
+The reveal is action `n`. The random creature is action `n + 1`. -/
+def parseRevealRandomCreature (line : String) (n : Nat) :
+    Option (List CardPart × Nat) :=
+  if normLine line !=
+      "when this artifact is put into a graveyard from the battlefield, reveal the top thirteen cards of your library. put a random creature card from among them onto the battlefield. put the rest on the bottom of your library in a random order" then
+    none
+  else
+    some ([.ability (.triggered (.putToGraveyard .this) (.sequence [
+      .actionId n (.reveal (.topOfLibrary (.controller .this) 13)),
+      .actionId (n + 1)
+        (.chooseRandom (.intersection [.wasObjectOfAction n, .cardType .creature])),
+      .putOntoBattlefield (.wasObjectOfAction (n + 1)),
+      .putOnLibraryBottomInRandomOrder
+        (.intersection [.wasObjectOfAction n, .not (.wasObjectOfAction (n + 1))])]))], n + 2)
+
 /-- Keyword, counter, and activated-ability lines. Tried before triggers. -/
 private def parseOneLineHead (cardName : String) (line : String) (n : Nat) :
     Option (List CardPart × Nat) :=
-  parseAttackTotalPowerExtraCombat line n <|>
+  parseRevealRandomCreature line n <|>
+    parseAttackTotalPowerExtraCombat line n <|>
     parseBolgEnters cardName line n <|>
     parseBeornCombat line n <|>
     parseHoneEachEquipment cardName line n <|>

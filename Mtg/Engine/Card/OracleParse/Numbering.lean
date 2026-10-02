@@ -249,6 +249,7 @@ def collectAction : CardAction → List Nat × List Nat
   | .delayedTrigger t as => appendIds [collectTrigger t, appendIds (as.map collectAction)]
   | .exileUntil s t => appendIds [collectSelector s, collectTrigger t]
   | .addPhaseAfterThisPhase _ => ([], [])
+  | .chooseRandom s => collectSelector s
 
 end
 
@@ -592,6 +593,7 @@ def mapAction (m : IdMaps) : CardAction → CardAction
   | .delayedTrigger t as => .delayedTrigger (mapTrigger m t) (mapActions m as)
   | .exileUntil s t => .exileUntil (mapSelector m s) (mapTrigger m t)
   | .addPhaseAfterThisPhase p => .addPhaseAfterThisPhase p
+  | .chooseRandom s => .chooseRandom (mapSelector m s)
 
 end
 
