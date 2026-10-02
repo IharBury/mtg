@@ -318,6 +318,30 @@ open OracleParts
   "Threshold — Most Decrepit Old Bird gets +1/+1 as long as there are seven or more cards in your graveyard." ==
   none
 #guard parseOracleParts (name := "")
+  "This creature gets +2/+0 for each graveyard with seven or more cards in it." ==
+  some [.ability (.static (.forEachVariable 1 .player [
+    .if
+      (.greaterOrEqual
+        (.count (.intersection [.zone .graveyard, .owner (.variable 1)]))
+        7)
+      [.addPower .this (Value.int 2)]]))]
+#guard parseOracleParts (name := "Master's Councillors")
+  "Master's Councillors gets +2/+0 for each graveyard with seven or more cards in it." ==
+  parseOracleParts (name := "")
+    "This creature gets +2/+0 for each graveyard with seven or more cards in it."
+#guard parseOracleParts (name := "")
+  "This creature gets +0/+0 for each graveyard with seven or more cards in it." ==
+  none
+#guard parseOracleParts (name := "")
+  "This creature gets +2/+1 for each graveyard with seven or more cards in it." ==
+  none
+#guard parseOracleParts (name := "")
+  "This creature gets +2/+0 for each graveyard with six or more cards in it." ==
+  none
+#guard parseOracleParts (name := "Gandalf")
+  "Master's Councillors gets +2/+0 for each graveyard with seven or more cards in it." ==
+  none
+#guard parseOracleParts (name := "")
   "Mill four cards, then put an instant or sorcery card from among them into your hand." ==
   some [.actions [.sequence [
     .actionId 1 (.mill (.controller .this) 4),

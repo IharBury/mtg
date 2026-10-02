@@ -211,6 +211,9 @@ inductive ContinuousEffect where
   spell or ability applies it until end of turn to the objects that match
   when it resolves (CR 611.2a / 611.2c). -/
   | removeAllAbilities : Selector → ContinuousEffect
+  /-- Execute the given continuous effects for each of the given objects,
+  binding the numbered variable to the current object. -/
+  | forEachVariable : Nat → Selector → List ContinuousEffect → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for

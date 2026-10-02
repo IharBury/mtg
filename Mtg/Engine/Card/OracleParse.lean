@@ -439,6 +439,12 @@ Currently recognized:
   `Threshold` is an ability word (CR 207.2c / 702.62) and may be omitted.
   Seven or more cards in your graveyard is that ability. A zero bonus is
   omitted. `+0/+0` is not an effect.
+- `<this> gets +P/+0 for each graveyard with seven or more cards in it.`
+  Each player is one graveyard (CR 404.1). Seven or more cards that player
+  owns in a graveyard is that graveyard. `<this>` gets +P/+0 once for each,
+  as `ContinuousEffect.forEachVariable`. The player is that variable. A zero
+  power is not an effect. A non-zero toughness is a different ability. No
+  duration is printed, so this is a static ability (CR 604.2).
 - `Mill <count> cards, then put an instant or sorcery card from among them into your hand.`
   More than one card uses the plural `cards`. One instant or sorcery card
   from among the milled cards goes to hand.
