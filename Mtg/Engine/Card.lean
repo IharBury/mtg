@@ -48,6 +48,7 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `TriggeredAbility`: printed triggered abilities (CR 603).
 - `Saga`: printed Sagas (CR 714).
 - `CardDef`: the printed card definition and `AdventureFace`.
-- `Dsl`: traditional-card definition clauses and the Oracle-text parser.
+- `Dsl`: traditional-card definition clauses (`Dsl.Elements`), the functions
+  that compile them (`Dsl.Compile`), and the Oracle-text parser (`Dsl.Parse`).
 - `Guards`: cross-abstraction `#guard` regression tests.
 -/
