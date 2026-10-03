@@ -123,6 +123,7 @@ disjunction, and the other words are a conjunction.
 `.targets (.or 1 2) [.cardType .creature]` is “one or two target creatures”.
 `[.this, .cardType .creature]` is “this creature”. `[.this, .spell]` is
 “this spell”. `.thatTarget` is the target named earlier (`It gets +2/+2`).
+`.innerTarget` is the target of this effect (`its controller`).
 `.it` is the object named earlier (`exile it`).
 `.permanentSpell` is “permanent spell”. `.thatCard` is “that card”.
 `.thisCardName` prints this card’s name, shortened before a comma
@@ -137,6 +138,7 @@ inductive ObjectRef where
   | other
   | it
   | thatTarget
+  | innerTarget
   | spell
   | permanentSpell
   | thatCard
@@ -146,7 +148,7 @@ inductive ObjectRef where
   | targets (count : TargetCount) (qs : List ObjectRef)
   deriving Repr, BEq
 
-/-- Who pays in `.unlessPay`. `.controller .it` is “its controller”. -/
+/-- Who pays in `.unlessPay`. `.controller .innerTarget` is “its controller”. -/
 inductive Payer where
   | controller (obj : ObjectRef)
   deriving Repr, BEq
@@ -312,10 +314,10 @@ inductive TextEffect where
   | counter (targets : List ObjectRef)
   /-- Discard `n` cards. -/
   | discard (n : Nat)
-  /-- Do `actions` unless `who` pays `costs`.
-  `.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]]` is
+  /-- `who` pays `costs`, or else do `actions`.
+  `.unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]]` is
   “Counter target spell unless its controller pays {4}.” -/
-  | unlessPay (actions : List TextEffect) (who : List Payer) (costs : List PrintedCost)
+  | unlessPay (who : List Payer) (costs : List PrintedCost) (actions : List TextEffect)
   /-- Choose `n` of these modes. `.chooseMode 1` is “Choose one —”.
   Each mode is one bullet. `.sequence [.draw 2, .discard 1]` inside a mode is
   “Draw two cards, then discard a card.” -/

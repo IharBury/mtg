@@ -356,7 +356,7 @@ def confusticateAndBebother : TraditionalCardDefinition := .card [
   .type .instant,
   .textBox [
     .chooseMode 1 [
-      .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+      .unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]],
       .sequence [.draw 2, .discard 1]
     ]
   ]

@@ -754,7 +754,7 @@ private def parseUnlessPay (line : String) : Option TextEffect := do
   let (tgtText, costText) ← splitOnce " unless its controller pays " rest
   let tgt ← parseSpellTarget tgtText
   let cost ← parseManaRun costText
-  return .unlessPay [.counter [tgt]] [.controller .it] [.mana cost]
+  return .unlessPay [.controller .innerTarget] [.mana cost] [.counter [tgt]]
 
 /-- `a card`, `one card`, or `two cards`. -/
 private def parseCardCount (s : String) : Option Nat := do
@@ -948,7 +948,7 @@ an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`
 on `[.thatTarget]`, and `.if` with `[.is [.thatTarget] [.cardSubtype .dwarf]]`.
 `Choose one —` followed by `•` lines becomes `.chooseMode 1`.
 `Counter target spell unless its controller pays {N}.` becomes `.unlessPay`
-with `.counter`, `[.controller .it]`, and `.mana`.
+with `[.controller .innerTarget]`, `.mana`, and `.counter`.
 `Draw two cards, then discard a card.` becomes `.sequence` with `.draw` and `.discard`.
 `Counter target spell. If a permanent spell is countered this way, exile it
 instead of putting it into its owner's graveyard. You may cast that card
@@ -1053,7 +1053,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 
 #guard parseUnlessPay
     "Counter target spell unless its controller pays {4}." ==
-  some (.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]])
+  some (.unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]])
 
 #guard parseThen
     "Draw two cards, then discard a card." ==
@@ -1080,7 +1080,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   .type .instant,
   .textBox [
     .chooseMode 1 [
-      .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+      .unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]],
       .sequence [.draw 2, .discard 1]]
   ]
 ])

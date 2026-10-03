@@ -232,6 +232,7 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .other => "other"
   | .it => "it"
   | .thatTarget => "it"
+  | .innerTarget => "it"
   | .spell => if plural then "spells" else "spell"
   | .permanentSpell => "permanent spell"
   | .thatCard => "that card"
@@ -547,7 +548,7 @@ private def drawThenDiscardSentence (n d : Nat) : String :=
 private def payerPhrase (cardName : String) : Payer → String
   | .controller obj =>
     match obj with
-    | .it => "its controller"
+    | .it | .innerTarget => "its controller"
     | named => s!"{objectPhrase cardName false named}'s controller"
 
 /-- Lowercase action inside `.unlessPay` (`counter target spell`). -/
@@ -556,8 +557,8 @@ private def unlessAction (cardName : String) : TextEffect → String
     s!"counter {joinTargets (targets.map (objectPhrase cardName false))}"
   | _ => ""
 
-private def unlessPaySentence (cardName : String) (actions : List TextEffect)
-    (who : List Payer) (costs : List PrintedCost) : String :=
+private def unlessPaySentence (cardName : String) (who : List Payer)
+    (costs : List PrintedCost) (actions : List TextEffect) : String :=
   let action := capitalizeAscii (String.intercalate " " (actions.map (unlessAction cardName)))
   let payer := String.intercalate " and " (who.map (payerPhrase cardName))
   let cost := String.intercalate ", " (costs.map printedCostPhrase)
@@ -600,7 +601,7 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .remains obj state => some (remainsSentence cardName obj state)
   | .asLongAs action dur => some (asLongAsSentence cardName action dur)
   | .discard n => some (discardSentence n)
-  | .unlessPay actions who costs => some (unlessPaySentence cardName actions who costs)
+  | .unlessPay who costs actions => some (unlessPaySentence cardName who costs actions)
   | .chooseMode n modes =>
     some <| String.intercalate "\n" <|
       chooseHeader n :: (modes.filterMap (nestedEffectSentence cardName)).map (s!"• {·}")
@@ -649,7 +650,7 @@ where
     | .remains obj state => remainsSentence cardName obj state
     | .asLongAs action dur => asLongAsSentence cardName action dur
     | .discard n => discardSentence n
-    | .unlessPay actions who costs => unlessPaySentence cardName actions who costs
+    | .unlessPay who costs actions => unlessPaySentence cardName who costs actions
     | .chooseMode n modes =>
       String.intercalate "\n" (chooseHeader n :: (modes.map go).map (s!"• {·}"))
 
@@ -676,9 +677,9 @@ private def textEffectToEffect : TextEffect → Option Effect
   | .sequence [.draw n, .discard 1] =>
     some (Effect.drawThenDiscard n)
   | .unlessPay
-      [.counter [.target [.spell]]]
-      [.controller .it]
-      [.mana [.generic n]] =>
+      [.controller .innerTarget]
+      [.mana [.generic n]]
+      [.counter [.target [.spell]]] =>
     some (Effect.counterUnlessPays n)
   | .sequence
       [.counter [.target [.spell]],
@@ -922,14 +923,14 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
   "Whenever an opponent draws a card, put a +1/+1 counter on this creature."
 
 #guard textEffectSentence ""
-    (.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]]) ==
+    (.unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]]) ==
   "Counter target spell unless its controller pays {4}."
 
 #guard textEffectSentence "" (.sequence [.draw 2, .discard 1]) ==
   "Draw two cards, then discard a card."
 
 #guard textEffectSentence "" (.chooseMode 1 [
-    .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+    .unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]],
     .sequence [.draw 2, .discard 1]]) ==
   "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card."
 
