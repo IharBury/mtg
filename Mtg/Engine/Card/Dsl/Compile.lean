@@ -263,6 +263,12 @@ private def drawWatchPhrase (who : List PlayerRef) : DrawWatch → String
   | .ordinalEach n period =>
     s!"{drawPossessive who} {ordinalWord n} card each {eachPeriodPhrase period}"
 
+/-- What was drawn. An empty watch list is any card (“a card”). -/
+private def drawnPhrase (who : List PlayerRef) (which : List DrawWatch) : String :=
+  match which with
+  | [] => "a card"
+  | ws => String.intercalate " " (ws.map (drawWatchPhrase who))
+
 /-- Subject of `.creatureAttack`. The event supplies “creature”, so `who`
 does not store `.cardType .creature`. Control phrases follow the noun
 (`creature you control`). -/
@@ -286,8 +292,7 @@ private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
     s!"{joinPhrases cardName false who} enters"
   | .drawCard who which =>
     let actor := String.intercalate " and " (who.map playerPhrase)
-    let watched := String.intercalate " " (which.map (drawWatchPhrase who))
-    s!"{actor} {drawVerb who} {watched}"
+    s!"{actor} {drawVerb who} {drawnPhrase who which}"
 
 private def tapSentence (cardName : String) (ts : List ObjectRef) : String :=
   s!"Tap {joinTargets (ts.map (objectPhrase cardName false))}."
@@ -578,6 +583,10 @@ private def textEffectToTriggered : TextEffect → Option TriggeredAbility
       [.draw n] =>
     some (.onEnterDraw n)
   | .whenever
+      [.drawCard [.you] []]
+      [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]] =>
+    some .onDrawPlusOne
+  | .whenever
       [.drawCard [.you] [.ordinalEach 2 .turn]]
       [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]] =>
     some .onDrawSecondPlusOne
@@ -763,6 +772,16 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
     [.drawCard [.you] [.ordinalEach 2 .turn]]
     [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]]) ==
   "Whenever you draw your second card each turn, put a +1/+1 counter on this creature."
+
+#guard textEffectSentence "Ravenhill Flock" (.whenever
+    [.drawCard [.you] []]
+    [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]]) ==
+  "Whenever you draw a card, put a +1/+1 counter on this creature."
+
+#guard textEffectSentence "" (.whenever
+    [.drawCard [.opponent] []]
+    [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]]) ==
+  "Whenever an opponent draws a card, put a +1/+1 counter on this creature."
 
 #guard textEffectSentence ""
     (.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]]) ==
