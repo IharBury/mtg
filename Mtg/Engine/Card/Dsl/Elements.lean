@@ -13,8 +13,11 @@ are a `.tap` instruction in `.textBox`, cost reductions are a
 `.dealDamage` instruction in `.textBox`, triggered abilities are a
 `.whenever` or `.when` instruction in `.textBox`, scry spells are a
 `.scry` instruction in `.textBox`, putting counters is a `.putCounter`
-instruction in `.textBox`, and a spell that resolves as
-several sentences is a `.sequence` in `.textBox`.
+instruction in `.textBox`, a spell that resolves as
+several sentences is a `.sequence` in `.textBox`, countering
+unless a cost is paid is a `.counterUnless` in `.textBox`,
+“draw, then discard” is a `.then` in `.textBox`, and a
+modal spell is a `.choose` in `.textBox`.
 -/
 
 namespace Mtg.Engine
@@ -247,6 +250,17 @@ inductive TextEffect where
   `.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]` is
   “put a +1/+1 counter on this creature”. -/
   | putCounter (n : Nat) (kind : CounterKind) (objects : List ObjectRef)
+  /-- Counter `targets` unless its controller pays `cost`.
+  `.counterUnless [.target [.spell]] [.generic 4]` is
+  “Counter target spell unless its controller pays {4}.” -/
+  | counterUnless (targets : List ObjectRef) (cost : List CostSymbol)
+  /-- Discard `n` cards. -/
+  | discard (n : Nat)
+  /-- Do `lead`, then `follow`.
+  `.then (.draw 2) (.discard 1)` is “Draw two cards, then discard a card.” -/
+  | «then» (lead follow : TextEffect)
+  /-- Choose one of these modes (`Choose one —`). Each mode is one bullet. -/
+  | choose (modes : List TextEffect)
   deriving Repr, BEq
 
 /-- `getForEachUntil [.it] mods each dur` is “it gets … until … for each …”.
