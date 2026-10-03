@@ -631,7 +631,7 @@ private def parseItGets (s : String) : Option TextEffect := do
   guard !((durText.splitOn " ").contains "for")
   let dur ← parseDuration durText
   let mod ← parseStatMod bonus
-  return .getUntil [.it] [mod] dur
+  return .getUntil [.thatTarget] [mod] dur
 
 /-- `you may attach an Equipment you control to it`. -/
 private def parseYouMayAttach (s : String) : Option TextEffect := do
@@ -639,7 +639,7 @@ private def parseYouMayAttach (s : String) : Option TextEffect := do
   let (objText, destText) ← splitOnce " to " rest
   let quals ← parseTypedControlled objText
   guard (destText.trimAscii.copy.map Char.toLower == "it")
-  return .may [.you] [.attachTo [.oneOf quals] [.it]]
+  return .may [.you] [.attachTo [.oneOf quals] [.thatTarget]]
 
 /-- `Counter target spell`. -/
 private def parseCounterSpell (s : String) : Option TextEffect := do
@@ -704,7 +704,7 @@ private def parseIfMay (s : String) : Option TextEffect := do
       | none => dropPrefixCI condText "it is "
   let quals ← parseTypedControlled condRest
   let act ← parseYouMayAttach thenText
-  return .if [.is [.it] quals] [act]
+  return .if [.is [.thatTarget] quals] [act]
 
 private def parseSequenceStep (s : String) : Option TextEffect :=
   let s := stripTrailingDot s
@@ -944,8 +944,8 @@ becomes `.whenever` with `.drawCard` and `.putCounter`.
 `When {name} enters, draw a card.` becomes `.when` with `.permanentEnter` and `.draw`.
 `Scry N.` becomes `.scry`.
 `Untap target creature you control. It gets … If it's a Dwarf, you may attach
-an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`,
-and `.if` with `[.cardSubtype .dwarf]`.
+an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`
+on `[.thatTarget]`, and `.if` with `[.is [.thatTarget] [.cardSubtype .dwarf]]`.
 `Choose one —` followed by `•` lines becomes `.chooseMode 1`.
 `Counter target spell unless its controller pays {N}.` becomes `.unlessPay`
 with `.counter`, `[.controller .it]`, and `.mana`.
@@ -1038,10 +1038,10 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it." ==
   some (.sequence [
     .untap [.target [.cardType .creature, .controlledBy [.you]]],
-    .getUntil [.it] [.plusPowerToughness 2 2] .endOfTurn,
+    .getUntil [.thatTarget] [.plusPowerToughness 2 2] .endOfTurn,
     .if
-      [.is [.it] [.cardSubtype .dwarf]]
-      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]])
+      [.is [.thatTarget] [.cardSubtype .dwarf]]
+      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.thatTarget]]]])
 
 #guard parseWhen "Bilbo Baggins, Burglar"
     "When Bilbo Baggins enters, draw a card." ==

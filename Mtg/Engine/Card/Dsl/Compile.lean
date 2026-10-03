@@ -231,6 +231,7 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .this => "this"
   | .other => "other"
   | .it => "it"
+  | .thatTarget => "it"
   | .spell => if plural then "spells" else "spell"
   | .permanentSpell => "permanent spell"
   | .thatCard => "that card"
@@ -324,7 +325,7 @@ private def gainUntilSentence (cardName : String) (targets : List ObjectRef)
 private def getUntilSentence (cardName : String) (qs : List ObjectRef) (mods : List StatMod)
     (dur : Duration) : String :=
   let bonus := String.intercalate " and " (mods.map statModPhrase)
-  if qs == [.it] then
+  if qs == [.it] || qs == [.thatTarget] then
     s!"It gets {bonus} {durationPhrase dur}."
   else
     let subject := capitalizeAscii (joinPhrases cardName true qs)
@@ -666,11 +667,11 @@ private def textEffectToEffect : TextEffect → Option Effect
   | .scry n => some (Effect.scry n)
   | .sequence
       [.untap [.target [.cardType .creature, .controlledBy [.you]]],
-       .getUntil [.it] [.plusPowerToughness p t] .endOfTurn,
+       .getUntil [.thatTarget] [.plusPowerToughness p t] .endOfTurn,
        .if
-         [.is [.it] [.cardSubtype .dwarf]]
+         [.is [.thatTarget] [.cardSubtype .dwarf]]
          [.may [.you]
-           [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]] =>
+           [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.thatTarget]]]] =>
     some (Effect.untapPumpMaybeAttach p t)
   | .sequence [.draw n, .discard 1] =>
     some (Effect.drawThenDiscard n)
@@ -890,10 +891,10 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 
 #guard textEffectSentence "Vow to Erebor" (.sequence [
     .untap [.target [.cardType .creature, .controlledBy [.you]]],
-    .getUntil [.it] [.plusPowerToughness (+2) (+2)] .endOfTurn,
+    .getUntil [.thatTarget] [.plusPowerToughness (+2) (+2)] .endOfTurn,
     .if
-      [.is [.it] [.cardSubtype .dwarf]]
-      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]]) ==
+      [.is [.thatTarget] [.cardSubtype .dwarf]]
+      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.thatTarget]]]]) ==
   "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
 
 #guard shortCardName "Bilbo Baggins, Burglar" == "Bilbo Baggins"

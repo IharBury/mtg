@@ -230,10 +230,10 @@ def vowToErebor : TraditionalCardDefinition := .card [
   .textBox [
     .sequence [
       .untap [.target [.cardType .creature, .controlledBy [.you]]],
-      .getUntil [.it] [.plusPowerToughness (+2) (+2)] .endOfTurn,
+      .getUntil [.thatTarget] [.plusPowerToughness (+2) (+2)] .endOfTurn,
       .if
-        [.is [.it] [.cardSubtype .dwarf]]
-        [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]
+        [.is [.thatTarget] [.cardSubtype .dwarf]]
+        [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.thatTarget]]]
     ]
   ]
 ]
