@@ -8,8 +8,8 @@ Clause vocabulary for a traditional Magic card: one face, plus an optional
 Adventure. `TraditionalCardDefinition.card` is the clause list. Printed
 keywords are a `.keyword` instruction in `.textBox`, activated
 abilities are a `.costFor` instruction in `.textBox`, tapping spells
-are a `.tap` instruction in `.textBox`, cost reductions are a
-`.costLessToCastIf` instruction in `.textBox`, damage is a
+are a `.tap` instruction in `.textBox`, cost reductions are
+`.costLessToCast` inside `.if` in `.textBox`, damage is a
 `.dealDamage` instruction in `.textBox`, triggered abilities are a
 `.whenever` or `.when` instruction in `.textBox`, scry spells are a
 `.scry` instruction in `.textBox`, putting counters is a `.putCounter`
@@ -202,17 +202,14 @@ inductive PrintedCost where
   | mana (ms : List CostSymbol)
   deriving Repr, BEq
 
-/-- When a cost reduction applies.
-`.targeting .it [.tapped, .cardType .creature]` is “if it targets a tapped creature”. -/
-inductive CastIf where
-  | targeting (obj : ObjectRef) (qs : List ObjectRef)
-  deriving Repr, BEq
-
 /-- A condition in `.if`. `[.is [.it] [.cardSubtype .dwarf]]` is “it's a Dwarf”.
-`[.counteredThisWay [.permanentSpell]]` is “a permanent spell is countered this way”. -/
+`[.counteredThisWay [.permanentSpell]]` is “a permanent spell is countered this way”.
+`[.targeting [.this, .spell] [.tapped, .cardType .creature]]` is
+“it targets a tapped creature” once this spell has been named. -/
 inductive TextCondition where
   | is (subj : List ObjectRef) (qs : List ObjectRef)
   | counteredThisWay (qs : List ObjectRef)
+  | targeting (subj : List ObjectRef) (qs : List ObjectRef)
   deriving Repr, BEq
 
 /-- Whose zone `.belongingTo` names. `.owner [.it]` is “its owner”. -/
@@ -246,9 +243,9 @@ inductive TextEffect where
   | costFor (costs : List PrintedCost) (effects : List TextEffect)
   /-- Tap the named targets (`Tap one or two target creatures`). -/
   | tap (targets : List ObjectRef)
-  /-- These words cost `discount` less to cast when `cond` holds.
-  `[.this, .spell]` is “This spell costs …”. -/
-  | costLessToCastIf (subjects : List ObjectRef) (discount : List CostSymbol) (cond : CastIf)
+  /-- `subjects` cost `discount` less to cast.
+  `[.costLessToCast [.this, .spell] [.generic 3]]` is “This spell costs {3} less to cast”. -/
+  | costLessToCast (subjects : List ObjectRef) (discount : List CostSymbol)
   /-- `subjects` deal `n` damage to `targets`. -/
   | dealDamage (subjects : List ObjectRef) (n : Nat) (targets : List ObjectRef)
   /-- When `events` happen, follow `effects`.
@@ -271,7 +268,10 @@ inductive TextEffect where
   /-- Untap the named targets (`Untap target creature you control`). -/
   | untap (targets : List ObjectRef)
   /-- When `conds` hold, follow `effects`.
-  `[.is [.it] [.cardSubtype .dwarf]]` is “if it's a Dwarf”. -/
+  `[.is [.it] [.cardSubtype .dwarf]]` is “if it's a Dwarf”.
+  `[.targeting [.this, .spell] [.tapped, .cardType .creature]]` with
+  `[.costLessToCast [.this, .spell] [.generic 3]]` is
+  “This spell costs {3} less to cast if it targets a tapped creature”. -/
   | «if» (conds : List TextCondition) (effects : List TextEffect)
   /-- `who` may do `effects` (`you may …`). -/
   | may (who : List PlayerRef) (effects : List TextEffect)

@@ -163,7 +163,7 @@ def magnificentEnd : TraditionalCardDefinition := .card [
   .manaCost [.generic 4, .mono .white],
   .type .instant,
   .textBox [
-    .costLessToCastIf [.this, .spell] [.generic 3] (.targeting .it [.tapped, .cardType .creature]),
+    .if [.targeting [.this, .spell] [.tapped, .cardType .creature]] [.costLessToCast [.this, .spell] [.generic 3]],
     .dealDamage [.thisCardName] 5 [.target [.cardType .creature]]
   ]
 ]
