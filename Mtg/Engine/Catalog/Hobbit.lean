@@ -82,7 +82,7 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card [
   .textBox [
     .costFor
       [.mana [.generic 3, .mono .white]]
-      [.getUntil [.cardType .creature, .controlledBy [.you]] [.plusPowerToughness (+1) (+1)] .endOfTurn]
+      [.getUntil [.cardType .creature, .controlledBy [.you]] [.plusPowerToughness 1 1] .endOfTurn]
   ]
 ]
 
@@ -198,7 +198,7 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
     .keyword .flying,
     .whenever
       [.creatureAttack [.this] []]
-      [.getForEachUntil [.this, .cardType .creature] [.plusPowerToughness (+1) (+1)] [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn]
+      [.getForEachUntil [.this, .cardType .creature] [.plusPowerToughness 1 1] [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn]
   ]
 ]
 
@@ -230,7 +230,7 @@ def vowToErebor : TraditionalCardDefinition := .card [
   .textBox [
     .sequence [
       .untap [.target [.cardType .creature, .controlledBy [.you]]],
-      .getUntil [.thatTarget] [.plusPowerToughness (+2) (+2)] .endOfTurn,
+      .getUntil [.thatTarget] [.plusPowerToughness 2 2] .endOfTurn,
       .if
         [.is [.thatTarget] [.cardSubtype .dwarf]]
         [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.thatTarget]]]

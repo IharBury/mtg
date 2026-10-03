@@ -890,7 +890,7 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 #guard textEffectSentence "" (.costFor
     [.mana [.generic 3, .mono .white]]
     [.getUntil [.cardType .creature, .controlledBy [.you]]
-      [.plusPowerToughness (+1) (+1)] .endOfTurn]) ==
+      [.plusPowerToughness 1 1] .endOfTurn]) ==
   "{3}{W}: Creatures you control get +1/+1 until end of turn."
 
 #guard keywordRunLine [.lifelink] == "Lifelink"
@@ -912,13 +912,13 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 
 #guard textEffectSentence "Eagle of the Great Shelf" (.whenever
     [.creatureAttack [.this] []]
-    [getForEachUntil [.this, .cardType .creature] [.plusPowerToughness (+1) (+1)]
+    [getForEachUntil [.this, .cardType .creature] [.plusPowerToughness 1 1]
       [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn]) ==
   "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control."
 
 #guard textEffectSentence "Vow to Erebor" (.sequence [
     .untap [.target [.cardType .creature, .controlledBy [.you]]],
-    .getUntil [.thatTarget] [.plusPowerToughness (+2) (+2)] .endOfTurn,
+    .getUntil [.thatTarget] [.plusPowerToughness 2 2] .endOfTurn,
     .if
       [.is [.thatTarget] [.cardSubtype .dwarf]]
       [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.thatTarget]]]]) ==
