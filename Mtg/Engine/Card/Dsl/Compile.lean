@@ -234,7 +234,6 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .innerTarget => "it"
   | .spell => if plural then "spells" else "spell"
   | .permanentSpell => "permanent spell"
-  | .thatCard => "that card"
   | .thatExiled => "that card"
   | .thisCardName => shortCardName cardName
   | .oneOf qs =>
