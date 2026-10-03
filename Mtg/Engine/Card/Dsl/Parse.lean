@@ -668,13 +668,13 @@ private def parseSpellTarget (s : String) : Option ObjectRef := do
     parseTarget s
 
 /-- `Counter target spell unless its controller pays {4}.` -/
-private def parseCounterUnless (line : String) : Option TextEffect := do
+private def parseUnlessPay (line : String) : Option TextEffect := do
   let line := stripTrailingDot (stripParens line)
   let rest ← dropPrefixCI line "Counter "
   let (tgtText, costText) ← splitOnce " unless its controller pays " rest
   let tgt ← parseSpellTarget tgtText
   let cost ← parseManaRun costText
-  return .counterUnless [tgt] cost
+  return .unlessPay [.counter [tgt]] [.controller .it] [.mana cost]
 
 /-- `a card`, `one card`, or `two cards`. -/
 private def parseCardCount (s : String) : Option Nat := do
@@ -693,10 +693,10 @@ private def parseThen (line : String) : Option TextEffect := do
   let n ← parseCardCount drawRest
   let discRest ← dropPrefixCI follow "discard "
   let d ← parseCardCount discRest
-  return .then (.draw n) (.discard d)
+  return .sequence [.draw n, .discard d]
 
 private def parseMode (line : String) : Option TextEffect :=
-  match parseCounterUnless line with
+  match parseUnlessPay line with
   | some e => some e
   | none => parseThen line
 
@@ -743,7 +743,7 @@ private def parseLine (cardName : String) (cleaned : String) : Option TextEffect
                     match parseDealDamage cardName cleaned with
                     | some e => some e
                     | none =>
-                      match parseCounterUnless cleaned with
+                      match parseUnlessPay cleaned with
                       | some e => some e
                       | none => parseThen cleaned
 
@@ -760,7 +760,7 @@ private def closeChoose (a : BodyParse) : BodyParse :=
   else
     { a with
       choosing := false
-      effects := a.effects ++ [.choose a.modes.reverse]
+      effects := a.effects ++ [.chooseMode 1 a.modes.reverse]
       modes := [] }
 
 private def addPlain (cardName : String) (a : BodyParse) (cleaned : String) : BodyParse :=
@@ -863,9 +863,10 @@ becomes `.whenever` with `.drawCard` and `.putCounter`.
 `Untap target creature you control. It gets … If it's a Dwarf, you may attach
 an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`,
 and `.if` with `[.cardSubtype .dwarf]`.
-`Choose one —` followed by `•` lines becomes `.choose`.
-`Counter target spell unless its controller pays {N}.` becomes `.counterUnless`.
-`Draw two cards, then discard a card.` becomes `.then` with `.draw` and `.discard`.
+`Choose one —` followed by `•` lines becomes `.chooseMode 1`.
+`Counter target spell unless its controller pays {N}.` becomes `.unlessPay`
+with `.counter`, `[.controller .it]`, and `.mana`.
+`Draw two cards, then discard a card.` becomes `.sequence` with `.draw` and `.discard`.
 -/
 def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   let lines :=
@@ -949,13 +950,13 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     "Scry 2. (Then exile this card. You may cast the creature later from exile.)" ==
   some (.scry 2)
 
-#guard parseCounterUnless
+#guard parseUnlessPay
     "Counter target spell unless its controller pays {4}." ==
-  some (.counterUnless [.target [.spell]] [.generic 4])
+  some (.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]])
 
 #guard parseThen
     "Draw two cards, then discard a card." ==
-  some (.then (.draw 2) (.discard 1))
+  some (.sequence [.draw 2, .discard 1])
 
 #guard parseOracleText (String.intercalate "\n" [
   "Confusticate and Bebother {2}{U}",
@@ -968,9 +969,9 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   .manaCost [.generic 2, .mono .blue],
   .type .instant,
   .textBox [
-    .choose [
-      .counterUnless [.target [.spell]] [.generic 4],
-      .then (.draw 2) (.discard 1)]
+    .chooseMode 1 [
+      .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+      .sequence [.draw 2, .discard 1]]
   ]
 ])
 

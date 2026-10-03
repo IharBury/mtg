@@ -15,9 +15,9 @@ are a `.tap` instruction in `.textBox`, cost reductions are a
 `.scry` instruction in `.textBox`, putting counters is a `.putCounter`
 instruction in `.textBox`, a spell that resolves as
 several sentences is a `.sequence` in `.textBox`, countering
-unless a cost is paid is a `.counterUnless` in `.textBox`,
-“draw, then discard” is a `.then` in `.textBox`, and a
-modal spell is a `.choose` in `.textBox`.
+is a `.counter` in `.textBox`, doing effects unless a player
+pays is a `.unlessPay` in `.textBox`, and a modal spell is a
+`.chooseMode` in `.textBox`.
 -/
 
 namespace Mtg.Engine
@@ -136,6 +136,11 @@ inductive ObjectRef where
   | targets (count : TargetCount) (qs : List ObjectRef)
   deriving Repr, BEq
 
+/-- Who pays in `.unlessPay`. `.controller .it` is “its controller”. -/
+inductive Payer where
+  | controller (obj : ObjectRef)
+  deriving Repr, BEq
+
 /-- A keyword the text box grants. -/
 inductive GrantedAbility where
   | keyword (k : PrintedKeyword)
@@ -250,17 +255,18 @@ inductive TextEffect where
   `.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]` is
   “put a +1/+1 counter on this creature”. -/
   | putCounter (n : Nat) (kind : CounterKind) (objects : List ObjectRef)
-  /-- Counter `targets` unless its controller pays `cost`.
-  `.counterUnless [.target [.spell]] [.generic 4]` is
-  “Counter target spell unless its controller pays {4}.” -/
-  | counterUnless (targets : List ObjectRef) (cost : List CostSymbol)
+  /-- Counter `targets`. `.counter [.target [.spell]]` is “counter target spell”. -/
+  | counter (targets : List ObjectRef)
   /-- Discard `n` cards. -/
   | discard (n : Nat)
-  /-- Do `lead`, then `follow`.
-  `.then (.draw 2) (.discard 1)` is “Draw two cards, then discard a card.” -/
-  | «then» (lead follow : TextEffect)
-  /-- Choose one of these modes (`Choose one —`). Each mode is one bullet. -/
-  | choose (modes : List TextEffect)
+  /-- Do `actions` unless `who` pays `costs`.
+  `.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]]` is
+  “Counter target spell unless its controller pays {4}.” -/
+  | unlessPay (actions : List TextEffect) (who : List Payer) (costs : List PrintedCost)
+  /-- Choose `n` of these modes. `.chooseMode 1` is “Choose one —”.
+  Each mode is one bullet. `.sequence [.draw 2, .discard 1]` inside a mode is
+  “Draw two cards, then discard a card.” -/
+  | chooseMode (n : Nat) (modes : List TextEffect)
   deriving Repr, BEq
 
 /-- `getForEachUntil [.it] mods each dur` is “it gets … until … for each …”.

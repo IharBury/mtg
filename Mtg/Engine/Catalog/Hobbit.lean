@@ -355,9 +355,9 @@ def confusticateAndBebother : TraditionalCardDefinition := .card [
   .manaCost [.generic 2, .mono .blue],
   .type .instant,
   .textBox [
-    .choose [
-      .counterUnless [.target [.spell]] [.generic 4],
-      .then (.draw 2) (.discard 1)
+    .chooseMode 1 [
+      .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+      .sequence [.draw 2, .discard 1]
     ]
   ]
 ]

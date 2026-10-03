@@ -414,28 +414,37 @@ private def scrySentence (n : Nat) : String :=
 private def cardCountPhrase (n : Nat) : String :=
   if n == 1 then "a card" else s!"{englishNumber n} cards"
 
-private def counterUnlessSentence (cardName : String) (targets : List ObjectRef)
-    (cost : List CostSymbol) : String :=
-  let what := joinTargets (targets.map (objectPhrase cardName false))
-  let pay := (CostSymbol.toManaCost cost).toNotation
-  s!"Counter {what} unless its controller pays {pay}."
-
 private def discardSentence (n : Nat) : String :=
   s!"Discard {cardCountPhrase n}."
 
-/-- Lowercase action inside “, then …”. -/
-private def thenPiece (cardName : String) : TextEffect → String
-  | .draw n => s!"draw {cardCountPhrase n}"
-  | .discard n => s!"discard {cardCountPhrase n}"
-  | .scry n => s!"scry {n}"
-  | .counterUnless targets cost =>
-    let what := joinTargets (targets.map (objectPhrase cardName false))
-    let pay := (CostSymbol.toManaCost cost).toNotation
-    s!"counter {what} unless its controller pays {pay}"
+private def counterSentence (cardName : String) (targets : List ObjectRef) : String :=
+  s!"Counter {joinTargets (targets.map (objectPhrase cardName false))}."
+
+/-- `.sequence [.draw n, .discard d]` prints “Draw …, then discard …”. -/
+private def drawThenDiscardSentence (n d : Nat) : String :=
+  s!"Draw {cardCountPhrase n}, then discard {cardCountPhrase d}."
+
+private def payerPhrase (cardName : String) : Payer → String
+  | .controller obj =>
+    match obj with
+    | .it => "its controller"
+    | named => s!"{objectPhrase cardName false named}'s controller"
+
+/-- Lowercase action inside `.unlessPay` (`counter target spell`). -/
+private def unlessAction (cardName : String) : TextEffect → String
+  | .counter targets =>
+    s!"counter {joinTargets (targets.map (objectPhrase cardName false))}"
   | _ => ""
 
-private def thenSentence (cardName : String) (lead follow : TextEffect) : String :=
-  s!"{capitalizeAscii (thenPiece cardName lead)}, then {thenPiece cardName follow}."
+private def unlessPaySentence (cardName : String) (actions : List TextEffect)
+    (who : List Payer) (costs : List PrintedCost) : String :=
+  let action := capitalizeAscii (String.intercalate " " (actions.map (unlessAction cardName)))
+  let payer := String.intercalate " and " (who.map (payerPhrase cardName))
+  let cost := String.intercalate ", " (costs.map printedCostPhrase)
+  s!"{action} unless {payer} pays {cost}."
+
+private def chooseHeader (n : Nat) : String :=
+  s!"Choose {countWord n} —"
 
 /-- A text-box effect nested under `.costFor`, printed without a further cost. -/
 private def nestedEffectSentence (cardName : String) : TextEffect → Option String
@@ -454,6 +463,7 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .scry n => some (scrySentence n)
   | .getForEachUntil who mods each dur =>
     some s!"{capitalizeAscii (getForEachClause cardName who mods each dur)}."
+  | .sequence [.draw n, .discard d] => some (drawThenDiscardSentence n d)
   | .sequence es =>
     some (String.intercalate " " (es.filterMap (nestedEffectSentence cardName)))
   | .untap targets => some (untapSentence cardName targets)
@@ -462,12 +472,12 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .attachTo what dest => some s!"{capitalizeAscii (attachClause cardName what dest)}."
   | .putCounter n kind objects =>
     some s!"{capitalizeAscii (putCounterClause cardName n kind objects)}."
-  | .counterUnless targets cost => some (counterUnlessSentence cardName targets cost)
+  | .counter targets => some (counterSentence cardName targets)
   | .discard n => some (discardSentence n)
-  | .then lead follow => some (thenSentence cardName lead follow)
-  | .choose modes =>
+  | .unlessPay actions who costs => some (unlessPaySentence cardName actions who costs)
+  | .chooseMode n modes =>
     some <| String.intercalate "\n" <|
-      "Choose one —" :: (modes.filterMap (nestedEffectSentence cardName)).map (s!"• {·}")
+      chooseHeader n :: (modes.filterMap (nestedEffectSentence cardName)).map (s!"• {·}")
 
 /-- One Oracle line for consecutive printed keywords (`Flying, lifelink`). -/
 private def keywordRunLine (ks : List PrintedKeyword) : String :=
@@ -497,6 +507,7 @@ where
     | .scry n => scrySentence n
     | .getForEachUntil who mods each dur =>
       s!"{capitalizeAscii (getForEachClause cardName who mods each dur)}."
+    | .sequence [.draw n, .discard d] => drawThenDiscardSentence n d
     | .sequence es => String.intercalate " " (es.map go)
     | .untap targets => untapSentence cardName targets
     | .if conds effects => ifSentence cardName conds effects
@@ -504,11 +515,11 @@ where
     | .attachTo what dest => s!"{capitalizeAscii (attachClause cardName what dest)}."
     | .putCounter n kind objects =>
       s!"{capitalizeAscii (putCounterClause cardName n kind objects)}."
-    | .counterUnless targets cost => counterUnlessSentence cardName targets cost
+    | .counter targets => counterSentence cardName targets
     | .discard n => discardSentence n
-    | .then lead follow => thenSentence cardName lead follow
-    | .choose modes =>
-      String.intercalate "\n" ("Choose one —" :: (modes.map go).map (s!"• {·}"))
+    | .unlessPay actions who costs => unlessPaySentence cardName actions who costs
+    | .chooseMode n modes =>
+      String.intercalate "\n" (chooseHeader n :: (modes.map go).map (s!"• {·}"))
 
 /-- Map a spell text-box effect onto the engine's `Effect` vocabulary. -/
 private def textEffectToEffect : TextEffect → Option Effect
@@ -530,12 +541,13 @@ private def textEffectToEffect : TextEffect → Option Effect
          [.may [.you]
            [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]] =>
     some (Effect.untapPumpMaybeAttach p t)
-  | .counterUnless [.target [.spell]] cost =>
-    match cost with
-    | [.generic n] => some (Effect.counterUnlessPays n)
-    | _ => none
-  | .then (.draw n) (.discard 1) =>
+  | .sequence [.draw n, .discard 1] =>
     some (Effect.drawThenDiscard n)
+  | .unlessPay
+      [.counter [.target [.spell]]]
+      [.controller .it]
+      [.mana [.generic n]] =>
+    some (Effect.counterUnlessPays n)
   | _ => none
 
 private def creaturesYouControl (qs : List ObjectRef) : Bool :=
@@ -593,7 +605,7 @@ private def genericMana (ms : List CostSymbol) : Nat :=
 private def spellModesOf (es : List TextEffect) : Array Effect :=
   es.foldl (fun acc e =>
     match e with
-    | .choose modes => acc ++ (modes.filterMap textEffectToEffect).toArray
+    | .chooseMode _ modes => acc ++ (modes.filterMap textEffectToEffect).toArray
     | _ => acc) #[]
 
 /-- `{n}` less when the spell targets a tapped creature. -/
@@ -752,15 +764,16 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
     [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]]) ==
   "Whenever you draw your second card each turn, put a +1/+1 counter on this creature."
 
-#guard textEffectSentence "" (.counterUnless [.target [.spell]] [.generic 4]) ==
+#guard textEffectSentence ""
+    (.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]]) ==
   "Counter target spell unless its controller pays {4}."
 
-#guard textEffectSentence "" (.then (.draw 2) (.discard 1)) ==
+#guard textEffectSentence "" (.sequence [.draw 2, .discard 1]) ==
   "Draw two cards, then discard a card."
 
-#guard textEffectSentence "" (.choose [
-    .counterUnless [.target [.spell]] [.generic 4],
-    .then (.draw 2) (.discard 1)]) ==
+#guard textEffectSentence "" (.chooseMode 1 [
+    .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+    .sequence [.draw 2, .discard 1]]) ==
   "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card."
 
 end Mtg.Engine
