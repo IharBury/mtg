@@ -418,10 +418,36 @@ def ravenhillFlock : TraditionalCardDefinition := .card [
     c.triggeredAbilities == #[.onDrawPlusOne] &&
     c.oracleText == "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature."
 
-def thranduilsDecree : CardDef :=
-  instant "Thranduil's Decree" (ManaCost.ofGenericAndColors 4 [.blue, .blue])
-    "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled."
-    (some (Effect.counterExilePermanentMayCast))
+def thranduilsDecree : TraditionalCardDefinition := .card [
+  .name "Thranduil's Decree",
+  .manaCost [.generic 4, .mono .blue, .mono .blue],
+  .type .instant,
+  .textBox [
+    .sequence [
+      .counter [.target [.spell]],
+      .if
+        [.counteredThisWay [.permanentSpell]]
+        [.insteadOf [.putInto [.it] [.graveyard, .belongingTo [.owner [.it]]]] [.exile [.it]],
+        .asLongAs [.mayCastSo [.you] [.thatCard] [.withoutPayingManaCost]] [.remains [.it] [.exiled]]]
+    ]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Thranduil's Decree {4}{U}{U}",
+  "Instant",
+  "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled."
+]) == some thranduilsDecree
+
+#guard
+  let c := thranduilsDecree.toCardDef
+  c.name == "Thranduil's Decree" &&
+    c.types == #[.instant] &&
+    c.subtypes == #[] &&
+    c.manaCost == ManaCost.ofGenericAndColors 4 [.blue, .blue] &&
+    c.keywords == Keywords.none &&
+    c.spellEffect == some Effect.counterExilePermanentMayCast &&
+    c.oracleText == "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled."
 
 def bilboLuckwearer : CardDef :=
   legendaryCreature "Bilbo, Luckwearer" (ManaCost.ofGenericAndColor 1 .blue) #["Halfling", "Rogue"] 1 1
@@ -1565,8 +1591,8 @@ def hobbitCards : Array CardDef :=
   -- `++` compiles a run of DSL cards into `CardDef`s.
   (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
      magnificentEnd, eagleOfTheGreatShelf, vowToErebor, bilboBagginsBurglar,
-     lakeshoreApothecary, confusticateAndBebother, ravenhillFlock] ++ #[
-  thranduilsDecree,
+     lakeshoreApothecary, confusticateAndBebother, ravenhillFlock,
+     thranduilsDecree] ++ #[
   bilboLuckwearer,
   uneasyPartings,
   frontPorchSentries,
