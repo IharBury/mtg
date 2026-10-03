@@ -168,11 +168,11 @@ inductive DrawWatch where
 `[.attack [.this, .cardType .creature] []]` is “this creature attacks”.
 The second list is a further restriction on that attack; empty means any
 attack. `[.enter [.thisCardName]]` is “{name} enters”.
-`[.draw [.you] [.ordinalEach 2 .turn]]` is “you draw your second card each turn”. -/
+`[.drawCard [.you] [.ordinalEach 2 .turn]]` is “you draw your second card each turn”. -/
 inductive TriggerExpr where
   | attack (who : List ObjectRef) (restrictions : List ObjectRef)
   | enter (who : List PrintedName)
-  | draw (who : List PlayerRef) (which : List DrawWatch)
+  | drawCard (who : List PlayerRef) (which : List DrawWatch)
   deriving Repr, BEq
 
 /-- A printed power and toughness change. `.plusPowerToughness +1 +1` is `+1/+1`. -/

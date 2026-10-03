@@ -324,7 +324,7 @@ def lakeshoreApothecary : TraditionalCardDefinition := .card [
   .textBox [
     .keyword .vigilance,
     .whenever
-      [.draw [.you] [.ordinalEach 2 .turn]]
+      [.drawCard [.you] [.ordinalEach 2 .turn]]
       [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]]
   ]
 ]

@@ -271,7 +271,7 @@ private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
   | .enter who =>
     let name := String.intercalate " and " (who.map (printedNamePhrase cardName))
     s!"{name} enters"
-  | .draw who which =>
+  | .drawCard who which =>
     let actor := String.intercalate " and " (who.map playerPhrase)
     let watched := String.intercalate " " (which.map (drawWatchPhrase who))
     s!"{actor} {drawVerb who} {watched}"
@@ -515,7 +515,7 @@ private def textEffectToTriggered : TextEffect → Option TriggeredAbility
       [.draw n] =>
     some (.onEnterDraw n)
   | .whenever
-      [.draw [.you] [.ordinalEach 2 .turn]]
+      [.drawCard [.you] [.ordinalEach 2 .turn]]
       [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]] =>
     some .onDrawSecondPlusOne
   | _ => none
@@ -689,7 +689,7 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 #guard textEffectSentence "Take a Glance" (.scry 2) == "Scry 2."
 
 #guard textEffectSentence "Lakeshore Apothecary" (.whenever
-    [.draw [.you] [.ordinalEach 2 .turn]]
+    [.drawCard [.you] [.ordinalEach 2 .turn]]
     [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]]) ==
   "Whenever you draw your second card each turn, put a +1/+1 counter on this creature."
 

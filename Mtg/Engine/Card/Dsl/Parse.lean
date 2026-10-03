@@ -484,7 +484,7 @@ private def parseOrdinalWord (s : String) : Option Nat :=
   | "fifth" => some 5
   | other => other.toNat?
 
-/-- `you draw your second card each turn` is `[.draw [.you] [.ordinalEach 2 .turn]]`. -/
+/-- `you draw your second card each turn` is `[.drawCard [.you] [.ordinalEach 2 .turn]]`. -/
 private def parseDrawTrigger (s : String) : Option TriggerExpr := do
   let (who, rest) ←
     if let some rest := dropPrefixCI s "you draw your " then
@@ -496,7 +496,7 @@ private def parseDrawTrigger (s : String) : Option TriggerExpr := do
   let (ordText, period) ← splitOnce " card each " rest
   guard (period == "turn")
   let n ← parseOrdinalWord ordText
-  return .draw who [.ordinalEach n .turn]
+  return .drawCard who [.ordinalEach n .turn]
 
 private def parseWheneverTrigger (s : String) : Option TriggerExpr :=
   match parseAttackTrigger s with
@@ -762,7 +762,7 @@ instructions in that text box. `Tap one or two target …` becomes `.tap`.
 `Whenever this creature attacks, it gets … for each other creature you control`
 becomes `.whenever` with `.attack` and `getForEachUntil`.
 `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
-becomes `.whenever` with `.draw` and `.putCounter`.
+becomes `.whenever` with `.drawCard` and `.putCounter`.
 `When {name} enters, draw a card.` becomes `.when` with `.enter` and `.draw`.
 `Scry N.` becomes `.scry`.
 `Untap target creature you control. It gets … If it's a Dwarf, you may attach
@@ -831,7 +831,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 #guard parseWhenever
     "Whenever you draw your second card each turn, put a +1/+1 counter on this creature." ==
   some (.whenever
-    [.draw [.you] [.ordinalEach 2 .turn]]
+    [.drawCard [.you] [.ordinalEach 2 .turn]]
     [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]])
 
 #guard parseSequence
