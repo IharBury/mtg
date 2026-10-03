@@ -423,8 +423,7 @@ def mustAttackCanDeclineIfOnlyAttackCosts (onlyAttacksRequireCost : Bool) : Bool
 def hasAttacksIfAble (o : GameObject) : Bool :=
   o.staticAbilities.any (fun
     | .attacksEachCombatIfAble => true
-    | _ => false) ||
-    o.printed.oracleText.contains "attacks each combat if able"
+    | _ => false)
 
 /-- True when `o` must attack this combat. Summoning sickness, being tapped,
 or an unpaid attack cost means it does not have to attack (MSH 130). -/

@@ -754,7 +754,7 @@ def witchKingOfAngmar : CardDef :=
 
 /-- Every unique card in The Hobbit Eternal (HOC), including reprints
 that also appear in other sets. -/
-def hobbitEternalCards : Array CardDef := #[
+@[irreducible, noinline] def hobbitEternalCards : Array CardDef := #[
   mentorOfTheMeek,
   fiendHunter,
   errandRiderOfGondor,
@@ -1014,7 +1014,7 @@ def hobbitEternalCards : Array CardDef := #[
 #guard nightsWhisper.spellEffect == some (Effect.drawAndLoseLife 2 2)
 #guard !nightsWhisper.requiresTarget
 #guard nightsWhisper.hasCastKind .draw
-#guard (nightsWhisper.summary.splitOn "draw two cards").length > 1
+#guard (nightsWhisper.summary.splitOn "draw 2 cards").length > 1
 #guard (nightsWhisper.summary.splitOn "lose 2 life").length > 1
 #guard theOneRing.activatedAbilities[0]!.effect == Effect.burdenThenDraw
 #guard theOneRing.triggeredAbilities ==

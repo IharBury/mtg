@@ -35,7 +35,6 @@ structure AdventureFace where
   manaCost : ManaCost := ManaCost.empty
   types : Array CardType := #[.sorcery]
   subtypes : Array Subtype := #["Adventure"]
-  oracleText : String := ""
   spellEffect : Option Effect := none
   /-- Additional cost: sacrifice a creature. -/
   additionalCostSacrificeCreature : Bool := false
@@ -48,7 +47,6 @@ structure CardDef where
   types : Array CardType
   subtypes : Array Subtype := #[]
   supertypes : Array Supertype := #[]
-  oracleText : String := ""
   power : Option Int := none
   toughness : Option Int := none
   loyalty : Option Int := none
@@ -424,18 +422,42 @@ def stripAdventureDelimiter (line : String) : Option String :=
     if rest.isEmpty then none else some rest
   else some line
 
-/-- Oracle ability lines that are not just restating modeled keywords. The
-Gatherer `//ADV//` marker is stored in `oracleText` but is not an ability. -/
-def leftoverOracleLines (c : CardDef) : List String :=
-  c.oracleText.splitOn "\n" |>.map (fun s => s.trimAscii.copy) |>.filterMap (fun line =>
-    match stripAdventureDelimiter line with
-    | none => none
-    | some rest =>
-      if rest.isEmpty || isKeywordRestatement c.keywords rest then none else some rest)
+/-- `{T}: Add {C}` lines from an explicit `tapAddMana` list. Basic land types
+print the parenthetical reminder instead. -/
+def explicitTapAddLines (c : CardDef) : List String :=
+  c.tapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}")
 
-/-- `{T}: Add {C}` lines from `simpleTapAddMana`. -/
-def simpleTapAddLines (c : CardDef) : List String :=
-  c.simpleTapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}")
+/-- `({T}: Add {R}.)` for each basic land type, when no other tap-add list is set. -/
+def basicLandReminderLines (c : CardDef) : List String :=
+  if !c.tapAddMana.isEmpty then []
+  else c.basicLandMana.toList.map fun col => s!"(\{T}: Add \{{col.letter}}.)"
+
+/-- Adventure name, cost, and spell, without the Gatherer `//ADV//` marker. -/
+def adventureLines (c : CardDef) : List String :=
+  match c.adventure with
+  | none => []
+  | some a =>
+    let header :=
+      if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
+    let extra :=
+      (if a.additionalCostSacrificeCreature then
+        ["As an additional cost to cast this spell, sacrifice a creature."]
+       else []) ++
+      match a.spellEffect with
+      | some e => [e.phrase]
+      | none => []
+    header :: extra
+
+/-- `{T}: Add {U} or {B}.` -/
+def tapAddOneOfLines (c : CardDef) : List String :=
+  if c.tapAddOneOf.isEmpty then []
+  else [s!"\{T}: Add {manaSymbolsText c.tapAddOneOf " or "}."]
+
+/-- `{T}: Add {U} or {B}` gated on entering this turn or a basic land. -/
+def tapAddOneOfIfEnteredLines (c : CardDef) : List String :=
+  if c.tapAddOneOfIfEnteredOrBasic.isEmpty then []
+  else
+    [s!"\{T}: Add {manaSymbolsText c.tapAddOneOfIfEnteredOrBasic " or "}. Activate only if this land entered this turn or if you control a basic land."]
 
 /-- `{T}: Add` for each permanent of a listed type. -/
 def tapAddForEachLines (c : CardDef) : List String :=
@@ -472,29 +494,49 @@ def additionalCostSacrificeArtifactOrCreatureLine (c : CardDef) : List String :=
       [s!"As an additional cost to cast this spell, discard a card or pay \{{n}}."]
     | none => []
 
+/-- `{T}cycling` and other typecycling, printed as `Mountaincycling {1}`. -/
+def activatedNotation (ab : ActivatedAbility) : String :=
+  if ab.activateFromHand && ab.cost.discardSource then
+    match ab.effect.resolution with
+    | .searchLandTypeToHand t =>
+      if t == "Plan" then ab.toNotation else s!"{t}cycling {ab.cost.mana}"
+    | _ => ab.toNotation
+  else
+    ab.toNotation
+
+/-- Spell effect, or `Choose one —` when the spell is modal. -/
+def spellLines (c : CardDef) : List String :=
+  if !c.spellModes.isEmpty then
+    [s!"Choose one — {String.intercalate "; " (c.spellModes.toList.map Effect.toNotation)}"]
+  else
+    match c.spellEffect with
+    | some e => [Effect.toNotation e]
+    | none => []
+
 /-- `{T}: Add` mana abilities, additional costs, activated, static, triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
-  c.simpleTapAddLines ++
+  c.explicitTapAddLines ++
+  c.basicLandReminderLines ++
+  c.tapAddOneOfLines ++
+  c.tapAddOneOfIfEnteredLines ++
   c.tapAddForEachLines ++
   c.tapAddAnyColorEqualToPowerLine ++
   c.tapAddAnyColorForInstantOrSorceryLine ++
   c.additionalCostSacrificeArtifactOrCreatureLine ++
-  c.activatedAbilities.toList.map ActivatedAbility.toNotation ++
+  c.activatedAbilities.toList.map activatedNotation ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
-  match c.spellEffect with
-  | some e => [Effect.toNotation e]
-  | none => []
+  c.adventureLines ++
+  c.spellLines
 
-/-- Abilities to print in the demo. Prefer leftover Oracle text so unmodeled
-abilities (triggers, extra activations) are visible; fall back to structured
-abilities when Oracle is empty or only restates keywords. -/
+/-- Modeled ability lines. Keyword-only lines are omitted; those print with
+`Keywords`. -/
+def leftoverOracleLines (c : CardDef) : List String :=
+  c.structuredAbilityLines.filter fun line => !isKeywordRestatement c.keywords line
+
+/-- Abilities to print in the demo, taken from the modeled fields. -/
 def abilitiesText (c : CardDef) : String :=
-  let fromOracle := leftoverOracleLines c
-  if !fromOracle.isEmpty then
-    String.intercalate " / " fromOracle
-  else
-    String.intercalate "; " (structuredAbilityLines c)
+  String.intercalate "; " (structuredAbilityLines c)
 
 /-- Keywords `k` plus leftover Oracle / structured abilities. -/
 def keywordsAndAbilitiesOf (c : CardDef) (k : Keywords) : String :=
@@ -571,7 +613,6 @@ def toCardDef (a : AdventureFace) : CardDef := {
   manaCost := a.manaCost
   types := a.types
   subtypes := a.subtypes
-  oracleText := a.oracleText
   spellEffect := a.spellEffect
 }
 

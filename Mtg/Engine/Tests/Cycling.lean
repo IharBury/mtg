@@ -292,7 +292,7 @@ def ogreGrantedMenaceReadyToBlock : Game :=
 #guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
 #guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard bilbosDeadlySlice.requiresTarget
-#guard mentions bilbosDeadlySlice.summary "Destroy target creature"
+#guard mentions bilbosDeadlySlice.summary "destroy target creature"
 
 /-- Bilbo's Deadly Slice in hand, an opposing Grizzly Bears, enough mana. -/
 def bilbosDeadlySliceSetup : Game :=

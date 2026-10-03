@@ -22,11 +22,11 @@ open Mtg.Engine.Catalog
 
 /-! ## Marvel Super Heroes (MSH) -/
 
-#guard mshCards.size == 286
-#guard supportedCatalogCards.any (fun c => c.name == "Brave Brawler")
-#guard supportedCatalogCards.any (fun c => c.name == "Jennifer Walters")
-#guard supportedCatalogCards.any (fun c => c.name == "The Sensational She-Hulk")
-#guard supportedCatalogCards.any (fun c => c.name == "Stature, Size Shifter")
+#guard
+  let names := supportedCatalogCards.map (·.name)
+  mshCards.size == 286 &&
+    ["Brave Brawler", "Jennifer Walters", "The Sensational She-Hulk",
+      "Stature, Size Shifter"].all names.contains
 #guard statureSizeShifter.staticAbilities == #[StaticAbility.cantBeBlockedIfPowerAtMost 1]
 #guard statureSizeShifter.activatedAbilities[0]!.effect == Effect.plusOneX
 #guard statureSizeShifter.activatedAbilities[0]!.powerUp

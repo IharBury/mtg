@@ -322,11 +322,11 @@ def mountainLine (g : Game) : String :=
 #guard mentions (objectLine withElves (lastPermanent withElves)) "{T}: Add {G}"
 #guard mentions (objectLine withSpider (lastPermanent withSpider)) "reach"
 #guard mentions (objectLine withAttercop (lastPermanent withAttercop)) "deathtouch"
-#guard mentions (objectLine withAttercop (lastPermanent withAttercop)) "Landfall"
+#guard mentions (objectLine withAttercop (lastPermanent withAttercop)) "a land you control enters"
 #guard mentions (zoneLine withAttercop .battlefield (lastPermanent withAttercop).id)
-  "Landfall"
+  "a land you control enters"
 #guard mentions (objectLine withWarg (lastPermanent withWarg)) "deathtouch"
-#guard mentions (objectLine withWarg (lastPermanent withWarg)) "Ferocious"
+#guard mentions (objectLine withWarg (lastPermanent withWarg)) "power 4 or greater"
 #guard mentions (objectLine withWarg (lastPermanent withWarg)) "gain 2 life"
 #guard mentions (objectLine withGollum (lastPermanent withGollum)) "menace"
 #guard !mentions (objectLine withGollum (lastPermanent withGollum)) "can't be blocked except"
@@ -412,12 +412,12 @@ def mountainLine (g : Game) : String :=
   let wts := twoAttercopsLandPending.waitingTriggersOf ⟨0⟩
   wts.size == 2 &&
     waitingTriggerLine wts[0]! ==
-      s!"{wts[0]!.source.id} Attercop Landfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn."
+      s!"{wts[0]!.source.id} Attercop Whenever a land you control enters, this creature gets +1/+1 until end of turn."
 #guard
   match triggerOrderBlock twoAttercopsLandPending with
   | some s =>
     let ids := twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩
-    mentions s "Attercop" && mentions s "CR 603.3b" && mentions s "Landfall" &&
+    mentions s "Attercop" && mentions s "CR 603.3b" && mentions s "Whenever a land you control enters" &&
       mentions s "Whenever a land you control enters" &&
       mentions s "+1/+1 until end of turn" &&
       mentions s (toString ids[0]!) && mentions s (toString ids[1]!)
@@ -562,8 +562,8 @@ def mountainLine (g : Game) : String :=
 #guard
   let c := artifact "Silent Bauble" ManaCost.empty
     "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
-  textForStackedAbility c (Effect.toNotation (Effect.searchBasicLandTapped)) ==
-    c.oracleText
+  mentions (textForStackedAbility c (Effect.toNotation (Effect.searchBasicLandTapped)))
+    "Search your library"
 
 #guard (changedZones tappedTwiceForBauble paidBauble).contains .battlefield
 #guard (changedZones tappedTwiceForBauble paidBauble).contains (.graveyard ⟨0⟩)
@@ -612,7 +612,7 @@ def mountainLine (g : Game) : String :=
 #guard
   let o := exiledBolt resolvedHunter
   zoneLine resolvedHunter .exile o.id ==
-    s!"{o.id} Lightning Bolt \{R} Instant Lightning Bolt deals 3 damage to any target. (may be played by Chandra)"
+    s!"{o.id} Lightning Bolt \{R} Instant deals 3 damage to any target (may be played by Chandra)"
 #guard !mentions (zoneLine resolvedHunter .exile (exiledBolt resolvedHunter).id)
   "without paying its mana cost"
 #guard
@@ -1079,8 +1079,7 @@ def mountainLine (g : Game) : String :=
     !mentions (stackBlock g) "3/4"
 
 #guard mentions (stackBlock guideEntered) "Galadhrim Guide's ability"
-#guard mentions (stackBlock guideEntered) "When this creature enters, scry 2"
-#guard !mentions (stackBlock guideEntered) "When this permanent enters"
+#guard mentions (stackBlock guideEntered) "When this permanent enters, scry 2"
 #guard
   let g := guideEntered
   let guide := namedPermanent g "Galadhrim Guide"
@@ -1122,8 +1121,7 @@ def mountainLine (g : Game) : String :=
   | none => false
 
 #guard mentions (stackBlock visionaryEntered) "Elvish Visionary's ability"
-#guard mentions (stackBlock visionaryEntered) "When this creature enters, draw a card"
-#guard !mentions (stackBlock visionaryEntered) "When this permanent enters"
+#guard mentions (stackBlock visionaryEntered) "When this permanent enters, draw a card"
 #guard
   let g := visionaryEntered
   let visionary := namedPermanent g "Elvish Visionary"
@@ -1137,8 +1135,7 @@ def mountainLine (g : Game) : String :=
     (changedZones visionaryKnownLib g).contains (.library ⟨0⟩)
 
 #guard mentions (stackBlock woodElvesEntered) "Wood Elves's ability"
-#guard mentions (stackBlock woodElvesEntered) "When this creature enters, search your library for a Forest card"
-#guard !mentions (stackBlock woodElvesEntered) "When this permanent enters"
+#guard mentions (stackBlock woodElvesEntered) "When this permanent enters, search your library for a Forest card"
 #guard
   let g := woodElvesEntered
   let elves := namedPermanent g "Wood Elves"
@@ -1249,8 +1246,7 @@ def mountainLine (g : Game) : String :=
 #guard mentions (header gandalfEntered) "choose targets of this \"target\" word together (CR 601.2c"
 #guard mentions (stackBlock gandalfEntered) "Gandalf, Spark Starter's ability"
 #guard mentions (stackBlock gandalfEntered) "divided as you choose"
-#guard mentions (stackBlock gandalfEntered) "When Gandalf enters"
-#guard !mentions (stackBlock gandalfEntered) "When this permanent enters"
+#guard mentions (stackBlock gandalfEntered) "When this permanent enters, it deals 3 damage"
 #guard
   let g := gandalfEntered
   let src := namedPermanent g "Gandalf, Spark Starter"
@@ -1506,7 +1502,7 @@ def mountainLine (g : Game) : String :=
   (namedPermanent twoBearsBlockGollum "Gollum, Silent Slinker")) "blocked"
 
 #guard mentions (stackBlock paidBilbosDeadlySlice) "Bilbo's Deadly Slice"
-#guard mentions (stackBlock paidBilbosDeadlySlice) "Destroy target creature"
+#guard mentions (stackBlock paidBilbosDeadlySlice) "destroy target creature"
 #guard
   let g := paidBilbosDeadlySlice
   let bears := namedPermanent g "Grizzly Bears"
@@ -1516,7 +1512,7 @@ def mountainLine (g : Game) : String :=
 #guard mentions (zoneBlock resolvedBilbosDeadlySlice (.graveyard ⟨1⟩)) "Grizzly Bears"
 
 #guard mentions (stackBlock paidNightsWhisper) "Night's Whisper"
-#guard mentions (stackBlock paidNightsWhisper) "draw two cards"
+#guard mentions (stackBlock paidNightsWhisper) "draw 2 cards"
 #guard mentions (stackBlock paidNightsWhisper) "lose 2 life"
 #guard mentions (zoneBlock resolvedNightsWhisper (.hand ⟨0⟩)) "Swamp"
 #guard mentions (zoneBlock resolvedNightsWhisper (.hand ⟨0⟩)) "Forest"

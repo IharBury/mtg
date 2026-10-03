@@ -49,8 +49,7 @@ def allocStackAbility (g : Game) (source : GameObject) (controller : PlayerId)
     (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) : Game × GameObject :=
   g.allocObject
-    { name := s!"{source.name}'s ability", types := #[],
-      oracleText := source.printed.oracleText }
+    { name := s!"{source.name}'s ability", types := #[] }
     source.owner .stack (some controller)
     (abilityEffect := abilityEffect) (triggeredAbility := triggeredAbility)
     (sourceId := some source.id)

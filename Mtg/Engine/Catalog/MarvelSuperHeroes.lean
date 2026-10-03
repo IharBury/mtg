@@ -1713,7 +1713,7 @@ def villainousHideout : CardDef :=
 
 /-- All unique MSH card names, including both faces of transforming cards
 and the five basic lands printed in the set. -/
-def mshCards : Array CardDef :=
+@[irreducible, noinline] def mshCards : Array CardDef :=
   #[
     theSensationalSheHulk,
     photonLivingLight,
@@ -2003,7 +2003,6 @@ def mshCards : Array CardDef :=
     forest
   ]
 
-#guard mshCards.size >= 281
-#guard mshCards.all (fun c => c.name != "")
+#guard mshCards.size >= 281 && mshCards.all (fun c => c.name != "")
 
 end Mtg.Engine.Catalog

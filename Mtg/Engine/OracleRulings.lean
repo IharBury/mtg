@@ -5852,8 +5852,9 @@ def foodPaysOneCostOk : Bool :=
 -/
 
 def testSagaFourChapters : CardDef :=
-  enchantment "Test Saga" (ManaCost.ofGeneric 1)
-    "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Draw a card.\nII — Draw a card.\nIII — Return Tom Bombadil from your graveyard to the battlefield."
+  -- No rules text: the chapter list below is the fixture, including a chapter
+  -- line that is not one of the modeled Oracle effects.
+  enchantment "Test Saga" (ManaCost.ofGeneric 1) ""
     (subtypes := #["Saga"])
     (saga := some {
       sacrificeAfter := "III"
@@ -11790,9 +11791,10 @@ def allMshRulingsPresentOk : Bool :=
 
 /-- Catalog cards named by MSH rulings exist in `mshCards`. -/
 def mshRulingCardsInCatalogOk : Bool :=
+  let names := mshCards.map (·.name)
   uniqueMshOracleRulings.all (fun r =>
     r.cards.any (fun n =>
-      mshCards.any (fun c => c.name == n) ||
+      names.any (· == n) ||
         n == "T'Challa, the Black Panther"))
 
 #guard mshRulingCardsInCatalogOk

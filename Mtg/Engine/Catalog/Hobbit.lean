@@ -1176,7 +1176,7 @@ def theMountainKingSReturn : CardDef :=
 
 def theNotaryHobbits : CardDef :=
   legendaryCreature "The Notary Hobbits" (ManaCost.ofGenericAndColors 3 [.green, .green]) #["Halfling", "Advisor"] 1 1 (oracleText := "When The Notary Hobbits enter, if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary.\n{T}: Add {C} for each Halfling you control.")
-    (tapAddColorlessPerSubtype := some "Halfling")
+    (tapAddManaForEach := #[⟨.colorless, "Halfling"⟩])
     (triggeredAbilities := #[.onEnterIfNotTokenCopySelf])
 
 def theSackvilleBagginses : CardDef :=
@@ -1222,7 +1222,7 @@ def wizardSStaff : CardDef :=
 
 /-- Every unique card in The Hobbit (HOB), including Journey basic lands
 that are also in the core catalog. -/
-def hobbitCards : Array CardDef := #[
+@[irreducible, noinline] def hobbitCards : Array CardDef := #[
   plains,
   island,
   swamp,
@@ -1419,7 +1419,7 @@ def hobbitCards : Array CardDef := #[
 ]
 
 #guard bofurReliableGuardian.colors.isMonocolored
-#guard (attercop.summary.splitOn "Landfall").length > 1
+#guard (attercop.summary.splitOn "a land you control enters").length > 1
 #guard (attercop.summary.splitOn "reach").length > 1
 #guard attercop.keywords.reach
 #guard attercop.keywords.deathtouch
@@ -1481,7 +1481,7 @@ def hobbitCards : Array CardDef := #[
 #guard beornsHospitality.activatedAbilities[0]!.effect == Effect.becomeSubtypeWithLandsPT "Bear"
 #guard beornsHospitality.activatedAbilities[0]!.cost.mana ==
   (ManaCost.ofGenericAndColors 5 [.green, .green])
-#guard (beornsHospitality.summary.splitOn "Landfall").length > 1
+#guard (beornsHospitality.summary.splitOn "a land you control enters").length > 1
 #guard (beornsHospitality.summary.splitOn "Bear creature").length > 1
 #guard mirkwoodPathmaker.staticAbilities == #[.powerToughnessEqualLandsYouControl]
 #guard mirkwoodPathmaker.power.isNone
@@ -1513,7 +1513,7 @@ def hobbitCards : Array CardDef := #[
 #guard raveningWarg.power == some 2
 #guard raveningWarg.toughness == some 2
 #guard (raveningWarg.summary.splitOn "deathtouch").length > 1
-#guard (raveningWarg.summary.splitOn "Ferocious").length > 1
+#guard (raveningWarg.summary.splitOn "while you control a creature with power 4 or greater").length > 1
 #guard (raveningWarg.summary.splitOn "power 4 or greater").length > 1
 #guard (raveningWarg.summary.splitOn "gain 2 life").length > 1
 #guard frontPorchSentries.triggeredAbilities == #[.onDiesOppCreatureGets (-1) (-1)]
@@ -1555,7 +1555,7 @@ def hobbitCards : Array CardDef := #[
 #guard !(gollumSilentSlinker.summary.splitOn "can't be blocked except").length > 1
 #guard bilbosDeadlySlice.isInstant
 #guard bilbosDeadlySlice.hasCastKind .destroyCreature
-#guard (bilbosDeadlySlice.summary.splitOn "Destroy target creature").length > 1
+#guard (bilbosDeadlySlice.summary.splitOn "destroy target creature").length > 1
 #guard smaugTheGreatCalamity.keywords.flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)
@@ -1570,8 +1570,7 @@ def hobbitCards : Array CardDef := #[
       adv.subtypes.any (· == "Adventure") &&
       adv.spellEffect == some (Effect.dealDamageToCreature 5)
   | none => false
-#guard (smaugTheGreatCalamity.oracleText.splitOn "//ADV//").length > 1
-#guard (smaugTheGreatCalamity.oracleText.splitOn "{4}{R}").length > 1
+#guard (smaugTheGreatCalamity.summary.splitOn "//ADV//").length == 1
 #guard !smaugTheGreatCalamity.leftoverOracleLines.any (· == "//ADV//")
 #guard (smaugTheGreatCalamity.summary.splitOn "//ADV//").length == 1
 #guard (smaugTheGreatCalamity.summary.splitOn "Spew Flame {4}{R}").length > 1
@@ -1591,21 +1590,15 @@ def hobbitCards : Array CardDef := #[
       adv.spellEffect == some (Effect.playAdditionalLandThisTurn) &&
       !adv.toCardDef.requiresTarget
   | none => false
-#guard (beornReluctantHost.oracleText.splitOn "//ADV//").length > 1
-#guard (beornReluctantHost.oracleText.splitOn "{1}{G}").length > 1
+#guard (beornReluctantHost.summary.splitOn "//ADV//").length == 1
 #guard !beornReluctantHost.leftoverOracleLines.any (· == "//ADV//")
 #guard (beornReluctantHost.summary.splitOn "Till and Tend {1}{G}").length > 1
 #guard (beornReluctantHost.summary.splitOn "trample").length > 1
 #guard (beornReluctantHost.summary.splitOn "additional land").length > 1
-#guard (bofurReliableGuardian.oracleText.splitOn "//ADV//").length > 1
-#guard (bofurReliableGuardian.oracleText.splitOn "Concerted Care {1}{W}").length > 1
-#guard (velvetwingButterflies.oracleText.splitOn "//ADV//").length > 1
-#guard (velvetwingButterflies.oracleText.splitOn "Gaze in Wonder {1}{W}").length > 1
-#guard (bilboBagginsBurglar.oracleText.splitOn "//ADV//").length > 1
-#guard (bilboBagginsBurglar.oracleText.splitOn "Take a Glance {U}").length > 1
-#guard (bilboLuckwearer.oracleText.splitOn "//ADV//").length > 1
-#guard (bilboLuckwearer.oracleText.splitOn "Burglar's Plot {4}{U}").length > 1
-#guard (gollumSilentSlinker.oracleText.splitOn "//ADV//").length > 1
-#guard (gollumSilentSlinker.oracleText.splitOn "Meager Meal {B}").length > 1
+#guard (bofurReliableGuardian.summary.splitOn "Concerted Care {1}{W}").length > 1
+#guard (velvetwingButterflies.summary.splitOn "Gaze in Wonder {1}{W}").length > 1
+#guard (bilboBagginsBurglar.summary.splitOn "Take a Glance {U}").length > 1
+#guard (bilboLuckwearer.summary.splitOn "Burglar's Plot {4}{U}").length > 1
+#guard (gollumSilentSlinker.summary.splitOn "Meager Meal {B}").length > 1
 
 end Mtg.Engine.Catalog
