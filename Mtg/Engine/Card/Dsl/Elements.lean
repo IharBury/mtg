@@ -23,7 +23,10 @@ pays is a `.unlessPay` in `.textBox`, and a modal spell is a
 `.counteredThisWay [.permanentSpell]` inside `.if`.
 `{name} can't be blocked` is `.cannot (.block [] [.thisCardName])`.
 Combat damage is `.dealSuchDamage` inside `.whenever`. Exchanging control is
-`.exchangeControl`.
+`.exchangeControl`. An attacking nontoken creature is
+`[.attacking, .nontoken, .cardType .creature]`.
+`Target creature's owner puts it on their choice of the top or bottom of their library`
+is `.ownerPuts` with `[.top, .bottom]`.
 -/
 
 namespace Mtg.Engine
@@ -132,6 +135,8 @@ disjunction, and the other words are a conjunction.
 `.thisCardName` prints this card’s name, shortened before a comma
 (`Bilbo` on Bilbo, Luckwearer). `.player` is “a player”.
 `.nonland` is “nonland”. `.permanent` is “permanent”.
+`.tapped` is “tapped”. `.attacking` is “attacking”. `.nontoken` is “nontoken”.
+`[.attacking, .nontoken, .cardType .creature]` is “attacking nontoken creature”.
 `.sharingCardType` is “share a card type”.
 `.targetsWhich 2 [.nonland, .permanent] [.sharingCardType]` is
 “two target nonland permanents that share a card type”.
@@ -142,6 +147,10 @@ inductive ObjectRef where
   | controlledBy (ps : List PlayerRef)
   | or (qs : List ObjectRef)
   | tapped
+  /-- “attacking”, as in “an attacking nontoken creature”. -/
+  | attacking
+  /-- “nontoken”, as in “an attacking nontoken creature”. -/
+  | nontoken
   | this
   | other
   | thatTarget
@@ -229,7 +238,9 @@ inductive PrintedCost where
 /-- A condition in `.if`. `[.is [.thatTarget] [.cardSubtype .dwarf]]` is “it's a Dwarf”.
 `[.counteredThisWay [.permanentSpell]]` is “a permanent spell is countered this way”.
 `[.targeting [.this, .spell] [.tapped, .cardType .creature]]` is
-“it targets a tapped creature” once this spell has been named. -/
+“it targets a tapped creature” once this spell has been named.
+`[.targeting [.this, .spell] [.attacking, .nontoken, .cardType .creature]]` is
+“it targets an attacking nontoken creature”. -/
 inductive TextCondition where
   | is (subj : List ObjectRef) (qs : List ObjectRef)
   | counteredThisWay (qs : List ObjectRef)
@@ -247,6 +258,13 @@ inductive ZoneWord where
   | graveyard
   | exiled
   | belongingTo (who : List ZoneOwner)
+  deriving Repr, BEq
+
+/-- An edge of a library in `.ownerPuts`. `.top` is “top”; `.bottom` is “bottom”.
+`[.top, .bottom]` is “the top or bottom”. -/
+inductive LibraryEdge where
+  | top
+  | bottom
   deriving Repr, BEq
 
 /-- How `.mayCastSo` is paid.
@@ -354,6 +372,10 @@ inductive TextEffect where
   `.exchangeControl [.targetsWhich 2 [.nonland, .permanent] [.sharingCardType]]` is
   “Exchange control of two target nonland permanents that share a card type”. -/
   | exchangeControl (objects : List ObjectRef)
+  /-- `{obj}`'s owner puts it on their choice of `places` of their library.
+  `.ownerPuts [.target [.cardType .creature]] [.top, .bottom]` is
+  “Target creature's owner puts it on their choice of the top or bottom of their library.” -/
+  | ownerPuts (obj : List ObjectRef) (places : List LibraryEdge)
   deriving Repr, BEq
 
 /-- `getForEachUntil [.this, .cardType .creature] mods each dur` is
