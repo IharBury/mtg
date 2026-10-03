@@ -657,7 +657,7 @@ private def parsePuttingInto (s : String) : Option TextEffect := do
   guard (objText.map Char.toLower == "it")
   let dest := destText.map Char.toLower
   guard (dest == "its owner's graveyard" || dest == "its owner’s graveyard")
-  return .putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.it]]]
+  return .putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.thatTarget]]]
 
 /-- `exile it instead of putting it into its owner's graveyard`. -/
 private def parseInsteadOfExile (s : String) : Option TextEffect := do
@@ -1068,7 +1068,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     .counter [.target [.spell]],
     .if
       [.counteredThisWay [.permanentSpell]]
-      [.insteadOf [.putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.it]]]] [.exile [.thatTarget]],
+      [.insteadOf [.putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.thatTarget]]]] [.exile [.thatTarget]],
        .asLongAs [.remains [.thatExiled] [.exiled]] [.mayCastSo [.you] [.thatExiled] [.withoutPayingManaCost]]]])
 
 #guard parseOracleText (String.intercalate "\n" [
