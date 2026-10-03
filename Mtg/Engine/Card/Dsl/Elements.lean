@@ -125,7 +125,7 @@ disjunction, and the other words are a conjunction.
 “this spell”. `.thatTarget` is the target named earlier (`It gets +2/+2`).
 `.innerTarget` is the target of this effect (`its controller`).
 `.it` is the object named earlier (`exile it`).
-`.permanentSpell` is “permanent spell”. `.thatCard` is “that card”.
+`.permanentSpell` is “permanent spell”.
 `.thatExiled` is the card exiled this way (`that card`, then `it remains exiled`).
 `.thisCardName` prints this card’s name, shortened before a comma
 (`Bilbo Baggins` on Bilbo Baggins, Burglar). `.other` excludes this object. -/
@@ -142,7 +142,6 @@ inductive ObjectRef where
   | innerTarget
   | spell
   | permanentSpell
-  | thatCard
   | thatExiled
   | thisCardName
   | oneOf (qs : List ObjectRef)
