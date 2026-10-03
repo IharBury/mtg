@@ -221,6 +221,9 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .other => "other"
   | .it => "it"
   | .spell => if plural then "spells" else "spell"
+  | .permanent => "permanent"
+  | .that => "that"
+  | .card => if plural then "cards" else "card"
   | .thisCardName => shortCardName cardName
   | .oneOf qs =>
     let noun := String.intercalate " " (qs.map (objectPhrase cardName false))
@@ -343,10 +346,34 @@ private def objectExprsPhrase (cardName : String) (xs : List ObjectRef) : String
 private def attachClause (cardName : String) (what dest : List ObjectRef) : String :=
   s!"attach {objectExprsPhrase cardName what} to {objectExprsPhrase cardName dest}"
 
+private def zonePhrase : PrintedZone → String
+  | .ownersGraveyard => "its owner's graveyard"
+
+private def exileInsteadClause (cardName : String) (obj : ObjectRef) (zone : PrintedZone) : String :=
+  s!"exile {objectPhrase cardName false obj} instead of putting it into {zonePhrase zone}"
+
+private def castPaymentPhrase : CastPayment → String
+  | .withoutManaCost => "without paying its mana cost"
+
+private def castDurationPhrase : CastDuration → String
+  | .whileRemainsExiled => "for as long as it remains exiled"
+
+private def castClause (cardName : String) (what : List ObjectRef) (pay : CastPayment)
+    (dur : CastDuration) : String :=
+  s!"cast {joinPhrases cardName false what} {castPaymentPhrase pay} {castDurationPhrase dur}"
+
+private def exileInsteadSentence (cardName : String) (obj : ObjectRef) (zone : PrintedZone) : String :=
+  s!"{capitalizeAscii (exileInsteadClause cardName obj zone)}."
+
+private def castSentence (cardName : String) (what : List ObjectRef) (pay : CastPayment)
+    (dur : CastDuration) : String :=
+  s!"{capitalizeAscii (castClause cardName what pay dur)}."
+
 /-- An action inside `.may`, without the actor and without a final period. -/
 private def optionalAction (cardName : String) : TextEffect → String
   | .attachTo what dest => attachClause cardName what dest
   | .untap targets => s!"untap {joinTargets (targets.map (objectPhrase cardName false))}"
+  | .cast what pay dur => castClause cardName what pay dur
   | _ => ""
 
 private def mayClause (cardName : String) (who : List PlayerRef) (effects : List TextEffect) : String :=
@@ -360,10 +387,14 @@ private def isClause (cardName : String) : TextCondition → String
     let noun := joinPhrases cardName false qs
     if who == "it" then s!"it's {indefinite noun} {noun}"
     else s!"{who} is {indefinite noun} {noun}"
+  | .counteredThisWay qs =>
+    let noun := joinPhrases cardName false qs
+    s!"{indefinite noun} {noun} is countered this way"
 
 private def thenClause (cardName : String) : TextEffect → String
   | .may who es => mayClause cardName who es
   | .attachTo what dest => attachClause cardName what dest
+  | .exileInstead obj zone => exileInsteadClause cardName obj zone
   | _ => ""
 
 private def ifSentence (cardName : String) (conds : List TextCondition)
@@ -478,7 +509,9 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .putCounter n kind objects =>
     some s!"{capitalizeAscii (putCounterClause cardName n kind objects)}."
   | .counter targets => some (counterSentence cardName targets)
+  | .exileInstead obj zone => some (exileInsteadSentence cardName obj zone)
   | .discard n => some (discardSentence n)
+  | .cast what pay dur => some (castSentence cardName what pay dur)
   | .unlessPay actions who costs => some (unlessPaySentence cardName actions who costs)
   | .chooseMode n modes =>
     some <| String.intercalate "\n" <|
@@ -521,7 +554,9 @@ where
     | .putCounter n kind objects =>
       s!"{capitalizeAscii (putCounterClause cardName n kind objects)}."
     | .counter targets => counterSentence cardName targets
+    | .exileInstead obj zone => exileInsteadSentence cardName obj zone
     | .discard n => discardSentence n
+    | .cast what pay dur => castSentence cardName what pay dur
     | .unlessPay actions who costs => unlessPaySentence cardName actions who costs
     | .chooseMode n modes =>
       String.intercalate "\n" (chooseHeader n :: (modes.map go).map (s!"• {·}"))
@@ -553,6 +588,14 @@ private def textEffectToEffect : TextEffect → Option Effect
       [.controller .it]
       [.mana [.generic n]] =>
     some (Effect.counterUnlessPays n)
+  | .sequence
+      [.counter [.target [.spell]],
+       .if
+         [.counteredThisWay [.permanent, .spell]]
+         [.exileInstead .it .ownersGraveyard],
+       .may [.you]
+         [.cast [.that, .card] .withoutManaCost .whileRemainsExiled]] =>
+    some Effect.counterExilePermanentMayCast
   | _ => none
 
 private def creaturesYouControl (qs : List ObjectRef) : Bool :=
@@ -794,5 +837,14 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
     .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
     .sequence [.draw 2, .discard 1]]) ==
   "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card."
+
+#guard textEffectSentence "" (.sequence [
+    .counter [.target [.spell]],
+    .if
+      [.counteredThisWay [.permanent, .spell]]
+      [.exileInstead .it .ownersGraveyard],
+    .may [.you]
+      [.cast [.that, .card] .withoutManaCost .whileRemainsExiled]]) ==
+  "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled."
 
 end Mtg.Engine
