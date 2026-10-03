@@ -126,6 +126,7 @@ disjunction, and the other words are a conjunction.
 `.innerTarget` is the target of this effect (`its controller`).
 `.it` is the object named earlier (`exile it`).
 `.permanentSpell` is “permanent spell”. `.thatCard` is “that card”.
+`.thatExiled` is the card exiled this way (`that card`, then `it remains exiled`).
 `.thisCardName` prints this card’s name, shortened before a comma
 (`Bilbo Baggins` on Bilbo Baggins, Burglar). `.other` excludes this object. -/
 inductive ObjectRef where
@@ -142,6 +143,7 @@ inductive ObjectRef where
   | spell
   | permanentSpell
   | thatCard
+  | thatExiled
   | thisCardName
   | oneOf (qs : List ObjectRef)
   | target (qs : List ObjectRef)
@@ -289,19 +291,19 @@ inductive TextEffect where
   /-- Exile `obj`. `.exile [.it]` is “exile it”. -/
   | exile (obj : List ObjectRef)
   /-- Do `done` instead of `avoided`.
-  `.insteadOf [.putInto [.it] [.graveyard, .belongingTo [.owner [.it]]]] [.exile [.it]]` is
+  `.insteadOf [.putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.it]]]] [.exile [.thatTarget]]` is
   “exile it instead of putting it into its owner's graveyard”. -/
   | insteadOf (avoided done : List TextEffect)
   /-- `who` may cast `what` by `how`.
-  `.mayCastSo [.you] [.thatCard] [.withoutPayingManaCost]` is
+  `.mayCastSo [.you] [.thatExiled] [.withoutPayingManaCost]` is
   “you may cast that card without paying its mana cost”. -/
   | mayCastSo (who : List PlayerRef) (what : List ObjectRef) (how : List CastManner)
-  /-- `obj` remains in `state`. `.remains [.it] [.exiled]` is “it remains exiled”. -/
+  /-- `obj` remains in `state`. `.remains [.thatExiled] [.exiled]` is “it remains exiled”. -/
   | remains (obj : List ObjectRef) (state : List ZoneWord)
-  /-- `action` for as long as `cond`.
-  `.asLongAs [.mayCastSo [.you] [.thatCard] [.withoutPayingManaCost]] [.remains [.it] [.exiled]]` is
+  /-- `action` while `cond` holds. The condition is written first.
+  `.asLongAs [.remains [.thatExiled] [.exiled]] [.mayCastSo [.you] [.thatExiled] [.withoutPayingManaCost]]` is
   “you may cast that card without paying its mana cost for as long as it remains exiled”. -/
-  | asLongAs (action cond : List TextEffect)
+  | asLongAs (cond action : List TextEffect)
   /-- Attach `what` to `dest`.
   `[.oneOf [.cardType .equipment, .controlledBy [.you]]]` to `[.thatTarget]` is
   “attach an Equipment you control to it”. -/
