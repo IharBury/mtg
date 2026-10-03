@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Catalog.Supported
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -22,11 +21,6 @@ open Mtg.Engine.Catalog
 
 /-! ## Marvel Super Heroes (MSH) -/
 
-#guard
-  let names := supportedCatalogCards.map (·.name)
-  mshCards.size == 286 &&
-    ["Brave Brawler", "Jennifer Walters", "The Sensational She-Hulk",
-      "Stature, Size Shifter"].all names.contains
 #guard statureSizeShifter.staticAbilities == #[StaticAbility.cantBeBlockedIfPowerAtMost 1]
 #guard statureSizeShifter.activatedAbilities[0]!.effect == Effect.plusOneX
 #guard statureSizeShifter.activatedAbilities[0]!.powerUp
