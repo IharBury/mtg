@@ -166,6 +166,7 @@ private def keywordsOfText (es : List TextEffect) : Keywords :=
   es.foldl (fun acc e =>
     match e with
     | .keyword k => acc.merge k.toKeywords
+    | .cantBeBlocked _ => acc.merge Keyword.cantBeBlocked
     | _ => acc) Keywords.none
 
 private def keywordsOfGranted (gs : List GrantedAbility) : Keywords :=
@@ -181,6 +182,7 @@ private def countWord (n : Nat) : String :=
   | n => englishNumber n
 
 private def countPhrase : TargetCount → String
+  | .exactly n => countWord n
   | .or lo hi => s!"{countWord lo} or {countWord hi}"
 
 private def joinTargets (ts : List String) : String :=
@@ -236,6 +238,10 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .permanentSpell => "permanent spell"
   | .thatExiled => "that card"
   | .thisCardName => shortCardName cardName
+  | .player => "a player"
+  | .nonland => "nonland"
+  | .permanent => if plural then "permanents" else "permanent"
+  | .sharingCardType => "that share a card type"
   | .oneOf qs =>
     let noun := String.intercalate " " (qs.map (objectPhrase cardName false))
     s!"{indefinite noun} {noun}"
@@ -244,6 +250,7 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .targets count qs =>
     let many :=
       match count with
+      | .exactly n => n > 1
       | .or _ hi => hi > 1
     s!"{countPhrase count} target {String.intercalate " " (qs.map (objectPhrase cardName many))}"
 
@@ -303,6 +310,8 @@ private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
   | .drawCard who which =>
     let actor := String.intercalate " and " (who.map playerPhrase)
     s!"{actor} {drawVerb who} {drawnPhrase who which}"
+  | .dealsCombatDamage who toWhom =>
+    s!"{joinPhrases cardName false who} deals combat damage to {joinPhrases cardName false toWhom}"
 
 private def tapSentence (cardName : String) (ts : List ObjectRef) : String :=
   s!"Tap {joinTargets (ts.map (objectPhrase cardName false))}."
@@ -516,9 +525,18 @@ private def getForEachClause (cardName : String) (who : List ObjectRef) (mods : 
   let bonus := String.intercalate " and " (mods.map statModPhrase)
   s!"{subject} {verb} {bonus} {durationPhrase dur} for each {joinPhrases cardName false each}"
 
+/-- English for `n` cards (`a card`, `two cards`). “Draw …, then discard” uses words. -/
+private def cardCountPhrase (n : Nat) : String :=
+  if n == 1 then "a card" else s!"{englishNumber n} cards"
+
+/-- Lowercase “draw …, then discard …” inside a triggered ability. -/
+private def drawThenDiscardClause (n d : Nat) : String :=
+  s!"draw {cardCountPhrase n}, then discard {cardCountPhrase d}"
+
 private def wheneverBody (cardName : String) : TextEffect → Option String
   | .getForEachUntil who mods each dur => some (getForEachClause cardName who mods each dur)
   | .putCounter n kind objects => some (putCounterClause cardName n kind objects)
+  | .sequence [.draw n, .discard d] => some (drawThenDiscardClause n d)
   | _ => none
 
 private def wheneverSentence (cardName : String) (events : List TriggerExpr)
@@ -543,19 +561,21 @@ private def whenSentence (cardName : String) (events : List TriggerExpr)
 private def scrySentence (n : Nat) : String :=
   s!"Scry {n}."
 
-/-- English for `n` cards (`a card`, `two cards`). “Draw …, then discard” uses words. -/
-private def cardCountPhrase (n : Nat) : String :=
-  if n == 1 then "a card" else s!"{englishNumber n} cards"
-
 private def discardSentence (n : Nat) : String :=
   s!"Discard {cardCountPhrase n}."
 
 private def counterSentence (cardName : String) (targets : List ObjectRef) : String :=
   s!"Counter {joinTargets (targets.map (objectPhrase cardName false))}."
 
+private def cantBeBlockedSentence (cardName : String) (who : List ObjectRef) : String :=
+  s!"{joinPhrases cardName false who} can't be blocked."
+
+private def exchangeControlSentence (cardName : String) (objects : List ObjectRef) : String :=
+  s!"Exchange control of {joinTargets (objects.map (objectPhrase cardName false))}."
+
 /-- `.sequence [.draw n, .discard d]` prints “Draw …, then discard …”. -/
 private def drawThenDiscardSentence (n d : Nat) : String :=
-  s!"Draw {cardCountPhrase n}, then discard {cardCountPhrase d}."
+  s!"{capitalizeAscii (drawThenDiscardClause n d)}."
 
 private def payerPhrase (cardName : String) : Payer → String
   | .controller obj =>
@@ -617,6 +637,8 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .chooseMode n modes =>
     some <| String.intercalate "\n" <|
       chooseHeader n :: (modes.filterMap (nestedEffectSentence cardName)).map (s!"• {·}")
+  | .cantBeBlocked who => some (cantBeBlockedSentence cardName who)
+  | .exchangeControl objects => some (exchangeControlSentence cardName objects)
 
 /-- One Oracle line for consecutive printed keywords (`Flying, lifelink`). -/
 private def keywordRunLine (ks : List PrintedKeyword) : String :=
@@ -665,6 +687,8 @@ where
     | .unlessPay who costs actions => unlessPaySentence cardName who costs actions
     | .chooseMode n modes =>
       String.intercalate "\n" (chooseHeader n :: (modes.map go).map (s!"• {·}"))
+    | .cantBeBlocked who => cantBeBlockedSentence cardName who
+    | .exchangeControl objects => exchangeControlSentence cardName objects
 
 /-- Map a spell text-box effect onto the engine's `Effect` vocabulary. -/
 private def textEffectToEffect : TextEffect → Option Effect
@@ -704,6 +728,9 @@ private def textEffectToEffect : TextEffect → Option Effect
             [.remains [.thatExiled] [.exiled]]
             [.mayCastSo [.you] [.thatExiled] [.withoutPayingManaCost]]]] =>
     some Effect.counterExilePermanentMayCast
+  | .exchangeControl
+      [.targets (.exactly 2) [.nonland, .permanent, .sharingCardType]] =>
+    some Effect.exchangeControlSharingType
   | _ => none
 
 private def creaturesYouControl (qs : List ObjectRef) : Bool :=
@@ -741,6 +768,10 @@ private def textEffectToTriggered : TextEffect → Option TriggeredAbility
       [.drawCard [.you] [.ordinalEach 2 .turn]]
       [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]] =>
     some .onDrawSecondPlusOne
+  | .whenever
+      [.dealsCombatDamage [.thisCardName] [.player]]
+      [.sequence [.draw 1, .discard 1]] =>
+    some .onCombatDamageToPlayerLoot
   | _ => none
 
 /-- Map `.costFor` onto a non-mana activated ability. -/
@@ -959,6 +990,19 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
     .unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]],
     .sequence [.draw 2, .discard 1]]) ==
   "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card."
+
+#guard textEffectSentence "Bilbo, Luckwearer" (.cantBeBlocked [.thisCardName]) ==
+  "Bilbo can't be blocked."
+
+#guard textEffectSentence "Bilbo, Luckwearer" (.whenever
+    [.dealsCombatDamage [.thisCardName] [.player]]
+    [.sequence [.draw 1, .discard 1]]) ==
+  "Whenever Bilbo deals combat damage to a player, draw a card, then discard a card."
+
+#guard textEffectSentence "Burglar's Plot"
+    (.exchangeControl
+      [.targets (.exactly 2) [.nonland, .permanent, .sharingCardType]]) ==
+  "Exchange control of two target nonland permanents that share a card type."
 
 #guard textEffectSentence "" (.sequence [
     .counter [.target [.spell]],

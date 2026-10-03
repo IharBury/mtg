@@ -519,10 +519,20 @@ private def parseDrawTrigger (s : String) : Option TriggerExpr :=
   else
     none
 
-private def parseWheneverTrigger (s : String) : Option TriggerExpr :=
+/-- `{short name} deals combat damage to a player`. -/
+private def parseCombatDamageTrigger (cardName : String) (s : String) : Option TriggerExpr := do
+  let (who, rest) ← splitOnce " deals combat damage to " s
+  guard (who == shortCardName cardName)
+  guard (rest.map Char.toLower == "a player")
+  return .dealsCombatDamage [.thisCardName] [.player]
+
+private def parseWheneverTrigger (cardName : String) (s : String) : Option TriggerExpr :=
   match parseAttackTrigger s with
   | some trig => some trig
-  | none => parseDrawTrigger s
+  | none =>
+    match parseDrawTrigger s with
+    | some trig => some trig
+    | none => parseCombatDamageTrigger cardName s
 
 /-- `this creature` is `[.this, .cardType .creature]`. -/
 private def parseThisTyped (s : String) : Option (List ObjectRef) := do
@@ -536,18 +546,41 @@ private def parsePutCounter (s : String) : Option TextEffect := do
   let objs ← parseThisTyped rest
   return .putCounter 1 .plusOnePlusOne objs
 
+/-- `a card`, `one card`, or `two cards`. -/
+private def parseCardCount (s : String) : Option Nat := do
+  let s := s.trimAscii.copy.map Char.toLower
+  if s == "a card" || s == "one card" then
+    some 1
+  else
+    let (nText, tail) ← splitOnce " " s
+    if tail == "cards" then parseCountWord nText else none
+
+/-- `Draw two cards, then discard a card.` Also the lowercase trigger body. -/
+private def parseThen (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let (lead, follow) ← splitOnce ", then " line
+  let drawRest ← dropPrefixCI lead "Draw "
+  let n ← parseCardCount drawRest
+  let discRest ← dropPrefixCI follow "discard "
+  let d ← parseCardCount discRest
+  return .sequence [.draw n, .discard d]
+
 private def parseWheneverEffect (s : String) : Option TextEffect :=
   match parseGetForEachUntil s with
   | some effect => some effect
-  | none => parsePutCounter s
+  | none =>
+    match parsePutCounter s with
+    | some effect => some effect
+    | none => parseThen s
 
 /-- `Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control.`
-`Whenever you draw your second card each turn, put a +1/+1 counter on this creature.` -/
-private def parseWhenever (line : String) : Option TextEffect := do
+`Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
+`Whenever Bilbo deals combat damage to a player, draw a card, then discard a card.` -/
+private def parseWhenever (cardName : String) (line : String) : Option TextEffect := do
   let line := stripTrailingDot (stripParens line)
   let rest ← dropPrefixCI line "Whenever "
   let (trigText, effectText) ← splitOnce ", " rest
-  let trig ← parseWheneverTrigger trigText
+  let trig ← parseWheneverTrigger cardName trigText
   let effect ← parseWheneverEffect effectText
   return .whenever [trig] [effect]
 
@@ -758,25 +791,6 @@ private def parseUnlessPay (line : String) : Option TextEffect := do
   let cost ← parseManaRun costText
   return .unlessPay [.controller .innerTarget] [.mana cost] [.counter [tgt]]
 
-/-- `a card`, `one card`, or `two cards`. -/
-private def parseCardCount (s : String) : Option Nat := do
-  let s := s.trimAscii.copy.map Char.toLower
-  if s == "a card" || s == "one card" then
-    some 1
-  else
-    let (nText, tail) ← splitOnce " " s
-    if tail == "cards" then parseCountWord nText else none
-
-/-- `Draw two cards, then discard a card.` -/
-private def parseThen (line : String) : Option TextEffect := do
-  let line := stripTrailingDot (stripParens line)
-  let (lead, follow) ← splitOnce ", then " line
-  let drawRest ← dropPrefixCI lead "Draw "
-  let n ← parseCardCount drawRest
-  let discRest ← dropPrefixCI follow "discard "
-  let d ← parseCardCount discRest
-  return .sequence [.draw n, .discard d]
-
 private def parseMode (line : String) : Option TextEffect :=
   match parseUnlessPay line with
   | some e => some e
@@ -794,11 +808,30 @@ private def parseKeywordLine (line : String) : Option (List TextEffect) := do
     let kws ← parts.mapM PrintedKeyword.parse
     return kws.map TextEffect.keyword
 
+/-- `{short name} can't be blocked.` -/
+private def parseCantBeBlocked (cardName : String) (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let who ← stripSuffixCI? line " can't be blocked"
+  guard (who == shortCardName cardName)
+  return .cantBeBlocked [.thisCardName]
+
+/-- `Exchange control of two target nonland permanents that share a card type.` -/
+private def parseExchangeControl (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let rest ← dropPrefixCI line "Exchange control of "
+  let (countText, after) ← splitOnce " target " rest
+  let n ← parseCountWord countText
+  let (noun, share) ← splitOnce " that " after
+  let noun := noun.map Char.toLower
+  guard (noun == "nonland permanent" || noun == "nonland permanents")
+  guard (share.map Char.toLower == "share a card type")
+  return .exchangeControl [.targets (.exactly n) [.nonland, .permanent, .sharingCardType]]
+
 private def parseLine (cardName : String) (cleaned : String) : Option TextEffect :=
   match parseSequence cleaned with
   | some e => some e
   | none =>
-    match parseWhenever cleaned with
+    match parseWhenever cardName cleaned with
     | some e => some e
     | none =>
       match parseWhen cardName cleaned with
@@ -827,7 +860,13 @@ private def parseLine (cardName : String) (cleaned : String) : Option TextEffect
                     | none =>
                       match parseUnlessPay cleaned with
                       | some e => some e
-                      | none => parseThen cleaned
+                      | none =>
+                        match parseThen cleaned with
+                        | some e => some e
+                        | none =>
+                          match parseCantBeBlocked cardName cleaned with
+                          | some e => some e
+                          | none => parseExchangeControl cleaned
 
 private structure BodyParse where
   effects : List TextEffect := []
@@ -952,6 +991,11 @@ on `[.thatTarget]`, and `.if` with `[.is [.thatTarget] [.cardSubtype .dwarf]]`.
 `Counter target spell unless its controller pays {N}.` becomes `.unlessPay`
 with `[.controller .innerTarget]`, `.mana`, and `.counter`.
 `Draw two cards, then discard a card.` becomes `.sequence` with `.draw` and `.discard`.
+`{name} can't be blocked.` becomes `.cantBeBlocked` with `[.thisCardName]`.
+`Whenever {name} deals combat damage to a player, draw a card, then discard a card.`
+becomes `.whenever` with `.dealsCombatDamage` and `.sequence` of `.draw` and `.discard`.
+`Exchange control of two target nonland permanents that share a card type.`
+becomes `.exchangeControl` with `.targets (.exactly 2)`.
 `Counter target spell. If a permanent spell is countered this way, exile it
 instead of putting it into its owner's graveyard. You may cast that card
 without paying its mana cost for as long as it remains exiled.` becomes
@@ -1012,30 +1056,45 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     "Magnificent End deals 5 damage to target creature." ==
   some (.dealDamage [.thisCardName] 5 [.target [.cardType .creature]])
 
-#guard parseWhenever
+#guard parseWhenever "Eagle of the Great Shelf"
     "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." ==
   some (.whenever
     [.creatureAttack [.this] []]
     [.getForEachUntil [.this, .cardType .creature] [.plusPowerToughness 1 1]
       [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn])
 
-#guard parseWhenever
+#guard parseWhenever "Ravenhill Flock"
     "Whenever you draw a card, put a +1/+1 counter on this creature." ==
   some (.whenever
     [.drawCard [.you] []]
     [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]])
 
-#guard parseWhenever
+#guard parseWhenever "Ravenhill Flock"
     "Whenever an opponent draws a card, put a +1/+1 counter on this creature." ==
   some (.whenever
     [.drawCard [.opponent] []]
     [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]])
 
-#guard parseWhenever
+#guard parseWhenever "Lakeshore Apothecary"
     "Whenever you draw your second card each turn, put a +1/+1 counter on this creature." ==
   some (.whenever
     [.drawCard [.you] [.ordinalEach 2 .turn]]
     [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]])
+
+#guard parseWhenever "Bilbo, Luckwearer"
+    "Whenever Bilbo deals combat damage to a player, draw a card, then discard a card." ==
+  some (.whenever
+    [.dealsCombatDamage [.thisCardName] [.player]]
+    [.sequence [.draw 1, .discard 1]])
+
+#guard parseCantBeBlocked "Bilbo, Luckwearer"
+    "Bilbo can't be blocked." ==
+  some (.cantBeBlocked [.thisCardName])
+
+#guard parseExchangeControl
+    "Exchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)" ==
+  some (.exchangeControl
+    [.targets (.exactly 2) [.nonland, .permanent, .sharingCardType]])
 
 #guard parseSequence
     "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it." ==

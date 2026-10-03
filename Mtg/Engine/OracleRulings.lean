@@ -2453,12 +2453,12 @@ def untargetedAmass : Game := started.applyEffect ⟨0⟩ (Effect.amassGoblins 1
 
 /-- Ruling 2: in every zone except the stack-as-Adventure, ignore the
 Adventure face. Bilbo in a graveyard is a blue creature of mana value 2. -/
-def burglarPlot : AdventureFace := bilboLuckwearer.adventure.get!
+def burglarPlot : AdventureFace := bilboLuckwearer.toCardDef.adventure.get!
 
-#guard bilboLuckwearer.isCreature
-#guard !bilboLuckwearer.isInstant
-#guard !bilboLuckwearer.isSorcery
-#guard bilboLuckwearer.manaValue == 2
+#guard bilboLuckwearer.toCardDef.isCreature
+#guard !bilboLuckwearer.toCardDef.isInstant
+#guard !bilboLuckwearer.toCardDef.isSorcery
+#guard bilboLuckwearer.toCardDef.manaValue == 2
 #guard burglarPlot.name == "Burglar's Plot"
 #guard burglarPlot.manaCost.manaValue == 5
 
@@ -4526,7 +4526,7 @@ def exiledLandTimingOk : Bool :=
 /-- Ruling 10: a copy of an adventurer object has an Adventure; a token copy
 that leaves the battlefield ceases to exist. -/
 def adventureCopyHasAdventureOk : Bool :=
-  let printed := { bilboLuckwearer with isToken := true }
+  let printed := { bilboLuckwearer.toCardDef with isToken := true }
   let (g, tok) := started.createToken ⟨0⟩ printed
   let hasAdv := tok.printed.adventure.isSome
   let (g, _) := g.move tok.id (.graveyard ⟨0⟩) none

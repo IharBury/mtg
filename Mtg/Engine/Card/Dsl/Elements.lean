@@ -21,6 +21,9 @@ pays is a `.unlessPay` in `.textBox`, and a modal spell is a
 `.insteadOf`. A permission that lasts while a condition holds is
 `.asLongAs`. “A permanent spell is countered this way” is
 `.counteredThisWay [.permanentSpell]` inside `.if`.
+`{name} can't be blocked` is `.cantBeBlocked`. Combat damage is
+`.dealsCombatDamage` inside `.whenever`. Exchanging control is
+`.exchangeControl`.
 -/
 
 namespace Mtg.Engine
@@ -108,8 +111,10 @@ inductive TypeName where
   | equipment
   deriving Repr, BEq, DecidableEq
 
-/-- How many objects one targeting phrase names. `.or 1 2` is “one or two”. -/
+/-- How many objects one targeting phrase names.
+`.exactly 2` is “two”. `.or 1 2` is “one or two”. -/
 inductive TargetCount where
+  | exactly (n : Nat)
   | or (lo hi : Nat)
   deriving Repr, BEq
 
@@ -127,7 +132,12 @@ disjunction, and the other words are a conjunction.
 `.permanentSpell` is “permanent spell”.
 `.thatExiled` is the card exiled this way (`that card`, then `it remains exiled`).
 `.thisCardName` prints this card’s name, shortened before a comma
-(`Bilbo Baggins` on Bilbo Baggins, Burglar). `.other` excludes this object. -/
+(`Bilbo` on Bilbo, Luckwearer). `.player` is “a player”.
+`.nonland` is “nonland”. `.permanent` is “permanent”.
+`.sharingCardType` is “that share a card type”.
+`.targets (.exactly 2) [.nonland, .permanent, .sharingCardType]` is
+“two target nonland permanents that share a card type”.
+`.other` excludes this object. -/
 inductive ObjectRef where
   | cardType (t : TypeName)
   | cardSubtype (s : CardSubtype)
@@ -142,6 +152,10 @@ inductive ObjectRef where
   | permanentSpell
   | thatExiled
   | thisCardName
+  | player
+  | nonland
+  | permanent
+  | sharingCardType
   | oneOf (qs : List ObjectRef)
   | target (qs : List ObjectRef)
   | targets (count : TargetCount) (qs : List ObjectRef)
@@ -179,11 +193,14 @@ The creature type is the event, so `who` does not repeat `.cardType .creature`.
 The second list is a further restriction on that attack; empty means any
 attack. `[.permanentEnter [.thisCardName]]` is “{name} enters”.
 `[.drawCard [.you] []]` is “you draw a card”. An empty watch list means any card.
-`[.drawCard [.you] [.ordinalEach 2 .turn]]` is “you draw your second card each turn”. -/
+`[.drawCard [.you] [.ordinalEach 2 .turn]]` is “you draw your second card each turn”.
+`[.dealsCombatDamage [.thisCardName] [.player]]` is
+“{name} deals combat damage to a player”. -/
 inductive TriggerExpr where
   | creatureAttack (who : List ObjectRef) (restrictions : List ObjectRef)
   | permanentEnter (who : List ObjectRef)
   | drawCard (who : List PlayerRef) (which : List DrawWatch)
+  | dealsCombatDamage (who : List ObjectRef) (toWhom : List ObjectRef)
   deriving Repr, BEq
 
 /-- A printed power and toughness change. `.plusPowerToughness 1 1` is `+1/+1`. -/
@@ -316,6 +333,13 @@ inductive TextEffect where
   Each mode is one bullet. `.sequence [.draw 2, .discard 1]` inside a mode is
   “Draw two cards, then discard a card.” -/
   | chooseMode (n : Nat) (modes : List TextEffect)
+  /-- `{who} can't be blocked`.
+  `.cantBeBlocked [.thisCardName]` is “Bilbo can't be blocked”. -/
+  | cantBeBlocked (who : List ObjectRef)
+  /-- Exchange control of `objects`.
+  `.exchangeControl [.targets (.exactly 2) [.nonland, .permanent, .sharingCardType]]` is
+  “Exchange control of two target nonland permanents that share a card type”. -/
+  | exchangeControl (objects : List ObjectRef)
   deriving Repr, BEq
 
 /-- `getForEachUntil [.this, .cardType .creature] mods each dur` is
