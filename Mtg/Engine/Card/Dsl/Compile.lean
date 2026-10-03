@@ -42,6 +42,8 @@ def printed : CardSubtype → String
   | .soldier => "Soldier"
   | .halfling => "Halfling"
   | .rogue => "Rogue"
+  | .human => "Human"
+  | .cleric => "Cleric"
 
 end CardSubtype
 
@@ -234,6 +236,19 @@ private def shortCardName (cardName : String) : String :=
 private def printedNamePhrase (cardName : String) : PrintedName → String
   | .thisCardName => shortCardName cardName
 
+private def playerPhrase : PlayerRef → String
+  | .you => "you"
+  | .opponent => "an opponent"
+
+private def drawVerb (who : List PlayerRef) : String :=
+  if who == [.you] then "draw" else "draws"
+
+private def drawPossessive (who : List PlayerRef) : String :=
+  if who == [.you] then "your" else "their"
+
+private def drawOrdinalPhrase (who : List PlayerRef) : DrawOrdinal → String
+  | .secondEachTurn => s!"{drawPossessive who} second card each turn"
+
 private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
   | .attack who restrictions =>
     let extra :=
@@ -243,6 +258,9 @@ private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
   | .enter who =>
     let name := String.intercalate " and " (who.map (printedNamePhrase cardName))
     s!"{name} enters"
+  | .draw who which =>
+    let actor := String.intercalate " and " (who.map playerPhrase)
+    s!"{actor} {drawVerb who} {drawOrdinalPhrase who which}"
 
 private def tapSentence (cardName : String) (ts : List ObjectRef) : String :=
   s!"Tap {joinTargets (ts.map (objectPhrase cardName false))}."
@@ -287,10 +305,6 @@ private def dealDamageSentence (cardName : String) (subjects : List ObjectRef)
   let source := String.intercalate " and " (subjects.map (objectPhrase cardName false))
   s!"{source} deals {n} damage to {joinTargets (targets.map (objectPhrase cardName false))}."
 
-private def playerPhrase : PlayerRef → String
-  | .you => "you"
-  | .opponent => "an opponent"
-
 private def objectExprPhrase (cardName : String) : ObjectExpr → String
   | .it => "it"
   | .oneOf qs =>
@@ -332,6 +346,14 @@ private def ifSentence (cardName : String) (conds : List TextCondition)
   let body := String.intercalate " " (effects.map (thenClause cardName))
   s!"If {cond}, {body}."
 
+/-- “put a +1/+1 counter on this creature”. -/
+private def putCounterClause (cardName : String) (n : Nat) (kind : CounterKind)
+    (objects : List ObjectRef) : String :=
+  let counters :=
+    match kind with
+    | .plusOnePlusOne => plusOnePlusOneCountersPhrase n
+  s!"put {counters} on {joinPhrases cardName false objects}"
+
 /-- “it gets +1/+1 until end of turn for each other creature you control”. -/
 private def getForEachClause (cardName : String) (who : List ObjectRef) (mods : List StatMod)
     (each : List ObjectRef) (dur : Duration) : String :=
@@ -342,6 +364,7 @@ private def getForEachClause (cardName : String) (who : List ObjectRef) (mods : 
 
 private def wheneverBody (cardName : String) : TextEffect → Option String
   | .getForEachUntil who mods each dur => some (getForEachClause cardName who mods each dur)
+  | .putCounter n kind objects => some (putCounterClause cardName n kind objects)
   | _ => none
 
 private def wheneverSentence (cardName : String) (events : List TriggerExpr)
@@ -389,6 +412,8 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .if conds effects => some (ifSentence cardName conds effects)
   | .may who effects => some s!"{capitalizeAscii (mayClause cardName who effects)}."
   | .attachTo what dest => some s!"{capitalizeAscii (attachClause cardName what dest)}."
+  | .putCounter n kind objects =>
+    some s!"{capitalizeAscii (putCounterClause cardName n kind objects)}."
 
 /-- One Oracle line for consecutive printed keywords (`Flying, lifelink`). -/
 private def keywordRunLine (ks : List PrintedKeyword) : String :=
@@ -423,6 +448,8 @@ where
     | .if conds effects => ifSentence cardName conds effects
     | .may who effects => s!"{capitalizeAscii (mayClause cardName who effects)}."
     | .attachTo what dest => s!"{capitalizeAscii (attachClause cardName what dest)}."
+    | .putCounter n kind objects =>
+      s!"{capitalizeAscii (putCounterClause cardName n kind objects)}."
 
 /-- Map a spell text-box effect onto the engine's `Effect` vocabulary. -/
 private def textEffectToEffect : TextEffect → Option Effect
@@ -473,6 +500,10 @@ private def textEffectToTriggered : TextEffect → Option TriggeredAbility
       [.enter [.thisCardName]]
       [.draw n] =>
     some (.onEnterDraw n)
+  | .whenever
+      [.draw [.you] .secondEachTurn]
+      [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]] =>
+    some .onDrawSecondPlusOne
   | _ => none
 
 /-- Map `.costFor` onto a non-mana activated ability. -/
@@ -642,5 +673,10 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
   "When Bilbo Baggins enters, draw a card."
 
 #guard textEffectSentence "Take a Glance" (.scry 2) == "Scry 2."
+
+#guard textEffectSentence "Lakeshore Apothecary" (.whenever
+    [.draw [.you] .secondEachTurn]
+    [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]]) ==
+  "Whenever you draw your second card each turn, put a +1/+1 counter on this creature."
 
 end Mtg.Engine

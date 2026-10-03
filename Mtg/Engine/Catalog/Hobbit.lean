@@ -313,11 +313,42 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card [
         adv.spellEffect == some (Effect.scry 2)
     | none => false
 
-def lakeshoreApothecary : CardDef :=
-  creature "Lakeshore Apothecary" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Cleric"] 1 2
-    (oracleText := "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature.")
-    (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[.onDrawSecondPlusOne])
+def lakeshoreApothecary : TraditionalCardDefinition := .card [
+  .name "Lakeshore Apothecary",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .cleric,
+  .power 1,
+  .toughness 2,
+  .textBox [
+    .keyword .vigilance,
+    .whenever
+      [.draw [.you] .secondEachTurn]
+      [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Lakeshore Apothecary {1}{U}",
+  "Creature — Human Cleric",
+  "1/2",
+  "Vigilance",
+  "Whenever you draw your second card each turn, put a +1/+1 counter on this creature."
+]) == some lakeshoreApothecary
+
+#guard
+  let c := lakeshoreApothecary.toCardDef
+  c.name == "Lakeshore Apothecary" &&
+    c.types == #[.creature] &&
+    c.subtypes == #["Human", "Cleric"] &&
+    c.power == some 1 &&
+    c.toughness == some 2 &&
+    c.manaCost == ManaCost.ofGenericAndColor 1 .blue &&
+    c.keywords == Keyword.vigilance &&
+    c.spellEffect == none &&
+    c.triggeredAbilities == #[.onDrawSecondPlusOne] &&
+    c.oracleText == "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature."
 
 def confusticateAndBebother : CardDef :=
   instant "Confusticate and Bebother" (ManaCost.ofGenericAndColor 2 .blue)
@@ -1476,8 +1507,8 @@ def hobbitCards : Array CardDef :=
   #[plains, island, swamp, mountain, forest] ++
   -- `++` compiles a run of DSL cards into `CardDef`s.
   (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
-     magnificentEnd, eagleOfTheGreatShelf, vowToErebor, bilboBagginsBurglar] ++ #[
-  lakeshoreApothecary,
+     magnificentEnd, eagleOfTheGreatShelf, vowToErebor, bilboBagginsBurglar,
+     lakeshoreApothecary] ++ #[
   confusticateAndBebother,
   ravenhillFlock,
   thranduilsDecree,

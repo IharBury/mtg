@@ -6188,7 +6188,7 @@ def secondCardOnceEachTurnOk : Bool :=
   let g := g.draw ⟨0⟩ 1
   afterFirst && afterSecond &&
     !g.waitingTriggers.any (fun wt => wt.ability == .onDrawSecondPlusOne) &&
-    lakeshoreApothecary.triggeredAbilities == #[.onDrawSecondPlusOne] &&
+    lakeshoreApothecary.toCardDef.triggeredAbilities == #[.onDrawSecondPlusOne] &&
     (ruling 300).comment.contains "can trigger only once each turn" &&
     (ruling 301).comment.contains "can trigger only once each turn" &&
     (ruling 302).comment.contains "can trigger only once each turn"

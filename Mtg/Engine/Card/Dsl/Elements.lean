@@ -12,7 +12,8 @@ are a `.tap` instruction in `.textBox`, cost reductions are a
 `.costLessToCastIf` instruction in `.textBox`, damage is a
 `.dealDamage` instruction in `.textBox`, triggered abilities are a
 `.whenever` or `.when` instruction in `.textBox`, scry spells are a
-`.scry` instruction in `.textBox`, and a spell that resolves as
+`.scry` instruction in `.textBox`, putting counters is a `.putCounter`
+instruction in `.textBox`, and a spell that resolves as
 several sentences is a `.sequence` in `.textBox`.
 -/
 
@@ -44,6 +45,8 @@ inductive CardSubtype where
   | soldier
   | halfling
   | rogue
+  | human
+  | cleric
   deriving Repr, BEq, DecidableEq
 
 /-- One printed keyword, in the vocabulary `Keywords` already models. -/
@@ -150,18 +153,32 @@ inductive PrintedName where
   | thisCardName
   deriving Repr, BEq
 
+/-- Which draw a trigger watches.
+`.secondEachTurn` is “your/their second card each turn”. -/
+inductive DrawOrdinal where
+  | secondEachTurn
+  deriving Repr, BEq
+
 /-- One event in `.whenever` or `.when`.
 `[.attack [.this, .cardType .creature] []]` is “this creature attacks”.
 The second list is a further restriction on that attack; empty means any
-attack. `[.enter [.thisCardName]]` is “{name} enters”. -/
+attack. `[.enter [.thisCardName]]` is “{name} enters”.
+`[.draw [.you] .secondEachTurn]` is “you draw your second card each turn”. -/
 inductive TriggerExpr where
   | attack (who : List ObjectRef) (restrictions : List ObjectRef)
   | enter (who : List PrintedName)
+  | draw (who : List PlayerRef) (which : DrawOrdinal)
   deriving Repr, BEq
 
 /-- A printed power and toughness change. `.plusPowerToughness +1 +1` is `+1/+1`. -/
 inductive StatMod where
   | plusPowerToughness (power toughness : Int)
+  deriving Repr, BEq
+
+/-- A counter a text-box effect puts on an object.
+`.plusOnePlusOne` is a +1/+1 counter. -/
+inductive CounterKind where
+  | plusOnePlusOne
   deriving Repr, BEq
 
 /-- `+n` in `.plusPowerToughness +1 +1` is the positive integer `n`.
@@ -239,6 +256,10 @@ inductive TextEffect where
   | may (who : List PlayerRef) (effects : List TextEffect)
   /-- Attach `what` to `dest`. -/
   | attachTo (what dest : List ObjectExpr)
+  /-- Put `n` counters of `kind` on `objects`.
+  `.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]` is
+  “put a +1/+1 counter on this creature”. -/
+  | putCounter (n : Nat) (kind : CounterKind) (objects : List ObjectRef)
   deriving Repr, BEq
 
 /-- `getForEachUntil [.it] mods each dur` is “it gets … until … for each …”.
