@@ -116,7 +116,9 @@ inductive TargetCount where
 /-- A reference to an object in rules text. A list is read in order: `.or` is a
 disjunction, and the other words are a conjunction.
 
-`.oneOf [.cardType .equipment, .controlledBy .you]` is “an Equipment you control”.
+`.controlledBy [.you]` is “you control”. `.controlledBy [.opponent]` is
+“an opponent controls”.
+`.oneOf [.cardType .equipment, .controlledBy [.you]]` is “an Equipment you control”.
 `.target [.cardType .creature]` is “target creature”.
 `.targets (.or 1 2) [.cardType .creature]` is “one or two target creatures”.
 `[.this, .cardType .creature]` is “this creature”. `[.this, .spell]` is
@@ -127,7 +129,7 @@ disjunction, and the other words are a conjunction.
 inductive ObjectRef where
   | cardType (t : TypeName)
   | cardSubtype (s : CardSubtype)
-  | controlledBy (p : PlayerRef)
+  | controlledBy (ps : List PlayerRef)
   | or (qs : List ObjectRef)
   | tapped
   | this
@@ -263,7 +265,7 @@ inductive TextEffect where
   | scry (n : Nat)
   /-- `who` gets `mods` until `dur` for each object matching `each`.
   `[.this, .cardType .creature]` is “it” after “this creature attacks”.
-  `[.other, .cardType .creature, .controlledBy .you]` is
+  `[.other, .cardType .creature, .controlledBy [.you]]` is
   “each other creature you control”. -/
   | getForEachUntil (who : List ObjectRef) (mods : List StatMod)
       (each : List ObjectRef) (dur : Duration)
@@ -297,7 +299,7 @@ inductive TextEffect where
   “you may cast that card without paying its mana cost for as long as it remains exiled”. -/
   | asLongAs (action cond : List TextEffect)
   /-- Attach `what` to `dest`.
-  `[.oneOf [.cardType .equipment, .controlledBy .you]]` to `[.it]` is
+  `[.oneOf [.cardType .equipment, .controlledBy [.you]]]` to `[.it]` is
   “attach an Equipment you control to it”. -/
   | attachTo (what dest : List ObjectRef)
   /-- Put `n` counters of `kind` on `objects`.

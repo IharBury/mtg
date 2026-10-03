@@ -263,7 +263,7 @@ private def parseNoun (noun : String) : Option (List ObjectRef) := do
   let quals ← parseDisjunction (core.map Char.toLower)
   let tail :=
     match who with
-    | some p => [ObjectRef.controlledBy p]
+    | some p => [ObjectRef.controlledBy [p]]
     | none => []
   return quals ++ tail
 
@@ -298,7 +298,7 @@ private def parseGetSubject (noun : String) : Option (List ObjectRef) := do
   let quals ← parsePluralDisjunction core
   let tail :=
     match who with
-    | some p => [ObjectRef.controlledBy p]
+    | some p => [ObjectRef.controlledBy [p]]
     | none => []
   return quals ++ tail
 
@@ -457,7 +457,7 @@ private def parseGetsSubject (s : String) : Option (List ObjectRef) :=
   | "it" => some [.this, .cardType .creature]
   | _ => none
 
-/-- `other creature you control` is `[.other, .cardType .creature, .controlledBy .you]`. -/
+/-- `other creature you control` is `[.other, .cardType .creature, .controlledBy [.you]]`. -/
 private def parseForEachSubject (s : String) : Option (List ObjectRef) := do
   let (other, core) :=
     if let some core := dropPrefixCI s "other " then
@@ -613,7 +613,7 @@ private def parseTypedControlled (s : String) : Option (List ObjectRef) := do
   let qual ← parseQualifierWord core
   let tail :=
     match who with
-    | some p => [ObjectRef.controlledBy p]
+    | some p => [ObjectRef.controlledBy [p]]
     | none => []
   return [qual] ++ tail
 
@@ -981,7 +981,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 #guard parseGainUntil
     "Target artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)" ==
   some (.gainUntil
-    [.target [.or [.cardType .artifact, .cardType .creature], .controlledBy .you]]
+    [.target [.or [.cardType .artifact, .cardType .creature], .controlledBy [.you]]]
     [.keyword .hexproof, .keyword .indestructible]
     .endOfTurn)
 
@@ -989,7 +989,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     "{3}{W}: Creatures you control get +1/+1 until end of turn." ==
   some (.costFor
     [.mana [.generic 3, .mono .white]]
-    [.getUntil [.cardType .creature, .controlledBy .you]
+    [.getUntil [.cardType .creature, .controlledBy [.you]]
       [.plusPowerToughness 1 1] .endOfTurn])
 
 #guard parseKeywordLine "Lifelink" == some [.keyword .lifelink]
@@ -1014,7 +1014,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   some (.whenever
     [.creatureAttack [.this] []]
     [.getForEachUntil [.this, .cardType .creature] [.plusPowerToughness 1 1]
-      [.other, .cardType .creature, .controlledBy .you] .endOfTurn])
+      [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn])
 
 #guard parseWhenever
     "Whenever you draw a card, put a +1/+1 counter on this creature." ==
@@ -1037,11 +1037,11 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 #guard parseSequence
     "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it." ==
   some (.sequence [
-    .untap [.target [.cardType .creature, .controlledBy .you]],
+    .untap [.target [.cardType .creature, .controlledBy [.you]]],
     .getUntil [.it] [.plusPowerToughness 2 2] .endOfTurn,
     .if
       [.is [.it] [.cardSubtype .dwarf]]
-      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]])
+      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]])
 
 #guard parseWhen "Bilbo Baggins, Burglar"
     "When Bilbo Baggins enters, draw a card." ==
