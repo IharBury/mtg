@@ -332,16 +332,11 @@ private def getUntilSentence (cardName : String) (qs : List ObjectRef) (mods : L
     let subject := capitalizeAscii (joinPhrases cardName true qs)
     s!"{subject} get {bonus} {durationPhrase dur}."
 
-private def castIfPhrase (cardName : String) : CastIf → String
-  | .targeting obj qs =>
-    let noun := joinPhrases cardName false qs
-    s!"{objectPhrase cardName false obj} targets {indefinite noun} {noun}"
-
-private def costLessSentence (cardName : String) (subjects : List ObjectRef)
-    (discount : List CostSymbol) (cond : CastIf) : String :=
+private def costLessClause (cardName : String) (subjects : List ObjectRef)
+    (discount : List CostSymbol) : String :=
   let subject := capitalizeAscii (joinPhrases cardName false subjects)
   let cost := (CostSymbol.toManaCost discount).toNotation
-  s!"{subject} costs {cost} less to cast if {castIfPhrase cardName cond}."
+  s!"{subject} costs {cost} less to cast"
 
 private def dealDamageSentence (cardName : String) (subjects : List ObjectRef)
     (n : Nat) (targets : List ObjectRef) : String :=
@@ -460,6 +455,18 @@ private def isClause (cardName : String) : TextCondition → String
   | .counteredThisWay qs =>
     let noun := joinPhrases cardName false qs
     s!"{indefinite noun} {noun} is countered this way"
+  | .targeting subj qs =>
+    let who := joinPhrases cardName false subj
+    let noun := joinPhrases cardName false qs
+    s!"{who} targets {indefinite noun} {noun}"
+
+/-- A subject already named in the cost-reduction clause is “it”. -/
+private def costLessCond (cardName : String) (subjects : List ObjectRef) : TextCondition → String
+  | .targeting subj qs =>
+    let actor := if subj == subjects then "it" else joinPhrases cardName false subj
+    let noun := joinPhrases cardName false qs
+    s!"{actor} targets {indefinite noun} {noun}"
+  | other => isClause cardName other
 
 private def thenClause (cardName : String) : TextEffect → String
   | .may who es => mayClause cardName who es
@@ -474,17 +481,22 @@ private def followsIf : TextEffect → Bool
 
 private def ifSentence (cardName : String) (conds : List TextCondition)
     (effects : List TextEffect) : String :=
-  let cond := String.intercalate " and " (conds.map (isClause cardName))
-  let inline := effects.filter fun e => not (followsIf e)
-  let trailing := effects.filter followsIf
-  let body := String.intercalate " " (inline.map (thenClause cardName))
-  let head :=
-    if inline.isEmpty then s!"If {cond}." else s!"If {cond}, {body}."
-  let rest := trailing.map fun e =>
-    match e with
-    | .asLongAs action dur => asLongAsSentence cardName action dur
-    | _ => ""
-  String.intercalate " " (head :: rest.filter (· != ""))
+  match effects with
+  | [.costLessToCast subjects discount] =>
+    let cond := String.intercalate " and " (conds.map (costLessCond cardName subjects))
+    s!"{costLessClause cardName subjects discount} if {cond}."
+  | _ =>
+    let cond := String.intercalate " and " (conds.map (isClause cardName))
+    let inline := effects.filter fun e => not (followsIf e)
+    let trailing := effects.filter followsIf
+    let body := String.intercalate " " (inline.map (thenClause cardName))
+    let head :=
+      if inline.isEmpty then s!"If {cond}." else s!"If {cond}, {body}."
+    let rest := trailing.map fun e =>
+      match e with
+      | .asLongAs action dur => asLongAsSentence cardName action dur
+      | _ => ""
+    String.intercalate " " (head :: rest.filter (· != ""))
 
 /-- “put a +1/+1 counter on this creature”. -/
 private def putCounterClause (cardName : String) (n : Nat) (kind : CounterKind)
@@ -574,8 +586,8 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .getUntil qs mods dur => some (getUntilSentence cardName qs mods dur)
   | .costFor _ _ => none
   | .tap targets => some (tapSentence cardName targets)
-  | .costLessToCastIf subjects discount cond =>
-    some (costLessSentence cardName subjects discount cond)
+  | .costLessToCast subjects discount =>
+    some s!"{costLessClause cardName subjects discount}."
   | .dealDamage subjects n targets =>
     some (dealDamageSentence cardName subjects n targets)
   | .whenever events effects => some (wheneverSentence cardName events effects)
@@ -624,8 +636,8 @@ where
       let body := String.intercalate " " (effects.filterMap (nestedEffectSentence cardName))
       s!"{cost}: {body}"
     | .tap targets => tapSentence cardName targets
-    | .costLessToCastIf subjects discount cond =>
-      costLessSentence cardName subjects discount cond
+    | .costLessToCast subjects discount =>
+      s!"{costLessClause cardName subjects discount}."
     | .dealDamage subjects n targets =>
       dealDamageSentence cardName subjects n targets
     | .whenever events effects => wheneverSentence cardName events effects
@@ -760,8 +772,9 @@ private def spellModesOf (es : List TextEffect) : Array Effect :=
 private def tappedCreatureReduction (es : List TextEffect) : Nat :=
   es.foldl (fun n e =>
     match e with
-    | .costLessToCastIf [.this, .spell] discount
-        (.targeting .it [.tapped, .cardType .creature]) =>
+    | .if
+        [.targeting [.this, .spell] [.tapped, .cardType .creature]]
+        [.costLessToCast [.this, .spell] discount] =>
       n + genericMana discount
     | _ => n) 0
 
@@ -862,6 +875,18 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
     .endOfTurn) ==
   "Target artifact or creature you control gains hexproof and indestructible until end of turn."
 
+#guard textEffectSentence "" (.gainUntil
+    [.target [.cardType .creature, .controlledBy [.opponent]]]
+    [.keyword .hexproof]
+    .endOfTurn) ==
+  "Target creature an opponent controls gains hexproof until end of turn."
+
+#guard textEffectSentence "" (.gainUntil
+    [.target [.cardType .creature, .controlledBy [.you, .opponent]]]
+    [.keyword .hexproof]
+    .endOfTurn) ==
+  "Target creature you and an opponent control gains hexproof until end of turn."
+
 #guard textEffectSentence "" (.costFor
     [.mana [.generic 3, .mono .white]]
     [.getUntil [.cardType .creature, .controlledBy [.you]]
@@ -876,8 +901,9 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
   "Tap one or two target creatures."
 
 #guard textEffectSentence "Magnificent End"
-    (.costLessToCastIf [.this, .spell] [.generic 3]
-      (.targeting .it [.tapped, .cardType .creature])) ==
+    (.if
+      [.targeting [.this, .spell] [.tapped, .cardType .creature]]
+      [.costLessToCast [.this, .spell] [.generic 3]]) ==
   "This spell costs {3} less to cast if it targets a tapped creature."
 
 #guard textEffectSentence "Magnificent End"
