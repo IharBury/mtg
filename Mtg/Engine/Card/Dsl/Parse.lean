@@ -444,7 +444,7 @@ private def parseAttackTrigger (s : String) : Option TriggerExpr := do
   let (subject, rest) ← splitOnce " attacks" s
   let who ← parseAttackSubject subject
   let restrictions ← parseAttackRestrictions rest
-  return .attack who restrictions
+  return .permanentAttack who restrictions
 
 private def parseGetsSubject (s : String) : Option (List ObjectRef) :=
   match s.trimAscii.copy.map Char.toLower with
@@ -535,7 +535,7 @@ private def parseEntersTrigger (cardName : String) (s : String) : Option Trigger
   let (who, rest) ← splitOnce " enters" s
   guard (rest.trimAscii.copy.isEmpty)
   guard (who == shortCardName cardName)
-  return .enter [.thisCardName]
+  return .permanentEnter [.thisCardName]
 
 /-- `draw a card` or `draw N cards`. -/
 private def parseDrawClause (s : String) : Option TextEffect := do
@@ -760,10 +760,10 @@ instructions in that text box. `Tap one or two target …` becomes `.tap`.
 `.costLessToCastIf` with `[.this, .spell]`. `{Name} deals N damage to target …` becomes
 `.dealDamage` with `.thisCardName` when the subject is the card’s name.
 `Whenever this creature attacks, it gets … for each other creature you control`
-becomes `.whenever` with `.attack` and `getForEachUntil`.
+becomes `.whenever` with `.permanentAttack` and `getForEachUntil`.
 `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
 becomes `.whenever` with `.drawCard` and `.putCounter`.
-`When {name} enters, draw a card.` becomes `.when` with `.enter` and `.draw`.
+`When {name} enters, draw a card.` becomes `.when` with `.permanentEnter` and `.draw`.
 `Scry N.` becomes `.scry`.
 `Untap target creature you control. It gets … If it's a Dwarf, you may attach
 an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`,
@@ -824,7 +824,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 #guard parseWhenever
     "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." ==
   some (.whenever
-    [.attack [.this, .cardType .creature] []]
+    [.permanentAttack [.this, .cardType .creature] []]
     [.getForEachUntil [.it] [.plusPowerToughness 1 1]
       [.other, .cardType .creature, .controlledBy .you] .endOfTurn])
 
@@ -845,7 +845,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 
 #guard parseWhen "Bilbo Baggins, Burglar"
     "When Bilbo Baggins enters, draw a card." ==
-  some (.when [.enter [.thisCardName]] [.draw 1])
+  some (.when [.permanentEnter [.thisCardName]] [.draw 1])
 
 #guard parseScry
     "Scry 2. (Then exile this card. You may cast the creature later from exile.)" ==

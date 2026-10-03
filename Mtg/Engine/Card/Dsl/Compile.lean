@@ -193,8 +193,15 @@ private def joinTargets (ts : List String) : String :=
 private def durationPhrase : Duration → String
   | .endOfTurn => "until end of turn"
 
+/-- Legendary short name: the printed name before the first comma (CR 201.3). -/
+private def shortCardName (cardName : String) : String :=
+  match cardName.splitOn ", " with
+  | head :: _ => if head.isEmpty then cardName else head
+  | [] => cardName
+
 /-- Printed word for one `ObjectRef`. `plural` pluralizes a card type
-(`creature` / `creatures`). `.thisCardName` prints `cardName`. -/
+(`creature` / `creatures`). `.thisCardName` prints the legendary short name.
+`.oneOf` adds an indefinite article (`an Equipment you control`). -/
 private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → String
   | .cardType t =>
     if plural then
@@ -214,7 +221,10 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .other => "other"
   | .it => "it"
   | .spell => if plural then "spells" else "spell"
-  | .thisCardName => cardName
+  | .thisCardName => shortCardName cardName
+  | .oneOf qs =>
+    let noun := String.intercalate " " (qs.map (objectPhrase cardName false))
+    s!"{indefinite noun} {noun}"
   | .target qs =>
     s!"target {String.intercalate " " (qs.map (objectPhrase cardName false))}"
   | .targets count qs =>
@@ -226,15 +236,6 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
 /-- Words of a reference list, in order (`this creature`). -/
 private def joinPhrases (cardName : String) (plural : Bool) (qs : List ObjectRef) : String :=
   String.intercalate " " (qs.map (objectPhrase cardName plural))
-
-/-- Legendary short name: the printed name before the first comma (CR 201.3). -/
-private def shortCardName (cardName : String) : String :=
-  match cardName.splitOn ", " with
-  | head :: _ => if head.isEmpty then cardName else head
-  | [] => cardName
-
-private def printedNamePhrase (cardName : String) : PrintedName → String
-  | .thisCardName => shortCardName cardName
 
 private def playerPhrase : PlayerRef → String
   | .you => "you"
@@ -263,14 +264,13 @@ private def drawWatchPhrase (who : List PlayerRef) : DrawWatch → String
     s!"{drawPossessive who} {ordinalWord n} card each {eachPeriodPhrase period}"
 
 private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
-  | .attack who restrictions =>
+  | .permanentAttack who restrictions =>
     let extra :=
       if restrictions.isEmpty then ""
       else s!" {joinPhrases cardName false restrictions}"
     s!"{joinPhrases cardName false who} attacks{extra}"
-  | .enter who =>
-    let name := String.intercalate " and " (who.map (printedNamePhrase cardName))
-    s!"{name} enters"
+  | .permanentEnter who =>
+    s!"{joinPhrases cardName false who} enters"
   | .drawCard who which =>
     let actor := String.intercalate " and " (who.map playerPhrase)
     let watched := String.intercalate " " (which.map (drawWatchPhrase who))
@@ -319,16 +319,10 @@ private def dealDamageSentence (cardName : String) (subjects : List ObjectRef)
   let source := String.intercalate " and " (subjects.map (objectPhrase cardName false))
   s!"{source} deals {n} damage to {joinTargets (targets.map (objectPhrase cardName false))}."
 
-private def objectExprPhrase (cardName : String) : ObjectExpr → String
-  | .it => "it"
-  | .oneOf qs =>
-    let noun := joinPhrases cardName false qs
-    s!"{indefinite noun} {noun}"
+private def objectExprsPhrase (cardName : String) (xs : List ObjectRef) : String :=
+  String.intercalate " and " (xs.map (objectPhrase cardName false))
 
-private def objectExprsPhrase (cardName : String) (xs : List ObjectExpr) : String :=
-  String.intercalate " and " (xs.map (objectExprPhrase cardName))
-
-private def attachClause (cardName : String) (what dest : List ObjectExpr) : String :=
+private def attachClause (cardName : String) (what dest : List ObjectRef) : String :=
   s!"attach {objectExprsPhrase cardName what} to {objectExprsPhrase cardName dest}"
 
 /-- An action inside `.may`, without the actor and without a final period. -/
@@ -434,7 +428,7 @@ private def keywordRunLine (ks : List PrintedKeyword) : String :=
   capitalizeAscii (String.intercalate ", " (ks.map PrintedKeyword.oracleName))
 
 /-- Oracle sentence for a text-box effect, without reminder text.
-`cardName` is substituted for `.thisCardName`. -/
+`cardName` is substituted for `.thisCardName`, shortened before a comma. -/
 private def textEffectSentence (cardName : String) : TextEffect → String :=
   go
 where
@@ -506,12 +500,12 @@ private def costsToActivation (costs : List PrintedCost) : ActivationCost :=
 /-- Map `.whenever` and `.when` onto a triggered ability the engine already resolves. -/
 private def textEffectToTriggered : TextEffect → Option TriggeredAbility
   | .whenever
-      [.attack [.this, .cardType .creature] []]
+      [.permanentAttack [.this, .cardType .creature] []]
       [.getForEachUntil [.it] [.plusPowerToughness 1 1]
         [.other, .cardType .creature, .controlledBy .you] .endOfTurn] =>
     some .onAttackPumpForEachOtherCreature
   | .when
-      [.enter [.thisCardName]]
+      [.permanentEnter [.thisCardName]]
       [.draw n] =>
     some (.onEnterDraw n)
   | .whenever
@@ -645,8 +639,8 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 
 #guard textEffectSentence "" (.costFor
     [.mana [.generic 3, .mono .white]]
-    [.getUntil [.creature, .controlledBy .you]
-      [.plusPowerToughness +1 +1] .endOfTurn]) ==
+    [.getUntil [.cardType .creature, .controlledBy .you]
+      [.plusPowerToughness (+1) (+1)] .endOfTurn]) ==
   "{3}{W}: Creatures you control get +1/+1 until end of turn."
 
 #guard keywordRunLine [.lifelink] == "Lifelink"
@@ -666,14 +660,14 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
   "Magnificent End deals 5 damage to target creature."
 
 #guard textEffectSentence "Eagle of the Great Shelf" (.whenever
-    [.attack [.this, .cardType .creature] []]
-    [getForEachUntil [.it] [.plusPowerToughness +1 +1]
+    [.permanentAttack [.this, .cardType .creature] []]
+    [getForEachUntil [.it] [.plusPowerToughness (+1) (+1)]
       [.other, .cardType .creature, .controlledBy .you] .endOfTurn]) ==
   "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control."
 
 #guard textEffectSentence "Vow to Erebor" (.sequence [
     .untap [.target [.cardType .creature, .controlledBy .you]],
-    .getUntil [.it] [.plusPowerToughness +2 +2] .endOfTurn,
+    .getUntil [.it] [.plusPowerToughness (+2) (+2)] .endOfTurn,
     .if
       [.is [.it] [.cardSubtype .dwarf]]
       [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]]) ==
@@ -682,7 +676,7 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 #guard shortCardName "Bilbo Baggins, Burglar" == "Bilbo Baggins"
 
 #guard textEffectSentence "Bilbo Baggins, Burglar" (.when
-    [.enter [.thisCardName]]
+    [.permanentEnter [.thisCardName]]
     [.draw 1]) ==
   "When Bilbo Baggins enters, draw a card."
 

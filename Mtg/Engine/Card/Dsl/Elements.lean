@@ -110,11 +110,13 @@ inductive TargetCount where
 /-- A reference to an object in rules text. A list is read in order: `.or` is a
 disjunction, and the other words are a conjunction.
 
+`.oneOf [.cardType .equipment, .controlledBy .you]` is “an Equipment you control”.
 `.target [.cardType .creature]` is “target creature”.
 `.targets (.or 1 2) [.cardType .creature]` is “one or two target creatures”.
 `[.this, .cardType .creature]` is “this creature”. `[.this, .spell]` is
 “this spell”. `.it` is the object named earlier (`It gets +2/+2`).
-`.thisCardName` prints this card’s name. `.other` excludes this object. -/
+`.thisCardName` prints this card’s name, shortened before a comma
+(`Bilbo Baggins` on Bilbo Baggins, Burglar). `.other` excludes this object. -/
 inductive ObjectRef where
   | cardType (t : TypeName)
   | cardSubtype (s : CardSubtype)
@@ -126,16 +128,10 @@ inductive ObjectRef where
   | it
   | spell
   | thisCardName
+  | oneOf (qs : List ObjectRef)
   | target (qs : List ObjectRef)
   | targets (count : TargetCount) (qs : List ObjectRef)
   deriving Repr, BEq
-
-namespace ObjectRef
-
-/-- `.creature` in a reference list. -/
-def creature : ObjectRef := .cardType .creature
-
-end ObjectRef
 
 /-- A keyword the text box grants. -/
 inductive GrantedAbility where
@@ -145,12 +141,6 @@ inductive GrantedAbility where
 /-- How long a text-box effect lasts. -/
 inductive Duration where
   | endOfTurn
-  deriving Repr, BEq
-
-/-- A card name printed in rules text. `.thisCardName` is this card’s name,
-shortened before a comma (`Bilbo Baggins` on Bilbo Baggins, Burglar). -/
-inductive PrintedName where
-  | thisCardName
   deriving Repr, BEq
 
 /-- The period in “each turn”. `.turn` is one turn. -/
@@ -165,17 +155,17 @@ inductive DrawWatch where
   deriving Repr, BEq
 
 /-- One event in `.whenever` or `.when`.
-`[.attack [.this, .cardType .creature] []]` is “this creature attacks”.
+`[.permanentAttack [.this, .cardType .creature] []]` is “this creature attacks”.
 The second list is a further restriction on that attack; empty means any
-attack. `[.enter [.thisCardName]]` is “{name} enters”.
+attack. `[.permanentEnter [.thisCardName]]` is “{name} enters”.
 `[.drawCard [.you] [.ordinalEach 2 .turn]]` is “you draw your second card each turn”. -/
 inductive TriggerExpr where
-  | attack (who : List ObjectRef) (restrictions : List ObjectRef)
-  | enter (who : List PrintedName)
+  | permanentAttack (who : List ObjectRef) (restrictions : List ObjectRef)
+  | permanentEnter (who : List ObjectRef)
   | drawCard (who : List PlayerRef) (which : List DrawWatch)
   deriving Repr, BEq
 
-/-- A printed power and toughness change. `.plusPowerToughness +1 +1` is `+1/+1`. -/
+/-- A printed power and toughness change. `.plusPowerToughness (+1) (+1)` is `+1/+1`. -/
 inductive StatMod where
   | plusPowerToughness (power toughness : Int)
   deriving Repr, BEq
@@ -186,13 +176,10 @@ inductive CounterKind where
   | plusOnePlusOne
   deriving Repr, BEq
 
-/-- `+n` in `.plusPowerToughness +1 +1` is the positive integer `n`.
-Ordinary constructor application (`.plusPowerToughness p t`) still works. -/
-syntax plusBonus := "+" num
-scoped syntax ".plusPowerToughness" (plusBonus <|> term:max) (plusBonus <|> term:max) : term
+/-- `(+n)` is the positive integer `n`. -/
+scoped syntax:max (name := posLit) "(" "+" num ")" : term
 macro_rules
-  | `(.plusPowerToughness +$p:num +$t:num) => `(StatMod.plusPowerToughness $p $t)
-  | `(.plusPowerToughness $p:term $t:term) => `(StatMod.plusPowerToughness $p $t)
+  | `(posLit| (+$n)) => `($n)
 
 /-- One cost of an activated ability written in `.costFor`. -/
 inductive PrintedCost where
@@ -203,14 +190,6 @@ inductive PrintedCost where
 `.targeting .it [.tapped, .cardType .creature]` is “if it targets a tapped creature”. -/
 inductive CastIf where
   | targeting (obj : ObjectRef) (qs : List ObjectRef)
-  deriving Repr, BEq
-
-/-- An object named without the word “target”.
-`.oneOf [.cardType .equipment, .controlledBy .you]` is “an Equipment you control”.
-`.it` is the object named earlier. -/
-inductive ObjectExpr where
-  | oneOf (qs : List ObjectRef)
-  | it
   deriving Repr, BEq
 
 /-- A condition in `.if`. `[.is [.it] [.cardSubtype .dwarf]]` is “it's a Dwarf”. -/
@@ -236,10 +215,10 @@ inductive TextEffect where
   /-- `subjects` deal `n` damage to `targets`. -/
   | dealDamage (subjects : List ObjectRef) (n : Nat) (targets : List ObjectRef)
   /-- When `events` happen, follow `effects`.
-  `[.attack [.this, .cardType .creature] []]` is “this creature attacks”. -/
+  `[.permanentAttack [.this, .cardType .creature] []]` is “this creature attacks”. -/
   | whenever (events : List TriggerExpr) (effects : List TextEffect)
   /-- When `events` happen, follow `effects`.
-  `[.enter [.thisCardName]]` with `[.draw 1]` is “When {name} enters, draw a card”. -/
+  `[.permanentEnter [.thisCardName]]` with `[.draw 1]` is “When {name} enters, draw a card”. -/
   | when (events : List TriggerExpr) (effects : List TextEffect)
   /-- Draw `n` cards (`draw a card`). -/
   | draw (n : Nat)
@@ -259,8 +238,10 @@ inductive TextEffect where
   | «if» (conds : List TextCondition) (effects : List TextEffect)
   /-- `who` may do `effects` (`you may …`). -/
   | may (who : List PlayerRef) (effects : List TextEffect)
-  /-- Attach `what` to `dest`. -/
-  | attachTo (what dest : List ObjectExpr)
+  /-- Attach `what` to `dest`.
+  `[.oneOf [.cardType .equipment, .controlledBy .you]]` to `[.it]` is
+  “attach an Equipment you control to it”. -/
+  | attachTo (what dest : List ObjectRef)
   /-- Put `n` counters of `kind` on `objects`.
   `.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]` is
   “put a +1/+1 counter on this creature”. -/
@@ -291,6 +272,6 @@ inductive TraditionalCardDefinition where
   | card (clauses : List CardClause)
   deriving Repr, BEq
 
-#guard (.plusPowerToughness +1 +1 : StatMod) == .plusPowerToughness 1 1
+#guard (.plusPowerToughness (+1) (+1) : StatMod) == .plusPowerToughness 1 1
 
 end Mtg.Engine

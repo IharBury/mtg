@@ -82,7 +82,7 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card [
   .textBox [
     .costFor
       [.mana [.generic 3, .mono .white]]
-      [.getUntil [.creature, .controlledBy .you] [.plusPowerToughness +1 +1] .endOfTurn]
+      [.getUntil [.cardType .creature, .controlledBy .you] [.plusPowerToughness (+1) (+1)] .endOfTurn]
   ]
 ]
 
@@ -197,8 +197,8 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
   .textBox [
     .keyword .flying,
     .whenever
-      [.attack [.this, .cardType .creature] []]
-      [.getForEachUntil [.it] [.plusPowerToughness +1 +1] [.other, .cardType .creature, .controlledBy .you] .endOfTurn]
+      [.permanentAttack [.this, .cardType .creature] []]
+      [.getForEachUntil [.it] [.plusPowerToughness (+1) (+1)] [.other, .cardType .creature, .controlledBy .you] .endOfTurn]
   ]
 ]
 
@@ -230,7 +230,7 @@ def vowToErebor : TraditionalCardDefinition := .card [
   .textBox [
     .sequence [
       .untap [.target [.cardType .creature, .controlledBy .you]],
-      .getUntil [.it] [.plusPowerToughness +2 +2] .endOfTurn,
+      .getUntil [.it] [.plusPowerToughness (+2) (+2)] .endOfTurn,
       .if
         [.is [.it] [.cardSubtype .dwarf]]
         [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]
@@ -265,7 +265,7 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card [
   .toughness 1,
   .textBox [
     .when
-      [.enter [.thisCardName]]
+      [.permanentEnter [.thisCardName]]
       [.draw 1]
   ],
   .alternative [
