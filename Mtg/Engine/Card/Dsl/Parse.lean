@@ -395,14 +395,16 @@ private def parseMaybeTappedNoun (noun : String) : Option (List ObjectRef) := do
   let quals ← parseNoun core
   return (if tapped then [ObjectRef.tapped] else []) ++ quals
 
-private def parseCastIf (s : String) : Option CastIf := do
+/-- `it targets a tapped creature` is `.targeting [.this, .spell]`.
+“It” is this spell, already named in the sentence. -/
+private def parseItTargets (s : String) : Option TextCondition := do
   let rest ← dropPrefixCI s "it targets "
   let noun :=
     if let some n := dropPrefixCI rest "an " then n
     else if let some n := dropPrefixCI rest "a " then n
     else rest
   let qs ← parseMaybeTappedNoun noun
-  return .targeting .it qs
+  return .targeting [.this, .spell] qs
 
 /-- `This spell costs {3} less to cast if it targets a tapped creature.` -/
 private def parseCostLess (line : String) : Option TextEffect := do
@@ -410,8 +412,8 @@ private def parseCostLess (line : String) : Option TextEffect := do
   let rest ← dropPrefixCI line "This spell costs "
   let (costText, condText) ← splitOnce " less to cast if " rest
   let cost ← parseManaRun costText
-  let cond ← parseCastIf condText
-  return .costLessToCastIf [.this, .spell] cost cond
+  let cond ← parseItTargets condText
+  return .if [cond] [.costLessToCast [.this, .spell] cost]
 
 private def parseTarget (s : String) : Option ObjectRef := do
   let rest ← dropPrefixCI s "target "
@@ -930,8 +932,8 @@ is emitted in canonical order (name, mana cost, types, supertypes, subtypes,
 power, toughness, text box, alternative) so it can be compared to
 a definition written in that order. Keyword lines become `.keyword`
 instructions in that text box. `Tap one or two target …` becomes `.tap`.
-`This spell costs {N} less to cast if it targets …` becomes
-`.costLessToCastIf` with `[.this, .spell]`. `{Name} deals N damage to target …` becomes
+`This spell costs {N} less to cast if it targets …` becomes `.if` with
+`.targeting [.this, .spell]` and `.costLessToCast`. `{Name} deals N damage to target …` becomes
 `.dealDamage` with `.thisCardName` when the subject is the card’s name.
 `Whenever this creature attacks, it gets … for each other creature you control`
 becomes `.whenever` with `.creatureAttack` and `getForEachUntil`.
@@ -1000,8 +1002,9 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 
 #guard parseCostLess
     "This spell costs {3} less to cast if it targets a tapped creature." ==
-  some (.costLessToCastIf [.this, .spell] [.generic 3]
-    (.targeting .it [.tapped, .cardType .creature]))
+  some (.if
+    [.targeting [.this, .spell] [.tapped, .cardType .creature]]
+    [.costLessToCast [.this, .spell] [.generic 3]])
 
 #guard parseDealDamage "Magnificent End"
     "Magnificent End deals 5 damage to target creature." ==
