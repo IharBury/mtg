@@ -165,7 +165,7 @@ inductive TriggerExpr where
   | drawCard (who : List PlayerRef) (which : List DrawWatch)
   deriving Repr, BEq
 
-/-- A printed power and toughness change. `.plusPowerToughness +1 +1` is `+1/+1`. -/
+/-- A printed power and toughness change. `.plusPowerToughness (+1) (+1)` is `+1/+1`. -/
 inductive StatMod where
   | plusPowerToughness (power toughness : Int)
   deriving Repr, BEq
@@ -176,13 +176,10 @@ inductive CounterKind where
   | plusOnePlusOne
   deriving Repr, BEq
 
-/-- `+n` in `.plusPowerToughness +1 +1` is the positive integer `n`.
-Ordinary constructor application (`.plusPowerToughness p t`) still works. -/
-syntax plusBonus := "+" num
-scoped syntax ".plusPowerToughness" (plusBonus <|> term:max) (plusBonus <|> term:max) : term
+/-- `(+n)` is the positive integer `n`. -/
+scoped syntax:max (name := posLit) "(" "+" num ")" : term
 macro_rules
-  | `(.plusPowerToughness +$p:num +$t:num) => `(StatMod.plusPowerToughness $p $t)
-  | `(.plusPowerToughness $p:term $t:term) => `(StatMod.plusPowerToughness $p $t)
+  | `(posLit| (+$n)) => `($n)
 
 /-- One cost of an activated ability written in `.costFor`. -/
 inductive PrintedCost where
@@ -275,6 +272,6 @@ inductive TraditionalCardDefinition where
   | card (clauses : List CardClause)
   deriving Repr, BEq
 
-#guard (.plusPowerToughness +1 +1 : StatMod) == .plusPowerToughness 1 1
+#guard (.plusPowerToughness (+1) (+1) : StatMod) == .plusPowerToughness 1 1
 
 end Mtg.Engine
