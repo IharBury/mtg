@@ -453,9 +453,10 @@ private def parseAttackTrigger (s : String) : Option TriggerExpr := do
   let restrictions ← parseAttackRestrictions rest
   return .creatureAttack who restrictions
 
+/-- `it` in “it gets … for each” is this creature, already named by the trigger. -/
 private def parseGetsSubject (s : String) : Option (List ObjectRef) :=
   match s.trimAscii.copy.map Char.toLower with
-  | "it" => some [.it]
+  | "it" => some [.this, .cardType .creature]
   | _ => none
 
 /-- `other creature you control` is `[.other, .cardType .creature, .controlledBy [.you]]`. -/
@@ -632,7 +633,7 @@ private def parseItGets (s : String) : Option TextEffect := do
   guard !((durText.splitOn " ").contains "for")
   let dur ← parseDuration durText
   let mod ← parseStatMod bonus
-  return .getUntil [.it] [mod] dur
+  return .getUntil [.thatTarget] [mod] dur
 
 /-- `you may attach an Equipment you control to it`. -/
 private def parseYouMayAttach (s : String) : Option TextEffect := do
@@ -640,7 +641,7 @@ private def parseYouMayAttach (s : String) : Option TextEffect := do
   let (objText, destText) ← splitOnce " to " rest
   let quals ← parseTypedControlled objText
   guard (destText.trimAscii.copy.map Char.toLower == "it")
-  return .may [.you] [.attachTo [.oneOf quals] [.it]]
+  return .may [.you] [.attachTo [.oneOf quals] [.thatTarget]]
 
 /-- `Counter target spell`. -/
 private def parseCounterSpell (s : String) : Option TextEffect := do
@@ -705,7 +706,7 @@ private def parseIfMay (s : String) : Option TextEffect := do
       | none => dropPrefixCI condText "it is "
   let quals ← parseTypedControlled condRest
   let act ← parseYouMayAttach thenText
-  return .if [.is [.it] quals] [act]
+  return .if [.is [.thatTarget] quals] [act]
 
 private def parseSequenceStep (s : String) : Option TextEffect :=
   let s := stripTrailingDot s
@@ -755,7 +756,7 @@ private def parseUnlessPay (line : String) : Option TextEffect := do
   let (tgtText, costText) ← splitOnce " unless its controller pays " rest
   let tgt ← parseSpellTarget tgtText
   let cost ← parseManaRun costText
-  return .unlessPay [.counter [tgt]] [.controller .it] [.mana cost]
+  return .unlessPay [.controller .innerTarget] [.mana cost] [.counter [tgt]]
 
 /-- `a card`, `one card`, or `two cards`. -/
 private def parseCardCount (s : String) : Option Nat := do
@@ -936,7 +937,8 @@ instructions in that text box. `Tap one or two target …` becomes `.tap`.
 `.targeting [.this, .spell]` and `.costLessToCast`. `{Name} deals N damage to target …` becomes
 `.dealDamage` with `.thisCardName` when the subject is the card’s name.
 `Whenever this creature attacks, it gets … for each other creature you control`
-becomes `.whenever` with `.creatureAttack` and `getForEachUntil`.
+becomes `.whenever` with `.creatureAttack` and `getForEachUntil` on
+`[.this, .cardType .creature]`.
 `Whenever you draw a card, put a +1/+1 counter on this creature.`
 becomes `.whenever` with `.drawCard` and an empty watch list.
 `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
@@ -944,11 +946,11 @@ becomes `.whenever` with `.drawCard` and `.putCounter`.
 `When {name} enters, draw a card.` becomes `.when` with `.permanentEnter` and `.draw`.
 `Scry N.` becomes `.scry`.
 `Untap target creature you control. It gets … If it's a Dwarf, you may attach
-an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`,
-and `.if` with `[.cardSubtype .dwarf]`.
+an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`
+on `[.thatTarget]`, and `.if` with `[.is [.thatTarget] [.cardSubtype .dwarf]]`.
 `Choose one —` followed by `•` lines becomes `.chooseMode 1`.
 `Counter target spell unless its controller pays {N}.` becomes `.unlessPay`
-with `.counter`, `[.controller .it]`, and `.mana`.
+with `[.controller .innerTarget]`, `.mana`, and `.counter`.
 `Draw two cards, then discard a card.` becomes `.sequence` with `.draw` and `.discard`.
 `Counter target spell. If a permanent spell is countered this way, exile it
 instead of putting it into its owner's graveyard. You may cast that card
@@ -1014,7 +1016,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." ==
   some (.whenever
     [.creatureAttack [.this] []]
-    [.getForEachUntil [.it] [.plusPowerToughness 1 1]
+    [.getForEachUntil [.this, .cardType .creature] [.plusPowerToughness 1 1]
       [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn])
 
 #guard parseWhenever
@@ -1039,10 +1041,10 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it." ==
   some (.sequence [
     .untap [.target [.cardType .creature, .controlledBy [.you]]],
-    .getUntil [.it] [.plusPowerToughness 2 2] .endOfTurn,
+    .getUntil [.thatTarget] [.plusPowerToughness 2 2] .endOfTurn,
     .if
-      [.is [.it] [.cardSubtype .dwarf]]
-      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]])
+      [.is [.thatTarget] [.cardSubtype .dwarf]]
+      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.thatTarget]]]])
 
 #guard parseWhen "Bilbo Baggins, Burglar"
     "When Bilbo Baggins enters, draw a card." ==
@@ -1054,7 +1056,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 
 #guard parseUnlessPay
     "Counter target spell unless its controller pays {4}." ==
-  some (.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]])
+  some (.unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]])
 
 #guard parseThen
     "Draw two cards, then discard a card." ==
@@ -1081,7 +1083,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   .type .instant,
   .textBox [
     .chooseMode 1 [
-      .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+      .unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]],
       .sequence [.draw 2, .discard 1]]
   ]
 ])

@@ -198,7 +198,7 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
     .keyword .flying,
     .whenever
       [.creatureAttack [.this] []]
-      [.getForEachUntil [.it] [.plusPowerToughness (+1) (+1)] [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn]
+      [.getForEachUntil [.this, .cardType .creature] [.plusPowerToughness (+1) (+1)] [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn]
   ]
 ]
 
@@ -230,10 +230,10 @@ def vowToErebor : TraditionalCardDefinition := .card [
   .textBox [
     .sequence [
       .untap [.target [.cardType .creature, .controlledBy [.you]]],
-      .getUntil [.it] [.plusPowerToughness (+2) (+2)] .endOfTurn,
+      .getUntil [.thatTarget] [.plusPowerToughness (+2) (+2)] .endOfTurn,
       .if
-        [.is [.it] [.cardSubtype .dwarf]]
-        [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]
+        [.is [.thatTarget] [.cardSubtype .dwarf]]
+        [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.thatTarget]]]
     ]
   ]
 ]
@@ -356,7 +356,7 @@ def confusticateAndBebother : TraditionalCardDefinition := .card [
   .type .instant,
   .textBox [
     .chooseMode 1 [
-      .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+      .unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]],
       .sequence [.draw 2, .discard 1]
     ]
   ]

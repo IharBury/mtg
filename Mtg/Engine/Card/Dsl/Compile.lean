@@ -231,6 +231,8 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .this => "this"
   | .other => "other"
   | .it => "it"
+  | .thatTarget => "it"
+  | .innerTarget => "it"
   | .spell => if plural then "spells" else "spell"
   | .permanentSpell => "permanent spell"
   | .thatCard => "that card"
@@ -324,7 +326,7 @@ private def gainUntilSentence (cardName : String) (targets : List ObjectRef)
 private def getUntilSentence (cardName : String) (qs : List ObjectRef) (mods : List StatMod)
     (dur : Duration) : String :=
   let bonus := String.intercalate " and " (mods.map statModPhrase)
-  if qs == [.it] then
+  if qs == [.it] || qs == [.thatTarget] then
     s!"It gets {bonus} {durationPhrase dur}."
   else
     let subject := capitalizeAscii (joinPhrases cardName true qs)
@@ -504,11 +506,13 @@ private def putCounterClause (cardName : String) (n : Nat) (kind : CounterKind)
     | .plusOnePlusOne => plusOnePlusOneCountersPhrase n
   s!"put {counters} on {joinPhrases cardName false objects}"
 
-/-- “it gets +1/+1 until end of turn for each other creature you control”. -/
+/-- “it gets +1/+1 until end of turn for each other creature you control”.
+`[.this, .cardType .creature]` is the creature the trigger already named. -/
 private def getForEachClause (cardName : String) (who : List ObjectRef) (mods : List StatMod)
     (each : List ObjectRef) (dur : Duration) : String :=
-  let subject := joinPhrases cardName false who
-  let verb := if who.length == 1 then "gets" else "get"
+  let namedAgain := who == [.this, .cardType .creature] || who == [.it]
+  let subject := if namedAgain then "it" else joinPhrases cardName false who
+  let verb := if namedAgain || who.length == 1 then "gets" else "get"
   let bonus := String.intercalate " and " (mods.map statModPhrase)
   s!"{subject} {verb} {bonus} {durationPhrase dur} for each {joinPhrases cardName false each}"
 
@@ -556,7 +560,7 @@ private def drawThenDiscardSentence (n d : Nat) : String :=
 private def payerPhrase (cardName : String) : Payer → String
   | .controller obj =>
     match obj with
-    | .it => "its controller"
+    | .it | .innerTarget => "its controller"
     | named => s!"{objectPhrase cardName false named}'s controller"
 
 /-- Lowercase action inside `.unlessPay` (`counter target spell`). -/
@@ -565,8 +569,8 @@ private def unlessAction (cardName : String) : TextEffect → String
     s!"counter {joinTargets (targets.map (objectPhrase cardName false))}"
   | _ => ""
 
-private def unlessPaySentence (cardName : String) (actions : List TextEffect)
-    (who : List Payer) (costs : List PrintedCost) : String :=
+private def unlessPaySentence (cardName : String) (who : List Payer)
+    (costs : List PrintedCost) (actions : List TextEffect) : String :=
   let action := capitalizeAscii (String.intercalate " " (actions.map (unlessAction cardName)))
   let payer := String.intercalate " and " (who.map (payerPhrase cardName))
   let cost := String.intercalate ", " (costs.map printedCostPhrase)
@@ -609,7 +613,7 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .remains obj state => some (remainsSentence cardName obj state)
   | .asLongAs action dur => some (asLongAsSentence cardName action dur)
   | .discard n => some (discardSentence n)
-  | .unlessPay actions who costs => some (unlessPaySentence cardName actions who costs)
+  | .unlessPay who costs actions => some (unlessPaySentence cardName who costs actions)
   | .chooseMode n modes =>
     some <| String.intercalate "\n" <|
       chooseHeader n :: (modes.filterMap (nestedEffectSentence cardName)).map (s!"• {·}")
@@ -658,7 +662,7 @@ where
     | .remains obj state => remainsSentence cardName obj state
     | .asLongAs action dur => asLongAsSentence cardName action dur
     | .discard n => discardSentence n
-    | .unlessPay actions who costs => unlessPaySentence cardName actions who costs
+    | .unlessPay who costs actions => unlessPaySentence cardName who costs actions
     | .chooseMode n modes =>
       String.intercalate "\n" (chooseHeader n :: (modes.map go).map (s!"• {·}"))
 
@@ -676,18 +680,18 @@ private def textEffectToEffect : TextEffect → Option Effect
   | .scry n => some (Effect.scry n)
   | .sequence
       [.untap [.target [.cardType .creature, .controlledBy [.you]]],
-       .getUntil [.it] [.plusPowerToughness p t] .endOfTurn,
+       .getUntil [.thatTarget] [.plusPowerToughness p t] .endOfTurn,
        .if
-         [.is [.it] [.cardSubtype .dwarf]]
+         [.is [.thatTarget] [.cardSubtype .dwarf]]
          [.may [.you]
-           [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]] =>
+           [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.thatTarget]]]] =>
     some (Effect.untapPumpMaybeAttach p t)
   | .sequence [.draw n, .discard 1] =>
     some (Effect.drawThenDiscard n)
   | .unlessPay
-      [.counter [.target [.spell]]]
-      [.controller .it]
-      [.mana [.generic n]] =>
+      [.controller .innerTarget]
+      [.mana [.generic n]]
+      [.counter [.target [.spell]]] =>
     some (Effect.counterUnlessPays n)
   | .sequence
       [.counter [.target [.spell]],
@@ -722,7 +726,7 @@ private def costsToActivation (costs : List PrintedCost) : ActivationCost :=
 private def textEffectToTriggered : TextEffect → Option TriggeredAbility
   | .whenever
       [.creatureAttack [.this] []]
-      [.getForEachUntil [.it] [.plusPowerToughness 1 1]
+      [.getForEachUntil [.this, .cardType .creature] [.plusPowerToughness 1 1]
         [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn] =>
     some .onAttackPumpForEachOtherCreature
   | .when
@@ -908,16 +912,16 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 
 #guard textEffectSentence "Eagle of the Great Shelf" (.whenever
     [.creatureAttack [.this] []]
-    [getForEachUntil [.it] [.plusPowerToughness (+1) (+1)]
+    [getForEachUntil [.this, .cardType .creature] [.plusPowerToughness (+1) (+1)]
       [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn]) ==
   "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control."
 
 #guard textEffectSentence "Vow to Erebor" (.sequence [
     .untap [.target [.cardType .creature, .controlledBy [.you]]],
-    .getUntil [.it] [.plusPowerToughness (+2) (+2)] .endOfTurn,
+    .getUntil [.thatTarget] [.plusPowerToughness (+2) (+2)] .endOfTurn,
     .if
-      [.is [.it] [.cardSubtype .dwarf]]
-      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]]) ==
+      [.is [.thatTarget] [.cardSubtype .dwarf]]
+      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.thatTarget]]]]) ==
   "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
 
 #guard shortCardName "Bilbo Baggins, Burglar" == "Bilbo Baggins"
@@ -945,14 +949,14 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
   "Whenever an opponent draws a card, put a +1/+1 counter on this creature."
 
 #guard textEffectSentence ""
-    (.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]]) ==
+    (.unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]]) ==
   "Counter target spell unless its controller pays {4}."
 
 #guard textEffectSentence "" (.sequence [.draw 2, .discard 1]) ==
   "Draw two cards, then discard a card."
 
 #guard textEffectSentence "" (.chooseMode 1 [
-    .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+    .unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]],
     .sequence [.draw 2, .discard 1]]) ==
   "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card."
 

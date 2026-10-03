@@ -122,7 +122,9 @@ disjunction, and the other words are a conjunction.
 `.target [.cardType .creature]` is “target creature”.
 `.targets (.or 1 2) [.cardType .creature]` is “one or two target creatures”.
 `[.this, .cardType .creature]` is “this creature”. `[.this, .spell]` is
-“this spell”. `.it` is the object named earlier (`It gets +2/+2`).
+“this spell”. `.thatTarget` is the target named earlier (`It gets +2/+2`).
+`.innerTarget` is the target of this effect (`its controller`).
+`.it` is the object named earlier (`exile it`).
 `.permanentSpell` is “permanent spell”. `.thatCard` is “that card”.
 `.thisCardName` prints this card’s name, shortened before a comma
 (`Bilbo Baggins` on Bilbo Baggins, Burglar). `.other` excludes this object. -/
@@ -135,6 +137,8 @@ inductive ObjectRef where
   | this
   | other
   | it
+  | thatTarget
+  | innerTarget
   | spell
   | permanentSpell
   | thatCard
@@ -144,7 +148,7 @@ inductive ObjectRef where
   | targets (count : TargetCount) (qs : List ObjectRef)
   deriving Repr, BEq
 
-/-- Who pays in `.unlessPay`. `.controller .it` is “its controller”. -/
+/-- Who pays in `.unlessPay`. `.controller .innerTarget` is “its controller”. -/
 inductive Payer where
   | controller (obj : ObjectRef)
   deriving Repr, BEq
@@ -239,7 +243,7 @@ inductive TextEffect where
   | keyword (k : PrintedKeyword)
   | gainUntil (targets : List ObjectRef) (gains : List GrantedAbility) (dur : Duration)
   /-- Matching objects get these changes until `dur`.
-  `[.it]` is the object named earlier (`It gets +2/+2`). -/
+  `[.thatTarget]` is the target named earlier (`It gets +2/+2`). -/
   | getUntil (qs : List ObjectRef) (mods : List StatMod) (dur : Duration)
   /-- An activated ability: pay `costs`, then follow `effects` (`{3}{W}: …`). -/
   | costFor (costs : List PrintedCost) (effects : List TextEffect)
@@ -261,7 +265,8 @@ inductive TextEffect where
   /-- Look at the top `n` cards of your library (`Scry 2`). -/
   | scry (n : Nat)
   /-- `who` gets `mods` until `dur` for each object matching `each`.
-  `[.it]` is “it”. `[.other, .cardType .creature, .controlledBy [.you]]` is
+  `[.this, .cardType .creature]` is “it” after “this creature attacks”.
+  `[.other, .cardType .creature, .controlledBy [.you]]` is
   “each other creature you control”. -/
   | getForEachUntil (who : List ObjectRef) (mods : List StatMod)
       (each : List ObjectRef) (dur : Duration)
@@ -270,7 +275,7 @@ inductive TextEffect where
   /-- Untap the named targets (`Untap target creature you control`). -/
   | untap (targets : List ObjectRef)
   /-- When `conds` hold, follow `effects`.
-  `[.is [.it] [.cardSubtype .dwarf]]` is “if it's a Dwarf”.
+  `[.is [.thatTarget] [.cardSubtype .dwarf]]` is “if it's a Dwarf”.
   `[.targeting [.this, .spell] [.tapped, .cardType .creature]]` with
   `[.costLessToCast [.this, .spell] [.generic 3]]` is
   “This spell costs {3} less to cast if it targets a tapped creature”. -/
@@ -298,7 +303,7 @@ inductive TextEffect where
   “you may cast that card without paying its mana cost for as long as it remains exiled”. -/
   | asLongAs (action cond : List TextEffect)
   /-- Attach `what` to `dest`.
-  `[.oneOf [.cardType .equipment, .controlledBy [.you]]]` to `[.it]` is
+  `[.oneOf [.cardType .equipment, .controlledBy [.you]]]` to `[.thatTarget]` is
   “attach an Equipment you control to it”. -/
   | attachTo (what dest : List ObjectRef)
   /-- Put `n` counters of `kind` on `objects`.
@@ -309,17 +314,18 @@ inductive TextEffect where
   | counter (targets : List ObjectRef)
   /-- Discard `n` cards. -/
   | discard (n : Nat)
-  /-- Do `actions` unless `who` pays `costs`.
-  `.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]]` is
+  /-- `who` pays `costs`, or else do `actions`.
+  `.unlessPay [.controller .innerTarget] [.mana [.generic 4]] [.counter [.target [.spell]]]` is
   “Counter target spell unless its controller pays {4}.” -/
-  | unlessPay (actions : List TextEffect) (who : List Payer) (costs : List PrintedCost)
+  | unlessPay (who : List Payer) (costs : List PrintedCost) (actions : List TextEffect)
   /-- Choose `n` of these modes. `.chooseMode 1` is “Choose one —”.
   Each mode is one bullet. `.sequence [.draw 2, .discard 1]` inside a mode is
   “Draw two cards, then discard a card.” -/
   | chooseMode (n : Nat) (modes : List TextEffect)
   deriving Repr, BEq
 
-/-- `getForEachUntil [.it] mods each dur` is “it gets … until … for each …”.
+/-- `getForEachUntil [.this, .cardType .creature] mods each dur` is
+“it gets … until … for each …”.
 Written without a leading dot so it can sit in a `.whenever` effect list. -/
 def getForEachUntil (who : List ObjectRef) (mods : List StatMod)
     (each : List ObjectRef) (dur : Duration) : TextEffect :=
