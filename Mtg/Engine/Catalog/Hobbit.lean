@@ -449,14 +449,67 @@ def thranduilsDecree : TraditionalCardDefinition := .card [
     c.spellEffect == some Effect.counterExilePermanentMayCast &&
     c.oracleText == "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled."
 
-def bilboLuckwearer : CardDef :=
-  legendaryCreature "Bilbo, Luckwearer" (ManaCost.ofGenericAndColor 1 .blue) #["Halfling", "Rogue"] 1 1
-    (oracleText := "Bilbo can't be blocked.\nWhenever Bilbo deals combat damage to a player, draw a card, then discard a card.\n//ADV//\nBurglar's Plot {4}{U}\nSorcery — Adventure\nExchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)")
-    (keywords := Keyword.cantBeBlocked)
-    (triggeredAbilities := #[.onCombatDamageToPlayerLoot])
-    (adventure := some (adventure "Burglar's Plot" (ManaCost.ofGenericAndColor 4 .blue)
-      "Exchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.exchangeControlSharingType)))
+def bilboLuckwearer : TraditionalCardDefinition := .card [
+  .name "Bilbo, Luckwearer",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .rogue,
+  .power 1,
+  .toughness 1,
+  .textBox [
+    .cannot (.block [] [.thisCardName]),
+    .whenever
+      [.dealSuchDamage [.thisCardName] [.player] [.combat]]
+      [.draw 1, .discard 1]
+  ],
+  .alternative [
+    .name "Burglar's Plot",
+    .manaCost [.generic 4, .mono .blue],
+    .type .sorcery,
+    .subtype .adventure,
+    .textBox [
+      .exchangeControl
+        [.targetsWhich 2 [.nonland, .permanent] [.sharingCardType]]
+    ]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Bilbo, Luckwearer {1}{U}",
+  "Legendary Creature — Halfling Rogue",
+  "1/1",
+  "Bilbo can't be blocked.",
+  "Whenever Bilbo deals combat damage to a player, draw a card, then discard a card.",
+  "//ADV//",
+  "Burglar's Plot {4}{U}",
+  "Sorcery — Adventure",
+  "Exchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)"
+]) == some bilboLuckwearer
+
+#guard
+  let c := bilboLuckwearer.toCardDef
+  c.name == "Bilbo, Luckwearer" &&
+    c.types == #[.creature] &&
+    c.subtypes == #["Halfling", "Rogue"] &&
+    c.hasSupertype .legendary &&
+    c.power == some 1 &&
+    c.toughness == some 1 &&
+    c.manaCost == ManaCost.ofGenericAndColor 1 .blue &&
+    c.keywords == Keyword.cantBeBlocked &&
+    c.spellEffect == none &&
+    c.triggeredAbilities == #[.onCombatDamageToPlayerLoot] &&
+    c.oracleText == "Bilbo can't be blocked.\nWhenever Bilbo deals combat damage to a player, draw a card, then discard a card.\n//ADV//\nBurglar's Plot {4}{U}\nSorcery — Adventure\nExchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)" &&
+    match c.adventure with
+    | some adv =>
+      adv.name == "Burglar's Plot" &&
+        adv.manaCost == ManaCost.ofGenericAndColor 4 .blue &&
+        adv.types == #[.sorcery] &&
+        adv.subtypes == #["Adventure"] &&
+        adv.oracleText == "Exchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)" &&
+        adv.spellEffect == some Effect.exchangeControlSharingType
+    | none => false
 
 def uneasyPartings : CardDef :=
   instant "Uneasy Partings" (ManaCost.ofGenericAndColor 3 .blue)
@@ -1592,8 +1645,7 @@ def hobbitCards : Array CardDef :=
   (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
      magnificentEnd, eagleOfTheGreatShelf, vowToErebor, bilboBagginsBurglar,
      lakeshoreApothecary, confusticateAndBebother, ravenhillFlock,
-     thranduilsDecree] ++ #[
-  bilboLuckwearer,
+     thranduilsDecree, bilboLuckwearer] ++ #[
   uneasyPartings,
   frontPorchSentries,
   greatFierceBee,

@@ -48,7 +48,8 @@ def hobbitBlue : Array CardDef :=
   #[knightsOfDolAmroth, greyHavensNavigator, roguesPassage] ++
   copies 2 ithilienKingfisher ++
   #[hithlainKnots, captainOfUmbar, minasTirithGarrison, colossalWhale,
-    willowWind, bilboLuckwearer] ++
+    willowWind] ++
+  #[bilboLuckwearer] ++
   copies 2 uneasyPartings ++
   #[nimrodelWatcher, sternScolding]
 
