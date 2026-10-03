@@ -659,6 +659,52 @@ private def parseSequence (line : String) : Option TextEffect := do
   let steps ← parts.mapM parseSequenceStep
   return .sequence steps
 
+/-- `target spell`, or any other `target …` phrase `parseTarget` accepts. -/
+private def parseSpellTarget (s : String) : Option ObjectRef := do
+  let rest ← dropPrefixCI s "target "
+  if rest.map Char.toLower == "spell" then
+    some (.target [.spell])
+  else
+    parseTarget s
+
+/-- `Counter target spell unless its controller pays {4}.` -/
+private def parseUnlessPay (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let rest ← dropPrefixCI line "Counter "
+  let (tgtText, costText) ← splitOnce " unless its controller pays " rest
+  let tgt ← parseSpellTarget tgtText
+  let cost ← parseManaRun costText
+  return .unlessPay [.counter [tgt]] [.controller .it] [.mana cost]
+
+/-- `a card`, `one card`, or `two cards`. -/
+private def parseCardCount (s : String) : Option Nat := do
+  let s := s.trimAscii.copy.map Char.toLower
+  if s == "a card" || s == "one card" then
+    some 1
+  else
+    let (nText, tail) ← splitOnce " " s
+    if tail == "cards" then parseCountWord nText else none
+
+/-- `Draw two cards, then discard a card.` -/
+private def parseThen (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let (lead, follow) ← splitOnce ", then " line
+  let drawRest ← dropPrefixCI lead "Draw "
+  let n ← parseCardCount drawRest
+  let discRest ← dropPrefixCI follow "discard "
+  let d ← parseCardCount discRest
+  return .sequence [.draw n, .discard d]
+
+private def parseMode (line : String) : Option TextEffect :=
+  match parseUnlessPay line with
+  | some e => some e
+  | none => parseThen line
+
+private def chooseHeader? (s : String) : Bool :=
+  match s.trimAscii.copy with
+  | "Choose one —" | "Choose one -" | "Choose one—" | "Choose one-" => true
+  | _ => false
+
 private def parseKeywordLine (line : String) : Option (List TextEffect) := do
   let parts := splitEnglishList line
   if parts.isEmpty then none
@@ -666,45 +712,89 @@ private def parseKeywordLine (line : String) : Option (List TextEffect) := do
     let kws ← parts.mapM PrintedKeyword.parse
     return kws.map TextEffect.keyword
 
-private def parseBody (cardName : String) (lines : List String) : Option (List TextEffect) :=
-  lines.foldlM (fun effects line =>
-    let cleaned := stripTrailingDot (stripParens line)
-    if cleaned.isEmpty then
-      pure effects
-    else
-      match parseSequence cleaned with
-      | some e => pure (effects ++ [e])
+private def parseLine (cardName : String) (cleaned : String) : Option TextEffect :=
+  match parseSequence cleaned with
+  | some e => some e
+  | none =>
+    match parseWhenever cleaned with
+    | some e => some e
+    | none =>
+      match parseWhen cardName cleaned with
+      | some e => some e
       | none =>
-        match parseWhenever cleaned with
-        | some e => pure (effects ++ [e])
+        match parseScry cleaned with
+        | some e => some e
         | none =>
-          match parseWhen cardName cleaned with
-          | some e => pure (effects ++ [e])
+          match parseCostFor cleaned with
+          | some e => some e
           | none =>
-            match parseScry cleaned with
-            | some e => pure (effects ++ [e])
+            match parseGetUntil cleaned with
+            | some e => some e
             | none =>
-              match parseCostFor cleaned with
-              | some e => pure (effects ++ [e])
+              match parseGainUntil cleaned with
+              | some e => some e
               | none =>
-                match parseGetUntil cleaned with
-                | some e => pure (effects ++ [e])
+                match parseTap cleaned with
+                | some e => some e
                 | none =>
-                  match parseGainUntil cleaned with
-                  | some e => pure (effects ++ [e])
+                  match parseCostLess cleaned with
+                  | some e => some e
                   | none =>
-                    match parseTap cleaned with
-                    | some e => pure (effects ++ [e])
+                    match parseDealDamage cardName cleaned with
+                    | some e => some e
                     | none =>
-                      match parseCostLess cleaned with
-                      | some e => pure (effects ++ [e])
-                      | none =>
-                        match parseDealDamage cardName cleaned with
-                        | some e => pure (effects ++ [e])
-                        | none =>
-                          match parseKeywordLine cleaned with
-                          | some ks => pure (effects ++ ks)
-                          | none => none) []
+                      match parseUnlessPay cleaned with
+                      | some e => some e
+                      | none => parseThen cleaned
+
+private structure BodyParse where
+  effects : List TextEffect := []
+  /-- Collecting the bullets of a `Choose one —` that has not closed. -/
+  choosing : Bool := false
+  modes : List TextEffect := []
+  failed : Bool := false
+
+private def closeChoose (a : BodyParse) : BodyParse :=
+  if !a.choosing then a
+  else if a.modes.isEmpty then { a with failed := true, choosing := false }
+  else
+    { a with
+      choosing := false
+      effects := a.effects ++ [.chooseMode 1 a.modes.reverse]
+      modes := [] }
+
+private def addPlain (cardName : String) (a : BodyParse) (cleaned : String) : BodyParse :=
+  match parseLine cardName cleaned with
+  | some e => { a with effects := a.effects ++ [e] }
+  | none =>
+    match parseKeywordLine cleaned with
+    | some ks => { a with effects := a.effects ++ ks }
+    | none => { a with failed := true }
+
+private def parseBody (cardName : String) (lines : List String) : Option (List TextEffect) :=
+  let step (a : BodyParse) (line : String) : BodyParse :=
+    if a.failed then a
+    else
+      let cleaned := stripTrailingDot (stripParens line)
+      if cleaned.isEmpty then
+        a
+      else if a.choosing then
+        match dropPrefixCI line.trimAscii.copy "•" with
+        | some body =>
+          match parseMode body with
+          | some m => { a with modes := m :: a.modes }
+          | none => { a with failed := true }
+        | none =>
+          let a := closeChoose a
+          if a.failed then a
+          else if chooseHeader? cleaned then { a with choosing := true }
+          else addPlain cardName a cleaned
+      else if chooseHeader? cleaned then
+        { a with choosing := true }
+      else
+        addPlain cardName a cleaned
+  let done := closeChoose (lines.foldl step {})
+  if done.failed then none else some done.effects
 
 private def faceClauses (name : String) (cost : List CostSymbol)
     (supers : List Supertype) (tys : List CardType) (subs : List CardSubtype)
@@ -773,6 +863,10 @@ becomes `.whenever` with `.drawCard` and `.putCounter`.
 `Untap target creature you control. It gets … If it's a Dwarf, you may attach
 an Equipment you control to it.` becomes `.sequence` with `.untap`, `.getUntil`,
 and `.if` with `[.cardSubtype .dwarf]`.
+`Choose one —` followed by `•` lines becomes `.chooseMode 1`.
+`Counter target spell unless its controller pays {N}.` becomes `.unlessPay`
+with `.counter`, `[.controller .it]`, and `.mana`.
+`Draw two cards, then discard a card.` becomes `.sequence` with `.draw` and `.discard`.
 -/
 def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   let lines :=
@@ -855,5 +949,30 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 #guard parseScry
     "Scry 2. (Then exile this card. You may cast the creature later from exile.)" ==
   some (.scry 2)
+
+#guard parseUnlessPay
+    "Counter target spell unless its controller pays {4}." ==
+  some (.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]])
+
+#guard parseThen
+    "Draw two cards, then discard a card." ==
+  some (.sequence [.draw 2, .discard 1])
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Confusticate and Bebother {2}{U}",
+  "Instant",
+  "Choose one —",
+  "• Counter target spell unless its controller pays {4}.",
+  "• Draw two cards, then discard a card."
+]) == some (.card [
+  .name "Confusticate and Bebother",
+  .manaCost [.generic 2, .mono .blue],
+  .type .instant,
+  .textBox [
+    .chooseMode 1 [
+      .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+      .sequence [.draw 2, .discard 1]]
+  ]
+])
 
 end Mtg.Engine

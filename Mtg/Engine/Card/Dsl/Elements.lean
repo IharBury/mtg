@@ -13,8 +13,11 @@ are a `.tap` instruction in `.textBox`, cost reductions are a
 `.dealDamage` instruction in `.textBox`, triggered abilities are a
 `.whenever` or `.when` instruction in `.textBox`, scry spells are a
 `.scry` instruction in `.textBox`, putting counters is a `.putCounter`
-instruction in `.textBox`, and a spell that resolves as
-several sentences is a `.sequence` in `.textBox`.
+instruction in `.textBox`, a spell that resolves as
+several sentences is a `.sequence` in `.textBox`, countering
+is a `.counter` in `.textBox`, doing effects unless a player
+pays is a `.unlessPay` in `.textBox`, and a modal spell is a
+`.chooseMode` in `.textBox`.
 -/
 
 namespace Mtg.Engine
@@ -133,6 +136,11 @@ inductive ObjectRef where
   | targets (count : TargetCount) (qs : List ObjectRef)
   deriving Repr, BEq
 
+/-- Who pays in `.unlessPay`. `.controller .it` is “its controller”. -/
+inductive Payer where
+  | controller (obj : ObjectRef)
+  deriving Repr, BEq
+
 /-- A keyword the text box grants. -/
 inductive GrantedAbility where
   | keyword (k : PrintedKeyword)
@@ -247,6 +255,18 @@ inductive TextEffect where
   `.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]` is
   “put a +1/+1 counter on this creature”. -/
   | putCounter (n : Nat) (kind : CounterKind) (objects : List ObjectRef)
+  /-- Counter `targets`. `.counter [.target [.spell]]` is “counter target spell”. -/
+  | counter (targets : List ObjectRef)
+  /-- Discard `n` cards. -/
+  | discard (n : Nat)
+  /-- Do `actions` unless `who` pays `costs`.
+  `.unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]]` is
+  “Counter target spell unless its controller pays {4}.” -/
+  | unlessPay (actions : List TextEffect) (who : List Payer) (costs : List PrintedCost)
+  /-- Choose `n` of these modes. `.chooseMode 1` is “Choose one —”.
+  Each mode is one bullet. `.sequence [.draw 2, .discard 1]` inside a mode is
+  “Draw two cards, then discard a card.” -/
+  | chooseMode (n : Nat) (modes : List TextEffect)
   deriving Repr, BEq
 
 /-- `getForEachUntil [.it] mods each dur` is “it gets … until … for each …”.

@@ -350,10 +350,37 @@ def lakeshoreApothecary : TraditionalCardDefinition := .card [
     c.triggeredAbilities == #[.onDrawSecondPlusOne] &&
     c.oracleText == "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature."
 
-def confusticateAndBebother : CardDef :=
-  instant "Confusticate and Bebother" (ManaCost.ofGenericAndColor 2 .blue)
-    "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card."
-    (spellModes := #[(Effect.counterUnlessPays 4), (Effect.drawThenDiscard 2)])
+def confusticateAndBebother : TraditionalCardDefinition := .card [
+  .name "Confusticate and Bebother",
+  .manaCost [.generic 2, .mono .blue],
+  .type .instant,
+  .textBox [
+    .chooseMode 1 [
+      .unlessPay [.counter [.target [.spell]]] [.controller .it] [.mana [.generic 4]],
+      .sequence [.draw 2, .discard 1]
+    ]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Confusticate and Bebother {2}{U}",
+  "Instant",
+  "Choose one —",
+  "• Counter target spell unless its controller pays {4}.",
+  "• Draw two cards, then discard a card."
+]) == some confusticateAndBebother
+
+#guard
+  let c := confusticateAndBebother.toCardDef
+  c.name == "Confusticate and Bebother" &&
+    c.types == #[.instant] &&
+    c.subtypes == #[] &&
+    c.manaCost == ManaCost.ofGenericAndColor 2 .blue &&
+    c.keywords == Keywords.none &&
+    c.spellEffect == none &&
+    c.isModal &&
+    c.spellModes == #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2] &&
+    c.oracleText == "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card."
 
 def ravenhillFlock : CardDef :=
   creature "Ravenhill Flock" (ManaCost.ofGenericAndColor 3 .blue) #["Bird"] 1 2
@@ -1508,8 +1535,7 @@ def hobbitCards : Array CardDef :=
   -- `++` compiles a run of DSL cards into `CardDef`s.
   (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
      magnificentEnd, eagleOfTheGreatShelf, vowToErebor, bilboBagginsBurglar,
-     lakeshoreApothecary] ++ #[
-  confusticateAndBebother,
+     lakeshoreApothecary, confusticateAndBebother] ++ #[
   ravenhillFlock,
   thranduilsDecree,
   bilboLuckwearer,
