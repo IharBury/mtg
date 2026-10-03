@@ -199,6 +199,18 @@ private def shortCardName (cardName : String) : String :=
   | head :: _ => if head.isEmpty then cardName else head
   | [] => cardName
 
+private def playerPhrase : PlayerRef → String
+  | .you => "you"
+  | .opponent => "an opponent"
+
+/-- `.controlledBy [.you]` is “you control”. `.controlledBy [.opponent]` is
+“an opponent controls”. A longer list is joined with “and”. -/
+private def controlPhrase (ps : List PlayerRef) : String :=
+  match ps with
+  | [] => ""
+  | [.opponent] => "an opponent controls"
+  | many => s!"{String.intercalate " and " (many.map playerPhrase)} control"
+
 /-- Printed word for one `ObjectRef`. `plural` pluralizes a card type
 (`creature` / `creatures`). `.thisCardName` prints the legendary short name.
 `.oneOf` adds an indefinite article (`an Equipment you control`). -/
@@ -213,8 +225,7 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
     else
       t.phrase
   | .cardSubtype s => s.printed
-  | .controlledBy .you => "you control"
-  | .controlledBy .opponent => "an opponent controls"
+  | .controlledBy ps => controlPhrase ps
   | .or qs => orJoin (qs.map (objectPhrase cardName plural))
   | .tapped => "tapped"
   | .this => "this"
@@ -238,10 +249,6 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
 /-- Words of a reference list, in order (`this creature`). -/
 private def joinPhrases (cardName : String) (plural : Bool) (qs : List ObjectRef) : String :=
   String.intercalate " " (qs.map (objectPhrase cardName plural))
-
-private def playerPhrase : PlayerRef → String
-  | .you => "you"
-  | .opponent => "an opponent"
 
 private def drawVerb (who : List PlayerRef) : String :=
   if who == [.you] then "draw" else "draws"
@@ -646,7 +653,7 @@ where
 /-- Map a spell text-box effect onto the engine's `Effect` vocabulary. -/
 private def textEffectToEffect : TextEffect → Option Effect
   | .gainUntil
-      [.target [.or [.cardType .artifact, .cardType .creature], .controlledBy .you]]
+      [.target [.or [.cardType .artifact, .cardType .creature], .controlledBy [.you]]]
       [.keyword .hexproof, .keyword .indestructible]
       .endOfTurn =>
     some Effect.grantHexproofIndestructible
@@ -656,12 +663,12 @@ private def textEffectToEffect : TextEffect → Option Effect
     some (Effect.dealDamageToCreature n)
   | .scry n => some (Effect.scry n)
   | .sequence
-      [.untap [.target [.cardType .creature, .controlledBy .you]],
+      [.untap [.target [.cardType .creature, .controlledBy [.you]]],
        .getUntil [.it] [.plusPowerToughness p t] .endOfTurn,
        .if
          [.is [.it] [.cardSubtype .dwarf]]
          [.may [.you]
-           [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]] =>
+           [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]] =>
     some (Effect.untapPumpMaybeAttach p t)
   | .sequence [.draw n, .discard 1] =>
     some (Effect.drawThenDiscard n)
@@ -684,7 +691,7 @@ private def textEffectToEffect : TextEffect → Option Effect
   | _ => none
 
 private def creaturesYouControl (qs : List ObjectRef) : Bool :=
-  qs == [.cardType .creature, .controlledBy .you]
+  qs == [.cardType .creature, .controlledBy [.you]]
 
 private def pumpEffect : TextEffect → Option Effect
   | .getUntil qs [.plusPowerToughness p t] .endOfTurn =>
@@ -704,7 +711,7 @@ private def textEffectToTriggered : TextEffect → Option TriggeredAbility
   | .whenever
       [.creatureAttack [.this] []]
       [.getForEachUntil [.it] [.plusPowerToughness 1 1]
-        [.other, .cardType .creature, .controlledBy .you] .endOfTurn] =>
+        [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn] =>
     some .onAttackPumpForEachOtherCreature
   | .when
       [.permanentEnter [.thisCardName]]
@@ -846,14 +853,26 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 /-! Oracle sentences for the clause vocabulary. -/
 
 #guard textEffectSentence "" (.gainUntil
-    [.target [.or [.cardType .artifact, .cardType .creature], .controlledBy .you]]
+    [.target [.or [.cardType .artifact, .cardType .creature], .controlledBy [.you]]]
     [.keyword .hexproof, .keyword .indestructible]
     .endOfTurn) ==
   "Target artifact or creature you control gains hexproof and indestructible until end of turn."
 
+#guard textEffectSentence "" (.gainUntil
+    [.target [.cardType .creature, .controlledBy [.opponent]]]
+    [.keyword .hexproof]
+    .endOfTurn) ==
+  "Target creature an opponent controls gains hexproof until end of turn."
+
+#guard textEffectSentence "" (.gainUntil
+    [.target [.cardType .creature, .controlledBy [.you, .opponent]]]
+    [.keyword .hexproof]
+    .endOfTurn) ==
+  "Target creature you and an opponent control gains hexproof until end of turn."
+
 #guard textEffectSentence "" (.costFor
     [.mana [.generic 3, .mono .white]]
-    [.getUntil [.cardType .creature, .controlledBy .you]
+    [.getUntil [.cardType .creature, .controlledBy [.you]]
       [.plusPowerToughness (+1) (+1)] .endOfTurn]) ==
   "{3}{W}: Creatures you control get +1/+1 until end of turn."
 
@@ -876,15 +895,15 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 #guard textEffectSentence "Eagle of the Great Shelf" (.whenever
     [.creatureAttack [.this] []]
     [getForEachUntil [.it] [.plusPowerToughness (+1) (+1)]
-      [.other, .cardType .creature, .controlledBy .you] .endOfTurn]) ==
+      [.other, .cardType .creature, .controlledBy [.you]] .endOfTurn]) ==
   "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control."
 
 #guard textEffectSentence "Vow to Erebor" (.sequence [
-    .untap [.target [.cardType .creature, .controlledBy .you]],
+    .untap [.target [.cardType .creature, .controlledBy [.you]]],
     .getUntil [.it] [.plusPowerToughness (+2) (+2)] .endOfTurn,
     .if
       [.is [.it] [.cardSubtype .dwarf]]
-      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy .you]] [.it]]]]) ==
+      [.may [.you] [.attachTo [.oneOf [.cardType .equipment, .controlledBy [.you]]] [.it]]]]) ==
   "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
 
 #guard shortCardName "Bilbo Baggins, Burglar" == "Bilbo Baggins"
