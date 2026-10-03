@@ -647,35 +647,48 @@ private def parseCounterSpell (s : String) : Option TextEffect := do
   guard (spell.map Char.toLower == "spell")
   return .counter [.target [.spell]]
 
-/-- `exile it instead of putting it into its owner's graveyard`. -/
-private def parseExileInstead (s : String) : Option TextEffect := do
-  let rest ← dropPrefixCI s "exile "
-  let (objText, zoneText) ← splitOnce " instead of putting it into " rest
+/-- `putting it into its owner's graveyard`. -/
+private def parsePuttingInto (s : String) : Option TextEffect := do
+  let rest ← dropPrefixCI s "putting "
+  let (objText, destText) ← splitOnce " into " rest
   guard (objText.map Char.toLower == "it")
-  let zone := zoneText.map Char.toLower
-  guard (zone == "its owner's graveyard" || zone == "its owner’s graveyard")
-  return .exileInstead .it .ownersGraveyard
+  let dest := destText.map Char.toLower
+  guard (dest == "its owner's graveyard" || dest == "its owner’s graveyard")
+  return .putInto [.it] [.graveyard, .belongingTo [.owner [.it]]]
+
+/-- `exile it instead of putting it into its owner's graveyard`. -/
+private def parseInsteadOfExile (s : String) : Option TextEffect := do
+  let (doneText, avoidedText) ← splitOnce " instead of " s
+  guard (doneText.map Char.toLower == "exile it")
+  let avoided ← parsePuttingInto avoidedText
+  return .insteadOf [avoided] [.exile [.it]]
 
 /-- `If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard`. -/
 private def parseIfCounteredExile (s : String) : Option TextEffect := do
   let rest ← dropPrefixCI s "If "
   let (condText, thenText) ← splitOnce ", " rest
-  let noun ←
-    match dropPrefixCI condText "a " with
-    | some r => some r
-    | none => dropPrefixCI condText "an "
-  let qsText ← stripSuffixCI? noun " is countered this way"
-  guard (qsText.map Char.toLower == "permanent spell")
-  let act ← parseExileInstead thenText
-  return .if [.counteredThisWay [.permanent, .spell]] [act]
+  guard (condText.map Char.toLower == "a permanent spell is countered this way")
+  let act ← parseInsteadOfExile thenText
+  return .if [.counteredThisWay [.permanentSpell]] [act]
+
+/-- `you may cast that card without paying its mana cost`. -/
+private def parseMayCastSo (s : String) : Option TextEffect := do
+  let rest ← dropPrefixCI s "you may cast "
+  let objText ← stripSuffixCI? rest " without paying its mana cost"
+  guard (objText.map Char.toLower == "that card")
+  return .mayCastSo [.you] [.thatCard] [.withoutPayingManaCost]
+
+/-- `it remains exiled`. -/
+private def parseRemainsExiled (s : String) : Option TextEffect := do
+  guard (s.map Char.toLower == "it remains exiled")
+  return .remains [.it] [.exiled]
 
 /-- `You may cast that card without paying its mana cost for as long as it remains exiled`. -/
-private def parseYouMayCastExiled (s : String) : Option TextEffect := do
-  let rest ← dropPrefixCI s "You may cast "
-  let (objText, tail) ← splitOnce " without paying its mana cost " rest
-  guard (objText.map Char.toLower == "that card")
-  guard (tail.map Char.toLower == "for as long as it remains exiled")
-  return .may [.you] [.cast [.that, .card] .withoutManaCost .whileRemainsExiled]
+private def parseAsLongAsCast (s : String) : Option TextEffect := do
+  let (actText, durText) ← splitOnce " for as long as " s
+  let act ← parseMayCastSo actText
+  let dur ← parseRemainsExiled durText
+  return .asLongAs [act] [dur]
 
 /-- `If it's a Dwarf, you may attach an Equipment you control to it`. -/
 private def parseIfMay (s : String) : Option TextEffect := do
@@ -708,7 +721,14 @@ private def parseSequenceStep (s : String) : Option TextEffect :=
         | none =>
           match parseIfCounteredExile s with
           | some e => some e
-          | none => parseYouMayCastExiled s
+          | none => parseAsLongAsCast s
+
+/-- A following “for as long as” sentence belongs to the preceding `.if`. -/
+private def attachAsLongAs : List TextEffect → List TextEffect
+  | [] => []
+  | .if conds body :: .asLongAs action dur :: rest =>
+    .if conds (body ++ [.asLongAs action dur]) :: attachAsLongAs rest
+  | e :: rest => e :: attachAsLongAs rest
 
 /-- Several Oracle sentences in one rules line, as a `.sequence`. -/
 private def parseSequence (line : String) : Option TextEffect := do
@@ -716,7 +736,7 @@ private def parseSequence (line : String) : Option TextEffect := do
   let parts := line.splitOn ". " |>.map (·.trimAscii.copy) |>.filter (· != "")
   guard (parts.length ≥ 2)
   let steps ← parts.mapM parseSequenceStep
-  return .sequence steps
+  return .sequence (attachAsLongAs steps)
 
 /-- `target spell`, or any other `target …` phrase `parseTarget` accepts. -/
 private def parseSpellTarget (s : String) : Option ObjectRef := do
@@ -931,7 +951,9 @@ with `.counter`, `[.controller .it]`, and `.mana`.
 `Counter target spell. If a permanent spell is countered this way, exile it
 instead of putting it into its owner's graveyard. You may cast that card
 without paying its mana cost for as long as it remains exiled.` becomes
-`.sequence` with `.counter`, `.if` and `.counteredThisWay`, and `.may` with `.cast`.
+`.sequence` with `.counter` and `.if`. The `.if` holds `.counteredThisWay
+[.permanentSpell]`, `.insteadOf` with `.putInto` and `.exile`, and `.asLongAs`
+with `.mayCastSo` and `.remains`.
 -/
 def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   let lines :=
@@ -1040,10 +1062,9 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   some (.sequence [
     .counter [.target [.spell]],
     .if
-      [.counteredThisWay [.permanent, .spell]]
-      [.exileInstead .it .ownersGraveyard],
-    .may [.you]
-      [.cast [.that, .card] .withoutManaCost .whileRemainsExiled]])
+      [.counteredThisWay [.permanentSpell]]
+      [.insteadOf [.putInto [.it] [.graveyard, .belongingTo [.owner [.it]]]] [.exile [.it]],
+       .asLongAs [.mayCastSo [.you] [.thatCard] [.withoutPayingManaCost]] [.remains [.it] [.exiled]]]])
 
 #guard parseOracleText (String.intercalate "\n" [
   "Confusticate and Bebother {2}{U}",

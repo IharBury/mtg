@@ -426,10 +426,9 @@ def thranduilsDecree : TraditionalCardDefinition := .card [
     .sequence [
       .counter [.target [.spell]],
       .if
-        [.counteredThisWay [.permanent, .spell]]
-        [.exileInstead .it .ownersGraveyard],
-      .may [.you]
-        [.cast [.that, .card] .withoutManaCost .whileRemainsExiled]
+        [.counteredThisWay [.permanentSpell]]
+        [.insteadOf [.putInto [.it] [.graveyard, .belongingTo [.owner [.it]]]] [.exile [.it]],
+        .asLongAs [.mayCastSo [.you] [.thatCard] [.withoutPayingManaCost]] [.remains [.it] [.exiled]]]
     ]
   ]
 ]

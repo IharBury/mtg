@@ -17,10 +17,10 @@ instruction in `.textBox`, a spell that resolves as
 several sentences is a `.sequence` in `.textBox`, countering
 is a `.counter` in `.textBox`, doing effects unless a player
 pays is a `.unlessPay` in `.textBox`, and a modal spell is a
-`.chooseMode` in `.textBox`. Exiling instead of a zone is
-`.exileInstead`. A free cast is `.cast` inside `.may`.
-“A permanent spell is countered this way” is `.counteredThisWay`
-inside `.if`.
+`.chooseMode` in `.textBox`. Doing one effect instead of another is
+`.insteadOf`. A permission that lasts while a condition holds is
+`.asLongAs`. “A permanent spell is countered this way” is
+`.counteredThisWay [.permanentSpell]` inside `.if`.
 -/
 
 namespace Mtg.Engine
@@ -121,8 +121,7 @@ disjunction, and the other words are a conjunction.
 `.targets (.or 1 2) [.cardType .creature]` is “one or two target creatures”.
 `[.this, .cardType .creature]` is “this creature”. `[.this, .spell]` is
 “this spell”. `.it` is the object named earlier (`It gets +2/+2`).
-`.permanent` is the word “permanent” (`[.permanent, .spell]`).
-`.that` and `.card` are those words (`[.that, .card]` is “that card”).
+`.permanentSpell` is “permanent spell”. `.thatCard` is “that card”.
 `.thisCardName` prints this card’s name, shortened before a comma
 (`Bilbo Baggins` on Bilbo Baggins, Burglar). `.other` excludes this object. -/
 inductive ObjectRef where
@@ -135,9 +134,8 @@ inductive ObjectRef where
   | other
   | it
   | spell
-  | permanent
-  | that
-  | card
+  | permanentSpell
+  | thatCard
   | thisCardName
   | oneOf (qs : List ObjectRef)
   | target (qs : List ObjectRef)
@@ -211,27 +209,29 @@ inductive CastIf where
   deriving Repr, BEq
 
 /-- A condition in `.if`. `[.is [.it] [.cardSubtype .dwarf]]` is “it's a Dwarf”.
-`[.counteredThisWay [.permanent, .spell]]` is “a permanent spell is countered this way”. -/
+`[.counteredThisWay [.permanentSpell]]` is “a permanent spell is countered this way”. -/
 inductive TextCondition where
   | is (subj : List ObjectRef) (qs : List ObjectRef)
   | counteredThisWay (qs : List ObjectRef)
   deriving Repr, BEq
 
-/-- A zone named in “instead of putting it into …”.
-`.ownersGraveyard` is “its owner's graveyard”. -/
-inductive PrintedZone where
-  | ownersGraveyard
+/-- Whose zone `.belongingTo` names. `.owner [.it]` is “its owner”. -/
+inductive ZoneOwner where
+  | owner (obj : List ObjectRef)
   deriving Repr, BEq
 
-/-- How a `.cast` is paid. `.withoutManaCost` is “without paying its mana cost”. -/
-inductive CastPayment where
-  | withoutManaCost
+/-- A zone or state word. `.graveyard` is “graveyard”. `.exiled` is “exiled”.
+`.belongingTo [.owner [.it]]` beside `.graveyard` is “its owner's graveyard”. -/
+inductive ZoneWord where
+  | graveyard
+  | exiled
+  | belongingTo (who : List ZoneOwner)
   deriving Repr, BEq
 
-/-- How long a `.cast` permission lasts.
-`.whileRemainsExiled` is “for as long as it remains exiled”. -/
-inductive CastDuration where
-  | whileRemainsExiled
+/-- How `.mayCastSo` is paid.
+`.withoutPayingManaCost` is “without paying its mana cost”. -/
+inductive CastManner where
+  | withoutPayingManaCost
   deriving Repr, BEq
 
 /-- One instruction in a `.textBox`. -/
@@ -275,10 +275,26 @@ inductive TextEffect where
   | «if» (conds : List TextCondition) (effects : List TextEffect)
   /-- `who` may do `effects` (`you may …`). -/
   | may (who : List PlayerRef) (effects : List TextEffect)
-  /-- Cast `what` for `pay` during `dur`.
-  `.cast [.that, .card] .withoutManaCost .whileRemainsExiled` is
-  “cast that card without paying its mana cost for as long as it remains exiled”. -/
-  | cast (what : List ObjectRef) (pay : CastPayment) (dur : CastDuration)
+  /-- Put `obj` into `dest`.
+  `.putInto [.it] [.graveyard, .belongingTo [.owner [.it]]]` is
+  “putting it into its owner's graveyard”. -/
+  | putInto (obj : List ObjectRef) (dest : List ZoneWord)
+  /-- Exile `obj`. `.exile [.it]` is “exile it”. -/
+  | exile (obj : List ObjectRef)
+  /-- Do `done` instead of `avoided`.
+  `.insteadOf [.putInto [.it] [.graveyard, .belongingTo [.owner [.it]]]] [.exile [.it]]` is
+  “exile it instead of putting it into its owner's graveyard”. -/
+  | insteadOf (avoided done : List TextEffect)
+  /-- `who` may cast `what` by `how`.
+  `.mayCastSo [.you] [.thatCard] [.withoutPayingManaCost]` is
+  “you may cast that card without paying its mana cost”. -/
+  | mayCastSo (who : List PlayerRef) (what : List ObjectRef) (how : List CastManner)
+  /-- `obj` remains in `state`. `.remains [.it] [.exiled]` is “it remains exiled”. -/
+  | remains (obj : List ObjectRef) (state : List ZoneWord)
+  /-- `action` for as long as `cond`.
+  `.asLongAs [.mayCastSo [.you] [.thatCard] [.withoutPayingManaCost]] [.remains [.it] [.exiled]]` is
+  “you may cast that card without paying its mana cost for as long as it remains exiled”. -/
+  | asLongAs (action cond : List TextEffect)
   /-- Attach `what` to `dest`.
   `[.oneOf [.cardType .equipment, .controlledBy .you]]` to `[.it]` is
   “attach an Equipment you control to it”. -/
@@ -289,10 +305,6 @@ inductive TextEffect where
   | putCounter (n : Nat) (kind : CounterKind) (objects : List ObjectRef)
   /-- Counter `targets`. `.counter [.target [.spell]]` is “counter target spell”. -/
   | counter (targets : List ObjectRef)
-  /-- Exile `obj` instead of putting it into `zone`.
-  `.exileInstead .it .ownersGraveyard` is
-  “exile it instead of putting it into its owner's graveyard”. -/
-  | exileInstead (obj : ObjectRef) (zone : PrintedZone)
   /-- Discard `n` cards. -/
   | discard (n : Nat)
   /-- Do `actions` unless `who` pays `costs`.

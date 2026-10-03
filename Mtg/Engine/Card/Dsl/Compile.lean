@@ -221,9 +221,8 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .other => "other"
   | .it => "it"
   | .spell => if plural then "spells" else "spell"
-  | .permanent => "permanent"
-  | .that => "that"
-  | .card => if plural then "cards" else "card"
+  | .permanentSpell => "permanent spell"
+  | .thatCard => "that card"
   | .thisCardName => shortCardName cardName
   | .oneOf qs =>
     let noun := String.intercalate " " (qs.map (objectPhrase cardName false))
@@ -346,34 +345,96 @@ private def objectExprsPhrase (cardName : String) (xs : List ObjectRef) : String
 private def attachClause (cardName : String) (what dest : List ObjectRef) : String :=
   s!"attach {objectExprsPhrase cardName what} to {objectExprsPhrase cardName dest}"
 
-private def zonePhrase : PrintedZone → String
-  | .ownersGraveyard => "its owner's graveyard"
+private def possessorPhrase (cardName : String) : ZoneOwner → String
+  | .owner objs =>
+    let who := joinPhrases cardName false objs
+    if who == "it" then "its owner" else s!"the owner of {who}"
 
-private def exileInsteadClause (cardName : String) (obj : ObjectRef) (zone : PrintedZone) : String :=
-  s!"exile {objectPhrase cardName false obj} instead of putting it into {zonePhrase zone}"
+private def zonePhrase (cardName : String) (ws : List ZoneWord) : String :=
+  let place := String.intercalate " " (ws.filterMap fun w =>
+    match w with
+    | .graveyard => some "graveyard"
+    | .exiled => some "exiled"
+    | .belongingTo _ => none)
+  let owners := ws.filterMap fun w =>
+    match w with
+    | .belongingTo who =>
+      some (String.intercalate " and " (who.map (possessorPhrase cardName)))
+    | _ => none
+  match owners with
+  | [] => place
+  | _ =>
+    let owner := String.intercalate " and " owners
+    if place.isEmpty then owner else s!"{owner}'s {place}"
 
-private def castPaymentPhrase : CastPayment → String
-  | .withoutManaCost => "without paying its mana cost"
+private def putIntoClause (cardName : String) (obj : List ObjectRef) (dest : List ZoneWord) : String :=
+  s!"putting {joinPhrases cardName false obj} into {zonePhrase cardName dest}"
 
-private def castDurationPhrase : CastDuration → String
-  | .whileRemainsExiled => "for as long as it remains exiled"
+private def exileClause (cardName : String) (obj : List ObjectRef) : String :=
+  s!"exile {joinPhrases cardName false obj}"
 
-private def castClause (cardName : String) (what : List ObjectRef) (pay : CastPayment)
-    (dur : CastDuration) : String :=
-  s!"cast {joinPhrases cardName false what} {castPaymentPhrase pay} {castDurationPhrase dur}"
+private def avoidedClause (cardName : String) : TextEffect → String
+  | .putInto obj dest => putIntoClause cardName obj dest
+  | _ => ""
 
-private def exileInsteadSentence (cardName : String) (obj : ObjectRef) (zone : PrintedZone) : String :=
-  s!"{capitalizeAscii (exileInsteadClause cardName obj zone)}."
+private def replacementClause (cardName : String) : TextEffect → String
+  | .exile obj => exileClause cardName obj
+  | _ => ""
 
-private def castSentence (cardName : String) (what : List ObjectRef) (pay : CastPayment)
-    (dur : CastDuration) : String :=
-  s!"{capitalizeAscii (castClause cardName what pay dur)}."
+private def insteadOfClause (cardName : String) (avoided done : List TextEffect) : String :=
+  let replacement := String.intercalate " " (done.map (replacementClause cardName))
+  let original := String.intercalate " " (avoided.map (avoidedClause cardName))
+  s!"{replacement} instead of {original}"
+
+private def mannerPhrase : CastManner → String
+  | .withoutPayingManaCost => "without paying its mana cost"
+
+private def mayCastSoClause (cardName : String) (who : List PlayerRef) (what : List ObjectRef)
+    (how : List CastManner) : String :=
+  let actor := String.intercalate " and " (who.map playerPhrase)
+  let obj := joinPhrases cardName false what
+  let pay := String.intercalate " " (how.map mannerPhrase)
+  s!"{actor} may cast {obj} {pay}"
+
+private def remainsClause (cardName : String) (obj : List ObjectRef) (state : List ZoneWord) : String :=
+  s!"{joinPhrases cardName false obj} remains {zonePhrase cardName state}"
+
+private def durationAction (cardName : String) : TextEffect → String
+  | .mayCastSo who what how => mayCastSoClause cardName who what how
+  | _ => ""
+
+private def durationCond (cardName : String) : TextEffect → String
+  | .remains obj state => remainsClause cardName obj state
+  | _ => ""
+
+private def asLongAsClause (cardName : String) (action cond : List TextEffect) : String :=
+  let act := String.intercalate " " (action.map (durationAction cardName))
+  let while_ := String.intercalate " " (cond.map (durationCond cardName))
+  s!"{act} for as long as {while_}"
+
+private def putIntoSentence (cardName : String) (obj : List ObjectRef) (dest : List ZoneWord) : String :=
+  s!"Put {joinPhrases cardName false obj} into {zonePhrase cardName dest}."
+
+private def exileSentence (cardName : String) (obj : List ObjectRef) : String :=
+  s!"{capitalizeAscii (exileClause cardName obj)}."
+
+private def insteadOfSentence (cardName : String) (avoided done : List TextEffect) : String :=
+  s!"{capitalizeAscii (insteadOfClause cardName avoided done)}."
+
+private def mayCastSoSentence (cardName : String) (who : List PlayerRef) (what : List ObjectRef)
+    (how : List CastManner) : String :=
+  s!"{capitalizeAscii (mayCastSoClause cardName who what how)}."
+
+private def remainsSentence (cardName : String) (obj : List ObjectRef) (state : List ZoneWord) : String :=
+  s!"{capitalizeAscii (remainsClause cardName obj state)}."
+
+private def asLongAsSentence (cardName : String) (action cond : List TextEffect) : String :=
+  s!"{capitalizeAscii (asLongAsClause cardName action cond)}."
 
 /-- An action inside `.may`, without the actor and without a final period. -/
 private def optionalAction (cardName : String) : TextEffect → String
   | .attachTo what dest => attachClause cardName what dest
   | .untap targets => s!"untap {joinTargets (targets.map (objectPhrase cardName false))}"
-  | .cast what pay dur => castClause cardName what pay dur
   | _ => ""
 
 private def mayClause (cardName : String) (who : List PlayerRef) (effects : List TextEffect) : String :=
@@ -394,14 +455,27 @@ private def isClause (cardName : String) : TextCondition → String
 private def thenClause (cardName : String) : TextEffect → String
   | .may who es => mayClause cardName who es
   | .attachTo what dest => attachClause cardName what dest
-  | .exileInstead obj zone => exileInsteadClause cardName obj zone
+  | .insteadOf avoided done => insteadOfClause cardName avoided done
   | _ => ""
+
+/-- `.asLongAs` prints as its own sentence after the “If …” sentence. -/
+private def followsIf : TextEffect → Bool
+  | .asLongAs _ _ => true
+  | _ => false
 
 private def ifSentence (cardName : String) (conds : List TextCondition)
     (effects : List TextEffect) : String :=
   let cond := String.intercalate " and " (conds.map (isClause cardName))
-  let body := String.intercalate " " (effects.map (thenClause cardName))
-  s!"If {cond}, {body}."
+  let inline := effects.filter fun e => not (followsIf e)
+  let trailing := effects.filter followsIf
+  let body := String.intercalate " " (inline.map (thenClause cardName))
+  let head :=
+    if inline.isEmpty then s!"If {cond}." else s!"If {cond}, {body}."
+  let rest := trailing.map fun e =>
+    match e with
+    | .asLongAs action dur => asLongAsSentence cardName action dur
+    | _ => ""
+  String.intercalate " " (head :: rest.filter (· != ""))
 
 /-- “put a +1/+1 counter on this creature”. -/
 private def putCounterClause (cardName : String) (n : Nat) (kind : CounterKind)
@@ -509,9 +583,13 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .putCounter n kind objects =>
     some s!"{capitalizeAscii (putCounterClause cardName n kind objects)}."
   | .counter targets => some (counterSentence cardName targets)
-  | .exileInstead obj zone => some (exileInsteadSentence cardName obj zone)
+  | .putInto obj dest => some (putIntoSentence cardName obj dest)
+  | .exile obj => some (exileSentence cardName obj)
+  | .insteadOf avoided done => some (insteadOfSentence cardName avoided done)
+  | .mayCastSo who what how => some (mayCastSoSentence cardName who what how)
+  | .remains obj state => some (remainsSentence cardName obj state)
+  | .asLongAs action dur => some (asLongAsSentence cardName action dur)
   | .discard n => some (discardSentence n)
-  | .cast what pay dur => some (castSentence cardName what pay dur)
   | .unlessPay actions who costs => some (unlessPaySentence cardName actions who costs)
   | .chooseMode n modes =>
     some <| String.intercalate "\n" <|
@@ -554,9 +632,13 @@ where
     | .putCounter n kind objects =>
       s!"{capitalizeAscii (putCounterClause cardName n kind objects)}."
     | .counter targets => counterSentence cardName targets
-    | .exileInstead obj zone => exileInsteadSentence cardName obj zone
+    | .putInto obj dest => putIntoSentence cardName obj dest
+    | .exile obj => exileSentence cardName obj
+    | .insteadOf avoided done => insteadOfSentence cardName avoided done
+    | .mayCastSo who what how => mayCastSoSentence cardName who what how
+    | .remains obj state => remainsSentence cardName obj state
+    | .asLongAs action dur => asLongAsSentence cardName action dur
     | .discard n => discardSentence n
-    | .cast what pay dur => castSentence cardName what pay dur
     | .unlessPay actions who costs => unlessPaySentence cardName actions who costs
     | .chooseMode n modes =>
       String.intercalate "\n" (chooseHeader n :: (modes.map go).map (s!"• {·}"))
@@ -591,10 +673,13 @@ private def textEffectToEffect : TextEffect → Option Effect
   | .sequence
       [.counter [.target [.spell]],
        .if
-         [.counteredThisWay [.permanent, .spell]]
-         [.exileInstead .it .ownersGraveyard],
-       .may [.you]
-         [.cast [.that, .card] .withoutManaCost .whileRemainsExiled]] =>
+         [.counteredThisWay [.permanentSpell]]
+         [.insteadOf
+            [.putInto [.it] [.graveyard, .belongingTo [.owner [.it]]]]
+            [.exile [.it]],
+          .asLongAs
+            [.mayCastSo [.you] [.thatCard] [.withoutPayingManaCost]]
+            [.remains [.it] [.exiled]]]] =>
     some Effect.counterExilePermanentMayCast
   | _ => none
 
@@ -841,10 +926,13 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 #guard textEffectSentence "" (.sequence [
     .counter [.target [.spell]],
     .if
-      [.counteredThisWay [.permanent, .spell]]
-      [.exileInstead .it .ownersGraveyard],
-    .may [.you]
-      [.cast [.that, .card] .withoutManaCost .whileRemainsExiled]]) ==
+      [.counteredThisWay [.permanentSpell]]
+      [.insteadOf
+         [.putInto [.it] [.graveyard, .belongingTo [.owner [.it]]]]
+         [.exile [.it]],
+       .asLongAs
+         [.mayCastSo [.you] [.thatCard] [.withoutPayingManaCost]]
+         [.remains [.it] [.exiled]]]]) ==
   "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled."
 
 end Mtg.Engine
