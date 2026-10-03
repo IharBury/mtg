@@ -84,6 +84,8 @@ private def parseCardSubtype (s : String) : Option CardSubtype :=
   | "soldier" => some .soldier
   | "halfling" => some .halfling
   | "rogue" => some .rogue
+  | "human" => some .human
+  | "cleric" => some .cleric
   | _ => none
 
 private def colorOfLetter : String → Option Color
@@ -473,13 +475,59 @@ private def parseGetForEachUntil (s : String) : Option TextEffect := do
   let each ← parseForEachSubject eachText
   return .getForEachUntil who [mod] each dur
 
-/-- `Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control.` -/
+private def parseOrdinalWord (s : String) : Option Nat :=
+  match s.trimAscii.copy.map Char.toLower with
+  | "first" => some 1
+  | "second" => some 2
+  | "third" => some 3
+  | "fourth" => some 4
+  | "fifth" => some 5
+  | other => other.toNat?
+
+/-- `you draw your second card each turn` is `[.drawCard [.you] [.ordinalEach 2 .turn]]`. -/
+private def parseDrawTrigger (s : String) : Option TriggerExpr := do
+  let (who, rest) ←
+    if let some rest := dropPrefixCI s "you draw your " then
+      some (([.you] : List PlayerRef), rest)
+    else if let some rest := dropPrefixCI s "an opponent draws their " then
+      some (([.opponent] : List PlayerRef), rest)
+    else
+      none
+  let (ordText, period) ← splitOnce " card each " rest
+  guard (period == "turn")
+  let n ← parseOrdinalWord ordText
+  return .drawCard who [.ordinalEach n .turn]
+
+private def parseWheneverTrigger (s : String) : Option TriggerExpr :=
+  match parseAttackTrigger s with
+  | some trig => some trig
+  | none => parseDrawTrigger s
+
+/-- `this creature` is `[.this, .cardType .creature]`. -/
+private def parseThisTyped (s : String) : Option (List ObjectRef) := do
+  let rest ← dropPrefixCI s "this "
+  let t ← parseCardType rest
+  return [.this, .cardType (TypeName.ofCard t)]
+
+/-- `put a +1/+1 counter on this creature`. -/
+private def parsePutCounter (s : String) : Option TextEffect := do
+  let rest ← dropPrefixCI s "put a +1/+1 counter on "
+  let objs ← parseThisTyped rest
+  return .putCounter 1 .plusOnePlusOne objs
+
+private def parseWheneverEffect (s : String) : Option TextEffect :=
+  match parseGetForEachUntil s with
+  | some effect => some effect
+  | none => parsePutCounter s
+
+/-- `Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control.`
+`Whenever you draw your second card each turn, put a +1/+1 counter on this creature.` -/
 private def parseWhenever (line : String) : Option TextEffect := do
   let line := stripTrailingDot (stripParens line)
   let rest ← dropPrefixCI line "Whenever "
   let (trigText, effectText) ← splitOnce ", " rest
-  let trig ← parseAttackTrigger trigText
-  let effect ← parseGetForEachUntil effectText
+  let trig ← parseWheneverTrigger trigText
+  let effect ← parseWheneverEffect effectText
   return .whenever [trig] [effect]
 
 /-- `{short name} enters`, where the short name is the card name before a comma. -/
@@ -713,6 +761,8 @@ instructions in that text box. `Tap one or two target …` becomes `.tap`.
 `.dealDamage` with `.thisCardName` when the subject is the card’s name.
 `Whenever this creature attacks, it gets … for each other creature you control`
 becomes `.whenever` with `.attack` and `getForEachUntil`.
+`Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
+becomes `.whenever` with `.drawCard` and `.putCounter`.
 `When {name} enters, draw a card.` becomes `.when` with `.enter` and `.draw`.
 `Scry N.` becomes `.scry`.
 `Untap target creature you control. It gets … If it's a Dwarf, you may attach
@@ -777,6 +827,12 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     [.attack [.this, .cardType .creature] []]
     [.getForEachUntil [.it] [.plusPowerToughness 1 1]
       [.other, .cardType .creature, .controlledBy .you] .endOfTurn])
+
+#guard parseWhenever
+    "Whenever you draw your second card each turn, put a +1/+1 counter on this creature." ==
+  some (.whenever
+    [.drawCard [.you] [.ordinalEach 2 .turn]]
+    [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]])
 
 #guard parseSequence
     "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it." ==
