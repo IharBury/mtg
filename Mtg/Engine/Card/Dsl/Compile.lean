@@ -263,12 +263,25 @@ private def drawWatchPhrase (who : List PlayerRef) : DrawWatch → String
   | .ordinalEach n period =>
     s!"{drawPossessive who} {ordinalWord n} card each {eachPeriodPhrase period}"
 
+/-- Subject of `.creatureAttack`. The event supplies “creature”, so `who`
+does not store `.cardType .creature`. Control phrases follow the noun
+(`creature you control`). -/
+private def creatureAttackSubject (cardName : String) (who : List ObjectRef) : String :=
+  let (before, after) := who.span fun r =>
+    match r with
+    | .controlledBy _ => false
+    | _ => true
+  let pre := joinPhrases cardName false before
+  let post := joinPhrases cardName false after
+  let noun := if pre.isEmpty then "creature" else s!"{pre} creature"
+  if post.isEmpty then noun else s!"{noun} {post}"
+
 private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
-  | .permanentAttack who restrictions =>
+  | .creatureAttack who restrictions =>
     let extra :=
       if restrictions.isEmpty then ""
       else s!" {joinPhrases cardName false restrictions}"
-    s!"{joinPhrases cardName false who} attacks{extra}"
+    s!"{creatureAttackSubject cardName who} attacks{extra}"
   | .permanentEnter who =>
     s!"{joinPhrases cardName false who} enters"
   | .drawCard who which =>
@@ -500,7 +513,7 @@ private def costsToActivation (costs : List PrintedCost) : ActivationCost :=
 /-- Map `.whenever` and `.when` onto a triggered ability the engine already resolves. -/
 private def textEffectToTriggered : TextEffect → Option TriggeredAbility
   | .whenever
-      [.permanentAttack [.this, .cardType .creature] []]
+      [.creatureAttack [.this] []]
       [.getForEachUntil [.it] [.plusPowerToughness 1 1]
         [.other, .cardType .creature, .controlledBy .you] .endOfTurn] =>
     some .onAttackPumpForEachOtherCreature
@@ -660,7 +673,7 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
   "Magnificent End deals 5 damage to target creature."
 
 #guard textEffectSentence "Eagle of the Great Shelf" (.whenever
-    [.permanentAttack [.this, .cardType .creature] []]
+    [.creatureAttack [.this] []]
     [getForEachUntil [.it] [.plusPowerToughness (+1) (+1)]
       [.other, .cardType .creature, .controlledBy .you] .endOfTurn]) ==
   "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control."

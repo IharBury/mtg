@@ -155,12 +155,13 @@ inductive DrawWatch where
   deriving Repr, BEq
 
 /-- One event in `.whenever` or `.when`.
-`[.permanentAttack [.this, .cardType .creature] []]` is “this creature attacks”.
+`[.creatureAttack [.this] []]` is “this creature attacks”.
+The creature type is the event, so `who` does not repeat `.cardType .creature`.
 The second list is a further restriction on that attack; empty means any
 attack. `[.permanentEnter [.thisCardName]]` is “{name} enters”.
 `[.drawCard [.you] [.ordinalEach 2 .turn]]` is “you draw your second card each turn”. -/
 inductive TriggerExpr where
-  | permanentAttack (who : List ObjectRef) (restrictions : List ObjectRef)
+  | creatureAttack (who : List ObjectRef) (restrictions : List ObjectRef)
   | permanentEnter (who : List ObjectRef)
   | drawCard (who : List PlayerRef) (which : List DrawWatch)
   deriving Repr, BEq
@@ -215,7 +216,7 @@ inductive TextEffect where
   /-- `subjects` deal `n` damage to `targets`. -/
   | dealDamage (subjects : List ObjectRef) (n : Nat) (targets : List ObjectRef)
   /-- When `events` happen, follow `effects`.
-  `[.permanentAttack [.this, .cardType .creature] []]` is “this creature attacks”. -/
+  `[.creatureAttack [.this] []]` is “this creature attacks”. -/
   | whenever (events : List TriggerExpr) (effects : List TextEffect)
   /-- When `events` happen, follow `effects`.
   `[.permanentEnter [.thisCardName]]` with `[.draw 1]` is “When {name} enters, draw a card”. -/
