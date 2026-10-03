@@ -246,8 +246,21 @@ private def drawVerb (who : List PlayerRef) : String :=
 private def drawPossessive (who : List PlayerRef) : String :=
   if who == [.you] then "your" else "their"
 
-private def drawOrdinalPhrase (who : List PlayerRef) : DrawOrdinal → String
-  | .secondEachTurn => s!"{drawPossessive who} second card each turn"
+private def ordinalWord (n : Nat) : String :=
+  match n with
+  | 1 => "first"
+  | 2 => "second"
+  | 3 => "third"
+  | 4 => "fourth"
+  | 5 => "fifth"
+  | n => toString n
+
+private def eachPeriodPhrase : EachPeriod → String
+  | .turn => "turn"
+
+private def drawWatchPhrase (who : List PlayerRef) : DrawWatch → String
+  | .ordinalEach n period =>
+    s!"{drawPossessive who} {ordinalWord n} card each {eachPeriodPhrase period}"
 
 private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
   | .attack who restrictions =>
@@ -260,7 +273,8 @@ private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
     s!"{name} enters"
   | .draw who which =>
     let actor := String.intercalate " and " (who.map playerPhrase)
-    s!"{actor} {drawVerb who} {drawOrdinalPhrase who which}"
+    let watched := String.intercalate " " (which.map (drawWatchPhrase who))
+    s!"{actor} {drawVerb who} {watched}"
 
 private def tapSentence (cardName : String) (ts : List ObjectRef) : String :=
   s!"Tap {joinTargets (ts.map (objectPhrase cardName false))}."
@@ -501,7 +515,7 @@ private def textEffectToTriggered : TextEffect → Option TriggeredAbility
       [.draw n] =>
     some (.onEnterDraw n)
   | .whenever
-      [.draw [.you] .secondEachTurn]
+      [.draw [.you] [.ordinalEach 2 .turn]]
       [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]] =>
     some .onDrawSecondPlusOne
   | _ => none
@@ -675,7 +689,7 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 #guard textEffectSentence "Take a Glance" (.scry 2) == "Scry 2."
 
 #guard textEffectSentence "Lakeshore Apothecary" (.whenever
-    [.draw [.you] .secondEachTurn]
+    [.draw [.you] [.ordinalEach 2 .turn]]
     [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]]) ==
   "Whenever you draw your second card each turn, put a +1/+1 counter on this creature."
 

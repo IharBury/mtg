@@ -153,21 +153,26 @@ inductive PrintedName where
   | thisCardName
   deriving Repr, BEq
 
-/-- Which draw a trigger watches.
-`.secondEachTurn` is “your/their second card each turn”. -/
-inductive DrawOrdinal where
-  | secondEachTurn
+/-- The period in “each turn”. `.turn` is one turn. -/
+inductive EachPeriod where
+  | turn
+  deriving Repr, BEq
+
+/-- One restriction on which draw a trigger watches.
+`.ordinalEach 2 .turn` is “the second card each turn”. -/
+inductive DrawWatch where
+  | ordinalEach (n : Nat) (period : EachPeriod)
   deriving Repr, BEq
 
 /-- One event in `.whenever` or `.when`.
 `[.attack [.this, .cardType .creature] []]` is “this creature attacks”.
 The second list is a further restriction on that attack; empty means any
 attack. `[.enter [.thisCardName]]` is “{name} enters”.
-`[.draw [.you] .secondEachTurn]` is “you draw your second card each turn”. -/
+`[.draw [.you] [.ordinalEach 2 .turn]]` is “you draw your second card each turn”. -/
 inductive TriggerExpr where
   | attack (who : List ObjectRef) (restrictions : List ObjectRef)
   | enter (who : List PrintedName)
-  | draw (who : List PlayerRef) (which : DrawOrdinal)
+  | draw (who : List PlayerRef) (which : List DrawWatch)
   deriving Repr, BEq
 
 /-- A printed power and toughness change. `.plusPowerToughness +1 +1` is `+1/+1`. -/

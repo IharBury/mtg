@@ -475,13 +475,28 @@ private def parseGetForEachUntil (s : String) : Option TextEffect := do
   let each ← parseForEachSubject eachText
   return .getForEachUntil who [mod] each dur
 
-/-- `you draw your second card each turn`. -/
-private def parseDrawTrigger (s : String) : Option TriggerExpr :=
+private def parseOrdinalWord (s : String) : Option Nat :=
   match s.trimAscii.copy.map Char.toLower with
-  | "you draw your second card each turn" => some (.draw [.you] .secondEachTurn)
-  | "an opponent draws their second card each turn" =>
-    some (.draw [.opponent] .secondEachTurn)
-  | _ => none
+  | "first" => some 1
+  | "second" => some 2
+  | "third" => some 3
+  | "fourth" => some 4
+  | "fifth" => some 5
+  | other => other.toNat?
+
+/-- `you draw your second card each turn` is `[.draw [.you] [.ordinalEach 2 .turn]]`. -/
+private def parseDrawTrigger (s : String) : Option TriggerExpr := do
+  let (who, rest) ←
+    if let some rest := dropPrefixCI s "you draw your " then
+      some (([.you] : List PlayerRef), rest)
+    else if let some rest := dropPrefixCI s "an opponent draws their " then
+      some (([.opponent] : List PlayerRef), rest)
+    else
+      none
+  let (ordText, period) ← splitOnce " card each " rest
+  guard (period == "turn")
+  let n ← parseOrdinalWord ordText
+  return .draw who [.ordinalEach n .turn]
 
 private def parseWheneverTrigger (s : String) : Option TriggerExpr :=
   match parseAttackTrigger s with
@@ -816,7 +831,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
 #guard parseWhenever
     "Whenever you draw your second card each turn, put a +1/+1 counter on this creature." ==
   some (.whenever
-    [.draw [.you] .secondEachTurn]
+    [.draw [.you] [.ordinalEach 2 .turn]]
     [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]])
 
 #guard parseSequence
