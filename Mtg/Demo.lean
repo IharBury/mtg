@@ -4180,7 +4180,7 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
   | .error _ => false
 
 #guard
-  match applyLoggedAction (Tests.skipTo Tests.afterDraw .beginningOfCombat 80)
+  match applyLoggedAction (skipTo Tests.afterDraw .beginningOfCombat 80)
       "attack" ["step"] "attack step" with
   | .ok (g', cmds) =>
     cmds == #["pass"] &&
@@ -4655,7 +4655,7 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
 -- `main phase` only passes for the issuer; `noattack` waits until that
 -- player is declaring attackers (after the opponent passes).
 #guard
-  let g0 := Tests.passBoth (Tests.skipTo Tests.ogreVsBears .precombatMain 80)
+  let g0 := passBoth (skipTo Tests.ogreVsBears .precombatMain 80)
   match applyLoggedAction g0 "main" ["phase"] "main phase" with
   | .ok (g1, cmds) =>
     cmds == #["pass"] &&
