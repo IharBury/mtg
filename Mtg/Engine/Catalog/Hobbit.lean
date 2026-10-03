@@ -382,11 +382,41 @@ def confusticateAndBebother : TraditionalCardDefinition := .card [
     c.spellModes == #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2] &&
     c.oracleText == "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card."
 
-def ravenhillFlock : CardDef :=
-  creature "Ravenhill Flock" (ManaCost.ofGenericAndColor 3 .blue) #["Bird"] 1 2
-    (oracleText := "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onDrawPlusOne])
+def ravenhillFlock : TraditionalCardDefinition := .card [
+  .name "Ravenhill Flock",
+  .manaCost [.generic 3, .mono .blue],
+  .type .creature,
+  .subtype .bird,
+  .power 1,
+  .toughness 2,
+  .textBox [
+    .keyword .flying,
+    .whenever
+      [.drawCard [.you] []]
+      [.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Ravenhill Flock {3}{U}",
+  "Creature — Bird",
+  "1/2",
+  "Flying",
+  "Whenever you draw a card, put a +1/+1 counter on this creature."
+]) == some ravenhillFlock
+
+#guard
+  let c := ravenhillFlock.toCardDef
+  c.name == "Ravenhill Flock" &&
+    c.types == #[.creature] &&
+    c.subtypes == #["Bird"] &&
+    c.power == some 1 &&
+    c.toughness == some 2 &&
+    c.manaCost == ManaCost.ofGenericAndColor 3 .blue &&
+    c.keywords == Keyword.flying &&
+    c.spellEffect == none &&
+    c.triggeredAbilities == #[.onDrawPlusOne] &&
+    c.oracleText == "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature."
 
 def thranduilsDecree : CardDef :=
   instant "Thranduil's Decree" (ManaCost.ofGenericAndColors 4 [.blue, .blue])
@@ -1535,8 +1565,7 @@ def hobbitCards : Array CardDef :=
   -- `++` compiles a run of DSL cards into `CardDef`s.
   (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
      magnificentEnd, eagleOfTheGreatShelf, vowToErebor, bilboBagginsBurglar,
-     lakeshoreApothecary, confusticateAndBebother] ++ #[
-  ravenhillFlock,
+     lakeshoreApothecary, confusticateAndBebother, ravenhillFlock] ++ #[
   thranduilsDecree,
   bilboLuckwearer,
   uneasyPartings,

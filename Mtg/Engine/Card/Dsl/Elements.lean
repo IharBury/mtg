@@ -167,6 +167,7 @@ inductive DrawWatch where
 The creature type is the event, so `who` does not repeat `.cardType .creature`.
 The second list is a further restriction on that attack; empty means any
 attack. `[.permanentEnter [.thisCardName]]` is “{name} enters”.
+`[.drawCard [.you] []]` is “you draw a card”. An empty watch list means any card.
 `[.drawCard [.you] [.ordinalEach 2 .turn]]` is “you draw your second card each turn”. -/
 inductive TriggerExpr where
   | creatureAttack (who : List ObjectRef) (restrictions : List ObjectRef)
