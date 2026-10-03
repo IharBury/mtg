@@ -459,10 +459,10 @@ def bilboLuckwearer : TraditionalCardDefinition := .card [
   .power 1,
   .toughness 1,
   .textBox [
-    .cantBeBlocked [.thisCardName],
+    .cannot (.block [] [.thisCardName]),
     .whenever
-      [.dealsCombatDamage [.thisCardName] [.player]]
-      [.sequence [.draw 1, .discard 1]]
+      [.dealSuchDamage [.thisCardName] [.player] [.combat]]
+      [.draw 1, .discard 1]
   ],
   .alternative [
     .name "Burglar's Plot",
@@ -471,7 +471,7 @@ def bilboLuckwearer : TraditionalCardDefinition := .card [
     .subtype .adventure,
     .textBox [
       .exchangeControl
-        [.targets (.exactly 2) [.nonland, .permanent, .sharingCardType]]
+        [.targetsWhich 2 [.nonland, .permanent] [.sharingCardType]]
     ]
   ]
 ]

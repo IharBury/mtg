@@ -21,8 +21,8 @@ pays is a `.unlessPay` in `.textBox`, and a modal spell is a
 `.insteadOf`. A permission that lasts while a condition holds is
 `.asLongAs`. “A permanent spell is countered this way” is
 `.counteredThisWay [.permanentSpell]` inside `.if`.
-`{name} can't be blocked` is `.cantBeBlocked`. Combat damage is
-`.dealsCombatDamage` inside `.whenever`. Exchanging control is
+`{name} can't be blocked` is `.cannot (.block [] [.thisCardName])`.
+Combat damage is `.dealSuchDamage` inside `.whenever`. Exchanging control is
 `.exchangeControl`.
 -/
 
@@ -111,10 +111,8 @@ inductive TypeName where
   | equipment
   deriving Repr, BEq, DecidableEq
 
-/-- How many objects one targeting phrase names.
-`.exactly 2` is “two”. `.or 1 2` is “one or two”. -/
+/-- How many objects one targeting phrase names. `.or 1 2` is “one or two”. -/
 inductive TargetCount where
-  | exactly (n : Nat)
   | or (lo hi : Nat)
   deriving Repr, BEq
 
@@ -134,8 +132,8 @@ disjunction, and the other words are a conjunction.
 `.thisCardName` prints this card’s name, shortened before a comma
 (`Bilbo` on Bilbo, Luckwearer). `.player` is “a player”.
 `.nonland` is “nonland”. `.permanent` is “permanent”.
-`.sharingCardType` is “that share a card type”.
-`.targets (.exactly 2) [.nonland, .permanent, .sharingCardType]` is
+`.sharingCardType` is “share a card type”.
+`.targetsWhich 2 [.nonland, .permanent] [.sharingCardType]` is
 “two target nonland permanents that share a card type”.
 `.other` excludes this object. -/
 inductive ObjectRef where
@@ -159,6 +157,10 @@ inductive ObjectRef where
   | oneOf (qs : List ObjectRef)
   | target (qs : List ObjectRef)
   | targets (count : TargetCount) (qs : List ObjectRef)
+  /-- `n` targets described by `qs`, restricted by `which`.
+  `.targetsWhich 2 [.nonland, .permanent] [.sharingCardType]` is
+  “two target nonland permanents that share a card type”. -/
+  | targetsWhich (n : Nat) (qs : List ObjectRef) (which : List ObjectRef)
   deriving Repr, BEq
 
 /-- Who pays in `.unlessPay`. `.controller .innerTarget` is “its controller”. -/
@@ -181,6 +183,11 @@ inductive EachPeriod where
   | turn
   deriving Repr, BEq
 
+/-- A kind of damage in `.dealSuchDamage`. `.combat` is combat damage. -/
+inductive DamageKind where
+  | combat
+  deriving Repr, BEq, DecidableEq
+
 /-- One restriction on which draw a trigger watches.
 `.ordinalEach 2 .turn` is “the second card each turn”. -/
 inductive DrawWatch where
@@ -194,13 +201,13 @@ The second list is a further restriction on that attack; empty means any
 attack. `[.permanentEnter [.thisCardName]]` is “{name} enters”.
 `[.drawCard [.you] []]` is “you draw a card”. An empty watch list means any card.
 `[.drawCard [.you] [.ordinalEach 2 .turn]]` is “you draw your second card each turn”.
-`[.dealsCombatDamage [.thisCardName] [.player]]` is
+`[.dealSuchDamage [.thisCardName] [.player] [.combat]]` is
 “{name} deals combat damage to a player”. -/
 inductive TriggerExpr where
   | creatureAttack (who : List ObjectRef) (restrictions : List ObjectRef)
   | permanentEnter (who : List ObjectRef)
   | drawCard (who : List PlayerRef) (which : List DrawWatch)
-  | dealsCombatDamage (who : List ObjectRef) (toWhom : List ObjectRef)
+  | dealSuchDamage (who : List ObjectRef) (toWhom : List ObjectRef) (kinds : List DamageKind)
   deriving Repr, BEq
 
 /-- A printed power and toughness change. `.plusPowerToughness 1 1` is `+1/+1`. -/
@@ -246,6 +253,13 @@ inductive ZoneWord where
 `.withoutPayingManaCost` is “without paying its mana cost”. -/
 inductive CastManner where
   | withoutPayingManaCost
+  deriving Repr, BEq
+
+/-- What `.cannot` forbids.
+`.block [] [.thisCardName]` is “{name} can't be blocked”.
+The first list names who could block; empty means any blocker. -/
+inductive CannotExpr where
+  | block (byWhom : List ObjectRef) (who : List ObjectRef)
   deriving Repr, BEq
 
 /-- One instruction in a `.textBox`. -/
@@ -334,10 +348,10 @@ inductive TextEffect where
   “Draw two cards, then discard a card.” -/
   | chooseMode (n : Nat) (modes : List TextEffect)
   /-- `{who} can't be blocked`.
-  `.cantBeBlocked [.thisCardName]` is “Bilbo can't be blocked”. -/
-  | cantBeBlocked (who : List ObjectRef)
+  `.cannot (.block [] [.thisCardName])` is “Bilbo can't be blocked”. -/
+  | cannot (what : CannotExpr)
   /-- Exchange control of `objects`.
-  `.exchangeControl [.targets (.exactly 2) [.nonland, .permanent, .sharingCardType]]` is
+  `.exchangeControl [.targetsWhich 2 [.nonland, .permanent] [.sharingCardType]]` is
   “Exchange control of two target nonland permanents that share a card type”. -/
   | exchangeControl (objects : List ObjectRef)
   deriving Repr, BEq
