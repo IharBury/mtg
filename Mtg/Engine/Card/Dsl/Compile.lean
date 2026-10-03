@@ -485,11 +485,13 @@ private def putCounterClause (cardName : String) (n : Nat) (kind : CounterKind)
     | .plusOnePlusOne => plusOnePlusOneCountersPhrase n
   s!"put {counters} on {joinPhrases cardName false objects}"
 
-/-- “it gets +1/+1 until end of turn for each other creature you control”. -/
+/-- “it gets +1/+1 until end of turn for each other creature you control”.
+`[.this, .cardType .creature]` is the creature the trigger already named. -/
 private def getForEachClause (cardName : String) (who : List ObjectRef) (mods : List StatMod)
     (each : List ObjectRef) (dur : Duration) : String :=
-  let subject := joinPhrases cardName false who
-  let verb := if who.length == 1 then "gets" else "get"
+  let namedAgain := who == [.this, .cardType .creature] || who == [.it]
+  let subject := if namedAgain then "it" else joinPhrases cardName false who
+  let verb := if namedAgain || who.length == 1 then "gets" else "get"
   let bonus := String.intercalate " and " (mods.map statModPhrase)
   s!"{subject} {verb} {bonus} {durationPhrase dur} for each {joinPhrases cardName false each}"
 
@@ -703,7 +705,7 @@ private def costsToActivation (costs : List PrintedCost) : ActivationCost :=
 private def textEffectToTriggered : TextEffect → Option TriggeredAbility
   | .whenever
       [.creatureAttack [.this] []]
-      [.getForEachUntil [.it] [.plusPowerToughness 1 1]
+      [.getForEachUntil [.this, .cardType .creature] [.plusPowerToughness 1 1]
         [.other, .cardType .creature, .controlledBy .you] .endOfTurn] =>
     some .onAttackPumpForEachOtherCreature
   | .when
@@ -875,7 +877,7 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 
 #guard textEffectSentence "Eagle of the Great Shelf" (.whenever
     [.creatureAttack [.this] []]
-    [getForEachUntil [.it] [.plusPowerToughness (+1) (+1)]
+    [getForEachUntil [.this, .cardType .creature] [.plusPowerToughness (+1) (+1)]
       [.other, .cardType .creature, .controlledBy .you] .endOfTurn]) ==
   "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control."
 

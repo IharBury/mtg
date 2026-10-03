@@ -262,7 +262,8 @@ inductive TextEffect where
   /-- Look at the top `n` cards of your library (`Scry 2`). -/
   | scry (n : Nat)
   /-- `who` gets `mods` until `dur` for each object matching `each`.
-  `[.it]` is “it”. `[.other, .cardType .creature, .controlledBy .you]` is
+  `[.this, .cardType .creature]` is “it” after “this creature attacks”.
+  `[.other, .cardType .creature, .controlledBy .you]` is
   “each other creature you control”. -/
   | getForEachUntil (who : List ObjectRef) (mods : List StatMod)
       (each : List ObjectRef) (dur : Duration)
@@ -317,7 +318,8 @@ inductive TextEffect where
   | chooseMode (n : Nat) (modes : List TextEffect)
   deriving Repr, BEq
 
-/-- `getForEachUntil [.it] mods each dur` is “it gets … until … for each …”.
+/-- `getForEachUntil [.this, .cardType .creature] mods each dur` is
+“it gets … until … for each …”.
 Written without a leading dot so it can sit in a `.whenever` effect list. -/
 def getForEachUntil (who : List ObjectRef) (mods : List StatMod)
     (each : List ObjectRef) (dur : Duration) : TextEffect :=

@@ -451,9 +451,10 @@ private def parseAttackTrigger (s : String) : Option TriggerExpr := do
   let restrictions ← parseAttackRestrictions rest
   return .creatureAttack who restrictions
 
+/-- `it` in “it gets … for each” is this creature, already named by the trigger. -/
 private def parseGetsSubject (s : String) : Option (List ObjectRef) :=
   match s.trimAscii.copy.map Char.toLower with
-  | "it" => some [.it]
+  | "it" => some [.this, .cardType .creature]
   | _ => none
 
 /-- `other creature you control` is `[.other, .cardType .creature, .controlledBy .you]`. -/
@@ -934,7 +935,8 @@ instructions in that text box. `Tap one or two target …` becomes `.tap`.
 `.costLessToCastIf` with `[.this, .spell]`. `{Name} deals N damage to target …` becomes
 `.dealDamage` with `.thisCardName` when the subject is the card’s name.
 `Whenever this creature attacks, it gets … for each other creature you control`
-becomes `.whenever` with `.creatureAttack` and `getForEachUntil`.
+becomes `.whenever` with `.creatureAttack` and `getForEachUntil` on
+`[.this, .cardType .creature]`.
 `Whenever you draw a card, put a +1/+1 counter on this creature.`
 becomes `.whenever` with `.drawCard` and an empty watch list.
 `Whenever you draw your second card each turn, put a +1/+1 counter on this creature.`
@@ -1011,7 +1013,7 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
     "Whenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control." ==
   some (.whenever
     [.creatureAttack [.this] []]
-    [.getForEachUntil [.it] [.plusPowerToughness 1 1]
+    [.getForEachUntil [.this, .cardType .creature] [.plusPowerToughness 1 1]
       [.other, .cardType .creature, .controlledBy .you] .endOfTurn])
 
 #guard parseWhenever

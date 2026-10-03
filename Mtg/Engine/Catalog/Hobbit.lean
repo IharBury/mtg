@@ -198,7 +198,7 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
     .keyword .flying,
     .whenever
       [.creatureAttack [.this] []]
-      [.getForEachUntil [.it] [.plusPowerToughness (+1) (+1)] [.other, .cardType .creature, .controlledBy .you] .endOfTurn]
+      [.getForEachUntil [.this, .cardType .creature] [.plusPowerToughness (+1) (+1)] [.other, .cardType .creature, .controlledBy .you] .endOfTurn]
   ]
 ]
 
