@@ -200,7 +200,8 @@ private def shortCardName (cardName : String) : String :=
   | [] => cardName
 
 /-- Printed word for one `ObjectRef`. `plural` pluralizes a card type
-(`creature` / `creatures`). `.thisCardName` prints the legendary short name. -/
+(`creature` / `creatures`). `.thisCardName` prints the legendary short name.
+`.oneOf` adds an indefinite article (`an Equipment you control`). -/
 private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → String
   | .cardType t =>
     if plural then
@@ -221,6 +222,9 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .it => "it"
   | .spell => if plural then "spells" else "spell"
   | .thisCardName => shortCardName cardName
+  | .oneOf qs =>
+    let noun := String.intercalate " " (qs.map (objectPhrase cardName false))
+    s!"{indefinite noun} {noun}"
   | .target qs =>
     s!"target {String.intercalate " " (qs.map (objectPhrase cardName false))}"
   | .targets count qs =>
@@ -315,16 +319,10 @@ private def dealDamageSentence (cardName : String) (subjects : List ObjectRef)
   let source := String.intercalate " and " (subjects.map (objectPhrase cardName false))
   s!"{source} deals {n} damage to {joinTargets (targets.map (objectPhrase cardName false))}."
 
-private def objectExprPhrase (cardName : String) : ObjectExpr → String
-  | .it => "it"
-  | .oneOf qs =>
-    let noun := joinPhrases cardName false qs
-    s!"{indefinite noun} {noun}"
+private def objectExprsPhrase (cardName : String) (xs : List ObjectRef) : String :=
+  String.intercalate " and " (xs.map (objectPhrase cardName false))
 
-private def objectExprsPhrase (cardName : String) (xs : List ObjectExpr) : String :=
-  String.intercalate " and " (xs.map (objectExprPhrase cardName))
-
-private def attachClause (cardName : String) (what dest : List ObjectExpr) : String :=
+private def attachClause (cardName : String) (what dest : List ObjectRef) : String :=
   s!"attach {objectExprsPhrase cardName what} to {objectExprsPhrase cardName dest}"
 
 /-- An action inside `.may`, without the actor and without a final period. -/

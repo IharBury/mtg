@@ -110,6 +110,7 @@ inductive TargetCount where
 /-- A reference to an object in rules text. A list is read in order: `.or` is a
 disjunction, and the other words are a conjunction.
 
+`.oneOf [.cardType .equipment, .controlledBy .you]` is “an Equipment you control”.
 `.target [.cardType .creature]` is “target creature”.
 `.targets (.or 1 2) [.cardType .creature]` is “one or two target creatures”.
 `[.this, .cardType .creature]` is “this creature”. `[.this, .spell]` is
@@ -127,6 +128,7 @@ inductive ObjectRef where
   | it
   | spell
   | thisCardName
+  | oneOf (qs : List ObjectRef)
   | target (qs : List ObjectRef)
   | targets (count : TargetCount) (qs : List ObjectRef)
   deriving Repr, BEq
@@ -200,14 +202,6 @@ inductive CastIf where
   | targeting (obj : ObjectRef) (qs : List ObjectRef)
   deriving Repr, BEq
 
-/-- An object named without the word “target”.
-`.oneOf [.cardType .equipment, .controlledBy .you]` is “an Equipment you control”.
-`.it` is the object named earlier. -/
-inductive ObjectExpr where
-  | oneOf (qs : List ObjectRef)
-  | it
-  deriving Repr, BEq
-
 /-- A condition in `.if`. `[.is [.it] [.cardSubtype .dwarf]]` is “it's a Dwarf”. -/
 inductive TextCondition where
   | is (subj : List ObjectRef) (qs : List ObjectRef)
@@ -254,8 +248,10 @@ inductive TextEffect where
   | «if» (conds : List TextCondition) (effects : List TextEffect)
   /-- `who` may do `effects` (`you may …`). -/
   | may (who : List PlayerRef) (effects : List TextEffect)
-  /-- Attach `what` to `dest`. -/
-  | attachTo (what dest : List ObjectExpr)
+  /-- Attach `what` to `dest`.
+  `[.oneOf [.cardType .equipment, .controlledBy .you]]` to `[.it]` is
+  “attach an Equipment you control to it”. -/
+  | attachTo (what dest : List ObjectRef)
   /-- Put `n` counters of `kind` on `objects`.
   `.putCounter 1 .plusOnePlusOne [.this, .cardType .creature]` is
   “put a +1/+1 counter on this creature”. -/
