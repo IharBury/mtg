@@ -230,7 +230,6 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .tapped => "tapped"
   | .this => "this"
   | .other => "other"
-  | .it => "it"
   | .thatTarget => "it"
   | .innerTarget => "it"
   | .spell => if plural then "spells" else "spell"
@@ -326,7 +325,7 @@ private def gainUntilSentence (cardName : String) (targets : List ObjectRef)
 private def getUntilSentence (cardName : String) (qs : List ObjectRef) (mods : List StatMod)
     (dur : Duration) : String :=
   let bonus := String.intercalate " and " (mods.map statModPhrase)
-  if qs == [.it] || qs == [.thatTarget] then
+  if qs == [.thatTarget] then
     s!"It gets {bonus} {durationPhrase dur}."
   else
     let subject := capitalizeAscii (joinPhrases cardName true qs)
@@ -511,7 +510,7 @@ private def putCounterClause (cardName : String) (n : Nat) (kind : CounterKind)
 `[.this, .cardType .creature]` is the creature the trigger already named. -/
 private def getForEachClause (cardName : String) (who : List ObjectRef) (mods : List StatMod)
     (each : List ObjectRef) (dur : Duration) : String :=
-  let namedAgain := who == [.this, .cardType .creature] || who == [.it]
+  let namedAgain := who == [.this, .cardType .creature]
   let subject := if namedAgain then "it" else joinPhrases cardName false who
   let verb := if namedAgain || who.length == 1 then "gets" else "get"
   let bonus := String.intercalate " and " (mods.map statModPhrase)
@@ -561,7 +560,7 @@ private def drawThenDiscardSentence (n d : Nat) : String :=
 private def payerPhrase (cardName : String) : Payer → String
   | .controller obj =>
     match obj with
-    | .it | .innerTarget => "its controller"
+    | .innerTarget => "its controller"
     | named => s!"{objectPhrase cardName false named}'s controller"
 
 /-- Lowercase action inside `.unlessPay` (`counter target spell`). -/
@@ -699,7 +698,7 @@ private def textEffectToEffect : TextEffect → Option Effect
        .if
          [.counteredThisWay [.permanentSpell]]
          [.insteadOf
-            [.putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.it]]]]
+            [.putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.thatTarget]]]]
             [.exile [.thatTarget]],
           .asLongAs
             [.remains [.thatExiled] [.exiled]]
@@ -966,7 +965,7 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
     .if
       [.counteredThisWay [.permanentSpell]]
       [.insteadOf
-         [.putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.it]]]]
+         [.putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.thatTarget]]]]
          [.exile [.thatTarget]],
        .asLongAs
          [.remains [.thatExiled] [.exiled]]
