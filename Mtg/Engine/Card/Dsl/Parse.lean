@@ -239,7 +239,7 @@ private def splitEnglishList (s : String) : List String :=
   let s := s.replace " and " ", "
   s.splitOn "," |>.map (·.trimAscii.copy) |>.filter (· != "")
 
-private def parseDisjunction (s : String) : Option (List ObjectQualifier) := do
+private def parseDisjunction (s : String) : Option (List ObjectRef) := do
   let parts := s.splitOn " or " |>.map (·.trimAscii.copy) |>.filter (· != "")
   match parts with
   | [] => none
@@ -248,9 +248,9 @@ private def parseDisjunction (s : String) : Option (List ObjectQualifier) := do
     return [.cardType (TypeName.ofCard t)]
   | many =>
     let ts ← many.mapM parseCardType
-    return [.or (ts.map (fun t => ObjectQualifier.cardType (TypeName.ofCard t)))]
+    return [.or (ts.map (fun t => ObjectRef.cardType (TypeName.ofCard t)))]
 
-private def parseNoun (noun : String) : Option (List ObjectQualifier) := do
+private def parseNoun (noun : String) : Option (List ObjectRef) := do
   let (core, who) :=
     if let some core := stripSuffixCI? noun " you control" then
       (core, some PlayerRef.you)
@@ -261,7 +261,7 @@ private def parseNoun (noun : String) : Option (List ObjectQualifier) := do
   let quals ← parseDisjunction (core.map Char.toLower)
   let tail :=
     match who with
-    | some p => [ObjectQualifier.controlledBy p]
+    | some p => [ObjectRef.controlledBy p]
     | none => []
   return quals ++ tail
 
@@ -274,7 +274,7 @@ private def singularize (s : String) : String :=
   let s := s.trimAscii.copy.map Char.toLower
   if s.endsWith "s" && s.length > 1 then (s.dropEnd 1).copy else s
 
-private def parsePluralDisjunction (s : String) : Option (List ObjectQualifier) := do
+private def parsePluralDisjunction (s : String) : Option (List ObjectRef) := do
   let parts := s.splitOn " or " |>.map (·.trimAscii.copy) |>.filter (· != "")
   match parts with
   | [] => none
@@ -283,9 +283,9 @@ private def parsePluralDisjunction (s : String) : Option (List ObjectQualifier) 
     return [.cardType (TypeName.ofCard t)]
   | many =>
     let ts ← many.mapM (fun w => parseCardType (singularize w))
-    return [.or (ts.map (fun t => ObjectQualifier.cardType (TypeName.ofCard t)))]
+    return [.or (ts.map (fun t => ObjectRef.cardType (TypeName.ofCard t)))]
 
-private def parseGetSubject (noun : String) : Option (List ObjectQualifier) := do
+private def parseGetSubject (noun : String) : Option (List ObjectRef) := do
   let (core, who) :=
     if let some core := stripSuffixCI? noun " you control" then
       (core, some PlayerRef.you)
@@ -296,7 +296,7 @@ private def parseGetSubject (noun : String) : Option (List ObjectQualifier) := d
   let quals ← parsePluralDisjunction core
   let tail :=
     match who with
-    | some p => [ObjectQualifier.controlledBy p]
+    | some p => [ObjectRef.controlledBy p]
     | none => []
   return quals ++ tail
 
@@ -384,14 +384,14 @@ private def parseTap (line : String) : Option TextEffect := do
   let quals ← parseGetSubject noun
   return .tap [.targets count quals]
 
-private def parseMaybeTappedNoun (noun : String) : Option (List ObjectQualifier) := do
+private def parseMaybeTappedNoun (noun : String) : Option (List ObjectRef) := do
   let (tapped, core) :=
     if let some core := dropPrefixCI noun "tapped " then
       (true, core)
     else
       (false, noun)
   let quals ← parseNoun core
-  return (if tapped then [ObjectQualifier.tapped] else []) ++ quals
+  return (if tapped then [ObjectRef.tapped] else []) ++ quals
 
 private def parseCastIf (s : String) : Option CastIf := do
   let rest ← dropPrefixCI s "it targets "
@@ -411,7 +411,7 @@ private def parseCostLess (line : String) : Option TextEffect := do
   let cond ← parseCastIf condText
   return .costLessToCastIf [.this, .spell] cost cond
 
-private def parseTargetExpr (s : String) : Option TargetExpr := do
+private def parseTarget (s : String) : Option ObjectRef := do
   let rest ← dropPrefixCI s "target "
   let qs ← parseMaybeTappedNoun rest
   return .target qs
@@ -423,17 +423,17 @@ private def parseDealDamage (cardName : String) (line : String) : Option TextEff
   let rest ← dropPrefixCI line s!"{cardName} deals "
   let (nText, tgtText) ← splitOnce " damage to " rest
   let n ← nText.toNat?
-  let tgt ← parseTargetExpr tgtText
+  let tgt ← parseTarget tgtText
   return .dealDamage [.thisCardName] n [tgt]
 
-private def parseAttackSubject (s : String) : Option (List ObjectQualifier) := do
+private def parseAttackSubject (s : String) : Option (List ObjectRef) := do
   if let some rest := dropPrefixCI s "this " then
     let t ← parseCardType rest
     return [.this, .cardType (TypeName.ofCard t)]
   else
     parseNoun s
 
-private def parseAttackRestrictions (s : String) : Option (List ObjectQualifier) :=
+private def parseAttackRestrictions (s : String) : Option (List ObjectRef) :=
   let s := s.trimAscii.copy
   if s.isEmpty then some [] else none
 
@@ -444,20 +444,20 @@ private def parseAttackTrigger (s : String) : Option TriggerExpr := do
   let restrictions ← parseAttackRestrictions rest
   return .attack who restrictions
 
-private def parseGetsSubject (s : String) : Option (List ConditionRef) :=
+private def parseGetsSubject (s : String) : Option (List ObjectRef) :=
   match s.trimAscii.copy.map Char.toLower with
   | "it" => some [.it]
   | _ => none
 
 /-- `other creature you control` is `[.other, .cardType .creature, .controlledBy .you]`. -/
-private def parseForEachSubject (s : String) : Option (List ObjectQualifier) := do
+private def parseForEachSubject (s : String) : Option (List ObjectRef) := do
   let (other, core) :=
     if let some core := dropPrefixCI s "other " then
       (true, core)
     else
       (false, s)
   let quals ← parseNoun core
-  return (if other then [ObjectQualifier.other] else []) ++ quals
+  return (if other then [ObjectRef.other] else []) ++ quals
 
 /-- `it gets +1/+1 until end of turn for each other creature you control`. -/
 private def parseGetForEachUntil (s : String) : Option TextEffect := do
@@ -523,10 +523,10 @@ private def parseTypeName (s : String) : Option TypeName :=
   | other => (parseCardType other).map TypeName.ofCard
 
 /-- A card type, `.equipment`, or a named subtype such as `.cardSubtype .dwarf`. -/
-private def parseQualifierWord (s : String) : Option ObjectQualifier :=
+private def parseQualifierWord (s : String) : Option ObjectRef :=
   match parseCardSubtype s with
   | some sub => some (.cardSubtype sub)
-  | none => (parseTypeName s).map ObjectQualifier.cardType
+  | none => (parseTypeName s).map ObjectRef.cardType
 
 private def dropArticle (s : String) : Option String :=
   if let some r := dropPrefixCI s "an " then some r
@@ -534,7 +534,7 @@ private def dropArticle (s : String) : Option String :=
   else some s
 
 /-- `Equipment you control` or `Dwarf`, including a leading article. -/
-private def parseTypedControlled (s : String) : Option (List ObjectQualifier) := do
+private def parseTypedControlled (s : String) : Option (List ObjectRef) := do
   let noun ← dropArticle s
   let (core, who) :=
     if let some core := stripSuffixCI? noun " you control" then
@@ -546,14 +546,14 @@ private def parseTypedControlled (s : String) : Option (List ObjectQualifier) :=
   let qual ← parseQualifierWord core
   let tail :=
     match who with
-    | some p => [ObjectQualifier.controlledBy p]
+    | some p => [ObjectRef.controlledBy p]
     | none => []
   return [qual] ++ tail
 
 /-- `Untap target creature you control`. -/
 private def parseUntap (s : String) : Option TextEffect := do
   let rest ← dropPrefixCI s "Untap "
-  let tgt ← parseTargetExpr rest
+  let tgt ← parseTarget rest
   return .untap [tgt]
 
 /-- `It gets +2/+2 until end of turn`, with no “for each” tail. -/

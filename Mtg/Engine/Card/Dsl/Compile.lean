@@ -171,20 +171,6 @@ private def keywordsOfGranted (gs : List GrantedAbility) : Keywords :=
     match g with
     | .keyword k => acc.merge k.toKeywords) Keywords.none
 
-private def ObjectQualifier.toPhrase : ObjectQualifier → String
-  | .cardType t => t.phrase
-  | .cardSubtype s => s.printed
-  | .controlledBy .you => "you control"
-  | .controlledBy .opponent => "an opponent controls"
-  | .or qs => orJoin (qs.map toPhrase)
-  | .tapped => "tapped"
-  | .this => "this"
-  | .other => "other"
-  | .it => "it"
-
-private def qualifiersPhrase (qs : List ObjectQualifier) : String :=
-  String.intercalate " " (qs.map ObjectQualifier.toPhrase)
-
 /-- English word for a targeting count. `1` is “one”; larger counts reuse
 `englishNumber`. -/
 private def countWord (n : Nat) : String :=
@@ -205,25 +191,39 @@ private def joinTargets (ts : List String) : String :=
 private def durationPhrase : Duration → String
   | .endOfTurn => "until end of turn"
 
-private def pluralQualifier : ObjectQualifier → String
+/-- Printed word for one `ObjectRef`. `plural` pluralizes a card type
+(`creature` / `creatures`). `.thisCardName` prints `cardName`. -/
+private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → String
   | .cardType t =>
-    match t.toCard? with
-    | some _ =>
-      let n := t.phrase
-      if n.endsWith "s" then n else s!"{n}s"
-    | none => t.phrase
+    if plural then
+      match t.toCard? with
+      | some _ =>
+        let n := t.phrase
+        if n.endsWith "s" then n else s!"{n}s"
+      | none => t.phrase
+    else
+      t.phrase
   | .cardSubtype s => s.printed
   | .controlledBy .you => "you control"
   | .controlledBy .opponent => "an opponent controls"
-  | .or qs => orJoin (qs.map pluralQualifier)
+  | .or qs => orJoin (qs.map (objectPhrase cardName plural))
   | .tapped => "tapped"
   | .this => "this"
   | .other => "other"
   | .it => "it"
+  | .spell => if plural then "spells" else "spell"
+  | .thisCardName => cardName
+  | .target qs =>
+    s!"target {String.intercalate " " (qs.map (objectPhrase cardName false))}"
+  | .targets count qs =>
+    let many :=
+      match count with
+      | .or _ hi => hi > 1
+    s!"{countPhrase count} target {String.intercalate " " (qs.map (objectPhrase cardName many))}"
 
-/-- Singular words of a qualifier list, in order (`this creature`). -/
-private def qualifierWords (qs : List ObjectQualifier) : String :=
-  String.intercalate " " (qs.map ObjectQualifier.toPhrase)
+/-- Words of a reference list, in order (`this creature`). -/
+private def joinPhrases (cardName : String) (plural : Bool) (qs : List ObjectRef) : String :=
+  String.intercalate " " (qs.map (objectPhrase cardName plural))
 
 /-- Legendary short name: the printed name before the first comma (CR 201.3). -/
 private def shortCardName (cardName : String) : String :=
@@ -238,29 +238,17 @@ private def TriggerExpr.phrase (cardName : String) : TriggerExpr → String
   | .attack who restrictions =>
     let extra :=
       if restrictions.isEmpty then ""
-      else s!" {qualifierWords restrictions}"
-    s!"{qualifierWords who} attacks{extra}"
+      else s!" {joinPhrases cardName false restrictions}"
+    s!"{joinPhrases cardName false who} attacks{extra}"
   | .enter who =>
     let name := String.intercalate " and " (who.map (printedNamePhrase cardName))
     s!"{name} enters"
 
-private def targetNoun (plural : Bool) (qs : List ObjectQualifier) : String :=
-  if plural then String.intercalate " " (qs.map pluralQualifier)
-  else qualifiersPhrase qs
+private def tapSentence (cardName : String) (ts : List ObjectRef) : String :=
+  s!"Tap {joinTargets (ts.map (objectPhrase cardName false))}."
 
-private def TargetExpr.toPhrase : TargetExpr → String
-  | .target qs => s!"target {qualifiersPhrase qs}"
-  | .targets count qs =>
-    let plural :=
-      match count with
-      | .or _ hi => hi > 1
-    s!"{countPhrase count} target {targetNoun plural qs}"
-
-private def tapSentence (ts : List TargetExpr) : String :=
-  s!"Tap {joinTargets (ts.map TargetExpr.toPhrase)}."
-
-private def untapSentence (ts : List TargetExpr) : String :=
-  s!"Untap {joinTargets (ts.map TargetExpr.toPhrase)}."
+private def untapSentence (cardName : String) (ts : List ObjectRef) : String :=
+  s!"Untap {joinTargets (ts.map (objectPhrase cardName false))}."
 
 private def statModPhrase : StatMod → String
   | .plusPowerToughness p t => s!"{signedStat p}/{signedStat t}"
@@ -268,107 +256,98 @@ private def statModPhrase : StatMod → String
 private def printedCostPhrase : PrintedCost → String
   | .mana ms => (CostSymbol.toManaCost ms).toNotation
 
-private def gainUntilSentence (targets : List TargetExpr) (gains : List GrantedAbility)
-    (dur : Duration) : String :=
-  let subject := capitalizeAscii (joinTargets (targets.map TargetExpr.toPhrase))
+private def gainUntilSentence (cardName : String) (targets : List ObjectRef)
+    (gains : List GrantedAbility) (dur : Duration) : String :=
+  let subject := capitalizeAscii (joinTargets (targets.map (objectPhrase cardName false)))
   let kws := (keywordsOfGranted gains).joinedAnd
   s!"{subject} gains {kws} {durationPhrase dur}."
 
-private def getUntilSentence (qs : List ObjectQualifier) (mods : List StatMod)
+private def getUntilSentence (cardName : String) (qs : List ObjectRef) (mods : List StatMod)
     (dur : Duration) : String :=
   let bonus := String.intercalate " and " (mods.map statModPhrase)
   if qs == [.it] then
     s!"It gets {bonus} {durationPhrase dur}."
   else
-    let subject := capitalizeAscii (String.intercalate " " (qs.map pluralQualifier))
+    let subject := capitalizeAscii (joinPhrases cardName true qs)
     s!"{subject} get {bonus} {durationPhrase dur}."
 
-private def costSubjectWord : CostSubject → String
-  | .this => "this"
-  | .spell => "spell"
+private def castIfPhrase (cardName : String) : CastIf → String
+  | .targeting obj qs =>
+    let noun := joinPhrases cardName false qs
+    s!"{objectPhrase cardName false obj} targets {indefinite noun} {noun}"
 
-private def castIfPhrase : CastIf → String
-  | .targeting .it qs =>
-    let noun := qualifiersPhrase qs
-    s!"it targets {indefinite noun} {noun}"
-
-private def costLessSentence (subjects : List CostSubject) (discount : List CostSymbol)
-    (cond : CastIf) : String :=
-  let subject := capitalizeAscii (String.intercalate " " (subjects.map costSubjectWord))
+private def costLessSentence (cardName : String) (subjects : List ObjectRef)
+    (discount : List CostSymbol) (cond : CastIf) : String :=
+  let subject := capitalizeAscii (joinPhrases cardName false subjects)
   let cost := (CostSymbol.toManaCost discount).toNotation
-  s!"{subject} costs {cost} less to cast if {castIfPhrase cond}."
+  s!"{subject} costs {cost} less to cast if {castIfPhrase cardName cond}."
 
-private def damageSubjectPhrase (cardName : String) : DamageSubject → String
-  | .thisCardName => cardName
-
-private def dealDamageSentence (cardName : String) (subjects : List DamageSubject)
-    (n : Nat) (targets : List TargetExpr) : String :=
-  let source := String.intercalate " and " (subjects.map (damageSubjectPhrase cardName))
-  s!"{source} deals {n} damage to {joinTargets (targets.map TargetExpr.toPhrase)}."
-
-private def conditionRefWord : ConditionRef → String
-  | .it => "it"
+private def dealDamageSentence (cardName : String) (subjects : List ObjectRef)
+    (n : Nat) (targets : List ObjectRef) : String :=
+  let source := String.intercalate " and " (subjects.map (objectPhrase cardName false))
+  s!"{source} deals {n} damage to {joinTargets (targets.map (objectPhrase cardName false))}."
 
 private def playerPhrase : PlayerRef → String
   | .you => "you"
   | .opponent => "an opponent"
 
-private def objectExprPhrase : ObjectExpr → String
+private def objectExprPhrase (cardName : String) : ObjectExpr → String
   | .it => "it"
   | .oneOf qs =>
-    let noun := qualifiersPhrase qs
+    let noun := joinPhrases cardName false qs
     s!"{indefinite noun} {noun}"
 
-private def objectExprsPhrase (xs : List ObjectExpr) : String :=
-  String.intercalate " and " (xs.map objectExprPhrase)
+private def objectExprsPhrase (cardName : String) (xs : List ObjectExpr) : String :=
+  String.intercalate " and " (xs.map (objectExprPhrase cardName))
 
-private def attachClause (what dest : List ObjectExpr) : String :=
-  s!"attach {objectExprsPhrase what} to {objectExprsPhrase dest}"
+private def attachClause (cardName : String) (what dest : List ObjectExpr) : String :=
+  s!"attach {objectExprsPhrase cardName what} to {objectExprsPhrase cardName dest}"
 
 /-- An action inside `.may`, without the actor and without a final period. -/
-private def optionalAction : TextEffect → String
-  | .attachTo what dest => attachClause what dest
-  | .untap targets => s!"untap {joinTargets (targets.map TargetExpr.toPhrase)}"
+private def optionalAction (cardName : String) : TextEffect → String
+  | .attachTo what dest => attachClause cardName what dest
+  | .untap targets => s!"untap {joinTargets (targets.map (objectPhrase cardName false))}"
   | _ => ""
 
-private def mayClause (who : List PlayerRef) (effects : List TextEffect) : String :=
+private def mayClause (cardName : String) (who : List PlayerRef) (effects : List TextEffect) : String :=
   let actor := String.intercalate " and " (who.map playerPhrase)
-  let action := String.intercalate " " (effects.map optionalAction)
+  let action := String.intercalate " " (effects.map (optionalAction cardName))
   s!"{actor} may {action}"
 
-private def isClause : TextCondition → String
+private def isClause (cardName : String) : TextCondition → String
   | .is subj qs =>
-    let who := String.intercalate " " (subj.map conditionRefWord)
-    let noun := qualifiersPhrase qs
+    let who := joinPhrases cardName false subj
+    let noun := joinPhrases cardName false qs
     if who == "it" then s!"it's {indefinite noun} {noun}"
     else s!"{who} is {indefinite noun} {noun}"
 
-private def thenClause : TextEffect → String
-  | .may who es => mayClause who es
-  | .attachTo what dest => attachClause what dest
+private def thenClause (cardName : String) : TextEffect → String
+  | .may who es => mayClause cardName who es
+  | .attachTo what dest => attachClause cardName what dest
   | _ => ""
 
-private def ifSentence (conds : List TextCondition) (effects : List TextEffect) : String :=
-  let cond := String.intercalate " and " (conds.map isClause)
-  let body := String.intercalate " " (effects.map thenClause)
+private def ifSentence (cardName : String) (conds : List TextCondition)
+    (effects : List TextEffect) : String :=
+  let cond := String.intercalate " and " (conds.map (isClause cardName))
+  let body := String.intercalate " " (effects.map (thenClause cardName))
   s!"If {cond}, {body}."
 
 /-- “it gets +1/+1 until end of turn for each other creature you control”. -/
-private def getForEachClause (who : List ConditionRef) (mods : List StatMod)
-    (each : List ObjectQualifier) (dur : Duration) : String :=
-  let subject := String.intercalate " " (who.map conditionRefWord)
+private def getForEachClause (cardName : String) (who : List ObjectRef) (mods : List StatMod)
+    (each : List ObjectRef) (dur : Duration) : String :=
+  let subject := joinPhrases cardName false who
   let verb := if who.length == 1 then "gets" else "get"
   let bonus := String.intercalate " and " (mods.map statModPhrase)
-  s!"{subject} {verb} {bonus} {durationPhrase dur} for each {qualifierWords each}"
+  s!"{subject} {verb} {bonus} {durationPhrase dur} for each {joinPhrases cardName false each}"
 
-private def wheneverBody : TextEffect → Option String
-  | .getForEachUntil who mods each dur => some (getForEachClause who mods each dur)
+private def wheneverBody (cardName : String) : TextEffect → Option String
+  | .getForEachUntil who mods each dur => some (getForEachClause cardName who mods each dur)
   | _ => none
 
 private def wheneverSentence (cardName : String) (events : List TriggerExpr)
     (effects : List TextEffect) : String :=
   let trig := String.intercalate " and " (events.map (TriggerExpr.phrase cardName))
-  let body := String.intercalate " " (effects.filterMap wheneverBody)
+  let body := String.intercalate " " (effects.filterMap (wheneverBody cardName))
   s!"Whenever {trig}, {body}."
 
 private def drawClause (n : Nat) : String :=
@@ -390,12 +369,12 @@ private def scrySentence (n : Nat) : String :=
 /-- A text-box effect nested under `.costFor`, printed without a further cost. -/
 private def nestedEffectSentence (cardName : String) : TextEffect → Option String
   | .keyword _ => none
-  | .gainUntil targets gains dur => some (gainUntilSentence targets gains dur)
-  | .getUntil qs mods dur => some (getUntilSentence qs mods dur)
+  | .gainUntil targets gains dur => some (gainUntilSentence cardName targets gains dur)
+  | .getUntil qs mods dur => some (getUntilSentence cardName qs mods dur)
   | .costFor _ _ => none
-  | .tap targets => some (tapSentence targets)
+  | .tap targets => some (tapSentence cardName targets)
   | .costLessToCastIf subjects discount cond =>
-    some (costLessSentence subjects discount cond)
+    some (costLessSentence cardName subjects discount cond)
   | .dealDamage subjects n targets =>
     some (dealDamageSentence cardName subjects n targets)
   | .whenever events effects => some (wheneverSentence cardName events effects)
@@ -403,13 +382,13 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
   | .draw n => some s!"Draw {cardPhrase n}."
   | .scry n => some (scrySentence n)
   | .getForEachUntil who mods each dur =>
-    some s!"{capitalizeAscii (getForEachClause who mods each dur)}."
+    some s!"{capitalizeAscii (getForEachClause cardName who mods each dur)}."
   | .sequence es =>
     some (String.intercalate " " (es.filterMap (nestedEffectSentence cardName)))
-  | .untap targets => some (untapSentence targets)
-  | .if conds effects => some (ifSentence conds effects)
-  | .may who effects => some s!"{capitalizeAscii (mayClause who effects)}."
-  | .attachTo what dest => some s!"{capitalizeAscii (attachClause what dest)}."
+  | .untap targets => some (untapSentence cardName targets)
+  | .if conds effects => some (ifSentence cardName conds effects)
+  | .may who effects => some s!"{capitalizeAscii (mayClause cardName who effects)}."
+  | .attachTo what dest => some s!"{capitalizeAscii (attachClause cardName what dest)}."
 
 /-- One Oracle line for consecutive printed keywords (`Flying, lifelink`). -/
 private def keywordRunLine (ks : List PrintedKeyword) : String :=
@@ -422,15 +401,15 @@ private def textEffectSentence (cardName : String) : TextEffect → String :=
 where
   go : TextEffect → String
     | .keyword k => keywordRunLine [k]
-    | .gainUntil targets gains dur => gainUntilSentence targets gains dur
-    | .getUntil qs mods dur => getUntilSentence qs mods dur
+    | .gainUntil targets gains dur => gainUntilSentence cardName targets gains dur
+    | .getUntil qs mods dur => getUntilSentence cardName qs mods dur
     | .costFor costs effects =>
       let cost := String.intercalate ", " (costs.map printedCostPhrase)
       let body := String.intercalate " " (effects.filterMap (nestedEffectSentence cardName))
       s!"{cost}: {body}"
-    | .tap targets => tapSentence targets
+    | .tap targets => tapSentence cardName targets
     | .costLessToCastIf subjects discount cond =>
-      costLessSentence subjects discount cond
+      costLessSentence cardName subjects discount cond
     | .dealDamage subjects n targets =>
       dealDamageSentence cardName subjects n targets
     | .whenever events effects => wheneverSentence cardName events effects
@@ -438,12 +417,12 @@ where
     | .draw n => s!"Draw {cardPhrase n}."
     | .scry n => scrySentence n
     | .getForEachUntil who mods each dur =>
-      s!"{capitalizeAscii (getForEachClause who mods each dur)}."
+      s!"{capitalizeAscii (getForEachClause cardName who mods each dur)}."
     | .sequence es => String.intercalate " " (es.map go)
-    | .untap targets => untapSentence targets
-    | .if conds effects => ifSentence conds effects
-    | .may who effects => s!"{capitalizeAscii (mayClause who effects)}."
-    | .attachTo what dest => s!"{capitalizeAscii (attachClause what dest)}."
+    | .untap targets => untapSentence cardName targets
+    | .if conds effects => ifSentence cardName conds effects
+    | .may who effects => s!"{capitalizeAscii (mayClause cardName who effects)}."
+    | .attachTo what dest => s!"{capitalizeAscii (attachClause cardName what dest)}."
 
 /-- Map a spell text-box effect onto the engine's `Effect` vocabulary. -/
 private def textEffectToEffect : TextEffect → Option Effect
@@ -467,7 +446,7 @@ private def textEffectToEffect : TextEffect → Option Effect
     some (Effect.untapPumpMaybeAttach p t)
   | _ => none
 
-private def creaturesYouControl (qs : List ObjectQualifier) : Bool :=
+private def creaturesYouControl (qs : List ObjectRef) : Bool :=
   qs == [.cardType .creature, .controlledBy .you]
 
 private def pumpEffect : TextEffect → Option Effect
