@@ -1,4 +1,3 @@
-import Mtg.Engine
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Supported
 

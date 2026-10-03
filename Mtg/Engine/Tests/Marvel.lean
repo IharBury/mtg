@@ -33,12 +33,6 @@ open Mtg.Engine.Catalog
 #guard statureSizeShifter.activatedAbilities[0]!.cost.mana ==
   ({ symbols := #[.x, .colored .blue, .colored .blue] } : ManaCost)
 
-/-- Put `card` onto the battlefield and run enters replacements (shield, power-up). -/
-def mshEnter (g : Game) (card : CardDef) : Game :=
-  let g := addPermanent g card ⟨0⟩ ⟨0⟩
-  let o := namedPermanent g card.name
-  (g.afterPermanentEnters o).receivePriority ⟨0⟩
-
 /-- Power-up costs are reduced by the creature's mana cost if it entered this turn
 (CR 702.193b). `{4}{W}` minus Brave Brawler's `{1}{W}` is `{3}`. -/
 def brawlerEntered : Game := mshEnter afterDraw braveBrawler

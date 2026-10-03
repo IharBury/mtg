@@ -1,5 +1,5 @@
-import Mtg.Engine.OracleRulings
 import Mtg.Engine.Tests
+import Mtg.Engine.Tests.RulingFixtures
 import Mtg.Demo.Render
 
 /-!
@@ -1627,7 +1627,7 @@ def freeCloudAfterDeath : Game :=
 -- Cosmic Cube's look is a controller choice: the header and looked-at
 -- faces are shown to that player, not auto-cast.
 #guard
-  let g := Mtg.Engine.MshRulingTests.cosmicCubePending
+  let g := cosmicCubePending
   mentions (header g) "may cast a looked-at spell" &&
     mentions (header g) "mana value ≤ 2" &&
     mentions (snapshot g) "Looking at (may cast, mana value ≤ 2, top last):" &&

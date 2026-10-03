@@ -38,6 +38,13 @@ globs = [
   "Mtg.Engine.Zone",
 ]
 
+# Opening hands and other reused test games. One plugin, so `#guard` reads the
+# stored values instead of replaying start-of-game for every check.
+[[lean_lib]]
+name = "Mtg.Engine.Fixture"
+precompileModules = true
+globs = ["Mtg.Engine.Fixture"]
+
 [[lean_lib]]
 name = "MtgDemo"
 roots = ["Mtg.Demo.WelcomeDecks", "Mtg.Demo.DeckList", "Mtg.Demo.Render", "Mtg.Demo.RenderTests"]
