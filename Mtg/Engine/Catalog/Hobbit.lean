@@ -197,7 +197,7 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
   .textBox [
     .keyword .flying,
     .whenever
-      [.attack [.this, .cardType .creature] []]
+      [.permanentAttack [.this, .cardType .creature] []]
       [.getForEachUntil [.it] [.plusPowerToughness +1 +1] [.other, .cardType .creature, .controlledBy .you] .endOfTurn]
   ]
 ]
@@ -265,7 +265,7 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card [
   .toughness 1,
   .textBox [
     .when
-      [.enter [.thisCardName]]
+      [.permanentEnter [.thisCardName]]
       [.draw 1]
   ],
   .alternative [

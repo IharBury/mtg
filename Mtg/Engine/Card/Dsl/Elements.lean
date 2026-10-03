@@ -114,7 +114,8 @@ disjunction, and the other words are a conjunction.
 `.targets (.or 1 2) [.cardType .creature]` is “one or two target creatures”.
 `[.this, .cardType .creature]` is “this creature”. `[.this, .spell]` is
 “this spell”. `.it` is the object named earlier (`It gets +2/+2`).
-`.thisCardName` prints this card’s name. `.other` excludes this object. -/
+`.thisCardName` prints this card’s name, shortened before a comma
+(`Bilbo Baggins` on Bilbo Baggins, Burglar). `.other` excludes this object. -/
 inductive ObjectRef where
   | cardType (t : TypeName)
   | cardSubtype (s : CardSubtype)
@@ -147,12 +148,6 @@ inductive Duration where
   | endOfTurn
   deriving Repr, BEq
 
-/-- A card name printed in rules text. `.thisCardName` is this card’s name,
-shortened before a comma (`Bilbo Baggins` on Bilbo Baggins, Burglar). -/
-inductive PrintedName where
-  | thisCardName
-  deriving Repr, BEq
-
 /-- The period in “each turn”. `.turn` is one turn. -/
 inductive EachPeriod where
   | turn
@@ -165,13 +160,13 @@ inductive DrawWatch where
   deriving Repr, BEq
 
 /-- One event in `.whenever` or `.when`.
-`[.attack [.this, .cardType .creature] []]` is “this creature attacks”.
+`[.permanentAttack [.this, .cardType .creature] []]` is “this creature attacks”.
 The second list is a further restriction on that attack; empty means any
-attack. `[.enter [.thisCardName]]` is “{name} enters”.
+attack. `[.permanentEnter [.thisCardName]]` is “{name} enters”.
 `[.drawCard [.you] [.ordinalEach 2 .turn]]` is “you draw your second card each turn”. -/
 inductive TriggerExpr where
-  | attack (who : List ObjectRef) (restrictions : List ObjectRef)
-  | enter (who : List PrintedName)
+  | permanentAttack (who : List ObjectRef) (restrictions : List ObjectRef)
+  | permanentEnter (who : List ObjectRef)
   | drawCard (who : List PlayerRef) (which : List DrawWatch)
   deriving Repr, BEq
 
@@ -236,10 +231,10 @@ inductive TextEffect where
   /-- `subjects` deal `n` damage to `targets`. -/
   | dealDamage (subjects : List ObjectRef) (n : Nat) (targets : List ObjectRef)
   /-- When `events` happen, follow `effects`.
-  `[.attack [.this, .cardType .creature] []]` is “this creature attacks”. -/
+  `[.permanentAttack [.this, .cardType .creature] []]` is “this creature attacks”. -/
   | whenever (events : List TriggerExpr) (effects : List TextEffect)
   /-- When `events` happen, follow `effects`.
-  `[.enter [.thisCardName]]` with `[.draw 1]` is “When {name} enters, draw a card”. -/
+  `[.permanentEnter [.thisCardName]]` with `[.draw 1]` is “When {name} enters, draw a card”. -/
   | when (events : List TriggerExpr) (effects : List TextEffect)
   /-- Draw `n` cards (`draw a card`). -/
   | draw (n : Nat)
