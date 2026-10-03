@@ -133,13 +133,6 @@ inductive ObjectRef where
   | targets (count : TargetCount) (qs : List ObjectRef)
   deriving Repr, BEq
 
-namespace ObjectRef
-
-/-- `.creature` in a reference list. -/
-def creature : ObjectRef := .cardType .creature
-
-end ObjectRef
-
 /-- A keyword the text box grants. -/
 inductive GrantedAbility where
   | keyword (k : PrintedKeyword)

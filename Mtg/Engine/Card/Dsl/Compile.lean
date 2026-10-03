@@ -639,7 +639,7 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
 
 #guard textEffectSentence "" (.costFor
     [.mana [.generic 3, .mono .white]]
-    [.getUntil [.creature, .controlledBy .you]
+    [.getUntil [.cardType .creature, .controlledBy .you]
       [.plusPowerToughness +1 +1] .endOfTurn]) ==
   "{3}{W}: Creatures you control get +1/+1 until end of turn."
 

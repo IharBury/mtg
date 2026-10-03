@@ -82,7 +82,7 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card [
   .textBox [
     .costFor
       [.mana [.generic 3, .mono .white]]
-      [.getUntil [.creature, .controlledBy .you] [.plusPowerToughness +1 +1] .endOfTurn]
+      [.getUntil [.cardType .creature, .controlledBy .you] [.plusPowerToughness +1 +1] .endOfTurn]
   ]
 ]
 
