@@ -511,11 +511,35 @@ def bilboLuckwearer : TraditionalCardDefinition := .card [
         adv.spellEffect == some Effect.exchangeControlSharingType
     | none => false
 
-def uneasyPartings : CardDef :=
-  instant "Uneasy Partings" (ManaCost.ofGenericAndColor 3 .blue)
-    "This spell costs {1} less to cast if it targets an attacking nontoken creature.\nTarget creature's owner puts it on their choice of the top or bottom of their library."
-    (some (Effect.putOnTopOrBottom))
-    (costReductionIfTargetAttackingNontoken := 1)
+def uneasyPartings : TraditionalCardDefinition := .card [
+  .name "Uneasy Partings",
+  .manaCost [.generic 3, .mono .blue],
+  .type .instant,
+  .textBox [
+    .if
+      [.targeting [.this, .spell] [.attacking, .nontoken, .cardType .creature]]
+      [.costLessToCast [.this, .spell] [.generic 1]],
+    .ownerPuts [.target [.cardType .creature]] [.top, .bottom]
+  ]
+]
+
+#guard parseOracleText (String.intercalate "\n" [
+  "Uneasy Partings {3}{U}",
+  "Instant",
+  "This spell costs {1} less to cast if it targets an attacking nontoken creature.",
+  "Target creature's owner puts it on their choice of the top or bottom of their library."
+]) == some uneasyPartings
+
+#guard
+  let c := uneasyPartings.toCardDef
+  c.name == "Uneasy Partings" &&
+    c.types == #[.instant] &&
+    c.subtypes == #[] &&
+    c.manaCost == ManaCost.ofGenericAndColor 3 .blue &&
+    c.keywords == Keywords.none &&
+    c.spellEffect == some Effect.putOnTopOrBottom &&
+    c.costReductionIfTargetAttackingNontoken == 1 &&
+    c.oracleText == "This spell costs {1} less to cast if it targets an attacking nontoken creature.\nTarget creature's owner puts it on their choice of the top or bottom of their library."
 
 def frontPorchSentries : CardDef :=
   creature "Front Porch Sentries" (ManaCost.ofGenericAndColor 1 .black) #["Goblin", "Soldier"] 2 2
@@ -1645,8 +1669,7 @@ def hobbitCards : Array CardDef :=
   (#[bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
      magnificentEnd, eagleOfTheGreatShelf, vowToErebor, bilboBagginsBurglar,
      lakeshoreApothecary, confusticateAndBebother, ravenhillFlock,
-     thranduilsDecree, bilboLuckwearer] ++ #[
-  uneasyPartings,
+     thranduilsDecree, bilboLuckwearer, uneasyPartings] ++ #[
   frontPorchSentries,
   greatFierceBee,
   stirUpTrouble,

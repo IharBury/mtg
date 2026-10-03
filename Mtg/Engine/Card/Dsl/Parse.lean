@@ -386,17 +386,33 @@ private def parseTap (line : String) : Option TextEffect := do
   let quals ← parseGetSubject noun
   return .tap [.targets count quals]
 
+/-- A leading `tapped`, `attacking`, or `nontoken` on a noun. -/
+private def peelStatus (s : String) : Option (ObjectRef × String) :=
+  if let some rest := dropPrefixCI s "tapped " then some (.tapped, rest)
+  else if let some rest := dropPrefixCI s "attacking " then some (.attacking, rest)
+  else if let some rest := dropPrefixCI s "nontoken " then some (.nontoken, rest)
+  else none
+
+/-- Status words in printed order, then the remaining noun.
+`attacking nontoken creature` is `[.attacking, .nontoken]` and `creature`. -/
+private def statusWords (s : String) : List ObjectRef × String :=
+  let rec go (fuel : Nat) (s : String) (acc : List ObjectRef) : List ObjectRef × String :=
+    match fuel with
+    | 0 => (acc.reverse, s)
+    | fuel + 1 =>
+      match peelStatus s with
+      | some (flag, rest) => go fuel rest (flag :: acc)
+      | none => (acc.reverse, s)
+  go 4 s []
+
 private def parseMaybeTappedNoun (noun : String) : Option (List ObjectRef) := do
-  let (tapped, core) :=
-    if let some core := dropPrefixCI noun "tapped " then
-      (true, core)
-    else
-      (false, noun)
+  let (flags, core) := statusWords noun
   let quals ← parseNoun core
-  return (if tapped then [ObjectRef.tapped] else []) ++ quals
+  return flags ++ quals
 
 /-- `it targets a tapped creature` is `.targeting [.this, .spell]`.
-“It” is this spell, already named in the sentence. -/
+“It” is this spell, already named in the sentence.
+`it targets an attacking nontoken creature` keeps `.attacking` and `.nontoken`. -/
 private def parseItTargets (s : String) : Option TextCondition := do
   let rest ← dropPrefixCI s "it targets "
   let noun :=
@@ -837,6 +853,28 @@ private def parseCantBeBlocked (cardName : String) (line : String) : Option Text
   guard (who == shortCardName cardName)
   return .cannot (.block [] [.thisCardName])
 
+private def parseLibraryEdge (s : String) : Option LibraryEdge :=
+  match s.trimAscii.copy.map Char.toLower with
+  | "top" => some .top
+  | "bottom" => some .bottom
+  | _ => none
+
+/-- `the top or bottom` is `[.top, .bottom]`. -/
+private def parseLibraryChoice (s : String) : Option (List LibraryEdge) := do
+  let rest ← dropPrefixCI s "the "
+  let parts := rest.splitOn " or " |>.map (·.trimAscii.copy) |>.filter (· != "")
+  guard !parts.isEmpty
+  parts.mapM parseLibraryEdge
+
+/-- `Target creature's owner puts it on their choice of the top or bottom of their library.` -/
+private def parseOwnerPuts (line : String) : Option TextEffect := do
+  let line := stripTrailingDot (stripParens line)
+  let (objText, rest) ← splitOnce "'s owner puts it on their choice of " line
+  let choiceText ← stripSuffixCI? rest " of their library"
+  let places ← parseLibraryChoice choiceText
+  let obj ← parseTarget objText
+  return .ownerPuts [obj] places
+
 /-- `Exchange control of two target nonland permanents that share a card type.` -/
 private def parseExchangeControl (line : String) : Option TextEffect := do
   let line := stripTrailingDot (stripParens line)
@@ -888,7 +926,10 @@ private def parseLine (cardName : String) (cleaned : String) : Option TextEffect
                         | none =>
                           match parseCantBeBlocked cardName cleaned with
                           | some e => some e
-                          | none => parseExchangeControl cleaned
+                          | none =>
+                            match parseExchangeControl cleaned with
+                            | some e => some e
+                            | none => parseOwnerPuts cleaned
 
 private structure BodyParse where
   effects : List TextEffect := []
@@ -1018,6 +1059,10 @@ with `[.controller .innerTarget]`, `.mana`, and `.counter`.
 becomes `.whenever` with `.dealSuchDamage` and `[.draw 1, .discard 1]`.
 `Exchange control of two target nonland permanents that share a card type.`
 becomes `.exchangeControl` with `.targetsWhich 2`.
+`This spell costs {N} less to cast if it targets an attacking nontoken creature.`
+becomes `.if` with `[.attacking, .nontoken, .cardType .creature]`.
+`Target creature's owner puts it on their choice of the top or bottom of their library.`
+becomes `.ownerPuts` with `[.top, .bottom]`.
 `Counter target spell. If a permanent spell is countered this way, exile it
 instead of putting it into its owner's graveyard. You may cast that card
 without paying its mana cost for as long as it remains exiled.` becomes
@@ -1073,6 +1118,16 @@ def parseOracleText (text : String) : Option TraditionalCardDefinition := do
   some (.if
     [.targeting [.this, .spell] [.tapped, .cardType .creature]]
     [.costLessToCast [.this, .spell] [.generic 3]])
+
+#guard parseCostLess
+    "This spell costs {1} less to cast if it targets an attacking nontoken creature." ==
+  some (.if
+    [.targeting [.this, .spell] [.attacking, .nontoken, .cardType .creature]]
+    [.costLessToCast [.this, .spell] [.generic 1]])
+
+#guard parseOwnerPuts
+    "Target creature's owner puts it on their choice of the top or bottom of their library." ==
+  some (.ownerPuts [.target [.cardType .creature]] [.top, .bottom])
 
 #guard parseDealDamage "Magnificent End"
     "Magnificent End deals 5 damage to target creature." ==

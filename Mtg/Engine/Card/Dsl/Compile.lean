@@ -229,6 +229,8 @@ private def objectPhrase (cardName : String) (plural : Bool) : ObjectRef → Str
   | .controlledBy ps => controlPhrase ps
   | .or qs => orJoin (qs.map (objectPhrase cardName plural))
   | .tapped => "tapped"
+  | .attacking => "attacking"
+  | .nontoken => "nontoken"
   | .this => "this"
   | .other => "other"
   | .thatTarget => "it"
@@ -593,6 +595,17 @@ private def cannotSentence (cardName : String) : CannotExpr → String
 private def exchangeControlSentence (cardName : String) (objects : List ObjectRef) : String :=
   s!"Exchange control of {joinTargets (objects.map (objectPhrase cardName false))}."
 
+private def libraryEdgePhrase : LibraryEdge → String
+  | .top => "top"
+  | .bottom => "bottom"
+
+/-- “Target creature's owner puts it on their choice of the top or bottom of their library.” -/
+private def ownerPutsSentence (cardName : String) (obj : List ObjectRef)
+    (places : List LibraryEdge) : String :=
+  let who := capitalizeAscii (joinPhrases cardName false obj)
+  let choice := orJoin (places.map libraryEdgePhrase)
+  s!"{who}'s owner puts it on their choice of the {choice} of their library."
+
 /-- `.sequence [.draw n, .discard d]` prints “Draw …, then discard …”. -/
 private def drawThenDiscardSentence (n d : Nat) : String :=
   s!"{capitalizeAscii (drawThenDiscardClause n d)}."
@@ -659,6 +672,7 @@ private def nestedEffectSentence (cardName : String) : TextEffect → Option Str
       chooseHeader n :: (modes.filterMap (nestedEffectSentence cardName)).map (s!"• {·}")
   | .cannot what => some (cannotSentence cardName what)
   | .exchangeControl objects => some (exchangeControlSentence cardName objects)
+  | .ownerPuts obj places => some (ownerPutsSentence cardName obj places)
 
 /-- One Oracle line for consecutive printed keywords (`Flying, lifelink`). -/
 private def keywordRunLine (ks : List PrintedKeyword) : String :=
@@ -709,6 +723,7 @@ where
       String.intercalate "\n" (chooseHeader n :: (modes.map go).map (s!"• {·}"))
     | .cannot what => cannotSentence cardName what
     | .exchangeControl objects => exchangeControlSentence cardName objects
+    | .ownerPuts obj places => ownerPutsSentence cardName obj places
 
 /-- Map a spell text-box effect onto the engine's `Effect` vocabulary. -/
 private def textEffectToEffect : TextEffect → Option Effect
@@ -751,6 +766,8 @@ private def textEffectToEffect : TextEffect → Option Effect
   | .exchangeControl
       [.targetsWhich 2 [.nonland, .permanent] [.sharingCardType]] =>
     some Effect.exchangeControlSharingType
+  | .ownerPuts [.target [.cardType .creature]] [.top, .bottom] =>
+    some Effect.putOnTopOrBottom
   | _ => none
 
 private def creaturesYouControl (qs : List ObjectRef) : Bool :=
@@ -829,6 +846,16 @@ private def tappedCreatureReduction (es : List TextEffect) : Nat :=
       n + genericMana discount
     | _ => n) 0
 
+/-- `{n}` less when the spell targets an attacking nontoken creature. -/
+private def attackingNontokenReduction (es : List TextEffect) : Nat :=
+  es.foldl (fun n e =>
+    match e with
+    | .if
+        [.targeting [.this, .spell] [.attacking, .nontoken, .cardType .creature]]
+        [.costLessToCast [.this, .spell] discount] =>
+      n + genericMana discount
+    | _ => n) 0
+
 /-- Rules-text lines for a text box. Consecutive keywords share one line. -/
 private def renderText (cardName : String) (es : List TextEffect) : List String :=
   let (lines, pending) := es.foldl (fun (acc : List String × List PrintedKeyword) e =>
@@ -889,6 +916,7 @@ private def FaceBuild.toCard (f : FaceBuild) (oracleText : String)
     spellEffect := (f.textBox.filterMap textEffectToEffect).head?
     spellModes := spellModesOf f.textBox
     costReductionIfTargetTapped := tappedCreatureReduction f.textBox
+    costReductionIfTargetAttackingNontoken := attackingNontokenReduction f.textBox
     activatedAbilities := (f.textBox.filterMap textEffectToActivated).toArray
     triggeredAbilities := (f.textBox.filterMap textEffectToTriggered).toArray
     adventure }
@@ -1023,6 +1051,16 @@ def TraditionalCardDefinition.colors (c : TraditionalCardDefinition) : ColorSet 
     (.exchangeControl
       [.targetsWhich 2 [.nonland, .permanent] [.sharingCardType]]) ==
   "Exchange control of two target nonland permanents that share a card type."
+
+#guard textEffectSentence "Uneasy Partings"
+    (.if
+      [.targeting [.this, .spell] [.attacking, .nontoken, .cardType .creature]]
+      [.costLessToCast [.this, .spell] [.generic 1]]) ==
+  "This spell costs {1} less to cast if it targets an attacking nontoken creature."
+
+#guard textEffectSentence "Uneasy Partings"
+    (.ownerPuts [.target [.cardType .creature]] [.top, .bottom]) ==
+  "Target creature's owner puts it on their choice of the top or bottom of their library."
 
 #guard textEffectSentence "" (.sequence [
     .counter [.target [.spell]],
