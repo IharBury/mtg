@@ -124,7 +124,6 @@ disjunction, and the other words are a conjunction.
 `[.this, .cardType .creature]` is “this creature”. `[.this, .spell]` is
 “this spell”. `.thatTarget` is the target named earlier (`It gets +2/+2`).
 `.innerTarget` is the target of this effect (`its controller`).
-`.it` is the object named earlier (`exile it`).
 `.permanentSpell` is “permanent spell”. `.thatCard` is “that card”.
 `.thatExiled` is the card exiled this way (`that card`, then `it remains exiled`).
 `.thisCardName` prints this card’s name, shortened before a comma
@@ -137,7 +136,6 @@ inductive ObjectRef where
   | tapped
   | this
   | other
-  | it
   | thatTarget
   | innerTarget
   | spell
@@ -210,7 +208,7 @@ inductive PrintedCost where
   | mana (ms : List CostSymbol)
   deriving Repr, BEq
 
-/-- A condition in `.if`. `[.is [.it] [.cardSubtype .dwarf]]` is “it's a Dwarf”.
+/-- A condition in `.if`. `[.is [.thatTarget] [.cardSubtype .dwarf]]` is “it's a Dwarf”.
 `[.counteredThisWay [.permanentSpell]]` is “a permanent spell is countered this way”.
 `[.targeting [.this, .spell] [.tapped, .cardType .creature]]` is
 “it targets a tapped creature” once this spell has been named. -/
@@ -220,13 +218,13 @@ inductive TextCondition where
   | targeting (subj : List ObjectRef) (qs : List ObjectRef)
   deriving Repr, BEq
 
-/-- Whose zone `.belongingTo` names. `.owner [.it]` is “its owner”. -/
+/-- Whose zone `.belongingTo` names. `.owner [.thatTarget]` is “its owner”. -/
 inductive ZoneOwner where
   | owner (obj : List ObjectRef)
   deriving Repr, BEq
 
 /-- A zone or state word. `.graveyard` is “graveyard”. `.exiled` is “exiled”.
-`.belongingTo [.owner [.it]]` beside `.graveyard` is “its owner's graveyard”. -/
+`.belongingTo [.owner [.thatTarget]]` beside `.graveyard` is “its owner's graveyard”. -/
 inductive ZoneWord where
   | graveyard
   | exiled
@@ -285,13 +283,13 @@ inductive TextEffect where
   /-- `who` may do `effects` (`you may …`). -/
   | may (who : List PlayerRef) (effects : List TextEffect)
   /-- Put `obj` into `dest`.
-  `.putInto [.it] [.graveyard, .belongingTo [.owner [.it]]]` is
+  `.putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.thatTarget]]]` is
   “putting it into its owner's graveyard”. -/
   | putInto (obj : List ObjectRef) (dest : List ZoneWord)
-  /-- Exile `obj`. `.exile [.it]` is “exile it”. -/
+  /-- Exile `obj`. `.exile [.thatTarget]` is “exile it”. -/
   | exile (obj : List ObjectRef)
   /-- Do `done` instead of `avoided`.
-  `.insteadOf [.putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.it]]]] [.exile [.thatTarget]]` is
+  `.insteadOf [.putInto [.thatTarget] [.graveyard, .belongingTo [.owner [.thatTarget]]]] [.exile [.thatTarget]]` is
   “exile it instead of putting it into its owner's graveyard”. -/
   | insteadOf (avoided done : List TextEffect)
   /-- `who` may cast `what` by `how`.
