@@ -1034,6 +1034,15 @@ def lightLine (s : String) : String :=
   collapseWs (keepSignificant (replaceNumberWords (lowerAscii
     (stripAbilityWord (stripChaosSymbol (dropReminderText s))))))
 
+def abilityLines (cardName : String) (ab : ParsedAbility) : List String :=
+  match ab with
+  | .static a => [StaticAbility.toNotation a]
+  | .triggered a =>
+    (TriggeredAbility.toNotation a).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
+  | .activated a => [printedActivated a]
+  | .spell e => effectLines cardName e
+  | .modes .. => []
+
 structure IndexedAbility where
   ability : ParsedAbility
   raw : List String
@@ -1047,6 +1056,9 @@ structure IndexedAbility where
   pats : List (List Pat)
   /-- Holes learned before phrase equivalences, so open subtypes stay words. -/
   structPats : List (List Pat)
+  /-- `raw` is `abilityLines` of `ability` and does not include `indexName`, so
+  those are the ability's lines on every card and `light` is their light form. -/
+  ownLines : Bool
 
 def collectParsed (ab : ParsedAbility) : Array SlotVal :=
   match ab with
@@ -1068,7 +1080,8 @@ def indexItem (priority order : Nat) (ability : ParsedAbility) (lines : List Str
     order
     args
     pats := patsOfLines norm args
-    structPats := patsOfLines structNorm args }
+    structPats := patsOfLines structNorm args
+    ownLines := !lines.any (·.contains indexName) && lines == abilityLines indexName ability }
 
 def refillParsed (ab : ParsedAbility) (vals : Array SlotVal) : ParsedAbility :=
   match ab with
@@ -1269,20 +1282,22 @@ def listPrefix (pre rest : List String) : Bool :=
 
 def adaptLight (cardName : String) (lines : List String) : List String :=
   -- `light` is already lowercased, so the sentinel is `cardname`.
-  lines.map fun s => s.replace (lowerAscii indexName) (lowerAscii cardName)
-
-def abilityLines (cardName : String) (ab : ParsedAbility) : List String :=
-  match ab with
-  | .static a => [StaticAbility.toNotation a]
-  | .triggered a =>
-    (TriggeredAbility.toNotation a).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
-  | .activated a => [printedActivated a]
-  | .spell e => effectLines cardName e
-  | .modes .. => []
+  lines.map fun s => applyReplacements s [(lowerAscii indexName, lowerAscii cardName)]
 
 def coversLight (cardName : String) (ab : ParsedAbility) (lights : List String) : Bool :=
   let lines := (abilityLines cardName ab).map lightLine
   !lines.isEmpty && lines.length <= lights.length && listPrefix lines lights
+
+/-- `coversLight` of the candidate's ability, or of `filled` when arguments were
+read from the card. -/
+def IndexedAbility.coversLight (item : IndexedAbility) (cardName : String)
+    (filled : Option ParsedAbility) (lights : List String) : Bool :=
+  match filled with
+  | none =>
+    if item.ownLines then
+      !item.light.isEmpty && item.light.length <= lights.length && listPrefix item.light lights
+    else Mtg.Engine.coversLight cardName item.ability lights
+  | some ab => Mtg.Engine.coversLight cardName ab lights
 
 def filledAbility (item : IndexedAbility) (norms structNorms : List String) : Option ParsedAbility :=
   let attempt (pats : List (List Pat)) (lines : List String) : Option ParsedAbility :=
@@ -1309,7 +1324,7 @@ Numeric and text arguments are read from `units` when the line has the same shap
     let literal : Nat :=
       if n == 0 || n > lights.length then 0
       else if listPrefix (adaptLight cardName item.light) lights ||
-          coversLight cardName ability lights then 1 else 0
+          item.coversLight cardName filled lights then 1 else 0
     let exact := n != 0 && n <= norms.length && listPrefix printed norms
     if n == 0 || n > norms.length || (literal == 0 && !exact && filled.isNone) then acc
     else
