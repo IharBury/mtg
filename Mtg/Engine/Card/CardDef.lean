@@ -57,6 +57,9 @@ structure CardDef where
   /-- Printed toughness includes a star added to `toughness` (CR 208.2).
   See `powerStar`. -/
   toughnessStar : Bool := false
+  /-- Printed loyalty number (CR 209.1). While this planeswalker is not on
+  the battlefield, its loyalty is this number. It enters the battlefield
+  with that many loyalty counters. -/
   loyalty : Option Int := none
   /-- Printed defense (CR 210). Battles enter with this many defense counters. -/
   defense : Option Nat := none
