@@ -294,9 +294,9 @@ def flatten : Resolution → List Resolution
 constructor is a compile error here rather than silently skipping the new
 effect.
 
-Kept non-recursive: recursion through `List.map` makes a definition
+Keep this non-recursive: recursion through `List.map` makes a definition
 well-founded, and Lean then compiles a match splitter over every constructor,
-which took most of this module's C compile time. -/
+which clang takes many seconds to optimize. -/
 private def phraseWith (r : Resolution) (noun : String)
     (sequence : List Resolution → String) : String :=
   match r with
