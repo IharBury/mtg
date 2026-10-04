@@ -824,7 +824,7 @@ private def indexName : String := "CARDNAME"
 prefer a literal printed match over a phrase-equivalent one. -/
 def lightLine (s : String) : String :=
   collapseWs (keepSignificant (replaceNumberWords (lowerAscii
-    (stripAbilityWord (dropReminderText s)))))
+    (stripAbilityWord (stripChaosSymbol (dropReminderText s))))))
 
 structure IndexedAbility where
   ability : ParsedAbility
@@ -1117,11 +1117,14 @@ Numeric and text arguments are read from `units` when the line has the same shap
 partial def parseRules (c : CardDef) (lines : List String) : Except String CardDef :=
   -- CR 207.2a: drop reminder text before any rule is read. A reminder may be
   -- the whole line (basic-land mana, Saga progress, a keyword on its own line).
+  -- CR 207.4: the chaos symbol to the left of a chaos ability has no rules
+  -- meaning. Drop it before the line is read, as on Towashi.
   -- CR 207.2c: an ability word has no rules meaning. Drop every one before the
   -- line is matched, including a multi-word word and one inside a quote.
   let units :=
     mergeBulletLines
-      (lines.map (fun line => stripAbilityWords (dropReminderText line)) |>.filter (· != ""))
+      (lines.map (fun line =>
+          stripAbilityWords (stripChaosSymbol (dropReminderText line))) |>.filter (· != ""))
       |>.flatMap splitKeywordWardLine
   let rec go (c : CardDef) (units : List String) : Except String CardDef :=
     match units with
@@ -1610,6 +1613,34 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
     (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
     some (Effect.chapterGainLandfallCreateElf)
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — Council's Dilemma — This Saga gains \"Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
+    (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
+    some (Effect.chapterGainLandfallCreateElf)
+
+-- CR 207.4: the chaos symbol is not rules text. Towashi's chaos ability is the
+-- text after the symbol, and a `{CHAOS}` that names a planar-die face stays.
+private def towashiChaosAbility : String :=
+  "Whenever chaos ensues, distribute three +1/+1 counters among one, two, or three target creatures you control."
+
+#guard
+  match parseOracleCard s!"Towashi\nPlane — Kamigawa\nMenace\n\{CHAOS} {towashiChaosAbility}",
+        parseOracleCard s!"Towashi\nPlane — Kamigawa\nMenace\n{towashiChaosAbility}" with
+  | .ok a, .ok b => reprStr a == reprStr b
+  | .error a, .error b => a == b
+  | _, _ => false
+#guard (parseOracleCard "Towashi\nPlane — Kamigawa\n{CHAOS} Menace").toOption.map
+    (fun c => c.hasType .plane && c.subtypes == #["Kamigawa"] && c.keywords.menace) ==
+    some true
+#guard (parseOracleCard "Towashi\nPlane — Kamigawa\n{chaos}\nMenace").toOption.map
+    (·.keywords.menace) == some true
+#guard (parseOracleCard "Towashi\nPlane — Kamigawa\n{CHAOS} Draw seven cards.").toOption.bind
+    (·.spellEffect) ==
+  (parseOracleCard "Towashi\nPlane — Kamigawa\nDraw seven cards.").toOption.bind
+    (·.spellEffect)
+#guard
+  match parseOracleCard "Roll\nInstant\nWhenever you roll {CHAOS}, draw a card." with
+  | .error e => e == "unrecognized Oracle line on Roll: Whenever you roll {CHAOS}, draw a card."
+  | .ok _ => false
+#guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — This Saga gains \"{CHAOS} Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
     (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
     some (Effect.chapterGainLandfallCreateElf)
 
