@@ -65,9 +65,13 @@ structure CardDef where
   the battlefield, its defense is this number. It enters the battlefield
   with that many defense counters. -/
   defense : Option Nat := none
-  /-- Printed hand modifier (CR 211). Vanguards. -/
+  /-- Printed hand modifier (CR 211.1). The lower-left corner of a vanguard:
+  a number preceded by a plus sign, a number preceded by a minus sign, or
+  zero. It modifies its owner's starting hand size and maximum hand size. -/
   handModifier : Option Int := none
-  /-- Printed life modifier (CR 212). Vanguards. -/
+  /-- Printed life modifier (CR 212.1). The lower-right corner of a vanguard:
+  a number preceded by a plus sign, a number preceded by a minus sign, or
+  zero. It modifies its owner's starting life total. -/
   lifeModifier : Option Int := none
   /-- Explicit color indicator, if any (CR 107.13 / 202.2). -/
   colorIndicator : Option ColorSet := none
@@ -302,6 +306,7 @@ def isInstantOrSorcery (c : CardDef) : Bool := c.types.any CardType.isInstantOrS
 def isEnchantment (c : CardDef) : Bool := c.hasType .enchantment
 def isPlaneswalker (c : CardDef) : Bool := c.hasType .planeswalker
 def isBattle (c : CardDef) : Bool := c.hasType .battle
+def isVanguard (c : CardDef) : Bool := c.hasType .vanguard
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
 /-- Aura subtype on an Enchantment (CR 303.4). -/
 def isAura (c : CardDef) : Bool :=
