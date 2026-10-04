@@ -290,11 +290,15 @@ def flatten : Resolution → List Resolution
   | .sequence rs => rs.flatMap flatten
   | r => [r]
 
-/-- Oracle-style reminder from targeting and resolution. Source-deals-damage
-uses the creature as the subject rather than the generic `PermanentAction`
-wording. Adding a constructor is a compile error here rather than silently
-skipping the new effect. -/
-def toPhrase (r : Resolution) (noun : String) : String :=
+/-- `toPhrase` of one resolution, with `sequence` phrasing each step. Adding a
+constructor is a compile error here rather than silently skipping the new
+effect.
+
+Kept non-recursive: recursion through `List.map` makes a definition
+well-founded, and Lean then compiles a match splitter over every constructor,
+which took most of this module's C compile time. -/
+private def phraseWith (r : Resolution) (noun : String)
+    (sequence : List Resolution → String) : String :=
   match r with
   | .draw n =>
     s!"Draw {cardPhrase n}"
@@ -473,11 +477,19 @@ def toPhrase (r : Resolution) (noun : String) : String :=
   | .targetSubtypeConnives subtype =>
     s!"Target {subtype} you control connives"
   | .sequence rs =>
-    String.intercalate ". " (rs.map (fun step => toPhrase step noun))
+    sequence rs
   | .spell r =>
     SpellResolution.toPhrase r noun
   | .trigger _ =>
     ""
+
+/-- Oracle-style reminder from targeting and resolution. Source-deals-damage
+uses the creature as the subject rather than the generic `PermanentAction`
+wording. -/
+def toPhrase (r : Resolution) (noun : String) : String :=
+  match r with
+  | .sequence rs => String.intercalate ". " (rs.map (fun step => toPhrase step noun))
+  | r => phraseWith r noun fun _ => ""
 
 /-- Lift a spell resolution onto the shared `Resolution` vocabulary. -/
 def ofSpell : SpellResolution → Resolution
