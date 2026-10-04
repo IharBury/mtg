@@ -367,7 +367,9 @@ def spellEmpower (line : String) : Option (Nat × String) :=
   else
     let beforeLow := parts[0]!
     let afterLow := parts[1]!
-    let digits := afterLow.takeWhile Char.isDigit
+    -- `takeWhile` yields a slice; copy it so `.length` is not the deprecated
+    -- slice length (`lake build --wfail` treats that warning as a failure).
+    let digits := (afterLow.takeWhile Char.isDigit).copy
     if digits.isEmpty then none
     else if beforeLow.contains ':' then none
     else if beforeLow.startsWith "when " || beforeLow.startsWith "whenever " ||
