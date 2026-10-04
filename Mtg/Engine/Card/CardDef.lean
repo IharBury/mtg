@@ -49,6 +49,14 @@ structure CardDef where
   supertypes : Array Supertype := #[]
   power : Option Int := none
   toughness : Option Int := none
+  /-- Printed power includes a star added to `power` (CR 208.2).
+  A bare `*` leaves `power` empty. `1+*` and `*+1` are `some 1`.
+  When that star can't be determined it counts as 0, so the power is
+  `power.getD 0`: `*` is 0 and `1+*` is 1 (CR 208.2a). -/
+  powerStar : Bool := false
+  /-- Printed toughness includes a star added to `toughness` (CR 208.2).
+  See `powerStar`. -/
+  toughnessStar : Bool := false
   loyalty : Option Int := none
   /-- Printed defense (CR 210). Battles enter with this many defense counters. -/
   defense : Option Nat := none
@@ -556,12 +564,31 @@ def keywordsAndAbilities (c : CardDef) : String :=
 def typeLine (c : CardDef) : String :=
   formatTypeLine c.supertypes c.types c.subtypes
 
+/-- One side of a power/toughness box (CR 208.1 / 208.2).
+A star plus constant `k` prints as `k+*` (CR 208.2a writes `1+*`). A bare
+star, and `*+0`, print as `*`. -/
+def renderPrintedStat (n : Option Int) (star : Bool) : String :=
+  if star then
+    match n with
+    | some k => if k == 0 then "*" else s!"{k}+*"
+    | none => "*"
+  else
+    match n with
+    | some k => toString k
+    | none => "*"
+
+/-- Printed `power/toughness`, if this object has one.
+A creature with neither a number nor a star prints `*/*`. Any other object
+with neither prints nothing (CR 208.3). -/
+def formatPowerToughness (power toughness : Option Int)
+    (powerStar toughnessStar isCreature : Bool) : Option String :=
+  if power.isNone && toughness.isNone && !powerStar && !toughnessStar then
+    if isCreature then some "*/*" else none
+  else
+    some s!"{renderPrintedStat power powerStar}/{renderPrintedStat toughness toughnessStar}"
+
 def ptString (c : CardDef) : String :=
-  match c.power, c.toughness with
-  | some p, some t => s!"{p}/{t}"
-  | some p, none => s!"{p}/*"
-  | none, some t => s!"*/{t}"
-  | none, none => if c.isCreature then "*/*" else ""
+  (formatPowerToughness c.power c.toughness c.powerStar c.toughnessStar c.isCreature).getD ""
 
 /-- Name, printed mana cost if any, type line, P/T, then keywords and abilities.
 Cards with no mana cost (lands, and other objects whose cost cannot be paid)

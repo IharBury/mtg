@@ -673,6 +673,18 @@ namespace CardDef
 #guard
   let c : CardDef := { name := "Silent Star", types := #[.creature], toughness := some 3 }
   c.ptString == "*/3"
+#guard
+  let c : CardDef := {
+    name := "Lost Order of Jarkeld", types := #[.creature]
+    power := some 1, toughness := some 1, powerStar := true, toughnessStar := true
+  }
+  c.ptString == "1+*/1+*"
+#guard
+  let c : CardDef := {
+    name := "Tarmogoyf", types := #[.creature]
+    powerStar := true, toughness := some 1, toughnessStar := true
+  }
+  c.ptString == "*/1+*"
 #guard StaticAbility.toNotation (.cantBlockUnlessYouControl #["Goblin", "Orc"]) ==
   "This creature can't block unless you control a Goblin or Orc."
 #guard StaticAbility.toNotation (.cantBlockUnlessYouControl #[]) ==

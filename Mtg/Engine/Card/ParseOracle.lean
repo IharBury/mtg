@@ -170,25 +170,98 @@ def parseHandLifeLine (line : String) : Option (Int × Int) :=
     | _, _ => none
   | _ => none
 
-def parseStat (tok : String) : Option Int :=
-  if tok == "*" then none
-  else if tok.startsWith "-" then
-    let n := (tok.drop 1).copy
-    if n.all Char.isDigit && !n.isEmpty then some (-n.toNat!) else none
-  else if tok.all Char.isDigit && !tok.isEmpty then some tok.toNat!
-  else none
+/-- One side of a printed power/toughness box (CR 208.1 / 208.2).
 
-def isStatToken (tok : String) : Bool :=
-  tok == "*" ||
-    (tok.startsWith "-" && (tok.drop 1).copy.all Char.isDigit && tok.length > 1) ||
-    (tok.all Char.isDigit && !tok.isEmpty)
+`number` is the fixed value, or the constant added to a star. A bare `*`
+has `number = none` and `star = true`. `1+*` and `*+1` both have
+`number = some 1` and `star = true`. When the star can't be determined,
+count it as 0 (CR 208.2a), so the value is `number.getD 0`. -/
+structure PrintedStat where
+  number : Option Int := none
+  star : Bool := false
+deriving Repr, Inhabited, BEq
 
-/-- `2/2`, `*/*`, or `1/*`. -/
-def parsePT (line : String) : Option (Option Int × Option Int) :=
+namespace PrintedStat
+
+/-- This stat with an undetermined star counted as 0 (CR 208.2a / 208.5). -/
+def undetermined (s : PrintedStat) : Int :=
+  s.number.getD 0
+
+end PrintedStat
+
+private def digitValue (c : Char) : Nat :=
+  c.toNat - '0'.toNat
+
+/-- Natural number at the front of `cs`. -/
+private def readNatPrefix (cs : List Char) : Option (Nat × List Char) :=
+  let rec go : List Char → Nat → Bool → Option (Nat × List Char)
+    | [], _, false => none
+    | [], n, true => some (n, [])
+    | c :: rest, n, any =>
+      if c.isDigit then go rest (n * 10 + digitValue c) true
+      else if any then some (n, c :: rest) else none
+  go cs 0 false
+
+/-- Constant added to the one star in `cs`.
+`*`, `1+*`, `*+1`, `2+*`, `*-1`, and `-1+*` are accepted. -/
+private def readStarConstant (cs : List Char) : Option Int :=
+  let rec go (fuel : Nat) (cs : List Char) (acc : Int) (saw started : Bool) : Option Int :=
+    match fuel with
+    | 0 => none
+    | fuel + 1 =>
+      match cs with
+      | [] => if saw then some acc else none
+      | '*' :: rest =>
+        -- A star after a number needs a `+`, as in `1+*`. `2*` is not a stat.
+        if saw || started then none else go fuel rest acc true true
+      | '+' :: '*' :: rest =>
+        if !started || saw then none else go fuel rest acc true true
+      | '+' :: rest =>
+        if !started then none
+        else
+          match readNatPrefix rest with
+          | some (n, rest) => go fuel rest (acc + Int.ofNat n) saw true
+          | none => none
+      | '-' :: rest =>
+        match readNatPrefix rest with
+        | some (n, rest) => go fuel rest (acc - Int.ofNat n) saw true
+        | none => none
+      | _ =>
+        if started then none
+        else
+          match readNatPrefix cs with
+          | some (n, rest) => go fuel rest (acc + Int.ofNat n) saw true
+          | none => none
+  go (cs.length + 1) cs 0 false false
+
+/-- `2`, `-1`, `*`, `1+*`, or `*+1`. -/
+def parseStat (tok : String) : Option PrintedStat :=
+  let cs := tok.toList
+  if cs.contains '*' then
+    match readStarConstant cs with
+    | none => none
+    | some k =>
+      if k == 0 then some { star := true } else some { number := some k, star := true }
+  else
+    let (neg, digits) :=
+      if cs.head? == some '-' then (true, cs.drop 1) else (false, cs)
+    match readNatPrefix digits with
+    | some (n, []) =>
+      let k : Int := if neg then -Int.ofNat n else Int.ofNat n
+      some { number := some k }
+    | _ => none
+
+/-- `2/2`, `*/*`, `1/*`, or `1+*/1+*` (CR 208.1 / 208.2).
+
+A star is 0 when it can't be determined, so Lost Order of Jarkeld's `1+*`
+is 1 off the battlefield (CR 208.2a). `*+1` is the same value as `1+*`. -/
+def parsePT (line : String) : Option (PrintedStat × PrintedStat) :=
   let line := line.trimAscii.copy.replace " " ""
   match line.splitOn "/" with
   | [a, b] =>
-    if isStatToken a && isStatToken b then some (parseStat a, parseStat b) else none
+    match parseStat a, parseStat b with
+    | some pa, some pb => some (pa, pb)
+    | _, _ => none
   | _ => none
 
 def parseColorName (w : String) : Option Color :=
@@ -1236,8 +1309,8 @@ def parseFace (lines : List String) : Except String CardDef :=
           | line :: rest =>
             match parsePT line with
             | some pt => (pt, rest)
-            | none => ((none, none), line :: rest)
-          | [] => ((none, none), [])
+            | none => (({}, {}), line :: rest)
+          | [] => (({}, {}), [])
         let rec takeExtras (c : CardDef) : List String → CardDef × List String
           | [] => (c, [])
           | line :: rest =>
@@ -1280,7 +1353,8 @@ def parseFace (lines : List String) : Except String CardDef :=
                         else (c, line :: rest)
         let base : CardDef := {
           name, manaCost := cost, supertypes := supers, types, subtypes
-          power := pt.1, toughness := pt.2
+          power := pt.1.number, toughness := pt.2.number
+          powerStar := pt.1.star, toughnessStar := pt.2.star
         }
         let (base, rest) := takeExtras base rest
         let (rules, adv) := splitAdventure rest
@@ -1335,15 +1409,14 @@ def renderColors (cs : ColorSet) : String :=
 def formatPrintedCard (name : String) (manaCost : ManaCost)
     (supertypes : Array Supertype) (types : Array CardType) (subtypes : Array Subtype)
     (power toughness : Option Int) (colorIndicator : Option ColorSet)
-    (isToken : Bool) (rules : String) : String :=
+    (isToken : Bool) (rules : String)
+    (powerStar : Bool := false) (toughnessStar : Bool := false) : String :=
   let cost := if manaCost.symbols.isEmpty then [] else [toString manaCost]
   let isCreature := types.any (· == .creature)
   let pt : List String :=
-    match power, toughness with
-    | some p, some t => [s!"{p}/{t}"]
-    | some p, none => [s!"{p}/*"]
-    | none, some t => [s!"*/{t}"]
-    | none, none => if isCreature then ["*/*"] else []
+    match CardDef.formatPowerToughness power toughness powerStar toughnessStar isCreature with
+    | some s => [s]
+    | none => []
   let color :=
     match colorIndicator with
     | some cs => [s!"Color indicator: {renderColors cs}"]
@@ -1362,6 +1435,7 @@ partial def renderFullOracle (c : CardDef) : String :=
   let face :=
     formatPrintedCard c.name c.manaCost c.supertypes c.types c.subtypes
       c.power c.toughness c.colorIndicator c.isToken rules
+      c.powerStar c.toughnessStar
   let face :=
     match c.loyalty with
     | some n => face ++ s!"\nLoyalty: {n}"
@@ -1407,11 +1481,63 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
 #guard parseManaCost "{G/U}" == some (ManaCost.ofHybrid .green .blue)
 #guard (parseTypeLine "Legendary Creature — Dwarf Scout").toOption ==
   some (#[.legendary], #[.creature], #["Dwarf", "Scout"])
-#guard parsePT "2/2" == some (some 2, some 2)
-#guard parsePT "*/*" == some (none, none)
+#guard parsePT "2/2" == some ({ number := some 2 }, { number := some 2 })
+#guard parsePT "2/3" == some ({ number := some 2 }, { number := some 3 })
+#guard parsePT "-1/-1" == some ({ number := some (-1) }, { number := some (-1) })
+#guard parsePT "*/*" == some ({ star := true }, { star := true })
+#guard parsePT "1/*" == some ({ number := some 1 }, { star := true })
+#guard parsePT "*/3" == some ({ star := true }, { number := some 3 })
+#guard parsePT "*/4" == some ({ star := true }, { number := some 4 })
+#guard parsePT "1+*/1+*" == some ({ number := some 1, star := true }, { number := some 1, star := true })
+#guard parsePT "*+1/*+1" == parsePT "1+*/1+*"
+#guard parsePT "1 + */1 + *" == parsePT "1+*/1+*"
+#guard parsePT "*/1+*" == some ({ star := true }, { number := some 1, star := true })
+#guard parsePT "2+*/2+*" == some ({ number := some 2, star := true }, { number := some 2, star := true })
+#guard parsePT "*-1/*-1" == some ({ number := some (-1), star := true }, { number := some (-1), star := true })
+#guard (parsePT "1+*/1+*").map (fun (p, t) => (p.undetermined, t.undetermined)) == some (1, 1)
+#guard (parsePT "*/*").map (fun (p, t) => (p.undetermined, t.undetermined)) == some (0, 0)
+#guard parsePT "+1/+1" == none
+#guard parsePT "2*/2*" == none
+#guard parsePT "1+/1" == none
+#guard parsePT "*+/*+" == none
+#guard parsePT "*1/*1" == none
 #guard (parseOracleCard "Grizzly Bears\n{1}{G}\nCreature — Bear\n2/2").toOption.map
     (fun c => c.name == "Grizzly Bears" && c.manaCost == ManaCost.ofGenericAndColor 1 .green &&
-      c.power == some 2 && c.toughness == some 2 && c.isCreature) == some true
+      c.power == some 2 && c.toughness == some 2 && !c.powerStar && !c.toughnessStar &&
+      c.isCreature) == some true
+
+-- CR 208.2 / 208.2a: power and toughness may include a star. Lost Order of
+-- Jarkeld is `1+*`. With no chosen player, the star is 0, so the card is 1/1.
+-- `*+1` is that same printed value. A bare star is 0.
+#guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1+*/1+*\nVigilance").toOption.map
+    (fun c => c.power == some 1 && c.toughness == some 1 && c.powerStar && c.toughnessStar &&
+      c.power.getD 0 == 1 && c.toughness.getD 0 == 1 && c.ptString == "1+*/1+*" &&
+      c.keywords.vigilance && c.hasSubtype "Human" && c.hasSubtype "Knight") == some true
+#guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n*+1/*+1").toOption.map
+    (fun c => c.power == some 1 && c.toughness == some 1 && c.powerStar && c.toughnessStar &&
+      c.ptString == "1+*/1+*") == some true
+#guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1 + * / 1 + *").toOption.map
+    (fun c => c.ptString == "1+*/1+*" && c.power.getD 0 == 1) == some true
+#guard
+  match parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1+*/1+*\nVigilance" with
+  | .ok c =>
+    match parseOracleCard (renderFullOracle c) with
+    | .ok d => d.power == some 1 && d.toughness == some 1 && d.powerStar && d.toughnessStar &&
+        d.ptString == "1+*/1+*" && d.keywords.vigilance
+    | .error _ => false
+  | .error _ => false
+#guard (parseOracleCard "Tarmogoyf\n{1}{G}\nCreature — Lhurgoyf\n*/1+*").toOption.map
+    (fun c => c.power.isNone && c.powerStar && c.toughness == some 1 && c.toughnessStar &&
+      c.power.getD 0 == 0 && c.toughness.getD 0 == 1 && c.ptString == "*/1+*") == some true
+#guard (parseOracleCard "Angry Mob\n{2}{W}{W}\nCreature — Human\n2+*/2+*").toOption.map
+    (fun c => c.power == some 2 && c.toughness == some 2 && c.powerStar && c.toughnessStar &&
+      c.power.getD 0 == 2 && c.ptString == "2+*/2+*") == some true
+#guard (parseOracleCard "Maro\n{2}{G}{G}\nCreature — Elemental\n*/*").toOption.map
+    (fun c => c.power.isNone && c.toughness.isNone && c.powerStar && c.toughnessStar &&
+      c.power.getD 0 == 0 && c.toughness.getD 0 == 0 && c.ptString == "*/*") == some true
+#guard (parseOracleCard "Namor the Sub-Mariner\n{1}{U}{U}\nLegendary Creature — Mutant Merfolk Villain\n*/4\nFlying").toOption.map
+    (fun c => c.power.isNone && c.powerStar && c.toughness == some 4 && !c.toughnessStar &&
+      c.ptString == "*/4" && c.keywords.flying) == some true
 #guard (parseOracleCard "Mountain\nBasic Land — Mountain\n({T}: Add {R}.)").toOption.map
     (fun c => c.isLand && c.hasSupertype .basic && c.hasSubtype "Mountain" &&
       c.tapAddMana.isEmpty) == some true
