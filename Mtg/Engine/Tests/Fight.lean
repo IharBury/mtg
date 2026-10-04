@@ -5,6 +5,7 @@ import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
 import Mtg.Engine.Tests.Helpers
+import Mtg.Engine.Tests.RulingFixtures
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
 import Mtg.Engine.Tests.Combat
@@ -489,14 +490,6 @@ def attercopLandfallResolved : Game := passBoth attercopLandPlayed
   g.power (namedPermanent g "Attercop") == 4 &&
     g.toughness (namedPermanent g "Attercop") == 3
 
-/-- An opponent's land does not trigger your landfall. -/
-def nissaLandVsAttercop : Game :=
-  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
-  let g := passBoth (skipTo g .end 80)
-  let g := skipTo g .precombatMain 80
-  let g := addToHand g forest ⟨1⟩
-  mustApply g ⟨1⟩ (.playLand (handCardNamed g ⟨1⟩ "Forest").id)
-
 #guard nissaLandVsAttercop.stack.isEmpty
 #guard !(nissaLandVsAttercop.log.any (fun s => mentions s "landfall"))
 #guard nissaLandVsAttercop.power (namedPermanent nissaLandVsAttercop "Attercop") == 2
@@ -629,16 +622,6 @@ def apnapDiesAfterApTargets : Game :=
 #guard apnapDiesAfterApTargets.stack.back!.controller == ⟨1⟩
 #guard (apnapDiesAfterApTargets.object! apnapDiesAfterApTargets.stack.back!.objectId).sourceId ==
   some (fireleaperControlledBy apnapDiesSetup ⟨1⟩)
-
-/-- Wood Elves putting a Forest onto the battlefield also triggers landfall. -/
-def attercopWoodElvesResolved : Game :=
-  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
-  let g := withGreenMana (addToHand g woodElves ⟨0⟩) ⟨0⟩
-  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Wood Elves").id)
-  let g := mustApply g ⟨0⟩ .pay
-  let g := passBoth g
-  let g := addToLibraryTop (addToLibraryTop g forest ⟨0⟩) mountain ⟨0⟩
-  passBoth g
 
 #guard attercopWoodElvesResolved.battlefield.any (fun o => o.name == "Forest")
 #guard attercopWoodElvesResolved.stack.size == 1

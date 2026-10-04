@@ -29,7 +29,7 @@ open Mtg.Engine.Catalog
 #guard mentions wayfarersBauble.summary "Search your library"
 #guard mentions attercop.summary "reach"
 #guard mentions attercop.summary "deathtouch"
-#guard mentions attercop.summary "Landfall"
+#guard mentions attercop.summary "a land you control enters"
 #guard attercop.keywords.reach
 #guard attercop.keywords.deathtouch
 #guard attercop.triggeredAbilities.size == 1
@@ -140,7 +140,7 @@ open Mtg.Engine.Catalog
 #guard mentions goblinCratermaker.summary "Choose one"
 #guard mentions goblinCratermaker.summary "colorless nonland"
 #guard goblinCratermaker.activatedAbilities.size == 1
-#guard mentions beornsHospitality.summary "Landfall"
+#guard mentions beornsHospitality.summary "a land you control enters"
 #guard mentions beornsHospitality.summary "Bear creature"
 #guard beornsHospitality.triggeredAbilities.size == 1
 #guard beornsHospitality.activatedAbilities.size == 1
@@ -171,7 +171,7 @@ open Mtg.Engine.Catalog
 #guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
 #guard desolationProwler.activatedAbilities[0]!.onceEachTurn
 #guard mentions raveningWarg.summary "deathtouch"
-#guard mentions raveningWarg.summary "Ferocious"
+#guard mentions raveningWarg.summary "while you control a creature with power 4 or greater"
 #guard mentions raveningWarg.summary "power 4 or greater"
 #guard raveningWarg.keywords.deathtouch
 #guard raveningWarg.triggeredAbilities.size == 1
@@ -181,7 +181,7 @@ open Mtg.Engine.Catalog
 #guard gollumSilentSlinker.keywords.menace
 #guard gollumSilentSlinker.power == some 4
 #guard gollumSilentSlinker.toughness == some 3
-#guard mentions bilbosDeadlySlice.summary "Destroy target creature"
+#guard mentions bilbosDeadlySlice.summary "destroy target creature"
 #guard bilbosDeadlySlice.isInstant
 #guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
 #guard bilbosDeadlySlice.requiresTarget
@@ -439,7 +439,8 @@ open Mtg.Engine.Catalog
     (keywords := Keyword.menace)
   mentions c.summary "menace" &&
     !mentions c.summary "can't be blocked except" &&
-    CardDef.isKeywordRestatement c.keywords c.oracleText
+    CardDef.isKeywordRestatement c.keywords
+      "Menace (This creature can't be blocked except by two or more creatures.)"
 
 #guard
   let c := creature "Silent Oliphaunt" ManaCost.empty #[] 6 4

@@ -5,6 +5,7 @@ import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
 import Mtg.Engine.Tests.Helpers
+import Mtg.Engine.Tests.RulingFixtures
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
 import Mtg.Engine.Tests.Combat
@@ -23,9 +24,6 @@ open Mtg.Engine.Catalog
 /- Typecycling: Oliphaunt Mountaincycling and Troll of Khazad-dûm Swampcycling
 (CR 702.29). -/
 
-def oliphauntCycleAbility : ActivatedAbility :=
-  oliphaunt.activatedAbilities[0]!
-
 def trollCycleAbility : ActivatedAbility :=
   trollOfKhazadDum.activatedAbilities[0]!
 
@@ -35,16 +33,6 @@ def stompingGround : CardDef :=
 
 #guard isLandTypeCard stompingGround "Mountain"
 #guard !isBasicLandCard stompingGround
-
-/-- Isolated library so the search finds a known card. -/
-def withOnlyLibrary (g : Game) (p : PlayerId) (cards : Array CardDef) : Game :=
-  let g := g.modifyPlayer p (fun pl => { pl with library := #[] })
-  cards.foldl (fun g c => addToLibraryTop g c p) g
-
-def oliphauntCycleReady : Game :=
-  let g := readyMain (emptyHand afterDraw ⟨0⟩)
-  let g := withOnlyLibrary g ⟨0⟩ #[mountain]
-  withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
 
 #guard oliphauntCycleReady.canActivate ⟨0⟩
   (handCardNamed oliphauntCycleReady ⟨0⟩ "Oliphaunt") oliphauntCycleAbility
@@ -59,12 +47,6 @@ def oliphauntCycleReady : Game :=
 #guard
   let g := addToHand afterDraw oliphaunt ⟨1⟩
   !(g.canActivate ⟨0⟩ (handCardNamed g ⟨1⟩ "Oliphaunt") oliphauntCycleAbility)
-
-def oliphauntCycled : Game :=
-  let g := oliphauntCycleReady
-  let src := handCardNamed g ⟨0⟩ "Oliphaunt"
-  let g := mustApply g ⟨0⟩ (.activate src.id 0)
-  passBoth (mustApply g ⟨0⟩ .pay)
 
 #guard (oliphauntCycled.handObjects ⟨0⟩).any (fun o => o.name == "Mountain")
 #guard (oliphauntCycled.player ⟨0⟩).graveyard.any (fun id =>
@@ -122,13 +104,6 @@ def oliphauntCycleNonbasic : Game :=
   o.name == "Stomping Ground")
 #guard oliphauntCycleNonbasic.log.any (fun s =>
   mentions s "reveals Stomping Ground and puts it into their hand")
-
-/-- Typecycling is instant-speed (CR 702.29 / 117.1). -/
-def oliphauntCycleAtEnd : Game :=
-  let g := applyIdle (passBoth (skipTo afterDraw .end 80))
-  let g := emptyHand g ⟨0⟩
-  let g := withOnlyLibrary g ⟨0⟩ #[mountain]
-  withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
 
 #guard !oliphauntCycleAtEnd.asSorcery? ⟨0⟩
 #guard oliphauntCycleAtEnd.canActivate ⟨0⟩
@@ -292,7 +267,7 @@ def ogreGrantedMenaceReadyToBlock : Game :=
 #guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
 #guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard bilbosDeadlySlice.requiresTarget
-#guard mentions bilbosDeadlySlice.summary "Destroy target creature"
+#guard mentions bilbosDeadlySlice.summary "destroy target creature"
 
 /-- Bilbo's Deadly Slice in hand, an opposing Grizzly Bears, enough mana. -/
 def bilbosDeadlySliceSetup : Game :=

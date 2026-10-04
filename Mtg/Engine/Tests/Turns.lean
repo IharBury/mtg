@@ -327,6 +327,16 @@ def namedPermanent (g : Game) (name : String) : GameObject :=
   | some o => o
   | none => panic! s!"expected {name} on the battlefield"
 
+/-- True when a battlefield permanent named `n` exists. -/
+def onBattlefield (g : Game) (n : String) : Bool :=
+  g.battlefield.any (fun o => o.name == n)
+
+/-- Put `card` on the battlefield and let its enters abilities trigger. -/
+def mshEnter (g : Game) (card : CardDef) : Game :=
+  let g := addPermanent g card ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g card.name
+  (g.afterPermanentEnters o).receivePriority ⟨0⟩
+
 def namedGraveyardCard (g : Game) (p : PlayerId) (name : String) : GameObject :=
   match g.objects.find? (fun o => o.name == name && o.zone == .graveyard p) with
   | some o => o

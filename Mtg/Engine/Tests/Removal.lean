@@ -851,7 +851,7 @@ def resolvedQuarrelWarg : Game :=
 #guard nightsWhisper.spellEffect == some (Effect.drawAndLoseLife 2 2)
 #guard nightsWhisper.hasCastKind .draw
 #guard !nightsWhisper.requiresTarget
-#guard mentions nightsWhisper.summary "draw two cards"
+#guard mentions nightsWhisper.summary "draw 2 cards"
 #guard mentions nightsWhisper.summary "lose 2 life"
 
 -- Direct resolution draws that many cards and loses that much life.

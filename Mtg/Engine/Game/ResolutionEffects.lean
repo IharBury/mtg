@@ -348,7 +348,7 @@ def theVoidToken : CardDef :=
   { (creatureToken "The Void" #["Horror", "Villain"] 5 5 (some .black)
       ((Keyword.flying).merge Keyword.indestructible)) with
     supertypes := #[.legendary]
-    oracleText := "Flying, indestructible\nThe Void attacks each combat if able." }
+    staticAbilities := #[.attacksEachCombatIfAble] }
 
 def galactusToken : CardDef :=
   { (creatureToken "Galactus" #["Elder", "Alien"] 16 16 (some .black)

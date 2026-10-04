@@ -15,7 +15,6 @@ def treasureToken : CardDef := {
   name := "Treasure"
   types := #[.artifact]
   subtypes := #["Treasure"]
-  oracleText := "{T}, Sacrifice this artifact: Add one mana of any color."
   tapSacrificeAddAnyColor := true
   isToken := true
 }
@@ -156,7 +155,6 @@ def foodToken : CardDef := {
   name := "Food"
   types := #[.artifact]
   subtypes := #["Food"]
-  oracleText := "{2}, {T}, Sacrifice this artifact: You gain 3 life."
   activatedAbilities := #[{
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
     effect := Effect.gainLife 3
@@ -212,7 +210,6 @@ def clueToken : CardDef := {
   name := "Clue"
   types := #[.artifact]
   subtypes := #["Clue"]
-  oracleText := "{2}, Sacrifice this token: Draw a card."
   activatedAbilities := #[{
     cost := { mana := ManaCost.ofGeneric 2, sacrificeSource := true }
     effect := Effect.abilityDraw 1
@@ -271,7 +268,6 @@ def alien11redHasteToken : CardDef := {
   toughness := some 1
   colorIndicator := some (ColorSet.singleton .red)
   keywords := Keyword.haste
-  oracleText := "Haste\nThis token attacks each combat if able."
   staticAbilities := #[.attacksEachCombatIfAble]
   isToken := true
 }
@@ -282,7 +278,6 @@ def vibraniumToken : CardDef := {
   name := "Vibranium"
   types := #[.artifact]
   subtypes := #["Vibranium"]
-  oracleText := "Indestructible\n{T}: Add {C}. This mana can't be spent to cast a nonartifact spell."
   keywords := Keyword.indestructible
   tapAddMana := #[.colorless]
   isToken := true

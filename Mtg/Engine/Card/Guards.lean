@@ -33,29 +33,6 @@ namespace CardDef
 #guard CardDef.stripAdventureDelimiter "//ADV//" == none
 #guard CardDef.stripAdventureDelimiter "//ADV// Spew Flame {4}{R}" ==
   some "Spew Flame {4}{R}"
-#guard
-  let c : CardDef := {
-    name := "Silent Adventurer"
-    types := #[.creature]
-    oracleText :=
-      "Flying\n//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature."
-    keywords := Keyword.flying
-  }
-  leftoverOracleLines c ==
-    ["Spew Flame {4}{R}", "Sorcery — Adventure",
-      "Spew Flame deals 5 damage to target creature."] &&
-    (c.oracleText.splitOn "//ADV//").length > 1
-#guard
-  let c : CardDef := {
-    name := "Silent Adventurer"
-    types := #[.creature]
-    oracleText :=
-      "Flying\n//ADV// Spew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature."
-    keywords := Keyword.flying
-  }
-  leftoverOracleLines c ==
-    ["Spew Flame {4}{R}", "Sorcery — Adventure",
-      "Spew Flame deals 5 damage to target creature."]
 #guard (Effect.dealDamage 3).targetKind == .playerOrCreature
 #guard (Effect.dealDamage 3).resolution == Resolution.onPermanent (.dealDamage 3)
 #guard (Effect.dealDamage 3).phrase == "deals 3 damage to any target"
@@ -1049,7 +1026,6 @@ end CardDef
   let adv : AdventureFace := {
     name := "Spew Flame"
     manaCost := ManaCost.ofGenericAndColor 4 .red
-    oracleText := "Spew Flame deals 5 damage to target creature."
     spellEffect := some (Effect.dealDamageToCreature 5)
   }
   let c := adv.toCardDef
@@ -1060,7 +1036,6 @@ end CardDef
   let adv : AdventureFace := {
     name := "Till and Tend"
     manaCost := ManaCost.ofGenericAndColor 1 .green
-    oracleText := "You may play an additional land this turn."
     spellEffect := some (Effect.playAdditionalLandThisTurn)
   }
   let c := adv.toCardDef
@@ -1081,7 +1056,6 @@ end CardDef
     adventure := some {
       name := "Spew Flame"
       manaCost := ManaCost.ofGenericAndColor 4 .red
-      oracleText := ""
       spellEffect := some (Effect.dealDamageToCreature 5)
     }
   }

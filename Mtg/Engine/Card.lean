@@ -18,6 +18,7 @@ import Mtg.Engine.Card.SpellEffects
 import Mtg.Engine.Card.TriggeredAbility
 import Mtg.Engine.Card.Saga
 import Mtg.Engine.Card.CardDef
+import Mtg.Engine.Card.ParseOracle
 import Mtg.Engine.Card.Guards
 
 /-!

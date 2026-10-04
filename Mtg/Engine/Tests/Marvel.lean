@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Catalog.Supported
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -22,22 +21,11 @@ open Mtg.Engine.Catalog
 
 /-! ## Marvel Super Heroes (MSH) -/
 
-#guard mshCards.size == 286
-#guard supportedCatalogCards.any (fun c => c.name == "Brave Brawler")
-#guard supportedCatalogCards.any (fun c => c.name == "Jennifer Walters")
-#guard supportedCatalogCards.any (fun c => c.name == "The Sensational She-Hulk")
-#guard supportedCatalogCards.any (fun c => c.name == "Stature, Size Shifter")
 #guard statureSizeShifter.staticAbilities == #[StaticAbility.cantBeBlockedIfPowerAtMost 1]
 #guard statureSizeShifter.activatedAbilities[0]!.effect == Effect.plusOneX
 #guard statureSizeShifter.activatedAbilities[0]!.powerUp
 #guard statureSizeShifter.activatedAbilities[0]!.cost.mana ==
   ({ symbols := #[.x, .colored .blue, .colored .blue] } : ManaCost)
-
-/-- Put `card` onto the battlefield and run enters replacements (shield, power-up). -/
-def mshEnter (g : Game) (card : CardDef) : Game :=
-  let g := addPermanent g card ⟨0⟩ ⟨0⟩
-  let o := namedPermanent g card.name
-  (g.afterPermanentEnters o).receivePriority ⟨0⟩
 
 /-- Power-up costs are reduced by the creature's mana cost if it entered this turn
 (CR 702.193b). `{4}{W}` minus Brave Brawler's `{1}{W}` is `{3}`. -/

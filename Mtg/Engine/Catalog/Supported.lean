@@ -15,7 +15,7 @@ namespace Mtg.Engine
 open Catalog
 
 /-- Every card in the engine catalog. -/
-def supportedCatalogCards : Array CardDef :=
+@[irreducible, noinline] def supportedCatalogCards : Array CardDef :=
   #[grizzlyBears, grayOgre, hillGiant, canyonMinotaur, ragingGoblin,
     llanowarElves, crawWurm, centaurCourser, rumblingBaloth, giantSpider,
     lightningBolt, shock, giantGrowth]

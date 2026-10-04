@@ -1,4 +1,3 @@
-import Mtg.Engine
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Supported
 
@@ -107,14 +106,6 @@ def loadDeckListFile (path : String) : IO (Except String (Array CardDef)) := do
   catch e =>
     return .error s!"Failed to read deck list {path}: {e}"
 
-#guard (supportedCard? "Lightning Bolt").isSome
-#guard (supportedCard? "lightning bolt").isSome
-#guard (supportedCard? "Mountain").isSome
-#guard (supportedCard? "Bofur, Reliable Guardian").isSome
-#guard (supportedCard? "Elvish Archdruid").isSome
-#guard (supportedCard? "Black Lotus").isNone
-#guard (supportedCard? "Treasure").isNone
-
 #guard
   match parseDeckCountPrefix "4 Lightning Bolt" with
   | some (4, "Lightning Bolt") => true
@@ -142,48 +133,43 @@ def loadDeckListFile (path : String) : IO (Except String (Array CardDef)) := do
 #guard deckListEntry? "Lightning Bolt" == some (1, "Lightning Bolt")
 #guard deckListEntry? "2 Shock" == some (2, "Shock")
 
+-- One guard so the supported catalog is built once. Separate `#guard`s each
+-- rebuild all 609 printed cards.
 #guard
-  match parseDeckList #["4 Lightning Bolt", "20 Mountain"] with
-  | .ok cards =>
-    cards.size == 24 &&
-    cards[0]!.name == "Lightning Bolt" &&
-    cards[4]!.name == "Mountain"
-  | .error _ => false
-
-#guard
-  match parseDeckList #["# comment", "", "Shock"] with
-  | .ok cards => cards.size == 1 && cards[0]!.name == "Shock"
-  | _ => false
-
-#guard
-  match parseDeckList #["1x Giant Growth"] with
-  | .ok cards => cards.size == 1 && cards[0]!.name == "Giant Growth"
-  | _ => false
-
-#guard
-  match parseDeckList #["black lotus"] with
-  | .error msg => msg == "line 1: unsupported card: black lotus"
-  | _ => false
-
-#guard
-  match parseDeckList #["# only comments"] with
-  | .error msg => msg == "Deck list is empty"
-  | _ => false
-
-#guard
-  match parseDeckList #["0 Mountain"] with
-  | .error msg => msg == "line 1: count must be at least 1"
-  | _ => false
-
-#guard
-  match parseDeckList #["Deck", "2 Lightning Bolt", "Sideboard", "1 Shock"] with
-  | .ok cards =>
-    cards.size == 2 && cards.all (fun c => c.name == "Lightning Bolt")
-  | _ => false
-
-#guard
-  match parseDeckList #["40 Forest"] with
-  | .ok cards => cards.size == 40 && cards.all (fun c => c.name == "Forest")
-  | _ => false
+  (supportedCard? "Lightning Bolt").isSome &&
+    (supportedCard? "lightning bolt").isSome &&
+    (supportedCard? "Mountain").isSome &&
+    (supportedCard? "Bofur, Reliable Guardian").isSome &&
+    (supportedCard? "Elvish Archdruid").isSome &&
+    (supportedCard? "Black Lotus").isNone &&
+    (supportedCard? "Treasure").isNone &&
+    (match parseDeckList #["4 Lightning Bolt", "20 Mountain"] with
+      | .ok cards =>
+        cards.size == 24 &&
+          cards[0]!.name == "Lightning Bolt" &&
+          cards[4]!.name == "Mountain"
+      | .error _ => false) &&
+    (match parseDeckList #["# comment", "", "Shock"] with
+      | .ok cards => cards.size == 1 && cards[0]!.name == "Shock"
+      | _ => false) &&
+    (match parseDeckList #["1x Giant Growth"] with
+      | .ok cards => cards.size == 1 && cards[0]!.name == "Giant Growth"
+      | _ => false) &&
+    (match parseDeckList #["black lotus"] with
+      | .error msg => msg == "line 1: unsupported card: black lotus"
+      | _ => false) &&
+    (match parseDeckList #["# only comments"] with
+      | .error msg => msg == "Deck list is empty"
+      | _ => false) &&
+    (match parseDeckList #["0 Mountain"] with
+      | .error msg => msg == "line 1: count must be at least 1"
+      | _ => false) &&
+    (match parseDeckList #["Deck", "2 Lightning Bolt", "Sideboard", "1 Shock"] with
+      | .ok cards =>
+        cards.size == 2 && cards.all (fun c => c.name == "Lightning Bolt")
+      | _ => false) &&
+    (match parseDeckList #["40 Forest"] with
+      | .ok cards => cards.size == 40 && cards.all (fun c => c.name == "Forest")
+      | _ => false)
 
 end Mtg.Demo

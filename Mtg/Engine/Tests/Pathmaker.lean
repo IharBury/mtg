@@ -158,7 +158,7 @@ def mountainThenPassageBauble : Game :=
 /-- A source that lists green before colorless still taps for `{C}` when the
 remaining cost is generic. -/
 def greenThenColorlessLand : CardDef :=
-  land "Silent Caves" "{T}: Add {C} or {G}."
+  land "Silent Caves" "{T}: Add {G} or {C}."
     (tapAddOneOf := #[.colored .green, .colorless])
 
 def silentCavesReady : Game :=
