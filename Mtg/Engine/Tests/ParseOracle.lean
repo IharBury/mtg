@@ -16,6 +16,23 @@ open OracleActivate
 open OracleArgs
 open OracleCandidates
 
+/-- A stored line's cached normal forms equal normalizing it for the card,
+whether or not the card's name occurs in the line. -/
+def normLineAgrees (cardName line : String) : Bool :=
+  let n := NormLine.of line
+  n.unitFor cardName (nameKeys cardName) == normalizeUnit cardName line &&
+    n.structuralFor cardName (nameKeys cardName) == normalizeStructural cardName line
+
+#guard normLineAgrees "Shock" "Draw two cards."
+#guard normLineAgrees "Shock" "Shock deals 2 damage to any target."
+#guard normLineAgrees "Gandalf, Spark Starter" "Gandalf deals 2 damage to any target."
+#guard normLineAgrees "Bilbo, Retired Burglar" "Put a +1/+1 counter on Bilbo's ally."
+#guard normLineAgrees "Elven Raft-Steerer" "Other Elven creatures you control get +1/+1."
+#guard normLineAgrees "Lightning Bolt"
+  "Landfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn. (Reminder.)"
+#guard (NormLine.of "Draw two cards.").unit == normalizeUnit "Shock" "Draw two cards."
+#guard mentionsNameKey (nameKeys "Shock") (NormLine.of "Shock deals 2 damage to any target.").base
+
 #guard parseManaCost "{1}{G}" == some (ManaCost.ofGenericAndColor 1 .green)
 #guard parseManaCost "{W}" == some (ManaCost.ofColor .white)
 #guard parseManaCost "{G/U}" == some (ManaCost.ofHybrid .green .blue)
