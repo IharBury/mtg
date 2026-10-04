@@ -41,6 +41,10 @@ inductive StrFmt where
   | plural
   | cycling (n : Nat)
   | non
+  /-- Any CR 205.3 subtype, singular spelling, however many words it is. -/
+  | sub
+  /-- Any CR 205.3 subtype, plural spelling. -/
+  | subPlural
   deriving BEq, Repr
 
 /-- One token of a normalized Oracle line. A hole remembers which argument it is. -/
@@ -545,14 +549,10 @@ def collectActivated (ab : ActivatedAbility) : Array SlotVal := runCollect (take
 def collectTriggered (ab : TriggeredAbility) : Array SlotVal := runCollect (takeTriggered ab)
 
 def singularize (s : String) : String :=
-  match lowerAscii s with
-  | "armies" => "Army"
-  | "elves" => "Elf"
-  | "wolves" => "Wolf"
-  | "dwarves" => "Dwarf"
-  | "heroes" => "Hero"
-  | "merfolk" => "Merfolk"
-  | low =>
+  match ofOracle? s with
+  | some name => name
+  | none =>
+    let low := lowerAscii s
     if low.endsWith "s" && low.length > 3 && !low.endsWith "ss" then
       capFirst (low.dropEnd 1).toString
     else capFirst low
@@ -602,8 +602,8 @@ def renderInt (fmt : IntFmt) (i : Int) : String :=
 
 def renderStr (fmt : StrFmt) (s : String) : String :=
   match fmt with
-  | .word _ => s
-  | .plural => StaticAbility.pluralSubtype s
+  | .word _ | .sub => s
+  | .plural | .subPlural => StaticAbility.pluralSubtype s
   | .cycling _ => s ++ "cycling"
   | .non => "non-" ++ s
 
@@ -659,6 +659,28 @@ def intHit (i : Nat) (fmt : IntFmt) (v : Int) (toks : List String) (fresh : Bool
 def strWords (s : String) : List String :=
   tokenize (lowerAscii s)
 
+/-- A known subtype printed in this grammatical form. The hole later accepts
+every CR 205.3 subtype, not only `s`. -/
+def subHit (i : Nat) (fmt : StrFmt) (s : String) (toks : List String) (fresh : Bool) :
+    Option Hit :=
+  let found :=
+    match fmt with
+    | .sub => matchSubtypeForm false toks
+    | .subPlural => matchSubtypeForm true toks
+    | _ => none
+  match found with
+  | some (name, n) =>
+    if subtypeKey name == subtypeKey s then
+      some {
+        width := n
+        used := if fresh then [i] else []
+        pat := .str i fmt
+        needle := String.intercalate " " (toks.take n)
+        repl := renderStr fmt s
+      }
+    else none
+  | none => none
+
 def strHit (i : Nat) (fmt : StrFmt) (s : String) (toks : List String) (fresh : Bool) : Option Hit :=
   let needle :=
     match fmt with
@@ -669,7 +691,11 @@ def strHit (i : Nat) (fmt : StrFmt) (s : String) (toks : List String) (fresh : B
       match ws.dropLast with
       | [] => [lowerAscii s ++ "cycling"]
       | init => init ++ [ws.getLast! ++ "cycling"]
-    | .non => ["non-" ++ lowerAscii s]
+    | .non =>
+      match strWords s with
+      | [] => ["non-" ++ lowerAscii s]
+      | w :: ws => ("non-" ++ w) :: ws
+    | .sub | .subPlural => []
   if s.length < 2 || needle.isEmpty || !prefixTokens needle toks then none
   else some {
     width := needle.length
@@ -726,10 +752,18 @@ def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List 
                 hs := consider hs (ptHit i j false v t toks true)
               | _ => pure ()
       | .str s =>
-        hs := consider hs (strHit i (.word (strWords s).length) s toks fresh)
-        hs := consider hs (strHit i .plural s toks fresh)
-        hs := consider hs (strHit i (.cycling (strWords s).length) s toks fresh)
-        hs := consider hs (strHit i .non s toks fresh)
+        if ofOracle? s |>.isSome then
+          -- Plural first, then singular, so an invariant (`Merfolk`) learns
+          -- the singular hole when both spellings are the same word.
+          hs := consider hs (subHit i .subPlural s toks fresh)
+          hs := consider hs (subHit i .sub s toks fresh)
+          hs := consider hs (strHit i .non s toks fresh)
+          hs := consider hs (strHit i (.cycling (strWords s).length) s toks fresh)
+        else
+          hs := consider hs (strHit i (.word (strWords s).length) s toks fresh)
+          hs := consider hs (strHit i .plural s toks fresh)
+          hs := consider hs (strHit i (.cycling (strWords s).length) s toks fresh)
+          hs := consider hs (strHit i .non s toks fresh)
       | .ty t =>
         hs := consider hs (tyHit i t toks fresh)
     return hs
@@ -877,7 +911,16 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
           match setSlot vals i (.str (build got)) seen with
           | some (vals, seen) => some (vals, toks.drop n, seen)
           | none => none
+      let takeKnown (found : Option (String × Nat)) : Option (Array SlotVal × List Nat) :=
+        match found with
+        | some (name, n) =>
+          match setSlot vals i (.str name) seen with
+          | some (vals, seen) => go ps (toks.drop n) vals seen
+          | none => none
+        | none => none
       match fmt with
+      | .sub => takeKnown (matchSubtypeForm false toks)
+      | .subPlural => takeKnown (matchSubtypeForm true toks)
       | .word n =>
         match take n fun ws => capFirst (String.intercalate " " ws) with
         | some (vals, ts, seen) => go ps ts vals seen
@@ -890,24 +933,36 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
           | none => none
         | [] => none
       | .cycling n =>
-        match take n fun ws =>
-          match ws.dropLast with
-          | [] => capFirst ((ws.headD "").dropEnd "cycling".length).toString
-          | init =>
-            capFirst (String.intercalate " " (init ++
-              [((ws.getLast!).dropEnd "cycling".length).toString]))
-        with
-        | some (vals, ts, seen) => go ps ts vals seen
-        | none => none
+        match matchCyclingSubtype toks with
+        | some (name, w) =>
+          match setSlot vals i (.str name) seen with
+          | some (vals, seen) => go ps (toks.drop w) vals seen
+          | none => none
+        | none =>
+          match take n fun ws =>
+            match ws.dropLast with
+            | [] => capFirst ((ws.headD "").dropEnd "cycling".length).toString
+            | init =>
+              capFirst (String.intercalate " " (init ++
+                [((ws.getLast!).dropEnd "cycling".length).toString]))
+          with
+          | some (vals, ts, seen) => go ps ts vals seen
+          | none => none
       | .non =>
-        match toks with
-        | t :: ts =>
-          if t.startsWith "non-" then
-            match setSlot vals i (.str (capFirst (t.drop "non-".length).toString)) seen with
-            | some (vals, seen) => go ps ts vals seen
-            | none => none
-          else none
-        | [] => none
+        match matchNonSubtype toks with
+        | some (name, n) =>
+          match setSlot vals i (.str name) seen with
+          | some (vals, seen) => go ps (toks.drop n) vals seen
+          | none => none
+        | none =>
+          match toks with
+          | t :: ts =>
+            if t.startsWith "non-" then
+              match setSlot vals i (.str (capFirst (t.drop "non-".length).toString)) seen with
+              | some (vals, seen) => go ps ts vals seen
+              | none => none
+            else none
+          | [] => none
     | .ty i :: ps =>
       match toks with
       | t :: ts =>
@@ -983,6 +1038,8 @@ def patKey (pats : List (List Pat)) : String :=
       | .plural => "$p"
       | .cycling n => s!"$c{n}"
       | .non => "$n"
+      | .sub => "$s"
+      | .subPlural => "$sp"
     | .ty _ => "$t"
     | .pt _ _ signed => if signed then "+/+" else "#/#"
   String.intercalate "\n" (pats.map fun line => String.intercalate " " (line.map piece))
@@ -1022,9 +1079,14 @@ def allNeedles (args : Array SlotVal) : List Hit :=
             | _ => pure ()
       | .str s =>
         if s.length >= 2 then
-          let word := .word (strWords s).length
-          let cyc := .cycling (strWords s).length
-          for fmt in [word, StrFmt.plural, cyc, StrFmt.non] do
+          let fmts :=
+            match ofOracle? s with
+            | some _ =>
+              [StrFmt.sub, .subPlural, .non, .cycling (strWords s).length]
+            | none =>
+              [.word (strWords s).length, StrFmt.plural,
+                .cycling (strWords s).length, StrFmt.non]
+          for fmt in fmts do
             let needle := renderStr fmt s
             hs := { width := needle.length, used := [i], pat := .str i fmt, needle, repl := needle } :: hs
       | .ty t =>

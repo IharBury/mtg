@@ -122,11 +122,9 @@ def parseTypeLine (line : String) : Except String (Array Supertype × Array Card
         | some t => types := types.push t
         | none => return .error s!"unknown type-line word '{w}' in: {line}"
     if types.isEmpty then return .error s!"type line has no card type: {line}"
-    -- Planar subtypes are every word after the dash, together (CR 205.3b).
-    let subtypes :=
-      if types == #[.plane] && !sub.isEmpty then #[sub.trimAscii.copy]
-      else sub.splitOn " " |>.filter (· != "") |>.toArray
-    return .ok (supers, types, subtypes)
+    -- CR 205.3b: planes are one multi-word subtype; creatures and kindreds
+    -- keep `Time Lord` together; every other subtype is a single word.
+    return .ok (supers, types, splitPrintedSubtypes types sub)
 
 def parseUnsignedNat (tok : String) : Option Nat :=
   let tok := tok.trimAscii.copy
@@ -921,6 +919,37 @@ def wildcardHead (s : String) : String :=
     let t := if t.endsWith "cycling" then "$cycling" else "$"
     String.intercalate " " (t :: rest)
 
+/-- Collapse a leading typecycling span, including `Basic landcycling` and
+`Time Lordcycling`, so every cycling line of the same cost shares a key. -/
+def abstractCyclingLine (s : String) : Option String :=
+  let rec go (ts : List String) : Option (List String) :=
+    match ts with
+    | [] => none
+    | t :: rest =>
+      if t.endsWith "cycling" && t.length > "cycling".length then
+        some ("$cycling" :: rest)
+      else go rest
+  (go (tokenize s)).map fun ts => String.intercalate " " ts
+
+/-- Collapse a leading subtype (singular, plural, `non-`, or cycling) so
+`Time Lords you control` finds `Elves you control`. -/
+def abstractSubtypeLine (s : String) : Option String :=
+  let toks := tokenize s
+  let span? : Option Nat :=
+    match matchCyclingSubtype toks with
+    | some (_name, n) => some n
+    | none =>
+      match matchNonSubtype toks with
+      | some (_name, n) => some n
+      | none =>
+        match matchSubtypeForm true toks with
+        | some (_name, n) => some n
+        | none =>
+          match matchSubtypeForm false toks with
+          | some (_name, n) => some n
+          | none => none
+  span?.map fun n => String.intercalate " " ("$sub" :: toks.drop n)
+
 def mentionsCard (cardName : String) (lines : List String) : Bool :=
   let low := lowerAscii (String.intercalate "\n" lines)
   (nameAliases cardName).any fun a => low.contains (lowerAscii a)
@@ -972,11 +1001,19 @@ def pushBucket (m : Std.HashMap String (Array Nat)) (key : String) (i : Nat) :
   Thunk.mk fun _ => Id.run do
   let mut m : Std.HashMap String (Array Nat) := {}
   let mut i : Nat := 0
+  let addOpt (m : Std.HashMap String (Array Nat)) (k : Option String) (i : Nat) :=
+    match k with
+    | none => m
+    | some k =>
+      let m := pushBucket m k i
+      (lineKeys k).foldl (fun m sk => pushBucket m sk i) m
   let addKeys (m : Std.HashMap String (Array Nat)) (k : String) (i : Nat) :=
     let m := pushBucket m k i
     let m := (lineKeys k).foldl (fun m sk => pushBucket m sk i) m
     let m := pushBucket m (headWord k) i
-    (lineKeys (wildcardHead k)).foldl (fun m sk => pushBucket m sk i) m
+    let m := (lineKeys (wildcardHead k)).foldl (fun m sk => pushBucket m sk i) m
+    let m := addOpt m (abstractCyclingLine k) i
+    addOpt m (abstractSubtypeLine k) i
   for item in indexedAbilities.get do
     match item.light.head? with
     | some k => m := addKeys m k i
@@ -999,7 +1036,12 @@ def lookupKeys (cardName line : String) : List String :=
   let base := [lit, aliased, norm, normalizeStructural cardName line].foldl (fun acc k =>
     if k.isEmpty || acc.any (· == k) then acc else acc ++ [k]) []
   let wild := (base.map wildcardHead).flatMap lineKeys
-  (base ++ base.flatMap lineKeys ++ base.map headWord ++ wild).foldl
+  let extra :=
+    (base.filterMap abstractCyclingLine) ++
+    (base.filterMap abstractSubtypeLine) ++
+    ((base.filterMap abstractCyclingLine).flatMap lineKeys) ++
+    ((base.filterMap abstractSubtypeLine).flatMap lineKeys)
+  (base ++ base.flatMap lineKeys ++ base.map headWord ++ wild ++ extra).foldl
     (fun acc k => if k.isEmpty || acc.any (· == k) then acc else acc ++ [k]) []
 
 def candidatesFor (cardName : String) (units : List String) : Array IndexedAbility :=
@@ -1445,5 +1487,54 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
 #guard (parseOracleCard "Surge\n{R}\nSorcery\nPlaneswalker spells you cast this turn cost {2} less to cast.").toOption.bind
     (fun c => c.spellEffect.map (·.resolution)) ==
     some (.spell (.artifactSpellsCostLessThisTurn .planeswalker 2))
+
+#guard artifactTypes.all fun s =>
+  (parseTypeLine s!"Artifact — {s}").toOption == some (#[], #[.artifact], #[s])
+#guard enchantmentTypes.all fun s =>
+  (parseTypeLine s!"Enchantment — {s}").toOption == some (#[], #[.enchantment], #[s])
+#guard landTypes.all fun s =>
+  (parseTypeLine s!"Land — {s}").toOption == some (#[], #[.land], #[s])
+#guard planeswalkerTypes.all fun s =>
+  (parseTypeLine s!"Planeswalker — {s}").toOption == some (#[], #[.planeswalker], #[s])
+#guard spellTypes.all fun s =>
+  (parseTypeLine s!"Instant — {s}").toOption == some (#[], #[.instant], #[s])
+#guard creatureTypes.all fun s =>
+  (parseTypeLine s!"Creature — {s}").toOption == some (#[], #[.creature], #[s])
+#guard planarTypes.all fun s =>
+  (parseTypeLine s!"Plane — {s}").toOption == some (#[], #[.plane], #[s])
+#guard (parseTypeLine "Dungeon — Undercity").toOption ==
+  some (#[], #[.dungeon], #["Undercity"])
+#guard (parseTypeLine "Battle — Siege").toOption ==
+  some (#[], #[.battle], #["Siege"])
+#guard (parseTypeLine "Creature — Human Time Lord").toOption ==
+  some (#[], #[.creature], #["Human", "Time Lord"])
+#guard (parseTypeLine "Kindred Instant — Time Lord").toOption ==
+  some (#[], #[.kindred, .instant], #["Time Lord"])
+#guard (parseTypeLine "Land — Urza’s Mine").toOption ==
+  some (#[], #[.land], #["Urza's", "Mine"])
+
+#guard (parseOracleCard "Romana\n{2}{U}\nCreature — Time Lord\n1/1\nOther Time Lord creatures you control get +1/+1.").toOption.bind
+    (fun c => c.subtypes == #["Time Lord"] &&
+      c.staticAbilities[0]? == some (.otherCreaturesGet #["Time Lord"] 1 1)) == some true
+#guard (parseOracleCard "Pack\n{1}{G}\nCreature — Mouse\n1/1\nOther Mice and Time Lords you control have trample.").toOption.bind
+    (fun c => c.staticAbilities[0]?) ==
+    some (.otherCreaturesHaveTrample #["Mouse", "Time Lord"])
+#guard (parseOracleCard "Worker\n{3}\nArtifact Creature — Assembly-Worker\n2/2\nAssembly-Workercycling {4}").toOption.bind
+    (fun c => c.subtypes == #["Assembly-Worker"] &&
+      c.activatedAbilities[0]? ==
+        some (typecyclingAbility "Assembly-Worker" (ManaCost.ofGeneric 4))) == some true
+#guard (parseOracleCard "Doctor\n{U}\nCreature — Time Lord Doctor\n1/1\nTime Lordcycling {2}").toOption.bind
+    (fun c => c.subtypes == #["Time Lord", "Doctor"] &&
+      c.activatedAbilities[0]? ==
+        some (typecyclingAbility "Time Lord" (ManaCost.ofGeneric 2))) == some true
+#guard (parseOracleCard "Helm\n{1}\nArtifact\nC'tan spells you cast cost {1} less to cast.").toOption.bind
+    (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess "C'tan" 1)
+#guard (parseOracleCard "Walk\n{G}\nSorcery\nSearch your library for a Power-Plant card, reveal it, put it into your hand, then shuffle.").toOption.bind
+    (fun c => c.spellEffect) == some (Effect.searchLandTypeToHand "Power-Plant")
+#guard (parseOracleCard "Walk\n{G}\nSorcery\nSearch your library for a Bolas's Meditation Realm card, reveal it, put it into your hand, then shuffle.").toOption.bind
+    (fun c => c.spellEffect) == some (Effect.searchLandTypeToHand "Bolas's Meditation Realm")
+#guard (parseOracleCard "Saga\n{2}\nEnchantment — Saga\nI — This Saga deals 3 damage to each non-Time Lord creature and each opponent.").toOption.bind
+    (fun c => c.saga.bind fun s => (s.chapters[0]?).bind (·.chapterEffect)) ==
+    some (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 3 "Time Lord")
 
 end Mtg.Engine
