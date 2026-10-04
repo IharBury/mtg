@@ -801,6 +801,8 @@ structure IndexedAbility where
   norm : List String
   light : List String
   priority : Nat
+  /-- Position in the catalog. On a score tie, the earlier entry wins. -/
+  order : Nat
   args : Array SlotVal
   /-- Holes learned from `normalizeUnit`. -/
   pats : List (List Pat)
@@ -815,7 +817,7 @@ def collectParsed (ab : ParsedAbility) : Array SlotVal :=
   | .spell e => collectEffect e
   | .modes .. => #[]
 
-def indexItem (priority : Nat) (ability : ParsedAbility) (lines : List String) : IndexedAbility :=
+def indexItem (priority order : Nat) (ability : ParsedAbility) (lines : List String) : IndexedAbility :=
   let args := collectParsed ability
   let norm := lines.map (normalizeUnit indexName)
   let structNorm := lines.map (normalizeStructural indexName)
@@ -824,6 +826,7 @@ def indexItem (priority : Nat) (ability : ParsedAbility) (lines : List String) :
     norm
     light := lines.map lightLine
     priority
+    order
     args
     pats := patsOfLines norm args
     structPats := patsOfLines structNorm args }
@@ -835,6 +838,39 @@ def refillParsed (ab : ParsedAbility) (vals : Array SlotVal) : ParsedAbility :=
   | .activated a => .activated (refillActivated a vals)
   | .spell e => .spell (refillEffect e vals)
   | .modes es oneOrBoth teamwork twoIf => .modes es oneOrBoth teamwork twoIf
+
+def parsedEq (a b : ParsedAbility) : Bool :=
+  match a, b with
+  | .static x, .static y => x == y
+  | .triggered x, .triggered y => x == y
+  | .activated x, .activated y => x == y
+  | .spell x, .spell y => x == y
+  | .modes es1 a1 b1 c1, .modes es2 a2 b2 c2 =>
+    es1 == es2 && a1 == a2 && b1 == b2 && c1 == c2
+  | _, _ => false
+
+/-- True when `a` and `b` are the same ability with different argument values. -/
+def sameArgShape (a b : IndexedAbility) : Bool :=
+  a.priority == b.priority &&
+    patKey a.pats == patKey b.pats &&
+    patKey a.structPats == patKey b.structPats &&
+    a.args.size == b.args.size &&
+    parsedEq (refillParsed a.ability b.args) b.ability &&
+    parsedEq (refillParsed b.ability a.args) a.ability
+
+def shapeGroup (item : IndexedAbility) : String :=
+  s!"{item.priority}|{patKey item.pats}|{patKey item.structPats}"
+
+def insertUnique (out : Array IndexedAbility) (groups : Std.HashMap String (Array Nat))
+    (item : IndexedAbility) : Array IndexedAbility × Std.HashMap String (Array Nat) :=
+  let key := shapeGroup item
+  let prevs := groups.getD key #[]
+  let dup := prevs.any fun j =>
+    match out[j]? with
+    | some prev => sameArgShape prev item
+    | none => false
+  if dup then (out, groups)
+  else (out.push item, groups.insert key (prevs.push out.size))
 
 /-- First word, so `other Goblin creatures` still finds the `Elf` prototype. -/
 def headWord (s : String) : String :=
@@ -856,22 +892,38 @@ def mentionsCard (cardName : String) (lines : List String) : Bool :=
 def candidateNorm (cardName : String) (item : IndexedAbility) : List String :=
   if mentionsCard cardName item.raw then item.raw.map (normalizeUnit cardName) else item.norm
 
+/-- One prototype per shape. Later entries that differ only by `Nat`, `Int`, or
+`String` arguments are dropped. -/
 @[irreducible, noinline] def indexedAbilities : Thunk (Array IndexedAbility) :=
   Thunk.mk fun _ => Id.run do
   let mut out : Array IndexedAbility := #[]
+  let mut groups : Std.HashMap String (Array Nat) := {}
+  let mut order : Nat := 0
   for e in spellEffects.get do
     -- Ability effects use `abilityCastKind`; filing them as spells steals lines
     -- from the real spell (`Shock` vs `deals N to any target`).
     if e.abilityCastKind == .other then
-      out := out.push (indexItem 1 (.spell e) (effectLines indexName e))
+      let stepped := insertUnique out groups (indexItem 1 order (.spell e) (effectLines indexName e))
+      out := stepped.1
+      groups := stepped.2
+      order := order + 1
   for ab in staticAbilities.get do
-    out := out.push (indexItem 2 (.static ab) [StaticAbility.toNotation ab])
+    let stepped := insertUnique out groups (indexItem 2 order (.static ab) [StaticAbility.toNotation ab])
+    out := stepped.1
+    groups := stepped.2
+    order := order + 1
   for ab in triggeredAbilities.get do
     let lines := (TriggeredAbility.toNotation ab).splitOn "\n"
       |>.map (·.trimAscii.copy) |>.filter (· != "")
-    out := out.push (indexItem 3 (.triggered ab) lines)
+    let stepped := insertUnique out groups (indexItem 3 order (.triggered ab) lines)
+    out := stepped.1
+    groups := stepped.2
+    order := order + 1
   for ab in activatedAbilities.get do
-    out := out.push (indexItem 4 (.activated ab) [printedActivated ab])
+    let stepped := insertUnique out groups (indexItem 4 order (.activated ab) [printedActivated ab])
+    out := stepped.1
+    groups := stepped.2
+    order := order + 1
   out
 
 def pushBucket (m : Std.HashMap String (Array Nat)) (key : String) (i : Nat) :
@@ -936,6 +988,19 @@ def adaptLight (cardName : String) (lines : List String) : List String :=
   -- `light` is already lowercased, so the sentinel is `cardname`.
   lines.map fun s => s.replace (lowerAscii indexName) (lowerAscii cardName)
 
+def abilityLines (cardName : String) (ab : ParsedAbility) : List String :=
+  match ab with
+  | .static a => [StaticAbility.toNotation a]
+  | .triggered a =>
+    (TriggeredAbility.toNotation a).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
+  | .activated a => [printedActivated a]
+  | .spell e => effectLines cardName e
+  | .modes .. => []
+
+def coversLight (cardName : String) (ab : ParsedAbility) (lights : List String) : Bool :=
+  let lines := (abilityLines cardName ab).map lightLine
+  !lines.isEmpty && lines.length <= lights.length && listPrefix lines lights
+
 def filledAbility (item : IndexedAbility) (norms structNorms : List String) : Option ParsedAbility :=
   let attempt (pats : List (List Pat)) (lines : List String) : Option ParsedAbility :=
     if pats.isEmpty || pats.length > lines.length then none
@@ -956,21 +1021,23 @@ Numeric and text arguments are read from `units` when the line has the same shap
   let best := (candidatesFor cardName units).foldl (fun acc item =>
     let printed := candidateNorm cardName item
     let n := printed.length
+    let filled := filledAbility item norms structNorms
+    let ability := filled.getD item.ability
     let literal : Nat :=
       if n == 0 || n > lights.length then 0
-      else if listPrefix (adaptLight cardName item.light) lights then 1 else 0
-    let filled := filledAbility item norms structNorms
+      else if listPrefix (adaptLight cardName item.light) lights ||
+          coversLight cardName ability lights then 1 else 0
     let exact := n != 0 && n <= norms.length && listPrefix printed norms
     if n == 0 || n > norms.length || (literal == 0 && !exact && filled.isNone) then acc
     else
-      let ability := filled.getD item.ability
       match acc with
-      | none => some (n, literal, item.priority, ability)
-      | some (bn, bl, bp, _) =>
-        if n > bn || (n == bn && (literal > bl || (literal == bl && item.priority > bp))) then
-          some (n, literal, item.priority, ability)
+      | none => some (n, literal, item.priority, item.order, ability)
+      | some (bn, bl, bp, bo, _) =>
+        if n > bn || (n == bn && (literal > bl ||
+            (literal == bl && (item.priority > bp || (item.priority == bp && item.order < bo))))) then
+          some (n, literal, item.priority, item.order, ability)
         else acc) none
-  best.map fun (n, _, _, ab) => (ab, n)
+  best.map fun (n, _, _, _, ab) => (ab, n)
 
 partial def parseRules (c : CardDef) (lines : List String) : Except String CardDef :=
   let units := mergeBulletLines lines |>.flatMap splitKeywordWardLine
@@ -1236,5 +1303,21 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
 #guard (parseOracleCard "Test Saga\n{2}{R}\nEnchantment — Saga\nI — Draw seven cards.").toOption.bind
     (fun c => c.saga.bind fun s => (s.chapters[0]?).bind (·.chapterEffect)) ==
     some (Effect.chapterDraw 7)
+#guard (indexedAbilities.get).any fun item =>
+  match item.ability with
+  | .spell e => e == Effect.draw 1
+  | _ => false
+#guard !(indexedAbilities.get).any fun item =>
+  match item.ability with
+  | .spell e => e == Effect.draw 2 || e == Effect.dealDamage 2
+  | _ => false
+#guard !(indexedAbilities.get).any fun item =>
+  match item.ability with
+  | .activated a => a == equipAbility (ManaCost.ofGeneric 1) || a == equipAbility (ManaCost.ofGeneric 2)
+  | _ => false
+#guard (indexedAbilities.get).any fun item =>
+  match item.ability with
+  | .activated a => a == equipAbility (ManaCost.ofGeneric 3)
+  | _ => false
 
 end Mtg.Engine

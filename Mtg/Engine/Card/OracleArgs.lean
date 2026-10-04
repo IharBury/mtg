@@ -686,7 +686,7 @@ def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List 
           hs := consider hs (intHit i fmt v toks fresh)
         if fresh then
           for j in [:args.size] do
-            if i != j && !used.contains j then
+            if i < j && !used.contains j then
               match args[j]! with
               | .int t =>
                 hs := consider hs (ptHit i j true v t toks true)
@@ -921,10 +921,24 @@ def lineKeys (s : String) : List String :=
 def patKey (pats : List (List Pat)) : String :=
   let piece : Pat → String
     | .lit s => s
-    | .nat _ _ => "#"
-    | .int _ _ => "#"
-    | .str _ _ => "$"
-    | .pt _ _ _ => "#/#"
+    | .nat _ fmt =>
+      match fmt with
+      | .digits => "#d"
+      | .cards => "#c"
+      | .counters => "#k"
+      | .brace => "#b"
+      | .english => "#e"
+    | .int _ fmt =>
+      match fmt with
+      | .signed => "#+"
+      | .digits => "#i"
+    | .str _ fmt =>
+      match fmt with
+      | .word n => s!"$w{n}"
+      | .plural => "$p"
+      | .cycling n => s!"$c{n}"
+      | .non => "$n"
+    | .pt _ _ signed => if signed then "+/+" else "#/#"
   String.intercalate "\n" (pats.map fun line => String.intercalate " " (line.map piece))
 
 def renderHit (h : Hit) (vals : Array SlotVal) : String :=

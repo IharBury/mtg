@@ -4,6 +4,8 @@ import Mtg.Engine.Card.OracleActivate
 Modeled abilities the Oracle parser can recognize. Each entry is a shape.
 `Nat`, `Int`, and `String` arguments are read from the card's own Oracle
 text, so a prototype such as `Effect.draw 1` also matches “Draw seven cards.”
+Entries that differ only by those arguments are the same shape; the parser
+keeps the first one.
 -/
 
 namespace Mtg.Engine.OracleCandidates
