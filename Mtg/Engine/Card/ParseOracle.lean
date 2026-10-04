@@ -1187,6 +1187,120 @@ Numeric and text arguments are read from `units` when the line has the same shap
         else acc) none
   best.map fun (n, _, _, _, ab) => (ab, n)
 
+/-- `Loyalty: N` (any case), the labeled form of the corner number. -/
+def parseLoyaltyLabel (line : String) : Option Nat :=
+  prefixRest line "Loyalty:" |>.bind parseUnsignedNat
+
+/-- Split labeled loyalty numbers from the other lines, keeping order. -/
+def partitionLoyalty (lines : List String) : List Nat × List String :=
+  let rec go : List String → List Nat → List String → List Nat × List String
+    | [], labels, rules => (labels.reverse, rules.reverse)
+    | line :: rest, labels, rules =>
+      match parseLoyaltyLabel line with
+      | some n => go rest (n :: labels) rules
+      | none => go rest labels (line :: rules)
+  go lines [] []
+
+/-- A bare corner number at the start or end of `rules` (CR 209.1). -/
+def takeCornerLoyalty (name : String) (rules : List String) :
+    Except String (Option Nat × List String) :=
+  match rules with
+  | [] => .ok (none, [])
+  | [only] =>
+    match parseUnsignedNat only with
+    | some n => .ok (some n, [])
+    | none => .ok (none, rules)
+  | first :: rest =>
+    match rest.getLast? with
+    | none => .ok (none, rules)
+    | some last =>
+      let middle := rest.dropLast
+      match parseUnsignedNat first, parseUnsignedNat last with
+      | some _, some _ => .error s!"{name} has more than one loyalty number"
+      | some n, none => .ok (some n, rest)
+      | none, some n => .ok (some n, first :: middle)
+      | none, none => .ok (none, rules)
+
+/-- Printed loyalty of a planeswalker, and the rules lines that remain (CR 209.1).
+
+The number is `Loyalty: N` or the bare number from the lower right corner.
+It may sit before the rules text or after it. A non-planeswalker has no loyalty. -/
+def detachLoyalty (name : String) (isPlaneswalker : Bool) (lines : List String) :
+    Except String (Option Int × List String) :=
+  if !isPlaneswalker then .ok (none, lines)
+  else
+    let (labels, rules) := partitionLoyalty lines
+    if labels.length > 1 then .error s!"{name} has more than one loyalty number"
+    else
+      match takeCornerLoyalty name rules with
+      | .error e => .error e
+      | .ok (corner, rules) =>
+        match labels, corner with
+        | [n], none => .ok (some (n : Int), rules)
+        | [], some n => .ok (some (n : Int), rules)
+        | [], none => .ok (none, rules)
+        | _, _ => .error s!"{name} has more than one loyalty number"
+
+/-- True when `c` is a minus sign that can introduce a negative loyalty symbol. -/
+def isLoyaltyMinus (c : Char) : Bool :=
+  c == '-' || c == '−' || c == '–'
+
+/-- Sign of a loyalty symbol, then the text after it.
+`some true` is `+`, `some false` is a minus, `none` is unsigned. -/
+def splitLoyaltySign (s : String) : Option Bool × String :=
+  if s.startsWith "+" then (some true, (s.drop 1).copy)
+  else if !s.isEmpty && isLoyaltyMinus s.front then (some false, (s.drop 1).copy)
+  else (none, s)
+
+/-- `N` or `X` at the front of a loyalty symbol. -/
+def readLoyaltyMagnitude (s : String) : Option (Bool × Nat × String) :=
+  if s.startsWith "X" || s.startsWith "x" then some (true, 0, (s.drop 1).copy)
+  else
+    match readNatPrefix s.toList with
+    | some (n, rest) => some (false, n, String.ofList rest)
+    | none => none
+
+/-- Build a loyalty symbol from its sign and magnitude (CR 107.7). -/
+def loyaltySymbolOf (sign : Option Bool) (isX : Bool) (n : Nat) : Option LoyaltySymbol :=
+  if isX then
+    match sign with
+    | some true => some .plusX
+    | some false => some .minusX
+    | none => none
+  else if n == 0 then some .zero
+  else
+    match sign with
+    | some true => some (.plus n)
+    | some false => some (.minus n)
+    | none => none
+
+/-- An activated ability introduced by a loyalty symbol (CR 209.2 / 107.7).
+
+Accepts the rules form `[+N]:`, `[-N]:`, `[0]:`, `[+X]:`, `[-X]:` and the
+same symbols without brackets (`+N:`, `−N:`, `0:`). The second component is
+the ability text after the colon. -/
+def parseLoyaltyAbilityLine (line : String) : Option (LoyaltySymbol × String) :=
+  let line := line.trimAscii.copy
+  let (bracketed, rest) :=
+    if line.startsWith "[" then (true, (line.drop 1).copy) else (false, line)
+  let (sign, rest) := splitLoyaltySign rest
+  match readLoyaltyMagnitude rest with
+  | none => none
+  | some (isX, n, rest) =>
+    let rest :=
+      if bracketed then
+        if rest.startsWith "]" then some ((rest.drop 1).copy) else none
+      else some rest
+    match rest with
+    | none => none
+    | some rest =>
+      let rest := rest.trimAscii.copy
+      if rest.startsWith ":" then
+        let effect := (rest.drop 1).trimAscii.copy
+        if effect.isEmpty then none
+        else (loyaltySymbolOf sign isX n).map fun sym => (sym, effect)
+      else none
+
 partial def parseRules (c : CardDef) (lines : List String) : Except String CardDef :=
   -- CR 207.2a: drop reminder text before any rule is read. A reminder may be
   -- the whole line (basic-land mana, Saga progress, a keyword on its own line).
@@ -1211,6 +1325,18 @@ partial def parseRules (c : CardDef) (lines : List String) : Except String CardD
         else c
       if skipLine c line then go c rest
       else
+        -- CR 209.2: a loyalty symbol in the cost makes this a loyalty ability.
+        match parseLoyaltyAbilityLine line with
+        | some (sym, effectText) =>
+          match matchModeled c.name (effectText :: rest) with
+          | some (.spell e, n) =>
+            let more := (effectText :: rest).drop n
+            if n > 0 && more.length < (effectText :: rest).length then
+              go { c with activatedAbilities :=
+                c.activatedAbilities.push (activated e (loyalty := some sym)) } more
+            else .error s!"unrecognized Oracle line on {c.name}: {line}"
+          | _ => .error s!"unrecognized Oracle line on {c.name}: {line}"
+        | none =>
         match keywordTokens c.name line with
         | some toks => go { c with keywords := c.keywords.merge (keywordsFromTokens toks) } rest
         | none =>
@@ -1320,11 +1446,7 @@ def parseFace (lines : List String) : Except String CardDef :=
               match parseColorIndicator line with
               | some cs => takeExtras { c with colorIndicator := some cs } rest
               | none =>
-                if line.startsWith "Loyalty:" || (lowerAscii line).startsWith "loyalty:" then
-                  match prefixRest line "Loyalty:" |>.bind parseUnsignedNat with
-                  | some n => takeExtras { c with loyalty := some (n : Int) } rest
-                  | none => (c, line :: rest)
-                else if (lowerAscii line).startsWith "defense:" then
+                if (lowerAscii line).startsWith "defense:" then
                   match prefixRest line "Defense:" |>.bind parseUnsignedNat with
                   | some n => takeExtras { c with defense := some n } rest
                   | none => (c, line :: rest)
@@ -1339,16 +1461,13 @@ def parseFace (lines : List String) : Except String CardDef :=
                       match parseKeyedModifier line "life" with
                       | some n => takeExtras { c with lifeModifier := some n } rest
                       | none =>
-                        -- A lone number in the corner is loyalty or defense.
-                        if c.loyalty.isNone && c.defense.isNone &&
-                            !c.types.any (· == .creature) then
+                        -- A lone number in the corner is defense (CR 210).
+                        -- Planeswalker loyalty is separated later (CR 209.1).
+                        if c.defense.isNone && !c.types.any (· == .creature) &&
+                            !c.types.any (· == .planeswalker) &&
+                            c.types.any (· == .battle) then
                           match parseUnsignedNat line with
-                          | some n =>
-                            if c.types.any (· == .planeswalker) then
-                              takeExtras { c with loyalty := some (n : Int) } rest
-                            else if c.types.any (· == .battle) then
-                              takeExtras { c with defense := some n } rest
-                            else (c, line :: rest)
+                          | some n => takeExtras { c with defense := some n } rest
                           | none => (c, line :: rest)
                         else (c, line :: rest)
         let base : CardDef := {
@@ -1358,6 +1477,12 @@ def parseFace (lines : List String) : Except String CardDef :=
         }
         let (base, rest) := takeExtras base rest
         let (rules, adv) := splitAdventure rest
+        -- CR 209.1: the loyalty number sits in the lower right corner, so it
+        -- may be labeled or bare, before the rules text or after it.
+        match detachLoyalty base.name base.isPlaneswalker rules with
+        | .error e => .error e
+        | .ok (loyalty, rules) =>
+        let base := { base with loyalty := loyalty }
         match parseRules base rules with
         | .error e => .error e
         | .ok c =>
@@ -1371,9 +1496,12 @@ def parseFace (lines : List String) : Except String CardDef :=
 /-- Parse the full printed text of one card.
 
 The text is a name line (mana cost may sit on that line or on the next), a
-type line, an optional `power/toughness` line, then rules text. A line that
-is exactly `//` starts the back face. An Adventure is introduced by
-`//ADV//`. -/
+type line, an optional `power/toughness` line, then rules text. A planeswalker's
+loyalty number is `Loyalty: N` or the bare corner number, before or after the
+rules text (CR 209.1). A loyalty symbol in an activation cost (`[+N]:`,
+`+N:`, `[-N]:`, `[0]:`, and the `X` forms) is a loyalty ability (CR 209.2).
+A line that is exactly `//` starts the back face. An Adventure is introduced
+by `//ADV//`. -/
 @[irreducible, noinline] def parseOracleCard (text : String) : Except String CardDef :=
   let lines := nonEmptyLines text
   let (front, back) := splitBackFace lines
@@ -1611,6 +1739,71 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
 
 #guard (parseOracleCard "Jace\n{2}{U}{U}\nLegendary Planeswalker — Jace\n3").toOption.map
     (fun c => c.isPlaneswalker && c.hasSubtype "Jace" && c.loyalty == some 3) == some true
+
+-- CR 209.1: the loyalty number is the corner number, labeled or bare, and it
+-- may follow the rules text. It is that planeswalker's loyalty off the
+-- battlefield. CR 209.2 / 107.7: `[+N]`, `[-N]`, `[0]`, `[+X]`, and `[-X]`
+-- (with or without brackets) are loyalty abilities.
+#guard parseLoyaltyAbilityLine "+2: Draw a card." == some (.plus 2, "Draw a card.")
+#guard parseLoyaltyAbilityLine "[+1]: Draw a card." == some (.plus 1, "Draw a card.")
+#guard parseLoyaltyAbilityLine "−1: Scry 2." == some (.minus 1, "Scry 2.")
+#guard parseLoyaltyAbilityLine "–2: Draw a card." == some (.minus 2, "Draw a card.")
+#guard parseLoyaltyAbilityLine "[-X]: Draw a card." == some (.minusX, "Draw a card.")
+#guard parseLoyaltyAbilityLine "[+X]: Scry 1." == some (.plusX, "Scry 1.")
+#guard parseLoyaltyAbilityLine "0: Draw two cards." == some (.zero, "Draw two cards.")
+#guard parseLoyaltyAbilityLine "[0]: Draw a card." == some (.zero, "Draw a card.")
+#guard parseLoyaltyAbilityLine "+1/+1" == none
+#guard parseLoyaltyAbilityLine "Draw a card." == none
+#guard (LoyaltySymbol.plus 2).counters == some 2
+#guard (LoyaltySymbol.minus 1).counters == some (-1)
+#guard LoyaltySymbol.zero.counters == some 0
+#guard LoyaltySymbol.plusX.counters == none
+#guard LoyaltySymbol.minusX.counters == none
+#guard (LoyaltySymbol.minus 3).toNotation == "[-3]"
+#guard (LoyaltySymbol.zero).toNotation == "[0]"
+#guard (parseOracleCard "Jace\n{2}{U}{U}\nLegendary Planeswalker — Jace\nloyalty: 2").toOption.map
+    (·.loyalty) == some (some 2)
+#guard (parseOracleCard "Jace\n{2}{U}{U}\nLegendary Planeswalker — Jace\n+1: Draw a card.\nLoyalty: 5").toOption.map
+    (fun c => c.loyalty == some 5 && c.activatedAbilities.size == 1 &&
+      c.activatedAbilities[0]!.isLoyaltyAbility &&
+      c.activatedAbilities[0]!.cost.loyalty == some (.plus 1) &&
+      c.activatedAbilities[0]!.effect == Effect.draw 1) == some true
+#guard
+  match parseOracleCard "Jace\n{2}{U}{U}\nLegendary Planeswalker — Jace\n+2: Draw a card.\n−1: Scry 2.\n0: Draw two cards.\n[+X]: Scry 1.\n[-X]: Draw a card.\n3" with
+  | .ok c =>
+    c.loyalty == some 3 &&
+    c.activatedAbilities.map (fun ab => ab.cost.loyalty) ==
+      #[some (.plus 2), some (.minus 1), some .zero, some .plusX, some .minusX] &&
+    c.activatedAbilities[0]!.effect == Effect.draw 1 &&
+    c.activatedAbilities[1]!.effect == Effect.scry 2 &&
+    c.activatedAbilities[2]!.effect == Effect.draw 2 &&
+    c.activatedAbilities[3]!.effect == Effect.scry 1 &&
+    c.activatedAbilities[4]!.effect == Effect.draw 1 &&
+    match parseOracleCard (renderFullOracle c) with
+    | .ok d => d.loyalty == c.loyalty && d.activatedAbilities == c.activatedAbilities
+    | .error _ => false
+  | .error _ => false
+#guard
+  match parseOracleCard "Jace\n{U}\nLegendary Planeswalker — Jace\n3\nLoyalty: 4" with
+  | .error e => e == "Jace has more than one loyalty number"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Jace\n{U}\nLegendary Planeswalker — Jace\n3\n+1: Draw a card.\n4" with
+  | .error e => e == "Jace has more than one loyalty number"
+  | .ok _ => false
+#guard (parseOracleCard "Jace\n{U}\nLegendary Planeswalker — Jace\n+1: Draw a card.\nLoyalty: 6\n0: Scry 1.").toOption.map
+    (fun c => c.loyalty == some 6 &&
+      c.activatedAbilities.map (fun ab => ab.cost.loyalty) ==
+        #[some (.plus 1), some .zero]) == some true
+#guard
+  match parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nLoyalty: 3" with
+  | .ok _ => false
+  | .error _ => true
+#guard (parseOracleCard "Relic\n{1}\nArtifact\n+1: Draw a card.").toOption.map
+    (fun c => c.loyalty.isNone && c.activatedAbilities.size == 1 &&
+      c.activatedAbilities[0]!.isLoyaltyAbility &&
+      c.activatedAbilities[0]!.cost.loyalty == some (.plus 1) &&
+      c.activatedAbilities[0]!.effect == Effect.draw 1) == some true
 #guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nDefense: 4").toOption.map
     (fun c => c.isBattle && c.hasSubtype "Siege" && c.defense == some 4) == some true
 #guard (parseOracleCard "Urza\nVanguard\nHand +1, Life +10").toOption.map

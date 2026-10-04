@@ -9,10 +9,45 @@ effects.
 
 namespace Mtg.Engine
 
+/-- A loyalty symbol in an activation cost (CR 107.7 / 209.2).
+
+`[+N]` puts N loyalty counters on the source, `[-N]` removes N, and `[0]`
+puts zero. `[+X]` and `[-X]` use X in place of a fixed number (CR 107.3a). -/
+inductive LoyaltySymbol where
+  | plus (n : Nat)
+  | minus (n : Nat)
+  | zero
+  | plusX
+  | minusX
+deriving Repr, Inhabited, BEq
+
+namespace LoyaltySymbol
+
+/-- Rules notation: `[+N]`, `[-N]`, `[0]`, `[+X]`, or `[-X]`. -/
+def toNotation : LoyaltySymbol → String
+  | .plus n => s!"[+{n}]"
+  | .minus n => s!"[-{n}]"
+  | .zero => "[0]"
+  | .plusX => "[+X]"
+  | .minusX => "[-X]"
+
+/-- Counters this symbol adds, or removes when negative.
+`[+X]` and `[-X]` are not a fixed number. -/
+def counters : LoyaltySymbol → Option Int
+  | .plus n => some (Int.ofNat n)
+  | .minus n => some (-Int.ofNat n)
+  | .zero => some 0
+  | .plusX | .minusX => none
+
+end LoyaltySymbol
+
 /-- Costs of an activated ability besides announcements (CR 602.1). -/
 structure ActivationCost where
   mana : ManaCost := ManaCost.empty
   tap : Bool := false
+  /-- Loyalty symbol in this cost (CR 209.2). The ability is a loyalty
+  ability exactly when this is set. -/
+  loyalty : Option LoyaltySymbol := none
   sacrificeSource : Bool := false
   /-- Sacrifice another creature or artifact you control (CR 701.17). -/
   sacrificeAnotherCreatureOrArtifact : Bool := false
@@ -48,8 +83,15 @@ deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
 
+/-- True when this cost contains a loyalty symbol (CR 209.2). -/
+def isLoyalty (c : ActivationCost) : Bool :=
+  c.loyalty.isSome
+
 def toNotation (c : ActivationCost) : String :=
   let parts : List String :=
+    (match c.loyalty with
+     | some sym => [sym.toNotation]
+     | none => []) ++
     (if c.mana.symbols.isEmpty then [] else [toString c.mana]) ++
     (if c.tap then ["{T}"] else []) ++
     (if c.payLife != 0 then [s!"Pay {c.payLife} life"] else []) ++
@@ -148,6 +190,10 @@ namespace ActivatedAbility
 /-- Every mode of this ability; a non-modal ability is a singleton. -/
 def allModes (ab : ActivatedAbility) : Array Effect :=
   #[ab.effect] ++ ab.otherModes
+
+/-- An activated ability with a loyalty symbol in its cost (CR 209.2). -/
+def isLoyaltyAbility (ab : ActivatedAbility) : Bool :=
+  ab.cost.isLoyalty
 
 /-- True when zero targets is a legal announcement (CR 115.1c). -/
 def allowsZeroTargets (ab : ActivatedAbility) : Bool :=
