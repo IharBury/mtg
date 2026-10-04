@@ -251,17 +251,10 @@ deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
 
-/-- English plural used in Oracle-style reminders (`Orc` → `Orcs`), including
-the irregular plurals the catalog prints. -/
+/-- English plural used in Oracle-style reminders (`Orc` → `Orcs`).
+Known subtypes use the CR 205.3 spelling, including irregular plurals. -/
 def pluralSubtype (s : String) : String :=
-  match s with
-  | "Army" => "Armies"
-  | "Elf" => "Elves"
-  | "Wolf" => "Wolves"
-  | "Dwarf" => "Dwarves"
-  | "Hero" => "Heroes"
-  | "Merfolk" => "Merfolk"
-  | s => if s.endsWith "s" then s else s ++ "s"
+  pluralizeName s
 
 #guard pluralSubtype "Orc" == "Orcs"
 #guard pluralSubtype "Wolf" == "Wolves"
