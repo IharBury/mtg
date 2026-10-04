@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 
@@ -44,7 +43,7 @@ def withBlueMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
 /-- Nissa proposes Thranduil's Decree with Lightning Bolt on the stack. -/
 def proposedDecree : Game :=
   let g := mustApply paidBolt ⟨0⟩ .pass
-  let g := withBlueMana (addToHand g thranduilsDecreeCard ⟨1⟩) ⟨1⟩ 6
+  let g := withBlueMana (addToHand g thranduilsDecree ⟨1⟩) ⟨1⟩ 6
   mustApply g ⟨1⟩ (.cast (handCardNamed g ⟨1⟩ "Thranduil's Decree").id)
 
 #guard proposedDecree.pending == .chooseTargets ⟨1⟩
@@ -84,7 +83,7 @@ def clearHandPlayedLand (g : Game) (p : PlayerId) : Game :=
 /-- Chandra has her own Bolt on the stack and a counter in hand. -/
 def agentOwnBoltWithDecree : Game :=
   let g := clearHandPlayedLand paidBolt ⟨0⟩
-  withBlueMana (addToHand g thranduilsDecreeCard ⟨0⟩) ⟨0⟩ 6
+  withBlueMana (addToHand g thranduilsDecree ⟨0⟩) ⟨0⟩ 6
 
 -- The heuristic does not counter its own spell.
 #guard
@@ -97,7 +96,7 @@ def agentOwnBoltWithDecree : Game :=
 def agentOppBoltWithDecree : Game :=
   let g := mustApply paidBolt ⟨0⟩ .pass
   let g := clearHandPlayedLand g ⟨1⟩
-  withBlueMana (addToHand g thranduilsDecreeCard ⟨1⟩) ⟨1⟩ 6
+  withBlueMana (addToHand g thranduilsDecree ⟨1⟩) ⟨1⟩ 6
 
 -- The heuristic does counter an opposing spell.
 #guard
@@ -109,7 +108,7 @@ def agentOppBoltWithDecree : Game :=
 /-- Nissa's instant is under Chandra's Bolt, then Nissa proposes a counter. -/
 def proposedDecreeOverOwnSpell : Game :=
   let g := mustApply afterDraw ⟨0⟩ .pass
-  let g := withBlueMana (addToHand g confusticateAndBebotherCard ⟨1⟩) ⟨1⟩ 3
+  let g := withBlueMana (addToHand g confusticateAndBebother ⟨1⟩) ⟨1⟩ 3
   let g := mustApply g ⟨1⟩
     (.cast (handCardNamed g ⟨1⟩ "Confusticate and Bebother").id)
   let g := mustApply g ⟨1⟩ (.chooseMode 1)
@@ -120,7 +119,7 @@ def proposedDecreeOverOwnSpell : Game :=
   let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
   let g := mustApply g ⟨0⟩ .pay
   let g := mustApply g ⟨0⟩ .pass
-  let g := withBlueMana (addToHand g thranduilsDecreeCard ⟨1⟩) ⟨1⟩ 6
+  let g := withBlueMana (addToHand g thranduilsDecree ⟨1⟩) ⟨1⟩ 6
   mustApply g ⟨1⟩ (.cast (handCardNamed g ⟨1⟩ "Thranduil's Decree").id)
 
 #guard proposedDecreeOverOwnSpell.pending == .chooseTargets ⟨1⟩
@@ -135,7 +134,7 @@ def proposedDecreeOverOwnSpell : Game :=
 
 /-- Chandra proposes Confusticate with her own Bolt on the stack. -/
 def proposedConfusticateOwnBolt : Game :=
-  let g := withBlueMana (addToHand paidBolt confusticateAndBebotherCard ⟨0⟩) ⟨0⟩ 3
+  let g := withBlueMana (addToHand paidBolt confusticateAndBebother ⟨0⟩) ⟨0⟩ 3
   mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Confusticate and Bebother").id)
 
 -- Draw rather than counter your own spell.
@@ -151,7 +150,7 @@ def proposedConfusticateOwnBolt : Game :=
 /-- Nissa proposes Confusticate with Chandra's Bolt on the stack. -/
 def proposedConfusticateOppBolt : Game :=
   let g := mustApply paidBolt ⟨0⟩ .pass
-  let g := withBlueMana (addToHand g confusticateAndBebotherCard ⟨1⟩) ⟨1⟩ 3
+  let g := withBlueMana (addToHand g confusticateAndBebother ⟨1⟩) ⟨1⟩ 3
   mustApply g ⟨1⟩ (.cast (handCardNamed g ⟨1⟩ "Confusticate and Bebother").id)
 
 -- Counter an opposing spell when that mode is available.
@@ -327,8 +326,8 @@ def afterHostLeaves : Game :=
 /- Legend rule (CR 704.5j). -/
 
 def twoBofurs : Game :=
-  addPermanent (addPermanent started bofurReliableGuardianCard ⟨0⟩ ⟨0⟩)
-    bofurReliableGuardianCard ⟨0⟩ ⟨0⟩
+  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨0⟩)
+    bofurReliableGuardian ⟨0⟩ ⟨0⟩
 
 def twoBofursSBA : Game := twoBofurs.checkSBA
 
@@ -361,8 +360,8 @@ def keptOlderBofur : Game :=
 
 /-- Each player may control a copy of the same legend. -/
 def eachControlsBofur : Game :=
-  addPermanent (addPermanent started bofurReliableGuardianCard ⟨0⟩ ⟨0⟩)
-    bofurReliableGuardianCard ⟨1⟩ ⟨1⟩
+  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨0⟩)
+    bofurReliableGuardian ⟨1⟩ ⟨1⟩
 
 #guard (eachControlsBofur.checkSBA).pending == .none
 #guard (eachControlsBofur.checkSBA.battlefield.filter
@@ -370,7 +369,7 @@ def eachControlsBofur : Game :=
 
 /-- Different legendary names do not conflict. -/
 def twoDifferentLegends : Game :=
-  addPermanent (addPermanent started bofurReliableGuardianCard ⟨0⟩ ⟨0⟩)
+  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨0⟩)
     landrovalHorizonWitness ⟨0⟩ ⟨0⟩
 
 #guard (twoDifferentLegends.checkSBA).pending == .none
@@ -378,7 +377,7 @@ def twoDifferentLegends : Game :=
 
 /-- Three copies: keep one, two go to the graveyard. -/
 def threeBofursSBA : Game :=
-  (addPermanent twoBofurs bofurReliableGuardianCard ⟨0⟩ ⟨0⟩).checkSBA
+  (addPermanent twoBofurs bofurReliableGuardian ⟨0⟩ ⟨0⟩).checkSBA
 
 def keptOneOfThree : Game :=
   match threeBofursSBA.pending with
@@ -408,8 +407,8 @@ def twoIndestructibleLegends : Game :=
 
 /-- The rest go to their owners' graveyards, not the controller's. -/
 def nissaControlsTwoBofurs : Game :=
-  addPermanent (addPermanent started bofurReliableGuardianCard ⟨0⟩ ⟨1⟩)
-    bofurReliableGuardianCard ⟨1⟩ ⟨1⟩
+  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨1⟩)
+    bofurReliableGuardian ⟨1⟩ ⟨1⟩
 
 def nissaKeepsOwnBofur : Game :=
   let g := nissaControlsTwoBofurs.checkSBA

@@ -78,7 +78,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     g.putControlledTriggers caster .youCastSpell
   let extortN :=
     (g.permanentsOf caster).filter (fun o =>
-      (g.staticAbilitiesOf o).any (fun
+      o.staticAbilities.any (fun
         | .extort => true
         | _ => false)) |>.size
   let g :=
@@ -102,26 +102,20 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     if spell.printed.hasSubtype "Villain" then
       g.putControlledTriggers caster .youCastVillain
     else g
-  let announced : Array Target :=
+  let targetsCreatureYouControl : Bool :=
     match g.stack.find? (fun e => e.objectId == spell.id) with
-    | some e => e.targets
-    | none => #[]
-  let targetsPermanent (pred : GameObject → Bool) : Bool :=
-    announced.any (fun t =>
-      match t with
-      | Target.permanent id =>
-        match g.findObject? id with
-        | some o => pred o
-        | none => false
-      | _ => false)
+    | some e =>
+      e.targets.any (fun t =>
+        match t with
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some o => o.isCreature && o.controlledBy caster
+          | none => false
+        | _ => false)
+    | none => false
   let g :=
-    if targetsPermanent (fun o => o.isCreature && o.controlledBy caster) then
+    if targetsCreatureYouControl then
       g.putControlledTriggers caster .youCastTargetingCreatureYouControl
-    else g
-  let g :=
-    if spell.printed.isInstantOrSorcery &&
-        targetsPermanent (fun o => o.isArtifactOrLand) then
-      g.putControlledTriggers caster .youCastInstantOrSorceryTargetingArtifactOrLand
     else g
   let g :=
     if !spell.printed.isCreature && nonc == 1 then
@@ -213,7 +207,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     else g
   let o := g.object! o.id
   let g :=
-    if (g.staticAbilitiesOf o).any (fun
+    if o.staticAbilities.any (fun
         | .entersWithXPlusOne => true
         | _ => false) then
       let n := g.extraCountersOn o.controller (o.chosenX.getD 0)
@@ -225,6 +219,24 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     else g
   let o := g.object! o.id
   let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
+  let o := g.object! o.id
+  let g :=
+    if o.printed.entersPrepared then
+      match o.controller, o.printed.prepareFace with
+      | some p, some face =>
+        let (g, copy) := g.allocObject face.toCardDef o.owner .exile
+        let g := g.setObject { copy with playPermission := some {
+          player := p
+          turnEndsRemaining := 0
+          whileExiled := true
+          prepareSource := some o.id } }
+        let o := g.object! o.id
+        let g := g.setObject { o with status := { o.status with prepared := true } }
+        g.logMsg s!"{o.name} enters prepared. A copy of {face.name} is exiled"
+      | _, _ =>
+        let g := g.setObject { o with status := { o.status with prepared := true } }
+        g.logMsg s!"{o.name} enters prepared"
+    else g
   let o := g.object! o.id
   let g :=
     if o.printed.entersWithHopePerCreature then

@@ -29,26 +29,12 @@ makes the enchanted creature only a Spirit; CR 205.3m / 613.1d). -/
 def currentSubtypes (g : Game) (o : GameObject) : Array Subtype :=
   match g.battlefield.find? (fun a =>
     a.attachedTo == some o.id &&
-      (g.staticAbilitiesOf a).any (fun ab => ab.enchantedOnlySubtype?.isSome)) with
+      a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome)) with
   | none => o.subtypes
   | some aura =>
-    match (g.staticAbilitiesOf aura).findSome? (fun ab => ab.enchantedOnlySubtype?) with
+    match aura.staticAbilities.findSome? (fun ab => ab.enchantedOnlySubtype?) with
     | some s => #[s]
     | none => o.subtypes
-
-/-- Creature cards currently in `p`'s graveyard. -/
-def graveyardCreatureCards (g : Game) (p : PlayerId) : Nat :=
-  (g.player p).graveyard.filter (fun id =>
-    (g.object! id).printed.isCreature) |>.size
-
-/-- True when leftover “gets +P/+T and is all creature types if you have
-at least N creature cards in your graveyard” currently applies. -/
-def leftoverAllCreatureTypes (g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield &&
-  (g.staticAbilitiesOf o).any (fun
-    | .getsAndAllTypesIfGyCreatureCards min _ _ =>
-      g.graveyardCreatureCards o.you >= min
-    | _ => false)
 
 /-- Whether `o` currently has subtype `s`, including Fog-style overwrites.
 Changeling grants every creature type (CR 702.72 / MSH 72–73) unless a
@@ -57,16 +43,13 @@ def hasSubtype (g : Game) (o : GameObject) (s : String) : Bool :=
   let fogged :=
     g.battlefield.any (fun a =>
       a.attachedTo == some o.id &&
-        (g.staticAbilitiesOf a).any (fun ab => ab.enchantedOnlySubtype?.isSome))
-  let changeling :=
-    (if g.losesAllAbilities o then false else o.printed.keywords.changeling) ||
-      o.grantedUntilEot.changeling || g.leftoverAllCreatureTypes o
+        a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome))
   (g.currentSubtypes o).any (· == s) ||
-    (!fogged && changeling && !isNoncreatureSubtype s)
+    (!fogged && o.printedOrUntilEot.changeling && !isNoncreatureSubtype s)
 
 /-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.3c). -/
 def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
-  (g.staticAbilitiesOf src).foldl
+  src.staticAbilities.foldl
     (fun acc ab =>
       let sameController :=
         src.isOnBattlefield && target.isOnBattlefield &&
@@ -114,10 +97,9 @@ def lordStatBonus (g : Game) (o : GameObject) : Int × Int :=
       (fun acc src => addStats acc (g.grantsStatBonusTo src o))
       (0, 0)
 
-/-- Continuous +P/+T this Aura or Equipment currently grants its host (CR 613.3c).
-Printed static abilities are absent while the Aura loses all abilities. -/
-def auraStatBonus (g : Game) (aura : GameObject) : Int × Int :=
-  (g.staticAbilitiesOf aura).foldl
+/-- Continuous +P/+T this Aura or Equipment currently grants its host (CR 613.3c). -/
+def auraStatBonus (aura : GameObject) : Int × Int :=
+  aura.staticAbilities.foldl
     (fun acc ab => addStats acc ab.hostStatBonus)
     (0, 0)
 
@@ -136,7 +118,7 @@ def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
       (fun acc aura =>
         if aura.attachedTo == some o.id then
           let glam : Int × Int :=
-            if (g.staticAbilitiesOf aura).any (fun
+            if aura.staticAbilities.any (fun
               | .equippedFirstStrikePlusPerInstantSorcery => true
               | _ => false) then
               match aura.controller with
@@ -144,7 +126,7 @@ def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
               | none => (0, 0)
             else (0, 0)
           addStats acc
-            (addStats (addStats (g.auraStatBonus aura) glam) ((aura.status.hone : Int), 0))
+            (addStats (addStats (auraStatBonus aura) glam) ((aura.status.hone : Int), 0))
         else acc)
       (0, 0)
 
@@ -157,7 +139,7 @@ def enduringStorySelfBonus (g : Game) (o : GameObject) : Int × Int :=
     | some p =>
       if !g.hasEnduringStory p then (0, 0)
       else
-        (g.staticAbilitiesOf o).foldl
+        o.staticAbilities.foldl
           (fun acc ab =>
             match ab.selfIfEnduringStory? with
             | some (pw, tw, _) => addStats acc (pw, tw)
@@ -176,7 +158,7 @@ def enduringStoryTeamBonus (g : Game) (o : GameObject) : Int × Int :=
       else
         (g.permanentsOf p).foldl
           (fun acc src =>
-            (g.staticAbilitiesOf src).foldl
+            src.staticAbilities.foldl
               (fun acc ab =>
                 match ab.teamIfEnduringStory? with
                 | some (pw, tw) => addStats acc (pw, tw)
@@ -193,7 +175,7 @@ def enduringStoryKeywords (g : Game) (o : GameObject) : Keywords :=
     | some p =>
       if !g.hasEnduringStory p then Keywords.none
       else
-        (g.staticAbilitiesOf o).foldl
+        o.staticAbilities.foldl
           (fun acc ab =>
             match ab.selfIfEnduringStory? with
             | some (_, _, k) => Keywords.merge acc k
@@ -210,7 +192,7 @@ def mountainPowerBonus (g : Game) (o : GameObject) : Int :=
 
 /-- +P/+0 from graveyards with seven or more cards (Master's Councillors). -/
 def fatGraveyardPowerBonus (g : Game) (o : GameObject) : Int :=
-  (g.staticAbilitiesOf o).foldl (fun acc ab =>
+  o.staticAbilities.foldl (fun acc ab =>
     match ab with
     | .powerPerFatGraveyard p =>
       let n := g.players.filter (fun pl => pl.graveyard.size >= 7) |>.size
@@ -222,7 +204,7 @@ Equipment, creature cards in graveyard). -/
 def leftoverSelfBonus (g : Game) (o : GameObject) : Int × Int :=
   if !o.isOnBattlefield then (0, 0)
   else
-    (g.staticAbilitiesOf o).foldl (fun acc ab =>
+    o.staticAbilities.foldl (fun acc ab =>
       match ab with
       | .getsPowerPerOtherArtifact p =>
         let n : Int :=
@@ -234,9 +216,10 @@ def leftoverSelfBonus (g : Game) (o : GameObject) : Int × Int :=
         addStats acc (p * n, 0)
       | .getsIfGyCreatureCards min pw tw
       | .getsAndAllTypesIfGyCreatureCards min pw tw =>
-        if g.graveyardCreatureCards o.you >= min then
-          addStats acc (pw, tw)
-        else acc
+        let gy :=
+          (g.player o.you).graveyard.filter (fun id =>
+            (g.object! id).printed.isCreature) |>.size
+        if gy >= min then addStats acc (pw, tw) else acc
       | _ => acc) (0, 0)
 
 /-- +1/+1 for each artifact you control (Iron Man Armor until EOT). -/

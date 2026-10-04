@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -21,12 +20,12 @@ open Mtg.Engine.Catalog
 /-- Ragged Short Spear in hand, Grizzly Bears on the battlefield, enough mana. -/
 def spearSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  withRedMana (addToHand g raggedShortSpearCard ⟨0⟩) ⟨0⟩ 2
+  withRedMana (addToHand g raggedShortSpear ⟨0⟩) ⟨0⟩ 2
 
 #guard spearSetup.canCast ⟨0⟩ (handCardNamed spearSetup ⟨0⟩ "Ragged Short Spear")
 #guard spearSetup.asSorcery? ⟨0⟩
-#guard !raggedShortSpearCard.requiresTarget
-#guard raggedShortSpearCard.isEquipment
+#guard !raggedShortSpear.requiresTarget
+#guard raggedShortSpear.isEquipment
 
 /-- Equipment is cast without announcing a creature (CR 301.5b). -/
 def proposedSpear : Game :=
@@ -129,12 +128,12 @@ def spearEmptyHand : Game :=
 /-- Equip {3} with a creature you control and enough mana. -/
 def spearReadyToEquip : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
   withRedMana g ⟨0⟩ 3
 
 def spearEquipAbility : ActivatedAbility :=
-  raggedShortSpearCard.activatedAbilities[0]!
+  raggedShortSpear.activatedAbilities[0]!
 
 #guard spearReadyToEquip.canActivate ⟨0⟩
   (namedPermanent spearReadyToEquip "Ragged Short Spear") spearEquipAbility
@@ -145,20 +144,20 @@ def spearEquipAbility : ActivatedAbility :=
 
 -- Cannot Equip with no creature you control.
 #guard
-  let g := addPermanent afterDraw raggedShortSpearCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw raggedShortSpear ⟨0⟩ ⟨0⟩
   let g := withRedMana g ⟨0⟩ 3
   !g.canActivate ⟨0⟩ (namedPermanent g "Ragged Short Spear") spearEquipAbility
 
 -- Cannot Equip an opponent's creature: Equip needs a creature you control.
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
   let g := withRedMana g ⟨0⟩ 3
   !g.canActivate ⟨0⟩ (namedPermanent g "Ragged Short Spear") spearEquipAbility
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
-  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
   let g := withRedMana g ⟨0⟩ 3
   let g := mustApply g ⟨0⟩ (.activate (namedPermanent g "Ragged Short Spear").id 0)
   match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Gray Ogre").id)) with
@@ -169,7 +168,7 @@ def spearEquipAbility : ActivatedAbility :=
 #guard
   let g := applyIdle (passBoth (skipTo afterDraw .end 80))
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
   let g := withRedMana g ⟨0⟩ 3
   !g.asSorcery? ⟨0⟩ &&
     !g.canActivate ⟨0⟩ (namedPermanent g "Ragged Short Spear") spearEquipAbility
@@ -264,7 +263,7 @@ def afterEquippedHostLeaves : Game :=
 /-- Combat uses the equipped power. -/
 def afterEquippedCombat : Game :=
   let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addAttachedAura g raggedShortSpearCard (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g raggedShortSpear (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
   let g := passBoth g
@@ -279,7 +278,7 @@ def afterEquippedCombat : Game :=
 def spearTwoCreatures : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
   withRedMana g ⟨0⟩ 3
 
 def spearMovedToOgre : Game :=
@@ -305,7 +304,7 @@ def spearMovedToOgre : Game :=
 /-- Illegally attached Equipment becomes unattached and stays (CR 704.5n). -/
 def spearOnMountain : Game :=
   let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
-  addAttachedAura g raggedShortSpearCard (namedPermanent g "Mountain") ⟨0⟩ ⟨0⟩
+  addAttachedAura g raggedShortSpear (namedPermanent g "Mountain") ⟨0⟩ ⟨0⟩
 
 def spearUnattachedFromLand : Game := spearOnMountain.checkSBA
 
@@ -317,7 +316,7 @@ def spearUnattachedFromLand : Game := spearOnMountain.checkSBA
 def agentSpearOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := clearHandPlayedLand g ⟨0⟩
-  withRedMana (addToHand g raggedShortSpearCard ⟨0⟩) ⟨0⟩ 2
+  withRedMana (addToHand g raggedShortSpear ⟨0⟩) ⟨0⟩ 2
 
 #guard
   match Agent.choose agentSpearOnly ⟨0⟩ with
@@ -329,14 +328,14 @@ def agentSpearOnly : Game :=
 /-- Crude Bent Blade in hand, Nissa has a Grizzly Bears, enough mana. -/
 def bladeSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  withBlackMana (addToHand g crudeBentBladeCard ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g crudeBentBlade ⟨0⟩) ⟨0⟩ 3
 
 #guard bladeSetup.canCast ⟨0⟩ (handCardNamed bladeSetup ⟨0⟩ "Crude Bent Blade")
 #guard bladeSetup.asSorcery? ⟨0⟩
-#guard !crudeBentBladeCard.requiresTarget
-#guard crudeBentBladeCard.isEquipment
-#guard crudeBentBladeCard.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
-#guard crudeBentBladeCard.staticAbilities == #[.equippedCreatureGets 2 1]
+#guard !crudeBentBlade.requiresTarget
+#guard crudeBentBlade.isEquipment
+#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
+#guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
 
 /-- Equipment is cast without announcing a creature (CR 301.5b). -/
 def proposedBlade : Game :=
@@ -459,7 +458,7 @@ def bladeIdleSacrificed : Game := applyIdle bladeMustSac
 
 /-- With no opposing creature, the trigger still targets and then does nothing. -/
 def bladeNoCreatureSetup : Game :=
-  withBlackMana (addToHand afterDraw crudeBentBladeCard ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand afterDraw crudeBentBlade ⟨0⟩) ⟨0⟩ 3
 
 def bladeNoCreatureEntered : Game :=
   let g := mustApply bladeNoCreatureSetup ⟨0⟩
@@ -493,7 +492,7 @@ def bladeNoCreatureResolved : Game :=
 def bladeFireleaperSetup : Game :=
   let g := addPermanent afterDraw goblinFireleaper ⟨1⟩ ⟨1⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  withBlackMana (addToHand g crudeBentBladeCard ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g crudeBentBlade ⟨0⟩) ⟨0⟩ 3
 
 def bladeSacrificesFireleaper : Game :=
   let g := mustApply bladeFireleaperSetup ⟨0⟩
@@ -516,12 +515,12 @@ def bladeSacrificesFireleaper : Game :=
 /-- Equip {2} with a creature you control and enough mana. -/
 def bladeReadyToEquip : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g crudeBentBladeCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g crudeBentBlade ⟨0⟩ ⟨0⟩
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
   withBlackMana g ⟨0⟩ 2
 
 def bladeEquipAbility : ActivatedAbility :=
-  crudeBentBladeCard.activatedAbilities[0]!
+  crudeBentBlade.activatedAbilities[0]!
 
 #guard bladeReadyToEquip.canActivate ⟨0⟩
   (namedPermanent bladeReadyToEquip "Crude Bent Blade") bladeEquipAbility
@@ -533,7 +532,7 @@ def bladeEquipAbility : ActivatedAbility :=
 
 -- Cannot Equip with no creature you control.
 #guard
-  let g := addPermanent afterDraw crudeBentBladeCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw crudeBentBlade ⟨0⟩ ⟨0⟩
   let g := withBlackMana g ⟨0⟩ 2
   !g.canActivate ⟨0⟩ (namedPermanent g "Crude Bent Blade") bladeEquipAbility
 
@@ -580,8 +579,8 @@ def bladeEquipped : Game := passBoth paidBladeEquip
 
 /-- Bofur (a Dwarf) and unattached Equipment; Vow to Erebor offers the attach. -/
 def vowMayAttach : Game :=
-  let g := addPermanent afterDraw bofurReliableGuardianCard ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
   g.applyEffect ⟨0⟩ (Effect.untapPumpMaybeAttach 2 2)
     #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
 
@@ -635,7 +634,7 @@ def vowDeclined : Game := mustApply vowMayAttach ⟨0⟩ .decline
 /-- A non-Dwarf is pumped; the spell does not ask to attach Equipment. -/
 def vowOnBears : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
   g.applyEffect ⟨0⟩ (Effect.untapPumpMaybeAttach 2 2)
     #[Target.permanent (namedPermanent g "Grizzly Bears").id]
 
@@ -645,7 +644,7 @@ def vowOnBears : Game :=
 
 /-- No Equipment: the player is still asked, and the heuristic declines. -/
 def vowMayAttachNoGear : Game :=
-  let g := addPermanent afterDraw bofurReliableGuardianCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
   g.applyEffect ⟨0⟩ (Effect.untapPumpMaybeAttach 2 2)
     #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
 
@@ -767,7 +766,7 @@ def afterBladeCleanup : Game := passBoth (skipTo bladeEquipped .end 80)
 /-- Combat uses the equipped power and toughness. -/
 def afterEquippedBladeCombat : Game :=
   let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addAttachedAura g crudeBentBladeCard (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g crudeBentBlade (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
   let g := passBoth g
@@ -782,7 +781,7 @@ def afterEquippedBladeCombat : Game :=
 def agentBladeOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := clearHandPlayedLand g ⟨0⟩
-  withBlackMana (addToHand g crudeBentBladeCard ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g crudeBentBlade ⟨0⟩) ⟨0⟩ 3
 
 #guard
   match Agent.choose agentBladeOnly ⟨0⟩ with
@@ -802,8 +801,8 @@ def hospitalityLandfallSetup : Game :=
   addToHand g forest ⟨0⟩
 
 #guard hospitalityLandfallSetup.canPlayLand ⟨0⟩
-#guard beornsHospitalityCard.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
-#guard beornsHospitalityCard.activatedAbilities[0]!.effect == Effect.becomeSubtypeWithLandsPT "Bear"
+#guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
+#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.becomeSubtypeWithLandsPT "Bear"
 
 def hospitalityLandPlayed : Game :=
   mustApply hospitalityLandfallSetup ⟨0⟩
@@ -821,7 +820,7 @@ def hospitalityLandPlayed : Game :=
 
 -- The landfall trigger cannot target an opponent's creature or a player.
 #guard
-  let g := addPermanent hospitalityLandPlayed velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent hospitalityLandPlayed velvetwingButterflies ⟨1⟩ ⟨1⟩
   match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Velvetwing Butterflies").id)) with
   | .error msg => mentions msg "Illegal target"
   | .ok _ => false
@@ -859,7 +858,7 @@ def hospitalityLandfallResolved : Game := passBoth hospitalityLandfallTargeted
 /-- No creature you control: the landfall trigger is removed (CR 603.3d). -/
 def hospitalityNoTarget : Game :=
   let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
-  let g := addPermanent g velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent g velvetwingButterflies ⟨1⟩ ⟨1⟩
   let g := addToHand g forest ⟨0⟩
   mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
 
@@ -900,7 +899,7 @@ def hospitalityAnimateSetup : Game :=
 
 #guard hospitalityAnimateSetup.canActivate ⟨0⟩
   (namedPermanent hospitalityAnimateSetup "Beorn's Hospitality")
-  (beornsHospitalityCard.activatedAbilities[0]!)
+  (beornsHospitality.activatedAbilities[0]!)
 #guard !(namedPermanent hospitalityAnimateSetup "Beorn's Hospitality").isCreature
 #guard hospitalityAnimateSetup.landsYouControl ⟨0⟩ == 3
 

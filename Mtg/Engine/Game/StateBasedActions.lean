@@ -101,7 +101,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
       -- Snapshot exile-instead replacements first so a simultaneous death
       -- of Head of the Hunt still exiles opposing creatures.
-      let snap := g.battlefield.filter (g.exilesOppDeath?)
+      let snap := g.battlefield.filter exilesOppDeath?
       let victims :=
         g.battlefield.filterMap (fun o =>
           if !o.isCreature then none
@@ -130,7 +130,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               | some p =>
                 g := { g with waitingTriggers :=
                   g.waitingTriggers ++
-                    g.waitingTriggersFor o p .oneOrMoreOtherCreaturesDie }
+                    o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie }
               | none => pure ()
           -- “One or more creature cards” fires once per source still on
           -- the battlefield (Robot Domination; MSH 138).
@@ -149,7 +149,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
                   if gyOwners.any (· == p) then
                     g := { g with waitingTriggers :=
                       g.waitingTriggers ++
-                        g.waitingTriggersFor o p .creatureCardsPutIntoYourGy }
+                        o.waitingTriggersFor p .creatureCardsPutIntoYourGy }
                 | none => pure ()
             g := { g with suppressCreatureCardsToGy := true }
       for pair in victims do

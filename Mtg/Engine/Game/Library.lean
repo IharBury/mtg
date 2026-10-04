@@ -39,20 +39,20 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
       let mut g := g
       for o in g.permanentsOf p do
         g := { g with waitingTriggers :=
-          g.waitingTriggers ++ g.waitingTriggersFor o p .youDraw }
+          g.waitingTriggers ++ o.waitingTriggersFor p .youDraw }
         if drawn == 2 then
           g := { g with waitingTriggers :=
-            g.waitingTriggers ++ g.waitingTriggersFor o p .youDrawSecondCard }
+            g.waitingTriggers ++ o.waitingTriggersFor p .youDrawSecondCard }
       for opp in g.livingOpponents p do
         for o in g.permanentsOf opp.id do
           if !firstOfTheirDrawStep then
             g := { g with waitingTriggers :=
               g.waitingTriggers ++
-                g.waitingTriggersFor o opp.id .opponentDrawsExceptFirstDrawStep }
+                o.waitingTriggersFor opp.id .opponentDrawsExceptFirstDrawStep }
           if drawn == 2 then
             g := { g with waitingTriggers :=
               g.waitingTriggers ++
-                g.waitingTriggersFor o opp.id .opponentDrawsSecondCard }
+                o.waitingTriggersFor opp.id .opponentDrawsSecondCard }
       return g
 
 /-- How many cards replace one draw (`2^n` Bard effects, except the first

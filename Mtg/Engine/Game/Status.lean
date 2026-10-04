@@ -35,6 +35,10 @@ structure Status where
   activationsThisTurn : Nat := 0
   /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
   plusOnePlusOne : Nat := 0
+  /-- Loyalty counters on a planeswalker (CR 122.1 / 306.5). -/
+  loyaltyCounters : Nat := 0
+  /-- This permanent is prepared (Reality Fracture). -/
+  prepared : Bool := false
   /-- Keywords granted until end of turn (cleared in cleanup, CR 514.3).
   Printed keywords stay on `GameObject.printed`; this field is merged in
   `GameObject.printedOrUntilEot`. -/
@@ -127,9 +131,6 @@ structure Status where
   remain (The Wondrous Wasp; MSH 145 / 190). Later granted abilities still
   apply. -/
   losesAbilitiesGrantedBy : Array ObjectId := #[]
-  /-- Until end of turn, this permanent loses all abilities (CR 613.1f).
-  Later-granted abilities still apply. Cleared in cleanup (CR 514.3). -/
-  losesAllAbilitiesUntilEot : Bool := false
   /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
   chosenModes : Array Nat := #[]
   /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
@@ -177,10 +178,6 @@ structure Status where
   controlUntilEot : Bool := false
   /-- Instances of Iron Fist's granted tap ability this turn (MSH 106). -/
   ironFistTapGrants : Nat := 0
-  /-- This card was put into a graveyard from anywhere this turn
-  (Night Nurse; MSH). Cleared as the turn ends. Not a battlefield-only
-  flag: graveyard objects keep it until then. -/
-  putIntoGraveyardThisTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -230,8 +227,6 @@ def untilEotFields : List UntilEotField := [
     fun s => { s with untilEotKeywords := Keywords.none }⟩,
   ⟨fun s => s.untilEotLosesIndestructible,
     fun s => { s with untilEotLosesIndestructible := false }⟩,
-  ⟨fun s => s.losesAllAbilitiesUntilEot,
-    fun s => { s with losesAllAbilitiesUntilEot := false }⟩,
   ⟨fun s => s.untilEotExileIfDies,
     fun s => { s with untilEotExileIfDies := false }⟩,
   ⟨fun s => s.setBasePT.isSome, fun s => { s with setBasePT := none }⟩,

@@ -156,9 +156,6 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     g.logMsg s!"If {o.name} would die this turn, exile it instead"
   | .grantKeywords k =>
     g.grantUntilEotLogged o k
-  | .removeAllAbilities =>
-    let g := g.mapObjectStatus o (fun s => { s with losesAllAbilitiesUntilEot := true })
-    g.logMsg s!"{o.name} loses all abilities until end of turn"
   | .tap => g.becomeTapped o
   | .untap =>
     if g.hostCantBecomeUntapped o then
@@ -192,7 +189,7 @@ def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind
 def queueScryTriggers (g : Game) (p : PlayerId) (lookedAt : Nat) : Game :=
   g.foldControlledPermanents p none fun g o =>
     g.enqueueWaitingTriggers
-      (g.waitingTriggersFor o p .youScry (some (Int.ofNat lookedAt)))
+      (o.waitingTriggersFor p .youScry (some (Int.ofNat lookedAt)))
 
 /-- Start scrying `n` as a keyword action during resolution (CR 701.20).
 Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.20c). -/

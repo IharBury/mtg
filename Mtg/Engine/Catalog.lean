@@ -9,17 +9,22 @@ card-agnostic; these definitions just exercise the rules we model.
 Cards from Magic: The Gathering | The Hobbit (HOB) live in
 `Mtg.Engine.Catalog.Hobbit`. Cards from The Hobbit Eternal (HOC) live in
 `Mtg.Engine.Catalog.HobbitEternal`. Cards from Marvel Super Heroes (MSH) live
-in `Mtg.Engine.Catalog.MarvelSuperHeroes`. Decklists that use them live in `Mtg.Demo`.
+in `Mtg.Engine.Catalog.MarvelSuperHeroes`. Cards from Reality Fracture (FRA)
+live in `Mtg.Engine.Catalog.RealityFracture`. Decklists that use them live in `Mtg.Demo`.
 -/
 
 namespace Mtg.Engine.Catalog
 
 open Mtg.Engine
 
-/-- Fill a `CardDef` with the fields catalogs actually set. Type-specific
-helpers (`creature`, `instant`, …) are thin wrappers so a new card is one
-call instead of repeating `types`, `power := some`, and empty arrays. -/
-def card (name : String) (types : Array CardType)
+/-- Build a `CardDef` by parsing the full printed card. `oracleText` is the
+rules text and is not stored. When that text is empty, the modeled fields
+passed with the header are kept so test fixtures without rules text still
+work. A back face is attached from `otherFace`; it is not part of the front's
+rules text. -/
+-- `irreducible` stops `#guard` from unfolding this into the parser. The
+-- compiled body is unchanged: nonempty rules text is still `parseOracleCard!`.
+@[irreducible, noinline] def card (name : String) (types : Array CardType)
     (manaCost : ManaCost := ManaCost.empty) (subtypes : Array Subtype := #[])
     (oracleText : String := "") (power : Option Int := none)
     (toughness : Option Int := none) (keywords : Keywords := Keywords.none)
@@ -70,7 +75,7 @@ def card (name : String) (types : Array CardType)
     (saga : Option SagaDef := none)
     (affinityForSubtype : Option String := none)
     (costReductionEqualOppArtifacts : Bool := false)
-    (gift : Option Gift := none)
+    (giftTreasure : Bool := false)
     (foodAlsoCreatesTreasure : Bool := false)
     (othersEnterWithPlusOneEqualToughness : Bool := false)
     (powerPerMountain : Nat := 0)
@@ -89,148 +94,130 @@ def card (name : String) (types : Array CardType)
     (entersWithShield : Nat := 0)
     (otherFace : Option CardDef := none)
     (mayLookAtTopAnytime : Bool := false)
-    (mayPlayLandsFromTop : Bool := false) : CardDef := {
-  name, manaCost, types, subtypes, oracleText, power, toughness, keywords,
-  supertypes,
-  spellEffect := spellEffect,
-  spellModes := spellModes,
-  additionalCostSacrificeArtifactOrCreature,
-  additionalCostOrPayGeneric, additionalCostDiscardOrPayGeneric,
-  costReductionIfCreatureDied, costReductionIfTargetDamaged,
-  costReductionIfTargetTapped, costReductionIfTargetAttackingNontoken,
-  costReductionIfTargetAttacking, costReductionIfYouControl,
-  costReductionIfGyCreaturesAtLeast,
-  tapAddMana, tapAddManaForEach, tapAddAnyColorEqualToPower,
-  tapAddAnyColorForInstantOrSorcery, entersWithHopePerCreature, entersTapped,
-  tapAddOneOf, tapAddOneOfIfEnteredOrBasic, tapAddAnyColor, tapSacrificeAddAnyColor, isToken, cantBeCountered,
-  flashIfYouControlSubtype, ward, flashback, colorIndicator,
-  entersTappedUnlessLegendary, entersTappedUnlessEquipment,
-  tapAddAnyColorForLegendary, costReductionEqualFlyingPower, crew,
-  tapAddTwoAmong, chooseOneOrBoth, chooseTwoIfYouControlSubtype,
-  tapAddAnyColorAmongLegendaries, tapAddRestricted, tapPayLifeAddOneOf,
-  entersTappedUnlessPayLife, tapAddCommanderIdentity,
-  additionalCostSacrificeCreature, asEntersChooseCreatureType,
-  saga, affinityForSubtype, costReductionEqualOppArtifacts, gift,
-  foodAlsoCreatesTreasure, othersEnterWithPlusOneEqualToughness, powerPerMountain,
-  extraLandIfOtherSubtype, tapAddColorlessPerSubtype, cascade, kicker,
-  tokenDoubling, drawTwoExceptFirstDrawStep,
-  staticAbilities, triggeredAbilities, activatedAbilities, adventure,
-  teamwork, chooseBothIfTeamwork, entersWithShield, otherFace,
-  mayLookAtTopAnytime, mayPlayLandsFromTop
-}
+    (mayPlayLandsFromTop : Bool := false) : CardDef :=
+  let text :=
+    formatPrintedCard name manaCost supertypes types subtypes power toughness
+      colorIndicator isToken oracleText
+  let parsed := { parseOracleCard! text with otherFace := otherFace }
+  if (oracleText.trimAscii.copy).isEmpty then
+    { parsed with
+      keywords
+      spellEffect
+      spellModes
+      additionalCostSacrificeArtifactOrCreature
+      additionalCostOrPayGeneric
+      additionalCostDiscardOrPayGeneric
+      costReductionIfCreatureDied
+      costReductionIfTargetDamaged
+      costReductionIfTargetTapped
+      costReductionIfTargetAttackingNontoken
+      costReductionIfTargetAttacking
+      costReductionIfYouControl
+      costReductionIfGyCreaturesAtLeast
+      tapAddMana
+      tapAddManaForEach
+      tapAddAnyColorEqualToPower
+      tapAddAnyColorForInstantOrSorcery
+      entersWithHopePerCreature
+      entersTapped
+      tapAddOneOf
+      tapAddOneOfIfEnteredOrBasic
+      tapAddAnyColor
+      tapSacrificeAddAnyColor
+      cantBeCountered
+      flashIfYouControlSubtype
+      ward
+      flashback
+      entersTappedUnlessLegendary
+      entersTappedUnlessEquipment
+      tapAddAnyColorForLegendary
+      costReductionEqualFlyingPower
+      crew
+      tapAddTwoAmong
+      chooseOneOrBoth
+      chooseTwoIfYouControlSubtype
+      tapAddAnyColorAmongLegendaries
+      tapAddRestricted
+      tapPayLifeAddOneOf
+      entersTappedUnlessPayLife
+      tapAddCommanderIdentity
+      additionalCostSacrificeCreature
+      asEntersChooseCreatureType
+      saga
+      affinityForSubtype
+      costReductionEqualOppArtifacts
+      giftTreasure
+      foodAlsoCreatesTreasure
+      othersEnterWithPlusOneEqualToughness
+      powerPerMountain
+      extraLandIfOtherSubtype
+      tapAddColorlessPerSubtype
+      cascade
+      kicker
+      tokenDoubling
+      drawTwoExceptFirstDrawStep
+      staticAbilities
+      triggeredAbilities
+      activatedAbilities
+      adventure
+      teamwork
+      chooseBothIfTeamwork
+      entersWithShield
+      mayLookAtTopAnytime
+      mayPlayLandsFromTop }
+  else
+    parsed
+
+/-- Parse a card from its full printed text, one string per line.
+The lines are the definition: name, mana cost, type line, power and
+toughness, and rules. A line that is exactly `//` starts the back face. -/
+@[irreducible, noinline] def fromOracle (lines : List String) : CardDef :=
+  parseOracleCard! (String.intercalate "\n" lines)
+
+/-- Parse printed text, keeping rules lines the engine does not model yet. -/
+@[irreducible, noinline] def fromOracleKeeping (lines : List String) : CardDef :=
+  match parseOracleCardKeeping (String.intercalate "\n" lines) with
+  | .ok c => c
+  | .error e => panic! s!"parseOracleCardKeeping: {e}\n---\n{String.intercalate "\n" lines}"
 
 /-- A basic land whose name is also its land type (CR 305.6). -/
-def basicLand (landName : String) (color : Color) : CardDef :=
+@[irreducible, noinline] def basicLand (landName : String) (color : Color) : CardDef :=
   card landName #[.land] (subtypes := #[landName]) (supertypes := #[.basic])
     (oracleText := s!"(\{T}: Add \{{color.letter}}.)")
 
-/-- Oracle text for Plains. -/
-def plainsOracle : String :=
-  "({T}: Add {W}.)"
-
-def plainsDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Plains",
-    .type .land,
-    .supertype .basic,
-    .subtype .plains
-  ] ++ (parseOracleParts (name := "Plains") plainsOracle).get!
-
-#guard plainsDefinition == .card [
-  .name "Plains",
-  .type .land,
-  .supertype .basic,
-  .subtype .plains]
-
 def plains : CardDef :=
-  plainsDefinition.toCardDef (oracleText := plainsOracle)
-
-/-- Oracle text for Island. -/
-def islandOracle : String :=
-  "({T}: Add {U}.)"
-
-def islandDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Island",
-    .type .land,
-    .supertype .basic,
-    .subtype .island
-  ] ++ (parseOracleParts (name := "Island") islandOracle).get!
-
-#guard islandDefinition == .card [
-  .name "Island",
-  .type .land,
-  .supertype .basic,
-  .subtype .island]
-
+  fromOracle [
+    "Plains",
+    "Basic Land — Plains",
+    "({T}: Add {W}.)",
+  ]
 def island : CardDef :=
-  islandDefinition.toCardDef (oracleText := islandOracle)
-
-/-- Oracle text for Swamp. -/
-def swampOracle : String :=
-  "({T}: Add {B}.)"
-
-def swampDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Swamp",
-    .type .land,
-    .supertype .basic,
-    .subtype .swamp
-  ] ++ (parseOracleParts (name := "Swamp") swampOracle).get!
-
-#guard swampDefinition == .card [
-  .name "Swamp",
-  .type .land,
-  .supertype .basic,
-  .subtype .swamp]
-
+  fromOracle [
+    "Island",
+    "Basic Land — Island",
+    "({T}: Add {U}.)",
+  ]
 def swamp : CardDef :=
-  swampDefinition.toCardDef (oracleText := swampOracle)
-
-/-- Oracle text for Mountain. -/
-def mountainOracle : String :=
-  "({T}: Add {R}.)"
-
-def mountainDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Mountain",
-    .type .land,
-    .supertype .basic,
-    .subtype .mountain
-  ] ++ (parseOracleParts (name := "Mountain") mountainOracle).get!
-
-#guard mountainDefinition == .card [
-  .name "Mountain",
-  .type .land,
-  .supertype .basic,
-  .subtype .mountain]
-
+  fromOracle [
+    "Swamp",
+    "Basic Land — Swamp",
+    "({T}: Add {B}.)",
+  ]
 def mountain : CardDef :=
-  mountainDefinition.toCardDef (oracleText := mountainOracle)
-
-/-- Oracle text for Forest. -/
-def forestOracle : String :=
-  "({T}: Add {G}.)"
-
-def forestDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Forest",
-    .type .land,
-    .supertype .basic,
-    .subtype .forest
-  ] ++ (parseOracleParts (name := "Forest") forestOracle).get!
-
-#guard forestDefinition == .card [
-  .name "Forest",
-  .type .land,
-  .supertype .basic,
-  .subtype .forest]
-
+  fromOracle [
+    "Mountain",
+    "Basic Land — Mountain",
+    "({T}: Add {R}.)",
+  ]
 def forest : CardDef :=
-  forestDefinition.toCardDef (oracleText := forestOracle)
+  fromOracle [
+    "Forest",
+    "Basic Land — Forest",
+    "({T}: Add {G}.)",
+  ]
 
 /-- A creature used by engine tests and the Hobbit catalog. -/
-def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
+@[irreducible, noinline] def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (power toughness : Int) (oracleText : String := "")
     (keywords : Keywords := Keywords.none)
     (tapAddMana : Array ManaType := #[])
@@ -298,7 +285,7 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (otherFace := otherFace)
 
 /-- A legendary creature (CR 205.4 / 704.5j). -/
-def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
+@[irreducible, noinline] def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (power toughness : Int) (oracleText : String := "")
     (keywords : Keywords := Keywords.none)
     (tapAddMana : Array ManaType := #[])
@@ -354,7 +341,7 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (otherFace := otherFace)
 
 /-- Instant or sorcery with an optional one-shot effect or modal modes. -/
-def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
+@[irreducible, noinline] def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (oracleText : String) (spellEffect : Option Effect := none)
     (spellModes : Array Effect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false)
@@ -371,7 +358,7 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (additionalCostSacrificeCreature : Bool := false)
     (affinityForSubtype : Option String := none)
     (costReductionEqualOppArtifacts : Bool := false)
-    (gift : Option Gift := none)
+    (giftTreasure : Bool := false)
     (cascade : Nat := 0)
     (kicker : Option ManaCost := none)
     (staticAbilities : Array StaticAbility := #[])
@@ -394,7 +381,7 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (additionalCostSacrificeCreature := additionalCostSacrificeCreature)
     (affinityForSubtype := affinityForSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
-    (gift := gift)
+    (giftTreasure := giftTreasure)
     (cascade := cascade)
     (kicker := kicker)
     (staticAbilities := staticAbilities)
@@ -402,7 +389,7 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (chooseBothIfTeamwork := chooseBothIfTeamwork)
 
 /-- An instant, optionally with a one-shot effect or modal modes. -/
-def instant (name : String) (manaCost : ManaCost) (oracleText : String)
+@[irreducible, noinline] def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option Effect := none)
     (spellModes : Array Effect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false)
@@ -419,7 +406,7 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (additionalCostSacrificeCreature : Bool := false)
     (affinityForSubtype : Option String := none)
     (costReductionEqualOppArtifacts : Bool := false)
-    (gift : Option Gift := none)
+    (giftTreasure : Bool := false)
     (cascade : Nat := 0)
     (kicker : Option ManaCost := none)
     (staticAbilities : Array StaticAbility := #[])
@@ -443,7 +430,7 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (additionalCostSacrificeCreature := additionalCostSacrificeCreature)
     (affinityForSubtype := affinityForSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
-    (gift := gift)
+    (giftTreasure := giftTreasure)
     (cascade := cascade)
     (kicker := kicker)
     (staticAbilities := staticAbilities)
@@ -451,7 +438,7 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (chooseBothIfTeamwork := chooseBothIfTeamwork)
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
-def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
+@[irreducible, noinline] def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option Effect := none)
     (spellModes : Array Effect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false)
@@ -468,7 +455,7 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (additionalCostSacrificeCreature : Bool := false)
     (affinityForSubtype : Option String := none)
     (costReductionEqualOppArtifacts : Bool := false)
-    (gift : Option Gift := none)
+    (giftTreasure : Bool := false)
     (cascade : Nat := 0)
     (kicker : Option ManaCost := none)
     (staticAbilities : Array StaticAbility := #[])
@@ -492,7 +479,7 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (additionalCostSacrificeCreature := additionalCostSacrificeCreature)
     (affinityForSubtype := affinityForSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
-    (gift := gift)
+    (giftTreasure := giftTreasure)
     (cascade := cascade)
     (kicker := kicker)
     (staticAbilities := staticAbilities)
@@ -500,7 +487,7 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (chooseBothIfTeamwork := chooseBothIfTeamwork)
 
 /-- A non-Aura enchantment. -/
-def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
+@[irreducible, noinline] def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
     (keywords : Keywords := Keywords.none)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
@@ -529,14 +516,14 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
   SagaChapter.of roman effect e
 
 /-- A Saga enchantment (CR 714). -/
-def saga (name : String) (manaCost : ManaCost) (oracleText : String)
+@[irreducible, noinline] def saga (name : String) (manaCost : ManaCost) (oracleText : String)
     (sacrificeAfter : String) (chapters : Array SagaChapter) : CardDef :=
   enchantment name manaCost oracleText
     (subtypes := #["Saga"])
     (saga := some { sacrificeAfter, chapters })
 
 /-- An Aura enchantment (CR 303.4). -/
-def aura (name : String) (manaCost : ManaCost) (oracleText : String)
+@[irreducible, noinline] def aura (name : String) (manaCost : ManaCost) (oracleText : String)
     (keywords : Keywords := Keywords.none)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[]) : CardDef :=
@@ -544,7 +531,7 @@ def aura (name : String) (manaCost : ManaCost) (oracleText : String)
     (subtypes := #["Aura"])
 
 /-- An artifact, including Equipment. -/
-def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
+@[irreducible, noinline] def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
     (subtypes : Array Subtype := #[])
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
@@ -585,7 +572,7 @@ def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
     (ward := ward)
 
 /-- An artifact creature, optionally legendary. -/
-def artifactCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
+@[irreducible, noinline] def artifactCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (power toughness : Int) (oracleText : String := "")
     (keywords : Keywords := Keywords.none)
     (staticAbilities : Array StaticAbility := #[])
@@ -606,7 +593,7 @@ def artifactCreature (name : String) (manaCost : ManaCost) (subtypes : Array Sub
     (entersWithShield := entersWithShield)
 
 /-- A nonbasic land. -/
-def land (name : String) (oracleText : String)
+@[irreducible, noinline] def land (name : String) (oracleText : String)
     (tapAddMana : Array ManaType := #[])
     (tapAddOneOf : Array ManaType := #[])
     (tapAddOneOfIfEnteredOrBasic : Array ManaType := #[])
@@ -635,7 +622,7 @@ def land (name : String) (oracleText : String)
     (entersTappedUnlessPayLife := entersTappedUnlessPayLife)
 
 /-- A legendary land. -/
-def legendaryLand (name : String) (oracleText : String)
+@[irreducible, noinline] def legendaryLand (name : String) (oracleText : String)
     (tapAddMana : Array ManaType := #[])
     (tapAddOneOf : Array ManaType := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
@@ -656,11 +643,12 @@ def legendaryLand (name : String) (oracleText : String)
 
 /-- A Treasure token (CR 111 / 701.42). -/
 def treasureToken : CardDef :=
-  artifact "Treasure" ManaCost.empty
-    "{T}, Sacrifice this artifact: Add one mana of any color."
-    (subtypes := #["Treasure"])
-    (tapSacrificeAddAnyColor := true)
-    (isToken := true)
+  fromOracle [
+    "Treasure",
+    "Artifact — Treasure",
+    "Token",
+    "{T}, Sacrifice this token: Add one mana of any color.",
+  ]
 
 /-- A creature token with a color indicator (CR 202.2e). -/
 def tokenCreature (name : String) (subtypes : Array Subtype)
@@ -673,30 +661,58 @@ def tokenCreature (name : String) (subtypes : Array Subtype)
 
 /-- A 1/1 white Human Soldier creature token. -/
 def humanSoldierToken : CardDef :=
-  tokenCreature "Human Soldier" #["Human", "Soldier"] 1 1 .white
+  fromOracle [
+    "Human Soldier",
+    "Creature — Human Soldier",
+    "1/1",
+    "Color indicator: White",
+    "Token",
+  ]
 
 /-- A Food token. -/
 def foodToken : CardDef :=
-  artifact "Food" ManaCost.empty
-    "{2}, {T}, Sacrifice this artifact: You gain 3 life."
-    (subtypes := #["Food"])
-    (activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
-      effect := Effect.gainLife 3
-    }])
-    (isToken := true)
+  fromOracle [
+    "Food",
+    "Artifact — Food",
+    "Token",
+    "{2}, {T}, Sacrifice this token: You gain 3 life.",
+  ]
 
 def wolfToken : CardDef :=
-  tokenCreature "Wolf" #["Wolf"] 2 2 .green
+  fromOracle [
+    "Wolf",
+    "Creature — Wolf",
+    "2/2",
+    "Color indicator: Green",
+    "Token",
+  ]
 
 def dwarfToken : CardDef :=
-  tokenCreature "Dwarf" #["Dwarf"] 2 2 .red
+  fromOracle [
+    "Dwarf",
+    "Creature — Dwarf",
+    "2/2",
+    "Color indicator: Red",
+    "Token",
+  ]
 
 def bearToken : CardDef :=
-  tokenCreature "Bear" #["Bear"] 2 2 .green
+  fromOracle [
+    "Bear",
+    "Creature — Bear",
+    "2/2",
+    "Color indicator: Green",
+    "Token",
+  ]
 
 def elfToken : CardDef :=
-  tokenCreature "Elf" #["Elf"] 1 1 .green
+  fromOracle [
+    "Elf",
+    "Creature — Elf",
+    "1/1",
+    "Color indicator: Green",
+    "Token",
+  ]
 
 /-- An activated ability (CR 602.1). -/
 def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
@@ -773,7 +789,7 @@ def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
     (equipWorthy := true)
 
 /-- Equipment with a standard Equip cost (CR 301.5 / 702.6). -/
-def equipment (name : String) (manaCost : ManaCost) (oracleText : String)
+@[irreducible, noinline] def equipment (name : String) (manaCost : ManaCost) (oracleText : String)
     (equip : ManaCost)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
@@ -800,229 +816,126 @@ def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneri
     (discardSource := true) (activateFromHand := true)
 
 /-- Adventure characteristics used while the card is a spell (CR 715.2). -/
-def adventure (name : String) (manaCost : ManaCost) (oracleText : String)
+def adventure (name : String) (manaCost : ManaCost) (_oracleText : String)
     (spellEffect : Effect) (cardType : CardType := .sorcery)
     (additionalCostSacrificeCreature : Bool := false) : AdventureFace := {
   name, manaCost, types := #[cardType], subtypes := #["Adventure"],
-  oracleText, spellEffect := some spellEffect,
+  spellEffect := some spellEffect,
   additionalCostSacrificeCreature
 }
 
+/-- A red instant that deals `amount` damage to any target. -/
+@[irreducible, noinline] def damageInstant (name : String) (amount : Nat) : CardDef :=
+  instant name (ManaCost.ofColor .red)
+    s!"{name} deals {amount} damage to any target."
+    (some (Effect.dealDamage amount))
+
 def grizzlyBears : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Grizzly Bears",
-    .manaCost [.generic 1, .mono .green],
-    .type .creature,
-    .subtype .bear,
-    .power 2,
-    .toughness 2
-  ]).toCardDef
+  fromOracle [
+    "Grizzly Bears",
+    "{1}{G}",
+    "Creature — Bear",
+    "2/2",
+  ]
 
 def grayOgre : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Gray Ogre",
-    .manaCost [.generic 2, .mono .red],
-    .type .creature,
-    .subtype .ogre,
-    .power 2,
-    .toughness 2
-  ]).toCardDef
+  fromOracle [
+    "Gray Ogre",
+    "{2}{R}",
+    "Creature — Ogre",
+    "2/2",
+  ]
 
 def hillGiant : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Hill Giant",
-    .manaCost [.generic 3, .mono .red],
-    .type .creature,
-    .subtype .giant,
-    .power 3,
-    .toughness 3
-  ]).toCardDef
+  fromOracle [
+    "Hill Giant",
+    "{3}{R}",
+    "Creature — Giant",
+    "3/3",
+  ]
 
 def canyonMinotaur : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Canyon Minotaur",
-    .manaCost [.generic 3, .mono .red],
-    .type .creature,
-    .subtype .minotaur,
-    .power 3,
-    .toughness 3
-  ]).toCardDef
-
-/-- Oracle text for Raging Goblin. -/
-def ragingGoblinOracle : String :=
-  "Haste (This creature can attack and {T} as soon as it comes under your control.)"
-
-def ragingGoblinDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Raging Goblin",
-    .manaCost [.mono .red],
-    .type .creature,
-    .subtype .goblin,
-    .power 1,
-    .toughness 1
-  ] ++ (parseOracleParts (name := "Raging Goblin") ragingGoblinOracle).get!
-
-#guard ragingGoblinDefinition == .card [
-  .name "Raging Goblin",
-  .manaCost [.mono .red],
-  .type .creature,
-  .subtype .goblin,
-  .power 1,
-  .toughness 1,
-  .ability (.keyword .haste)]
+  fromOracle [
+    "Canyon Minotaur",
+    "{3}{R}",
+    "Creature — Minotaur Warrior",
+    "3/3",
+  ]
 
 def ragingGoblin : CardDef :=
-  ragingGoblinDefinition.toCardDef (oracleText := ragingGoblinOracle)
-
-/-- Oracle text for Llanowar Elves. -/
-def llanowarElvesOracle : String :=
-  "{T}: Add {G}."
-
-def llanowarElvesDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Llanowar Elves",
-    .manaCost [.mono .green],
-    .type .creature,
-    .subtype .elf,
-    .subtype .druid,
-    .power 1,
-    .toughness 1
-  ] ++ (parseOracleParts (name := "Llanowar Elves") llanowarElvesOracle).get!
-
-#guard llanowarElvesDefinition == .card [
-  .name "Llanowar Elves",
-  .manaCost [.mono .green],
-  .type .creature,
-  .subtype .elf,
-  .subtype .druid,
-  .power 1,
-  .toughness 1,
-  .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.mono .green]))]
+  fromOracle [
+    "Raging Goblin",
+    "{R}",
+    "Creature — Goblin Berserker",
+    "1/1",
+    "Haste (This creature can attack and {T} as soon as it comes under your control.)",
+  ]
 
 def llanowarElves : CardDef :=
-  llanowarElvesDefinition.toCardDef (oracleText := llanowarElvesOracle)
+  fromOracle [
+    "Llanowar Elves",
+    "{G}",
+    "Creature — Elf Druid",
+    "1/1",
+    "{T}: Add {G}.",
+  ]
 
 def crawWurm : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Craw Wurm",
-    .manaCost [.generic 4, .mono .green],
-    .type .creature,
-    .subtype .wurm,
-    .power 6,
-    .toughness 4
-  ]).toCardDef
+  fromOracle [
+    "Craw Wurm",
+    "{4}{G}{G}",
+    "Creature — Wurm",
+    "6/4",
+  ]
 
 def centaurCourser : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Centaur Courser",
-    .manaCost [.generic 2, .mono .green],
-    .type .creature,
-    .subtype .centaur,
-    .power 3,
-    .toughness 3
-  ]).toCardDef
+  fromOracle [
+    "Centaur Courser",
+    "{2}{G}",
+    "Creature — Centaur Warrior",
+    "3/3",
+  ]
 
 def rumblingBaloth : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name "Rumbling Baloth",
-    .manaCost [.generic 2, .mono .green, .mono .green],
-    .type .creature,
-    .subtype .beast,
-    .power 4,
-    .toughness 4
-  ]).toCardDef
-
-/-- Oracle text for Giant Spider. -/
-def giantSpiderOracle : String :=
-  "Reach (This creature can block creatures with flying.)"
-
-def giantSpiderDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Giant Spider",
-    .manaCost [.generic 3, .mono .green],
-    .type .creature,
-    .subtype .spider,
-    .power 2,
-    .toughness 4
-  ] ++ (parseOracleParts (name := "Giant Spider") giantSpiderOracle).get!
-
-#guard giantSpiderDefinition == .card [
-  .name "Giant Spider",
-  .manaCost [.generic 3, .mono .green],
-  .type .creature,
-  .subtype .spider,
-  .power 2,
-  .toughness 4,
-  .ability (.keyword .reach)]
+  fromOracle [
+    "Rumbling Baloth",
+    "{2}{G}{G}",
+    "Creature — Beast",
+    "4/4",
+  ]
 
 def giantSpider : CardDef :=
-  giantSpiderDefinition.toCardDef (oracleText := giantSpiderOracle)
-
-/-- Oracle text for Lightning Bolt. -/
-def lightningBoltOracle : String :=
-  "Lightning Bolt deals 3 damage to any target."
-
-def lightningBoltDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Lightning Bolt",
-    .manaCost [.mono .red],
-    .type .instant
-  ] ++ (parseOracleParts (name := "Lightning Bolt") lightningBoltOracle).get!
-
-#guard lightningBoltDefinition == .card [
-  .name "Lightning Bolt",
-  .manaCost [.mono .red],
-  .type .instant,
-  .actions [.dealDamage .this (.target 1 .all) (.int 3)]]
+  fromOracle [
+    "Giant Spider",
+    "{3}{G}",
+    "Creature — Spider",
+    "2/4",
+    "Reach (This creature can block creatures with flying.)",
+  ]
 
 def lightningBolt : CardDef :=
-  lightningBoltDefinition.toCardDef (oracleText := lightningBoltOracle)
-
-/-- Oracle text for Shock. -/
-def shockOracle : String :=
-  "Shock deals 2 damage to any target."
-
-def shockDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Shock",
-    .manaCost [.mono .red],
-    .type .instant
-  ] ++ (parseOracleParts (name := "Shock") shockOracle).get!
-
-#guard shockDefinition == .card [
-  .name "Shock",
-  .manaCost [.mono .red],
-  .type .instant,
-  .actions [.dealDamage .this (.target 1 .all) (.int 2)]]
+  fromOracle [
+    "Lightning Bolt",
+    "{R}",
+    "Instant",
+    "Lightning Bolt deals 3 damage to any target.",
+  ]
 
 def shock : CardDef :=
-  shockDefinition.toCardDef (oracleText := shockOracle)
-
-/-- Oracle text for Giant Growth. -/
-def giantGrowthOracle : String :=
-  "Target creature gets +3/+3 until end of turn."
-
-def giantGrowthDefinition : TraditionalCardDefinition := .card <|
-  [
-    .name "Giant Growth",
-    .manaCost [.mono .green],
-    .type .instant
-  ] ++ (parseOracleParts (name := "Giant Growth") giantGrowthOracle).get!
-
-#guard giantGrowthDefinition == .card [
-  .name "Giant Growth",
-  .manaCost [.mono .green],
-  .type .instant,
-  .actions [
-    .continuous
-      [.addPower
-        (.target 1 (.intersection [.zone .battlefield, .cardType .creature])) (Value.int 3),
-       .addToughness
-        (.targetReference 1) (Value.int 3)]
-      .endOfTurn]]
+  fromOracle [
+    "Shock",
+    "{R}",
+    "Instant",
+    "Shock deals 2 damage to any target.",
+  ]
 
 def giantGrowth : CardDef :=
-  giantGrowthDefinition.toCardDef (oracleText := giantGrowthOracle)
+  fromOracle [
+    "Giant Growth",
+    "{G}",
+    "Instant",
+    "Target creature gets +3/+3 until end of turn.",
+  ]
 
 /-- Repeat a card `n` times. -/
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
@@ -1038,20 +951,35 @@ def powerUpAbility (effect : Effect) (mana : ManaCost)
 def dualAddClause (a b : Color) : String :=
   s!"\{T}: Add {manaSymbolsText #[.colored a, .colored b] " or "}."
 
+/-- Dual land: enters tapped, gains 1 life, `{T}: Add` one of two colors.
+The Oracle text is reconstructed from the colors. -/
+@[irreducible, noinline] def gainLifeDualLand (name : String) (a b : Color) : CardDef :=
+  land name
+    s!"This land enters tapped.\nWhen this land enters, you gain 1 life.\n{dualAddClause a b}"
+    (entersTapped := true)
+    (triggeredAbilities := #[.onEnterGainLife 1])
+    (tapAddOneOf := #[.colored a, .colored b])
+
 /-- Dual land: `{T}: Add {C}` plus a two-color tap that requires this land
 entered this turn or a basic land you control. The Oracle text is
 reconstructed from the colors. -/
-def conditionalDualLand (name : String) (a b : Color) : CardDef :=
+@[irreducible, noinline] def conditionalDualLand (name : String) (a b : Color) : CardDef :=
   land name
     s!"\{T}: Add \{C}.\n{dualAddClause a b} Activate only if this land entered this turn or if you control a basic land."
     (tapAddMana := #[.colorless])
     (tapAddOneOfIfEnteredOrBasic := #[.colored a, .colored b])
 
+#guard (gainLifeDualLand "Silent Plaza" .blue .black).tapAddOneOf ==
+  #[.colored .blue, .colored .black]
+#guard (gainLifeDualLand "Silent Plaza" .blue .black).triggeredAbilities ==
+  #[.onEnterGainLife 1]
+#guard ((gainLifeDualLand "Silent Plaza" .blue .black).summary.splitOn "you gain 1 life").length > 1
+#guard ((gainLifeDualLand "Silent Plaza" .blue .black).summary.splitOn "{T}: Add {U} or {B}").length > 1
 #guard (conditionalDualLand "Silent Lair" .blue .black).tapAddOneOfIfEnteredOrBasic ==
   #[.colored .blue, .colored .black]
 #guard (conditionalDualLand "Silent Lair" .blue .black).requiresEnteredOrBasicAdd
-#guard (conditionalDualLand "Silent Lair" .blue .black).oracleText ==
-  "{T}: Add {C}.\n{T}: Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land."
+#guard ((conditionalDualLand "Silent Lair" .blue .black).summary.splitOn "{T}: Add {C}").length > 1
+#guard ((conditionalDualLand "Silent Lair" .blue .black).summary.splitOn "entered this turn").length > 1
 #guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary
 #guard (creature "Silent Legend" ManaCost.empty #[] 1 1 (legendary := true)).hasSupertype .legendary
 #guard (legendaryLand "Silent Keep" "").hasSupertype .legendary
@@ -1059,16 +987,6 @@ def conditionalDualLand (name : String) (a b : Color) : CardDef :=
 #guard (sorcery "Silent Flame" (ManaCost.ofColor .red) "" (some (Effect.dealDamage 1))).isSorcery
 #guard mountain.colors.isColorless
 #guard grizzlyBears.colors.isMonocolored
-#guard grizzlyBears.hasSubtype "Bear"
-#guard grizzlyBears.power == some 2
-#guard grizzlyBears.toughness == some 2
-#guard grayOgre.hasSubtype "Ogre"
-#guard hillGiant.hasSubtype "Giant"
-#guard canyonMinotaur.hasSubtype "Minotaur"
-#guard crawWurm.hasSubtype "Wurm"
-#guard crawWurm.power == some 6
-#guard centaurCourser.hasSubtype "Centaur"
-#guard rumblingBaloth.hasSubtype "Beast"
 #guard grizzlyBears.hasSorcerySpeed
 #guard !lightningBolt.hasSorcerySpeed
 #guard !mountain.hasSorcerySpeed
@@ -1079,14 +997,12 @@ def conditionalDualLand (name : String) (a b : Color) : CardDef :=
 #guard (mountain.summary.splitOn "{T}: Add {R}").length > 1
 #guard (mountain.summary.splitOn "{0}").length == 1
 #guard mountain.summary == "Mountain Basic Land — Mountain ({T}: Add {R}.)"
-#guard plains.oracleText == "({T}: Add {W}.)"
-#guard island.oracleText == "({T}: Add {U}.)"
-#guard swamp.oracleText == "({T}: Add {B}.)"
-#guard mountain.oracleText == "({T}: Add {R}.)"
-#guard forest.oracleText == "({T}: Add {G}.)"
-#guard ragingGoblin.oracleText ==
-  "Haste (This creature can attack and {T} as soon as it comes under your control.)"
-#guard giantSpider.oracleText == "Reach (This creature can block creatures with flying.)"
+#guard (plains.summary.splitOn "({T}: Add {W}.)").length > 1
+#guard (island.summary.splitOn "({T}: Add {U}.)").length > 1
+#guard (swamp.summary.splitOn "({T}: Add {B}.)").length > 1
+#guard (forest.summary.splitOn "({T}: Add {G}.)").length > 1
+#guard ragingGoblin.keywords.haste
+#guard giantSpider.keywords.reach
 #guard (giantSpider.summary.splitOn "reach").length > 1
 #guard giantGrowth.spellEffect == some (Effect.pump 3 3)
 #guard giantGrowth.isInstant
@@ -1118,6 +1034,7 @@ def conditionalDualLand (name : String) (a b : Color) : CardDef :=
   (legendary := true)).hasType .artifact
 #guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
   (legendary := true)).hasType .creature
+#guard (gainLifeDualLand "Silent Plaza" .blue .black).entersTapped
 #guard (conditionalDualLand "Silent Keep" .blue .black).tapAddMana == #[.colorless]
 #guard (powerUpAbility (Effect.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
 #guard (Keywords.mergeAll #[Keyword.flying, Keyword.trample, Keyword.haste]) ==

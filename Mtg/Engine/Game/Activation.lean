@@ -14,7 +14,7 @@ namespace Game
 (MSH 280). Does not grant haste and does not allow attacking. -/
 def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
-    (g.staticAbilitiesOf o).any (fun
+    o.staticAbilities.any (fun
       | .activateCreaturesAsThoughHaste => true
       | _ => false))
 
@@ -53,18 +53,11 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s power-up ability can be activated only once"
   if ab.cost.tap && o.status.tapped then
     throw s!"{o.name} is already tapped"
-  if ab.cost.tap && g.hasSummoningSickness o && !g.activatesAsThoughHaste p then
+  if ab.cost.tap && o.hasSummoningSickness && !g.activatesAsThoughHaste p then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
     throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
-  if ab.cost.sacrificeArtifactOrDiscardNonland &&
-      !(g.permanentsOf p).any (·.printed.isArtifact) &&
-      !(g.player p).hand.any (fun id =>
-        match g.findObject? id with
-        | some c => !c.printed.isLand
-        | none => false) then
-    throw s!"{o.name}'s ability requires sacrificing an artifact or discarding a nonland card"
   if !g.canPayLife p ab.cost.payLife then
     throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
   if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 &&
@@ -108,8 +101,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if !ab.isModal && !ab.effect.requiresTarget &&
       !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&
-      !ab.cost.sacrificeAnotherCreatureOrArtifact &&
-      !ab.cost.sacrificeArtifactOrDiscardNonland then
+      !ab.cost.sacrificeAnotherCreatureOrArtifact then
     let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
       ab.cost.payLife ab.cost.discardSource (some ab)
     return g.becomeActivated p o.name (some id)

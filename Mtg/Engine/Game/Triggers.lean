@@ -89,7 +89,7 @@ statics. Each such ability adds one additional instance; they stack. -/
 def extraTriggerCopies (g : Game) (controller : PlayerId) (source : GameObject) : Nat :=
   let story := (g.player controller).enduringStory
   (g.permanentsOf controller).foldl (fun acc o =>
-    (g.staticAbilitiesOf o).foldl (fun acc ab =>
+    o.staticAbilities.foldl (fun acc ab =>
       match ab with
       | .extraTriggerIfEnduringStorySubtype subtype =>
         if story && g.hasSubtype source subtype then acc + 1 else acc
@@ -110,9 +110,6 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) : Game :=
   if (g.player controller).lost then g
-  else if g.losesAllAbilities source &&
-      source.printed.triggeredAbilities.any (· == ab) &&
-      !source.status.grantedTriggeredAbilities.any (· == ab) then g
   else if !g.triggerConditionHolds controller ab cause (some source) then g
   else if ab.onceEachTurn && source.status.firedOnceEachTurn then g
   else if ab.optionalOnceEachTurn && source.status.optionalOnceUsed then g
@@ -277,7 +274,7 @@ def copiedFromGy {α : Type} (g : Game) (o : GameObject) (sel : CardDef → Arra
     match o.controller with
     | none => #[]
     | some p =>
-      (g.staticAbilitiesOf o).foldl (fun acc sa =>
+      o.staticAbilities.foldl (fun acc sa =>
         match sa with
         | .copyActivatedFromGySubtype subtype =>
           (g.graveyardCardsOfSubtype p subtype).foldl
@@ -312,7 +309,7 @@ def grantedManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
         (g.permanentsOf p).foldl (fun acc src =>
           if src.id == o.id then acc
           else
-            (g.staticAbilitiesOf src).foldl (fun acc ab =>
+            src.staticAbilities.foldl (fun acc ab =>
               match ab with
               | .otherSubtypeHaveTapAddOneOf subtypes mana =>
                 if subtypes.any (g.hasSubtype o) then

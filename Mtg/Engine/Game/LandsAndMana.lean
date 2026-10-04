@@ -32,7 +32,7 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
   g.permanentsOf p |>.filterMap (fun o =>
     let types := g.manaAbilitiesOf o
     if types.isEmpty || o.status.tapped then none
-    else if g.hasSummoningSickness o then none
+    else if o.hasSummoningSickness then none
     else some (o, types))
 
 /-- Permanents `p` currently controls with this subtype. -/
@@ -88,7 +88,7 @@ def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
   else
     match g.pending with
     | .activateManaAbilities caster => caster == p
-    | .mayPayGeneric q _ _ => q == p
+    | .mayPayGeneric q _ => q == p
     | .payOrLetCounter q _ _ => q == p
     | .payWard q _ cost =>
       q == p &&
@@ -109,7 +109,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
       | some prop => prop.tapSource && prop.sourceId == some id
       | none => false) then
     throw s!"{o.name} is needed to pay \{T}"
-  if g.hasSummoningSickness o then
+  if o.hasSummoningSickness then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if o.printed.enteredOrBasicAddMana.contains mana &&
       o.printed.requiresEnteredOrBasicAdd &&

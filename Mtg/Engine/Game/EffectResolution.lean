@@ -27,29 +27,6 @@ def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
     let (g, _) := g.move src.id (.library owner) none
     g.requestShuffle owner after |>.continueIfShuffled
 
-/-- Until end of turn, each battlefield permanent matching `sel` loses all
-abilities. `sourceId` is the effect's source; a resolving spell with no
-source object uses `controller` as “you”. -/
-def applyRemoveAllAbilities (g : Game) (controller : PlayerId)
-    (sourceId : Option ObjectId) (sel : Selector) : Game :=
-  let src? := sourceId.bind g.findObject?
-  let you :=
-    match src? with
-    | some src => src.you
-    | none => controller
-  Id.run do
-    let mut g := g
-    let mut any := false
-    for o in g.battlefield do
-      if g.selectorMatches src? you sel o then
-        let o := g.object! o.id
-        g := g.mapObjectStatus o (fun s => { s with losesAllAbilitiesUntilEot := true })
-        g := g.logMsg s!"{o.name} loses all abilities until end of turn"
-        any := true
-    if !any then
-      g := g.logMsg "No selected object loses abilities"
-    return g
-
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
@@ -74,8 +51,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.beginDiscardCards #[controller] n
   | .onSource a =>
     g.applyOnPermanent controller effect.targetKind targets a
-  | .removeAllAbilities sel =>
-    g.applyRemoveAllAbilities controller none sel
   | _ =>
   match effect.spellResolution with
   | .fight =>
@@ -251,9 +226,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match g.findObject? id with
       | none => g.logMsg "The target is no longer legal"
       | some o =>
-        -- Calculate while the spell is still on the stack. Countering
-        -- moves it off the stack, where `{X}` becomes 0 (CR 202.3e).
-        let mv := g.objectManaValue o
+        let mv := o.printed.manaValue
         let g := g.counterStackSpell id
         if mv <= n then g.beginRecruit controller else g
     | _ => g.logMsg "The target is no longer legal"
@@ -600,8 +573,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | _ => g.logMsg "The target is no longer legal"
   | .grantVigilanceUnblockable =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      let g := g.grantUntilEotKeywords o
-        [Keyword.vigilance, { Keywords.none with cantBeBlocked := true }]
+      let g := g.grantUntilEotKeywords o [Keyword.vigilance, Keyword.cantBeBlocked]
       g.draw controller 1)
       none (some "The target is no longer legal. You won't draw a card.")
   | .becomeArtifactCreature44Flying =>
@@ -618,7 +590,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .fightUpToOne =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
-      g.fightCreatures (g.object! srcId) (g.object! destId)
+      g.dealFightDamage (g.object! srcId) (g.object! destId)
     | some (Target.permanent srcId), none =>
       g.logMsg s!"{(g.object! srcId).name} has nothing to fight"
     | _, _ => g.logMsg "The target is no longer legal"
@@ -716,7 +688,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.applyLeftoverTextEffect controller
       "Choose up to two. Return those cards from your graveyard to your hand."
       targets none
-  | .artifactSpellsCostLessThisTurn _n =>
+  | .artifactSpellsCostLessThisTurn _ty _n =>
+    g
+  | .supertypeSpellsCostLessThisTurn _s _n =>
     g
 
 /-- Resolve a printed spell effect (CR 608). -/
@@ -867,20 +841,12 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.exileThenReturn o "is exiled, then returned" (clearExileFields := true)
       else g)
   | .searchBasicBeholdSubtypeUntap subtype =>
-    -- “That land” is the permanent `putOntoBattlefieldInState` affected,
-    -- not the library card the search variable named (CR 400.7).
-    -- “If you do” is this behold, not an earlier one (CR 701.4b).
-    let before := g.battlefield.map (·.id)
     let g := g.resolveSearchBasicLandTapped controller
-    let entered? :=
-      (g.battlefield.find? fun o =>
-        o.printed.isLand && !before.any (· == o.id)).map (·.id)
-    let beheld := (g.player controller).beheldQualities.size
     let g := g.beholdQuality controller subtype
-    if (g.player controller).beheldQualities.size > beheld then
-      match entered?.bind g.findObject? with
-      | some land => g.applyPermanentAction land .untap
+    if g.qualityWasBeheld controller subtype then
+      match (g.permanentsOf controller).find? (fun o => o.printed.isLand && o.status.tapped) with
       | none => g
+      | some land => g.applyPermanentAction land .untap
     else g
   | .twoPlayersDraw =>
     match targets[0]?, targets[1]? with
@@ -1152,8 +1118,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     match targets[0]? with
     | some (Target.permanent id) => g.applyConnive controller (some id)
     | _ => g.applyConnive controller none
-  | .removeAllAbilities sel =>
-    g.applyRemoveAllAbilities controller sourceId sel
   | .sequence _ | .shuffleSource | .amassGoblins _ | .discard _ | .spell _ | .trigger _ =>
     g
 

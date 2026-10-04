@@ -35,10 +35,13 @@ structure AdventureFace where
   manaCost : ManaCost := ManaCost.empty
   types : Array CardType := #[.sorcery]
   subtypes : Array Subtype := #["Adventure"]
-  oracleText : String := ""
   spellEffect : Option Effect := none
   /-- Additional cost: sacrifice a creature. -/
   additionalCostSacrificeCreature : Bool := false
+  /-- Rules lines of this face that are not a modeled spell effect. -/
+  extraLines : Array String := #[]
+  /-- Empower Jace N on this alternate face. -/
+  empowerJace : Option Nat := none
 deriving Repr, Inhabited, BEq
 
 /-- Printed (Oracle) characteristics of a card. -/
@@ -48,10 +51,32 @@ structure CardDef where
   types : Array CardType
   subtypes : Array Subtype := #[]
   supertypes : Array Supertype := #[]
-  oracleText : String := ""
   power : Option Int := none
   toughness : Option Int := none
+  /-- Printed power includes a star added to `power` (CR 208.2).
+  A bare `*` leaves `power` empty. `1+*` and `*+1` are `some 1`.
+  When that star can't be determined it counts as 0, so the power is
+  `power.getD 0`: `*` is 0 and `1+*` is 1 (CR 208.2a). -/
+  powerStar : Bool := false
+  /-- Printed toughness includes a star added to `toughness` (CR 208.2).
+  See `powerStar`. -/
+  toughnessStar : Bool := false
+  /-- Printed loyalty number (CR 209.1). While this planeswalker is not on
+  the battlefield, its loyalty is this number. It enters the battlefield
+  with that many loyalty counters. -/
   loyalty : Option Int := none
+  /-- Printed defense number (CR 210.1). While this battle is not on
+  the battlefield, its defense is this number. It enters the battlefield
+  with that many defense counters. -/
+  defense : Option Nat := none
+  /-- Printed hand modifier (CR 211.1). The lower-left corner of a vanguard:
+  a number preceded by a plus sign, a number preceded by a minus sign, or
+  zero. It modifies its owner's starting hand size and maximum hand size. -/
+  handModifier : Option Int := none
+  /-- Printed life modifier (CR 212.1). The lower-right corner of a vanguard:
+  a number preceded by a plus sign, a number preceded by a minus sign, or
+  zero. It modifies its owner's starting life total. -/
+  lifeModifier : Option Int := none
   /-- Explicit color indicator, if any (CR 107.13 / 202.2). -/
   colorIndicator : Option ColorSet := none
   keywords : Keywords := Keywords.none
@@ -136,7 +161,7 @@ structure CardDef where
   /-- This spell costs {X} less to cast, where X is the total power of
   creatures you control with flying. -/
   costReductionEqualFlyingPower : Bool := false
-  /-- Crew `n` (CR 702.122). `n` is the number of creatures to tap. -/
+  /-- Crew `n` (CR 702.122). -/
   crew : Option Nat := none
   /-- `{T}: Add two mana in any combination of these types`. -/
   tapAddTwoAmong : Array ManaType := #[]
@@ -166,8 +191,8 @@ structure CardDef where
   /-- This spell costs {X} less, where X is the greatest number of artifacts
   an opponent controls. -/
   costReductionEqualOppArtifacts : Bool := false
-  /-- Gift promised to an opponent (CR 702.174). `none` when the spell has no gift. -/
-  gift : Option Gift := none
+  /-- Gift a Treasure (you may promise an opponent a Treasure). -/
+  giftTreasure : Bool := false
   /-- If you would create a Food token, also create a Treasure. -/
   foodAlsoCreatesTreasure : Bool := false
   /-- Other creatures enter with +1/+1 counters equal to this creature's toughness. -/
@@ -193,9 +218,6 @@ structure CardDef where
   activatedAbilities : Array ActivatedAbility := #[]
   /-- Static abilities other than printed keywords (CR 604). -/
   staticAbilities : Array StaticAbility := #[]
-  /-- Static `ContinuousEffect.removeAllAbilities` selectors. While this
-  permanent is on the battlefield, matching objects lose all abilities. -/
-  removesAllAbilitiesFrom : Array Selector := #[]
   /-- Triggered abilities (CR 603). -/
   triggeredAbilities : Array TriggeredAbility := #[]
   /-- If a creature an opponent controls would die, exile it instead
@@ -242,6 +264,16 @@ structure CardDef where
   daybound : Bool := false
   /-- Back face of a modal double-faced card that can transform. -/
   otherFace : Option CardDef := none
+  /-- Empower Jace N on this spell (Reality Fracture). When the spell
+  resolves, put N loyalty counters on a Jace planeswalker token you control,
+  creating one first if you control none. -/
+  empowerJace : Option Nat := none
+  /-- This permanent enters prepared (Reality Fracture). -/
+  entersPrepared : Bool := false
+  /-- Sorcery or instant copied while this permanent is prepared. -/
+  prepareFace : Option AdventureFace := none
+  /-- Additional cost: behold this quality, or pay this much generic mana. -/
+  additionalCostBeholdOrPay : Option (String × Nat) := none
 deriving Repr, Inhabited
 
 namespace CardDef
@@ -288,6 +320,7 @@ def isInstantOrSorcery (c : CardDef) : Bool := c.types.any CardType.isInstantOrS
 def isEnchantment (c : CardDef) : Bool := c.hasType .enchantment
 def isPlaneswalker (c : CardDef) : Bool := c.hasType .planeswalker
 def isBattle (c : CardDef) : Bool := c.hasType .battle
+def isVanguard (c : CardDef) : Bool := c.hasType .vanguard
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
 /-- Aura subtype on an Enchantment (CR 303.4). -/
 def isAura (c : CardDef) : Bool :=
@@ -427,18 +460,63 @@ def stripAdventureDelimiter (line : String) : Option String :=
     if rest.isEmpty then none else some rest
   else some line
 
-/-- Oracle ability lines that are not just restating modeled keywords. The
-Gatherer `//ADV//` marker is stored in `oracleText` but is not an ability. -/
-def leftoverOracleLines (c : CardDef) : List String :=
-  c.oracleText.splitOn "\n" |>.map (fun s => s.trimAscii.copy) |>.filterMap (fun line =>
-    match stripAdventureDelimiter line with
-    | none => none
-    | some rest =>
-      if rest.isEmpty || isKeywordRestatement c.keywords rest then none else some rest)
+/-- `{T}: Add {C}` lines from an explicit `tapAddMana` list. Basic land types
+print the parenthetical reminder instead. -/
+def explicitTapAddLines (c : CardDef) : List String :=
+  c.tapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}")
 
-/-- `{T}: Add {C}` lines from `simpleTapAddMana`. -/
-def simpleTapAddLines (c : CardDef) : List String :=
-  c.simpleTapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}")
+/-- `({T}: Add {R}.)` for each basic land type, when no other tap-add list is set. -/
+def basicLandReminderLines (c : CardDef) : List String :=
+  if !c.tapAddMana.isEmpty then []
+  else c.basicLandMana.toList.map fun col => s!"(\{T}: Add \{{col.letter}}.)"
+
+/-- Adventure name, cost, and spell, without the Gatherer `//ADV//` marker. -/
+def adventureLines (c : CardDef) : List String :=
+  match c.adventure with
+  | none => []
+  | some a =>
+    let header :=
+      if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
+    let extra :=
+      (if a.additionalCostSacrificeCreature then
+        ["As an additional cost to cast this spell, sacrifice a creature."]
+       else []) ++
+      match a.spellEffect with
+      | some e => [e.phrase]
+      | none => []
+    header :: extra ++ a.extraLines.toList
+
+/-- Prepare-spell name, cost, and effect. -/
+def prepareLines (c : CardDef) : List String :=
+  match c.prepareFace with
+  | none =>
+    if c.entersPrepared then ["This creature enters prepared."] else []
+  | some a =>
+    let header :=
+      if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
+    let effect :=
+      match a.spellEffect with
+      | some e => [e.phrase]
+      | none => []
+    (if c.entersPrepared then ["This creature enters prepared."] else []) ++
+      [header] ++ effect ++ a.extraLines.toList
+
+/-- Empower Jace printed on this spell. -/
+def empowerLines (c : CardDef) : List String :=
+  match c.empowerJace with
+  | some n => [s!"Empower Jace {n}."]
+  | none => []
+
+/-- `{T}: Add {U} or {B}.` -/
+def tapAddOneOfLines (c : CardDef) : List String :=
+  if c.tapAddOneOf.isEmpty then []
+  else [s!"\{T}: Add {manaSymbolsText c.tapAddOneOf " or "}."]
+
+/-- `{T}: Add {U} or {B}` gated on entering this turn or a basic land. -/
+def tapAddOneOfIfEnteredLines (c : CardDef) : List String :=
+  if c.tapAddOneOfIfEnteredOrBasic.isEmpty then []
+  else
+    [s!"\{T}: Add {manaSymbolsText c.tapAddOneOfIfEnteredOrBasic " or "}. Activate only if this land entered this turn or if you control a basic land."]
 
 /-- `{T}: Add` for each permanent of a listed type. -/
 def tapAddForEachLines (c : CardDef) : List String :=
@@ -459,7 +537,8 @@ def tapAddAnyColorForInstantOrSorceryLine (c : CardDef) : List String :=
 /-- True when CR 601.2b must announce a sacrifice-or-pay or discard-or-pay
 additional cost. -/
 def announcesAdditionalCost (c : CardDef) : Bool :=
-  c.additionalCostOrPayGeneric.isSome || c.additionalCostDiscardOrPayGeneric.isSome
+  c.additionalCostOrPayGeneric.isSome || c.additionalCostDiscardOrPayGeneric.isSome ||
+    c.additionalCostBeholdOrPay.isSome
 
 /-- Additional cost that sacrifices an artifact or creature (optionally or pay `{n}`). -/
 def additionalCostSacrificeArtifactOrCreatureLine (c : CardDef) : List String :=
@@ -473,31 +552,57 @@ def additionalCostSacrificeArtifactOrCreatureLine (c : CardDef) : List String :=
     match c.additionalCostDiscardOrPayGeneric with
     | some n =>
       [s!"As an additional cost to cast this spell, discard a card or pay \{{n}}."]
+    | none =>
+      match c.additionalCostBeholdOrPay with
+      | some (quality, n) =>
+        [s!"As an additional cost to cast this spell, behold a {quality} or pay \{{n}}."]
+      | none => []
+
+/-- `{T}cycling` and other typecycling, printed as `Mountaincycling {1}`. -/
+def activatedNotation (ab : ActivatedAbility) : String :=
+  if ab.activateFromHand && ab.cost.discardSource then
+    match ab.effect.resolution with
+    | .searchLandTypeToHand t =>
+      if t == "Plan" then ab.toNotation else s!"{t}cycling {ab.cost.mana}"
+    | _ => ab.toNotation
+  else
+    ab.toNotation
+
+/-- Spell effect, or `Choose one —` when the spell is modal. -/
+def spellLines (c : CardDef) : List String :=
+  if !c.spellModes.isEmpty then
+    [s!"Choose one — {String.intercalate "; " (c.spellModes.toList.map Effect.toNotation)}"]
+  else
+    match c.spellEffect with
+    | some e => [Effect.toNotation e]
     | none => []
 
 /-- `{T}: Add` mana abilities, additional costs, activated, static, triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
-  c.simpleTapAddLines ++
+  c.explicitTapAddLines ++
+  c.basicLandReminderLines ++
+  c.tapAddOneOfLines ++
+  c.tapAddOneOfIfEnteredLines ++
   c.tapAddForEachLines ++
   c.tapAddAnyColorEqualToPowerLine ++
   c.tapAddAnyColorForInstantOrSorceryLine ++
   c.additionalCostSacrificeArtifactOrCreatureLine ++
-  c.activatedAbilities.toList.map ActivatedAbility.toNotation ++
+  c.activatedAbilities.toList.map activatedNotation ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
-  match c.spellEffect with
-  | some e => [Effect.toNotation e]
-  | none => []
+  c.adventureLines ++
+  c.prepareLines ++
+  c.empowerLines ++
+  c.spellLines
 
-/-- Abilities to print in the demo. Prefer leftover Oracle text so unmodeled
-abilities (triggers, extra activations) are visible; fall back to structured
-abilities when Oracle is empty or only restates keywords. -/
+/-- Modeled ability lines. Keyword-only lines are omitted; those print with
+`Keywords`. -/
+def leftoverOracleLines (c : CardDef) : List String :=
+  c.structuredAbilityLines.filter fun line => !isKeywordRestatement c.keywords line
+
+/-- Abilities to print in the demo, taken from the modeled fields. -/
 def abilitiesText (c : CardDef) : String :=
-  let fromOracle := leftoverOracleLines c
-  if !fromOracle.isEmpty then
-    String.intercalate " / " fromOracle
-  else
-    String.intercalate "; " (structuredAbilityLines c)
+  String.intercalate "; " (structuredAbilityLines c)
 
 /-- Keywords `k` plus leftover Oracle / structured abilities. -/
 def keywordsAndAbilitiesOf (c : CardDef) (k : Keywords) : String :=
@@ -511,12 +616,31 @@ def keywordsAndAbilities (c : CardDef) : String :=
 def typeLine (c : CardDef) : String :=
   formatTypeLine c.supertypes c.types c.subtypes
 
+/-- One side of a power/toughness box (CR 208.1 / 208.2).
+A star plus constant `k` prints as `k+*` (CR 208.2a writes `1+*`). A bare
+star, and `*+0`, print as `*`. -/
+def renderPrintedStat (n : Option Int) (star : Bool) : String :=
+  if star then
+    match n with
+    | some k => if k == 0 then "*" else s!"{k}+*"
+    | none => "*"
+  else
+    match n with
+    | some k => toString k
+    | none => "*"
+
+/-- Printed `power/toughness`, if this object has one.
+A creature with neither a number nor a star prints `*/*`. Any other object
+with neither prints nothing (CR 208.3). -/
+def formatPowerToughness (power toughness : Option Int)
+    (powerStar toughnessStar isCreature : Bool) : Option String :=
+  if power.isNone && toughness.isNone && !powerStar && !toughnessStar then
+    if isCreature then some "*/*" else none
+  else
+    some s!"{renderPrintedStat power powerStar}/{renderPrintedStat toughness toughnessStar}"
+
 def ptString (c : CardDef) : String :=
-  match c.power, c.toughness with
-  | some p, some t => s!"{p}/{t}"
-  | some p, none => s!"{p}/*"
-  | none, some t => s!"*/{t}"
-  | none, none => if c.isCreature then "*/*" else ""
+  (formatPowerToughness c.power c.toughness c.powerStar c.toughnessStar c.isCreature).getD ""
 
 /-- Name, printed mana cost if any, type line, P/T, then keywords and abilities.
 Cards with no mana cost (lands, and other objects whose cost cannot be paid)
@@ -540,10 +664,6 @@ def grantsImproviseToNoncreature (c : CardDef) : Bool :=
   c.staticAbilities.any (fun
     | .noncreatureSpellsHaveImprovise => true
     | _ => false)
-
-/-- True when this spell's gift is a Treasure (CR 702.174h). -/
-def giftTreasure (c : CardDef) : Bool :=
-  c.gift == some .treasure
 
 /-- True when this permanent has a boast ability (MSH). -/
 def hasBoast (c : CardDef) : Bool :=
@@ -578,8 +698,9 @@ def toCardDef (a : AdventureFace) : CardDef := {
   manaCost := a.manaCost
   types := a.types
   subtypes := a.subtypes
-  oracleText := a.oracleText
   spellEffect := a.spellEffect
+  staticAbilities := a.extraLines.map StaticAbility.printed
+  empowerJace := a.empowerJace
 }
 
 /-- True when this Adventure's effect is classified as `k`. -/

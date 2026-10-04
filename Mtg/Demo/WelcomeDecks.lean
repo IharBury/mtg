@@ -20,44 +20,44 @@ open Mtg.Engine.Catalog
 
 /-- White Welcome Deck (40 cards). -/
 def hobbitWhite : Array CardDef :=
-  #[bofurReliableGuardianCard] ++
+  #[bofurReliableGuardian] ++
   copies 16 plains ++
-  copies 2 dwarvenProvisionerCard ++
-  #[velvetwingButterfliesCard] ++
-  copies 2 magnificentEndCard ++
+  copies 2 dwarvenProvisioner ++
+  #[velvetwingButterflies] ++
+  copies 2 magnificentEnd ++
   #[mentorOfTheMeek, fiendHunter] ++
   copies 2 errandRiderOfGondor ++
   #[landrovalHorizonWitness, roguesPassage] ++
   copies 2 soldierOfTheGreyHost ++
-  #[eaglesOfTheNorth, dunedainBlade, fogOnTheBarrowDowns, eagleOfTheGreatShelfCard,
-    banishingLight, dawnOfANewAge, vowToEreborCard] ++
+  #[eaglesOfTheNorth, dunedainBlade, fogOnTheBarrowDowns, eagleOfTheGreatShelf,
+    banishingLight, dawnOfANewAge, vowToErebor] ++
   copies 2 westfoldRider ++
   #[esquireOfTheKing]
 
 /-- Blue Welcome Deck (40 cards). -/
 def hobbitBlue : Array CardDef :=
-  copies 2 bilboBagginsBurglarCard ++
+  copies 2 bilboBagginsBurglar ++
   copies 16 island ++
   #[pelargirSurvivor] ++
-  copies 2 lakeshoreApothecaryCard ++
-  #[confusticateAndBebotherCard, ravenhillFlockCard, lorienRevealed, thranduilsDecreeCard,
+  copies 2 lakeshoreApothecary ++
+  #[confusticateAndBebother, ravenhillFlock, lorienRevealed, thranduilsDecree,
     knightsOfDolAmroth, greyHavensNavigator, roguesPassage] ++
   copies 2 ithilienKingfisher ++
   #[hithlainKnots, captainOfUmbar, minasTirithGarrison, colossalWhale,
-    willowWind, bilboLuckwearerCard] ++
-  copies 2 uneasyPartingsCard ++
+    willowWind, bilboLuckwearer] ++
+  copies 2 uneasyPartings ++
   #[nimrodelWatcher, sternScolding]
 
 /-- Black Welcome Deck (40 cards). -/
 def hobbitBlack : Array CardDef :=
-  copies 2 frontPorchSentriesCard ++
-  #[greatFierceBeeCard, stirUpTroubleCard, hauntOfTheDeadMarshes, desolationProwlerCard,
-    raveningWargCard] ++
-  copies 2 gollumSilentSlinkerCard ++
-  copies 2 bilbosDeadlySliceCard ++
-  #[dreadedBatCloudCard, roguesPassage, crudeBentBladeCard, languish, shadowOfTheEnemy,
-    gollumTheAbandonedCard, gnashingOfTeethCard, trollOfKhazadDum, mercilessExecutioner,
-    bitterDownfall, reverentHowlCard, nightsWhisper, stonyVoicedGoblinsCard] ++
+  copies 2 frontPorchSentries ++
+  #[greatFierceBee, stirUpTrouble, hauntOfTheDeadMarshes, desolationProwler,
+    raveningWarg] ++
+  copies 2 gollumSilentSlinker ++
+  copies 2 bilbosDeadlySlice ++
+  #[dreadedBatCloud, roguesPassage, crudeBentBlade, languish, shadowOfTheEnemy,
+    gollumTheAbandoned, gnashingOfTeeth, trollOfKhazadDum, mercilessExecutioner,
+    bitterDownfall, reverentHowl, nightsWhisper, stonyVoicedGoblins] ++
   copies 16 swamp
 
 /-- Red Welcome Deck (40 cards). -/
@@ -66,24 +66,24 @@ def hobbitRed : Array CardDef :=
   copies 2 wayfarersBauble ++
   copies 2 battleScarredGoblin ++
   #[improvisedClub] ++
-  copies 2 smaugTheGreatCalamityCard ++
+  copies 2 smaugTheGreatCalamity ++
   copies 2 ologHaiCrusher ++
-  #[gandalfSparkStarterCard] ++
-  copies 2 raggedShortSpearCard ++
+  #[gandalfSparkStarter] ++
+  copies 2 raggedShortSpear ++
   copies 2 smiteTheDeathless ++
   copies 2 goblinFireleaper ++
   #[oliphaunt, roguesPassage, goblinCratermaker, infernoTitan, guttersnipe,
-    orcishSiegemaster, snowslopeHunterCard, fireOfOrthanc]
+    orcishSiegemaster, snowslopeHunter, fireOfOrthanc]
 
 /-- Green Welcome Deck (40 cards). -/
 def hobbitGreen : Array CardDef :=
   copies 16 forest ++
-  copies 2 guardianOfTheHallsCard ++
-  copies 2 quarrelCard ++
+  copies 2 guardianOfTheHalls ++
+  copies 2 quarrel ++
   copies 2 galadhrimGuide ++
-  #[galionElvenkingsButlerCard, elvishVisionary, wargTacticsCard, beornsHospitalityCard,
+  #[galionElvenkingsButler, elvishVisionary, wargTactics, beornsHospitality,
     roguesPassage, mirkwoodElk, celebornTheWise, giftOfStrands, elvishArchdruid,
-    lothlorienLookout, woodlandWeavemasterCard, mirkwoodPathmaker,
+    lothlorienLookout, woodlandWeavemaster, mirkwoodPathmaker,
     beornReluctantHost] ++
   copies 2 woodElves ++
   copies 2 elvishMystic ++

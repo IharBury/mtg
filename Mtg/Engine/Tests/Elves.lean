@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -616,12 +615,12 @@ def afterCelebornCleanup : Game := passBoth (skipTo celebornPumped .end 80)
 /- Woodland Weavemaster: vigilance, another-Elf-enters +1/+1, and restricted
 any-color mana equal to power. -/
 
-#guard woodlandWeavemasterCard.keywords.vigilance
-#guard woodlandWeavemasterCard.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
-#guard woodlandWeavemasterCard.tapAddAnyColorEqualToPower
-#guard woodlandWeavemasterCard.manaAbilities.contains (.colored .green)
-#guard woodlandWeavemasterCard.manaAbilities.contains (.colored .white)
-#guard !woodlandWeavemasterCard.manaAbilities.contains .colorless
+#guard woodlandWeavemaster.keywords.vigilance
+#guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
+#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
+#guard woodlandWeavemaster.manaAbilities.contains (.colored .green)
+#guard woodlandWeavemaster.manaAbilities.contains (.colored .white)
+#guard !woodlandWeavemaster.manaAbilities.contains .colorless
 
 def weavemasterReady : Game :=
   addPermanent afterDraw woodlandWeavemaster ⟨0⟩ ⟨0⟩

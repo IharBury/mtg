@@ -204,7 +204,7 @@ attacker is attacking, CR 508.1), and cards it has exiled until it leaves
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
-  let sick := if g.hasSummoningSickness o then " (summoning sickness)" else ""
+  let sick := if o.hasSummoningSickness then " (summoning sickness)" else ""
   let atk :=
     if o.status.attacking then
       let dest :=
@@ -669,7 +669,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [legend rule: {g.player p |>.name} keeps one {name} (CR 704.5j)]"
     | .chooseTriggerToStack p =>
       s!" [choose trigger order (CR 603.3b, {g.player p |>.name})]"
-    | .mayPayGeneric p n _ =>
+    | .mayPayGeneric p n =>
       s!" [may pay \{{n}} ({g.player p |>.name})]"
     | .chooseLibraryPlacement p _ =>
       s!" [choose top or bottom ({g.player p |>.name})]"
@@ -697,7 +697,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .chooseKicker p =>
       s!" [announce kicker (CR 702.32, {g.player p |>.name})]"
     | .chooseGift p =>
-      s!" [announce gift (CR 702.174, {g.player p |>.name})]"
+      s!" [announce gift (CR 702.185, {g.player p |>.name})]"
     | .chooseTeamwork p =>
       s!" [announce teamwork (CR 702.194, {g.player p |>.name})]"
     | .chooseTeamworkCreatures p need =>
@@ -716,11 +716,6 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [choose tap or untap ({g.player p |>.name})]"
     | .maySacArtifactOrDiscard p =>
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
-    | .maySacArtifactOrDiscardNonland p _ required =>
-      if required then
-        s!" [sacrifice an artifact or discard a nonland card ({g.player p |>.name})]"
-      else
-        s!" [may sacrifice an artifact or discard a nonland card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>
       s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>

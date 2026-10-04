@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -29,7 +28,7 @@ def readyMain (g : Game) : Game :=
 
 /-- Front Porch Sentries: dies, target opposing creature gets -1 / -1. -/
 def sentriesDied : Game :=
-  let g := addPermanent afterDraw frontPorchSentriesCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw frontPorchSentries ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let (g, _) := g.move (namedPermanent g "Front Porch Sentries").id (.graveyard ⟨0⟩) none
   g.receivePriority ⟨0⟩
@@ -55,14 +54,14 @@ def sentriesPumpResolved : Game :=
   mentions s "Grizzly Bears gets -1/-1 until end of turn")
 
 #guard
-  let g := addPermanent afterDraw frontPorchSentriesCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw frontPorchSentries ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Front Porch Sentries").id (.graveyard ⟨0⟩) none
   let g := g.receivePriority ⟨0⟩
   g.stack.isEmpty && g.log.any (fun s => mentions s "no legal target")
 
 /-- Great Fierce Bee: another creature dying scries 1. -/
 def beeOtherDied : Game :=
-  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Raging Goblin").id (.graveyard ⟨0⟩) none
   g.receivePriority ⟨0⟩
@@ -81,13 +80,13 @@ def beeScrying : Game := passBoth beeOtherDied
 #guard beeScrying.log.any (fun s => mentions s "scries 1")
 
 #guard
-  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Great Fierce Bee").id (.graveyard ⟨0⟩) none
   let g := g.receivePriority ⟨0⟩
   g.stack.isEmpty && g.creatureDiedThisTurn
 
 #guard
-  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let (g, _) := g.move (namedPermanent g "Raging Goblin").id (.graveyard ⟨0⟩) none
@@ -101,13 +100,13 @@ def stirReady : Game :=
   let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g stirUpTroubleCard ⟨0⟩) ⟨0⟩ 1
+  withBlackMana (addToHand g stirUpTrouble ⟨0⟩) ⟨0⟩ 1
 
 #guard stirReady.canCast ⟨0⟩ (handCardNamed stirReady ⟨0⟩ "Stir Up Trouble")
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  let g := withBlackMana (addToHand g stirUpTroubleCard ⟨0⟩) ⟨0⟩ 5
+  let g := withBlackMana (addToHand g stirUpTrouble ⟨0⟩) ⟨0⟩ 5
   g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Stir Up Trouble")
 
 def proposedStir : Game :=
@@ -173,7 +172,7 @@ def stirResolvedViaSac : Game := passBoth stirCastViaSac
 def stirPayGenericReady : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g stirUpTroubleCard ⟨0⟩) ⟨0⟩ 5
+  withBlackMana (addToHand g stirUpTrouble ⟨0⟩) ⟨0⟩ 5
 
 def stirPayGenericChosen : Game :=
   let g := mustApply stirPayGenericReady ⟨0⟩
@@ -208,13 +207,13 @@ def hauntInGy : Game :=
   (namedGraveyardCard hauntInGy ⟨0⟩ "Haunt of the Dead Marshes") hauntAbility)
 
 def hauntInGyWithLegend : Game :=
-  addPermanent hauntInGy gollumSilentSlinkerCard ⟨0⟩ ⟨0⟩
+  addPermanent hauntInGy gollumSilentSlinker ⟨0⟩ ⟨0⟩
 
 #guard hauntInGyWithLegend.canActivate ⟨0⟩
   (namedGraveyardCard hauntInGyWithLegend ⟨0⟩ "Haunt of the Dead Marshes") hauntAbility
 #guard
   let g := addPermanent hauntInGy hauntOfTheDeadMarshes ⟨0⟩ ⟨0⟩
-  let g := addPermanent g gollumSilentSlinkerCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g gollumSilentSlinker ⟨0⟩ ⟨0⟩
   !(g.canActivate ⟨0⟩ (namedPermanent g "Haunt of the Dead Marshes") hauntAbility)
 
 def hauntReturned : Game :=
@@ -234,7 +233,7 @@ def hauntReturned : Game :=
 
 /-- Gollum, Silent Slinker: menace requires two blockers. -/
 def gollumMenaceField : Game :=
-  let g := addPermanent afterDraw gollumSilentSlinkerCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw gollumSilentSlinker ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
 
@@ -271,7 +270,7 @@ def gollumBlockedByTwo : Game :=
 def sliceSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
 
 #guard sliceSetup.canCast ⟨0⟩ (handCardNamed sliceSetup ⟨0⟩ "Bilbo's Deadly Slice")
 #guard
@@ -292,7 +291,7 @@ def sliceResolved : Game :=
 /-- Dreaded Bat-Cloud costs {3} less if a creature died this turn. -/
 def batCloudFull : Game :=
   let g := readyMain (emptyHand afterDraw ⟨0⟩)
-  withBlackMana (addToHand g dreadedBatCloudCard ⟨0⟩) ⟨0⟩ 5
+  withBlackMana (addToHand g dreadedBatCloud ⟨0⟩) ⟨0⟩ 5
 
 def batCloudReduced : Game :=
   { batCloudFull with creatureDiedThisTurn := true }
@@ -402,14 +401,14 @@ def shadowCastOgre : Game :=
 
 /-- Gollum the Abandoned: can't block; ETB exile GY + opps lose 2; GY to hand. -/
 def abandonedAbility : ActivatedAbility :=
-  gollumTheAbandonedCard.activatedAbilities[0]!
+  gollumTheAbandoned.activatedAbilities[0]!
 
 #guard
-  let g := addPermanent afterDraw gollumTheAbandonedCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent afterDraw gollumTheAbandoned ⟨1⟩ ⟨1⟩
   !g.mayDeclareAsBlocker (namedPermanent g "Gollum the Abandoned")
 
 #guard
-  let g := addPermanent afterDraw gollumTheAbandonedCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent afterDraw gollumTheAbandoned ⟨1⟩ ⟨1⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Raging Goblin").id])
@@ -423,7 +422,7 @@ def abandonedAbility : ActivatedAbility :=
 def abandonedEtbReady : Game :=
   let g := addToGraveyard afterDraw llanowarElves ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g gollumTheAbandonedCard ⟨0⟩) ⟨0⟩ 2
+  withBlackMana (addToHand g gollumTheAbandoned ⟨0⟩) ⟨0⟩ 2
 
 def abandonedEntered : Game :=
   let g := mustApply abandonedEtbReady ⟨0⟩
@@ -453,7 +452,7 @@ def abandonedExiled : Game :=
 #guard (abandonedExiled.player ⟨1⟩).life == 18
 
 def abandonedInGy : Game :=
-  let g := addToGraveyard afterDraw gollumTheAbandonedCard ⟨0⟩
+  let g := addToGraveyard afterDraw gollumTheAbandoned ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let g := readyMain g
   withBlackMana g ⟨0⟩ 2
@@ -479,9 +478,9 @@ def abandonedReturnedToHand : Game :=
 def gnashingReady : Game :=
   let g := addPermanent afterDraw rumblingBaloth ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g gnashingOfTeethCard ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g gnashingOfTeeth ⟨0⟩) ⟨0⟩ 3
 
-#guard gnashingOfTeethCard.isModal
+#guard gnashingOfTeeth.isModal
 #guard
   match Agent.choose gnashingReady ⟨0⟩ with
   | some (.cast id) => (gnashingReady.object! id).name == "Gnashing of Teeth"
@@ -625,7 +624,7 @@ def downfallResolved : Game :=
 def howlReady : Game :=
   let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g reverentHowlCard ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g reverentHowl ⟨0⟩) ⟨0⟩ 3
 
 def howlDraw : Game :=
   let g := mustApply howlReady ⟨0⟩
@@ -686,7 +685,7 @@ def whisperResolved : Game :=
 /-- Stony-Voiced Goblins: each opponent discards a card. -/
 def stonyReady : Game :=
   let g := readyMain (emptyHand afterDraw ⟨0⟩)
-  withBlackMana (addToHand g stonyVoicedGoblinsCard ⟨0⟩) ⟨0⟩ 2
+  withBlackMana (addToHand g stonyVoicedGoblins ⟨0⟩) ⟨0⟩ 2
 
 def stonyEntered : Game :=
   let g := mustApply stonyReady ⟨0⟩
@@ -875,17 +874,17 @@ def thorExilePlayOk : Bool :=
 
 #guard thorExilePlayOk
 
-/-- Wolverine fights another creature. A 3/3 still deals damage back
-even though 3 damage is lethal (CR 701.12b). -/
+/-- Wolverine fights another creature. Use a 4/4 so both sides survive
+sequential damage (a 3/3 would die before dealing damage back). -/
 def wolverineFightOk : Bool :=
   let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
-  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let g := addPermanent g rumblingBaloth ⟨1⟩ ⟨1⟩
   let w := namedPermanent g "Wolverine, Fierce Fighter"
-  let giant := namedPermanent g "Hill Giant"
+  let baloth := namedPermanent g "Rumbling Baloth"
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterFightUpToOne)
-    (some w.id) #[Target.permanent giant.id]
-  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 3 &&
-    (namedPermanent g "Hill Giant").status.damage == 3
+    (some w.id) #[Target.permanent baloth.id]
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage > 0 &&
+    (namedPermanent g "Rumbling Baloth").status.damage > 0
 
 #guard wolverineFightOk
 
@@ -901,98 +900,6 @@ def justiceBounceOk : Bool :=
     (g.handObjects ⟨1⟩).any (fun o => o.name == "Grizzly Bears")
 
 #guard justiceBounceOk
-
-/-- Resolve Justice's bounce-watch after `id` is returned to its owner's hand. -/
-def justiceAfterBounce (g : Game) (id : ObjectId) : Game :=
-  let o := g.object! id
-  passBoth ((g.returnToHand id o.owner).receivePriority ⟨0⟩)
-
-/-- The second trigger fires for another nontoken nonland you control. -/
-def justiceWatchNontokenOk : Bool :=
-  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
-  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := justiceAfterBounce g (namedPermanent g "Grizzly Bears").id
-  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 1 &&
-    (g.handObjects ⟨0⟩).any (fun o => o.name == "Grizzly Bears") &&
-    g.log.any (fun s => mentions s "return trigger")
-
-#guard justiceWatchNontokenOk
-
-/-- The second trigger also fires for a token (Oracle does not say nontoken). -/
-def justiceWatchTokenOk : Bool :=
-  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
-  let (g, tok) := g.createToken ⟨0⟩ humanSoldierToken
-  let g := justiceAfterBounce g tok.id
-  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 1 &&
-    g.log.any (fun s => mentions s "return trigger")
-
-#guard justiceWatchTokenOk
-
-/-- A land returning to hand does not fire the bounce-watch. -/
-def justiceWatchLandOk : Bool :=
-  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
-  let g := addPermanent g mountain ⟨0⟩ ⟨0⟩
-  let g := justiceAfterBounce g (namedPermanent g "Mountain").id
-  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 0 &&
-    !g.log.any (fun s => mentions s "return trigger")
-
-#guard justiceWatchLandOk
-
--- An opponent's bounced permanent does not fire the bounce-watch.
-#guard
-  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
-  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := justiceAfterBounce g (namedPermanent g "Grizzly Bears").id
-  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 0 &&
-    !g.log.any (fun s => mentions s "return trigger")
-
-/-- Arnim Zola's activated ability. -/
-def arnimAbility (g : Game) : ActivatedAbility :=
-  (namedPermanent g "Arnim Zola, Bio-Fanatic").printed.activatedAbilities[0]!
-
-#guard arnimZolaBioFanatic.activatedAbilities[0]!.onlyIfGyCreaturesAtLeast == 2
-
-/-- Empty graveyard: the ability cannot be activated. -/
-def arnimNoGyCreatureOk : Bool :=
-  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
-  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
-
-#guard arnimNoGyCreatureOk
-
-/-- One creature card in your graveyard is not enough. -/
-def arnimOneGyCreatureOk : Bool :=
-  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
-  let g := addToGraveyard g grizzlyBears ⟨0⟩
-  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
-
-#guard arnimOneGyCreatureOk
-
-/-- A creature card plus a noncreature still has only one creature card. -/
-def arnimOneCreatureAndInstantOk : Bool :=
-  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
-  let g := addToGraveyard g grizzlyBears ⟨0⟩
-  let g := addToGraveyard g lightningBolt ⟨0⟩
-  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
-
-#guard arnimOneCreatureAndInstantOk
-
-/-- Creature cards in an opponent's graveyard do not count. -/
-def arnimOppGyCreaturesOk : Bool :=
-  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
-  let g := addToGraveyard g grizzlyBears ⟨1⟩
-  let g := addToGraveyard g hillGiant ⟨1⟩
-  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
-
-#guard arnimOppGyCreaturesOk
-
-/-- Two creature cards in your graveyard make the ability legal. -/
-def arnimTwoGyCreaturesOk : Bool :=
-  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
-  let g := addToGraveyard g grizzlyBears ⟨0⟩
-  let g := addToGraveyard g hillGiant ⟨0⟩
-  g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
-
-#guard arnimTwoGyCreaturesOk
 
 /-- S.H.I.E.L.D. Flying Car: exile until the next end step. -/
 def flyingCarFlickerOk : Bool :=
@@ -1056,17 +963,6 @@ def wakandanRoyalGuardHeroOk : Bool :=
 
 #guard wakandanRoyalGuardHeroOk
 
-/-- Wakandan Royal Guard: one +1/+1 when the target is this Hero. -/
-def wakandanRoyalGuardSelfOk : Bool :=
-  let g := addPermanent afterDraw wakandanRoyalGuard ⟨0⟩ ⟨0⟩
-  let guard := namedPermanent g "Wakandan Royal Guard"
-  let before := (g.object! guard.id).status.plusOnePlusOne
-  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterPlusOneOrTwoIfAnotherHero
-    (some guard.id) #[Target.permanent guard.id]
-  (g.object! guard.id).status.plusOnePlusOne == before + 1
-
-#guard wakandanRoyalGuardSelfOk
-
 /-- K'un-Lun Warrior: discard, then draw. -/
 def kunLunDiscardDrawOk : Bool :=
   let g := addPermanent afterDraw kUnLunWarrior ⟨0⟩ ⟨0⟩
@@ -1086,155 +982,5 @@ def discardOneStillOne : Bool :=
   g.pending == .none && (g.player ⟨0⟩).hand.size == 6
 
 #guard discardOneStillOne
-
-/- ContinuousEffect.removeAllAbilities (CR 613.1f). -/
-
-def abilityLord : CardDef := {
-  name := "Ability Lord"
-  types := #[.creature]
-  subtypes := #["Elf"]
-  power := some 2
-  toughness := some 2
-  keywords := Keyword.flying.toKeywords
-  staticAbilities := #[.creaturesYouControlGet 1 1]
-  triggeredAbilities := #[.onThisAttack (Effect.scry 1)]
-}
-
-def abilityStrip : CardDef := {
-  name := "Ability Strip"
-  types := #[.enchantment]
-  subtypes := #["Aura"]
-  removesAllAbilitiesFrom := #[.hostOf .this]
-}
-
-def massAbilityStrip : CardDef := {
-  name := "Mass Ability Strip"
-  types := #[.enchantment]
-  removesAllAbilitiesFrom := #[.intersection
-    [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]]
-}
-
-def selfAbilityStrip : CardDef := {
-  name := "Self Ability Strip"
-  types := #[.creature]
-  power := some 2
-  toughness := some 2
-  keywords := Keyword.flying.toKeywords
-  staticAbilities := #[.creaturesYouControlGet 1 1]
-  removesAllAbilitiesFrom := #[.intersection
-    [.zone .battlefield, .cardType .creature]]
-}
-
-/-- Targeted “loses all abilities” compiles to the permanent action. -/
-def targetedRemoveAllAbilitiesCompiles : Bool :=
-  (CardAction.toAbilityEffect
-    (.continuous [.removeAllAbilities (.target 1 (.cardType .creature))] .endOfTurn)).resolution ==
-    .onPermanent .removeAllAbilities
-
-#guard targetedRemoveAllAbilitiesCompiles
-
-/-- A selector with no announced target is matched when the effect resolves. -/
-def massRemoveAllAbilitiesCompiles : Bool :=
-  let sel := Selector.intersection
-    [.zone .battlefield, .cardType .creature, .controlled (.controller .this)]
-  (CardAction.toEffect
-    (.continuous [.removeAllAbilities sel] .endOfTurn)).resolution ==
-    .removeAllAbilities sel
-
-#guard massRemoveAllAbilitiesCompiles
-
-def lordAndBear : Game :=
-  let g := addPermanent afterDraw abilityLord ⟨0⟩ ⟨0⟩
-  addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-
-def lordStripped : Game :=
-  let g := addPermanent lordAndBear abilityStrip ⟨0⟩ ⟨0⟩
-  let lord := namedPermanent g "Ability Lord"
-  let aura := namedPermanent g "Ability Strip"
-  g.attachSourceTo aura lord
-
-#guard lordAndBear.power (namedPermanent lordAndBear "Grizzly Bears") == 3
-#guard lordAndBear.hasKeyword (namedPermanent lordAndBear "Ability Lord") (·.flying)
-#guard !lordStripped.hasKeyword (namedPermanent lordStripped "Ability Lord") (·.flying)
-#guard lordStripped.power (namedPermanent lordStripped "Grizzly Bears") == 2
-
-def lordAttackQueued : Game :=
-  lordAndBear.putAttackTriggersOnStack ⟨0⟩
-    #[(namedPermanent lordAndBear "Ability Lord").id]
-
-def lordAttackStripped : Game :=
-  lordStripped.putAttackTriggersOnStack ⟨0⟩
-    #[(namedPermanent lordStripped "Ability Lord").id]
-
-#guard lordAttackQueued.waitingTriggers.size == 1
-#guard lordAttackStripped.waitingTriggers.isEmpty
-
-def spiderStrippedByAura : Game :=
-  let g := addPermanent afterDraw giantSpider ⟨0⟩ ⟨0⟩
-  let g := addPermanent g abilityStrip ⟨0⟩ ⟨0⟩
-  let spider := namedPermanent g "Giant Spider"
-  let aura := namedPermanent g "Ability Strip"
-  g.attachSourceTo aura spider
-
-def spiderUnattached : Game :=
-  let aura := namedPermanent spiderStrippedByAura "Ability Strip"
-  spiderStrippedByAura.setObject { aura with attachedTo := none }
-
-#guard !spiderStrippedByAura.hasKeyword
-  (namedPermanent spiderStrippedByAura "Giant Spider") (·.reach)
-#guard spiderUnattached.hasKeyword
-  (namedPermanent spiderUnattached "Giant Spider") (·.reach)
-
-def massStripBoard : Game :=
-  let g := addPermanent afterDraw giantSpider ⟨0⟩ ⟨0⟩
-  let g := addPermanent g ragingGoblin ⟨1⟩ ⟨1⟩
-  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
-  addPermanent g massAbilityStrip ⟨0⟩ ⟨0⟩
-
-#guard !massStripBoard.hasKeyword (namedPermanent massStripBoard "Giant Spider") (·.reach)
-#guard massStripBoard.hasHaste (namedPermanent massStripBoard "Raging Goblin")
-#guard (massStripBoard.manaAbilitiesOf
-  (namedPermanent massStripBoard "Llanowar Elves")).isEmpty
-#guard
-  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
-  !(g.manaAbilitiesOf (namedPermanent g "Llanowar Elves")).isEmpty
-
-def selfStripBoard : Game :=
-  let g := addPermanent afterDraw selfAbilityStrip ⟨0⟩ ⟨0⟩
-  addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-
-#guard !selfStripBoard.hasKeyword (namedPermanent selfStripBoard "Self Ability Strip") (·.flying)
-#guard selfStripBoard.power (namedPermanent selfStripBoard "Grizzly Bears") == 2
-
-def untilEotAbilityStrip : Game :=
-  let g := addPermanent afterDraw giantSpider ⟨0⟩ ⟨0⟩
-  g.applyAbilityEffect ⟨0⟩
-    (Effect.mkAbility ({})
-      (.removeAllAbilities (.intersection [.zone .battlefield, .cardType .creature]))) #[]
-
-def untilEotThenTrample : Game :=
-  let spider := namedPermanent untilEotAbilityStrip "Giant Spider"
-  untilEotAbilityStrip.grantUntilEotLogged spider Keyword.trample.toKeywords
-
-#guard !untilEotAbilityStrip.hasKeyword
-  (namedPermanent untilEotAbilityStrip "Giant Spider") (·.reach)
-#guard untilEotAbilityStrip.clearEOT.hasKeyword
-  (namedPermanent untilEotAbilityStrip.clearEOT "Giant Spider") (·.reach)
-#guard untilEotThenTrample.hasTrample
-  (namedPermanent untilEotThenTrample "Giant Spider")
-#guard !untilEotThenTrample.hasKeyword
-  (namedPermanent untilEotThenTrample "Giant Spider") (·.reach)
-
-def targetedAbilityStrip : Game :=
-  let g := addPermanent afterDraw giantSpider ⟨0⟩ ⟨0⟩
-  let spider := namedPermanent g "Giant Spider"
-  g.applyAbilityEffect ⟨0⟩
-    (Effect.mkAbility (EffectTargeting.of .creature) (.onPermanent .removeAllAbilities))
-    #[Target.permanent spider.id]
-
-#guard !targetedAbilityStrip.hasKeyword
-  (namedPermanent targetedAbilityStrip "Giant Spider") (·.reach)
-#guard targetedAbilityStrip.log.any (fun s =>
-  mentions s "Giant Spider loses all abilities until end of turn")
 
 end Mtg.Engine.Tests

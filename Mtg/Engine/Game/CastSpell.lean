@@ -32,7 +32,7 @@ def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : Proposed
     g.logMsg s!"{pl.name} may kick the spell (CR 702.32 / 601.2b)"
   else if needsGift then
     let g := { g with pending := .chooseGift p, proposedSpell := some prop }
-    g.logMsg s!"{pl.name} may promise a gift (CR 702.174 / 601.2b)"
+    g.logMsg s!"{pl.name} may promise a gift (CR 702.185 / 601.2b)"
   else if needsTeamwork then
     let g := { g with pending := .chooseTeamwork p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} may pay a teamwork cost (CR 702.194 / 601.2b)"
@@ -49,7 +49,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     throw "You don't have priority"
   if p != g.activePlayer &&
       (g.permanentsOf g.activePlayer).any (fun o =>
-        (g.staticAbilitiesOf o).any (fun
+        o.staticAbilities.any (fun
           | .opponentsCantCastOnYourTurn => true
           | _ => false)) then
     throw "Opponents can't cast spells during that player's turn"
@@ -80,6 +80,14 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       face.additionalCostOrPayGeneric.isNone &&
       (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
     throw s!"{face.name} requires sacrificing an artifact or creature"
+  match card.playPermission.bind (·.prepareSource) with
+  | some src =>
+    match g.findObject? src with
+    | some perm =>
+      if !perm.isOnBattlefield || !perm.status.prepared then
+        throw s!"{perm.name} is not prepared"
+    | none => throw "The prepared permanent is gone"
+  | none => pure ()
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
@@ -96,6 +104,15 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let fromTop :=
     original.zone == .library p && (g.player p).library.back? == some id
   let (g, newId) := g.move id .stack (some p)
+  let g :=
+    match original.playPermission.bind (·.prepareSource) with
+    | some src =>
+      match g.findObject? src with
+      | some perm =>
+        (g.setObject { perm with status := { perm.status with prepared := false } }).logMsg
+          s!"{perm.name} is no longer prepared"
+      | none => g
+    | none => g
   let g := { g with castingFromTop := fromTop || g.castingFromTop }
   let g :=
     if asAdventure then
@@ -112,7 +129,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsTarget := face.requiresTarget && !needsMode
   let needsAdditionalCostChoice := face.announcesAdditionalCost
   let needsKicker := face.kicker.isSome
-  let needsGift := face.gift.isSome
+  let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
   if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
       !needsSacrifice &&
@@ -225,7 +242,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       return g.enterProposalWindow p pl prop face.isModal
         (face.requiresTarget && !face.isModal) "CR 601.2b / 700.2"
         (needsAdditionalCost := face.announcesAdditionalCost)
-        (needsKicker := face.kicker.isSome) (needsGift := face.gift.isSome)
+        (needsKicker := face.kicker.isSome) (needsGift := face.giftTreasure)
         (needsTeamwork := face.teamwork.isSome)
   | _ => throw "Not time to choose X (CR 601.2b)"
 
