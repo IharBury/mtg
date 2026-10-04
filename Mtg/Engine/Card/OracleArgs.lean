@@ -15,11 +15,12 @@ namespace Mtg.Engine.OracleArgs
 
 open OracleNorm
 
-/-- One printed argument. -/
+/-- One printed argument. A card type is any type from CR 205.2a. -/
 inductive SlotVal where
   | nat (n : Nat)
   | int (i : Int)
   | str (s : String)
+  | ty (t : CardType)
   deriving BEq, Repr, Inhabited
 
 inductive NatFmt where
@@ -48,6 +49,7 @@ inductive Pat where
   | nat (i : Nat) (fmt : NatFmt)
   | int (i : Nat) (fmt : IntFmt)
   | str (i : Nat) (fmt : StrFmt)
+  | ty (i : Nat)
   | pt (i j : Nat) (signed : Bool)
   deriving BEq, Repr
 
@@ -98,6 +100,19 @@ def takeInt (i : Int) : ArgM Int := do
       set { s with vals := rest }
       return v
     | _ => return i
+
+def takeCardType (t : CardType) : ArgM CardType := do
+  let s ← get
+  match s.mode with
+  | .collect =>
+    set { s with vals := .ty t :: s.vals }
+    return t
+  | .fill =>
+    match s.vals with
+    | .ty v :: rest =>
+      set { s with vals := rest }
+      return v
+    | _ => return t
 
 def takeStr (str : String) : ArgM String := do
   let s ← get
@@ -236,7 +251,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .copyThisSpellXTimesThenDamage n => return .copyThisSpellXTimesThenDamage (← takeNat n)
   | .mayPutHeroMvOrDraw n => return .mayPutHeroMvOrDraw (← takeNat n)
   | .maySacArtifactOrDiscardDraw n => return .maySacArtifactOrDiscardDraw (← takeNat n)
-  | .artifactSpellsCostLessThisTurn n => return .artifactSpellsCostLessThisTurn (← takeNat n)
+  | .artifactSpellsCostLessThisTurn ty n =>
+    return .artifactSpellsCostLessThisTurn (← takeCardType ty) (← takeNat n)
   | r => return r
 
 def takeChapter (c : ChapterResolution) : ArgM ChapterResolution := do
@@ -448,7 +464,8 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   | .cantBeBlockedIfPowerAtMost n => return .cantBeBlockedIfPowerAtMost (← takeInt n)
   | .maximumHandSize n => return .maximumHandSize (← takeNat n)
   | .powerEqualSubtypeYouControl s => return .powerEqualSubtypeYouControl (← takeStr s)
-  | .typeSpellsCostLess ty n => return .typeSpellsCostLess ty (← takeNat n)
+  | .typeSpellsCostLess ty n =>
+    return .typeSpellsCostLess (← takeCardType ty) (← takeNat n)
   | .wardDiscardOrPay n => return .wardDiscardOrPay (← takeNat n)
   | .wardPoisonCounters n => return .wardPoisonCounters (← takeNat n)
   | .otherPowerUpCostsLess n => return .otherPowerUpCostsLess (← takeNat n)
@@ -556,6 +573,11 @@ def slotStr (vals : Array SlotVal) (i : Nat) : String :=
   | some (.str s) => s
   | _ => ""
 
+def slotTy (vals : Array SlotVal) (i : Nat) : CardType :=
+  match vals[i]? with
+  | some (.ty t) => t
+  | _ => default
+
 def parseNatTok (t : String) : Option Nat :=
   if !t.isEmpty && t.all Char.isDigit then some t.toNat! else none
 
@@ -657,6 +679,17 @@ def strHit (i : Nat) (fmt : StrFmt) (s : String) (toks : List String) (fresh : B
     repl := renderStr fmt s
   }
 
+def tyHit (i : Nat) (t : CardType) (toks : List String) (fresh : Bool) : Option Hit :=
+  let needle := tokenize (lowerAscii t.englishName)
+  if needle.isEmpty || !prefixTokens needle toks then none
+  else some {
+    width := needle.length
+    used := if fresh then [i] else []
+    pat := .ty i
+    needle := String.intercalate " " needle
+    repl := t.englishName
+  }
+
 def ptHit (i j : Nat) (signed : Bool) (p t : Int) (toks : List String) (fresh : Bool) : Option Hit :=
   match toks with
   | tok :: _ =>
@@ -697,6 +730,8 @@ def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List 
         hs := consider hs (strHit i .plural s toks fresh)
         hs := consider hs (strHit i (.cycling (strWords s).length) s toks fresh)
         hs := consider hs (strHit i .non s toks fresh)
+      | .ty t =>
+        hs := consider hs (tyHit i t toks fresh)
     return hs
 
 /-- Prefer a still-unused argument, then the longest printed form. -/
@@ -873,6 +908,16 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
             | none => none
           else none
         | [] => none
+    | .ty i :: ps =>
+      match toks with
+      | t :: ts =>
+        match CardType.ofOracle? t with
+        | some ty =>
+          match setSlot vals i (.ty ty) seen with
+          | some (vals, seen) => go ps ts vals seen
+          | none => none
+        | none => none
+      | [] => none
     | .pt i j signed :: ps =>
       match toks with
       | t :: ts =>
@@ -938,6 +983,7 @@ def patKey (pats : List (List Pat)) : String :=
       | .plural => "$p"
       | .cycling n => s!"$c{n}"
       | .non => "$n"
+    | .ty _ => "$t"
     | .pt _ _ signed => if signed then "+/+" else "#/#"
   String.intercalate "\n" (pats.map fun line => String.intercalate " " (line.map piece))
 
@@ -946,6 +992,7 @@ def renderHit (h : Hit) (vals : Array SlotVal) : String :=
   | .nat i fmt => renderNat fmt (slotNat vals i)
   | .int i fmt => renderInt fmt (slotInt vals i)
   | .str i fmt => renderStr fmt (slotStr vals i)
+  | .ty i => (slotTy vals i).englishName
   | .pt i j signed => renderPt signed (slotInt vals i) (slotInt vals j)
   | .lit s => s
 
@@ -980,6 +1027,9 @@ def allNeedles (args : Array SlotVal) : List Hit :=
           for fmt in [word, StrFmt.plural, cyc, StrFmt.non] do
             let needle := renderStr fmt s
             hs := { width := needle.length, used := [i], pat := .str i fmt, needle, repl := needle } :: hs
+      | .ty t =>
+        let needle := lowerAscii t.englishName
+        hs := { width := needle.length, used := [i], pat := .ty i, needle, repl := t.englishName } :: hs
     return hs
 
 def charHit (args : Array SlotVal) (cs : List Char) (prev : Option Char) (used : List Nat) :
@@ -1069,6 +1119,35 @@ def setNat (e : Effect) (i n : Nat) : Effect :=
 #guard setNat (Effect.scry 1) 0 3 == Effect.scry 3
 #guard refillEffect (Effect.sourceGets 2 0) (collectEffect (Effect.sourceGets 2 0)) ==
   Effect.sourceGets 2 0
+
+#guard
+  let ab := StaticAbility.typeSpellsCostLess .artifact 1
+  let args := collectStatic ab
+  let query := StaticAbility.toNotation (.typeSpellsCostLess .sorcery 4)
+  match matchPats (patsOf (normalizeUnit "X" (StaticAbility.toNotation ab)) args)
+      (tokenize (normalizeUnit "X" query)) args with
+  | some vals => refillStatic ab vals == .typeSpellsCostLess .sorcery 4
+  | none => false
+
+#guard
+  let e := Effect.artifactSpellsCostLessThisTurn 1
+  let args := collectEffect e
+  let query := "Planeswalker spells you cast this turn cost {3} less to cast."
+  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+      (tokenize (normalizeUnit "X" query)) args with
+  | some vals =>
+    (refillEffect e vals).resolution ==
+      .spell (.artifactSpellsCostLessThisTurn .planeswalker 3)
+  | none => false
+
+#guard CardType.all.all fun t =>
+  let ab := StaticAbility.typeSpellsCostLess .artifact 1
+  let args := collectStatic ab
+  let query := StaticAbility.toNotation (.typeSpellsCostLess t 2)
+  match matchPats (patsOf (normalizeUnit "X" (StaticAbility.toNotation ab)) args)
+      (tokenize (normalizeUnit "X" query)) args with
+  | some vals => refillStatic ab vals == .typeSpellsCostLess t 2
+  | none => false
 
 #guard
   let e := Effect.draw 2

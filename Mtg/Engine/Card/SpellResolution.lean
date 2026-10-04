@@ -1,6 +1,7 @@
 import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.Token
+import Mtg.Engine.TypeLine
 
 /-!
 # Spell resolutions (CR 608)
@@ -257,8 +258,8 @@ inductive SpellResolution where
   | chooseTargetDoubleAndTrample
   /-- Return up to two modal graveyard cards. -/
   | returnUpToTwoGyModal
-  /-- Artifact spells cost less this turn. -/
-  | artifactSpellsCostLessThisTurn (n : Nat)
+  /-- Spells of this card type cost `{n}` less this turn (CR 205.2a). -/
+  | artifactSpellsCostLessThisTurn (ty : CardType) (n : Nat)
 deriving Repr, Inhabited, BEq
 
 
@@ -473,8 +474,8 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
   | .returnUpToTwoGyModal =>
     "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
-  | .artifactSpellsCostLessThisTurn n =>
-    s!"Artifact spells you cast this turn cost \{{n}} less to cast"
+  | .artifactSpellsCostLessThisTurn ty n =>
+    s!"{ty} spells you cast this turn cost \{{n}} less to cast"
 
 end SpellResolution
 

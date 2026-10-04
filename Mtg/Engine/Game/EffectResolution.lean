@@ -688,7 +688,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.applyLeftoverTextEffect controller
       "Choose up to two. Return those cards from your graveyard to your hand."
       targets none
-  | .artifactSpellsCostLessThisTurn _n =>
+  | .artifactSpellsCostLessThisTurn _ty _n =>
     g
 
 /-- Resolve a printed spell effect (CR 608). -/

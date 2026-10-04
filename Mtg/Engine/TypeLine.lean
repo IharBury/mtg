@@ -9,7 +9,7 @@ any applicable supertypes.
 
 namespace Mtg.Engine
 
-/-- Card types listed in CR 300.1 / 205.2a, plus additional types from section 3. -/
+/-- Card types, exactly the list in CR 205.2a / 300.1. -/
 inductive CardType where
   | artifact
   | battle
@@ -49,6 +49,36 @@ def englishName : CardType → String
 
 instance : ToString CardType where
   toString := englishName
+
+/-- Plural Oracle spelling of each card type (CR 205.2a). -/
+def pluralName : CardType → String
+  | .artifact => "artifacts"
+  | .battle => "battles"
+  | .conspiracy => "conspiracies"
+  | .creature => "creatures"
+  | .dungeon => "dungeons"
+  | .enchantment => "enchantments"
+  | .instant => "instants"
+  | .kindred => "kindreds"
+  | .land => "lands"
+  | .phenomenon => "phenomena"
+  | .plane => "planes"
+  | .planeswalker => "planeswalkers"
+  | .scheme => "schemes"
+  | .sorcery => "sorceries"
+  | .vanguard => "vanguards"
+
+/-- Every card type in CR 205.2a, in that order. -/
+def all : List CardType := [
+  .artifact, .battle, .conspiracy, .creature, .dungeon, .enchantment, .instant,
+  .kindred, .land, .phenomenon, .plane, .planeswalker, .scheme, .sorcery, .vanguard
+]
+
+/-- A printed card-type word, singular or plural, in any case. -/
+def ofOracle? (s : String) : Option CardType :=
+  let s := s.map Char.toLower
+  all.find? fun t =>
+    t.englishName.map Char.toLower == s || t.pluralName.map Char.toLower == s
 
 /-- Permanent types (CR 110.4). Instant and sorcery cards can’t be permanents. -/
 def isPermanentType : CardType → Bool
@@ -128,8 +158,28 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard !isNoncreatureSubtype "Human"
 #guard !isNoncreatureSubtype "Construct"
 #guard basicLandTypes.length == 5
+#guard CardType.all.length == 15
+#guard CardType.all.all fun t =>
+  CardType.ofOracle? t.englishName == some t &&
+    CardType.ofOracle? t.pluralName == some t &&
+    CardType.all.all fun u =>
+      t == u || (t.pluralName != u.englishName && t.pluralName != u.pluralName)
+#guard CardType.ofOracle? "Sorceries" == some .sorcery
+#guard CardType.ofOracle? "conspiracies" == some .conspiracy
+#guard CardType.ofOracle? "phenomena" == some .phenomenon
+#guard CardType.ofOracle? "planeswalkers" == some .planeswalker
+#guard CardType.ofOracle? "KINDREDS" == some .kindred
 #guard CardType.creature.isPermanentType
 #guard !CardType.instant.isPermanentType
+#guard !CardType.kindred.isPermanentType
+#guard !CardType.dungeon.isPermanentType
+#guard !CardType.plane.isPermanentType
+#guard !CardType.phenomenon.isPermanentType
+#guard !CardType.vanguard.isPermanentType
+#guard !CardType.scheme.isPermanentType
+#guard !CardType.conspiracy.isPermanentType
+#guard CardType.battle.isPermanentType
+#guard CardType.planeswalker.isPermanentType
 #guard CardType.sorcery.isInstantOrSorcery
 #guard formatTypeLine #[.basic] #[.land] #["Forest"] == "Basic Land — Forest"
 #guard formatTypeLine #[] #[.creature] #["Bear"] == "Creature — Bear"
