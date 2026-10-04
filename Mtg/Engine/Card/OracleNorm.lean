@@ -276,9 +276,10 @@ def nameAliases (name : String) : List String :=
     if skipFirst then [trimmed, beforeComma] else [trimmed, beforeComma, first]
   uniqueStrings (aliases.filter (fun s => s.length > 2))
 
-/-- Replace each `old` with `new` in order. -/
+/-- Replace each `old` with `new` in order. Most pairs are absent from a given
+line, and `contains` does not copy the string the way `replace` does. -/
 def applyReplacements (s : String) (pairs : List (String × String)) : String :=
-  pairs.foldl (fun acc p => acc.replace p.fst p.snd) s
+  pairs.foldl (fun acc p => if acc.contains p.fst then acc.replace p.fst p.snd else acc) s
 
 /-- Replace an isolated word.
 
@@ -287,7 +288,7 @@ one character per step, which made Oracle normalization quadratic and dominated
 catalog builds.
 -/
 def replaceWord (s old new : String) : String :=
-  if old.isEmpty then s
+  if old.isEmpty || !s.contains old then s
   else
     Id.run do
       let chars := s.toList.toArray
