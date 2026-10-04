@@ -115,7 +115,7 @@ player view. With `--interactive`, that player is the first named player; with
 
 | Path | Purpose |
 | --- | --- |
-| `lakefile.toml` | Lake package (`Mtg.Engine` library, `MtgDemo` demo library, `mtg-demo` executable). |
+| `lakefile.toml` | Lake package (`Mtg.Engine` library with the precompiled `Mtg.Engine.Card`, `Mtg.Engine.Game`, and `Mtg.Engine.Fixture` plugins, `MtgDemo` demo library, `mtg-demo` and `oracle-roundtrip` executables). |
 | `lean-toolchain` | Pinned Lean toolchain version. |
 | `Mtg/Engine.lean`, `Mtg/Engine/` | The `Mtg.Engine` library. |
 | `Mtg/Engine/Catalog/` | Oracle cards used by the demo decks (engine remains card-agnostic). |
