@@ -116,7 +116,7 @@ Decklists:
 https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 
 The engine follows the Magic: The Gathering Comprehensive Rules
-effective 7 August 2026.
+effective 25 September 2026.
 
 At the start of a game, one player is chosen to decide who takes the
 first turn (CR 103.1). `--decides NAME` names that player; the default

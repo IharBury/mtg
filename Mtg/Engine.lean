@@ -20,7 +20,7 @@ import Mtg.Engine.Zone
 # Mtg.Engine
 
 A Lean 4 rules engine for *Magic: The Gathering*, following the Comprehensive
-Rules effective 7 August 2026.
+Rules effective 25 September 2026.
 -/
 
 namespace Mtg.Engine

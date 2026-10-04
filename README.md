@@ -5,9 +5,9 @@ A [Lean 4](https://lean-lang.org/) rules engine for
 [Lake](https://github.com/leanprover/lean4/tree/master/src/lake).
 
 The engine follows the *Magic: The Gathering* Comprehensive Rules **effective
-7 August 2026**. The official text is published by Wizards of the Coast at:
+25 September 2026**. The official text is published by Wizards of the Coast at:
 
-<https://media.wizards.com/2026/downloads/MagicCompRules%2020260819.txt>
+<https://media.wizards.com/2026/downloads/MagicCompRules%2020260925.txt>
 
 ## Prerequisites
 
