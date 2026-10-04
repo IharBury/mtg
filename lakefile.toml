@@ -17,11 +17,14 @@ name = "Mtg.Engine.Card"
 precompileModules = true
 globs = ["Mtg.Engine.Card.*", "Mtg.Engine.Color", "Mtg.Engine.Mana", "Mtg.Engine.TypeLine"]
 
-# Constructors (`card`, `creature`, ...) are native. The big catalog modules stay
-# interpreted so loading this plugin does not parse every printed card.
+# `Mtg.Engine.Catalog` is the root of every `Mtg.Engine.Catalog.*` module.
+# Lake treats those submodules as part of this library, so precompiling it
+# builds one shared library whose initializers parse every printed card.
+# Each downstream `lake` job reloads that library and parses the catalog
+# again, which dominates build time. Leave the library interpreted.
+# `parseOracleCard!` stays native via `Mtg.Engine.Card`.
 [[lean_lib]]
 name = "Mtg.Engine.Catalog"
-precompileModules = true
 globs = ["Mtg.Engine.Catalog"]
 
 # The rules engine is one plugin, so `#guard` runs compiled game code.
