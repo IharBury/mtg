@@ -38,6 +38,9 @@ inductive ManaSymbol where
   | colorless
   /-- A monocolored hybrid symbol `{A/B}` (CR 107.4e). Payable with either color. -/
   | hybrid (a b : Color)
+  /-- A monocolored hybrid with generic mana `{2/C}` (CR 107.4f). Payable with
+  two mana of any type, or one mana of `c`. Mana value is 2. -/
+  | twobrid (c : Color)
   /-- The variable symbol `{X}` (CR 107.3). Treated as 0 off the stack (CR 107.3g). -/
   | x
 deriving DecidableEq, Repr, Inhabited
@@ -49,12 +52,14 @@ def toNotation : ManaSymbol → String
   | .colored c => s!"\{{c.letter}}"
   | .colorless => "{C}"
   | .hybrid a b => s!"\{{a.letter}/{b.letter}}"
+  | .twobrid c => s!"\{2/{c.letter}}"
   | .x => "{X}"
 
 /-- Color contributed by this symbol to an object’s color (CR 202.2). -/
 def colorContribution : ManaSymbol → ColorSet
   | .colored c => ColorSet.singleton c
   | .hybrid a b => ColorSet.singleton a |>.union (ColorSet.singleton b)
+  | .twobrid c => ColorSet.singleton c
   | .generic _ | .colorless | .x => ColorSet.empty
 
 instance : ToString ManaSymbol where
@@ -112,6 +117,7 @@ def manaValue (cost : ManaCost) : Nat :=
       | .colored _ => acc + 1
       | .colorless => acc + 1
       | .hybrid _ _ => acc + 1
+      | .twobrid _ => acc + 2
       | .x => acc)
     0
 
@@ -141,7 +147,7 @@ def coloredCount (cost : ManaCost) (c : Color) : Nat :=
     (fun n s =>
       match s with
       | .colored d => if d == c then n + 1 else n
-      | .generic _ | .colorless | .hybrid _ _ | .x => n)
+      | .generic _ | .colorless | .hybrid _ _ | .twobrid _ | .x => n)
     0
 
 /-- How many mana symbols include color `c`, counting `{c}` and `{c/x}`
@@ -152,6 +158,7 @@ def symbolsIncludingColor (cost : ManaCost) (c : Color) : Nat :=
       match s with
       | .colored d => if d == c then n + 1 else n
       | .hybrid a b => if a == c || b == c then n + 1 else n
+      | .twobrid d => if d == c then n + 1 else n
       | .generic _ | .colorless | .x => n)
     0
 
@@ -233,6 +240,7 @@ def reduceByCost (cost byCost : ManaCost) : ManaCost :=
       match s with
       | .generic n => acc + n
       | .hybrid _ _ => acc + 1
+      | .twobrid _ => acc + 2
       | _ => acc) 0
   afterReduction original (cost.reduceGeneric (generic + extraColored + extraColorless))
 
@@ -592,9 +600,11 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
     (allowCreatureRestricted : Bool := false) : Option ManaPool :=
   Id.run do
     let mut pool := p
+    let mut unpaidTwobrid : Nat := 0
     -- Specific symbols first so leftover mana of other types can pay generic
     -- (e.g. `{U}×1 {R}×1` pays `{1}{U}`). Printed order would spend `{U}` on
     -- `{1}` via `spendAny?` and then fail the `{U}`.
+    -- `{2/C}` prefers one mana of that color, then two mana of any type.
     for s in cost.symbols do
       match s with
       | .colored c =>
@@ -620,7 +630,20 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
               allowCreatureRestricted with
           | some p' => pool := p'
           | none => return none
+      | .twobrid c =>
+        match pool.spendOne? (.colored c) allowElfRestricted allowInstRestricted
+            allowHeroRestricted allowVillainRestricted allowCantNonartifact
+            allowCreatureRestricted with
+        | some p' => pool := p'
+        | none => unpaidTwobrid := unpaidTwobrid + 1
       | .generic _ | .x => pure () -- CR 107.3g: unpaid `{X}` is 0
+    for _ in [0:unpaidTwobrid] do
+      for _ in [0:2] do
+        match pool.spendAny? allowElfRestricted allowInstRestricted
+            allowHeroRestricted allowVillainRestricted allowCantNonartifact
+            allowCreatureRestricted with
+        | some p' => pool := p'
+        | none => return none
     for s in cost.symbols do
       match s with
       | .generic n =>
@@ -652,6 +675,7 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
   Id.run do
     let mut pool := p
     let mut paid := 0
+    let mut unpaidTwobrid : Nat := 0
     -- Match `pay?`: cover colored/colorless/hybrid first so leftover mana
     -- still counts toward generic.
     for s in cost.symbols do
@@ -687,7 +711,24 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
             pool := p'
             paid := paid + 1
           | none => pure ()
+      | .twobrid c =>
+        match pool.spendOne? (.colored c) allowElfRestricted allowInstRestricted
+            allowHeroRestricted allowVillainRestricted allowCantNonartifact
+            allowCreatureRestricted with
+        | some p' =>
+          pool := p'
+          paid := paid + 2
+        | none => unpaidTwobrid := unpaidTwobrid + 1
       | .generic _ | .x => pure ()
+    for _ in [0:unpaidTwobrid] do
+      for _ in [0:2] do
+        match pool.spendAny? allowElfRestricted allowInstRestricted
+            allowHeroRestricted allowVillainRestricted allowCantNonartifact
+            allowCreatureRestricted with
+        | some p' =>
+          pool := p'
+          paid := paid + 1
+        | none => pure ()
     for s in cost.symbols do
       match s with
       | .generic n =>

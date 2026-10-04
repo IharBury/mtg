@@ -64,7 +64,7 @@ def abilityWords : List String := [
   "adamant", "addendum", "alliance", "battalion", "bloodrush", "celebration",
   "channel", "chroma", "cohort", "constellation", "converge",
   "council's dilemma", "coven", "delirium", "descend 4", "descend 8",
-  "disappear", "domain", "eerie", "eminence", "enrage", "fateful hour",
+  "disappear", "domain", "eerie", "eminence", "enrage", "exhaust", "fateful hour",
   "fathomless descent", "ferocious", "flurry", "formidable", "grandeur",
   "hellbent", "heroic", "imprint", "infusion", "inspired", "join forces",
   "kinship", "landfall", "lieutenant", "magecraft", "metalcraft", "morbid",
@@ -516,7 +516,7 @@ def splitKeywordWardLine (s : String) : List String :=
 
 -- CR 207.2c: every ability word is ignored, in any case, wherever it labels
 -- an ability. A word that merely shares letters with an ability word is not.
-#guard abilityWords.length == 61
+#guard abilityWords.length == 62
 #guard abilityWords.head? == some "adamant"
 #guard abilityWords.getLast? == some "will of the council"
 #guard abilityWords.all fun w =>

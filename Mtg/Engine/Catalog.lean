@@ -9,7 +9,8 @@ card-agnostic; these definitions just exercise the rules we model.
 Cards from Magic: The Gathering | The Hobbit (HOB) live in
 `Mtg.Engine.Catalog.Hobbit`. Cards from The Hobbit Eternal (HOC) live in
 `Mtg.Engine.Catalog.HobbitEternal`. Cards from Marvel Super Heroes (MSH) live
-in `Mtg.Engine.Catalog.MarvelSuperHeroes`. Decklists that use them live in `Mtg.Demo`.
+in `Mtg.Engine.Catalog.MarvelSuperHeroes`. Cards from Reality Fracture (FRA)
+live in `Mtg.Engine.Catalog.RealityFracture`. Decklists that use them live in `Mtg.Demo`.
 -/
 
 namespace Mtg.Engine.Catalog
@@ -172,6 +173,12 @@ The lines are the definition: name, mana cost, type line, power and
 toughness, and rules. A line that is exactly `//` starts the back face. -/
 @[irreducible, noinline] def fromOracle (lines : List String) : CardDef :=
   parseOracleCard! (String.intercalate "\n" lines)
+
+/-- Parse printed text, keeping rules lines the engine does not model yet. -/
+@[irreducible, noinline] def fromOracleKeeping (lines : List String) : CardDef :=
+  match parseOracleCardKeeping (String.intercalate "\n" lines) with
+  | .ok c => c
+  | .error e => panic! s!"parseOracleCardKeeping: {e}\n---\n{String.intercalate "\n" lines}"
 
 /-- A basic land whose name is also its land type (CR 305.6). -/
 @[irreducible, noinline] def basicLand (landName : String) (color : Color) : CardDef :=

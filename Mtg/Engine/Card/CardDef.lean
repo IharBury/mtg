@@ -38,6 +38,10 @@ structure AdventureFace where
   spellEffect : Option Effect := none
   /-- Additional cost: sacrifice a creature. -/
   additionalCostSacrificeCreature : Bool := false
+  /-- Rules lines of this face that are not a modeled spell effect. -/
+  extraLines : Array String := #[]
+  /-- Empower Jace N on this alternate face. -/
+  empowerJace : Option Nat := none
 deriving Repr, Inhabited, BEq
 
 /-- Printed (Oracle) characteristics of a card. -/
@@ -260,6 +264,16 @@ structure CardDef where
   daybound : Bool := false
   /-- Back face of a modal double-faced card that can transform. -/
   otherFace : Option CardDef := none
+  /-- Empower Jace N on this spell (Reality Fracture). When the spell
+  resolves, put N loyalty counters on a Jace planeswalker token you control,
+  creating one first if you control none. -/
+  empowerJace : Option Nat := none
+  /-- This permanent enters prepared (Reality Fracture). -/
+  entersPrepared : Bool := false
+  /-- Sorcery or instant copied while this permanent is prepared. -/
+  prepareFace : Option AdventureFace := none
+  /-- Additional cost: behold this quality, or pay this much generic mana. -/
+  additionalCostBeholdOrPay : Option (String × Nat) := none
 deriving Repr, Inhabited
 
 namespace CardDef
@@ -470,7 +484,28 @@ def adventureLines (c : CardDef) : List String :=
       match a.spellEffect with
       | some e => [e.phrase]
       | none => []
-    header :: extra
+    header :: extra ++ a.extraLines.toList
+
+/-- Prepare-spell name, cost, and effect. -/
+def prepareLines (c : CardDef) : List String :=
+  match c.prepareFace with
+  | none =>
+    if c.entersPrepared then ["This creature enters prepared."] else []
+  | some a =>
+    let header :=
+      if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
+    let effect :=
+      match a.spellEffect with
+      | some e => [e.phrase]
+      | none => []
+    (if c.entersPrepared then ["This creature enters prepared."] else []) ++
+      [header] ++ effect ++ a.extraLines.toList
+
+/-- Empower Jace printed on this spell. -/
+def empowerLines (c : CardDef) : List String :=
+  match c.empowerJace with
+  | some n => [s!"Empower Jace {n}."]
+  | none => []
 
 /-- `{T}: Add {U} or {B}.` -/
 def tapAddOneOfLines (c : CardDef) : List String :=
@@ -502,7 +537,8 @@ def tapAddAnyColorForInstantOrSorceryLine (c : CardDef) : List String :=
 /-- True when CR 601.2b must announce a sacrifice-or-pay or discard-or-pay
 additional cost. -/
 def announcesAdditionalCost (c : CardDef) : Bool :=
-  c.additionalCostOrPayGeneric.isSome || c.additionalCostDiscardOrPayGeneric.isSome
+  c.additionalCostOrPayGeneric.isSome || c.additionalCostDiscardOrPayGeneric.isSome ||
+    c.additionalCostBeholdOrPay.isSome
 
 /-- Additional cost that sacrifices an artifact or creature (optionally or pay `{n}`). -/
 def additionalCostSacrificeArtifactOrCreatureLine (c : CardDef) : List String :=
@@ -516,7 +552,11 @@ def additionalCostSacrificeArtifactOrCreatureLine (c : CardDef) : List String :=
     match c.additionalCostDiscardOrPayGeneric with
     | some n =>
       [s!"As an additional cost to cast this spell, discard a card or pay \{{n}}."]
-    | none => []
+    | none =>
+      match c.additionalCostBeholdOrPay with
+      | some (quality, n) =>
+        [s!"As an additional cost to cast this spell, behold a {quality} or pay \{{n}}."]
+      | none => []
 
 /-- `{T}cycling` and other typecycling, printed as `Mountaincycling {1}`. -/
 def activatedNotation (ab : ActivatedAbility) : String :=
@@ -551,6 +591,8 @@ def structuredAbilityLines (c : CardDef) : List String :=
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
   c.adventureLines ++
+  c.prepareLines ++
+  c.empowerLines ++
   c.spellLines
 
 /-- Modeled ability lines. Keyword-only lines are omitted; those print with
@@ -657,6 +699,8 @@ def toCardDef (a : AdventureFace) : CardDef := {
   types := a.types
   subtypes := a.subtypes
   spellEffect := a.spellEffect
+  staticAbilities := a.extraLines.map StaticAbility.printed
+  empowerJace := a.empowerJace
 }
 
 /-- True when this Adventure's effect is classified as `k`. -/

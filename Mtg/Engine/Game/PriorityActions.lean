@@ -41,7 +41,18 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
   match g.findObject? prop.spellId with
   | none => true
   | some spell =>
-    if spell.printed.additionalCostDiscardOrPayGeneric.isSome then
+    if spell.printed.additionalCostBeholdOrPay.isSome then
+      match spell.printed.additionalCostBeholdOrPay with
+      | some (quality, _) =>
+        let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
+        let hasHand :=
+          (g.player p).hand.any (fun id =>
+            match g.findObject? id with
+            | some card => card.printed.hasSubtype quality
+            | none => false)
+        !(hasPerm || hasHand)
+      | none => true
+    else if spell.printed.additionalCostDiscardOrPayGeneric.isSome then
       (g.player p).hand.isEmpty
     else
       (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
@@ -59,6 +70,23 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
       | throw "No spell is waiting for an additional cost (CR 601.2b)"
     let some spell := g.findObject? prop.spellId
       | throw "The spell left the stack"
+    match spell.printed.additionalCostBeholdOrPay with
+    | some (quality, n) =>
+      if payGeneric then
+        let prop := { prop with
+          cost := prop.cost.addGeneric n
+          needsSacrificeOther := false
+          needsDiscardCard := false }
+        let g := { g with proposedSpell := some prop }
+        let g := g.logMsg
+          s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
+        return g.afterAdditionalCostAnnounced
+      else
+        let g := g.beholdQuality p quality
+        if !(g.qualityWasBeheld p quality) then
+          throw s!"{spell.name} requires beholding a {quality}"
+        return g.afterAdditionalCostAnnounced
+    | none =>
     match spell.printed.additionalCostOrPayGeneric,
           spell.printed.additionalCostDiscardOrPayGeneric with
     | some n, _ =>

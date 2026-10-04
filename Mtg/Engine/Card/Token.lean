@@ -46,6 +46,20 @@ inductive TokenKind where
   | vibranium
   /-- A 1/1 green Minion creature token named Moloid. -/
   | moloid
+  /-- A 2/2 colorless Wizard Soldier creature token named Cadet (FRA). -/
+  | cadet
+  /-- A red and green Heartwood artifact token (FRA). -/
+  | heartwood
+  /-- A colorless Lotus artifact token (FRA). -/
+  | lotus
+  /-- A blue Jace planeswalker token (FRA). -/
+  | jace
+  /-- A 1/1 colorless Sculpture Treasure artifact creature token (FRA). -/
+  | sculpture
+  /-- A legendary 3/3 green Dog creature token named Mowu (FRA). -/
+  | mowu
+  /-- A 2/2 white Cat Soldier creature token named Ajani's Pridemate (FRA). -/
+  | pridemate
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -75,6 +89,13 @@ def oracleNoun : TokenKind → String
   | .vibranium => "Vibranium token"
   | .moloid =>
     "1/1 green Minion creature token named Moloid with \"Whenever this token attacks, you may mill a card.\""
+  | .cadet => "2/2 colorless Wizard Soldier creature token named Cadet"
+  | .heartwood => "Heartwood token"
+  | .lotus => "Lotus token"
+  | .jace => "blue Jace planeswalker token"
+  | .sculpture => "1/1 colorless Sculpture Treasure artifact creature token"
+  | .mowu => "legendary 3/3 green Dog creature token named Mowu"
+  | .pridemate => "2/2 white Cat Soldier creature token named Ajani's Pridemate"
 
 /-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
 def pluralNoun (k : TokenKind) : String :=

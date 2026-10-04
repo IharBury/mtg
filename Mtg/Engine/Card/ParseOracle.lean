@@ -45,6 +45,9 @@ def parseManaSymbol (s : String) : Option (ManaSymbol × String) :=
         | [a, b] =>
           match color? a, color? b with
           | some ca, some cb => some (.hybrid ca cb, after)
+          | none, some cb =>
+            if a.all Char.isDigit && !a.isEmpty then some (.twobrid cb, after)
+            else none
           | _, _ => none
         | _ =>
           match color? sym with
@@ -334,18 +337,69 @@ def splitBackFace (lines : List String) : List String × Option (List String) :=
     let back := lines.drop (i + 1)
     (front, some back)
 
-/-- Pull an Adventure block out of the rules lines. -/
-def splitAdventure (lines : List String) : List String × Option (List String) :=
+/-- Pull a marked alternate-face block (`//ADV//` or `//PREP//`) out of the rules. -/
+def splitMarked (mark : String) (lines : List String) : List String × Option (List String) :=
   let rec go (acc : List String) : List String → List String × Option (List String)
     | [] => (acc.reverse, none)
     | line :: rest =>
-      if line == "//ADV//" then (acc.reverse, some rest)
-      else if line.startsWith "//ADV//" then
-        let extra := (line.drop "//ADV//".length).trimAscii.copy
-        let adv := if extra.isEmpty then rest else extra :: rest
-        (acc.reverse, some adv)
+      if line == mark then (acc.reverse, some rest)
+      else if line.startsWith mark then
+        let extra := (line.drop mark.length).trimAscii.copy
+        let face := if extra.isEmpty then rest else extra :: rest
+        (acc.reverse, some face)
       else go (line :: acc) rest
   go [] lines
+
+/-- Pull an Adventure block out of the rules lines. -/
+def splitAdventure (lines : List String) : List String × Option (List String) :=
+  splitMarked "//ADV//" lines
+
+/-- Pull a prepare-spell block out of the rules lines (Reality Fracture). -/
+def splitPrepare (lines : List String) : List String × Option (List String) :=
+  splitMarked "//PREP//" lines
+
+/-- Spell-level `Empower Jace N`, and the line with that sentence removed.
+Trigger and activated lines are left alone so the loyalty goes on the ability. -/
+def spellEmpower (line : String) : Option (Nat × String) :=
+  let low := lowerAscii line
+  let parts := low.splitOn "empower jace "
+  if parts.length != 2 then none
+  else
+    let beforeLow := parts[0]!
+    let afterLow := parts[1]!
+    -- `takeWhile` yields a slice; copy it so `.length` is not the deprecated
+    -- slice length (`lake build --wfail` treats that warning as a failure).
+    let digits := (afterLow.takeWhile Char.isDigit).copy
+    if digits.isEmpty then none
+    else if beforeLow.contains ':' then none
+    else if beforeLow.startsWith "when " || beforeLow.startsWith "whenever " ||
+        beforeLow.startsWith "at the " then none
+    else
+      let n := digits.toNat!
+      let before := (line.take beforeLow.length).trimAscii.copy
+      let after :=
+        (line.drop (beforeLow.length + "empower jace ".length + digits.length)).trimAscii.copy
+      let after :=
+        if after == "." || after == "" then ""
+        else if after.startsWith "." then (after.drop 1).trimAscii.copy
+        else after
+      let rest :=
+        if before.isEmpty then after
+        else if after.isEmpty then before
+        else s!"{before} {after}"
+      some (n, rest.trimAscii.copy)
+
+/-- `behold a Jace or pay {N}` as an additional cost. -/
+def beholdOrPay (line : String) : Option (String × Nat) :=
+  let low := lowerAscii line
+  if !(low.startsWith "as an additional cost") || !(low.contains "behold") then none
+  else
+    let quality := if low.contains "jace" then "Jace" else "permanent"
+    match low.splitOn "{" with
+    | _ :: brace :: _ =>
+      let digits := brace.takeWhile Char.isDigit
+      if digits.isEmpty then none else some (quality, digits.toNat!)
+    | _ => none
 
 def romanToken (s : String) : Bool :=
   s.all (fun c => c == 'I' || c == 'V' || c == 'X' || c == ',')
@@ -741,6 +795,8 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low.contains "you may play an additional land" && low.contains "as long as you control another" then
     let t := (raw.splitOn "another ").getLastD "" |>.splitOn "," |>.headD "" |>.trimAscii.copy
     some { c with extraLandIfOtherSubtype := some t }
+  else if low.contains "enters prepared" then
+    some { c with entersPrepared := true }
   else if low.contains "sacrifice after" && low.contains "lore counter" then
     let after := (raw.splitOn "Sacrifice after ").getLastD raw
     let roman := (after.takeWhile (fun c => c != '.' && c != ')')).trimAscii.copy
@@ -1490,7 +1546,8 @@ def parseLoyaltyAbilityLine (line : String) : Option (LoyaltySymbol × String) :
         else (loyaltySymbolOf sign isX n).map fun sym => (sym, effect)
       else none
 
-partial def parseRules (c : CardDef) (lines : List String) : Except String CardDef :=
+partial def parseRules (c : CardDef) (lines : List String)
+    (keepUnrecognized : Bool := false) : Except String CardDef :=
   -- CR 207.2a: drop reminder text before any rule is read. A reminder may be
   -- the whole line (basic-land mana, Saga progress, a keyword on its own line).
   -- CR 207.4: the chaos symbol to the left of a chaos ability has no rules
@@ -1503,9 +1560,23 @@ partial def parseRules (c : CardDef) (lines : List String) : Except String CardD
           stripAbilityWords (stripChaosSymbol (dropReminderText line))) |>.filter (· != ""))
       |>.flatMap splitKeywordWardLine
   let rec go (c : CardDef) (units : List String) : Except String CardDef :=
+    let unrecognized (c : CardDef) (line : String) (rest : List String) : Except String CardDef :=
+      if keepUnrecognized then
+        go { c with staticAbilities := c.staticAbilities.push (.printed line) } rest
+      else
+        .error s!"unrecognized Oracle line on {c.name}: {line}"
     match units with
     | [] => .ok c
     | line :: rest =>
+      let (c, line) :=
+        match spellEmpower line with
+        | some (n, leftover) =>
+          let amount := match c.empowerJace with | some k => k | none => n
+          ({ c with empowerJace := some amount }, leftover)
+        | none => (c, line)
+      if (line.trimAscii.copy).isEmpty then go c rest
+      else
+      let units := line :: rest
       let bare := lowerAscii line
       let c :=
         if bare.contains "a creature an opponent controls would die" &&
@@ -1514,6 +1585,9 @@ partial def parseRules (c : CardDef) (lines : List String) : Except String CardD
         else c
       if skipLine c line then go c rest
       else
+        match beholdOrPay line with
+        | some cost => go { c with additionalCostBeholdOrPay := some cost } rest
+        | none =>
         -- CR 209.2: a loyalty symbol in the cost makes this a loyalty ability.
         match parseLoyaltyAbilityLine line with
         | some (sym, effectText) =>
@@ -1523,8 +1597,8 @@ partial def parseRules (c : CardDef) (lines : List String) : Except String CardD
             if n > 0 && more.length < (effectText :: rest).length then
               go { c with activatedAbilities :=
                 c.activatedAbilities.push (activated e (loyalty := some sym)) } more
-            else .error s!"unrecognized Oracle line on {c.name}: {line}"
-          | _ => .error s!"unrecognized Oracle line on {c.name}: {line}"
+            else unrecognized c line rest
+          | _ => unrecognized c line rest
         | none =>
         match keywordTokens c.name line with
         | some toks => go { c with keywords := c.keywords.merge (keywordsFromTokens toks) } rest
@@ -1544,7 +1618,10 @@ partial def parseRules (c : CardDef) (lines : List String) : Except String CardD
               -- not the Roman numeral printed in the Saga reminder.
               let s := { s with sacrificeAfter := romanNumeral s.finalChapterNumber }
               go { c with saga := some s } rest
-            | none => .error s!"unrecognized chapter on {c.name}: {line}"
+            | none =>
+              if keepUnrecognized then
+                go { c with staticAbilities := c.staticAbilities.push (.printed line) } rest
+              else .error s!"unrecognized chapter on {c.name}: {line}"
           | none =>
             match parseStructural c line with
             | some c => go c rest
@@ -1556,12 +1633,13 @@ partial def parseRules (c : CardDef) (lines : List String) : Except String CardD
                 | some (ab, n) =>
                   let more := units.drop n
                   if more.length < units.length then go (applyParsed c ab) more
-                  else .error s!"unrecognized Oracle line on {c.name}: {line}"
+                  else unrecognized c line rest
                 | none =>
-                  .error s!"unrecognized Oracle line on {c.name}: {line}"
+                  unrecognized c line rest
   go c units
 
-def parseAdventure (lines : List String) : Except String AdventureFace :=
+def parseAdventure (lines : List String) (keepUnrecognized : Bool := false) :
+    Except String AdventureFace :=
   match lines with
   | [] => .error "empty Adventure"
   | nameLine :: rest =>
@@ -1586,7 +1664,7 @@ def parseAdventure (lines : List String) : Except String AdventureFace :=
           types
           subtypes := if subtypes.isEmpty then #["Adventure"] else subtypes
         }
-        match parseRules base rules with
+        match parseRules base rules keepUnrecognized with
         | .error e => .error e
         | .ok c =>
           .ok {
@@ -1596,10 +1674,15 @@ def parseAdventure (lines : List String) : Except String AdventureFace :=
             subtypes := if c.subtypes.any (· == "Adventure") then c.subtypes else c.subtypes.push "Adventure"
             spellEffect := c.spellEffect
             additionalCostSacrificeCreature := c.additionalCostSacrificeCreature
+            extraLines := c.staticAbilities.filterMap fun
+              | .printed t => some t
+              | _ => none
+            empowerJace := c.empowerJace
           }
 
 /-- Parse one face (no `//` back face) into a `CardDef`. -/
-def parseFace (lines : List String) : Except String CardDef :=
+def parseFace (lines : List String) (keepUnrecognized : Bool := false) :
+    Except String CardDef :=
   let lines := lines.filter (· != "")
   match lines with
   | [] => .error "empty card text"
@@ -1642,6 +1725,7 @@ def parseFace (lines : List String) : Except String CardDef :=
         }
         let (base, rest) := takeExtras base rest
         let (rules, adv) := splitAdventure rest
+        let (rules, prep) := splitPrepare rules
         -- CR 209.1 / 210.1: the loyalty and defense numbers sit in the lower
         -- right corner, so each may be labeled or bare, before the rules text
         -- or after it. CR 211.1 / 212.1: a vanguard's hand modifier is the
@@ -1658,15 +1742,25 @@ def parseFace (lines : List String) : Except String CardDef :=
         let base := { base with loyalty := loyalty, defense := defense
                                 handModifier := handModifier
                                 lifeModifier := lifeModifier }
-        match parseRules base rules with
+        match parseRules base rules keepUnrecognized with
         | .error e => .error e
         | .ok c =>
-          match adv with
-          | none => .ok c
-          | some advLines =>
-            match parseAdventure advLines with
-            | .error e => .error e
-            | .ok a => .ok { c with adventure := some a }
+          let withAdv : Except String CardDef :=
+            match adv with
+            | none => .ok c
+            | some advLines =>
+              match parseAdventure advLines keepUnrecognized with
+              | .error e => .error e
+              | .ok a => .ok { c with adventure := some a }
+          match withAdv with
+          | .error e => .error e
+          | .ok c =>
+            match prep with
+            | none => .ok c
+            | some prepLines =>
+              match parseAdventure prepLines keepUnrecognized with
+              | .error e => .error e
+              | .ok a => .ok { c with prepareFace := some a }
 
 /-- Parse the full printed text of one card.
 
@@ -1679,19 +1773,26 @@ A battle's defense number is `Defense: N` or the bare corner number, before
 or after the rules text (CR 210.1). A vanguard's hand modifier (lower left)
 and life modifier (lower right) are `+N`, `-N`, or `0`, labeled or bare,
 before or after the rules text (CR 211.1 / 212.1). A line that is exactly
-`//` starts the back face. An Adventure is introduced by `//ADV//`. -/
-@[irreducible, noinline] def parseOracleCard (text : String) : Except String CardDef :=
+`//` starts the back face. An Adventure is introduced by `//ADV//`.
+A prepare spell is introduced by `//PREP//`. `keepUnrecognized` stores a line
+the parser does not model instead of rejecting the card. -/
+@[irreducible, noinline] def parseOracleCard (text : String)
+    (keepUnrecognized : Bool := false) : Except String CardDef :=
   let lines := nonEmptyLines text
   let (front, back) := splitBackFace lines
-  match parseFace front with
+  match parseFace front keepUnrecognized with
   | .error e => .error e
   | .ok front =>
     match back with
     | none => .ok front
     | some backLines =>
-      match parseFace backLines with
+      match parseFace backLines keepUnrecognized with
       | .error e => .error e
       | .ok back => .ok { front with otherFace := some back }
+
+/-- Parse a card, keeping unrecognized rules lines as printed text. -/
+@[irreducible, noinline] def parseOracleCardKeeping (text : String) : Except String CardDef :=
+  parseOracleCard text (keepUnrecognized := true)
 
 /-- `parseOracleCard`, panicking with the line that was not recognized. -/
 @[irreducible, noinline] def parseOracleCard! (text : String) : CardDef :=

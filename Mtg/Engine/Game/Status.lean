@@ -35,6 +35,10 @@ structure Status where
   activationsThisTurn : Nat := 0
   /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
   plusOnePlusOne : Nat := 0
+  /-- Loyalty counters on a planeswalker (CR 122.1 / 306.5). -/
+  loyaltyCounters : Nat := 0
+  /-- This permanent is prepared (Reality Fracture). -/
+  prepared : Bool := false
   /-- Keywords granted until end of turn (cleared in cleanup, CR 514.3).
   Printed keywords stay on `GameObject.printed`; this field is merged in
   `GameObject.printedOrUntilEot`. -/
