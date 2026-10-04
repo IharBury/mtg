@@ -879,13 +879,6 @@ where
         else some (pushMana c t)
       | _ => none
 
-def normEq (cardName a b : String) : Bool :=
-  normalizeUnit cardName a == normalizeUnit cardName b
-
-def linesEq (cardName : String) (printed oracle : List String) : Bool :=
-  printed.length == oracle.length &&
-    (printed.zip oracle).all fun (p, o) => normEq cardName p o
-
 def skipLine (c : CardDef) (line : String) : Bool :=
   let n := normalizeUnit c.name line
   n.isEmpty || n == "enchant creature" ||
@@ -907,38 +900,106 @@ def matchArgLines (pats : List (List Pat)) (norms : List String) (vals : Array S
         | none => none
   go pats norms vals []
 
-/-- Parse `Nat` / `Int` / `String` holes in `proto` from `query` and rebuild `e`. -/
-def matchEffectText (cardName proto query : String) (e : Effect) : Option Effect :=
+/-- Name used when indexing printed abilities. `normalizeUnit` rewrites it to `this`,
+the same way a real card name is rewritten. -/
+private def indexName : String := "CARDNAME"
+
+/-- A chapter or one-line spell effect with its printed line, normal forms, and
+argument holes, prepared once for every card that does not name it. -/
+structure EffectProto where
+  line : NormLine
+  effect : Effect
+  args : Array SlotVal
+  unitPats : List Pat
+  structPats : List Pat
+
+def EffectProto.of (line : String) (e : Effect) : EffectProto :=
+  let line := NormLine.of line
   let args := collectEffect e
-  let tryNorm (norm : String → String → String) : Option (Array SlotVal) :=
-    matchPats (patsOf (norm cardName proto) args) (tokenize (norm cardName query)) args
-  match tryNorm normalizeUnit |>.orElse (fun _ => tryNorm normalizeStructural) with
-  | none => none
-  | some vals => some (if vals == args then e else refillEffect e vals)
+  { line, effect := e, args
+    unitPats := patsOf line.unit args
+    structPats := patsOf line.structural args }
+
+/-- One Oracle line normalized for the card being parsed. -/
+structure EffectQuery where
+  cardName : String
+  /-- `nameKeys cardName`. -/
+  keys : List String
+  unit : String
+  unitToks : List String
+  structToks : List String
+
+def EffectQuery.of (cardName text : String) : EffectQuery :=
+  let unit := normalizeUnit cardName text
+  { cardName, keys := nameKeys cardName, unit
+    unitToks := tokenize unit
+    structToks := tokenize (normalizeStructural cardName text) }
+
+/-- `normalizeUnit` of the prototype line equals `normalizeUnit` of the query. -/
+def EffectProto.sameText (p : EffectProto) (q : EffectQuery) : Bool :=
+  p.line.unitFor q.cardName q.keys == q.unit
+
+/-- Parse `Nat` / `Int` / `String` holes in the prototype line from the query
+and rebuild the effect. -/
+def EffectProto.matchText (p : EffectProto) (q : EffectQuery) : Option Effect :=
+  let named := mentionsNameKey q.keys p.line.base
+  let unitPats :=
+    if named then patsOf (normalizeUnit q.cardName p.line.raw) p.args else p.unitPats
+  let structPats (_ : Unit) :=
+    if named then patsOf (normalizeStructural q.cardName p.line.raw) p.args else p.structPats
+  let found := (matchPats unitPats q.unitToks p.args).orElse fun _ =>
+    matchPats (structPats ()) q.structToks p.args
+  found.map fun vals => if vals == p.args then p.effect else refillEffect p.effect vals
+
+@[irreducible, noinline] def chapterProtos : Thunk (Array EffectProto) :=
+  Thunk.mk fun _ => chapterEffects.get.map fun (stored, e) => EffectProto.of stored e
+
+/-- A spell effect as a chapter or mode candidate. `fixed` is its one printed
+line when that line never includes the card's name; `effectLines` is
+recomputed for the card otherwise. -/
+structure SpellProto where
+  effect : Effect
+  fixed : Option EffectProto
+  namesCard : Bool
+
+@[irreducible, noinline] def spellProtos : Thunk (Array SpellProto) :=
+  Thunk.mk fun _ => spellEffects.get.map fun e =>
+    let lines := effectLines indexName e
+    let namesCard := lines.any (·.contains indexName)
+    let fixed := match lines with
+      | [line] => if namesCard then none else some (EffectProto.of line e)
+      | _ => none
+    { effect := e, fixed, namesCard }
+
+/-- The one-line prototype of a spell effect on this card, if it has one line. -/
+def SpellProto.forCard (p : SpellProto) (cardName : String) : Option EffectProto :=
+  if p.namesCard then
+    match effectLines cardName p.effect with
+    | [line] => some (EffectProto.of line p.effect)
+    | _ => none
+  else p.fixed
+
+/-- Stored text of the first chapter whose printed line reads as `text`. -/
+def chapterStoredText (cardName text : String) : Option String :=
+  let q := EffectQuery.of cardName text
+  chapterProtos.get.find? (·.sameText q) |>.map (·.line.raw)
 
 def matchChapter (cardName text : String) : Option Effect :=
-  let fromTable := chapterEffects.get.find? fun (stored, _) => normEq cardName stored text
-  match fromTable with
-  | some (_, e) => some e
+  let q := EffectQuery.of cardName text
+  let firstSpell (f : EffectProto → Option Effect) : Option Effect :=
+    spellProtos.get.foldl (fun acc p =>
+      match acc with
+      | some _ => acc
+      | none => (p.forCard cardName).bind f) none
+  match chapterProtos.get.find? (·.sameText q) with
+  | some p => some p.effect
   | none =>
-    match spellEffects.get.find? fun e =>
-        linesEq cardName (effectLines cardName e) [text] with
+    match firstSpell fun p => if p.sameText q then some p.effect else none with
     | some e => some e
     | none =>
-      let fromPattern := chapterEffects.get.foldl (fun acc (stored, e) =>
-        match acc with
-        | some _ => acc
-        | none => matchEffectText cardName stored text e) none
-      match fromPattern with
+      match chapterProtos.get.findSome? (·.matchText q) with
       | some e => some e
-      | none =>
-        spellEffects.get.foldl (fun acc e =>
-          match acc with
-          | some _ => acc
-          | none =>
-            match effectLines cardName e with
-            | [line] => matchEffectText cardName line text e
-            | _ => none) none
+      | none => firstSpell (·.matchText q)
 
 def parseModes (cardName line : String) : Option ParsedAbility :=
   let raw := line.trimAscii.copy
@@ -966,10 +1027,6 @@ def parseModes (cardName line : String) : Option ParsedAbility :=
               if t.isEmpty then none else some t
             else none
           some (.modes effects.toArray oneOrBoth teamwork twoIf)
-
-/-- Name used when indexing printed abilities. `normalizeUnit` rewrites it to `this`,
-the same way a real card name is rewritten. -/
-private def indexName : String := "CARDNAME"
 
 /-- Lowercase, strip reminders and punctuation, keep the card name. Used to
 prefer a literal printed match over a phrase-equivalent one. -/
@@ -1605,10 +1662,7 @@ partial def parseRules (c : CardDef) (lines : List String)
         | none =>
           match parseChapterHeader line with
           | some (roman, text) =>
-            let printed :=
-              match chapterEffects.get.find? fun (stored, _) => normEq c.name stored text with
-              | some (stored, _) => stored
-              | none => text
+            let printed := (chapterStoredText c.name text).getD text
             match matchChapter c.name text with
             | some e =>
               let ch := SagaChapter.of roman printed e

@@ -316,17 +316,31 @@ def replaceWord (s old new : String) : String :=
           i := i + 1
       String.ofList acc.toList
 
-/-- Lowercase, drop reminders, and replace the card's name with `this`. -/
-def prepareLine (cardName : String) (s : String) : String :=
+/-- Lowercased name aliases that `prepareLine` rewrites to `this`. -/
+def nameKeys (cardName : String) : List String :=
+  nameAliases cardName |>.map lowerAscii
+
+/-- Lowercase and drop reminders, ability words, and the chaos symbol. This part
+of `prepareLine` does not depend on the card's name. -/
+def prepareBase (s : String) : String :=
   let s := dropReminderText s
   let s := stripChaosSymbol s
   let s := stripAbilityWord s
-  let s := (lowerAscii s).trimAscii.copy
-  let aliases := nameAliases cardName |>.map lowerAscii
-  let s :=
-    aliases.foldl (fun acc a =>
-      let acc := acc.replace s!"{a}'s" "this"
-      replaceWord acc a "this") s
+  (lowerAscii s).trimAscii.copy
+
+/-- Replace each name alias (and its possessive) with `this`. -/
+def replaceNameKeys (keys : List String) (s : String) : String :=
+  keys.foldl (fun acc a =>
+    let acc := applyReplacements acc [(s!"{a}'s", "this")]
+    replaceWord acc a "this") s
+
+/-- True when a name alias occurs in `base`. Otherwise `replaceNameKeys` leaves
+it unchanged. -/
+def mentionsNameKey (keys : List String) (base : String) : Bool :=
+  keys.any fun a => base.contains a
+
+/-- Fold `this creature`, `this card's`, and similar self-references to `this`. -/
+def foldSelfReferences (s : String) : String :=
   applyReplacements s [
     ("this creature's", "this"),
     ("this permanent's", "this"),
@@ -351,6 +365,10 @@ def prepareLine (cardName : String) (s : String) : String :=
     ("this enter ", "this enters "),
     ("this enter,", "this enters,")
   ]
+
+/-- Lowercase, drop reminders, and replace the card's name with `this`. -/
+def prepareLine (cardName : String) (s : String) : String :=
+  foldSelfReferences (replaceNameKeys (nameKeys cardName) (prepareBase s))
 
 /-- English number words that appear in Oracle (`two cards`, `three or more`). -/
 def replaceNumberWords (s : String) : String :=
@@ -437,20 +455,41 @@ def normalizePhrases (s : String) : String :=
 Argument parsing uses this so a subtype written out in full (`other Elf
 creatures`) stays a hole instead of being rewritten to one fixed plural. -/
 def normalizeStructural (cardName : String) (s : String) : String :=
-  let s := prepareLine cardName s
-  let s := replaceNumberWords s
-  let s := keepSignificant s
-  let s := collapseWs s
-  dropLeadingThis s
+  structuralTail (prepareLine cardName s)
+where
+  structuralTail (s : String) : String :=
+    dropLeadingThis (collapseWs (keepSignificant (replaceNumberWords s)))
 
 /-- Comparable form of one ability unit. -/
 def normalizeUnit (cardName : String) (s : String) : String :=
-  let s := prepareLine cardName s
-  let s := replaceNumberWords s
-  let s := normalizePhrases s
-  let s := keepSignificant s
-  let s := collapseWs s
-  dropLeadingThis s
+  unitTail (prepareLine cardName s)
+where
+  unitTail (s : String) : String :=
+    dropLeadingThis (collapseWs (keepSignificant (normalizePhrases (replaceNumberWords s))))
+
+/-- A stored Oracle line with the normal forms it has on a card whose name does
+not occur in it. They are computed once instead of for every card. -/
+structure NormLine where
+  raw : String
+  /-- `prepareBase raw`, where a name alias would be found. -/
+  base : String
+  unit : String
+  structural : String
+
+def NormLine.of (raw : String) : NormLine :=
+  let base := prepareBase raw
+  let prepared := foldSelfReferences base
+  { raw, base
+    unit := normalizeUnit.unitTail prepared
+    structural := normalizeStructural.structuralTail prepared }
+
+/-- `normalizeUnit cardName n.raw`, where `keys` is `nameKeys cardName`. -/
+def NormLine.unitFor (n : NormLine) (cardName : String) (keys : List String) : String :=
+  if mentionsNameKey keys n.base then normalizeUnit cardName n.raw else n.unit
+
+/-- `normalizeStructural cardName n.raw`, where `keys` is `nameKeys cardName`. -/
+def NormLine.structuralFor (n : NormLine) (cardName : String) (keys : List String) : String :=
+  if mentionsNameKey keys n.base then normalizeStructural cardName n.raw else n.structural
 
 /-- True when `line` is a Gatherer Adventure type line. -/
 def isAdventureTypeLine (s : String) : Bool :=
