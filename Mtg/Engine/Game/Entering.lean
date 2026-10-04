@@ -221,6 +221,24 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
   let o := g.object! o.id
   let g :=
+    if o.printed.entersPrepared then
+      match o.controller, o.printed.prepareFace with
+      | some p, some face =>
+        let (g, copy) := g.allocObject face.toCardDef o.owner .exile
+        let g := g.setObject { copy with playPermission := some {
+          player := p
+          turnEndsRemaining := 0
+          whileExiled := true
+          prepareSource := some o.id } }
+        let o := g.object! o.id
+        let g := g.setObject { o with status := { o.status with prepared := true } }
+        g.logMsg s!"{o.name} enters prepared. A copy of {face.name} is exiled"
+      | _, _ =>
+        let g := g.setObject { o with status := { o.status with prepared := true } }
+        g.logMsg s!"{o.name} enters prepared"
+    else g
+  let o := g.object! o.id
+  let g :=
     if o.printed.entersWithHopePerCreature then
       match o.controller with
       | some p =>

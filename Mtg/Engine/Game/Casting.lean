@@ -70,6 +70,16 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     else
       available.canPay (o.printed.manaCost.addGeneric n)
         (allowElfRestricted := allowElf)
+  match o.printed.additionalCostBeholdOrPay with
+  | some (quality, n) =>
+    let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)
+    let hasHand :=
+      (g.player p).hand.any (fun id =>
+        match g.findObject? id with
+        | some card => card.printed.hasSubtype quality
+        | none => false)
+    hasPerm || hasHand || payExtra n
+  | none =>
   match o.printed.additionalCostOrPayGeneric, o.printed.additionalCostDiscardOrPayGeneric with
   | some n, _ =>
     (g.permanentsOf p).any (fun perm =>

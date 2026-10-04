@@ -80,6 +80,14 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       face.additionalCostOrPayGeneric.isNone &&
       (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
     throw s!"{face.name} requires sacrificing an artifact or creature"
+  match card.playPermission.bind (·.prepareSource) with
+  | some src =>
+    match g.findObject? src with
+    | some perm =>
+      if !perm.isOnBattlefield || !perm.status.prepared then
+        throw s!"{perm.name} is not prepared"
+    | none => throw "The prepared permanent is gone"
+  | none => pure ()
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
@@ -96,6 +104,15 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let fromTop :=
     original.zone == .library p && (g.player p).library.back? == some id
   let (g, newId) := g.move id .stack (some p)
+  let g :=
+    match original.playPermission.bind (·.prepareSource) with
+    | some src =>
+      match g.findObject? src with
+      | some perm =>
+        (g.setObject { perm with status := { perm.status with prepared := false } }).logMsg
+          s!"{perm.name} is no longer prepared"
+      | none => g
+    | none => g
   let g := { g with castingFromTop := fromTop || g.castingFromTop }
   let g :=
     if asAdventure then

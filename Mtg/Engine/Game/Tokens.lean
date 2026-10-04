@@ -283,6 +283,85 @@ def vibraniumToken : CardDef := {
   isToken := true
 }
 
+/-- A 2/2 colorless Wizard Soldier creature token named Cadet (FRA). -/
+def cadetToken : CardDef :=
+  creatureToken "Cadet" #["Wizard", "Soldier"] 2 2 none
+
+/-- A red and green Heartwood artifact token. `{T}: Add {R} or {G}`. -/
+def heartwoodToken : CardDef := {
+  name := "Heartwood"
+  types := #[.artifact]
+  colorIndicator := some ((ColorSet.singleton .red).insert .green)
+  tapAddOneOf := #[ManaType.colored .red, ManaType.colored .green]
+  isToken := true
+}
+
+/-- A colorless Lotus artifact token. `{T}`, sacrifice: add three mana of any
+one color. -/
+def lotusToken : CardDef := {
+  name := "Lotus"
+  types := #[.artifact]
+  isToken := true
+  staticAbilities := #[.printed
+    "{T}, Sacrifice this token: Add three mana of any one color."]
+}
+
+/-- A blue Jace planeswalker token with loyalty 0, `[-1]: Surveil 1`, and
+`[-3]: Draw a card` (Reality Fracture). -/
+def jacePlaneswalkerToken : CardDef := {
+  name := "Jace"
+  types := #[.planeswalker]
+  subtypes := #["Jace"]
+  colorIndicator := some (ColorSet.singleton .blue)
+  loyalty := some 0
+  isToken := true
+  activatedAbilities := #[
+    { cost := { loyalty := some (.minus 1) }
+      effect := { resolution := .scry 1, phrase := "Surveil 1" } },
+    { cost := { loyalty := some (.minus 3) }
+      effect := { resolution := .draw 1, phrase := "Draw a card" } }]
+}
+
+/-- A 1/1 colorless Sculpture Treasure artifact creature token. -/
+def sculptureToken : CardDef :=
+  creatureToken "Sculpture" #["Sculpture", "Treasure"] 1 1 none
+    (types := #[.artifact, .creature])
+
+/-- A legendary 3/3 green Dog creature token named Mowu. -/
+def mowuToken : CardDef := {
+  name := "Mowu"
+  types := #[.creature]
+  subtypes := #["Dog"]
+  supertypes := #[.legendary]
+  power := some 3
+  toughness := some 3
+  colorIndicator := some (ColorSet.singleton .green)
+  isToken := true
+}
+
+/-- A 2/2 white Cat Soldier creature token named Ajani's Pridemate. -/
+def pridemateToken : CardDef :=
+  creatureToken "Ajani's Pridemate" #["Cat", "Soldier"] 2 2 (some .white)
+
+/-- Empower Jace `n` (Reality Fracture). If you don't control a Jace
+planeswalker token, create one, then put `n` loyalty counters on a Jace
+token you control. -/
+def empowerJace (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+  let isJace (o : GameObject) : Bool :=
+    o.printed.isPlaneswalker && o.printed.hasSubtype "Jace" && o.printed.isToken
+  let existing := (g.permanentsOf controller).filter isJace
+  let g :=
+    if existing.isEmpty then
+      let (g, _) := g.createToken controller jacePlaneswalkerToken
+      g
+    else g
+  match ((g.permanentsOf controller).filter isJace)[0]? with
+  | none => g.logMsg "Empower Jace creates no token"
+  | some o =>
+    let g := g.setObject { o with status :=
+      { o.status with loyaltyCounters := o.status.loyaltyCounters + n } }
+    g.logMsg s!"Empower Jace {n}"
+
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=
   match k with
@@ -309,6 +388,13 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .insect11green => insect11greenToken
   | .vibranium => vibraniumToken
   | .moloid => moloidToken
+  | .cadet => cadetToken
+  | .heartwood => heartwoodToken
+  | .lotus => lotusToken
+  | .jace => jacePlaneswalkerToken
+  | .sculpture => sculptureToken
+  | .mowu => mowuToken
+  | .pridemate => pridemateToken
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)

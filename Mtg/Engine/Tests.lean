@@ -21,6 +21,7 @@ import Mtg.Engine.Tests.Effects
 import Mtg.Engine.Tests.Leaving
 import Mtg.Engine.Tests.Marvel
 import Mtg.Engine.Tests.CatalogSmoke
+import Mtg.Engine.Tests.RealityFracture
 
 /-!
 # Compile-time smoke tests for the engine.

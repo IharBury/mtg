@@ -90,6 +90,10 @@ def resolveTop (g : Game) : Game :=
             (giftPromised := obj.giftPromisedTo.isSome)
             (chosenX := obj.chosenX.getD 0)
           | none => g
+        let g :=
+          match obj.printed.empowerJace with
+          | some n => g.empowerJace entry.controller n
+          | none => g
         if obj.isAdventureSpell then
           g.resolveAdventureSpell entry (g.object! obj.id)
         else if obj.printed.isAura then

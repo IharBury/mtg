@@ -44,6 +44,8 @@ structure Keywords where
   shadow : Bool := false
   /-- Changeling (CR 702.72): this object has all creature types. -/
   changeling : Bool := false
+  /-- Convoke (CR 702.51): tap creatures to help pay this spell. -/
+  convoke : Bool := false
 deriving BEq, Repr, Inhabited
 
 namespace Keywords
@@ -79,7 +81,8 @@ def fields : List Field := [
   ⟨(·.prowess), fun k b => { k with prowess := b }, "prowess"⟩,
   ⟨(·.ascend), fun k b => { k with ascend := b }, "ascend"⟩,
   ⟨(·.shadow), fun k b => { k with shadow := b }, "shadow"⟩,
-  ⟨(·.changeling), fun k b => { k with changeling := b }, "changeling"⟩
+  ⟨(·.changeling), fun k b => { k with changeling := b }, "changeling"⟩,
+  ⟨(·.convoke), fun k b => { k with convoke := b }, "convoke"⟩
 ]
 
 /-- Union of two keyword sets (printed or granted). -/
@@ -136,6 +139,7 @@ def prowess : Keywords := { Keywords.none with prowess := true }
 def ascend : Keywords := { Keywords.none with ascend := true }
 def shadow : Keywords := { Keywords.none with shadow := true }
 def changeling : Keywords := { Keywords.none with changeling := true }
+def convoke : Keywords := { Keywords.none with convoke := true }
 end Keyword
 
 end Mtg.Engine

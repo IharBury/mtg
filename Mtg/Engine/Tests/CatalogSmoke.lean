@@ -15,7 +15,9 @@ open Mtg.Engine.Catalog
 #guard
   let names := supportedCatalogCards.map (·.name)
   mshCards.size == 286 &&
+    realityFractureCards.size == 285 &&
     ["Brave Brawler", "Jennifer Walters", "The Sensational She-Hulk",
-      "Stature, Size Shifter"].all names.contains
+      "Stature, Size Shifter", "Academic Ascent", "Blossom-Blessed Angel",
+      "Jace's Machinations"].all names.contains
 
 end Mtg.Engine.Tests

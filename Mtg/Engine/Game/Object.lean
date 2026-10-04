@@ -37,6 +37,8 @@ structure PlayPermission where
   ignoreTiming : Bool := false
   /-- The card is exiled face down (Flameshape, Riddles in the Dark). -/
   faceDown : Bool := false
+  /-- Casting this exiled copy unprepares `prepareSource`. -/
+  prepareSource : Option ObjectId := none
   /-- Cast by paying life equal to mana value instead of the mana cost. -/
   payLifeEqualManaValue : Bool := false
 deriving Repr, Inhabited, BEq

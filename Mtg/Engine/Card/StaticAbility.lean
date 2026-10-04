@@ -249,6 +249,8 @@ inductive StaticAbility where
   | sneak (cost : ManaCost)
   /-- Boast — exile black cards from your graveyard and copy them. -/
   | boast
+  /-- Rules text kept when the line is not a modeled static ability. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -408,6 +410,8 @@ inductive StaticShape where
   | getsAndAllTypesIfGyCreatureCards (min : Nat) (power toughness : Int)
   | sneak (cost : ManaCost)
   | boast
+  /-- Rules text kept when the line is not a modeled static ability. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -602,6 +606,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .getsAndAllTypesIfGyCreatureCards _ _ _ => {}
   | .sneak _ => {}
   | .boast => {}
+  | .printed _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -724,6 +729,7 @@ def shape : StaticAbility → StaticShape
     .getsAndAllTypesIfGyCreatureCards min p t
   | .sneak cost => .sneak cost
   | .boast => .boast
+  | .printed text => .printed text
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -957,6 +963,7 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Sneak {cost}"
   | .boast =>
     "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
+  | .printed text => text
 
 instance : ToString StaticAbility where
   toString := toNotation
