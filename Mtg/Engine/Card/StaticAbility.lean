@@ -99,8 +99,7 @@ inductive StaticAbility where
   | equippedCreatureHasKeywordsAndCantBeBlocked (k : Keywords)
   /-- Equip abilities that target this cost `{n}` less. -/
   | equipAbilitiesTargetingThisCostLess (n : Nat)
-  /-- As long as you have an enduring story, you may pay `{0}` rather than pay
-  the equip cost of the first Equip ability you activate each turn. -/
+  /-- As long as you have an enduring story, the first equip each turn is `{0}`. -/
   | firstEquipFreeIfEnduringStory
   /-- Creatures you control of the chosen type get +P/+T. -/
   | chosenTypeCreaturesGet (power toughness : Int)
@@ -161,6 +160,8 @@ inductive StaticAbility where
   | powerEqualLegendaryCreaturesYouControl
   /-- Spells of this card type you cast cost `{n}` less (e.g. artifact spells). -/
   | typeSpellsCostLess (ty : CardType) (n : Nat)
+  /-- Spells of this supertype you cast cost `{n}` less (CR 205.4a). -/
+  | supertypeSpellsCostLess (s : Supertype) (n : Nat)
   /-- Improvise (CR 702.126). -/
   | improvise
   /-- Noncreature spells you cast have improvise. -/
@@ -248,21 +249,16 @@ inductive StaticAbility where
   | sneak (cost : ManaCost)
   /-- Boast — exile black cards from your graveyard and copy them. -/
   | boast
+  /-- Rules text kept when the line is not a modeled static ability. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
 
-/-- English plural used in Oracle-style reminders (`Orc` → `Orcs`), including
-the irregular plurals the catalog prints. -/
+/-- English plural used in Oracle-style reminders (`Orc` → `Orcs`).
+Known subtypes use the CR 205.3 spelling, including irregular plurals. -/
 def pluralSubtype (s : String) : String :=
-  match s with
-  | "Army" => "Armies"
-  | "Elf" => "Elves"
-  | "Wolf" => "Wolves"
-  | "Dwarf" => "Dwarves"
-  | "Hero" => "Heroes"
-  | "Merfolk" => "Merfolk"
-  | s => if s.endsWith "s" then s else s ++ "s"
+  pluralizeName s
 
 #guard pluralSubtype "Orc" == "Orcs"
 #guard pluralSubtype "Wolf" == "Wolves"
@@ -344,7 +340,7 @@ inductive StaticShape where
   | equippedKeywordsAndUnblockable (k : Keywords)
   /-- Equip abilities targeting this cost less. -/
   | equipTargetingThisCostLess (n : Nat)
-  /-- Alternative cost of `{0}` for the first Equip ability each turn. -/
+  /-- First equip each turn is free if enduring story. -/
   | firstEquipFreeIfEnduringStory
   /-- Chosen-type team pump. -/
   | chosenTypePump (power toughness : Int)
@@ -375,6 +371,7 @@ inductive StaticShape where
   | powerEqualSubtype (subtype : String)
   | powerEqualLegendaryCreatures
   | typeSpellsCostLess (ty : CardType) (n : Nat)
+  | supertypeSpellsCostLess (s : Supertype) (n : Nat)
   | improvise
   | noncreatureSpellsHaveImprovise
   | extort
@@ -413,6 +410,8 @@ inductive StaticShape where
   | getsAndAllTypesIfGyCreatureCards (min : Nat) (power toughness : Int)
   | sneak (cost : ManaCost)
   | boast
+  /-- Rules text kept when the line is not a modeled static ability. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -469,7 +468,7 @@ structure StaticMeta where
   equippedCantBeBlocked : Bool := false
   /-- Equip abilities targeting this cost this much less. -/
   equipTargetingThisCostLess : Option Nat := none
-  /-- Alternative cost of `{0}` for the first Equip ability each turn. -/
+  /-- First equip is free if enduring story. -/
   firstEquipFreeIfEnduringStory : Bool := false
   /-- You have no maximum hand size. -/
   noMaximumHandSize : Bool := false
@@ -566,6 +565,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .powerEqualSubtype subtype => { powerEqualSubtype := some subtype }
   | .powerEqualLegendaryCreatures => { powerEqualLegendaryCreatures := true }
   | .typeSpellsCostLess _ _ => {}
+  | .supertypeSpellsCostLess _ _ => {}
   | .improvise => {}
   | .noncreatureSpellsHaveImprovise => {}
   | .extort => {}
@@ -606,6 +606,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .getsAndAllTypesIfGyCreatureCards _ _ _ => {}
   | .sneak _ => {}
   | .boast => {}
+  | .printed _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -686,6 +687,7 @@ def shape : StaticAbility → StaticShape
   | .powerEqualSubtypeYouControl subtype => .powerEqualSubtype subtype
   | .powerEqualLegendaryCreaturesYouControl => .powerEqualLegendaryCreatures
   | .typeSpellsCostLess ty n => .typeSpellsCostLess ty n
+  | .supertypeSpellsCostLess s n => .supertypeSpellsCostLess s n
   | .improvise => .improvise
   | .noncreatureSpellsHaveImprovise => .noncreatureSpellsHaveImprovise
   | .extort => .extort
@@ -727,6 +729,7 @@ def shape : StaticAbility → StaticShape
     .getsAndAllTypesIfGyCreatureCards min p t
   | .sneak cost => .sneak cost
   | .boast => .boast
+  | .printed text => .printed text
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -878,6 +881,8 @@ def toNotation (ab : StaticAbility) : String :=
     "This creature's power is equal to the number of legendary creatures you control."
   | .typeSpellsCostLess ty n =>
     s!"{ty} spells you cast cost \{{n}} less to cast."
+  | .supertypeSpellsCostLess s n =>
+    s!"{s} spells you cast cost \{{n}} less to cast."
   | .improvise =>
     "Improvise"
   | .noncreatureSpellsHaveImprovise =>
@@ -958,6 +963,7 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Sneak {cost}"
   | .boast =>
     "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
+  | .printed text => text
 
 instance : ToString StaticAbility where
   toString := toNotation

@@ -8,16 +8,6 @@ phases are further broken down into steps.
 
 namespace Mtg.Engine
 
-/-- One of the five phases of a turn (CR 500.1). An effect can add one
-after the current phase (CR 500.7). -/
-inductive Phase where
-  | beginning
-  | precombatMain
-  | combat
-  | postcombatMain
-  | ending
-deriving DecidableEq, Repr, Inhabited, BEq
-
 /-- A step or a main phase (main phases have no steps; CR 505.2). -/
 inductive Step where
   | untap

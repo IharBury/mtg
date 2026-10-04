@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 
 /-!
@@ -30,7 +29,7 @@ open Mtg.Engine.Catalog
 #guard mentions wayfarersBauble.summary "Search your library"
 #guard mentions attercop.summary "reach"
 #guard mentions attercop.summary "deathtouch"
-#guard mentions attercop.summary "Landfall"
+#guard mentions attercop.summary "a land you control enters"
 #guard attercop.keywords.reach
 #guard attercop.keywords.deathtouch
 #guard attercop.triggeredAbilities.size == 1
@@ -56,9 +55,9 @@ open Mtg.Engine.Catalog
 #guard mentions giftOfStrands.summary "Enchanted creature"
 #guard giftOfStrands.staticAbilities.size == 1
 #guard giftOfStrands.triggeredAbilities.size == 1
-#guard mentions raggedShortSpearCard.summary "Equipped creature"
-#guard mentions raggedShortSpearCard.summary "Equip"
-#guard raggedShortSpearCard.isEquipment
+#guard mentions raggedShortSpear.summary "Equipped creature"
+#guard mentions raggedShortSpear.summary "Equip"
+#guard raggedShortSpear.isEquipment
 #guard hawkeyeSBow.isEquipment
 #guard hawkeyeSBow.staticAbilities == #[.equippedCreatureGetsAndHas 1 0 Keyword.reach]
 #guard hawkeyeSBow.triggeredAbilities == #[.onWatch Effect.watchEquippedTappedDamage]
@@ -69,27 +68,27 @@ open Mtg.Engine.Catalog
 #guard mentions hawkeyeSBow.summary "Equipped creature"
 #guard mentions hawkeyeSBow.summary "becomes tapped"
 #guard mentions hawkeyeSBow.summary "Equip"
-#guard raggedShortSpearCard.staticAbilities.size == 1
-#guard raggedShortSpearCard.triggeredAbilities.size == 1
-#guard raggedShortSpearCard.activatedAbilities.size == 1
-#guard mentions crudeBentBladeCard.summary "Equipped creature"
-#guard mentions crudeBentBladeCard.summary "Equip"
-#guard mentions crudeBentBladeCard.summary "target opponent"
-#guard crudeBentBladeCard.isEquipment
-#guard crudeBentBladeCard.staticAbilities.size == 1
-#guard crudeBentBladeCard.triggeredAbilities.size == 1
-#guard crudeBentBladeCard.activatedAbilities.size == 1
-#guard crudeBentBladeCard.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
+#guard raggedShortSpear.staticAbilities.size == 1
+#guard raggedShortSpear.triggeredAbilities.size == 1
+#guard raggedShortSpear.activatedAbilities.size == 1
+#guard mentions crudeBentBlade.summary "Equipped creature"
+#guard mentions crudeBentBlade.summary "Equip"
+#guard mentions crudeBentBlade.summary "target opponent"
+#guard crudeBentBlade.isEquipment
+#guard crudeBentBlade.staticAbilities.size == 1
+#guard crudeBentBlade.triggeredAbilities.size == 1
+#guard crudeBentBlade.activatedAbilities.size == 1
+#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
 #guard mentions galadhrimGuide.summary "scry 2"
 #guard galadhrimGuide.triggeredAbilities.size == 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
 #guard mentions elvishVisionary.summary "draw a card"
 #guard elvishVisionary.triggeredAbilities.size == 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
-#guard mentions quarrelCard.summary "deals damage equal to its power"
-#guard quarrelCard.isInstant
-#guard quarrelCard.requiresTarget
-#guard quarrelCard.spellEffect == some (Effect.creatureYouControlDealsPowerToOppCreature)
+#guard mentions quarrel.summary "deals damage equal to its power"
+#guard quarrel.isInstant
+#guard quarrel.requiresTarget
+#guard quarrel.spellEffect == some (Effect.creatureYouControlDealsPowerToOppCreature)
 #guard mentions smiteTheDeathless.summary "loses indestructible"
 #guard mentions smiteTheDeathless.summary "exile it instead"
 #guard smiteTheDeathless.isInstant
@@ -113,19 +112,19 @@ open Mtg.Engine.Catalog
 #guard celebornTheWise.triggeredAbilities.size == 2
 #guard celebornTheWise.triggeredAbilities ==
   #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
-#guard mentions galionElvenkingsButlerCard.summary "base power and toughness"
-#guard galionElvenkingsButlerCard.triggeredAbilities.size == 1
-#guard galionElvenkingsButlerCard.triggeredAbilities == #[.onAttackSetOtherBasePT]
+#guard mentions galionElvenkingsButler.summary "base power and toughness"
+#guard galionElvenkingsButler.triggeredAbilities.size == 1
+#guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
 #guard mentions lothlorienLookout.summary "scry 1"
 #guard lothlorienLookout.triggeredAbilities.size == 1
 #guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
-#guard mentions woodlandWeavemasterCard.summary "vigilance"
-#guard mentions woodlandWeavemasterCard.summary "another Elf"
-#guard mentions woodlandWeavemasterCard.summary "any one color"
-#guard woodlandWeavemasterCard.keywords.vigilance
-#guard woodlandWeavemasterCard.triggeredAbilities.size == 1
-#guard woodlandWeavemasterCard.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
-#guard woodlandWeavemasterCard.tapAddAnyColorEqualToPower
+#guard mentions woodlandWeavemaster.summary "vigilance"
+#guard mentions woodlandWeavemaster.summary "another Elf"
+#guard mentions woodlandWeavemaster.summary "any one color"
+#guard woodlandWeavemaster.keywords.vigilance
+#guard woodlandWeavemaster.triggeredAbilities.size == 1
+#guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
+#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
 #guard mentions oliphaunt.summary "trample"
 #guard mentions oliphaunt.summary "+2/+0"
 #guard mentions oliphaunt.summary "Mountaincycling"
@@ -134,17 +133,17 @@ open Mtg.Engine.Catalog
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
 #guard oliphaunt.activatedAbilities.size == 1
 #guard oliphaunt.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Mountain"
-#guard mentions wargTacticsCard.summary "Choose one"
-#guard mentions wargTacticsCard.summary "hexproof"
-#guard wargTacticsCard.isModal
-#guard wargTacticsCard.modes.size == 2
+#guard mentions wargTactics.summary "Choose one"
+#guard mentions wargTactics.summary "hexproof"
+#guard wargTactics.isModal
+#guard wargTactics.modes.size == 2
 #guard mentions goblinCratermaker.summary "Choose one"
 #guard mentions goblinCratermaker.summary "colorless nonland"
 #guard goblinCratermaker.activatedAbilities.size == 1
-#guard mentions beornsHospitalityCard.summary "Landfall"
-#guard mentions beornsHospitalityCard.summary "Bear creature"
-#guard beornsHospitalityCard.triggeredAbilities.size == 1
-#guard beornsHospitalityCard.activatedAbilities.size == 1
+#guard mentions beornsHospitality.summary "a land you control enters"
+#guard mentions beornsHospitality.summary "Bear creature"
+#guard beornsHospitality.triggeredAbilities.size == 1
+#guard beornsHospitality.activatedAbilities.size == 1
 #guard mentions mirkwoodPathmaker.summary "lands you control"
 #guard mentions mirkwoodPathmaker.summary "*/*"
 #guard mirkwoodPathmaker.staticAbilities.size == 1
@@ -155,38 +154,38 @@ open Mtg.Engine.Catalog
 #guard ologHaiCrusher.keywords.trample
 #guard ologHaiCrusher.staticAbilities.size == 1
 #guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
-#guard mentions gandalfSparkStarterCard.summary "reach"
-#guard mentions gandalfSparkStarterCard.summary "divided as you choose"
-#guard gandalfSparkStarterCard.keywords.reach
-#guard gandalfSparkStarterCard.triggeredAbilities.size == 1
-#guard gandalfSparkStarterCard.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
+#guard mentions gandalfSparkStarter.summary "reach"
+#guard mentions gandalfSparkStarter.summary "divided as you choose"
+#guard gandalfSparkStarter.keywords.reach
+#guard gandalfSparkStarter.triggeredAbilities.size == 1
+#guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
 #guard mentions goblinFireleaper.summary "+1/+0"
 #guard mentions goblinFireleaper.summary "dies"
 #guard goblinFireleaper.activatedAbilities.size == 1
 #guard goblinFireleaper.triggeredAbilities.size == 1
 #guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
-#guard mentions desolationProwlerCard.summary "Pay 2 life"
-#guard mentions desolationProwlerCard.summary "+2/+2"
-#guard desolationProwlerCard.activatedAbilities.size == 1
-#guard desolationProwlerCard.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
-#guard desolationProwlerCard.activatedAbilities[0]!.cost.payLife == 2
-#guard desolationProwlerCard.activatedAbilities[0]!.onceEachTurn
-#guard mentions raveningWargCard.summary "deathtouch"
-#guard mentions raveningWargCard.summary "Ferocious"
-#guard mentions raveningWargCard.summary "power 4 or greater"
-#guard raveningWargCard.keywords.deathtouch
-#guard raveningWargCard.triggeredAbilities.size == 1
-#guard raveningWargCard.triggeredAbilities == #[.onAttackFerociousGainLife 2]
-#guard mentions gollumSilentSlinkerCard.summary "menace"
-#guard !mentions gollumSilentSlinkerCard.summary "can't be blocked except"
-#guard gollumSilentSlinkerCard.keywords.menace
-#guard gollumSilentSlinkerCard.power == some 4
-#guard gollumSilentSlinkerCard.toughness == some 3
-#guard mentions bilbosDeadlySliceCard.summary "Destroy target creature"
-#guard bilbosDeadlySliceCard.isInstant
-#guard bilbosDeadlySliceCard.spellEffect == some (Effect.destroyCreature)
-#guard bilbosDeadlySliceCard.requiresTarget
-#guard bilbosDeadlySliceCard.hasCastKind .destroyCreature
+#guard mentions desolationProwler.summary "Pay 2 life"
+#guard mentions desolationProwler.summary "+2/+2"
+#guard desolationProwler.activatedAbilities.size == 1
+#guard desolationProwler.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
+#guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
+#guard desolationProwler.activatedAbilities[0]!.onceEachTurn
+#guard mentions raveningWarg.summary "deathtouch"
+#guard mentions raveningWarg.summary "while you control a creature with power 4 or greater"
+#guard mentions raveningWarg.summary "power 4 or greater"
+#guard raveningWarg.keywords.deathtouch
+#guard raveningWarg.triggeredAbilities.size == 1
+#guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
+#guard mentions gollumSilentSlinker.summary "menace"
+#guard !mentions gollumSilentSlinker.summary "can't be blocked except"
+#guard gollumSilentSlinker.keywords.menace
+#guard gollumSilentSlinker.power == some 4
+#guard gollumSilentSlinker.toughness == some 3
+#guard mentions bilbosDeadlySlice.summary "destroy target creature"
+#guard bilbosDeadlySlice.isInstant
+#guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
+#guard bilbosDeadlySlice.requiresTarget
+#guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard mentions infernoTitan.summary "+1/+0"
 #guard mentions infernoTitan.summary "divided as you choose"
 #guard infernoTitan.activatedAbilities.size == 1
@@ -196,12 +195,12 @@ open Mtg.Engine.Catalog
 #guard mentions guttersnipe.summary "each opponent"
 #guard guttersnipe.triggeredAbilities.size == 1
 #guard guttersnipe.triggeredAbilities == #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
-#guard mentions guardianOfTheHallsCard.summary "trample"
-#guard mentions guardianOfTheHallsCard.summary "+1/+1"
-#guard guardianOfTheHallsCard.keywords.trample
-#guard guardianOfTheHallsCard.activatedAbilities.size == 1
-#guard guardianOfTheHallsCard.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
-#guard guardianOfTheHallsCard.activatedAbilities[0]!.cost.mana ==
+#guard mentions guardianOfTheHalls.summary "trample"
+#guard mentions guardianOfTheHalls.summary "+1/+1"
+#guard guardianOfTheHalls.keywords.trample
+#guard guardianOfTheHalls.activatedAbilities.size == 1
+#guard guardianOfTheHalls.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
+#guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
   ManaCost.ofGenericAndColors 5 [.green, .green]
 #guard mentions improvisedClub.summary "additional cost"
 #guard mentions improvisedClub.summary "4 damage"
@@ -214,10 +213,10 @@ open Mtg.Engine.Catalog
 #guard fireOfOrthanc.isSorcery
 #guard fireOfOrthanc.spellEffect == some (Effect.destroyArtifactOrLandNonflyersCantBlock)
 #guard fireOfOrthanc.requiresTarget
-#guard mentions smaugTheGreatCalamityCard.summary "flying"
-#guard mentions smaugTheGreatCalamityCard.summary "Spew Flame"
-#guard smaugTheGreatCalamityCard.keywords.flying
-#guard smaugTheGreatCalamityCard.hasAdventure
+#guard mentions smaugTheGreatCalamity.summary "flying"
+#guard mentions smaugTheGreatCalamity.summary "Spew Flame"
+#guard smaugTheGreatCalamity.keywords.flying
+#guard smaugTheGreatCalamity.hasAdventure
 #guard mentions beornReluctantHost.summary "trample"
 #guard mentions beornReluctantHost.summary "Till and Tend"
 #guard mentions beornReluctantHost.summary "additional land"
@@ -440,7 +439,8 @@ open Mtg.Engine.Catalog
     (keywords := Keyword.menace)
   mentions c.summary "menace" &&
     !mentions c.summary "can't be blocked except" &&
-    CardDef.isKeywordRestatement c.keywords c.oracleText
+    CardDef.isKeywordRestatement c.keywords
+      "Menace (This creature can't be blocked except by two or more creatures.)"
 
 #guard
   let c := creature "Silent Oliphaunt" ManaCost.empty #[] 6 4

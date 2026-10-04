@@ -152,12 +152,6 @@ structure Game where
   pendingDiscardsLeft : Nat := 0
   /-- Ward payments still to announce after the current one (CR 702.21). -/
   wardQueue : Array WardObligation := #[]
-  /-- Extra turns inserted after the current turn, most recently created
-  first (CR 500.7). -/
-  extraTurns : Array PlayerId := #[]
-  /-- Active player of the turn after which `extraTurns` were inserted.
-  After that queue drains, seat order continues after this player. -/
-  extraTurnAfter : Option PlayerId := none
 deriving Repr, Inhabited
 
 namespace Game
@@ -169,16 +163,6 @@ def over (g : Game) : Bool := g.result.isSome
 
 def player (g : Game) (p : PlayerId) : Player :=
   g.players[p.idx]!
-
-/-- The chosen player takes an extra turn after this one (CR 500.7).
-A later extra turn is taken before an earlier one. Gift an extra turn
-uses this (CR 702.174g). -/
-def scheduleExtraTurn (g : Game) (p : PlayerId) : Game :=
-  let anchor := g.extraTurnAfter.getD g.activePlayer
-  { g with
-      extraTurns := #[p] ++ g.extraTurns
-      extraTurnAfter := some anchor
-  }.logMsg s!"{(g.player p).name} takes an extra turn after this one"
 
 def setPlayer (g : Game) (pl : Player) : Game :=
   { g with players := g.players.set! pl.id.idx pl }

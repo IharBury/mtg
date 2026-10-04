@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -24,7 +23,7 @@ open Mtg.Engine.Catalog
 def galionAndElves : Game :=
   addPermanent (addPermanent started galionElvenkingsButler ⟨0⟩ ⟨0⟩) llanowarElves ⟨0⟩ ⟨0⟩
 
-#guard galionElvenkingsButlerCard.triggeredAbilities == #[.onAttackSetOtherBasePT]
+#guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
 #guard galionAndElves.power (namedPermanent galionAndElves "Galion, Elvenking's Butler") == 4
 #guard galionAndElves.power (namedPermanent galionAndElves "Llanowar Elves") == 1
 
@@ -507,56 +506,5 @@ def lookoutEntered : Game :=
 #guard lookoutEntered.battlefield.any (fun o => o.name == "Lothlórien Lookout")
 #guard !lookoutEntered.log.any (fun s => mentions s "scries")
 #guard !lookoutEntered.log.any (fun s => mentions s "enters trigger")
-
-/- Eagle of the Great Shelf: +1/+1 per other creature you control. -/
-
-#guard eagleOfTheGreatShelfCard.keywords.flying
-#guard eagleOfTheGreatShelfCard.triggeredAbilities ==
-  #[.onAttackPumpForEachOtherCreature]
-#guard eagleOfTheGreatShelfCard.power == some 2
-#guard eagleOfTheGreatShelfCard.toughness == some 5
-
-def eagleAndCompany : Game :=
-  addPermanent
-    (addPermanent
-      (addPermanent started eagleOfTheGreatShelfCard ⟨0⟩ ⟨0⟩)
-      llanowarElves ⟨0⟩ ⟨0⟩)
-    grizzlyBears ⟨1⟩ ⟨1⟩
-
-#guard eagleAndCompany.power (namedPermanent eagleAndCompany "Eagle of the Great Shelf") == 2
-#guard eagleAndCompany.toughness (namedPermanent eagleAndCompany "Eagle of the Great Shelf") == 5
-
-def eagleAttackDeclared : Game :=
-  let g := passBoth (skipTo eagleAndCompany .beginningOfCombat 80)
-  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Eagle of the Great Shelf").id])
-
-#guard eagleAttackDeclared.stack.size == 1
-#guard (eagleAttackDeclared.object! eagleAttackDeclared.stack.back!.objectId).triggeredAbility ==
-  some .onAttackPumpForEachOtherCreature
-#guard (namedPermanent eagleAttackDeclared "Eagle of the Great Shelf").status.attacking
-
-def eagleAttackResolved : Game := passBoth eagleAttackDeclared
-
-#guard eagleAttackResolved.stack.isEmpty
-#guard eagleAttackResolved.power (namedPermanent eagleAttackResolved "Eagle of the Great Shelf") == 3
-#guard eagleAttackResolved.toughness (namedPermanent eagleAttackResolved "Eagle of the Great Shelf") == 6
-#guard eagleAttackResolved.log.any (fun s =>
-  mentions s "Eagle of the Great Shelf gets +1/+1 until end of turn")
-
-def eagleWithTwoOthers : Game :=
-  addPermanent eagleAndCompany grizzlyBears ⟨0⟩ ⟨0⟩
-
-def eagleTwoOthersResolved : Game :=
-  let g := passBoth (skipTo eagleWithTwoOthers .beginningOfCombat 80)
-  let g := mustApply g ⟨0⟩
-    (.declareAttackers #[(namedPermanent g "Eagle of the Great Shelf").id])
-  passBoth g
-
-#guard eagleTwoOthersResolved.power
-  (namedPermanent eagleTwoOthersResolved "Eagle of the Great Shelf") == 4
-#guard eagleTwoOthersResolved.toughness
-  (namedPermanent eagleTwoOthersResolved "Eagle of the Great Shelf") == 7
-#guard eagleTwoOthersResolved.log.any (fun s =>
-  mentions s "Eagle of the Great Shelf gets +2/+2 until end of turn")
 
 end Mtg.Engine.Tests

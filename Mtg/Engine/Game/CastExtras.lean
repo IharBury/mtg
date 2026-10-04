@@ -83,29 +83,10 @@ def resolveTargetedTempt (g : Game) (p : PlayerId) (kind : EffectTargetKind)
     g.withLegalKindTarget p kind targets (fun g _ => g.temptWithTheRing p)
       (missing := some "The spell doesn't resolve. The Ring won't tempt you.")
 
-/-- Give `gift` to `to` (CR 702.174d–i). An instant or sorcery does this
-when it begins resolving, before its other effects (CR 702.174j). A
-permanent does this as it enters (CR 702.174b). -/
-def givePromisedGift (g : Game) (to : PlayerId) (gift : Gift) : Game :=
-  let who := (g.player to).name
-  match gift with
-  | .food =>
-    let (g, _) := g.createToken to foodToken
-    g.logMsg s!"{who} is given a Food (gift)"
-  | .card =>
-    let g := g.draw to 1
-    g.logMsg s!"{who} is given a card (gift)"
-  | .tappedFish =>
-    let (g, _) := g.createToken to fishToken (tapped := true)
-    g.logMsg s!"{who} is given a tapped Fish (gift)"
-  | .extraTurn =>
-    g.scheduleExtraTurn to
-  | .treasure =>
-    let (g, _) := g.createToken to treasureToken
-    g.logMsg s!"{who} is given a Treasure (gift)"
-  | .octopus =>
-    let (g, _) := g.createToken to octopusToken
-    g.logMsg s!"{who} is given an Octopus (gift)"
+/-- Give the promised gift (a Treasure) to `to` before other effects. -/
+def givePromisedGift (g : Game) (to : PlayerId) : Game :=
+  let (g, _) := g.createToken to treasureToken
+  g.logMsg s!"{(g.player to).name} is given a Treasure (gift)"
 
 /-- Copy a spell on the stack. The copy is also kicked / has the same
 promised gift. It is not cast. -/
@@ -235,9 +216,9 @@ def applyGiftToProposed (g : Game) (to : Option PlayerId) : Except String Game :
 def afterOptionalAdditionalCost (g : Game) (p : PlayerId) : Game :=
   match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
   | some prop, some spell =>
-    if spell.printed.gift.isSome && !prop.giftAnnounced then
+    if spell.printed.giftTreasure && !prop.giftAnnounced then
       let g := { g with pending := .chooseGift p }
-      g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
+      g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.185)"
     else if spell.printed.teamwork.isSome && !prop.teamworkAnnounced then
       let g := { g with pending := .chooseTeamwork p }
       g.logMsg s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"

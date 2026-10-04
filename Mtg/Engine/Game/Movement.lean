@@ -12,15 +12,15 @@ namespace Mtg.Engine
 namespace Game
 
 /-- True when `o` replaces an opposing creature dying with exile. -/
-def exilesOppDeath? (g : Game) (o : GameObject) : Bool :=
+def exilesOppDeath? (o : GameObject) : Bool :=
   o.printed.exileOppCreaturesInstead ||
-    (g.staticAbilitiesOf o).any (fun
+    o.staticAbilities.any (fun
       | .exileOppDeathCreateWolf => true
       | _ => false)
 
 /-- True when `o` also creates a Wolf after that replacement (Head of the Hunt). -/
-def createsWolfOnOppExileDeath? (g : Game) (o : GameObject) : Bool :=
-  (g.staticAbilitiesOf o).any (fun
+def createsWolfOnOppExileDeath? (o : GameObject) : Bool :=
+  o.staticAbilities.any (fun
     | .exileOppDeathCreateWolf => true
     | _ => false)
 
@@ -30,7 +30,7 @@ applies (CR 614.4 / 614.6). -/
 def deathReplacementObjects (g : Game) : Array GameObject :=
   match g.lockedDeathReplacements with
   | some xs => xs
-  | none => g.battlefield.filter (g.exilesOppDeath?)
+  | none => g.battlefield.filter exilesOppDeath?
 
 /-- Controller of a Head-of-the-Hunt-style replacement, if `dying` is an
 opposing creature that would go to a graveyard. -/
@@ -58,7 +58,7 @@ def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTri
   if old.zone == .battlefield && old.isCreature then
     match dest, old.controller with
     | .graveyard _, some p =>
-      g.waitingTriggersFor old p .dying (some (g.snapshotPower old))
+      old.waitingTriggersFor p .dying (some (g.snapshotPower old))
     | _, _ => (#[] : Array WaitingTrigger)
   else (#[] : Array WaitingTrigger)
 
@@ -97,7 +97,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let leaving :=
     if old.zone == .battlefield then
       match old.controller with
-      | some p => g.waitingTriggersFor old p .leaving
+      | some p => old.waitingTriggersFor p .leaving
       | none => (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)
   let othersDie :=
@@ -106,7 +106,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         if o.id == old.id then acc
         else
           match o.controller with
-          | some p => acc ++ g.waitingTriggersFor o p .oneOrMoreOtherCreaturesDie
+          | some p => acc ++ o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie
           | none => acc) (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)
   let g :=
@@ -131,10 +131,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     controller := controller
     defaultController := if dest == .battlefield then controller else none
     zone := dest
-    status :=
-      match dest with
-      | .graveyard _ => { putIntoGraveyardThisTurn := true }
-      | _ => {}
+    status := {}
     timestamp := ts
   }
   let g : Game :=
@@ -151,7 +148,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       if old.printed.isCreature &&
           (match dest with | .graveyard _ => false | _ => true) then
         (g.permanentsOf owner).foldl (fun acc o =>
-          acc ++ g.waitingTriggersFor o owner .creatureCardLeavesYourGy) #[]
+          acc ++ o.waitingTriggersFor owner .creatureCardLeavesYourGy) #[]
       else (#[] : Array WaitingTrigger)
     | _, _ => (#[] : Array WaitingTrigger)
   let nontokenDie :=
@@ -164,7 +161,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             match o.controller with
             | some q =>
               if q == p then
-                acc ++ g.waitingTriggersFor o q .nontokenYouControlDies
+                acc ++ o.waitingTriggersFor q .nontokenYouControlDies
               else acc
             | none => acc) (#[] : Array WaitingTrigger)
       | none => (#[] : Array WaitingTrigger)
@@ -181,7 +178,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
               match o.controller with
               | some q =>
                 if q == p then
-                  acc ++ g.waitingTriggersFor o q .anotherGoblinOrcArmyDies
+                  acc ++ o.waitingTriggersFor q .anotherGoblinOrcArmyDies
                 else acc
               | none => acc) (#[] : Array WaitingTrigger)
         else (#[] : Array WaitingTrigger)
@@ -196,10 +193,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             match o.controller with
             | some q =>
               if q == p then
-                acc ++ g.waitingTriggersFor o q .attackingCreatureYouControlDies
+                acc ++ o.waitingTriggersFor q .attackingCreatureYouControlDies
               else acc
             | none => acc) (#[] : Array WaitingTrigger)
-        fromOthers ++ g.waitingTriggersFor old p .attackingCreatureYouControlDies
+        fromOthers ++ old.waitingTriggersFor p .attackingCreatureYouControlDies
       | none => (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)
   -- After the object has left: sources still on the battlefield see
@@ -214,51 +211,15 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             match o.controller with
             | some p =>
               if p == owner then
-                acc ++ g.waitingTriggersFor o p .creatureCardsPutIntoYourGy
+                acc ++ o.waitingTriggersFor p .creatureCardsPutIntoYourGy
               else acc
             | none => acc) (#[] : Array WaitingTrigger)
         else (#[] : Array WaitingTrigger)
       | _ => (#[] : Array WaitingTrigger)
-  -- Justice: another nonland you control returned to its owner's hand,
-  -- including tokens (MSH). Computed after the zone change so the bounced
-  -- object is no longer a source (“another”).
-  let returnedToHand :=
-    match dest with
-    | .hand p =>
-      if old.zone == .battlefield && p == old.owner && !old.printed.isLand then
-        match old.controller with
-        | some ctrl =>
-          g.battlefield.foldl (fun acc o =>
-            match o.controller with
-            | some q =>
-              if q == ctrl then
-                acc ++ g.waitingTriggersFor o q .anotherNonlandReturned
-              else acc
-            | none => acc) (#[] : Array WaitingTrigger)
-        | none => (#[] : Array WaitingTrigger)
-      else (#[] : Array WaitingTrigger)
-    | _ => (#[] : Array WaitingTrigger)
-  -- Moonstone: “whenever you discard a card” is hand → graveyard only, not
-  -- mill or dying (MSH). `lastKnownPower` carries the new graveyard object's
-  -- id so resolution can exile that card.
-  let discarded :=
-    match old.zone, dest with
-    | .hand p, .graveyard owner =>
-      if owner == old.owner then
-        g.battlefield.foldl (fun acc o =>
-          match o.controller with
-          | some q =>
-            if q == p then
-              acc ++ g.waitingTriggersFor o q .youDiscard (some (Int.ofNat newId.raw))
-            else acc
-          | none => acc) (#[] : Array WaitingTrigger)
-      else (#[] : Array WaitingTrigger)
-    | _, _ => (#[] : Array WaitingTrigger)
   let g := { g with
     waitingTriggers :=
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
-        nontokenDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
-        returnedToHand ++ discarded
+        nontokenDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then
@@ -309,7 +270,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                   match returned.controller with
                   | some p =>
                     g := { g with waitingTriggers :=
-                      g.waitingTriggers ++ g.waitingTriggersFor returned p .entering }
+                      g.waitingTriggers ++ returned.waitingTriggersFor p .entering }
                   | none => pure ()
               else
                 let (g', returnedId) := g.move o.id .battlefield (some o.owner)
@@ -323,7 +284,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                 match returned.controller with
                 | some p =>
                   g := { g with waitingTriggers :=
-                    g.waitingTriggers ++ g.waitingTriggersFor returned p .entering }
+                    g.waitingTriggers ++ returned.waitingTriggersFor p .entering }
                 | none => pure ()
           | none => pure ()
         return g
@@ -333,7 +294,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let g :=
     match headSource with
     | some src =>
-      if g.createsWolfOnOppExileDeath? src then
+      if createsWolfOnOppExileDeath? src then
         match src.controller with
         | some p =>
           let (g, _) := g.createToken p wolfToken
@@ -382,7 +343,7 @@ def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId) : Game :=
           match o.controller with
           | some p =>
             if gyOwners.any (· == p) then
-              acc ++ g.waitingTriggersFor o p .creatureCardsPutIntoYourGy
+              acc ++ o.waitingTriggersFor p .creatureCardsPutIntoYourGy
             else acc
           | none => acc) (#[] : Array WaitingTrigger)
   let g := { g with

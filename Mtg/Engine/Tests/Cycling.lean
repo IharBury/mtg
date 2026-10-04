@@ -4,8 +4,8 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
+import Mtg.Engine.Tests.RulingFixtures
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
 import Mtg.Engine.Tests.Combat
@@ -24,9 +24,6 @@ open Mtg.Engine.Catalog
 /- Typecycling: Oliphaunt Mountaincycling and Troll of Khazad-dûm Swampcycling
 (CR 702.29). -/
 
-def oliphauntCycleAbility : ActivatedAbility :=
-  oliphaunt.activatedAbilities[0]!
-
 def trollCycleAbility : ActivatedAbility :=
   trollOfKhazadDum.activatedAbilities[0]!
 
@@ -36,16 +33,6 @@ def stompingGround : CardDef :=
 
 #guard isLandTypeCard stompingGround "Mountain"
 #guard !isBasicLandCard stompingGround
-
-/-- Isolated library so the search finds a known card. -/
-def withOnlyLibrary (g : Game) (p : PlayerId) (cards : Array CardDef) : Game :=
-  let g := g.modifyPlayer p (fun pl => { pl with library := #[] })
-  cards.foldl (fun g c => addToLibraryTop g c p) g
-
-def oliphauntCycleReady : Game :=
-  let g := readyMain (emptyHand afterDraw ⟨0⟩)
-  let g := withOnlyLibrary g ⟨0⟩ #[mountain]
-  withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
 
 #guard oliphauntCycleReady.canActivate ⟨0⟩
   (handCardNamed oliphauntCycleReady ⟨0⟩ "Oliphaunt") oliphauntCycleAbility
@@ -60,12 +47,6 @@ def oliphauntCycleReady : Game :=
 #guard
   let g := addToHand afterDraw oliphaunt ⟨1⟩
   !(g.canActivate ⟨0⟩ (handCardNamed g ⟨1⟩ "Oliphaunt") oliphauntCycleAbility)
-
-def oliphauntCycled : Game :=
-  let g := oliphauntCycleReady
-  let src := handCardNamed g ⟨0⟩ "Oliphaunt"
-  let g := mustApply g ⟨0⟩ (.activate src.id 0)
-  passBoth (mustApply g ⟨0⟩ .pay)
 
 #guard (oliphauntCycled.handObjects ⟨0⟩).any (fun o => o.name == "Mountain")
 #guard (oliphauntCycled.player ⟨0⟩).graveyard.any (fun id =>
@@ -124,13 +105,6 @@ def oliphauntCycleNonbasic : Game :=
 #guard oliphauntCycleNonbasic.log.any (fun s =>
   mentions s "reveals Stomping Ground and puts it into their hand")
 
-/-- Typecycling is instant-speed (CR 702.29 / 117.1). -/
-def oliphauntCycleAtEnd : Game :=
-  let g := applyIdle (passBoth (skipTo afterDraw .end 80))
-  let g := emptyHand g ⟨0⟩
-  let g := withOnlyLibrary g ⟨0⟩ #[mountain]
-  withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
-
 #guard !oliphauntCycleAtEnd.asSorcery? ⟨0⟩
 #guard oliphauntCycleAtEnd.canActivate ⟨0⟩
   (handCardNamed oliphauntCycleAtEnd ⟨0⟩ "Oliphaunt") oliphauntCycleAbility
@@ -170,9 +144,9 @@ def trollCycled : Game :=
 
 /- Gollum, Silent Slinker: menace (CR 702.111 / 509.1c). -/
 
-#guard gollumSilentSlinkerCard.keywords.menace
-#guard gollumSilentSlinkerCard.power == some 4
-#guard gollumSilentSlinkerCard.toughness == some 3
+#guard gollumSilentSlinker.keywords.menace
+#guard gollumSilentSlinker.power == some 4
+#guard gollumSilentSlinker.toughness == some 3
 #guard withGollum.hasMenace (namedPermanent withGollum "Gollum, Silent Slinker")
 #guard (withGollum.effectiveKeywords (namedPermanent withGollum "Gollum, Silent Slinker")).menace
 #guard withGollum.legalBlockerCount
@@ -187,7 +161,7 @@ def trollCycled : Game :=
 /-- Chandra's Gollum attacks; Nissa has one Grizzly Bears. Pairwise blocking
 is legal, but a one-blocker declaration is not. -/
 def gollumVsOneBear : Game :=
-  addPermanent (addPermanent started gollumSilentSlinkerCard ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
+  addPermanent (addPermanent started gollumSilentSlinker ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
 
 def gollumVsOneBearReadyToBlock : Game :=
   let g := passBoth (skipTo gollumVsOneBear .beginningOfCombat 80)
@@ -287,18 +261,18 @@ def ogreGrantedMenaceReadyToBlock : Game :=
 
 /- Bilbo's Deadly Slice: destroy target creature (CR 701.8 / 701.7b / 608.2b). -/
 
-#guard bilbosDeadlySliceCard.isInstant
-#guard !bilbosDeadlySliceCard.hasSorcerySpeed
-#guard bilbosDeadlySliceCard.hasInstantSpeed
-#guard bilbosDeadlySliceCard.spellEffect == some (Effect.destroyCreature)
-#guard bilbosDeadlySliceCard.hasCastKind .destroyCreature
-#guard bilbosDeadlySliceCard.requiresTarget
-#guard mentions bilbosDeadlySliceCard.summary "Destroy target creature"
+#guard bilbosDeadlySlice.isInstant
+#guard !bilbosDeadlySlice.hasSorcerySpeed
+#guard bilbosDeadlySlice.hasInstantSpeed
+#guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
+#guard bilbosDeadlySlice.hasCastKind .destroyCreature
+#guard bilbosDeadlySlice.requiresTarget
+#guard mentions bilbosDeadlySlice.summary "destroy target creature"
 
 /-- Bilbo's Deadly Slice in hand, an opposing Grizzly Bears, enough mana. -/
 def bilbosDeadlySliceSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
 
 #guard bilbosDeadlySliceSetup.canCast ⟨0⟩
   (handCardNamed bilbosDeadlySliceSetup ⟨0⟩ "Bilbo's Deadly Slice")
@@ -308,14 +282,14 @@ def bilbosDeadlySliceSetup : Game :=
 
 -- Cannot cast with no creature.
 #guard
-  let g := withBlackMana (addToHand afterDraw bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand afterDraw bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
 #guard
   let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
-  let g := withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
 #guard
-  let g := withBlackMana (addToHand afterDraw bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand afterDraw bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
   match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice").id) with
   | .error msg => mentions msg "requires a target"
   | .ok _ => false
@@ -324,18 +298,18 @@ def bilbosDeadlySliceSetup : Game :=
 -- creature is not (CR 702.11b).
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
   g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice") &&
     (g.legalTargets ⟨0⟩ (Effect.destroyCreature)).contains
       (Target.permanent (namedPermanent g "Grizzly Bears").id)
 #guard
-  let g := addPermanent afterDraw velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
-  let g := withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
+  let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
   (g.legalTargets ⟨0⟩ (Effect.destroyCreature)).contains
     (Target.permanent (namedPermanent g "Velvetwing Butterflies").id)
 #guard
   let g := addPermanent afterDraw hexproofFlyer ⟨1⟩ ⟨1⟩
-  let g := withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
 
 def proposedBilbosDeadlySlice : Game :=
@@ -424,7 +398,7 @@ def bilbosDeadlySliceTargetGone : Game :=
 def agentBilbosDeadlySliceOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := clearHandPlayedLand g ⟨0⟩
-  withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
 
 #guard
   match Agent.choose agentBilbosDeadlySliceOnly ⟨0⟩ with
@@ -441,12 +415,12 @@ def magnificentEndSetup (tapped : Bool) : Game :=
       g.setObject { o with status := { o.status with tapped := true } }
     else g
   let g := readyMain (emptyHand g ⟨0⟩)
-  withWhiteMana (addToHand g magnificentEndCard ⟨0⟩) ⟨0⟩ 5
+  withWhiteMana (addToHand g magnificentEnd ⟨0⟩) ⟨0⟩ 5
 
 def magnificentEndFull : Game := magnificentEndSetup false
 def magnificentEndCheap : Game := magnificentEndSetup true
 
-#guard magnificentEndCard.costReductionIfTargetTapped == 3
+#guard magnificentEnd.costReductionIfTargetTapped == 3
 #guard
   match magnificentEndFull.apply ⟨0⟩
       (.cast (handCardNamed magnificentEndFull ⟨0⟩ "Magnificent End").id) with
@@ -504,7 +478,7 @@ def mentorMayPay : Game := passBoth mentorSmallEnters
 
 #guard
   match mentorMayPay.pending with
-  | .mayPayGeneric ⟨0⟩ 1 .draw => true
+  | .mayPayGeneric ⟨0⟩ 1 => true
   | _ => false
 
 #guard
@@ -580,11 +554,11 @@ def gazeSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withWhiteMana (addToHand g velvetwingButterfliesCard ⟨0⟩) ⟨0⟩ 2
+  withWhiteMana (addToHand g velvetwingButterflies ⟨0⟩) ⟨0⟩ 2
 
 #guard Effect.tapOneOrTwoCreatures.maxTargetCount == 2
 #guard
-  match velvetwingButterfliesCard.adventure with
+  match velvetwingButterflies.adventure with
   | some adv => adv.spellEffect == some (Effect.tapOneOrTwoCreatures)
   | none => false
 

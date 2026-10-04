@@ -1,3 +1,4 @@
+import Std.Data.HashMap
 import Mtg.Engine.Color
 
 /-!
@@ -9,7 +10,7 @@ any applicable supertypes.
 
 namespace Mtg.Engine
 
-/-- Card types listed in CR 300.1 / 205.2a, plus additional types from section 3. -/
+/-- Card types, exactly the list in CR 205.2a / 300.1. -/
 inductive CardType where
   | artifact
   | battle
@@ -50,6 +51,36 @@ def englishName : CardType → String
 instance : ToString CardType where
   toString := englishName
 
+/-- Plural Oracle spelling of each card type (CR 205.2a). -/
+def pluralName : CardType → String
+  | .artifact => "artifacts"
+  | .battle => "battles"
+  | .conspiracy => "conspiracies"
+  | .creature => "creatures"
+  | .dungeon => "dungeons"
+  | .enchantment => "enchantments"
+  | .instant => "instants"
+  | .kindred => "kindreds"
+  | .land => "lands"
+  | .phenomenon => "phenomena"
+  | .plane => "planes"
+  | .planeswalker => "planeswalkers"
+  | .scheme => "schemes"
+  | .sorcery => "sorceries"
+  | .vanguard => "vanguards"
+
+/-- Every card type in CR 205.2a, in that order. -/
+def all : List CardType := [
+  .artifact, .battle, .conspiracy, .creature, .dungeon, .enchantment, .instant,
+  .kindred, .land, .phenomenon, .plane, .planeswalker, .scheme, .sorcery, .vanguard
+]
+
+/-- A printed card-type word, singular or plural, in any case. -/
+def ofOracle? (s : String) : Option CardType :=
+  let s := s.map Char.toLower
+  all.find? fun t =>
+    t.englishName.map Char.toLower == s || t.pluralName.map Char.toLower == s
+
 /-- Permanent types (CR 110.4). Instant and sorcery cards can’t be permanents. -/
 def isPermanentType : CardType → Bool
   | .artifact | .battle | .creature | .enchantment | .land | .planeswalker => true
@@ -71,9 +102,6 @@ inductive Supertype where
   | world
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Printed-card alias for `Supertype` (CR 205.4). -/
-abbrev CardSupertype := Supertype
-
 namespace Supertype
 
 def englishName : Supertype → String
@@ -86,258 +114,408 @@ def englishName : Supertype → String
 instance : ToString Supertype where
   toString := englishName
 
+/-- Every supertype in CR 205.4a, in that order. -/
+def all : List Supertype :=
+  [.basic, .legendary, .ongoing, .snow, .world]
+
+/-- A printed supertype word, in any case. -/
+def ofOracle? (s : String) : Option Supertype :=
+  let s := s.map Char.toLower
+  all.find? fun t => t.englishName.map Char.toLower == s
+
 end Supertype
 
-/-- Subtype as printed on the type line. Basic land types are the five listed in CR 305.6. -/
+/-- Subtype as printed on the type line. -/
 abbrev Subtype := String
 
-/-- Named subtypes used when composing a `TraditionalCardDefinition`. -/
-inductive CardSubtype where
-  | adventure
-  | advisor
-  | alien
-  | ape
-  | arcane
-  | archer
-  | army
-  | artificer
-  | assassin
-  | aura
-  | avatar
-  | barbarian
-  | bard
-  | bat
-  | bear
-  | beast
-  | berserker
-  | bird
-  | cat
-  | centaur
-  | citizen
-  | cleric
-  | clue
-  | demigod
-  | detective
-  | dinosaur
-  | doctor
-  | dog
-  | dragon
-  | druid
-  | dwarf
-  | elder
-  | elemental
-  | elephant
-  | elf
-  | elk
-  | equipment
-  | eternal
-  | food
-  | forest
-  | frog
-  | gamma
-  | gate
-  | giant
-  | goblin
-  | god
-  | halfling
-  | hero
-  | horror
-  | horse
-  | human
-  | infinity
-  | inhuman
-  | insect
-  | island
-  | knight
-  | kree
-  | mercenary
-  | merfolk
-  | minion
-  | minotaur
-  | mountain
-  | mutant
-  | nightmare
-  | ninja
-  | noble
-  | ogre
-  | orc
-  | peasant
-  | performer
-  | pilot
-  | pirate
-  | plains
-  | plan
-  | rabbit
-  | ranger
-  | robot
-  | rogue
-  | saga
-  | samurai
-  | scientist
-  | scout
-  | shaman
-  | shapeshifter
-  | skrull
-  | snake
-  | soldier
-  | sorcerer
-  | spider
-  | spirit
-  | spy
-  | squirrel
-  | stone
-  | swamp
-  | troll
-  | treasure
-  | vampire
-  | vehicle
-  | villain
-  | wall
-  | warlock
-  | warrior
-  | whale
-  | wizard
-  | wolf
-  | wraith
-  | wurm
-  | zombie
-deriving DecidableEq, Repr, Inhabited, BEq
-
-namespace CardSubtype
-
-def toString : CardSubtype → String
-  | .adventure => "Adventure"
-  | .advisor => "Advisor"
-  | .alien => "Alien"
-  | .ape => "Ape"
-  | .arcane => "Arcane"
-  | .archer => "Archer"
-  | .army => "Army"
-  | .artificer => "Artificer"
-  | .assassin => "Assassin"
-  | .aura => "Aura"
-  | .avatar => "Avatar"
-  | .barbarian => "Barbarian"
-  | .bard => "Bard"
-  | .bat => "Bat"
-  | .bear => "Bear"
-  | .beast => "Beast"
-  | .berserker => "Berserker"
-  | .bird => "Bird"
-  | .cat => "Cat"
-  | .centaur => "Centaur"
-  | .citizen => "Citizen"
-  | .cleric => "Cleric"
-  | .clue => "Clue"
-  | .demigod => "Demigod"
-  | .detective => "Detective"
-  | .dinosaur => "Dinosaur"
-  | .doctor => "Doctor"
-  | .dog => "Dog"
-  | .dragon => "Dragon"
-  | .druid => "Druid"
-  | .dwarf => "Dwarf"
-  | .elder => "Elder"
-  | .elemental => "Elemental"
-  | .elephant => "Elephant"
-  | .elf => "Elf"
-  | .elk => "Elk"
-  | .equipment => "Equipment"
-  | .eternal => "Eternal"
-  | .food => "Food"
-  | .forest => "Forest"
-  | .frog => "Frog"
-  | .gamma => "Gamma"
-  | .gate => "Gate"
-  | .giant => "Giant"
-  | .goblin => "Goblin"
-  | .god => "God"
-  | .halfling => "Halfling"
-  | .hero => "Hero"
-  | .horror => "Horror"
-  | .horse => "Horse"
-  | .human => "Human"
-  | .infinity => "Infinity"
-  | .inhuman => "Inhuman"
-  | .insect => "Insect"
-  | .island => "Island"
-  | .knight => "Knight"
-  | .kree => "Kree"
-  | .mercenary => "Mercenary"
-  | .merfolk => "Merfolk"
-  | .minion => "Minion"
-  | .minotaur => "Minotaur"
-  | .mountain => "Mountain"
-  | .mutant => "Mutant"
-  | .nightmare => "Nightmare"
-  | .ninja => "Ninja"
-  | .noble => "Noble"
-  | .ogre => "Ogre"
-  | .orc => "Orc"
-  | .peasant => "Peasant"
-  | .performer => "Performer"
-  | .pilot => "Pilot"
-  | .pirate => "Pirate"
-  | .plains => "Plains"
-  | .plan => "Plan"
-  | .rabbit => "Rabbit"
-  | .ranger => "Ranger"
-  | .robot => "Robot"
-  | .rogue => "Rogue"
-  | .saga => "Saga"
-  | .samurai => "Samurai"
-  | .scientist => "Scientist"
-  | .scout => "Scout"
-  | .shaman => "Shaman"
-  | .shapeshifter => "Shapeshifter"
-  | .skrull => "Skrull"
-  | .snake => "Snake"
-  | .soldier => "Soldier"
-  | .sorcerer => "Sorcerer"
-  | .spider => "Spider"
-  | .spirit => "Spirit"
-  | .spy => "Spy"
-  | .squirrel => "Squirrel"
-  | .stone => "Stone"
-  | .swamp => "Swamp"
-  | .troll => "Troll"
-  | .treasure => "Treasure"
-  | .vampire => "Vampire"
-  | .vehicle => "Vehicle"
-  | .villain => "Villain"
-  | .wall => "Wall"
-  | .warlock => "Warlock"
-  | .warrior => "Warrior"
-  | .whale => "Whale"
-  | .wizard => "Wizard"
-  | .wolf => "Wolf"
-  | .wraith => "Wraith"
-  | .wurm => "Wurm"
-  | .zombie => "Zombie"
-
-instance : ToString CardSubtype where
-  toString := CardSubtype.toString
-
-instance : Coe CardSubtype Subtype where
-  coe := toString
-
-end CardSubtype
-
-/-- The five basic land types (CR 305.6). -/
+/-- The five basic land types (CR 305.6), in the order used by mana abilities. -/
 def basicLandTypes : List Subtype :=
   ["Plains", "Island", "Swamp", "Mountain", "Forest"]
 
-/-- Artifact, enchantment, and land subtypes (CR 205.3g–i). A “becomes a
-`[creature types] artifact creature`” effect keeps these and replaces
-creature types (MSH 88). -/
+/-- Which card type a CR 205.3 subtype belongs to.
+`spell` is shared by instants and sorceries (205.3k). `creature` is shared by
+creatures and kindreds (205.3m). -/
+inductive SubtypeClass where
+  | artifact
+  | enchantment
+  | land
+  | planeswalker
+  | spell
+  | creature
+  | planar
+  | dungeon
+  | battle
+deriving DecidableEq, Repr, BEq
+
+def artifactTypes : List String := [
+  "Attraction", "Blood", "Bobblehead", "Book", "Clue", "Contraption",
+  "Equipment", "Food", "Fortification", "Gold", "Heartwood", "Incubator",
+  "Infinity", "Junk", "Lander", "Map", "Mutagen", "Powerstone",
+  "Spacecraft", "Stone", "Treasure", "Vehicle", "Vibranium"
+]
+
+def enchantmentTypes : List String := [
+  "Aura", "Background", "Cartouche", "Case", "Class", "Curse",
+  "Plan", "Role", "Room", "Rune", "Saga", "Shard",
+  "Shrine"
+]
+
+def landTypes : List String := [
+  "Cave", "Desert", "Forest", "Gate", "Island", "Lair",
+  "Locus", "Mine", "Mountain", "Plains", "Planet", "Power-Plant",
+  "Sphere", "Swamp", "Tower", "Town", "Urza's"
+]
+
+def planeswalkerTypes : List String := [
+  "Ajani", "Aminatou", "Angrath", "Arlinn", "Ashiok", "Bahamut",
+  "Basri", "Bolas", "Calix", "Chandra", "Comet", "Dack",
+  "Dakkon", "Daretti", "Davriel", "Dellian", "Dihada", "Domri",
+  "Dovin", "Ellywick", "Elminster", "Elspeth", "Estrid", "Freyalise",
+  "Garruk", "Gideon", "Grist", "Guff", "Huatli", "Jace",
+  "Jared", "Jaya", "Jeska", "Kaito", "Karn", "Kasmina",
+  "Kaya", "Kiora", "Koth", "Liliana", "Lolth", "Lukka",
+  "Minsc", "Mordenkainen", "Nahiri", "Narset", "Niko", "Nissa",
+  "Nixilis", "Oko", "Quintorius", "Ral", "Rowan", "Saheeli",
+  "Samut", "Sarkhan", "Serra", "Sivitri", "Sorin", "Szat",
+  "Tamiyo", "Tasha", "Teferi", "Teyo", "Tezzeret", "Tibalt",
+  "Tyvar", "Ugin", "Urza", "Venser", "Vivien", "Vraska",
+  "Vronos", "Will", "Windgrace", "Wrenn", "Xenagos", "Yanggu",
+  "Yanling", "Zariel"
+]
+
+def spellTypes : List String := [
+  "Adventure", "Arcane", "Lesson", "Omen", "Trap"
+]
+
+def creatureTypes : List String := [
+  "Time Lord", "Advisor", "Aetherborn", "Alien", "Ally", "Angel",
+  "Antelope", "Ape", "Archer", "Archon", "Armadillo", "Army",
+  "Artificer", "Assassin", "Assembly-Worker", "Astartes", "Atog", "Aurochs",
+  "Avatar", "Azra", "Badger", "Balloon", "Barbarian", "Bard",
+  "Basilisk", "Bat", "Bear", "Beast", "Beaver", "Beeble",
+  "Beholder", "Berserker", "Bird", "Bison", "Blinkmoth", "Boar",
+  "Bringer", "Brushwagg", "Camarid", "Camel", "Capybara", "Caribou",
+  "Carrier", "Cat", "Centaur", "Child", "Chimera", "Citizen",
+  "Cleric", "Clown", "Cockatrice", "Construct", "Coward", "Coyote",
+  "Crab", "Crocodile", "C'tan", "Custodes", "Cyberman", "Cyclops",
+  "Dalek", "Dauthi", "Demigod", "Demon", "Deserter", "Detective",
+  "Devil", "Dinosaur", "Djinn", "Doctor", "Dog", "Dragon",
+  "Drake", "Dreadnought", "Drix", "Drone", "Druid", "Dryad",
+  "Dwarf", "Echidna", "Efreet", "Egg", "Elder", "Eldrazi",
+  "Elemental", "Elephant", "Elf", "Elk", "Employee", "Eternal",
+  "Eye", "Faerie", "Ferret", "Fish", "Flagbearer", "Fox",
+  "Fractal", "Frog", "Fungus", "Gamer", "Gamma", "Gargoyle",
+  "Germ", "Giant", "Giraffe", "Gith", "Glimmer", "Gnoll",
+  "Gnome", "Goat", "Goblin", "God", "Golem", "Gorgon",
+  "Graveborn", "Gremlin", "Griffin", "Guest", "Hag", "Halfling",
+  "Hamster", "Harpy", "Hedgehog", "Hellion", "Hero", "Hippo",
+  "Hippogriff", "Homarid", "Homunculus", "Horror", "Horse", "Human",
+  "Hydra", "Hyena", "Illusion", "Imp", "Incarnation", "Inhuman",
+  "Inkling", "Inquisitor", "Insect", "Jackal", "Jellyfish", "Juggernaut",
+  "Kangaroo", "Kavu", "Kirin", "Kithkin", "Knight", "Kobold",
+  "Kor", "Kraken", "Kree", "Llama", "Lamia", "Lammasu",
+  "Leech", "Lemur", "Leviathan", "Lhurgoyf", "Licid", "Lizard",
+  "Lobster", "Manticore", "Masticore", "Mercenary", "Merfolk", "Metathran",
+  "Minion", "Minotaur", "Mite", "Mole", "Monger", "Mongoose",
+  "Monk", "Monkey", "Moogle", "Moonfolk", "Mount", "Mouse",
+  "Mutant", "Myr", "Mystic", "Nautilus", "Necron", "Nephilim",
+  "Nightmare", "Nightstalker", "Ninja", "Noble", "Noggle", "Nomad",
+  "Nymph", "Octopus", "Ogre", "Ooze", "Orb", "Orc",
+  "Orgg", "Otter", "Ouphe", "Ox", "Oyster", "Pangolin",
+  "Peasant", "Pegasus", "Pentavite", "Performer", "Pest", "Phelddagrif",
+  "Phoenix", "Phyrexian", "Pilot", "Pincher", "Pirate", "Plant",
+  "Platypus", "Porcupine", "Possum", "Praetor", "Primarch", "Prism",
+  "Processor", "Qu", "Rabbit", "Raccoon", "Ranger", "Rat",
+  "Rebel", "Reflection", "Rhino", "Rigger", "Robot", "Rogue",
+  "Sable", "Salamander", "Samurai", "Sand", "Saproling", "Satyr",
+  "Scarecrow", "Scientist", "Scion", "Scorpion", "Scout", "Sculpture",
+  "Seal", "Serf", "Serpent", "Servo", "Shade", "Shaman",
+  "Shapeshifter", "Shark", "Sheep", "Shi'ar", "Siren", "Skeleton",
+  "Skrull", "Skunk", "Slith", "Sliver", "Sloth", "Slug",
+  "Snail", "Snake", "Soldier", "Soltari", "Sorcerer", "Spawn",
+  "Specter", "Spellshaper", "Sphinx", "Spider", "Spike", "Spirit",
+  "Splinter", "Sponge", "Spy", "Squid", "Squirrel", "Starfish",
+  "Surrakar", "Survivor", "Symbiote", "Synth", "Tentacle", "Tetravite",
+  "Thalakos", "Thopter", "Thrull", "Tiefling", "Toy", "Treefolk",
+  "Trilobite", "Triskelavite", "Troll", "Turtle", "Tyranid", "Unicorn",
+  "Utrom", "Vampire", "Varmint", "Vedalken", "Villain", "Volver",
+  "Wall", "Walrus", "Warlock", "Warrior", "Weasel", "Weird",
+  "Werewolf", "Whale", "Wizard", "Wolf", "Wolverine", "Wombat",
+  "Worm", "Wraith", "Wurm", "Yeti", "Zombie", "Zubera",
+]
+
+def planarTypes : List String := [
+  "The Abyss", "Alara", "Alfava Metraxis", "Amonkhet", "Androzani Minor", "Antausia",
+  "Apalapucia", "Arcavios", "Arkhos", "Avishkar", "Azgol", "Belenon",
+  "Bolas's Meditation Realm", "Capenna", "Cridhe", "The Dalek Asylum", "Darillium", "Dominaria",
+  "Earth", "Echoir", "Eldraine", "Equilor", "Ergamon", "Fabacin",
+  "Fiora", "Gallifrey", "Gargantikar", "Gobakhan", "Horsehead Nebula", "Ikoria",
+  "Innistrad", "Iquatana", "Ir", "Ixalan", "Kaldheim", "Kamigawa",
+  "Kandoka", "Karsus", "Kephalai", "Kinshala", "Kolbahan", "Kylem",
+  "Kyneth", "The Library", "Lorwyn", "Luvion", "Mars", "Mercadia",
+  "Mirrodin", "Moag", "Mongseng", "Moon", "Muraganda", "Necros",
+  "New Earth", "New Phyrexia", "Outside Mutter's Spiral", "Phyrexia", "Pyrulea", "Rabiah",
+  "Rath", "Ravnica", "Regatha", "Segovia", "Serra's Realm", "Shadowmoor",
+  "Shandalar", "Shenmeng", "Skaro", "Spacecraft", "Tarkir", "Theros",
+  "Time", "Trenzalore", "Ulgrotha", "Unknown Planet", "Valla", "Vryn",
+  "Wildfire", "Xerex", "Zendikar", "Zhalfir"
+]
+
+def dungeonTypes : List String := [
+  "Undercity"
+]
+
+def battleTypes : List String := [
+  "Siege"
+]
+
+/-- One known subtype from CR 205.3g–q. -/
+structure KnownSubtype where
+  name : String
+  plural : String
+  kind : SubtypeClass
+deriving Repr
+
+/-- Fold curly apostrophes to `'` and lowercase. Apostrophes stay, so `Urza`
+and `Urza's` remain different subtypes. -/
+def subtypeKey (s : String) : String :=
+  let rec go (cs : List Char) (acc : List Char) (sp : Bool) : List Char :=
+    match cs with
+    | [] => acc.reverse
+    | c :: rest =>
+      let c := if c == '\u2019' || c == '\u2018' then '\'' else c
+      if c == ' ' || c == '\n' || c == '\t' then
+        if sp || acc.isEmpty then go rest acc true else go rest (' ' :: acc) true
+      else
+        go rest (c.toLower :: acc) false
+  String.ofList (go s.toList [] true)
+
+/-- `subtypeKey` with apostrophes removed. Oracle normalization drops them
+(`can't` → `cant`), so ability text for `Urza's` arrives as `urzas`. -/
+def subtypeKeyStripped (s : String) : String :=
+  String.ofList ((subtypeKey s).toList.filter (· != '\''))
+
+def nameHasApostrophe (s : String) : Bool :=
+  s.toList.any fun c => c == '\'' || c == '\u2019' || c == '\u2018'
+
+def endsWithConsonantY (w : String) : Bool :=
+  match w.toList.reverse with
+  | 'y' :: c :: _ =>
+    c != 'a' && c != 'e' && c != 'i' && c != 'o' && c != 'u'
+  | _ => false
+
+/-- Plural of one subtype word, using the irregular forms Oracle prints. -/
+def pluralizeWord (w : String) : String :=
+  match w with
+  | "Elf" => "Elves"
+  | "Dwarf" => "Dwarves"
+  | "Wolf" => "Wolves"
+  | "Werewolf" => "Werewolves"
+  | "Hero" => "Heroes"
+  | "Mouse" => "Mice"
+  | "Ox" => "Oxen"
+  | "Child" => "Children"
+  | "Fungus" => "Fungi"
+  | "Homunculus" => "Homunculi"
+  | "Cyclops" => "Cyclopes"
+  | "Leech" => "Leeches"
+  | "Merfolk" => "Merfolk"
+  | "Fish" | "Jellyfish" | "Starfish" => w
+  | "Elk" | "Sheep" | "Bison" | "Caribou" => w
+  | _ =>
+    if w.endsWith "s" then w
+    else if endsWithConsonantY w then (w.dropEnd 1).toString ++ "ies"
+    else if w.endsWith "x" || w.endsWith "z" then w ++ "es"
+    else w ++ "s"
+
+/-- Plural of a subtype name. Only the last word changes (`Time Lord` → `Time Lords`). -/
+def heuristicPlural (s : String) : String :=
+  let parts := (s.splitOn " ").filter (· != "")
+  match parts.getLast? with
+  | none => s
+  | some last =>
+    String.intercalate " " (parts.dropLast ++ [pluralizeWord last])
+
+def subtypesOf (kind : SubtypeClass) (names : List String) : List KnownSubtype :=
+  names.map fun name => { name, plural := heuristicPlural name, kind }
+
+/-- Every subtype in CR 205.3g–q. `Spacecraft` is both an artifact type and a
+planar type; the artifact entry is kept. -/
+def subtypeEntries : List KnownSubtype :=
+  let raw :=
+    subtypesOf .artifact artifactTypes ++
+    subtypesOf .enchantment enchantmentTypes ++
+    subtypesOf .land landTypes ++
+    subtypesOf .planeswalker planeswalkerTypes ++
+    subtypesOf .spell spellTypes ++
+    subtypesOf .creature creatureTypes ++
+    subtypesOf .planar planarTypes ++
+    subtypesOf .dungeon dungeonTypes ++
+    subtypesOf .battle battleTypes
+  raw.foldl (fun acc e =>
+    if acc.any (·.name == e.name) then acc else acc ++ [e]) []
+
+/-- Singular and plural spellings, apostrophes kept. -/
+def subtypeByKey : Thunk (Std.HashMap String KnownSubtype) :=
+  Thunk.mk fun _ =>
+    subtypeEntries.foldl (fun m e =>
+      let m := m.insert (subtypeKey e.name) e
+      m.insert (subtypeKey e.plural) e)
+      ({} : Std.HashMap String KnownSubtype)
+
+/-- Apostrophe-free spellings of subtypes whose names contain `'`.
+Oracle text drops the apostrophe, so `urzas` means the land type `Urza's`
+rather than the plural of the planeswalker type `Urza`. -/
+def subtypeByStrippedApostrophe : Thunk (Std.HashMap String KnownSubtype) :=
+  Thunk.mk fun _ =>
+    subtypeEntries.foldl (fun m e =>
+      if nameHasApostrophe e.name then
+        let m := m.insert (subtypeKeyStripped e.name) e
+        m.insert (subtypeKeyStripped e.plural) e
+      else m)
+      ({} : Std.HashMap String KnownSubtype)
+
+/-- Canonical singular name for a printed singular or plural subtype, in any
+case. A missing apostrophe still finds `C'tan`, `Shi'ar`, and `Urza's`. -/
+def ofOracle? (s : String) : Option String :=
+  let kept := subtypeKey s
+  if !kept.toList.any (· == '\'') then
+    match (subtypeByStrippedApostrophe.get).get? (subtypeKeyStripped s) with
+    | some e => some e.name
+    | none => (subtypeByKey.get).get? kept |>.map (·.name)
+  else
+    (subtypeByKey.get).get? kept |>.map (·.name)
+
+/-- Oracle plural of a subtype. Unknown words use the same spelling rules. -/
+def pluralizeName (s : String) : String :=
+  match ofOracle? s with
+  | some name =>
+    match (subtypeByKey.get).get? (subtypeKey name) with
+    | some e => e.plural
+    | none => heuristicPlural name
+  | none => heuristicPlural s
+
+/-- Kept-apostrophe keys that would make two different subtypes the same word. -/
+def subtypeClashes : List String :=
+  Id.run do
+    let mut seen : Std.HashMap String String := {}
+    let mut bad : Array String := #[]
+    for e in subtypeEntries do
+      for key in [subtypeKey e.name, subtypeKey e.plural] do
+        match seen.get? key with
+        | some prev =>
+          if prev != e.name then bad := bad.push s!"{key}: {prev} / {e.name}"
+        | none => seen := seen.insert key e.name
+    return bad.toList
+
+def isCreatureType (s : String) : Bool :=
+  match (subtypeByKey.get).get? (subtypeKey s) with
+  | some e => e.kind == .creature
+  | none => false
+
+/-- A subtype that is not a creature type (CR 205.3g–k, 205.3n–q).
+Changeling grants creature types only (CR 702.72). Unknown words stay
+available to changeling, matching objects whose printed subtype is not in
+the current rules list. -/
 def isNoncreatureSubtype (s : Subtype) : Bool :=
-  s == "Equipment" || s == "Vehicle" || s == "Food" || s == "Clue" ||
-    s == "Treasure" || s == "Blood" || s == "Gold" || s == "Map" ||
-    s == "Powerstone" || s == "Aura" || s == "Saga" || s == "Plan" ||
-    s == "Case" || s == "Role" || s == "Shrine" || s == "Class" ||
-    s == "Background" || s == "Room" || s == "Lesson" || s == "Cartouche" ||
-    s == "Curse" || s == "Rune" || s == "Shard" || s == "Sphere" ||
-    basicLandTypes.any (· == s)
+  match (subtypeByKey.get).get? (subtypeKey s) with
+  | some e => e.kind != .creature
+  | none => false
+
+def formMatches (e : KnownSubtype) (key : String) (plural : Bool) : Bool :=
+  let target := if plural then e.plural else e.name
+  subtypeKey target == key || subtypeKeyStripped target == subtypeKeyStripped key
+
+/-- Longest leading singular (`plural = false`) or plural spelling. -/
+def matchSubtypeForm (plural : Bool) (toks : List String) : Option (String × Nat) :=
+  let rec go : Nat → Option (String × Nat)
+    | 0 => none
+    | n + 1 =>
+      let got := toks.take (n + 1)
+      if got.length != n + 1 then go n
+      else
+        let raw := String.intercalate " " got
+        match ofOracle? raw with
+        | some name =>
+          match (subtypeByKey.get).get? (subtypeKey name) with
+          | some e =>
+            if formMatches e (subtypeKey raw) plural then some (e.name, n + 1) else go n
+          | none => go n
+        | none => go n
+  go (min 4 toks.length)
+
+/-- `non-Time Lord` is tokens `non-time` `lord` after normalization. -/
+def matchNonSubtype (toks : List String) : Option (String × Nat) :=
+  match toks with
+  | t :: rest =>
+    if t.startsWith "non-" && t.length > "non-".length then
+      let stem := (t.drop "non-".length).toString
+      match matchSubtypeForm false (stem :: rest) with
+      | some (name, n) => some (name, n)
+      | none => none
+    else none
+  | [] => none
+
+/-- `Forestcycling` or `Time Lordcycling` (cycling glued to the last word). -/
+def matchCyclingSubtype (toks : List String) : Option (String × Nat) :=
+  let rec go : Nat → Option (String × Nat)
+    | 0 => none
+    | n + 1 =>
+      let got := toks.take (n + 1)
+      if got.length != n + 1 then go n
+      else
+        match got.getLast? with
+        | some last =>
+          if last.endsWith "cycling" && last.length > "cycling".length then
+            let stem := (last.dropEnd "cycling".length).toString
+            let words := got.dropLast ++ [stem]
+            match matchSubtypeForm false words with
+            | some (name, w) =>
+              if w == words.length then some (name, n + 1) else go n
+            | none => go n
+          else go n
+        | none => go n
+  go (min 4 toks.length)
+
+def normalizeApostrophes (s : String) : String :=
+  String.ofList (s.toList.map fun c =>
+    if c == '\u2019' || c == '\u2018' then '\'' else c)
+
+def wordsMatchIgnoreCase (printed expected : List String) : Bool :=
+  printed.length == expected.length &&
+    (printed.zip expected).all fun (p, e) =>
+      p.map Char.toLower == e.map Char.toLower
+
+/-- Split the words after a type-line dash (CR 205.3b).
+Planes keep every word as one subtype. Creatures and kindreds keep the
+two-word creature type `Time Lord` together. Every other subtype is one word. -/
+def splitPrintedSubtypes (types : Array CardType) (sub : String) : Array Subtype :=
+  let sub := (normalizeApostrophes sub).trimAscii.copy
+  if sub.isEmpty then #[]
+  else if types.any (· == .plane) then #[sub]
+  else
+    let words := sub.splitOn " " |>.filter (· != "")
+    let multis :=
+      if types.any fun t => t == .creature || t == .kindred then
+        creatureTypes.filter fun s => (s.splitOn " ").length > 1
+      else []
+    let rec go : Nat → List String → List String
+      | 0, _ => []
+      | _, [] => []
+      | fuel + 1, ws =>
+        match multis.find? fun m =>
+          let mw := m.splitOn " " |>.filter (· != "")
+          wordsMatchIgnoreCase (ws.take mw.length) mw
+        with
+        | some m =>
+          let n := (m.splitOn " " |>.filter (· != "")).length
+          let n := if n == 0 then 1 else n
+          String.intercalate " " (ws.take n) :: go fuel (ws.drop n)
+        | none =>
+          match ws with
+          | w :: rest => w :: go fuel rest
+          | [] => []
+    (go words.length words).toArray
 
 /-- Intrinsic mana produced by a basic land type (CR 305.6). -/
 def manaForBasicLandType : Subtype → Option Color
@@ -363,86 +541,105 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard !isNoncreatureSubtype "Human"
 #guard !isNoncreatureSubtype "Construct"
 #guard basicLandTypes.length == 5
+#guard Supertype.all.length == 5
+#guard Supertype.all == [.basic, .legendary, .ongoing, .snow, .world]
+#guard Supertype.all.all fun s =>
+  Supertype.ofOracle? s.englishName == some s &&
+    Supertype.ofOracle? (s.englishName.map Char.toLower) == some s &&
+    Supertype.ofOracle? (s.englishName.map Char.toUpper) == some s
+#guard Supertype.ofOracle? "SNOW" == some .snow
+#guard Supertype.ofOracle? "World" == some .world
+#guard Supertype.ofOracle? "nonbasic" == none
+#guard Supertype.ofOracle? "legendaries" == none
+#guard Supertype.ofOracle? "Snow-Covered" == none
+#guard CardType.all.length == 15
+#guard CardType.all.all fun t =>
+  CardType.ofOracle? t.englishName == some t &&
+    CardType.ofOracle? t.pluralName == some t &&
+    CardType.all.all fun u =>
+      t == u || (t.pluralName != u.englishName && t.pluralName != u.pluralName)
+#guard CardType.ofOracle? "Sorceries" == some .sorcery
+#guard CardType.ofOracle? "conspiracies" == some .conspiracy
+#guard CardType.ofOracle? "phenomena" == some .phenomenon
+#guard CardType.ofOracle? "planeswalkers" == some .planeswalker
+#guard CardType.ofOracle? "KINDREDS" == some .kindred
 #guard CardType.creature.isPermanentType
 #guard !CardType.instant.isPermanentType
+#guard !CardType.kindred.isPermanentType
+#guard !CardType.dungeon.isPermanentType
+#guard !CardType.plane.isPermanentType
+#guard !CardType.phenomenon.isPermanentType
+#guard !CardType.vanguard.isPermanentType
+#guard !CardType.scheme.isPermanentType
+#guard !CardType.conspiracy.isPermanentType
+#guard CardType.battle.isPermanentType
+#guard CardType.planeswalker.isPermanentType
 #guard CardType.sorcery.isInstantOrSorcery
 #guard formatTypeLine #[.basic] #[.land] #["Forest"] == "Basic Land — Forest"
 #guard formatTypeLine #[] #[.creature] #["Bear"] == "Creature — Bear"
 #guard formatTypeLine #[] #[.instant] #[] == "Instant"
-#guard formatTypeLine #[] #[.creature] #[CardSubtype.toString .noble] ==
-  "Creature — Noble"
-#guard formatTypeLine #[] #[.enchantment] #[CardSubtype.toString .plan] ==
-  "Enchantment — Plan"
-#guard formatTypeLine #[] #[.enchantment] #[CardSubtype.toString .saga] ==
-  "Enchantment — Saga"
-#guard formatTypeLine #[.legendary] #[.land] #[CardSubtype.toString .gate] ==
-  "Legendary Land — Gate"
-#guard formatTypeLine #[] #[.instant] #[CardSubtype.toString .arcane] ==
-  "Instant — Arcane"
-#guard CardSubtype.toString .forest == "Forest"
-#guard CardSubtype.toString .plains == "Plains"
-#guard CardSubtype.toString .island == "Island"
-#guard CardSubtype.toString .swamp == "Swamp"
-#guard CardSubtype.toString .mountain == "Mountain"
-#guard CardSubtype.toString .elephant == "Elephant"
-#guard CardSubtype.toString .vehicle == "Vehicle"
-#guard CardSubtype.toString .aura == "Aura"
-#guard CardSubtype.toString .elemental == "Elemental"
-#guard CardSubtype.toString .pilot == "Pilot"
-#guard CardSubtype.toString .orc == "Orc"
-#guard CardSubtype.toString .pirate == "Pirate"
-#guard CardSubtype.toString .robot == "Robot"
-#guard CardSubtype.toString .spirit == "Spirit"
-#guard CardSubtype.toString .zombie == "Zombie"
-#guard CardSubtype.toString .archer == "Archer"
-#guard CardSubtype.toString .dinosaur == "Dinosaur"
-#guard CardSubtype.toString .rabbit == "Rabbit"
-#guard CardSubtype.toString .alien == "Alien"
-#guard CardSubtype.toString .ape == "Ape"
-#guard CardSubtype.toString .arcane == "Arcane"
-#guard CardSubtype.toString .army == "Army"
-#guard CardSubtype.toString .artificer == "Artificer"
-#guard CardSubtype.toString .assassin == "Assassin"
-#guard CardSubtype.toString .barbarian == "Barbarian"
-#guard CardSubtype.toString .berserker == "Berserker"
-#guard CardSubtype.toString .cat == "Cat"
-#guard CardSubtype.toString .demigod == "Demigod"
-#guard CardSubtype.toString .detective == "Detective"
-#guard CardSubtype.toString .doctor == "Doctor"
-#guard CardSubtype.toString .dog == "Dog"
-#guard CardSubtype.toString .elk == "Elk"
-#guard CardSubtype.toString .eternal == "Eternal"
-#guard CardSubtype.toString .frog == "Frog"
-#guard CardSubtype.toString .gamma == "Gamma"
-#guard CardSubtype.toString .gate == "Gate"
-#guard CardSubtype.toString .horse == "Horse"
-#guard CardSubtype.toString .infinity == "Infinity"
-#guard CardSubtype.toString .inhuman == "Inhuman"
-#guard CardSubtype.toString .mercenary == "Mercenary"
-#guard CardSubtype.toString .mutant == "Mutant"
-#guard CardSubtype.toString .nightmare == "Nightmare"
-#guard CardSubtype.toString .ninja == "Ninja"
-#guard CardSubtype.toString .noble == "Noble"
-#guard CardSubtype.toString .peasant == "Peasant"
-#guard CardSubtype.toString .performer == "Performer"
-#guard CardSubtype.toString .plan == "Plan"
-#guard CardSubtype.toString .saga == "Saga"
-#guard CardSubtype.toString .samurai == "Samurai"
-#guard CardSubtype.toString .scientist == "Scientist"
-#guard CardSubtype.toString .skrull == "Skrull"
-#guard CardSubtype.toString .snake == "Snake"
-#guard CardSubtype.toString .sorcerer == "Sorcerer"
-#guard CardSubtype.toString .squirrel == "Squirrel"
-#guard CardSubtype.toString .stone == "Stone"
-#guard CardSubtype.toString .troll == "Troll"
-#guard CardSubtype.toString .vampire == "Vampire"
-#guard CardSubtype.toString .warlock == "Warlock"
-#guard CardSubtype.toString .whale == "Whale"
-#guard CardSubtype.toString .treasure == "Treasure"
-#guard CardSubtype.toString .food == "Food"
-#guard CardSubtype.toString .clue == "Clue"
-#guard CardSubtype.toString .wall == "Wall"
-#guard CardSubtype.toString .minion == "Minion"
-#guard CardSubtype.toString .elder == "Elder"
+
+
+#guard artifactTypes.length == 23
+#guard enchantmentTypes.length == 13
+#guard landTypes.length == 17
+#guard planeswalkerTypes.length == 80
+#guard spellTypes.length == 5
+#guard creatureTypes.length == 324
+#guard planarTypes.length == 82
+#guard dungeonTypes == ["Undercity"]
+#guard battleTypes == ["Siege"]
+#guard basicLandTypes.all fun s => landTypes.any (· == s)
+#guard subtypeEntries.length == 545
+#guard subtypeClashes == []
+#guard subtypeEntries.all fun e =>
+  ofOracle? e.name == some e.name &&
+    pluralizeName e.name == e.plural &&
+    -- `Urzas` is the plural of planeswalker type Urza and also `Urza's`
+    -- after Oracle drops the apostrophe. The land type wins that spelling.
+    (e.name == "Urza" || ofOracle? e.plural == some e.name)
+#guard ofOracle? "ELVES" == some "Elf"
+#guard ofOracle? "time lords" == some "Time Lord"
+#guard ofOracle? "URZA'S" == some "Urza's"
+#guard ofOracle? "urzas" == some "Urza's"
+#guard ofOracle? "c'tan" == some "C'tan"
+#guard ofOracle? "C\u2019tan" == some "C'tan"
+#guard ofOracle? "bolass meditation realm" == some "Bolas's Meditation Realm"
+#guard ofOracle? "power-plant" == some "Power-Plant"
+#guard ofOracle? "assembly-workers" == some "Assembly-Worker"
+#guard ofOracle? "mice" == some "Mouse"
+#guard ofOracle? "siege" == some "Siege"
+#guard ofOracle? "undercity" == some "Undercity"
+#guard ofOracle? "phenomenon" == none
+#guard pluralizeName "Mouse" == "Mice"
+#guard pluralizeName "Ox" == "Oxen"
+#guard pluralizeName "Harpy" == "Harpies"
+#guard pluralizeName "Spy" == "Spies"
+#guard pluralizeName "Monkey" == "Monkeys"
+#guard pluralizeName "Sheep" == "Sheep"
+#guard pluralizeName "Phoenix" == "Phoenixes"
+#guard pluralizeName "Time Lord" == "Time Lords"
+#guard pluralizeName "Werewolf" == "Werewolves"
+#guard pluralizeName "Merfolk" == "Merfolk"
+#guard isCreatureType "Time Lord"
+#guard isCreatureType "C'tan"
+#guard !isNoncreatureSubtype "Time Lord"
+#guard isNoncreatureSubtype "Siege"
+#guard isNoncreatureSubtype "Jace"
+#guard isNoncreatureSubtype "Adventure"
+#guard isNoncreatureSubtype "Undercity"
+#guard isNoncreatureSubtype "Spacecraft"
+#guard isNoncreatureSubtype "The Abyss"
+#guard isNoncreatureSubtype "Urza's"
+#guard isNoncreatureSubtype "Power-Plant"
+#guard !isNoncreatureSubtype "NotARealType"
+#guard splitPrintedSubtypes #[.creature] "Human Time Lord" == #["Human", "Time Lord"]
+#guard splitPrintedSubtypes #[.creature] "Time Lord Human" == #["Time Lord", "Human"]
+#guard splitPrintedSubtypes #[.artifact] "Time Lord" == #["Time", "Lord"]
+#guard splitPrintedSubtypes #[.kindred, .sorcery] "Time Lord" == #["Time Lord"]
+#guard splitPrintedSubtypes #[.plane] "Bolas\u2019s Meditation Realm" == #["Bolas's Meditation Realm"]
+#guard splitPrintedSubtypes #[.land] "Urza\u2019s Power-Plant" == #["Urza's", "Power-Plant"]
+#guard splitPrintedSubtypes #[.creature] "C\u2019tan" == #["C'tan"]
+#guard splitPrintedSubtypes #[.creature] "Shi'ar" == #["Shi'ar"]
 
 end Mtg.Engine

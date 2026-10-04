@@ -38,8 +38,8 @@ def queueCreatureYouControlDealtDamage (g : Game) (o : GameObject) (n : Int) : G
         g.putMatchingSourceTriggers p src .creatureYouControlDealtDamage (some n))
 
 /-- True when all damage that would be dealt to `o` is prevented. -/
-def preventsAllDamageTo (g : Game) (o : GameObject) : Bool :=
-  (g.staticAbilitiesOf o).any (fun
+def preventsAllDamageTo (_g : Game) (o : GameObject) : Bool :=
+  o.staticAbilities.any (fun
     | .preventAllDamageToThis => true
     | _ => false)
 
@@ -100,7 +100,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
 the time the damage would be dealt (MSH 305). -/
 def hawkeyeNoncombatBonus (g : Game) (sourceController : PlayerId) : Int :=
   (g.permanentsOf sourceController).foldl (fun acc o =>
-    if (g.staticAbilitiesOf o).any (fun
+    if o.staticAbilities.any (fun
       | .noncombatDamagePlusSourcePower => true
       | _ => false) then
       acc + g.power o
@@ -111,7 +111,7 @@ def mjolnirMultiplier (g : Game) (src : GameObject) : Nat :=
   let n :=
     (g.battlefield.filter (fun o =>
       o.attachedTo == some src.id &&
-        (g.staticAbilitiesOf o).any (fun
+        o.staticAbilities.any (fun
           | .equippedDealsDoubleDamage => true
           | _ => false))).size
   if n == 0 then 1 else Nat.pow 2 n
@@ -170,27 +170,15 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
 /-- Deal this creature's power as damage to `dest` (one side of a fight). -/
 def dealFightDamage (g : Game) (src dest : GameObject) : Game :=
   g.dealDamageFrom src.name dest (g.power src).toNat
-    (deathtouch := g.hasDeathtouch src) (source := some src)
+    (deathtouch := g.hasDeathtouch src)
 
-/-- Both sides of a fight deal damage at the same time (CR 701.12b).
-Snapshot power and deathtouch, then mark each recipient so lethal on the
-first does not cancel the second creature's damage. -/
+/-- Both sides of a fight deal damage simultaneously-looking: `src` first,
+then `dest` if both are still in play. -/
 def fightCreatures (g : Game) (src dest : GameObject) : Game :=
-  if !(src.isOnBattlefield && dest.isOnBattlefield) then g
-  else
-    let srcPower := (g.power src).toNat
-    let destPower := (g.power dest).toNat
-    let srcDt := g.hasDeathtouch src
-    let destDt := g.hasDeathtouch dest
-    let g := g.dealDamageFrom src.name dest srcPower
-      (deathtouch := srcDt) (source := some src)
-    match g.findObject? src.id, g.findObject? dest.id with
-    | some srcNow, some destNow =>
-      g.dealDamageFrom destNow.name srcNow destPower
-        (deathtouch := destDt) (source := some destNow)
-    | some srcNow, none =>
-      g.dealDamageFrom dest.name srcNow destPower (deathtouch := destDt)
-    | none, _ => g
+  let g := g.dealFightDamage src dest
+  match g.findObject? dest.id, g.findObject? src.id with
+  | some dest, some src => g.dealFightDamage dest src
+  | _, _ => g
 
 /-- Decrease `p`'s life total (CR 118.3a). Losing 0 life does nothing
 (CR 118.9). Loss of life is not damage (CR 120.3). -/
@@ -230,24 +218,6 @@ def continueIfShuffled (g : Game) : Game :=
     | .draw p n => g.draw p n
     | .gainLife p n => g.gainLife p n
     | other => { g with afterRandom := other }
-
-/-- Whether `after` shows that noncombat damage was just dealt to `oid`.
-Prevention and a shield counter do not deal that damage (CR 120 / 614). -/
-def wasJustDealtNoncombatDamage (after before : Game) (oid : ObjectId) : Bool :=
-  match after.findObject? oid with
-  | none => false
-  | some now =>
-    let increased :=
-      match before.findObject? oid with
-      | some prev => now.status.damage > prev.status.damage
-      | none => now.status.damage > 0
-    let freshlyMarked :=
-      match after.lastNoncombatDamage with
-      | some (id, amt) =>
-        id == oid && amt > 0 &&
-          after.lastNoncombatDamage != before.lastNoncombatDamage
-      | none => false
-    increased || freshlyMarked
 
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=

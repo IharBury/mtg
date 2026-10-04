@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -159,7 +158,7 @@ def mountainThenPassageBauble : Game :=
 /-- A source that lists green before colorless still taps for `{C}` when the
 remaining cost is generic. -/
 def greenThenColorlessLand : CardDef :=
-  land "Silent Caves" "{T}: Add {C} or {G}."
+  land "Silent Caves" "{T}: Add {G} or {C}."
     (tapAddOneOf := #[.colored .green, .colorless])
 
 def silentCavesReady : Game :=
@@ -177,7 +176,7 @@ def silentCavesReady : Game :=
 /-- Island `{U}` plus Mountain `{R}` pays `{1}{U}` (generic after colored). -/
 def islandMountainApothecary : Game :=
   let g := addUntappedLand afterDraw island
-  let g := addToHand (addUntappedLand g mountain) lakeshoreApothecaryCard ⟨0⟩
+  let g := addToHand (addUntappedLand g mountain) lakeshoreApothecary ⟨0⟩
   mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lakeshore Apothecary").id)
 
 #guard

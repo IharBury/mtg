@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -26,7 +25,7 @@ player, in that card-text order (CR 601.2c / 115.1c). -/
   .upToOneCreatureThenPlayer
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetCount == 2
 #guard
-  match gollumSilentSlinkerCard.adventure with
+  match gollumSilentSlinker.adventure with
   | some adv => adv.spellEffect == some (Effect.plusOneUpToOneAndPlayerGainsLife 2)
   | none => false
 
@@ -35,7 +34,7 @@ def meagerMealSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g gollumSilentSlinkerCard ⟨0⟩) ⟨0⟩ 1
+  withBlackMana (addToHand g gollumSilentSlinker ⟨0⟩) ⟨0⟩ 1
 
 #guard meagerMealSetup.canCastAdventure ⟨0⟩
   (handCardNamed meagerMealSetup ⟨0⟩ "Gollum, Silent Slinker")
@@ -45,7 +44,7 @@ def meagerMealSetup : Game :=
 legal (the player target remains). -/
 def meagerMealNoCreature : Game :=
   let g := readyMain (emptyHand afterDraw ⟨0⟩)
-  withBlackMana (addToHand g gollumSilentSlinkerCard ⟨0⟩) ⟨0⟩ 1
+  withBlackMana (addToHand g gollumSilentSlinker ⟨0⟩) ⟨0⟩ 1
 
 #guard meagerMealNoCreature.canCastAdventure ⟨0⟩
   (handCardNamed meagerMealNoCreature ⟨0⟩ "Gollum, Silent Slinker")
@@ -214,8 +213,8 @@ def meagerMealNoCreatureAfterSkip : Game :=
     (g.player ⟨0⟩).life == 22 &&
     g.log.any (fun s => mentions s "Chandra gains 2 life")
 
-#guard (Keyword.firstStrike : Keywords).firstStrike
-#guard (Keyword.islandwalk : Keywords).islandwalk
+#guard Keyword.firstStrike.firstStrike
+#guard Keyword.islandwalk.islandwalk
 #guard largeBear.manaCost.manaValue == 5
 #guard
   let p := ManaPool.empty.add (.colored .black) 2 |>.add .colorless 3

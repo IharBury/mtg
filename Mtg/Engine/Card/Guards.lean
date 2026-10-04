@@ -33,29 +33,6 @@ namespace CardDef
 #guard CardDef.stripAdventureDelimiter "//ADV//" == none
 #guard CardDef.stripAdventureDelimiter "//ADV// Spew Flame {4}{R}" ==
   some "Spew Flame {4}{R}"
-#guard
-  let c : CardDef := {
-    name := "Silent Adventurer"
-    types := #[.creature]
-    oracleText :=
-      "Flying\n//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature."
-    keywords := Keyword.flying
-  }
-  leftoverOracleLines c ==
-    ["Spew Flame {4}{R}", "Sorcery — Adventure",
-      "Spew Flame deals 5 damage to target creature."] &&
-    (c.oracleText.splitOn "//ADV//").length > 1
-#guard
-  let c : CardDef := {
-    name := "Silent Adventurer"
-    types := #[.creature]
-    oracleText :=
-      "Flying\n//ADV// Spew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature."
-    keywords := Keyword.flying
-  }
-  leftoverOracleLines c ==
-    ["Spew Flame {4}{R}", "Sorcery — Adventure",
-      "Spew Flame deals 5 damage to target creature."]
 #guard (Effect.dealDamage 3).targetKind == .playerOrCreature
 #guard (Effect.dealDamage 3).resolution == Resolution.onPermanent (.dealDamage 3)
 #guard (Effect.dealDamage 3).phrase == "deals 3 damage to any target"
@@ -223,14 +200,10 @@ namespace CardDef
 #guard TriggerEvent.label .landYouControlEnters == "landfall trigger"
 #guard TriggerEvent.label .becomesBlocked == "becomes-blocked trigger"
 #guard TriggerEvent.label .youCastInstantOrSorcery == "cast trigger"
-#guard TriggerEvent.clause .youCastInstantOrSorceryTargetingArtifactOrLand ==
-  "you cast an instant or sorcery spell that targets an artifact or land"
-#guard TriggerEvent.label .youCastInstantOrSorceryTargetingArtifactOrLand == "cast trigger"
 #guard TriggerEvent.label .anotherElfYouControlEnters == "Elf-enters trigger"
 #guard TriggerEvent.label .attacking == "attack trigger"
 #guard TriggerEvent.label .youAttackWithElves == "attack trigger"
 #guard !TriggerEvent.checkTargets .youCastInstantOrSorcery
-#guard !TriggerEvent.checkTargets .youCastInstantOrSorceryTargetingArtifactOrLand
 #guard !TriggerEvent.checkTargets .youAttackWithElves
 #guard !TriggerEvent.checkTargets .anotherElfYouControlEnters
 #guard TriggerEvent.checkTargets .entering
@@ -453,8 +426,6 @@ namespace CardDef
   .triggered .enter (Effect.ofTrigger (.attachTo .legendaryCreatureYouControl))
 #guard TriggeredAbility.onCombatPlusOneOnCreatureYouControl ==
   .triggered .yourBeginCombat (Effect.ofTrigger (.plusOneOn .creatureYouControl))
-#guard TriggeredAbility.onYourBeginCombatFerociousPlusOne ==
-  .triggered .yourBeginCombat (Effect.ofTrigger .plusOneOnSource) .ferocious
 #guard TriggeredAbility.onEnterOrAttackCreateWall ==
   .triggered .enterOrAttack (Effect.ofTrigger (.createTokens .wall 1))
 #guard TriggeredAbility.onEnterConnive == .triggered .enter (Effect.ofTrigger .connive)
@@ -636,8 +607,7 @@ namespace CardDef
 #guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
 #guard !(Effect.sourceGets 1 0).requiresTarget
 #guard !(Effect.putPlusOnePlusOneOnSource 3).requiresTarget
-#guard toString ({ Keywords.none with cantBeBlocked := true } : Keywords) ==
-  "can't be blocked"
+#guard toString Keyword.cantBeBlocked == "can't be blocked"
 #guard toString Keyword.menace == "menace"
 #guard CardDef.isKeywordRestatement Keyword.menace "Menace"
 #guard CardDef.isKeywordRestatement Keyword.menace
@@ -703,6 +673,18 @@ namespace CardDef
 #guard
   let c : CardDef := { name := "Silent Star", types := #[.creature], toughness := some 3 }
   c.ptString == "*/3"
+#guard
+  let c : CardDef := {
+    name := "Lost Order of Jarkeld", types := #[.creature]
+    power := some 1, toughness := some 1, powerStar := true, toughnessStar := true
+  }
+  c.ptString == "1+*/1+*"
+#guard
+  let c : CardDef := {
+    name := "Tarmogoyf", types := #[.creature]
+    powerStar := true, toughness := some 1, toughnessStar := true
+  }
+  c.ptString == "*/1+*"
 #guard StaticAbility.toNotation (.cantBlockUnlessYouControl #["Goblin", "Orc"]) ==
   "This creature can't block unless you control a Goblin or Orc."
 #guard StaticAbility.toNotation (.cantBlockUnlessYouControl #[]) ==
@@ -856,12 +838,6 @@ namespace CardDef
 #guard TriggeredAbility.firesOn
   (.onCastInstantOrSorceryDealDamageToEachOpponent 2) .youCastInstantOrSorcery
 #guard !TriggeredAbility.firesOn (.onEnterScry 2) .youCastInstantOrSorcery
-#guard TriggeredAbility.firesOn
-  (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand)
-  .youCastInstantOrSorceryTargetingArtifactOrLand
-#guard !TriggeredAbility.firesOn
-  (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand)
-  .youCastInstantOrSorcery
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 3 }
@@ -1000,7 +976,7 @@ namespace CardDef
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
-  .permanentCardInYourGraveyardThisTurn
+  .permanentCardInYourGraveyard
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
   .tapCantUntapWhileControl
 #guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==
@@ -1015,6 +991,10 @@ namespace CardDef
 #guard StaticAbility.toNotation .improvise == "Improvise"
 #guard StaticAbility.toNotation (.typeSpellsCostLess .artifact 1) ==
   "Artifact spells you cast cost {1} less to cast."
+#guard StaticAbility.toNotation (.supertypeSpellsCostLess .legendary 1) ==
+  "Legendary spells you cast cost {1} less to cast."
+#guard StaticAbility.toNotation (.supertypeSpellsCostLess .snow 2) ==
+  "Snow spells you cast cost {2} less to cast."
 #guard StaticAbility.toNotation (.enchantedCreatureGetsHasAndTypes 2 2
     (Keyword.firstStrike.merge Keyword.vigilance) #["legendary", "Soldier"]) ==
   "Enchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types."
@@ -1062,7 +1042,6 @@ end CardDef
   let adv : AdventureFace := {
     name := "Spew Flame"
     manaCost := ManaCost.ofGenericAndColor 4 .red
-    oracleText := "Spew Flame deals 5 damage to target creature."
     spellEffect := some (Effect.dealDamageToCreature 5)
   }
   let c := adv.toCardDef
@@ -1073,7 +1052,6 @@ end CardDef
   let adv : AdventureFace := {
     name := "Till and Tend"
     manaCost := ManaCost.ofGenericAndColor 1 .green
-    oracleText := "You may play an additional land this turn."
     spellEffect := some (Effect.playAdditionalLandThisTurn)
   }
   let c := adv.toCardDef
@@ -1094,7 +1072,6 @@ end CardDef
     adventure := some {
       name := "Spew Flame"
       manaCost := ManaCost.ofGenericAndColor 4 .red
-      oracleText := ""
       spellEffect := some (Effect.dealDamageToCreature 5)
     }
   }

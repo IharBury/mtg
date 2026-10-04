@@ -4,11 +4,12 @@ import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
+import Mtg.Engine.Catalog.RealityFracture
+import Mtg.Engine.Catalog.Supported
 import Mtg.Engine.Color
 import Mtg.Engine.Deck
 import Mtg.Engine.Game
 import Mtg.Engine.Mana
-import Mtg.Engine.Oracle
 import Mtg.Engine.OracleRulings
 import Mtg.Engine.Rules
 import Mtg.Engine.Tests
@@ -20,7 +21,7 @@ import Mtg.Engine.Zone
 # Mtg.Engine
 
 A Lean 4 rules engine for *Magic: The Gathering*, following the Comprehensive
-Rules effective 7 August 2026.
+Rules effective 25 September 2026.
 -/
 
 namespace Mtg.Engine

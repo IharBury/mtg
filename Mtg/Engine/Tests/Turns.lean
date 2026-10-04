@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 
 /-!
@@ -75,37 +74,6 @@ def chandraTurn3 : Game := passBoth nissaEnd
 #guard !(chandraTurn3.battlefield.any (·.status.tapped))
 #guard nissaEnd.battlefield.map (·.id) == chandraTurn3.battlefield.map (·.id)
 #guard chandraTurn3.log.any (fun s => mentions s "untaps Mountain")
-
-/-- CR 500.7 / 702.174g: extra turns are inserted after the current turn.
-The most recently created one is taken first, then seat order resumes
-after the turn they were inserted into. -/
-def extraTurnsQueued : Game :=
-  (atEndStep.scheduleExtraTurn ⟨1⟩).scheduleExtraTurn ⟨0⟩
-
-#guard extraTurnsQueued.extraTurns == #[⟨0⟩, ⟨1⟩]
-#guard extraTurnsQueued.extraTurnAfter == some ⟨0⟩
-
-def chandraExtraTurn : Game := passBoth extraTurnsQueued
-
-#guard chandraExtraTurn.turnNumber == 2
-#guard chandraExtraTurn.activePlayer == ⟨0⟩
-#guard chandraExtraTurn.step == .upkeep
-#guard chandraExtraTurn.extraTurns == #[⟨1⟩]
-#guard chandraExtraTurn.log.any (fun s => mentions s "Chandra's extra turn")
-
-def nissaExtraTurn : Game := passBoth (skipTo chandraExtraTurn .end 80)
-
-#guard nissaExtraTurn.turnNumber == 3
-#guard nissaExtraTurn.activePlayer == ⟨1⟩
-#guard nissaExtraTurn.extraTurns.isEmpty
-#guard nissaExtraTurn.extraTurnAfter == some ⟨0⟩
-
-def turnAfterExtras : Game := passBoth (skipTo nissaExtraTurn .end 80)
-
-#guard turnAfterExtras.turnNumber == 4
-#guard turnAfterExtras.activePlayer == ⟨1⟩
-#guard turnAfterExtras.extraTurnAfter.isNone
-#guard turnAfterExtras.log.any (fun s => mentions s "Nissa's turn 4")
 
 /-- CR 514.3a: ending a pump that was keeping a 0/0 alive causes a state-based
 action, so the active player receives priority still in cleanup. -/
@@ -358,6 +326,16 @@ def namedPermanent (g : Game) (name : String) : GameObject :=
   match g.battlefield.find? (fun o => o.name == name) with
   | some o => o
   | none => panic! s!"expected {name} on the battlefield"
+
+/-- True when a battlefield permanent named `n` exists. -/
+def onBattlefield (g : Game) (n : String) : Bool :=
+  g.battlefield.any (fun o => o.name == n)
+
+/-- Put `card` on the battlefield and let its enters abilities trigger. -/
+def mshEnter (g : Game) (card : CardDef) : Game :=
+  let g := addPermanent g card ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g card.name
+  (g.afterPermanentEnters o).receivePriority ⟨0⟩
 
 def namedGraveyardCard (g : Game) (p : PlayerId) (name : String) : GameObject :=
   match g.objects.find? (fun o => o.name == name && o.zone == .graveyard p) with

@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -124,49 +123,6 @@ def giganticBigBearUncounterable : Game :=
     giganticBigBearUncounterable.stack.back!.objectId).name ==
     "Gigantic Big Bear" &&
     giganticBigBearUncounterable.log.any (fun s => mentions s "can't be countered")
-
-/-- A spell with mana cost `{X}{G}`, so its stack mana value includes X. -/
-def xBeast : CardDef :=
-  creature "X Beast" { symbols := #[.x, .colored .green] } #["Beast"] 0 1
-
-/-- Counter `spell` with Sound the Trumpets' effect. Mana value is taken
-before the spell leaves the stack. -/
-def counterThenMaybeRecruit (spell : CardDef) (chosenX : Option Nat := none) : Game :=
-  let (g, o) := started.allocObject spell ⟨1⟩ .stack (some ⟨1⟩)
-  let o := { o with chosenX := chosenX }
-  let g := g.setObject o
-  g.applyEffect ⟨0⟩ (Effect.counterThenRecruitIfMvAtMost 2) #[.card o.id]
-
-def shockCountered : Game := counterThenMaybeRecruit shock
-
-#guard shockCountered.pending == .recruitDiscard ⟨0⟩
-#guard (shockCountered.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1
-#guard shockCountered.log.any (fun s => s == "Shock is countered")
-
-def ogreCountered : Game := counterThenMaybeRecruit grayOgre
-
-#guard ogreCountered.pending == .none
-#guard (ogreCountered.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size
-#guard ogreCountered.log.any (fun s => s == "Gray Ogre is countered")
-
-/-- `{X}` is 3 on the stack (mana value 4) and 0 after the spell is countered
-(mana value 1). Recruit uses the earlier value. -/
-def xBeastCounteredHigh : Game := counterThenMaybeRecruit xBeast (some 3)
-
-#guard xBeastCounteredHigh.pending == .none
-#guard (xBeastCounteredHigh.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size
-#guard xBeastCounteredHigh.log.any (fun s => s == "X Beast is countered")
-#guard
-  (xBeastCounteredHigh.player ⟨1⟩).graveyard.any fun id =>
-    match xBeastCounteredHigh.findObject? id with
-    | some o => o.name == "X Beast" && xBeastCounteredHigh.objectManaValue o == 1
-    | none => false
-
-/-- `{X}` chosen as 1 makes the stack mana value 2, so recruit happens. -/
-def xBeastCounteredLow : Game := counterThenMaybeRecruit xBeast (some 1)
-
-#guard xBeastCounteredLow.pending == .recruitDiscard ⟨0⟩
-#guard (xBeastCounteredLow.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1
 
 /-- Rage into the Valley draws, loses life, and amasses Goblins. -/
 def rageAmass : Game :=
@@ -523,7 +479,7 @@ def sackvilleNontokenSac : Game :=
 
 def thranduilWithGuardianGy : Game :=
   let g := addPermanent afterDraw thranduilTheElvenking ⟨0⟩ ⟨0⟩
-  addToGraveyard g guardianOfTheHallsCard ⟨0⟩
+  addToGraveyard g guardianOfTheHalls ⟨0⟩
 
 def thranduilSource (g : Game) : GameObject :=
   namedPermanent g "Thranduil, the Elvenking"

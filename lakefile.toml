@@ -8,9 +8,45 @@ relaxedAutoImplicit = false
 
 [[lean_lib]]
 name = "Mtg.Engine"
-# Ruling suites stay off the `Mtg.Engine` import chain so the demo does not
-# wait for them. `lake build` still compiles them as library roots.
-roots = ["Mtg.Engine", "Mtg.Engine.OracleRulings.RulingTests", "Mtg.Engine.OracleRulings.MshRulingTests"]
+
+# One shared plugin for the card model and the Oracle parser. Downstream
+# modules load this library once, so `#guard` calls compiled `parseOracleCard`
+# without loading a dynlib per engine module.
+[[lean_lib]]
+name = "Mtg.Engine.Card"
+precompileModules = true
+globs = ["Mtg.Engine.Card.*", "Mtg.Engine.Color", "Mtg.Engine.Mana", "Mtg.Engine.TypeLine"]
+
+# `Mtg.Engine.Catalog` is the root of every `Mtg.Engine.Catalog.*` module.
+# Lake treats those submodules as part of this library, so precompiling it
+# builds one shared library whose initializers parse every printed card.
+# Each downstream `lake` job reloads that library and parses the catalog
+# again, which dominates build time. Leave the library interpreted.
+# `parseOracleCard!` stays native via `Mtg.Engine.Card`.
+[[lean_lib]]
+name = "Mtg.Engine.Catalog"
+globs = ["Mtg.Engine.Catalog"]
+
+# The rules engine is one plugin, so `#guard` runs compiled game code.
+# Catalog card bodies stay out of this library.
+[[lean_lib]]
+name = "Mtg.Engine.Game"
+precompileModules = true
+globs = [
+  "Mtg.Engine.Game.*",
+  "Mtg.Engine.Deck",
+  "Mtg.Engine.Rng",
+  "Mtg.Engine.Rules",
+  "Mtg.Engine.Turn",
+  "Mtg.Engine.Zone",
+]
+
+# Opening hands and other reused test games. One plugin, so `#guard` reads the
+# stored values instead of replaying start-of-game for every check.
+[[lean_lib]]
+name = "Mtg.Engine.Fixture"
+precompileModules = true
+globs = ["Mtg.Engine.Fixture"]
 
 [[lean_lib]]
 name = "MtgDemo"
@@ -20,3 +56,7 @@ globs = ["Mtg.Demo.*"]
 [[lean_exe]]
 name = "mtg-demo"
 root = "Mtg.Demo"
+
+[[lean_exe]]
+name = "oracle-roundtrip"
+root = "Mtg.OracleRoundtrip"

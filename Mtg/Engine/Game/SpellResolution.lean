@@ -79,9 +79,9 @@ def resolveTop (g : Game) : Game :=
         | _ => g
       else
         let g :=
-          match obj.giftPromisedTo, obj.printed.isInstantOrSorcery, obj.printed.gift with
-          | some to, true, some gift => g.givePromisedGift to gift
-          | _, _, _ => g
+          match obj.giftPromisedTo, obj.printed.isInstantOrSorcery with
+          | some to, true => g.givePromisedGift to
+          | _, _ => g
         let g :=
           match spellEffectOf obj entry.chosenMode with
           | some e => g.applyUnified entry.controller e entry.targets
@@ -89,6 +89,10 @@ def resolveTop (g : Game) : Game :=
             (kicked := obj.kicked)
             (giftPromised := obj.giftPromisedTo.isSome)
             (chosenX := obj.chosenX.getD 0)
+          | none => g
+        let g :=
+          match obj.printed.empowerJace with
+          | some n => g.empowerJace entry.controller n
           | none => g
         if obj.isAdventureSpell then
           g.resolveAdventureSpell entry (g.object! obj.id)
@@ -110,10 +114,6 @@ def resolveTop (g : Game) : Game :=
             else g
           let o := g.object! newId
           let g := g.logMsg s!"{o.name} enters the battlefield"
-          let g :=
-            match o.giftPromisedTo, o.printed.gift with
-            | some to, some gift => g.givePromisedGift to gift
-            | _, _ => g
           g.afterPermanentEnters (g.object! newId)
         else if obj.castFromGraveyard then
           let (g, _) := g.move obj.id .exile none

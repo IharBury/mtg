@@ -17,7 +17,7 @@ cast a spell this turn (MSH 105). The permanent need not have been on
 the battlefield when that spell was cast. -/
 def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
-    (g.staticAbilitiesOf o).any (fun
+    o.staticAbilities.any (fun
       | .flashIfOpponentCastThisTurn => true
       | _ => false)) &&
     (g.livingOpponents p).any (fun pl => pl.spellsCastThisTurn > 0)
@@ -70,6 +70,16 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     else
       available.canPay (o.printed.manaCost.addGeneric n)
         (allowElfRestricted := allowElf)
+  match o.printed.additionalCostBeholdOrPay with
+  | some (quality, n) =>
+    let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)
+    let hasHand :=
+      (g.player p).hand.any (fun id =>
+        match g.findObject? id with
+        | some card => card.printed.hasSubtype quality
+        | none => false)
+    hasPerm || hasHand || payExtra n
+  | none =>
   match o.printed.additionalCostOrPayGeneric, o.printed.additionalCostDiscardOrPayGeneric with
   | some n, _ =>
     (g.permanentsOf p).any (fun perm =>
@@ -371,7 +381,7 @@ def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
     match o.printed.ward with
     | some n => acc := acc.push (.genericMana n)
     | none => pure ()
-    for ab in g.staticAbilitiesOf o do
+    for ab in o.staticAbilities do
       match ab with
       | .wardDiscardEnchantmentInstantOrSorcery =>
         acc := acc.push .discardEnchantmentInstantOrSorcery
@@ -397,7 +407,7 @@ def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
           | none => pure ()
     for src in g.battlefield do
       if src.id != o.id then
-        for ab in g.staticAbilitiesOf src do
+        for ab in src.staticAbilities do
           match ab.grantedWard? with
           | some n =>
             if src.attachedTo == some o.id then

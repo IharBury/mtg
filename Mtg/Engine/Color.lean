@@ -15,7 +15,7 @@ inductive Color where
   | black
   | red
   | green
-deriving DecidableEq, Repr, Hashable, Inhabited, BEq
+deriving DecidableEq, Repr, Hashable, Inhabited
 
 namespace Color
 

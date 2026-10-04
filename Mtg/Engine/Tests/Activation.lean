@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 
@@ -135,7 +134,7 @@ def resolvedBauble : Game := passBoth paidBauble
 /-- Snowslope Hunter plus fodder and a known library top, in the precombat main. -/
 def hunterReady : Game :=
   let g := skipTo started .precombatMain 80
-  let g := addPermanent g snowslopeHunterCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g snowslopeHunter ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
   let g := addUntappedLand g mountain
@@ -149,9 +148,9 @@ def hunterFodder (g : Game) : GameObject :=
   namedPermanent g "Raging Goblin"
 
 def hunterAbility : ActivatedAbility :=
-  snowslopeHunterCard.activatedAbilities[0]!
+  snowslopeHunter.activatedAbilities[0]!
 
-#guard snowslopeHunterCard.activatedAbilities.size == 1
+#guard snowslopeHunter.activatedAbilities.size == 1
 #guard hunterAbility.cost.sacrificeAnotherCreatureOrArtifact
 #guard hunterAbility.effect == Effect.exileTopPlayUntilEndOfNextTurn
 #guard hunterAbility.onlyDuringYourTurn
@@ -300,7 +299,7 @@ def resolvedExiledBolt : Game := passBoth paidExiledBolt
 -- Playing an exiled land uses the land drop.
 def hunterLandReady : Game :=
   let g := skipTo started .precombatMain 80
-  let g := addPermanent g snowslopeHunterCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g snowslopeHunter ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   addToLibraryTop g mountain ⟨0⟩
 
@@ -394,7 +393,7 @@ def hunterPermissionExpired : Game :=
 -- Empty library: the ability still resolves.
 def hunterEmptyLibrary : Game :=
   let g := skipTo started .precombatMain 80
-  let g := addPermanent g snowslopeHunterCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g snowslopeHunter ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
 
@@ -426,7 +425,7 @@ def siegeAndOppGoblin : Game :=
 /-- Snowslope Hunter (a Goblin) trampling over Llanowar Elves. -/
 def siegeHunterVsElves : Game :=
   let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
-  let g := addPermanent g snowslopeHunterCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g snowslopeHunter ⟨0⟩ ⟨0⟩
   addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
 
 def hunterGrantedTrampleAttack : Game :=
@@ -449,7 +448,7 @@ def afterGrantedTrample : Game := passBoth hunterGrantedTrampleBlocked
 
 /-- Without the Siegemaster, the same Goblin assigns all damage to the blocker. -/
 def hunterOnlyVsElves : Game :=
-  addPermanent (addPermanent started snowslopeHunterCard ⟨0⟩ ⟨0⟩) llanowarElves ⟨1⟩ ⟨1⟩
+  addPermanent (addPermanent started snowslopeHunter ⟨0⟩ ⟨0⟩) llanowarElves ⟨1⟩ ⟨1⟩
 
 def afterHunterNoTrample : Game :=
   let g := passBoth (skipTo hunterOnlyVsElves .beginningOfCombat 80)

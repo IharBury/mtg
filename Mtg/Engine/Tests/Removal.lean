@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -509,7 +508,7 @@ modified event are ignored.
 /-- Head of the Hunt replaces an opposing death: the die event never happens,
 so Great Fierce Bee does not trigger, and `creatureDiedThisTurn` stays false. -/
 def headExilesPreyBeeSilent : Game :=
-  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let g := addPermanent g headOfTheHunt ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   (withLethal g "Grizzly Bears").checkSBA
@@ -529,7 +528,7 @@ def headExilesPreyBeeSilent : Game :=
 /-- Bee itself dying does not see an opposing creature that was exiled instead
 of dying. The Bee did die, so `creatureDiedThisTurn` is true. -/
 def beeDiesWhileHeadExilesPrey : Game :=
-  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let g := addPermanent g headOfTheHunt ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := withLethal g "Great Fierce Bee"
@@ -609,10 +608,10 @@ def agentSmite : Game :=
 
 /- Ravening Warg: deathtouch (CR 702.2 / 704.5h) and Ferocious attack-gain-life. -/
 
-#guard raveningWargCard.keywords.deathtouch
-#guard raveningWargCard.triggeredAbilities == #[.onAttackFerociousGainLife 2]
-#guard raveningWargCard.power == some 2
-#guard raveningWargCard.toughness == some 2
+#guard raveningWarg.keywords.deathtouch
+#guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
+#guard raveningWarg.power == some 2
+#guard raveningWarg.toughness == some 2
 #guard withWarg.hasDeathtouch (namedPermanent withWarg "Ravening Warg")
 #guard (withWarg.effectiveKeywords (namedPermanent withWarg "Ravening Warg")).deathtouch
 #guard withWarg.power (namedPermanent withWarg "Ravening Warg") == 2
@@ -825,7 +824,7 @@ def tramplerVsBalothAfterDamage : Game :=
 
 /-- Quarrel from Ravening Warg applies deathtouch to the damage it deals. -/
 def quarrelWargVsGiant : Game :=
-  let g := addPermanent afterDraw raveningWargCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw raveningWarg ⟨0⟩ ⟨0⟩
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
 
@@ -852,7 +851,7 @@ def resolvedQuarrelWarg : Game :=
 #guard nightsWhisper.spellEffect == some (Effect.drawAndLoseLife 2 2)
 #guard nightsWhisper.hasCastKind .draw
 #guard !nightsWhisper.requiresTarget
-#guard mentions nightsWhisper.summary "draw two cards"
+#guard mentions nightsWhisper.summary "draw 2 cards"
 #guard mentions nightsWhisper.summary "lose 2 life"
 
 -- Direct resolution draws that many cards and loses that much life.
@@ -989,42 +988,5 @@ def agentNightsWhisperOnly : Game :=
   | some (.declareAttackers ids _ _) =>
     ids.contains (namedPermanent g "Ravening Warg").id
   | _ => false
-
--- Nasty Little Rabbit: Ferocious beginning of combat puts a +1/+1 counter.
-
-#guard nastyLittleRabbit.triggeredAbilities == #[.onYourBeginCombatFerociousPlusOne]
-#guard nastyLittleRabbit.subtypes == #["Rabbit"]
-#guard nastyLittleRabbit.power == some 1
-#guard nastyLittleRabbit.toughness == some 2
-
-def rabbitAndBaloth : Game :=
-  addPermanent (addPermanent started nastyLittleRabbit ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨0⟩ ⟨0⟩
-
-#guard rabbitAndBaloth.triggerConditionHolds ⟨0⟩ .onYourBeginCombatFerociousPlusOne
-
--- Alone, Nasty Little Rabbit is 1/2, so Ferocious does not trigger.
-#guard
-  let g := skipTo (addPermanent started nastyLittleRabbit ⟨0⟩ ⟨0⟩) .beginningOfCombat 80
-  g.stack.isEmpty &&
-    (namedPermanent g "Nasty Little Rabbit").status.plusOnePlusOne == 0 &&
-    !g.triggerConditionHolds ⟨0⟩ .onYourBeginCombatFerociousPlusOne
-
-def rabbitBeginCombat : Game :=
-  skipTo rabbitAndBaloth .beginningOfCombat 80
-
-#guard rabbitBeginCombat.step == .beginningOfCombat
-#guard rabbitBeginCombat.stack.size == 1
-#guard (rabbitBeginCombat.object! rabbitBeginCombat.stack.back!.objectId).triggeredAbility ==
-  some .onYourBeginCombatFerociousPlusOne
-#guard rabbitBeginCombat.log.any (fun s => mentions s "begin-combat trigger")
-
-def rabbitBeginCombatResolved : Game := passBoth rabbitBeginCombat
-
-#guard rabbitBeginCombatResolved.stack.isEmpty
-#guard (namedPermanent rabbitBeginCombatResolved "Nasty Little Rabbit").status.plusOnePlusOne == 1
-#guard rabbitBeginCombatResolved.power
-  (namedPermanent rabbitBeginCombatResolved "Nasty Little Rabbit") == 2
-#guard rabbitBeginCombatResolved.toughness
-  (namedPermanent rabbitBeginCombatResolved "Nasty Little Rabbit") == 3
 
 end Mtg.Engine.Tests

@@ -37,6 +37,8 @@ structure PlayPermission where
   ignoreTiming : Bool := false
   /-- The card is exiled face down (Flameshape, Riddles in the Dark). -/
   faceDown : Bool := false
+  /-- Casting this exiled copy unprepares `prepareSource`. -/
+  prepareSource : Option ObjectId := none
   /-- Cast by paying life equal to mana value instead of the mana cost. -/
   payLifeEqualManaValue : Bool := false
 deriving Repr, Inhabited, BEq
@@ -259,5 +261,12 @@ structure WaitingTrigger where
   Baron Strucker; MSH 422). -/
   causeId : Option ObjectId := none
 deriving Repr, Inhabited
+
+/-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/
+def GameObject.waitingTriggersFor (source : GameObject) (controller : PlayerId)
+    (event : TriggerEvent) (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Array WaitingTrigger :=
+  source.matchingTriggers event |>.map (fun ab =>
+    { controller, source, ability := ab, event, lastKnownPower, lastKnownToughness })
 
 end Mtg.Engine

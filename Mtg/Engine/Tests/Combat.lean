@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Activation
@@ -466,12 +465,12 @@ def hexproofFlyer : CardDef :=
 /-- Warg Tactics in hand, Grizzly Bears you control, an opposing flyer, enough mana. -/
 def wargSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent g velvetwingButterflies ⟨1⟩ ⟨1⟩
   withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
 
 #guard wargSetup.canCast ⟨0⟩ (handCardNamed wargSetup ⟨0⟩ "Warg Tactics")
-#guard wargTacticsCard.isModal
-#guard wargTacticsCard.requiresTarget
+#guard wargTactics.isModal
+#guard wargTactics.requiresTarget
 #guard (wargSetup.legalModes ⟨0⟩ (handCardNamed wargSetup ⟨0⟩ "Warg Tactics")).size == 2
 
 -- Cannot cast with no legal mode (no flyer and no creature you control).
@@ -495,7 +494,7 @@ def wargSetup : Game :=
   g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics") &&
     g.legalModes ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics") == #[1]
 #guard
-  let g := addPermanent afterDraw velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
   let g := withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
   g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics") &&
     g.legalModes ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics") == #[0]
@@ -725,7 +724,7 @@ def resolvedNissaBoltPlayer : Game := passBoth paidNissaBoltPlayer
 
 /-- The agent casts Warg Tactics to destroy a flyer when that is the playable spell. -/
 def agentWargDestroyOnly : Game :=
-  let g := addPermanent afterDraw velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
   let g := clearHandPlayedLand g ⟨0⟩
   withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
 

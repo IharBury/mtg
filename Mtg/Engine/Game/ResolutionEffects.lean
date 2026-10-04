@@ -348,7 +348,7 @@ def theVoidToken : CardDef :=
   { (creatureToken "The Void" #["Horror", "Villain"] 5 5 (some .black)
       ((Keyword.flying).merge Keyword.indestructible)) with
     supertypes := #[.legendary]
-    oracleText := "Flying, indestructible\nThe Void attacks each combat if able." }
+    staticAbilities := #[.attacksEachCombatIfAble] }
 
 def galactusToken : CardDef :=
   { (creatureToken "Galactus" #["Elder", "Alien"] 16 16 (some .black)
@@ -604,8 +604,7 @@ def applyModeledReflexive (g : Game) (targets : Array Target := #[])
             g.dealDamageToPlayer pid 2
           | Target.permanent id =>
             match g.findObject? id with
-            | some o => g.mapObjectStatus o
-                (·.grantUntilEot { Keywords.none with cantBeBlocked := true })
+            | some o => g.mapObjectStatus o (·.grantUntilEot Keyword.cantBeBlocked)
             | none => g
           | Target.card _ => g) sourceId (some "The target is no longer legal")
     else if kind == 3 then

@@ -4,7 +4,6 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Game
-import Mtg.Engine.Oracle
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 import Mtg.Engine.Tests.Auras
@@ -23,17 +22,17 @@ open Mtg.Engine.Catalog
 /-- Smaug in hand, an opposing creature, and enough mana for either face. -/
 def smaugSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  withRedMana (addToHand g smaugTheGreatCalamityCard ⟨0⟩) ⟨0⟩ 7
+  withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 7
 
-#guard smaugTheGreatCalamityCard.hasAdventure
-#guard smaugTheGreatCalamityCard.keywords.flying
+#guard smaugTheGreatCalamity.hasAdventure
+#guard smaugTheGreatCalamity.keywords.flying
 #guard smaugSetup.canCast ⟨0⟩ (handCardNamed smaugSetup ⟨0⟩ "Smaug, the Great Calamity")
 #guard smaugSetup.canCastAdventure ⟨0⟩ (handCardNamed smaugSetup ⟨0⟩ "Smaug, the Great Calamity")
 #guard smaugSetup.asSorcery? ⟨0⟩
 
 /-- Spew Flame requires a creature. -/
 def smaugNoTarget : Game :=
-  withRedMana (addToHand afterDraw smaugTheGreatCalamityCard ⟨0⟩) ⟨0⟩ 5
+  withRedMana (addToHand afterDraw smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 5
 
 #guard !smaugNoTarget.canCastAdventure ⟨0⟩
   (handCardNamed smaugNoTarget ⟨0⟩ "Smaug, the Great Calamity")
@@ -185,7 +184,7 @@ def smaugAtEndStep : Game := skipTo smaugSetup .end 80
 /-- Reversing an unpaid Adventure returns the creature card to hand. -/
 def unpaidSpewFlame : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := addToHand g smaugTheGreatCalamityCard ⟨0⟩
+  let g := addToHand g smaugTheGreatCalamity ⟨0⟩
   let g := mustApply g ⟨0⟩
     (.castAdventure (handCardNamed g ⟨0⟩ "Smaug, the Great Calamity").id)
   mustApply g ⟨0⟩ (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
@@ -200,7 +199,7 @@ def reversedSpewFlame : Game := mustApply unpaidSpewFlame ⟨0⟩ .pay
 def agentSmaugOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := clearHandPlayedLand g ⟨0⟩
-  withRedMana (addToHand g smaugTheGreatCalamityCard ⟨0⟩) ⟨0⟩ 5
+  withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 5
 
 #guard
   match Agent.choose agentSmaugOnly ⟨0⟩ with
@@ -211,7 +210,7 @@ def agentSmaugOnly : Game :=
 /-- With no opposing creature, the heuristic casts Smaug as a creature. -/
 def agentSmaugCreatureOnly : Game :=
   let g := clearHandPlayedLand afterDraw ⟨0⟩
-  withRedMana (addToHand g smaugTheGreatCalamityCard ⟨0⟩) ⟨0⟩ 7
+  withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 7
 
 #guard
   match Agent.choose agentSmaugCreatureOnly ⟨0⟩ with
@@ -555,7 +554,7 @@ def crusherStillBlockingAfterGoblinLeaves : Game :=
 
 /-- A Goblin still does not let Crusher block a flyer. -/
 def flyerVsCrusherAndGoblinReadyToBlock : Game :=
-  let g := addPermanent (addPermanent (addPermanent started greatFierceBeeCard ⟨0⟩ ⟨0⟩)
+  let g := addPermanent (addPermanent (addPermanent started greatFierceBee ⟨0⟩ ⟨0⟩)
     ologHaiCrusher ⟨1⟩ ⟨1⟩) ragingGoblin ⟨1⟩ ⟨1⟩
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Great Fierce Bee").id])

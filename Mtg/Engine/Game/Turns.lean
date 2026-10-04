@@ -92,10 +92,6 @@ def clearTurnActivations (g : Game) : Game :=
           boastUsedThisTurn := false
           becameTappedThisTurn := false
           gotPlusOneThisTurn := false } }
-    for o in g.objects do
-      if o.status.putIntoGraveyardThisTurn then
-        g := g.setObject { o with status := { o.status with
-          putIntoGraveyardThisTurn := false } }
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/
@@ -142,42 +138,26 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
     cantCastSpellsThisTurn := false
     attackPumpPerPlainsThisTurn := 0 }
 
-/-- Begin a turn for `p`. `extra` is an inserted turn (CR 500.7). -/
-def beginPlayerTurn (g : Game) (p : PlayerId) (extra : Bool) : Game :=
-  let g := { g with
-    activePlayer := p
-    turnNumber := g.turnNumber + 1
-    isFirstTurn := false
-    cleanupGivesPriority := false }
-  let kind := if extra then "extra turn" else "turn"
-  g.logMsg s!"It is now {g.player p |>.name}'s {kind} {g.turnNumber}"
-
 /-- Advance to the next living player's turn after a cleanup step ends.
 A player who has left does not begin a turn (CR 800.4k); effects that last
-until that turn expire when it would have begun (CR 800.4m). Extra turns
-inserted after the current turn are taken first (CR 500.7 / 702.174g). -/
+until that turn expire when it would have begun (CR 800.4m). -/
 def startNextTurn (g : Game) : Game :=
   let ending := g.activePlayer
   let g := g.expirePlayPermissions ending |>.clearTurnActivations
   let n := g.players.size
   Id.run do
     let mut g := g
-    -- Extra turns inserted after the anchored turn (CR 500.7 / 702.174g).
-    while !g.extraTurns.isEmpty do
-      let p := g.extraTurns[0]!
-      g := { g with extraTurns := g.extraTurns.extract 1 g.extraTurns.size }
-      if (g.player p).lost then
-        g := g.expireUntilNextTurnEffects p
-      else
-        return g.beginPlayerTurn p true
-    let endingForOrder := g.extraTurnAfter.getD ending
-    g := { g with extraTurnAfter := none }
     for k in [1:n+1] do
-      let q : PlayerId := ⟨(endingForOrder.idx + k) % n⟩
+      let q : PlayerId := ⟨(ending.idx + k) % n⟩
       if (g.player q).lost then
         g := g.expireUntilNextTurnEffects q
       else
-        return g.beginPlayerTurn q false
+        g := { g with
+          activePlayer := q
+          turnNumber := g.turnNumber + 1
+          isFirstTurn := false
+          cleanupGivesPriority := false }
+        return g.logMsg s!"It is now {g.player q |>.name}'s turn {g.turnNumber}"
     return g
 
 /-- `partial` because a silent cleanup (CR 514.3) immediately begins the next
@@ -206,7 +186,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         -- previously tapped permanent makes the battlefield status change
         -- visible in the demo before the zone reprint.
         let skipUntap :=
-          ((g.staticAbilitiesOf o).any StaticAbility.doesntUntapUnlessEnduringStory? &&
+          (o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
             !g.hasEnduringStory ap) ||
           g.hostCantBecomeUntapped o
         if o.status.tapped && !skipUntap then
