@@ -24,7 +24,8 @@ def bofurReliableGuardian : CardDef :=
     "1/1",
     "Lifelink",
     "//ADV//",
-    "Concerted Care {1}{W}",
+    "Concerted Care",
+    "{1}{W}",
     "Instant — Adventure",
     "Target artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)",
   ]
@@ -46,7 +47,8 @@ def velvetwingButterflies : CardDef :=
     "2/2",
     "Flying",
     "//ADV//",
-    "Gaze in Wonder {1}{W}",
+    "Gaze in Wonder",
+    "{1}{W}",
     "Instant — Adventure",
     "Tap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)",
   ]
@@ -86,7 +88,8 @@ def bilboBagginsBurglar : CardDef :=
     "2/1",
     "When Bilbo Baggins enters, draw a card.",
     "//ADV//",
-    "Take a Glance {U}",
+    "Take a Glance",
+    "{U}",
     "Sorcery — Adventure",
     "Scry 2. (Then exile this card. You may cast the creature later from exile.)",
   ]
@@ -138,7 +141,8 @@ def bilboLuckwearer : CardDef :=
     "Bilbo can't be blocked.",
     "Whenever Bilbo deals combat damage to a player, draw a card, then discard a card.",
     "//ADV//",
-    "Burglar's Plot {4}{U}",
+    "Burglar's Plot",
+    "{4}{U}",
     "Sorcery — Adventure",
     "Exchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)",
   ]
@@ -207,7 +211,8 @@ def gollumSilentSlinker : CardDef :=
     "4/3",
     "Menace (This creature can't be blocked except by two or more creatures.)",
     "//ADV//",
-    "Meager Meal {B}",
+    "Meager Meal",
+    "{B}",
     "Sorcery — Adventure",
     "Put a +1/+1 counter on up to one target creature. Target player gains 2 life. (Then exile this card. You may cast the creature later from exile.)",
   ]
@@ -288,7 +293,8 @@ def smaugTheGreatCalamity : CardDef :=
     "5/5",
     "Flying",
     "//ADV//",
-    "Spew Flame {4}{R}",
+    "Spew Flame",
+    "{4}{R}",
     "Sorcery — Adventure",
     "Spew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)",
   ]
@@ -396,7 +402,8 @@ def beornReluctantHost : CardDef :=
     "5/5",
     "Trample",
     "//ADV//",
-    "Till and Tend {1}{G}",
+    "Till and Tend",
+    "{1}{G}",
     "Sorcery — Adventure",
     "You may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)",
   ]
@@ -898,7 +905,8 @@ def greatUglyLookingGoblin : CardDef :=
     "4/4",
     "Each creature you control with a +1/+1 counter on it has menace. (It can't be blocked except by two or more creatures.)",
     "//ADV//",
-    "Clap! Snap! {1}{B}",
+    "Clap! Snap!",
+    "{1}{B}",
     "Sorcery — Adventure",
     "Amass Goblins 2. (Then exile this card. You may cast the creature later from exile.)",
   ]
@@ -911,7 +919,8 @@ def theArkenstone : CardDef :=
     "Creatures you control get +1/+1.",
     "At the beginning of your end step, draw a card.",
     "//ADV//",
-    "Seek the Heart {2}{W}",
+    "Seek the Heart",
+    "{2}{W}",
     "Sorcery — Adventure",
     "Search your library for a legendary creature card, reveal it, put it into your hand, then shuffle. (Then exile this card. You may cast the artifact later from exile.)",
   ]
@@ -1069,7 +1078,8 @@ def mostDecrepitOldBird : CardDef :=
     "Flying",
     "Threshold — This creature gets +1/+1 as long as there are seven or more cards in your graveyard.",
     "//ADV//",
-    "Speak Secrets {1}{U}",
+    "Speak Secrets",
+    "{1}{U}",
     "Sorcery — Adventure",
     "Mill four cards, then put an instant or sorcery card from among them into your hand.",
   ]
@@ -1083,7 +1093,8 @@ def lakeTownMariners : CardDef :=
     "Vigilance",
     "Ward {2} (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {2}.)",
     "//ADV//",
-    "Gone Fishing {3}{U}",
+    "Gone Fishing",
+    "{3}{U}",
     "Instant — Adventure",
     "Exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control.",
   ]
@@ -1116,7 +1127,8 @@ def thranduilSindarinLiege : CardDef :=
     "Other Elves you control get +1/+1.",
     "Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.",
     "//ADV//",
-    "Silvan Rally {1}{G/U}{G/U}",
+    "Silvan Rally",
+    "{1}{G/U}{G/U}",
     "Sorcery — Adventure",
     "Mill four cards, then put up to two land cards from among them into your hand. (Then exile this card. You may cast the creature later from exile.)",
   ]
@@ -1129,7 +1141,8 @@ def gloinTheMighty : CardDef :=
     "4/3",
     "At the beginning of your first main phase, add {R}{R}.",
     "//ADV//",
-    "Easy Pickings {2}{R}",
+    "Easy Pickings",
+    "{2}{R}",
     "Sorcery — Adventure",
     "Easy Pickings deals 1 damage to each creature your opponents control. (Then exile this card. You may cast the creature later from exile.)",
   ]
@@ -1191,10 +1204,11 @@ def myPrecious : CardDef :=
     "Equipped creature has hexproof and can't be blocked.",
     "Equip—{2}, Pay 2 life.",
     "//ADV//",
-    "Allure of Power {1}{B}",
+    "Allure of Power",
+    "{1}{B}",
     "Instant — Adventure",
     "As an additional cost to cast this spell, sacrifice a creature.",
-    "Draw two cards. (Then exile this card. You may cast the artifact later from exile.)",
+    "Draw two cards.",
   ]
 
 def troopOfPonies : CardDef :=
@@ -1275,7 +1289,8 @@ def glamdringFoeHammer : CardDef :=
     "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.",
     "Equip {2}",
     "//ADV//",
-    "Gleam of Death {3}{U}",
+    "Gleam of Death",
+    "{3}{U}",
     "Sorcery — Adventure",
     "Mill six cards, then put all instant and sorcery cards from among them into your hand. (Then exile this card. You may cast the artifact later from exile.)",
   ]
@@ -1306,9 +1321,10 @@ def gandalfGoblinsBane : CardDef :=
     "2/3",
     "Whenever you cast a noncreature spell, Gandalf gets +1/+1 until end of turn and deals 1 damage to each opponent.",
     "//ADV//",
-    "Flameshape {1}{R}",
+    "Flameshape",
+    "{1}{R}",
     "Sorcery — Adventure",
-    "Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard. (Then exile this card. You may cast the creature later from exile.)",
+    "Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard.",
   ]
 
 def anUnexpectedParty : CardDef :=
@@ -1319,7 +1335,8 @@ def anUnexpectedParty : CardDef :=
     "As this enchantment enters, choose a creature type.",
     "Creatures you control of the chosen type get +2/+2.",
     "//ADV//",
-    "At the Door {X}{2}{W}",
+    "At the Door",
+    "{X}{2}{W}",
     "Sorcery — Adventure",
     "Create X 2/2 red Dwarf creature tokens. (Then exile this card. You may cast the enchantment later from exile.)",
   ]

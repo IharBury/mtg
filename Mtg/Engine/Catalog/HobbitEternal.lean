@@ -722,6 +722,7 @@ def thranduilTheStrategist : CardDef :=
 def moxAmber : CardDef :=
   fromOracle [
     "Mox Amber",
+    "{0}",
     "Legendary Artifact",
     "{T}: Add one mana of any color among legendary creatures and planeswalkers you control.",
   ]
@@ -1104,7 +1105,7 @@ def thorinCompanySLeader : CardDef :=
     "{4}{R}",
     "Legendary Creature — Dwarf Warrior",
     "4/5",
-    "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens.",
+    "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens. (They're artifacts with \"{T}, Sacrifice this token: Add one mana of any color.\")",
     "{10}: Creatures you control gain double strike until end of turn.",
   ]
 

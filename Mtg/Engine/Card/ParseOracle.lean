@@ -664,7 +664,8 @@ where
       some { c with tapAddAnyColorAmongLegendaries := true }
     else if low.contains "in your commander's color identity" then
       some { c with tapAddCommanderIdentity := true }
-    else if low.contains "sacrifice this artifact: add one mana of any color" then
+    else if low.contains "sacrifice this artifact: add one mana of any color" ||
+        low.contains "sacrifice this token: add one mana of any color" then
       some { c with tapSacrificeAddAnyColor := true }
     else if low.contains "two mana in any combination" then
       let rest := (raw.splitOn "combination of ").getLastD "" |>.replace "." ""
@@ -914,8 +915,16 @@ def parseAdventure (lines : List String) : Except String AdventureFace :=
   match lines with
   | [] => .error "empty Adventure"
   | nameLine :: rest =>
-    let (name, cost?) := splitNameCost nameLine
-    match rest with
+    let (name, costOnName) := splitNameCost nameLine
+    let (cost, afterCost) :=
+      match costOnName, rest with
+      | some cost, rest => (cost, rest)
+      | none, line :: rest =>
+        match parseManaCost line with
+        | some cost => (cost, rest)
+        | none => (ManaCost.empty, line :: rest)
+      | none, [] => (ManaCost.empty, [])
+    match afterCost with
     | [] => .error s!"Adventure {name} is missing a type line"
     | typeLine :: rules =>
       match parseTypeLine typeLine with
@@ -923,7 +932,7 @@ def parseAdventure (lines : List String) : Except String AdventureFace :=
       | .ok (_, types, subtypes) =>
         let base : CardDef := {
           name
-          manaCost := cost?.getD ManaCost.empty
+          manaCost := cost
           types
           subtypes := if subtypes.isEmpty then #["Adventure"] else subtypes
         }

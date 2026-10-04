@@ -640,7 +640,7 @@ def treasureToken : CardDef :=
     "Treasure",
     "Artifact — Treasure",
     "Token",
-    "{T}, Sacrifice this artifact: Add one mana of any color.",
+    "{T}, Sacrifice this token: Add one mana of any color.",
   ]
 
 /-- A creature token with a color indicator (CR 202.2e). -/
@@ -658,7 +658,7 @@ def humanSoldierToken : CardDef :=
     "Human Soldier",
     "Creature — Human Soldier",
     "1/1",
-    "Color indicator: white",
+    "Color indicator: White",
     "Token",
   ]
 
@@ -668,7 +668,7 @@ def foodToken : CardDef :=
     "Food",
     "Artifact — Food",
     "Token",
-    "{2}, {T}, Sacrifice this artifact: You gain 3 life.",
+    "{2}, {T}, Sacrifice this token: You gain 3 life.",
   ]
 
 def wolfToken : CardDef :=
@@ -676,7 +676,7 @@ def wolfToken : CardDef :=
     "Wolf",
     "Creature — Wolf",
     "2/2",
-    "Color indicator: green",
+    "Color indicator: Green",
     "Token",
   ]
 
@@ -685,7 +685,7 @@ def dwarfToken : CardDef :=
     "Dwarf",
     "Creature — Dwarf",
     "2/2",
-    "Color indicator: red",
+    "Color indicator: Red",
     "Token",
   ]
 
@@ -694,7 +694,7 @@ def bearToken : CardDef :=
     "Bear",
     "Creature — Bear",
     "2/2",
-    "Color indicator: green",
+    "Color indicator: Green",
     "Token",
   ]
 
@@ -703,7 +703,7 @@ def elfToken : CardDef :=
     "Elf",
     "Creature — Elf",
     "1/1",
-    "Color indicator: green",
+    "Color indicator: Green",
     "Token",
   ]
 
@@ -851,7 +851,7 @@ def canyonMinotaur : CardDef :=
   fromOracle [
     "Canyon Minotaur",
     "{3}{R}",
-    "Creature — Minotaur",
+    "Creature — Minotaur Warrior",
     "3/3",
   ]
 
@@ -859,7 +859,7 @@ def ragingGoblin : CardDef :=
   fromOracle [
     "Raging Goblin",
     "{R}",
-    "Creature — Goblin",
+    "Creature — Goblin Berserker",
     "1/1",
     "Haste (This creature can attack and {T} as soon as it comes under your control.)",
   ]
@@ -876,7 +876,7 @@ def llanowarElves : CardDef :=
 def crawWurm : CardDef :=
   fromOracle [
     "Craw Wurm",
-    "{4}{G}",
+    "{4}{G}{G}",
     "Creature — Wurm",
     "6/4",
   ]
@@ -885,7 +885,7 @@ def centaurCourser : CardDef :=
   fromOracle [
     "Centaur Courser",
     "{2}{G}",
-    "Creature — Centaur",
+    "Creature — Centaur Warrior",
     "3/3",
   ]
 

@@ -31,12 +31,15 @@ def main : IO UInt32 := do
     "Mountain\nBasic Land — Mountain\n({T}: Add {R}.)"
     (fun c => c.isLand && c.hasSupertype .basic && c.tapAddMana.isEmpty))
   fails := fails + (← expect "Allure of Power"
-    "My Precious\n{3}\nLegendary Artifact — Equipment\nEquipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life.\n//ADV//\nAllure of Power {1}{B}\nInstant — Adventure\nAs an additional cost to cast this spell, sacrifice a creature.\nDraw two cards."
+    "My Precious\n{3}\nLegendary Artifact — Equipment\nEquipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life.\n//ADV//\nAllure of Power\n{1}{B}\nInstant — Adventure\nAs an additional cost to cast this spell, sacrifice a creature.\nDraw two cards."
     (fun c =>
       match c.adventure with
       | some a => a.name == "Allure of Power" && a.spellEffect == some (Effect.draw 2) &&
           a.additionalCostSacrificeCreature
       | none => false))
+  fails := fails + (← expect "Treasure"
+    "Treasure\nArtifact — Treasure\nToken\n{T}, Sacrifice this token: Add one mana of any color."
+    (fun c => c.tapSacrificeAddAnyColor && c.isArtifact))
   fails := fails + (← expect "Thanos"
     "Thanos, the Mad Titan\n{R}{W}{B}\nLegendary Creature — Eternal Villain\n4/4\nDeathtouch, lifelink\nPower-up — {C}{W}{U}{B}{R}{G}: Put two +1/+1 counters on Thanos. Choose odd or even. Destroy each other creature with mana value of the chosen quality."
     (fun c => c.activatedAbilities.size == 1 && c.activatedAbilities[0]!.powerUp &&

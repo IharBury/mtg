@@ -1387,7 +1387,7 @@ def hawkeyeSBow : CardDef :=
     "Artifact — Equipment",
     "Equipped creature gets +1/+0 and has reach.",
     "Whenever equipped creature becomes tapped, it deals 1 damage to each opponent.",
-    "Equip {1}",
+    "Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)",
   ]
 
 def hexMagic : CardDef :=
