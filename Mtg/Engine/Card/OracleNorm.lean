@@ -1,9 +1,9 @@
 /-!
 # Oracle-text normalization
 
-Comparable form of printed Oracle lines. Reminder text, ability words, and
-the card's own name are removed so a line can be matched to the ability the
-engine models.
+Comparable form of printed Oracle lines. Reminder text (CR 207.2a), ability
+words, and the card's own name are removed so a line can be matched to the
+ability the engine models.
 -/
 
 namespace Mtg.Engine.OracleNorm
@@ -25,7 +25,12 @@ def collapseWs (s : String) : String :=
         go rest false (c :: acc)
   String.ofList (go s.toList false [])
 
-/-- Drop balanced parentheticals, including nested reminder text. -/
+/-- Drop balanced parentheticals, including nested reminder text.
+
+CR 207.2a: reminder text is parenthetical text in the text box. It may sit on
+the same line as an ability or on a line of its own, and it is not rules text.
+Oracle plaintext has no italic markup, so a parenthetical is the reminder.
+-/
 def stripParentheticals (s : String) : String :=
   Id.run do
     let mut acc : Array Char := #[]
@@ -39,12 +44,13 @@ def stripParentheticals (s : String) : String :=
         acc := acc.push c
     return String.ofList acc.toList
 
-/-- If the whole line is a parenthetical (basic-land reminder), unwrap it. -/
-def unwrapOuterParens (s : String) : String :=
-  let t := s.trimAscii.copy
-  if t.startsWith "(" && t.endsWith ")" && t.length >= 2 then
-    (t.drop 1 |>.dropEnd 1).trimAscii.copy
-  else t
+/-- Rules text of one printed line, with reminder text removed (CR 207.2a).
+
+A line that is only a parenthetical — a basic-land mana reminder, a Saga
+reminder, or a keyword reminder printed on its own line — is empty.
+-/
+def dropReminderText (s : String) : String :=
+  (stripParentheticals s).trimAscii.copy
 
 /-- Drop a leading ability word (`Landfall —`, `Ferocious —`). -/
 def stripAbilityWord (s : String) : String :=
@@ -129,8 +135,7 @@ def replaceWord (s old new : String) : String :=
 
 /-- Lowercase, drop reminders, and replace the card's name with `this`. -/
 def prepareLine (cardName : String) (s : String) : String :=
-  let s := unwrapOuterParens s
-  let s := stripParentheticals s
+  let s := dropReminderText s
   let s := stripAbilityWord s
   let s := (lowerAscii s).trimAscii.copy
   let aliases := nameAliases cardName |>.map lowerAscii
@@ -306,5 +311,24 @@ def splitKeywordWardLine (s : String) : List String :=
         if kws.isEmpty || digits.isEmpty then [s]
         else [kws, s!"Ward \{{digits}}."]
       | _ => [s]
+
+#guard dropReminderText
+  "Menace (This creature can't be blocked except by two or more creatures.)" ==
+  "Menace"
+#guard dropReminderText
+  "(This creature can't be blocked except by two or more creatures.)" == ""
+#guard dropReminderText "({T}: Add {U} or {R}.)" == ""
+#guard dropReminderText "Menace (outer (inner) still reminder)" == "Menace"
+#guard dropReminderText
+  "Kicker {1}{R} (You may pay an additional {2}{G} as you cast this spell.)" ==
+  "Kicker {1}{R}"
+#guard normalizeUnit "Bear"
+  "Menace (This creature can't be blocked except by two or more creatures.)" ==
+  "menace"
+#guard normalizeUnit "Bear"
+  "(This creature can't be blocked except by two or more creatures.)" == ""
+#guard normalizeUnit "Saga"
+  "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)" ==
+  ""
 
 end Mtg.Engine.OracleNorm

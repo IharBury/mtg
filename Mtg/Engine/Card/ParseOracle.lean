@@ -488,8 +488,9 @@ def parseEquipLine (line : String) : Option ActivatedAbility :=
 
 /-- Structural rules that are card fields rather than an ability value. -/
 def parseStructural (c : CardDef) (line : String) : Option CardDef :=
-  let raw := unwrapOuterParens line.trimAscii.copy
-  let low := lowerAscii (stripParentheticals raw).trimAscii.copy
+  -- CR 207.2a: reminder text is not part of the ability being parsed.
+  let raw := dropReminderText line
+  let low := lowerAscii raw
   let named := collapseWs (prepareLine c.name raw)
   let n := firstBraceNat raw
   if low.contains "sacrifice this land" && low.contains "create x treasure tokens" then
@@ -823,7 +824,7 @@ private def indexName : String := "CARDNAME"
 prefer a literal printed match over a phrase-equivalent one. -/
 def lightLine (s : String) : String :=
   collapseWs (keepSignificant (replaceNumberWords (lowerAscii
-    (stripParentheticals (unwrapOuterParens (stripAbilityWord s))))))
+    (stripAbilityWord (dropReminderText s)))))
 
 structure IndexedAbility where
   ability : ParsedAbility
@@ -1114,12 +1115,16 @@ Numeric and text arguments are read from `units` when the line has the same shap
   best.map fun (n, _, _, _, ab) => (ab, n)
 
 partial def parseRules (c : CardDef) (lines : List String) : Except String CardDef :=
-  let units := mergeBulletLines lines |>.flatMap splitKeywordWardLine
+  -- CR 207.2a: drop reminder text before any rule is read. A reminder may be
+  -- the whole line (basic-land mana, Saga progress, a keyword on its own line).
+  let units :=
+    mergeBulletLines (lines.map dropReminderText |>.filter (· != ""))
+      |>.flatMap splitKeywordWardLine
   let rec go (c : CardDef) (units : List String) : Except String CardDef :=
     match units with
     | [] => .ok c
     | line :: rest =>
-      let bare := lowerAscii (stripParentheticals line)
+      let bare := lowerAscii line
       let c :=
         if bare.contains "a creature an opponent controls would die" &&
             bare.contains "exile it instead" then
@@ -1140,7 +1145,11 @@ partial def parseRules (c : CardDef) (lines : List String) : Except String CardD
             | some e =>
               let ch := SagaChapter.of roman printed e
               let s := c.saga.getD { sacrificeAfter := "", chapters := #[] }
-              go { c with saga := some { s with chapters := s.chapters.push ch } } rest
+              let s := { s with chapters := s.chapters.push ch }
+              -- CR 714.2d: the final chapter is the greatest chapter number,
+              -- not the Roman numeral printed in the Saga reminder.
+              let s := { s with sacrificeAfter := romanNumeral s.finalChapterNumber }
+              go { c with saga := some s } rest
             | none => .error s!"unrecognized chapter on {c.name}: {line}"
           | none =>
             match parseStructural c line with
@@ -1572,5 +1581,31 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
 #guard (parseOracleCard "Saga\n{2}\nEnchantment — Saga\nI — This Saga deals 3 damage to each non-Time Lord creature and each opponent.").toOption.bind
     (fun c => c.saga.bind fun s => (s.chapters[0]?).bind (·.chapterEffect)) ==
     some (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 3 "Time Lord")
+
+-- CR 207.2a: reminder text is not rules text, on the ability's line or its own line.
+#guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nMenace (This creature can't be blocked except by two or more creatures.)").toOption.map
+    (fun c => c.keywords.menace && c.staticAbilities.isEmpty && !c.keywords.cantBeBlocked) ==
+    some true
+#guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nMenace\n(This creature can't be blocked except by two or more creatures.)").toOption.map
+    (fun c => c.keywords.menace && c.staticAbilities.isEmpty && c.triggeredAbilities.isEmpty) ==
+    some true
+#guard (parseOracleCard "Mage\n{U}\nCreature — Human Wizard\n1/1\nProwess\n(Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)").toOption.map
+    (fun c => c.keywords.prowess && c.triggeredAbilities.isEmpty && c.staticAbilities.isEmpty) ==
+    some true
+#guard (parseOracleCard "Elf\n{G}\nCreature — Elf Druid\n1/1\n({T}: Add {G}.)").toOption.map
+    (fun c => c.tapAddMana.isEmpty && c.tapAddOneOf.isEmpty && c.activatedAbilities.isEmpty) ==
+    some true
+#guard (parseOracleCard "Elf\n{G}\nCreature — Elf Druid\n1/1\n{T}: Add {G}.").toOption.map
+    (fun c => c.tapAddMana == #[.colored .green]) == some true
+#guard (parseOracleCard "Steam\nLand — Island Mountain\n({T}: Add {U} or {R}.)").toOption.map
+    (fun c => c.tapAddOneOf.isEmpty && c.tapAddMana.isEmpty &&
+      c.basicLandMana == #[.blue, .red]) == some true
+#guard (parseOracleCard "Kick\n{1}{R}\nSorcery\nKicker {1}{R} (You may pay an additional {2}{G} as you cast this spell.)").toOption.map
+    (fun c => c.kicker == some (ManaCost.ofGenericAndColor 1 .red)) == some true
+#guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\n(As this Saga enters and after your draw step, add a lore counter. Sacrifice after I.)\nI — Draw seven cards.\nII — Draw seven cards.\nIII — Draw seven cards.").toOption.map
+    (fun c => match c.saga with
+      | some s => s.chapters.size == 3 && s.finalChapterNumber == 3 &&
+          s.sacrificeAfter == "III" && c.triggeredAbilities.isEmpty
+      | none => false) == some true
 
 end Mtg.Engine
