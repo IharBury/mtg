@@ -1117,8 +1117,11 @@ Numeric and text arguments are read from `units` when the line has the same shap
 partial def parseRules (c : CardDef) (lines : List String) : Except String CardDef :=
   -- CR 207.2a: drop reminder text before any rule is read. A reminder may be
   -- the whole line (basic-land mana, Saga progress, a keyword on its own line).
+  -- CR 207.2c: an ability word has no rules meaning. Drop every one before the
+  -- line is matched, including a multi-word word and one inside a quote.
   let units :=
-    mergeBulletLines (lines.map dropReminderText |>.filter (· != ""))
+    mergeBulletLines
+      (lines.map (fun line => stripAbilityWords (dropReminderText line)) |>.filter (· != ""))
       |>.flatMap splitKeywordWardLine
   let rec go (c : CardDef) (units : List String) : Except String CardDef :=
     match units with
@@ -1581,6 +1584,34 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
 #guard (parseOracleCard "Saga\n{2}\nEnchantment — Saga\nI — This Saga deals 3 damage to each non-Time Lord creature and each opponent.").toOption.bind
     (fun c => c.saga.bind fun s => (s.chapters[0]?).bind (·.chapterEffect)) ==
     some (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 3 "Time Lord")
+
+-- CR 207.2c: ability words are not rules text. The ability parses as if the
+-- word were absent, including multi-word words and words inside a quote.
+#guard abilityWords.all fun w =>
+  (parseOracleCard s!"Walk\n\{G}\nSorcery\n{w} — Draw seven cards.").toOption.bind
+      (·.spellEffect) ==
+    (parseOracleCard "Walk\n{G}\nSorcery\nDraw seven cards.").toOption.bind
+      (·.spellEffect)
+#guard (parseOracleCard "Cloud\n{4}{B}\nSorcery\nSpell Mastery — This spell costs {3} less to cast if a creature died this turn.").toOption.map
+    (·.costReductionIfCreatureDied) == some 3
+#guard (parseOracleCard "Cloud\n{4}{B}\nSorcery\nThis spell costs {3} less to cast if a creature died this turn.").toOption.map
+    (·.costReductionIfCreatureDied) == some 3
+#guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nWill of the Council — Menace").toOption.map
+    (·.keywords.menace) == some true
+#guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nFathomless Descent — Flying (This creature can't be blocked except by creatures with flying or reach.)").toOption.map
+    (fun c => c.keywords.flying && !c.keywords.reach && c.staticAbilities.isEmpty) ==
+    some true
+#guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nI — Spell Mastery — Draw seven cards.").toOption.map
+    (fun c => match c.saga with
+      | some s => s.chapters.size == 1 &&
+          (s.chapters[0]?).any (fun ch => ch.roman == "I" && ch.chapterEffect.isSome)
+      | none => false) == some true
+#guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
+    (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
+    some (Effect.chapterGainLandfallCreateElf)
+#guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — Council's Dilemma — This Saga gains \"Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
+    (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
+    some (Effect.chapterGainLandfallCreateElf)
 
 -- CR 207.2a: reminder text is not rules text, on the ability's line or its own line.
 #guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nMenace (This creature can't be blocked except by two or more creatures.)").toOption.map
