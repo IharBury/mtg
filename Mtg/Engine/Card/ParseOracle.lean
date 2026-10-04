@@ -86,32 +86,17 @@ def splitNameCost (line : String) : String × Option ManaCost :=
   go line.toList []
 
 def parseSupertype (w : String) : Option Supertype :=
-  match w with
-  | "Basic" => some .basic
-  | "Legendary" => some .legendary
-  | "Ongoing" => some .ongoing
-  | "Snow" => some .snow
-  | "World" => some .world
+  match lowerAscii w with
+  | "basic" => some .basic
+  | "legendary" => some .legendary
+  | "ongoing" => some .ongoing
+  | "snow" => some .snow
+  | "world" => some .world
   | _ => none
 
+/-- Every card type in CR 205.2a, singular or plural, in any case. -/
 def parseCardType (w : String) : Option CardType :=
-  match w with
-  | "Artifact" => some .artifact
-  | "Battle" => some .battle
-  | "Creature" => some .creature
-  | "Enchantment" => some .enchantment
-  | "Instant" => some .instant
-  | "Land" => some .land
-  | "Planeswalker" => some .planeswalker
-  | "Sorcery" => some .sorcery
-  | "Kindred" => some .kindred
-  | "Dungeon" => some .dungeon
-  | "Plane" => some .plane
-  | "Phenomenon" => some .phenomenon
-  | "Vanguard" => some .vanguard
-  | "Scheme" => some .scheme
-  | "Conspiracy" => some .conspiracy
-  | _ => none
+  CardType.ofOracle? w
 
 /-- `Legendary Creature — Human Wizard`, or `Instant`. -/
 def parseTypeLine (line : String) : Except String (Array Supertype × Array CardType × Array Subtype) :=
@@ -137,8 +122,60 @@ def parseTypeLine (line : String) : Except String (Array Supertype × Array Card
         | some t => types := types.push t
         | none => return .error s!"unknown type-line word '{w}' in: {line}"
     if types.isEmpty then return .error s!"type line has no card type: {line}"
-    let subtypes := sub.splitOn " " |>.filter (· != "") |>.toArray
+    -- Planar subtypes are every word after the dash, together (CR 205.3b).
+    let subtypes :=
+      if types == #[.plane] && !sub.isEmpty then #[sub.trimAscii.copy]
+      else sub.splitOn " " |>.filter (· != "") |>.toArray
     return .ok (supers, types, subtypes)
+
+def parseUnsignedNat (tok : String) : Option Nat :=
+  let tok := tok.trimAscii.copy
+  if !tok.isEmpty && tok.all Char.isDigit then some tok.toNat! else none
+
+/-- `+1`, `-2`, or `0`, as printed for a vanguard modifier (CR 211 / 212). -/
+def parseModifier (tok : String) : Option Int :=
+  let tok := tok.trimAscii.copy
+  if tok == "0" || tok == "+0" || tok == "-0" then some 0
+  else if tok.startsWith "+" || tok.startsWith "-" then
+    let n := (tok.drop 1).copy
+    if !n.isEmpty && n.all Char.isDigit then
+      some (if tok.startsWith "-" then -n.toNat! else n.toNat!)
+    else none
+  else if !tok.isEmpty && tok.all Char.isDigit then some tok.toNat!
+  else none
+
+def renderModifier (n : Int) : String :=
+  if n > 0 then s!"+{n}" else toString n
+
+/-- Text after `label` when `line` starts with it, ignoring case. -/
+def prefixRest (line label : String) : Option String :=
+  let line := line.trimAscii.copy
+  if (lowerAscii line).startsWith (lowerAscii label) then
+    some ((line.drop label.length).trimAscii.copy)
+  else none
+
+/-- `Hand +1` or `Life modifier: -2`. -/
+def parseKeyedModifier (part key : String) : Option Int :=
+  match prefixRest part key with
+  | none => none
+  | some rest =>
+    let rest :=
+      if (lowerAscii rest).startsWith "modifier" then
+        ((rest.drop "modifier".length).trimAscii.copy)
+      else rest
+    let rest :=
+      if rest.startsWith ":" then (rest.drop 1).trimAscii.copy else rest
+    parseModifier rest
+
+/-- `Hand +1, Life +10` on one line. -/
+def parseHandLifeLine (line : String) : Option (Int × Int) :=
+  let parts := line.splitOn "," |>.map (·.trimAscii.copy) |>.filter (· != "")
+  match parts with
+  | [hand, life] =>
+    match parseKeyedModifier hand "hand", parseKeyedModifier life "life" with
+    | some h, some l => some (h, l)
+    | _, _ => none
+  | _ => none
 
 def parseStat (tok : String) : Option Int :=
   if tok == "*" then none
@@ -1158,12 +1195,37 @@ def parseFace (lines : List String) : Except String CardDef :=
               match parseColorIndicator line with
               | some cs => takeExtras { c with colorIndicator := some cs } rest
               | none =>
-                if line.startsWith "Loyalty:" then
-                  let n := (line.drop "Loyalty:".length).trimAscii.copy
-                  if n.all Char.isDigit && !n.isEmpty then
-                    takeExtras { c with loyalty := some n.toNat! } rest
-                  else (c, line :: rest)
-                else (c, line :: rest)
+                if line.startsWith "Loyalty:" || (lowerAscii line).startsWith "loyalty:" then
+                  match prefixRest line "Loyalty:" |>.bind parseUnsignedNat with
+                  | some n => takeExtras { c with loyalty := some (n : Int) } rest
+                  | none => (c, line :: rest)
+                else if (lowerAscii line).startsWith "defense:" then
+                  match prefixRest line "Defense:" |>.bind parseUnsignedNat with
+                  | some n => takeExtras { c with defense := some n } rest
+                  | none => (c, line :: rest)
+                else
+                  match parseHandLifeLine line with
+                  | some (h, l) =>
+                    takeExtras { c with handModifier := some h, lifeModifier := some l } rest
+                  | none =>
+                    match parseKeyedModifier line "hand" with
+                    | some n => takeExtras { c with handModifier := some n } rest
+                    | none =>
+                      match parseKeyedModifier line "life" with
+                      | some n => takeExtras { c with lifeModifier := some n } rest
+                      | none =>
+                        -- A lone number in the corner is loyalty or defense.
+                        if c.loyalty.isNone && c.defense.isNone &&
+                            !c.types.any (· == .creature) then
+                          match parseUnsignedNat line with
+                          | some n =>
+                            if c.types.any (· == .planeswalker) then
+                              takeExtras { c with loyalty := some (n : Int) } rest
+                            else if c.types.any (· == .battle) then
+                              takeExtras { c with defense := some n } rest
+                            else (c, line :: rest)
+                          | none => (c, line :: rest)
+                        else (c, line :: rest)
         let base : CardDef := {
           name, manaCost := cost, supertypes := supers, types, subtypes
           power := pt.1, toughness := pt.2
@@ -1252,6 +1314,18 @@ partial def renderFullOracle (c : CardDef) : String :=
     match c.loyalty with
     | some n => face ++ s!"\nLoyalty: {n}"
     | none => face
+  let face :=
+    match c.defense with
+    | some n => face ++ s!"\nDefense: {n}"
+    | none => face
+  let face :=
+    match c.handModifier with
+    | some n => face ++ s!"\nHand: {renderModifier n}"
+    | none => face
+  let face :=
+    match c.lifeModifier with
+    | some n => face ++ s!"\nLife: {renderModifier n}"
+    | none => face
   let face := if c.daybound then face ++ "\nDaybound" else face
   match c.otherFace with
   | none => face
@@ -1319,5 +1393,57 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
   match item.ability with
   | .activated a => a == equipAbility (ManaCost.ofGeneric 3)
   | _ => false
+
+#guard CardType.all.all fun t =>
+  (parseTypeLine t.englishName).toOption == some (#[], #[t], #[])
+#guard (parseTypeLine "Artifact Creature — Golem").toOption ==
+  some (#[], #[.artifact, .creature], #["Golem"])
+#guard (parseTypeLine "Kindred Enchantment — Faerie").toOption ==
+  some (#[], #[.kindred, .enchantment], #["Faerie"])
+#guard (parseTypeLine "kindred instant — goblin").toOption ==
+  some (#[], #[.kindred, .instant], #["goblin"])
+#guard (parseTypeLine "Legendary Planeswalker — Jace").toOption ==
+  some (#[.legendary], #[.planeswalker], #["Jace"])
+#guard (parseTypeLine "Battle — Siege").toOption ==
+  some (#[], #[.battle], #["Siege"])
+#guard (parseTypeLine "Dungeon — Undercity").toOption ==
+  some (#[], #[.dungeon], #["Undercity"])
+#guard (parseTypeLine "Ongoing Scheme").toOption ==
+  some (#[.ongoing], #[.scheme], #[])
+#guard (parseTypeLine "Plane — Bolas's Meditation Realm").toOption ==
+  some (#[], #[.plane], #["Bolas's Meditation Realm"])
+#guard (parseTypeLine "Phenomenon").toOption == some (#[], #[.phenomenon], #[])
+#guard (parseTypeLine "Conspiracy").toOption == some (#[], #[.conspiracy], #[])
+#guard (parseTypeLine "Vanguard").toOption == some (#[], #[.vanguard], #[])
+
+#guard (parseOracleCard "Jace\n{2}{U}{U}\nLegendary Planeswalker — Jace\n3").toOption.map
+    (fun c => c.isPlaneswalker && c.hasSubtype "Jace" && c.loyalty == some 3) == some true
+#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nDefense: 4").toOption.map
+    (fun c => c.isBattle && c.hasSubtype "Siege" && c.defense == some 4) == some true
+#guard (parseOracleCard "Urza\nVanguard\nHand +1, Life +10").toOption.map
+    (fun c => c.hasType .vanguard && c.handModifier == some 1 && c.lifeModifier == some 10) ==
+    some true
+#guard (parseOracleCard "Undercity\nDungeon — Undercity").toOption.map
+    (fun c => c.hasType .dungeon && c.hasSubtype "Undercity") == some true
+#guard (parseOracleCard "Tazeem\nPlane — Zendikar").toOption.map
+    (fun c => c.hasType .plane && c.subtypes == #["Zendikar"]) == some true
+#guard (parseOracleCard "Interplanar Tunnel\nPhenomenon").toOption.map
+    (fun c => c.hasType .phenomenon && c.subtypes.isEmpty) == some true
+#guard (parseOracleCard "All in Good Time\nOngoing Scheme").toOption.map
+    (fun c => c.hasType .scheme && c.hasSupertype .ongoing) == some true
+#guard (parseOracleCard "Advantageous Proclamation\nConspiracy").toOption.map
+    (fun c => c.hasType .conspiracy) == some true
+#guard (parseOracleCard "Bitterblossom\n{1}{B}\nKindred Enchantment — Faerie").toOption.map
+    (fun c => c.hasType .kindred && c.isEnchantment && c.hasSubtype "Faerie") == some true
+
+#guard CardType.all.all fun t =>
+  match parseOracleCard s!"Relic\n\{1}\nArtifact\n{t} spells you cast cost \{{3}} less to cast." with
+  | .ok c => c.staticAbilities[0]? == some (.typeSpellsCostLess t 3)
+  | .error _ => false
+#guard (parseOracleCard "Helm\n{1}\nArtifact\nVillain spells you cast cost {1} less to cast.").toOption.bind
+    (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess "Villain" 1)
+#guard (parseOracleCard "Surge\n{R}\nSorcery\nPlaneswalker spells you cast this turn cost {2} less to cast.").toOption.bind
+    (fun c => c.spellEffect.map (·.resolution)) ==
+    some (.spell (.artifactSpellsCostLessThisTurn .planeswalker 2))
 
 end Mtg.Engine

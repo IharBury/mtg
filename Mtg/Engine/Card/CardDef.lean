@@ -50,6 +50,12 @@ structure CardDef where
   power : Option Int := none
   toughness : Option Int := none
   loyalty : Option Int := none
+  /-- Printed defense (CR 210). Battles enter with this many defense counters. -/
+  defense : Option Nat := none
+  /-- Printed hand modifier (CR 211). Vanguards. -/
+  handModifier : Option Int := none
+  /-- Printed life modifier (CR 212). Vanguards. -/
+  lifeModifier : Option Int := none
   /-- Explicit color indicator, if any (CR 107.13 / 202.2). -/
   colorIndicator : Option ColorSet := none
   keywords : Keywords := Keywords.none
