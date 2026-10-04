@@ -61,7 +61,9 @@ structure CardDef where
   the battlefield, its loyalty is this number. It enters the battlefield
   with that many loyalty counters. -/
   loyalty : Option Int := none
-  /-- Printed defense (CR 210). Battles enter with this many defense counters. -/
+  /-- Printed defense number (CR 210.1). While this battle is not on
+  the battlefield, its defense is this number. It enters the battlefield
+  with that many defense counters. -/
   defense : Option Nat := none
   /-- Printed hand modifier (CR 211). Vanguards. -/
   handModifier : Option Int := none
