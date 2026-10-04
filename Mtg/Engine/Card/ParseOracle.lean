@@ -1,4 +1,5 @@
 import Std.Data.HashMap
+import Std.Data.HashSet
 import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Card.OracleActivate
 import Mtg.Engine.Card.OracleArgs
@@ -1059,6 +1060,8 @@ structure IndexedAbility where
   /-- `raw` is `abilityLines` of `ability` and does not include `indexName`, so
   those are the ability's lines on every card and `light` is their light form. -/
   ownLines : Bool
+  /-- `raw` joined and lowercased, to look for the card's name. -/
+  rawLower : String
 
 def collectParsed (ab : ParsedAbility) : Array SlotVal :=
   match ab with
@@ -1081,7 +1084,8 @@ def indexItem (priority order : Nat) (ability : ParsedAbility) (lines : List Str
     args
     pats := patsOfLines norm args
     structPats := patsOfLines structNorm args
-    ownLines := !lines.any (·.contains indexName) && lines == abilityLines indexName ability }
+    ownLines := !lines.any (·.contains indexName) && lines == abilityLines indexName ability
+    rawLower := lowerAscii (String.intercalate "\n" lines) }
 
 def refillParsed (ab : ParsedAbility) (vals : Array SlotVal) : ParsedAbility :=
   match ab with
@@ -1167,13 +1171,11 @@ def abstractSubtypeLine (s : String) : Option String :=
           | none => none
   span?.map fun n => String.intercalate " " ("$sub" :: toks.drop n)
 
-def mentionsCard (cardName : String) (lines : List String) : Bool :=
-  let low := lowerAscii (String.intercalate "\n" lines)
-  (nameAliases cardName).any fun a => low.contains (lowerAscii a)
-
-/-- Normalized lines, recomputed when the printed text contains this card's name. -/
-def candidateNorm (cardName : String) (item : IndexedAbility) : List String :=
-  if mentionsCard cardName item.raw then item.raw.map (normalizeUnit cardName) else item.norm
+/-- Normalized lines, recomputed when the printed text contains this card's name.
+`keys` is `nameKeys cardName`. -/
+def candidateNorm (cardName : String) (keys : List String) (item : IndexedAbility) :
+    List String :=
+  if mentionsNameKey keys item.rawLower then item.raw.map (normalizeUnit cardName) else item.norm
 
 /-- One prototype per shape. Later entries that differ only by `Nat`, `Int`, or
 `String` arguments are dropped. -/
@@ -1244,13 +1246,11 @@ def pushBucket (m : Std.HashMap String (Array Nat)) (key : String) (i : Nat) :
     i := i + 1
   return m
 
-def lookupKeys (cardName line : String) : List String :=
-  let lit := lightLine line
-  let norm := normalizeUnit cardName line
-  let aliased :=
-    (nameAliases cardName |>.map lowerAscii).foldl
-      (fun acc a => acc.replace a (lowerAscii indexName)) lit
-  let base := [lit, aliased, norm, normalizeStructural cardName line].foldl (fun acc k =>
+/-- Bucket keys for a rules line, given its `lightLine`, `normalizeUnit`, and
+`normalizeStructural` forms and the card's `nameKeys`. -/
+def lookupKeys (keys : List String) (lit norm struct : String) : List String :=
+  let aliased := keys.foldl (fun acc a => acc.replace a (lowerAscii indexName)) lit
+  let base := [lit, aliased, norm, struct].foldl (fun acc k =>
     if k.isEmpty || acc.any (· == k) then acc else acc ++ [k]) []
   let wild := (base.map wildcardHead).flatMap lineKeys
   let extra :=
@@ -1261,18 +1261,18 @@ def lookupKeys (cardName line : String) : List String :=
   (base ++ base.flatMap lineKeys ++ base.map headWord ++ wild ++ extra).foldl
     (fun acc k => if k.isEmpty || acc.any (· == k) then acc else acc ++ [k]) []
 
-def candidatesFor (cardName : String) (units : List String) : Array IndexedAbility :=
-  match units with
-  | [] => #[]
-  | line :: _ =>
-    let idxs := (lookupKeys cardName line).foldl (fun acc k =>
-      acc ++ ((abilityBuckets.get).getD k #[]).toList) []
-    let idxs := idxs.foldl (fun acc i =>
-      if acc.any (· == i) then acc else acc ++ [i]) []
-    idxs.foldl (fun acc i =>
-      match (indexedAbilities.get)[i]? with
-      | some item => acc.push item
-      | none => acc) #[]
+/-- Indexed abilities filed under any lookup key of the first rules line, in
+key order without repeats. -/
+def candidatesFor (keys : List String) (lit norm struct : String) : Array IndexedAbility :=
+  let (_, out) := (lookupKeys keys lit norm struct).foldl (fun (seen, out) k =>
+    ((abilityBuckets.get).getD k #[]).foldl (fun (seen, out) i =>
+      if seen.contains i then (seen, out)
+      else
+        match (indexedAbilities.get)[i]? with
+        | some item => (seen.insert i, out.push item)
+        | none => (seen.insert i, out)) (seen, out))
+    ((∅ : Std.HashSet Nat), (#[] : Array IndexedAbility))
+  out
 
 def listPrefix (pre rest : List String) : Bool :=
   match pre, rest with
@@ -1316,8 +1316,13 @@ Numeric and text arguments are read from `units` when the line has the same shap
   let norms := units.map (normalizeUnit cardName)
   let structNorms := units.map (normalizeStructural cardName)
   let lights := units.map lightLine
-  let best := (candidatesFor cardName units).foldl (fun acc item =>
-    let printed := candidateNorm cardName item
+  let keys := nameKeys cardName
+  let candidates :=
+    match lights, norms, structNorms with
+    | lit :: _, norm :: _, struct :: _ => candidatesFor keys lit norm struct
+    | _, _, _ => #[]
+  let best := candidates.foldl (fun acc item =>
+    let printed := candidateNorm cardName keys item
     let n := printed.length
     let filled := filledAbility item norms structNorms
     let ability := filled.getD item.ability
