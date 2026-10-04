@@ -125,16 +125,24 @@ def parseUnsignedNat (tok : String) : Option Nat :=
   let tok := tok.trimAscii.copy
   if !tok.isEmpty && tok.all Char.isDigit then some tok.toNat! else none
 
-/-- `+1`, `-2`, or `0`, as printed for a vanguard modifier (CR 211 / 212). -/
+/-- A minus sign, including the Unicode minus and en dash used in Oracle text. -/
+def isMinusSign (c : Char) : Bool :=
+  c == '-' || c == '−' || c == '–'
+
+/-- `+1`, `-2`, or `0`, as printed for a vanguard modifier (CR 211.1 / 212.1).
+
+A plus sign adds the number and a minus sign subtracts it. Zero leaves the
+total unchanged, and so do `+0` and `-0`. An unsigned number other than zero
+is not a modifier. -/
 def parseModifier (tok : String) : Option Int :=
   let tok := tok.trimAscii.copy
-  if tok == "0" || tok == "+0" || tok == "-0" then some 0
-  else if tok.startsWith "+" || tok.startsWith "-" then
-    let n := (tok.drop 1).copy
+  if tok == "0" then some 0
+  else if !tok.isEmpty && (tok.startsWith "+" || isMinusSign tok.front) then
+    let n := (tok.drop 1).trimAscii.copy
     if !n.isEmpty && n.all Char.isDigit then
-      some (if tok.startsWith "-" then -n.toNat! else n.toNat!)
+      let k : Int := n.toNat!
+      some (if tok.startsWith "+" then k else -k)
     else none
-  else if !tok.isEmpty && tok.all Char.isDigit then some tok.toNat!
   else none
 
 def renderModifier (n : Int) : String :=
@@ -160,12 +168,26 @@ def parseKeyedModifier (part key : String) : Option Int :=
       if rest.startsWith ":" then (rest.drop 1).trimAscii.copy else rest
     parseModifier rest
 
-/-- `Hand +1, Life +10` on one line. -/
+/-- `Hand +1, Life +10`, or the same pair with Life first. -/
 def parseHandLifeLine (line : String) : Option (Int × Int) :=
   let parts := line.splitOn "," |>.map (·.trimAscii.copy) |>.filter (· != "")
   match parts with
-  | [hand, life] =>
-    match parseKeyedModifier hand "hand", parseKeyedModifier life "life" with
+  | [a, b] =>
+    match parseKeyedModifier a "hand", parseKeyedModifier b "life" with
+    | some h, some l => some (h, l)
+    | _, _ =>
+      match parseKeyedModifier a "life", parseKeyedModifier b "hand" with
+      | some l, some h => some (h, l)
+      | _, _ => none
+  | _ => none
+
+/-- `+1 +10` or `+1, -2`: unlabeled hand then life (CR 211.1 / 212.1). -/
+def parseBareModifierPair (line : String) : Option (Int × Int) :=
+  let parts := (line.replace "," " ").splitOn " "
+    |>.map (·.trimAscii.copy) |>.filter (· != "")
+  match parts with
+  | [a, b] =>
+    match parseModifier a, parseModifier b with
     | some h, some l => some (h, l)
     | _, _ => none
   | _ => none
@@ -1295,9 +1317,122 @@ def detachDefense (name : String) (isBattle : Bool) (lines : List String) :
         | [], none => .ok (none, rules)
         | _, _ => .error s!"{name} has more than one defense number"
 
+/-- Record one hand or life modifier, rejecting a second one. -/
+def addPrintedModifier (name kind : String) (cur : Option Int) (n : Int) :
+    Except String (Option Int) :=
+  match cur with
+  | some _ => .error s!"{name} has more than one {kind} modifier"
+  | none => .ok (some n)
+
+/-- Pull labeled hand and life modifiers out of `lines`, keeping other lines. -/
+def partitionVanguardModifiers (name : String) (lines : List String) :
+    Except String (Option Int × Option Int × List String) :=
+  let rec go : List String → Option Int → Option Int → List String →
+      Except String (Option Int × Option Int × List String)
+    | [], hand, life, rules => .ok (hand, life, rules.reverse)
+    | line :: rest, hand, life, rules =>
+      match parseHandLifeLine line with
+      | some (h, l) =>
+        match addPrintedModifier name "hand" hand h with
+        | .error e => .error e
+        | .ok hand =>
+          match addPrintedModifier name "life" life l with
+          | .error e => .error e
+          | .ok life => go rest hand life rules
+      | none =>
+        match parseKeyedModifier line "hand" with
+        | some n =>
+          match addPrintedModifier name "hand" hand n with
+          | .error e => .error e
+          | .ok hand => go rest hand life rules
+        | none =>
+          match parseKeyedModifier line "life" with
+          | some n =>
+            match addPrintedModifier name "life" life n with
+            | .error e => .error e
+            | .ok life => go rest hand life rules
+          | none =>
+            match parseBareModifierPair line with
+            | some (h, l) =>
+              match addPrintedModifier name "hand" hand h with
+              | .error e => .error e
+              | .ok hand =>
+                match addPrintedModifier name "life" life l with
+                | .error e => .error e
+                | .ok life => go rest hand life rules
+            | none => go rest hand life (line :: rules)
+  go lines none none []
+
+/-- Bare modifier lines at the front of `lines`. -/
+def takeLeadingModifiers (lines : List String) : List Int × List String :=
+  let rec go : List String → List Int → List Int × List String
+    | [], acc => (acc.reverse, [])
+    | line :: rest, acc =>
+      match parseModifier line with
+      | some n => go rest (n :: acc)
+      | none => (acc.reverse, line :: rest)
+  go lines []
+
+/-- Bare modifier lines at the end of `lines`, in printed order. -/
+def takeTrailingModifiers (lines : List String) : List String × List Int :=
+  let (revMods, revRest) := takeLeadingModifiers lines.reverse
+  (revRest.reverse, revMods.reverse)
+
+/-- Assign bare corner numbers that labels did not already name.
+
+A pair is hand then life. One number fills whichever corner is still open.
+A lone number, when both corners are open, is not a modifier pair. -/
+def applyCornerModifiers (name : String) (hand life : Option Int) (bare : List Int) :
+    Except String (Option Int × Option Int) :=
+  match bare, hand, life with
+  | [], hand, life => .ok (hand, life)
+  | [n], none, some l => .ok (some n, some l)
+  | [n], some h, none => .ok (some h, some n)
+  | [_], none, none => .error s!"{name} has only one of its hand and life modifiers"
+  | [_], some _, some _ => .error s!"{name} has more than one life modifier"
+  | [h, l], none, none => .ok (some h, some l)
+  | [_, _], some _, _ => .error s!"{name} has more than one hand modifier"
+  | [_, _], none, some _ => .error s!"{name} has more than one life modifier"
+  | _, _, _ => .error s!"{name} has more than one hand modifier"
+
+/-- Bare hand and life modifiers at the corners of `rules` (CR 211.1 / 212.1).
+
+The hand modifier is the lower left and the life modifier is the lower right,
+so a pair is hand then life. The pair may sit before the rules text or after
+it, and one corner may sit before the text while the other sits after it. -/
+def takeCornerHandLife (name : String) (hand life : Option Int) (rules : List String) :
+    Except String (Option Int × Option Int × List String) :=
+  let (pre, rest) := takeLeadingModifiers rules
+  let (mid, suf) := takeTrailingModifiers rest
+  if !pre.isEmpty && !suf.isEmpty then
+    match pre, suf, hand, life with
+    | [h], [l], none, none => .ok (some h, some l, mid)
+    | _, _, some _, _ => .error s!"{name} has more than one hand modifier"
+    | _, _, none, some _ => .error s!"{name} has more than one life modifier"
+    | _, _, none, none => .error s!"{name} has more than one hand modifier"
+  else
+    let bare := if pre.isEmpty then suf else pre
+    match applyCornerModifiers name hand life bare with
+    | .error e => .error e
+    | .ok (hand, life) => .ok (hand, life, mid)
+
+/-- Printed hand and life modifiers of a vanguard, and the rules that remain
+(CR 211.1 / 212.1).
+
+Each modifier is `+N`, `-N`, or `0`. Labels (`Hand: +1`, `Life: -2`,
+`Hand modifier: +1`, and `Hand +1, Life +10`) may appear on any line. A bare
+pair is two corner lines, or `+1 -2` on one line. A non-vanguard has neither. -/
+def detachHandLife (name : String) (isVanguard : Bool) (lines : List String) :
+    Except String (Option Int × Option Int × List String) :=
+  if !isVanguard then .ok (none, none, lines)
+  else
+    match partitionVanguardModifiers name lines with
+    | .error e => .error e
+    | .ok (hand, life, rules) => takeCornerHandLife name hand life rules
+
 /-- True when `c` is a minus sign that can introduce a negative loyalty symbol. -/
 def isLoyaltyMinus (c : Char) : Bool :=
-  c == '-' || c == '−' || c == '–'
+  isMinusSign c
 
 /-- Sign of a loyalty symbol, then the text after it.
 `some true` is `+`, `some false` is a minus, `none` is unsigned. -/
@@ -1499,17 +1634,7 @@ def parseFace (lines : List String) : Except String CardDef :=
             else
               match parseColorIndicator line with
               | some cs => takeExtras { c with colorIndicator := some cs } rest
-              | none =>
-                match parseHandLifeLine line with
-                | some (h, l) =>
-                  takeExtras { c with handModifier := some h, lifeModifier := some l } rest
-                | none =>
-                  match parseKeyedModifier line "hand" with
-                  | some n => takeExtras { c with handModifier := some n } rest
-                  | none =>
-                    match parseKeyedModifier line "life" with
-                    | some n => takeExtras { c with lifeModifier := some n } rest
-                    | none => (c, line :: rest)
+              | none => (c, line :: rest)
         let base : CardDef := {
           name, manaCost := cost, supertypes := supers, types, subtypes
           power := pt.1.number, toughness := pt.2.number
@@ -1519,14 +1644,20 @@ def parseFace (lines : List String) : Except String CardDef :=
         let (rules, adv) := splitAdventure rest
         -- CR 209.1 / 210.1: the loyalty and defense numbers sit in the lower
         -- right corner, so each may be labeled or bare, before the rules text
-        -- or after it.
+        -- or after it. CR 211.1 / 212.1: a vanguard's hand modifier is the
+        -- lower left corner and its life modifier is the lower right.
         match detachLoyalty base.name base.isPlaneswalker rules with
         | .error e => .error e
         | .ok (loyalty, rules) =>
         match detachDefense base.name base.isBattle rules with
         | .error e => .error e
         | .ok (defense, rules) =>
-        let base := { base with loyalty := loyalty, defense := defense }
+        match detachHandLife base.name base.isVanguard rules with
+        | .error e => .error e
+        | .ok (handModifier, lifeModifier, rules) =>
+        let base := { base with loyalty := loyalty, defense := defense
+                                handModifier := handModifier
+                                lifeModifier := lifeModifier }
         match parseRules base rules with
         | .error e => .error e
         | .ok c =>
@@ -1545,8 +1676,10 @@ loyalty number is `Loyalty: N` or the bare corner number, before or after the
 rules text (CR 209.1). A loyalty symbol in an activation cost (`[+N]:`,
 `+N:`, `[-N]:`, `[0]:`, and the `X` forms) is a loyalty ability (CR 209.2).
 A battle's defense number is `Defense: N` or the bare corner number, before
-or after the rules text (CR 210.1). A line that is exactly `//` starts the
-back face. An Adventure is introduced by `//ADV//`. -/
+or after the rules text (CR 210.1). A vanguard's hand modifier (lower left)
+and life modifier (lower right) are `+N`, `-N`, or `0`, labeled or bare,
+before or after the rules text (CR 211.1 / 212.1). A line that is exactly
+`//` starts the back face. An Adventure is introduced by `//ADV//`. -/
 @[irreducible, noinline] def parseOracleCard (text : String) : Except String CardDef :=
   let lines := nonEmptyLines text
   let (front, back) := splitBackFace lines
@@ -1904,8 +2037,122 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
     | none => false
   | .error _ => false
 #guard (parseOracleCard "Urza\nVanguard\nHand +1, Life +10").toOption.map
-    (fun c => c.hasType .vanguard && c.handModifier == some 1 && c.lifeModifier == some 10) ==
+    (fun c => c.hasType .vanguard && c.isVanguard && c.handModifier == some 1 &&
+      c.lifeModifier == some 10) == some true
+
+-- CR 211.1 / 212.1: the hand modifier is the lower-left corner and the life
+-- modifier is the lower-right corner. Each is `+N`, `-N`, or `0`. Labels and
+-- a bare pair may sit before the rules text or after it.
+#guard parseModifier "0" == some 0
+#guard parseModifier "+0" == some 0
+#guard parseModifier "-0" == some 0
+#guard parseModifier "−0" == some 0
+#guard parseModifier "+2" == some 2
+#guard parseModifier "-3" == some (-3)
+#guard parseModifier "−4" == some (-4)
+#guard parseModifier "–5" == some (-5)
+#guard parseModifier "+ 6" == some 6
+#guard parseModifier "2" == none
+#guard parseModifier "+" == none
+#guard parseModifier "1+*" == none
+#guard parseHandLifeLine "Hand +1, Life +10" == some (1, 10)
+#guard parseHandLifeLine "Life -2, Hand modifier: +1" == some (1, -2)
+#guard parseHandLifeLine "hand: +0, life: 0" == some (0, 0)
+#guard parseBareModifierPair "+1 -2" == some (1, -2)
+#guard parseBareModifierPair "+1, 0" == some (1, 0)
+#guard parseBareModifierPair "Hand +1, Life +10" == none
+#guard (parseOracleCard "Urza\nVanguard\nHand: +1\nLife: -2").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2)) == some true
+#guard (parseOracleCard "Urza\nVanguard\nhand modifier: +1\nlife modifier: −2").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2)) == some true
+#guard (parseOracleCard "Urza\nVanguard\nLife +10, Hand +1").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some 10) == some true
+#guard (parseOracleCard "Urza\nVanguard\n+1\n+10").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some 10 &&
+      c.loyalty.isNone && c.defense.isNone) == some true
+#guard (parseOracleCard "Urza\nVanguard\n+1 -2").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2)) == some true
+#guard (parseOracleCard "Urza\nVanguard\n0\n0").toOption.map
+    (fun c => c.handModifier == some 0 && c.lifeModifier == some 0) == some true
+#guard (parseOracleCard "Urza\nVanguard\nFlying\n+1\n-2").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
+      c.keywords.flying) == some true
+#guard (parseOracleCard "Urza\nVanguard\n+1\n-2\nFlying").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
+      c.keywords.flying) == some true
+#guard (parseOracleCard "Urza\nVanguard\nFlying\nHand: +1\nLife: 0").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some 0 &&
+      c.keywords.flying) == some true
+#guard (parseOracleCard "Urza\nVanguard\n+1\nFlying\n-2").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
+      c.keywords.flying) == some true
+#guard (parseOracleCard "Urza\nVanguard\nHand: +1\nFlying\n-2").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
+      c.keywords.flying) == some true
+#guard (parseOracleCard "Urza\nVanguard\n+1\nFlying\nLife: +10").toOption.map
+    (fun c => c.handModifier == some 1 && c.lifeModifier == some 10 &&
+      c.keywords.flying) == some true
+#guard (parseOracleCard "Urza\nVanguard\n+1: Draw a card.\n+2\n-3").toOption.map
+    (fun c => c.handModifier == some 2 && c.lifeModifier == some (-3) &&
+      c.activatedAbilities.size == 1 &&
+      c.activatedAbilities[0]!.cost.loyalty == some (.plus 1) &&
+      c.activatedAbilities[0]!.effect == Effect.draw 1) == some true
+#guard (parseOracleCard "Urza\nVanguard\nFlying").toOption.map
+    (fun c => c.handModifier.isNone && c.lifeModifier.isNone && c.keywords.flying) ==
     some true
+#guard
+  match parseOracleCard "Urza\nVanguard\nFlying\n+1\n-2" with
+  | .ok c =>
+    c.handModifier == some 1 && c.lifeModifier == some (-2) && c.keywords.flying &&
+    match parseOracleCard (renderFullOracle c) with
+    | .ok d => d.handModifier == c.handModifier && d.lifeModifier == c.lifeModifier &&
+        d.keywords.flying && d.isVanguard
+    | .error _ => false
+  | .error _ => false
+#guard
+  match parseOracleCard "Urza\nVanguard\nHand: +1\nHand: +2" with
+  | .error e => e == "Urza has more than one hand modifier"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Urza\nVanguard\nHand +1, Life +10\nLife: +3" with
+  | .error e => e == "Urza has more than one life modifier"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Urza\nVanguard\n+1\n+10\nHand: +2" with
+  | .error e => e == "Urza has more than one hand modifier"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Urza\nVanguard\n+1\n+2\nFlying\n+3\n+4" with
+  | .error e => e == "Urza has more than one hand modifier"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Urza\nVanguard\n+1\n+2\n+3" with
+  | .error e => e == "Urza has more than one hand modifier"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Urza\nVanguard\n+1" with
+  | .error e => e == "Urza has only one of its hand and life modifiers"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Urza\nVanguard\nFlying\n-2" with
+  | .error e => e == "Urza has only one of its hand and life modifiers"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Urza\nVanguard\nHand 2\nLife +1" with
+  | .error e => e == "unrecognized Oracle line on Urza: Hand 2"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nHand +1, Life +10" with
+  | .ok _ => false
+  | .error _ => true
+#guard
+  match parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nHand: +1" with
+  | .ok _ => false
+  | .error _ => true
+#guard
+  match parseOracleCard "Relic\n{1}\nArtifact\n+1\n+10" with
+  | .ok _ => false
+  | .error _ => true
 #guard (parseOracleCard "Undercity\nDungeon — Undercity").toOption.map
     (fun c => c.hasType .dungeon && c.hasSubtype "Undercity") == some true
 #guard (parseOracleCard "Tazeem\nPlane — Zendikar").toOption.map
