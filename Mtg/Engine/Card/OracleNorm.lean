@@ -2,8 +2,8 @@
 # Oracle-text normalization
 
 Comparable form of printed Oracle lines. Reminder text (CR 207.2a), ability
-words, and the card's own name are removed so a line can be matched to the
-ability the engine models.
+words (CR 207.2c), and the card's own name are removed so a line can be
+matched to the ability the engine models.
 -/
 
 namespace Mtg.Engine.OracleNorm
@@ -52,8 +52,126 @@ reminder, or a keyword reminder printed on its own line — is empty.
 def dropReminderText (s : String) : String :=
   (stripParentheticals s).trimAscii.copy
 
-/-- Drop a leading ability word (`Landfall —`, `Ferocious —`). -/
+/-- Ability words (CR 207.2c), in rules order.
+
+An ability word is italicized at the start of an ability. It has no rules
+meaning, so Oracle parsing ignores it. Comparison is case-insensitive.
+`council's dilemma` is stored with an ASCII apostrophe. Printed Oracle
+may use U+2019 instead.
+-/
+def abilityWords : List String := [
+  "adamant", "addendum", "alliance", "battalion", "bloodrush", "celebration",
+  "channel", "chroma", "cohort", "constellation", "converge",
+  "council's dilemma", "coven", "delirium", "descend 4", "descend 8",
+  "disappear", "domain", "eerie", "eminence", "enrage", "fateful hour",
+  "fathomless descent", "ferocious", "flurry", "formidable", "grandeur",
+  "hellbent", "heroic", "imprint", "infusion", "inspired", "join forces",
+  "kinship", "landfall", "lieutenant", "magecraft", "metalcraft", "morbid",
+  "opus", "pack tactics", "paradox", "parley", "radiance", "raid", "rally",
+  "renew", "repartee", "revolt", "secret council", "spell mastery", "strive",
+  "survival", "sweep", "tempting offer", "threshold", "undergrowth", "valiant",
+  "vivid", "void", "will of the council"
+]
+
+private def foldApos (c : Char) : Char :=
+  if c == '\'' || c == Char.ofNat 0x2019 || c == Char.ofNat 0x2018 then '\''
+  else c.toLower
+
+private def eqFold (a b : Char) : Bool :=
+  foldApos a == foldApos b
+
+/-- A character that may sit inside an ability-word label. -/
+private def isAbilityLabelChar (c : Char) : Bool :=
+  c.isAlphanum || c == '\'' || c == Char.ofNat 0x2019 || c == Char.ofNat 0x2018
+
+private def skipWs (cs : Array Char) (i : Nat) : Nat :=
+  Id.run do
+    let mut i := i
+    while i < cs.size && (cs[i]! == ' ' || cs[i]! == '\n' || cs[i]! == '\t') do
+      i := i + 1
+    return i
+
+/-- If `word` labels an ability at `i`, the index just after `word —`. -/
+private def matchAbilityWordAt (cs : Array Char) (i : Nat) (word : String) : Option Nat :=
+  let w := word.toList.toArray
+  let n := w.size
+  if n == 0 || i + n > cs.size then
+    none
+  else
+    Id.run do
+      let mut ok := true
+      let mut k : Nat := 0
+      while ok && k < n do
+        if eqFold cs[i + k]! w[k]! then
+          k := k + 1
+        else
+          ok := false
+      if !ok then
+        return none
+      let j := skipWs cs (i + n)
+      if j >= cs.size || cs[j]! != '—' then
+        return none
+      return some (skipWs cs (j + 1))
+
+/-- An ability word labels the ability that follows (CR 207.2c). It sits at
+the start of the text, or just after a quote, a mode bullet, or the em dash
+that opens the ability (`I —`, `"Landfall —`). -/
+private def abilityIntro (cs : Array Char) (i : Nat) : Bool :=
+  Id.run do
+    let mut j := i
+    while j != 0 && (cs[j - 1]! == ' ' || cs[j - 1]! == '\n' || cs[j - 1]! == '\t') do
+      j := j - 1
+    if j == 0 then
+      return true
+    let c := cs[j - 1]!
+    return c == '"' || c == Char.ofNat 0x201C || c == '•' || c == '—'
+
+/-- End index after the longest CR 207.2c ability word at `i`, if one labels
+the ability that follows. -/
+private def abilityWordEnd (cs : Array Char) (i : Nat) : Option Nat :=
+  if !abilityIntro cs i || (i != 0 && isAbilityLabelChar cs[i - 1]!) then
+    none
+  else
+    Id.run do
+      let mut best : Option Nat := none
+      for w in abilityWords do
+        match matchAbilityWordAt cs i w with
+        | some stop =>
+          if stop > i then
+            best := some (match best with
+              | none => stop
+              | some b => max b stop)
+        | none => pure ()
+      return best
+
+/-- Drop every CR 207.2c ability word (`Landfall —`, `Spell Mastery —`,
+`Council's Dilemma —`, `Descend 4 —`), including one quoted inside a later
+ability. Other em-dash labels are left alone. -/
+def stripAbilityWords (s : String) : String :=
+  Id.run do
+    let cs := s.toList.toArray
+    let mut acc : Array Char := Array.mkEmpty cs.size
+    let mut i : Nat := 0
+    let mut changed := false
+    while i < cs.size do
+      match abilityWordEnd cs i with
+      | some stop =>
+        changed := true
+        i := stop
+      | none =>
+        acc := acc.push cs[i]!
+        i := i + 1
+    if changed then (String.ofList acc.toList).trimAscii.copy else s
+
+/-- Drop a leading em-dash label that is not rules text.
+
+CR 207.2c ability words are removed wherever they introduce an ability.
+Flavor words (CR 207.2d) and keyword labels this engine prints the same way
+(`Boast —`, `Power-up —`) are removed once from the front so the remaining
+text can be matched. A one-word label is treated the same way.
+-/
 def stripAbilityWord (s : String) : String :=
+  let s := stripAbilityWords s
   match s.splitOn "—" with
   | head :: rest =>
     if rest.isEmpty then s
@@ -330,5 +448,52 @@ def splitKeywordWardLine (s : String) : List String :=
 #guard normalizeUnit "Saga"
   "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)" ==
   ""
+
+-- CR 207.2c: every ability word is ignored, in any case, wherever it labels
+-- an ability. A word that merely shares letters with an ability word is not.
+#guard abilityWords.length == 61
+#guard abilityWords.head? == some "adamant"
+#guard abilityWords.getLast? == some "will of the council"
+#guard abilityWords.all fun w =>
+  stripAbilityWords s!"{w} — Draw a card." == "Draw a card."
+#guard abilityWords.all fun w =>
+  stripAbilityWords s!"{w.map Char.toUpper} — Draw a card." == "Draw a card."
+#guard abilityWords.all fun w =>
+  normalizeUnit "Card" s!"{w} — Whenever a land you control enters, draw a card." ==
+    normalizeUnit "Card" "Whenever a land you control enters, draw a card."
+#guard stripAbilityWords
+    ("Council" ++ String.ofList [Char.ofNat 0x2019] ++
+      "s Dilemma — Starting with you, each player votes.") ==
+  "Starting with you, each player votes."
+#guard stripAbilityWords "Descend 4 — {T}: Add {B}{B}." == "{T}: Add {B}{B}."
+#guard stripAbilityWords "Descend 8 — {T}: Add {U}{B}." == "{T}: Add {U}{B}."
+#guard stripAbilityWords "Descend — This creature gets +1/+1." ==
+  "Descend — This creature gets +1/+1."
+#guard stripAbilityWords
+    "This Saga gains \"Landfall — Whenever a land you control enters, draw a card.\"" ==
+  "This Saga gains \"Whenever a land you control enters, draw a card.\""
+#guard stripAbilityWords "Ferocious — Landfall — Whenever you attack, draw a card." ==
+  "Whenever you attack, draw a card."
+#guard stripAbilityWords "Choose one — • Draw a card. • Create a Treasure token." ==
+  "Choose one — • Draw a card. • Create a Treasure token."
+#guard stripAbilityWords "You have the will of the council in hand." ==
+  "You have the will of the council in hand."
+#guard stripAbilityWords
+    "You have the will of the council — Starting with you, each player votes." ==
+  "You have the will of the council — Starting with you, each player votes."
+#guard stripAbilityWords "I — Spell Mastery — Draw a card." == "I — Draw a card."
+#guard stripAbilityWords "• Pack Tactics — Draw a card." == "• Draw a card."
+#guard stripAbilityWords "afraid — draw a card." == "afraid — draw a card."
+#guard stripAbilityWords "Boast — {1}: Draw a card." == "Boast — {1}: Draw a card."
+#guard stripAbilityWords "Power-up — {4}{W}: Draw a card." ==
+  "Power-up — {4}{W}: Draw a card."
+#guard stripAbilityWord "Boast — {1}: Draw a card." == "{1}: Draw a card."
+#guard stripAbilityWord "Power-up — {4}{W}: Draw a card." == "{4}{W}: Draw a card."
+#guard stripAbilityWord "Street Justice — Exile target creature." ==
+  "Exile target creature."
+#guard normalizeUnit "Saga"
+    "This Saga gains \"Spell Mastery — Whenever a land you control enters, draw a card.\"" ==
+  normalizeUnit "Saga"
+    "This Saga gains \"Whenever a land you control enters, draw a card.\""
 
 end Mtg.Engine.OracleNorm
