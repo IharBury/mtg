@@ -40,6 +40,24 @@ def main : IO UInt32 := do
   fails := fails + (← expect "Treasure"
     "Treasure\nArtifact — Treasure\nToken\n{T}, Sacrifice this token: Add one mana of any color."
     (fun c => c.tapSacrificeAddAnyColor && c.isArtifact))
+  fails := fails + (← expect "Shock five"
+    "Shock\n{R}\nInstant\nShock deals 5 damage to any target."
+    (fun c => c.spellEffect == some (Effect.dealDamage 5) && c.isInstant))
+  fails := fails + (← expect "Draw seven"
+    "Insight\n{U}\nSorcery\nDraw seven cards."
+    (fun c => c.spellEffect == some (Effect.draw 7) && c.isSorcery))
+  fails := fails + (← expect "Forestcycling"
+    "Wander\n{G}\nInstant\nForestcycling {2}"
+    (fun c => c.activatedAbilities[0]? ==
+      some (OracleActivate.typecyclingAbility "Forest" (ManaCost.ofGeneric 2))))
+  fails := fails + (← expect "Equip five"
+    "Sword\n{2}\nArtifact — Equipment\nEquip {5}"
+    (fun c => c.activatedAbilities[0]? ==
+      some (OracleActivate.equipAbility (ManaCost.ofGeneric 5))))
+  fails := fails + (← expect "Goblin lord"
+    "Warren Chief\n{1}{R}\nCreature — Goblin\n2/2\nOther Goblin creatures you control get +2/+2."
+    (fun c => c.staticAbilities[0]? ==
+      some (StaticAbility.otherCreaturesGet #["Goblin"] 2 2)))
   fails := fails + (← expect "Thanos"
     "Thanos, the Mad Titan\n{R}{W}{B}\nLegendary Creature — Eternal Villain\n4/4\nDeathtouch, lifelink\nPower-up — {C}{W}{U}{B}{R}{G}: Put two +1/+1 counters on Thanos. Choose odd or even. Destroy each other creature with mana value of the chosen quality."
     (fun c => c.activatedAbilities.size == 1 && c.activatedAbilities[0]!.powerUp &&

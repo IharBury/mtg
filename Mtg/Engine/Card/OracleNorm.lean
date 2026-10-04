@@ -232,6 +232,16 @@ def normalizePhrases (s : String) : String :=
     ("shield counter on it", "counter on this")
   ]
 
+/-- Comparable form of one ability unit, before phrase equivalences.
+Argument parsing uses this so a subtype written out in full (`other Elf
+creatures`) stays a hole instead of being rewritten to one fixed plural. -/
+def normalizeStructural (cardName : String) (s : String) : String :=
+  let s := prepareLine cardName s
+  let s := replaceNumberWords s
+  let s := keepSignificant s
+  let s := collapseWs s
+  dropLeadingThis s
+
 /-- Comparable form of one ability unit. -/
 def normalizeUnit (cardName : String) (s : String) : String :=
   let s := prepareLine cardName s
