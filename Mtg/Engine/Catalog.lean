@@ -167,16 +167,47 @@ rules text. -/
   else
     parsed
 
+/-- Parse a card from its full printed text, one string per line.
+The lines are the definition: name, mana cost, type line, power and
+toughness, and rules. A line that is exactly `//` starts the back face. -/
+@[irreducible, noinline] def fromOracle (lines : List String) : CardDef :=
+  parseOracleCard! (String.intercalate "\n" lines)
+
 /-- A basic land whose name is also its land type (CR 305.6). -/
 @[irreducible, noinline] def basicLand (landName : String) (color : Color) : CardDef :=
   card landName #[.land] (subtypes := #[landName]) (supertypes := #[.basic])
     (oracleText := s!"(\{T}: Add \{{color.letter}}.)")
 
-def plains : CardDef := basicLand "Plains" .white
-def island : CardDef := basicLand "Island" .blue
-def swamp : CardDef := basicLand "Swamp" .black
-def mountain : CardDef := basicLand "Mountain" .red
-def forest : CardDef := basicLand "Forest" .green
+def plains : CardDef :=
+  fromOracle [
+    "Plains",
+    "Basic Land — Plains",
+    "({T}: Add {W}.)",
+  ]
+def island : CardDef :=
+  fromOracle [
+    "Island",
+    "Basic Land — Island",
+    "({T}: Add {U}.)",
+  ]
+def swamp : CardDef :=
+  fromOracle [
+    "Swamp",
+    "Basic Land — Swamp",
+    "({T}: Add {B}.)",
+  ]
+def mountain : CardDef :=
+  fromOracle [
+    "Mountain",
+    "Basic Land — Mountain",
+    "({T}: Add {R}.)",
+  ]
+def forest : CardDef :=
+  fromOracle [
+    "Forest",
+    "Basic Land — Forest",
+    "({T}: Add {G}.)",
+  ]
 
 /-- A creature used by engine tests and the Hobbit catalog. -/
 @[irreducible, noinline] def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
@@ -605,11 +636,12 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
 
 /-- A Treasure token (CR 111 / 701.42). -/
 def treasureToken : CardDef :=
-  artifact "Treasure" ManaCost.empty
-    "{T}, Sacrifice this artifact: Add one mana of any color."
-    (subtypes := #["Treasure"])
-    (tapSacrificeAddAnyColor := true)
-    (isToken := true)
+  fromOracle [
+    "Treasure",
+    "Artifact — Treasure",
+    "Token",
+    "{T}, Sacrifice this artifact: Add one mana of any color.",
+  ]
 
 /-- A creature token with a color indicator (CR 202.2e). -/
 def tokenCreature (name : String) (subtypes : Array Subtype)
@@ -622,30 +654,58 @@ def tokenCreature (name : String) (subtypes : Array Subtype)
 
 /-- A 1/1 white Human Soldier creature token. -/
 def humanSoldierToken : CardDef :=
-  tokenCreature "Human Soldier" #["Human", "Soldier"] 1 1 .white
+  fromOracle [
+    "Human Soldier",
+    "Creature — Human Soldier",
+    "1/1",
+    "Color indicator: white",
+    "Token",
+  ]
 
 /-- A Food token. -/
 def foodToken : CardDef :=
-  artifact "Food" ManaCost.empty
-    "{2}, {T}, Sacrifice this artifact: You gain 3 life."
-    (subtypes := #["Food"])
-    (activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
-      effect := Effect.gainLife 3
-    }])
-    (isToken := true)
+  fromOracle [
+    "Food",
+    "Artifact — Food",
+    "Token",
+    "{2}, {T}, Sacrifice this artifact: You gain 3 life.",
+  ]
 
 def wolfToken : CardDef :=
-  tokenCreature "Wolf" #["Wolf"] 2 2 .green
+  fromOracle [
+    "Wolf",
+    "Creature — Wolf",
+    "2/2",
+    "Color indicator: green",
+    "Token",
+  ]
 
 def dwarfToken : CardDef :=
-  tokenCreature "Dwarf" #["Dwarf"] 2 2 .red
+  fromOracle [
+    "Dwarf",
+    "Creature — Dwarf",
+    "2/2",
+    "Color indicator: red",
+    "Token",
+  ]
 
 def bearToken : CardDef :=
-  tokenCreature "Bear" #["Bear"] 2 2 .green
+  fromOracle [
+    "Bear",
+    "Creature — Bear",
+    "2/2",
+    "Color indicator: green",
+    "Token",
+  ]
 
 def elfToken : CardDef :=
-  tokenCreature "Elf" #["Elf"] 1 1 .green
+  fromOracle [
+    "Elf",
+    "Creature — Elf",
+    "1/1",
+    "Color indicator: green",
+    "Token",
+  ]
 
 /-- An activated ability (CR 602.1). -/
 def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
@@ -764,49 +824,111 @@ def adventure (name : String) (manaCost : ManaCost) (_oracleText : String)
     (some (Effect.dealDamage amount))
 
 def grizzlyBears : CardDef :=
-  creature "Grizzly Bears" (ManaCost.ofGenericAndColor 1 .green) #["Bear"] 2 2
+  fromOracle [
+    "Grizzly Bears",
+    "{1}{G}",
+    "Creature — Bear",
+    "2/2",
+  ]
 
 def grayOgre : CardDef :=
-  creature "Gray Ogre" (ManaCost.ofGenericAndColor 2 .red) #["Ogre"] 2 2
+  fromOracle [
+    "Gray Ogre",
+    "{2}{R}",
+    "Creature — Ogre",
+    "2/2",
+  ]
 
 def hillGiant : CardDef :=
-  creature "Hill Giant" (ManaCost.ofGenericAndColor 3 .red) #["Giant"] 3 3
+  fromOracle [
+    "Hill Giant",
+    "{3}{R}",
+    "Creature — Giant",
+    "3/3",
+  ]
 
 def canyonMinotaur : CardDef :=
-  creature "Canyon Minotaur" (ManaCost.ofGenericAndColor 3 .red) #["Minotaur"] 3 3
+  fromOracle [
+    "Canyon Minotaur",
+    "{3}{R}",
+    "Creature — Minotaur",
+    "3/3",
+  ]
 
 def ragingGoblin : CardDef :=
-  creature "Raging Goblin" (ManaCost.ofColor .red) #["Goblin"] 1 1
-    (oracleText := "Haste (This creature can attack and {T} as soon as it comes under your control.)")
-    (keywords := Keyword.haste)
+  fromOracle [
+    "Raging Goblin",
+    "{R}",
+    "Creature — Goblin",
+    "1/1",
+    "Haste (This creature can attack and {T} as soon as it comes under your control.)",
+  ]
 
 def llanowarElves : CardDef :=
-  creature "Llanowar Elves" (ManaCost.ofColor .green) #["Elf", "Druid"] 1 1
-    (oracleText := "{T}: Add {G}.") (tapAddMana := #[.colored .green])
+  fromOracle [
+    "Llanowar Elves",
+    "{G}",
+    "Creature — Elf Druid",
+    "1/1",
+    "{T}: Add {G}.",
+  ]
 
 def crawWurm : CardDef :=
-  creature "Craw Wurm" (ManaCost.ofGenericAndColor 4 .green) #["Wurm"] 6 4
+  fromOracle [
+    "Craw Wurm",
+    "{4}{G}",
+    "Creature — Wurm",
+    "6/4",
+  ]
 
 def centaurCourser : CardDef :=
-  creature "Centaur Courser" (ManaCost.ofGenericAndColor 2 .green) #["Centaur"] 3 3
+  fromOracle [
+    "Centaur Courser",
+    "{2}{G}",
+    "Creature — Centaur",
+    "3/3",
+  ]
 
 def rumblingBaloth : CardDef :=
-  creature "Rumbling Baloth" (ManaCost.ofGenericAndColors 2 [.green, .green])
-    #["Beast"] 4 4
+  fromOracle [
+    "Rumbling Baloth",
+    "{2}{G}{G}",
+    "Creature — Beast",
+    "4/4",
+  ]
 
 def giantSpider : CardDef :=
-  creature "Giant Spider" (ManaCost.ofGenericAndColor 3 .green) #["Spider"] 2 4
-    (oracleText := "Reach (This creature can block creatures with flying.)")
-    (keywords := Keyword.reach)
+  fromOracle [
+    "Giant Spider",
+    "{3}{G}",
+    "Creature — Spider",
+    "2/4",
+    "Reach (This creature can block creatures with flying.)",
+  ]
 
-def lightningBolt : CardDef := damageInstant "Lightning Bolt" 3
+def lightningBolt : CardDef :=
+  fromOracle [
+    "Lightning Bolt",
+    "{R}",
+    "Instant",
+    "Lightning Bolt deals 3 damage to any target.",
+  ]
 
-def shock : CardDef := damageInstant "Shock" 2
+def shock : CardDef :=
+  fromOracle [
+    "Shock",
+    "{R}",
+    "Instant",
+    "Shock deals 2 damage to any target.",
+  ]
 
 def giantGrowth : CardDef :=
-  instant "Giant Growth" (ManaCost.ofColor .green)
-    "Target creature gets +3/+3 until end of turn."
-    (some (Effect.pump 3 3))
+  fromOracle [
+    "Giant Growth",
+    "{G}",
+    "Instant",
+    "Target creature gets +3/+3 until end of turn.",
+  ]
 
 /-- Repeat a card `n` times. -/
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
