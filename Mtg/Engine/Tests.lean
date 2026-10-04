@@ -22,6 +22,7 @@ import Mtg.Engine.Tests.Leaving
 import Mtg.Engine.Tests.Marvel
 import Mtg.Engine.Tests.CatalogSmoke
 import Mtg.Engine.Tests.RealityFracture
+import Mtg.Engine.Tests.ParseOracle
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -53,4 +54,5 @@ keep working.
 - `Leaving`: a player leaving a multiplayer game (CR 800.4)
 - `Marvel`: MSH connive, teamwork, Power-up, and wards
 - `CatalogSmoke`: the supported catalog names the MSH cards those tests use
+- `ParseOracle`: printed-card parsing, Oracle normalization, and argument reading
 -/
