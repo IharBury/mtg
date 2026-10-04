@@ -286,6 +286,8 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
           if face.hasSubtype subtype then acc + n else acc
         | .typeSpellsCostLess ty n =>
           if face.hasType ty then acc + n else acc
+        | .supertypeSpellsCostLess s n =>
+          if face.hasSupertype s then acc + n else acc
         | _ => acc) acc) 0
   afterWitch.reduceGeneric subtypeLess
 

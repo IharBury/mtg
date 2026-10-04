@@ -690,6 +690,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       targets none
   | .artifactSpellsCostLessThisTurn _ty _n =>
     g
+  | .supertypeSpellsCostLessThisTurn _s _n =>
+    g
 
 /-- Resolve a printed spell effect (CR 608). -/
 def applyEffect (g : Game) (controller : PlayerId) (effect : Effect)

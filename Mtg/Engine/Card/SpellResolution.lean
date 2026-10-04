@@ -260,6 +260,8 @@ inductive SpellResolution where
   | returnUpToTwoGyModal
   /-- Spells of this card type cost `{n}` less this turn (CR 205.2a). -/
   | artifactSpellsCostLessThisTurn (ty : CardType) (n : Nat)
+  /-- Spells of this supertype cost `{n}` less this turn (CR 205.4a). -/
+  | supertypeSpellsCostLessThisTurn (s : Supertype) (n : Nat)
 deriving Repr, Inhabited, BEq
 
 
@@ -476,6 +478,8 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
   | .artifactSpellsCostLessThisTurn ty n =>
     s!"{ty} spells you cast this turn cost \{{n}} less to cast"
+  | .supertypeSpellsCostLessThisTurn s n =>
+    s!"{s} spells you cast this turn cost \{{n}} less to cast"
 
 end SpellResolution
 

@@ -114,6 +114,15 @@ def englishName : Supertype → String
 instance : ToString Supertype where
   toString := englishName
 
+/-- Every supertype in CR 205.4a, in that order. -/
+def all : List Supertype :=
+  [.basic, .legendary, .ongoing, .snow, .world]
+
+/-- A printed supertype word, in any case. -/
+def ofOracle? (s : String) : Option Supertype :=
+  let s := s.map Char.toLower
+  all.find? fun t => t.englishName.map Char.toLower == s
+
 end Supertype
 
 /-- Subtype as printed on the type line. -/
@@ -532,6 +541,17 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard !isNoncreatureSubtype "Human"
 #guard !isNoncreatureSubtype "Construct"
 #guard basicLandTypes.length == 5
+#guard Supertype.all.length == 5
+#guard Supertype.all == [.basic, .legendary, .ongoing, .snow, .world]
+#guard Supertype.all.all fun s =>
+  Supertype.ofOracle? s.englishName == some s &&
+    Supertype.ofOracle? (s.englishName.map Char.toLower) == some s &&
+    Supertype.ofOracle? (s.englishName.map Char.toUpper) == some s
+#guard Supertype.ofOracle? "SNOW" == some .snow
+#guard Supertype.ofOracle? "World" == some .world
+#guard Supertype.ofOracle? "nonbasic" == none
+#guard Supertype.ofOracle? "legendaries" == none
+#guard Supertype.ofOracle? "Snow-Covered" == none
 #guard CardType.all.length == 15
 #guard CardType.all.all fun t =>
   CardType.ofOracle? t.englishName == some t &&

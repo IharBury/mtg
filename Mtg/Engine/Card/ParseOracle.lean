@@ -85,14 +85,9 @@ def splitNameCost (line : String) : String × Option ManaCost :=
     | c :: rest => go rest (c :: acc)
   go line.toList []
 
+/-- Every supertype in CR 205.4a, in any case. -/
 def parseSupertype (w : String) : Option Supertype :=
-  match lowerAscii w with
-  | "basic" => some .basic
-  | "legendary" => some .legendary
-  | "ongoing" => some .ongoing
-  | "snow" => some .snow
-  | "world" => some .world
-  | _ => none
+  Supertype.ofOracle? w
 
 /-- Every card type in CR 205.2a, singular or plural, in any case. -/
 def parseCardType (w : String) : Option CardType :=
@@ -1450,6 +1445,21 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
   some (#[], #[.battle], #["Siege"])
 #guard (parseTypeLine "Dungeon — Undercity").toOption ==
   some (#[], #[.dungeon], #["Undercity"])
+#guard Supertype.all.all fun s =>
+  (parseTypeLine s!"{s} Creature").toOption == some (#[s], #[.creature], #[])
+#guard Supertype.all.all fun s =>
+  (parseTypeLine (s.englishName.map Char.toUpper ++ " Land")).toOption ==
+    some (#[s], #[.land], #[])
+#guard (parseTypeLine "Basic Snow Land — Island").toOption ==
+  some (#[.basic, .snow], #[.land], #["Island"])
+#guard (parseTypeLine "LEGENDARY snow Creature — Elemental").toOption ==
+  some (#[.legendary, .snow], #[.creature], #["Elemental"])
+#guard (parseTypeLine "World Enchantment — Aura").toOption ==
+  some (#[.world], #[.enchantment], #["Aura"])
+#guard (parseTypeLine "Legendary Sorcery").toOption ==
+  some (#[.legendary], #[.sorcery], #[])
+#guard (parseTypeLine "Legendary Instant").toOption ==
+  some (#[.legendary], #[.instant], #[])
 #guard (parseTypeLine "Ongoing Scheme").toOption ==
   some (#[.ongoing], #[.scheme], #[])
 #guard (parseTypeLine "Plane — Bolas's Meditation Realm").toOption ==
@@ -1473,6 +1483,17 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
     (fun c => c.hasType .phenomenon && c.subtypes.isEmpty) == some true
 #guard (parseOracleCard "All in Good Time\nOngoing Scheme").toOption.map
     (fun c => c.hasType .scheme && c.hasSupertype .ongoing) == some true
+#guard (parseOracleCard "Snow-Covered Island\nBasic Snow Land — Island\n({T}: Add {U}.)").toOption.map
+    (fun c => c.isLand && c.hasSupertype .basic && c.hasSupertype .snow &&
+      c.hasSubtype "Island" && c.tapAddMana.isEmpty &&
+      c.typeLine == "Basic Snow Land — Island") == some true
+#guard (parseOracleCard "Glacier\n{1}{U}\nSnow Creature — Elemental\n1/1").toOption.map
+    (fun c => c.hasSupertype .snow && c.hasSubtype "Elemental" &&
+      c.power == some 1 && c.toughness == some 1) == some true
+#guard (parseOracleCard "The Abyss\nWorld Enchantment").toOption.map
+    (fun c => c.hasSupertype .world && c.isEnchantment && c.subtypes.isEmpty) == some true
+#guard (parseOracleCard "Urza's Ruinous Blast\n{4}{W}{W}\nLegendary Sorcery").toOption.map
+    (fun c => c.hasSupertype .legendary && c.isSorcery && !c.isCreature) == some true
 #guard (parseOracleCard "Advantageous Proclamation\nConspiracy").toOption.map
     (fun c => c.hasType .conspiracy) == some true
 #guard (parseOracleCard "Bitterblossom\n{1}{B}\nKindred Enchantment — Faerie").toOption.map
@@ -1482,6 +1503,21 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
   match parseOracleCard s!"Relic\n\{1}\nArtifact\n{t} spells you cast cost \{{3}} less to cast." with
   | .ok c => c.staticAbilities[0]? == some (.typeSpellsCostLess t 3)
   | .error _ => false
+#guard Supertype.all.all fun s =>
+  match parseOracleCard s!"Relic\n\{1}\nArtifact\n{s} spells you cast cost \{{2}} less to cast." with
+  | .ok c => c.staticAbilities[0]? == some (.supertypeSpellsCostLess s 2)
+  | .error _ => false
+#guard Supertype.all.all fun s =>
+  match parseOracleCard s!"Surge\n\{R}\nSorcery\n{s} spells you cast this turn cost \{{3}} less to cast." with
+  | .ok c => c.spellEffect.map (·.resolution) ==
+      some (.spell (.supertypeSpellsCostLessThisTurn s 3))
+  | .error _ => false
+#guard (parseOracleCard "Walk\n{G}\nInstant\nSnowcycling {2}").toOption.bind
+    (fun c => c.activatedAbilities[0]?) ==
+    some (typecyclingAbility "Snow" (ManaCost.ofGeneric 2))
+#guard (parseOracleCard "Walk\n{G}\nInstant\nBasic landcycling {2}").toOption.bind
+    (fun c => c.activatedAbilities[0]?) ==
+    some (typecyclingAbility "Basic land" (ManaCost.ofGeneric 2))
 #guard (parseOracleCard "Helm\n{1}\nArtifact\nVillain spells you cast cost {1} less to cast.").toOption.bind
     (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess "Villain" 1)
 #guard (parseOracleCard "Surge\n{R}\nSorcery\nPlaneswalker spells you cast this turn cost {2} less to cast.").toOption.bind
