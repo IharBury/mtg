@@ -51,9 +51,25 @@ def of (roman effect : String) (e : Effect) : SagaChapter :=
 
 end SagaChapter
 
-/-- Printed Saga (CR 714): reminder plus chapter abilities. -/
+/-- Roman numeral for a chapter count (`4` → `IV`). `0` is empty. -/
+def romanNumeral (n : Nat) : String :=
+  Id.run do
+    let mut n := n
+    let mut acc : String := ""
+    let digits : Array (Nat × String) := #[
+      (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
+    ]
+    for (v, s) in digits do
+      while n >= v do
+        acc := acc ++ s
+        n := n - v
+    return acc
+
+/-- Printed Saga (CR 714). The sacrifice point is the final chapter number
+(CR 714.2d / 714.4). The parenthetical “Sacrifice after …” line is reminder
+text and is not read (CR 207.2a). -/
 structure SagaDef where
-  /-- Roman numeral in “Sacrifice after …”. -/
+  /-- Final chapter as a Roman numeral (CR 714.2d). -/
   sacrificeAfter : String
   chapters : Array SagaChapter
 deriving Repr, Inhabited, BEq
@@ -71,6 +87,11 @@ def chaptersForLore (s : SagaDef) (lore : Nat) : Array SagaChapter :=
 
 end SagaDef
 
+#guard romanNumeral 0 == ""
+#guard romanNumeral 3 == "III"
+#guard romanNumeral 4 == "IV"
+#guard romanNumeral 9 == "IX"
+#guard romanNumeral 14 == "XIV"
 #guard parseChapterNumbers "I" == #[1]
 #guard parseChapterNumbers "III, IV" == #[3, 4]
 #guard parseChapterNumbers "I, II, III, IV" == #[1, 2, 3, 4]
