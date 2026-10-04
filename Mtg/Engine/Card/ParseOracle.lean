@@ -1241,6 +1241,60 @@ def detachLoyalty (name : String) (isPlaneswalker : Bool) (lines : List String) 
         | [], none => .ok (none, rules)
         | _, _ => .error s!"{name} has more than one loyalty number"
 
+/-- `Defense: N` (any case), the labeled form of the corner number. -/
+def parseDefenseLabel (line : String) : Option Nat :=
+  prefixRest line "Defense:" |>.bind parseUnsignedNat
+
+/-- Split labeled defense numbers from the other lines, keeping order. -/
+def partitionDefense (lines : List String) : List Nat × List String :=
+  let rec go : List String → List Nat → List String → List Nat × List String
+    | [], labels, rules => (labels.reverse, rules.reverse)
+    | line :: rest, labels, rules =>
+      match parseDefenseLabel line with
+      | some n => go rest (n :: labels) rules
+      | none => go rest labels (line :: rules)
+  go lines [] []
+
+/-- A bare corner number at the start or end of `rules` (CR 210.1). -/
+def takeCornerDefense (name : String) (rules : List String) :
+    Except String (Option Nat × List String) :=
+  match rules with
+  | [] => .ok (none, [])
+  | [only] =>
+    match parseUnsignedNat only with
+    | some n => .ok (some n, [])
+    | none => .ok (none, rules)
+  | first :: rest =>
+    match rest.getLast? with
+    | none => .ok (none, rules)
+    | some last =>
+      let middle := rest.dropLast
+      match parseUnsignedNat first, parseUnsignedNat last with
+      | some _, some _ => .error s!"{name} has more than one defense number"
+      | some n, none => .ok (some n, rest)
+      | none, some n => .ok (some n, first :: middle)
+      | none, none => .ok (none, rules)
+
+/-- Printed defense of a battle, and the rules lines that remain (CR 210.1).
+
+The number is `Defense: N` or the bare number from the lower right corner.
+It may sit before the rules text or after it. A non-battle has no defense. -/
+def detachDefense (name : String) (isBattle : Bool) (lines : List String) :
+    Except String (Option Nat × List String) :=
+  if !isBattle then .ok (none, lines)
+  else
+    let (labels, rules) := partitionDefense lines
+    if labels.length > 1 then .error s!"{name} has more than one defense number"
+    else
+      match takeCornerDefense name rules with
+      | .error e => .error e
+      | .ok (corner, rules) =>
+        match labels, corner with
+        | [n], none => .ok (some n, rules)
+        | [], some n => .ok (some n, rules)
+        | [], none => .ok (none, rules)
+        | _, _ => .error s!"{name} has more than one defense number"
+
 /-- True when `c` is a minus sign that can introduce a negative loyalty symbol. -/
 def isLoyaltyMinus (c : Char) : Bool :=
   c == '-' || c == '−' || c == '–'
@@ -1446,30 +1500,16 @@ def parseFace (lines : List String) : Except String CardDef :=
               match parseColorIndicator line with
               | some cs => takeExtras { c with colorIndicator := some cs } rest
               | none =>
-                if (lowerAscii line).startsWith "defense:" then
-                  match prefixRest line "Defense:" |>.bind parseUnsignedNat with
-                  | some n => takeExtras { c with defense := some n } rest
-                  | none => (c, line :: rest)
-                else
-                  match parseHandLifeLine line with
-                  | some (h, l) =>
-                    takeExtras { c with handModifier := some h, lifeModifier := some l } rest
+                match parseHandLifeLine line with
+                | some (h, l) =>
+                  takeExtras { c with handModifier := some h, lifeModifier := some l } rest
+                | none =>
+                  match parseKeyedModifier line "hand" with
+                  | some n => takeExtras { c with handModifier := some n } rest
                   | none =>
-                    match parseKeyedModifier line "hand" with
-                    | some n => takeExtras { c with handModifier := some n } rest
-                    | none =>
-                      match parseKeyedModifier line "life" with
-                      | some n => takeExtras { c with lifeModifier := some n } rest
-                      | none =>
-                        -- A lone number in the corner is defense (CR 210).
-                        -- Planeswalker loyalty is separated later (CR 209.1).
-                        if c.defense.isNone && !c.types.any (· == .creature) &&
-                            !c.types.any (· == .planeswalker) &&
-                            c.types.any (· == .battle) then
-                          match parseUnsignedNat line with
-                          | some n => takeExtras { c with defense := some n } rest
-                          | none => (c, line :: rest)
-                        else (c, line :: rest)
+                    match parseKeyedModifier line "life" with
+                    | some n => takeExtras { c with lifeModifier := some n } rest
+                    | none => (c, line :: rest)
         let base : CardDef := {
           name, manaCost := cost, supertypes := supers, types, subtypes
           power := pt.1.number, toughness := pt.2.number
@@ -1477,12 +1517,16 @@ def parseFace (lines : List String) : Except String CardDef :=
         }
         let (base, rest) := takeExtras base rest
         let (rules, adv) := splitAdventure rest
-        -- CR 209.1: the loyalty number sits in the lower right corner, so it
-        -- may be labeled or bare, before the rules text or after it.
+        -- CR 209.1 / 210.1: the loyalty and defense numbers sit in the lower
+        -- right corner, so each may be labeled or bare, before the rules text
+        -- or after it.
         match detachLoyalty base.name base.isPlaneswalker rules with
         | .error e => .error e
         | .ok (loyalty, rules) =>
-        let base := { base with loyalty := loyalty }
+        match detachDefense base.name base.isBattle rules with
+        | .error e => .error e
+        | .ok (defense, rules) =>
+        let base := { base with loyalty := loyalty, defense := defense }
         match parseRules base rules with
         | .error e => .error e
         | .ok c =>
@@ -1500,8 +1544,9 @@ type line, an optional `power/toughness` line, then rules text. A planeswalker's
 loyalty number is `Loyalty: N` or the bare corner number, before or after the
 rules text (CR 209.1). A loyalty symbol in an activation cost (`[+N]:`,
 `+N:`, `[-N]:`, `[0]:`, and the `X` forms) is a loyalty ability (CR 209.2).
-A line that is exactly `//` starts the back face. An Adventure is introduced
-by `//ADV//`. -/
+A battle's defense number is `Defense: N` or the bare corner number, before
+or after the rules text (CR 210.1). A line that is exactly `//` starts the
+back face. An Adventure is introduced by `//ADV//`. -/
 @[irreducible, noinline] def parseOracleCard (text : String) : Except String CardDef :=
   let lines := nonEmptyLines text
   let (front, back) := splitBackFace lines
@@ -1805,7 +1850,59 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
       c.activatedAbilities[0]!.cost.loyalty == some (.plus 1) &&
       c.activatedAbilities[0]!.effect == Effect.draw 1) == some true
 #guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nDefense: 4").toOption.map
-    (fun c => c.isBattle && c.hasSubtype "Siege" && c.defense == some 4) == some true
+    (fun c => c.isBattle && c.hasSubtype "Siege" && c.defense == some 4 &&
+      c.loyalty.isNone) == some true
+
+-- CR 210.1: the defense number is the corner number, labeled or bare, and it
+-- may follow the rules text. It is that battle's defense off the battlefield,
+-- and the battle enters with that many defense counters.
+#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\n4").toOption.map
+    (fun c => c.isBattle && c.defense == some 4) == some true
+#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\ndefense: 4").toOption.map
+    (·.defense) == some (some 4)
+#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\nDefense: 4").toOption.map
+    (fun c => c.defense == some 4 && c.keywords.flying) == some true
+#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\n4\nFlying").toOption.map
+    (fun c => c.defense == some 4 && c.keywords.flying) == some true
+#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\n4").toOption.map
+    (·.defense) == some (some 4)
+#guard
+  match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\n4" with
+  | .ok c =>
+    c.defense == some 4 && c.keywords.flying &&
+    match parseOracleCard (renderFullOracle c) with
+    | .ok d => d.defense == c.defense && d.keywords.flying
+    | .error _ => false
+  | .error _ => false
+#guard
+  match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\n4\nDefense: 5" with
+  | .error e => e == "Invasion of Zendikar has more than one defense number"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\n4\nFlying\n5" with
+  | .error e => e == "Invasion of Zendikar has more than one defense number"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nDefense: 4\nDefense: 5" with
+  | .error e => e == "Invasion of Zendikar has more than one defense number"
+  | .ok _ => false
+#guard
+  match parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nDefense: 3" with
+  | .ok _ => false
+  | .error _ => true
+#guard
+  match parseOracleCard "Relic\n{1}\nArtifact\n4" with
+  | .ok _ => false
+  | .error _ => true
+#guard
+  match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\n4\n//\nAwakened Skyclave\nCreature — Elemental\n4/4" with
+  | .ok c =>
+    c.defense == some 4 && c.keywords.flying &&
+    match c.otherFace with
+    | some back => back.isCreature && back.power == some 4 && back.toughness == some 4 &&
+        back.defense.isNone && back.loyalty.isNone
+    | none => false
+  | .error _ => false
 #guard (parseOracleCard "Urza\nVanguard\nHand +1, Life +10").toOption.map
     (fun c => c.hasType .vanguard && c.handModifier == some 1 && c.lifeModifier == some 10) ==
     some true
