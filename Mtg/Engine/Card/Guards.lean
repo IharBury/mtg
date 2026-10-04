@@ -979,6 +979,10 @@ namespace CardDef
 #guard StaticAbility.toNotation .improvise == "Improvise"
 #guard StaticAbility.toNotation (.typeSpellsCostLess .artifact 1) ==
   "Artifact spells you cast cost {1} less to cast."
+#guard StaticAbility.toNotation (.supertypeSpellsCostLess .legendary 1) ==
+  "Legendary spells you cast cost {1} less to cast."
+#guard StaticAbility.toNotation (.supertypeSpellsCostLess .snow 2) ==
+  "Snow spells you cast cost {2} less to cast."
 #guard StaticAbility.toNotation (.enchantedCreatureGetsHasAndTypes 2 2
     (Keyword.firstStrike.merge Keyword.vigilance) #["legendary", "Soldier"]) ==
   "Enchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types."

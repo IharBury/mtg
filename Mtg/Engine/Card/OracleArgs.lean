@@ -21,6 +21,7 @@ inductive SlotVal where
   | int (i : Int)
   | str (s : String)
   | ty (t : CardType)
+  | sup (s : Supertype)
   deriving BEq, Repr, Inhabited
 
 inductive NatFmt where
@@ -54,6 +55,7 @@ inductive Pat where
   | int (i : Nat) (fmt : IntFmt)
   | str (i : Nat) (fmt : StrFmt)
   | ty (i : Nat)
+  | sup (i : Nat)
   | pt (i j : Nat) (signed : Bool)
   deriving BEq, Repr
 
@@ -117,6 +119,19 @@ def takeCardType (t : CardType) : ArgM CardType := do
       set { s with vals := rest }
       return v
     | _ => return t
+
+def takeSupertype (sup : Supertype) : ArgM Supertype := do
+  let s ← get
+  match s.mode with
+  | .collect =>
+    set { s with vals := .sup sup :: s.vals }
+    return sup
+  | .fill =>
+    match s.vals with
+    | .sup v :: rest =>
+      set { s with vals := rest }
+      return v
+    | _ => return sup
 
 def takeStr (str : String) : ArgM String := do
   let s ← get
@@ -257,6 +272,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .maySacArtifactOrDiscardDraw n => return .maySacArtifactOrDiscardDraw (← takeNat n)
   | .artifactSpellsCostLessThisTurn ty n =>
     return .artifactSpellsCostLessThisTurn (← takeCardType ty) (← takeNat n)
+  | .supertypeSpellsCostLessThisTurn s n =>
+    return .supertypeSpellsCostLessThisTurn (← takeSupertype s) (← takeNat n)
   | r => return r
 
 def takeChapter (c : ChapterResolution) : ArgM ChapterResolution := do
@@ -470,6 +487,8 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   | .powerEqualSubtypeYouControl s => return .powerEqualSubtypeYouControl (← takeStr s)
   | .typeSpellsCostLess ty n =>
     return .typeSpellsCostLess (← takeCardType ty) (← takeNat n)
+  | .supertypeSpellsCostLess s n =>
+    return .supertypeSpellsCostLess (← takeSupertype s) (← takeNat n)
   | .wardDiscardOrPay n => return .wardDiscardOrPay (← takeNat n)
   | .wardPoisonCounters n => return .wardPoisonCounters (← takeNat n)
   | .otherPowerUpCostsLess n => return .otherPowerUpCostsLess (← takeNat n)
@@ -576,6 +595,11 @@ def slotStr (vals : Array SlotVal) (i : Nat) : String :=
 def slotTy (vals : Array SlotVal) (i : Nat) : CardType :=
   match vals[i]? with
   | some (.ty t) => t
+  | _ => default
+
+def slotSup (vals : Array SlotVal) (i : Nat) : Supertype :=
+  match vals[i]? with
+  | some (.sup s) => s
   | _ => default
 
 def parseNatTok (t : String) : Option Nat :=
@@ -716,6 +740,17 @@ def tyHit (i : Nat) (t : CardType) (toks : List String) (fresh : Bool) : Option 
     repl := t.englishName
   }
 
+def supHit (i : Nat) (s : Supertype) (toks : List String) (fresh : Bool) : Option Hit :=
+  let needle := tokenize (lowerAscii s.englishName)
+  if needle.isEmpty || !prefixTokens needle toks then none
+  else some {
+    width := needle.length
+    used := if fresh then [i] else []
+    pat := .sup i
+    needle := String.intercalate " " needle
+    repl := s.englishName
+  }
+
 def ptHit (i j : Nat) (signed : Bool) (p t : Int) (toks : List String) (fresh : Bool) : Option Hit :=
   match toks with
   | tok :: _ =>
@@ -766,6 +801,8 @@ def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List 
           hs := consider hs (strHit i .non s toks fresh)
       | .ty t =>
         hs := consider hs (tyHit i t toks fresh)
+      | .sup s =>
+        hs := consider hs (supHit i s toks fresh)
     return hs
 
 /-- Prefer a still-unused argument, then the longest printed form. -/
@@ -973,6 +1010,16 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
           | none => none
         | none => none
       | [] => none
+    | .sup i :: ps =>
+      match toks with
+      | t :: ts =>
+        match Supertype.ofOracle? t with
+        | some sup =>
+          match setSlot vals i (.sup sup) seen with
+          | some (vals, seen) => go ps ts vals seen
+          | none => none
+        | none => none
+      | [] => none
     | .pt i j signed :: ps =>
       match toks with
       | t :: ts =>
@@ -1041,6 +1088,7 @@ def patKey (pats : List (List Pat)) : String :=
       | .sub => "$s"
       | .subPlural => "$sp"
     | .ty _ => "$t"
+    | .sup _ => "$sup"
     | .pt _ _ signed => if signed then "+/+" else "#/#"
   String.intercalate "\n" (pats.map fun line => String.intercalate " " (line.map piece))
 
@@ -1050,6 +1098,7 @@ def renderHit (h : Hit) (vals : Array SlotVal) : String :=
   | .int i fmt => renderInt fmt (slotInt vals i)
   | .str i fmt => renderStr fmt (slotStr vals i)
   | .ty i => (slotTy vals i).englishName
+  | .sup i => (slotSup vals i).englishName
   | .pt i j signed => renderPt signed (slotInt vals i) (slotInt vals j)
   | .lit s => s
 
@@ -1092,6 +1141,9 @@ def allNeedles (args : Array SlotVal) : List Hit :=
       | .ty t =>
         let needle := lowerAscii t.englishName
         hs := { width := needle.length, used := [i], pat := .ty i, needle, repl := t.englishName } :: hs
+      | .sup s =>
+        let needle := lowerAscii s.englishName
+        hs := { width := needle.length, used := [i], pat := .sup i, needle, repl := s.englishName } :: hs
     return hs
 
 def charHit (args : Array SlotVal) (cs : List Char) (prev : Option Char) (used : List Nat) :
@@ -1209,6 +1261,25 @@ def setNat (e : Effect) (i n : Nat) : Effect :=
   match matchPats (patsOf (normalizeUnit "X" (StaticAbility.toNotation ab)) args)
       (tokenize (normalizeUnit "X" query)) args with
   | some vals => refillStatic ab vals == .typeSpellsCostLess t 2
+  | none => false
+
+#guard Supertype.all.all fun s =>
+  let ab := StaticAbility.supertypeSpellsCostLess .legendary 1
+  let args := collectStatic ab
+  let query := StaticAbility.toNotation (.supertypeSpellsCostLess s 2)
+  match matchPats (patsOf (normalizeUnit "X" (StaticAbility.toNotation ab)) args)
+      (tokenize (normalizeUnit "X" query)) args with
+  | some vals => refillStatic ab vals == .supertypeSpellsCostLess s 2
+  | none => false
+
+#guard Supertype.all.all fun s =>
+  let e := Effect.supertypeSpellsCostLessThisTurn 1
+  let args := collectEffect e
+  let query := s!"{s} spells you cast this turn cost \{{3}} less to cast."
+  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+      (tokenize (normalizeUnit "X" query)) args with
+  | some vals =>
+    (refillEffect e vals).resolution == .spell (.supertypeSpellsCostLessThisTurn s 3)
   | none => false
 
 #guard

@@ -160,6 +160,8 @@ inductive StaticAbility where
   | powerEqualLegendaryCreaturesYouControl
   /-- Spells of this card type you cast cost `{n}` less (e.g. artifact spells). -/
   | typeSpellsCostLess (ty : CardType) (n : Nat)
+  /-- Spells of this supertype you cast cost `{n}` less (CR 205.4a). -/
+  | supertypeSpellsCostLess (s : Supertype) (n : Nat)
   /-- Improvise (CR 702.126). -/
   | improvise
   /-- Noncreature spells you cast have improvise. -/
@@ -367,6 +369,7 @@ inductive StaticShape where
   | powerEqualSubtype (subtype : String)
   | powerEqualLegendaryCreatures
   | typeSpellsCostLess (ty : CardType) (n : Nat)
+  | supertypeSpellsCostLess (s : Supertype) (n : Nat)
   | improvise
   | noncreatureSpellsHaveImprovise
   | extort
@@ -558,6 +561,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .powerEqualSubtype subtype => { powerEqualSubtype := some subtype }
   | .powerEqualLegendaryCreatures => { powerEqualLegendaryCreatures := true }
   | .typeSpellsCostLess _ _ => {}
+  | .supertypeSpellsCostLess _ _ => {}
   | .improvise => {}
   | .noncreatureSpellsHaveImprovise => {}
   | .extort => {}
@@ -678,6 +682,7 @@ def shape : StaticAbility → StaticShape
   | .powerEqualSubtypeYouControl subtype => .powerEqualSubtype subtype
   | .powerEqualLegendaryCreaturesYouControl => .powerEqualLegendaryCreatures
   | .typeSpellsCostLess ty n => .typeSpellsCostLess ty n
+  | .supertypeSpellsCostLess s n => .supertypeSpellsCostLess s n
   | .improvise => .improvise
   | .noncreatureSpellsHaveImprovise => .noncreatureSpellsHaveImprovise
   | .extort => .extort
@@ -870,6 +875,8 @@ def toNotation (ab : StaticAbility) : String :=
     "This creature's power is equal to the number of legendary creatures you control."
   | .typeSpellsCostLess ty n =>
     s!"{ty} spells you cast cost \{{n}} less to cast."
+  | .supertypeSpellsCostLess s n =>
+    s!"{s} spells you cast cost \{{n}} less to cast."
   | .improvise =>
     "Improvise"
   | .noncreatureSpellsHaveImprovise =>
