@@ -2,8 +2,9 @@
 # Oracle-text normalization
 
 Comparable form of printed Oracle lines. Reminder text (CR 207.2a), ability
-words (CR 207.2c), and the card's own name are removed so a line can be
-matched to the ability the engine models.
+words (CR 207.2c), the chaos symbol that introduces a chaos ability (CR 207.4),
+and the card's own name are removed so a line can be matched to the ability
+the engine models.
 -/
 
 namespace Mtg.Engine.OracleNorm
@@ -144,6 +145,69 @@ private def abilityWordEnd (cs : Array Char) (i : Nat) : Option Nat :=
         | none => pure ()
       return best
 
+/-- The chaos symbol `{CHAOS}` (CR 107.12), matched without regard to case. -/
+private def chaosSymbolLiteral : Array Char := "{CHAOS}".toList.toArray
+
+private def matchChaosSymbol (cs : Array Char) (i : Nat) : Bool :=
+  let lit := chaosSymbolLiteral
+  let n := lit.size
+  if i + n > cs.size then false
+  else
+    Id.run do
+      let mut ok := true
+      let mut k : Nat := 0
+      while ok && k < n do
+        if eqFold cs[i + k]! lit[k]! then
+          k := k + 1
+        else
+          ok := false
+      return ok
+
+/-- A chaos symbol introduces the ability (CR 207.4). It sits at the start of
+the text, or just after a quote, a mode bullet, an em dash, or another chaos
+symbol. A `{CHAOS}` after a word names a planar-die face (CR 107.12). -/
+private def chaosIntro (cs : Array Char) (i : Nat) : Bool :=
+  let n := chaosSymbolLiteral.size
+  Id.run do
+    let mut j := i
+    let mut fuel := cs.size + 1
+    while fuel != 0 do
+      fuel := fuel - 1
+      if j != 0 && cs[j - 1]!.isAlphanum then
+        return false
+      if abilityIntro cs j then
+        return true
+      let mut k := j
+      while k != 0 && (cs[k - 1]! == ' ' || cs[k - 1]! == '\n' || cs[k - 1]! == '\t') do
+        k := k - 1
+      if k >= n && matchChaosSymbol cs (k - n) then
+        j := k - n
+      else
+        return false
+    return false
+
+/-- Drop a chaos symbol that introduces an ability (CR 207.4).
+
+On a plane card the symbol is printed to the left of the ability that
+triggers whenever chaos ensues. Towashi's chaos ability is read the same way
+with or without a leading `{CHAOS}`. A `{CHAOS}` later in the text still
+names a face of the planar die (CR 107.12) and stays.
+-/
+def stripChaosSymbol (s : String) : String :=
+  Id.run do
+    let cs := s.toList.toArray
+    let mut acc : Array Char := Array.mkEmpty cs.size
+    let mut i : Nat := 0
+    let mut changed := false
+    while i < cs.size do
+      if matchChaosSymbol cs i && chaosIntro cs i then
+        changed := true
+        i := skipWs cs (i + chaosSymbolLiteral.size)
+      else
+        acc := acc.push cs[i]!
+        i := i + 1
+    if changed then (String.ofList acc.toList).trimAscii.copy else s
+
 /-- Drop every CR 207.2c ability word (`Landfall —`, `Spell Mastery —`,
 `Council's Dilemma —`, `Descend 4 —`), including one quoted inside a later
 ability. Other em-dash labels are left alone. -/
@@ -254,6 +318,7 @@ def replaceWord (s old new : String) : String :=
 /-- Lowercase, drop reminders, and replace the card's name with `this`. -/
 def prepareLine (cardName : String) (s : String) : String :=
   let s := dropReminderText s
+  let s := stripChaosSymbol s
   let s := stripAbilityWord s
   let s := (lowerAscii s).trimAscii.copy
   let aliases := nameAliases cardName |>.map lowerAscii
@@ -491,6 +556,37 @@ def splitKeywordWardLine (s : String) : List String :=
 #guard stripAbilityWord "Power-up — {4}{W}: Draw a card." == "{4}{W}: Draw a card."
 #guard stripAbilityWord "Street Justice — Exile target creature." ==
   "Exile target creature."
+
+-- CR 207.4: the chaos symbol to the left of a chaos ability has no rules
+-- meaning. Towashi is read as the ability that follows the symbol.
+#guard stripChaosSymbol
+    "{CHAOS} Whenever chaos ensues, distribute three +1/+1 counters among one, two, or three target creatures you control." ==
+  "Whenever chaos ensues, distribute three +1/+1 counters among one, two, or three target creatures you control."
+#guard stripChaosSymbol
+    "{chaos} Whenever chaos ensues, distribute three +1/+1 counters among one, two, or three target creatures you control." ==
+  "Whenever chaos ensues, distribute three +1/+1 counters among one, two, or three target creatures you control."
+#guard stripChaosSymbol "{Chaos}Menace" == "Menace"
+#guard stripChaosSymbol "{CHAOS}" == ""
+#guard stripChaosSymbol "{CHAOS} {CHAOS} Whenever chaos ensues, draw a card." ==
+  "Whenever chaos ensues, draw a card."
+#guard stripChaosSymbol
+    "This gains \"{CHAOS} Whenever chaos ensues, draw a card.\"" ==
+  "This gains \"Whenever chaos ensues, draw a card.\""
+#guard stripChaosSymbol "• {CHAOS} Draw a card." == "• Draw a card."
+#guard stripChaosSymbol "{C} Whenever chaos ensues, draw a card." ==
+  "{C} Whenever chaos ensues, draw a card."
+#guard stripChaosSymbol "Whenever you roll {CHAOS}, draw a card." ==
+  "Whenever you roll {CHAOS}, draw a card."
+#guard stripAbilityWords (stripChaosSymbol
+    "{CHAOS} Landfall — Whenever a land you control enters, draw a card.") ==
+  "Whenever a land you control enters, draw a card."
+#guard normalizeUnit "Towashi"
+    "{CHAOS} Whenever chaos ensues, distribute three +1/+1 counters among one, two, or three target creatures you control." ==
+  normalizeUnit "Towashi"
+    "Whenever chaos ensues, distribute three +1/+1 counters among one, two, or three target creatures you control."
+#guard normalizeUnit "Towashi"
+    "Whenever you roll {CHAOS}, draw a card." ==
+  "whenever you roll {chaos} draw a card"
 #guard normalizeUnit "Saga"
     "This Saga gains \"Spell Mastery — Whenever a land you control enters, draw a card.\"" ==
   normalizeUnit "Saga"
