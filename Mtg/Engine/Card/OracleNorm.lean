@@ -92,28 +92,40 @@ def nameAliases (name : String) : List String :=
 def applyReplacements (s : String) (pairs : List (String × String)) : String :=
   pairs.foldl (fun acc p => acc.replace p.fst p.snd) s
 
-/-- Replace an isolated word. -/
+/-- Replace an isolated word.
+
+Linear in `s` and `new`. The previous list walk dropped a suffix and appended
+one character per step, which made Oracle normalization quadratic and dominated
+catalog builds.
+-/
 def replaceWord (s old new : String) : String :=
   if old.isEmpty then s
   else
     Id.run do
-      let chars := s.toList
-      let needle := old.toList
-      let n := needle.length
-      let mut acc : List Char := []
+      let chars := s.toList.toArray
+      let needle := old.toList.toArray
+      let fresh := new.toList.toArray
+      let n := needle.size
+      let mut acc : Array Char := Array.mkEmpty chars.size
       let mut i : Nat := 0
-      while i < chars.length do
-        let slice := chars.drop i |>.take n
+      while i < chars.size do
+        let mut matched := true
+        let mut k : Nat := 0
+        while matched && k < n do
+          if i + k >= chars.size || chars[i + k]! != needle[k]! then
+            matched := false
+          else
+            k := k + 1
         let beforeOk := i == 0 || !(chars[i - 1]!.isAlphanum)
         let afterOk :=
-          i + n >= chars.length || !(chars[i + n]!.isAlphanum)
-        if slice == needle && beforeOk && afterOk then
-          acc := acc ++ new.toList
+          i + n >= chars.size || !(chars[i + n]!.isAlphanum)
+        if matched && beforeOk && afterOk then
+          acc := acc ++ fresh
           i := i + n
         else
-          acc := acc ++ [chars[i]!]
+          acc := acc.push chars[i]!
           i := i + 1
-      String.ofList acc
+      String.ofList acc.toList
 
 /-- Lowercase, drop reminders, and replace the card's name with `this`. -/
 def prepareLine (cardName : String) (s : String) : String :=
