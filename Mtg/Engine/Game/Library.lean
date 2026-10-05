@@ -151,6 +151,23 @@ def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone) : Game :=
   | _ =>
     ids.foldl (fun acc id => (acc.move id dest none).1) g
 
+/-- Put `ids` on top of `p`'s library, last listed on top. Cards that are no
+longer in that library are skipped. -/
+def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    for id in ids do
+      match g.findObject? id with
+      | some o =>
+        if o.zone == .library p then
+          let name := o.name
+          g := g.modifyPlayer p (fun pl =>
+            { pl with library := (pl.library.filter (· != id)).push id })
+          g := g.logMsg s!"{(g.player p).name} puts {name} on top of their library"
+        else pure ()
+      | none => pure ()
+    return g
+
 /-- Put `ids` into `dest` in a random order. With `norandom` and two or more
 cards, becomes `Pending.resolveRandom`. -/
 def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)

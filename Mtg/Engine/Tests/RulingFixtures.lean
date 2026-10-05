@@ -37,7 +37,7 @@ def oliphauntCycled : Game :=
   let g := oliphauntCycleReady
   let src := handCardNamed g ⟨0⟩ "Oliphaunt"
   let g := mustApply g ⟨0⟩ (.activate src.id 0)
-  passBoth (mustApply g ⟨0⟩ .pay)
+  applyIdle (passBoth (mustApply g ⟨0⟩ .pay))
 
 /-- Typecycling is instant-speed (CR 702.29 / 117.1). -/
 def oliphauntCycleAtEnd : Game :=
@@ -62,7 +62,7 @@ def attercopWoodElvesResolved : Game :=
   let g := mustApply g ⟨0⟩ .pay
   let g := passBoth g
   let g := addToLibraryTop (addToLibraryTop g forest ⟨0⟩) mountain ⟨0⟩
-  passBoth g
+  applyIdle (passBoth g)
 
 /-- Cosmic Cube: attacking Bears, then Bolt / Mountain / Hill Giant on top. -/
 def cosmicCubeSetup : Game :=

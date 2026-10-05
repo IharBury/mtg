@@ -803,6 +803,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .newTargetsForCopies copies =>
           s!"choose a new target for the copy ({copies.size} left): choose <id>, or decline to keep it"
         | .mayCastCascade .. => "cascade: cast the exiled card without paying its mana cost (accept), or decline"
+        | .maySearchLibrary _ _ _ _ kind =>
+          s!"may search for {kind}: accept, or decline"
+        | .searchLibrary eligible count .. =>
+          s!"search: choose up to {count} of {eligible.size} card(s), or decline to find nothing"
         | .zemoBoastExile .. =>
           "exile black cards with 15+ black mana symbols from your graveyard: choose <id> ..., or decline"
       s!" [{what} ({g.player p |>.name})]"

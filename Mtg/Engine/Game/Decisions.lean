@@ -756,6 +756,8 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
       let g := g.logMsg s!"Starting player: {(g.player sp).name}"
       continueOpeningShuffles g 0
     | .putCreatureThenShuffle _ => g
+    | .putOnTop p ids => g.putIdsOnTop p ids
+    | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
   if grantPriority && g.pending == .none && !g.openingHandsPending && !g.over
       && !g.players.isEmpty then
     g.receivePriority g.activePlayer

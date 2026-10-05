@@ -188,17 +188,5 @@ def loyaltyOnEachPlaneswalkerOf (g : Game) (p : PlayerId) : Game :=
         s!"A loyalty counter is put on {o.name}") g
     g.queueLoyaltyPutTriggers p
 
-/-- Search `p`'s library for up to `n` land cards matching `pred` and put them
-onto the battlefield tapped, then shuffle (first matches in library order). -/
-def searchLandsOntoBattlefieldTapped (g : Game) (p : PlayerId) (n : Nat) (pred : CardDef → Bool) : Game :=
-  let ids := ((g.player p).library.filter (fun id =>
-    (g.findObject? id).any (fun o => o.printed.isLand && pred o.printed))).extract 0 n
-  let g := ids.foldl (fun g id =>
-    let name := (g.object! id).name
-    let (g, newId) := g.putOntoBattlefield id p (tapped := true) (summoningSick := false)
-    let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield tapped"
-    g.afterLandEnters (g.object! newId)) g
-  g.shuffleLibrary p
-
 end Game
 end Mtg.Engine

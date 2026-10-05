@@ -43,6 +43,10 @@ inductive AfterRandom where
   | setStartingPlayer (i : Nat)
   /-- Put the chosen creature onto the battlefield for `controller`, then shuffle. -/
   | putCreatureThenShuffle (controller : PlayerId)
+  /-- Put these cards on top of `p`'s library after shuffling. -/
+  | putOnTop (p : PlayerId) (ids : Array ObjectId)
+  /-- Behold `subtype`; if you do, untap `landId` (Elven Passage). -/
+  | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Payment a player may make to stop ward from countering their spell
@@ -88,6 +92,7 @@ inductive FraNext where
   | beastToken
   | proliferate (times : Nat)
   | mshReflexive (kind paid : Nat)
+  | gainLife (n : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 def FraNext.toResolution : FraNext → FraResolution
@@ -104,6 +109,27 @@ def FraNext.toResolution : FraNext → FraResolution
   | .beastToken => .beastToken
   | .proliferate n => .proliferate n
   | .mshReflexive k paid => .queueMshReflexive k paid
+  | .gainLife n => .gainLife n
+
+/-- Where cards found by a library search go (CR 701.19). -/
+inductive SearchDest where
+  | battlefield (tapped : Bool)
+  | hand
+  | graveyard
+  /-- On top of the library after shuffling. -/
+  | topAfterShuffle
+  /-- Exiled, linked to the source. -/
+  | exileLinked (sourceId : Option ObjectId)
+  /-- The first chosen card onto the battlefield tapped, the second into the
+  hand (Troop of Ponies). -/
+  | battlefieldTappedThenHand
+  /-- Onto the battlefield tapped; you may behold a `subtype`, and if you do,
+  untap it (Elven Passage). -/
+  | battlefieldTappedBeholdUntap (subtype : String)
+  /-- Onto the battlefield from the hand or library; shuffle only if the
+  library was searched (Last Light of Durin's Day). -/
+  | battlefieldFromHandOrLibrary
+deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What a “you may sacrifice …” choice accepts. -/
 inductive FraSacrifice where
@@ -291,6 +317,14 @@ inductive FraChoice where
   /-- You may reveal one of `eligible` from among the looked-at `looked` and
   put it into your hand; the rest go on the bottom in a random order. -/
   | mayRevealToHand (looked eligible : Array ObjectId)
+  /-- Search: choose up to `count` of `eligible` (or none, CR 701.19b), send
+  them to `dest`, shuffle, then do `after`. `kind` is the logged card phrase. -/
+  | searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
+    (after : Option FraNext) (kind : String)
+  /-- You may search (Old Thrush). Declining does not shuffle. Accepting
+  continues as `searchLibrary`. -/
+  | maySearchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
+    (after : Option FraNext) (kind : String)
   /-- You may pay `cost` up to `maxTimes` times (accept pays once; a mode
   index pays that many times); when you do, the reflexive ability `kind`
   triggers. -/

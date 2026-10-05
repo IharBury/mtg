@@ -236,13 +236,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.resolveSearchBasicLandToHand controller
   | .gainLifeSearchBasicOnTop n =>
     let g := g.gainLife controller n
-    g.resolveLibrarySearch controller isBasicLandCard "basic land card"
-      fun g cardId =>
-        let cardName := (g.object! cardId).name
-        let pl := g.player controller
-        let lib := pl.library.filter (· != cardId) |>.push cardId
-        let g := g.setPlayer { pl with library := lib }
-        g.logMsg s!"{(g.player controller).name} puts {cardName} on top of their library"
+    g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
+      (optional := true)
   | .plusOneEachOtherGainLife =>
     let others :=
       g.battlefield.filter (fun o =>
@@ -663,18 +658,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let name := src.name
         let (g, _) := g.move src.id (.graveyard src.owner) none
         let g := g.logMsg s!"{name} is sacrificed"
-        match (g.player controller).hand.findSome? (fun id =>
-          match g.findObject? id with
-          | some o => if o.printed.hasSubtype "Dragon" then some id else none
-          | none => none) with
-        | some id =>
-          let (g, _) := g.putOntoBattlefield id controller
-          g.afterPermanentEnters (g.object! id)
-        | none =>
-          g.resolveLibrarySearch controller (fun c => c.hasSubtype "Dragon")
-            "Dragon card" fun g cardId =>
-              let (g, _) := g.putOntoBattlefield cardId controller
-              g.afterPermanentEnters (g.object! cardId)
+        g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
+          .battlefieldFromHandOrLibrary (alsoHand := true)
       else g
   | .millPlayer n =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n)

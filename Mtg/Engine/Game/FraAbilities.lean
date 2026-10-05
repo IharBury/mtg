@@ -412,6 +412,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
           g.beginFraChoice controller (.newTargetsForCopies copies)
             s!"{(g.player controller).name} may choose new targets for the copies"
     | none => g
+  | .gainLife n => g.gainLife controller n
   | .zemoBoastCopies =>
     let exiled := (g.resolvingAbilityObject?.map (·.boastExiled)).getD #[]
     let (g, copies) := exiled.foldl (fun (acc : Game × Array ObjectId) id =>

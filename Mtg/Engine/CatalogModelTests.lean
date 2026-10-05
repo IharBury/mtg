@@ -1061,6 +1061,69 @@ player controls phases out. -/
   let phased (n : String) := g.objects.any (fun o => o.name == n && o.zone == .battlefield && o.status.phasedOut)
   phased "Grizzly Bears" && phased "Hill Giant"
 
+def shuffledSince (before : Nat) (g : Game) : Bool :=
+  (g.log.extract before g.log.size).any (fun s => mentions s "shuffles")
+
+def onlyLib (g : Game) (cards : Array CardDef) : Game :=
+  let g := g.modifyPlayer me (fun pl => { pl with library := #[] })
+  cards.foldl (fun g c => addToLibraryTop g c me) g
+
+/- A library search is the player's choice. Declining finds nothing and still
+shuffles; Old Thrush's optional search does not shuffle when declined. -/
+#guard
+  let g0 := addToLibraryTop afterDraw forest me
+  let n := g0.log.size
+  let g := g0.beginLibrarySearch me isBasicLandCard "a basic land card" .topAfterShuffle
+    (optional := true)
+  let g := mustApply g me .decline
+  !shuffledSince n g &&
+    (g.player me).library.any (fun id => (g.object! id).name == "Forest") &&
+    g.log.any (fun s => mentions s "doesn't search")
+#guard
+  let g := addToLibraryTop afterDraw forest me
+  let fid := (g.player me).library.back!
+  let g := g.beginLibrarySearch me isBasicLandCard "a basic land card" .topAfterShuffle
+    (optional := true)
+  let g := mustApply g me .accept
+  let g := mustApply g me (.choosePermanents #[fid])
+  (g.player me).library.back? == some fid &&
+    g.log.any (fun s => mentions s "on top of their library")
+
+/- Troop of Ponies: the first chosen basic enters tapped, the second goes to hand. -/
+#guard
+  let g := onlyLib afterDraw #[plains, forest]
+  let g := applyIdle (g.applyAbilityEffect me Effect.searchTwoBasicsSplit #[])
+  let plainsBf := g.battlefield.any (fun o => o.name == "Plains" && o.status.tapped)
+  plainsBf && inHand g me "Forest"
+
+/- Elven Passage untaps the found land only when an Elf is beheld. -/
+#guard
+  let g := onlyLib afterDraw #[forest]
+  let g := applyIdle (g.applyAbilityEffect me Effect.searchBasicBeholdElfUntap #[])
+  (namedPermanent g "Forest").status.tapped &&
+    g.log.any (fun s => mentions s "does not behold")
+#guard
+  let g := addPermanent afterDraw llanowarElves me me
+  let g := onlyLib g #[forest]
+  let g := applyIdle (g.applyAbilityEffect me Effect.searchBasicBeholdElfUntap #[])
+  !(namedPermanent g "Forest").status.tapped &&
+    g.log.any (fun s => mentions s "beholds a Elf")
+
+/- Last Light shuffles only when the Dragon comes from the library. -/
+#guard
+  let g0 := addToHand afterDraw smaugWickedWorm me
+  let n := g0.log.size
+  let g := g0.beginLibrarySearch me (fun c => c.hasSubtype "Dragon") "a Dragon card"
+    .battlefieldFromHandOrLibrary (alsoHand := true)
+  let g := mustApply g me (.choosePermanents #[(handObj g me "Smaug, Wicked Worm").id])
+  onBattlefield g "Smaug, Wicked Worm" && !shuffledSince n g
+#guard
+  let g0 := onlyLib afterDraw #[smaugWickedWorm]
+  let n := g0.log.size
+  let g := applyIdle (g0.beginLibrarySearch me (fun c => c.hasSubtype "Dragon") "a Dragon card"
+    .battlefieldFromHandOrLibrary (alsoHand := true))
+  onBattlefield g "Smaug, Wicked Worm" && shuffledSince n g
+
 /- Outside the declare blockers step, sneak can't be used. -/
 #guard
   let g := addPermanent afterDraw grizzlyBears me me

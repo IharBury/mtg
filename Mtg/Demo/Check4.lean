@@ -259,10 +259,16 @@ def graveyardHas (g : Game) (name : String) : Bool :=
   match applyInteractiveAsActor Tests.woodElvesKnownLib "pass" [] with
   | .ok g1 =>
     match applyInteractiveAsActor g1 "pass" [] with
-    | .ok g' =>
-      g'.stack.isEmpty &&
-      g'.log.any (fun s => Tests.mentions s "puts Forest onto the battlefield") &&
-      g'.battlefield.any (fun o => o.name == "Forest" && !o.status.tapped)
+    | .ok g2 =>
+      match (g2.player ⟨0⟩).library.find? (fun id => (g2.object! id).name == "Forest") with
+      | none => false
+      | some fid =>
+        match applyInteractiveAsActor g2 "choose" [toString fid] with
+        | .ok g' =>
+          g'.stack.isEmpty &&
+          g'.log.any (fun s => Tests.mentions s "puts Forest onto the battlefield") &&
+          g'.battlefield.any (fun o => o.name == "Forest" && !o.status.tapped)
+        | .error _ => false
     | .error _ => false
   | .error _ => false
 

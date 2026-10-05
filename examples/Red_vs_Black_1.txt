@@ -53,6 +53,7 @@ tap 109 115
 pay
 pass
 pass
+choose 9
 pass
 pass
 pass
@@ -215,6 +216,7 @@ tap 109 115
 pay
 pass
 pass
+choose 99
 pass
 pass
 pass

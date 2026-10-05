@@ -83,16 +83,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       | some o => g.destroyPermanent o
       | none => g) g
   | .searchPlaneswalkerToTop =>
-    match g.findLibraryCard? controller (·.isPlaneswalker) with
-    | none =>
-      (g.logMsg s!"{(g.player controller).name} searches their library and finds no planeswalker card").shuffleLibrary controller
-    | some id =>
-      let name := (g.object! id).name
-      let g := g.logMsg s!"{(g.player controller).name} reveals {name}"
-      let g := g.shuffleLibrary controller
-      let g := g.modifyPlayer controller (fun pl =>
-        { pl with library := (pl.library.filter (· != id)).push id })
-      g.logMsg s!"{(g.player controller).name} puts {name} on top of their library"
+    g.beginLibrarySearch controller (·.isPlaneswalker) "a planeswalker card" .topAfterShuffle
   | .plusOneOnEachTarget n =>
     targets.foldl (fun g t =>
       match t with
@@ -259,10 +250,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       { pl with mountainExtraRedThisTurn := pl.mountainExtraRedThisTurn + 1 })
     g.logMsg s!"Until end of turn, whenever {(g.player controller).name} taps a Mountain for mana, they add an additional \{R}"
   | .searchLandToGraveyard =>
-    g.resolveLibrarySearch controller (·.isLand) "land card" fun g id =>
-      let name := (g.object! id).name
-      let (g, _) := g.move id (.graveyard controller) none
-      g.logMsg s!"{(g.player controller).name} puts {name} into their graveyard"
+    g.beginLibrarySearch controller (·.isLand) "a land card" .graveyard
   | .counter =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
@@ -695,7 +683,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
         g.afterLandEnters (g.object! newId)
       | _ => g) sourceId illegal
   | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
-  | .searchLandsTapped n => g.searchLandsOntoBattlefieldTapped controller n (fun _ => true)
+  | .searchLandsTapped n =>
+    g.beginLibrarySearch controller (·.isLand) "a land card" (.battlefield true) (count := n)
   | .searchEnchantmentToHand =>
     g.resolveLibrarySearchToHand controller (·.isEnchantment) "enchantment card"
   | .tappedHeartwoods n => g.createKindTokens controller .heartwood n (tapped := true)
@@ -768,6 +757,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .hawkeyeArrows _
   | .zemoBoastCopies
   | .copySourceSpellXTimes
+  | .gainLife _
   | .extort =>
     g.applyFraAbility controller effect r targets sourceId
 

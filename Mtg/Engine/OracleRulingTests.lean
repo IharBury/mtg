@@ -1989,7 +1989,8 @@ def archdruidOk : Bool :=
 /-- Ruling 94: a characteristic search may find nothing. -/
 def woodElvesSkipFind : Game :=
   let g := addToLibraryTop afterDraw forest ⟨0⟩
-  g.resolveSearchForest ⟨0⟩ (find := false)
+  let g := g.resolveSearchForest ⟨0⟩
+  mustApply g ⟨0⟩ .decline
 
 def optionalSearchOk : Bool :=
   woodElvesSkipFind.log.any (fun s => mentions s "chooses not to find") &&

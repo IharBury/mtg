@@ -334,6 +334,7 @@ planeswalker each opponent controls. -/
   let g := resolveTop (stackTriggers (enterPermanent afterDraw simulacrumShaper me))
   let lands := (afterDraw.permanentsOf me).size
   let g := mustApply g me .accept
+  let g := applyIdle g
   (g.permanentsOf me).size == lands + 2
 
 #guard
@@ -493,6 +494,7 @@ X is 0. -/
   let g := addToLibraryTop g ajanisAnguish me
   let g := resolveTop (stackTriggers (enterPermanent g piaAetherAscetic me))
   let g := mustApply g me (.choosePermanents #[(handCardNamed g me "Forest").id])
+  let g := applyIdle g
   inHand g me "Ajani's Anguish"
 
 /- Yoshimaru, Scrappy Stray: another creature you control fights. -/
@@ -710,6 +712,7 @@ Master of Barbs pumps your team. -/
   let lands := ((afterDraw.permanentsOf me).filter (·.printed.isLand)).size
   let g := resolveTop (stackTriggers (g.dealDamageToPermanent (namedPermanent g "Hexhaven Invigorator") 2))
   let g := mustApply g me .accept
+  let g := applyIdle g
   ((g.permanentsOf me).filter (·.printed.isLand)).size == lands + 2
 
 /-! ## Step triggers -/

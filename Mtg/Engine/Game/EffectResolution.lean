@@ -985,15 +985,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .draw n =>
     g.draw controller n
   | .searchTwoBasicsSplit =>
-    g.resolveLibrarySearch controller isBasicLandCard "basic land card"
-      fun g cardId =>
-        let cardName := (g.object! cardId).name
-        let (g, _) := g.move cardId .battlefield (some controller)
-        let g :=
-          match g.findObject? cardId with
-          | some o => g.setObject { o with status := { o.status with tapped := true } }
-          | none => g
-        g.logMsg s!"{(g.player controller).name} puts {cardName} onto the battlefield tapped"
+    g.beginLibrarySearch controller isBasicLandCard "a basic land card"
+      .battlefieldTappedThenHand (count := 2)
   | .subtypesGainMenace subtypes =>
     g.grantUntilEotToControlledCreatures controller Keyword.menace "menace"
       (fun g o => subtypes.any (g.hasSubtype o))
@@ -1006,13 +999,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.exileThenReturn o "is exiled, then returned" (clearExileFields := true)
       else g)
   | .searchBasicBeholdSubtypeUntap subtype =>
-    let g := g.resolveSearchBasicLandTapped controller
-    let g := g.beholdQuality controller subtype
-    if g.qualityWasBeheld controller subtype then
-      match (g.permanentsOf controller).find? (fun o => o.printed.isLand && o.status.tapped) with
-      | none => g
-      | some land => g.applyPermanentAction land .untap
-    else g
+    g.beginLibrarySearch controller isBasicLandCard "a basic land card"
+      (.battlefieldTappedBeholdUntap subtype)
   | .twoPlayersDraw =>
     match targets[0]?, targets[1]? with
     | some (Target.player a), some (Target.player b) =>

@@ -98,7 +98,7 @@ def oliphauntCycleNonbasic : Game :=
   let g := withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
   let src := handCardNamed g ⟨0⟩ "Oliphaunt"
   let g := mustApply g ⟨0⟩ (.activate src.id 0)
-  passBoth (mustApply g ⟨0⟩ .pay)
+  applyIdle (passBoth (mustApply g ⟨0⟩ .pay))
 
 #guard (oliphauntCycleNonbasic.handObjects ⟨0⟩).any (fun o =>
   o.name == "Stomping Ground")
@@ -127,7 +127,7 @@ def trollCycled : Game :=
   let g := trollCycleReady
   let src := handCardNamed g ⟨0⟩ "Troll of Khazad-dûm"
   let g := mustApply g ⟨0⟩ (.activate src.id 0)
-  passBoth (mustApply g ⟨0⟩ .pay)
+  applyIdle (passBoth (mustApply g ⟨0⟩ .pay))
 
 #guard (trollCycled.handObjects ⟨0⟩).any (fun o => o.name == "Swamp")
 #guard (trollCycled.player ⟨0⟩).graveyard.any (fun id =>

@@ -314,6 +314,7 @@ tap 109 115
 pay
 pass
 pass
+choose 1
 pass
 pass
 pass

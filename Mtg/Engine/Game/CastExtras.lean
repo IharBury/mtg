@@ -291,22 +291,9 @@ def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except
 shuffle, and gain `life`. -/
 def resolveSearchBasicPlainsExile (g : Game) (p : PlayerId)
     (sourceId : Option ObjectId) (max life : Nat) : Game :=
-  Id.run do
-    let mut g := g
-    for _ in [0:max] do
-      match g.findLibraryCard? p (fun c => isBasicLandCard c && c.hasSubtype "Plains") with
-      | none => pure ()
-      | some id =>
-        let name := (g.object! id).name
-        let (g', newId) := g.move id .exile none
-        g := g'
-        match sourceId.bind g.findObject? with
-        | some src =>
-          g := g.setObject { src with linkedExile := src.linkedExile.push newId }
-        | none => pure ()
-        g := g.logMsg s!"{(g.player p).name} exiles {name}"
-    g := g.requestShuffle p (.gainLife p life)
-    return g.continueIfShuffled
+  g.beginLibrarySearch p (fun c => isBasicLandCard c && c.hasSubtype "Plains")
+    "a basic Plains card" (.exileLinked sourceId) (count := max)
+    (after := some (.gainLife life))
 
 /-- Target opponent reveals their hand; you discard a nonland of your choice. -/
 def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=

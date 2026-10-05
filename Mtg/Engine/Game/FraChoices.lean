@@ -514,6 +514,24 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.requestOrderInto (others.push cardId) (.library p)
       s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
   | .mayCastCascade .., _ => throw "Cast it (accept), or decline"
+  | .maySearchLibrary eligible count dest after kind, .accept =>
+    if eligible.isEmpty then
+      let g :=
+        (g.logMsg s!"{(g.player p).name} finds no {searchNoun kind}").shuffleThen p (searchAfter p after)
+      return g.finishFraChoice
+    else
+      return { g with pending := .fraChoice p (.searchLibrary eligible count dest after kind) }
+  | .maySearchLibrary .., .decline =>
+    return (g.logMsg s!"{(g.player p).name} doesn't search their library").finishFraChoice
+  | .maySearchLibrary .., _ => throw "Search (accept), or decline"
+  | .searchLibrary eligible count dest after kind, .objects ids =>
+    if ids.size > count then throw s!"Choose at most {count} card(s)"
+    if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
+    if !ids.all (eligible.contains ·) then throw "That card can't be found"
+    return (g.finishLibrarySearch p ids dest after kind).finishFraChoice
+  | .searchLibrary _ _ dest after kind, .decline =>
+    return (g.finishLibrarySearch p #[] dest after kind).finishFraChoice
+  | .searchLibrary .., _ => throw "Choose cards from the search, or decline to find nothing"
   | .newTargetsForCopies copies, .objects #[id] =>
     let some c := copies[0]? | return g.finishFraChoice
     let some obj := g.findObject? c | throw "The copy left the stack"
@@ -613,6 +631,10 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | none => .decline
   | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
   | .mayCastCascade .. => .accept
+  | .maySearchLibrary eligible .. =>
+    if eligible.isEmpty then .decline else .accept
+  | .searchLibrary eligible count .. =>
+    if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 count)
   | .newTargetsForCopies _ => .decline
   | .zemoBoastExile .. =>
     .choosePermanents ((g.player p).graveyard.filter (fun id =>

@@ -284,6 +284,8 @@ inductive FraResolution where
   /-- Copy the source spell X times; you may choose new targets for the
   copies (Photon Blast Barrage). -/
   | copySourceSpellXTimes
+  /-- You gain `n` life. -/
+  | gainLife (n : Nat)
   /-- The creature that caused this ability gets +P/+T until end of turn. -/
   | causeGetsPump (power toughness : Int)
   /-- Creatures attacking the player recorded as the cause's controller get
