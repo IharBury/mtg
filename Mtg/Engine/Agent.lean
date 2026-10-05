@@ -73,7 +73,12 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       | none => some .pass
     | .chooseX _ =>
       match g.proposedSpell with
-      | some prop => some (.chooseX (maxAffordableX g p prop.cost))
+      | some prop =>
+        if prop.loyaltyX then
+          -- Remove all but one loyalty counter so the planeswalker survives.
+          let loyalty := ((prop.sourceId.bind g.findObject?).map (·.status.loyaltyCounters)).getD 0
+          some (.chooseX (loyalty - 1))
+        else some (.chooseX (maxAffordableX g p prop.cost))
       | none => some (.chooseX 0)
     | .chooseTargets _ =>
       chooseSpellTarget g p
