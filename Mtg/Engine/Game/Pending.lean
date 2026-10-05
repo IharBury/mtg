@@ -231,9 +231,10 @@ inductive FraChoice where
   /-- Choose a nonland card from `victim`'s revealed hand to exile, linked to
   `sourceId` (Null Summoner). -/
   | exileFromRevealedHand (victim : PlayerId) (sourceId : Option ObjectId)
-  /-- Cast any number of the copies `ids` with total mana value at most
-  `budget` without paying their mana costs (Uldaros Theorix). -/
-  | castCopiesFree (ids : Array ObjectId) (budget : Nat)
+  /-- Cast up to `castsLeft` of the copies `ids` with total mana value at
+  most `budget` without paying their mana costs (Uldaros Theorix, Baron
+  Helmut Zemo). -/
+  | castCopiesFree (ids : Array ObjectId) (budget : Nat) (castsLeft : Nat)
   /-- Choose `remaining` more modes for the triggered ability `objectId`
   from `CardDef.fraTriggerModes` of its source. -/
   | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
@@ -289,6 +290,9 @@ inductive FraChoice where
   | hawkeyeModes (left : Nat) (chosen : Array Nat) (sourceId : Option ObjectId)
   /-- Discard a card, then draw a card. -/
   | discardThenDraw
+  /-- Choose the black cards to exile from your graveyard to pay the boast
+  ability `abilityId` of `sourceId`. Declining cancels the activation. -/
+  | zemoBoastExile (abilityId sourceId : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

@@ -397,6 +397,26 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
           (g.beginFraChoice controller .discardThenDraw
             s!"{(g.player controller).name} discards a card, then draws a card", i)) (g, 0)
     g
+  | .zemoBoastCopies =>
+    let exiled := (g.resolvingAbilityObject?.map (·.boastExiled)).getD #[]
+    let (g, copies) := exiled.foldl (fun (acc : Game × Array ObjectId) id =>
+      let (g, cs) := acc
+      match g.findObject? id with
+      | some card =>
+        if card.zone != .exile then (g, cs)
+        else
+          let (g, copy) := g.allocObject { card.printed with isToken := card.printed.isPermanentCard }
+            controller .exile (some controller)
+          let g := g.setObject { copy with
+            isCopy := true
+            playPermission := some { player := controller, turnEndsRemaining := 0
+                                     whileExiled := true, withoutManaCost := true, ignoreTiming := true } }
+          (g, cs.push copy.id)
+      | none => (g, cs)) (g, #[])
+    if copies.isEmpty then g.logMsg "No exiled card is left to copy"
+    else
+      g.beginFraChoice controller (.castCopiesFree copies 1000 3)
+        s!"{(g.player controller).name} may cast up to three of the copies without paying their mana costs"
   | .extort =>
     g.beginFraChoice controller (.mayPayExtort sourceId)
       s!"{(g.player controller).name} may pay \{W/B} (extort)"

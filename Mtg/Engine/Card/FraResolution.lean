@@ -278,6 +278,9 @@ inductive FraResolution where
   /-- Hawkeye's Trick Arrows: resolve the chosen modes (0 Net, 1 Explosive,
   2 Boomerang) in order. -/
   | hawkeyeArrows (modes : List Nat)
+  /-- Copy the cards exiled to pay this boast activation; you may cast up to
+  three of the copies without paying their mana costs (Baron Helmut Zemo). -/
+  | zemoBoastCopies
   /-- The creature that caused this ability gets +P/+T until end of turn. -/
   | causeGetsPump (power toughness : Int)
   /-- Creatures attacking the player recorded as the cause's controller get

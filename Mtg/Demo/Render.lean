@@ -766,7 +766,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .maySacrificeThen .. => "may sacrifice a permanent (choose or decline)"
         | .mayMovePlusOne _ => "may remove a +1/+1 counter (accept or decline)"
         | .exileFromRevealedHand _ _ => "choose a nonland card to exile"
-        | .castCopiesFree _ n => s!"may cast copies with total mana value {n} or less (cast or decline)"
+        | .castCopiesFree _ n left => s!"may cast up to {left} copies with total mana value {n} or less (cast or decline)"
         | .triggerModes _ n _ => if n == 2 then "choose two modes" else "choose a mode"
         | .chooseKeyword _ options =>
           let names : List String :=
@@ -795,6 +795,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .hawkeyeModes left _ _ =>
           s!"choose up to {left} modes: 0 Net, 1 Explosive, 2 Boomerang (mode <n>), or decline to stop"
         | .discardThenDraw => "discard a card, then draw: choose <id>"
+        | .zemoBoastExile .. =>
+          "exile black cards with 15+ black mana symbols from your graveyard: choose <id> ..., or decline"
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=

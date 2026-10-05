@@ -194,5 +194,36 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     | none => pure ()
   return g
 
+/-- Black mana symbols among `ids` for Zemo's boast, counting hybrid symbols
+that include black (MSH 128). -/
+def zemoBoastBlackSymbols (g : Game) (ids : Array ObjectId) : Nat :=
+  ids.foldl (fun n id =>
+    match g.findObject? id with
+    | some o => n + o.printed.manaCost.symbolsIncludingColor .black
+    | none => n) 0
+
+/-- True when `ids` are black cards in `p`'s graveyard whose mana costs have
+fifteen or more black mana symbols, including `{B/x}` hybrids (MSH 128). -/
+def canPayZemoBoast (g : Game) (p : PlayerId) (ids : Array ObjectId) : Bool :=
+  !ids.isEmpty &&
+    ids.all (fun id =>
+      match g.findObject? id with
+      | some o =>
+        o.zone == .graveyard p && o.printed.colors.contains .black
+      | none => false) &&
+    g.zemoBoastBlackSymbols ids >= 15
+
+/-- True when a boast ability of `o` may be activated (MSH / CR 702.111). -/
+def canActivateBoast (_g : Game) (o : GameObject) : Bool :=
+  o.printed.hasBoast && o.status.declaredAsAttackerThisTurn && !o.status.boastUsedThisTurn
+
+/-- Mark a boast activation used for the turn. -/
+def markBoastUsed (g : Game) (o : GameObject) : Game :=
+  match g.findObject? o.id with
+  | some o =>
+    (g.setObject { o with status := { o.status with boastUsedThisTurn := true } }).logMsg
+      s!"{o.name}'s boast ability is activated"
+  | none => g
+
 end Game
 end Mtg.Engine

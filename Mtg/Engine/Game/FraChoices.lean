@@ -46,7 +46,7 @@ def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Eff
 /-- Cast one of the copies of a pending “cast copies without paying their mana
 costs” choice (Uldaros Theorix). X is 0 (ruling 806). -/
 def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
-  let .fraChoice q (.castCopiesFree ids budget) := g.pending | throw "No copy may be cast now"
+  let .fraChoice q (.castCopiesFree ids budget castsLeft) := g.pending | throw "No copy may be cast now"
   if p != q then throw s!"Only {(g.player q).name} may cast the copies"
   if !ids.contains id then throw "That isn't one of the copies"
   let some card := g.findObject? id | throw "no such object"
@@ -64,7 +64,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let (g, newId) := g.move id .stack (some p)
   let g := g.setObject { (g.object! newId) with isCopy := true }
   let g := g.putStackEntry p newId
-  let g := { g with pending := .none, pendingFreeCopies := some (p, rest, budget - mv) }
+  let g := { g with pending := .none, pendingFreeCopies := some (p, rest, budget - mv, castsLeft - 1) }
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
   let prop : ProposedSpell := {
     caster := p, cost := ManaCost.empty, spellId := newId, original := card
@@ -266,7 +266,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.setObject { (g.object! ex) with exiledBy := sourceId }
     return (g.logMsg s!"{(g.player p).name} exiles {name} from {(g.player victim).name}'s hand").finishFraChoice
   | .exileFromRevealedHand .., _ => throw "Choose a nonland card from the revealed hand"
-  | .castCopiesFree ids _, .decline =>
+  | .castCopiesFree ids _ _, .decline =>
     let g := ids.foldl (fun g id =>
       if (g.findObject? id).any (·.zone == .exile) then g.ceaseToExist id else g) g
     return { g with pendingFreeCopies := none }.finishFraChoice
@@ -446,6 +446,26 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
     return ((g.discardFromHand p id).draw p 1).finishFraChoice
   | .discardThenDraw, _ => throw "Choose a card to discard"
+  | .zemoBoastExile abilityId sourceId, .objects ids =>
+    if ids.toList.eraseDups.length != ids.size then throw "Choose each card once"
+    if !g.canPayZemoBoast p ids then
+      throw "Choose black cards from your graveyard with fifteen or more black mana symbols among their mana costs"
+    let (g, exiled) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
+      let (g, ex) := acc.1.move id .exile none
+      (g, acc.2.push ex)) (g, #[])
+    let g := g.logMsg s!"{(g.player p).name} exiles {exiled.size} card(s) from their graveyard"
+    let g := match g.findObject? abilityId with
+      | some ab => g.setObject { ab with boastExiled := exiled }
+      | none => g
+    let g := match g.findObject? sourceId with
+      | some src => g.markBoastUsed src
+      | none => g
+    let name := ((g.findObject? sourceId).map (·.name)).getD "Baron Helmut Zemo"
+    return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).finishFraChoice
+  | .zemoBoastExile abilityId _, .decline =>
+    let g := (g.removeFromZoneList abilityId .stack).ceaseToExist abilityId
+    return (g.logMsg s!"{(g.player p).name} doesn't boast").receivePriority p
+  | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
@@ -515,6 +535,9 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       else .chooseMode m
     | none => .decline
   | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
+  | .zemoBoastExile .. =>
+    .choosePermanents ((g.player p).graveyard.filter (fun id =>
+      (g.findObject? id).any (·.printed.colors.contains .black)))
   | .chooseCardName _ =>
     -- Name a nonland card an opponent owns, else any nonland card.
     let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)

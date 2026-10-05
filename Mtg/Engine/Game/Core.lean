@@ -92,7 +92,7 @@ structure Game where
   fraAfterLook : Option (PlayerId × Option ObjectId × FraNext) := none
   /-- Copies a player may still cast without paying their mana costs as an
   ability resolves, with the mana value left (Uldaros Theorix). -/
-  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat) := none
+  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
   /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
   permanent (Proft, Consulting Detective). -/
   mayPayAlsoPlusOneOn : Option ObjectId := none
@@ -163,8 +163,6 @@ structure Game where
   /-- World War Hulk chapter I: the next red or green creature spell this
   player casts this turn may be cast without paying its mana cost (MSH 343). -/
   pendingFreeRGCreature : Option PlayerId := none
-  /-- Cards exiled to pay the current Zemo boast activation (MSH 227). -/
-  zemoBoastExiles : Array ObjectId := #[]
   /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
   card finishes the requirement early. -/
   thirstDiscardsLeft : Nat := 0

@@ -424,7 +424,7 @@ X is 0. -/
     | _ => g
   let g := resolveTop g
   match pendingFra g with
-  | some (.castCopiesFree ids 6) =>
+  | some (.castCopiesFree ids 6 _) =>
     let shockCopy := (ids.find? (fun id => (g.object! id).name == "Shock")).get!
     let g := mustApply g me (.cast shockCopy)
     let g := mustApply g me (.target (.player opp))

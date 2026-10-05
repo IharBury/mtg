@@ -38,6 +38,9 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : FraCost) : Boo
     g.costPicksPayable p o.id (costPicksOf { cost := { fra := c }, effect := default })
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
+  | .zemoBoast =>
+    g.canPayZemoBoast p ((g.player p).graveyard.filter (fun id =>
+      (g.findObject? id).any (·.printed.colors.contains .black)))
   | .crew n =>
     ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).foldl
       (fun acc c => acc + (g.power c).toNat) 0 ≥ n
@@ -88,6 +91,8 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s exhaust ability can be activated only once (CR 702.177)"
   if !g.fraActivationConditionHolds p ab.fraCondition then
     throw s!"{o.name}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
+  if ab.cost.fra == .zemoBoast && !g.canActivateBoast o then
+    throw s!"{o.name}'s boast ability can be activated only if it attacked this turn and only once each turn"
   if !g.canPayFraCost p o ab.cost.fra then
     throw s!"{o.name}'s ability has a cost that can't be paid"
   if g.combatLocksNonManaAbilities && !isManaActivation ab then
@@ -190,6 +195,9 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     (abilityEffect := if ab.isModal then none else some effect)
   let newId := abilityObj.id
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
+  if ab.cost.fra == .zemoBoast then
+    return { g with pending := .fraChoice p (.zemoBoastExile newId id) }.logMsg
+      s!"{pl.name} chooses black cards to exile from their graveyard"
   if let .crew n := ab.cost.fra then
     return { g with pending := .fraChoice p (.crew newId id n) }.logMsg
       s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {o.name}"

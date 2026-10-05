@@ -5,7 +5,7 @@ import Mtg.Engine.Game.Damage
 
 Until-end-of-turn pumps and keyword grants, +1/+1 counters and amass
 (CR 701.47), finality counters, hand-size effects, improvise
-(CR 702.126), boast, and sneak (MSH).
+(CR 702.126).
 -/
 
 namespace Mtg.Engine
@@ -132,15 +132,6 @@ def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       throw s!"{o.name} is already tapped"
     g := g.becomeTapped o
   return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
-
-/-- True when a boast ability of `o` may be activated (MSH / CR 702.111). -/
-def canActivateBoast (_g : Game) (o : GameObject) : Bool :=
-  o.printed.hasBoast && o.status.declaredAsAttackerThisTurn && !o.status.boastUsedThisTurn
-
-/-- Mark a boast activation used for the turn. -/
-def markBoastUsed (g : Game) (o : GameObject) : Game :=
-  g.mapObjectStatus o (fun s => { s with boastUsedThisTurn := true })
-    |>.logMsg s!"{o.name}'s boast ability is activated"
 
 /-- Equip worthy may attach only to a legendary non-Villain red or white
 creature. Other attach effects ignore this restriction. -/

@@ -63,6 +63,10 @@ inductive FraCost where
   /-- Crew N: tap any number of untapped creatures you control with total
   power N or more (CR 702.122). -/
   | crew (power : Nat)
+  /-- Boast cost of Baron Helmut Zemo: exile any number of black cards from
+  your graveyard with fifteen or more black mana symbols among their mana
+  costs. -/
+  | zemoBoast
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- A Reality Fracture “Activate only if …” condition. -/
@@ -249,6 +253,14 @@ def crewAbility (n : Nat) : ActivatedAbility :=
 only as a sorcery. -/
 def isEquip (ab : ActivatedAbility) : Bool :=
   ab.effect.resolution == .attach && ab.onlyAsSorcery && ab.otherModes.isEmpty
+
+/-- Baron Helmut Zemo's boast ability (activate only if it attacked this turn
+and only once each turn). -/
+def zemoBoastAbility : ActivatedAbility :=
+  { cost := { fra := .zemoBoast }
+    printed := "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
+    effect := { resolution := .fra .zemoBoastCopies
+                phrase := "Copy those exiled cards. You may cast up to three of the copies without paying their mana costs" } }
 
 /-- Every mode of this ability; a non-modal ability is a singleton. -/
 def allModes (ab : ActivatedAbility) : Array Effect :=

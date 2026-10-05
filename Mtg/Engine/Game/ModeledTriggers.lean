@@ -870,46 +870,6 @@ def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
       | none => g
     else g
 
-/-- Black mana symbols among `ids` for Zemo's boast, counting hybrid symbols
-that include black (MSH 128). -/
-def zemoBoastBlackSymbols (g : Game) (ids : Array ObjectId) : Nat :=
-  ids.foldl (fun n id =>
-    match g.findObject? id with
-    | some o => n + o.printed.manaCost.symbolsIncludingColor .black
-    | none => n) 0
-
-/-- True when `ids` are black cards in `p`'s graveyard whose mana costs have
-fifteen or more black mana symbols, including `{B/x}` hybrids (MSH 128). -/
-def canPayZemoBoast (g : Game) (p : PlayerId) (ids : Array ObjectId) : Bool :=
-  !ids.isEmpty &&
-    ids.all (fun id =>
-      match g.findObject? id with
-      | some o =>
-        o.zone == .graveyard p && o.printed.colors.contains .black
-      | none => false) &&
-    g.zemoBoastBlackSymbols ids >= 15
-
-/-- Baron Helmut Zemo boast: copy only the cards exiled to this activation
-(MSH 227). Copies are cast while the ability is resolving (MSH 353). -/
-def applyZemoBoast (g : Game) (controller : PlayerId) (exileIds : Array ObjectId)
-    (castN : Nat := 0) : Game :=
-  Id.run do
-    let mut g := g
-    let mut copied : Array ObjectId := #[]
-    for id in exileIds do
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .graveyard controller then
-          let (g', newId) := g.move id .exile none
-          g := g'
-          copied := copied.push newId
-      | none => pure ()
-    g := { g with zemoBoastExiles := copied }
-    g := g.logMsg s!"Zemo copies {copied.size} card(s) exiled to this activation"
-    for id in copied.take castN do
-      g := g.castAsPartOfResolution controller id
-    return g
-
 /-- Cast up to `n` cards that currently have a free-cast exile permission,
 as the ability resolves (Doom Reigns; MSH 357). -/
 def castExiledAsResolves (g : Game) (p : PlayerId) (n : Nat) : Game :=

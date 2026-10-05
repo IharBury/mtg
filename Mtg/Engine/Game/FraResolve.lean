@@ -464,7 +464,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       (g, cs.push copy.id)) (g, #[])
     if copies.isEmpty then g
     else
-      g.beginFraChoice controller (.castCopiesFree copies 6)
+      g.beginFraChoice controller (.castCopiesFree copies 6 copies.size)
         s!"{(g.player controller).name} may cast copies with total mana value 6 or less"
   | .damageThenGainLife n =>
     let g := g.withLegalKindTarget controller kind targets (fun g t =>
@@ -766,6 +766,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .queueMshReflexive _ _
   | .mshReflexive _ _
   | .hawkeyeArrows _
+  | .zemoBoastCopies
   | .extort =>
     g.applyFraAbility controller effect r targets sourceId
 

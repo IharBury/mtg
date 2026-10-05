@@ -444,7 +444,8 @@ def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
     if !g.retainsPrintedAbilities o then #[]
     else
       o.printed.activatedAbilities ++ g.copiedFromGy o (·.activatedAbilities) ++
-        (o.printed.crew.map ActivatedAbility.crewAbility).toArray
+        (o.printed.crew.map ActivatedAbility.crewAbility).toArray ++
+        (if o.printed.hasBoast then #[ActivatedAbility.zemoBoastAbility] else #[])
   -- Loyalty abilities granted to planeswalkers you control (Way of the
   -- Healer and similar). A planeswalker still activates only one loyalty
   -- ability per turn, however many it has (ruling 779).

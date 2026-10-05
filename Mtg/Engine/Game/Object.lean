@@ -123,6 +123,8 @@ structure GameObject where
   /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
   legendary spell, so it can't be countered. Copies do not inherit this. -/
   uncounterableThisCast : Bool := false
+  /-- Cards exiled to pay this boast activation (Baron Helmut Zemo; MSH 227). -/
+  boastExiled : Array ObjectId := #[]
   /-- Mana from a Treasure was spent to cast this spell. -/
   treasureManaSpent : Bool := false
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).

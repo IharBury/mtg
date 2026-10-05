@@ -237,18 +237,30 @@ def deathToOurEnemiesEachTargetAtLeastOneOk : Bool :=
 
 /-- Rulings 227 / 353: Zemo copies only this activation's exiles and casts
 them while resolving. -/
+def heavyWhisper : CardDef :=
+  { nightsWhisper with manaCost := { symbols := Array.replicate 8 (.colored .black) } }
+
 def zemoBoastThisActivationOk : Bool :=
-  let g := addToGraveyard afterDraw lightningBolt ⟨0⟩
-  let g := addToGraveyard g helicarrierStrike ⟨0⟩
-  let first := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
-  let g := g.applyZemoBoast ⟨0⟩ #[first.id] 0
-  g.zemoBoastExiles.size == 1 &&
-    (let second := namedGraveyardCard g ⟨0⟩ "Helicarrier Strike"
-     let g2 := g.applyZemoBoast ⟨0⟩ #[second.id] 1
-     g2.zemoBoastExiles.size == 1 &&
-       g2.stack.any (fun e =>
-         (g2.object! e.objectId).name == "Helicarrier Strike") &&
-       g2.log.any (fun s => mentions s "as the ability resolves")) &&
+  let g := addPermanent afterDraw baronHelmutZemo ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard (addToGraveyard g heavyWhisper ⟨0⟩) heavyWhisper ⟨0⟩
+  let g := addToGraveyard g nightsWhisper ⟨0⟩
+  let zemo := namedPermanent g "Baron Helmut Zemo"
+  let g := g.mapObjectStatus zemo (fun s => { s with declaredAsAttackerThisTurn := true })
+  let gy := (g.player ⟨0⟩).graveyard.filter (fun id => (g.object! id).printed.manaCost.symbols.size == 8)
+  let idx := (g.activatedAbilitiesOf zemo).size - 1
+  let g := mustApply g ⟨0⟩ (.activate zemo.id idx)
+  let g := mustApply g ⟨0⟩ (.choosePermanents gy)
+  let g := passBoth g
+  let copies := match g.pending with
+    | .fraChoice _ (.castCopiesFree ids _ 3) => ids
+    | _ => #[]
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := mustApply g ⟨0⟩ (.cast copies[0]!)
+  copies.size == 2 &&
+    g.stack.any (fun e => (g.object! e.objectId).isCopy) &&
+    (namedGraveyardCard g ⟨0⟩ "Night's Whisper").zone == .graveyard ⟨0⟩ &&
+    (let g := passBoth (mustApply g ⟨0⟩ .decline)
+     (g.player ⟨0⟩).hand.size == hand0 + 2) &&
     (mshRuling 579).comment.contains "copy only the cards exiled" &&
     (mshRuling 705).comment.contains "while Baron Helmut Zemo's boast ability is resolving"
 

@@ -54,8 +54,7 @@ def clearTurnActivations (g : Game) : Game :=
       lastLifeLost := none
       lastNoncombatDamage := none
       sheHulkDamageUsedThisTurn := false
-      pendingFreeRGCreature := none
-      zemoBoastExiles := #[] }
+      pendingFreeRGCreature := none }
     -- Stingcaster Mage: flashback granted until end of turn ends.
     for o in g.objects do
       if o.flashbackUntilEot then
