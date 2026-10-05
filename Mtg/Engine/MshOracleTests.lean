@@ -2670,4 +2670,86 @@ def blackPantherModeOk : Bool :=
 
 #guard blackPantherModeOk
 
+/-- Captain America's Shield taps a creature the equipped creature's
+defending player controls, not a creature controlled by another opponent. -/
+def shieldTapsDefendingPlayerOk : Bool :=
+  let liliana := { (afterDraw.player ⟨1⟩) with id := ⟨2⟩, name := "Liliana" }
+  let g := { afterDraw with players := afterDraw.players.push liliana }
+  let g := g.modifyPlayer ⟨2⟩ (fun pl => { pl with hand := #[], library := #[], graveyard := #[] })
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g captainAmericaSShield ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨2⟩ ⟨2⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let shield := namedPermanent g "Captain America's Shield"
+  let g := g.attachSourceTo shield bear
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bear with status :=
+    { bear.status with attacking := true, attackingWhom := some ⟨2⟩ } }
+  let shield := namedPermanent g "Captain America's Shield"
+  let giant := namedPermanent g "Hill Giant"
+  let ogre := namedPermanent g "Gray Ogre"
+  let kind := (SharedTrigger.timing (.watch .equippedAttacksTap)).targeting.kind
+  let legal := g.legalTargetsForKind ⟨0⟩ kind (some shield.id)
+  kind == .defendingPlayerCreature &&
+    legal.contains (Target.permanent ogre.id) &&
+    !legal.contains (Target.permanent giant.id) &&
+    !legal.contains (Target.permanent bear.id) &&
+    (let gMiss := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchEquippedAttacksTap)
+        (some shield.id) #[Target.permanent giant.id]
+     (namedPermanent gMiss "Hill Giant").status.tapped == false &&
+       logContains gMiss "no longer legal") &&
+    (let gHit := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchEquippedAttacksTap)
+        (some shield.id) #[Target.permanent ogre.id]
+     (namedPermanent gHit "Gray Ogre").status.tapped)
+
+#guard shieldTapsDefendingPlayerOk
+
+/-- Speedball may change the spell's targets. Declining keeps them. An
+illegal replacement stays unchanged. -/
+def speedballMayRetargetOk : Bool :=
+  let g := addPermanent afterDraw speedballNewWarrior ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g mountain ⟨1⟩ ⟨1⟩
+  let speed := namedPermanent g "Speedball, New Warrior"
+  let bears := namedPermanent g "Grizzly Bears"
+  let mt := namedPermanent g "Mountain"
+  let (g, bolt) := g.allocObject lightningBolt ⟨1⟩ .stack (some ⟨1⟩)
+  let g := g.putStackEntry ⟨1⟩ bolt.id
+  let g := g.setStackEntryTargets bolt.id #[Target.permanent speed.id]
+  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSpeedballTargeted) (some speed.id)
+  let target0 (g : Game) : Option Target :=
+    match g.stackEntry? bolt.id with
+    | some e => e.targets[0]?
+    | none => none
+  match g.pending with
+  | .fraChoice _ (.mayChangeSpellTarget _ 0) =>
+    let kept := mustApply g ⟨0⟩ .decline
+    target0 kept == some (Target.permanent speed.id) &&
+      (let changed := mustApply g ⟨0⟩ (.choosePermanents #[bears.id])
+       target0 changed == some (Target.permanent bears.id)) &&
+      (let stayed := mustApply g ⟨0⟩ (.choosePermanents #[mt.id])
+       target0 stayed == some (Target.permanent speed.id) &&
+         logContains stayed "stays unchanged")
+  | _ => false
+
+#guard speedballMayRetargetOk
+
+/-- Declining Daredevil's attack trigger exiles nothing. -/
+def daredevilMayDeclineOk : Bool :=
+  let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
+  let g := addToLibraryTop g lightningBolt ⟨0⟩
+  let top := (g.player ⟨0⟩).library.size
+  let dd := namedPermanent g "Daredevil, Man Without Fear"
+  let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump)
+    (some dd.id)
+  match g.pending with
+  | .fraChoice _ (.daredevilMayExile _) =>
+    let g := mustApply g ⟨0⟩ .decline
+    (g.player ⟨0⟩).library.size == top &&
+      (namedPermanent g "Daredevil, Man Without Fear").status.pump == (0, 0)
+  | _ => false
+
+#guard daredevilMayDeclineOk
+
 end Mtg.Engine.MshRulingTests

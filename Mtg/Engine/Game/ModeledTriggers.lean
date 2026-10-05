@@ -117,6 +117,47 @@ def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectI
         g.setObject { tok with printed }
           |>.logMsg s!"{printed.name} becomes a 2/2 Robot Villain creature after it enters"
 
+/-- Exile the top card of your library. A Hero card pumps Daredevil. The
+exiled card may be played this turn either way (MSH 685). -/
+def applyDaredevilExile (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
+  let top? := (g.player controller).library.back?
+  let isHero :=
+    match top? with
+    | some top => (g.object! top).hasSubtype "Hero"
+    | none => false
+  let g := g.exileTopPlayThisTurn controller 1
+  if isHero then
+    g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
+      "Daredevil is no longer on the battlefield"
+  else g
+
+/-- Ask to change the spell's target at `index`, then the later slots. -/
+def offerSpellRetarget (g : Game) (controller : PlayerId) (spellId : ObjectId) (index : Nat) : Game :=
+  match g.stackEntry? spellId with
+  | none => g
+  | some e =>
+    if index < e.targets.size then
+      { g with pending := .fraChoice controller (.mayChangeSpellTarget spellId index) }
+        |>.logMsg "You may choose a new target for the spell"
+    else g
+
+/-- Replace one target of a spell when the replacement is legal. An illegal
+choice leaves that target unchanged (MSH 722). -/
+def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target) : Game :=
+  match g.stack.findIdx? (fun e => e.objectId == spellId) with
+  | none => g.logMsg "The spell is no longer on the stack"
+  | some i =>
+    let e := g.stack[i]!
+    match g.findObject? spellId with
+    | none => g.logMsg "The spell is no longer on the stack"
+    | some spell =>
+      let legal := g.legalTargetsForKind e.controller (g.targetingOf spell).kind (some spellId)
+      if index < e.targets.size && legal.contains neu then
+        { g with stack := g.stack.set! i { e with targets := e.targets.set! index neu } }
+          |>.logMsg "A new target is chosen for the spell"
+      else
+        g.logMsg "That target stays unchanged"
+
 /-- Mister Hyde's chosen mode. Mode 0 puts a +1/+1 counter on the source.
 Mode 1 removes a counter from the chosen creature, then draws. -/
 def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
@@ -281,26 +322,34 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.casting .mayPayHasteUnblockable) =>
     g.offerPayForReflexive controller sourceId #[.generic 1] 9
   | (.watch .speedballTargeted) =>
-    g.withSourceOnBattlefield sourceId (fun g o => g.pumpPermanent o 2 2)
-      "Speedball is no longer on the battlefield"
+    let g :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.pumpPermanent o 2 2
+        else g.logMsg "Speedball is no longer on the battlefield"
+      | none => g.logMsg "Speedball is no longer on the battlefield"
+    let fromCause :=
+      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    let targetingSource (e : StackEntry) : Bool :=
+      e.targets.any (fun t =>
+        match t, sourceId with
+        | Target.permanent id, some sid => id == sid
+        | _, _ => false)
+    let fromStack :=
+      g.stack.foldl (fun acc e =>
+        if targetingSource e then some e.objectId else acc) none
+    match fromCause.orElse (fun _ => fromStack) with
+    | none => g
+    | some spellId => g.offerSpellRetarget controller spellId 0
   | (.youAttacking .exileTopHeroPump) =>
-    -- Daredevil: exile the top card. Hero-ness only affects the pump;
-    -- the card may be played this turn either way (MSH 333).
-    let top? := (g.player controller).library.back?
-    let isHero :=
-      match top? with
-      | some top => (g.object! top).hasSubtype "Hero"
-      | none => false
-    let g := g.exileTopPlayThisTurn controller 1
-    if isHero then
-      g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
-        "Daredevil is no longer on the battlefield"
-    else g
+    { g with pending := .fraChoice controller (.daredevilMayExile sourceId) }
+      |>.logMsg "You may exile the top card of your library"
   | (.youAttacking .pay2LifeToughness) =>
-    g.ifPaid (lastKnownPower.getD (0 : Int)).toNat "The Kingpin's cost wasn't paid"
-      fun g =>
-        { g with assignCombatDamageEqualToughness := some controller }
-          |>.logMsg "Creatures you control assign combat damage equal to their toughness"
+    if g.canPayLife controller 2 then
+      { g with pending := .fraChoice controller .kingpinMayPay2Life }
+        |>.logMsg "You may pay 2 life"
+    else
+      g.logMsg "The Kingpin's cost wasn't paid"
   | (.watch .villainPlusOneDamageOnce) =>
     let src? := sourceId.bind (fun id => g.findObject? (g.followMoved id))
     let g :=
@@ -702,7 +751,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       else g.logMsg "The equipped creature has left"
     | none => g.logMsg "The equipped creature has left"
   | (.watch .equippedAttacksTap) =>
-    g.withLegalKindPermanent controller .creature targets
+    g.withLegalKindPermanent controller .defendingPlayerCreature targets
       (fun g o => g.applyPermanentAction o .tap) sourceId
       (some "The target is no longer legal")
   | (.watch .equippedTappedDamage) =>

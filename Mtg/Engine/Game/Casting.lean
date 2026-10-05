@@ -577,6 +577,7 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
       g.foldPermanentTargets e.targets (fun g o =>
         match o.controller with
         | some c => g.putMatchingSourceTriggers c o .spellTargetsSource
+          (cause := some spell)
         | none => g)
     | none => g
   let g := g.putCastTriggersOnStack p spell

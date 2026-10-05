@@ -1070,7 +1070,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .equippedAttacksAloneUntapScry =>
     { events := #[.equippedAttacksAlone], resolution := .watch .equippedAttacksAloneUntapScry }
   | .watch .equippedAttacksTap =>
-    { events := #[.equippedAttacks], targeting := .of .creature,
+    { events := #[.equippedAttacks], targeting := .of .defendingPlayerCreature,
       resolution := .watch .equippedAttacksTap }
   | .watch .equippedTappedDamage =>
     { events := #[.equippedBecomesTapped], resolution := .watch .equippedTappedDamage }

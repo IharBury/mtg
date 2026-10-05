@@ -226,8 +226,17 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
         ((o.printed.power.getD 0) <= (n : Int) ||
           (o.printed.toughness.getD 0) <= (n : Int)))
   | .defendingPlayerCreature =>
-    g.legalCreatureTargets caster (fun o =>
-      o.controlledBy g.defendingPlayer)
+    let defender :=
+      match sourceId.bind g.findObject? with
+      | some src =>
+        let fromHost :=
+          match src.attachedTo.bind g.findObject? with
+          | some host => host.status.attackingWhom
+          | none => none
+        let fromSelf := if src.status.attacking then src.status.attackingWhom else none
+        (fromHost.orElse (fun _ => fromSelf)).getD g.defendingPlayer
+      | none => g.defendingPlayer
+    g.legalCreatureTargets caster (fun o => o.controlledBy defender)
   | .twoNonlandsSharingType => #[]
   | .creaturePowerAtLeast n =>
     g.legalCreatureTargets caster (fun o => g.power o >= n)

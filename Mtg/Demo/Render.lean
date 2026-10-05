@@ -834,6 +834,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .widowMayCounter .. =>
           "may put a +1/+1 counter on Black Widow (accept); otherwise you may cast the exiled card"
         | .ultronMayPay _ => "may pay {2} to copy the artifact (accept), or decline"
+        | .kingpinMayPay2Life => "may pay 2 life (accept), or decline"
+        | .daredevilMayExile _ => "may exile the top card of your library (accept), or decline"
+        | .mayChangeSpellTarget .. =>
+          "may choose a new target for the spell: choose <id>, or decline to keep it"
         | .mayCastFromGraveyard eligible =>
           s!"may cast an artifact, instant, or sorcery from your graveyard ({eligible.size} card(s)): cast <id>, or decline"
         | .maySearchLibrary _ _ _ _ kind =>

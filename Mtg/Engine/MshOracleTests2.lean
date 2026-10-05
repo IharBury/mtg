@@ -183,6 +183,26 @@ def speedYoungAvengerReflexiveOk : Bool :=
 
 #guard speedYoungAvengerReflexiveOk
 
+/-- Speed's reflexive ability can target only a creature that has haste. -/
+def speedReflexiveHasteOnlyOk : Bool :=
+  let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl =>
+    { pl with manaPool := pl.manaPool.add (.colored .red) 1 })
+  let speed := namedPermanent g "Speed, Young Avenger"
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable)
+    (some speed.id)
+  let g := mustApply g ⟨0⟩ .accept
+  let kind := (Game.modeledReflexiveEffect 9 1).targetKind
+  let legal := g.legalTargetsForKind ⟨0⟩ kind (some speed.id)
+  let bears := namedPermanent g "Grizzly Bears"
+  legal.contains (Target.permanent speed.id) &&
+    !legal.contains (Target.permanent bears.id) &&
+    (let gMiss := g.applyModeledReflexive #[Target.permanent bears.id]
+     !(namedPermanent gMiss "Grizzly Bears").status.cantBeBlockedExceptByHasteUntilEot)
+
+#guard speedReflexiveHasteOnlyOk
+
 /-- Ruling 720: Death to Our Enemies deals 7 only after the sacrifice. -/
 def deathToOurEnemiesReflexiveOk : Bool :=
   let g := addPermanent afterDraw deathToOurEnemies ⟨0⟩ ⟨0⟩
@@ -269,11 +289,14 @@ def kingpinExtortAndToughnessOk : Bool :=
      let g := g.setObject { kp with status := { kp.status with
        attacking := true, attackingWhom := some ⟨1⟩, summoningSick := false } }
      let kp := namedPermanent g "The Kingpin of Crime"
+     let life0 := (g.player ⟨0⟩).life
      let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingPay2LifeToughness) (some kp.id)
        #[] "The Kingpin of Crime" (some (1 : Int))
+     let g := mustApply g ⟨0⟩ .accept
      let kp := namedPermanent g "The Kingpin of Crime"
      g.power kp == 1 &&
        g.toughness kp == 5 &&
+       (g.player ⟨0⟩).life == life0 - 2 &&
        g.combatDamageToAssign kp true == 5) &&
     (mshRuling 639).comment.contains "doesn't actually change any creature's power" &&
     (mshRuling 644).comment.contains "total amount of life lost" &&
@@ -568,6 +591,7 @@ def daredevilPlayExiledOk : Bool :=
   let g := addToLibraryTop g lightningBolt ⟨0⟩
   let dd := namedPermanent g "Daredevil, Man Without Fear"
   let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
+  let g := mustApply g ⟨0⟩ .accept
   let bolt? := g.objects.find? (fun o =>
     o.name == "Lightning Bolt" && o.zone == .exile)
   (match bolt? with
@@ -579,6 +603,7 @@ def daredevilPlayExiledOk : Bool :=
      let g := addToLibraryTop g mistyKnightHeroForHire ⟨0⟩
      let dd := namedPermanent g "Daredevil, Man Without Fear"
      let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
+     let g := mustApply g ⟨0⟩ .accept
      let hero? := g.objects.find? (fun o =>
        o.name == "Misty Knight, Hero for Hire" && o.zone == .exile)
      match hero? with

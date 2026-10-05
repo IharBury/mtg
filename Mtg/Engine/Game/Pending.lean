@@ -418,6 +418,14 @@ inductive FraChoice where
   | widowMayCounter (sourceId : Option ObjectId) (exiled : Option ObjectId)
   /-- You may pay {2} to copy the nontoken artifact that entered (Ultron). -/
   | ultronMayPay (artifactId : ObjectId)
+  /-- You may pay 2 life so creatures you control assign combat damage equal
+  to their toughness (The Kingpin of Crime). -/
+  | kingpinMayPay2Life
+  /-- You may exile the top card of your library (Daredevil). -/
+  | daredevilMayExile (sourceId : Option ObjectId)
+  /-- You may choose a new target for one slot of `spellId`, or decline to
+  keep it. `index` walks the spell's targets (Speedball). -/
+  | mayChangeSpellTarget (spellId : ObjectId) (index : Nat)
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)

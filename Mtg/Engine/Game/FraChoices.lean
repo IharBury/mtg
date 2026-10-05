@@ -731,6 +731,24 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .ultronMayPay _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't pay {2}").finishFraChoice
   | .ultronMayPay _, _ => throw "Pay {2} (accept), or decline"
+  | .kingpinMayPay2Life, .accept =>
+    let g ← g.payLifeCost p 2
+    return ({ g with assignCombatDamageEqualToughness := some p }
+      |>.logMsg "Creatures you control assign combat damage equal to their toughness").finishFraChoice
+  | .kingpinMayPay2Life, .decline =>
+    return (g.logMsg "The Kingpin's cost wasn't paid").finishFraChoice
+  | .kingpinMayPay2Life, _ => throw "Pay 2 life (accept), or decline"
+  | .daredevilMayExile sourceId, .accept =>
+    return (g.applyDaredevilExile p sourceId).finishFraChoice
+  | .daredevilMayExile _, .decline =>
+    return (g.logMsg s!"{(g.player p).name} doesn't exile the top card").finishFraChoice
+  | .daredevilMayExile _, _ => throw "Exile the top card (accept), or decline"
+  | .mayChangeSpellTarget spellId index, .objects #[id] =>
+    let g := g.setSpellTargetAt spellId index (Target.permanent id)
+    return (g.offerSpellRetarget p spellId (index + 1)).finishFraChoice
+  | .mayChangeSpellTarget spellId index, .decline =>
+    return (g.offerSpellRetarget p spellId (index + 1)).finishFraChoice
+  | .mayChangeSpellTarget .., _ => throw "Choose a new target, or decline to keep it"
   | .sheHulkMayDamage amount target sourceId, .accept =>
     let g := { g with sheHulkDamageUsedThisTurn := true }
     let g :=
@@ -914,6 +932,9 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .sheHulkMayDamage .. => .decline
   | .widowMayCounter .. => .decline
   | .ultronMayPay _ => .decline
+  | .kingpinMayPay2Life => .decline
+  | .daredevilMayExile _ => .decline
+  | .mayChangeSpellTarget .. => .decline
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>
