@@ -808,6 +808,23 @@ battlefield, though it isn't a creature. -/
   let g := g.destroyPermanent (namedPermanent g "Getaway Barrel")
   g.waitingTriggers.any (·.source.name == "Getaway Barrel")
 
+/-! ## Intervening “if” clauses (CR 603.4) -/
+
+/- The One Ring gives protection only if it was cast. -/
+#guard
+  let g := settle (enterPermanent afterDraw theOneRing me)
+  !(g.player me).protectionFromEverything
+#guard
+  let g := resolved (castFra afterDraw theOneRing)
+  (g.player me).protectionFromEverything
+
+/- Lake-town Toymaker doesn't trigger unless you've drawn two cards. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw lakeTownToymaker me me) grizzlyBears me me
+  let g := g.modifyPlayer me (fun pl => { pl with cardsDrawnThisTurn := 0 })
+  let g := g.putControlledTriggers me .yourBeginCombat
+  !g.waitingTriggers.any (·.source.name == "Lake-town Toymaker")
+
 /-! ## Life loss -/
 
 /- The Master of Lake-town: damage and paying life are losses of life; that

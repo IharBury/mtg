@@ -900,8 +900,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let n := (lastKnownPower.getD 0).toNat
     g.createTreasureTokens controller n
   | .protectionEverything =>
-    g.modifyPlayer controller (fun pl => { pl with protectionFromEverything := true })
-      |>.logMsg s!"{(g.player controller).name} gains protection from everything"
+    if !(sourceId.bind g.findObject?).any (·.wasCast) then
+      g.logMsg "It wasn't cast. The ability does nothing."
+    else
+      g.modifyPlayer controller (fun pl => { pl with protectionFromEverything := true })
+        |>.logMsg s!"{(g.player controller).name} gains protection from everything"
   | .loseLifePerBurden =>
     match sourceId.bind g.findObject? with
     | none => g
