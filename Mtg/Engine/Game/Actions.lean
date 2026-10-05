@@ -19,6 +19,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
     | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
     | .mayPutLandFromHand _ => g.putLandFromHandTapped p id
     | .mayPutArtifactFromHand .. => g.choosePutArtifactFromHand p id
+    | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .chooseMode idx =>
@@ -114,6 +115,7 @@ def actor (g : Game) : Option PlayerId :=
     | .mayPutArtifactFromHand p _ => who p
     | .mayHaveVillainConnive p _ _ => who p
     | .chooseProliferate p _ => who p
+    | .mayCastExiledElseDamage p _ _ => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p

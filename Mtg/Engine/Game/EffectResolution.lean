@@ -86,6 +86,28 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       let excess := g.excessDamage o dealt
       if excess > 0 then g.empowerJace controller excess
       else g) sourceId (some "The target is no longer legal"))
+  | .exileTopMayCastElseDamageOpponents n =>
+    match (g.player controller).library.back? with
+    | none =>
+      some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n))
+    | some top =>
+      let (g, id) := g.move top .exile none
+      let card := g.object! id
+      let g := g.logMsg s!"{(g.player controller).name} exiles {card.name}"
+      if card.printed.isLand then
+        -- Ruling 855: a land can't be cast, so the damage is dealt.
+        some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n))
+      else
+        some ({ g with pending := .mayCastExiledElseDamage controller id n }.logMsg
+          s!"{(g.player controller).name} may cast {card.name}")
+  | .emblemCastSpellDamage n =>
+    -- Ruling 858: the emblem is colorless.
+    let emblem : CardDef := {
+      name := "Chandra Emblem", types := #[]
+      triggeredAbilities := #[.triggered .youCastSpell
+        (Effect.ofTrigger (.onPermanent .playerOrCreature (.dealDamage n)))] }
+    let (g, _) := g.allocObject emblem controller .command (some controller)
+    some (g.logMsg s!"{(g.player controller).name} gets an emblem")
   | .copyNextInstantSorceryThisTurn =>
     let g := g.modifyPlayer controller (fun pl =>
       { pl with copyNextInstantSorceryThisTurn := pl.copyNextInstantSorceryThisTurn + 1 })
@@ -1237,7 +1259,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
   | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
   | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
-  | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn =>
+  | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn
+  | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ =>
     g
 
 /-- Resolve a printed activated ability (CR 608). -/

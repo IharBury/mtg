@@ -417,6 +417,8 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
     return .becomeTypes (← takeStrs ts) (← takeInt p) (← takeInt t) k
   | .targetSubtypeConnives s => return .targetSubtypeConnives (← takeStr s)
   | .empowerJace n => return .empowerJace (← takeNat n)
+  | .exileTopMayCastElseDamageOpponents n => return .exileTopMayCastElseDamageOpponents (← takeNat n)
+  | .emblemCastSpellDamage n => return .emblemCastSpellDamage (← takeNat n)
   | .surveil n => return .surveil (← takeNat n)
   | .millSelf n => return .millSelf (← takeNat n)
   | .mayDiscardDraw n => return .mayDiscardDraw (← takeNat n)

@@ -718,6 +718,12 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>
       s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
+    | .mayCastExiledElseDamage p cardId n =>
+      let name :=
+        match g.findObject? cardId with
+        | some o => o.name
+        | none => "the exiled card"
+      s!" [may cast {name}, or {n} damage to each opponent ({g.player p |>.name})]"
     | .chooseProliferate p n =>
       s!" [proliferate ({n} more, CR 701.34, {g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>

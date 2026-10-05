@@ -13,6 +13,7 @@ import Mtg.Engine.FraOracleTests3
 import Mtg.Engine.FraOracleTests4
 import Mtg.Engine.FraOracleTests5
 import Mtg.Engine.FraOracleTests6
+import Mtg.Engine.FraOracleTests7
 
 /-!
 # Unique Oracle rulings

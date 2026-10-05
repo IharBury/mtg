@@ -966,6 +966,12 @@ def damageThenEmpowerExcess (n : Nat) : Effect :=
 def jaceLoyaltyAtInstantSpeed : Effect :=
   mkAbility ({}) (.jaceLoyaltyAtInstantSpeed)
 
+def exileTopMayCastElseDamageOpponents (n : Nat) : Effect :=
+  mkAbility ({}) (.exileTopMayCastElseDamageOpponents n)
+
+def emblemCastSpellDamage (n : Nat) : Effect :=
+  mkAbility ({}) (.emblemCastSpellDamage n)
+
 def copyNextInstantSorceryThisTurn : Effect :=
   mkAbility ({}) (.copyNextInstantSorceryThisTurn)
 

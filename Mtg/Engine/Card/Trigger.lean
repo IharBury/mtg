@@ -541,6 +541,7 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .opponentDrawsSecond => #[.opponentDrawsSecondCard]
   | .opponentCastsFirstNoncreature => #[.opponentCastsFirstNoncreature]
   | .youCastFirstNoncreature => #[.youCastFirstNoncreature]
+  | .youCastSpell => #[.youCastSpell]
   | .youCastTargetingOpponentOrTheirCreature => #[.youCastTargetingOpponentOrTheirCreature]
   | .youActivateLoyaltyAbility => #[.youActivateLoyaltyAbility]
   | .eachUpkeep => #[.eachUpkeep]

@@ -6,10 +6,8 @@ import Mtg.Engine.OracleData
 
 Inventory of every FRA judge ruling. Each id is in exactly one list:
 
-- `fraEngineCheckedIds`: checked against game states in
-  `Mtg.Engine.FraOracleTests`, `Mtg.Engine.FraOracleTests2`,
-  `Mtg.Engine.FraOracleTests4`, `Mtg.Engine.FraOracleTests5`, and
-  `Mtg.Engine.FraOracleTests6`.
+- `fraEngineCheckedIds`: checked against game states in the other
+  `Mtg.Engine.FraOracleTests*` modules.
 - `fraSharedCheckedIds`: comments shared with HOB/HOC or MSH cards, whose
   behavior those suites check. The FRA cards that repeat them are not
   modeled further.
@@ -38,9 +36,9 @@ def fraEngineCheckedIds : List Nat := [
   796, 797, 798, 799, 800, 801, 802, 804, 807, 808, 809, 810, 811, 812, 813,
   814, 815, 816, 817, 821, 822, 823, 824, 825, 826, 827, 828, 829, 830, 831,
   832, 833, 837, 838, 839, 840, 841, 842, 843, 844, 845, 846, 847, 848, 849,
-  850, 851, 852, 853, 856, 862, 863, 864, 865, 866, 867, 868, 869, 870, 871,
-  872, 873, 874, 876, 877, 878, 879, 880, 881, 882, 883, 886, 887, 888, 889,
-  890, 891, 892, 893]
+  850, 851, 852, 853, 854, 855, 856, 857, 858, 859, 860, 862, 863, 864, 865,
+  866, 867, 868, 869, 870, 871, 872, 873, 874, 876, 877, 878, 879, 880, 881,
+  882, 883, 886, 887, 888, 889, 890, 891, 892, 893]
 
 def fraSharedCheckedIds : List Nat := [153, 314, 403, 405, 413, 416]
 
@@ -48,7 +46,7 @@ def fraNotApplicableIds : List Nat := [745, 884, 885]
 
 def fraUnmodeledIds : List Nat := [
   729, 730, 750, 756, 757, 758, 759, 760, 764, 774, 775, 791, 792, 803, 805,
-  806, 818, 819, 820, 834, 835, 836, 854, 855, 857, 858, 859, 860, 861, 875]
+  806, 818, 819, 820, 834, 835, 836, 861, 875]
 
 /-- Every FRA ruling id is in exactly one inventory list. -/
 def fraInventoryOk : Bool :=

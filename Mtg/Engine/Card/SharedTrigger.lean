@@ -299,6 +299,8 @@ inductive SharedTriggerWhen where
   | opponentCastsFirstNoncreature
   /-- Whenever you cast your first noncreature spell each turn. -/
   | youCastFirstNoncreature
+  /-- Whenever you cast a spell. -/
+  | youCastSpell
   /-- Whenever you cast a spell that targets an opponent or a creature an
   opponent controls. -/
   | youCastTargetingOpponentOrTheirCreature

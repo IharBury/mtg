@@ -159,6 +159,10 @@ inductive Pending where
   | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)
   /-- You may have this entering Villain connive (Baron Strucker; MSH 422). -/
   | mayHaveVillainConnive (player : PlayerId) (sourceId : ObjectId) (villainId : ObjectId)
+  /-- You may cast exiled `cardId` as an ability resolves, paying its costs.
+  If you don't, the ability deals `damage` to each opponent (Chandra, Torch
+  of Defiance). -/
+  | mayCastExiledElseDamage (player : PlayerId) (cardId : ObjectId) (damage : Nat)
   /-- Choose any number of permanents and players with counters to
   proliferate, `remaining` more times (CR 701.34; Tam, the Possibility). -/
   | chooseProliferate (player : PlayerId) (remaining : Nat)

@@ -217,6 +217,12 @@ inductive Resolution where
   | proliferatePlaneswalkerTypesTimes
   /-- When you next cast an instant or sorcery spell this turn, copy it. -/
   | copyNextInstantSorceryThisTurn
+  /-- Exile the top card of your library. You may cast it. If you don't, this
+  deals `n` damage to each opponent (Chandra, Torch of Defiance). -/
+  | exileTopMayCastElseDamageOpponents (n : Nat)
+  /-- You get an emblem with “Whenever you cast a spell, this emblem deals
+  `n` damage to any target.” -/
+  | emblemCastSpellDamage (n : Nat)
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -527,6 +533,10 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
   | .jaceLoyaltyAtInstantSpeed =>
     "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
+  | .exileTopMayCastElseDamageOpponents n =>
+    s!"Exile the top card of your library. You may cast that card. If you don't, this deals {n} damage to each opponent"
+  | .emblemCastSpellDamage n =>
+    s!"You get an emblem with \"Whenever you cast a spell, this emblem deals {n} damage to any target.\""
   | .copyNextInstantSorceryThisTurn =>
     "When you next cast an instant or sorcery spell this turn, copy that spell. You may choose new targets for the copy"
   | .proliferatePlaneswalkerTypesTimes =>

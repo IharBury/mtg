@@ -346,10 +346,53 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     g.payTeamworkCreatures p ids
   | _ => throw "Not time to choose permanents"
 
+/-- Cast the card Chandra, Torch of Defiance exiled, as her ability resolves.
+Timing permissions are ignored, but its costs are paid (rulings 857 /
+859). A land can't be cast (ruling 855). -/
+def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
+    Except String Game := do
+  match g.pending with
+  | .mayCastExiledElseDamage q cardId _ =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may cast that card"
+    if id != cardId then
+      throw "That isn't the exiled card"
+    let some card := g.findObject? id | throw "no such object"
+    let face := card.printed
+    if face.isLand then
+      throw "An effect that lets you cast a card doesn't let you play a land (ruling 855)"
+    if face.requiresTarget && (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+      throw s!"{face.name} requires a target"
+    let cost := g.playManaCost card face
+    let pl := g.player p
+    let some pool := pl.manaPool.pay? cost
+      | throw s!"{pl.name} cannot pay {cost}"
+    let g := g.setPlayer { pl with manaPool := pool }
+    let stackBefore := g.stack
+    let (g, newId) := g.move id .stack (some p)
+    let g := g.putStackEntry p newId
+    let g := { g with pending := .none }
+    let g := g.logMsg s!"{(g.player p).name} casts {face.name} as the ability resolves"
+    if face.requiresTarget then
+      let prop : ProposedSpell := {
+        caster := p, cost := ManaCost.empty, spellId := newId, original := card
+        handBefore := (g.player p).hand, stackBefore, manaBefore := pool }
+      return { g with pending := .chooseTargets p, proposedSpell := some prop }
+    else
+      return g.becomeCast p (g.object! newId)
+  | _ => throw "No exiled card may be cast now"
+
 /-- Decline an optional discard (CR 608.2d) or choose no target for an
 “up to one” trigger (CR 601.2c / 115.1c). -/
 def decline (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
+  | .mayCastExiledElseDamage q _ n =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline to cast"
+    let g := g.logMsg s!"{(g.player p).name} doesn't cast the exiled card"
+    let g := g.forEachOpponent p (fun g pid => g.dealDamageToPlayer pid n)
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
   | .mayDiscardDraw q _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to discard"

@@ -541,6 +541,9 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.copyEachCreatureOfTargetPlayer,
   Effect.copyNextInstantSorceryThisTurn,
   Effect.addMana #[.colored .red],
+  Effect.exileTopMayCastElseDamageOpponents 2,
+  Effect.emblemCastSpellDamage 5,
+  Effect.addMana #[.colored .red, .colored .red],
 ]
 
 def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[

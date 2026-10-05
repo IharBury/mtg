@@ -258,8 +258,11 @@ def forEachControlledCreature (g : Game) (p : PlayerId)
 /-- Put matching triggers of permanents `p` controls that fire on `event`. -/
 def putControlledTriggers (g : Game) (p : PlayerId)
     (event : TriggerEvent) (excludeId : Option ObjectId := none) : Game :=
-  g.foldControlledPermanents p excludeId fun g o =>
+  let g := g.foldControlledPermanents p excludeId fun g o =>
     g.putMatchingSourceTriggers p o event
+  -- Emblems in the command zone trigger too (CR 114.4).
+  (g.objects.filter (fun o => o.zone == .command && o.controlledBy p)).foldl
+    (fun g e => g.putMatchingSourceTriggers p e event) g
 
 /-- Queue “whenever you sacrifice a token” if `o` was a token when sacrificed. -/
 def queueYouSacrificeToken (g : Game) (o : GameObject) : Game :=

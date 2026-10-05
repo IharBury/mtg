@@ -195,6 +195,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       | none => some .decline
     | .mayHaveVillainConnive _ _ _ =>
       some .haveVillainConnive
+    | .mayCastExiledElseDamage _ cardId _ =>
+      match (g.apply p (.cast cardId)) with
+      | .ok _ => some (.cast cardId)
+      | .error _ => some .decline
     | .chooseProliferate _ _ =>
       let own := (g.permanentsOf p).filter (·.status.hasCounters) |>.map (Target.permanent ·.id)
       let opps := (g.livingOpponents p).filter (·.poison > 0) |>.map (Target.player ·.id)
