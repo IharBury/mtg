@@ -291,6 +291,7 @@ def cadetToken : CardDef :=
 def heartwoodToken : CardDef := {
   name := "Heartwood"
   types := #[.artifact]
+  subtypes := #["Heartwood"]
   colorIndicator := some ((ColorSet.singleton .red).insert .green)
   tapAddOneOf := #[ManaType.colored .red, ManaType.colored .green]
   isToken := true
@@ -317,7 +318,7 @@ def jacePlaneswalkerToken : CardDef := {
   isToken := true
   activatedAbilities := #[
     { cost := { loyalty := some (.minus 1) }
-      effect := { resolution := .scry 1, phrase := "Surveil 1" } },
+      effect := { resolution := .surveil 1, phrase := "Surveil 1" } },
     { cost := { loyalty := some (.minus 3) }
       effect := { resolution := .draw 1, phrase := "Draw a card" } }]
 }
@@ -343,24 +344,43 @@ def mowuToken : CardDef := {
 def pridemateToken : CardDef :=
   creatureToken "Ajani's Pridemate" #["Cat", "Soldier"] 2 2 (some .white)
 
-/-- Empower Jace `n` (Reality Fracture). If you don't control a Jace
-planeswalker token, create one, then put `n` loyalty counters on a Jace
-token you control. -/
-def empowerJace (g : Game) (controller : PlayerId) (n : Nat) : Game :=
-  let isJace (o : GameObject) : Bool :=
-    o.printed.isPlaneswalker && o.printed.hasSubtype "Jace" && o.printed.isToken
-  let existing := (g.permanentsOf controller).filter isJace
+/-- A 4/4 green Beast creature token with trample. -/
+def beast44trampleToken : CardDef :=
+  creatureToken "Beast" #["Beast"] 4 4 (some .green) (keywords := Keyword.trample)
+
+/-- Jace planeswalker tokens `controller` controls. Nontoken Jace
+planeswalkers don't count, but a token copy of one does (ruling 733). -/
+def jacePlaneswalkerTokens (g : Game) (controller : PlayerId) : Array GameObject :=
+  (g.permanentsOf controller).filter (fun o =>
+    o.printed.isPlaneswalker && o.hasSubtype "Jace" && o.printed.isToken)
+
+/-- Empower Jace `n` (Reality Fracture, ruling 732). If you don't control a
+Jace planeswalker token, create one with 0 loyalty. Then put `n` loyalty
+counters on a Jace planeswalker token you control. You can't create a new
+token while you control one; with several, `chosen` picks which (ruling
+731), defaulting to the one that entered most recently. -/
+def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
+    (chosen : Option ObjectId := none) : Game :=
   let g :=
-    if existing.isEmpty then
+    if (g.jacePlaneswalkerTokens controller).isEmpty then
       let (g, _) := g.createToken controller jacePlaneswalkerToken
-      g
+      g.logMsg s!"{(g.player controller).name} creates a Jace planeswalker token"
     else g
-  match ((g.permanentsOf controller).filter isJace)[0]? with
+  let tokens := g.jacePlaneswalkerTokens controller
+  let pick :=
+    match chosen.bind (fun id => tokens.find? (·.id == id)) with
+    | some o => some o
+    | none =>
+      tokens.foldl (fun (best : Option GameObject) (o : GameObject) =>
+        match best with
+        | some b => if o.timestamp ≥ b.timestamp then some o else best
+        | none => some o) none
+  match pick with
   | none => g.logMsg "Empower Jace creates no token"
   | some o =>
     let g := g.setObject { o with status :=
       { o.status with loyaltyCounters := o.status.loyaltyCounters + n } }
-    g.logMsg s!"Empower Jace {n}"
+    g.logMsg s!"Empower Jace {n}: {n} loyalty counter(s) are put on {o.name}"
 
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=
@@ -395,6 +415,7 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .sculpture => sculptureToken
   | .mowu => mowuToken
   | .pridemate => pridemateToken
+  | .beast44trample => beast44trampleToken
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)

@@ -523,6 +523,19 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.ofTrigger .drawGainLifeIfAnotherHero,
   Effect.ofTrigger .plusOneOrTwoIfAnotherHero,
   Effect.ofTrigger .maySacArtifactOrDiscardDraw,
+  Effect.pumpAndGrantKeywords 2 2 Keyword.flying,
+  Effect.plusOneThenGainLife 1 1,
+  Effect.damageTargetOpponent 1,
+  Effect.millSelf 3,
+  Effect.mayDiscardDraw 1,
+  Effect.createTokens .heartwood 1,
+  Effect.createTokens .beast44trample 1,
+  Effect.createTokensThenSurveil .cadet 1 1,
+  Effect.createTokensLifeGained .cadet,
+  Effect.setBasePT 0 0,
+  Effect.oppSacrificesGreatestMvGainLife 2,
+  Effect.damageThenEmpowerExcess 6,
+  Effect.jaceLoyaltyAtInstantSpeed,
 ]
 
 def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
@@ -638,6 +651,10 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   StaticAbility.equippedCreatureGetsAndHas 2 1 Keyword.flying,
   .powerEqualLegendaryCreaturesYouControl,
   .maximumHandSize 10,
+  .planeswalkersSurviveZeroLoyalty,
+  .enteringArtifactsCreaturesDontTrigger,
+  .instantSorcerySplitSecond,
+  .ptEqualGraveyardCardTypes,
 ]
 
 def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
@@ -972,6 +989,11 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .onWatch Effect.watchUltronCopy,
   .onCasting Effect.castingVisionModes,
   .onThisAttack Effect.thisAttackDrawIfPower4,
+  .triggered .enter (Effect.ofTrigger (.empowerJace 1)),
+  .triggered .youGainLife (Effect.ofTrigger (.onSource (.plusOne 2))),
+  .triggered .landYouControlEnters (Effect.ofTrigger (.empowerJace 2)),
+  .onStep (Effect.ofTrigger .prepareSourceIfNot),
+  .onStep (Effect.ofTrigger .prepareSourceIfThreeDied),
 ]
 
 def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
@@ -1167,6 +1189,11 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
       cost := { mana := ManaCost.ofGeneric 2, sacrificeSource := true },
       effect := Effect.abilityDraw 1
     },
+  activated (Effect.abilityEmpowerJace 2) (ManaCost.ofGeneric 6),
+  activated (Effect.abilityEmpowerJace 2) (ManaCost.ofGenericAndColor 2 .blue) (tap := true),
+  activated (Effect.targetCreatureBecomesPrepared) (ManaCost.ofGeneric 4) (tap := true),
+  activated (Effect.eachCreatureYouControlBecomesPrepared)
+          (ManaCost.ofColors [.white, .blue, .black, .red, .green]) (tap := true),
 ]
 
 def chapterEffects : Thunk (Array (String × Effect)) := Thunk.mk fun _ => #[

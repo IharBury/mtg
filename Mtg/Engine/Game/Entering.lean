@@ -184,6 +184,16 @@ def extraCountersOn (g : Game) (controller : Option PlayerId) (n : Nat) : Nat :=
           | .extraCounterOnPermanents => true
           | _ => false))).size
 
+/-- Karn, Argent Defender: an artifact or creature entering doesn't cause
+abilities to trigger. Checked with the permanent as it exists on the
+battlefield (rulings 891–893). Replacement effects still apply (ruling 890). -/
+def enteringCausesNoTriggers (g : Game) (o : GameObject) : Bool :=
+  (o.isCreature || o.types.contains .artifact) &&
+    g.battlefield.any (fun src =>
+      src.staticAbilities.any (fun
+        | .enteringArtifactsCreaturesDontTrigger => true
+        | _ => false))
+
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
@@ -191,6 +201,19 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   -- 0 toughness) and before enters triggers use the stack.
   let g := g.refreshEnduringStory
   let g := g.refreshCitysBlessing
+  -- CR 306.5b: a planeswalker enters with loyalty counters equal to its
+  -- printed loyalty.
+  let g :=
+    match o.printed.isPlaneswalker, o.printed.loyalty with
+    | true, some n =>
+      if n > 0 then
+        let o := g.object! o.id
+        let g := g.setObject { o with status :=
+          { o.status with loyaltyCounters := o.status.loyaltyCounters + n.toNat } }
+        g.logMsg s!"{o.name} enters with {n} loyalty counter(s)"
+      else g
+    | _, _ => g
+  let o := g.object! o.id
   let g :=
     if o.printed.entersWithIndestructibleCounter then
       let g := g.setObject { o with status :=
@@ -220,23 +243,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let o := g.object! o.id
   let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
   let o := g.object! o.id
-  let g :=
-    if o.printed.entersPrepared then
-      match o.controller, o.printed.prepareFace with
-      | some p, some face =>
-        let (g, copy) := g.allocObject face.toCardDef o.owner .exile
-        let g := g.setObject { copy with playPermission := some {
-          player := p
-          turnEndsRemaining := 0
-          whileExiled := true
-          prepareSource := some o.id } }
-        let o := g.object! o.id
-        let g := g.setObject { o with status := { o.status with prepared := true } }
-        g.logMsg s!"{o.name} enters prepared. A copy of {face.name} is exiled"
-      | _, _ =>
-        let g := g.setObject { o with status := { o.status with prepared := true } }
-        g.logMsg s!"{o.name} enters prepared"
-    else g
+  let g := if o.printed.entersPrepared then g.becomePrepared o else g
   let o := g.object! o.id
   let g :=
     if o.printed.entersWithHopePerCreature then
@@ -250,6 +257,9 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let o := g.object! o.id
   let g := g.addLoreAsSagaEnters o
   let o := g.object! o.id
+  if g.enteringCausesNoTriggers o then
+    g.logMsg s!"{o.name} entering doesn't cause abilities to trigger"
+  else
   let g := g.putEnterTriggersOnStack o
   let g := g.putAnotherElfYouControlEntersTriggers (g.object! o.id)
   let g := g.putAnotherCreatureYouControlEntersTriggers (g.object! o.id)
@@ -317,7 +327,9 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
 /-- After a land enters, put its enters triggers, Elf-enters triggers, and landfall. -/
 def afterLandEnters (g : Game) (land : GameObject) : Game :=
   let g := g.afterPermanentEnters land
-  g.putLandYouControlEntersTriggers (g.object! land.id)
+  let land := g.object! land.id
+  if g.enteringCausesNoTriggers land then g
+  else g.putLandYouControlEntersTriggers land
 
 /-- Nick Fury power-up: put a Hero, Equipment, or Vehicle onto the battlefield.
 A daybound front face enters back-face-up at night and cannot transform

@@ -716,8 +716,14 @@ inductive SharedTrigger where
   | planFinishDividedDamage (n : Nat)
   /-- Fourth-plan: sacrifice and grant indestructible. -/
   | planFinishIndestructibleOnTarget
-  /-- Surveil `n` (resolves as a scry-shaped look). -/
+  /-- Surveil `n` (CR 701.25). -/
   | surveil (n : Nat)
+  /-- Empower Jace `n` (Reality Fracture). -/
+  | empowerJace (n : Nat)
+  /-- If this creature isn't prepared, it becomes prepared. -/
+  | prepareSourceIfNot
+  /-- If three or more creatures died this turn, this creature becomes prepared. -/
+  | prepareSourceIfThreeDied
   /-- Apply `action` to the enchanted creature. -/
   | onEnchanted (action : PermanentAction)
   /-- Attach to target, then apply `followup`. -/

@@ -78,6 +78,14 @@ def resolveTop (g : Game) : Game :=
           | none => g
         | _ => g
       else
+        -- CR 608.2b: checked before the spell's effects change the game.
+        let allTargetsIllegal :=
+          !entry.targets.isEmpty &&
+            match spellEffectOf obj entry.chosenMode with
+            | some e =>
+              let legal := g.legalTargetsForKind entry.controller e.targetKind (some obj.id)
+              entry.targets.all (fun t => !legal.contains t)
+            | none => false
         let g :=
           match obj.giftPromisedTo, obj.printed.isInstantOrSorcery with
           | some to, true => g.givePromisedGift to
@@ -90,9 +98,14 @@ def resolveTop (g : Game) : Game :=
             (giftPromised := obj.giftPromisedTo.isSome)
             (chosenX := obj.chosenX.getD 0)
           | none => g
+        -- Ruling 734: a spell whose targets are all illegal doesn't resolve,
+        -- so it doesn't empower Jace.
         let g :=
           match obj.printed.empowerJace with
-          | some n => g.empowerJace entry.controller n
+          | some n =>
+            if allTargetsIllegal then
+              g.logMsg s!"{obj.name}'s targets are all illegal. Jace isn't empowered"
+            else g.empowerJace entry.controller n
           | none => g
         if obj.isAdventureSpell then
           g.resolveAdventureSpell entry (g.object! obj.id)
@@ -115,6 +128,9 @@ def resolveTop (g : Game) : Game :=
           let o := g.object! newId
           let g := g.logMsg s!"{o.name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
+        else if obj.isCopy then
+          (g.ceaseToExist obj.id).logMsg
+            s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
         else if obj.castFromGraveyard then
           let (g, _) := g.move obj.id .exile none
           g.logMsg s!"{obj.name} is exiled (flashback)"

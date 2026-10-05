@@ -31,6 +31,32 @@ def asSorcery? (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.stack.isEmpty &&
   g.step.isMainPhase && g.activePlayer == p && g.priority == p
 
+/-- True while a spell with split second is on the stack (CR 702.61a): an
+instant or sorcery spell whose controller controls a permanent granting
+instant and sorcery spells they control split second (Samut). -/
+def splitSecondOnStack (g : Game) : Bool :=
+  g.stack.any (fun e =>
+    match g.findObject? e.objectId with
+    | some o =>
+      o.abilityEffect.isNone && o.triggeredAbility.isNone &&
+        o.printed.isInstantOrSorcery &&
+        (g.permanentsOf e.controller).any (fun src =>
+          src.staticAbilities.any (fun
+            | .instantSorcerySplitSecond => true
+            | _ => false))
+    | none => false)
+
+/-- Mana abilities (CR 605.1a): no target, not a loyalty ability, and the
+effect adds mana. -/
+def isManaActivation (ab : ActivatedAbility) : Bool :=
+  !ab.effect.requiresTarget && ab.cost.loyalty.isNone &&
+    match ab.effect.resolution with
+    | .addMana _ | .addAnyColor | .addAnyColorSpendOnlySubtype _
+    | .addAnyColorSpendOnlyArtifactSpell | .addTwoAnyColorCreatureSources
+    | .addBlueCantNonartifact | .addAnyColorEqualToSourcePower
+    | .addFourAnyCombination | .addTwoAnyColorEquipment => true
+    | _ => false
+
 def hasPriority (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.priority == p && g.playersReceivePriority
 
@@ -59,7 +85,16 @@ def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
   match o.playPermission with
   | some perm =>
-    perm.player == p &&
+    -- Ruling 744: only the current controller of the prepared permanent may
+    -- cast the copy of its prepare spell.
+    let mayCast :=
+      match perm.prepareSource with
+      | some src =>
+        match g.findObject? src with
+        | some perm => perm.isOnBattlefield && perm.status.prepared && perm.controlledBy p
+        | none => false
+      | none => perm.player == p
+    mayCast &&
       (perm.fromAdventure || perm.whileExiled || perm.turnEndsRemaining > 0) &&
       (match perm.requireSubtype with
        | none => true

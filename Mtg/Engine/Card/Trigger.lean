@@ -415,6 +415,14 @@ inductive TriggerResolution where
   | revealDiscardFromHand
   /-- Create Redwing. -/
   | createRedwing
+  /-- Surveil `n` (CR 701.25). -/
+  | surveil (n : Nat)
+  /-- Empower Jace `n` (Reality Fracture). -/
+  | empowerJace (n : Nat)
+  /-- If the source isn't prepared, it becomes prepared. -/
+  | prepareSourceIfNot
+  /-- If three or more creatures died this turn, the source becomes prepared. -/
+  | prepareSourceIfThreeDied
   /-- Resolve a leftover StepLeftover. -/
   | step (e : StepLeftover)
   /-- Resolve a leftover DeathLeftover. -/
@@ -807,7 +815,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .planFinishDividedDamage n => { resolution := .planFinishDividedDamage n }
   | .planFinishIndestructibleOnTarget =>
     { resolution := .planFinishIndestructibleOnTarget }
-  | .surveil n => { resolution := .scry n }
+  | .surveil n => { resolution := .surveil n }
+  | .empowerJace n => { resolution := .empowerJace n }
+  | .prepareSourceIfNot => { events := #[.yourUpkeep], resolution := .prepareSourceIfNot }
+  | .prepareSourceIfThreeDied =>
+    { events := #[.eachEndStep], resolution := .prepareSourceIfThreeDied }
   | .onEnchanted action => { resolution := .onEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl, resolution := .attachThen followup }

@@ -175,6 +175,10 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .pumpAndGrant pw tw k =>
     let g := g.pumpPermanent o pw tw
     g.grantUntilEotLogged (g.object! o.id) k
+  | .becomePrepared => g.becomePrepared o
+  | .setBasePT pw tw =>
+    let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
+    g.logMsg s!"{o.name} has base power and toughness {pw}/{tw} until end of turn"
 def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (action : PermanentAction)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
@@ -200,7 +204,19 @@ def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if count == 0 then
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
-    { g with pending := .scry p count }.logMsg s!"{pl.name} scries {n}"
+    { g with pending := .scry p count, surveilling := false }.logMsg s!"{pl.name} scries {n}"
+
+/-- Start surveilling `n` during resolution (CR 701.25): look at the top
+`n` cards, put any number into the graveyard and the rest back on top in any
+order. Shares the scry decision; the bottom pile goes to the graveyard. -/
+def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  let pl := g.player p
+  let count := min n pl.library.size
+  if count == 0 then
+    g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
+  else
+    { g with pending := .scry p count, surveilling := true }.logMsg
+      s!"{pl.name} surveils {n}"
 
 /-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.13). -/
 def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=

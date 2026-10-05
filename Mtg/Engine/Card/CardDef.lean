@@ -155,12 +155,22 @@ structure CardDef where
   entersTappedUnlessLegendary : Bool := false
   /-- This permanent enters tapped unless you control an Equipment. -/
   entersTappedUnlessEquipment : Bool := false
+  /-- This permanent enters tapped unless you control a planeswalker. -/
+  entersTappedUnlessPlaneswalker : Bool := false
+  /-- This permanent enters tapped unless you control two or more other lands. -/
+  entersTappedUnlessTwoOtherLands : Bool := false
   /-- `{T}: Add one mana of any color. Spend this mana only to cast a
   legendary spell, and that spell can't be countered.` -/
   tapAddAnyColorForLegendary : Bool := false
   /-- This spell costs {X} less to cast, where X is the total power of
   creatures you control with flying. -/
   costReductionEqualFlyingPower : Bool := false
+  /-- This spell costs {X} less to cast, where X is the greatest power among
+  creatures you control. -/
+  costReductionGreatestPower : Bool := false
+  /-- This spell costs {X} less to cast, where X is the greatest toughness
+  among creatures you control. -/
+  costReductionGreatestToughness : Bool := false
   /-- Crew `n` (CR 702.122). -/
   crew : Option Nat := none
   /-- `{T}: Add two mana in any combination of these types`. -/

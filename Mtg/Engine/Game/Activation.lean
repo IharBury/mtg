@@ -18,12 +18,31 @@ def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
       | .activateCreaturesAsThoughHaste => true
       | _ => false))
 
+/-- Jace's Machinations lets `p` activate loyalty abilities of Jace
+planeswalkers they control any time they could cast an instant. -/
+def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  (g.player p).jaceLoyaltyAtInstantSpeed && o.printed.isPlaneswalker && o.hasSubtype "Jace"
+
+/-- Pay a loyalty cost: put or remove loyalty counters on the source and
+record that a loyalty ability of it was activated this turn (CR 606.3 / 606.4). -/
+def payLoyaltyCost (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Game :=
+  let k := (sym.counters).getD 0
+  let n := ((o.status.loyaltyCounters : Int) + k).toNat
+  let g := g.setObject { o with status := { o.status with
+    loyaltyCounters := n
+    loyaltyActivatedThisTurn := true } }
+  if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {o.name}"
+  else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {o.name}"
+  else g
+
 /-- Shared activation legality (CR 602.3). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
 def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) :
     Except String Unit := do
   if !g.hasPriority p then
     throw "You don't have priority"
+  if g.splitSecondOnStack && !isManaActivation ab then
+    throw "A spell with split second is on the stack (CR 702.61a)"
   if ab.activateFromGraveyard then
     if !(o.zone == .graveyard o.owner && o.owner == p) then
       throw s!"{o.name}'s ability can be activated only from the graveyard"
@@ -43,6 +62,20 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s ability can be activated only if you attacked with two or more creatures this turn"
   if ab.onlyAsSorcery && !g.asSorcery? p then
     throw s!"{o.name}'s ability can be activated only as a sorcery"
+  match ab.cost.loyalty with
+  | none => pure ()
+  | some sym =>
+    -- CR 606.3: once per turn per permanent, and only as a sorcery unless an
+    -- effect such as Jace's Machinations allows otherwise.
+    if o.status.loyaltyActivatedThisTurn then
+      throw s!"A loyalty ability of {o.name} has already been activated this turn (CR 606.3)"
+    if !g.asSorcery? p && !g.mayActivateLoyaltyAtInstantSpeed p o then
+      throw s!"{o.name}'s loyalty abilities can be activated only as a sorcery (CR 606.3)"
+    match sym.counters with
+    | some k =>
+      if k < 0 && (o.status.loyaltyCounters : Int) < -k then
+        throw s!"{o.name} doesn't have {-k} loyalty counters to remove (CR 606.4)"
+    | none => throw s!"{o.name}'s X loyalty cost is not supported"
   if ab.onlyDuringYourTurn && g.activePlayer != p then
     throw s!"{o.name}'s ability can be activated only during your turn"
   if ab.onceEachTurn && o.status.activationsThisTurn != 0 then
@@ -92,6 +125,11 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let some ab := abs[abilityIdx]?
     | throw s!"{o.name} has no such activated ability"
   g.validateActivation p o ab
+  let g :=
+    match ab.cost.loyalty with
+    | some sym => g.payLoyaltyCost o sym
+    | none => g
+  let o := g.object! id
   let pl := g.player p
   let stackBefore := g.stack
   let manaBefore := pl.manaPool

@@ -916,7 +916,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
   .onPermanent (.pumpAndTrample 2 0)
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry 2
-#guard TriggeredAbility.resolution (.onEnterSurveil 2) == .scry 2
+#guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil 2
 #guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
   "When this permanent enters, surveil 1."
 #guard TriggeredAbility.toNotation (.onEnterEnchanted (.grantKeywords Keyword.firstStrike)) ==

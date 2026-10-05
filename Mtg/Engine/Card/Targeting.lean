@@ -138,6 +138,8 @@ inductive EffectTargetKind where
   | artifactYouControl
   /-- Two target artifacts you control. -/
   | twoArtifactsYouControl
+  /-- Target creature or planeswalker. -/
+  | creatureOrPlaneswalker
   /-- Target creature you control that's attacking alone. -/
   | attackingAloneCreatureYouControl
   /-- Target noncreature artifact or noncreature enchantment. -/
@@ -350,6 +352,8 @@ def spec : EffectTargetKind → Spec
   | .upToTwoCreaturesTotalMvAtMost n =>
     { count := 2
       noun := s!"up to two target creatures with total mana value {n} or less" }
+  | .creatureOrPlaneswalker =>
+    { noun := "target creature or planeswalker" }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=

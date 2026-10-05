@@ -65,11 +65,17 @@ def controlsLegendaryCreature (g : Game) (p : PlayerId) : Bool :=
 def controlsEquipment (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o => o.printed.isEquipment)
 
-/-- Whether this face should enter tapped given the controller's board. -/
+/-- Whether this face should enter tapped given the controller's board. It is
+checked before the permanent enters, so lands or planeswalkers entering at
+the same time are not counted (rulings 808 / 809). -/
 def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
   card.entersTapped ||
     (card.entersTappedUnlessLegendary && !g.controlsLegendaryCreature p) ||
-    (card.entersTappedUnlessEquipment && !g.controlsEquipment p)
+    (card.entersTappedUnlessEquipment && !g.controlsEquipment p) ||
+    (card.entersTappedUnlessPlaneswalker &&
+      !(g.permanentsOf p).any (·.printed.isPlaneswalker)) ||
+    (card.entersTappedUnlessTwoOtherLands &&
+      ((g.permanentsOf p).filter (·.printed.isLand)).size < 2)
 
 /-- Whether `blocker`'s static abilities currently allow it to be declared as
 a blocker (CR 509.1b). Checked only when declaring blockers. -/

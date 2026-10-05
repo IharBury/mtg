@@ -184,6 +184,28 @@ inductive Resolution where
   | destroyTargetNoncreatureArtOrEnch
   /-- Target permanent you control of this subtype connives. -/
   | targetSubtypeConnives (subtype : String)
+  /-- Empower Jace `n` (Reality Fracture): put `n` loyalty counters on a Jace
+  planeswalker token you control, creating one first if you control none. -/
+  | empowerJace (n : Nat)
+  /-- Surveil `n` (CR 701.25). -/
+  | surveil (n : Nat)
+  /-- Mill `n` cards (CR 701.13). -/
+  | millSelf (n : Nat)
+  /-- You may discard a card. If you do, draw `n` cards. -/
+  | mayDiscardDraw (n : Nat)
+  /-- Create X tokens, where X is the life you gained this turn. -/
+  | createTokensLifeGained (kind : TokenKind)
+  /-- Target opponent sacrifices a creature or planeswalker with the greatest
+  mana value among those they control. You gain `life` life. -/
+  | oppSacrificesGreatestMvGainLife (life : Nat)
+  /-- Each creature you control becomes prepared. -/
+  | eachCreatureYouControlBecomesPrepared
+  /-- Deal `n` damage to the target. If excess damage was dealt, empower Jace
+  that much. -/
+  | damageThenEmpowerExcess (n : Nat)
+  /-- Until end of turn, loyalty abilities of Jace planeswalkers you control
+  may be activated any time you could cast an instant. -/
+  | jaceLoyaltyAtInstantSpeed
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -476,6 +498,24 @@ private def phraseWith (r : Resolution) (noun : String)
     "Destroy target noncreature artifact or noncreature enchantment"
   | .targetSubtypeConnives subtype =>
     s!"Target {subtype} you control connives"
+  | .empowerJace n =>
+    s!"Empower Jace {n}"
+  | .surveil n =>
+    s!"Surveil {n}"
+  | .millSelf n =>
+    s!"Mill {cardPhrase n}"
+  | .mayDiscardDraw n =>
+    s!"You may discard a card. If you do, draw {cardPhrase n}"
+  | .createTokensLifeGained kind =>
+    s!"Create X {kind.pluralNoun}, where X is the amount of life you gained this turn"
+  | .oppSacrificesGreatestMvGainLife life =>
+    s!"{capitalizeAscii noun} sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control. You gain {life} life"
+  | .eachCreatureYouControlBecomesPrepared =>
+    "Each creature you control becomes prepared"
+  | .damageThenEmpowerExcess n =>
+    s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
+  | .jaceLoyaltyAtInstantSpeed =>
+    "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
   | .sequence rs =>
     sequence rs
   | .spell r =>

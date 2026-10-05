@@ -237,6 +237,9 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalPermanentTargets caster (fun o =>
       o.controlledBy caster && o.isOnBattlefield && o.printed.isArtifact)
   | .twoArtifactsYouControl => #[]
+  | .creatureOrPlaneswalker =>
+    g.legalPermanentTargets caster (fun o =>
+      o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker))
   | .attackingAloneCreatureYouControl =>
     let attackers :=
       g.legalCreatureTargets caster (fun o =>

@@ -60,6 +60,8 @@ inductive TokenKind where
   | mowu
   /-- A 2/2 white Cat Soldier creature token named Ajani's Pridemate (FRA). -/
   | pridemate
+  /-- A 4/4 green Beast creature token with trample (FRA). -/
+  | beast44trample
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -96,6 +98,7 @@ def oracleNoun : TokenKind → String
   | .sculpture => "1/1 colorless Sculpture Treasure artifact creature token"
   | .mowu => "legendary 3/3 green Dog creature token named Mowu"
   | .pridemate => "2/2 white Cat Soldier creature token named Ajani's Pridemate"
+  | .beast44trample => "4/4 green Beast creature token with trample"
 
 /-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
 def pluralNoun (k : TokenKind) : String :=

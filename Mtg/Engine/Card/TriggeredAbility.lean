@@ -639,6 +639,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .setOtherBasePT =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
   | .onPermanent action => PermanentAction.toNotation action noun
+  | .surveil n => s!"surveil {n}"
+  | .empowerJace n => s!"empower Jace {n}"
+  | .prepareSourceIfNot => "if this creature isn't prepared, it becomes prepared"
+  | .prepareSourceIfThreeDied =>
+    "if three or more creatures died this turn, this creature becomes prepared"
   | .damageBlockers n =>
     s!"it deals {n} damage to each creature blocking it"
   | .scry n => s!"scry {n}"

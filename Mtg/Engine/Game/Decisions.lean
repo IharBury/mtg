@@ -40,15 +40,23 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     let pl := g.player p
     let lower := pl.library.extract 0 (pl.library.size - count)
     let mut g := g
-    for id in bottom do
-      g := g.logMsg
-        s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
+    let surveil := g.surveilling
+    if !surveil then
+      for id in bottom do
+        g := g.logMsg
+          s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
     if top != looked then
       for id in top do
         g := g.logMsg
           s!"{(g.player p).name} puts {(g.object! id).name} on top of their library"
     g := g.setPlayer { (g.player p) with library := bottom ++ lower ++ top }
-    g := { g with pending := .none }
+    if surveil then
+      -- CR 701.25a: the cards not kept on top go to the graveyard.
+      for id in bottom do
+        let name := (g.object! id).name
+        let (g', _) := g.move id (.graveyard p) none
+        g := g'.logMsg s!"{(g.player p).name} puts {name} into their graveyard (surveil)"
+    g := { g with pending := .none, surveilling := false }
     match g.pendingDrawAfterScry with
     | some (q, n) =>
       g := { g with pendingDrawAfterScry := none }
@@ -56,7 +64,7 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
       return g.receivePriority g.activePlayer
     | none =>
       return g.receivePriority g.activePlayer
-  | _ => throw "Not time to scry (CR 701.20)"
+  | _ => throw "Not time to scry or surveil (CR 701.20 / 701.25)"
 
 /-- Shared pending-discard core (CR 701.9): `p` must be the pending player
 `q` and `id` must be in `p`'s hand; the discard is logged (with `logSuffix`)

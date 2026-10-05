@@ -337,6 +337,19 @@ def reverseProposedSpell (g : Game) : Game :=
       for id in prop.tapped do
         if let some o := g.findObject? id then
           g := g.setObject { o with status := { o.status with tapped := false } }
+      -- Undo unpreparing the permanent whose prepare-spell copy was proposed.
+      match prop.kind, (prop.original.playPermission.bind (·.prepareSource)).bind g.findObject? with
+      | .spell, some src =>
+        g := g.setObject { src with status := { src.status with prepared := true } }
+      | _, _ => pure ()
+      -- Undo a paid loyalty cost (CR 606.4 / 733.1).
+      match prop.kind, prop.sourceId.bind g.findObject?,
+          (prop.activation.bind (·.cost.loyalty)).bind (·.counters) with
+      | .activatedAbility, some src, some k =>
+        g := g.setObject { src with status := { src.status with
+          loyaltyCounters := ((src.status.loyaltyCounters : Int) - k).toNat
+          loyaltyActivatedThisTurn := false } }
+      | _, _, _ => pure ()
       let reversed :=
         match prop.kind with
         | .spell => "the casting is reversed (CR 601.2 / 733.1)"

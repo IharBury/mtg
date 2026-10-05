@@ -45,6 +45,17 @@ def legendChoicePending? (g : Game) : Bool :=
   | .chooseLegend .. => true
   | _ => false
 
+/-- True when `controller` controls a permanent saying planeswalkers they
+control aren't put into graveyards for having 0 loyalty (Sanctum Lurker). -/
+def planeswalkersSurviveZeroLoyalty (g : Game) (controller : Option PlayerId) : Bool :=
+  match controller with
+  | none => false
+  | some p =>
+    (g.permanentsOf p).any (fun o =>
+      o.staticAbilities.any (fun
+        | .planeswalkersSurviveZeroLoyalty => true
+        | _ => false))
+
 /-- Default legend-rule choice: the copy that entered most recently. -/
 def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
   ids.foldl (fun best id =>
@@ -168,6 +179,14 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       for o in g.battlefield do
         if o.isCreature && o.status.dealtDeathtouch && g.hasIndestructible o then
           g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
+      -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
+      -- controls Sanctum Lurker (ruling 778).
+      for o in g.battlefield do
+        if o.printed.isPlaneswalker && o.status.loyaltyCounters == 0 &&
+            !g.planeswalkersSurviveZeroLoyalty o.controller then
+          g := g.moveToOwnerGraveyard o
+            s!"{o.name} is put into its owner's graveyard (0 loyalty, CR 704.5i)"
+          changed := true
       -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
       match g.firstLegendRuleChoice? with
       | some (p, name, ids) =>

@@ -66,7 +66,12 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     let g := (g.mapObjectStatus (g.object! o.id) (fun s => s.addDamage n deathtouch)).logMsg msg
     g.queueCreatureYouControlDealtDamage (g.object! o.id) n
   else
-  let g := (g.mapObjectStatus o (fun s => s.addDamage n deathtouch)).logMsg msg
+  -- CR 120.3c: damage dealt to a planeswalker removes that many loyalty counters.
+  let g := (g.mapObjectStatus o (fun s =>
+    let s := s.addDamage n deathtouch
+    if o.printed.isPlaneswalker && n > 0 then
+      { s with loyaltyCounters := s.loyaltyCounters - n.toNat }
+    else s)).logMsg msg
   let g :=
     if n > 0 then
       match o.controller with

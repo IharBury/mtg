@@ -47,6 +47,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
+  if g.splitSecondOnStack then
+    throw "A spell with split second is on the stack (CR 702.61a)"
   if p != g.activePlayer &&
       (g.permanentsOf g.activePlayer).any (fun o =>
         o.staticAbilities.any (fun
@@ -86,13 +88,14 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     | some perm =>
       if !perm.isOnBattlefield || !perm.status.prepared then
         throw s!"{perm.name} is not prepared"
+      if !perm.controlledBy p then
+        throw s!"Only {perm.name}'s controller may cast this copy (ruling 744)"
     | none => throw "The prepared permanent is gone"
   | none => pure ()
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
   -- cast as its Adventure.
-  let cost := g.playManaCost card face
   let fromGraveyard := card.zone == .graveyard card.owner
   let needsSacrifice :=
     face.additionalCostSacrificeArtifactOrCreature &&
@@ -104,9 +107,17 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let fromTop :=
     original.zone == .library p && (g.player p).library.back? == some id
   let (g, newId) := g.move id .stack (some p)
+  -- CR 601.2a / 601.2f: the total cost is determined after the spell is on
+  -- the stack (rulings 824 / 874).
+  let cost := g.playManaCost card face
+  -- Casting the exiled copy of a prepare spell unprepares its permanent. The
+  -- spell on the stack is a copy, so it isn't put into a graveyard later
+  -- (CR 707.10 / 704.5e).
   let g :=
     match original.playPermission.bind (·.prepareSource) with
     | some src =>
+      let o := g.object! newId
+      let g := g.setObject { o with isCopy := true }
       match g.findObject? src with
       | some perm =>
         (g.setObject { perm with status := { perm.status with prepared := false } }).logMsg

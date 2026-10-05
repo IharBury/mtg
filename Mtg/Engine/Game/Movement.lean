@@ -11,6 +11,47 @@ graveyard, and putting cards onto the battlefield (CR 611.3 / 603.6).
 namespace Mtg.Engine
 namespace Game
 
+/-- The copy of `srcId`'s prepare spell in exile, if any. -/
+def preparedCopyOf? (g : Game) (srcId : ObjectId) : Option GameObject :=
+  g.objects.find? (fun o =>
+    o.zone == .exile && (o.playPermission.bind (·.prepareSource)) == some srcId)
+
+/-- The exiled copy of `srcId`'s prepare spell ceases to exist. -/
+def removePreparedCopy (g : Game) (srcId : ObjectId) : Game :=
+  match g.preparedCopyOf? srcId with
+  | some c => (g.ceaseToExist c.id).logMsg s!"The copy of {c.name} in exile ceases to exist"
+  | none => g
+
+/-- `o` becomes prepared: its controller creates a copy of its prepare spell
+in exile and may cast that copy while `o` stays prepared (ruling 742). A
+creature without a prepare spell can't become prepared (ruling 747), and a
+prepared creature can't become prepared again (ruling 743). Only the printed
+prepare spell is copied, so copy exceptions on `o` don't apply (ruling 741). -/
+def becomePrepared (g : Game) (o : GameObject) : Game :=
+  match o.printed.prepareFace with
+  | none => g.logMsg s!"{o.name} has no prepare spell and can't become prepared"
+  | some face =>
+    if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
+    else
+      let p := o.controller.getD o.owner
+      let (g, copy) := g.allocObject face.toCardDef p .exile
+      let g := g.setObject { copy with playPermission := some {
+        player := p
+        turnEndsRemaining := 0
+        whileExiled := true
+        prepareSource := some o.id } }
+      let o := g.object! o.id
+      let g := g.setObject { o with status := { o.status with prepared := true } }
+      g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
+
+/-- `o` stops being prepared and the copy of its prepare spell in exile
+ceases to exist. Nothing happens if it isn't prepared (ruling 737). -/
+def unprepare (g : Game) (o : GameObject) : Game :=
+  if !o.status.prepared then g
+  else
+    let g := g.setObject { o with status := { o.status with prepared := false } }
+    (g.removePreparedCopy o.id).logMsg s!"{o.name} is no longer prepared"
+
 /-- True when `o` replaces an opposing creature dying with exile. -/
 def exilesOppDeath? (o : GameObject) : Bool :=
   o.printed.exileOppCreaturesInstead ||
@@ -111,6 +152,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else (#[] : Array WaitingTrigger)
   let g :=
     if old.zone == .battlefield then g.unattachFrom id else g
+  -- The copy of a prepare spell stays in exile only while its permanent is
+  -- on the battlefield (ruling 742).
+  let g :=
+    if old.zone == .battlefield then g.removePreparedCopy id else g
   let g := g.removeFromZoneList id old.zone
   let (g, newId) := g.allocId
   let (g, ts) := g.bumpTime

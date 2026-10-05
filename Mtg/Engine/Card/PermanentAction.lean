@@ -48,6 +48,10 @@ inductive PermanentAction where
   | becomeArtifactIndestructible
   /-- Until-end-of-turn +P/+T and these keywords. -/
   | pumpAndGrant (power toughness : Int) (k : Keywords)
+  /-- The permanent becomes prepared (Reality Fracture). -/
+  | becomePrepared
+  /-- Until-end-of-turn layer-7b base power and toughness (CR 613.4b). -/
+  | setBasePT (power toughness : Int)
 deriving Repr, Inhabited, BEq
 
 namespace PermanentAction
@@ -84,6 +88,9 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
       s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
     | .pumpAndGrant p t k =>
       s!"{noun} gets {signedStat p}/{signedStat t} and gains {k.joinedAnd} until end of turn"
+    | .becomePrepared => s!"{noun} becomes prepared"
+    | .setBasePT p t =>
+      s!"{noun} has base power and toughness {p}/{t} until end of turn"
   if sentence then capitalizeAscii raw else raw
 
 end PermanentAction

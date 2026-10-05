@@ -94,6 +94,10 @@ structure Player where
   /-- An artifact entered under this player's control this turn (Iron Man;
   MSH 242 / 323). Still true if that artifact later left or changed types. -/
   artifactEnteredThisTurn : Bool := false
+  /-- Until end of turn, loyalty abilities of Jace planeswalkers this player
+  controls may be activated any time they could cast an instant (Jace's
+  Machinations). Each permanent is still limited to one per turn (ruling 766). -/
+  jaceLoyaltyAtInstantSpeed : Bool := false
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/
   teammate : Option PlayerId := none
 deriving Repr, Inhabited

@@ -656,6 +656,10 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with costReductionEqualFlyingPower := true }
   else if low.startsWith "this spell costs {x} less to cast, where x is the greatest number of artifacts an opponent controls" then
     some { c with costReductionEqualOppArtifacts := true }
+  else if low.startsWith "this spell costs {x} less to cast, where x is the greatest power among creatures you control" then
+    some { c with costReductionGreatestPower := true }
+  else if low.startsWith "this spell costs {x} less to cast, where x is the greatest toughness among creatures you control" then
+    some { c with costReductionGreatestToughness := true }
   else if low.startsWith "this spell costs " && low.contains "less to cast if a creature died this turn" then
     n.map fun k => { c with costReductionIfCreatureDied := k }
   else if low.startsWith "this spell costs " && low.contains "dealt damage this turn" then
@@ -732,6 +736,10 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with entersTappedUnlessLegendary := true }
   else if low.contains "enters tapped unless you control an equipment" then
     some { c with entersTappedUnlessEquipment := true }
+  else if low.contains "enters tapped unless you control a planeswalker" then
+    some { c with entersTappedUnlessPlaneswalker := true }
+  else if low.contains "enters tapped unless you control two or more other lands" then
+    some { c with entersTappedUnlessTwoOtherLands := true }
   else if low.contains "you may pay" && low.contains "if you don't, it enters tapped" then
     let life :=
       match (low.splitOn "pay ").getLastD "" |>.takeWhile Char.isDigit with

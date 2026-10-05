@@ -1333,6 +1333,26 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | _ => g
   | .createRedwing =>
     g.createNamedToken controller redwingToken
+  | .surveil n =>
+    g.beginSurveil controller n
+  | .empowerJace n =>
+    g.empowerJace controller n
+  | .prepareSourceIfNot =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if !o.isOnBattlefield then g.logMsg s!"{o.name} is no longer on the battlefield"
+      else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
+      else g.becomePrepared o
+    | none => g.logMsg "The source is no longer on the battlefield"
+  | .prepareSourceIfThreeDied =>
+    if g.battlefieldCreaturesToGyThisTurn.size < 3 then
+      g.logMsg "Fewer than three creatures died this turn"
+    else
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.becomePrepared o
+        else g.logMsg s!"{o.name} is no longer on the battlefield"
+      | none => g.logMsg "The source is no longer on the battlefield"
   | .step e =>
     g.applyModeledTrigger controller (.onStep (Effect.ofTrigger (.step e))) sourceId targets sourceName lastKnownPower
   | .death e =>

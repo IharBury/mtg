@@ -50,13 +50,28 @@ def proposedSeedSuture : Game :=
   mustApply g ⟨0⟩ (.cast (seedSutureCopy g).id)
 
 #guard !(namedPermanent proposedSeedSuture "Blossom-Blessed Angel").status.prepared
-#guard proposedSeedSuture.pending == .activateManaAbilities ⟨0⟩
+#guard proposedSeedSuture.pending == .chooseTargets ⟨0⟩
+
+def targetedSeedSuture : Game :=
+  let angel := namedPermanent proposedSeedSuture "Blossom-Blessed Angel"
+  mustApply proposedSeedSuture ⟨0⟩ (.target (.permanent angel.id))
+
+#guard targetedSeedSuture.pending == .activateManaAbilities ⟨0⟩
 
 def paidSeedSuture : Game :=
-  mustApply proposedSeedSuture ⟨0⟩ .pay
+  mustApply targetedSeedSuture ⟨0⟩ .pay
 
 #guard paidSeedSuture.stack.size == 1
 #guard paidSeedSuture.log.any (fun s => mentions s "Seed Suture")
+
+/-- Seed Suture puts a +1/+1 counter on the Angel and gains 1 life. The
+copy of the prepare spell then ceases to exist instead of going to a
+graveyard. -/
+def resolvedSeedSuture : Game := passBoth paidSeedSuture
+
+#guard (namedPermanent resolvedSeedSuture "Blossom-Blessed Angel").status.plusOnePlusOne == 1
+#guard (resolvedSeedSuture.player ⟨0⟩).life == (paidSeedSuture.player ⟨0⟩).life + 1
+#guard !resolvedSeedSuture.objects.any (fun o => o.name == "Seed Suture")
 #guard karnGildedGuardian.manaCost.manaValue == 10
 
 end Mtg.Engine.Tests

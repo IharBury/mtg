@@ -27,10 +27,77 @@ def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
     let (g, _) := g.move src.id (.library owner) none
     g.requestShuffle owner after |>.continueIfShuffled
 
+/-- Damage beyond lethal damage dealt to `o` by `dealt` damage (CR 120.4a):
+beyond its toughness minus damage already marked for a creature, beyond its
+loyalty for a planeswalker (ruling 790), and beyond the greater of the two
+when it is both. -/
+def excessDamage (g : Game) (o : GameObject) (dealt : Nat) : Nat :=
+  let creatureLethal :=
+    if o.isCreature then (g.toughness o - o.status.damage).toNat else 0
+  let loyalty := if o.printed.isPlaneswalker then o.status.loyaltyCounters else 0
+  dealt - Nat.max creatureLethal loyalty
+
+/-- `pid` sacrifices a creature or planeswalker with the greatest mana value
+among creatures and planeswalkers they control, as one group (rulings
+771–773). With a tie, the most recent of them is sacrificed. -/
+def sacrificeGreatestManaValue (g : Game) (pid : PlayerId) : Game :=
+  let candidates := (g.permanentsOf pid).filter (fun o =>
+    o.isCreature || o.printed.isPlaneswalker)
+  let best := candidates.foldl (fun best o =>
+    match best with
+    | none => some o
+    | some b =>
+      let mo := g.objectManaValue o
+      let mb := g.objectManaValue b
+      if mo > mb || (mo == mb && o.timestamp ≥ b.timestamp) then some o else best) none
+  match best with
+  | none => g.logMsg s!"{(g.player pid).name} has no creature or planeswalker to sacrifice"
+  | some o => g.sacrificeToGraveyard o s!"{(g.player pid).name} sacrifices {o.name}"
+
+/-- Resolutions added for Reality Fracture, shared by spells and activated
+abilities. `none` for every other resolution. -/
+def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (sourceId : Option ObjectId) : Option Game :=
+  match effect.resolution with
+  | .empowerJace n => some (g.empowerJace controller n)
+  | .surveil n => some (g.beginSurveil controller n)
+  | .millSelf n => some (g.mill controller n)
+  | .mayDiscardDraw n =>
+    let pl := g.player controller
+    if pl.hand.isEmpty then some (g.logMsg s!"{pl.name} has no card to discard")
+    else
+      some ({ g with pending := .mayDiscardDraw controller n }.logMsg
+        s!"{pl.name} may discard a card. If they do, they draw {n}")
+  | .createTokensLifeGained kind =>
+    -- Ruling 755: counts life gained, ignoring life lost this turn.
+    some (g.createKindTokens controller kind (g.player controller).lifeGainedThisTurn)
+  | .oppSacrificesGreatestMvGainLife life =>
+    some (g.withLegalKindPlayer controller effect.targetKind targets (fun g pid =>
+      (g.sacrificeGreatestManaValue pid).gainLife controller life) sourceId)
+  | .eachCreatureYouControlBecomesPrepared =>
+    some ((g.permanentsOf controller).foldl (fun g o =>
+      if o.isCreature && o.printed.prepareFace.isSome then g.becomePrepared (g.object! o.id)
+      else g) g)
+  | .damageThenEmpowerExcess n =>
+    some (g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
+      let before := o.status.damage
+      let g := g.dealDamageToPermanent o n
+      let dealt := ((g.object! o.id).status.damage - before).toNat
+      let excess := g.excessDamage o dealt
+      if excess > 0 then g.empowerJace controller excess
+      else g) sourceId (some "The target is no longer legal"))
+  | .jaceLoyaltyAtInstantSpeed =>
+    let g := g.modifyPlayer controller (fun pl => { pl with jaceLoyaltyAtInstantSpeed := true })
+    some (g.logMsg s!"Until end of turn, {(g.player controller).name} may activate loyalty abilities of Jace planeswalkers they control any time they could cast an instant")
+  | _ => none
+
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0) : Game :=
+  match g.applyFraResolution? controller effect targets none with
+  | some g => g
+  | none =>
   match effect.resolution with
   | .sequence rs =>
     match rs.flatMap Resolution.flatten with
@@ -730,6 +797,9 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
 partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
+  match g.applyFraResolution? controller effect targets sourceId with
+  | some g => g
+  | none =>
   match effect.resolution with
   | .sequence rs =>
     match rs.flatMap Resolution.flatten with
@@ -1119,6 +1189,11 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     | some (Target.permanent id) => g.applyConnive controller (some id)
     | _ => g.applyConnive controller none
   | .sequence _ | .shuffleSource | .amassGoblins _ | .discard _ | .spell _ | .trigger _ =>
+    g
+  | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
+  | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
+  | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
+  | .jaceLoyaltyAtInstantSpeed =>
     g
 
 /-- Resolve a printed activated ability (CR 608). -/

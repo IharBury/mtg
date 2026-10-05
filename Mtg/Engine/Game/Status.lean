@@ -37,6 +37,8 @@ structure Status where
   plusOnePlusOne : Nat := 0
   /-- Loyalty counters on a planeswalker (CR 122.1 / 306.5). -/
   loyaltyCounters : Nat := 0
+  /-- A loyalty ability of this permanent was activated this turn (CR 606.3). -/
+  loyaltyActivatedThisTurn : Bool := false
   /-- This permanent is prepared (Reality Fracture). -/
   prepared : Bool := false
   /-- Keywords granted until end of turn (cleared in cleanup, CR 514.3).

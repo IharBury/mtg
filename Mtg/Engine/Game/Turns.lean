@@ -60,7 +60,7 @@ def clearTurnActivations (g : Game) : Game :=
       else if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
           pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
           pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 ||
-          pl.cardsDiscardedThisTurn != 0 then
+          pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -75,15 +75,18 @@ def clearTurnActivations (g : Game) : Game :=
           heroEnteredThisTurn := false
           attackedWithHeroThisTurn := false
           cardsDiscardedThisTurn := 0
-          artifactEnteredThisTurn := false }
+          artifactEnteredThisTurn := false
+          jaceLoyaltyAtInstantSpeed := false }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||
           !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
           o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn ||
-          o.status.becameTappedThisTurn || o.status.gotPlusOneThisTurn then
+          o.status.becameTappedThisTurn || o.status.gotPlusOneThisTurn ||
+          o.status.loyaltyActivatedThisTurn then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
+          loyaltyActivatedThisTurn := false
           firedOnceEachTurn := false
           optionalOnceUsed := false
           allianceModesChosen := #[]

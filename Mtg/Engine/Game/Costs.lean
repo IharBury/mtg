@@ -206,13 +206,23 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
           if o.isCreature && g.hasFlying o then acc + (g.power o).toNat else acc) 0
       afterGy.reduceGeneric n
     else afterGy
+  -- Ghalta: X is the greatest power or toughness among creatures you
+  -- control, determined after the spell is on the stack (rulings 824 / 874).
+  let afterGreatest :=
+    let creatures := (g.permanentsOf caster).filter (·.isCreature)
+    let greatest (f : GameObject → Int) : Nat :=
+      creatures.foldl (fun acc o => Nat.max acc (f o).toNat) 0
+    let n :=
+      (if face.costReductionGreatestPower then greatest g.power else 0) +
+        (if face.costReductionGreatestToughness then greatest g.toughness else 0)
+    afterFly.reduceGeneric n
   let afterAff :=
     match face.affinityForSubtype with
     | some t =>
       let st := if t == "Elves" then "Elf" else t
       let n := g.countSubtype caster st
-      afterFly.reduceGeneric n
-    | none => afterFly
+      afterGreatest.reduceGeneric n
+    | none => afterGreatest
   let afterOpp :=
     if face.costReductionEqualOppArtifacts then
       let n :=

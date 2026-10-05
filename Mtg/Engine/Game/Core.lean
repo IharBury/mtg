@@ -76,6 +76,9 @@ structure Game where
   isNight : Bool := false
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
+  /-- The pending library look is a surveil, not a scry: the cards not kept
+  on top go to the graveyard instead of the bottom (CR 701.25). -/
+  surveilling : Bool := false
   /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
   batch, so simultaneous deaths still see those sources (Gatherer).
   Objects are stored so a source that also dies still applies (CR 614.6). -/

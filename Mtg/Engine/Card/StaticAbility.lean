@@ -194,6 +194,17 @@ inductive StaticAbility where
   /-- You may activate abilities of creatures you control as though they had
   haste. -/
   | activateCreaturesAsThoughHaste
+  /-- Planeswalkers you control aren't put into their owners' graveyards for
+  having 0 loyalty (CR 704.5i; Sanctum Lurker). -/
+  | planeswalkersSurviveZeroLoyalty
+  /-- Artifacts and creatures entering the battlefield don't cause abilities
+  to trigger (Karn, Argent Defender). -/
+  | enteringArtifactsCreaturesDontTrigger
+  /-- Instant and sorcery spells you control have split second (CR 702.61). -/
+  | instantSorcerySplitSecond
+  /-- Power is the number of card types among cards in all graveyards and
+  toughness is that plus 1, in all zones (CR 604.3; Tarmogoyf). -/
+  | ptEqualGraveyardCardTypes
   /-- If you would put one or more counters on a permanent you control, put
   that many plus one of each of those kinds instead. -/
   | extraCounterOnPermanents
@@ -386,6 +397,10 @@ inductive StaticShape where
   | extraPowerUpActivation
   | otherPowerUpCostsLess (n : Nat)
   | activateCreaturesAsThoughHaste
+  | planeswalkersSurviveZeroLoyalty
+  | enteringArtifactsCreaturesDontTrigger
+  | instantSorcerySplitSecond
+  | ptEqualGraveyardCardTypes
   | extraCounterOnPermanents
   | mayBeginOnBattlefield
   | enchantedHasWard (w : Nat)
@@ -580,6 +595,10 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .extraPowerUpActivation => {}
   | .otherPowerUpCostsLess _ => {}
   | .activateCreaturesAsThoughHaste => {}
+  | .planeswalkersSurviveZeroLoyalty => {}
+  | .enteringArtifactsCreaturesDontTrigger => {}
+  | .instantSorcerySplitSecond => {}
+  | .ptEqualGraveyardCardTypes => {}
   | .extraCounterOnPermanents => {}
   | .mayBeginOnBattlefield => {}
   | .enchantedHasWard w => { grantedWard := some w }
@@ -702,6 +721,10 @@ def shape : StaticAbility → StaticShape
   | .extraPowerUpActivation => .extraPowerUpActivation
   | .otherPowerUpCostsLess n => .otherPowerUpCostsLess n
   | .activateCreaturesAsThoughHaste => .activateCreaturesAsThoughHaste
+  | .planeswalkersSurviveZeroLoyalty => .planeswalkersSurviveZeroLoyalty
+  | .enteringArtifactsCreaturesDontTrigger => .enteringArtifactsCreaturesDontTrigger
+  | .instantSorcerySplitSecond => .instantSorcerySplitSecond
+  | .ptEqualGraveyardCardTypes => .ptEqualGraveyardCardTypes
   | .extraCounterOnPermanents => .extraCounterOnPermanents
   | .mayBeginOnBattlefield => .mayBeginOnBattlefield
   | .enchantedCreatureHasWard w => .enchantedHasWard w
@@ -911,6 +934,14 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Power-up abilities of other creatures you control cost \{{n}} less to activate."
   | .activateCreaturesAsThoughHaste =>
     "You may activate abilities of creatures you control as though those creatures had haste."
+  | .planeswalkersSurviveZeroLoyalty =>
+    "Planeswalkers you control aren't put into their owners' graveyards for having 0 loyalty."
+  | .enteringArtifactsCreaturesDontTrigger =>
+    "Artifacts and creatures entering the battlefield don't cause abilities to trigger."
+  | .instantSorcerySplitSecond =>
+    "Instant and sorcery spells you control have split second."
+  | .ptEqualGraveyardCardTypes =>
+    "This creature's power is equal to the number of card types among cards in all graveyards and its toughness is equal to that number plus 1."
   | .extraCounterOnPermanents =>
     "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead."
   | .mayBeginOnBattlefield =>
