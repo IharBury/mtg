@@ -170,6 +170,8 @@ Nissa (CR 506.3). -/
 
 #guard ((helpInteractive false).splitOn "Attack that planeswalker").length > 1
 
+#guard ((helpInteractive false).splitOn "name <card name>").length > 1
+
 
 #guard
   let g := Tests.threeTwoOgresReady
