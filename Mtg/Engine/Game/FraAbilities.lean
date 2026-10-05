@@ -366,6 +366,10 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
   | .mayPayThenProliferate pay times =>
     g.beginFraChoice controller (.mayPayThen pay (.proliferate times) sourceId)
       s!"{(g.player controller).name} may pay \{{pay}}"
+  | .becomeArtifactCreatureUntilEot =>
+    onSource (fun g o =>
+      (g.mapObjectStatus o (fun s => { s with additionalCreatureUntilEot := true })).logMsg
+        s!"{o.name} becomes an artifact creature until end of turn")
   | .proliferate times =>
     if times == 0 then g
     else

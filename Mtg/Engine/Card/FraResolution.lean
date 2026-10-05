@@ -263,6 +263,9 @@ inductive FraResolution where
   | mayPayThenProliferate (pay times : Nat)
   /-- Proliferate `times` times (CR 701.34). -/
   | proliferate (times : Nat)
+  /-- The source Vehicle becomes an artifact creature until end of turn
+  (crew, CR 702.122). -/
+  | becomeArtifactCreatureUntilEot
   /-- The creature that caused this ability gets +P/+T until end of turn. -/
   | causeGetsPump (power toughness : Int)
   /-- Creatures attacking the player recorded as the cause's controller get

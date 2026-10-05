@@ -54,6 +54,9 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) : FraCost → Bool
     ((g.permanentsOf p).filter (fun x => x.printed.isArtifact && !x.status.tapped)).size ≥ 2
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
+  | .crew n =>
+    ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).foldl
+      (fun acc c => acc + (g.power c).toNat) 0 ≥ n
 
 /-- “For each opponent, up to one target … that player controls” as one
 optional target slot per opponent (CR 601.2c). -/
@@ -187,6 +190,9 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     (abilityEffect := if ab.isModal then none else some effect)
   let newId := abilityObj.id
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
+  if let .crew n := ab.cost.fra then
+    return { g with pending := .fraChoice p (.crew newId id n) }.logMsg
+      s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {o.name}"
   if !ab.isModal && !ab.effect.requiresTarget && !loyaltyX &&
       !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&
       !ab.cost.sacrificeAnotherCreatureOrArtifact then

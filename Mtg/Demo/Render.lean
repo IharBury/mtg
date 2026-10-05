@@ -777,6 +777,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .discardTwo .. => "discard two cards"
         | .mayMoveAllCounters .. => "may move all counters (accept or decline)"
         | .chooseCardName _ => "name a nonland card: name <card name>"
+        | .crew _ _ n => s!"choose creatures with total power {n} to crew: choose <id> ..., or decline"
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=

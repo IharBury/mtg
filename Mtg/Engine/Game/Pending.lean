@@ -180,6 +180,10 @@ inductive FraChoice where
   /-- Choose a nonland card name for `objectId` as it enters (Meddling
   Mage). Answered with `Action.chooseName`. -/
   | chooseCardName (objectId : ObjectId)
+  /-- Tap untapped creatures with total power `power` or more to pay the crew
+  cost of `vehicleId`'s ability `abilityId` (CR 702.122). Declining cancels
+  the activation. -/
+  | crew (abilityId vehicleId : ObjectId) (power : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

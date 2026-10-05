@@ -330,6 +330,24 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return (g.logMsg s!"{(g.player p).name} chooses {nm} for {o.name}").finishFraChoice
     | none => return g.finishFraChoice
   | .chooseCardName _, _ => throw "Name a nonland card"
+  | .crew _ vehicleId n, .objects ids =>
+    let some vehicle := g.findObject? vehicleId | throw "The Vehicle is gone"
+    if ids.toList.eraseDups.length != ids.size then throw "Choose each creature once"
+    let crew ← ids.mapM (fun id => do
+      let some c := g.findObject? id | throw "no such object"
+      if !c.isOnBattlefield || !c.isCreature || !c.controlledBy p || c.status.tapped || id == vehicleId then
+        throw s!"{c.name} can't crew {vehicle.name}"
+      pure c)
+    let total := crew.foldl (fun acc c => acc + (g.power c).toNat) 0
+    if total < n then throw s!"Total power {total} is less than {n}"
+    let g := crew.foldl (fun g c => g.becomeTapped (g.object! c.id)) g
+    let g := g.logMsg s!"{(g.player p).name} crews {vehicle.name}"
+    return (g.becomeActivated p vehicle.name (some vehicleId)).finishFraChoice
+  | .crew abilityId _ _, .decline =>
+    let g := (g.removeFromZoneList abilityId .stack).ceaseToExist abilityId
+    return (g.logMsg s!"{(g.player p).name} doesn't crew").receivePriority p
+  | .crew .., _ => throw "Choose creatures to tap, or decline"
+
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
 accepting only Sphinx's Approach and declining other optional actions. -/
@@ -373,6 +391,12 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     .choosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
   | .discardTwo .. => .choosePermanents ((g.player p).hand.extract 0 2)
   | .mayMoveAllCounters .. => .accept
+  | .crew _ vehicleId n =>
+    let cands := ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).qsort
+      (fun a b => g.power a > g.power b)
+    let (picked, _) := cands.foldl (fun (acc : Array ObjectId × Nat) c =>
+      if acc.2 ≥ n then acc else (acc.1.push c.id, acc.2 + (g.power c).toNat)) (#[], 0)
+    .choosePermanents picked
   | .chooseCardName _ =>
     -- Name a nonland card an opponent owns, else any nonland card.
     let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)

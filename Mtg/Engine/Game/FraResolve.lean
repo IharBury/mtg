@@ -761,7 +761,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .putCauseCountersOnSource
   | .mayMoveSourceCountersToTarget
   | .mayPayThenProliferate _ _
-  | .proliferate _ =>
+  | .proliferate _
+  | .becomeArtifactCreatureUntilEot =>
     g.applyFraAbility controller effect r targets sourceId
 
 end Game

@@ -60,6 +60,9 @@ inductive FraCost where
   | exileSourceFromHand
   /-- Exile this permanent. -/
   | exileSource
+  /-- Crew N: tap any number of untapped creatures you control with total
+  power N or more (CR 702.122). -/
+  | crew (power : Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- A Reality Fracture “Activate only if …” condition. -/
@@ -235,6 +238,12 @@ structure ActivatedAbility where
 deriving Repr, Inhabited, BEq
 
 namespace ActivatedAbility
+
+/-- The crew ability of a Vehicle with Crew `n` (CR 702.122). -/
+def crewAbility (n : Nat) : ActivatedAbility :=
+  { cost := { fra := .crew n }, printed := s!"Crew {n}"
+    effect := { resolution := .fra .becomeArtifactCreatureUntilEot
+                phrase := "This Vehicle becomes an artifact creature until end of turn" } }
 
 /-- Every mode of this ability; a non-modal ability is a singleton. -/
 def allModes (ab : ActivatedAbility) : Array Effect :=
