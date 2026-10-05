@@ -477,7 +477,9 @@ def helpInteractive (controlAll : Bool := false)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
-  scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
+  scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20); when surveilling, the bottom pile goes to the graveyard (CR 701.25)
+  convoke <id> [id...]  Tap those creatures to help pay for the spell (CR 702.51)
+  proliferate [id|name|opponent ...]  Give each chosen permanent and player another counter of each kind it has (CR 701.34)
   discard <id>         Discard a card (CR 701.9), or pay an additional cost
   discard              Choose to discard as an additional cost (CR 601.2b)
   attach <id>          Attach that Equipment you control

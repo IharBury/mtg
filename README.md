@@ -211,6 +211,15 @@ The first slice of the engine models the two-player game:
   hexproof and damage prevention while the Saga remains, draw, linked exile,
   delayed blink, Treasure-into-Dragon, recruit, and graveyard return), and
   sacrificing a Saga after its final chapter leaves the stack (CR 714.4)
+- planeswalkers: entering with loyalty (CR 306.5b), loyalty abilities once
+  per turn at sorcery speed with loyalty costs (CR 606), abilities granted to
+  planeswalkers you control, damage removing loyalty (CR 120.3c), and the
+  0-loyalty state-based action (CR 704.5i); emblems in the command zone
+- Reality Fracture mechanics checked against its judge rulings: Empower
+  Jace, prepare, surveil (CR 701.25), split second (CR 702.61), convoke
+  (CR 702.51), proliferate with a choice of permanents and players
+  (CR 701.34), stun counters (CR 122.1d), and instants and sorceries that
+  don't resolve when all their targets are illegal (CR 608.2b)
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,
   including choosing the starting player (CR 103.1), `autopay` to activate
