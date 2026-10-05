@@ -200,10 +200,16 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           (o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
             !g.hasEnduringStory ap) ||
           g.hostCantBecomeUntapped o
-        if o.status.tapped && !skipUntap then
+        -- CR 122.1d: a stun counter is removed instead of untapping.
+        let stunned := o.status.tapped && !skipUntap && o.status.stun > 0
+        if o.status.tapped && !skipUntap && !stunned then
           g := g.logMsg s!"{apName} untaps {o.name}"
-        let tapped := if skipUntap then o.status.tapped else false
-        g := g.setObject { o with status := { o.status with tapped := tapped, summoningSick := false } }
+        if stunned then
+          g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
+        let tapped := if skipUntap || stunned then o.status.tapped else false
+        let stun := if stunned then o.status.stun - 1 else o.status.stun
+        g := g.setObject { o with status :=
+          { o.status with tapped := tapped, stun := stun, summoningSick := false } }
       -- No priority (CR 502.4). Immediately continue.
       return g
   | .draw =>

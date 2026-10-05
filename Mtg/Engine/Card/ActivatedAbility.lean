@@ -55,6 +55,8 @@ structure ActivationCost where
   payLife : Nat := 0
   /-- Discard this card from your hand (CR 701.9 / 702.29, e.g. cycling). -/
   discardSource : Bool := false
+  /-- Exile this card from your graveyard. -/
+  exileSourceFromGraveyard : Bool := false
   /-- Sacrifice another permanent you control of this subtype. -/
   sacrificeAnotherSubtype : Option String := none
   /-- Discard a card (not necessarily this card). -/
@@ -96,6 +98,7 @@ def toNotation (c : ActivationCost) : String :=
     (if c.tap then ["{T}"] else []) ++
     (if c.payLife != 0 then [s!"Pay {c.payLife} life"] else []) ++
     (if c.discardSource then ["Discard this card"] else []) ++
+    (if c.exileSourceFromGraveyard then ["Exile this card from your graveyard"] else []) ++
     (if c.sacrificeSource && c.sacrificeLegendaryArtifact then
       ["Sacrifice Mount Doom and a legendary artifact"]
      else if c.sacrificeSource then ["Sacrifice"]

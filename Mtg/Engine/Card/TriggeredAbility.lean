@@ -663,6 +663,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put its counters on up to one target creature you control"
   | .chargeCounterOnSource => "put a charge counter on this enchantment"
   | .addGreenPerChargeCounter => "add {G} for each charge counter on this enchantment"
+  | .surveilReturnIfGainedLife =>
+    "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
   | .drawTwoWinIfEmptyShuffleSource =>
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
   | .pumpIfFiveOtherForests =>

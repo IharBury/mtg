@@ -42,7 +42,11 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     return g
   let fromGraveyard := src.zone == .graveyard src.owner && src.owner == p
   if fromGraveyard && !tapSource && !sacrificeSource then
-    return (← g.payLifeCost p payLife)
+    let g ← g.payLifeCost p payLife
+    if ab.any (·.cost.exileSourceFromGraveyard) then
+      let g := g.logMsg s!"{(g.player p).name} exiles {src.name} from their graveyard"
+      return (g.move sourceId .exile none).1
+    return g
   if !src.isOnBattlefield then
     throw "The source is no longer on the battlefield"
   if !src.controlledBy p then

@@ -162,6 +162,9 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
       g.logMsg s!"{o.name} can't become untapped"
     else if !o.status.tapped then
       g.logMsg s!"{o.name} is already untapped"
+    else if o.status.stun > 0 then
+      let g := g.mapObjectStatus o (fun s => { s with stun := s.stun - 1 })
+      g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it (CR 122.1d)"
     else
       let g := g.mapObjectStatus o (fun s => { s with tapped := false })
       g.logMsg s!"{o.name} untaps"
@@ -176,6 +179,11 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     let g := g.pumpPermanent o pw tw
     g.grantUntilEotLogged (g.object! o.id) k
   | .becomePrepared => g.becomePrepared o
+  | .tapAndStun =>
+    -- Ruling 764: an already tapped creature still gets the stun counter.
+    let g := if o.status.tapped then g else g.becomeTapped o
+    let g := g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + 1 })
+    g.logMsg s!"A stun counter is put on {o.name}"
   | .setBasePT pw tw =>
     let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
     g.logMsg s!"{o.name} has base power and toughness {pw}/{tw} until end of turn"
@@ -213,7 +221,7 @@ def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if count == 0 then
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
-    { g with pending := .scry p count, surveilling := false }.logMsg s!"{pl.name} scries {n}"
+    { g with pending := .scry p count, surveilling := false, surveilReturnMvAtMost := none }.logMsg s!"{pl.name} scries {n}"
 
 /-- Start surveilling `n` during resolution (CR 701.25): look at the top
 `n` cards, put any number into the graveyard and the rest back on top in any

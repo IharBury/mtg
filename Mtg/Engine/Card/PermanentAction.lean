@@ -52,6 +52,8 @@ inductive PermanentAction where
   | becomePrepared
   /-- Until-end-of-turn layer-7b base power and toughness (CR 613.4b). -/
   | setBasePT (power toughness : Int)
+  /-- Tap the permanent and put a stun counter on it (CR 122.1d). -/
+  | tapAndStun
 deriving Repr, Inhabited, BEq
 
 namespace PermanentAction
@@ -91,6 +93,7 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
     | .becomePrepared => s!"{noun} becomes prepared"
     | .setBasePT p t =>
       s!"{noun} has base power and toughness {p}/{t} until end of turn"
+    | .tapAndStun => s!"tap {noun} and put a stun counter on it"
   if sentence then capitalizeAscii raw else raw
 
 end PermanentAction

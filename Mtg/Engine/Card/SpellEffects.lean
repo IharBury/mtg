@@ -975,6 +975,9 @@ def emblemCastSpellDamage (n : Nat) : Effect :=
 def returnFromGyWithFinality : Effect :=
   mkAbility ({}) (.returnFromGyWithFinality)
 
+def tapAndStunTargetCreature : Effect :=
+  mkAbility (.of .creature) (.onPermanent .tapAndStun)
+
 def copyNextInstantSorceryThisTurn : Effect :=
   mkAbility ({}) (.copyNextInstantSorceryThisTurn)
 

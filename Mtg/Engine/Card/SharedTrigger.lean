@@ -778,6 +778,9 @@ inductive SharedTrigger where
   /-- If you control at least five other Forests, target creature you
   control gets +3/+3 until end of turn (Roiling Canopy). -/
   | pumpIfFiveOtherForests
+  /-- If you gained life this turn, surveil 1; a card with mana value at most
+  the life gained put into the graveyard this way goes to your hand. -/
+  | surveilReturnIfGainedLife
   /-- Apply `action` to the enchanted creature. -/
   | onEnchanted (action : PermanentAction)
   /-- Attach to target, then apply `followup`. -/

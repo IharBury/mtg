@@ -1359,6 +1359,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else
       g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
         g.pumpPermanent o 3 3)
+  | .surveilReturnIfGainedLife =>
+    -- Ruling 750: the life gained is checked as the ability resolves.
+    let n := (g.player controller).lifeGainedThisTurn
+    let g := g.beginSurveil controller 1
+    match g.pending with
+    | .scry _ _ => { g with surveilReturnMvAtMost := some n }
+    | _ => g
   | .drawTwoWinIfEmptyShuffleSource =>
     -- Ruling 835: you win while the ability resolves, before the
     -- state-based action for drawing from an empty library.

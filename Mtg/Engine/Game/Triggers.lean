@@ -57,6 +57,7 @@ def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
   | .prepareSourceIfThreeDied => g.battlefieldCreaturesToGyThisTurn.size ≥ 3
   | .sacrificeSourceIfNoPlaneswalker =>
     !(g.permanentsOf controller).any (·.printed.isPlaneswalker)
+  | .surveilReturnIfGainedLife => (g.player controller).lifeGainedThisTurn > 0
   | _ => true
 
 /-- True when any intervening trigger condition holds (e.g. Ferocious). -/

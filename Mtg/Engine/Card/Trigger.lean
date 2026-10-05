@@ -452,6 +452,8 @@ inductive TriggerResolution where
   | drawTwoWinIfEmptyShuffleSource
   /-- +3/+3 if you control at least five Forests other than the cause. -/
   | pumpIfFiveOtherForests
+  /-- Surveil 1; return a card with mana value at most the life gained. -/
+  | surveilReturnIfGainedLife
   /-- Resolve a leftover StepLeftover. -/
   | step (e : StepLeftover)
   /-- Resolve a leftover DeathLeftover. -/
@@ -879,6 +881,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.yourFirstMain], resolution := .addGreenPerChargeCounter }
   | .mayPayPlusOneAndDraw n => { resolution := .mayPayPlusOneAndDraw n }
   | .drawTwoWinIfEmptyShuffleSource => { resolution := .drawTwoWinIfEmptyShuffleSource }
+  | .surveilReturnIfGainedLife =>
+    { events := #[.yourEndStep], resolution := .surveilReturnIfGainedLife }
   | .pumpIfFiveOtherForests =>
     { targeting := .of .creatureYouControl, resolution := .pumpIfFiveOtherForests }
   | .onEnchanted action => { resolution := .onEnchanted action }

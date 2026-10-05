@@ -82,6 +82,9 @@ structure Game where
   /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
   permanent (Proft, Consulting Detective). -/
   mayPayAlsoPlusOneOn : Option ObjectId := none
+  /-- After the pending surveil, a card with mana value at most this put into
+  the graveyard goes to its owner's hand (Enlightened Confidant). -/
+  surveilReturnMvAtMost : Option Nat := none
   /-- The pending library look is a surveil, not a scry: the cards not kept
   on top go to the graveyard instead of the bottom (CR 701.25). -/
   surveilling : Bool := false

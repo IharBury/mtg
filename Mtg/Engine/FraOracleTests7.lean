@@ -17,7 +17,8 @@ import Mtg.Engine.Tests.Turns
 Chandra, Torch of Defiance: casting the exiled card as her ability resolves,
 her mana ability that uses the stack, and her emblem. Graft Surgeon,
 Gardenize, Loot, the Nexus, Proft, Consulting Detective, Fblthp,
-Roiling Canopy, and Grim Repriser.
+Roiling Canopy, Grim Repriser, Enlightened Confidant, Cryotheory Adept, and
+Campus Crier.
 -/
 
 namespace Mtg.Engine.FraRulingTests
@@ -291,5 +292,69 @@ finality counter. -/
   let g := resolveStack (mustApply g ⟨0⟩ .pay) 20
   (namedPermanent g "Grim Repriser").status.finality == 1
 #guard (fraRuling 805).comment.contains "doesn't need to have been in your graveyard"
+
+/-!
+## Cryotheory Adept and stun counters (ruling 764)
+-/
+
+/-- Nissa's Grizzly Bears is already tapped; it can still be targeted and
+gets a stun counter. Cryotheory Adept is exiled from the graveyard to pay. -/
+def adeptStunned : Game :=
+  let g := withBlueMana (addToGraveyard afterDraw cryotheoryAdept ⟨0⟩) ⟨0⟩ 4
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.mapObjectStatus (namedPermanent g "Grizzly Bears") (fun s => { s with tapped := true })
+  let g := mustApply g ⟨0⟩ (.activate (graveyardCard g ⟨0⟩ "Cryotheory Adept").id 0)
+  let g := mustApply g ⟨0⟩ (.target (.permanent (namedPermanent g "Grizzly Bears").id))
+  resolveStack (mustApply g ⟨0⟩ .pay) 20
+
+#guard (namedPermanent adeptStunned "Grizzly Bears").status.stun == 1
+#guard adeptStunned.objects.any (fun o => o.zone == .exile && o.name == "Cryotheory Adept")
+#guard (fraRuling 764).comment.contains "doesn't need to be untapped"
+
+/- In Nissa's untap step the stun counter is removed instead (CR 122.1d). -/
+#guard
+  let g := skipTo (passBoth (skipTo adeptStunned .end 80)) .upkeep 80
+  let bears := namedPermanent g "Grizzly Bears"
+  g.activePlayer == ⟨1⟩ && bears.status.tapped && bears.status.stun == 0
+
+/- Campus Crier empowers Jace from the graveyard, exiling itself. -/
+#guard
+  let g := withMana (addToGraveyard afterDraw campusCrier ⟨0⟩) ⟨0⟩ .white 1
+  let g := mustApply g ⟨0⟩ (.activate (graveyardCard g ⟨0⟩ "Campus Crier").id 0)
+  let g := resolveStack (mustApply g ⟨0⟩ .pay) 20
+  (jaceTokenOf g).status.loyaltyCounters == 2 &&
+    g.objects.any (fun o => o.zone == .exile && o.name == "Campus Crier")
+
+/-!
+## Enlightened Confidant (ruling 750)
+-/
+
+/-- Chandra controls Enlightened Confidant with `top` on top of her library,
+having gained `life`, and moves to her end step. -/
+def confidantEndStep (life : Nat) (top : CardDef) : Game :=
+  let g := addPermanent afterDraw enlightenedConfidant ⟨0⟩ ⟨0⟩
+  let g := addToLibraryTop g top ⟨0⟩
+  skipTo (g.gainLife ⟨0⟩ life) .end 80
+
+/- Without life gained this turn, it doesn't trigger. -/
+#guard (confidantEndStep 0 grizzlyBears).stack.isEmpty
+/- Gaining 3 life: Grizzly Bears (mana value 2) surveiled into the graveyard
+goes to Chandra's hand. -/
+#guard
+  let g := passBoth (confidantEndStep 3 grizzlyBears)
+  let g := mustApply g ⟨0⟩ (.scry #[] (g.scryLookedIds ⟨0⟩ 1))
+  (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Grizzly Bears")
+/- The life gained is checked as it resolves: gaining 1 more with the
+ability on the stack lets Hill Giant (mana value 4) come back. -/
+#guard
+  let g := confidantEndStep 3 hillGiant
+  let g := passBoth (g.gainLife ⟨0⟩ 1)
+  let g := mustApply g ⟨0⟩ (.scry #[] (g.scryLookedIds ⟨0⟩ 1))
+  (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Hill Giant")
+#guard
+  let g := passBoth (confidantEndStep 3 hillGiant)
+  let g := mustApply g ⟨0⟩ (.scry #[] (g.scryLookedIds ⟨0⟩ 1))
+  (g.player ⟨0⟩).graveyard.any (fun id => (g.object! id).name == "Hill Giant")
+#guard (fraRuling 750).comment.contains "the last part of the ability will check how much life you've gained as the ability resolves"
 
 end Mtg.Engine.FraRulingTests

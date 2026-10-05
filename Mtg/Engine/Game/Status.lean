@@ -73,6 +73,8 @@ structure Status where
   hope : Nat := 0
   /-- Charge counters (Gardenize). -/
   charge : Nat := 0
+  /-- Stun counters (CR 122.1d). -/
+  stun : Nat := 0
   /-- A once-each-turn triggered ability of this permanent has fired. -/
   firedOnceEachTurn : Bool := false
   /-- The optional action of a “Do this only once each turn” trigger has
@@ -208,7 +210,7 @@ def addDamage (s : Status) (n : Int) (deathtouch := false) : Status :=
 /-- True when this permanent has a counter (CR 122.1). -/
 def hasCounters (s : Status) : Bool :=
   s.plusOnePlusOne > 0 || s.loyaltyCounters > 0 || s.hope > 0 || s.charge > 0 ||
-    s.shield > 0 ||
+    s.stun > 0 || s.shield > 0 ||
     s.finality > 0 || s.plan > 0 || s.burden > 0 || s.quest > 0 || s.invasion > 0 ||
     s.influence > 0 || s.trampleCounters > 0 || s.indestructibleCounters > 0 ||
     s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0
@@ -219,6 +221,7 @@ def proliferatedExceptPlusOne (s : Status) : Status :=
   let inc (n : Nat) : Nat := if n > 0 then n + 1 else n
   { s with
     loyaltyCounters := inc s.loyaltyCounters, hope := inc s.hope, charge := inc s.charge
+    stun := inc s.stun
     shield := inc s.shield
     finality := inc s.finality, plan := inc s.plan, burden := inc s.burden
     quest := inc s.quest, invasion := inc s.invasion, influence := inc s.influence
@@ -233,6 +236,7 @@ def addCountersExceptPlusOne (s «from» : Status) : Status :=
   { s with
     loyaltyCounters := s.loyaltyCounters + «from».loyaltyCounters
     hope := s.hope + «from».hope, charge := s.charge + «from».charge
+    stun := s.stun + «from».stun
     shield := s.shield + «from».shield, finality := s.finality + «from».finality
     plan := s.plan + «from».plan, burden := s.burden + «from».burden
     quest := s.quest + «from».quest, invasion := s.invasion + «from».invasion

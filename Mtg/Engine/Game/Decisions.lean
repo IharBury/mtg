@@ -53,9 +53,16 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     if surveil then
       -- CR 701.25a: the cards not kept on top go to the graveyard.
       for id in bottom do
-        let name := (g.object! id).name
-        let (g', _) := g.move id (.graveyard p) none
-        g := g'.logMsg s!"{(g.player p).name} puts {name} into their graveyard (surveil)"
+        let card := g.object! id
+        let (g', newId) := g.move id (.graveyard p) none
+        g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their graveyard (surveil)"
+        match g.surveilReturnMvAtMost with
+        | some n =>
+          if g.objectManaValue card ≤ n then
+            let (g', _) := g.move newId (.hand p) none
+            g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
+        | none => pure ()
+    g := { g with surveilReturnMvAtMost := none }
     g := { g with pending := .none, surveilling := false }
     match g.pendingDrawAfterScry with
     | some (q, n) =>
