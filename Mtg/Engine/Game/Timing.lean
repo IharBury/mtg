@@ -31,6 +31,39 @@ def asSorcery? (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.stack.isEmpty &&
   g.step.isMainPhase && g.activePlayer == p && g.priority == p
 
+/-- True while a spell with split second is on the stack (CR 702.61a): an
+instant or sorcery spell whose controller controls a permanent granting
+instant and sorcery spells they control split second (Samut). -/
+def splitSecondOnStack (g : Game) : Bool :=
+  g.stack.any (fun e =>
+    match g.findObject? e.objectId with
+    | some o =>
+      o.abilityEffect.isNone && o.triggeredAbility.isNone &&
+        o.printed.isInstantOrSorcery &&
+        (g.permanentsOf e.controller).any (fun src =>
+          src.staticAbilities.any (fun
+            | .instantSorcerySplitSecond => true
+            | _ => false))
+    | none => false)
+
+/-- Yuriko, Blade of the Mighty: during combat, players can't cast spells or
+activate abilities that aren't mana abilities. -/
+def combatLocksNonManaAbilities (g : Game) : Bool :=
+  (g.step == .beginningOfCombat || g.step == .declareAttackers ||
+    g.step == .declareBlockers || g.step == .combatDamage || g.step == .endOfCombat) &&
+    g.battlefield.any (·.staticAbilities.any (· == .fra .noSpellsOrAbilitiesDuringCombat))
+
+/-- Mana abilities (CR 605.1a): no target, not a loyalty ability, and the
+effect adds mana. -/
+def isManaActivation (ab : ActivatedAbility) : Bool :=
+  !ab.effect.requiresTarget && ab.cost.loyalty.isNone &&
+    match ab.effect.resolution with
+    | .addMana _ | .addAnyColor | .addAnyColorSpendOnlySubtype _
+    | .addAnyColorSpendOnlyArtifactSpell | .addTwoAnyColorCreatureSources
+    | .addBlueCantNonartifact | .addAnyColorEqualToSourcePower
+    | .addFourAnyCombination | .addTwoAnyColorEquipment => true
+    | _ => false
+
 def hasPriority (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.priority == p && g.playersReceivePriority
 
@@ -59,16 +92,35 @@ def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
   match o.playPermission with
   | some perm =>
-    perm.player == p &&
+    -- Ruling 744: only the current controller of the prepared permanent may
+    -- cast the copy of its prepare spell.
+    let mayCast :=
+      match perm.prepareSource with
+      | some src =>
+        match g.findObject? src with
+        | some perm => perm.isOnBattlefield && perm.status.prepared && perm.controlledBy p
+        | none => false
+      | none => perm.player == p
+    mayCast &&
       (perm.fromAdventure || perm.whileExiled || perm.turnEndsRemaining > 0) &&
       (match perm.requireSubtype with
        | none => true
        | some t => g.controlsAnySubtype p #[t])
   | none => false
 
+/-- Null Summoner: `p` may cast a card it exiled while seven or more cards are
+in their graveyard. -/
+def mayCastExiledBySource (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.zone == .exile &&
+    match o.exiledBy.bind g.findObject? with
+    | some src =>
+      src.isOnBattlefield && src.controlledBy p && src.printed.castExiledWithSevenInGraveyard &&
+        (g.player p).graveyard.size ≥ 7
+    | none => false
+
 /-- Cards in exile that `p` currently may play. -/
 def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
-  g.objects.filter (fun o => g.mayPlayFromExile p o)
+  g.objects.filter (fun o => g.mayPlayFromExile p o || g.mayCastExiledBySource p o)
 
 /-- Mole Man lets you play land cards from your graveyard (MSH 253 / 254).
 Cycling and other activated abilities of those cards are still illegal. -/
@@ -80,7 +132,7 @@ def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p &&
-    (o.printed.flashback.isSome ||
+    (o.printed.flashback.isSome || o.flashbackUntilEot ||
       (o.printed.isLand && g.controlsPlayLandsFromGraveyard p))
 
 /-- True when `p` controls a permanent that lets them look at the library top. -/
@@ -114,11 +166,11 @@ def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
       (o.printed.isLand && g.controlsPlayLandsFromTop p))
 
 def mayPlay (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  (g.player p).hand.contains o.id || g.mayPlayFromExile p o ||
+  (g.player p).hand.contains o.id || g.mayPlayFromExile p o || g.mayCastExiledBySource p o ||
     g.mayPlayFromGraveyard p o || g.mayPlayFromLibraryTop p o
 
 def playZoneError (g : Game) (p : PlayerId) (o : GameObject) : String :=
-  if o.zone == .exile && !g.mayPlayFromExile p o then
+  if o.zone == .exile && !g.mayPlayFromExile p o && !g.mayCastExiledBySource p o then
     "You may not play that card from exile"
   else if o.zone == .graveyard p && !g.mayPlayFromGraveyard p o then
     "You may not play that card from your graveyard"

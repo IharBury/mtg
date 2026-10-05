@@ -89,6 +89,66 @@ def isOppStackSpellTarget (g : Game) (p : PlayerId) : Target → Bool
 def oppStackSpells (g : Game) (p : PlayerId) : Array GameObject :=
   g.stackSpells (fun o => (g.livingOpponents p).any (fun pl => o.controlledBy pl.id))
 
+/-- Whether `o` has card type `t`, counting type-changing effects on
+permanents. -/
+def objectHasCardType (o : GameObject) (t : CardType) : Bool :=
+  if t == .creature then o.isCreature else o.types.contains t || o.printed.types.contains t
+
+/-- Whether object `o` has every characteristic `f` asks for (CR 115.1).
+Zone and hexproof are checked by the caller. -/
+def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
+    (sourceId : Option ObjectId) (o : GameObject) : Bool :=
+  let typeOk :=
+    f.types.isEmpty || f.types.any (objectHasCardType o) || (f.orLegendary && o.isLegendary)
+  let colorOk := f.colors.isEmpty || f.colors.any (o.printed.colors.contains ·)
+  let who := o.controller.getD o.owner
+  let controllerOk :=
+    match f.controller with
+    | .any => true
+    | .you => who == caster
+    | .opponent | .eachOpponent => who != caster
+    | .specific idx => who.idx == idx
+  let mv := g.objectManaValue o
+  typeOk && colorOk && controllerOk &&
+    (!f.nonland || !objectHasCardType o .land) &&
+    (!f.noncreature || !objectHasCardType o .creature) &&
+    (!f.nonAura || !o.printed.isAura) &&
+    (!f.nontoken || !o.printed.isToken) &&
+    (!f.permanentCard || o.printed.isPermanentCard) &&
+    (!f.legendary || o.isLegendary) &&
+    (!f.nonlegendary || !o.isLegendary) &&
+    (f.mvAtLeast.all (mv ≥ ·)) && (f.mvAtMost.all (mv ≤ ·)) &&
+    (f.toughnessAtLeast.all (g.toughness o ≥ ·)) &&
+    (!f.another || some o.id != sourceId) &&
+    (!f.withFlying || g.hasFlying o) &&
+    (!f.withPlusOneCounter || o.status.plusOnePlusOne > 0) &&
+    (!f.attacking || o.status.attacking) &&
+    (!f.attackingOrBlocking || o.status.attacking || !o.status.blocking.isEmpty) &&
+    (!f.attackedThisTurn || o.status.declaredAsAttackerThisTurn) &&
+    (!f.enteredThisTurn || o.status.enteredThisTurn) &&
+    (!f.untapped || !o.status.tapped)
+
+/-- Legal targets described by a `TargetFilter` (CR 115.1). -/
+def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
+    (sourceId : Option ObjectId) : Array Target :=
+  let ok := g.matchesTargetFilter caster f sourceId
+  match f.zone with
+  | .battlefield => g.legalPermanentTargets caster (fun o => o.isOnBattlefield && ok o)
+  | .yourGraveyard => g.legalGraveyardCardTargets caster ok
+  | .anyGraveyard =>
+    g.livingPlayers.foldl (fun acc pl => acc ++ g.legalGraveyardCardTargets pl.id ok) #[]
+  | .stack => g.legalStackSpellTargets ok
+  | .spellOrCreature =>
+    g.legalStackSpellTargets ok ++
+      g.legalPermanentTargets caster (fun o => o.isOnBattlefield && o.isCreature && ok o)
+  | .player =>
+    playerTargets (g.livingPlayers.filter (fun pl =>
+      match f.controller with
+      | .any => true
+      | .you => pl.id == caster
+      | .opponent | .eachOpponent => pl.id != caster
+      | .specific idx => pl.id.idx == idx))
+
 /-- Legal targets for an atomic targeting shape (no sequential slots). -/
 def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
     (sourceId : Option ObjectId) : Array Target :=
@@ -101,8 +161,10 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .anotherCreature =>
     g.legalCreatureTargets caster (fun o => some o.id != sourceId)
   | .playerOrCreature =>
+    -- CR 115.4: “any target” is a creature, player, planeswalker, or battle.
     playerTargets g.livingPlayers ++
-      g.legalCreatureTargets caster (fun _ => true)
+      g.legalPermanentTargets caster (fun o =>
+        o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker || o.printed.isBattle))
   | .elfInYourGraveyard =>
     g.legalGraveyardCardTargets caster (fun o => g.hasSubtype o "Elf")
   | .oppCreature =>
@@ -237,6 +299,26 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalPermanentTargets caster (fun o =>
       o.controlledBy caster && o.isOnBattlefield && o.printed.isArtifact)
   | .twoArtifactsYouControl => #[]
+  | .creatureOrPlaneswalker =>
+    g.legalPermanentTargets caster (fun o =>
+      o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker))
+  | .permanentYouControl =>
+    g.legalPermanentTargets caster (fun o => o.isOnBattlefield && o.controlledBy caster)
+  | .oppPermanent =>
+    g.legalPermanentTargets caster (fun o =>
+      o.isOnBattlefield && o.controller.isSome && !o.controlledBy caster)
+  | .planeswalkerYouControl =>
+    g.legalPermanentTargets caster (fun o =>
+      o.isOnBattlefield && o.printed.isPlaneswalker && o.controlledBy caster)
+  | .oppCreatureOrPlaneswalker =>
+    g.legalPermanentTargets caster (fun o =>
+      o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker) &&
+        o.controller.isSome && !o.controlledBy caster)
+  | .creatureYouControlThenOppCreatureOrPlaneswalker => #[]
+  | .planeswalkerYouControlThenOppCreatureOrPlaneswalker => #[]
+  | .anotherCreatureYouControlPowerAtMost n =>
+    g.legalCreatureTargets caster (fun o =>
+      o.controlledBy caster && some o.id != sourceId && g.snapshotPower o <= n)
   | .attackingAloneCreatureYouControl =>
     let attackers :=
       g.legalCreatureTargets caster (fun o =>
@@ -251,6 +333,8 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       g.legalPermanentTargets caster (·.isOnBattlefield)
   | .upToTwoCreaturesTotalMvAtMost n =>
     g.legalCreatureTargets caster (fun o => o.printed.manaValue ≤ n)
+  | .filtered f => g.legalFilteredTargets caster f sourceId
+  | .multi .. => #[]
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
 `sourceId` excludes the source of an “another” creature. Shapes with
@@ -287,7 +371,7 @@ def triggerStillNeedsTargets (e : StackEntry) (ab : TriggeredAbility) : Bool :=
   match ab.dividedDamage? with
   | some (amount, _) => assignedDividedDamage e < amount
   | none =>
-    if ab.allowsZeroTargets then !e.targetsAnnounced
+    if ab.allowsZeroTargets || ab.targeting.kind.spec.slots.size > 1 then !e.targetsAnnounced
     else ab.requiresTarget && e.targets.isEmpty
 
 /-- Stack entry for a triggered ability that still needs targets announced
@@ -297,9 +381,16 @@ def triggerNeedingTargets (g : Game) : Option StackEntry :=
   g.stack.find? (fun e =>
     match g.findObject? e.objectId with
     | some o =>
-      match o.triggeredAbility with
-      | some ab => triggerStillNeedsTargets e ab
-      | none => false
+      match o.triggeredAbility, o.abilityEffect with
+      | some _, some eff =>
+        -- A modal trigger whose modes were chosen (CR 603.3c).
+        if eff.allowsZeroTargets || eff.targetKind.spec.slots.size > 1 then !e.targetsAnnounced
+        else eff.requiresTarget && e.targets.isEmpty
+      | some ab, none =>
+        match ab.effect.resolution with
+        | .fra (.chooseTriggerModes _) => false
+        | _ => triggerStillNeedsTargets e ab
+      | none, _ => false
     | none => false)
 
 end Game

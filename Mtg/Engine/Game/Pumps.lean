@@ -180,6 +180,7 @@ def isWorthyPermanent (_g : Game) (o : GameObject) : Bool :=
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let n := g.extraCountersOn o.controller n
+  let n := g.extraPlusOneOnCreature o n
   let g := g.mapObjectStatus o (fun s =>
     { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 })
   let g := g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"

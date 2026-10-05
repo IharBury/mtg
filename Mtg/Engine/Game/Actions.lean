@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Decisions
+import Mtg.Engine.Game.FraChoices
 
 /-!
 # Applying player actions
@@ -19,22 +19,28 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
     | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
     | .mayPutLandFromHand _ => g.putLandFromHandTapped p id
     | .mayPutArtifactFromHand .. => g.choosePutArtifactFromHand p id
+    | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
+    | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .chooseMode idx =>
     match g.pending with
+    | .fraChoice .. => g.answerFraChoice p (.mode idx)
     | .chooseFoodOrTreasure _ => g.chooseFoodOrTreasure p idx
     | .chooseTapOrUntap _ tid => g.chooseTapOrUntap p idx tid
     | _ => g.announceMode p idx
   | .chooseX n => g.announceX p n
   | .target t => g.announceTarget p t
-  | .targets ts => g.announceTargets p ts
+  | .targets ts =>
+    match g.pending with
+    | .chooseProliferate .. => g.finishProliferate p ts
+    | _ => g.announceTargets p ts
   | .divideDamage as => g.announceDividedDamage p as
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
   | .sacrifice id => g.sacrificeForActivation p id
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
-  | .declareAttackers ids defender each => g.declareAttackers p ids defender each
+  | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
   | .declareBlockers as => g.declareBlockers p as
   | .assignCombatDamage asgns => g.announceCombatDamage p asgns
   | .keep => g.keepOpeningHand p
@@ -43,13 +49,34 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .takeMulligan => g.takeMulligan p
   | .putOnBottom ids => g.putCardsOnBottom p ids
   | .scry top bottom => g.finishScry p top bottom
+  | .surveil top graveyard => g.finishSurveil p top graveyard
   | .discard id => g.discardForDraw p id
-  | .decline => g.decline p
+  | .decline =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p .decline
+    | _ => g.decline p
+  | .accept =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p .accept
+    | _ => throw "Nothing to accept now"
   | .haveVillainConnive => g.haveVillainConnive p
-  | .payGeneric => g.payGeneric p
-  | .chooseTop => g.chooseLibrarySide p true
-  | .chooseBottom => g.chooseLibrarySide p false
-  | .choosePermanents ids => g.choosePermanents p ids
+  | .payGeneric =>
+    match g.pending with
+    | .fraChoice _ (.mayPayThen ..) => g.answerFraChoice p .accept
+    | _ => g.payGeneric p
+  | .chooseTop =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p .accept
+    | _ => g.chooseLibrarySide p true
+  | .chooseBottom =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p .decline
+    | _ => g.chooseLibrarySide p false
+  | .choosePermanents ids =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p (.objects ids)
+    | .activateManaAbilities _ => g.convoke p ids
+    | _ => g.choosePermanents p ids
   | .announceKicker kick => g.announceKicker p kick
   | .announceGift to => g.announceGift p to
   | .announceTeamwork pay => g.announceTeamwork p pay
@@ -57,6 +84,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .concede => return g.concede p
   | .supplyOrder ids => g.supplyOrder ids
   | .supplyIndex i => g.supplyIndex i
+  | .chooseName name => g.answerFraChoice p (.name name)
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
   (g.player p).hand.filterMap (fun id => g.findObject? id)
@@ -80,6 +108,7 @@ def actor (g : Game) : Option PlayerId :=
     | .declareMulligan p => who p
     | .putOnBottom p _ => who p
     | .scry p _ => who p
+    | .surveil p _ => who p
     | .mayDiscardDraw p _ => who p
     | .chooseAdditionalCost p => who p
     | .chooseSacrificeCreature p _ _ => who p
@@ -107,6 +136,9 @@ def actor (g : Game) : Option PlayerId :=
     | .maySacArtifactOrDiscard p => who p
     | .mayPutArtifactFromHand p _ => who p
     | .mayHaveVillainConnive p _ _ => who p
+    | .chooseProliferate p _ => who p
+    | .fraChoice p _ => who p
+    | .mayCastExiledElseDamage p _ _ => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p

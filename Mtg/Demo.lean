@@ -404,8 +404,8 @@ def loadSeats (players : Array DemoPlayer) : IO (Except String (Array Seat)) := 
     | .file path =>
       match (← loadDeckListFile path) with
       | .error e => return .error e
-      | .ok cards =>
-        seats := seats.push { name := p.name, deck := cards }
+      | .ok (cards, sideboard) =>
+        seats := seats.push { name := p.name, deck := cards, sideboard }
   return .ok seats
 
 /-- Create the demo game after the starting player is known (CR 103.1). -/
@@ -478,15 +478,25 @@ def helpInteractive (controlAll : Bool := false)
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
   scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
+  surveil              Finish surveilling; keep looked-at cards on top
+  surveil top <id>...  Keep listed cards on top (last = new top); rest go to the graveyard
+  surveil graveyard <id>...  Put listed cards into the graveyard in that order; rest stay on top
+  surveil top <id>... graveyard <id>...  Choose both piles and their orders (CR 701.25)
+  convoke <id> [id...]  Tap those creatures to help pay for the spell (CR 702.51)
+  proliferate [id|name|opponent ...]  Give each chosen permanent and player another counter of each kind it has (CR 701.34)
   discard <id>         Discard a card (CR 701.9), or pay an additional cost
   discard              Choose to discard as an additional cost (CR 601.2b)
   attach <id>          Attach that Equipment you control
   connive              Have the entering Villain connive (Baron Strucker)
   decline              Decline an optional discard, attach, cast, put, connive, or choose no target
+  accept               Agree to an optional action offered while an effect resolves
+  choose <id> [id...]  Choose cards or permanents an effect asks for
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   attack [id...] [at] <name|opponent>  Attack those (or all that can) at that player
   attack <id> [at] <name> <id> [at] <name> ...  Each listed creature attacks that player
+  attack <id> at <planeswalker id>  Attack that planeswalker
+  name <card name>     Name a card when asked (Meddling Mage)
   noattack             Declare no attackers
   block                Block each attacker with a legal unused blocker
   block <b> <a> [...]  Assign listed blocker/attacker pairs
@@ -579,7 +589,7 @@ where
       if t == kw then (acc.reverse, some rest)
       else go (t :: acc) rest
 
-def attackUsage : String := "usage: attack [id ...] [at] <name|opponent> ..."
+def attackUsage : String := "usage: attack [id ...] [at] <name|opponent|planeswalker id> ..."
 
 /-- True when `token` names a player or `opponent`. -/
 def isAttackDefenderToken (g : Game) (token : String) : Bool :=
@@ -596,6 +606,22 @@ def parseAttackDefender (g : Game) (p : PlayerId) (token : String) : Except Stri
     | none => throw attackUsage
     | some pl => g.resolveAttackDestination p (some pl.id)
 
+/-- Where an `attack` command sends a creature: a player, or a planeswalker
+that player controls (CR 506.3). -/
+abbrev AttackDest := PlayerId × Option ObjectId
+
+/-- Parse an `at` destination: a player, `opponent`, or a planeswalker id. -/
+def parseAttackDest (g : Game) (p : PlayerId) (token : String) : Except String AttackDest :=
+  match parseObjectId? token with
+  | some id =>
+    match g.findObject? id with
+    | some pw =>
+      if pw.isOnBattlefield && pw.printed.isPlaneswalker then
+        .ok (pw.controller.getD pw.owner, some id)
+      else .error s!"{pw.name} is not a planeswalker on the battlefield"
+    | none => .error attackUsage
+  | none => (parseAttackDefender g p token).map (·, none)
+
 /-- Attackers for an interactive `attack` command. Omitted ids mean every
 creature that currently can attack. -/
 def attackerIdsForCommand (g : Game) (tokens : List String) : Except String (Array ObjectId) :=
@@ -606,20 +632,20 @@ def attackerIdsForCommand (g : Game) (tokens : List String) : Except String (Arr
     parseObjectIds tokens attackUsage
 
 /-- Split `attack` tokens into per-creature destinations. A player name or
-`at <name|opponent>` applies to the preceding ids (or to every creature
-that can attack if none were listed). Later pairs may name a different
-player (CR 508.1). -/
+`at <name|opponent|planeswalker id>` applies to the preceding ids (or to
+every creature that can attack if none were listed). Later pairs may name a
+different player or planeswalker (CR 508.1). -/
 def parseAttackCommand (g : Game) (p : PlayerId) (tokens : List String) :
-    Except String (Array (ObjectId × Option PlayerId)) :=
+    Except String (Array (ObjectId × Option AttackDest)) :=
   let tokens := commandTokens tokens
   go tokens #[] #[] none
 where
-  flush (ids : Array ObjectId) (dest : Option PlayerId)
-      (acc : Array (ObjectId × Option PlayerId)) :
-      Array (ObjectId × Option PlayerId) :=
+  flush (ids : Array ObjectId) (dest : Option AttackDest)
+      (acc : Array (ObjectId × Option AttackDest)) :
+      Array (ObjectId × Option AttackDest) :=
     ids.foldl (fun a id => a.push (id, dest)) acc
-  go : List String → Array ObjectId → Array (ObjectId × Option PlayerId) →
-      Option PlayerId → Except String (Array (ObjectId × Option PlayerId))
+  go : List String → Array ObjectId → Array (ObjectId × Option AttackDest) →
+      Option AttackDest → Except String (Array (ObjectId × Option AttackDest))
     | [], pending, acc, defaultDest =>
       if pending.isEmpty && acc.isEmpty then
         .ok ((g.battlefield.filter (g.canAttack) |>.map (·.id)).map (fun id =>
@@ -632,7 +658,7 @@ where
       match rest with
       | [] => .error attackUsage
       | name :: rest' =>
-        match parseAttackDefender g p name with
+        match parseAttackDest g p name with
         | .error e => .error e
         | .ok dest =>
           if pending.isEmpty then
@@ -645,8 +671,8 @@ where
         match parseAttackDefender g p t with
         | .error e => .error e
         | .ok dest =>
-          if pending.isEmpty then go rest #[] acc (some dest)
-          else go rest #[] (flush pending (some dest) acc) defaultDest
+          if pending.isEmpty then go rest #[] acc (some (dest, none))
+          else go rest #[] (flush pending (some (dest, none)) acc) defaultDest
       else
         match parseObjectId? t with
         | none => .error attackUsage
@@ -655,9 +681,10 @@ where
 def applyAttack (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let attacks ← parseAttackCommand g p tokens
   let ids := attacks.map (·.1)
-  let each := attacks.map (·.2)
+  let each := attacks.map (fun a => a.2.map (·.1))
+  let pws := attacks.map (fun a => a.2.bind (·.2))
   requireObjects g ids
-  g.apply p (.declareAttackers ids none each)
+  g.apply p (.declareAttackers ids none each pws)
 
 /-- Pair unused legal blockers with attackers. A creature with menace is
 covered only when two blockers can be assigned (CR 702.111b); leftover
@@ -1042,6 +1069,21 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
     | _ :: _ :: _ => throw sequentialTargetUsage
     | _ => throw targetUsage
 
+/-- Convoke (CR 702.51): `convoke <id> ...` taps those creatures to pay for
+the spell being cast. -/
+def applyConvoke (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let ids ← parseObjectIds (commandTokens tokens) "usage: convoke <id> ..."
+  requireObjects g ids
+  g.apply p (.choosePermanents ids)
+
+/-- Proliferate once (CR 701.34): `proliferate` chooses nothing;
+`proliferate <id|player> ...` gives each another counter of each kind. -/
+def applyProliferate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let ts ← (commandTokens tokens).foldlM (fun acc arg => do
+    let t ← parseTarget g p arg
+    pure (acc.push t)) #[]
+  g.apply p (.targets ts)
+
 def scryUsage : String := "usage: scry [top <id> ...] [bottom <id> ...]"
 
 /-- Finish a pending scry (CR 701.20). Bare `scry` keeps the looked-at cards
@@ -1078,7 +1120,45 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
           pure ids
       g.apply p (.scry topIds bottomIds)
     | _ => throw scryUsage
+  | .surveil _ _ => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
   | _ => throw "Not time to scry (CR 701.20)"
+
+def surveilUsage : String := "usage: surveil [top <id> ...] [graveyard <id> ...]"
+
+/-- Finish a pending surveil (CR 701.25). Bare `surveil` keeps the looked-at
+cards on top in their current order. `surveil graveyard <ids>` puts those
+cards into the graveyard in that order and the rest stay on top in their
+current relative order. `surveil top <ids>` keeps those cards on top
+(last = new top) and puts the rest into the graveyard. Both piles may be
+listed to choose each order. -/
+def applySurveil (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  match g.pending with
+  | .surveil q n =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may surveil"
+    let looked := g.scryLookedIds p n
+    match commandTokens tokens with
+    | [] => g.apply p (.surveil looked #[])
+    | "graveyard" :: rest =>
+      let ids ← parseObjectIds rest surveilUsage
+      requireObjects g ids
+      g.apply p (.surveil (looked.filter (fun id => !ids.contains id)) ids)
+    | "top" :: rest =>
+      let (topToks, gyRest) := splitAtKeyword "graveyard" rest
+      let topIds ← parseObjectIds topToks surveilUsage
+      requireObjects g topIds
+      let graveyardIds ←
+        match gyRest with
+        | none => pure (looked.filter (fun id => !topIds.contains id))
+        | some [] => pure #[]
+        | some ts =>
+          let ids ← parseObjectIds ts surveilUsage
+          requireObjects g ids
+          pure ids
+      g.apply p (.surveil topIds graveyardIds)
+    | _ => throw surveilUsage
+  | .scry _ _ => throw "You are scrying, not surveilling; use scry (CR 701.20)"
+  | _ => throw "Not time to surveil (CR 701.25)"
 
 def discardUsage : String := "usage: discard <id>"
 
@@ -1105,6 +1185,21 @@ def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
   match commandTokens tokens with
   | [] => g.apply p .decline
   | _ => throw declineUsage
+
+def acceptUsage : String := "usage: accept"
+def chooseUsage : String := "usage: choose <id> ..."
+
+/-- Agree to an optional action offered while an effect resolves. -/
+def applyAccept (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  match commandTokens tokens with
+  | [] => g.apply p .accept
+  | _ => throw acceptUsage
+
+/-- Choose cards or permanents for a choice made while an effect resolves. -/
+def applyChoose (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let ids ← parseObjectIds (commandTokens tokens) chooseUsage
+  requireObjects g ids
+  g.apply p (.choosePermanents ids)
 
 /-- Have the entering Villain connive (Baron Strucker; MSH 422). -/
 def applyConniveChoice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
@@ -1608,10 +1703,19 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "cast" => applyCast g p args
   | "target" => applyTarget g p args
   | "scry" => applyScry g p args
+  | "surveil" => applySurveil g p args
+  | "proliferate" => applyProliferate g p args
+  | "convoke" => applyConvoke g p args
   | "discard" => applyDiscard g p args
   | "attach" => applyAttach g p args
   | "connive" => applyConniveChoice g p args
   | "decline" => applyDecline g p args
+  | "accept" => applyAccept g p args
+  | "choose" => applyChoose g p args
+  | "name" =>
+    match args with
+    | [] => .error "usage: name <card name>"
+    | _ => g.apply p (.chooseName (" ".intercalate args))
   | "shuffle" => applyShuffle g args
   | "order" => applyOrder g args
   | "pick" => applyPick g args

@@ -17,6 +17,9 @@ def clearEOT (g : Game) : Game :=
       creaturesWithoutFlyingCantBlock := false
       assignCombatDamageEqualToughness := none }
     g := g.restoreCopiesUntilEot
+    for pl in g.players do
+      if pl.legendRuleOffThisTurn then
+        g := g.setPlayer { pl with legendRuleOffThisTurn := false }
     for o in g.battlefield do
       if o.status.controlUntilEot then
         g := g.endControlChangingEffect (g.object! o.id)
@@ -46,12 +49,17 @@ def clearTurnActivations (g : Game) : Game :=
   Id.run do
     let mut g := { g with
       creatureDiedThisTurn := false
+      creatureDeathsThisTurn := 0
       battlefieldCreaturesToGyThisTurn := #[]
       lastLifeLost := none
       lastNoncombatDamage := none
       sheHulkDamageUsedThisTurn := false
       pendingFreeRGCreature := none
       zemoBoastExiles := #[] }
+    -- Stingcaster Mage: flashback granted until end of turn ends.
+    for o in g.objects do
+      if o.flashbackUntilEot then
+        g := g.setObject { o with flashbackUntilEot := false }
     for pl in g.players do
       if pl.lost then
         -- Keep last-known this-turn info until that turn would have begun
@@ -60,7 +68,11 @@ def clearTurnActivations (g : Game) : Game :=
       else if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
           pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
           pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 ||
-          pl.cardsDiscardedThisTurn != 0 then
+          pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed ||
+          pl.scriedOrSurveilledThisTurn || pl.copyNextInstantSorceryThisTurn != 0 ||
+          pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
+          pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
+          pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -75,15 +87,26 @@ def clearTurnActivations (g : Game) : Game :=
           heroEnteredThisTurn := false
           attackedWithHeroThisTurn := false
           cardsDiscardedThisTurn := 0
-          artifactEnteredThisTurn := false }
+          artifactEnteredThisTurn := false
+          jaceLoyaltyAtInstantSpeed := false
+          scriedOrSurveilledThisTurn := false
+          copyNextInstantSorceryThisTurn := 0
+          dealtNoncombatDamageThisTurn := false
+          dealtNoncombatDamageLastTurn := pl.dealtNoncombatDamageThisTurn
+          activatedLoyaltyThisTurn := false
+          cardsMilledThisTurn := 0
+          mountainExtraRedThisTurn := 0
+          nextSpellCantBeCountered := false }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||
           !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
           o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn ||
-          o.status.becameTappedThisTurn || o.status.gotPlusOneThisTurn then
+          o.status.becameTappedThisTurn || o.status.gotPlusOneThisTurn ||
+          o.status.loyaltyActivatedThisTurn then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
+          loyaltyActivatedThisTurn := false
           firedOnceEachTurn := false
           optionalOnceUsed := false
           allianceModesChosen := #[]
@@ -115,9 +138,24 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
                 turnEndsRemaining := perm.turnEndsRemaining - 1 } }
     return g
 
+/-- End Reality Fracture effects that last until `p`'s next turn: Garruk,
+Veiled Butcher's toughness and power reduction and the command-zone effects of Jace, Reality Sculptor
+and Garruk, Curse Breaker (CR 611.2b). -/
+def expireFraUntilTurnEffects (g : Game) (p : PlayerId) : Game :=
+  let g := g.objects.foldl (fun g o =>
+    if o.status.untilTurnOfPump.any (·.1 == p) then
+      g.setObject { o with status := { o.status with
+        untilTurnOfPump := o.status.untilTurnOfPump.filter (·.1 != p) } }
+    else g) g
+  g.objects.foldl (fun g o =>
+    if o.zone == .command && o.fraEffectUntilTurnOf == some p then
+      (g.ceaseToExist o.id).logMsg s!"{o.name} ends"
+    else g) g
+
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
 that player's last-turn information (CR 800.4i). -/
 def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
+  let g := g.expireFraUntilTurnEffects p
   let g :=
     if (g.player p).protectionFromEverything then
       g.setPlayer { (g.player p) with protectionFromEverything := false }
@@ -177,6 +215,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       let mut g := g
       let ap := g.activePlayer
       let apName := (g.player ap).name
+      g := g.expireFraUntilTurnEffects ap
       -- CR 502.1: phased-out permanents phase in before the player untaps.
       g := g.phaseInControlled ap
       g := g.modifyPlayer ap (fun pl =>
@@ -188,11 +227,18 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         let skipUntap :=
           (o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
             !g.hasEnduringStory ap) ||
+          o.staticAbilities.any (· == .fra .doesntUntap) ||
           g.hostCantBecomeUntapped o
-        if o.status.tapped && !skipUntap then
+        -- CR 122.1d: a stun counter is removed instead of untapping.
+        let stunned := o.status.tapped && !skipUntap && o.status.stun > 0
+        if o.status.tapped && !skipUntap && !stunned then
           g := g.logMsg s!"{apName} untaps {o.name}"
-        let tapped := if skipUntap then o.status.tapped else false
-        g := g.setObject { o with status := { o.status with tapped := tapped, summoningSick := false } }
+        if stunned then
+          g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
+        let tapped := if skipUntap || stunned then o.status.tapped else false
+        let stun := if stunned then o.status.stun - 1 else o.status.stun
+        g := g.setObject { o with status :=
+          { o.status with tapped := tapped, stun := stun, summoningSick := false } }
       -- No priority (CR 502.4). Immediately continue.
       return g
   | .draw =>
@@ -203,7 +249,11 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g.logMsg s!"{g.player g.activePlayer |>.name} skips their first draw step (CR 103.8a)"
         |>.beginStep .precombatMain
     else
-      g.draw g.activePlayer |>.receivePriority g.activePlayer
+      -- The turn-based draw happens before triggers (ruling 770).
+      let g := g.draw g.activePlayer
+      let g := (g.livingOpponents g.activePlayer).foldl (fun acc pl =>
+        acc.putControlledTriggers pl.id .eachOpponentDrawStep) g
+      g.receivePriority g.activePlayer
   | .declareAttackers =>
     { g with pending := .declareAttackers }
   | .declareBlockers =>
@@ -230,10 +280,23 @@ partial def beginStep (g : Game) (st : Step) : Game :=
             s!"{pl.name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
       return g
     let g := g.putControlledTriggers ap .yourUpkeep
+    let g :=
+      g.livingPlayers.foldl (fun acc pl => acc.putControlledTriggers pl.id .eachUpkeep) g
+    -- Abilities that trigger from a graveyard (Command the Stage).
+    let g :=
+      g.livingPlayers.foldl (fun g pl =>
+        (g.player pl.id).graveyard.foldl (fun g id =>
+          match g.findObject? id with
+          | some card => g.putMatchingSourceTriggers pl.id card (.fra .eachUpkeepFromGraveyard)
+          | none => g) g) g
     g.receivePriority ap
   | .beginningOfCombat =>
     let ap := g.activePlayer
     let g := g.putControlledTriggers ap .yourBeginCombat
+    let g := (g.player ap).graveyard.foldl (fun g id =>
+      match g.findObject? id with
+      | some card => g.putMatchingSourceTriggers ap card (.fra .yourBeginCombatFromGraveyard)
+      | none => g) g
     g.receivePriority ap
   | .end =>
     let ap := g.activePlayer
@@ -258,6 +321,15 @@ partial def beginStep (g : Game) (st : Step) : Game :=
                 g := g'.logMsg
                   s!"{name} returns to the battlefield (beginning of end step)"
                 g := g.afterPermanentEnters (g.object! newId)
+        let exiles := g.delayedEndStepExiles
+        g := { g with delayedEndStepExiles := #[] }
+        for id in exiles do
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield then
+              let (g', _) := g.move id .exile none
+              g := g'.logMsg s!"{o.name} is exiled (beginning of end step)"
+          | none => pure ()
         return g
     let g :=
       g.livingPlayers.foldl (fun acc pl =>

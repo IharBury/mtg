@@ -40,7 +40,7 @@ open Mtg.Engine.Catalog
 open Mtg.Engine.Tests
 
 #guard uniqueMshOracleRulingCount == 376
-#guard uniqueOracleRulingCount == 728
+#guard uniqueOracleRulingCount == 893
 #guard uniqueMshOracleRulings.all (fun r => (mshRuling r.id).id == r.id)
 #guard (mshRuling 360).comment.contains "Power-up"
 #guard (mshRuling 363).comment.contains "cast using teamwork"

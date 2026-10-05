@@ -208,9 +208,12 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
   let atk :=
     if o.status.attacking then
       let dest :=
-        match o.status.attackingWhom with
-        | some pid => (g.player pid).name
-        | none => (g.player g.defendingPlayer).name
+        match o.status.attackingPlaneswalker.bind g.findObject? with
+        | some pw => objectRef g pw.id
+        | none =>
+          match o.status.attackingWhom with
+          | some pid => (g.player pid).name
+          | none => (g.player g.defendingPlayer).name
       if o.status.blocked then s!" *attacking {dest}, blocked*" else s!" *attacking {dest}*"
     else ""
   let blk :=
@@ -286,6 +289,10 @@ def canSeeZoneFaces (viewer : Option PlayerId) : Zone → Bool
     match viewer with
     | none => true
     | some v => v == p
+  | .outside p =>
+    match viewer with
+    | none => true
+    | some v => v == p
   | .battlefield | .graveyard _ | .stack | .exile | .command | .ante => true
 
 /-- Whether `viewer` may look at the cards `scrying` is looking at (CR 701.20).
@@ -316,6 +323,9 @@ def libraryLook? (g : Game) : Option LibraryLook :=
   | .scry p n =>
     some { player := p, ids := g.scryLookedIds p n, boardTitle := "Scry",
            label := s!"scry {n}", hiddenActivity := s!"is scrying {n}" }
+  | .surveil p n =>
+    some { player := p, ids := g.scryLookedIds p n, boardTitle := "Surveil",
+           label := s!"surveil {n}", hiddenActivity := s!"is surveilling {n}" }
   | .mayCastFromLooked p ids maxMv =>
     some { player := p, ids, boardTitle := "May cast", label := "may cast",
            detail := some s!"mana value ≤ {maxMv}",
@@ -653,6 +663,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [mulligan: {g.player p |>.name} puts {cards} on the bottom (CR 103.5)]"
     | .scry p n =>
       s!" [scry {n} ({g.player p |>.name})]"
+    | .surveil p n =>
+      s!" [surveil {n} ({g.player p |>.name})]"
     | .mayDiscardDraw p n =>
       s!" [may discard a card, then draw {n} ({g.player p |>.name})]"
     | .chooseAdditionalCost p =>
@@ -692,6 +704,13 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         s!" [discard a card or pay \{{n}} or let the spell be countered (ward, {who})]"
       | .fivePoison =>
         s!" [get five poison counters or let the spell be countered (ward, {who})]"
+      | .discardCard =>
+        s!" [discard a card or let the spell be countered (ward, {who})]"
+      | .sacrificePermanents left paid =>
+        if paid == 0 then
+          s!" [sacrifice {left} permanents or let the spell be countered (ward, {who})]"
+        else
+          s!" [sacrifice {left} more permanent(s) (ward, {who})]"
     | .recruitDiscard p =>
       s!" [recruit: discard a card ({g.player p |>.name})]"
     | .chooseKicker p =>
@@ -718,6 +737,47 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>
       s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
+    | .mayCastExiledElseDamage p cardId n =>
+      let name :=
+        match g.findObject? cardId with
+        | some o => o.name
+        | none => "the exiled card"
+      s!" [may cast {name}, or {n} damage to each opponent ({g.player p |>.name})]"
+    | .chooseProliferate p n =>
+      s!" [proliferate ({n} more, CR 701.34, {g.player p |>.name})]"
+    | .fraChoice p choice =>
+      let what :=
+        match choice with
+        | .discardFromRevealedHand v _ => s!"choose a card from {(g.player v).name}'s hand to discard"
+        | .mayWheel n _ => s!"may discard your hand and draw {n}"
+        | .maySacrificePlaneswalker => "may sacrifice a planeswalker"
+        | .topOrBottomDamage id _ =>
+          let name := ((g.findObject? id).map (fun (o : GameObject) => o.name)).getD "the card"
+          s!"put {name} on top (and be dealt damage) or on the bottom"
+        | .sphinxsApproach _ => "may exile five cards named Sphinx's Approach"
+        | .extrapolateReveal => "may reveal two cards from outside the game"
+        | .extrapolatePick _ _ => "choose one of the revealed cards"
+        | .mayPutMilledPermanent _ _ => "may put a milled permanent card into your hand"
+        | .mayThen .. => "may do it (accept or decline)"
+        | .mayPayThen n .. => s!"may pay \{{n}} (accept or decline)"
+        | .mayDiscardThen .. => "may discard a card (choose or decline)"
+        | .discardThen .. => "discard a card"
+        | .discardThenStun n _ => s!"discard {n} card(s)"
+        | .maySacrificeThen .. => "may sacrifice a permanent (choose or decline)"
+        | .mayMovePlusOne _ => "may remove a +1/+1 counter (accept or decline)"
+        | .exileFromRevealedHand _ _ => "choose a nonland card to exile"
+        | .castCopiesFree _ n => s!"may cast copies with total mana value {n} or less (cast or decline)"
+        | .triggerModes _ n _ => if n == 2 then "choose two modes" else "choose a mode"
+        | .chooseKeyword _ options =>
+          let names : List String :=
+            (List.range options.size).map (fun i => s!"{i} {fraKeywordName options[i]!}")
+          "choose a keyword: " ++ String.intercalate ", " names
+        | .chooseColor _ => "choose a color: 0 white, 1 blue, 2 black, 3 red, 4 green"
+        | .sacrificeCreatureEach .. => "sacrifice a creature"
+        | .discardTwo .. => "discard two cards"
+        | .mayMoveAllCounters .. => "may move all counters (accept or decline)"
+        | .chooseCardName _ => "name a nonland card: name <card name>"
+      s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=
         match g.findObject? villainId with
@@ -739,6 +799,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           | .exile => "exile"
           | .command => "command"
           | .ante => "ante"
+          | .outside p => s!"{(g.player p).name}'s cards outside the game"
         s!" [supply a random order into {destName} (--norandom)]"
       | .chooseObject _ =>
         " [pick the randomly chosen object (--norandom)]"
@@ -832,6 +893,7 @@ def zoneLabel (g : Game) : Zone → String
   | .exile => "exile"
   | .command => "command"
   | .ante => "ante"
+  | .outside p => s!"{g.player p |>.name}'s cards outside the game"
 
 /-- Object identities currently occupying `z`, in zone order. -/
 def zoneObjectIds (g : Game) : Zone → Array ObjectId
@@ -843,6 +905,7 @@ def zoneObjectIds (g : Game) : Zone → Array ObjectId
   | .exile => g.objects.filter (fun o => o.zone == .exile) |>.map (·.id)
   | .command => g.objects.filter (fun o => o.zone == .command) |>.map (·.id)
   | .ante => g.objects.filter (fun o => o.zone == .ante) |>.map (·.id)
+  | .outside p => g.objects.filter (fun o => o.zone == .outside p) |>.map (·.id)
 
 /-- Every zone the demo tracks, in a stable print order. -/
 def allZones (g : Game) : Array Zone :=

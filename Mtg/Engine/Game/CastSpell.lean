@@ -47,6 +47,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
+  if g.splitSecondOnStack then
+    throw "A spell with split second is on the stack (CR 702.61a)"
+  if g.combatLocksNonManaAbilities then
+    throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
   if p != g.activePlayer &&
       (g.permanentsOf g.activePlayer).any (fun o =>
         o.staticAbilities.any (fun
@@ -65,9 +69,18 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     match asAdventure, card.printed.adventure with
     | true, some adv => adv.toCardDef
     | _, _ => card.printed
+  if g.spellNameForbidden face.name then
+    throw s!"Spells named {face.name} can't be cast"
   let pl := g.player p
   if face.isLand then
     throw "Lands are played, not cast (CR 305)"
+  match face.castOnlyIfGraveyardAtLeast with
+  | some n =>
+    -- Ruling 852: the card itself doesn't count if it's in the graveyard.
+    let others := (g.player p).graveyard.filter (· != id) |>.size
+    if others < n then
+      throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+  | none => pure ()
   if face.hasSorcerySpeed && !g.asSorcery? p then
     throw s!"{face.name} has sorcery speed"
   if face.isModal then
@@ -86,13 +99,14 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     | some perm =>
       if !perm.isOnBattlefield || !perm.status.prepared then
         throw s!"{perm.name} is not prepared"
+      if !perm.controlledBy p then
+        throw s!"Only {perm.name}'s controller may cast this copy (ruling 744)"
     | none => throw "The prepared permanent is gone"
   | none => pure ()
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
   -- cast as its Adventure.
-  let cost := g.playManaCost card face
   let fromGraveyard := card.zone == .graveyard card.owner
   let needsSacrifice :=
     face.additionalCostSacrificeArtifactOrCreature &&
@@ -104,9 +118,17 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let fromTop :=
     original.zone == .library p && (g.player p).library.back? == some id
   let (g, newId) := g.move id .stack (some p)
+  -- CR 601.2a / 601.2f: the total cost is determined after the spell is on
+  -- the stack (rulings 824 / 874).
+  let cost := g.playManaCost card face
+  -- Casting the exiled copy of a prepare spell unprepares its permanent. The
+  -- spell on the stack is a copy, so it isn't put into a graveyard later
+  -- (CR 707.10 / 704.5e).
   let g :=
     match original.playPermission.bind (·.prepareSource) with
     | some src =>
+      let o := g.object! newId
+      let g := g.setObject { o with isCopy := true, isPreparedSpell := true }
       match g.findObject? src with
       | some perm =>
         (g.setObject { perm with status := { perm.status with prepared := false } }).logMsg
@@ -123,6 +145,9 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     if fromGraveyard then
       let o := g.object! newId
       g.setObject { o with castFromGraveyard := true }
+    else if original.zone == .hand original.owner then
+      let o := g.object! newId
+      g.setObject { o with castFromHand := true }
     else g
   let g := g.putStackEntry p newId
   let needsMode := face.isModal
@@ -131,8 +156,12 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsKicker := face.kicker.isSome
   let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
+  -- CR 702.34a: a flashback cost that includes discarding a card.
+  let needsFlashbackDiscard := fromGraveyard && face.flashbackDiscard
+  if needsFlashbackDiscard && (g.player p).hand.isEmpty then
+    throw s!"{face.name}'s flashback cost requires discarding a card"
   if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
-      !needsSacrifice &&
+      !needsSacrifice && !needsFlashbackDiscard &&
       !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork then
     return g.becomeCast p (g.object! newId)
   let lifeInstead :=
@@ -149,6 +178,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     stackBefore := stackBefore
     manaBefore := manaBefore
     needsSacrificeOther := needsSacrifice
+    needsDiscardCard := needsFlashbackDiscard
     payLife := lifeInstead
   }
   let g := g.logMsg s!"{pl.name} begins casting {face.name}"
@@ -199,6 +229,41 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       return g.afterTargetsChosen
   | _ => throw "Not time to choose a mode (CR 601.2b)"
 
+/-- Pay a loyalty cost: put or remove loyalty counters on the source and
+record that a loyalty ability of it was activated this turn (CR 606.3 / 606.4). -/
+def payLoyaltyCost (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Game :=
+  let k := (sym.counters).getD 0
+  let n := ((o.status.loyaltyCounters : Int) + k).toNat
+  let g := g.setObject { o with status := { o.status with
+    loyaltyCounters := n
+    loyaltyActivatedThisTurn := true } }
+  let g := match o.controller with
+    | some p =>
+      let g := g.modifyPlayer p (fun pl => { pl with activatedLoyaltyThisTurn := true })
+      let g := if k > 0 then g.queueLoyaltyPutTriggers p else g
+      -- Gideon, the Oathless: an opponent activating a loyalty ability.
+      (g.livingOpponents p).foldl (fun g opp =>
+        g.foldControlledPermanents opp.id none fun g src =>
+          g.putMatchingSourceTriggers opp.id src (.fra .opponentActivatesLoyaltyAbility)
+            (cause := some o)) g
+    | none => g
+  if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {o.name}"
+  else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {o.name}"
+  else g
+
+/-- Queue “whenever you activate a loyalty ability” triggers. They go on the
+stack above the loyalty ability, so they resolve first (rulings 847 / 853).
+Way of the Mind Sculptor triggers only if two or more loyalty counters were
+removed (intervening “if”). -/
+def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbol) : Game :=
+  let removed := match sym.counters with
+    | some k => if k < 0 then (-k).toNat else 0
+    | none => 0
+  g.foldControlledPermanents p none fun g o =>
+    g.enqueueWaitingTriggers
+      ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>
+        wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2))
+
 /-- Announce the value of `{X}` for a proposed spell or ability
 (CR 107.3a / 601.2b). Substitutes `{X}` into the locked-in cost and
 continues the proposal window. -/
@@ -212,6 +277,14 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
     let some obj := g.findObject? prop.spellId
       | throw "The spell or ability left the stack"
     let g := g.setObject { obj with chosenX := some x }
+    let g ←
+      if prop.loyaltyX then
+        let some src := prop.sourceId.bind g.findObject?
+          | throw "The planeswalker left the battlefield"
+        if src.status.loyaltyCounters < x then
+          throw s!"{src.name} doesn't have {x} loyalty counters to remove (CR 606.4)"
+        pure ((g.payLoyaltyCost src (.minus x)).queueLoyaltyActivationTriggers p (.minus x))
+      else pure g
     let cost :=
       match prop.kind, prop.activation, prop.sourceId.bind g.findObject? with
       | .activatedAbility, some ab, src =>
@@ -355,7 +428,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
       let g := g.logMsg
         s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
       if g.currentTargetSlot obj < kind.spec.slots.size then
-        return { g with pending := .chooseTargets p }
+        return { (g.markTargetsAnnounced obj.id false) with pending := .chooseTargets p }
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
       let g := g.queueYouTargetTriggers p obj

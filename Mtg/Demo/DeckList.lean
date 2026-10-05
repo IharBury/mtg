@@ -72,9 +72,11 @@ def isSideboardHeader (raw : String) : Bool :=
 def isDeckHeader (raw : String) : Bool :=
   raw.trimAscii.copy.map Char.toLower == "deck"
 
-/-- Expand a deck list into catalog cards. Sideboard lines are omitted. -/
-def parseDeckList (lines : Array String) : Except String (Array CardDef) := do
+/-- Expand a deck list into its main deck and sideboard (CR 100.4). -/
+def parseDeckListWithSideboard (lines : Array String) :
+    Except String (Array CardDef × Array CardDef) := do
   let mut cards : Array CardDef := #[]
+  let mut side : Array CardDef := #[]
   let mut sideboard := false
   let mut i : Nat := 0
   for raw in lines do
@@ -83,7 +85,7 @@ def parseDeckList (lines : Array String) : Except String (Array CardDef) := do
       sideboard := true
     else if isDeckHeader raw then
       sideboard := false
-    else if !sideboard then
+    else
       match deckListEntry? raw with
       | none => pure ()
       | some (n, name) =>
@@ -91,16 +93,22 @@ def parseDeckList (lines : Array String) : Except String (Array CardDef) := do
           throw s!"line {i}: count must be at least 1"
         match supportedCard? name with
         | none => throw s!"line {i}: unsupported card: {name}"
-        | some c => cards := cards ++ copies n c
+        | some c =>
+          if sideboard then side := side ++ copies n c
+          else cards := cards ++ copies n c
   if cards.isEmpty then
     throw "Deck list is empty"
-  return cards
+  return (cards, side)
+
+/-- Expand a deck list into catalog cards. Sideboard lines are omitted. -/
+def parseDeckList (lines : Array String) : Except String (Array CardDef) :=
+  (parseDeckListWithSideboard lines).map (·.1)
 
 /-- Read a deck list file and resolve every name against the supported catalog. -/
-def loadDeckListFile (path : String) : IO (Except String (Array CardDef)) := do
+def loadDeckListFile (path : String) : IO (Except String (Array CardDef × Array CardDef)) := do
   try
     let lines ← IO.FS.lines path
-    match parseDeckList lines with
+    match parseDeckListWithSideboard lines with
     | .ok cards => return .ok cards
     | .error e => return .error s!"Deck list {path}: {e}"
   catch e =>
@@ -167,6 +175,9 @@ def loadDeckListFile (path : String) : IO (Except String (Array CardDef)) := do
     (match parseDeckList #["Deck", "2 Lightning Bolt", "Sideboard", "1 Shock"] with
       | .ok cards =>
         cards.size == 2 && cards.all (fun c => c.name == "Lightning Bolt")
+      | _ => false) &&
+    (match parseDeckListWithSideboard #["Deck", "2 Lightning Bolt", "Sideboard", "1 Shock"] with
+      | .ok (_, side) => side.size == 1 && side.all (fun c => c.name == "Shock")
       | _ => false) &&
     (match parseDeckList #["40 Forest"] with
       | .ok cards => cards.size == 40 && cards.all (fun c => c.name == "Forest")

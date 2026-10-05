@@ -84,6 +84,30 @@ structure GameObject where
   leaveTriggerExile : Array ObjectId := #[]
   /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
   castFromGraveyard : Bool := false
+  /-- This spell was cast from its owner's hand. -/
+  castFromHand : Bool := false
+  /-- This permanent entered the battlefield as a spell that was cast
+  (“if you cast it”). -/
+  wasCast : Bool := false
+  /-- This spell is a copy of a prepare spell cast from exile (a “prepared
+  spell”). -/
+  isPreparedSpell : Bool := false
+  /-- For a triggered ability on the stack: the object whose event caused it,
+  that object's controller, and its power as the ability triggered. -/
+  fraCauseId : Option ObjectId := none
+  fraCauseController : Option PlayerId := none
+  fraCausePower : Option Int := none
+  /-- The causing object's status (its counters) as it last existed. -/
+  fraCauseStatus : Option Status := none
+  /-- The permanent that exiled this card, for permissions tied to it (Null
+  Summoner). -/
+  exiledBy : Option ObjectId := none
+  /-- A command-zone effect object that ends when this player's next turn
+  begins (Jace, Reality Sculptor; Garruk, Curse Breaker). -/
+  fraEffectUntilTurnOf : Option PlayerId := none
+  /-- The instant or sorcery card in a graveyard has flashback until end of
+  turn, with its mana cost as the flashback cost (Stingcaster Mage). -/
+  flashbackUntilEot : Bool := false
   /-- This spell's kicker cost was paid (CR 702.32). -/
   kicked : Bool := false
   /-- This spell's teamwork cost was paid (CR 702.194). -/
@@ -151,7 +175,10 @@ def types (o : GameObject) : Array CardType :=
 def subtypes (o : GameObject) : Array Subtype :=
   if o.status.onlyFoodArtifact then #["Food"]
   else
-    let extra := o.status.additionalSubtypes.filter (fun s => !o.printed.subtypes.any (· == s))
+    let added :=
+      if o.status.animatedConstruct55 then o.status.additionalSubtypes.push "Construct"
+      else o.status.additionalSubtypes
+    let extra := added.filter (fun s => !o.printed.subtypes.any (· == s))
     let raw := o.printed.subtypes ++ extra
     match o.status.replacedCreatureTypesUntilEot with
     | none => raw
@@ -192,7 +219,7 @@ def you (o : GameObject) : PlayerId :=
 def isCreature (o : GameObject) : Bool :=
   !o.status.onlyFoodArtifact && !o.status.returnedAsArtifact &&
     (o.printed.isCreature || o.status.additionalCreature ||
-      o.status.additionalCreatureUntilEot)
+      o.status.additionalCreatureUntilEot || o.status.animatedConstruct55)
 
 /-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
 def isLegendary (o : GameObject) : Bool :=
@@ -209,6 +236,15 @@ def hasSubtype (o : GameObject) (s : String) : Bool :=
 /-- Printed static abilities plus those granted by a lasting effect. -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=
   o.printed.staticAbilities ++ o.status.grantedStaticAbilities
+
+/-- Whether an Aura with card `aura` may enchant this permanent: an artifact
+or non-Aura enchantment for “Enchant artifact or non-Aura enchantment”
+(Puppet Crafting), otherwise a creature (CR 303.4). -/
+def auraCanEnchant (host : GameObject) (aura : CardDef) : Bool :=
+  host.isOnBattlefield &&
+    if aura.staticAbilities.any (· == .fra .enchantArtifactOrNonAuraEnchantment) then
+      host.printed.isArtifact || (host.printed.isEnchantment && !host.printed.isAura)
+    else host.isCreature
 
 /-- Colorless nonland permanent (e.g. a legal Goblin Cratermaker destroy target). -/
 def isColorlessNonland (o : GameObject) : Bool :=
@@ -240,7 +276,8 @@ end GameObject
 /-- Printed and granted triggers of `source` that fire on `event`. -/
 def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
     Array TriggeredAbility :=
-  (source.printed.triggeredAbilities ++ source.status.grantedTriggeredAbilities).filter
+  (source.printed.triggeredAbilities ++ source.status.grantedTriggeredAbilities ++
+      (if source.isOnBattlefield then source.status.grantedTriggersUntilEot else #[])).filter
     (·.firesOn event)
 
 /-- A triggered ability waiting to be put onto the stack the next time a
@@ -260,6 +297,8 @@ structure WaitingTrigger where
   /-- Object that caused this trigger, if any (the entering Villain for
   Baron Strucker; MSH 422). -/
   causeId : Option ObjectId := none
+  /-- The causing object as it was when the ability triggered. -/
+  cause : Option GameObject := none
 deriving Repr, Inhabited
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/

@@ -44,6 +44,7 @@ structure AdventureFace where
   empowerJace : Option Nat := none
 deriving Repr, Inhabited, BEq
 
+set_option maxRecDepth 1024 in
 /-- Printed (Oracle) characteristics of a card. -/
 structure CardDef where
   name : String
@@ -86,6 +87,9 @@ structure CardDef where
   may be replaced by paying that much generic mana (e.g. Stir Up Trouble).
   The choice is announced at CR 601.2b, before targets. -/
   additionalCostSacrificeArtifactOrCreature : Bool := false
+  /-- The sacrifice alternative of the additional cost is a creature or
+  planeswalker rather than an artifact or creature (Silence the Echo). -/
+  additionalCostSacrificeCreatureOrPlaneswalker : Bool := false
   /-- Alternative additional cost: pay this much generic mana instead of
   sacrificing an artifact or creature (CR 601.2b). -/
   additionalCostOrPayGeneric : Option Nat := none
@@ -114,6 +118,9 @@ structure CardDef where
   costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
   spellModes : Array Effect := #[]
+  /-- Modes of this card's modal triggered ability (“When this creature
+  enters, choose one —”), chosen as it is put on the stack (CR 603.3c). -/
+  fraTriggerModes : Array Effect := #[]
   /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/
   tapAddMana : Array ManaType := #[]
   /-- `{T}: Add {M} for each permanent you control with this subtype
@@ -151,16 +158,45 @@ structure CardDef where
   ward : Option Nat := none
   /-- Flashback cost (CR 702.34). -/
   flashback : Option ManaCost := none
+  /-- Casting with flashback also requires discarding a card (CR 702.34a). -/
+  flashbackDiscard : Bool := false
+  /-- “As long as there are seven or more cards in your graveyard, you may
+  cast the exiled card, and mana of any type can be spent to cast that
+  spell” (Null Summoner). -/
+  castExiledWithSevenInGraveyard : Bool := false
   /-- This permanent enters tapped unless you control a legendary creature. -/
   entersTappedUnlessLegendary : Bool := false
   /-- This permanent enters tapped unless you control an Equipment. -/
   entersTappedUnlessEquipment : Bool := false
+  /-- Abilities planeswalkers you control have (“Planeswalkers you control
+  have …”). -/
+  planeswalkersYouControlHave : Array ActivatedAbility := #[]
+  /-- This permanent enters with this many +1/+1 counters (CR 614.1c). -/
+  entersWithPlusOneCounters : Nat := 0
+  /-- `{T}: Choose a color. Add one mana of that color for each different
+  power among creatures you control.` (Loot, the Nexus) -/
+  tapAddChosenColorPerDifferentPower : Bool := false
+  /-- A deck can have any number of cards with this name (CR 100.2a). -/
+  anyNumberInDeck : Bool := false
+  /-- You can't cast this spell unless there are at least this many other
+  cards in your graveyard. -/
+  castOnlyIfGraveyardAtLeast : Option Nat := none
+  /-- This permanent enters tapped unless you control a planeswalker. -/
+  entersTappedUnlessPlaneswalker : Bool := false
+  /-- This permanent enters tapped unless you control two or more other lands. -/
+  entersTappedUnlessTwoOtherLands : Bool := false
   /-- `{T}: Add one mana of any color. Spend this mana only to cast a
   legendary spell, and that spell can't be countered.` -/
   tapAddAnyColorForLegendary : Bool := false
   /-- This spell costs {X} less to cast, where X is the total power of
   creatures you control with flying. -/
   costReductionEqualFlyingPower : Bool := false
+  /-- This spell costs {X} less to cast, where X is the greatest power among
+  creatures you control. -/
+  costReductionGreatestPower : Bool := false
+  /-- This spell costs {X} less to cast, where X is the greatest toughness
+  among creatures you control. -/
+  costReductionGreatestToughness : Bool := false
   /-- Crew `n` (CR 702.122). -/
   crew : Option Nat := none
   /-- `{T}: Add two mana in any combination of these types`. -/
@@ -223,6 +259,8 @@ structure CardDef where
   /-- If a creature an opponent controls would die, exile it instead
   (e.g. Head of the Hunt). The original die event never happens (CR 614.6). -/
   exileOppCreaturesInstead : Bool := false
+  /-- Printed instances of prowess; each triggers separately (CR 702.108b). -/
+  prowessInstances : Nat := 0
   /-- You may look at the top card of your library any time
   (e.g. Elven Chorus). -/
   mayLookAtTopAnytime : Bool := false
@@ -422,7 +460,7 @@ def manaAbilities (c : CardDef) : Array ManaType :=
         c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
         c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 ||
         c.tapAddAnyColorAmongLegendaries || c.tapAddCommanderIdentity ||
-        c.hasAnyColorActivatedAdd then
+        c.hasAnyColorActivatedAdd || c.tapAddChosenColorPerDifferentPower then
       (Color.all.map ManaType.colored).toArray
      else #[])
 

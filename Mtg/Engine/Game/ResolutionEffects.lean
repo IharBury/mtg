@@ -57,7 +57,9 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
   match g.findObject? id with
   | none => g.logMsg "There is no card to cast"
   | some o =>
-    if !ignoreTiming && !g.timingAllowsCast p o.printed then
+    if g.splitSecondOnStack then
+      g.logMsg s!"{o.name} can't be cast while a spell with split second is on the stack (ruling 839)"
+    else if !ignoreTiming && !g.timingAllowsCast p o.printed then
       g.logMsg s!"{o.name} cannot be cast now (timing)"
     else if !withoutManaCost &&
         !(g.player p).manaPool.canPay (g.playManaCost o o.printed) then
@@ -308,7 +310,7 @@ def returnExiledId (g : Game) (id : ObjectId) : Game :=
         g.logMsg s!"{name} returns to {(g.player p).name}'s graveyard"
       | _ =>
         if o.printed.isAura then
-          match g.battlefield.find? (fun h => h.isCreature) with
+          match g.battlefield.find? (fun h => h.auraCanEnchant o.printed) with
           | none =>
             g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)"
           | some host =>

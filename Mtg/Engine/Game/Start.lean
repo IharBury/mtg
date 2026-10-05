@@ -31,6 +31,9 @@ def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) : Except String Gam
       let (g', obj) := g.allocObject card pid (.library pid)
       g := g'
       g := g.modifyPlayer pid (fun pl => { pl with library := pl.library.push obj.id })
+    -- CR 400.11b: sideboard cards are outside the game. They become objects
+    -- only when an effect reaches outside the game.
+    g := g.modifyPlayer pid (fun pl => { pl with sideboard := seat.sideboard })
     return g
 
 def start (cfg : StartConfig) : Except String Game := do

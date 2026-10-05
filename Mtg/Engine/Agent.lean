@@ -73,7 +73,12 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       | none => some .pass
     | .chooseX _ =>
       match g.proposedSpell with
-      | some prop => some (.chooseX (maxAffordableX g p prop.cost))
+      | some prop =>
+        if prop.loyaltyX then
+          -- Remove all but one loyalty counter so the planeswalker survives.
+          let loyalty := ((prop.sourceId.bind g.findObject?).map (·.status.loyaltyCounters)).getD 0
+          some (.chooseX (loyalty - 1))
+        else some (.chooseX (maxAffordableX g p prop.cost))
       | none => some (.chooseX 0)
     | .chooseTargets _ =>
       chooseSpellTarget g p
@@ -95,6 +100,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.putOnBottom ((g.player p).hand.extract 0 n))
     | .scry _ n =>
       some (.scry (g.scryLookedIds p n) #[])
+    | .surveil _ n =>
+      some (.surveil (g.scryLookedIds p n) #[])
     | .mayDiscardDraw _ _ =>
       discardBackOrDecline g p
     | .chooseAdditionalCost _ =>
@@ -151,6 +158,17 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         | some o => some (.sacrifice o.id)
         | none => some .decline
       | .fivePoison => some .pay
+      | .discardCard =>
+        match (g.player p).hand.back? with
+        | some id => some (.discard id)
+        | none => some .decline
+      | .sacrificePermanents left paid =>
+        let perms := g.permanentsOf p
+        if paid == 0 && perms.size < left then some .decline
+        else
+          match perms[0]? with
+          | some o => some (.sacrifice o.id)
+          | none => some .decline
     | .recruitDiscard _ =>
       discardBackOrDecline g p
     | .chooseKicker _ =>
@@ -195,6 +213,16 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       | none => some .decline
     | .mayHaveVillainConnive _ _ _ =>
       some .haveVillainConnive
+    | .mayCastExiledElseDamage _ cardId _ =>
+      match (g.apply p (.cast cardId)) with
+      | .ok _ => some (.cast cardId)
+      | .error _ => some .decline
+    | .fraChoice _ choice =>
+      some (g.defaultFraAction p choice)
+    | .chooseProliferate _ _ =>
+      let own := (g.permanentsOf p).filter (·.status.hasCounters) |>.map (Target.permanent ·.id)
+      let opps := (g.livingOpponents p).filter (·.poison > 0) |>.map (Target.player ·.id)
+      some (.targets (own ++ opps))
     | .resolveRandom _ =>
       -- Random results are supplied by the host (`--norandom`), never the heuristic.
       none

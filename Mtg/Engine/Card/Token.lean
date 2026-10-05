@@ -60,6 +60,20 @@ inductive TokenKind where
   | mowu
   /-- A 2/2 white Cat Soldier creature token named Ajani's Pridemate (FRA). -/
   | pridemate
+  /-- A 4/4 green Beast creature token with trample (FRA). -/
+  | beast44trample
+  /-- A 5/5 red Dragon creature token with flying (FRA). -/
+  | dragon55flying
+  /-- A 3/3 green Forest Tentacle land creature token (FRA). -/
+  | forestTentacle
+  /-- A 1/1 colorless Thopter artifact creature token with flying (FRA). -/
+  | thopter
+  /-- A 3/3 blue Angel creature token with flying (FRA). -/
+  | angel33blue
+  /-- A 1/1 blue Illusion creature token (FRA). -/
+  | illusion11blue
+  /-- An 8/8 blue Leviathan creature token with hexproof (FRA). -/
+  | leviathan88hexproof
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -93,9 +107,18 @@ def oracleNoun : TokenKind → String
   | .heartwood => "Heartwood token"
   | .lotus => "Lotus token"
   | .jace => "blue Jace planeswalker token"
-  | .sculpture => "1/1 colorless Sculpture Treasure artifact creature token"
+  | .sculpture =>
+    "1/1 colorless Sculpture Treasure artifact creature token with \"{T}, Sacrifice this token: Add one mana of any color.\""
   | .mowu => "legendary 3/3 green Dog creature token named Mowu"
-  | .pridemate => "2/2 white Cat Soldier creature token named Ajani's Pridemate"
+  | .pridemate =>
+    "2/2 white Cat Soldier creature token named Ajani's Pridemate with \"Whenever you gain life, put a +1/+1 counter on this token.\""
+  | .beast44trample => "4/4 green Beast creature token with trample"
+  | .dragon55flying => "5/5 red Dragon creature token with flying"
+  | .forestTentacle => "3/3 green Forest Tentacle land creature token"
+  | .thopter => "1/1 colorless Thopter artifact creature token with flying"
+  | .angel33blue => "3/3 blue Angel creature token with flying"
+  | .illusion11blue => "1/1 blue Illusion creature token"
+  | .leviathan88hexproof => "8/8 blue Leviathan creature token with hexproof"
 
 /-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
 def pluralNoun (k : TokenKind) : String :=

@@ -240,6 +240,18 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
         let g := g.queueTrigger c bolg .onBolgDealSacrificedPower
           .bolgSacrificedForReflexive (lastKnownPower := some pw)
         return g.receivePriority g.activePlayer
+  | .payWard q spellId (.sacrificePermanents left paid) =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may sacrifice for ward"
+    let some sac := g.findObject? id | throw "no such object"
+    if !sac.isOnBattlefield || !sac.controlledBy p then
+      throw s!"Can't sacrifice {sac.name} to pay ward"
+    if paid == 0 && (g.permanentsOf p).size < left then
+      throw s!"{(g.player p).name} can't sacrifice {left} permanents"
+    let g := g.sacrificeToGraveyard sac
+      s!"{(g.player p).name} sacrifices {sac.name} (ward)"
+    if left ≤ 1 then return g.afterWardResolved
+    else return { g with pending := .payWard q spellId (.sacrificePermanents (left - 1) (paid + 1)) }
   | .payWard q _ .sacrificeLegendary =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"

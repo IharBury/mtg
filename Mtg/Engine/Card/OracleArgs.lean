@@ -187,6 +187,8 @@ def takeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
   | .enchantmentMvAtLeast n => return .enchantmentMvAtLeast (← takeNat n)
   | .oppCreaturePowerAtMost n => return .oppCreaturePowerAtMost (← takeInt n)
   | .upToTwoCreaturesTotalMvAtMost n => return .upToTwoCreaturesTotalMvAtMost (← takeNat n)
+  | .anotherCreatureYouControlPowerAtMost n =>
+    return .anotherCreatureYouControlPowerAtMost (← takeInt n)
   | k => return k
 
 def takeTargeting (t : EffectTargeting) : ArgM EffectTargeting := do
@@ -203,6 +205,7 @@ def takeAction (a : PermanentAction) : ArgM PermanentAction := do
   | .pumpAndLifelink p t => return .pumpAndLifelink (← takeInt p) (← takeInt t)
   | .pumpAndExileIfDies p t => return .pumpAndExileIfDies (← takeInt p) (← takeInt t)
   | .pumpAndGrant p t k => return .pumpAndGrant (← takeInt p) (← takeInt t) k
+  | .setBasePT p t => return .setBasePT (← takeInt p) (← takeInt t)
   | a => return a
 
 def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
@@ -372,6 +375,10 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .planFinishCreateRobots n => return .planFinishCreateRobots (← takeNat n)
   | .planFinishDividedDamage n => return .planFinishDividedDamage (← takeNat n)
   | .surveil n => return .surveil (← takeNat n)
+  | .empowerJace n => return .empowerJace (← takeNat n)
+  | .creaturesYouControlGet p t => return .creaturesYouControlGet (← takeInt p) (← takeInt t)
+  | .mayPayPlusOneAndDraw n => return .mayPayPlusOneAndDraw (← takeNat n)
+  | .plusOneOnEachSubtypeYouControl s => return .plusOneOnEachSubtypeYouControl (← takeStr s)
   | .onEnchanted a => return .onEnchanted (← takeAction a)
   | .attachThen a => return .attachThen (← takeAction a)
   | .enter e => return .enter (← takeEnter e)
@@ -410,6 +417,14 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .becomeTypes ts p t k =>
     return .becomeTypes (← takeStrs ts) (← takeInt p) (← takeInt t) k
   | .targetSubtypeConnives s => return .targetSubtypeConnives (← takeStr s)
+  | .empowerJace n => return .empowerJace (← takeNat n)
+  | .exileTopMayCastElseDamageOpponents n => return .exileTopMayCastElseDamageOpponents (← takeNat n)
+  | .emblemCastSpellDamage n => return .emblemCastSpellDamage (← takeNat n)
+  | .surveil n => return .surveil (← takeNat n)
+  | .millSelf n => return .millSelf (← takeNat n)
+  | .mayDiscardDraw n => return .mayDiscardDraw (← takeNat n)
+  | .oppSacrificesGreatestMvGainLife n => return .oppSacrificesGreatestMvGainLife (← takeNat n)
+  | .damageThenEmpowerExcess n => return .damageThenEmpowerExcess (← takeNat n)
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
   | .spell s => return .spell (← takeSpell s)
   | .trigger e => return .trigger (← takeTrigger e)

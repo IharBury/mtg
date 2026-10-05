@@ -42,13 +42,16 @@ inductive Zone where
   | command
   /-- Legacy “for keeps” zone (CR 407). -/
   | ante
+  /-- Cards a player owns outside the game, such as their sideboard
+  (CR 400.11b). Not a zone; these cards aren't in the game. -/
+  | outside (owner : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Zone
 
 /-- Graveyard, battlefield, stack, exile, ante, and command are public (CR 400.2). -/
 def isPublic : Zone → Bool
-  | .library _ | .hand _ => false
+  | .library _ | .hand _ | .outside _ => false
   | .battlefield | .graveyard _ | .stack | .exile | .command | .ante => true
 
 /-- Library and hand are hidden even if every card happens to be revealed (CR 400.2). -/
@@ -60,7 +63,7 @@ def isOwned : Zone → Bool
   | _ => false
 
 def owner? : Zone → Option PlayerId
-  | .library p | .hand p | .graveyard p => some p
+  | .library p | .hand p | .graveyard p | .outside p => some p
   | _ => none
 
 def englishName : Zone → String
@@ -72,6 +75,7 @@ def englishName : Zone → String
   | .exile => "exile"
   | .command => "command"
   | .ante => "ante"
+  | .outside p => s!"outside the game ({p})"
 
 instance : ToString Zone where
   toString := englishName

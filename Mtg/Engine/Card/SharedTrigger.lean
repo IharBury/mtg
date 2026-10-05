@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.PermanentAction
+import Mtg.Engine.Card.TriggerEvent
 import Mtg.Engine.Card.Chapter
 
 /-!
@@ -297,6 +298,25 @@ inductive SharedTriggerWhen where
   | opponentDrawsSecond
   /-- Whenever an opponent casts their first noncreature spell each turn. -/
   | opponentCastsFirstNoncreature
+  /-- Whenever you cast your first noncreature spell each turn. -/
+  | youCastFirstNoncreature
+  /-- Whenever you cast a spell. -/
+  | youCastSpell
+  /-- Whenever you cast a spell that targets an opponent or a creature an
+  opponent controls. -/
+  | youCastTargetingOpponentOrTheirCreature
+  /-- Whenever you activate a loyalty ability. -/
+  | youActivateLoyaltyAbility
+  /-- At the beginning of each player's upkeep. -/
+  | eachUpkeep
+  /-- Whenever you scry or surveil. -/
+  | youScryOrSurveil
+  /-- When one or more of your opponents are dealt combat damage during your turn. -/
+  | opponentsDealtCombatDamageYourTurn
+  /-- Whenever a creature you control dies. -/
+  | creatureYouControlDies
+  /-- At the beginning of each opponent's draw step. -/
+  | eachOpponentDrawStep
   /-- At the beginning of each end step. -/
   | eachEndStep
   /-- Whenever this or another nontoken permanent of a listed subtype enters. -/
@@ -395,6 +415,8 @@ inductive SharedTriggerWhen where
   | or (a b : SharedTriggerWhen)
   /-- Use the events stored on the shared effect (leftover family wrappers). -/
   | fromEffect
+  /-- A Reality Fracture event. -/
+  | fra (e : FraEvent)
 deriving Repr, Inhabited, BEq
 
 /-- Shared resolution for reusable triggered abilities that only differ by
@@ -716,8 +738,52 @@ inductive SharedTrigger where
   | planFinishDividedDamage (n : Nat)
   /-- Fourth-plan: sacrifice and grant indestructible. -/
   | planFinishIndestructibleOnTarget
-  /-- Surveil `n` (resolves as a scry-shaped look). -/
+  /-- Surveil `n` (CR 701.25). -/
   | surveil (n : Nat)
+  /-- Empower Jace `n` (Reality Fracture). -/
+  | empowerJace (n : Nat)
+  /-- If this creature isn't prepared, it becomes prepared. -/
+  | prepareSourceIfNot
+  /-- If three or more creatures died this turn, this creature becomes prepared. -/
+  | prepareSourceIfThreeDied
+  /-- If two or more loyalty counters were removed to activate the ability, draw a card. -/
+  | drawIfRemovedTwoLoyalty
+  /-- Put a +1/+1 counter on each permanent of this subtype you control. -/
+  | plusOneOnEachSubtypeYouControl (subtype : String)
+  /-- Put a loyalty counter on the source (Ajani Resolute). -/
+  | loyaltyOnSource
+  /-- Target permanent you control gains these keywords until end of turn; a
+  +1/+1 counter if it's a creature, a loyalty counter if it's a planeswalker. -/
+  | grantThenCounterByType (k : Keywords)
+  /-- If you control six or more lands, destroy target permanent an opponent
+  controls; its controller creates a Treasure. -/
+  | destroyOppPermanentIfSixLands
+  /-- Another target creature you control gets +1/+1 until end of turn, or a
+  +1/+1 counter instead if you've scried or surveilled this turn. -/
+  | pumpOrCounterIfScried
+  /-- If you don't control a planeswalker, sacrifice the source. -/
+  | sacrificeSourceIfNoPlaneswalker
+  /-- Creatures you control get +P/+T until end of turn. -/
+  | creaturesYouControlGet (power toughness : Int)
+  /-- Put the source's last-known counters on up to one target creature you
+  control (Graft Surgeon). -/
+  | putSourceCountersOnTarget
+  /-- Put a charge counter on the source. -/
+  | chargeCounterOnSource
+  /-- Add {G} for each charge counter on the source. -/
+  | addGreenPerChargeCounter
+  /-- You may pay `{n}`. If you do, put a +1/+1 counter on the source and
+  draw a card. -/
+  | mayPayPlusOneAndDraw (n : Nat)
+  /-- Draw two cards; if your library is then empty, you win; the owner
+  shuffles the source into their library (Fblthp, Impossibly Lost). -/
+  | drawTwoWinIfEmptyShuffleSource
+  /-- If you control at least five other Forests, target creature you
+  control gets +3/+3 until end of turn (Roiling Canopy). -/
+  | pumpIfFiveOtherForests
+  /-- If you gained life this turn, surveil 1; a card with mana value at most
+  the life gained put into the graveyard this way goes to your hand. -/
+  | surveilReturnIfGainedLife
   /-- Apply `action` to the enchanted creature. -/
   | onEnchanted (action : PermanentAction)
   /-- Attach to target, then apply `followup`. -/
@@ -760,6 +826,30 @@ inductive SharedTrigger where
   | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
 
+/-- A Reality Fracture intervening “if” clause (CR 603.4), checked when the
+ability triggers and again as it resolves. -/
+inductive FraCondition where
+  | none
+  /-- “if it isn't a token” (the source, as it last existed). -/
+  | sourceNotToken
+  /-- “if two or more creatures died this turn”. -/
+  | twoCreaturesDiedThisTurn
+  /-- “if an opponent was dealt noncombat damage last turn”. -/
+  | opponentDealtNoncombatDamageLastTurn
+  /-- “if you've drawn three or more cards this turn”. -/
+  | drewThreeThisTurn
+  /-- “if you didn't cast a spell this turn”. -/
+  | castNoSpellThisTurn
+  /-- “if you've activated a loyalty ability this turn”. -/
+  | activatedLoyaltyThisTurn
+  /-- “if you cast it”. -/
+  | sourceWasCast
+  /-- “if it had counters on it” (the object that caused the trigger). -/
+  | causeHadCounters
+  /-- “if this has counters on it”. -/
+  | sourceHasCounters
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Optional intervening conditions and wording filters for `triggered`. -/
 structure SharedTriggerOpts where
   onceEachTurn : Bool := false
@@ -775,6 +865,11 @@ structure SharedTriggerOpts where
   watchedSubtype : Option String := none
   /-- Drop targeting from the shared effect (e.g. Guttersnipe). -/
   untargeted : Bool := false
+  /-- The ability's printed sentence, when its wording isn't built from the
+  event and resolution (Reality Fracture). -/
+  printed : String := ""
+  /-- Reality Fracture intervening “if” clause. -/
+  fraCondition : FraCondition := .none
 deriving Repr, Inhabited, BEq
 
 /-- Ferocious intervening condition (power 4 or greater). -/

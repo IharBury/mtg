@@ -7,10 +7,21 @@ import Mtg.Engine.MshOracleTests4
 import Mtg.Engine.MshOracleTests5
 import Mtg.Engine.MshOracleTests6
 import Mtg.Engine.MshOracleTests7
+import Mtg.Engine.FraOracleTests
+import Mtg.Engine.FraOracleTests2
+import Mtg.Engine.FraOracleTests3
+import Mtg.Engine.FraOracleTests4
+import Mtg.Engine.FraOracleTests5
+import Mtg.Engine.FraOracleTests6
+import Mtg.Engine.FraOracleTests7
+import Mtg.Engine.FraCardTests
+import Mtg.Engine.FraCardTests2
+import Mtg.Engine.FraCardTests3
+import Mtg.Engine.FraOracleTests8
 
 /-!
 # Unique Oracle rulings
 
-Facade for the ruling table and the HOB/HOC and MSH checks. Importing this
+Facade for the ruling table and the HOB/HOC, MSH, and FRA checks. Importing this
 module still loads every ruling test.
 -/

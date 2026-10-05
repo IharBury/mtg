@@ -58,6 +58,11 @@ inductive WardCost where
   | discardOrPay (n : Nat)
   /-- Ward — get five poison counters. -/
   | fivePoison
+  /-- Ward — discard a card. -/
+  | discardCard
+  /-- Ward — sacrifice `left` more permanents; `paid` were already
+  sacrificed, so the cost can no longer be declined. -/
+  | sacrificePermanents (left paid : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A queued ward obligation waiting to be announced. -/
@@ -65,6 +70,116 @@ structure WardObligation where
   player : PlayerId
   spellId : ObjectId
   cost : WardCost
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- What happens after a Reality Fracture choice is made. Each one is also a
+`FraResolution`, run through the same interpreter. -/
+inductive FraNext where
+  | searchBasicLandTapped
+  | searchLandsTapped (n : Nat)
+  | searchEnchantmentToHand
+  | tappedHeartwoods (n : Nat)
+  | eachOpponentSacrificesCreature
+  | drawThenCountersPerDiscard
+  | eyeOfJaceCheck
+  | reflexiveDamageAnyTarget (n : Nat)
+  | reflexiveDestroyPerOpponent
+  | reflexiveReturnLandTapped
+  | beastToken
+  | proliferate (times : Nat)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+def FraNext.toResolution : FraNext → FraResolution
+  | .searchBasicLandTapped => .searchBasicLandTapped
+  | .searchLandsTapped n => .searchLandsTapped n
+  | .searchEnchantmentToHand => .searchEnchantmentToHand
+  | .tappedHeartwoods n => .tappedHeartwoods n
+  | .eachOpponentSacrificesCreature => .eachOpponentSacrificesCreature
+  | .drawThenCountersPerDiscard => .drawThenCountersPerDiscard
+  | .eyeOfJaceCheck => .eyeOfJaceCheck
+  | .reflexiveDamageAnyTarget n => .reflexiveDamageAnyTarget n
+  | .reflexiveDestroyPerOpponent => .reflexiveDestroyPerOpponent
+  | .reflexiveReturnLandTapped => .reflexiveReturnLandTapped
+  | .beastToken => .beastToken
+  | .proliferate n => .proliferate n
+
+/-- What a “you may sacrifice …” choice accepts. -/
+inductive FraSacrifice where
+  | land
+  | creatureOrPlaneswalker
+  | creature
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A choice made while a Reality Fracture effect resolves. The player answers
+with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
+`Action.decline`. -/
+inductive FraChoice where
+  /-- Choose a card from `target`'s revealed hand for them to discard: a
+  nonland permanent card if `permanentOnly`, else a nonland card. -/
+  | discardFromRevealedHand (target : PlayerId) (permanentOnly : Bool)
+  /-- The player may discard their hand and draw `n`; `rest` choose after. -/
+  | mayWheel (n : Nat) (rest : Array PlayerId)
+  /-- You may sacrifice a planeswalker to search for one (Entrust the Spark). -/
+  | maySacrificePlaneswalker
+  /-- The owner of `id` puts it on top (accept) or on the bottom (decline) of
+  their library; on top, they are dealt `damage`. -/
+  | topOrBottomDamage (id : ObjectId) (damage : Nat)
+  /-- You may exile `spellId` and four other cards named Sphinx's Approach. -/
+  | sphinxsApproach (spellId : ObjectId)
+  /-- You may reveal two cards with different names from outside the game. -/
+  | extrapolateReveal
+  /-- Choose one of `ids` for `revealer` to put into their hand. -/
+  | extrapolatePick (revealer : PlayerId) (ids : Array ObjectId)
+  /-- You may put one of the milled permanent cards `ids` into your hand;
+  then you gain `life` life. -/
+  | mayPutMilledPermanent (ids : Array ObjectId) (life : Nat)
+  /-- You may do `next` (accept or decline). -/
+  | mayThen (next : FraNext) (sourceId : Option ObjectId)
+  /-- You may pay `{n}`; if you do, do `next`. -/
+  | mayPayThen (n : Nat) (next : FraNext) (sourceId : Option ObjectId)
+  /-- You may discard a card; if you do, do `next`. -/
+  | mayDiscardThen (next : FraNext) (sourceId : Option ObjectId)
+  /-- Discard a card (required while you have one), then do `next`. -/
+  | discardThen (next : FraNext) (sourceId : Option ObjectId)
+    (causeId : Option ObjectId)
+  /-- Discard `n` cards, then tap and stun up to as many target creatures as
+  nonland cards were discarded (Seasoned Cryomancer). -/
+  | discardThenStun (n : Nat) (sourceId : Option ObjectId)
+  /-- You may sacrifice a permanent of `kind` (land, creature or planeswalker);
+  if you do, do `next`. -/
+  | maySacrificeThen (kind : FraSacrifice) (next : FraNext)
+    (sourceId : Option ObjectId)
+  /-- You may remove a +1/+1 counter from `sourceId` (Guiding Hydra). -/
+  | mayMovePlusOne (sourceId : ObjectId)
+  /-- Choose a nonland card from `victim`'s revealed hand to exile, linked to
+  `sourceId` (Null Summoner). -/
+  | exileFromRevealedHand (victim : PlayerId) (sourceId : Option ObjectId)
+  /-- Cast any number of the copies `ids` with total mana value at most
+  `budget` without paying their mana costs (Uldaros Theorix). -/
+  | castCopiesFree (ids : Array ObjectId) (budget : Nat)
+  /-- Choose `remaining` more modes for the triggered ability `objectId`
+  from `CardDef.fraTriggerModes` of its source. -/
+  | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
+  /-- `objectId` gains your choice of the keywords coded in `options`
+  (0 trample, 1 hexproof, 2 haste, 3 deathtouch) until end of turn. Answered
+  with the index of an option. -/
+  | chooseKeyword (objectId : ObjectId) (options : Array Nat)
+  /-- Choose a color for `objectId` as it enters (white, blue, black, red,
+  green by index). -/
+  | chooseColor (objectId : ObjectId)
+  /-- Each player sacrifices a creature of their choice; `controller` creates
+  a 4/4 Beast if they sacrificed one (Garruk, Veiled Butcher). `chosen` are
+  sacrificed together once everyone has chosen. -/
+  | sacrificeCreatureEach (controller : PlayerId) (rest : Array PlayerId)
+    (chosen : Array ObjectId)
+  /-- The choosing opponent discards two cards; `controller` draws a card for
+  each opponent who didn't discard two nonland cards. -/
+  | discardTwo (controller : PlayerId) (rest : Array PlayerId) (draws : Nat)
+  /-- You may move all counters from `fromId` onto `toId` (The Ozolith). -/
+  | mayMoveAllCounters (fromId toId : ObjectId)
+  /-- Choose a nonland card name for `objectId` as it enters (Meddling
+  Mage). Answered with `Action.chooseName`. -/
+  | chooseCardName (objectId : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/
@@ -95,6 +210,9 @@ inductive Pending where
   | putOnBottom (player : PlayerId) (count : Nat)
   /-- This player is looking at the top `count` cards of their library (CR 701.20). -/
   | scry (player : PlayerId) (count : Nat)
+  /-- This player is looking at the top `count` cards of their library to
+  surveil (CR 701.25). -/
+  | surveil (player : PlayerId) (count : Nat)
   /-- This player may discard a card; if they do, they draw `drawCount` (CR 701.9). -/
   | mayDiscardDraw (player : PlayerId) (drawCount : Nat)
   /-- The player must announce an additional or alternative additional cost
@@ -159,6 +277,15 @@ inductive Pending where
   | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)
   /-- You may have this entering Villain connive (Baron Strucker; MSH 422). -/
   | mayHaveVillainConnive (player : PlayerId) (sourceId : ObjectId) (villainId : ObjectId)
+  /-- You may cast exiled `cardId` as an ability resolves, paying its costs.
+  If you don't, the ability deals `damage` to each opponent (Chandra, Torch
+  of Defiance). -/
+  | mayCastExiledElseDamage (player : PlayerId) (cardId : ObjectId) (damage : Nat)
+  /-- Choose any number of permanents and players with counters to
+  proliferate, `remaining` more times (CR 701.34; Tam, the Possibility). -/
+  | chooseProliferate (player : PlayerId) (remaining : Nat)
+  /-- A Reality Fracture choice made while an effect resolves. -/
+  | fraChoice (player : PlayerId) (choice : FraChoice)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
 deriving DecidableEq, Repr, Inhabited, BEq

@@ -66,16 +66,27 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     let g := (g.mapObjectStatus (g.object! o.id) (fun s => s.addDamage n deathtouch)).logMsg msg
     g.queueCreatureYouControlDealtDamage (g.object! o.id) n
   else
-  let g := (g.mapObjectStatus o (fun s => s.addDamage n deathtouch)).logMsg msg
+  -- CR 120.3c: damage dealt to a planeswalker removes that many loyalty counters.
+  let g := (g.mapObjectStatus o (fun s =>
+    let s := s.addDamage n deathtouch
+    if o.printed.isPlaneswalker && n > 0 then
+      { s with loyaltyCounters := s.loyaltyCounters - n.toNat }
+    else s)).logMsg msg
   let g :=
     if n > 0 then
       match o.controller with
       | some p =>
         let already := g.waitingTriggers.any (fun t =>
           t.source.id == o.id && t.event == .sourceDealtDamage)
+        -- The amount dealt rides on last-known power (Hexhaven Invigorator);
+        -- simultaneous damage adds up.
         let g :=
-          if already then g
-          else g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage
+          if already then
+            { g with waitingTriggers := g.waitingTriggers.map (fun t =>
+                if t.source.id == o.id && t.event == .sourceDealtDamage then
+                  { t with lastKnownPower := some ((t.lastKnownPower.getD 0) + n) }
+                else t) }
+          else g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage (some n)
         let hasEnrage :=
           o.printed.triggeredAbilities.any (fun ab =>
             match ab.shared with
@@ -131,6 +142,16 @@ def replacedDamageAmount (g : Game) (src : GameObject) (n : Int)
         | none => (0 : Int)
     (n + extra) * Int.ofNat (g.mjolnirMultiplier src)
 
+/-- Tomik, Izzet Sparkmage: noncombat damage a source deals to an opponent of
+its controller, or a permanent one controls, is increased by 1 for each. -/
+def tomikNoncombatBonus (g : Game) (src : GameObject) (recipient : PlayerId) : Int :=
+  match src.controller with
+  | some p =>
+    if p == recipient then 0
+    else Int.ofNat ((g.permanentsOf p).filter (·.staticAbilities.any
+      (· == .fra .noncombatDamagePlusOne))).size
+  | none => 0
+
 /-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
   g.markDamageOn o n s!"{o.name} is dealt {n} damage"
@@ -144,6 +165,12 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
       g.logMsg s!"damage from {src.name} is prevented"
     else
       let n := g.replacedDamageAmount src n
+      let n :=
+        if n > 0 then
+          match o.controller with
+          | some c => n + g.tomikNoncombatBonus src c
+          | none => n
+        else n
       let g :=
         g.mapObjectStatus src (fun s => { s with dealtDamageThisTurn := true })
       g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
@@ -157,7 +184,9 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     match source with
     | some src =>
       if g.sourceDamagePrevented src then (0 : Int)
-      else g.replacedDamageAmount src n
+      else
+        let n := g.replacedDamageAmount src n
+        if n > 0 then n + g.tomikNoncombatBonus src pid else n
     | none => n
   let pl := g.player pid
   if n == 0 && source.isSome then
@@ -165,12 +194,26 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   else if preventable && pl.protectionFromEverything then
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else
-    g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+    let g := if n > 0 then g.modifyPlayer pid (fun pl => { pl with dealtNoncombatDamageThisTurn := true }) else g
+    let g := g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+    if n > 0 then
+      -- Each other player sees an opponent dealt noncombat damage. “One or
+      -- more opponents” triggers once per batch.
+      g.livingPlayers.foldl (fun g q =>
+        if q.id == pid then g
+        else
+          let g := g.putFraEventTriggers q.id .opponentDealtNoncombatDamage
+          g.foldControlledPermanents q.id none fun g o =>
+            if g.waitingTriggers.any (fun w =>
+                w.source.id == o.id && w.event == .fra .opponentsDealtNoncombatDamage) then g
+            else g.putMatchingSourceTriggers q.id o (.fra .opponentsDealtNoncombatDamage)) g
+    else g
 
 /-- Deal this creature's power as damage to `dest` (one side of a fight). -/
 def dealFightDamage (g : Game) (src dest : GameObject) : Game :=
-  g.dealDamageFrom src.name dest (g.power src).toNat
-    (deathtouch := g.hasDeathtouch src)
+  let n : Int := (g.power src).toNat
+  let n := if n > 0 then n + g.tomikNoncombatBonus src (dest.controller.getD dest.owner) else n
+  g.dealDamageFrom src.name dest n (deathtouch := g.hasDeathtouch src)
 
 /-- Both sides of a fight deal damage simultaneously-looking: `src` first,
 then `dest` if both are still in play. -/
@@ -221,11 +264,16 @@ def continueIfShuffled (g : Game) : Game :=
 
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
+  -- Tomik, Izzet Sparkmage applies to the resolving spell or ability.
+  let bonus (recipient : PlayerId) : Int :=
+    match (g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject? with
+    | some src => if n > 0 then g.tomikNoncombatBonus src recipient else 0
+    | none => 0
   match t with
-  | Target.player pid => g.dealDamageToPlayer pid n
+  | Target.player pid => g.dealDamageToPlayer pid (n + bonus pid)
   | Target.permanent oid =>
     match g.findObject? oid with
-    | some o => g.dealDamageToPermanent o n
+    | some o => g.dealDamageToPermanent o (n + bonus (o.controller.getD o.owner))
     | none => g.logMsg "The target is no longer in play"
   | Target.card _ => g.logMsg "The target is no longer legal"
 

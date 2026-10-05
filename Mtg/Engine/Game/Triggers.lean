@@ -13,16 +13,60 @@ batches stacked in APNAP order (CR 603.3b), and `receivePriority`.
 namespace Mtg.Engine
 namespace Game
 
-/-- Put a triggered ability of `source` onto the stack (CR 603.3). -/
+/-- Modes of the triggered ability `obj` (from its source). -/
+def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
+  match obj.sourceId.bind g.findObject? with
+  | some src => src.printed.fraTriggerModes
+  | none => obj.printed.fraTriggerModes
+
+/-- Whether `p` may choose this mode of a triggered ability (CR 700.2d). -/
+def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
+  !e.requiresTarget || e.allowsZeroTargets ||
+    !(g.legalTargetsForKind p e.targetKind obj.sourceId).isEmpty
+
+/-- Ask for the modes of a modal triggered ability just put on the stack. -/
+def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count : Nat) : Game :=
+  let modes := g.triggerModesOf obj
+  if !modes.any (g.triggerModeChoosable p obj) then
+    let g := g.removeFromZoneList obj.id .stack |>.ceaseToExist obj.id
+    g.logMsg s!"{obj.name} has no mode that can be chosen and is removed from the stack (CR 700.2d)"
+  else
+    let what := if count == 2 then "two modes" else "a mode"
+    { g with pending := .fraChoice p (.triggerModes obj.id count #[]) }.logMsg
+      s!"{(g.player p).name} chooses {what} for {obj.name} (CR 603.3c)"
+
+/-- Put a triggered ability of `source` onto the stack (CR 603.3). A modal
+ability's modes are chosen as it is put on the stack (CR 603.3c). -/
 def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : String) (lastKnownPower : Option Int := none)
-    (lastKnownToughness : Option Int := none) : Game :=
+    (lastKnownToughness : Option Int := none) (cause : Option GameObject := none) : Game :=
   if (g.player controller).lost then g
   else
-    let (g, _) := g.putStackAbility source controller
+    let (g, obj) := g.putStackAbility source controller
       (triggeredAbility := some ab)
       (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
-    g.logMsg s!"{source.name}'s {event} is put on the stack"
+    let obj := { obj with
+      fraCauseId := cause.map (·.id)
+      fraCauseController := cause.bind (·.controller)
+      fraCausePower := cause.map (g.power ·)
+      fraCauseStatus := cause.map (·.status)
+      -- “For each opponent, up to one target … that player controls”: one
+      -- optional instance per opponent (CR 601.2c).
+      abilityEffect :=
+        match ab.effect.targetKind with
+        | .filtered f =>
+          if f.controller == .eachOpponent then
+            let fs := (g.livingOpponents controller).map (fun pl =>
+              { f with controller := .specific pl.id.idx })
+            some { ab.effect with
+              targeting := .of (.multi fs ((List.range fs.size).toArray)) }
+          else none
+        | _ => none }
+    let g := g.setObject obj
+    let g := g.logMsg s!"{source.name}'s {event} is put on the stack"
+    match ab.effect.resolution with
+    | .fra (.chooseTriggerModes n) => g.beginTriggerModeChoice controller obj n
+    | _ => g
 
 /-- True when this trigger would be put on the stack with no legal target (CR 603.3d). -/
 def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -33,12 +77,52 @@ def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAb
 /-- Put `ab` on the stack, or log that it is removed for lack of a target (CR 603.3d). -/
 def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : String)
-    (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none) : Game :=
+    (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
+    (cause : Option GameObject := none) : Game :=
   if g.triggerHasNoLegalTarget controller ab source.id then
     g.logMsg
       s!"{source.name}'s {event} is removed from the stack (no legal target) (CR 603.3d)"
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
+      (cause := cause)
+
+/-- A Reality Fracture intervening “if” clause on the trigger's options. -/
+def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
+    (source : Option GameObject) (causeStatus : Option Status := none) : Bool :=
+  let pl := g.player controller
+  match cond with
+  | .none => true
+  | .sourceNotToken => !(source.any (·.printed.isToken))
+  | .twoCreaturesDiedThisTurn => g.creatureDeathsThisTurn ≥ 2
+  | .opponentDealtNoncombatDamageLastTurn =>
+    (g.livingOpponents controller).any (·.dealtNoncombatDamageLastTurn)
+  | .drewThreeThisTurn => pl.cardsDrawnThisTurn ≥ 3
+  | .castNoSpellThisTurn => pl.spellsCastThisTurn == 0
+  | .activatedLoyaltyThisTurn => pl.activatedLoyaltyThisTurn
+  | .sourceWasCast => source.any (·.wasCast)
+  | .causeHadCounters => causeStatus.any (·.hasCounters)
+  | .sourceHasCounters =>
+    source.any (fun o => (g.findObject? o.id).any (·.status.hasCounters))
+
+/-- Reality Fracture intervening “if” clauses, checked when the ability would
+trigger and again as it resolves (rulings 743 / 889). -/
+def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (source : Option GameObject) (cause : Option GameObject := none) : Bool :=
+  match ab.shared with
+  | .pumpIfFiveOtherForests =>
+    ((g.permanentsOf controller).filter (fun o =>
+      g.hasSubtype o "Forest" && some o.id != cause.map (·.id))).size ≥ 5
+  | .destroyOppPermanentIfSixLands =>
+    ((g.permanentsOf controller).filter (·.printed.isLand)).size ≥ 6
+  | .prepareSourceIfNot =>
+    match source.bind (fun o => g.findObject? o.id) with
+    | some o => !o.status.prepared
+    | none => true
+  | .prepareSourceIfThreeDied => g.battlefieldCreaturesToGyThisTurn.size ≥ 3
+  | .sacrificeSourceIfNoPlaneswalker =>
+    !(g.permanentsOf controller).any (·.printed.isPlaneswalker)
+  | .surveilReturnIfGainedLife => (g.player controller).lifeGainedThisTurn > 0
+  | _ => true
 
 /-- True when any intervening trigger condition holds (e.g. Ferocious). -/
 def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -64,7 +148,9 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g.power entered > g.power hulkling || g.toughness entered > g.toughness hulkling
     | .watch .hulklingCompare, _, _ => false
     | _, _, _ => true
-  powerOk && otherOk && lifeOk && hulklingOk
+  powerOk && otherOk && lifeOk && hulklingOk &&
+    g.fraInterveningHolds controller ab source cause &&
+    g.fraConditionHolds controller ab.opts.fraCondition source (cause.map (·.status))
 
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/
@@ -76,9 +162,10 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
   else if !g.triggerConditionHolds controller ab cause (some source) then g
   else if event.checkTargets then
     g.putTriggerOrFizzle controller source ab event.label lastKnownPower lastKnownToughness
+      (cause := cause)
   else
     g.putTriggeredAbilityOnStack controller source ab event.label
-      lastKnownPower lastKnownToughness
+      lastKnownPower lastKnownToughness (cause := cause)
 
 /-- Append waiting-trigger snapshots. -/
 def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
@@ -123,7 +210,7 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     let copies := g.extraTriggerCopies controller source + 1
     let wt : WaitingTrigger := {
       controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
-      causeId := cause.map (·.id) }
+      causeId := cause.map (·.id), cause }
     Id.run do
       let mut g := g
       for _ in [0:copies] do
@@ -172,6 +259,35 @@ def addLoreAfterDrawStep (g : Game) : Game :=
   (g.permanentsOf g.activePlayer).foldl (fun acc o =>
     if o.printed.saga.isSome then acc.addOneLoreCounter o else acc) g
 
+/-- Triggered abilities an attached Equipment grants `o` (Hunter's Axe,
+Medic's Kitesail). -/
+def attachedGrantedTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
+  if !o.isOnBattlefield then #[]
+  else
+    g.battlefield.foldl (fun acc eq =>
+      if eq.attachedTo != some o.id then acc
+      else
+        eq.staticAbilities.foldl (fun acc ab =>
+          match ab with
+          | .fra .equippedHuntersAxe =>
+            acc.push (TriggeredAbility.fra .attack
+              "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
+              (.fra (.chooseKeyword [0, 3])))
+          | .fra .equippedMedicsKitesail =>
+            acc.push (TriggeredAbility.fra .attack
+              "Whenever this creature attacks, you gain 1 life." (.gainLife 1))
+          | _ => acc) acc) #[]
+
+/-- Prowess triggers of `o`, one for each instance (CR 702.108). -/
+def prowessTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
+  if !o.isOnBattlefield then #[]
+  else
+    let printed := if g.retainsPrintedAbilities o then o.printed.prowessInstances else 0
+    let n := if printed == 0 && (g.currentKeywords o).prowess then 1 else printed
+    Array.replicate n (TriggeredAbility.fra .youCastNoncreature
+      "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)"
+      (.onSource (.pump 1 1)))
+
 /-- Queue each printed trigger of `source` that fires on `event` (CR 603.3). -/
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
     (event : TriggerEvent)
@@ -179,7 +295,8 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
     (cause : Option GameObject := none) : Game :=
   Id.run do
     let mut g := g
-    for ab in source.matchingTriggers event do
+    for ab in source.matchingTriggers event ++
+        (g.attachedGrantedTriggers source ++ g.prowessTriggers source).filter (·.firesOn event) do
       let skipInfinity :=
         match ab.shared with
         | .step .harnessedFlicker => !source.status.harnessed
@@ -241,8 +358,32 @@ def forEachControlledCreature (g : Game) (p : PlayerId)
 /-- Put matching triggers of permanents `p` controls that fire on `event`. -/
 def putControlledTriggers (g : Game) (p : PlayerId)
     (event : TriggerEvent) (excludeId : Option ObjectId := none) : Game :=
-  g.foldControlledPermanents p excludeId fun g o =>
+  let g := g.foldControlledPermanents p excludeId fun g o =>
     g.putMatchingSourceTriggers p o event
+  -- Emblems in the command zone trigger too (CR 114.4).
+  (g.objects.filter (fun o => o.zone == .command && o.controlledBy p)).foldl
+    (fun g e => g.putMatchingSourceTriggers p e event) g
+
+/-- Queue `p`'s triggered abilities whose Reality Fracture event satisfies
+`pred`, with `cause` as the object that caused them. -/
+def putFraEventTriggersWhere (g : Game) (p : PlayerId) (pred : FraEvent → Bool)
+    (cause : Option GameObject := none) (excludeId : Option ObjectId := none) : Game :=
+  let fire (g : Game) (o : GameObject) : Game :=
+    (o.printed.triggeredAbilities ++ o.status.grantedTriggeredAbilities).foldl (fun g ab =>
+      match ab.timing.events.find? (fun e =>
+          match e with
+          | .fra fe => pred fe
+          | _ => false) with
+      | some e => g.queueTrigger p o ab e (cause := cause)
+      | none => g) g
+  let g := g.foldControlledPermanents p excludeId fire
+  -- Emblems and effects in the command zone trigger too (CR 114.4).
+  (g.objects.filter (fun o => o.zone == .command && o.controlledBy p)).foldl fire g
+
+/-- Queue `p`'s triggered abilities for the Reality Fracture event `e`. -/
+def putFraEventTriggers (g : Game) (p : PlayerId) (e : FraEvent)
+    (cause : Option GameObject := none) (excludeId : Option ObjectId := none) : Game :=
+  g.putFraEventTriggersWhere p (· == e) cause excludeId
 
 /-- Queue “whenever you sacrifice a token” if `o` was a token when sacrificed. -/
 def queueYouSacrificeToken (g : Game) (o : GameObject) : Game :=
@@ -283,8 +424,20 @@ def copiedFromGy {α : Type} (g : Game) (o : GameObject) (sel : CardDef → Arra
 
 /-- Printed activated abilities plus those copied from the graveyard. -/
 def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
-  if !g.retainsPrintedAbilities o then #[]
-  else o.printed.activatedAbilities ++ g.copiedFromGy o (·.activatedAbilities)
+  let own :=
+    if !g.retainsPrintedAbilities o then #[]
+    else o.printed.activatedAbilities ++ g.copiedFromGy o (·.activatedAbilities)
+  -- Loyalty abilities granted to planeswalkers you control (Way of the
+  -- Healer and similar). A planeswalker still activates only one loyalty
+  -- ability per turn, however many it has (ruling 779).
+  let granted :=
+    if o.isOnBattlefield && o.printed.isPlaneswalker then
+      match o.controller with
+      | some p => (g.permanentsOf p).foldl (fun acc src =>
+          acc ++ src.printed.planeswalkersYouControlHave) #[]
+      | none => #[]
+    else #[]
+  own ++ granted
 
 /-- True when `p` controls a basic land (CR 205.4c / 305.8). -/
 def controlsBasicLand (g : Game) (p : PlayerId) : Bool :=
@@ -326,6 +479,33 @@ def grantedManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
           if acc.contains t then acc else acc.push t) fromLords
       else fromLords
 
+/-- Mana types Reality Fracture mana abilities of `o` produce, including the
+`{T}: Add {C}{C}` Emrakul, the Exigent Doom grants a land. -/
+def fraManaAbilities (o : GameObject) : Array ManaType :=
+  let anyColor : Array ManaType :=
+    #[.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
+  let own := o.staticAbilities.foldl (fun acc ab =>
+    match ab with
+    | .fra .tapAddColorlessNotFromHand => acc.push .colorless
+    | .fra .tapAddAnyColorPlaneswalkerOnly => acc ++ anyColor
+    | .fra .tapSacrificeAddThreeOfOneColor => acc ++ anyColor
+    | .fra .tapAddChosenColor =>
+      match o.status.chosenColor with
+      | some c => acc.push (.colored c)
+      | none => acc
+    | _ => acc) #[]
+  if o.isOnBattlefield && !o.status.colorlessGrantUntilCast.isEmpty && !own.contains .colorless then
+    own.push .colorless
+  else own
+
+/-- The spending restriction on mana `o` adds when tapped for `mana`. -/
+def fraManaUseOf (_g : Game) (o : GameObject) (mana : ManaType) : Option FraManaUse :=
+  if mana == .colorless && !o.status.colorlessGrantUntilCast.isEmpty then none
+  else o.staticAbilities.findSome? (fun ab =>
+    match ab with
+    | .fra s => s.manaUse?
+    | _ => none)
+
 /-- Printed mana abilities plus those copied from the graveyard or granted
 by another permanent. Restricted MSH `{T}: Add` types are omitted until the
 activation condition holds. -/
@@ -334,7 +514,7 @@ def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
   else
     let types :=
       o.printed.manaAbilities ++ g.copiedFromGy o (·.manaAbilities) ++
-        g.grantedManaAbilities o
+        g.grantedManaAbilities o ++ fraManaAbilities o
     if o.printed.requiresEnteredOrBasicAdd && !g.canUseEnteredOrBasicAdd o then
       types.filter (fun t => !o.printed.enteredOrBasicAddMana.contains t)
     else types
@@ -345,6 +525,7 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
   match g.triggerNeedingTargets with
   | some e =>
     if g.pending == .chooseTargets e.controller then g
+    else if (match g.pending with | .fraChoice .. => true | _ => false) then g
     else
       let msg :=
         match (g.findObject? e.objectId).bind (fun o =>
@@ -416,6 +597,7 @@ def lastKnownPowerForTrigger (ab : TriggeredAbility) (lastKnownPower : Option In
     (causeId : Option ObjectId) : Option Int :=
   match ab.shared, causeId with
   | .watch .villainConniveOnce, some id => some (Int.ofNat id.raw)
+  | .pumpIfFiveOtherForests, some id => some (Int.ofNat id.raw)
   | _, _ => lastKnownPower
 
 /-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d). -/
@@ -428,7 +610,7 @@ def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
         g := g.removeWaitingTrigger wt
         g := g.putQueuedTrigger wt.controller wt.source wt.ability wt.event
           (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
-          wt.lastKnownToughness
+          wt.lastKnownToughness (cause := wt.cause)
       return g.promptTriggerTargetsIfNeeded
 
 /-- Put queued triggers for `event` onto the stack (CR 603.3). The event spec
@@ -448,7 +630,7 @@ def flushWaitingTriggers (g : Game) (event : TriggerEvent) : Game :=
       for wt in waiting do
         g := g.putQueuedTrigger wt.controller wt.source wt.ability event
           (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
-          wt.lastKnownToughness
+          wt.lastKnownToughness (cause := wt.cause)
       return g.promptTriggerTargetsIfNeeded
 
 /-- CR 704.3 / 603.3b: check state-based actions, then put waiting triggers
@@ -512,10 +694,18 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
     match land.controller with
     | none => g
     | some landController =>
-      let g := g.putControlledTriggersWithPrompt landController .landYouControlEnters
+      let g := (g.foldControlledPermanents landController none fun g o =>
+        g.putMatchingSourceTriggers landController o .landYouControlEnters
+          (cause := some land)).promptTriggerTargetsIfNeeded
       let g :=
         if g.hasSubtype land "Mountain" then
           g.putControlledTriggers landController .mountainYouControlEnters
+        else g
+      let g :=
+        if g.hasSubtype land "Forest" then
+          (g.foldControlledPermanents landController none fun g o =>
+            g.putMatchingSourceTriggers landController o .forestYouControlEnters
+              (cause := some land)).promptTriggerTargetsIfNeeded
         else g
       (g.player landController).graveyard.foldl (fun acc id =>
         match acc.findObject? id with

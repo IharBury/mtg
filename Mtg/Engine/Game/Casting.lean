@@ -36,11 +36,31 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
       !g.cosmicAwarenessFlash p then
     g.asSorcery? p else true)
 
+/-- Every card face the game knows: each object's card, its other face,
+Adventure, and prepare spell, and each sideboard card. A prepare spell's name
+is judged by its own characteristics (ruling 745). -/
+def knownCardFaces (g : Game) : Array CardDef :=
+  let faces (c : CardDef) : Array CardDef :=
+    #[c] ++ c.otherFace.toArray ++ (c.adventure.map (·.toCardDef)).toArray ++
+      (c.prepareFace.map (·.toCardDef)).toArray
+  let fromObjects := g.objects.foldl (fun acc o => acc ++ faces o.printed) #[]
+  g.players.foldl (fun acc pl => pl.sideboard.foldl (fun acc c => acc ++ faces c) acc) fromObjects
+
+/-- Whether `name` is the name of a nonland card (CR 201.3). -/
+def isNonlandCardName (g : Game) (name : String) : Bool :=
+  g.knownCardFaces.any (fun c => c.name == name && !c.isLand)
+
+/-- Whether a permanent forbids casting spells named `name` (Meddling Mage). -/
+def spellNameForbidden (g : Game) (name : String) : Bool :=
+  g.battlefield.any (fun o =>
+    o.status.chosenName == some name &&
+      o.staticAbilities.any (· == .fra .chosenNameSpellsCantBeCast))
+
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. Additional
 non-mana costs such as sacrificing a permanent must still be payable. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  !o.printed.isLand &&
+  !o.printed.isLand && !g.combatLocksNonManaAbilities && !g.spellNameForbidden o.printed.name &&
   !(g.player p).cantCastSpellsThisTurn &&
   g.mayPlay p o &&
   (match o.playPermission with
@@ -83,7 +103,10 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
   match o.printed.additionalCostOrPayGeneric, o.printed.additionalCostDiscardOrPayGeneric with
   | some n, _ =>
     (g.permanentsOf p).any (fun perm =>
-      perm.id != o.id && (perm.isCreature || perm.printed.isArtifact)) || payExtra n
+      perm.id != o.id &&
+        if o.printed.additionalCostSacrificeCreatureOrPlaneswalker then
+          perm.isCreature || perm.printed.isPlaneswalker
+        else perm.isCreature || perm.printed.isArtifact) || payExtra n
   | none, some n =>
     (g.player p).hand.any (fun id => id != o.id) || payExtra n
   | none, none => true
@@ -188,9 +211,25 @@ def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
     | some o => o.printed.isArtifact
     | none => false
 
+/-- What paying `prop` is for, as Reality Fracture mana restrictions see it. -/
+def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
+  match prop.kind with
+  | .activatedAbility => {}
+  | .spell =>
+    match g.findObject? prop.spellId with
+    | some o =>
+      { spell := true, fromHand := prop.original.zone == .hand prop.caster
+        planeswalker := o.printed.isPlaneswalker, noncreature := !o.printed.isCreature }
+    | none => {}
+
 /-- Mana types `src` can produce that may be spent on `prop` (CR 106.10). -/
 def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array ManaType)
     (prop : ProposedSpell) : Array ManaType :=
+  let spend := g.proposedManaSpend prop
+  let types := types.filter (fun t =>
+    match g.fraManaUseOf src t with
+    | some u => u.allows spend
+    | none => true)
   let allowElf := g.proposedAllowsElfRestricted prop
   let allowInst := g.proposedAllowsInstRestricted prop
   let allowLeg := g.proposedAllowsLegendaryRestricted prop
@@ -219,6 +258,7 @@ def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType) 
   pool.add t (g.manaFromTap src t)
     (elfRestricted := src.printed.tapAddAnyColorEqualToPower)
     (instRestricted := src.printed.tapAddAnyColorForInstantOrSorcery)
+    (fra := g.fraManaUseOf src t)
 
 /-- Whether some assignment of types from `sources` pays `cost`. -/
 def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
@@ -303,12 +343,12 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
     (allowElfRestricted : Bool := false) (allowInstRestricted : Bool := false)
     (allowHeroRestricted : Bool := false) (allowVillainRestricted : Bool := false)
     (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false) :
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) :
     Except String Game := do
   let pl := g.player p
   match pl.manaPool.pay? cost allowElfRestricted allowInstRestricted
       allowHeroRestricted allowVillainRestricted allowCantNonartifact
-      allowCreatureRestricted with
+      allowCreatureRestricted spend with
   | none => throw s!"{pl.name} cannot pay {cost}"
   | some pool =>
     return g.setPlayer { pl with manaPool := pool }
@@ -337,6 +377,19 @@ def reverseProposedSpell (g : Game) : Game :=
       for id in prop.tapped do
         if let some o := g.findObject? id then
           g := g.setObject { o with status := { o.status with tapped := false } }
+      -- Undo unpreparing the permanent whose prepare-spell copy was proposed.
+      match prop.kind, (prop.original.playPermission.bind (·.prepareSource)).bind g.findObject? with
+      | .spell, some src =>
+        g := g.setObject { src with status := { src.status with prepared := true } }
+      | _, _ => pure ()
+      -- Undo a paid loyalty cost (CR 606.4 / 733.1).
+      match prop.kind, prop.sourceId.bind g.findObject?,
+          (prop.activation.bind (·.cost.loyalty)).bind (·.counters) with
+      | .activatedAbility, some src, some k =>
+        g := g.setObject { src with status := { src.status with
+          loyaltyCounters := ((src.status.loyaltyCounters : Int) - k).toNat
+          loyaltyActivatedThisTurn := false } }
+      | _, _, _ => pure ()
       let reversed :=
         match prop.kind with
         | .spell => "the casting is reversed (CR 601.2 / 733.1)"
@@ -391,6 +444,10 @@ def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
         acc := acc.push (.discardOrPay n)
       | .wardPoisonCounters _ =>
         acc := acc.push .fivePoison
+      | .fra .wardDiscardCard =>
+        acc := acc.push .discardCard
+      | .fra .wardSacrificeThreePermanents =>
+        acc := acc.push (.sacrificePermanents 3 0)
       | _ =>
         match ab.grantedWard? with
         | some n =>
@@ -449,6 +506,10 @@ def promptNextWard (g : Game) : Game :=
           s!"{who} may discard a card or pay \{{n}} or the spell is countered (ward)"
         | .fivePoison =>
           s!"{who} may get five poison counters or the spell is countered (ward)"
+        | .discardCard =>
+          s!"{who} may discard a card or the spell is countered (ward)"
+        | .sacrificePermanents n _ =>
+          s!"{who} may sacrifice {n} permanents or the spell is countered (ward)"
       { g with pending := .payWard w.player w.spellId w.cost, wardQueue := rest
         }.logMsg msg
   | _ => g
@@ -479,6 +540,19 @@ def beginWardsForTargets (g : Game) (caster : PlayerId) (spellId : ObjectId)
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   let g := { g with castingFromTop := false }
   let g := g.logMsg s!"{(g.player p).name} casts {spell.name}"
+  -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card
+  -- is cast from exile, so it can help pay for that spell (ruling 729).
+  let g := g.battlefield.foldl (fun g land =>
+    let kept := land.status.colorlessGrantUntilCast.filter (fun cid => g.followMoved cid != spell.id)
+    if kept.size == land.status.colorlessGrantUntilCast.size then g
+    else g.setObject { land with status := { land.status with colorlessGrantUntilCast := kept } }) g
+  -- Theorist's Proxy: the next spell this player casts this turn.
+  let g :=
+    if (g.player p).nextSpellCantBeCountered && !spell.isCopy then
+      let g := g.modifyPlayer p (fun pl => { pl with nextSpellCantBeCountered := false })
+      (g.setObject { (g.object! spell.id) with uncounterableThisCast := true }).logMsg
+        s!"{spell.name} can't be countered"
+    else g
   let g :=
     match g.stackEntry? spell.id with
     | some e =>
@@ -493,7 +567,22 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
     match g.stackEntry? spell.id with
     | some e => g.beginWardsForTargets p spell.id e.targets
     | none => g
-  g.receivePriority p
+  -- Uldaros Theorix: offer the remaining copies until none can be cast.
+  let g :=
+    match g.pendingFreeCopies with
+    | some (q, ids, budget) =>
+      if q != p || g.pending != .none then g
+      else
+        let alive := ids.filter (fun id => (g.findObject? id).any (·.zone == .exile))
+        let castable := alive.filter (fun id =>
+          (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
+        if castable.isEmpty then
+          let g := alive.foldl (fun g id => g.ceaseToExist id) g
+          { g with pendingFreeCopies := none }
+        else
+          { g with pending := .fraChoice q (.castCopiesFree alive budget) }
+    | none => g
+  if g.pending != .none then g else g.receivePriority p
 
 /-- After targets are announced, reduce the locked-in cost if the spell cares
 about a damaged, tapped, or attacking nontoken target (CR 601.2f). -/
@@ -526,7 +615,10 @@ def lockInTargetCostReduction (g : Game) : Game :=
             else if face.costReductionIfTargetAttacking > 0 && o.status.attacking then
               face.costReductionIfTargetAttacking
             else 0
-          let n := nDamaged + nTapped + nAttacking
+          let nCounters :=
+            if prop.activation.any (·.costLessPerPlusOneOnTarget) then o.status.plusOnePlusOne
+            else 0
+          let n := nDamaged + nTapped + nAttacking + nCounters
           if n == 0 then g
           else
             { g with proposedSpell := some { prop with

@@ -18,12 +18,62 @@ def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
       | .activateCreaturesAsThoughHaste => true
       | _ => false))
 
+/-- Jace's Machinations lets `p` activate loyalty abilities of Jace
+planeswalkers they control any time they could cast an instant. -/
+def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  (g.player p).jaceLoyaltyAtInstantSpeed && o.printed.isPlaneswalker && o.hasSubtype "Jace"
+
+/-- Loyalty counters among Jace planeswalkers `p` controls. -/
+def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    if o.printed.isPlaneswalker && g.hasSubtype o "Jace" then acc + o.status.loyaltyCounters
+    else acc) 0
+
+/-- Whether a Reality Fracture “Activate only if …” condition holds. -/
+def fraActivationConditionHolds (g : Game) (p : PlayerId) : FraActivationCondition → Bool
+  | .none => true
+  | .scriedOrSurveilledThisTurn => (g.player p).scriedOrSurveilledThisTurn
+  | .graveyardAtLeast n => (g.player p).graveyard.size ≥ n
+  | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
+
+/-- Whether `p` can pay the Reality Fracture part of `o`'s activation cost. -/
+def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) : FraCost → Bool
+  | .none => true
+  | .exileAnotherCreatureCardFromGraveyard =>
+    (g.player p).graveyard.any (fun id =>
+      id != o.id && (g.findObject? id).any (·.printed.isCreature))
+  | .sacrificeAnotherArtifact =>
+    (g.permanentsOf p).any (fun x => x.id != o.id && x.printed.isArtifact)
+  | .sacrificeAnotherCreatureOrPlaneswalker =>
+    (g.permanentsOf p).any (fun x => x.id != o.id && (x.isCreature || x.printed.isPlaneswalker))
+  | .sacrificeArtifactOrLand =>
+    (g.permanentsOf p).any (fun x => x.printed.isArtifact || x.printed.isLand)
+  | .discardLegendaryCard =>
+    (g.player p).hand.any (fun id => (g.findObject? id).any (·.isLegendary))
+  | .tapTwoUntappedArtifacts =>
+    ((g.permanentsOf p).filter (fun x => x.printed.isArtifact && !x.status.tapped)).size ≥ 2
+  | .exileSourceFromHand => o.zone == .hand o.owner
+  | .exileSource => o.isOnBattlefield
+
+/-- “For each opponent, up to one target … that player controls” as one
+optional target slot per opponent (CR 601.2c). -/
+def expandEachOpponentEffect (g : Game) (p : PlayerId) (e : Effect) : Effect :=
+  match e.targetKind with
+  | .filtered f =>
+    if f.controller == .eachOpponent then
+      let fs := (g.livingOpponents p).map (fun pl => { f with controller := .specific pl.id.idx })
+      { e with targeting := .of (.multi fs ((List.range fs.size).toArray)) }
+    else e
+  | _ => e
+
 /-- Shared activation legality (CR 602.3). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
 def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) :
     Except String Unit := do
   if !g.hasPriority p then
     throw "You don't have priority"
+  if g.splitSecondOnStack && !isManaActivation ab then
+    throw "A spell with split second is on the stack (CR 702.61a)"
   if ab.activateFromGraveyard then
     if !(o.zone == .graveyard o.owner && o.owner == p) then
       throw s!"{o.name}'s ability can be activated only from the graveyard"
@@ -41,8 +91,34 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       (g.battlefield.filter (fun x =>
         x.isCreature && x.controlledBy p && x.status.attacking)).size < 2 then
     throw s!"{o.name}'s ability can be activated only if you attacked with two or more creatures this turn"
+  if ab.onlyIfOpponentDealtNoncombatDamage &&
+      !(g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn) then
+    throw s!"{o.name}'s ability can be activated only if an opponent has been dealt noncombat damage this turn"
   if ab.onlyAsSorcery && !g.asSorcery? p then
     throw s!"{o.name}'s ability can be activated only as a sorcery"
+  if ab.exhaust && o.status.exhaustUsed then
+    throw s!"{o.name}'s exhaust ability can be activated only once (CR 702.177)"
+  if !g.fraActivationConditionHolds p ab.fraCondition then
+    throw s!"{o.name}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
+  if !g.canPayFraCost p o ab.cost.fra then
+    throw s!"{o.name}'s ability has a cost that can't be paid"
+  if g.combatLocksNonManaAbilities && !isManaActivation ab then
+    throw "During combat, players can't activate abilities that aren't mana abilities (Yuriko)"
+  match ab.cost.loyalty with
+  | none => pure ()
+  | some sym =>
+    -- CR 606.3: once per turn per permanent, and only as a sorcery unless an
+    -- effect such as Jace's Machinations allows otherwise.
+    if o.status.loyaltyActivatedThisTurn then
+      throw s!"A loyalty ability of {o.name} has already been activated this turn (CR 606.3)"
+    if !g.asSorcery? p && !g.mayActivateLoyaltyAtInstantSpeed p o then
+      throw s!"{o.name}'s loyalty abilities can be activated only as a sorcery (CR 606.3)"
+    match sym.counters with
+    | some k =>
+      if k < 0 && (o.status.loyaltyCounters : Int) < -k then
+        throw s!"{o.name} doesn't have {-k} loyalty counters to remove (CR 606.4)"
+    | none =>
+      if sym != .minusX then throw s!"{o.name}'s X loyalty cost is not supported"
   if ab.onlyDuringYourTurn && g.activePlayer != p then
     throw s!"{o.name}'s ability can be activated only during your turn"
   if ab.onceEachTurn && o.status.activationsThisTurn != 0 then
@@ -53,7 +129,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s power-up ability can be activated only once"
   if ab.cost.tap && o.status.tapped then
     throw s!"{o.name} is already tapped"
-  if ab.cost.tap && o.hasSummoningSickness && !g.activatesAsThoughHaste p then
+  if ab.cost.tap && o.hasSummoningSickness && !g.activatesAsThoughHaste p && !g.hasHaste o then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
@@ -92,14 +168,26 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let some ab := abs[abilityIdx]?
     | throw s!"{o.name} has no such activated ability"
   g.validateActivation p o ab
+  let loyaltyX := ab.cost.loyalty == some .minusX
+  let g :=
+    match ab.cost.loyalty with
+    | some sym => if loyaltyX then g else (g.payLoyaltyCost o sym).queueLoyaltyActivationTriggers p sym
+    | none => g
+  let g :=
+    if ab.exhaust then
+      let o := g.object! id
+      g.setObject { o with status := { o.status with exhaustUsed := true } }
+    else g
+  let o := g.object! id
   let pl := g.player p
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
+  let effect := g.expandEachOpponentEffect p ab.effect
   let (g, abilityObj) := g.putStackAbility o p
-    (abilityEffect := if ab.isModal then none else some ab.effect)
+    (abilityEffect := if ab.isModal then none else some effect)
   let newId := abilityObj.id
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
-  if !ab.isModal && !ab.effect.requiresTarget &&
+  if !ab.isModal && !ab.effect.requiresTarget && !loyaltyX &&
       !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&
       !ab.cost.sacrificeAnotherCreatureOrArtifact then
     let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
@@ -122,9 +210,16 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     payLife := ab.cost.payLife
     discardSource := ab.cost.discardSource
     abilityModes := ab.allModes
-    targetKindOverride := ab.equipSubtype.map EffectTargetKind.creatureYouControlSubtype
+    targetKindOverride :=
+      match ab.equipSubtype with
+      | some t => some (EffectTargetKind.creatureYouControlSubtype t)
+      | none => if effect.targetKind != ab.effect.targetKind then some effect.targetKind else none
     activation := some ab
+    loyaltyX
   }
+  if loyaltyX then
+    let g := { g with pending := .chooseX p, proposedSpell := some prop }
+    return g.logMsg s!"{pl.name} must choose a value for X (CR 107.3a / 601.2b)"
   return g.enterProposalWindow p pl prop ab.isModal ab.effect.requiresTarget "CR 601.2b"
 
 end Game

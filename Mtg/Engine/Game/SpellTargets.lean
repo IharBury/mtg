@@ -18,9 +18,17 @@ def legalTargets (g : Game) (caster : PlayerId) (effect : Effect) : Array Target
 def legalEffectTargets (g : Game) (caster : PlayerId) (effect : Effect) : Array Target :=
   g.legalTargetsForKind caster effect.targetKind
 
+/-- What an Aura spell targets (CR 303.4a): a creature, or an artifact or
+non-Aura enchantment for Puppet Crafting. -/
+def auraTargetKind (aura : CardDef) : EffectTargetKind :=
+  if aura.staticAbilities.any (· == .fra .enchantArtifactOrNonAuraEnchantment) then
+    .filtered { noun := "target artifact or non-Aura enchantment"
+                types := #[.artifact, .enchantment], nonAura := true }
+  else .creature
+
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
-def legalAuraTargets (g : Game) (caster : PlayerId) : Array Target :=
-  g.legalTargetsForKind caster .creature
+def legalAuraTargets (g : Game) (caster : PlayerId) (aura : CardDef) : Array Target :=
+  g.legalTargetsForKind caster (auraTargetKind aura)
 
 /-- Chosen mode of `o` if it is a modal spell on the stack (CR 700.2). -/
 def chosenModeOf (g : Game) (o : GameObject) : Option Nat :=
@@ -54,7 +62,7 @@ def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
       else c.spellEffect
     match effect with
     | some e => g.legalEffectTargets p e
-    | none => if c.isAura then g.legalAuraTargets p else #[]
+    | none => if c.isAura then g.legalAuraTargets p c else #[]
 
 /-- Legal targets for beginning to cast `o`, or for the chosen mode (CR 115.1, 303.4, 601.2c). -/
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
@@ -134,7 +142,11 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
         match g.currentSpellEffect obj with
         | some e => e.targeting
         | none =>
-          if obj.printed.isAura then EffectTargeting.of .creature .own
+          if obj.printed.isAura then
+            match auraTargetKind obj.printed with
+            | .creature => EffectTargeting.of .creature .own
+            | k => EffectTargeting.of k
+
           else EffectTargeting.of .none
   match g.proposedSpell with
   | some prop =>
@@ -165,6 +177,14 @@ def skipOptionalTargetSlot (g : Game) (objectId : ObjectId) : Game :=
   | some i =>
     { g with stack := g.stack.set! i { g.stack[i]! with
         skippedOptionalSlots := g.stack[i]!.skippedOptionalSlots + 1 } }
+
+/-- Record whether every instance of “target” on this stack object has been
+announced. A triggered ability with several instances stays unfinished until
+the last one is chosen or skipped (CR 603.3d). -/
+def markTargetsAnnounced (g : Game) (objectId : ObjectId) (done : Bool) : Game :=
+  match g.stack.findIdx? (fun e => e.objectId == objectId) with
+  | none => g
+  | some i => { g with stack := g.stack.set! i { g.stack[i]! with targetsAnnounced := done } }
 
 /-- True when the current instance of “target” is optional (“up to one”). -/
 def canSkipCurrentOptionalSlot (g : Game) (obj : GameObject) : Bool :=
@@ -243,13 +263,15 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
   | none =>
     match obj.abilityEffect with
     | some e =>
-      if e.allowsZeroTargets then (0, e.targetCount) else (e.targetCount, e.targetCount)
+      let maxN := e.maxTargetCount
+      if e.allowsZeroTargets then (0, maxN) else (e.targetCount, maxN)
     | none =>
       match obj.triggeredAbility with
       | some ab =>
         let n := ab.targeting.targetCount
+        let maxN := Nat.max n ab.effect.maxTargetCount
         -- “Up to one” is min 0, max the printed count (usually 1).
-        if ab.allowsZeroTargets then (0, n) else (n, n)
+        if ab.allowsZeroTargets then (0, maxN) else (n, maxN)
       | none => (1, 1)
 
 /-- True when at least the required targets are announced and another

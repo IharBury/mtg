@@ -9,6 +9,67 @@ When a triggered ability fires, with per-event clause wording and metadata.
 
 namespace Mtg.Engine
 
+/-- Trigger events first printed in Reality Fracture (FRA). -/
+inductive FraEvent where
+  /-- When you cast this spell. -/
+  | castThis
+  /-- Whenever one or more opponents are dealt noncombat damage. -/
+  | opponentsDealtNoncombatDamage
+  /-- Whenever an opponent is dealt noncombat damage. -/
+  | opponentDealtNoncombatDamage
+  /-- Whenever you put one or more loyalty counters on a planeswalker. -/
+  | youPutLoyaltyCounters
+  /-- When enchanted creature dies. -/
+  | enchantedDies
+  /-- Whenever a creature you control attacks. -/
+  | creatureYouControlAttacks
+  /-- Whenever a creature you control attacks a player alone. -/
+  | creatureYouControlAttacksPlayerAlone
+  /-- Whenever an opponent casts a spell with mana value `n` or less. -/
+  | opponentCastsSpellMvAtMost (n : Nat)
+  /-- Whenever you cast a prepared spell (a copy of a prepare spell). -/
+  | youCastPreparedSpell
+  /-- Whenever another creature or planeswalker you control enters. -/
+  | anotherCreatureOrPlaneswalkerYouControlEnters
+  /-- Whenever this creature or another creature you control enters. -/
+  | thisOrAnotherCreatureYouControlEnters
+  /-- Whenever another nontoken creature you control enters. -/
+  | anotherNontokenCreatureYouControlEnters
+  /-- Whenever a creature an opponent controls enters. -/
+  | creatureOpponentControlsEnters
+  /-- Whenever an opponent activates a loyalty ability. -/
+  | opponentActivatesLoyaltyAbility
+  /-- Whenever another creature or planeswalker you control dies. -/
+  | anotherCreatureOrPlaneswalkerYouControlDies
+  /-- Whenever a player discards one or more cards. -/
+  | playerDiscards
+  /-- When you discard this card. -/
+  | youDiscardThis
+  /-- Whenever a creature you control with power `n` or greater enters. -/
+  | creatureYouControlPowerAtLeastEnters (n : Int)
+  /-- Whenever you cast an artifact or creature spell. -/
+  | youCastArtifactOrCreature
+  /-- Whenever you cast an Equipment spell or a spell that targets a creature
+  you control. -/
+  | youCastEquipmentOrTargetingCreatureYouControl
+  /-- Whenever a creature an opponent controls with power or toughness 1 or
+  less blocks. -/
+  | opponentSmallCreatureBlocks
+  /-- At the beginning of combat on your turn, while this card is in your
+  graveyard. -/
+  | yourBeginCombatFromGraveyard
+  /-- At the beginning of each upkeep, while this card is in your graveyard. -/
+  | eachUpkeepFromGraveyard
+  /-- Whenever a creature attacks you or a planeswalker you control. -/
+  | creatureAttacksYouOrYourPlaneswalker
+  /-- Whenever one or more creatures attack one of your opponents. -/
+  | creaturesAttackYourOpponent
+  /-- Whenever a creature you control leaves the battlefield. -/
+  | creatureYouControlLeaves
+  /-- Whenever you proliferate (CR 701.34). -/
+  | youProliferate
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- When a triggered ability fires (CR 603). Several printed abilities share
 an event (`scry` on attack, enter, or attack-with-Elves); “enters or attacks”
 is two events. -/
@@ -165,6 +226,23 @@ inductive TriggerEvent where
   | youCastVillain
   /-- You cast a spell that targets a creature you control. -/
   | youCastTargetingCreatureYouControl
+  /-- You cast a spell that targets an opponent or a creature an opponent
+  controls. -/
+  | youCastTargetingOpponentOrTheirCreature
+  /-- You cast your first noncreature spell this turn. -/
+  | youCastFirstNoncreature
+  /-- You activate a loyalty ability. -/
+  | youActivateLoyaltyAbility
+  /-- The beginning of each player's upkeep. -/
+  | eachUpkeep
+  /-- You scry or surveil (CR 701.20 / 701.25). -/
+  | youScryOrSurveil
+  /-- One or more of your opponents are dealt combat damage during your turn. -/
+  | opponentsDealtCombatDamageYourTurn
+  /-- A creature you control dies. -/
+  | creatureYouControlDies
+  /-- The beginning of each opponent's draw step. -/
+  | eachOpponentDrawStep
   /-- You cast a spell. -/
   | youCastSpell
   /-- You discard a card. -/
@@ -215,6 +293,8 @@ inductive TriggerEvent where
   | sourceBecomesTapped
   /-- Equipped creature becomes tapped. -/
   | equippedBecomesTapped
+  /-- A Reality Fracture event. -/
+  | fra (e : FraEvent)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -455,6 +535,28 @@ def spec : TriggerEvent → Spec
   | .youCastTargetingCreatureYouControl =>
     { clause := "you cast a spell that targets a creature you control",
       label := "cast trigger", checkTargets := false }
+  | .youCastTargetingOpponentOrTheirCreature =>
+    { clause := "you cast a spell that targets an opponent or a creature an opponent controls",
+      label := "cast trigger", checkTargets := false }
+  | .youCastFirstNoncreature =>
+    { clause := "you cast your first noncreature spell each turn",
+      label := "cast trigger", checkTargets := false }
+  | .youActivateLoyaltyAbility =>
+    { clause := "you activate a loyalty ability",
+      label := "loyalty trigger", checkTargets := false }
+  | .eachUpkeep =>
+    { clause := "the beginning of each player's upkeep", isWhenever := false,
+      label := "upkeep trigger", checkTargets := false }
+  | .youScryOrSurveil =>
+    { clause := "you scry or surveil", label := "scry trigger", checkTargets := false }
+  | .opponentsDealtCombatDamageYourTurn =>
+    { clause := "one or more of your opponents are dealt combat damage during your turn",
+      isWhenever := false, label := "combat-damage trigger", checkTargets := false }
+  | .creatureYouControlDies =>
+    { clause := "a creature you control dies", label := "dies trigger", checkTargets := false }
+  | .eachOpponentDrawStep =>
+    { clause := "the beginning of each opponent's draw step", isWhenever := false,
+      label := "draw-step trigger", checkTargets := false }
   | .youCastSpell =>
     { clause := "you cast a spell", label := "cast trigger", checkTargets := false }
   | .youDiscard =>
@@ -527,6 +629,20 @@ def spec : TriggerEvent → Spec
   | .equippedBecomesTapped =>
     { clause := "equipped creature becomes tapped", label := "equipped-tapped trigger",
       checkTargets := false }
+  | .fra e =>
+    match e with
+    | .castThis => { clause := "you cast this spell", isWhenever := false, label := "cast trigger" }
+    | .enchantedDies =>
+      { clause := "enchanted creature dies", isWhenever := false, label := "dies trigger" }
+    | .youDiscardThis =>
+      { clause := "you discard this card", isWhenever := false, label := "discard trigger" }
+    | .yourBeginCombatFromGraveyard =>
+      { clause := "the beginning of combat on your turn", isWhenever := false
+        label := "beginning-of-combat trigger" }
+    | .eachUpkeepFromGraveyard =>
+      { clause := "the beginning of each upkeep", isWhenever := false
+        label := "upkeep trigger" }
+    | _ => { clause := "this occurs", label := "triggered ability" }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=

@@ -153,6 +153,25 @@ def parsedTwoAmountsSameSource : Bool :=
   | .error msg => msg == attackUsage
   | .ok _ => false
 
+/- Gray Ogre attacks Nissa's planeswalker by its id; Grizzly Bears attacks
+Nissa (CR 506.3). -/
+#guard
+  let g := Tests.readyToDeclareAttackers
+  let g := Tests.addPermanent g ajaniResolute ⟨1⟩ ⟨1⟩
+  let ajani := Tests.namedPermanent g "Ajani Resolute"
+  let ogre := Tests.namedPermanent g "Gray Ogre"
+  let bears := Tests.namedPermanent g "Grizzly Bears"
+  match applyAttack g ⟨0⟩ [toString ogre.id, "at", toString ajani.id, toString bears.id, "at", "Nissa"] with
+  | .ok g' =>
+    (g'.object! ogre.id).status.attackingPlaneswalker == some ajani.id &&
+      (g'.object! ogre.id).status.attackingWhom == some ⟨1⟩ &&
+      (g'.object! bears.id).status.attackingPlaneswalker.isNone
+  | .error _ => false
+
+#guard ((helpInteractive false).splitOn "Attack that planeswalker").length > 1
+
+#guard ((helpInteractive false).splitOn "name <card name>").length > 1
+
 
 #guard
   let g := Tests.threeTwoOgresReady

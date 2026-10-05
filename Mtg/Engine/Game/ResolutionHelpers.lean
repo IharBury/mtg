@@ -162,6 +162,9 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
       g.logMsg s!"{o.name} can't become untapped"
     else if !o.status.tapped then
       g.logMsg s!"{o.name} is already untapped"
+    else if o.status.stun > 0 then
+      let g := g.mapObjectStatus o (fun s => { s with stun := s.stun - 1 })
+      g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it (CR 122.1d)"
     else
       let g := g.mapObjectStatus o (fun s => { s with tapped := false })
       g.logMsg s!"{o.name} untaps"
@@ -175,6 +178,15 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .pumpAndGrant pw tw k =>
     let g := g.pumpPermanent o pw tw
     g.grantUntilEotLogged (g.object! o.id) k
+  | .becomePrepared => g.becomePrepared o
+  | .tapAndStun =>
+    -- Ruling 764: an already tapped creature still gets the stun counter.
+    let g := if o.status.tapped then g else g.becomeTapped o
+    let g := g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + 1 })
+    g.logMsg s!"A stun counter is put on {o.name}"
+  | .setBasePT pw tw =>
+    let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
+    g.logMsg s!"{o.name} has base power and toughness {pw}/{tw} until end of turn"
 def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (action : PermanentAction)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
@@ -191,16 +203,40 @@ def queueScryTriggers (g : Game) (p : PlayerId) (lookedAt : Nat) : Game :=
     g.enqueueWaitingTriggers
       (o.waitingTriggersFor p .youScry (some (Int.ofNat lookedAt)))
 
+/-- Queue “whenever you scry or surveil” triggers. They wait until the
+scry or surveil is finished (ruling 836). -/
+def queueScryOrSurveilTriggers (g : Game) (p : PlayerId) : Game :=
+  g.foldControlledPermanents p none fun g o =>
+    g.putMatchingSourceTriggers p o .youScryOrSurveil
+
 /-- Start scrying `n` as a keyword action during resolution (CR 701.20).
 Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.20c). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
   let g := if n == 0 then g else g.queueScryTriggers p count
+  let g := if n == 0 then g else g.queueScryOrSurveilTriggers p
+  let g := if n == 0 then g else
+    g.modifyPlayer p (fun pl => { pl with scriedOrSurveilledThisTurn := true })
   if count == 0 then
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
-    { g with pending := .scry p count }.logMsg s!"{pl.name} scries {n}"
+    { g with pending := .scry p count, surveilReturnMvAtMost := none }.logMsg s!"{pl.name} scries {n}"
+
+/-- Start surveilling `n` during resolution (CR 701.25): look at the top
+`n` cards, put any number into the graveyard and the rest back on top in any
+order. -/
+def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  let pl := g.player p
+  let count := min n pl.library.size
+  let g := if n == 0 then g else g.queueScryOrSurveilTriggers p
+  let g := if n == 0 then g else
+    g.modifyPlayer p (fun pl => { pl with scriedOrSurveilledThisTurn := true })
+  if count == 0 then
+    g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
+  else
+    { g with pending := .surveil p count }.logMsg
+      s!"{pl.name} surveils {n}"
 
 /-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.13). -/
 def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=

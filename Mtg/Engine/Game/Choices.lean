@@ -14,8 +14,14 @@ namespace Game
 /-- Permanents `p` may sacrifice to pay “sacrifice another creature or artifact”. -/
 def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : ObjectId) :
     Array GameObject :=
+  let creatureOrPlaneswalker :=
+    match g.findObject? sourceId with
+    | some src => src.printed.additionalCostSacrificeCreatureOrPlaneswalker
+    | none => false
   g.permanentsOf p |>.filter (fun o =>
-    o.id != sourceId && (o.isCreature || o.printed.isArtifact))
+    o.id != sourceId &&
+      if creatureOrPlaneswalker then o.isCreature || o.printed.isPlaneswalker
+      else o.isCreature || o.printed.isArtifact)
 
 /-- Creatures `p` may sacrifice to a “sacrifices a creature of their choice” effect. -/
 def sacrificeCreatureChoices (g : Game) (p : PlayerId) : Array GameObject :=
@@ -474,7 +480,8 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
       (src.zone == .graveyard src.owner && src.owner == prop.caster &&
         !prop.tapSource && !prop.sacrificeSource && !prop.discardSource) ||
       (src.zone == .hand src.owner && src.owner == prop.caster &&
-        prop.discardSource && !prop.tapSource && !prop.sacrificeSource)
+        (prop.discardSource || prop.activation.any (·.cost.fra == .exileSourceFromHand)) &&
+        !prop.tapSource && !prop.sacrificeSource)
 
 end Game
 end Mtg.Engine

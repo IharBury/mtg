@@ -472,7 +472,8 @@ def typecyclingLand? (ab : ActivatedAbility) : Option String :=
 
 /-- Oracle line for one activated ability, matching the wording catalogs store. -/
 def printedActivated (ab : ActivatedAbility) : String :=
-  if isEquipAbility ab then
+  if !ab.printed.isEmpty then ab.printed
+  else if isEquipAbility ab then
     let pay := if ab.cost.payLife != 0 then s!", Pay {ab.cost.payLife} life" else ""
     match ab.equipSubtype with
     | some t => s!"Equip {t} {ab.cost.mana}{pay}"
@@ -505,6 +506,8 @@ def printedActivated (ab : ActivatedAbility) : String :=
           " Activate only if you control a legendary creature." else "") ++
         (if ab.onlyIfYouAttackedWithTwoOrMore then
           " Activate only if you attacked with two or more creatures this turn." else "") ++
+        (if ab.onlyIfOpponentDealtNoncombatDamage then
+          " Activate only if an opponent has been dealt noncombat damage this turn." else "") ++
         (if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 then
           s!" Activate only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater."
          else "") ++
@@ -656,6 +659,10 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with costReductionEqualFlyingPower := true }
   else if low.startsWith "this spell costs {x} less to cast, where x is the greatest number of artifacts an opponent controls" then
     some { c with costReductionEqualOppArtifacts := true }
+  else if low.startsWith "this spell costs {x} less to cast, where x is the greatest power among creatures you control" then
+    some { c with costReductionGreatestPower := true }
+  else if low.startsWith "this spell costs {x} less to cast, where x is the greatest toughness among creatures you control" then
+    some { c with costReductionGreatestToughness := true }
   else if low.startsWith "this spell costs " && low.contains "less to cast if a creature died this turn" then
     n.map fun k => { c with costReductionIfCreatureDied := k }
   else if low.startsWith "this spell costs " && low.contains "dealt damage this turn" then
@@ -706,6 +713,10 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low.startsWith "teamwork " then
     let num := (low.drop "teamwork ".length).takeWhile Char.isDigit
     if num.isEmpty then none else some { c with teamwork := some num.toNat! }
+  else if low.startsWith "as an additional cost to cast this spell, sacrifice a creature or planeswalker or pay" then
+    n.map fun k => { c with additionalCostSacrificeArtifactOrCreature := true
+                            additionalCostSacrificeCreatureOrPlaneswalker := true
+                            additionalCostOrPayGeneric := some k }
   else if low.startsWith "as an additional cost to cast this spell, sacrifice an artifact or creature or pay" then
     n.map fun k => { c with additionalCostSacrificeArtifactOrCreature := true, additionalCostOrPayGeneric := some k }
   else if low.startsWith "as an additional cost to cast this spell, sacrifice an artifact or creature" then
@@ -721,6 +732,10 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with flashIfYouControlSubtype := some t }
   else if low.startsWith "ward " || low.startsWith "ward{" then
     n.map fun k => { c with ward := some k }
+  else if low.startsWith "flashback—" && low.contains ", discard a card" then
+    let costText := (((raw.drop "Flashback—".length).copy).splitOn ",").headD "" |>.trimAscii.copy
+    parseManaCost costText |>.map fun cost =>
+      { c with flashback := some cost, flashbackDiscard := true }
   else if low.startsWith "flashback " then
     let costText :=
       ((stripParentheticals ((raw.drop "Flashback ".length).trimAscii.copy)).trimAscii.copy).replace "." ""
@@ -732,6 +747,20 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with entersTappedUnlessLegendary := true }
   else if low.contains "enters tapped unless you control an equipment" then
     some { c with entersTappedUnlessEquipment := true }
+  else if low == "this creature enters with a +1/+1 counter on it." then
+    some { c with entersWithPlusOneCounters := 1 }
+  else if low.startsWith "{t}: choose a color. add one mana of that color for each different power among creatures you control" then
+    some { c with tapAddChosenColorPerDifferentPower := true }
+  else if low.startsWith "as long as there are seven or more cards in your graveyard, you may cast the exiled card" then
+    some { c with castExiledWithSevenInGraveyard := true }
+  else if low.startsWith "a deck can have any number of cards named" then
+    some { c with anyNumberInDeck := true }
+  else if low.startsWith "you can't cast this spell unless there are seven or more cards in your graveyard" then
+    some { c with castOnlyIfGraveyardAtLeast := some 7 }
+  else if low.contains "enters tapped unless you control a planeswalker" then
+    some { c with entersTappedUnlessPlaneswalker := true }
+  else if low.contains "enters tapped unless you control two or more other lands" then
+    some { c with entersTappedUnlessTwoOtherLands := true }
   else if low.contains "you may pay" && low.contains "if you don't, it enters tapped" then
     let life :=
       match (low.splitOn "pay ").getLastD "" |>.takeWhile Char.isDigit with
@@ -1002,10 +1031,53 @@ def matchChapter (cardName text : String) : Option Effect :=
       | some e => some e
       | none => firstSpell (·.matchText q)
 
+/-- A mode of a modal triggered ability: a spell or ability effect, else a
+Saga chapter effect. -/
+def matchTriggerMode (cardName text : String) : Option Effect :=
+  let q := EffectQuery.of cardName text
+  let firstSpell (f : EffectProto → Option Effect) : Option Effect :=
+    spellProtos.get.foldl (fun acc p =>
+      match acc with
+      | some _ => acc
+      | none => (p.forCard cardName).bind f) none
+  match firstSpell fun p => if p.sameText q then some p.effect else none with
+  | some e => some e
+  | none =>
+    match firstSpell (·.matchText q) with
+    | some e => some e
+    | none => matchChapter cardName text
+
+/-- A modal “When this enters, choose one —” (or “choose two —”) triggered
+ability: the trigger and its modes. -/
+def parseTriggerModes (cardName line : String) : Option (TriggeredAbility × Array Effect) :=
+  let raw := line.trimAscii.copy
+  let low := lowerAscii raw
+  let header := ((raw.splitOn "•").headD "").trimAscii.copy
+  let lowHeader := lowerAscii header
+  let named := collapseWs (prepareLine cardName header)
+  let count :=
+    if lowHeader.endsWith "choose one —" then some 1
+    else if lowHeader.endsWith "choose two —" then some 2
+    else none
+  if !(low.startsWith "when ") || !(named.startsWith "when this enters, choose") then none
+  else
+    match count with
+    | none => none
+    | some n =>
+      let modes := (raw.splitOn "•").drop 1 |>.map (·.trimAscii.copy) |>.filter (· != "")
+      let effects := modes.filterMap fun m => matchTriggerMode cardName (stripAbilityWord m)
+      if modes.isEmpty || effects.length != modes.length then none
+      else
+        let eff : Effect :=
+          { resolution := .fra (.chooseTriggerModes n)
+            phrase := if n == 2 then "choose two" else "choose one" }
+        some (.triggered .enter eff, effects.toArray)
+
 def parseModes (cardName line : String) : Option ParsedAbility :=
   let raw := line.trimAscii.copy
   let low := lowerAscii raw
   if !(low.contains "choose one") then none
+  else if low.startsWith "when " || low.startsWith "whenever " then none
   else if raw.contains "{" && ((raw.splitOn "Choose").headD "").contains "{" then none
   else
     let bullets := raw.splitOn "•" |>.map (·.trimAscii.copy) |>.filter (· != "")
@@ -1645,8 +1717,10 @@ partial def parseRules (c : CardDef) (lines : List String)
     match units with
     | [] => .ok c
     | line :: rest =>
+      -- A modal line keeps its Empower Jace on the mode that prints it.
+      let modal := (lowerAscii line).contains "•"
       let (c, line) :=
-        match spellEmpower line with
+        match if modal then none else spellEmpower line with
         | some (n, leftover) =>
           let amount := match c.empowerJace with | some k => k | none => n
           ({ c with empowerJace := some amount }, leftover)
@@ -1666,19 +1740,49 @@ partial def parseRules (c : CardDef) (lines : List String)
         | some cost => go { c with additionalCostBeholdOrPay := some cost } rest
         | none =>
         -- CR 209.2: a loyalty symbol in the cost makes this a loyalty ability.
+        -- “Planeswalkers you control have "[−N]: …"”: a granted loyalty ability.
+        let grantedPrefix := "planeswalkers you control have \""
+        let granted? : Option ActivatedAbility :=
+          if (lowerAscii line).startsWith grantedPrefix then
+            let inner := ((line.drop grantedPrefix.length).trimAscii.copy)
+            let inner :=
+              if inner.endsWith "\"." then (inner.dropEnd 2).copy
+              else if inner.endsWith "\"" then (inner.dropEnd 1).copy
+              else inner
+            match parseLoyaltyAbilityLine inner with
+            | some (sym, effectText) =>
+              match matchModeled c.name [effectText] with
+              | some (.spell e, 1) => some (activated e (loyalty := some sym))
+              | _ => none
+            | none => none
+          else none
+        match granted? with
+        | some ab =>
+          go { c with planeswalkersYouControlHave := c.planeswalkersYouControlHave.push ab } rest
+        | none =>
         match parseLoyaltyAbilityLine line with
         | some (sym, effectText) =>
+          let jaceSuffix :=
+            " Activate only if there are twenty-five or more loyalty counters among Jaces you control."
+          let (effectText, cond) :=
+            if effectText.endsWith jaceSuffix then
+              ((effectText.dropEnd jaceSuffix.length).copy, FraActivationCondition.jaceLoyaltyAtLeast 25)
+            else (effectText, .none)
           match matchModeled c.name (effectText :: rest) with
           | some (.spell e, n) =>
             let more := (effectText :: rest).drop n
             if n > 0 && more.length < (effectText :: rest).length then
+              let ab : ActivatedAbility := activated e (loyalty := some sym)
               go { c with activatedAbilities :=
-                c.activatedAbilities.push (activated e (loyalty := some sym)) } more
+                c.activatedAbilities.push { ab with fraCondition := cond } } more
             else unrecognized c line rest
           | _ => unrecognized c line rest
         | none =>
         match keywordTokens c.name line with
-        | some toks => go { c with keywords := c.keywords.merge (keywordsFromTokens toks) } rest
+        | some toks =>
+          go { c with
+            keywords := c.keywords.merge (keywordsFromTokens toks)
+            prowessInstances := c.prowessInstances + toks.count "prowess" } rest
         | none =>
           match parseChapterHeader line with
           | some (roman, text) =>
@@ -1700,6 +1804,11 @@ partial def parseRules (c : CardDef) (lines : List String)
             match parseStructural c line with
             | some c => go c rest
             | none =>
+              match parseTriggerModes c.name line with
+              | some (ab, modes) =>
+                go { c with triggeredAbilities := c.triggeredAbilities.push ab
+                            fraTriggerModes := modes } rest
+              | none =>
               match parseModes c.name line with
               | some ab => go (applyParsed c ab) rest
               | none =>

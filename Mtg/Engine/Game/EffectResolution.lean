@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.ModeledTriggers
+import Mtg.Engine.Game.FraResolve
 
 /-!
 # Unified effect resolution (CR 608)
@@ -27,10 +27,174 @@ def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
     let (g, _) := g.move src.id (.library owner) none
     g.requestShuffle owner after |>.continueIfShuffled
 
+/-- Damage beyond lethal damage dealt to `o` by `dealt` damage (CR 120.4a):
+beyond its toughness minus damage already marked for a creature, beyond its
+loyalty for a planeswalker (ruling 790), and beyond the greater of the two
+when it is both. -/
+def excessDamage (g : Game) (o : GameObject) (dealt : Nat) : Nat :=
+  let creatureLethal :=
+    if o.isCreature then (g.toughness o - o.status.damage).toNat else 0
+  let loyalty := if o.printed.isPlaneswalker then o.status.loyaltyCounters else 0
+  dealt - Nat.max creatureLethal loyalty
+
+/-- `pid` sacrifices a creature or planeswalker with the greatest mana value
+among creatures and planeswalkers they control, as one group (rulings
+771–773). With a tie, the most recent of them is sacrificed. -/
+def sacrificeGreatestManaValue (g : Game) (pid : PlayerId) : Game :=
+  let candidates := (g.permanentsOf pid).filter (fun o =>
+    o.isCreature || o.printed.isPlaneswalker)
+  let best := candidates.foldl (fun best o =>
+    match best with
+    | none => some o
+    | some b =>
+      let mo := g.objectManaValue o
+      let mb := g.objectManaValue b
+      if mo > mb || (mo == mb && o.timestamp ≥ b.timestamp) then some o else best) none
+  match best with
+  | none => g.logMsg s!"{(g.player pid).name} has no creature or planeswalker to sacrifice"
+  | some o => g.sacrificeToGraveyard o s!"{(g.player pid).name} sacrifices {o.name}"
+
+/-- Resolutions added for Reality Fracture, shared by spells and activated
+abilities. `none` for every other resolution. -/
+def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (sourceId : Option ObjectId) : Option Game :=
+  match effect.resolution with
+  | .empowerJace n => some (g.empowerJace controller n)
+  | .surveil n => some (g.beginSurveil controller n)
+  | .millSelf n => some (g.mill controller n)
+  | .mayDiscardDraw n =>
+    let pl := g.player controller
+    if pl.hand.isEmpty then some (g.logMsg s!"{pl.name} has no card to discard")
+    else
+      some ({ g with pending := .mayDiscardDraw controller n }.logMsg
+        s!"{pl.name} may discard a card. If they do, they draw {n}")
+  | .createTokensLifeGained kind =>
+    -- Ruling 755: counts life gained, ignoring life lost this turn.
+    some (g.createKindTokens controller kind (g.player controller).lifeGainedThisTurn)
+  | .oppSacrificesGreatestMvGainLife life =>
+    some (g.withLegalKindPlayer controller effect.targetKind targets (fun g pid =>
+      (g.sacrificeGreatestManaValue pid).gainLife controller life) sourceId)
+  | .eachCreatureYouControlBecomesPrepared =>
+    some ((g.permanentsOf controller).foldl (fun g o =>
+      if o.isCreature && o.printed.prepareFace.isSome then g.becomePrepared (g.object! o.id)
+      else g) g)
+  | .damageThenEmpowerExcess n =>
+    some (g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
+      let before := o.status.damage
+      let g := g.dealDamageToPermanent o n
+      let dealt := ((g.object! o.id).status.damage - before).toNat
+      let excess := g.excessDamage o dealt
+      if excess > 0 then g.empowerJace controller excess
+      else g) sourceId (some "The target is no longer legal"))
+  | .exileTopMayCastElseDamageOpponents n =>
+    match (g.player controller).library.back? with
+    | none =>
+      some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n))
+    | some top =>
+      let (g, id) := g.move top .exile none
+      let card := g.object! id
+      let g := g.logMsg s!"{(g.player controller).name} exiles {card.name}"
+      if card.printed.isLand then
+        -- Ruling 855: a land can't be cast, so the damage is dealt.
+        some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n))
+      else
+        some ({ g with pending := .mayCastExiledElseDamage controller id n }.logMsg
+          s!"{(g.player controller).name} may cast {card.name}")
+  | .emblemCastSpellDamage n =>
+    -- Ruling 858: the emblem is colorless.
+    let emblem : CardDef := {
+      name := "Chandra Emblem", types := #[]
+      triggeredAbilities := #[.triggered .youCastSpell
+        (Effect.ofTrigger (.onPermanent .playerOrCreature (.dealDamage n)))] }
+    let (g, _) := g.allocObject emblem controller .command (some controller)
+    some (g.logMsg s!"{(g.player controller).name} gets an emblem")
+  | .firstDealsStatDamageToSecond useLoyalty =>
+    -- Ruling 791: the power or loyalty is checked as the spell resolves; if
+    -- that permanent is gone, no damage is dealt.
+    let kinds := effect.targetKind.spec.slots
+    let legalAt (i : Nat) (t : Target) : Bool :=
+      match kinds[i]? with
+      | some k => (g.legalTargetsForAtomicKind controller k none).contains t
+      | none => false
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent srcId), some (Target.permanent dstId) =>
+      if !legalAt 0 (Target.permanent srcId) then
+        some (g.logMsg "The first target is no longer legal. No damage is dealt")
+      else if !legalAt 1 (Target.permanent dstId) then
+        some (g.logMsg "The second target is no longer legal. No damage is dealt")
+      else
+        let src := g.object! srcId
+        let dst := g.object! dstId
+        let n : Int := if useLoyalty then Int.ofNat src.status.loyaltyCounters else g.power src
+        some (g.dealDamageFrom src.name dst (max n 0) (source := some src))
+    | _, _ => some (g.logMsg "The targets are no longer legal")
+  | .returnFromGyWithFinality =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.zone == .graveyard o.owner then
+        let (g, newId) := g.putOntoBattlefield o.id controller
+        let g := g.logMsg s!"{o.name} returns to the battlefield"
+        let g := g.addFinalityTo (g.object! newId) 1
+        some (g.afterPermanentEnters (g.object! newId))
+      else some (g.logMsg s!"{o.name} is no longer in the graveyard")
+    | none => some (g.logMsg "The card is no longer in the graveyard")
+  | .copyNextInstantSorceryThisTurn =>
+    let g := g.modifyPlayer controller (fun pl =>
+      { pl with copyNextInstantSorceryThisTurn := pl.copyNextInstantSorceryThisTurn + 1 })
+    some (g.logMsg s!"When {(g.player controller).name} next casts an instant or sorcery spell this turn, it is copied")
+  | .proliferatePlaneswalkerTypesTimes =>
+    -- Ruling 878: X is determined once, as the ability resolves.
+    let types := (g.permanentsOf controller).foldl (fun acc o =>
+      if o.printed.isPlaneswalker then
+        o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc
+      else acc) (#[] : Array String)
+    if types.isEmpty then
+      some (g.logMsg s!"{(g.player controller).name} controls no planeswalker types. X is 0")
+    else
+      some ({ g with pending := .chooseProliferate controller types.size }.logMsg
+        s!"{(g.player controller).name} proliferates {types.size} time(s)")
+  | .copyEachCreatureOfTargetPlayer =>
+    -- Rulings 784–789: each token copies the creature's copiable values only
+    -- (no counters or status). All tokens are created before any of them is
+    -- treated as entering, so they see each other enter.
+    some (g.withLegalKindPlayer controller effect.targetKind targets (fun g pid =>
+      let sacrifice : TriggeredAbility :=
+        .triggered .fromEffect (Effect.ofTrigger .sacrificeSourceIfNoPlaneswalker)
+      let (g, ids) := (g.creaturesControlledBy pid).foldl
+        (fun (acc : Game × Array ObjectId) c =>
+          let printed := { c.printed with
+            keywords := c.printed.keywords.merge Keyword.haste
+            triggeredAbilities := c.printed.triggeredAbilities.push sacrifice }
+          let (g, tok) := acc.1.createToken controller printed
+          (g, acc.2.push tok.id)) (g, #[])
+      ids.foldl (fun g id =>
+        match g.findObject? id with
+        | some o => g.afterPermanentEnters o
+        | none => g) g) sourceId)
+  | .becomeCopyLegendRuleOff =>
+    some (g.withLegalKindPermanent controller effect.targetKind targets (fun g target =>
+      g.withSourceOnBattlefield sourceId (fun g src =>
+        -- Rulings 812 / 815 / 816: copy the copiable values (already those
+        -- of anything the target copies); the land doesn't enter, keeps its
+        -- status, and both effects end together in cleanup (ruling 817).
+        let g := g.becomeCopyOf src target (untilEot := true)
+        let g := g.modifyPlayer controller (fun pl => { pl with legendRuleOffThisTurn := true })
+        g.logMsg s!"The legend rule doesn't apply to permanents {(g.player controller).name} controls this turn")
+        "The source is no longer in play") sourceId (some "The target is no longer legal"))
+  | .fra r => some (g.applyFra controller effect r targets sourceId)
+  | .teamGain k => some (g.grantUntilEotToControlledCreatures controller k k.joinedAnd)
+  | .jaceLoyaltyAtInstantSpeed =>
+    let g := g.modifyPlayer controller (fun pl => { pl with jaceLoyaltyAtInstantSpeed := true })
+    some (g.logMsg s!"Until end of turn, {(g.player controller).name} may activate loyalty abilities of Jace planeswalkers they control any time they could cast an instant")
+  | _ => none
+
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0) : Game :=
+  match g.applyFraResolution? controller effect targets none with
+  | some g => g
+  | none =>
   match effect.resolution with
   | .sequence rs =>
     match rs.flatMap Resolution.flatten with
@@ -730,6 +894,9 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
 partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
+  match g.applyFraResolution? controller effect targets sourceId with
+  | some g => g
+  | none =>
   match effect.resolution with
   | .sequence rs =>
     match rs.flatMap Resolution.flatten with
@@ -1119,6 +1286,14 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     | some (Target.permanent id) => g.applyConnive controller (some id)
     | _ => g.applyConnive controller none
   | .sequence _ | .shuffleSource | .amassGoblins _ | .discard _ | .spell _ | .trigger _ =>
+    g
+  | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
+  | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
+  | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
+  | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
+  | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn | .returnFromGyWithFinality
+  | .firstDealsStatDamageToSecond _
+  | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ | .fra _ =>
     g
 
 /-- Resolve a printed activated ability (CR 608). -/

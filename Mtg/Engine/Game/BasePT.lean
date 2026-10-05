@@ -62,7 +62,43 @@ def hasSuperAdaptoidPowerCda (o : GameObject) : Bool :=
     | .powerEqualLegendaryCreaturesYouControl => true
     | _ => false)
 
+/-- Number of card types among cards in all graveyards (Tarmogoyf). Card
+types, not cards, are counted, and supertypes are not card types (rulings
+797 / 800). -/
+def graveyardCardTypeCount (g : Game) : Nat :=
+  let types := g.objects.foldl (fun acc o =>
+    match o.zone with
+    | .graveyard _ => o.printed.types.foldl (fun acc t =>
+        if acc.contains t then acc else acc.push t) acc
+    | _ => acc) (#[] : Array CardType)
+  types.size
+
+/-- True when `o` has Tarmogoyf's characteristic-defining ability. It works
+in every zone, including the graveyard (ruling 799). -/
+def hasGraveyardCardTypesPT (o : GameObject) : Bool :=
+  o.staticAbilities.any (fun
+    | .ptEqualGraveyardCardTypes => true
+    | _ => false)
+
+/-- Basic land types among lands `p` controls (domain; CR 305.6). -/
+def basicLandTypesAmong (g : Game) (p : PlayerId) : Nat :=
+  (#["Plains", "Island", "Swamp", "Mountain", "Forest"].filter (fun t =>
+    (g.permanentsOf p).any (fun o => o.printed.isLand && o.hasSubtype t))).size
+
 def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
+  if o.isOnBattlefield && o.status.animatedConstruct55 then
+    (o.status.setBasePower.getD 5, o.status.setBaseToughness.getD 5)
+  else if o.staticAbilities.any (· == .fra .powerEqualsBasicLandTypes) then
+    let cda : Int := Int.ofNat (g.basicLandTypesAmong o.you)
+    let power := if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
+    (power, g.characteristicBase o o.printed.toughness o.status.setBaseToughness)
+  else if hasGraveyardCardTypesPT o then
+    let n : Int := Int.ofNat g.graveyardCardTypeCount
+    -- Ruling 776: a layer-7b set (Multiply by Zero) overrides this CDA.
+    if o.isOnBattlefield then
+      (o.status.setBasePower.getD n, o.status.setBaseToughness.getD (n + 1))
+    else (n, n + 1)
+  else
   let power :=
     if g.hasCardsInHandPower o then
       -- Ms. Marvel (ruling 288): this set-P/T overwrites previous layer-7b sets.

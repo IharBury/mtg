@@ -3,7 +3,7 @@ import Mtg.Engine.Game.Mulligans
 /-!
 # Decision handlers
 
-Handlers for `Pending` decisions: finishing scry, discarding, paying
+Handlers for `Pending` decisions: finishing scry and surveil, discarding, paying
 generic costs, library-side and permanent choices, declining, keeping
 the opening hand, the legend rule, ordering triggers, taking mulligans,
 and supplying outside randomness.
@@ -24,39 +24,195 @@ def uniqueObjectIds (ids : Array ObjectId) : Bool :=
 def isPermutation (a b : Array ObjectId) : Bool :=
   a.size == b.size && uniqueObjectIds a && a.all (fun x => b.contains x)
 
+/-- Check that `top ++ rest` rearranges the `count` cards `p` is looking at
+as `q`'s pending scry or surveil. -/
+def checkLookedPiles (g : Game) (p q : PlayerId) (count : Nat)
+    (top rest : Array ObjectId) (verb rule : String) : Except String Unit := do
+  if p != q then
+    throw s!"Only {(g.player q).name} may {verb}"
+  if !uniqueObjectIds (top ++ rest) then
+    throw "Duplicate card"
+  if !isPermutation (top ++ rest) (g.scryLookedIds p count) then
+    throw s!"{verb.capitalize} must rearrange the cards you looked at ({rule})"
+
+/-- Clear the finished scry or surveil, draw any follow-up cards, and give
+the active player priority. -/
+def finishLibraryLook (g : Game) : Game :=
+  let g := { g with pending := .none, surveilReturnMvAtMost := none
+                    surveilReturnNoncreatureNonland := false }
+  let g :=
+    match g.fraAfterLook with
+    | some (c, src, next) =>
+      ({ g with fraAfterLook := none }).applyFra c default next.toResolution #[] src
+    | none => g
+  match g.pendingDrawAfterScry with
+  | some (q, n) =>
+    let g := { g with pendingDrawAfterScry := none }
+    (g.draw q n).receivePriority g.activePlayer
+  | none => g.receivePriority g.activePlayer
+
+/-- Log putting `top` back on top, unless they stay in the looked-at order. -/
+def logPutOnTop (g : Game) (p : PlayerId) (looked top : Array ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    if top != looked then
+      for id in top do
+        g := g.logMsg
+          s!"{(g.player p).name} puts {(g.object! id).name} on top of their library"
+    return g
+
 /-- Finish scrying: put `bottom` on the bottom (first = new bottom) and `top`
 on top (last = new top) of the library, each pile in the given order (CR 701.20). -/
 def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     Except String Game := do
   match g.pending with
   | .scry q count =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may scry"
-    if !uniqueObjectIds (top ++ bottom) then
-      throw "Duplicate card"
+    g.checkLookedPiles p q count top bottom "scry" "CR 701.20"
     let looked := g.scryLookedIds p count
-    if !isPermutation (top ++ bottom) looked then
-      throw "Scry must rearrange the cards you looked at (CR 701.20)"
     let pl := g.player p
     let lower := pl.library.extract 0 (pl.library.size - count)
     let mut g := g
     for id in bottom do
       g := g.logMsg
         s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
-    if top != looked then
-      for id in top do
-        g := g.logMsg
-          s!"{(g.player p).name} puts {(g.object! id).name} on top of their library"
+    g := g.logPutOnTop p looked top
     g := g.setPlayer { (g.player p) with library := bottom ++ lower ++ top }
-    g := { g with pending := .none }
-    match g.pendingDrawAfterScry with
-    | some (q, n) =>
-      g := { g with pendingDrawAfterScry := none }
-      g := g.draw q n
-      return g.receivePriority g.activePlayer
-    | none =>
-      return g.receivePriority g.activePlayer
+    return g.finishLibraryLook
+  | .surveil _ _ => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
   | _ => throw "Not time to scry (CR 701.20)"
+
+/-- Finish surveilling: put `graveyard` into the graveyard in that order and
+`top` back on top (last = new top) of the library (CR 701.25). -/
+def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
+    Except String Game := do
+  match g.pending with
+  | .surveil q count =>
+    g.checkLookedPiles p q count top graveyard "surveil" "CR 701.25"
+    let looked := g.scryLookedIds p count
+    let pl := g.player p
+    let lower := pl.library.extract 0 (pl.library.size - count)
+    let mut g := g.logPutOnTop p looked top
+    g := g.setPlayer { (g.player p) with library := graveyard ++ lower ++ top }
+    for id in graveyard do
+      let card := g.object! id
+      let (g', newId) := g.move id (.graveyard p) none
+      g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their graveyard (surveil)"
+      match g.surveilReturnMvAtMost with
+      | some n =>
+        if g.objectManaValue card ≤ n then
+          let (g', _) := g.move newId (.hand p) none
+          g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
+      | none =>
+        if g.surveilReturnNoncreatureNonland && !card.printed.isCreature &&
+            !card.printed.isLand then
+          let (g', _) := g.move newId (.hand p) none
+          g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
+    return g.finishLibraryLook
+  | .scry _ _ => throw "You are scrying, not surveilling; use scry (CR 701.20)"
+  | _ => throw "Not time to surveil (CR 701.25)"
+
+/-- Remove one symbol a convoking creature of `colors` can pay: a colored
+(or hybrid) symbol of one of its colors, else one generic mana (ruling 865). -/
+def convokePayOne (cost : ManaCost) (colors : ColorSet) : Option ManaCost :=
+  let syms := cost.symbols
+  let without (i : Nat) : Array ManaSymbol := syms.extract 0 i ++ syms.extract (i + 1) syms.size
+  let colored := syms.findIdx? (fun s =>
+    match s with
+    | .colored c => colors.contains c
+    | .hybrid a b => colors.contains a || colors.contains b
+    | .twobrid c => colors.contains c
+    | _ => false)
+  match colored with
+  | some i => some { symbols := without i }
+  | none =>
+    match syms.findIdx? (fun s => match s with | .generic n => n > 0 | _ => false) with
+    | some i =>
+      match syms[i]! with
+      | .generic n =>
+        if n == 1 then some { symbols := without i }
+        else some { symbols := syms.set! i (.generic (n - 1)) }
+      | _ => none
+    | none => none
+
+/-- Convoke (CR 702.51a): while paying for a spell with convoke, tap untapped
+creatures you control; each pays for {1} or one mana of its colors. It
+applies to the total cost after alternative and additional costs, and
+doesn't change the mana value (rulings 864 / 869). A creature already tapped,
+for example for mana, can't be tapped again (ruling 863). Summoning sickness
+doesn't matter, and an attacking creature stays attacking (rulings 866 / 867). -/
+def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Game := do
+  match g.pending, g.proposedSpell with
+  | .activateManaAbilities q, some prop =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may pay"
+    let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+    if prop.kind != .spell || !spell.printed.keywords.convoke then
+      throw s!"{spell.name} doesn't have convoke (CR 702.51)"
+    let mut g := g
+    let mut cost := prop.cost
+    let mut tapped := prop.tapped
+    for id in ids do
+      let some o := g.findObject? id | throw "no such object"
+      if !(o.isOnBattlefield && o.isCreature && o.controlledBy p) then
+        throw s!"{o.name} is not a creature you control"
+      if o.status.tapped then
+        throw s!"{o.name} is already tapped (ruling 863)"
+      match convokePayOne cost o.printed.colors with
+      | none => throw s!"{o.name} can't pay for any of the remaining cost"
+      | some c => cost := c
+      g := g.becomeTapped o
+      g := g.logMsg s!"{(g.player p).name} taps {o.name} to convoke {spell.name}"
+      tapped := tapped.push id
+    return { g with proposedSpell := some { prop with cost, tapped } }
+  | _, _ => throw "No spell is being paid for (CR 601.2h)"
+
+/-- Proliferate once (CR 701.34a): give each chosen permanent and player
+another counter of each kind already there. Any subset may be chosen,
+including none and opponents' permanents (rulings 881 / 882); cards in other
+zones can't be (ruling 881). No player can act between proliferations
+(ruling 880), and each one may choose a different set (ruling 886). -/
+def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
+    Except String Game := do
+  match g.pending with
+  | .chooseProliferate q remaining =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may proliferate"
+    if chosen.toList.eraseDups.length != chosen.size then
+      throw "Choose each permanent or player at most once"
+    let mut g := g
+    let mut loyaltyPut := false
+    for t in chosen do
+      match t with
+      | .permanent id =>
+        let some o := g.findObject? id | throw "no such object"
+        if !o.isOnBattlefield then
+          throw s!"{o.name} is not a permanent on the battlefield (CR 701.34a)"
+        if !o.status.hasCounters then
+          throw s!"{o.name} has no counters"
+        let hadLoyalty := o.status.loyaltyCounters > 0
+        g := g.mapObjectStatus o Status.proliferatedExceptPlusOne
+        let o := g.object! id
+        g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 else g
+        if hadLoyalty && o.printed.isPlaneswalker then loyaltyPut := true
+        g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
+      | .player pid =>
+        let pl := g.player pid
+        if pl.poison == 0 then
+          throw s!"{pl.name} has no counters"
+        g := g.setPlayer { pl with poison := pl.poison + 1 }
+        g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
+      | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
+    if loyaltyPut then
+      g := g.queueLoyaltyPutTriggers p
+    if chosen.isEmpty then
+      g := g.logMsg s!"{(g.player p).name} proliferates, choosing nothing"
+    -- “Whenever you proliferate” triggers even if nothing was chosen (ruling 884).
+    g := g.putFraEventTriggers p .youProliferate
+    if remaining > 1 then
+      return { g with pending := .chooseProliferate p (remaining - 1) }
+    else
+      return ({ g with pending := .none }).receivePriority g.activePlayer
+  | _ => throw "Not time to proliferate (CR 701.34)"
 
 /-- Shared pending-discard core (CR 701.9): `p` must be the pending player
 `q` and `id` must be in `p`'s hand; the discard is logged (with `logSuffix`)
@@ -136,6 +292,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
           o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery
         | none => false
       | .discardOrPay _ => true
+      | .discardCard => true
       | _ => false
     if !legal then
       throw "That card cannot pay this ward"
@@ -154,6 +311,11 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     let g ← g.payCost p (ManaCost.ofGeneric n)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     let g := { g with pending := .none }
+    let g :=
+      match g.mayPayAlsoPlusOneOn.bind g.findObject? with
+      | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
+      | none => g
+    let g := { g with mayPayAlsoPlusOneOn := none }
     let g := g.draw p 1
     return g.receivePriority g.activePlayer
   | .payOrLetCounter q n _spellId =>
@@ -242,10 +404,53 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     g.payTeamworkCreatures p ids
   | _ => throw "Not time to choose permanents"
 
+/-- Cast the card Chandra, Torch of Defiance exiled, as her ability resolves.
+Timing permissions are ignored, but its costs are paid (rulings 857 /
+859). A land can't be cast (ruling 855). -/
+def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
+    Except String Game := do
+  match g.pending with
+  | .mayCastExiledElseDamage q cardId _ =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may cast that card"
+    if id != cardId then
+      throw "That isn't the exiled card"
+    let some card := g.findObject? id | throw "no such object"
+    let face := card.printed
+    if face.isLand then
+      throw "An effect that lets you cast a card doesn't let you play a land (ruling 855)"
+    if face.requiresTarget && (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+      throw s!"{face.name} requires a target"
+    let cost := g.playManaCost card face
+    let pl := g.player p
+    let some pool := pl.manaPool.pay? cost
+      | throw s!"{pl.name} cannot pay {cost}"
+    let g := g.setPlayer { pl with manaPool := pool }
+    let stackBefore := g.stack
+    let (g, newId) := g.move id .stack (some p)
+    let g := g.putStackEntry p newId
+    let g := { g with pending := .none }
+    let g := g.logMsg s!"{(g.player p).name} casts {face.name} as the ability resolves"
+    if face.requiresTarget then
+      let prop : ProposedSpell := {
+        caster := p, cost := ManaCost.empty, spellId := newId, original := card
+        handBefore := (g.player p).hand, stackBefore, manaBefore := pool }
+      return { g with pending := .chooseTargets p, proposedSpell := some prop }
+    else
+      return g.becomeCast p (g.object! newId)
+  | _ => throw "No exiled card may be cast now"
+
 /-- Decline an optional discard (CR 608.2d) or choose no target for an
 “up to one” trigger (CR 601.2c / 115.1c). -/
 def decline (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
+  | .mayCastExiledElseDamage q _ n =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline to cast"
+    let g := g.logMsg s!"{(g.player p).name} doesn't cast the exiled card"
+    let g := g.forEachOpponent p (fun g pid => g.dealDamageToPlayer pid n)
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
   | .mayDiscardDraw q _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to discard"
@@ -284,15 +489,16 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
           return { g with pending := .chooseTargets p }
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
-        return g.afterTriggerTargetsChosen
+        return (g.markTargetsAnnounced obj.id true).afterTriggerTargetsChosen
       else if g.canFinishOptionalTargets obj then
         let g := g.logMsg
           s!"{(g.player p).name} finishes choosing targets (CR 601.2c)"
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
-        return g.afterTriggerTargetsChosen
+        return (g.markTargetsAnnounced obj.id true).afterTriggerTargetsChosen
       throw "That spell requires a target (CR 601.2c)"
   | .mayPayGeneric q _ =>
+    let g := { g with mayPayAlsoPlusOneOn := none }
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay"
     let g := g.logMsg s!"{(g.player p).name} declines to pay"
@@ -305,6 +511,8 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     let g := { g with pending := .none }
     let g := g.counterStackSpell spellId
     return g.receivePriority g.activePlayer
+  | .payWard _ _ (.sacrificePermanents _ (_ + 1)) =>
+    throw s!"{(g.player p).name} already began sacrificing permanents for ward and must finish"
   | .payWard q spellId _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay ward"

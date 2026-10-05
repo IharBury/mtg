@@ -24,6 +24,8 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (costReductionPerEquipment : Nat := 0)
     (tapAnUntappedCreatureYouControl : Bool := false)
     (onlyIfYouAttackedWithTwoOrMore : Bool := false)
+    (onlyIfOpponentDealtNoncombatDamage : Bool := false)
+    (exileSourceFromGraveyard : Bool := false)
     (removeIndestructibleCounter : Bool := false)
     (sacrificeLegendaryArtifact : Bool := false)
     (discardLegendarySameName : Bool := false)
@@ -48,6 +50,7 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact
     payLife := payLife
     discardSource := discardSource
+    exileSourceFromGraveyard := exileSourceFromGraveyard
     sacrificeAnotherSubtype := sacrificeAnotherSubtype
     discardACard := discardACard
     tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl
@@ -66,7 +69,7 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
   onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
   activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
   costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
-  onlyIfYouAttackedWithTwoOrMore, powerUp, equipWorthy
+  onlyIfYouAttackedWithTwoOrMore, onlyIfOpponentDealtNoncombatDamage, powerUp, equipWorthy
   onlyIfYouControlCreatureToughnessAtLeast, onlyIfGyCreaturesAtLeast
   costReductionIfTargetPowerAtMost
 }

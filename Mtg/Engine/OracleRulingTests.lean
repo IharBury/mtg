@@ -38,7 +38,7 @@ open Mtg.Engine.Tests
 def ruling (id : Nat) : OracleRuling :=
   uniqueOracleRulings[id - 1]!
 
-#guard uniqueOracleRulingCount == 728
+#guard uniqueOracleRulingCount == 893
 #guard uniqueHobHocOracleRulingCount == 359
 #guard (List.range 359).all (fun i => (ruling (i + 1)).id == i + 1)
 #guard !(ruling 1).comment.contains "Whenever"

@@ -231,13 +231,56 @@ def artifactCountPump (g : Game) (o : GameObject) : Int × Int :=
         p.status.additionalArtifactUntilEot) |>.size)
     (n, n)
 
+/-- +P/+T from Reality Fracture static abilities: the creature's own
+graveyard-count bonuses, grants from its controller's permanents and
+emblems, attached Auras and Equipment, and effects lasting until a player's
+next turn. -/
+def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    let untilTurn := o.status.untilTurnOfPump.foldl (fun acc (_, p, t) => addStats acc (p, t)) (0, 0)
+    match o.controller with
+    | none => untilTurn
+    | some p =>
+      let gyIds := (g.player p).graveyard
+      let gy := gyIds.size
+      let self := o.staticAbilities.foldl (fun acc ab =>
+        match ab with
+        | .fra .powerPerSevenInGraveyard => addStats acc (2 * Int.ofNat (gy / 7), 0)
+        | .fra .powerAndFlyingIfSevenInGraveyard => if gy ≥ 7 then addStats acc (1, 0) else acc
+        | .fra .powerPerCreatureAndPlaneswalkerCard =>
+          let n := (gyIds.filter (fun id =>
+            (g.findObject? id).any (fun c => c.printed.isCreature || c.printed.isPlaneswalker))).size
+          addStats acc (Int.ofNat n, 0)
+        | _ => acc) (0, 0)
+      let fromSources (srcs : Array GameObject) : Int × Int :=
+        srcs.foldl (fun acc src =>
+          src.staticAbilities.foldl (fun acc ab =>
+            match ab with
+            | .fra .creatureTokensGetOneAndVigilance =>
+              if o.isCreature && o.printed.isToken then addStats acc (1, 0) else acc
+            | .fra .emblemCreaturesGetTwoTwo => if o.isCreature then addStats acc (2, 2) else acc
+            | _ => acc) acc) (0, 0)
+      let team := fromSources (g.permanentsOf p)
+      let emblems := fromSources (g.objects.filter (fun e => e.zone == .command && e.controlledBy p))
+      let attached := g.battlefield.foldl (fun acc a =>
+        if a.attachedTo != some o.id then acc
+        else
+          a.staticAbilities.foldl (fun acc ab =>
+            match ab with
+            | .fra .equippedHuntersAxe => addStats acc (2, 0)
+            | .fra .equippedMedicsKitesail => addStats acc (1, 0)
+            | .fra .enchantedGetsOneAndDeathtouch => addStats acc (1, 0)
+            | _ => acc) acc) (0, 0)
+      #[untilTurn, self, team, emblems, attached].foldl addStats (0, 0)
+
 def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
-  let n : Int := o.status.plusOnePlusOne
+  let n : Int := (o.status.plusOnePlusOne : Int) - (o.status.minusOneMinusOne : Int)
   #[g.characteristicBasePT o, o.status.pump, (n, n), g.attachedStatBonus o,
       g.lordStatBonus o, g.enduringStorySelfBonus o, g.enduringStoryTeamBonus o,
       (g.mountainPowerBonus o, (0 : Int)),
       (g.fatGraveyardPowerBonus o, (0 : Int)),
-      g.artifactCountPump o, g.leftoverSelfBonus o].foldl
+      g.artifactCountPump o, g.leftoverSelfBonus o, g.fraStatBonus o].foldl
     addStats (0, 0)
 
 /-- Power of `o` as last known information (CR 113.7a / 208.2). -/

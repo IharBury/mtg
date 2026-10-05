@@ -76,6 +76,32 @@ structure Game where
   isNight : Bool := false
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
+  /-- Last-known status of objects that left the battlefield, newest last
+  (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
+  lastKnownStatus : Array (ObjectId × Status) := #[]
+  /-- The spell whose effect is currently resolving (CR 608.2). -/
+  resolvingSpell : Option ObjectId := none
+  /-- The activated or triggered ability currently resolving. -/
+  resolvingAbility : Option ObjectId := none
+  /-- Where recently moved objects went (old id, new id), most recent last. -/
+  movedTo : Array (ObjectId × ObjectId) := #[]
+  /-- Creatures that died this turn, tokens included. -/
+  creatureDeathsThisTurn : Nat := 0
+  /-- Work left after the pending scry or surveil finishes (Eye of Jace):
+  its controller, source, and what to do. -/
+  fraAfterLook : Option (PlayerId × Option ObjectId × FraNext) := none
+  /-- Copies a player may still cast without paying their mana costs as an
+  ability resolves, with the mana value left (Uldaros Theorix). -/
+  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat) := none
+  /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
+  permanent (Proft, Consulting Detective). -/
+  mayPayAlsoPlusOneOn : Option ObjectId := none
+  /-- After the pending surveil, a card with mana value at most this put into
+  the graveyard goes to its owner's hand (Enlightened Confidant). -/
+  surveilReturnMvAtMost : Option Nat := none
+  /-- A noncreature, nonland card put into the graveyard by the pending
+  surveil goes to its owner's hand (Chandra, Chill of Compliance). -/
+  surveilReturnNoncreatureNonland : Bool := false
   /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
   batch, so simultaneous deaths still see those sources (Gatherer).
   Objects are stored so a source that also dies still applies (CR 614.6). -/
@@ -104,6 +130,9 @@ structure Game where
   /-- Cards in exile that return at the beginning of the next end step
   (Roll-Roll-Roll-Roll and similar delayed blinks). -/
   delayedEndStepReturns : Array ObjectId := #[]
+  /-- Permanents exiled at the beginning of the next end step (Vindictive
+  Triumph). -/
+  delayedEndStepExiles : Array ObjectId := #[]
   /-- Source of the current connive action, if any (MSH / CR 701.47). -/
   conniveSource : Option ObjectId := none
   /-- Most recent creature that became tapped (Captain America, Living Legend). -/
@@ -430,6 +459,12 @@ def canMakeIllegalDecision (_g : Game) (_actor _whose : PlayerId) : Bool :=
 (MSH 352). That player may still concede. -/
 def canConcedeAs (_g : Game) (actor whose : PlayerId) : Bool :=
   actor == whose
+
+/-- The object a moved object became, following zone changes (CR 400.7). -/
+partial def followMoved (g : Game) (id : ObjectId) : ObjectId :=
+  match g.movedTo.reverse.find? (·.1 == id) with
+  | some (_, next) => if next == id then id else g.followMoved next
+  | none => id
 
 end Game
 end Mtg.Engine

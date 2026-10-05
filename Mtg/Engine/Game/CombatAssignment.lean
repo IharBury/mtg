@@ -68,27 +68,45 @@ def canAssignCombatDamageToDefendingPlayer (g : Game) (source : GameObject)
     (forAttackers : Bool) : Bool :=
   forAttackers && (!source.status.blocked || g.hasTrample source)
 
+/-- Combat damage `source` assigns before any recipient checks (CR 510.1a):
+its power, or its toughness while Ghalta, the Immovable (or a similar
+effect) applies and toughness is greater, or the absolute value of a
+negative power for Loot, the Anomaly. Neither changes the creature's power
+(rulings 825 / 850 / 851). -/
+def combatDamageAmount (g : Game) (source : GameObject) : Int :=
+  let ghalta :=
+    match source.controller with
+    | some p =>
+      (g.permanentsOf p).any (fun o =>
+        o.staticAbilities.any (fun
+          | .toughnessAssignsCombatDamage => true
+          | _ => false))
+    | none => false
+  let byToughness :=
+    (ghalta || g.assignCombatDamageEqualToughness.any (source.controlledBy ·)) &&
+      g.toughness source > g.power source
+  let amt :=
+    if byToughness then g.toughness source
+    else if source.staticAbilities.any (fun
+        | .negativePowerAssignsAsPositive => true
+        | _ => false) then
+      Int.ofNat (g.power source).natAbs
+    else g.power source
+  max amt 0
+
 /-- Combat damage `source` must assign this step (CR 510.1a), or `0` if it
 assigns none because no recipients remain (CR 510.1c–d). -/
 def combatDamageToAssign (g : Game) (source : GameObject) (forAttackers : Bool) : Int :=
   if (g.legalCombatDamageRecipients source forAttackers).isEmpty &&
       !g.canAssignCombatDamageToDefendingPlayer source forAttackers then
     0
-  else
-    let amt :=
-      match g.assignCombatDamageEqualToughness with
-      | some pid =>
-        if source.controlledBy pid && g.toughness source > g.power source then
-          g.toughness source
-        else g.power source
-      | none => g.power source
-    max amt 0
+  else g.combatDamageAmount source
 
 /-- True when a creature this player controls has two or more creature
 recipients, so the controller must divide combat damage (CR 510.1c–d). -/
 def needsCombatDamageChoice (g : Game) (forAttackers : Bool) : Bool :=
   (g.creaturesAssigningCombatDamage forAttackers).any (fun o =>
-    (g.legalCombatDamageRecipients o forAttackers).size ≥ 2 && max (g.power o) 0 > 0)
+    (g.legalCombatDamageRecipients o forAttackers).size ≥ 2 && g.combatDamageAmount o > 0)
 
 end Game
 end Mtg.Engine

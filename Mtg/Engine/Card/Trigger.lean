@@ -415,6 +415,45 @@ inductive TriggerResolution where
   | revealDiscardFromHand
   /-- Create Redwing. -/
   | createRedwing
+  /-- Surveil `n` (CR 701.25). -/
+  | surveil (n : Nat)
+  /-- Empower Jace `n` (Reality Fracture). -/
+  | empowerJace (n : Nat)
+  /-- If the source isn't prepared, it becomes prepared. -/
+  | prepareSourceIfNot
+  /-- If three or more creatures died this turn, the source becomes prepared. -/
+  | prepareSourceIfThreeDied
+  /-- If two or more loyalty counters were removed to activate the ability, draw a card. -/
+  | drawIfRemovedTwoLoyalty
+  /-- Put a +1/+1 counter on each permanent of this subtype you control. -/
+  | plusOneOnEachSubtypeYouControl (subtype : String)
+  /-- Put a loyalty counter on the source. -/
+  | loyaltyOnSource
+  /-- Grant keywords, then a +1/+1 or loyalty counter by the target's type. -/
+  | grantThenCounterByType (k : Keywords)
+  /-- If you control six or more lands, destroy the target; its controller
+  creates a Treasure. -/
+  | destroyOppPermanentIfSixLands
+  /-- +1/+1 until end of turn, or a +1/+1 counter if you scried or surveilled. -/
+  | pumpOrCounterIfScried
+  /-- If you don't control a planeswalker, sacrifice the source. -/
+  | sacrificeSourceIfNoPlaneswalker
+  /-- Creatures you control get +P/+T until end of turn. -/
+  | creaturesYouControlGet (power toughness : Int)
+  /-- Put the source's last-known counters on the target. -/
+  | putSourceCountersOnTarget
+  /-- Put a charge counter on the source. -/
+  | chargeCounterOnSource
+  /-- Add {G} for each charge counter on the source. -/
+  | addGreenPerChargeCounter
+  /-- You may pay `{n}`. If you do, a +1/+1 counter on the source and draw. -/
+  | mayPayPlusOneAndDraw (n : Nat)
+  /-- Draw two; win if the library is empty; shuffle the source away. -/
+  | drawTwoWinIfEmptyShuffleSource
+  /-- +3/+3 if you control at least five Forests other than the cause. -/
+  | pumpIfFiveOtherForests
+  /-- Surveil 1; return a card with mana value at most the life gained. -/
+  | surveilReturnIfGainedLife
   /-- Resolve a leftover StepLeftover. -/
   | step (e : StepLeftover)
   /-- Resolve a leftover DeathLeftover. -/
@@ -515,6 +554,15 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .youActivateCreatureAbility => #[.youActivateCreatureAbility]
   | .opponentDrawsSecond => #[.opponentDrawsSecondCard]
   | .opponentCastsFirstNoncreature => #[.opponentCastsFirstNoncreature]
+  | .youCastFirstNoncreature => #[.youCastFirstNoncreature]
+  | .youCastSpell => #[.youCastSpell]
+  | .youCastTargetingOpponentOrTheirCreature => #[.youCastTargetingOpponentOrTheirCreature]
+  | .youActivateLoyaltyAbility => #[.youActivateLoyaltyAbility]
+  | .eachUpkeep => #[.eachUpkeep]
+  | .youScryOrSurveil => #[.youScryOrSurveil]
+  | .opponentsDealtCombatDamageYourTurn => #[.opponentsDealtCombatDamageYourTurn]
+  | .creatureYouControlDies => #[.creatureYouControlDies]
+  | .eachOpponentDrawStep => #[.eachOpponentDrawStep]
   | .eachEndStep => #[.eachEndStep]
   | .thisOrNontokenSubtypeEnters => #[.thisOrNontokenSubtypeYouControlEnters]
   | .thisOrAnotherSubtypeEnters => #[.thisOrAnotherSubtypeYouControlEnters]
@@ -564,6 +612,7 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .nthPlanCounter n => #[.nthPlanCounter n]
   | .or a b => a.events ++ b.events
   | .fromEffect => #[]
+  | .fra e => #[.fra e]
 
 end SharedTriggerWhen
 
@@ -807,7 +856,36 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .planFinishDividedDamage n => { resolution := .planFinishDividedDamage n }
   | .planFinishIndestructibleOnTarget =>
     { resolution := .planFinishIndestructibleOnTarget }
-  | .surveil n => { resolution := .scry n }
+  | .surveil n => { resolution := .surveil n }
+  | .empowerJace n => { resolution := .empowerJace n }
+  | .prepareSourceIfNot => { events := #[.yourUpkeep], resolution := .prepareSourceIfNot }
+  | .prepareSourceIfThreeDied =>
+    { events := #[.eachEndStep], resolution := .prepareSourceIfThreeDied }
+  | .drawIfRemovedTwoLoyalty => { resolution := .drawIfRemovedTwoLoyalty }
+  | .plusOneOnEachSubtypeYouControl s => { resolution := .plusOneOnEachSubtypeYouControl s }
+  | .loyaltyOnSource => { resolution := .loyaltyOnSource }
+  | .grantThenCounterByType k =>
+    { targeting := .of .permanentYouControl, resolution := .grantThenCounterByType k }
+  | .destroyOppPermanentIfSixLands =>
+    { targeting := .of .oppPermanent, resolution := .destroyOppPermanentIfSixLands }
+  | .pumpOrCounterIfScried =>
+    { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
+      resolution := .pumpOrCounterIfScried }
+  | .sacrificeSourceIfNoPlaneswalker =>
+    { events := #[.eachEndStep], resolution := .sacrificeSourceIfNoPlaneswalker }
+  | .creaturesYouControlGet p t => { resolution := .creaturesYouControlGet p t }
+  | .putSourceCountersOnTarget =>
+    { targeting := .of .creatureYouControl, allowsZeroTargets := true,
+      resolution := .putSourceCountersOnTarget }
+  | .chargeCounterOnSource => { resolution := .chargeCounterOnSource }
+  | .addGreenPerChargeCounter =>
+    { events := #[.yourFirstMain], resolution := .addGreenPerChargeCounter }
+  | .mayPayPlusOneAndDraw n => { resolution := .mayPayPlusOneAndDraw n }
+  | .drawTwoWinIfEmptyShuffleSource => { resolution := .drawTwoWinIfEmptyShuffleSource }
+  | .surveilReturnIfGainedLife =>
+    { events := #[.yourEndStep], resolution := .surveilReturnIfGainedLife }
+  | .pumpIfFiveOtherForests =>
+    { targeting := .of .creatureYouControl, resolution := .pumpIfFiveOtherForests }
   | .onEnchanted action => { resolution := .onEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl, resolution := .attachThen followup }

@@ -34,6 +34,10 @@ def creatureToken (name : String) (subtypes : Array String)
   isToken := true
 }
 
+/-- A 5/5 red Dragon creature token with flying. -/
+def dragon55flyingToken : CardDef :=
+  creatureToken "Dragon" #["Dragon"] 5 5 (some .red) (keywords := Keyword.flying)
+
 /-- A 1/1 white Human Soldier creature token. -/
 def humanSoldierToken : CardDef :=
   creatureToken "Human Soldier" #["Human", "Soldier"] 1 1 (some .white)
@@ -93,6 +97,21 @@ def tokenCreateMultiplier (g : Game) (controller : PlayerId) : Nat :=
 def foodTreasureReplacements (g : Game) (controller : PlayerId) : Nat :=
   (g.permanentsOf controller).filter (fun o => o.printed.foodAlsoCreatesTreasure) |>.size
 
+/-- Draconic Visitor: artifact tokens that would be created under
+`controller`'s control are 5/5 red Dragons with flying instead. Only the
+characteristics change; tapped and other instructions still apply, and the
+token's characteristics as created decide whether it applies (rulings
+780–782). -/
+def replaceArtifactTokenWithDragon (g : Game) (controller : PlayerId)
+    (printed : CardDef) : CardDef :=
+  if printed.isArtifact &&
+      (g.permanentsOf controller).any (fun o =>
+        o.staticAbilities.any (fun
+          | .artifactTokensBecomeDragons => true
+          | _ => false)) then
+    dragon55flyingToken
+  else printed
+
 /-- Create a token under `controller`, applying token-doubling and
 Food-and-Treasure replacement effects. -/
 def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
@@ -100,9 +119,11 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
   if (g.player controller).lost then
     g.createOneToken controller printed (tapped := tapped)
   else
+    let original := printed
+    let printed := g.replaceArtifactTokenWithDragon controller printed
     let copies := g.tokenCreateMultiplier controller
     let extraTreasure :=
-      if printed.hasSubtype "Food" then g.foodTreasureReplacements controller else 0
+      if original.hasSubtype "Food" then g.foodTreasureReplacements controller else 0
     Id.run do
       let mut g := g
       let mut last : Option GameObject := none
@@ -111,7 +132,8 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
         g := g'
         last := some obj
       for _ in [0:copies * extraTreasure] do
-        let (g', _) := g.createOneToken controller treasureToken (tapped := tapped)
+        let (g', _) := g.createOneToken controller
+          (g.replaceArtifactTokenWithDragon controller treasureToken) (tapped := tapped)
         g := g'
       match last with
       | some obj => (g, g.object! obj.id)
@@ -291,6 +313,7 @@ def cadetToken : CardDef :=
 def heartwoodToken : CardDef := {
   name := "Heartwood"
   types := #[.artifact]
+  subtypes := #["Heartwood"]
   colorIndicator := some ((ColorSet.singleton .red).insert .green)
   tapAddOneOf := #[ManaType.colored .red, ManaType.colored .green]
   isToken := true
@@ -302,8 +325,7 @@ def lotusToken : CardDef := {
   name := "Lotus"
   types := #[.artifact]
   isToken := true
-  staticAbilities := #[.printed
-    "{T}, Sacrifice this token: Add three mana of any one color."]
+  staticAbilities := #[.fra .tapSacrificeAddThreeOfOneColor]
 }
 
 /-- A blue Jace planeswalker token with loyalty 0, `[-1]: Surveil 1`, and
@@ -317,15 +339,16 @@ def jacePlaneswalkerToken : CardDef := {
   isToken := true
   activatedAbilities := #[
     { cost := { loyalty := some (.minus 1) }
-      effect := { resolution := .scry 1, phrase := "Surveil 1" } },
+      effect := { resolution := .surveil 1, phrase := "Surveil 1" } },
     { cost := { loyalty := some (.minus 3) }
       effect := { resolution := .draw 1, phrase := "Draw a card" } }]
 }
 
 /-- A 1/1 colorless Sculpture Treasure artifact creature token. -/
 def sculptureToken : CardDef :=
-  creatureToken "Sculpture" #["Sculpture", "Treasure"] 1 1 none
-    (types := #[.artifact, .creature])
+  { creatureToken "Sculpture" #["Sculpture", "Treasure"] 1 1 none
+      (types := #[.artifact, .creature]) with
+    tapSacrificeAddAnyColor := true }
 
 /-- A legendary 3/3 green Dog creature token named Mowu. -/
 def mowuToken : CardDef := {
@@ -341,26 +364,61 @@ def mowuToken : CardDef := {
 
 /-- A 2/2 white Cat Soldier creature token named Ajani's Pridemate. -/
 def pridemateToken : CardDef :=
-  creatureToken "Ajani's Pridemate" #["Cat", "Soldier"] 2 2 (some .white)
+  { creatureToken "Ajani's Pridemate" #["Cat", "Soldier"] 2 2 (some .white) with
+    triggeredAbilities := #[TriggeredAbility.onGainLifePlusOne] }
 
-/-- Empower Jace `n` (Reality Fracture). If you don't control a Jace
-planeswalker token, create one, then put `n` loyalty counters on a Jace
-token you control. -/
-def empowerJace (g : Game) (controller : PlayerId) (n : Nat) : Game :=
-  let isJace (o : GameObject) : Bool :=
-    o.printed.isPlaneswalker && o.printed.hasSubtype "Jace" && o.printed.isToken
-  let existing := (g.permanentsOf controller).filter isJace
+/-- A 3/3 green Forest Tentacle land creature token. It isn't basic (ruling
+802); the Forest type gives it `{T}: Add {G}`. -/
+def forestTentacleToken : CardDef :=
+  creatureToken "Forest Tentacle" #["Forest", "Tentacle"] 3 3 (some .green)
+    (types := #[.land, .creature])
+
+/-- A 4/4 green Beast creature token with trample. -/
+def beast44trampleToken : CardDef :=
+  creatureToken "Beast" #["Beast"] 4 4 (some .green) (keywords := Keyword.trample)
+
+/-- Jace planeswalker tokens `controller` controls. Nontoken Jace
+planeswalkers don't count, but a token copy of one does (ruling 733). -/
+def jacePlaneswalkerTokens (g : Game) (controller : PlayerId) : Array GameObject :=
+  (g.permanentsOf controller).filter (fun o =>
+    o.printed.isPlaneswalker && o.hasSubtype "Jace" && o.printed.isToken)
+
+/-- Queue “whenever you put one or more loyalty counters on a planeswalker”
+for `p` (Inspired Tethermage). Entering with loyalty counters counts
+(CR 122.6). -/
+def queueLoyaltyPutTriggers (g : Game) (p : PlayerId) : Game :=
+  let wts := (g.permanentsOf p).foldl (fun acc o =>
+    acc ++ o.waitingTriggersFor p (.fra .youPutLoyaltyCounters)) #[]
+  { g with waitingTriggers := g.waitingTriggers ++ wts }
+
+/-- Empower Jace `n` (Reality Fracture, ruling 732). If you don't control a
+Jace planeswalker token, create one with 0 loyalty. Then put `n` loyalty
+counters on a Jace planeswalker token you control. You can't create a new
+token while you control one; with several, `chosen` picks which (ruling
+731), defaulting to the one that entered most recently. -/
+def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
+    (chosen : Option ObjectId := none) : Game :=
   let g :=
-    if existing.isEmpty then
+    if (g.jacePlaneswalkerTokens controller).isEmpty then
       let (g, _) := g.createToken controller jacePlaneswalkerToken
-      g
+      g.logMsg s!"{(g.player controller).name} creates a Jace planeswalker token"
     else g
-  match ((g.permanentsOf controller).filter isJace)[0]? with
+  let tokens := g.jacePlaneswalkerTokens controller
+  let pick :=
+    match chosen.bind (fun id => tokens.find? (·.id == id)) with
+    | some o => some o
+    | none =>
+      tokens.foldl (fun (best : Option GameObject) (o : GameObject) =>
+        match best with
+        | some b => if o.timestamp ≥ b.timestamp then some o else best
+        | none => some o) none
+  match pick with
   | none => g.logMsg "Empower Jace creates no token"
   | some o =>
     let g := g.setObject { o with status :=
       { o.status with loyaltyCounters := o.status.loyaltyCounters + n } }
-    g.logMsg s!"Empower Jace {n}"
+    let g := if n > 0 then g.queueLoyaltyPutTriggers controller else g
+    g.logMsg s!"Empower Jace {n}: {n} loyalty counter(s) are put on {o.name}"
 
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=
@@ -395,6 +453,16 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .sculpture => sculptureToken
   | .mowu => mowuToken
   | .pridemate => pridemateToken
+  | .beast44trample => beast44trampleToken
+  | .dragon55flying => dragon55flyingToken
+  | .forestTentacle => forestTentacleToken
+  | .thopter =>
+    creatureToken "Thopter" #["Thopter"] 1 1 (keywords := Keyword.flying)
+      (types := #[.artifact, .creature])
+  | .angel33blue => creatureToken "Angel" #["Angel"] 3 3 (some .blue) (keywords := Keyword.flying)
+  | .illusion11blue => creatureToken "Illusion" #["Illusion"] 1 1 (some .blue)
+  | .leviathan88hexproof =>
+    creatureToken "Leviathan" #["Leviathan"] 8 8 (some .blue) (keywords := Keyword.hexproof)
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)

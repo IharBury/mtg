@@ -1333,6 +1333,124 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | _ => g
   | .createRedwing =>
     g.createNamedToken controller redwingToken
+  | .surveil n =>
+    g.beginSurveil controller n
+  | .empowerJace n =>
+    g.empowerJace controller n
+  | .prepareSourceIfNot =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if !o.isOnBattlefield then g.logMsg s!"{o.name} is no longer on the battlefield"
+      else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
+      else g.becomePrepared o
+    | none => g.logMsg "The source is no longer on the battlefield"
+  | .drawIfRemovedTwoLoyalty =>
+    g.draw controller 1
+  | .creaturesYouControlGet pw tw =>
+    g.pumpControlledCreatures controller pw tw
+  | .pumpIfFiveOtherForests =>
+    -- Rulings 818 / 819: count Forests other than the one that caused the
+    -- trigger, whether or not that one is still on the battlefield.
+    let cause : Option ObjectId := lastKnownPower.map (fun n => ⟨n.toNat⟩)
+    let others := ((g.permanentsOf controller).filter (fun o =>
+      g.hasSubtype o "Forest" && some o.id != cause)).size
+    if others < 5 then
+      g.logMsg "You control fewer than five other Forests. The ability doesn't resolve"
+    else
+      g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+        g.pumpPermanent o 3 3)
+  | .surveilReturnIfGainedLife =>
+    -- Ruling 750: the life gained is checked as the ability resolves.
+    let n := (g.player controller).lifeGainedThisTurn
+    let g := g.beginSurveil controller 1
+    match g.pending with
+    | .surveil _ _ => { g with surveilReturnMvAtMost := some n }
+    | _ => g
+  | .drawTwoWinIfEmptyShuffleSource =>
+    -- Ruling 835: you win while the ability resolves, before the
+    -- state-based action for drawing from an empty library.
+    let g := g.draw controller 2
+    if (g.player controller).library.isEmpty then
+      { g with result := some (.won controller) }.logMsg
+        s!"{(g.player controller).name} wins the game"
+    else g.shuffleSourceIntoLibrary sourceId
+  | .putSourceCountersOnTarget =>
+    -- Rulings 756 / 758: each kind of counter it had as it died, in the same
+    -- numbers; nothing moves from the dead creature.
+    match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
+    | none => g.logMsg "The source had no counters"
+    | some (_, last) =>
+      g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+        let g := g.mapObjectStatus o (fun s => s.addCountersExceptPlusOne last)
+        let o := g.object! o.id
+        let g := if last.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o last.plusOnePlusOne else g
+        g.logMsg s!"The counters are put on {o.name}") "No target was chosen"
+  | .chargeCounterOnSource =>
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      let g := g.mapObjectStatus o (fun s => { s with charge := s.charge + 1 })
+      g.logMsg s!"A charge counter is put on {o.name}")
+  | .addGreenPerChargeCounter =>
+    -- Ruling 792: if the source left, use its last-known charge counters.
+    let n :=
+      match sourceId.bind g.findObject? with
+      | some o => if o.isOnBattlefield then o.status.charge else 0
+      | none => 0
+    let n :=
+      if n == 0 then
+        match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
+        | some (_, last) => last.charge
+        | none => n
+      else n
+    g.addManaLogged controller (Array.replicate n (.colored .green))
+  | .mayPayPlusOneAndDraw n =>
+    { g with pending := .mayPayGeneric controller n, mayPayAlsoPlusOneOn := sourceId }.logMsg
+      s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
+  | .loyaltyOnSource =>
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })
+      let g := g.queueLoyaltyPutTriggers controller
+      g.logMsg s!"A loyalty counter is put on {o.name}")
+  | .grantThenCounterByType k =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      let g := g.grantUntilEotLogged o k
+      let o := g.object! o.id
+      let g := if o.isCreature then g.addPlusOnePlusOneTo o 1 else g
+      let o := g.object! o.id
+      if o.printed.isPlaneswalker then
+        let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })
+        let g := g.queueLoyaltyPutTriggers controller
+        g.logMsg s!"A loyalty counter is put on {o.name}"
+      else g)
+  | .destroyOppPermanentIfSixLands =>
+    if ((g.permanentsOf controller).filter (·.printed.isLand)).size < 6 then
+      g.logMsg "You control fewer than six lands. The ability doesn't resolve (ruling 889)"
+    else
+      g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+        let owner := o.controller.getD o.owner
+        let g := g.destroyPermanent o
+        g.createTreasureTokens owner 1)
+  | .pumpOrCounterIfScried =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      if (g.player controller).scriedOrSurveilledThisTurn then g.addPlusOnePlusOneTo o 1
+      else g.pumpPermanent o 1 1)
+  | .sacrificeSourceIfNoPlaneswalker =>
+    if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
+      g.logMsg "You control a planeswalker. The ability does nothing"
+    else
+      g.withSourceOnBattlefield sourceId (fun g o =>
+        g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}")
+  | .plusOneOnEachSubtypeYouControl s =>
+    (g.permanentsOf controller).foldl (fun g o =>
+      if g.hasSubtype o s then g.addPlusOnePlusOneTo (g.object! o.id) 1 else g) g
+  | .prepareSourceIfThreeDied =>
+    if g.battlefieldCreaturesToGyThisTurn.size < 3 then
+      g.logMsg "Fewer than three creatures died this turn"
+    else
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.becomePrepared o
+        else g.logMsg s!"{o.name} is no longer on the battlefield"
+      | none => g.logMsg "The source is no longer on the battlefield"
   | .step e =>
     g.applyModeledTrigger controller (.onStep (Effect.ofTrigger (.step e))) sourceId targets sourceName lastKnownPower
   | .death e =>
@@ -1369,6 +1487,38 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
       if !skipIronMan then
         g := g.putMatchingSourceTriggers p o .attacking
           (some (g.snapshotPower o)) (some (g.snapshotToughness o))
+      -- Reality Fracture: each attacking creature, and one attacking a player
+      -- alone (no other creature attacks that player; ruling 861).
+      g := g.putFraEventTriggers p .creatureYouControlAttacks (cause := some o)
+      let whom := o.status.attackingWhom.getD g.defendingPlayer
+      let alone := !attackerIds.any (fun id' =>
+        id' != id && (g.object! id').status.attackingWhom.getD g.defendingPlayer == whom &&
+          (g.object! id').status.attackingPlaneswalker.isNone) &&
+        o.status.attackingPlaneswalker.isNone
+      if alone then
+        g := g.putFraEventTriggers p .creatureYouControlAttacksPlayerAlone (cause := some o)
+      -- Jace, Reality Sculptor's effect: a creature attacks that player or a
+      -- planeswalker they control.
+      g := g.putFraEventTriggers whom .creatureAttacksYouOrYourPlaneswalker (cause := some o)
+    -- Garruk, Curse Breaker's effect: once for each opponent attacked. The
+    -- cause records the attacked player as its controller.
+    let attackedPlayers := attackerIds.foldl (fun (acc : Array PlayerId) id =>
+      let o := g.object! id
+      if o.status.attackingPlaneswalker.isSome then acc
+      else
+        let d := o.status.attackingWhom.getD g.defendingPlayer
+        if acc.contains d then acc else acc.push d) #[]
+    for d in attackedPlayers do
+      match attackerIds.find? (fun id =>
+          let o := g.object! id
+          o.status.attackingPlaneswalker.isNone &&
+            o.status.attackingWhom.getD g.defendingPlayer == d) with
+      | some id =>
+        for q in g.livingPlayers do
+          if q.id != d then
+            g := g.putFraEventTriggers q.id .creaturesAttackYourOpponent
+              (cause := some { g.object! id with controller := some d })
+      | none => pure ()
     let attackedWithElves := attackerIds.any (fun id => g.hasSubtype (g.object! id) "Elf")
     if attackedWithElves then
       g := g.putControlledTriggers p .youAttackWithElves
@@ -1449,6 +1599,16 @@ def putBlockedTriggersOnStack (g : Game) (assignments : Array (ObjectId × Objec
         | none => pure ()
         | some p =>
           g := g.putMatchingSourceTriggers p o .becomesBlocked
+    -- Tetsuko Umezawa, Pursuer: a small creature an opponent controls blocks.
+    let mut blockers : Array ObjectId := #[]
+    for (blockerId, _) in assignments do
+      if !blockers.contains blockerId then
+        blockers := blockers.push blockerId
+        let b := g.object! blockerId
+        if g.power b ≤ 1 || g.toughness b ≤ 1 then
+          for pl in g.livingPlayers do
+            if some pl.id != b.controller then
+              g := g.putFraEventTriggers pl.id .opponentSmallCreatureBlocks (cause := some b)
     return g
 
 end Game

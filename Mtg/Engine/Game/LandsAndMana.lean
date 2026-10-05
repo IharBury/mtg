@@ -32,7 +32,7 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
   g.permanentsOf p |>.filterMap (fun o =>
     let types := g.manaAbilitiesOf o
     if types.isEmpty || o.status.tapped then none
-    else if o.hasSummoningSickness then none
+    else if o.hasSummoningSickness && !g.hasHaste o then none
     else some (o, types))
 
 /-- Permanents `p` currently controls with this subtype. -/
@@ -58,7 +58,18 @@ controls with the listed subtype. `tapAddAnyColorEqualToPower` adds this
 creature's current power (CR 208.2). Mox Amber and Arcane Signet may
 produce 0 when no matching color is available. -/
 def manaFromTap (g : Game) (o : GameObject) (mana : ManaType) : Nat :=
-  if o.printed.tapAddAnyColorEqualToPower then
+  if mana == .colorless && !o.status.colorlessGrantUntilCast.isEmpty then 2
+  else if o.staticAbilities.any (· == .fra .tapSacrificeAddThreeOfOneColor) then
+    match mana with
+    | .colored _ => 3
+    | .colorless => 0
+  else if o.printed.tapAddChosenColorPerDifferentPower then
+    -- Ruling 875: count distinct power values.
+    match mana, o.controller with
+    | .colored _, some p =>
+      ((g.creaturesControlledBy p).map (g.power ·)).toList.eraseDups.length
+    | _, _ => 0
+  else if o.printed.tapAddAnyColorEqualToPower then
     match mana with
     | .colored _ => (g.power o).toNat
     | .colorless => 0
@@ -109,7 +120,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
       | some prop => prop.tapSource && prop.sourceId == some id
       | none => false) then
     throw s!"{o.name} is needed to pay \{T}"
-  if o.hasSummoningSickness then
+  if o.hasSummoningSickness && !g.hasHaste o then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if o.printed.enteredOrBasicAddMana.contains mana &&
       o.printed.requiresEnteredOrBasicAdd &&
@@ -118,12 +129,14 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   if !(g.manaAbilitiesOf o).contains mana then
     throw s!"{o.name} cannot produce {mana}"
   let amount := g.manaFromTap o mana
+  let fraUse := g.fraManaUseOf o mana
   let elfRestricted := o.printed.tapAddAnyColorEqualToPower
   let instRestricted := o.printed.tapAddAnyColorForInstantOrSorcery
   let cantNonartifact := o.printed.hasSubtype "Vibranium" && mana == .colorless
   let g := g.becomeTapped o
   let g :=
-    if o.printed.tapSacrificeAddAnyColor then
+    if o.printed.tapSacrificeAddAnyColor ||
+        o.staticAbilities.any (· == .fra .tapSacrificeAddThreeOfOneColor) then
       let o := g.object! o.id
       g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     else g
@@ -132,7 +145,17 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
       (elfRestricted := elfRestricted)
       (instRestricted := instRestricted)
       (cantNonartifact := cantNonartifact)
+      (fra := fraUse)
   let g := g.modifyPlayer p (fun pl => { pl with manaPool := pool })
+  -- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a).
+  let extraRed :=
+    if g.hasSubtype o "Mountain" && amount > 0 then (g.player p).mountainExtraRedThisTurn else 0
+  let g :=
+    if extraRed > 0 then
+      (g.modifyPlayer p (fun pl =>
+        { pl with manaPool := pl.manaPool.add (.colored .red) extraRed })).logMsg
+        (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
+    else g
   let produced :=
     if amount == 0 then "no mana"
     else if amount == 1 then toString mana
@@ -141,7 +164,10 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
     if elfRestricted then " (Elf spells and abilities)"
     else if instRestricted then " (instant or sorcery spells)"
     else if cantNonartifact then " (not a nonartifact spell)"
-    else ""
+    else
+      match fraUse with
+      | some u => s!" ({u.label})"
+      | none => ""
   let g :=
     if amount == 0 then
       g.logMsg s!"{g.player p |>.name} taps {o.name} but adds no mana"

@@ -28,7 +28,7 @@ more legendary permanents with the same name controlled by the same player,
 taking players in APNAP order. -/
 def firstLegendRuleChoice? (g : Game) : Option (PlayerId × String × Array ObjectId) :=
   Id.run do
-    for p in g.apnapPlayers do
+    for p in g.apnapPlayers.filter (fun p => !(g.player p).legendRuleOffThisTurn) do
       let legs := g.legendaryPermanentsOf p
       let mut seen : Array String := #[]
       for o in legs do
@@ -45,6 +45,17 @@ def legendChoicePending? (g : Game) : Bool :=
   | .chooseLegend .. => true
   | _ => false
 
+/-- True when `controller` controls a permanent saying planeswalkers they
+control aren't put into graveyards for having 0 loyalty (Sanctum Lurker). -/
+def planeswalkersSurviveZeroLoyalty (g : Game) (controller : Option PlayerId) : Bool :=
+  match controller with
+  | none => false
+  | some p =>
+    (g.permanentsOf p).any (fun o =>
+      o.staticAbilities.any (fun
+        | .planeswalkersSurviveZeroLoyalty => true
+        | _ => false))
+
 /-- Default legend-rule choice: the copy that entered most recently. -/
 def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
   ids.foldl (fun best id =>
@@ -52,6 +63,16 @@ def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
     | some a, some b => if b.timestamp ≥ a.timestamp then id else best
     | _, some _ => id
     | _, none => best) (ids[0]!)
+
+/-- Puppet Crafting: the enchanted permanent is a 5/5 Construct creature
+while the Aura is attached to it. -/
+def refreshAuraAnimation (g : Game) : Game :=
+  g.battlefield.foldl (fun g o =>
+    let animated := g.battlefield.any (fun a =>
+      a.attachedTo == some o.id &&
+        a.staticAbilities.any (· == .fra .enchantedIsConstruct55))
+    if animated == o.status.animatedConstruct55 then g
+    else g.setObject { o with status := { o.status with animatedConstruct55 := animated } }) g
 
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
 any state-based action was performed (used by CR 514.3a). If a legend-rule
@@ -62,7 +83,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
   if g.over then (g, false)
   else
     Id.run do
-      let mut g := g
+      let mut g := g.refreshAuraAnimation
       let mut changed := false
       -- Players losing (CR 704.5a–c). They leave after this SBA pass
       -- if the game continues (CR 800.4 / 800.4a).
@@ -98,6 +119,16 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         else
           g := { g with pending := .none }
       | _ => pure ()
+      -- CR 704.5q: +1/+1 and -1/-1 counters on one permanent are removed in
+      -- pairs.
+      for o in g.battlefield do
+        let k := Nat.min o.status.plusOnePlusOne o.status.minusOneMinusOne
+        if k > 0 then
+          g := g.setObject { o with status := { o.status with
+            plusOnePlusOne := o.status.plusOnePlusOne - k
+            minusOneMinusOne := o.status.minusOneMinusOne - k } }
+          g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
+          changed := true
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
       -- Snapshot exile-instead replacements first so a simultaneous death
       -- of Head of the Hunt still exiles opposing creatures.
@@ -168,6 +199,14 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       for o in g.battlefield do
         if o.isCreature && o.status.dealtDeathtouch && g.hasIndestructible o then
           g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
+      -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
+      -- controls Sanctum Lurker (ruling 778).
+      for o in g.battlefield do
+        if o.printed.isPlaneswalker && o.status.loyaltyCounters == 0 &&
+            !g.planeswalkersSurviveZeroLoyalty o.controller then
+          g := g.moveToOwnerGraveyard o
+            s!"{o.name} is put into its owner's graveyard (0 loyalty, CR 704.5i)"
+          changed := true
       -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
       match g.firstLegendRuleChoice? with
       | some (p, name, ids) =>
@@ -198,7 +237,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         if o.printed.isAura then
           let legal :=
             match o.attachedTo.bind g.findObject? with
-            | some host => host.isOnBattlefield && host.isCreature
+            | some host => host.auraCanEnchant o.printed
             | none => false
           if !legal then
             g := g.moveToOwnerGraveyard o

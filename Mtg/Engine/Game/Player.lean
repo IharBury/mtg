@@ -94,6 +94,36 @@ structure Player where
   /-- An artifact entered under this player's control this turn (Iron Man;
   MSH 242 / 323). Still true if that artifact later left or changed types. -/
   artifactEnteredThisTurn : Bool := false
+  /-- Until end of turn, loyalty abilities of Jace planeswalkers this player
+  controls may be activated any time they could cast an instant (Jace's
+  Machinations). Each permanent is still limited to one per turn (ruling 766). -/
+  jaceLoyaltyAtInstantSpeed : Bool := false
+  /-- The legend rule doesn't apply to permanents this player controls this
+  turn (Hall of Echoes). Ends in cleanup with the copy effect (ruling 817). -/
+  legendRuleOffThisTurn : Bool := false
+  /-- Instant or sorcery spells this player casts this turn that are copied
+  (Way of the Cryomancer). -/
+  copyNextInstantSorceryThisTurn : Nat := 0
+  /-- This player was dealt noncombat damage this turn (Grim Repriser). -/
+  dealtNoncombatDamageThisTurn : Bool := false
+  /-- This player scried or surveilled this turn (Desperate Futurescribe). -/
+  scriedOrSurveilledThisTurn : Bool := false
+  /-- Sideboard cards not yet brought into play as objects outside the game
+  (CR 400.11b). -/
+  sideboard : Array CardDef := #[]
+  /-- This player was dealt noncombat damage during the previous turn. -/
+  dealtNoncombatDamageLastTurn : Bool := false
+  /-- This player activated a loyalty ability this turn. -/
+  activatedLoyaltyThisTurn : Bool := false
+  /-- Cards put into this player's graveyard from their library this turn
+  (Cruel Calculations). -/
+  cardsMilledThisTurn : Nat := 0
+  /-- Until end of turn, each Mountain this player taps for mana adds this
+  many additional {R} (Molten Tide). -/
+  mountainExtraRedThisTurn : Nat := 0
+  /-- The next spell this player casts this turn can't be countered
+  (Theorist's Proxy). -/
+  nextSpellCantBeCountered : Bool := false
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/
   teammate : Option PlayerId := none
 deriving Repr, Inhabited
@@ -102,6 +132,9 @@ deriving Repr, Inhabited
 structure Seat where
   name : String
   deck : Array CardDef
+  /-- Cards outside the game the player may use, such as a sideboard
+  (CR 400.11b). -/
+  sideboard : Array CardDef := #[]
 deriving Repr, Inhabited
 
 structure StartConfig where
@@ -151,9 +184,12 @@ inductive Action where
   the generic alternative; `false` sacrifices or discards. -/
   | chooseAdditionalCost (payGeneric : Bool)
   /-- `defender` is the destination when `each` is omitted or an entry is
-  `none`. `each[i]` is the player `ids[i]` attacks (CR 508.1). -/
+  `none`. `each[i]` is the player `ids[i]` attacks (CR 508.1).
+  `planeswalkers[i]`, when set, is the planeswalker `ids[i]` attacks instead
+  (CR 506.3 / 508.1b). -/
   | declareAttackers (ids : Array ObjectId) (defender : Option PlayerId := none)
       (each : Array (Option PlayerId) := #[])
+      (planeswalkers : Array (Option ObjectId) := #[])
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
   /-- Announce combat damage assignment (CR 510.1). Omitted sources use a
   legal default; listed sources must divide their power among legal creature
@@ -174,12 +210,17 @@ inductive Action where
   /-- Finish scrying: `top` (last = new top) go on top of the library in that
   order; `bottom` (first = new bottom) go to the bottom (CR 701.20). -/
   | scry (top : Array ObjectId) (bottom : Array ObjectId)
+  /-- Finish surveilling: `top` (last = new top) go on top of the library in
+  that order; `graveyard` go to the graveyard in that order (CR 701.25). -/
+  | surveil (top : Array ObjectId) (graveyard : Array ObjectId)
   /-- Discard this card from hand; if a pending “may discard, then draw” is
   waiting, draw afterward (CR 701.9). -/
   | discard (id : ObjectId)
   /-- Decline an optional “you may discard a card”, or choose no target for an
   “up to one” trigger (CR 608.2d / 601.2c). -/
   | decline
+  /-- Agree to an optional action offered while an effect resolves. -/
+  | accept
   /-- Have the entering Villain connive (Baron Strucker; MSH 422). -/
   | haveVillainConnive
   /-- Pay a pending generic-mana “you may pay” or “unless pays” cost. -/
@@ -204,6 +245,8 @@ inductive Action where
   | supplyOrder (ids : Array ObjectId)
   /-- Supply an index for a pending `chooseIndex` random event (`--norandom`). -/
   | supplyIndex (i : Nat)
+  /-- Name a card (CR 201.3), e.g. for Meddling Mage. -/
+  | chooseName (name : String)
 deriving Repr
 
 end Mtg.Engine

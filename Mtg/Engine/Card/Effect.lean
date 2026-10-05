@@ -1,6 +1,7 @@
 import Mtg.Engine.Card.AbilityResolution
 import Mtg.Engine.Card.SharedTrigger
 import Mtg.Engine.Card.StaticAbility
+import Mtg.Engine.Card.FraResolution
 
 /-!
 # Unified one-shot effects (CR 608)
@@ -184,6 +185,53 @@ inductive Resolution where
   | destroyTargetNoncreatureArtOrEnch
   /-- Target permanent you control of this subtype connives. -/
   | targetSubtypeConnives (subtype : String)
+  /-- Empower Jace `n` (Reality Fracture): put `n` loyalty counters on a Jace
+  planeswalker token you control, creating one first if you control none. -/
+  | empowerJace (n : Nat)
+  /-- Surveil `n` (CR 701.25). -/
+  | surveil (n : Nat)
+  /-- Mill `n` cards (CR 701.13). -/
+  | millSelf (n : Nat)
+  /-- You may discard a card. If you do, draw `n` cards. -/
+  | mayDiscardDraw (n : Nat)
+  /-- Create X tokens, where X is the life you gained this turn. -/
+  | createTokensLifeGained (kind : TokenKind)
+  /-- Target opponent sacrifices a creature or planeswalker with the greatest
+  mana value among those they control. You gain `life` life. -/
+  | oppSacrificesGreatestMvGainLife (life : Nat)
+  /-- Each creature you control becomes prepared. -/
+  | eachCreatureYouControlBecomesPrepared
+  /-- Deal `n` damage to the target. If excess damage was dealt, empower Jace
+  that much. -/
+  | damageThenEmpowerExcess (n : Nat)
+  /-- Until end of turn, loyalty abilities of Jace planeswalkers you control
+  may be activated any time you could cast an instant. -/
+  | jaceLoyaltyAtInstantSpeed
+  /-- The source becomes a copy of the target creature until end of turn, and
+  the legend rule doesn't apply to permanents you control this turn. -/
+  | becomeCopyLegendRuleOff
+  /-- For each creature the target player controls, create a token copy with
+  haste that is sacrificed at end step unless you control a planeswalker. -/
+  | copyEachCreatureOfTargetPlayer
+  /-- Proliferate X times, where X is the number of planeswalker types among
+  planeswalkers you control (Tam, the Possibility). -/
+  | proliferatePlaneswalkerTypesTimes
+  /-- When you next cast an instant or sorcery spell this turn, copy it. -/
+  | copyNextInstantSorceryThisTurn
+  /-- Return this card from your graveyard to the battlefield with a
+  finality counter on it. -/
+  | returnFromGyWithFinality
+  /-- The first target deals damage equal to its power (or loyalty) to the
+  second target, checked as the spell resolves (Compel Brutality). -/
+  | firstDealsStatDamageToSecond (useLoyalty : Bool)
+  /-- Exile the top card of your library. You may cast it. If you don't, this
+  deals `n` damage to each opponent (Chandra, Torch of Defiance). -/
+  | exileTopMayCastElseDamageOpponents (n : Nat)
+  /-- You get an emblem with “Whenever you cast a spell, this emblem deals
+  `n` damage to any target.” -/
+  | emblemCastSpellDamage (n : Nat)
+  /-- A Reality Fracture resolution. -/
+  | fra (r : FraResolution)
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -476,6 +524,45 @@ private def phraseWith (r : Resolution) (noun : String)
     "Destroy target noncreature artifact or noncreature enchantment"
   | .targetSubtypeConnives subtype =>
     s!"Target {subtype} you control connives"
+  | .empowerJace n =>
+    s!"Empower Jace {n}"
+  | .surveil n =>
+    s!"Surveil {n}"
+  | .millSelf n =>
+    s!"Mill {cardPhrase n}"
+  | .mayDiscardDraw n =>
+    s!"You may discard a card. If you do, draw {cardPhrase n}"
+  | .createTokensLifeGained kind =>
+    s!"Create X {kind.pluralNoun}, where X is the amount of life you gained this turn"
+  | .oppSacrificesGreatestMvGainLife life =>
+    s!"{capitalizeAscii noun} sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control. You gain {life} life"
+  | .eachCreatureYouControlBecomesPrepared =>
+    "Each creature you control becomes prepared"
+  | .damageThenEmpowerExcess n =>
+    s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
+  | .jaceLoyaltyAtInstantSpeed =>
+    "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
+  | .exileTopMayCastElseDamageOpponents n =>
+    s!"Exile the top card of your library. You may cast that card. If you don't, this deals {n} damage to each opponent"
+  | .emblemCastSpellDamage n =>
+    s!"You get an emblem with \"Whenever you cast a spell, this emblem deals {n} damage to any target.\""
+  | .firstDealsStatDamageToSecond useLoyalty =>
+    if useLoyalty then
+      "Target planeswalker you control deals damage equal to its loyalty to target creature or planeswalker an opponent controls"
+    else
+      "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls"
+  | .returnFromGyWithFinality =>
+    "Return this card from your graveyard to the battlefield with a finality counter on it"
+  | .copyNextInstantSorceryThisTurn =>
+    "When you next cast an instant or sorcery spell this turn, copy that spell. You may choose new targets for the copy"
+  | .proliferatePlaneswalkerTypesTimes =>
+    "Proliferate X times, where X is the number of planeswalker types among planeswalkers you control"
+  | .copyEachCreatureOfTargetPlayer =>
+    s!"For each creature {noun} controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
+  | .becomeCopyLegendRuleOff =>
+    s!"This land becomes a copy of {noun} until end of turn. The \"legend rule\" doesn't apply to permanents you control this turn"
+  | .fra r =>
+    FraResolution.toPhrase r noun
   | .sequence rs =>
     sequence rs
   | .spell r =>

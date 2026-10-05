@@ -11,11 +11,53 @@ graveyard, and putting cards onto the battlefield (CR 611.3 / 603.6).
 namespace Mtg.Engine
 namespace Game
 
+/-- The copy of `srcId`'s prepare spell in exile, if any. -/
+def preparedCopyOf? (g : Game) (srcId : ObjectId) : Option GameObject :=
+  g.objects.find? (fun o =>
+    o.zone == .exile && (o.playPermission.bind (·.prepareSource)) == some srcId)
+
+/-- The exiled copy of `srcId`'s prepare spell ceases to exist. -/
+def removePreparedCopy (g : Game) (srcId : ObjectId) : Game :=
+  match g.preparedCopyOf? srcId with
+  | some c => (g.ceaseToExist c.id).logMsg s!"The copy of {c.name} in exile ceases to exist"
+  | none => g
+
+/-- `o` becomes prepared: its controller creates a copy of its prepare spell
+in exile and may cast that copy while `o` stays prepared (ruling 742). A
+creature without a prepare spell can't become prepared (ruling 747), and a
+prepared creature can't become prepared again (ruling 743). Only the printed
+prepare spell is copied, so copy exceptions on `o` don't apply (ruling 741). -/
+def becomePrepared (g : Game) (o : GameObject) : Game :=
+  match o.printed.prepareFace with
+  | none => g.logMsg s!"{o.name} has no prepare spell and can't become prepared"
+  | some face =>
+    if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
+    else
+      let p := o.controller.getD o.owner
+      let (g, copy) := g.allocObject face.toCardDef p .exile
+      let g := g.setObject { copy with playPermission := some {
+        player := p
+        turnEndsRemaining := 0
+        whileExiled := true
+        prepareSource := some o.id } }
+      let o := g.object! o.id
+      let g := g.setObject { o with status := { o.status with prepared := true } }
+      g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
+
+/-- `o` stops being prepared and the copy of its prepare spell in exile
+ceases to exist. Nothing happens if it isn't prepared (ruling 737). -/
+def unprepare (g : Game) (o : GameObject) : Game :=
+  if !o.status.prepared then g
+  else
+    let g := g.setObject { o with status := { o.status with prepared := false } }
+    (g.removePreparedCopy o.id).logMsg s!"{o.name} is no longer prepared"
+
 /-- True when `o` replaces an opposing creature dying with exile. -/
 def exilesOppDeath? (o : GameObject) : Bool :=
   o.printed.exileOppCreaturesInstead ||
     o.staticAbilities.any (fun
       | .exileOppDeathCreateWolf => true
+      | .fra .exileOpponentsDyingCreatures => true
       | _ => false)
 
 /-- True when `o` also creates a Wolf after that replacement (Head of the Hunt). -/
@@ -94,6 +136,45 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | .graveyard _ => true
       | _ => false
   let dying := g.dyingTriggers old dest
+  let pwDied :=
+    old.zone == .battlefield && old.printed.isPlaneswalker &&
+      match dest with
+      | .graveyard _ => true
+      | _ => false
+  let withCause (wts : Array WaitingTrigger) : Array WaitingTrigger :=
+    wts.map (fun wt => { wt with causeId := some old.id, cause := some old })
+  -- Ferocity of the Hunt: “when enchanted creature dies”, seen by the Aura
+  -- while it is still attached.
+  let fraEnchantedDie :=
+    if died then
+      withCause (g.battlefield.foldl (fun acc a =>
+        if a.attachedTo == some old.id then
+          match a.controller with
+          | some p => acc ++ a.waitingTriggersFor p (.fra .enchantedDies)
+          | none => acc
+        else acc) (#[] : Array WaitingTrigger))
+    else #[]
+  let fraAnotherDies :=
+    if died || pwDied then
+      match old.controller with
+      | some p =>
+        withCause (g.battlefield.foldl (fun acc o =>
+          if o.id != old.id && o.controlledBy p then
+            acc ++ o.waitingTriggersFor p (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
+          else acc) (#[] : Array WaitingTrigger))
+      | none => #[]
+    else #[]
+  -- The Ozolith: a creature you control leaving with counters on it.
+  let fraCreatureLeaves :=
+    if old.zone == .battlefield && old.isCreature && old.status.hasCounters then
+      match old.controller with
+      | some p =>
+        withCause (g.battlefield.foldl (fun acc o =>
+          if o.id != old.id && o.controlledBy p then
+            acc ++ o.waitingTriggersFor p (.fra .creatureYouControlLeaves)
+          else acc) (#[] : Array WaitingTrigger))
+      | none => #[]
+    else #[]
   let leaving :=
     if old.zone == .battlefield then
       match old.controller with
@@ -111,8 +192,21 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else (#[] : Array WaitingTrigger)
   let g :=
     if old.zone == .battlefield then g.unattachFrom id else g
+  -- The copy of a prepare spell stays in exile only while its permanent is
+  -- on the battlefield (ruling 742).
+  let g :=
+    if old.zone == .battlefield then g.removePreparedCopy id else g
+  let g :=
+    if old.zone == .battlefield then
+      let lki := g.lastKnownStatus.push (id, old.status)
+      { g with lastKnownStatus := lki.extract (lki.size - Nat.min lki.size 32) lki.size }
+    else g
   let g := g.removeFromZoneList id old.zone
   let (g, newId) := g.allocId
+  let g :=
+    let m := g.movedTo.push (id, newId)
+    { g with movedTo := m.extract (m.size - Nat.min m.size 64) m.size }
+  let g := if died then { g with creatureDeathsThisTurn := g.creatureDeathsThisTurn + 1 } else g
   let (g, ts) := g.bumpTime
   let leavingPlay :=
     (old.zone == .battlefield || old.zone == .stack) &&
@@ -142,6 +236,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     | .hand p => g.modifyPlayer p (fun pl => { pl with hand := pl.hand.push newId })
     | .graveyard p => g.modifyPlayer p (fun pl => { pl with graveyard := pl.graveyard.push newId })
     | _ => g
+  let g :=
+    match old.zone, dest with
+    | .library _, .graveyard p =>
+      g.modifyPlayer p (fun pl => { pl with cardsMilledThisTurn := pl.cardsMilledThisTurn + 1 })
+    | _, _ => g
   let gyLeave :=
     match old.zone, old.owner with
     | .graveyard owner, _ =>
@@ -151,6 +250,16 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           acc ++ o.waitingTriggersFor owner .creatureCardLeavesYourGy) #[]
       else (#[] : Array WaitingTrigger)
     | _, _ => (#[] : Array WaitingTrigger)
+  let creatureDie :=
+    if died then
+      match old.controller with
+      | some p =>
+        g.battlefield.foldl (fun acc o =>
+          if o.id != old.id && o.controlledBy p then
+            acc ++ o.waitingTriggersFor p .creatureYouControlDies
+          else acc) (#[] : Array WaitingTrigger)
+      | none => (#[] : Array WaitingTrigger)
+    else (#[] : Array WaitingTrigger)
   let nontokenDie :=
     if died && !old.printed.isToken then
       match old.controller with
@@ -216,10 +325,29 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             | none => acc) (#[] : Array WaitingTrigger)
         else (#[] : Array WaitingTrigger)
       | _ => (#[] : Array WaitingTrigger)
+  -- CR 701.9: a card moved from a hand to its owner's graveyard is
+  -- discarded. “Whenever a player discards one or more cards” triggers once
+  -- per batch.
+  let discardTriggers :=
+    match old.zone, dest with
+    | .hand p, .graveyard q =>
+      if p == q then
+        let mine := fresh.waitingTriggersFor p (.fra .youDiscardThis)
+        let anyPlayer := g.battlefield.foldl (fun acc o =>
+          match o.controller with
+          | some c =>
+            if g.waitingTriggers.any (fun w =>
+                w.source.id == o.id && w.event == .fra .playerDiscards) then acc
+            else acc ++ o.waitingTriggersFor c (.fra .playerDiscards)
+          | none => acc) (#[] : Array WaitingTrigger)
+        mine ++ anyPlayer
+      else #[]
+    | _, _ => #[]
   let g := { g with
     waitingTriggers :=
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
-        nontokenDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy
+        nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
+        fraEnchantedDie ++ fraAnotherDies ++ fraCreatureLeaves ++ discardTriggers
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then
@@ -254,7 +382,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                 g := g.logMsg s!"{name} returns to {(g.player p).name}'s graveyard"
               | _ =>
               if o.printed.isAura then
-                match g.battlefield.find? (fun h => h.isCreature) with
+                match g.battlefield.find? (fun h => h.auraCanEnchant o.printed) with
                 | none =>
                   g := g.logMsg
                     s!"{name} remains in exile (can't be attached legally; CR 614.6)"

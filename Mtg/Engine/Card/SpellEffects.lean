@@ -916,6 +916,90 @@ def abilityScry (n : Nat) : Effect :=
 def abilityTargetPlayerDraw (n : Nat) : Effect :=
   mkAbility (.of .player) (.targetPlayerDraw n)
 
+/-- Reality Fracture effects. -/
+
+def abilityEmpowerJace (n : Nat) : Effect :=
+  mkAbility ({}) (.empowerJace n)
+
+def abilitySurveil (n : Nat) : Effect :=
+  mkAbility ({}) (.surveil n)
+
+def targetCreatureBecomesPrepared : Effect :=
+  mkAbility (.of .creature) (.onPermanent .becomePrepared)
+
+def eachCreatureYouControlBecomesPrepared : Effect :=
+  mkAbility ({}) (.eachCreatureYouControlBecomesPrepared)
+
+def plusOneThenGainLife (n life : Nat) : Effect :=
+  { mkAbility (.of .creature) (.sequence [.onPermanent (.plusOne n), .gainLife life])
+      with spellCastKind := .pump }
+
+def damageTargetOpponent (n : Nat) : Effect :=
+  { mkAbility (.of .opponent) (.onPermanent (.dealDamage n))
+      (phraseOverride := some s!"This deals {n} damage to target opponent")
+      with spellCastKind := .burn }
+
+def millSelf (n : Nat) : Effect :=
+  mkAbility ({}) (.millSelf n)
+
+def mayDiscardDraw (n : Nat) : Effect :=
+  { mkAbility ({}) (.mayDiscardDraw n) with spellCastKind := .draw }
+
+def createTokensThenSurveil (kind : TokenKind) (n s : Nat) : Effect :=
+  mkAbility ({}) (.sequence [.createTokens kind n, .surveil s])
+
+def createTokensLifeGained (kind : TokenKind) : Effect :=
+  mkAbility ({}) (.createTokensLifeGained kind)
+
+def setBasePT (power toughness : Int) : Effect :=
+  { mkAbility (.of .creature) (.onPermanent (.setBasePT power toughness))
+      with spellCastKind := .creatureDamage }
+
+def oppSacrificesGreatestMvGainLife (life : Nat) : Effect :=
+  { mkAbility (.of .opponent) (.oppSacrificesGreatestMvGainLife life)
+      with spellCastKind := .destroyCreature }
+
+def damageThenEmpowerExcess (n : Nat) : Effect :=
+  { mkAbility (.of .creatureOrPlaneswalker) (.damageThenEmpowerExcess n)
+      with spellCastKind := .creatureDamage }
+
+def jaceLoyaltyAtInstantSpeed : Effect :=
+  mkAbility ({}) (.jaceLoyaltyAtInstantSpeed)
+
+def exileTopMayCastElseDamageOpponents (n : Nat) : Effect :=
+  mkAbility ({}) (.exileTopMayCastElseDamageOpponents n)
+
+def emblemCastSpellDamage (n : Nat) : Effect :=
+  mkAbility ({}) (.emblemCastSpellDamage n)
+
+def returnFromGyWithFinality : Effect :=
+  mkAbility ({}) (.returnFromGyWithFinality)
+
+def firstDealsStatDamageToSecond (useLoyalty : Bool) : Effect :=
+  { mkAbility (.of (if useLoyalty then .planeswalkerYouControlThenOppCreatureOrPlaneswalker
+        else .creatureYouControlThenOppCreatureOrPlaneswalker))
+      (.firstDealsStatDamageToSecond useLoyalty)
+      with spellCastKind := .fight }
+
+def tapAndStunTargetCreature : Effect :=
+  mkAbility (.of .creature) (.onPermanent .tapAndStun)
+
+def copyNextInstantSorceryThisTurn : Effect :=
+  mkAbility ({}) (.copyNextInstantSorceryThisTurn)
+
+def proliferatePlaneswalkerTypesTimes : Effect :=
+  mkAbility ({}) (.proliferatePlaneswalkerTypesTimes)
+
+def copyEachCreatureOfTargetPlayer : Effect :=
+  { mkAbility (.of .player) (.copyEachCreatureOfTargetPlayer)
+      with spellCastKind := .extraLand }
+
+def cantBeBlockedAnotherPowerAtMost (n : Int) : Effect :=
+  mkAbility (.of (.anotherCreatureYouControlPowerAtMost n)) (.onPermanent .cantBeBlocked)
+
+def becomeCopyLegendRuleOff : Effect :=
+  mkAbility (.of .creatureYouControl) (.becomeCopyLegendRuleOff)
+
 end Effect
 
 end Mtg.Engine

@@ -39,6 +39,10 @@ def effect (ab : TriggeredAbility) : Effect :=
   match ab with
   | .triggered _ e _ => e
 
+/-- The options of this triggered ability. -/
+def opts : TriggeredAbility → SharedTriggerOpts
+  | .triggered _ _ o => o
+
 /-- Leftover shared trigger this ability resolves. -/
 def shared (ab : TriggeredAbility) : SharedTrigger :=
   match ab.effect.asTrigger? with
@@ -639,6 +643,38 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .setOtherBasePT =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
   | .onPermanent action => PermanentAction.toNotation action noun
+  | .surveil n => s!"surveil {n}"
+  | .empowerJace n => s!"empower Jace {n}"
+  | .prepareSourceIfNot => "if this creature isn't prepared, it becomes prepared"
+  | .prepareSourceIfThreeDied =>
+    "if three or more creatures died this turn, this creature becomes prepared"
+  | .drawIfRemovedTwoLoyalty =>
+    "if you removed two or more loyalty counters to activate it, draw a card"
+  | .plusOneOnEachSubtypeYouControl s =>
+    s!"put a +1/+1 counter on each {s} you control"
+  | .loyaltyOnSource => "put a loyalty counter on this"
+  | .grantThenCounterByType k =>
+    s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
+  | .destroyOppPermanentIfSixLands =>
+    s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
+  | .pumpOrCounterIfScried =>
+    s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
+  | .sacrificeSourceIfNoPlaneswalker =>
+    "if you don't control a planeswalker, sacrifice this creature"
+  | .creaturesYouControlGet p t =>
+    s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
+  | .putSourceCountersOnTarget =>
+    "put its counters on up to one target creature you control"
+  | .chargeCounterOnSource => "put a charge counter on this enchantment"
+  | .addGreenPerChargeCounter => "add {G} for each charge counter on this enchantment"
+  | .surveilReturnIfGainedLife =>
+    "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
+  | .drawTwoWinIfEmptyShuffleSource =>
+    "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
+  | .pumpIfFiveOtherForests =>
+    s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
+  | .mayPayPlusOneAndDraw n =>
+    s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
   | .damageBlockers n =>
     s!"it deals {n} damage to each creature blocking it"
   | .scry n => s!"scry {n}"
@@ -1174,6 +1210,7 @@ def leadInSentence (ab : TriggeredAbility) (lead : String) : String :=
 def toNotation (ab : TriggeredAbility) : String :=
   match ab with
   | .triggered w e opts =>
+    if !opts.printed.isEmpty then opts.printed else
     match w, e.asTrigger?, opts with
     | .enter, some .bolgMaySacrifice, _ =>
       leadInSentence ab "When Bolg enters"
@@ -1181,6 +1218,12 @@ def toNotation (ab : TriggeredAbility) : String :=
       leadInSentence ab "Whenever this creature deals combat damage to a player"
     | .enterOrOpponentDrawsExceptFirst, some .deal1ThenAmassOrcs, _ =>
     "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
+    | .eachUpkeep, some (.createTokens k n), _ =>
+    s!"At the beginning of each player's upkeep, you {TokenKind.createPhrase k n}."
+    | .eachOpponentDrawStep, some (.draw 1), _ =>
+    "At the beginning of each opponent's draw step, you draw a card."
+    | .youGainLife, some .loyaltyOnSource, _ =>
+    "Whenever you gain life, put a loyalty counter on Ajani."
     | .opponentDrawsSecond, some (.createTokens .treasure 1), _ =>
     "Whenever an opponent draws their second card each turn, you create a Treasure token."
     | .youAttackWithTotalPower, some (.untapAttackersExtraCombat n), _ =>
@@ -1306,6 +1349,18 @@ def toNotation (ab : TriggeredAbility) : String :=
 
 instance : ToString TriggeredAbility where
   toString := toNotation
+
+end TriggeredAbility
+
+namespace TriggeredAbility
+
+/-- An FRA triggered ability with its printed sentence. -/
+def fra (w : SharedTriggerWhen) (printed : String) (r : Resolution)
+    (kind : EffectTargetKind := .none) (allowsZeroTargets := false) (maxTargets := 0)
+    (once := false) (cond : FraCondition := .none) : TriggeredAbility :=
+  .triggered w { targeting := .of kind, resolution := r, phrase := printed
+                 allowsZeroTargets, maxTargets }
+    { printed, onceEachTurn := once, fraCondition := cond, allowsZeroTargets }
 
 end TriggeredAbility
 

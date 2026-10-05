@@ -2,6 +2,7 @@ import Mtg.Engine.Mana
 import Mtg.Engine.TypeLine
 import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.Text
+import Mtg.Engine.Card.FraStatic
 
 /-!
 # Static abilities (CR 604)
@@ -194,6 +195,32 @@ inductive StaticAbility where
   /-- You may activate abilities of creatures you control as though they had
   haste. -/
   | activateCreaturesAsThoughHaste
+  /-- Planeswalkers you control aren't put into their owners' graveyards for
+  having 0 loyalty (CR 704.5i; Sanctum Lurker). -/
+  | planeswalkersSurviveZeroLoyalty
+  /-- Artifacts and creatures entering the battlefield don't cause abilities
+  to trigger (Karn, Argent Defender). -/
+  | enteringArtifactsCreaturesDontTrigger
+  /-- Instant and sorcery spells you control have split second (CR 702.61). -/
+  | instantSorcerySplitSecond
+  /-- Power is the number of card types among cards in all graveyards and
+  toughness is that plus 1, in all zones (CR 604.3; Tarmogoyf). -/
+  | ptEqualGraveyardCardTypes
+  /-- Artifact tokens that would be created under your control are 5/5 red
+  Dragon creature tokens with flying instead (Draconic Visitor). -/
+  | artifactTokensBecomeDragons
+  /-- Creatures you control with power or toughness 1 or less can't be
+  blocked (Tetsuko Umezawa, Fugitive). -/
+  | smallCreaturesYouControlUnblockable
+  /-- Each creature you control with toughness greater than its power assigns
+  combat damage equal to its toughness (Ghalta, the Immovable). -/
+  | toughnessAssignsCombatDamage
+  /-- If this creature's power is negative, it assigns combat damage as
+  though its power were positive (Loot, the Anomaly). -/
+  | negativePowerAssignsAsPositive
+  /-- You may cast spells with mana value at most the number of creatures you
+  control from your hand without paying their mana costs (Omnipresence). -/
+  | castFromHandFreeUpToCreatures
   /-- If you would put one or more counters on a permanent you control, put
   that many plus one of each of those kinds instead. -/
   | extraCounterOnPermanents
@@ -249,6 +276,8 @@ inductive StaticAbility where
   | sneak (cost : ManaCost)
   /-- Boast — exile black cards from your graveyard and copy them. -/
   | boast
+  /-- A Reality Fracture static ability. -/
+  | fra (s : FraStatic)
   /-- Rules text kept when the line is not a modeled static ability. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -386,6 +415,15 @@ inductive StaticShape where
   | extraPowerUpActivation
   | otherPowerUpCostsLess (n : Nat)
   | activateCreaturesAsThoughHaste
+  | planeswalkersSurviveZeroLoyalty
+  | enteringArtifactsCreaturesDontTrigger
+  | instantSorcerySplitSecond
+  | ptEqualGraveyardCardTypes
+  | artifactTokensBecomeDragons
+  | smallCreaturesYouControlUnblockable
+  | toughnessAssignsCombatDamage
+  | negativePowerAssignsAsPositive
+  | castFromHandFreeUpToCreatures
   | extraCounterOnPermanents
   | mayBeginOnBattlefield
   | enchantedHasWard (w : Nat)
@@ -410,6 +448,8 @@ inductive StaticShape where
   | getsAndAllTypesIfGyCreatureCards (min : Nat) (power toughness : Int)
   | sneak (cost : ManaCost)
   | boast
+  /-- A Reality Fracture static ability. -/
+  | fra (s : FraStatic)
   /-- Rules text kept when the line is not a modeled static ability. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -580,6 +620,15 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .extraPowerUpActivation => {}
   | .otherPowerUpCostsLess _ => {}
   | .activateCreaturesAsThoughHaste => {}
+  | .planeswalkersSurviveZeroLoyalty => {}
+  | .enteringArtifactsCreaturesDontTrigger => {}
+  | .instantSorcerySplitSecond => {}
+  | .ptEqualGraveyardCardTypes => {}
+  | .artifactTokensBecomeDragons => {}
+  | .smallCreaturesYouControlUnblockable => {}
+  | .toughnessAssignsCombatDamage => {}
+  | .negativePowerAssignsAsPositive => {}
+  | .castFromHandFreeUpToCreatures => {}
   | .extraCounterOnPermanents => {}
   | .mayBeginOnBattlefield => {}
   | .enchantedHasWard w => { grantedWard := some w }
@@ -606,6 +655,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .getsAndAllTypesIfGyCreatureCards _ _ _ => {}
   | .sneak _ => {}
   | .boast => {}
+  | .fra _ => {}
   | .printed _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
@@ -702,6 +752,15 @@ def shape : StaticAbility → StaticShape
   | .extraPowerUpActivation => .extraPowerUpActivation
   | .otherPowerUpCostsLess n => .otherPowerUpCostsLess n
   | .activateCreaturesAsThoughHaste => .activateCreaturesAsThoughHaste
+  | .planeswalkersSurviveZeroLoyalty => .planeswalkersSurviveZeroLoyalty
+  | .enteringArtifactsCreaturesDontTrigger => .enteringArtifactsCreaturesDontTrigger
+  | .instantSorcerySplitSecond => .instantSorcerySplitSecond
+  | .ptEqualGraveyardCardTypes => .ptEqualGraveyardCardTypes
+  | .artifactTokensBecomeDragons => .artifactTokensBecomeDragons
+  | .smallCreaturesYouControlUnblockable => .smallCreaturesYouControlUnblockable
+  | .toughnessAssignsCombatDamage => .toughnessAssignsCombatDamage
+  | .negativePowerAssignsAsPositive => .negativePowerAssignsAsPositive
+  | .castFromHandFreeUpToCreatures => .castFromHandFreeUpToCreatures
   | .extraCounterOnPermanents => .extraCounterOnPermanents
   | .mayBeginOnBattlefield => .mayBeginOnBattlefield
   | .enchantedCreatureHasWard w => .enchantedHasWard w
@@ -729,6 +788,7 @@ def shape : StaticAbility → StaticShape
     .getsAndAllTypesIfGyCreatureCards min p t
   | .sneak cost => .sneak cost
   | .boast => .boast
+  | .fra s => .fra s
   | .printed text => .printed text
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
@@ -911,6 +971,24 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Power-up abilities of other creatures you control cost \{{n}} less to activate."
   | .activateCreaturesAsThoughHaste =>
     "You may activate abilities of creatures you control as though those creatures had haste."
+  | .planeswalkersSurviveZeroLoyalty =>
+    "Planeswalkers you control aren't put into their owners' graveyards for having 0 loyalty."
+  | .enteringArtifactsCreaturesDontTrigger =>
+    "Artifacts and creatures entering the battlefield don't cause abilities to trigger."
+  | .instantSorcerySplitSecond =>
+    "Instant and sorcery spells you control have split second."
+  | .ptEqualGraveyardCardTypes =>
+    "This creature's power is equal to the number of card types among cards in all graveyards and its toughness is equal to that number plus 1."
+  | .artifactTokensBecomeDragons =>
+    "If one or more artifact tokens would be created under your control, that many 5/5 red Dragon creature tokens with flying are created instead."
+  | .smallCreaturesYouControlUnblockable =>
+    "Creatures you control with power or toughness 1 or less can't be blocked."
+  | .toughnessAssignsCombatDamage =>
+    "Each creature you control with toughness greater than its power assigns combat damage equal to its toughness rather than its power."
+  | .negativePowerAssignsAsPositive =>
+    "If Loot's power is negative, he assigns combat damage as though his power were positive."
+  | .castFromHandFreeUpToCreatures =>
+    "You may cast spells with mana value less than or equal to the number of creatures you control from your hand without paying their mana costs."
   | .extraCounterOnPermanents =>
     "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead."
   | .mayBeginOnBattlefield =>
@@ -963,6 +1041,7 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Sneak {cost}"
   | .boast =>
     "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
+  | .fra s => s.text
   | .printed text => text
 
 instance : ToString StaticAbility where
