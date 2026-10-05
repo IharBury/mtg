@@ -480,6 +480,9 @@ structure TriggerTiming where
   targeting : EffectTargeting := .of .none
   /-- Zero targets is a legal announcement (CR 115.1c / 601.2c), e.g. “up to one”. -/
   allowsZeroTargets : Bool := false
+  /-- Most targets one instance of “target” may take (“any number of target
+  …”); 0 means the targeting's own count. -/
+  maxTargets : Nat := 0
   /-- Damage amount and maximum number of targets when this ability divides
   damage as the controller chooses (CR 601.2d). -/
   dividedDamage : Option (Nat × Nat) := none
@@ -1034,7 +1037,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .ultronCopy =>
     { events := #[.anotherNontokenArtifactEnters], resolution := .watch .ultronCopy }
   | .watch .enchantedAttachEquipment =>
-    { events := #[.enchantedAttacksOrBlocks], resolution := .watch .enchantedAttachEquipment }
+    { events := #[.enchantedAttacksOrBlocks], targeting := .of .equipmentYouControl
+      allowsZeroTargets := true, maxTargets := 1000, resolution := .watch .enchantedAttachEquipment }
   | .watch .equippedAttacksAloneUntapScry =>
     { events := #[.equippedAttacksAlone], resolution := .watch .equippedAttacksAloneUntapScry }
   | .watch .equippedAttacksTap =>

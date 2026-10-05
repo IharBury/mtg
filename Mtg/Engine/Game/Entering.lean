@@ -11,6 +11,31 @@ permanent or land enters the battlefield.
 namespace Mtg.Engine
 namespace Game
 
+/-- “Whenever this or another [subtype] you control enters” and its nontoken
+and “another [subtype] or Equipment” variants (Balin, Fíli, Kíli, Thorin). -/
+def putSubtypeEnterTriggers (g : Game) (entered : GameObject) : Game :=
+  match entered.controller with
+  | none => g
+  | some p =>
+    let g := g.foldControlledPermanents p none fun g src =>
+      (src.printed.triggeredAbilities ++ src.status.grantedTriggeredAbilities).foldl (fun g ab =>
+        let o := ab.opts
+        let self := src.id == entered.id
+        let fire (e : TriggerEvent) (cond : Bool) : Game → Game := fun g =>
+          if ab.firesOn e && cond then g.queueTrigger p src ab e (cause := some entered) else g
+        let g := match o.thisOrNontokenSubtype with
+          | some s => fire .thisOrNontokenSubtypeYouControlEnters
+              (self || (!entered.printed.isToken && g.hasSubtype entered s)) g
+          | none => g
+        let g := match o.thisOrAnotherSubtype with
+          | some s => fire .thisOrAnotherSubtypeYouControlEnters (self || g.hasSubtype entered s) g
+          | none => g
+        match o.anotherSubtypeOrEquipment with
+        | some s => fire .anotherSubtypeOrEquipmentYouControlEnters
+            (!self && (g.hasSubtype entered s || entered.printed.isEquipment)) g
+        | none => g) g
+    g.promptTriggerTargetsIfNeeded
+
 /-- Put “whenever you cast an instant or sorcery” triggers onto the stack
 (CR 601.2i / 603.3). -/
 def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
@@ -82,8 +107,12 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let g :=
     Color.all.foldl (fun acc c =>
       if colors.contains c then
-        acc.putControlledTriggers caster (.youCastColor c)
+        let acc := acc.putControlledTriggers caster (.youCastColor c)
+        if spell.castFromHand then acc.putControlledTriggers caster (.youCastColorFromHand c)
+        else acc
       else acc) g
+  let g := if colors.contains .green then g.putControlledTriggers caster .youCastGreen else g
+  let g := if spell.treasureManaSpent then g.putControlledTriggers caster .youCastWithTreasure else g
   let mv := g.objectManaValue spell
   let g :=
     (g.livingOpponents caster).foldl (fun acc pl =>
@@ -391,13 +420,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let g := g.putEnterTriggersOnStack o
   let g := g.putAnotherElfYouControlEntersTriggers (g.object! o.id)
   let g := g.putAnotherCreatureYouControlEntersTriggers (g.object! o.id)
-  let g :=
-    if o.printed.isToken then g
-    else
-      match o.controller with
-      | none => g
-      | some p =>
-        g.putControlledTriggersWithPrompt p .thisOrNontokenSubtypeYouControlEnters
+  let g := g.putSubtypeEnterTriggers (g.object! o.id)
   match (g.object! o.id).controller with
   | some p =>
     let entered := g.object! o.id

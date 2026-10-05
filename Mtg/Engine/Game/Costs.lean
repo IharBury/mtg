@@ -205,8 +205,16 @@ def finishProposedSpell (g : Game) : Except String Game := do
       return g.reverseProposedSpell
   if prop.needsDiscardCard && (g.player prop.caster).hand.isEmpty then
     return g.reverseProposedSpell
+  let treasureBefore := ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == .fromTreasure)).size
   let g ← g.payCost prop.caster prop.cost allowElf allowInst
     allowHero allowVillain allowCant allowCreature spend
+  let treasureAfter := ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == .fromTreasure)).size
+  let g :=
+    if prop.kind == .spell && treasureAfter < treasureBefore then
+      match g.findObject? prop.spellId with
+      | some o => g.setObject { o with treasureManaSpent := true }
+      | none => g
+    else g
   let g ←
     match prop.kind, prop.sourceId with
     | .activatedAbility, some sid =>

@@ -289,10 +289,18 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           match g.findObject? id with
           | some card => g.putMatchingSourceTriggers pl.id card (.fra .eachUpkeepFromGraveyard)
           | none => g) g) g
+    -- Auras with “at the beginning of the upkeep of enchanted creature's controller”.
+    let g := g.battlefield.foldl (fun g aura =>
+      match aura.attachedTo.bind g.findObject?, aura.controller with
+      | some host, some c =>
+        if host.controlledBy ap then g.putMatchingSourceTriggers c aura .enchantedControllerUpkeep
+        else g
+      | _, _ => g) g
     g.receivePriority ap
   | .beginningOfCombat =>
     let ap := g.activePlayer
     let g := g.putControlledTriggers ap .yourBeginCombat
+    let g := g.livingPlayers.foldl (fun g pl => g.putControlledTriggers pl.id .eachBeginCombat) g
     let g := (g.player ap).graveyard.foldl (fun g id =>
       match g.findObject? id with
       | some card => g.putMatchingSourceTriggers ap card (.fra .yourBeginCombatFromGraveyard)

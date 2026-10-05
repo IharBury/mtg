@@ -337,6 +337,15 @@ def becomeTapped (g : Game) (o : GameObject) : Game :=
     match o.controller with
     | some p =>
       let g := g.putMatchingSourceTriggers p (g.object! o.id) .sourceBecomesTapped
+      -- “Whenever one or more creatures you control become tapped” triggers once
+      -- per batch of tapping.
+      let g :=
+        if o.isCreature then
+          g.foldControlledPermanents p none fun g src =>
+            if g.waitingTriggers.any (fun w =>
+                w.source.id == src.id && w.event == .creaturesYouControlBecomeTapped) then g
+            else g.putMatchingSourceTriggers p src .creaturesYouControlBecomeTapped
+        else g
       let g :=
         (g.attachmentsOf (g.object! o.id)).foldl (fun (g : Game) (eq : GameObject) =>
           if eq.printed.isEquipment then
@@ -354,6 +363,13 @@ def forEachControlledCreature (g : Game) (p : PlayerId)
     (f : Game → GameObject → Game) (excludeId : Option ObjectId := none) : Game :=
   g.foldControlledPermanents p excludeId fun g o =>
     if o.isCreature then f g o else g
+
+/-- Queue `event` for each permanent `p` controls that doesn't already have a
+waiting trigger for it, so a “one or more” trigger fires once per batch. -/
+def putControlledTriggersOncePerBatch (g : Game) (p : PlayerId) (event : TriggerEvent) : Game :=
+  g.foldControlledPermanents p none fun g src =>
+    if g.waitingTriggers.any (fun w => w.source.id == src.id && w.event == event) then g
+    else g.putMatchingSourceTriggers p src event
 
 /-- Put matching triggers of permanents `p` controls that fire on `event`. -/
 def putControlledTriggers (g : Game) (p : PlayerId)
@@ -426,7 +442,9 @@ def copiedFromGy {α : Type} (g : Game) (o : GameObject) (sel : CardDef → Arra
 def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
   let own :=
     if !g.retainsPrintedAbilities o then #[]
-    else o.printed.activatedAbilities ++ g.copiedFromGy o (·.activatedAbilities)
+    else
+      o.printed.activatedAbilities ++ g.copiedFromGy o (·.activatedAbilities) ++
+        (o.printed.crew.map ActivatedAbility.crewAbility).toArray
   -- Loyalty abilities granted to planeswalkers you control (Way of the
   -- Healer and similar). A planeswalker still activates only one loyalty
   -- ability per turn, however many it has (ruling 779).
@@ -499,12 +517,15 @@ def fraManaAbilities (o : GameObject) : Array ManaType :=
   else own
 
 /-- The spending restriction on mana `o` adds when tapped for `mana`. -/
-def fraManaUseOf (_g : Game) (o : GameObject) (mana : ManaType) : Option FraManaUse :=
+def fraManaUseOf (g : Game) (o : GameObject) (mana : ManaType) : Option FraManaUse :=
   if mana == .colorless && !o.status.colorlessGrantUntilCast.isEmpty then none
-  else o.staticAbilities.findSome? (fun ab =>
-    match ab with
-    | .fra s => s.manaUse?
-    | _ => none)
+  else
+    match o.staticAbilities.findSome? (fun ab =>
+        match ab with
+        | .fra s => s.manaUse?
+        | _ => none) with
+    | some u => some u
+    | none => if g.hasSubtype o "Treasure" then some .fromTreasure else none
 
 /-- Printed mana abilities plus those copied from the graveyard or granted
 by another permanent. Restricted MSH `{T}: Add` types are omitted until the

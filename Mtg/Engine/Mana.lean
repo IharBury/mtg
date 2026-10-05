@@ -318,6 +318,9 @@ inductive FraManaUse where
   | planeswalkerSpell
   /-- Only casting a noncreature spell (Chandra, Chill of Compliance). -/
   | noncreatureSpell
+  /-- No restriction; tracked so “if mana from a Treasure was spent” can be
+  checked (Smaug, Wicked Worm). -/
+  | fromTreasure
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What a payment is for, as far as `FraManaUse` restrictions care. The
@@ -334,12 +337,14 @@ def FraManaUse.allows : FraManaUse → ManaSpend → Bool
   | .notSpellsFromHand, s => !(s.spell && s.fromHand)
   | .planeswalkerSpell, s => s.spell && s.planeswalker
   | .noncreatureSpell, s => s.spell && s.noncreature
+  | .fromTreasure, _ => true
 
 /-- Short label for a restriction in pool notation. -/
 def FraManaUse.label : FraManaUse → String
   | .notSpellsFromHand => "not spells from hand"
   | .planeswalkerSpell => "planeswalker spells"
   | .noncreatureSpell => "noncreature spells"
+  | .fromTreasure => "Treasure"
 
 /-- Unspent mana a player currently has (CR 106.4). Restricted mana (CR 106.10)
 is a subset of the colored totals. -/

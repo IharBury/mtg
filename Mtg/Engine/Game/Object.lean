@@ -123,6 +123,8 @@ structure GameObject where
   /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
   legendary spell, so it can't be countered. Copies do not inherit this. -/
   uncounterableThisCast : Bool := false
+  /-- Mana from a Treasure was spent to cast this spell. -/
+  treasureManaSpent : Bool := false
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
   Off the stack, `{X}` is 0. -/
   chosenX : Option Nat := none

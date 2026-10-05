@@ -196,6 +196,15 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   else
     let g := if n > 0 then g.modifyPlayer pid (fun pl => { pl with dealtNoncombatDamageThisTurn := true }) else g
     let g := g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+    let g :=
+      match source with
+      | some src =>
+        match src.controller with
+        | some c =>
+          if n > 0 && g.hasSubtype src "Hero" then g.putControlledTriggersOncePerBatch c .heroesDealDamageToPlayer
+          else g
+        | none => g
+      | none => g
     if n > 0 then
       -- Each other player sees an opponent dealt noncombat damage. “One or
       -- more opponents” triggers once per batch.

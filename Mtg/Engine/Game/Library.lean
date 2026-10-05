@@ -43,6 +43,11 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
         if drawn == 2 then
           g := { g with waitingTriggers :=
             g.waitingTriggers ++ o.waitingTriggersFor p .youDrawSecondCard }
+      if drawn == 2 then
+        for q in g.livingPlayers do
+          for o in g.permanentsOf q.id do
+            g := { g with waitingTriggers :=
+              g.waitingTriggers ++ o.waitingTriggersFor q.id .anyPlayerDrawsSecond }
       for opp in g.livingOpponents p do
         for o in g.permanentsOf opp.id do
           if !firstOfTheirDrawStep then

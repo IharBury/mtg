@@ -255,7 +255,11 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       | none => g
     | _ => g
   | (.death .villainReturnAsHero) =>
-    match targets[0]? with
+    let causeId := (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)
+    let it := match targets[0]? with
+      | some t => some t
+      | none => causeId.map (fun id => Target.card (g.followMoved id))
+    match it with
     | some (Target.card id) | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>

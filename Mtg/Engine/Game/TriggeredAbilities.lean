@@ -1497,6 +1497,12 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
         o.status.attackingPlaneswalker.isNone
       if alone then
         g := g.putFraEventTriggers p .creatureYouControlAttacksPlayerAlone (cause := some o)
+      -- “Whenever enchanted creature attacks or blocks” (Super-Soldier Serum).
+      for aura in g.battlefield do
+        if aura.attachedTo == some o.id then
+          match aura.controller with
+          | some c => g := g.putMatchingSourceTriggers c aura .enchantedAttacksOrBlocks
+          | none => pure ()
       -- Jace, Reality Sculptor's effect: a creature attacks that player or a
       -- planeswalker they control.
       g := g.putFraEventTriggers whom .creatureAttacksYouOrYourPlaneswalker (cause := some o)
@@ -1605,6 +1611,11 @@ def putBlockedTriggersOnStack (g : Game) (assignments : Array (ObjectId × Objec
       if !blockers.contains blockerId then
         blockers := blockers.push blockerId
         let b := g.object! blockerId
+        for aura in g.battlefield do
+          if aura.attachedTo == some b.id then
+            match aura.controller with
+            | some c => g := g.putMatchingSourceTriggers c aura .enchantedAttacksOrBlocks
+            | none => pure ()
         if g.power b ≤ 1 || g.toughness b ≤ 1 then
           for pl in g.livingPlayers do
             if some pl.id != b.controller then

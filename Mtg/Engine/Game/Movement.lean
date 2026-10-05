@@ -175,6 +175,27 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           else acc) (#[] : Array WaitingTrigger))
       | none => #[]
     else #[]
+  let villainDies :=
+    if died && g.hasSubtype old "Villain" then
+      match old.controller with
+      | some p =>
+        withCause (g.battlefield.foldl (fun acc o =>
+          if o.id != old.id && o.controlledBy p then
+            acc ++ o.waitingTriggersFor p .villainYouControlDies
+          else acc) (#[] : Array WaitingTrigger))
+      | none => #[]
+    else #[]
+  let nonlandReturned :=
+    if old.zone == .battlefield && !old.printed.isLand &&
+        (match dest with | .hand _ => true | _ => false) then
+      match old.controller with
+      | some p =>
+        withCause (g.battlefield.foldl (fun acc o =>
+          if o.id != old.id && o.controlledBy p then
+            acc ++ o.waitingTriggersFor p .anotherNonlandReturned
+          else acc) (#[] : Array WaitingTrigger))
+      | none => #[]
+    else #[]
   let leaving :=
     if old.zone == .battlefield then
       match old.controller with
@@ -332,7 +353,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     match old.zone, dest with
     | .hand p, .graveyard q =>
       if p == q then
-        let mine := fresh.waitingTriggersFor p (.fra .youDiscardThis)
+        let mine := fresh.waitingTriggersFor p (.fra .youDiscardThis) ++
+          (g.permanentsOf p).foldl (fun acc o =>
+            acc ++ o.waitingTriggersFor p .youDiscard (lastKnownPower := some (Int.ofNat newId.raw))) #[]
         let anyPlayer := g.battlefield.foldl (fun acc o =>
           match o.controller with
           | some c =>
@@ -347,7 +370,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     waitingTriggers :=
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
         nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
-        fraEnchantedDie ++ fraAnotherDies ++ fraCreatureLeaves ++ discardTriggers
+        fraEnchantedDie ++ fraAnotherDies ++ fraCreatureLeaves ++ villainDies ++ nonlandReturned ++
+        discardTriggers
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then
