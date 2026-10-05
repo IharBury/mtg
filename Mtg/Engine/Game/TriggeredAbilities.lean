@@ -1346,6 +1346,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | none => g.logMsg "The source is no longer on the battlefield"
   | .drawIfRemovedTwoLoyalty =>
     g.draw controller 1
+  | .creaturesYouControlGet pw tw =>
+    g.pumpControlledCreatures controller pw tw
   | .loyaltyOnSource =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })

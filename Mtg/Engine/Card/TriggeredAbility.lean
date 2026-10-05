@@ -657,6 +657,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
   | .sacrificeSourceIfNoPlaneswalker =>
     "if you don't control a planeswalker, sacrifice this creature"
+  | .creaturesYouControlGet p t =>
+    s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .damageBlockers n =>
     s!"it deals {n} damage to each creature blocking it"
   | .scry n => s!"scry {n}"

@@ -1017,6 +1017,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .onStep (Effect.ofTrigger .pumpOrCounterIfScried),
   .triggered .eachUpkeep (Effect.ofTrigger (.createTokens .forestTentacle 1)),
   .triggered .eachOpponentDrawStep (Effect.ofTrigger (.draw 1)),
+  .triggered .youCastNoncreature (Effect.ofTrigger (.creaturesYouControlGet 1 0)),
 ]
 
 def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[

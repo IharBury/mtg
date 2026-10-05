@@ -2,6 +2,8 @@ import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.RealityFracture
 import Mtg.Engine.FraOracleTests
 import Mtg.Engine.FraOracleTests2
+import Mtg.Engine.FraOracleTests4
+import Mtg.Engine.Tests.Abilities
 import Mtg.Engine.Game
 import Mtg.Engine.OracleData
 import Mtg.Engine.Tests.Auras
@@ -11,7 +13,8 @@ import Mtg.Engine.Tests.Turns
 /-!
 # Engine behavior for Reality Fracture (FRA) judge rulings (part 6)
 
-Tam, the Possibility: proliferating X times (CR 701.34).
+Tam, the Possibility: proliferating X times (CR 701.34). Winter, Team
+Player: convoke (CR 702.51) and its cast trigger.
 -/
 
 namespace Mtg.Engine.FraRulingTests
@@ -90,5 +93,103 @@ def tamSecond : Game :=
 #guard (jaceTokenOf tamSecond).status.loyaltyCounters == 3
 #guard (fraRuling 882).comment.contains "you don't have to choose any permanents at all"
 #guard (fraRuling 886).comment.contains "you don't have to choose the same set"
+
+/-!
+## Winter, Team Player and convoke (rulings 863–869)
+-/
+
+/-- Chandra holds Winter and two red mana, and controls three Cadets that
+entered this turn. -/
+def winterInHand : Game :=
+  let g := (emptyHand afterDraw ⟨0⟩).createKindTokens ⟨0⟩ .cadet 3
+  withRedMana (addToHand g winterTeamPlayer ⟨0⟩) ⟨0⟩ 2
+
+def winterProposed : Game :=
+  mustApply winterInHand ⟨0⟩ (.cast (handCardNamed winterInHand ⟨0⟩ "Winter, Team Player").id)
+
+def cadetIds (g : Game) : Array ObjectId :=
+  (g.battlefield.filter (fun o => o.name == "Cadet")).map (·.id)
+
+/-- Ruling 867: creatures that entered this turn can convoke. Ruling 869:
+convoke pays part of the total cost; Winter's mana value is still 5. -/
+def winterConvoked : Game := mustApply winterProposed ⟨0⟩ (.choosePermanents (cadetIds winterProposed))
+
+#guard winterConvoked.battlefield.all (fun o => o.name != "Cadet" || o.status.tapped)
+#guard
+  match winterConvoked.proposedSpell with
+  | some prop => prop.cost.manaValue == 2 && prop.cost.coloredCount .red == 1
+  | none => false
+#guard
+  let g := passBoth (mustApply winterConvoked ⟨0⟩ .pay)
+  g.battlefield.any (fun o => o.name == "Winter, Team Player") &&
+    g.objectManaValue (namedPermanent g "Winter, Team Player") == 5
+#guard (fraRuling 867).comment.contains "even one you haven't controlled continuously"
+#guard (fraRuling 869).comment.contains "Convoke doesn't change a spell's mana cost or mana value"
+
+/- A reversed cast untaps the convoking creatures (CR 733.1). -/
+#guard
+  let g := { winterConvoked with
+    proposedSpell := winterConvoked.proposedSpell.map (fun p =>
+      { p with cost := p.cost.addGeneric 9 }) }
+  let g := mustApply g ⟨0⟩ .pay
+  g.battlefield.all (fun o => o.name != "Cadet" || !o.status.tapped)
+
+/-- Ruling 865: a multicolored creature pays {1} or one mana of its colors. -/
+def testRedGreenBear : CardDef :=
+  creature "Test Gruul Bear" (ManaCost.ofColors [.red, .green]) #["Bear"] 2 2
+
+#guard
+  let g := addPermanent winterInHand testRedGreenBear ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Winter, Team Player").id)
+  let g := mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Test Gruul Bear").id])
+  match g.proposedSpell with
+  | some prop => prop.cost.coloredCount .red == 0 && prop.cost.manaValue == 4
+  | none => false
+#guard (fraRuling 865).comment.contains "one mana of your choice of any of that creature's colors"
+
+/- Ruling 863: a creature tapped for mana can't also convoke. -/
+#guard
+  let g := addPermanent winterInHand llanowarElves ⟨0⟩ ⟨0⟩
+  let elves := namedPermanent g "Llanowar Elves"
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Winter, Team Player").id)
+  let g := mustApply g ⟨0⟩ (.tapForMana elves.id (.colored .green))
+  rejects g ⟨0⟩ (.choosePermanents #[elves.id]) "already tapped"
+#guard (fraRuling 863).comment.contains "You won't be able to tap it again for convoke"
+
+/- Ruling 864: convoke works with an alternative cost. A Bestial Incursion
+with convoke cast with flashback has its {5}{G} paid by convoke. -/
+#guard
+  let card := { bestialIncursion with keywords := Keyword.convoke }
+  let g := addToGraveyard ((emptyHand afterDraw ⟨0⟩).createKindTokens ⟨0⟩ .cadet 5) card ⟨0⟩
+  let g := withGreenMana g ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (graveyardCard g ⟨0⟩ "Bestial Incursion").id)
+  let g := mustApply g ⟨0⟩ (.choosePermanents (cadetIds g))
+  match g.proposedSpell with
+  | some prop => prop.cost.manaValue == 1 && prop.cost.coloredCount .green == 1
+  | none => false
+#guard (fraRuling 864).comment.contains "it can be used in conjunction with alternative costs"
+
+/- Ruling 866: an attacking creature tapped to convoke stays attacking.
+Blossom-Blessed Angel has vigilance, so it is untapped while attacking. -/
+#guard
+  let shockConvoke := { shock with manaCost := ManaCost.ofGeneric 1, keywords := Keyword.convoke }
+  let g := addPermanent (emptyHand afterDraw ⟨0⟩) blossomBlessedAngel ⟨0⟩ ⟨0⟩
+  let g := addToHand g shockConvoke ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Blossom-Blessed Angel").id])
+  let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Shock").id (.player ⟨1⟩)
+  let g := mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Blossom-Blessed Angel").id])
+  let g := mustApply g ⟨0⟩ .pay
+  let angel := namedPermanent g "Blossom-Blessed Angel"
+  angel.status.tapped && angel.status.attacking
+#guard (fraRuling 866).comment.contains "won't cause that creature to stop attacking or blocking"
+
+/- Ruling 868: Winter's trigger resolves before the spell. -/
+#guard
+  let g := castShockAtNissa (addPermanent afterDraw winterTeamPlayer ⟨0⟩ ⟨0⟩)
+  let g := passBoth g
+  topOfStack g == "Shock" &&
+    g.power (namedPermanent g "Winter, Team Player") == 4
+#guard (fraRuling 868).comment.contains "resolves before the spell that caused it to trigger"
 
 end Mtg.Engine.FraRulingTests

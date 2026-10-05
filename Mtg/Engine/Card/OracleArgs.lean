@@ -376,6 +376,7 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .planFinishDividedDamage n => return .planFinishDividedDamage (← takeNat n)
   | .surveil n => return .surveil (← takeNat n)
   | .empowerJace n => return .empowerJace (← takeNat n)
+  | .creaturesYouControlGet p t => return .creaturesYouControlGet (← takeInt p) (← takeInt t)
   | .plusOneOnEachSubtypeYouControl s => return .plusOneOnEachSubtypeYouControl (← takeStr s)
   | .onEnchanted a => return .onEnchanted (← takeAction a)
   | .attachThen a => return .attachThen (← takeAction a)

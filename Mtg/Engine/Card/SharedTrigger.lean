@@ -752,6 +752,8 @@ inductive SharedTrigger where
   | pumpOrCounterIfScried
   /-- If you don't control a planeswalker, sacrifice the source. -/
   | sacrificeSourceIfNoPlaneswalker
+  /-- Creatures you control get +P/+T until end of turn. -/
+  | creaturesYouControlGet (power toughness : Int)
   /-- Apply `action` to the enchanted creature. -/
   | onEnchanted (action : PermanentAction)
   /-- Attach to target, then apply `followup`. -/

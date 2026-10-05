@@ -438,6 +438,8 @@ inductive TriggerResolution where
   | pumpOrCounterIfScried
   /-- If you don't control a planeswalker, sacrifice the source. -/
   | sacrificeSourceIfNoPlaneswalker
+  /-- Creatures you control get +P/+T until end of turn. -/
+  | creaturesYouControlGet (power toughness : Int)
   /-- Resolve a leftover StepLeftover. -/
   | step (e : StepLeftover)
   /-- Resolve a leftover DeathLeftover. -/
@@ -852,6 +854,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .pumpOrCounterIfScried }
   | .sacrificeSourceIfNoPlaneswalker =>
     { events := #[.eachEndStep], resolution := .sacrificeSourceIfNoPlaneswalker }
+  | .creaturesYouControlGet p t => { resolution := .creaturesYouControlGet p t }
   | .onEnchanted action => { resolution := .onEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl, resolution := .attachThen followup }

@@ -66,6 +66,61 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
       return g.receivePriority g.activePlayer
   | _ => throw "Not time to scry or surveil (CR 701.20 / 701.25)"
 
+/-- Remove one symbol a convoking creature of `colors` can pay: a colored
+(or hybrid) symbol of one of its colors, else one generic mana (ruling 865). -/
+def convokePayOne (cost : ManaCost) (colors : ColorSet) : Option ManaCost :=
+  let syms := cost.symbols
+  let without (i : Nat) : Array ManaSymbol := syms.extract 0 i ++ syms.extract (i + 1) syms.size
+  let colored := syms.findIdx? (fun s =>
+    match s with
+    | .colored c => colors.contains c
+    | .hybrid a b => colors.contains a || colors.contains b
+    | .twobrid c => colors.contains c
+    | _ => false)
+  match colored with
+  | some i => some { symbols := without i }
+  | none =>
+    match syms.findIdx? (fun s => match s with | .generic n => n > 0 | _ => false) with
+    | some i =>
+      match syms[i]! with
+      | .generic n =>
+        if n == 1 then some { symbols := without i }
+        else some { symbols := syms.set! i (.generic (n - 1)) }
+      | _ => none
+    | none => none
+
+/-- Convoke (CR 702.51a): while paying for a spell with convoke, tap untapped
+creatures you control; each pays for {1} or one mana of its colors. It
+applies to the total cost after alternative and additional costs, and
+doesn't change the mana value (rulings 864 / 869). A creature already tapped,
+for example for mana, can't be tapped again (ruling 863). Summoning sickness
+doesn't matter, and an attacking creature stays attacking (rulings 866 / 867). -/
+def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Game := do
+  match g.pending, g.proposedSpell with
+  | .activateManaAbilities q, some prop =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may pay"
+    let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+    if prop.kind != .spell || !spell.printed.keywords.convoke then
+      throw s!"{spell.name} doesn't have convoke (CR 702.51)"
+    let mut g := g
+    let mut cost := prop.cost
+    let mut tapped := prop.tapped
+    for id in ids do
+      let some o := g.findObject? id | throw "no such object"
+      if !(o.isOnBattlefield && o.isCreature && o.controlledBy p) then
+        throw s!"{o.name} is not a creature you control"
+      if o.status.tapped then
+        throw s!"{o.name} is already tapped (ruling 863)"
+      match convokePayOne cost o.printed.colors with
+      | none => throw s!"{o.name} can't pay for any of the remaining cost"
+      | some c => cost := c
+      g := g.becomeTapped o
+      g := g.logMsg s!"{(g.player p).name} taps {o.name} to convoke {spell.name}"
+      tapped := tapped.push id
+    return { g with proposedSpell := some { prop with cost, tapped } }
+  | _, _ => throw "No spell is being paid for (CR 601.2h)"
+
 /-- Proliferate once (CR 701.34a): give each chosen permanent and player
 another counter of each kind already there. Any subset may be chosen,
 including none and opponents' permanents (rulings 881 / 882); cards in other

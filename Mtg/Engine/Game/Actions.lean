@@ -52,7 +52,10 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .payGeneric => g.payGeneric p
   | .chooseTop => g.chooseLibrarySide p true
   | .chooseBottom => g.chooseLibrarySide p false
-  | .choosePermanents ids => g.choosePermanents p ids
+  | .choosePermanents ids =>
+    match g.pending with
+    | .activateManaAbilities _ => g.convoke p ids
+    | _ => g.choosePermanents p ids
   | .announceKicker kick => g.announceKicker p kick
   | .announceGift to => g.announceGift p to
   | .announceTeamwork pay => g.announceTeamwork p pay

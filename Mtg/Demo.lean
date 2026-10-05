@@ -1042,6 +1042,13 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
     | _ :: _ :: _ => throw sequentialTargetUsage
     | _ => throw targetUsage
 
+/-- Convoke (CR 702.51): `convoke <id> ...` taps those creatures to pay for
+the spell being cast. -/
+def applyConvoke (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let ids ← parseObjectIds (commandTokens tokens) "usage: convoke <id> ..."
+  requireObjects g ids
+  g.apply p (.choosePermanents ids)
+
 /-- Proliferate once (CR 701.34): `proliferate` chooses nothing;
 `proliferate <id|player> ...` gives each another counter of each kind. -/
 def applyProliferate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
@@ -1617,6 +1624,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "target" => applyTarget g p args
   | "scry" => applyScry g p args
   | "proliferate" => applyProliferate g p args
+  | "convoke" => applyConvoke g p args
   | "discard" => applyDiscard g p args
   | "attach" => applyAttach g p args
   | "connive" => applyConniveChoice g p args
