@@ -418,6 +418,9 @@ inductive FraChoice where
   | widowMayCounter (sourceId : Option ObjectId) (exiled : Option ObjectId)
   /-- You may pay {2} to copy the nontoken artifact that entered (Ultron). -/
   | ultronMayPay (artifactId : ObjectId)
+  /-- Choose a Vision mode that hasn't been chosen this turn.
+  0 double strike, 1 indestructible, 2 draw. -/
+  | visionMode (sourceId : ObjectId) (available : Array Nat)
   /-- You may pay 2 life so creatures you control assign combat damage equal
   to their toughness (The Kingpin of Crime). -/
   | kingpinMayPay2Life

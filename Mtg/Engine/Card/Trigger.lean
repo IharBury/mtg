@@ -1102,7 +1102,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .casting .plusOneEachOther =>
     { events := #[.youCastNoncreature], resolution := .casting .plusOneEachOther }
   | .casting .exileFlicker =>
-    { events := #[.youCastNoncreature], targeting := .of .nonland,
+    { events := #[.youCastNoncreature]
+      targeting := .of (.filtered {
+        noun := "another target nonland, nontoken permanent"
+        nonland := true, nontoken := true, another := true })
       resolution := .casting .exileFlicker }
   | .casting .visionModes =>
     { events := #[.youCastNoncreature], resolution := .casting .visionModes }

@@ -40,7 +40,8 @@ def characteristicBase (g : Game) (o : GameObject) (printed setBase : Option Int
 
 /-- Whether `o` currently has a “power equal to cards in your hand” ability. -/
 def hasCardsInHandPower (_g : Game) (o : GameObject) : Bool :=
-  o.staticAbilities.any StaticAbility.isCardsInHandPower
+  o.status.cardsInHandPowerUntilEot ||
+    o.staticAbilities.any StaticAbility.isCardsInHandPower
 
 /-- Characteristic power and toughness before pumps, counters, and attached
 bonuses: an until-EOT layer-7b set on the battlefield, else lands you control

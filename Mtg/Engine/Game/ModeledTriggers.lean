@@ -21,7 +21,8 @@ def attachedHost? (g : Game) (sourceId : Option ObjectId) : Option GameObject :=
 
 /-- The spell that caused the resolving cast trigger. -/
 def castTriggerSpell? (g : Game) : Option GameObject :=
-  ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).bind g.findObject?
+  ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).bind
+    (fun id => g.findObject? (g.followMoved id))
 
 /-- Newest non-ability object on the stack (the spell that caused a cast trigger). -/
 def lastStackSpell? (g : Game) : Option GameObject :=
@@ -130,6 +131,29 @@ def applyDaredevilExile (g : Game) (controller : PlayerId) (sourceId : Option Ob
     g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
       "Daredevil is no longer on the battlefield"
   else g
+
+/-- The Vision's chosen mode that hasn't been chosen yet this turn.
+0 double strike, 1 indestructible, 2 draw. -/
+def applyVisionMode (g : Game) (controller : PlayerId) (sourceId : ObjectId) (mode : Nat) : Game :=
+  match g.findObject? (g.followMoved sourceId) with
+  | none =>
+    if mode == 2 then g.draw controller 1
+    else g.logMsg "The Vision is no longer in play"
+  | some src =>
+    if src.status.modesChosenThisTurn.contains mode || src.status.modesChosenThisTurn.size >= 3 then
+      g.logMsg "The Vision's ability is removed from the stack with no effect"
+    else if !src.isOnBattlefield then
+      if mode == 2 then g.draw controller 1
+      else g.logMsg "The Vision is no longer in play"
+    else
+      let g := g.mapObjectStatus src (fun s =>
+        { s with modesChosenThisTurn := s.modesChosenThisTurn.push mode })
+      if mode == 0 then
+        g.mapObjectStatus (g.object! src.id) (·.grantUntilEot Keyword.doubleStrike)
+      else if mode == 1 then
+        g.mapObjectStatus (g.object! src.id) (·.grantUntilEot Keyword.indestructible)
+      else
+        g.draw controller 1
 
 /-- Ask to change the spell's target at `index`, then the later slots. -/
 def offerSpellRetarget (g : Game) (controller : PlayerId) (spellId : ObjectId) (index : Nat) : Game :=
@@ -446,23 +470,17 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         |>.logMsg s!"{o.name}'s base power and toughness become 6/6")
       "The source is no longer in play"
   | (.casting .visionModes) =>
-    match sourceId.bind g.findObject? with
+    match sourceId.bind (fun id => g.findObject? (g.followMoved id)) with
     | some src =>
-      if src.status.chosenModes.size >= 3 then
+      let available :=
+        #[0, 1, 2].filter (fun m => !src.status.modesChosenThisTurn.contains m)
+      if available.isEmpty then
         g.logMsg "The Vision's ability is removed from the stack with no effect"
       else
-        let mode := (lastKnownPower.getD 0).toNat
-        let g := g.mapObjectStatus src (fun s =>
-          { s with chosenModes := s.chosenModes.push mode })
-        if mode == 0 then
-          g.mapObjectStatus (g.object! src.id)
-            (·.grantUntilEot Keyword.doubleStrike)
-        else if mode == 1 then
-          g.mapObjectStatus (g.object! src.id)
-            (·.grantUntilEot Keyword.indestructible)
-        else
-          g.draw controller 1
-    | none => g.logMsg "The Vision is no longer in play"
+        { g with pending := .fraChoice controller (.visionMode src.id available) }
+          |>.logMsg "Choose one that hasn't been chosen this turn"
+    | none =>
+      g.logMsg "The Vision is no longer in play"
   | (.casting .ironFistTap) =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.mapObjectStatus o (fun s =>
@@ -472,10 +490,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.casting .drawPowerEqualHand) =>
     let g := g.draw controller 1
     g.withSourceOnBattlefield sourceId (fun g o =>
-      g.mapObjectStatus o (fun s =>
-        { s with grantedStaticAbilities :=
-            s.grantedStaticAbilities.push .powerEqualCardsInHand })
-        |>.logMsg s!"{o.name}'s base power is the number of cards in your hand")
+      g.mapObjectStatus o (fun s => { s with cardsInHandPowerUntilEot := true })
+        |>.logMsg s!"{o.name}'s base power is the number of cards in your hand until end of turn")
       "The source is no longer in play"
   | (.step .hydeChoose) =>
     match lastKnownPower with
@@ -769,14 +785,42 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.watch .tokensEnterMayDraw) =>
     g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
       fun g => g.draw controller 1
+  | (.casting .exileFlicker) =>
+    let kind := EffectTargetKind.filtered {
+      noun := "another target nonland, nontoken permanent"
+      nonland := true, nontoken := true, another := true }
+    g.withLegalKindPermanent controller kind targets (fun g o =>
+      let name := o.name
+      let (g, newId) := g.move o.id .exile none
+      { g with delayedEndStepReturns := g.delayedEndStepReturns.push newId }
+        |>.logMsg s!"{name} is exiled until the beginning of the next end step")
+      sourceId (some "The target is no longer legal")
+  | (.casting .damageEqualMv) =>
+    let n :=
+      match g.castTriggerSpell? with
+      | some spell => spell.printed.manaValue + spell.chosenX.getD 0
+      | none =>
+        match lastKnownPower with
+        | some p => p.toNat
+        | none =>
+          match g.lastStackSpell? with
+          | some o => o.printed.manaValue + o.chosenX.getD 0
+          | none =>
+            match (g.player controller).castManaValuesThisTurn.back? with
+            | some mv => mv
+            | none => 0
+    g.applyDamageToKindTarget controller .playerOrCreature targets n sourceId none
   | (.casting .merfolkFromBlue) =>
     let n :=
-      match lastKnownPower with
-      | some p => p.toNat
+      match g.castTriggerSpell? with
+      | some spell => spell.printed.manaCost.symbolsIncludingColor .blue
       | none =>
-        match g.lastStackSpell? with
-        | some o => o.printed.manaCost.symbolsIncludingColor .blue
-        | none => 0
+        match lastKnownPower with
+        | some p => p.toNat
+        | none =>
+          match g.lastStackSpell? with
+          | some o => o.printed.manaCost.symbolsIncludingColor .blue
+          | none => 0
     if n == 0 then
       g.logMsg "No blue mana symbols. No Merfolk are created."
     else
@@ -789,28 +833,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.casting .plusOneEachOther) =>
     g.forEachControlledCreature controller (fun g o =>
       if some o.id != sourceId then g.addPlusOnePlusOneTo o 1 else g)
-  | (.casting .exileFlicker) =>
-    g.withLegalKindPermanent controller .nonland targets (fun g o =>
-      if o.printed.isToken then
-        g.logMsg "The target is a token and can't be flickered"
-      else
-        let name := o.name
-        let (g, newId) := g.move o.id .exile none
-        { g with delayedEndStepReturns := g.delayedEndStepReturns.push newId }
-          |>.logMsg s!"{name} is exiled until the beginning of the next end step")
-      sourceId (some "The target is no longer legal")
-  | (.casting .damageEqualMv) =>
-    let n :=
-      match lastKnownPower with
-      | some p => p.toNat
-      | none =>
-        match g.lastStackSpell? with
-        | some o => o.printed.manaValue
-        | none =>
-          match (g.player controller).castManaValuesThisTurn.back? with
-          | some mv => mv
-          | none => 0
-    g.applyDamageToKindTarget controller .playerOrCreature targets n sourceId none
   | (.casting .plusOneThis) =>
     g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
       "The source is no longer in play"

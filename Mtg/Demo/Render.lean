@@ -834,6 +834,12 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .widowMayCounter .. =>
           "may put a +1/+1 counter on Black Widow (accept); otherwise you may cast the exiled card"
         | .ultronMayPay _ => "may pay {2} to copy the artifact (accept), or decline"
+        | .visionMode _ available =>
+          let names := available.toList.map (fun m =>
+            if m == 0 then "0 double strike"
+            else if m == 1 then "1 indestructible"
+            else "2 draw a card")
+          s!"choose one that hasn't been chosen this turn: {String.intercalate ", " names}"
         | .kingpinMayPay2Life => "may pay 2 life (accept), or decline"
         | .daredevilMayExile _ => "may exile the top card of your library (accept), or decline"
         | .mayChangeSpellTarget .. =>

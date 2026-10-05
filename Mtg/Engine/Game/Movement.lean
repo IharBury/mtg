@@ -272,6 +272,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     zone := dest
     status := {}
     timestamp := ts
+    chosenX := old.chosenX
     lastKnownPower := lkiPower
     lastKnownToughness := lkiToughness
   }

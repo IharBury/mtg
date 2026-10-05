@@ -731,6 +731,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .ultronMayPay _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't pay {2}").finishFraChoice
   | .ultronMayPay _, _ => throw "Pay {2} (accept), or decline"
+  | .visionMode sourceId available, .mode m =>
+    if !available.contains m then throw "That mode was already chosen this turn"
+    return (g.applyVisionMode p sourceId m).finishFraChoice
+  | .visionMode .., _ => throw "Choose a mode that hasn't been chosen this turn"
   | .kingpinMayPay2Life, .accept =>
     let g ← g.payLifeCost p 2
     return ({ g with assignCombatDamageEqualToughness := some p }
@@ -932,6 +936,10 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .sheHulkMayDamage .. => .decline
   | .widowMayCounter .. => .decline
   | .ultronMayPay _ => .decline
+  | .visionMode _ available =>
+    match available[0]? with
+    | some m => .chooseMode m
+    | none => .decline
   | .kingpinMayPay2Life => .decline
   | .daredevilMayExile _ => .decline
   | .mayChangeSpellTarget .. => .decline

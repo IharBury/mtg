@@ -150,6 +150,11 @@ structure Status where
   losesAbilitiesUntilEot : Bool := false
   /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
   chosenModes : Array Nat := #[]
+  /-- Modes of The Vision chosen this turn. Cleared as the turn ends. -/
+  modesChosenThisTurn : Array Nat := #[]
+  /-- Until end of turn, base power equals the number of cards in your hand
+  (Ms. Marvel). -/
+  cardsInHandPowerUntilEot : Bool := false
   /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
   chosenOdd : Option Bool := none
   /-- Lore counters on a Saga (CR 714). -/
@@ -349,7 +354,9 @@ def untilEotFields : List UntilEotField := [
   ⟨fun s => s.losesAbilitiesUntilEot,
     fun s => { s with losesAbilitiesUntilEot := false }⟩,
   ⟨fun s => !s.grantedTriggersUntilEot.isEmpty,
-    fun s => { s with grantedTriggersUntilEot := #[] }⟩
+    fun s => { s with grantedTriggersUntilEot := #[] }⟩,
+  ⟨fun s => s.cardsInHandPowerUntilEot,
+    fun s => { s with cardsInHandPowerUntilEot := false }⟩
 ]
 
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or

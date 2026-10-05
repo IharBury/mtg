@@ -273,7 +273,7 @@ def zemoBoastThisActivationOk : Bool :=
 def visionModesExhaustedOk : Bool :=
   let g := addPermanent afterDraw theVision ⟨0⟩ ⟨0⟩
   let vis := namedPermanent g "The Vision"
-  let g := g.mapObjectStatus vis (fun s => { s with chosenModes := #[0, 1, 2] })
+  let g := g.mapObjectStatus vis (fun s => { s with modesChosenThisTurn := #[0, 1, 2] })
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingVisionModes)
     (some (namedPermanent g "The Vision").id)

@@ -2752,4 +2752,136 @@ def daredevilMayDeclineOk : Bool :=
 
 #guard daredevilMayDeclineOk
 
+/-- The Vision chooses a mode that hasn't been chosen this turn, and those
+choices reset as the turn ends. -/
+def visionModeChoiceOk : Bool :=
+  let g := addPermanent afterDraw theVision ⟨0⟩ ⟨0⟩
+  let vis := namedPermanent g "The Vision"
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingVisionModes) (some vis.id)
+  match g.pending with
+  | .fraChoice _ (.visionMode _ available) =>
+    available == #[0, 1, 2] &&
+      (let g := mustApply g ⟨0⟩ (.chooseMode 0)
+       let vis := namedPermanent g "The Vision"
+       g.hasDoubleStrike vis && vis.status.modesChosenThisTurn == #[0] &&
+         (let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingVisionModes) (some vis.id)
+          match g.pending with
+          | .fraChoice _ (.visionMode _ available) =>
+            available == #[1, 2] &&
+              (let g := mustApply g ⟨0⟩ (.chooseMode 1)
+               let vis := namedPermanent g "The Vision"
+               g.hasIndestructible vis &&
+                 (let g := g.clearTurnActivations
+                  (namedPermanent g "The Vision").status.modesChosenThisTurn.isEmpty &&
+                    (let g := g.applyModeledTrigger ⟨0⟩
+                       (.onCasting Effect.castingVisionModes) (some vis.id)
+                     match g.pending with
+                     | .fraChoice _ (.visionMode _ available) => available == #[0, 1, 2]
+                     | _ => false)))
+          | _ => false))
+  | _ => false
+
+#guard visionModeChoiceOk
+
+/-- Ms. Marvel's hand-size power lasts until end of turn. -/
+def msMarvelUntilEndOfTurnOk : Bool :=
+  let g := addPermanent afterDraw msMarvelKamalaKhan ⟨0⟩ ⟨0⟩
+  let marvel := namedPermanent g "Ms. Marvel, Kamala Khan"
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingDrawPowerEqualHand)
+    (some marvel.id)
+  let marvel := namedPermanent g "Ms. Marvel, Kamala Khan"
+  let fromHand := Int.ofNat (g.player ⟨0⟩).hand.size
+  marvel.status.cardsInHandPowerUntilEot &&
+    g.power marvel == fromHand &&
+    (let g := g.mapObjectStatus marvel (·.clearedAtCleanup)
+     let marvel := namedPermanent g "Ms. Marvel, Kamala Khan"
+     !marvel.status.cardsInHandPowerUntilEot && g.power marvel == 1)
+
+#guard msMarvelUntilEndOfTurnOk
+
+/-- Thor's damage is the triggering spell's mana value, including X, even
+after that spell has left the stack. -/
+def thorSpellManaValueOk : Bool :=
+  let g := addPermanent afterDraw thorGodOfThunder ⟨0⟩ ⟨0⟩
+  let thor := namedPermanent g "Thor, God of Thunder"
+  let (g, spell) := g.allocObject photonBlastBarrage ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.setObject { spell with chosenX := some 3 }
+  let g := g.putStackEntry ⟨0⟩ spell.id
+  let (g, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.putStackEntry ⟨0⟩ bolt.id
+  let (g, ab) := g.allocStackAbility thor ⟨0⟩
+  let g := g.setObject { ab with fraCauseId := some spell.id }
+  let g := { g with resolvingAbility := some ab.id }
+  let life0 := (g.player ⟨1⟩).life
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
+    (some thor.id) #[Target.player ⟨1⟩]
+  (g.player ⟨1⟩).life == life0 - (5 : Int) &&
+    (let (g, _) := g.move spell.id (.graveyard ⟨0⟩) none
+     let gy := g.object! (g.followMoved spell.id)
+     gy.chosenX == some 3 &&
+       (let (g, ab2) := g.allocStackAbility thor ⟨0⟩
+        let g := g.setObject { ab2 with fraCauseId := some spell.id }
+        let g := { g with resolvingAbility := some ab2.id }
+        let life1 := (g.player ⟨1⟩).life
+        let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
+          (some thor.id) #[Target.player ⟨1⟩]
+        (g.player ⟨1⟩).life == life1 - (5 : Int)))
+
+#guard thorSpellManaValueOk
+
+/-- Namor creates one Merfolk for each blue mana symbol in the triggering
+spell, not whichever spell is newest on the stack. -/
+def namorTriggeringSpellOk : Bool :=
+  let g := addPermanent afterDraw namorTheSubMariner ⟨0⟩ ⟨0⟩
+  let namor := namedPermanent g "Namor the Sub-Mariner"
+  let (g, aura) := g.allocObject secretInvasion ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.putStackEntry ⟨0⟩ aura.id
+  let (g, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.putStackEntry ⟨0⟩ bolt.id
+  let merfolk (g : Game) :=
+    (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype "Merfolk")).size
+  let (gBlue, ab) := g.allocStackAbility namor ⟨0⟩
+  let gBlue := gBlue.setObject { ab with fraCauseId := some aura.id }
+  let gBlue := { gBlue with resolvingAbility := some ab.id }
+  let gBlue := gBlue.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
+    (some namor.id)
+  merfolk gBlue == 2 &&
+    (let (gRed, ab) := g.allocStackAbility namor ⟨0⟩
+     let gRed := gRed.setObject { ab with fraCauseId := some bolt.id }
+     let gRed := { gRed with resolvingAbility := some ab.id }
+     let gRed := gRed.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
+       (some namor.id)
+     merfolk gRed == 0 && logContains gRed "No blue mana symbols")
+
+#guard namorTriggeringSpellOk
+
+/-- Wiccan exiles another nonland nontoken permanent. -/
+def wiccanAnotherNonlandNontokenOk : Bool :=
+  let g := addPermanent afterDraw wiccanRisingMagician ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mountain ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let wiccan := namedPermanent g "Wiccan, Rising Magician"
+  let bears := namedPermanent g "Grizzly Bears"
+  let land := namedPermanent g "Mountain"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.setObject { giant with printed := { giant.printed with isToken := true } }
+  let giant := namedPermanent g "Hill Giant"
+  let kind := (SharedTrigger.timing (.casting .exileFlicker)).targeting.kind
+  let legal := g.legalTargetsForKind ⟨0⟩ kind (some wiccan.id)
+  legal.contains (Target.permanent bears.id) &&
+    !legal.contains (Target.permanent wiccan.id) &&
+    !legal.contains (Target.permanent land.id) &&
+    !legal.contains (Target.permanent giant.id) &&
+    (let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingExileFlicker)
+        (some wiccan.id) #[Target.permanent bears.id]
+     !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+       g.delayedEndStepReturns.size == 1) &&
+    (let gMiss := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingExileFlicker)
+        (some wiccan.id) #[Target.permanent giant.id]
+     gMiss.battlefield.any (fun o => o.name == "Hill Giant") &&
+       logContains gMiss "no longer legal")
+
+#guard wiccanAnotherNonlandNontokenOk
+
 end Mtg.Engine.MshRulingTests
