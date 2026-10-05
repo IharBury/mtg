@@ -35,6 +35,19 @@ def payLoyaltyCost (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Game :=
   else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {o.name}"
   else g
 
+/-- Queue “whenever you activate a loyalty ability” triggers. They go on the
+stack above the loyalty ability, so they resolve first (rulings 847 / 853).
+Way of the Mind Sculptor triggers only if two or more loyalty counters were
+removed (intervening “if”). -/
+def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbol) : Game :=
+  let removed := match sym.counters with
+    | some k => if k < 0 then (-k).toNat else 0
+    | none => 0
+  g.foldControlledPermanents p none fun g o =>
+    g.enqueueWaitingTriggers
+      ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>
+        wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2))
+
 /-- Shared activation legality (CR 602.3). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
 def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) :
@@ -127,7 +140,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   g.validateActivation p o ab
   let g :=
     match ab.cost.loyalty with
-    | some sym => g.payLoyaltyCost o sym
+    | some sym => (g.payLoyaltyCost o sym).queueLoyaltyActivationTriggers p sym
     | none => g
   let o := g.object! id
   let pl := g.player p

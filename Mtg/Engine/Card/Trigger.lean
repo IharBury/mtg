@@ -423,6 +423,10 @@ inductive TriggerResolution where
   | prepareSourceIfNot
   /-- If three or more creatures died this turn, the source becomes prepared. -/
   | prepareSourceIfThreeDied
+  /-- If two or more loyalty counters were removed to activate the ability, draw a card. -/
+  | drawIfRemovedTwoLoyalty
+  /-- Put a +1/+1 counter on each permanent of this subtype you control. -/
+  | plusOneOnEachSubtypeYouControl (subtype : String)
   /-- Resolve a leftover StepLeftover. -/
   | step (e : StepLeftover)
   /-- Resolve a leftover DeathLeftover. -/
@@ -523,6 +527,9 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .youActivateCreatureAbility => #[.youActivateCreatureAbility]
   | .opponentDrawsSecond => #[.opponentDrawsSecondCard]
   | .opponentCastsFirstNoncreature => #[.opponentCastsFirstNoncreature]
+  | .youCastFirstNoncreature => #[.youCastFirstNoncreature]
+  | .youCastTargetingOpponentOrTheirCreature => #[.youCastTargetingOpponentOrTheirCreature]
+  | .youActivateLoyaltyAbility => #[.youActivateLoyaltyAbility]
   | .eachEndStep => #[.eachEndStep]
   | .thisOrNontokenSubtypeEnters => #[.thisOrNontokenSubtypeYouControlEnters]
   | .thisOrAnotherSubtypeEnters => #[.thisOrAnotherSubtypeYouControlEnters]
@@ -820,6 +827,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .prepareSourceIfNot => { events := #[.yourUpkeep], resolution := .prepareSourceIfNot }
   | .prepareSourceIfThreeDied =>
     { events := #[.eachEndStep], resolution := .prepareSourceIfThreeDied }
+  | .drawIfRemovedTwoLoyalty => { resolution := .drawIfRemovedTwoLoyalty }
+  | .plusOneOnEachSubtypeYouControl s => { resolution := .plusOneOnEachSubtypeYouControl s }
   | .onEnchanted action => { resolution := .onEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl, resolution := .attachThen followup }

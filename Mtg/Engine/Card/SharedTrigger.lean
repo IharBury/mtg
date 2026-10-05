@@ -297,6 +297,13 @@ inductive SharedTriggerWhen where
   | opponentDrawsSecond
   /-- Whenever an opponent casts their first noncreature spell each turn. -/
   | opponentCastsFirstNoncreature
+  /-- Whenever you cast your first noncreature spell each turn. -/
+  | youCastFirstNoncreature
+  /-- Whenever you cast a spell that targets an opponent or a creature an
+  opponent controls. -/
+  | youCastTargetingOpponentOrTheirCreature
+  /-- Whenever you activate a loyalty ability. -/
+  | youActivateLoyaltyAbility
   /-- At the beginning of each end step. -/
   | eachEndStep
   /-- Whenever this or another nontoken permanent of a listed subtype enters. -/
@@ -724,6 +731,10 @@ inductive SharedTrigger where
   | prepareSourceIfNot
   /-- If three or more creatures died this turn, this creature becomes prepared. -/
   | prepareSourceIfThreeDied
+  /-- If two or more loyalty counters were removed to activate the ability, draw a card. -/
+  | drawIfRemovedTwoLoyalty
+  /-- Put a +1/+1 counter on each permanent of this subtype you control. -/
+  | plusOneOnEachSubtypeYouControl (subtype : String)
   /-- Apply `action` to the enchanted creature. -/
   | onEnchanted (action : PermanentAction)
   /-- Attach to target, then apply `followup`. -/

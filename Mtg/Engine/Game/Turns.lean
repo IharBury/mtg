@@ -17,6 +17,9 @@ def clearEOT (g : Game) : Game :=
       creaturesWithoutFlyingCantBlock := false
       assignCombatDamageEqualToughness := none }
     g := g.restoreCopiesUntilEot
+    for pl in g.players do
+      if pl.legendRuleOffThisTurn then
+        g := g.setPlayer { pl with legendRuleOffThisTurn := false }
     for o in g.battlefield do
       if o.status.controlUntilEot then
         g := g.endControlChangingEffect (g.object! o.id)

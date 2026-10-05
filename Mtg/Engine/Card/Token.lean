@@ -62,6 +62,8 @@ inductive TokenKind where
   | pridemate
   /-- A 4/4 green Beast creature token with trample (FRA). -/
   | beast44trample
+  /-- A 5/5 red Dragon creature token with flying (FRA). -/
+  | dragon55flying
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -95,10 +97,12 @@ def oracleNoun : TokenKind → String
   | .heartwood => "Heartwood token"
   | .lotus => "Lotus token"
   | .jace => "blue Jace planeswalker token"
-  | .sculpture => "1/1 colorless Sculpture Treasure artifact creature token"
+  | .sculpture =>
+    "1/1 colorless Sculpture Treasure artifact creature token with \"{T}, Sacrifice this token: Add one mana of any color.\""
   | .mowu => "legendary 3/3 green Dog creature token named Mowu"
   | .pridemate => "2/2 white Cat Soldier creature token named Ajani's Pridemate"
   | .beast44trample => "4/4 green Beast creature token with trample"
+  | .dragon55flying => "5/5 red Dragon creature token with flying"
 
 /-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
 def pluralNoun (k : TokenKind) : String :=

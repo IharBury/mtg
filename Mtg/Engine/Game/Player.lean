@@ -98,6 +98,9 @@ structure Player where
   controls may be activated any time they could cast an instant (Jace's
   Machinations). Each permanent is still limited to one per turn (ruling 766). -/
   jaceLoyaltyAtInstantSpeed : Bool := false
+  /-- The legend rule doesn't apply to permanents this player controls this
+  turn (Hall of Echoes). Ends in cleanup with the copy effect (ruling 817). -/
+  legendRuleOffThisTurn : Bool := false
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/
   teammate : Option PlayerId := none
 deriving Repr, Inhabited

@@ -206,6 +206,9 @@ inductive Resolution where
   /-- Until end of turn, loyalty abilities of Jace planeswalkers you control
   may be activated any time you could cast an instant. -/
   | jaceLoyaltyAtInstantSpeed
+  /-- The source becomes a copy of the target creature until end of turn, and
+  the legend rule doesn't apply to permanents you control this turn. -/
+  | becomeCopyLegendRuleOff
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -516,6 +519,8 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
   | .jaceLoyaltyAtInstantSpeed =>
     "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
+  | .becomeCopyLegendRuleOff =>
+    s!"This land becomes a copy of {noun} until end of turn. The \"legend rule\" doesn't apply to permanents you control this turn"
   | .sequence rs =>
     sequence rs
   | .spell r =>

@@ -966,6 +966,9 @@ def damageThenEmpowerExcess (n : Nat) : Effect :=
 def jaceLoyaltyAtInstantSpeed : Effect :=
   mkAbility ({}) (.jaceLoyaltyAtInstantSpeed)
 
+def becomeCopyLegendRuleOff : Effect :=
+  mkAbility (.of .creatureYouControl) (.becomeCopyLegendRuleOff)
+
 end Effect
 
 end Mtg.Engine

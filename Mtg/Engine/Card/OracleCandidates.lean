@@ -536,6 +536,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.oppSacrificesGreatestMvGainLife 2,
   Effect.damageThenEmpowerExcess 6,
   Effect.jaceLoyaltyAtInstantSpeed,
+  Effect.creaturesYouControlGetAndGrant 1 0 Keyword.haste,
 ]
 
 def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
@@ -655,6 +656,8 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .enteringArtifactsCreaturesDontTrigger,
   .instantSorcerySplitSecond,
   .ptEqualGraveyardCardTypes,
+  .artifactTokensBecomeDragons,
+  .smallCreaturesYouControlUnblockable,
 ]
 
 def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
@@ -994,6 +997,14 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .triggered .landYouControlEnters (Effect.ofTrigger (.empowerJace 2)),
   .onStep (Effect.ofTrigger .prepareSourceIfNot),
   .onStep (Effect.ofTrigger .prepareSourceIfThreeDied),
+  .triggered .youActivateLoyaltyAbility (Effect.ofTrigger .drawIfRemovedTwoLoyalty),
+  .triggered .youActivateLoyaltyAbility (Effect.ofTrigger (.createTokens .cadet 1)),
+  .triggered .youCastFirstNoncreature (Effect.ofTrigger (.empowerJace 1)),
+  .triggered .youCastNoncreature (Effect.ofTrigger (.createTokens .sculpture 1)),
+  .triggered .youGainLife (Effect.ofTrigger (.plusOneOnEachSubtypeYouControl "Angel")),
+  .triggered .youCastTargetingOpponentOrTheirCreature (Effect.ofTrigger .plusOneOnSource),
+  .triggered .landYouControlEnters (Effect.ofTrigger (.gainLife 1)),
+  .triggered (.subtypeYouControlEnters "Plains") (Effect.ofTrigger (.plusOneOn .creature)),
 ]
 
 def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
@@ -1194,6 +1205,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   activated (Effect.targetCreatureBecomesPrepared) (ManaCost.ofGeneric 4) (tap := true),
   activated (Effect.eachCreatureYouControlBecomesPrepared)
           (ManaCost.ofColors [.white, .blue, .black, .red, .green]) (tap := true),
+  activated (Effect.becomeCopyLegendRuleOff) (ManaCost.ofGeneric 5),
 ]
 
 def chapterEffects : Thunk (Array (String × Effect)) := Thunk.mk fun _ => #[

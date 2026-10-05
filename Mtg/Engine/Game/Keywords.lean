@@ -230,7 +230,18 @@ def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
     o.staticAbilities.any (fun ab =>
       match ab.cantBeBlockedIfPowerAtMost? with
       | some n => g.snapshotPower o <= n
-      | none => false))
+      | none => false)) ||
+  -- Tetsuko Umezawa, Fugitive: checked as blockers are declared, so a
+  -- creature already blocked stays blocked (ruling 842).
+  (o.isOnBattlefield && o.isCreature &&
+    (g.snapshotPower o <= 1 || g.snapshotToughness o <= 1) &&
+    match o.controller with
+    | some p =>
+      (g.permanentsOf p).any (fun src =>
+        src.staticAbilities.any (fun
+          | .smallCreaturesYouControlUnblockable => true
+          | _ => false))
+    | none => false)
 
 /-- Whether `o` has lifelink, printed, granted until end of turn, or from a
 lifelink counter (CR 702.15). -/

@@ -205,6 +205,12 @@ inductive StaticAbility where
   /-- Power is the number of card types among cards in all graveyards and
   toughness is that plus 1, in all zones (CR 604.3; Tarmogoyf). -/
   | ptEqualGraveyardCardTypes
+  /-- Artifact tokens that would be created under your control are 5/5 red
+  Dragon creature tokens with flying instead (Draconic Visitor). -/
+  | artifactTokensBecomeDragons
+  /-- Creatures you control with power or toughness 1 or less can't be
+  blocked (Tetsuko Umezawa, Fugitive). -/
+  | smallCreaturesYouControlUnblockable
   /-- If you would put one or more counters on a permanent you control, put
   that many plus one of each of those kinds instead. -/
   | extraCounterOnPermanents
@@ -401,6 +407,8 @@ inductive StaticShape where
   | enteringArtifactsCreaturesDontTrigger
   | instantSorcerySplitSecond
   | ptEqualGraveyardCardTypes
+  | artifactTokensBecomeDragons
+  | smallCreaturesYouControlUnblockable
   | extraCounterOnPermanents
   | mayBeginOnBattlefield
   | enchantedHasWard (w : Nat)
@@ -599,6 +607,8 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .enteringArtifactsCreaturesDontTrigger => {}
   | .instantSorcerySplitSecond => {}
   | .ptEqualGraveyardCardTypes => {}
+  | .artifactTokensBecomeDragons => {}
+  | .smallCreaturesYouControlUnblockable => {}
   | .extraCounterOnPermanents => {}
   | .mayBeginOnBattlefield => {}
   | .enchantedHasWard w => { grantedWard := some w }
@@ -725,6 +735,8 @@ def shape : StaticAbility → StaticShape
   | .enteringArtifactsCreaturesDontTrigger => .enteringArtifactsCreaturesDontTrigger
   | .instantSorcerySplitSecond => .instantSorcerySplitSecond
   | .ptEqualGraveyardCardTypes => .ptEqualGraveyardCardTypes
+  | .artifactTokensBecomeDragons => .artifactTokensBecomeDragons
+  | .smallCreaturesYouControlUnblockable => .smallCreaturesYouControlUnblockable
   | .extraCounterOnPermanents => .extraCounterOnPermanents
   | .mayBeginOnBattlefield => .mayBeginOnBattlefield
   | .enchantedCreatureHasWard w => .enchantedHasWard w
@@ -942,6 +954,10 @@ def toNotation (ab : StaticAbility) : String :=
     "Instant and sorcery spells you control have split second."
   | .ptEqualGraveyardCardTypes =>
     "This creature's power is equal to the number of card types among cards in all graveyards and its toughness is equal to that number plus 1."
+  | .artifactTokensBecomeDragons =>
+    "If one or more artifact tokens would be created under your control, that many 5/5 red Dragon creature tokens with flying are created instead."
+  | .smallCreaturesYouControlUnblockable =>
+    "Creatures you control with power or toughness 1 or less can't be blocked."
   | .extraCounterOnPermanents =>
     "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead."
   | .mayBeginOnBattlefield =>

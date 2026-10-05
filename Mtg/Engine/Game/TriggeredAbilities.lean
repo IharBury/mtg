@@ -1344,6 +1344,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
       else g.becomePrepared o
     | none => g.logMsg "The source is no longer on the battlefield"
+  | .drawIfRemovedTwoLoyalty =>
+    g.draw controller 1
+  | .plusOneOnEachSubtypeYouControl s =>
+    (g.permanentsOf controller).foldl (fun g o =>
+      if g.hasSubtype o s then g.addPlusOnePlusOneTo (g.object! o.id) 1 else g) g
   | .prepareSourceIfThreeDied =>
     if g.battlefieldCreaturesToGyThisTurn.size < 3 then
       g.logMsg "Fewer than three creatures died this turn"

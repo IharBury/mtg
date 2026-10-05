@@ -165,6 +165,13 @@ inductive TriggerEvent where
   | youCastVillain
   /-- You cast a spell that targets a creature you control. -/
   | youCastTargetingCreatureYouControl
+  /-- You cast a spell that targets an opponent or a creature an opponent
+  controls. -/
+  | youCastTargetingOpponentOrTheirCreature
+  /-- You cast your first noncreature spell this turn. -/
+  | youCastFirstNoncreature
+  /-- You activate a loyalty ability. -/
+  | youActivateLoyaltyAbility
   /-- You cast a spell. -/
   | youCastSpell
   /-- You discard a card. -/
@@ -455,6 +462,15 @@ def spec : TriggerEvent → Spec
   | .youCastTargetingCreatureYouControl =>
     { clause := "you cast a spell that targets a creature you control",
       label := "cast trigger", checkTargets := false }
+  | .youCastTargetingOpponentOrTheirCreature =>
+    { clause := "you cast a spell that targets an opponent or a creature an opponent controls",
+      label := "cast trigger", checkTargets := false }
+  | .youCastFirstNoncreature =>
+    { clause := "you cast your first noncreature spell each turn",
+      label := "cast trigger", checkTargets := false }
+  | .youActivateLoyaltyAbility =>
+    { clause := "you activate a loyalty ability",
+      label := "loyalty trigger", checkTargets := false }
   | .youCastSpell =>
     { clause := "you cast a spell", label := "cast trigger", checkTargets := false }
   | .youDiscard =>

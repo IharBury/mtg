@@ -117,6 +117,27 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     if targetsCreatureYouControl then
       g.putControlledTriggers caster .youCastTargetingCreatureYouControl
     else g
+  -- Danitha: once per spell, however many targets it has (ruling 849).
+  let targetsOpponentOrTheirCreature : Bool :=
+    match g.stack.find? (fun e => e.objectId == spell.id) with
+    | some e =>
+      e.targets.any (fun t =>
+        match t with
+        | Target.player q => q != caster
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some o => o.isCreature && o.controller.isSome && !o.controlledBy caster
+          | none => false
+        | _ => false)
+    | none => false
+  let g :=
+    if targetsOpponentOrTheirCreature then
+      g.putControlledTriggers caster .youCastTargetingOpponentOrTheirCreature
+    else g
+  let g :=
+    if !spell.printed.isCreature && nonc == 1 then
+      g.putControlledTriggers caster .youCastFirstNoncreature
+    else g
   let g :=
     if !spell.printed.isCreature && nonc == 1 then
       (g.livingOpponents caster).foldl (fun acc pl =>

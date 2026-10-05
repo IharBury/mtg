@@ -644,6 +644,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .prepareSourceIfNot => "if this creature isn't prepared, it becomes prepared"
   | .prepareSourceIfThreeDied =>
     "if three or more creatures died this turn, this creature becomes prepared"
+  | .drawIfRemovedTwoLoyalty =>
+    "if you removed two or more loyalty counters to activate it, draw a card"
+  | .plusOneOnEachSubtypeYouControl s =>
+    s!"put a +1/+1 counter on each {s} you control"
   | .damageBlockers n =>
     s!"it deals {n} damage to each creature blocking it"
   | .scry n => s!"scry {n}"

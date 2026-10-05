@@ -86,6 +86,16 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       let excess := g.excessDamage o dealt
       if excess > 0 then g.empowerJace controller excess
       else g) sourceId (some "The target is no longer legal"))
+  | .becomeCopyLegendRuleOff =>
+    some (g.withLegalKindPermanent controller effect.targetKind targets (fun g target =>
+      g.withSourceOnBattlefield sourceId (fun g src =>
+        -- Rulings 812 / 815 / 816: copy the copiable values (already those
+        -- of anything the target copies); the land doesn't enter, keeps its
+        -- status, and both effects end together in cleanup (ruling 817).
+        let g := g.becomeCopyOf src target (untilEot := true)
+        let g := g.modifyPlayer controller (fun pl => { pl with legendRuleOffThisTurn := true })
+        g.logMsg s!"The legend rule doesn't apply to permanents {(g.player controller).name} controls this turn")
+        "The source is no longer in play") sourceId (some "The target is no longer legal"))
   | .jaceLoyaltyAtInstantSpeed =>
     let g := g.modifyPlayer controller (fun pl => { pl with jaceLoyaltyAtInstantSpeed := true })
     some (g.logMsg s!"Until end of turn, {(g.player controller).name} may activate loyalty abilities of Jace planeswalkers they control any time they could cast an instant")
@@ -1193,7 +1203,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
   | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
   | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
-  | .jaceLoyaltyAtInstantSpeed =>
+  | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff =>
     g
 
 /-- Resolve a printed activated ability (CR 608). -/

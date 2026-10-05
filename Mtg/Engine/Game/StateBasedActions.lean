@@ -28,7 +28,7 @@ more legendary permanents with the same name controlled by the same player,
 taking players in APNAP order. -/
 def firstLegendRuleChoice? (g : Game) : Option (PlayerId × String × Array ObjectId) :=
   Id.run do
-    for p in g.apnapPlayers do
+    for p in g.apnapPlayers.filter (fun p => !(g.player p).legendRuleOffThisTurn) do
       let legs := g.legendaryPermanentsOf p
       let mut seen : Array String := #[]
       for o in legs do

@@ -34,6 +34,10 @@ def creatureToken (name : String) (subtypes : Array String)
   isToken := true
 }
 
+/-- A 5/5 red Dragon creature token with flying. -/
+def dragon55flyingToken : CardDef :=
+  creatureToken "Dragon" #["Dragon"] 5 5 (some .red) (keywords := Keyword.flying)
+
 /-- A 1/1 white Human Soldier creature token. -/
 def humanSoldierToken : CardDef :=
   creatureToken "Human Soldier" #["Human", "Soldier"] 1 1 (some .white)
@@ -93,6 +97,21 @@ def tokenCreateMultiplier (g : Game) (controller : PlayerId) : Nat :=
 def foodTreasureReplacements (g : Game) (controller : PlayerId) : Nat :=
   (g.permanentsOf controller).filter (fun o => o.printed.foodAlsoCreatesTreasure) |>.size
 
+/-- Draconic Visitor: artifact tokens that would be created under
+`controller`'s control are 5/5 red Dragons with flying instead. Only the
+characteristics change; tapped and other instructions still apply, and the
+token's characteristics as created decide whether it applies (rulings
+780–782). -/
+def replaceArtifactTokenWithDragon (g : Game) (controller : PlayerId)
+    (printed : CardDef) : CardDef :=
+  if printed.isArtifact &&
+      (g.permanentsOf controller).any (fun o =>
+        o.staticAbilities.any (fun
+          | .artifactTokensBecomeDragons => true
+          | _ => false)) then
+    dragon55flyingToken
+  else printed
+
 /-- Create a token under `controller`, applying token-doubling and
 Food-and-Treasure replacement effects. -/
 def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
@@ -100,9 +119,11 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
   if (g.player controller).lost then
     g.createOneToken controller printed (tapped := tapped)
   else
+    let original := printed
+    let printed := g.replaceArtifactTokenWithDragon controller printed
     let copies := g.tokenCreateMultiplier controller
     let extraTreasure :=
-      if printed.hasSubtype "Food" then g.foodTreasureReplacements controller else 0
+      if original.hasSubtype "Food" then g.foodTreasureReplacements controller else 0
     Id.run do
       let mut g := g
       let mut last : Option GameObject := none
@@ -111,7 +132,8 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
         g := g'
         last := some obj
       for _ in [0:copies * extraTreasure] do
-        let (g', _) := g.createOneToken controller treasureToken (tapped := tapped)
+        let (g', _) := g.createOneToken controller
+          (g.replaceArtifactTokenWithDragon controller treasureToken) (tapped := tapped)
         g := g'
       match last with
       | some obj => (g, g.object! obj.id)
@@ -325,8 +347,9 @@ def jacePlaneswalkerToken : CardDef := {
 
 /-- A 1/1 colorless Sculpture Treasure artifact creature token. -/
 def sculptureToken : CardDef :=
-  creatureToken "Sculpture" #["Sculpture", "Treasure"] 1 1 none
-    (types := #[.artifact, .creature])
+  { creatureToken "Sculpture" #["Sculpture", "Treasure"] 1 1 none
+      (types := #[.artifact, .creature]) with
+    tapSacrificeAddAnyColor := true }
 
 /-- A legendary 3/3 green Dog creature token named Mowu. -/
 def mowuToken : CardDef := {
@@ -416,6 +439,7 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .mowu => mowuToken
   | .pridemate => pridemateToken
   | .beast44trample => beast44trampleToken
+  | .dragon55flying => dragon55flyingToken
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
