@@ -193,8 +193,9 @@ def finishProposedSpell (g : Game) : Except String Game := do
   let allowVillain := g.proposedAllowsVillainRestricted prop
   let allowCant := g.proposedAllowsCantNonartifact prop
   let allowCreature := g.proposedAllowsCreatureRestricted prop
+  let spend := g.proposedManaSpend prop
   if !(g.player prop.caster).manaPool.canPay prop.cost allowElf allowInst
-        allowHero allowVillain allowCant allowCreature ||
+        allowHero allowVillain allowCant allowCreature spend ||
       !g.sourceStillPayable prop ||
       !g.canPayLife prop.caster prop.payLife then
     return g.reverseProposedSpell
@@ -205,7 +206,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
   if prop.needsDiscardCard && (g.player prop.caster).hand.isEmpty then
     return g.reverseProposedSpell
   let g ← g.payCost prop.caster prop.cost allowElf allowInst
-    allowHero allowVillain allowCant allowCreature
+    allowHero allowVillain allowCant allowCreature spend
   let g ←
     match prop.kind, prop.sourceId with
     | .activatedAbility, some sid =>
@@ -372,8 +373,13 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
           if face.hasType ty then acc + n else acc
         | .supertypeSpellsCostLess s n =>
           if face.hasSupertype s then acc + n else acc
+        | .fra .noncreatureSpellsCostLess => if face.isCreature then acc else acc + 1
         | _ => acc) acc) 0
-  afterWitch.reduceGeneric subtypeLess
+  let selfLess :=
+    if face.staticAbilities.any (· == .fra .costsLessIfCastNoncreature) &&
+        (g.player caster).noncreatureSpellsCastThisTurn > 0 then 2
+    else 0
+  afterWitch.reduceGeneric (subtypeLess + selfLess)
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
 (CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
@@ -382,6 +388,15 @@ Target-based reductions lock in after CR 601.2c. Cost increases (kicker)
 are applied before these reductions. -/
 def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     (increase : ManaCost := ManaCost.empty) : ManaCost :=
+  let caster := card.controller.getD card.owner
+  -- Thalia, the Survivor: each one an opponent controls adds {1}.
+  let tax :=
+    if face.isCreature then 0
+    else
+      (g.livingOpponents caster).foldl (fun acc pl =>
+        acc + ((g.permanentsOf pl.id).filter (·.staticAbilities.any
+          (· == .fra .opponentsNoncreatureSpellsCostMore))).size) 0
+  let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
   let start := playCostStart card face
   let afterIncrease := start.addCost increase
   let afterEquip := g.applyCastCostReductions card face afterIncrease

@@ -22,7 +22,7 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
   | some (Target.permanent hostId) =>
     match g.findObject? hostId with
     | some host =>
-      if isLegalAuraHost host then
+      if host.auraCanEnchant obj.printed then
         let (g, newId) := g.putOntoBattlefield obj.id entry.controller
           (attachedTo := some host.id)
         let o := g.object! newId

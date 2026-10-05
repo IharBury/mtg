@@ -257,6 +257,16 @@ def extraCountersOn (g : Game) (controller : Option PlayerId) (n : Nat) : Nat :=
           | .extraCounterOnPermanents => true
           | _ => false))).size
 
+/-- Yoshimaru, Beloved Companion: one more +1/+1 counter for each such
+permanent the creature's controller controls. -/
+def extraPlusOneOnCreature (g : Game) (o : GameObject) (n : Nat) : Nat :=
+  if n == 0 || !o.isCreature then n
+  else
+    match o.controller with
+    | none => n
+    | some p =>
+      n + ((g.permanentsOf p).filter (·.staticAbilities.any (· == .fra .extraPlusOneCounter))).size
+
 /-- Karn, Argent Defender: an artifact or creature entering doesn't cause
 abilities to trigger. Checked with the permanent as it exists on the
 battlefield (rulings 891–893). Replacement effects still apply (ruling 890). -/
@@ -287,7 +297,7 @@ def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
   let base := o.printed.entersWithPlusOneCounters
   if base == 0 then g
   else
-    let n := g.extraCountersOn o.controller base
+    let n := g.extraPlusOneOnCreature o (g.extraCountersOn o.controller base)
     let g := g.setObject { o with status := o.status.addPlusOnePlusOne n }
     g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
 
@@ -310,7 +320,7 @@ def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
   if o.staticAbilities.any (fun
       | .entersWithXPlusOne => true
       | _ => false) then
-    let n := g.extraCountersOn o.controller (o.chosenX.getD 0)
+    let n := g.extraPlusOneOnCreature o (g.extraCountersOn o.controller (o.chosenX.getD 0))
     if n == 0 then g
     else
       let g := g.setObject { o with status :=
@@ -354,6 +364,15 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let g := g.refreshCitysBlessing
   let g := g.applyEntersWith (g.object! o.id)
   let o := g.object! o.id
+  -- Room of Refuge: “As it enters, choose a color.”
+  let g :=
+    if o.staticAbilities.any (· == .fra .entersTappedChooseColor) && o.status.chosenColor.isNone then
+      match o.controller with
+      | some p =>
+        { g with pending := .fraChoice p (.chooseColor o.id) }.logMsg
+          s!"{(g.player p).name} chooses a color for {o.name}"
+      | none => g
+    else g
   let g := g.addLoreAsSagaEnters o
   let o := g.object! o.id
   if g.enteringCausesNoTriggers o then

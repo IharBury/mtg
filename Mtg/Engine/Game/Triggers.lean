@@ -465,6 +465,32 @@ def grantedManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
           if acc.contains t then acc else acc.push t) fromLords
       else fromLords
 
+/-- Mana types Reality Fracture mana abilities of `o` produce, including the
+`{T}: Add {C}{C}` Emrakul, the Exigent Doom grants a land. -/
+def fraManaAbilities (o : GameObject) : Array ManaType :=
+  let anyColor : Array ManaType :=
+    #[.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
+  let own := o.staticAbilities.foldl (fun acc ab =>
+    match ab with
+    | .fra .tapAddColorlessNotFromHand => acc.push .colorless
+    | .fra .tapAddAnyColorPlaneswalkerOnly => acc ++ anyColor
+    | .fra .tapAddChosenColor =>
+      match o.status.chosenColor with
+      | some c => acc.push (.colored c)
+      | none => acc
+    | _ => acc) #[]
+  if o.isOnBattlefield && !o.status.colorlessGrantUntilCast.isEmpty && !own.contains .colorless then
+    own.push .colorless
+  else own
+
+/-- The spending restriction on mana `o` adds when tapped for `mana`. -/
+def fraManaUseOf (_g : Game) (o : GameObject) (mana : ManaType) : Option FraManaUse :=
+  if mana == .colorless && !o.status.colorlessGrantUntilCast.isEmpty then none
+  else o.staticAbilities.findSome? (fun ab =>
+    match ab with
+    | .fra s => s.manaUse?
+    | _ => none)
+
 /-- Printed mana abilities plus those copied from the graveyard or granted
 by another permanent. Restricted MSH `{T}: Add` types are omitted until the
 activation condition holds. -/
@@ -473,7 +499,7 @@ def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
   else
     let types :=
       o.printed.manaAbilities ++ g.copiedFromGy o (·.manaAbilities) ++
-        g.grantedManaAbilities o
+        g.grantedManaAbilities o ++ fraManaAbilities o
     if o.printed.requiresEnteredOrBasicAdd && !g.canUseEnteredOrBasicAdd o then
       types.filter (fun t => !o.printed.enteredOrBasicAddMana.contains t)
     else types

@@ -11,8 +11,16 @@ CR 510.1c–d / 702.19b), and clearing combat (CR 511.3).
 namespace Mtg.Engine
 namespace Game
 
+/-- Whether `pw` is limited to one attacker each combat (Tomik, Orzhov
+Lawmage grants this to planeswalkers its controller controls). -/
+def planeswalkerAttackedByOneAtMost (g : Game) (pw : GameObject) : Bool :=
+  match pw.controller with
+  | some q => (g.permanentsOf q).any (·.staticAbilities.any (· == .fra .planeswalkersAttackedByOneAtMost))
+  | none => false
+
 def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
-    (defender : Option PlayerId := none) (each : Array (Option PlayerId) := #[]) :
+    (defender : Option PlayerId := none) (each : Array (Option PlayerId) := #[])
+    (planeswalkers : Array (Option ObjectId) := #[]) :
     Except String Game := do
   if g.pending != .declareAttackers || g.priorityInstead g.activePlayer != p then
     throw "Not time to declare attackers"
@@ -27,17 +35,42 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
       | some (some d) => some d
       | some none => defender
       | none => defender
-    let dest ← g.resolveAttackDestination p want
+    let pw? ←
+      match planeswalkers[i]? with
+      | some (some pwId) =>
+        match g.findObject? pwId with
+        | some pw =>
+          if !pw.isOnBattlefield || !pw.printed.isPlaneswalker then
+            throw s!"{pw.name} is not a planeswalker on the battlefield"
+          else if !(g.livingOpponents p).any (fun pl => pw.controlledBy pl.id) then
+            throw s!"{pw.name} isn't controlled by an opponent (CR 508.1b)"
+          else pure (some pw)
+        | none => throw "no such planeswalker"
+      | _ => pure none
+    let dest ←
+      match pw? with
+      | some pw => pure (pw.controller.getD pw.owner)
+      | none => g.resolveAttackDestination p want
     if g.hasFlying o && g.leftoverFlyingRestriction dest then
       throw s!"{o.name} can't attack {(g.player dest).name}"
     g := g.setObject { o with status := { o.status with
       attacking := true
       attackingWhom := some dest
+      attackingPlaneswalker := pw?.map (·.id)
       declaredAsAttackerThisTurn := true } }
     if !g.hasVigilance (g.object! id) then
       g := g.becomeTapped (g.object! id)
     g := g.logMsg
-      s!"{g.player p |>.name} attacks {(g.player dest).name} with {o.name}"
+      (match pw? with
+       | some pw => s!"{g.player p |>.name} attacks {pw.name} with {o.name}"
+       | none => s!"{g.player p |>.name} attacks {(g.player dest).name} with {o.name}")
+  -- Tomik, Orzhov Lawmage (ruling 834): checked on the whole declaration.
+  for pw in g.battlefield do
+    if pw.printed.isPlaneswalker && g.planeswalkerAttackedByOneAtMost pw then
+      let n := (g.battlefield.filter (fun a =>
+        a.status.attacking && a.status.attackingPlaneswalker == some pw.id)).size
+      if n > 1 then
+        throw s!"No more than one creature can attack {pw.name} each combat"
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"
   g := g.putAttackTriggersOnStack p ids
@@ -245,7 +278,18 @@ def dealAssignedCombatDamage (g : Game) : Game :=
               s!"{src.name} deals {amt} combat damage to {t.name}"
               (deathtouch := g.hasDeathtouch src) (combat := true)
             totalDealt := totalDealt + amt
-      if !g.sourceDamagePrevented src && asgn.toPlayer > 0 &&
+      let pwTarget? := src.status.attackingPlaneswalker
+      if !g.sourceDamagePrevented src && asgn.toPlayer > 0 && pwTarget?.isSome then
+        -- CR 510.1c / 120.3c: damage to the attacked planeswalker removes loyalty.
+        match pwTarget?.bind g.findObject? with
+        | some pw =>
+          if pw.isOnBattlefield then
+            let amt := g.replacedDamageAmount src asgn.toPlayer (combat := true)
+            g := g.markDamageOn pw amt s!"{src.name} deals {amt} combat damage to {pw.name}"
+              (deathtouch := g.hasDeathtouch src) (combat := true)
+            totalDealt := totalDealt + amt
+        | none => pure ()
+      else if !g.sourceDamagePrevented src && asgn.toPlayer > 0 &&
           !(g.player defn).lost then
         let toPlayer := g.replacedDamageAmount src asgn.toPlayer (combat := true)
         let pl := g.player defn
@@ -261,7 +305,9 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         match src.controller with
         | some pid => g := g.gainLife pid totalDealt.toNat
         | none => pure ()
-      if asgn.toPlayer > 0 && !(g.player defn).lost then
+      if totalDealt > 0 then
+        g := g.mapObjectStatus (g.object! src.id) (fun s => { s with dealtCombatDamage := true })
+      if asgn.toPlayer > 0 && pwTarget?.isNone && !(g.player defn).lost then
         match src.controller with
         | some pid =>
           g := { g with lastCombatDamagePlayer := some defn }

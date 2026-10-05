@@ -587,7 +587,7 @@ where
       if t == kw then (acc.reverse, some rest)
       else go (t :: acc) rest
 
-def attackUsage : String := "usage: attack [id ...] [at] <name|opponent> ..."
+def attackUsage : String := "usage: attack [id ...] [at] <name|opponent|planeswalker id> ..."
 
 /-- True when `token` names a player or `opponent`. -/
 def isAttackDefenderToken (g : Game) (token : String) : Bool :=
@@ -604,6 +604,22 @@ def parseAttackDefender (g : Game) (p : PlayerId) (token : String) : Except Stri
     | none => throw attackUsage
     | some pl => g.resolveAttackDestination p (some pl.id)
 
+/-- Where an `attack` command sends a creature: a player, or a planeswalker
+that player controls (CR 506.3). -/
+abbrev AttackDest := PlayerId × Option ObjectId
+
+/-- Parse an `at` destination: a player, `opponent`, or a planeswalker id. -/
+def parseAttackDest (g : Game) (p : PlayerId) (token : String) : Except String AttackDest :=
+  match parseObjectId? token with
+  | some id =>
+    match g.findObject? id with
+    | some pw =>
+      if pw.isOnBattlefield && pw.printed.isPlaneswalker then
+        .ok (pw.controller.getD pw.owner, some id)
+      else .error s!"{pw.name} is not a planeswalker on the battlefield"
+    | none => .error attackUsage
+  | none => (parseAttackDefender g p token).map (·, none)
+
 /-- Attackers for an interactive `attack` command. Omitted ids mean every
 creature that currently can attack. -/
 def attackerIdsForCommand (g : Game) (tokens : List String) : Except String (Array ObjectId) :=
@@ -614,20 +630,20 @@ def attackerIdsForCommand (g : Game) (tokens : List String) : Except String (Arr
     parseObjectIds tokens attackUsage
 
 /-- Split `attack` tokens into per-creature destinations. A player name or
-`at <name|opponent>` applies to the preceding ids (or to every creature
-that can attack if none were listed). Later pairs may name a different
-player (CR 508.1). -/
+`at <name|opponent|planeswalker id>` applies to the preceding ids (or to
+every creature that can attack if none were listed). Later pairs may name a
+different player or planeswalker (CR 508.1). -/
 def parseAttackCommand (g : Game) (p : PlayerId) (tokens : List String) :
-    Except String (Array (ObjectId × Option PlayerId)) :=
+    Except String (Array (ObjectId × Option AttackDest)) :=
   let tokens := commandTokens tokens
   go tokens #[] #[] none
 where
-  flush (ids : Array ObjectId) (dest : Option PlayerId)
-      (acc : Array (ObjectId × Option PlayerId)) :
-      Array (ObjectId × Option PlayerId) :=
+  flush (ids : Array ObjectId) (dest : Option AttackDest)
+      (acc : Array (ObjectId × Option AttackDest)) :
+      Array (ObjectId × Option AttackDest) :=
     ids.foldl (fun a id => a.push (id, dest)) acc
-  go : List String → Array ObjectId → Array (ObjectId × Option PlayerId) →
-      Option PlayerId → Except String (Array (ObjectId × Option PlayerId))
+  go : List String → Array ObjectId → Array (ObjectId × Option AttackDest) →
+      Option AttackDest → Except String (Array (ObjectId × Option AttackDest))
     | [], pending, acc, defaultDest =>
       if pending.isEmpty && acc.isEmpty then
         .ok ((g.battlefield.filter (g.canAttack) |>.map (·.id)).map (fun id =>
@@ -640,7 +656,7 @@ where
       match rest with
       | [] => .error attackUsage
       | name :: rest' =>
-        match parseAttackDefender g p name with
+        match parseAttackDest g p name with
         | .error e => .error e
         | .ok dest =>
           if pending.isEmpty then
@@ -653,8 +669,8 @@ where
         match parseAttackDefender g p t with
         | .error e => .error e
         | .ok dest =>
-          if pending.isEmpty then go rest #[] acc (some dest)
-          else go rest #[] (flush pending (some dest) acc) defaultDest
+          if pending.isEmpty then go rest #[] acc (some (dest, none))
+          else go rest #[] (flush pending (some (dest, none)) acc) defaultDest
       else
         match parseObjectId? t with
         | none => .error attackUsage
@@ -663,9 +679,10 @@ where
 def applyAttack (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let attacks ← parseAttackCommand g p tokens
   let ids := attacks.map (·.1)
-  let each := attacks.map (·.2)
+  let each := attacks.map (fun a => a.2.map (·.1))
+  let pws := attacks.map (fun a => a.2.bind (·.2))
   requireObjects g ids
-  g.apply p (.declareAttackers ids none each)
+  g.apply p (.declareAttackers ids none each pws)
 
 /-- Pair unused legal blockers with attackers. A creature with menace is
 covered only when two blockers can be assigned (CR 702.111b); leftover

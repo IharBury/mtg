@@ -184,9 +184,12 @@ inductive Action where
   the generic alternative; `false` sacrifices or discards. -/
   | chooseAdditionalCost (payGeneric : Bool)
   /-- `defender` is the destination when `each` is omitted or an entry is
-  `none`. `each[i]` is the player `ids[i]` attacks (CR 508.1). -/
+  `none`. `each[i]` is the player `ids[i]` attacks (CR 508.1).
+  `planeswalkers[i]`, when set, is the planeswalker `ids[i]` attacks instead
+  (CR 506.3 / 508.1b). -/
   | declareAttackers (ids : Array ObjectId) (defender : Option PlayerId := none)
       (each : Array (Option PlayerId) := #[])
+      (planeswalkers : Array (Option ObjectId) := #[])
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
   /-- Announce combat damage assignment (CR 510.1). Omitted sources use a
   legal default; listed sources must divide their power among legal creature

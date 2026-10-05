@@ -48,6 +48,8 @@ structure TargetFilter where
   orLegendary : Bool := false
   nonland : Bool := false
   noncreature : Bool := false
+  /-- Not an Aura (“non-Aura enchantment”). -/
+  nonAura : Bool := false
   /-- A permanent card (CR 110.4b). -/
   permanentCard : Bool := false
   nontoken : Bool := false

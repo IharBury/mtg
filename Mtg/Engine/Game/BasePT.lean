@@ -80,8 +80,19 @@ def hasGraveyardCardTypesPT (o : GameObject) : Bool :=
     | .ptEqualGraveyardCardTypes => true
     | _ => false)
 
+/-- Basic land types among lands `p` controls (domain; CR 305.6). -/
+def basicLandTypesAmong (g : Game) (p : PlayerId) : Nat :=
+  (#["Plains", "Island", "Swamp", "Mountain", "Forest"].filter (fun t =>
+    (g.permanentsOf p).any (fun o => o.printed.isLand && o.hasSubtype t))).size
+
 def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
-  if hasGraveyardCardTypesPT o then
+  if o.isOnBattlefield && o.status.animatedConstruct55 then
+    (o.status.setBasePower.getD 5, o.status.setBaseToughness.getD 5)
+  else if o.staticAbilities.any (· == .fra .powerEqualsBasicLandTypes) then
+    let cda : Int := Int.ofNat (g.basicLandTypesAmong o.you)
+    let power := if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
+    (power, g.characteristicBase o o.printed.toughness o.status.setBaseToughness)
+  else if hasGraveyardCardTypesPT o then
     let n : Int := Int.ofNat g.graveyardCardTypeCount
     -- Ruling 776: a layer-7b set (Multiply by Zero) overrides this CDA.
     if o.isOnBattlefield then

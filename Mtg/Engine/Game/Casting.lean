@@ -40,7 +40,7 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
 pool is not required; mana abilities are activated at CR 601.2g. Additional
 non-mana costs such as sacrificing a permanent must still be payable. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  !o.printed.isLand &&
+  !o.printed.isLand && !g.combatLocksNonManaAbilities &&
   !(g.player p).cantCastSpellsThisTurn &&
   g.mayPlay p o &&
   (match o.playPermission with
@@ -191,9 +191,25 @@ def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
     | some o => o.printed.isArtifact
     | none => false
 
+/-- What paying `prop` is for, as Reality Fracture mana restrictions see it. -/
+def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
+  match prop.kind with
+  | .activatedAbility => {}
+  | .spell =>
+    match g.findObject? prop.spellId with
+    | some o =>
+      { spell := true, fromHand := prop.original.zone == .hand prop.caster
+        planeswalker := o.printed.isPlaneswalker, noncreature := !o.printed.isCreature }
+    | none => {}
+
 /-- Mana types `src` can produce that may be spent on `prop` (CR 106.10). -/
 def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array ManaType)
     (prop : ProposedSpell) : Array ManaType :=
+  let spend := g.proposedManaSpend prop
+  let types := types.filter (fun t =>
+    match g.fraManaUseOf src t with
+    | some u => u.allows spend
+    | none => true)
   let allowElf := g.proposedAllowsElfRestricted prop
   let allowInst := g.proposedAllowsInstRestricted prop
   let allowLeg := g.proposedAllowsLegendaryRestricted prop
@@ -222,6 +238,7 @@ def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType) 
   pool.add t (g.manaFromTap src t)
     (elfRestricted := src.printed.tapAddAnyColorEqualToPower)
     (instRestricted := src.printed.tapAddAnyColorForInstantOrSorcery)
+    (fra := g.fraManaUseOf src t)
 
 /-- Whether some assignment of types from `sources` pays `cost`. -/
 def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
@@ -306,12 +323,12 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
     (allowElfRestricted : Bool := false) (allowInstRestricted : Bool := false)
     (allowHeroRestricted : Bool := false) (allowVillainRestricted : Bool := false)
     (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false) :
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) :
     Except String Game := do
   let pl := g.player p
   match pl.manaPool.pay? cost allowElfRestricted allowInstRestricted
       allowHeroRestricted allowVillainRestricted allowCantNonartifact
-      allowCreatureRestricted with
+      allowCreatureRestricted spend with
   | none => throw s!"{pl.name} cannot pay {cost}"
   | some pool =>
     return g.setPlayer { pl with manaPool := pool }

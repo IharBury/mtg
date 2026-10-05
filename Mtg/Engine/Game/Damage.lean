@@ -142,6 +142,16 @@ def replacedDamageAmount (g : Game) (src : GameObject) (n : Int)
         | none => (0 : Int)
     (n + extra) * Int.ofNat (g.mjolnirMultiplier src)
 
+/-- Tomik, Izzet Sparkmage: noncombat damage a source deals to an opponent of
+its controller, or a permanent one controls, is increased by 1 for each. -/
+def tomikNoncombatBonus (g : Game) (src : GameObject) (recipient : PlayerId) : Int :=
+  match src.controller with
+  | some p =>
+    if p == recipient then 0
+    else Int.ofNat ((g.permanentsOf p).filter (·.staticAbilities.any
+      (· == .fra .noncombatDamagePlusOne))).size
+  | none => 0
+
 /-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
   g.markDamageOn o n s!"{o.name} is dealt {n} damage"
@@ -155,6 +165,12 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
       g.logMsg s!"damage from {src.name} is prevented"
     else
       let n := g.replacedDamageAmount src n
+      let n :=
+        if n > 0 then
+          match o.controller with
+          | some c => n + g.tomikNoncombatBonus src c
+          | none => n
+        else n
       let g :=
         g.mapObjectStatus src (fun s => { s with dealtDamageThisTurn := true })
       g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
@@ -168,7 +184,9 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     match source with
     | some src =>
       if g.sourceDamagePrevented src then (0 : Int)
-      else g.replacedDamageAmount src n
+      else
+        let n := g.replacedDamageAmount src n
+        if n > 0 then n + g.tomikNoncombatBonus src pid else n
     | none => n
   let pl := g.player pid
   if n == 0 && source.isSome then

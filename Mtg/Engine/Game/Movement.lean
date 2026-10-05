@@ -57,6 +57,7 @@ def exilesOppDeath? (o : GameObject) : Bool :=
   o.printed.exileOppCreaturesInstead ||
     o.staticAbilities.any (fun
       | .exileOppDeathCreateWolf => true
+      | .fra .exileOpponentsDyingCreatures => true
       | _ => false)
 
 /-- True when `o` also creates a Wolf after that replacement (Head of the Hunt). -/
@@ -370,7 +371,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                 g := g.logMsg s!"{name} returns to {(g.player p).name}'s graveyard"
               | _ =>
               if o.printed.isAura then
-                match g.battlefield.find? (fun h => h.isCreature) with
+                match g.battlefield.find? (fun h => h.auraCanEnchant o.printed) with
                 | none =>
                   g := g.logMsg
                     s!"{name} remains in exile (can't be attached legally; CR 614.6)"

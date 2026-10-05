@@ -40,7 +40,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .pay => g.pay p
   | .sacrifice id => g.sacrificeForActivation p id
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
-  | .declareAttackers ids defender each => g.declareAttackers p ids defender each
+  | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
   | .declareBlockers as => g.declareBlockers p as
   | .assignCombatDamage asgns => g.announceCombatDamage p asgns
   | .keep => g.keepOpeningHand p

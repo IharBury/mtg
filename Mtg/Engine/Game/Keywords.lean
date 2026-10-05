@@ -20,10 +20,78 @@ def enchantedCantAttackOrBlock (g : Game) (o : GameObject) : Bool :=
     a.attachedTo == some o.id &&
       a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome))
 
+/-- Whether `p` controls a Jace planeswalker. -/
+def controlsJacePlaneswalker (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun x => x.printed.isPlaneswalker && g.hasSubtype x "Jace")
+
+/-- Keywords Reality Fracture static abilities grant `o`: its own conditional
+keywords, grants from permanents its controller controls, and grants from
+attached Auras and Equipment. -/
+def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
+  if !o.isOnBattlefield then Keywords.none
+  else
+    match o.controller with
+    | none => Keywords.none
+    | some p =>
+      let gy := (g.player p).graveyard.size
+      let self := o.staticAbilities.foldl (fun acc ab =>
+        match ab with
+        | .fra .firstStrikeDuringYourTurn =>
+          if g.activePlayer == p then Keywords.merge acc Keyword.firstStrike else acc
+        | .fra .vigilanceIfJace =>
+          if g.controlsJacePlaneswalker p then Keywords.merge acc Keyword.vigilance else acc
+        | .fra .powerAndFlyingIfSevenInGraveyard =>
+          if gy ≥ 7 then Keywords.merge acc Keyword.flying else acc
+        | .fra .flyingHasteIfOpponentDealtNoncombat =>
+          if (g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn) then
+            Keywords.merge acc (Keyword.flying.merge Keyword.haste)
+          else acc
+        | .fra .hexproofUntilCombatDamage =>
+          if o.status.dealtCombatDamage then acc else Keywords.merge acc Keyword.hexproof
+        | _ => acc) Keywords.none
+      let team := (g.permanentsOf p).foldl (fun acc src =>
+        let other := src.id != o.id
+        src.staticAbilities.foldl (fun acc ab =>
+          let grant (cond : Bool) (k : Keywords) := if cond then Keywords.merge acc k else acc
+          match ab with
+          | .fra .creaturesYouControlHaveTrample => grant o.isCreature Keyword.trample
+          | .fra .plusOneCreaturesHaveVigilance =>
+            grant (o.isCreature && o.status.plusOnePlusOne > 0) Keyword.vigilance
+          | .fra .creatureTokensGetOneAndVigilance =>
+            grant (o.isCreature && o.printed.isToken) Keyword.vigilance
+          | .fra .otherPlusOneCreaturesHaveHaste =>
+            grant (other && o.isCreature && o.status.plusOnePlusOne > 0) Keyword.haste
+          | .fra .creaturesYouControlHaveHaste => grant o.isCreature Keyword.haste
+          | .fra .otherCreaturesHaveTrample => grant (other && o.isCreature) Keyword.trample
+          | .fra .landsHaveHexproof => grant o.printed.isLand Keyword.hexproof
+          | .fra .thoptersHaveHaste => grant (g.hasSubtype o "Thopter") Keyword.haste
+          | .fra .artifactCreaturesHaveVigilance =>
+            grant (o.isCreature && o.printed.isArtifact) Keyword.vigilance
+          | _ => acc) acc) Keywords.none
+      let attached := g.battlefield.foldl (fun acc a =>
+        if a.attachedTo != some o.id then acc
+        else
+          a.staticAbilities.foldl (fun acc ab =>
+            match ab with
+            | .fra .equippedMedicsKitesail => Keywords.merge acc Keyword.flying
+            | .fra .enchantedGetsOneAndDeathtouch => Keywords.merge acc Keyword.deathtouch
+            | _ => acc) acc) Keywords.none
+      Keywords.mergeAll #[self, team, attached]
+
+/-- Whether `o` may attack as though it didn't have defender (Surveillance
+Phantasm; Ghalta the Immovable). -/
+def mayAttackDespiteDefender (g : Game) (o : GameObject) : Bool :=
+  match o.controller with
+  | none => false
+  | some p =>
+    (o.staticAbilities.any (· == .fra .attackDespiteDefenderIfScried) &&
+      (g.player p).scriedOrSurveilledThisTurn) ||
+    (g.permanentsOf p).any (·.staticAbilities.any (· == .fra .creaturesAttackDespiteDefender))
+
 /-- Printed haste, until-EOT haste, or a static “haste as long as you control
 another …” ability. -/
 def hasHaste (g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.haste ||
+  o.printedOrUntilEot.haste || (g.fraGrantedKeywords o).haste ||
   (o.isOnBattlefield &&
     o.staticAbilities.any (fun ab =>
       match ab.hasteIfOtherSubtype? with
@@ -37,7 +105,7 @@ def hasHaste (g : Game) (o : GameObject) : Bool :=
 def canAttack (g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield && o.isCreature &&
   o.controlledBy g.activePlayer &&
-  !o.status.tapped && !o.printedOrUntilEot.defender &&
+  !o.status.tapped && (!o.printedOrUntilEot.defender || g.mayAttackDespiteDefender o) &&
   !(o.status.summoningSick && !g.hasHaste o) &&
   !g.enchantedCantAttackOrBlock o &&
   o.staticAbilities.all (fun ab =>
@@ -69,7 +137,7 @@ def controlsEquipment (g : Game) (p : PlayerId) : Bool :=
 checked before the permanent enters, so lands or planeswalkers entering at
 the same time are not counted (rulings 808 / 809). -/
 def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
-  card.entersTapped ||
+  card.entersTapped || card.staticAbilities.any (· == .fra .entersTappedChooseColor) ||
     (card.entersTappedUnlessLegendary && !g.controlsLegendaryCreature p) ||
     (card.entersTappedUnlessEquipment && !g.controlsEquipment p) ||
     (card.entersTappedUnlessPlaneswalker &&
@@ -141,7 +209,7 @@ def leftoverGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
               Keywords.merge acc k
             else acc
           | _ => acc) acc) Keywords.none
-  Keywords.merge self fromTeam
+  Keywords.merge (Keywords.merge self fromTeam) (g.fraGrantedKeywords o)
 
 def currentKeywords (g : Game) (o : GameObject) : Keywords :=
   let printedKw :=
@@ -414,8 +482,8 @@ def sourceDamagePrevented (g : Game) (src : GameObject) : Bool :=
   src.status.preventDamageGrantedBy.any g.grantorStillInPlay
 
 /-- Whether `o` has deathtouch, printed or granted until end of turn (CR 702.2). -/
-def hasDeathtouch (_g : Game) (o : GameObject) : Bool :=
-  hasPrintedOrEot o (·.deathtouch)
+def hasDeathtouch (g : Game) (o : GameObject) : Bool :=
+  hasPrintedOrEot o (·.deathtouch) || (g.fraGrantedKeywords o).deathtouch
 
 /-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
 make it lose the keyword. -/
@@ -461,7 +529,7 @@ def hasTrample (g : Game) (o : GameObject) : Bool :=
 Only trample (lords) and indestructible (until-EOT loss) differ from
 `printedOrUntilEot`; overlaying the other keywords would restate identity. -/
 def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
-  { o.printedOrUntilEot with
+  { Keywords.merge o.printedOrUntilEot (g.fraGrantedKeywords o) with
     indestructible := g.hasIndestructible o
     trample := g.hasTrample o }
 

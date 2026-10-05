@@ -112,6 +112,7 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
   typeOk && colorOk && controllerOk &&
     (!f.nonland || !objectHasCardType o .land) &&
     (!f.noncreature || !objectHasCardType o .creature) &&
+    (!f.nonAura || !o.printed.isAura) &&
     (!f.nontoken || !o.printed.isToken) &&
     (!f.permanentCard || o.printed.isPermanentCard) &&
     (!f.legendary || o.isLegendary) &&

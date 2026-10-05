@@ -49,6 +49,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     throw "You don't have priority"
   if g.splitSecondOnStack then
     throw "A spell with split second is on the stack (CR 702.61a)"
+  if g.combatLocksNonManaAbilities then
+    throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
   if p != g.activePlayer &&
       (g.permanentsOf g.activePlayer).any (fun o =>
         o.staticAbilities.any (fun

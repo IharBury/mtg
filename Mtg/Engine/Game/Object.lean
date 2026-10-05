@@ -173,7 +173,10 @@ def types (o : GameObject) : Array CardType :=
 def subtypes (o : GameObject) : Array Subtype :=
   if o.status.onlyFoodArtifact then #["Food"]
   else
-    let extra := o.status.additionalSubtypes.filter (fun s => !o.printed.subtypes.any (· == s))
+    let added :=
+      if o.status.animatedConstruct55 then o.status.additionalSubtypes.push "Construct"
+      else o.status.additionalSubtypes
+    let extra := added.filter (fun s => !o.printed.subtypes.any (· == s))
     let raw := o.printed.subtypes ++ extra
     match o.status.replacedCreatureTypesUntilEot with
     | none => raw
@@ -231,6 +234,15 @@ def hasSubtype (o : GameObject) (s : String) : Bool :=
 /-- Printed static abilities plus those granted by a lasting effect. -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=
   o.printed.staticAbilities ++ o.status.grantedStaticAbilities
+
+/-- Whether an Aura with card `aura` may enchant this permanent: an artifact
+or non-Aura enchantment for “Enchant artifact or non-Aura enchantment”
+(Puppet Crafting), otherwise a creature (CR 303.4). -/
+def auraCanEnchant (host : GameObject) (aura : CardDef) : Bool :=
+  host.isOnBattlefield &&
+    if aura.staticAbilities.any (· == .fra .enchantArtifactOrNonAuraEnchantment) then
+      host.printed.isArtifact || (host.printed.isEnchantment && !host.printed.isAura)
+    else host.isCreature
 
 /-- Colorless nonland permanent (e.g. a legal Goblin Cratermaker destroy target). -/
 def isColorlessNonland (o : GameObject) : Bool :=

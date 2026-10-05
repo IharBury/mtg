@@ -64,6 +64,16 @@ def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
     | _, some _ => id
     | _, none => best) (ids[0]!)
 
+/-- Puppet Crafting: the enchanted permanent is a 5/5 Construct creature
+while the Aura is attached to it. -/
+def refreshAuraAnimation (g : Game) : Game :=
+  g.battlefield.foldl (fun g o =>
+    let animated := g.battlefield.any (fun a =>
+      a.attachedTo == some o.id &&
+        a.staticAbilities.any (· == .fra .enchantedIsConstruct55))
+    if animated == o.status.animatedConstruct55 then g
+    else g.setObject { o with status := { o.status with animatedConstruct55 := animated } }) g
+
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
 any state-based action was performed (used by CR 514.3a). If a legend-rule
 choice is required (CR 704.5j), the check pauses: that SBA is not finished,
@@ -73,7 +83,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
   if g.over then (g, false)
   else
     Id.run do
-      let mut g := g
+      let mut g := g.refreshAuraAnimation
       let mut changed := false
       -- Players losing (CR 704.5a–c). They leave after this SBA pass
       -- if the game continues (CR 800.4 / 800.4a).
@@ -227,7 +237,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         if o.printed.isAura then
           let legal :=
             match o.attachedTo.bind g.findObject? with
-            | some host => host.isOnBattlefield && host.isCreature
+            | some host => host.auraCanEnchant o.printed
             | none => false
           if !legal then
             g := g.moveToOwnerGraveyard o
