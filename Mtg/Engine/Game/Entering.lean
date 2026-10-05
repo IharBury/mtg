@@ -131,18 +131,15 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     else g
   let g :=
     g.putControlledTriggers caster .youCastSpell
-  let extortN :=
-    (g.permanentsOf caster).filter (fun o =>
-      o.staticAbilities.any (fun
-        | .extort => true
-        | _ => false)) |>.size
+  -- Extort (CR 702.101a): each instance triggers separately.
   let g :=
-    if extortN == 0 then g
-    else
-      { g with
-          pendingExtort := g.pendingExtort + extortN
-          pendingExtortController := some caster }
-        |>.logMsg "Extort triggers"
+    (g.permanentsOf caster).foldl (fun g o =>
+      if o.staticAbilities.any (fun | .extort => true | _ => false) then
+        g.queueTrigger caster o
+          (.triggered .enter { resolution := .fra .extort
+                               phrase := "You may pay {W/B}. If you do, each opponent loses 1 life and you gain that much life" } {})
+          .youCastSpell
+      else g) g
   let g :=
     match g.pendingFreeRGCreature with
     | some p =>

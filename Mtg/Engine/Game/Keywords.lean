@@ -374,7 +374,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
       (g.permanentsOf defender).any (fun o => g.hasSubtype o "Island")
   blocker.isOnBattlefield && blocker.isCreature &&
   blocker.controlledBy defender && !blocker.status.tapped &&
-  blocker.status.blocking.isEmpty &&
+  blocker.status.blocking.isEmpty && !blocker.status.cantBlockUntilEot &&
   g.mayDeclareAsBlocker blocker &&
   !g.enchantedCantAttackOrBlock blocker &&
   (!g.creaturesWithoutFlyingCantBlock || g.hasFlying blocker) &&

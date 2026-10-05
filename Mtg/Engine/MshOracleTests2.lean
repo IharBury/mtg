@@ -44,7 +44,7 @@ def claimTheKingdomReflexiveOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanIndestructible (some plan.id)
   !g.battlefield.any (fun o => o.name == "Claim the Kingdom") &&
     (namedPermanent g "Grizzly Bears").status.indestructibleCounters == 0 &&
-    g.pendingMshReflexive.isSome &&
+    g.hasModeledReflexiveOnStack &&
     (let g := g.applyModeledReflexive #[Target.permanent bears.id]
      (namedPermanent g "Grizzly Bears").status.indestructibleCounters == 1) &&
     (let g := addPermanent afterDraw claimTheKingdom ⟨0⟩ ⟨0⟩
@@ -52,7 +52,7 @@ def claimTheKingdomReflexiveOk : Bool :=
      let plan := namedPermanent g "Claim the Kingdom"
      let (g, _) := g.move plan.id (.graveyard ⟨0⟩) none
      let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanIndestructible (some plan.id)
-     !g.pendingMshReflexive.isSome &&
+     !g.hasModeledReflexiveOnStack &&
        (namedPermanent g "Grizzly Bears").status.indestructibleCounters == 0) &&
     (mshRuling 712).comment.contains "reflexive"
 
@@ -64,7 +64,7 @@ def constructACosmicCubeReflexiveOk : Bool :=
   let plan := namedPermanent g "Construct a Cosmic Cube"
   let g := g.applyTriggeredAbility ⟨0⟩ .onSeventhPlanControlOpponent (some plan.id)
   !g.battlefield.any (fun o => o.name == "Construct a Cosmic Cube") &&
-    g.pendingMshReflexive.isSome &&
+    g.hasModeledReflexiveOnStack &&
     (let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
      g.controlsPlayer ⟨0⟩ ⟨1⟩ && g.controlOnNextTakenTurn) &&
     (mshRuling 713).comment.contains "reflexive"
@@ -79,7 +79,7 @@ def doomReignsSupremeReflexiveOk : Bool :=
   let lib0 := (g.player ⟨1⟩).library.size
   let g := g.applyTriggeredAbility ⟨0⟩ .onFifthPlanExileTopCast (some plan.id)
   (g.player ⟨1⟩).library.size == lib0 &&
-    g.pendingMshReflexive.isSome &&
+    g.hasModeledReflexiveOnStack &&
     (let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
      (g.player ⟨1⟩).library.size == lib0 - 5 &&
        (g.objects.filter (fun o =>
@@ -96,10 +96,11 @@ def grimReaperReflexiveOk : Bool :=
   let grim := namedPermanent g "Grim Reaper, Lethal Legionnaire"
   let unpaid :=
     g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackPayReturnAttacking) (some grim.id)
-  !unpaid.pendingMshReflexive.isSome &&
-    (let g := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackPayReturnAttacking) (some grim.id)
-       #[] "Grim Reaper" (some (1 : Int))
-     g.pendingMshReflexive.isSome &&
+  !unpaid.hasModeledReflexiveOnStack &&
+    (let g := unpaid.modifyPlayer ⟨0⟩ (fun pl =>
+       { pl with manaPool := (pl.manaPool.add (.colored .black) 4) })
+     let g := mustApply g ⟨0⟩ .accept
+     g.hasModeledReflexiveOnStack &&
        (let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
         let g := g.applyModeledReflexive #[Target.card gy.id]
         let bears := namedPermanent g "Grizzly Bears"
@@ -118,15 +119,16 @@ def killmongerReflexiveOk : Bool :=
   let km := namedPermanent g "Killmonger, Scourge of Wakanda"
   let ogre := namedPermanent g "Gray Ogre"
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) (some km.id)
+  let g := mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Grizzly Bears").id])
   !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
-    g.pendingMshReflexive.isSome &&
+    g.hasModeledReflexiveOnStack &&
     g.battlefield.any (fun o => o.name == "Gray Ogre") &&
     (let g := g.applyModeledReflexive #[Target.permanent ogre.id]
      !g.battlefield.any (fun o => o.name == "Gray Ogre")) &&
     (let g := addPermanent afterDraw killmongerScourgeOfWakanda ⟨0⟩ ⟨0⟩
      let km := namedPermanent g "Killmonger, Scourge of Wakanda"
      let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) (some km.id)
-     !g.pendingMshReflexive.isSome) &&
+     !g.hasModeledReflexiveOnStack) &&
     (mshRuling 716).comment.contains "reflexive"
 
 #guard killmongerReflexiveOk
@@ -139,8 +141,7 @@ def redHulkReflexiveOk : Bool :=
   let hulk := namedPermanent g "Red Hulk"
   let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchRedHulk) (some hulk.id)
   (namedPermanent g "Red Hulk").status.plusOnePlusOne == 1 &&
-    g.pendingMshReflexive.isSome &&
-    g.pendingMshReflexivePaid == 1 &&
+    g.hasModeledReflexiveOnStack &&
     (let bears := namedPermanent g "Grizzly Bears"
      let g := g.applyModeledReflexive #[Target.permanent bears.id]
      (namedPermanent g "Grizzly Bears").status.damage == 1) &&
@@ -148,7 +149,7 @@ def redHulkReflexiveOk : Bool :=
      let hulk := namedPermanent g "Red Hulk"
      let (g, _) := g.move hulk.id (.graveyard ⟨0⟩) none
      let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchRedHulk) (some hulk.id)
-     !g.pendingMshReflexive.isSome) &&
+     !g.hasModeledReflexiveOnStack) &&
     (mshRuling 625).comment.contains "must survive the damage" &&
     (mshRuling 717).comment.contains "reflexive"
 
@@ -161,10 +162,11 @@ def speedYoungAvengerReflexiveOk : Bool :=
   let speed := namedPermanent g "Speed, Young Avenger"
   let unpaid :=
     g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable) (some speed.id)
-  !unpaid.pendingMshReflexive.isSome &&
-    (let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable)
-       (some speed.id) #[] "Speed" (some (1 : Int))
-     g.pendingMshReflexive.isSome &&
+  !unpaid.hasModeledReflexiveOnStack &&
+    (let g := unpaid.modifyPlayer ⟨0⟩ (fun pl =>
+       { pl with manaPool := (pl.manaPool.add (.colored .red) 1) })
+     let g := mustApply g ⟨0⟩ .accept
+     g.hasModeledReflexiveOnStack &&
        (let speed := namedPermanent g "Speed, Young Avenger"
         let g := g.applyModeledReflexive #[Target.permanent speed.id]
         let speed := namedPermanent g "Speed, Young Avenger"
@@ -188,7 +190,7 @@ def deathToOurEnemiesReflexiveOk : Bool :=
   let life0 := (g.player ⟨1⟩).life
   let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanDividedDamage (some plan.id)
   (g.player ⟨1⟩).life == life0 &&
-    g.pendingMshReflexive.isSome &&
+    g.hasModeledReflexiveOnStack &&
     (let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
      (g.player ⟨1⟩).life + 7 == life0) &&
     (mshRuling 720).comment.contains "reflexive"
@@ -207,7 +209,7 @@ def rewriteHistoryReflexiveOk : Bool :=
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanReturnInstants (some plan.id)
   (g.player ⟨0⟩).hand.size == hand0 &&
-    g.pendingMshReflexive.isSome &&
+    g.hasModeledReflexiveOnStack &&
     (let g := g.applyModeledReflexive #[Target.card inst.id, Target.card sorc.id]
      (g.player ⟨0⟩).hand.size == hand0 + 2 &&
        (g.handObjects ⟨0⟩).any (fun o => o.name == "Helicarrier Strike") &&
@@ -252,26 +254,14 @@ def speedballRetargetOk : Bool :=
 equals life actually lost; combat assignment uses toughness, not power. -/
 def kingpinExtortAndToughnessOk : Bool :=
   let g := addPermanent afterDraw theKingpinOfCrime ⟨0⟩ ⟨0⟩
-  let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
-  let g := g.putStackEntry ⟨0⟩ spell.id
-  let g := g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id)
-  g.pendingExtort == 1 &&
-    (let life0 := (g.player ⟨0⟩).life
-     let life1 := (g.player ⟨1⟩).life
-     let g := g.applyExtort true
-     (g.player ⟨1⟩).life + 1 == life1 &&
-       (g.player ⟨0⟩).life == life0 + 1 &&
-       g.pendingExtort == 0 &&
-       (let g := g.applyExtort true
-        g.pendingExtort == 0 && (g.player ⟨1⟩).life + 1 == life1)) &&
-    (let g := addPermanent afterDraw theKingpinOfCrime ⟨0⟩ ⟨0⟩
-     let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
-     let g := g.putStackEntry ⟨0⟩ spell.id
-     let g := g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id)
-     let g := g.modifyPlayer ⟨1⟩ (fun pl => { pl with lifeLocked := true })
+  (let life0 := (g.player ⟨0⟩).life
+   let life1 := (g.player ⟨1⟩).life
+   let g := g.extortDrain ⟨0⟩
+   (g.player ⟨1⟩).life + 1 == life1 && (g.player ⟨0⟩).life == life0 + 1) &&
+    (let g := g.modifyPlayer ⟨1⟩ (fun pl => { pl with lifeLocked := true })
      let life0 := (g.player ⟨0⟩).life
      let life1 := (g.player ⟨1⟩).life
-     let g := g.applyExtort true
+     let g := g.extortDrain ⟨0⟩
      (g.player ⟨1⟩).life == life1 &&
        (g.player ⟨0⟩).life == life0) &&
     (let g := addPermanent afterDraw theKingpinOfCrime ⟨0⟩ ⟨0⟩

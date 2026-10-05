@@ -168,30 +168,6 @@ as it last existed. -/
 def fraCauseController? (g : Game) : Option PlayerId :=
   g.resolvingAbilityObject?.bind (·.fraCauseController)
 
-/-- A stack object to stand for `sourceId` as an ability's source. -/
-def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : GameObject :=
-  match sourceId.bind g.findObject? with
-  | some o => o
-  | none =>
-    { id := sourceId.getD ⟨0⟩, printed := { name := "The ability", types := #[] }
-      owner := controller, controller := some controller, zone := .battlefield }
-
-/-- Put a reflexive triggered ability (“When you do, …”) on the stack with
-`effect` (CR 603.12). Its targets are chosen now. -/
-def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (effect : Effect) : Game :=
-  let src := g.abilitySourceFor controller sourceId
-  let marker : TriggeredAbility := .triggered .enter effect {}
-  if effect.requiresTarget && !effect.allowsZeroTargets &&
-      (g.legalTargetsForKind controller effect.targetKind sourceId).isEmpty then
-    g.logMsg s!"{src.name}'s reflexive ability has no legal target and is removed (CR 603.3d)"
-  else
-    let (g, obj) := g.putStackAbility src controller (abilityEffect := some effect)
-      (triggeredAbility := some marker)
-    let g := g.setObject { obj with sourceId := sourceId }
-    let g := g.logMsg s!"{src.name}'s reflexive ability is put on the stack"
-    g.promptTriggerTargetsIfNeeded
-
 /-- “For each opponent, up to one target creature or planeswalker that
 player controls”: one optional instance per opponent. -/
 def perOpponentKind (g : Game) (controller : PlayerId) (f : TargetFilter) : EffectTargetKind :=

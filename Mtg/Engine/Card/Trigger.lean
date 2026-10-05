@@ -978,7 +978,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .death .deathtouchOppSac =>
     { events := #[.anotherCreatureYouControlEnters], resolution := .death .deathtouchOppSac }
   | .thisAttack .mayPayPlusOne =>
-    { events := #[.attacking], targeting := .of .creature, resolution := .thisAttack .mayPayPlusOne }
+    { events := #[.attacking], resolution := .thisAttack .mayPayPlusOne }
   | .thisAttack .payReturnAttacking =>
     { events := #[.attacking], resolution := .thisAttack .payReturnAttacking }
   | .thisAttack .ifArtifactEnteredDraw =>

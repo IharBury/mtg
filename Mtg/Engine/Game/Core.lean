@@ -143,12 +143,9 @@ structure Game where
   enrageGrantsAdditionalCombat : Nat := 0
   /-- The Sensational She-Hulk chose to deal damage this turn (MSH 95 / 142). -/
   sheHulkDamageUsedThisTurn : Bool := false
-  /-- A pending MSH reflexive trigger: (controller, source, kind tag).
-  Kind is `0` grant-indestructible, `1` deal-2, `2` Hawkeye modes (paid count
-  in `pendingMshReflexivePaid`). -/
-  pendingMshReflexive : Option (PlayerId × Option ObjectId × Nat) := none
-  /-- Times Hawkeye paid for Trick Arrows (0–3). -/
-  pendingMshReflexivePaid : Nat := 0
+  /-- Damage assigned to each target of the resolving divided-damage ability
+(CR 601.2d). -/
+  resolvingDivision : Array Nat := #[]
   /-- Player-controlling effect: (you, the player you control). Last created
   wins (MSH 259). -/
   playerControl : Option (PlayerId × PlayerId) := none
@@ -158,10 +155,6 @@ structure Game where
   /-- Loki delayed copy: (controller, Loki's id if still known, last-known
   power). Compared at cast time (MSH 109). -/
   pendingLokiCopy : Option (PlayerId × Option ObjectId × Int) := none
-  /-- Extort triggers waiting for a pay/don't-pay decision (MSH 371). -/
-  pendingExtort : Nat := 0
-  /-- Controller of the pending extort trigger. -/
-  pendingExtortController : Option PlayerId := none
   /-- Until EOT, this player's creatures with toughness greater than power
   assign combat damage equal to toughness (The Kingpin of Crime; MSH 287). -/
   assignCombatDamageEqualToughness : Option PlayerId := none

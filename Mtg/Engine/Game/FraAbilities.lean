@@ -370,6 +370,36 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
     onSource (fun g o =>
       (g.mapObjectStatus o (fun s => { s with additionalCreatureUntilEot := true })).logMsg
         s!"{o.name} becomes an artifact creature until end of turn")
+  | .queueMshReflexive kind paid =>
+    if kind == 2 then
+      g.beginFraChoice controller (.hawkeyeModes paid #[] sourceId)
+        s!"{(g.player controller).name} chooses up to {paid} Trick Arrows modes"
+    else g.queueModeledReflexive controller sourceId kind paid
+  | .mshReflexive kind paid =>
+    g.resolveModeledReflexive controller sourceId kind paid targets g.resolvingDivision
+  | .hawkeyeArrows modes =>
+    let src := sourceId.bind g.findObject?
+    let illegal := some "The target is no longer legal"
+    let (g, _) := modes.foldl (fun (acc : Game × Nat) m =>
+      let (g, i) := acc
+      let slice := targets.extract i (i + 1)
+      match m with
+      | 0 =>
+        (g.withLegalKindPermanent controller .creature slice (fun g o =>
+          (g.mapObjectStatus o (fun s => { s with cantBlockUntilEot := true })).logMsg
+            s!"{o.name} can't block this turn") sourceId illegal, i + 1)
+      | 1 =>
+        (g.withLegalKindPlayer controller .player slice
+          (fun g pid => g.dealDamageToPlayer pid 2 (source := src)) sourceId illegal, i + 1)
+      | _ =>
+        if (g.player controller).hand.isEmpty then (g.draw controller 1, i)
+        else
+          (g.beginFraChoice controller .discardThenDraw
+            s!"{(g.player controller).name} discards a card, then draws a card", i)) (g, 0)
+    g
+  | .extort =>
+    g.beginFraChoice controller (.mayPayExtort sourceId)
+      s!"{(g.player controller).name} may pay \{W/B} (extort)"
   | .proliferate times =>
     if times == 0 then g
     else

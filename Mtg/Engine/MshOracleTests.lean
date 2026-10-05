@@ -2288,8 +2288,9 @@ def mshReflexiveNoTargetFirstOk : Bool :=
      let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
      let sm := namedPermanent g "Spider-Man, To the Rescue"
      let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterMayTapThenGrantIndestructible) (some sm.id)
+     let g := mustApply g ⟨0⟩ .accept
      (namedPermanent g "Spider-Man, To the Rescue").status.tapped &&
-       g.pendingMshReflexive.isSome &&
+       g.hasModeledReflexiveOnStack &&
        (let bears := namedPermanent g "Grizzly Bears"
         let g := g.applyModeledReflexive #[Target.permanent bears.id]
         (namedPermanent g "Grizzly Bears").status.untilEotKeywords.indestructible)) &&
@@ -2305,13 +2306,16 @@ def hawkeyeReflexivePayOk : Bool :=
   let nonePaid :=
     g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHawkeyeModes) (some hawk.id)
       #[] "Hawkeye" none
-  !nonePaid.pendingMshReflexive.isSome &&
-    (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHawkeyeModes) (some hawk.id)
-       #[] "Hawkeye" (some (2 : Int))
-     g.pendingMshReflexive.isSome &&
-       g.pendingMshReflexivePaid == 2 &&
+  !nonePaid.hasModeledReflexiveOnStack &&
+    (let g := nonePaid.modifyPlayer ⟨0⟩ (fun pl =>
+       { pl with manaPool := (pl.manaPool.add (.colored .red) 2) })
+     let g := mustApply g ⟨0⟩ (.chooseMode 2)
+     let g := mustApply g ⟨0⟩ (.chooseMode 1)
+     let g := mustApply g ⟨0⟩ .decline
+     let g := mustApply g ⟨0⟩ (.target (.player ⟨1⟩))
+     (g.player ⟨0⟩).manaPool.red == 0 &&
        (let life1 := (g.player ⟨1⟩).life
-        let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
+        let g := passBoth g
         (g.player ⟨1⟩).life + 2 == life1)) &&
     (mshRuling 478).comment.contains "reflexive"
 

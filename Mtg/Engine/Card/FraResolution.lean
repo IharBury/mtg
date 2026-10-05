@@ -266,6 +266,18 @@ inductive FraResolution where
   /-- The source Vehicle becomes an artifact creature until end of turn
   (crew, CR 702.122). -/
   | becomeArtifactCreatureUntilEot
+  /-- Extort: you may pay {W/B}. If you do, each opponent loses 1 life and
+  you gain that much life (CR 702.101). -/
+  | extort
+  /-- Put the reflexive triggered ability `kind` of an MSH card on the stack
+  (“When you do, …”; MSH 359–369). `paid` is how many times its cost was
+  paid. -/
+  | queueMshReflexive (kind paid : Nat)
+  /-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
+  | mshReflexive (kind paid : Nat)
+  /-- Hawkeye's Trick Arrows: resolve the chosen modes (0 Net, 1 Explosive,
+  2 Boomerang) in order. -/
+  | hawkeyeArrows (modes : List Nat)
   /-- The creature that caused this ability gets +P/+T until end of turn. -/
   | causeGetsPump (power toughness : Int)
   /-- Creatures attacking the player recorded as the cause's controller get

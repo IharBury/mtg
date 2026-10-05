@@ -126,7 +126,9 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     (!f.attackingOrBlocking || o.status.attacking || !o.status.blocking.isEmpty) &&
     (!f.attackedThisTurn || o.status.declaredAsAttackerThisTurn) &&
     (!f.enteredThisTurn || o.status.enteredThisTurn) &&
-    (!f.untapped || !o.status.tapped)
+    (!f.untapped || !o.status.tapped) &&
+    (!f.nonattacking || !o.status.attacking) &&
+    (!f.withHaste || g.hasHaste o)
 
 /-- Legal targets described by a `TargetFilter` (CR 115.1). -/
 def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
@@ -141,6 +143,10 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
   | .spellOrCreature =>
     g.legalStackSpellTargets ok ++
       g.legalPermanentTargets caster (fun o => o.isOnBattlefield && o.isCreature && ok o)
+  | .anyTarget =>
+    playerTargets g.livingPlayers ++
+      g.legalPermanentTargets caster (fun o =>
+        o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker || o.printed.isBattle) && ok o)
   | .player =>
     playerTargets (g.livingPlayers.filter (fun pl =>
       match f.controller with

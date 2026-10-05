@@ -76,6 +76,25 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   else
     return g.becomeCast p (g.object! newId)
 
+/-- Hawkeye's Trick Arrows with the chosen modes, in printed order. -/
+def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
+  let sorted := modes.qsort (· < ·)
+  let kinds := sorted.filterMap (fun m =>
+    if m == 0 then some EffectTargetKind.creature
+    else if m == 1 then some EffectTargetKind.player
+    else none)
+  let targeting : EffectTargeting :=
+    match kinds.toList with
+    | [k] => .of k
+    | [a, b] => .of (.pair a b)
+    | _ => .of .none
+  let names := sorted.toList.map (fun m =>
+    if m == 0 then "Net — Target creature can't block this turn"
+    else if m == 1 then "Explosive — Hawkeye deals 2 damage to target player"
+    else "Boomerang — Discard a card, then draw a card")
+  { targeting, resolution := .fra (.hawkeyeArrows sorted.toList)
+    phrase := String.intercalate ". " names }
+
 def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
   let .fraChoice q choice := g.pending | throw "Nothing to choose now"
   if p != q then
@@ -380,6 +399,53 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return (g.logMsg s!"{o.name} enters tapped").finishFraChoice
     | none => return g.finishFraChoice
   | .payLifeOrEnterTapped .., _ => throw "Pay the life (accept), or decline"
+  | .mayPayExtort _, .accept =>
+    let cost : ManaCost := { symbols := #[.hybrid .white .black] }
+    if !(g.player p).manaPool.canPay cost then
+      throw s!"{(g.player p).name} cannot pay \{W/B}; add mana first"
+    let g ← g.payCost p cost
+    return (g.extortDrain p).finishFraChoice
+  | .mayPayExtort _, .decline => return (g.logMsg "Extort is not paid").finishFraChoice
+  | .mayPayExtort _, _ => throw "Pay {W/B} (accept), or decline"
+  | .mayPayManaForReflexive cost maxTimes kind sourceId, .accept
+  | .mayPayManaForReflexive cost maxTimes kind sourceId, .mode _ =>
+    let times := match answer with | .mode n => n | _ => 1
+    if times == 0 then return g.finishFraChoice
+    if times > maxTimes then throw s!"Pay at most {maxTimes} times"
+    let total : ManaCost := { symbols := (List.replicate times cost.toList).flatten.toArray }
+    if !(g.player p).manaPool.canPay total then
+      throw s!"{(g.player p).name} cannot pay {total}; add mana first"
+    let g ← g.payCost p total
+    let g := g.logMsg s!"{(g.player p).name} pays {total}"
+    return (g.applyFra p default (.queueMshReflexive kind times) #[] sourceId).finishFraChoice
+  | .mayPayManaForReflexive .., .decline =>
+    return (g.logMsg "The cost isn't paid. The reflexive ability doesn't trigger.").finishFraChoice
+  | .mayPayManaForReflexive .., _ => throw "Pay (accept, or a number of times), or decline"
+  | .mayTapSourceThen next sourceId, .accept =>
+    match g.findObject? sourceId with
+    | some o =>
+      if o.isOnBattlefield && !o.status.tapped then
+        let g := g.becomeTapped o
+        return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+      else throw s!"{o.name} can't be tapped"
+    | none => throw "The source is gone"
+  | .mayTapSourceThen .., .decline => return g.finishFraChoice
+  | .mayTapSourceThen .., _ => throw "Answer accept or decline"
+  | .hawkeyeModes left chosen sourceId, .mode idx =>
+    if idx > 2 then throw "Choose Net (0), Explosive (1), or Boomerang (2)"
+    if chosen.contains idx then throw "That mode was already chosen (CR 700.2)"
+    let chosen := chosen.push idx
+    if chosen.size < left && chosen.size < 3 then
+      return { g with pending := .fraChoice p (.hawkeyeModes left chosen sourceId) }
+    return (g.putReflexiveTrigger p sourceId (hawkeyeArrowsEffect chosen)).finishFraChoice
+  | .hawkeyeModes _ chosen sourceId, .decline =>
+    if chosen.isEmpty then return g.finishFraChoice
+    return (g.putReflexiveTrigger p sourceId (hawkeyeArrowsEffect chosen)).finishFraChoice
+  | .hawkeyeModes .., _ => throw "Choose a mode, or decline to stop"
+  | .discardThenDraw, .objects #[id] =>
+    if !(g.player p).hand.contains id then throw "That card is not in your hand"
+    return ((g.discardFromHand p id).draw p 1).finishFraChoice
+  | .discardThenDraw, _ => throw "Choose a card to discard"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
@@ -438,6 +504,17 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayPayPickThen .. => .decline
   | .addManaColors .. => .chooseMode 0
   | .payLifeOrEnterTapped _ n => if (g.player p).life > (n : Int) then .accept else .decline
+  | .mayPayExtort _ =>
+    if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then .accept else .decline
+  | .mayPayManaForReflexive cost _ _ _ =>
+    if (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
+  | .mayTapSourceThen .. => .accept
+  | .hawkeyeModes _ chosen _ =>
+    match [1, 0, 2].find? (!chosen.contains ·) with
+    | some m => if m == 0 && (g.legalTargetsForKind p .creature none).isEmpty then .decline
+      else .chooseMode m
+    | none => .decline
+  | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
   | .chooseCardName _ =>
     -- Name a nonland card an opponent owns, else any nonland card.
     let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)

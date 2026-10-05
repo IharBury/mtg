@@ -1191,15 +1191,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid }))
       sourceId (some "The target is no longer legal")
   | .maySacAnotherThenDestroyOppNonland =>
-    let others :=
-      (g.permanentsOf controller).filter (fun o =>
-        o.isCreature && some o.id != sourceId)
-    match others[0]? with
-    | none =>
-      g.logMsg "No other creature was sacrificed. The reflexive ability doesn't trigger."
-    | some victim =>
-      let g := g.sacrificeToGraveyard victim "Killmonger"
-      g.queueModeledReflexive controller sourceId 7
+    match sourceId with
+    | some sid =>
+      let pick := CostPick.sacrificeAnotherSubtype "Creature"
+      if (g.costPickCandidates controller sid pick).isEmpty then
+        g.logMsg "There is no other creature to sacrifice. The reflexive ability doesn't trigger."
+      else
+        g.beginFraChoice controller (.mayPayPickThen pick (.mshReflexive 7 0) sid)
+          s!"{(g.player controller).name} may sacrifice another creature"
+    | none => g
   | .maySacOrDiscardNonlandThenDamage =>
     match sourceId with
     | some sid =>
@@ -1296,10 +1296,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match sourceId.bind g.findObject? with
     | some src =>
       if src.isOnBattlefield && !src.status.tapped then
-        let g := g.applyPermanentAction src PermanentAction.tap
-        g.queueModeledReflexive controller sourceId 0
+        g.beginFraChoice controller (.mayTapSourceThen (.mshReflexive 0 0) src.id)
+          s!"{(g.player controller).name} may tap {src.name}"
       else
-        g.logMsg "The source is not tapped this way. The reflexive ability doesn't trigger."
+        g.logMsg s!"{src.name} can't be tapped this way. The reflexive ability doesn't trigger."
     | none =>
       g.logMsg "The source is no longer on the battlefield. The reflexive ability doesn't trigger."
   | .tapLoseAbilitiesWhileSource =>

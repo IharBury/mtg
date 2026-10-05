@@ -762,7 +762,11 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .mayMoveSourceCountersToTarget
   | .mayPayThenProliferate _ _
   | .proliferate _
-  | .becomeArtifactCreatureUntilEot =>
+  | .becomeArtifactCreatureUntilEot
+  | .queueMshReflexive _ _
+  | .mshReflexive _ _
+  | .hawkeyeArrows _
+  | .extort =>
     g.applyFraAbility controller effect r targets sourceId
 
 end Game

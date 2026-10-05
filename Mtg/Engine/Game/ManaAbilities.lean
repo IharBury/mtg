@@ -272,6 +272,8 @@ def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
     match g.pending with
     | .activateManaAbilities caster => caster == p
     | .mayPayGeneric q _ => q == p
+    | .fraChoice q (.mayPayThen ..) | .fraChoice q (.mayPayExtort _)
+    | .fraChoice q (.mayPayManaForReflexive ..) => q == p
     | .payOrLetCounter q _ _ => q == p
     | .payWard q _ cost =>
       q == p &&

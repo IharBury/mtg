@@ -21,6 +21,9 @@ inductive TargetZone where
   | player
   /-- A spell on the stack or a creature on the battlefield. -/
   | spellOrCreature
+  /-- “Any target”: a player, or a creature, planeswalker, or battle
+  (CR 115.4). -/
+  | anyTarget
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Who controls (or, for a card in a graveyard, owns) a filtered target. -/
@@ -71,6 +74,8 @@ structure TargetFilter where
   enteredThisTurn : Bool := false
   /-- Only a creature that is still untapped (“tap target untapped creature”). -/
   untapped : Bool := false
+  nonattacking : Bool := false
+  withHaste : Bool := false
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Whom a spell, activated ability, or triggered ability may target

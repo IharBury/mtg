@@ -76,7 +76,7 @@ def resolveTop (g : Game) : Game :=
     | none => g.logMsg "The spell left the stack unexpectedly"
     | some obj =>
       if let some e := obj.abilityEffect then
-        let g := { g with resolvingAbility := some obj.id }
+        let g := { g with resolvingAbility := some obj.id, resolvingDivision := entry.dividedDamage }
         let g :=
           match obj.triggeredAbility with
           | some t =>
@@ -91,7 +91,7 @@ def resolveTop (g : Game) : Game :=
           | none =>
             g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
               obj.lastKnownPower (obj.chosenX.getD 0)
-        let g := { g with resolvingAbility := none }
+        let g := { g with resolvingAbility := none, resolvingDivision := #[] }
         -- CR 608.2m: after resolution the ability ceases to exist.
         g.ceaseToExist obj.id
       else if let some t := obj.triggeredAbility then

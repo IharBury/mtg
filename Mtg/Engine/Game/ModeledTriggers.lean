@@ -101,9 +101,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       { g with sheHulkDamageUsedThisTurn := true }
         |>.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
   | (.watch .hawkeyeModes) =>
-    let paid := (lastKnownPower.getD (0 : Int)).toNat
-    g.queueModeledReflexiveIfPaid controller sourceId 2 paid
-      "Hawkeye didn't pay. The reflexive ability doesn't trigger."
+    g.offerPayForReflexive controller sourceId #[.generic 1] 2 (maxTimes := 3)
   | (.thisAttack .equippedDrain) =>
     let x :=
       match sourceId.bind g.findObject? with
@@ -173,13 +171,9 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     | none =>
       g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
   | (.thisAttack .payReturnAttacking) =>
-    g.queueModeledReflexiveIfPaid controller sourceId 6
-      (lastKnownPower.getD (0 : Int)).toNat
-      "Grim Reaper's cost wasn't paid. The reflexive ability doesn't trigger."
+    g.offerPayForReflexive controller sourceId #[.generic 3, .colored .black] 6
   | (.casting .mayPayHasteUnblockable) =>
-    g.queueModeledReflexiveIfPaid controller sourceId 9
-      (lastKnownPower.getD (0 : Int)).toNat
-      "Speed's cost wasn't paid. The reflexive ability doesn't trigger."
+    g.offerPayForReflexive controller sourceId #[.generic 1] 9
   | (.watch .speedballTargeted) =>
     g.withSourceOnBattlefield sourceId (fun g o => g.pumpPermanent o 2 2)
       "Speedball is no longer on the battlefield"
@@ -459,11 +453,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       | none =>
         g.logMsg s!"{(g.player pl.id).name} has no nontoken creature to sacrifice") g
   | (.thisAttack .mayPayPlusOne) =>
-    g.ifPaid (lastKnownPower.getD (0 : Int)).toNat "Ant-Man's cost wasn't paid"
-      fun g =>
-        g.withLegalKindPermanent controller .creature targets
-          (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
-          (some "The target is no longer legal")
+    g.offerPayForReflexive controller sourceId #[.generic 1] 12
   | (.thisAttack .blinkNontoken) =>
     match targets[0]? with
     | some (Target.permanent id) =>

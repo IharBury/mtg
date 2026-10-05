@@ -87,6 +87,7 @@ inductive FraNext where
   | reflexiveReturnLandTapped
   | beastToken
   | proliferate (times : Nat)
+  | mshReflexive (kind paid : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 def FraNext.toResolution : FraNext → FraResolution
@@ -102,6 +103,7 @@ def FraNext.toResolution : FraNext → FraResolution
   | .reflexiveReturnLandTapped => .reflexiveReturnLandTapped
   | .beastToken => .beastToken
   | .proliferate n => .proliferate n
+  | .mshReflexive k paid => .queueMshReflexive k paid
 
 /-- What a “you may sacrifice …” choice accepts. -/
 inductive FraSacrifice where
@@ -273,6 +275,20 @@ inductive FraChoice where
   /-- As `objectId` enters, pay `life` life (accept), or it enters tapped
   (decline). -/
   | payLifeOrEnterTapped (objectId : ObjectId) (life : Nat)
+  /-- Extort: you may pay {W/B}; if you do, drain each opponent for 1. -/
+  | mayPayExtort (sourceId : Option ObjectId)
+  /-- You may pay `cost` up to `maxTimes` times (accept pays once; a mode
+  index pays that many times); when you do, the reflexive ability `kind`
+  triggers. -/
+  | mayPayManaForReflexive (cost : Array ManaSymbol) (maxTimes : Nat) (kind : Nat)
+    (sourceId : Option ObjectId)
+  /-- You may tap the untapped source; if you do, do `next`. -/
+  | mayTapSourceThen (next : FraNext) (sourceId : ObjectId)
+  /-- Choose up to `left` more different modes of Hawkeye's Trick Arrows
+  (0 Net, 1 Explosive, 2 Boomerang); decline to stop. -/
+  | hawkeyeModes (left : Nat) (chosen : Array Nat) (sourceId : Option ObjectId)
+  /-- Discard a card, then draw a card. -/
+  | discardThenDraw
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

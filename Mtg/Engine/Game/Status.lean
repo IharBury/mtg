@@ -166,6 +166,8 @@ structure Status where
   /-- Until end of turn, this creature can be blocked only by creatures with
   haste (Speed, Young Avenger). -/
   cantBeBlockedExceptByHasteUntilEot : Bool := false
+  /-- This creature can't block this turn. -/
+  cantBlockUntilEot : Bool := false
   /-- This permanent dealt damage this turn (Red Guardian; MSH 272). -/
   dealtDamageThisTurn : Bool := false
   /-- Until end of turn, these replace existing creature types and keep
@@ -326,6 +328,7 @@ def untilEotFields : List UntilEotField := [
     fun s => { s with cantBeBlockedByPlayer := none }⟩,
   ⟨fun s => s.cantBeBlockedExceptByHasteUntilEot,
     fun s => { s with cantBeBlockedExceptByHasteUntilEot := false }⟩,
+  ⟨fun s => s.cantBlockUntilEot, fun s => { s with cantBlockUntilEot := false }⟩,
   ⟨fun s => s.dealtDamageThisTurn,
     fun s => { s with dealtDamageThisTurn := false }⟩,
   ⟨fun s => s.replacedCreatureTypesUntilEot.isSome,

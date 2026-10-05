@@ -601,4 +601,64 @@ spent only on Dragon spells. -/
   let restricted := (pool g).fraRestricted.filter (·.2 == .dragonSpell)
   restricted.size == 4 && (restricted.filter (·.1 == .colored .red)).size == 2
 
+/-! ## Extort and “you may pay … When you do” triggers -/
+
+/- The Kingpin of Crime: extort triggers on cast, and paying {W/B} drains each
+opponent for 1. -/
+#guard
+  let g := addPermanent afterDraw theKingpinOfCrime me me
+  let g := castFra g shock [.target (.player opp)]
+  let g := passBoth (stackTriggers g)
+  let offered := match g.pending with
+    | .fraChoice _ (.mayPayExtort _) => true
+    | _ => false
+  let g := settle (mustApply g me .accept)
+  offered && life g opp == 17 && life g me == 21
+#guard
+  let g := addPermanent afterDraw theKingpinOfCrime me me
+  let g := castFra g shock [.target (.player opp)]
+  let g := settle (mustApply (passBoth (stackTriggers g)) me .decline)
+  life g opp == 18 && life g me == 20
+
+/- Spider-Man, To the Rescue: tapping him is optional; the reflexive ability
+targets another nonattacking creature you control. -/
+#guard
+  let g := addPermanent afterDraw grizzlyBears me me
+  let g := resolveTop (stackTriggers (enterPermanent g spiderManToTheRescue me))
+  let g := mustApply g me .accept
+  let selfRejected :=
+    match g.apply me (tgt g "Spider-Man, To the Rescue") with
+    | .error _ => true
+    | .ok _ => false
+  let g := passBoth (mustApply g me (tgt g "Grizzly Bears"))
+  selfRejected && (namedPermanent g "Spider-Man, To the Rescue").status.tapped &&
+    (kw g "Grizzly Bears").indestructible
+#guard
+  let g := addPermanent afterDraw grizzlyBears me me
+  let g := resolveTop (stackTriggers (enterPermanent g spiderManToTheRescue me))
+  let g := mustApply g me .decline
+  !(namedPermanent g "Spider-Man, To the Rescue").status.tapped && g.stack.isEmpty
+
+/- Killmonger: the player chooses which other creature to sacrifice, then
+targets a nonland permanent an opponent controls. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears me me) hillGiant me me
+  let g := addPermanent g crawWurm opp opp
+  let g := resolveTop (stackTriggers (enterPermanent g killmongerScourgeOfWakanda me))
+  let g := mustApply g me (.choosePermanents #[idOf g "Hill Giant"])
+  let g := passBoth (mustApply g me (tgt g "Craw Wurm"))
+  !onBattlefield g "Hill Giant" && onBattlefield g "Grizzly Bears" && !onBattlefield g "Craw Wurm"
+
+/- Hawkeye, Master Marksman: paying {1} once allows one mode; Net stops the
+target creature from blocking. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw hawkeyeMasterMarksman me me) grizzlyBears opp opp
+  let hawk := namedPermanent g "Hawkeye, Master Marksman"
+  let g := g.applyModeledTrigger me (.onWatch Effect.watchHawkeyeModes) (some hawk.id)
+  let g := withMana g me .red 1
+  let g := mustApply g me .accept
+  let g := mustApply g me (.chooseMode 0)
+  let g := passBoth (mustApply g me (tgt g "Grizzly Bears"))
+  (namedPermanent g "Grizzly Bears").status.cantBlockUntilEot && (pool g).red == 0
+
 end Mtg.Engine.CatalogModelTests
