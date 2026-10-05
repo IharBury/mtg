@@ -210,6 +210,8 @@ structure Status where
   /-- An attached Aura makes this a 5/5 Construct creature in addition to its
   other types (Puppet Crafting). Refreshed with state-based actions. -/
   animatedConstruct55 : Bool := false
+  /-- Card name chosen as this permanent entered (Meddling Mage). -/
+  chosenName : Option String := none
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -241,6 +243,14 @@ def hasCounters (s : Status) : Bool :=
     s.finality > 0 || s.plan > 0 || s.burden > 0 || s.quest > 0 || s.invasion > 0 ||
     s.influence > 0 || s.trampleCounters > 0 || s.indestructibleCounters > 0 ||
     s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0
+
+/-- This permanent with every counter removed. -/
+def withoutCounters (s : Status) : Status :=
+  { s with
+    plusOnePlusOne := 0, minusOneMinusOne := 0, loyaltyCounters := 0, hope := 0, charge := 0
+    stun := 0, shield := 0, finality := 0, plan := 0, burden := 0, quest := 0, invasion := 0
+    influence := 0, trampleCounters := 0, indestructibleCounters := 0, lifelinkCounters := 0
+    hone := 0, shadow := 0, lore := 0 }
 
 /-- Another counter of each kind already on this permanent (CR 701.34a).
 +1/+1 counters are added by the caller so their triggers apply. -/

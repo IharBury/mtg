@@ -69,6 +69,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     match asAdventure, card.printed.adventure with
     | true, some adv => adv.toCardDef
     | _, _ => card.printed
+  if g.spellNameForbidden face.name then
+    throw s!"Spells named {face.name} can't be cast"
   let pl := g.player p
   if face.isLand then
     throw "Lands are played, not cast (CR 305)"

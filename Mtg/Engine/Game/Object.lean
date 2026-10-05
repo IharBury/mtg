@@ -97,6 +97,8 @@ structure GameObject where
   fraCauseId : Option ObjectId := none
   fraCauseController : Option PlayerId := none
   fraCausePower : Option Int := none
+  /-- The causing object's status (its counters) as it last existed. -/
+  fraCauseStatus : Option Status := none
   /-- The permanent that exiled this card, for permissions tied to it (Null
   Summoner). -/
   exiledBy : Option ObjectId := none

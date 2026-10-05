@@ -83,7 +83,8 @@ def resolveTop (g : Game) : Game :=
             if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
               let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
               g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
-            else if g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?) then
+            else if g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?)
+                obj.fraCauseStatus then
               g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
                 obj.lastKnownPower (obj.chosenX.getD 0)
             else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
@@ -100,7 +101,8 @@ def resolveTop (g : Game) : Game :=
           if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
             let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
             g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
-          else if g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?) then
+          else if g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?)
+                obj.fraCauseStatus then
             g.applyTriggeredAbility entry.controller t obj.sourceId
               entry.targets entry.dividedDamage obj.lastKnownPower obj.lastKnownToughness srcName
           else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."

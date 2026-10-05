@@ -84,6 +84,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .concede => return g.concede p
   | .supplyOrder ids => g.supplyOrder ids
   | .supplyIndex i => g.supplyIndex i
+  | .chooseName name => g.answerFraChoice p (.name name)
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
   (g.player p).hand.filterMap (fun id => g.findObject? id)

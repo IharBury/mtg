@@ -36,11 +36,31 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
       !g.cosmicAwarenessFlash p then
     g.asSorcery? p else true)
 
+/-- Every card face the game knows: each object's card, its other face,
+Adventure, and prepare spell, and each sideboard card. A prepare spell's name
+is judged by its own characteristics (ruling 745). -/
+def knownCardFaces (g : Game) : Array CardDef :=
+  let faces (c : CardDef) : Array CardDef :=
+    #[c] ++ c.otherFace.toArray ++ (c.adventure.map (·.toCardDef)).toArray ++
+      (c.prepareFace.map (·.toCardDef)).toArray
+  let fromObjects := g.objects.foldl (fun acc o => acc ++ faces o.printed) #[]
+  g.players.foldl (fun acc pl => pl.sideboard.foldl (fun acc c => acc ++ faces c) acc) fromObjects
+
+/-- Whether `name` is the name of a nonland card (CR 201.3). -/
+def isNonlandCardName (g : Game) (name : String) : Bool :=
+  g.knownCardFaces.any (fun c => c.name == name && !c.isLand)
+
+/-- Whether a permanent forbids casting spells named `name` (Meddling Mage). -/
+def spellNameForbidden (g : Game) (name : String) : Bool :=
+  g.battlefield.any (fun o =>
+    o.status.chosenName == some name &&
+      o.staticAbilities.any (· == .fra .chosenNameSpellsCantBeCast))
+
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. Additional
 non-mana costs such as sacrificing a permanent must still be payable. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  !o.printed.isLand && !g.combatLocksNonManaAbilities &&
+  !o.printed.isLand && !g.combatLocksNonManaAbilities && !g.spellNameForbidden o.printed.name &&
   !(g.player p).cantCastSpellsThisTurn &&
   g.mayPlay p o &&
   (match o.playPermission with

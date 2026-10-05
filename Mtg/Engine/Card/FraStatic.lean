@@ -107,6 +107,10 @@ inductive FraStatic where
   | emblemCreaturesGetTwoTwo
   /-- `{T}`, Sacrifice this token: Add three mana of any one color (Lotus). -/
   | tapSacrificeAddThreeOfOneColor
+  /-- As this creature enters, choose a nonland card name. -/
+  | entersChooseNonlandCardName
+  /-- Spells with the chosen name can't be cast. -/
+  | chosenNameSpellsCantBeCast
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace FraStatic
@@ -175,6 +179,8 @@ def text : FraStatic → String
   | .doesntUntap => "This creature doesn't untap during your untap step."
   | .emblemCreaturesGetTwoTwo => "Creatures you control get +2/+2."
   | .tapSacrificeAddThreeOfOneColor => "{T}, Sacrifice this token: Add three mana of any one color."
+  | .entersChooseNonlandCardName => "As this creature enters, choose a nonland card name."
+  | .chosenNameSpellsCantBeCast => "Spells with the chosen name can't be cast."
 
 /-- Every FRA static ability the parser recognizes. The emblem's static is
 created by Ajani's ultimate and never printed on a card. -/
@@ -192,7 +198,8 @@ def all : Array FraStatic := #[
   .powerPerCreatureAndPlaneswalkerCard, .otherPlusOneCreaturesHaveHaste,
   .creaturesYouControlHaveHaste, .noncombatDamagePlusOne, .powerEqualsBasicLandTypes,
   .otherCreaturesHaveTrample, .landsHaveHexproof, .hexproofUntilCombatDamage,
-  .thoptersHaveHaste, .artifactCreaturesHaveVigilance, .doesntUntap]
+  .thoptersHaveHaste, .artifactCreaturesHaveVigilance, .doesntUntap,
+  .entersChooseNonlandCardName, .chosenNameSpellsCantBeCast]
 
 /-- The restricted mana this ability adds, if it is a mana ability. -/
 def manaUse? : FraStatic → Option FraManaUse

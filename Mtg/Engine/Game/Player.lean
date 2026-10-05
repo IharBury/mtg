@@ -245,6 +245,8 @@ inductive Action where
   | supplyOrder (ids : Array ObjectId)
   /-- Supply an index for a pending `chooseIndex` random event (`--norandom`). -/
   | supplyIndex (i : Nat)
+  /-- Name a card (CR 201.3), e.g. for Meddling Mage. -/
+  | chooseName (name : String)
 deriving Repr
 
 end Mtg.Engine

@@ -345,6 +345,32 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
         else g.illegalAbilityTarget t
       | _ => g) g
   | .beastToken => g.createKindTokens controller .beast44trample 1
+  | .putCauseCountersOnSource =>
+    match g.resolvingAbilityObject?.bind (·.fraCauseStatus), source? with
+    | some st, some o =>
+      if !o.isOnBattlefield then g
+      else
+        let g := g.setObject { o with status := o.status.addCountersExceptPlusOne st }
+        let g := if st.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo (g.object! o.id) st.plusOnePlusOne else g
+        g.logMsg s!"Counters are put on {o.name}"
+    | _, _ => g
+  | .mayMoveSourceCountersToTarget =>
+    match source? with
+    | some src =>
+      g.withLegalKindPermanent controller kind targets (fun g o =>
+        if src.isOnBattlefield && src.status.hasCounters then
+          g.beginFraChoice controller (.mayMoveAllCounters src.id o.id)
+            s!"{(g.player controller).name} may move all counters from {src.name} onto {o.name}"
+        else g) sourceId illegal
+    | none => g
+  | .mayPayThenProliferate pay times =>
+    g.beginFraChoice controller (.mayPayThen pay (.proliferate times) sourceId)
+      s!"{(g.player controller).name} may pay \{{pay}}"
+  | .proliferate times =>
+    if times == 0 then g
+    else
+      { g with pending := .chooseProliferate controller times }.logMsg
+        s!"{(g.player controller).name} proliferates {times} time(s)"
   | .causeGetsPump p t =>
     match g.fraCause? with
     | some o => if o.isOnBattlefield then g.pumpPermanent o p t else g

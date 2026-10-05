@@ -64,6 +64,10 @@ inductive FraEvent where
   | creatureAttacksYouOrYourPlaneswalker
   /-- Whenever one or more creatures attack one of your opponents. -/
   | creaturesAttackYourOpponent
+  /-- Whenever a creature you control leaves the battlefield. -/
+  | creatureYouControlLeaves
+  /-- Whenever you proliferate (CR 701.34). -/
+  | youProliferate
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share

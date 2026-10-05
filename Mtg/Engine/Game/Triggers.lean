@@ -49,6 +49,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       fraCauseId := cause.map (·.id)
       fraCauseController := cause.bind (·.controller)
       fraCausePower := cause.map (g.power ·)
+      fraCauseStatus := cause.map (·.status)
       -- “For each opponent, up to one target … that player controls”: one
       -- optional instance per opponent (CR 601.2c).
       abilityEffect :=
@@ -87,7 +88,7 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
 
 /-- A Reality Fracture intervening “if” clause on the trigger's options. -/
 def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
-    (source : Option GameObject) : Bool :=
+    (source : Option GameObject) (causeStatus : Option Status := none) : Bool :=
   let pl := g.player controller
   match cond with
   | .none => true
@@ -99,6 +100,9 @@ def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
   | .castNoSpellThisTurn => pl.spellsCastThisTurn == 0
   | .activatedLoyaltyThisTurn => pl.activatedLoyaltyThisTurn
   | .sourceWasCast => source.any (·.wasCast)
+  | .causeHadCounters => causeStatus.any (·.hasCounters)
+  | .sourceHasCounters =>
+    source.any (fun o => (g.findObject? o.id).any (·.status.hasCounters))
 
 /-- Reality Fracture intervening “if” clauses, checked when the ability would
 trigger and again as it resolves (rulings 743 / 889). -/
@@ -146,7 +150,7 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | _, _, _ => true
   powerOk && otherOk && lifeOk && hulklingOk &&
     g.fraInterveningHolds controller ab source cause &&
-    g.fraConditionHolds controller ab.opts.fraCondition source
+    g.fraConditionHolds controller ab.opts.fraCondition source (cause.map (·.status))
 
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/

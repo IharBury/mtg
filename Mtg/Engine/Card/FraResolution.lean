@@ -254,6 +254,15 @@ inductive FraResolution where
   | exileUntilSourceLeaves
   /-- Create a 4/4 green Beast creature token with trample. -/
   | beastToken
+  /-- Put the counters the causing object had as it left the battlefield on
+  the source (The Ozolith). -/
+  | putCauseCountersOnSource
+  /-- You may move all counters from the source onto the target. -/
+  | mayMoveSourceCountersToTarget
+  /-- You may pay `{pay}`. If you do, proliferate `times` times. -/
+  | mayPayThenProliferate (pay times : Nat)
+  /-- Proliferate `times` times (CR 701.34). -/
+  | proliferate (times : Nat)
   /-- The creature that caused this ability gets +P/+T until end of turn. -/
   | causeGetsPump (power toughness : Int)
   /-- Creatures attacking the player recorded as the cause's controller get

@@ -757,7 +757,11 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .damageUpToOneAndPlayer _
   | .beastToken
   | .causeGetsPump _ _
-  | .attackersOfPlayerGetTwoTwoTrample =>
+  | .attackersOfPlayerGetTwoTwoTrample
+  | .putCauseCountersOnSource
+  | .mayMoveSourceCountersToTarget
+  | .mayPayThenProliferate _ _
+  | .proliferate _ =>
     g.applyFraAbility controller effect r targets sourceId
 
 end Game

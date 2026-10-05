@@ -206,6 +206,8 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
       g := g.queueLoyaltyPutTriggers p
     if chosen.isEmpty then
       g := g.logMsg s!"{(g.player p).name} proliferates, choosing nothing"
+    -- “Whenever you proliferate” triggers even if nothing was chosen (ruling 884).
+    g := g.putFraEventTriggers p .youProliferate
     if remaining > 1 then
       return { g with pending := .chooseProliferate p (remaining - 1) }
     else

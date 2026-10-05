@@ -86,6 +86,7 @@ inductive FraNext where
   | reflexiveDestroyPerOpponent
   | reflexiveReturnLandTapped
   | beastToken
+  | proliferate (times : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 def FraNext.toResolution : FraNext → FraResolution
@@ -100,6 +101,7 @@ def FraNext.toResolution : FraNext → FraResolution
   | .reflexiveDestroyPerOpponent => .reflexiveDestroyPerOpponent
   | .reflexiveReturnLandTapped => .reflexiveReturnLandTapped
   | .beastToken => .beastToken
+  | .proliferate n => .proliferate n
 
 /-- What a “you may sacrifice …” choice accepts. -/
 inductive FraSacrifice where
@@ -173,6 +175,11 @@ inductive FraChoice where
   /-- The choosing opponent discards two cards; `controller` draws a card for
   each opponent who didn't discard two nonland cards. -/
   | discardTwo (controller : PlayerId) (rest : Array PlayerId) (draws : Nat)
+  /-- You may move all counters from `fromId` onto `toId` (The Ozolith). -/
+  | mayMoveAllCounters (fromId toId : ObjectId)
+  /-- Choose a nonland card name for `objectId` as it enters (Meddling
+  Mage). Answered with `Action.chooseName`. -/
+  | chooseCardName (objectId : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

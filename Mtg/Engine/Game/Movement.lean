@@ -164,6 +164,17 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           else acc) (#[] : Array WaitingTrigger))
       | none => #[]
     else #[]
+  -- The Ozolith: a creature you control leaving with counters on it.
+  let fraCreatureLeaves :=
+    if old.zone == .battlefield && old.isCreature && old.status.hasCounters then
+      match old.controller with
+      | some p =>
+        withCause (g.battlefield.foldl (fun acc o =>
+          if o.id != old.id && o.controlledBy p then
+            acc ++ o.waitingTriggersFor p (.fra .creatureYouControlLeaves)
+          else acc) (#[] : Array WaitingTrigger))
+      | none => #[]
+    else #[]
   let leaving :=
     if old.zone == .battlefield then
       match old.controller with
@@ -336,7 +347,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     waitingTriggers :=
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
         nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
-        fraEnchantedDie ++ fraAnotherDies ++ discardTriggers
+        fraEnchantedDie ++ fraAnotherDies ++ fraCreatureLeaves ++ discardTriggers
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then

@@ -688,6 +688,21 @@ def loyaltyEffects : Array Effect :=
 
 
 open TriggeredAbility in
+/-- Triggered abilities of cards from other sets that FRA rulings name
+(The Ozolith; Ezuri, Stalker of Spheres). -/
+def rulingSupportTriggers : Array TriggeredAbility := #[
+  fra (.fra .creatureYouControlLeaves)
+    "Whenever a creature you control leaves the battlefield, if it had counters on it, put those counters on this artifact."
+    (.fra .putCauseCountersOnSource) (cond := .causeHadCounters),
+  fra .yourBeginCombat
+    "At the beginning of combat on your turn, if this artifact has counters on it, you may move all counters from this artifact onto target creature."
+    (.fra .mayMoveSourceCountersToTarget) (.filtered TargetFilter.creature) (cond := .sourceHasCounters),
+  fra .enter "When this creature enters, you may pay {3}. If you do, proliferate twice."
+    (.fra (.mayPayThenProliferate 3 2)),
+  fra (.fra .youProliferate) "Whenever you proliferate, draw a card." (.draw 1)
+]
+
+open TriggeredAbility in
 /-- FRA triggered abilities the parser recognizes. -/
 def triggeredAbilities : Array TriggeredAbility :=
   let anyTarget : EffectTargetKind := .playerOrCreature

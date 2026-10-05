@@ -844,6 +844,10 @@ inductive FraCondition where
   | activatedLoyaltyThisTurn
   /-- “if you cast it”. -/
   | sourceWasCast
+  /-- “if it had counters on it” (the object that caused the trigger). -/
+  | causeHadCounters
+  /-- “if this has counters on it”. -/
+  | sourceHasCounters
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Optional intervening conditions and wording filters for `triggered`. -/

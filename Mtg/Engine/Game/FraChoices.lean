@@ -19,6 +19,7 @@ inductive FraAnswer where
   | decline
   | objects (ids : Array ObjectId)
   | mode (idx : Nat)
+  | name (name : String)
 deriving Repr, BEq
 
 /-- Clear the choice and let the game continue. -/
@@ -304,6 +305,31 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := ids.foldl (fun g id => g.discardFromHand p id) g
     return (g.continueDiscardTwo controller rest (if nonland < 2 then draws + 1 else draws)).finishFraChoice
   | .discardTwo .., _ => throw "Choose two cards to discard"
+  | .mayMoveAllCounters fromId toId, .accept =>
+    match g.findObject? fromId, g.findObject? toId with
+    | some src, some dst =>
+      if !src.isOnBattlefield || !dst.isOnBattlefield then return g.finishFraChoice
+      else
+        let moved := src.status
+        let g := g.setObject { src with status := src.status.withoutCounters }
+        let dst := g.object! toId
+        let g := g.setObject { dst with status := dst.status.addCountersExceptPlusOne moved }
+        let g :=
+          if moved.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo (g.object! toId) moved.plusOnePlusOne
+          else g
+        return (g.logMsg s!"All counters move from {src.name} onto {dst.name}").finishFraChoice
+    | _, _ => return g.finishFraChoice
+  | .mayMoveAllCounters .., .decline => return g.finishFraChoice
+  | .mayMoveAllCounters .., _ => throw "Answer accept or decline"
+  | .chooseCardName id, .name nm =>
+    if !g.isNonlandCardName nm then
+      throw s!"{nm} isn't the name of a nonland card (CR 201.3)"
+    match g.findObject? id with
+    | some o =>
+      let g := g.mapObjectStatus o (fun s => { s with chosenName := some nm })
+      return (g.logMsg s!"{(g.player p).name} chooses {nm} for {o.name}").finishFraChoice
+    | none => return g.finishFraChoice
+  | .chooseCardName _, _ => throw "Name a nonland card"
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
 accepting only Sphinx's Approach and declining other optional actions. -/
@@ -346,6 +372,12 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .sacrificeCreatureEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
   | .discardTwo .. => .choosePermanents ((g.player p).hand.extract 0 2)
+  | .mayMoveAllCounters .. => .accept
+  | .chooseCardName _ =>
+    -- Name a nonland card an opponent owns, else any nonland card.
+    let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)
+    let any := g.knownCardFaces.find? (fun c => !c.isLand)
+    .chooseName ((opp.map (·.name)).getD ((any.map (·.name)).getD ""))
 
 end Game
 end Mtg.Engine

@@ -496,6 +496,7 @@ def helpInteractive (controlAll : Bool := false)
   attack [id...] [at] <name|opponent>  Attack those (or all that can) at that player
   attack <id> [at] <name> <id> [at] <name> ...  Each listed creature attacks that player
   attack <id> at <planeswalker id>  Attack that planeswalker
+  name <card name>     Name a card when asked (Meddling Mage)
   noattack             Declare no attackers
   block                Block each attacker with a legal unused blocker
   block <b> <a> [...]  Assign listed blocker/attacker pairs
@@ -1711,6 +1712,10 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "decline" => applyDecline g p args
   | "accept" => applyAccept g p args
   | "choose" => applyChoose g p args
+  | "name" =>
+    match args with
+    | [] => .error "usage: name <card name>"
+    | _ => g.apply p (.chooseName (" ".intercalate args))
   | "shuffle" => applyShuffle g args
   | "order" => applyOrder g args
   | "pick" => applyPick g args

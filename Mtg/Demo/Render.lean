@@ -775,6 +775,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .chooseColor _ => "choose a color: 0 white, 1 blue, 2 black, 3 red, 4 green"
         | .sacrificeCreatureEach .. => "sacrifice a creature"
         | .discardTwo .. => "discard two cards"
+        | .mayMoveAllCounters .. => "may move all counters (accept or decline)"
+        | .chooseCardName _ => "name a nonland card: name <card name>"
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=

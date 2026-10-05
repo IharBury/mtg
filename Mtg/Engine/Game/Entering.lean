@@ -373,6 +373,16 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
           s!"{(g.player p).name} chooses a color for {o.name}"
       | none => g
     else g
+  -- Meddling Mage: “As it enters, choose a nonland card name.”
+  let g :=
+    if o.staticAbilities.any (· == .fra .entersChooseNonlandCardName) && o.status.chosenName.isNone &&
+        g.pending == .none then
+      match o.controller with
+      | some p =>
+        { g with pending := .fraChoice p (.chooseCardName o.id) }.logMsg
+          s!"{(g.player p).name} chooses a nonland card name for {o.name}"
+      | none => g
+    else g
   let g := g.addLoreAsSagaEnters o
   let o := g.object! o.id
   if g.enteringCausesNoTriggers o then
