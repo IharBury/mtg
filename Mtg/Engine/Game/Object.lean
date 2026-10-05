@@ -305,6 +305,9 @@ structure WaitingTrigger where
   causeId : Option ObjectId := none
   /-- The causing object as it was when the ability triggered. -/
   cause : Option GameObject := none
+  /-- “Only once each turn” and extra trigger copies were already applied
+  when this was queued. -/
+  checked : Bool := false
 deriving Repr, Inhabited
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/

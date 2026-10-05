@@ -779,6 +779,28 @@ control enters” (Belladonna Took). -/
   let g := settle (pick g #[idOf g "Grizzly Bears"])
   life g me == 21
 
+/- Part in Friendship triggers only once each turn. -/
+#guard
+  let g := addPermanent (addPermanent (addPermanent afterDraw partInFriendship me me) grizzlyBears me me) hillGiant me me
+  let g := g.destroyPermanent (namedPermanent g "Grizzly Bears")
+  let g := stackTriggers g
+  let g := g.destroyPermanent (namedPermanent g "Hill Giant")
+  let g := stackTriggers g
+  (g.stack.filter (fun e => (g.object! e.objectId).name.startsWith "Part in Friendship")).size == 1
+
+/- Landfall works from the graveyard only for Silvan Reveler's “return this
+card from your graveyard”, and that ability doesn't work on the battlefield. -/
+#guard
+  let g := addToGraveyard (addToGraveyard afterDraw attercop me) silvanReveler me
+  let g := addPermanent g forest me me
+  let g := g.putLandYouControlEntersTriggers (namedPermanent g "Forest")
+  g.waitingTriggers.all (·.source.name == "Silvan Reveler") && g.waitingTriggers.size == 1
+#guard
+  let g := addPermanent afterDraw silvanReveler me me
+  let g := addPermanent g forest me me
+  let g := g.putLandYouControlEntersTriggers (namedPermanent g "Forest")
+  g.waitingTriggers.isEmpty
+
 /- Getaway Barrel triggers when it's put into a graveyard from the
 battlefield, though it isn't a creature. -/
 #guard

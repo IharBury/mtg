@@ -205,8 +205,10 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (cause : Option GameObject := none) : Game :=
   if (g.player controller).lost then g
   else if !g.triggerConditionHolds controller ab cause (some source) then g
-  else if ab.onceEachTurn && source.status.firedOnceEachTurn then g
-  else if ab.optionalOnceEachTurn && source.status.optionalOnceUsed then g
+  else if ab.onceEachTurn &&
+      ((g.findObject? source.id).map (·.status.firedOnceEachTurn)).getD source.status.firedOnceEachTurn then g
+  else if ab.optionalOnceEachTurn &&
+      ((g.findObject? source.id).map (·.status.optionalOnceUsed)).getD source.status.optionalOnceUsed then g
   else
     let g :=
       if ab.onceEachTurn then
@@ -217,7 +219,7 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     let copies := g.extraTriggerCopies controller source + 1
     let wt : WaitingTrigger := {
       controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
-      causeId := cause.map (·.id), cause }
+      causeId := cause.map (·.id), cause, checked := true }
     Id.run do
       let mut g := g
       for _ in [0:copies] do
@@ -299,11 +301,11 @@ def prowessTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
     (event : TriggerEvent)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
-    (cause : Option GameObject := none) : Game :=
+    (cause : Option GameObject := none) (keep : TriggeredAbility → Bool := fun _ => true) : Game :=
   Id.run do
     let mut g := g
-    for ab in source.matchingTriggers event ++
-        (g.attachedGrantedTriggers source ++ g.prowessTriggers source).filter (·.firesOn event) do
+    for ab in (source.matchingTriggers event ++
+        (g.attachedGrantedTriggers source ++ g.prowessTriggers source).filter (·.firesOn event)).filter keep do
       let skipInfinity :=
         match ab.shared with
         | .step .harnessedFlicker => !source.status.harnessed
@@ -616,6 +618,32 @@ def lastKnownPowerForTrigger (ab : TriggeredAbility) (lastKnownPower : Option In
   | .pumpIfFiveOtherForests, some id => some (Int.ofNat id.raw)
   | _, _ => lastKnownPower
 
+/-- Put one waiting trigger on the stack. A trigger queued without
+`queueTrigger` is checked here for “only once each turn” (CR 603.2h) and
+gets its extra copies (Chief of the Wilds, Bifur). -/
+def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : Game :=
+  let put (g : Game) :=
+    g.putQueuedTrigger wt.controller wt.source wt.ability event
+      (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
+      wt.lastKnownToughness (cause := wt.cause)
+  if wt.checked then put g
+  else
+    let live := g.findObject? wt.source.id
+    let status := (live.map (·.status)).getD wt.source.status
+    if wt.ability.onceEachTurn && status.firedOnceEachTurn then g
+    else if wt.ability.optionalOnceEachTurn && status.optionalOnceUsed then g
+    else if !g.triggerConditionHolds wt.controller wt.ability wt.cause (some wt.source) then g
+    else
+      let g :=
+        match live with
+        | some o =>
+          if wt.ability.onceEachTurn then
+            g.setObject { o with status := { o.status with firedOnceEachTurn := true } }
+          else g
+        | none => g
+      let copies := g.extraTriggerCopies wt.controller wt.source + 1
+      (List.range copies).foldl (fun g _ => put g) g
+
 /-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d). -/
 def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
   if wts.isEmpty then g
@@ -624,9 +652,7 @@ def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
       let mut g := g
       for wt in wts do
         g := g.removeWaitingTrigger wt
-        g := g.putQueuedTrigger wt.controller wt.source wt.ability wt.event
-          (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
-          wt.lastKnownToughness (cause := wt.cause)
+        g := g.putWaitingTrigger wt wt.event
       return g.promptTriggerTargetsIfNeeded
 
 /-- Put queued triggers for `event` onto the stack (CR 603.3). The event spec
@@ -644,9 +670,7 @@ def flushWaitingTriggers (g : Game) (event : TriggerEvent) : Game :=
     Id.run do
       let mut g := { g with waitingTriggers := g.waitingTriggers.filter (·.event != event) }
       for wt in waiting do
-        g := g.putQueuedTrigger wt.controller wt.source wt.ability event
-          (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
-          wt.lastKnownToughness (cause := wt.cause)
+        g := g.putWaitingTrigger wt event
       return g.promptTriggerTargetsIfNeeded
 
 /-- CR 704.3 / 603.3b: check state-based actions, then put waiting triggers
@@ -710,9 +734,15 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
     match land.controller with
     | none => g
     | some landController =>
+      -- “Return this card from your graveyard” works only from the graveyard
+      -- (CR 113.6k); other landfall abilities only on the battlefield.
+      let fromGraveyard (ab : TriggeredAbility) : Bool :=
+        match ab.shared with
+        | .payReturnFromGy => true
+        | _ => false
       let g := (g.foldControlledPermanents landController none fun g o =>
         g.putMatchingSourceTriggers landController o .landYouControlEnters
-          (cause := some land)).promptTriggerTargetsIfNeeded
+          (cause := some land) (keep := (!fromGraveyard ·))).promptTriggerTargetsIfNeeded
       let g :=
         if g.hasSubtype land "Mountain" then
           g.putControlledTriggers landController .mountainYouControlEnters
@@ -727,7 +757,8 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
         match acc.findObject? id with
         | none => acc
         | some o =>
-          acc.putMatchingSourceTriggers landController o .landYouControlEnters) g
+          acc.putMatchingSourceTriggers landController o .landYouControlEnters
+            (keep := fromGraveyard)) g
 
 end Game
 end Mtg.Engine
