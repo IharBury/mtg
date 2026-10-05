@@ -709,6 +709,28 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !ids.contains id then throw "Choose a creature with a counter"
     return (g.applyHydeMode p none 1 #[Target.permanent id]).finishFraChoice
   | .hydeRemoveCounter _, _ => throw "Choose a creature with a counter"
+  | .widowMayCounter sourceId exiled, .accept =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        return (g.addPlusOnePlusOneTo o 1).finishFraChoice
+      else
+        return (g.grantWidowCast p exiled).finishFraChoice
+    | none =>
+      return (g.grantWidowCast p exiled).finishFraChoice
+  | .widowMayCounter _ exiled, .decline =>
+    return (g.grantWidowCast p exiled).finishFraChoice
+  | .widowMayCounter .., _ =>
+    throw "Put a +1/+1 counter on Black Widow (accept), or decline"
+  | .ultronMayPay artifactId, .accept =>
+    let cost := ManaCost.ofGeneric 2
+    if !(g.player p).manaPool.canPay cost then
+      throw s!"{(g.player p).name} cannot pay {2}; add mana first, or decline"
+    let g ← g.payCost p cost
+    return (g.copyEnteredArtifact p artifactId).finishFraChoice
+  | .ultronMayPay _, .decline =>
+    return (g.logMsg s!"{(g.player p).name} doesn't pay {2}").finishFraChoice
+  | .ultronMayPay _, _ => throw "Pay {2} (accept), or decline"
   | .sheHulkMayDamage amount target sourceId, .accept =>
     let g := { g with sheHulkDamageUsedThisTurn := true }
     let g :=
@@ -890,6 +912,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .hydeMode _ => .chooseMode 0
   | .hydeRemoveCounter ids => .choosePermanents (ids.extract 0 1)
   | .sheHulkMayDamage .. => .decline
+  | .widowMayCounter .. => .decline
+  | .ultronMayPay _ => .decline
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>

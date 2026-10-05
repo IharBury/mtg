@@ -79,6 +79,44 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
         else g
       | none => g) g
 
+/-- Let `controller` cast the exiled nonland with any type of mana until end of turn. -/
+def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId) : Game :=
+  match exiled.bind g.findObject? with
+  | none => g.logMsg "No nonland card was exiled"
+  | some o =>
+    g.setObject { o with
+        playPermission := some {
+          player := controller
+          turnEndsRemaining := 1
+          anyMana := true } }
+      |>.logMsg s!"{(g.player controller).name} may cast {o.name} until end of turn"
+
+/-- Copy the nontoken artifact that entered, then make a noncreature token a
+2/2 Robot Villain after it enters (Ultron; MSH 574 / 656). -/
+def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectId) : Game :=
+  match g.findObject? (g.followMoved artifactId) with
+  | none => g.logMsg "Ultron has nothing to copy"
+  | some src =>
+    if src.printed.isToken || !src.printed.isArtifact then
+      g.logMsg "That permanent isn't a nontoken artifact"
+    else
+      let (g, tok) := g.copyBattlefieldPermanent src controller
+      let tok := g.object! tok.id
+      let g := g.afterPermanentEnters tok
+      let tok := g.object! tok.id
+      if tok.isCreature then g
+      else
+        let printed :=
+          { tok.printed with
+            types :=
+              if tok.printed.types.any (· == .creature) then tok.printed.types
+              else tok.printed.types.push .creature
+            subtypes := mergeSubtypes tok.printed.subtypes #["Robot", "Villain"]
+            power := some 2
+            toughness := some 2 }
+        g.setObject { tok with printed }
+          |>.logMsg s!"{printed.name} becomes a 2/2 Robot Villain creature after it enters"
+
 /-- Mister Hyde's chosen mode. Mode 0 puts a +1/+1 counter on the source.
 Mode 1 removes a counter from the chosen creature, then draws. -/
 def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
@@ -264,11 +302,15 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         { g with assignCombatDamageEqualToughness := some controller }
           |>.logMsg "Creatures you control assign combat damage equal to their toughness"
   | (.watch .villainPlusOneDamageOnce) =>
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      let g := g.addPlusOnePlusOneTo o 1
-      g.forEachOpponent controller (fun g pid =>
-        g.dealDamageToPlayer pid 2 (source := some (g.object! o.id))))
-      "Crossbones is no longer on the battlefield"
+    let src? := sourceId.bind (fun id => g.findObject? (g.followMoved id))
+    let g :=
+      match src? with
+      | some o =>
+        if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1
+        else g.logMsg "Crossbones is no longer on the battlefield. No counter is put."
+      | none => g.logMsg "Crossbones is no longer on the battlefield. No counter is put."
+    g.forEachOpponent controller (fun g pid =>
+      g.dealDamageToPlayer pid 2 (source := src?))
   | (.watch .villainConniveOnce) =>
     match sourceId.bind g.findObject? with
     | none =>
@@ -297,30 +339,23 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       else
         g.returnToHand o.id o.owner
   | (.watch .ultronCopy) =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
+    let fromTarget :=
+      match targets[0]? with
+      | some (Target.permanent id) => some id
+      | _ => none
+    let fromCause :=
+      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    match fromTarget.orElse (fun _ => fromCause) with
+    | none => g.logMsg "Ultron has nothing to copy"
+    | some id =>
+      match g.findObject? (g.followMoved id) with
       | some src =>
-        if src.isOnBattlefield && src.printed.isArtifact && !src.printed.isToken then
-          let (g, tok) := g.copyBattlefieldPermanent src controller
-          let tok := g.object! tok.id
-          let g := g.afterPermanentEnters tok
-          let tok := g.object! tok.id
-          if tok.isCreature then g
-          else
-            let printed :=
-              { tok.printed with
-                types :=
-                  if tok.printed.types.any (· == .creature) then tok.printed.types
-                  else tok.printed.types.push .creature
-                subtypes := mergeSubtypes tok.printed.subtypes #["Robot", "Villain"]
-                power := some 2
-                toughness := some 2 }
-            g.setObject { tok with printed }
-              |>.logMsg s!"{printed.name} becomes a 2/2 Robot Villain creature after it enters"
-        else g
-      | none => g
-    | _ => g
+        if src.printed.isToken || !src.printed.isArtifact || some src.id == sourceId then
+          g.logMsg "That permanent isn't another nontoken artifact"
+        else
+          { g with pending := .fraChoice controller (.ultronMayPay id) }
+            |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {src.name}"
+      | none => g.logMsg "Ultron has nothing to copy"
   | (.death .villainReturnAsHero) =>
     let causeId := (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)
     let it := match targets[0]? with
@@ -458,16 +493,25 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     | none =>
       g.logMsg "The enchanted creature has left. Equipment stays where it is."
   | (.watch .villainAttachEquipment) =>
-    match targets[0]?, targets[1]? with
-    | some (Target.permanent eqId), some (Target.permanent crId) =>
+    match targets.toList with
+    | [Target.permanent eqId, Target.permanent crId] =>
       match g.findObject? eqId, g.findObject? crId with
       | some eq, some cr =>
-        if eq.isOnBattlefield && cr.isOnBattlefield && eq.printed.isEquipment then
+        if eq.isOnBattlefield && cr.isOnBattlefield && eq.printed.isEquipment &&
+            cr.isCreature then
           g.attachSourceTo eq cr
         else
           g.logMsg "The Equipment won't move"
       | _, _ => g.logMsg "The Equipment won't move"
-    | _, _ => g.logMsg "The Equipment won't move"
+    | [Target.permanent id] =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && o.printed.isEquipment then
+          g.logMsg "The Equipment won't move"
+        else
+          g.logMsg "No Equipment was chosen"
+      | none => g.logMsg "The Equipment won't move"
+    | _ => g.logMsg "The Equipment won't move"
   | (.thisAttack .ifArtifactEnteredDraw) =>
     if (g.player controller).artifactEnteredThisTurn then
       g.draw controller 1
@@ -598,28 +642,21 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       match targets[0]? with
       | some (Target.player p) => some p
       | _ =>
-        match (g.livingOpponents controller)[0]? with
-        | some pl => some pl.id
-        | none => none
+        (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness)
+          |>.map (fun n => ⟨n.toNat⟩)
     match pid with
-    | none => g
+    | none => g.logMsg "Black Widow didn't deal combat damage to a player"
     | some pid =>
       let (g, nonland?) := g.exileLibraryUntilNonland pid
-      if (lastKnownPower.getD 1) != 0 then
-        g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-          "Black Widow is no longer on the battlefield"
+      let onBf :=
+        match sourceId.bind g.findObject? with
+        | some o => o.isOnBattlefield
+        | none => false
+      if onBf then
+        { g with pending := .fraChoice controller (.widowMayCounter sourceId nonland?) }
+          |>.logMsg "You may put a +1/+1 counter on Black Widow"
       else
-        match nonland? with
-        | none => g
-        | some id =>
-          let o := g.object! id
-          g.setObject { o with
-              playPermission := some {
-                player := controller
-                turnEndsRemaining := 1
-                anyMana := true } }
-            |>.logMsg
-              s!"{(g.player controller).name} may cast {o.name} until end of turn"
+        g.grantWidowCast controller nonland?
   | (.watch .attacksAloneDrain) =>
     g.withLegalKindTarget controller .opponent targets (fun g tgt =>
       match tgt with

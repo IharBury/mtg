@@ -2532,4 +2532,142 @@ def capUntapsTriggeringCreatureOk : Bool :=
 
 #guard capUntapsTriggeringCreatureOk
 
+/-- Black Widow exiles from the damaged player's library, then asks whether
+to put a +1/+1 counter. Declining grants permission to cast the nonland. -/
+def blackWidowChoiceOk : Bool :=
+  let setup :=
+    let g := addPermanent afterDraw blackWidowSuperSpy ⟨0⟩ ⟨0⟩
+    let g := g.modifyPlayer ⟨1⟩ (fun pl => { pl with library := #[] })
+    let g := addToLibraryTop g mountain ⟨1⟩
+    addToLibraryTop g lightningBolt ⟨1⟩
+  let widow := namedPermanent setup "Black Widow, Super Spy"
+  let untouched := setup.applyModeledTrigger ⟨0⟩
+    (.onWatch Effect.watchCombatDamageExileUntilNonland) (some widow.id) #[]
+  (untouched.player ⟨1⟩).library.size == 2 &&
+    logContains untouched "didn't deal combat damage" &&
+    (let g := setup.applyModeledTrigger ⟨0⟩
+        (.onWatch Effect.watchCombatDamageExileUntilNonland)
+        (some widow.id) #[Target.player ⟨1⟩]
+     match g.pending with
+     | .fraChoice _ (.widowMayCounter _ (some _)) =>
+       let accepted := mustApply g ⟨0⟩ .accept
+       let declined := mustApply g ⟨0⟩ .decline
+       (namedPermanent accepted "Black Widow, Super Spy").status.plusOnePlusOne == 1 &&
+         (accepted.player ⟨1⟩).library.size == 1 &&
+         (accepted.objects.filter (fun o =>
+           o.zone == .exile && o.name == "Lightning Bolt" && o.playPermission.isSome)).isEmpty &&
+         (namedPermanent declined "Black Widow, Super Spy").status.plusOnePlusOne == 0 &&
+         (declined.objects.any (fun o =>
+           o.zone == .exile && o.name == "Lightning Bolt" && o.playPermission.isSome))
+     | _ => false) &&
+    (let (g, ab) := setup.allocStackAbility widow ⟨0⟩ (lastKnownToughness := some 1)
+     let g := { g with resolvingAbility := some ab.id }
+     let g := g.applyModeledTrigger ⟨0⟩
+       (.onWatch Effect.watchCombatDamageExileUntilNonland) (some widow.id) #[]
+     match g.pending with
+     | .fraChoice _ (.widowMayCounter ..) => (g.player ⟨1⟩).library.size == 1
+     | _ => false)
+
+#guard blackWidowChoiceOk
+
+/-- Crossbones still deals 2 damage to each opponent after he has left.
+The +1/+1 counter is not put. -/
+def crossbonesDamageAfterLeavingOk : Bool :=
+  let g := addPermanent afterDraw crossbonesMaliciousMercenary ⟨0⟩ ⟨0⟩
+  let xb := namedPermanent g "Crossbones, Malicious Mercenary"
+  let (g, _) := g.move xb.id (.graveyard ⟨0⟩) none
+  let life := (g.player ⟨1⟩).life
+  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainPlusOneDamageOnce)
+    (some xb.id) #[]
+  (g.player ⟨1⟩).life == life - 2 &&
+    logContains g "No counter is put"
+
+#guard crossbonesDamageAfterLeavingOk
+
+/-- Swordsman targets up to one Equipment, then a creature. An illegal
+Equipment does not move. -/
+def swordsmanAttachTargetsOk : Bool :=
+  let g := addPermanent afterDraw swordsmanSharpScoundrel ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hawkeyeSBow ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let sw := namedPermanent g "Swordsman, Sharp Scoundrel"
+  let bow := namedPermanent g "Hawkeye's Bow"
+  let bears := namedPermanent g "Grizzly Bears"
+  let kind := (SharedTrigger.timing (.watch .villainAttachEquipment)).targeting.kind
+  let equip := g.legalTargetsForKind ⟨0⟩ (kind.slotKind 0) (some sw.id)
+  let creatures := g.legalTargetsForKind ⟨0⟩ (kind.slotKind 1) (some sw.id)
+  kind == .upToOneEquipmentThenCreatureYouControl &&
+    kind.isOptionalSlot 0 && !kind.isOptionalSlot 1 &&
+    equip.contains (Target.permanent bow.id) &&
+    !equip.contains (Target.permanent bears.id) &&
+    creatures.contains (Target.permanent bears.id) &&
+    (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainAttachEquipment)
+        (some sw.id) #[Target.permanent bow.id, Target.permanent bears.id]
+     (namedPermanent g "Hawkeye's Bow").attachedTo == some bears.id) &&
+    (let gOnly := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainAttachEquipment)
+        (some sw.id) #[Target.permanent bears.id]
+     logContains gOnly "No Equipment was chosen" &&
+       (namedPermanent gOnly "Hawkeye's Bow").attachedTo.isNone) &&
+    (let bowId := bow.id
+     let (gGone, _) := g.move bowId (.graveyard ⟨0⟩) none
+     let gGone := gGone.applyModeledTrigger ⟨0⟩
+       (.onWatch Effect.watchVillainAttachEquipment)
+       (some sw.id) #[Target.permanent bowId, Target.permanent bears.id]
+     logContains gGone "won't move" &&
+       (namedPermanent gGone "Grizzly Bears").attachedTo.isNone)
+
+#guard swordsmanAttachTargetsOk
+
+/-- Ultron copies the artifact that entered only after {2} is paid. A
+noncreature token becomes a 2/2 Robot Villain after it enters. -/
+def ultronMayPayCopyOk : Bool :=
+  let g := addPermanent afterDraw ultronArtificialMalevolence ⟨0⟩ ⟨0⟩
+  let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl =>
+    { pl with manaPool := pl.manaPool.add .colorless 2 })
+  let ultron := namedPermanent g "Ultron, Artificial Malevolence"
+  let stone := namedPermanent g "The Mind Stone"
+  let (g, ab) := g.allocStackAbility ultron ⟨0⟩
+  let g := g.setObject { ab with fraCauseId := some stone.id }
+  let g := { g with resolvingAbility := some ab.id }
+  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchUltronCopy)
+    (some ultron.id) #[]
+  let tokens (g : Game) :=
+    (g.battlefield.filter (fun o => o.printed.isToken && o.name == "The Mind Stone")).size
+  match g.pending with
+  | .fraChoice _ (.ultronMayPay _) =>
+    let declined := mustApply g ⟨0⟩ .decline
+    tokens declined == 0 &&
+      (let paid := mustApply g ⟨0⟩ .accept
+       tokens paid == 1 &&
+         (paid.player ⟨0⟩).manaPool.colorless == 0 &&
+         (paid.battlefield.any (fun o =>
+           o.printed.isToken && o.name == "The Mind Stone" && o.isCreature &&
+             paid.power o == 2 && paid.toughness o == 2 &&
+             o.printed.subtypes.any (· == "Robot") &&
+             o.printed.subtypes.any (· == "Villain"))))
+  | _ => false
+
+#guard ultronMayPayCopyOk
+
+/-- Black Panther chooses a mode as the trigger is put on the stack. -/
+def blackPantherModeOk : Bool :=
+  let g := addPermanent afterDraw blackPantherVanguard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g sheHulkJadeDefender ⟨0⟩ ⟨0⟩
+  let hero := namedPermanent g "She-Hulk, Jade Defender"
+  let g := (g.afterPermanentEnters hero).receivePriority ⟨0⟩
+  let soldiers (g : Game) :=
+    (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype "Soldier")).size
+  match g.pending with
+  | .fraChoice _ (.triggerModes _ 1 _) =>
+    let soldier := (mustApply g ⟨0⟩ (.chooseMode 0)).resolveTop
+    let pumped := (mustApply g ⟨0⟩ (.chooseMode 1)).resolveTop
+    soldiers soldier == 1 &&
+      (namedPermanent pumped "Grizzly Bears").status.pump == (1, 1) &&
+      soldiers pumped == 0
+  | _ => false
+
+#guard blackPantherModeOk
+
 end Mtg.Engine.MshRulingTests

@@ -268,6 +268,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.controlledBy caster && (o.isCreature || o.printed.isLand))
   | .twoCreaturesOrLandsYouControl => #[]
   | .equipmentYouControlThenCreatureYouControl => #[]
+  | .upToOneEquipmentThenCreatureYouControl => #[]
   | .twoPlayers => #[]
   | .upToOneCreatureThenPlayer => #[]
   | .attackingOrBlockingCreature =>

@@ -1051,8 +1051,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.anotherVillainEnters], onceEachTurn := true,
       resolution := .watch .villainPlusOneDamageOnce }
   | .watch .villainAttachEquipment =>
-    { events := #[.anotherVillainEnters], targeting := .of .creatureYouControl,
-      allowsZeroTargets := true, resolution := .watch .villainAttachEquipment }
+    { events := #[.anotherVillainEnters]
+      targeting := .of .upToOneEquipmentThenCreatureYouControl
+      resolution := .watch .villainAttachEquipment }
   | .watch .villainPlusOneLifelink =>
     { events := #[.anotherVillainEnters], resolution := .watch .villainPlusOneLifelink }
   | .watch .hulklingCompare =>

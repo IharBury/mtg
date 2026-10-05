@@ -317,6 +317,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         | some pid =>
           g := { g with lastCombatDamagePlayer := some defn }
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
+            (lastKnownToughness := some (Int.ofNat defn.idx))
           if g.hasSubtype src "Hero" then
             g := g.putControlledTriggersOncePerBatch pid .heroesDealDamageToPlayer
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayerOrBattle

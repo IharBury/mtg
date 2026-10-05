@@ -28,6 +28,11 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
         phrase := "Put a +1/+1 counter on target Wolf you control" },
       { resolution := .createTokens .treasure 1
         phrase := "Create a Treasure token" }]
+  | .watch .nontokenHeroModal =>
+    #[{ resolution := .createTokens .soldier11white 1
+        phrase := "Create a 1/1 white Soldier creature token" },
+      { resolution := .creaturesYouControlPump 1 1
+        phrase := "Creatures you control get +1/+1 until end of turn" }]
   | _ => #[]
 
 /-- Modes of the triggered ability `obj` (from its source). -/

@@ -180,6 +180,8 @@ def klawRevealAllOk : Bool :=
 def ultronAfterEnterOk : Bool :=
   let g := addPermanent afterDraw ultronArtificialMalevolence ⟨0⟩ ⟨0⟩
   let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl =>
+    { pl with manaPool := pl.manaPool.add .colorless 2 })
   let stone := namedPermanent g "The Mind Stone"
   let before :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
@@ -187,6 +189,7 @@ def ultronAfterEnterOk : Bool :=
   let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchUltronCopy)
     (some (namedPermanent g "Ultron, Artificial Malevolence").id)
     #[Target.permanent stone.id]
+  let g := mustApply g ⟨0⟩ .accept
   let tok :=
     (g.battlefield.find? (fun o =>
       o.printed.isToken && o.name == "The Mind Stone")).getD stone

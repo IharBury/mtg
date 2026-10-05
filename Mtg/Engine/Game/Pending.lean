@@ -413,6 +413,11 @@ inductive FraChoice where
   /-- You may have The Sensational She-Hulk deal `amount` damage to `target`.
   Accepting is the once-each-turn action (MSH 448). -/
   | sheHulkMayDamage (amount : Int) (target : Target) (sourceId : Option ObjectId)
+  /-- You may put a +1/+1 counter on Black Widow. If you don't, you may cast
+  `exiled` until end of turn. -/
+  | widowMayCounter (sourceId : Option ObjectId) (exiled : Option ObjectId)
+  /-- You may pay {2} to copy the nontoken artifact that entered (Ultron). -/
+  | ultronMayPay (artifactId : ObjectId)
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)

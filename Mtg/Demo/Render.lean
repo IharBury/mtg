@@ -831,6 +831,9 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .hydeRemoveCounter _ => "remove a counter from a creature you control: choose <id>"
         | .sheHulkMayDamage amount _ _ =>
           s!"may have The Sensational She-Hulk deal {amount} damage (accept), or decline"
+        | .widowMayCounter .. =>
+          "may put a +1/+1 counter on Black Widow (accept); otherwise you may cast the exiled card"
+        | .ultronMayPay _ => "may pay {2} to copy the artifact (accept), or decline"
         | .mayCastFromGraveyard eligible =>
           s!"may cast an artifact, instant, or sorcery from your graveyard ({eligible.size} card(s)): cast <id>, or decline"
         | .maySearchLibrary _ _ _ _ kind =>

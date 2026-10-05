@@ -175,6 +175,9 @@ inductive EffectTargetKind where
   | twoCreaturesOrLandsYouControl
   /-- Target Equipment you control, then up to one target creature you control. -/
   | equipmentYouControlThenCreatureYouControl
+  /-- Up to one target Equipment you control, then target creature you control
+  (Swordsman). -/
+  | upToOneEquipmentThenCreatureYouControl
   /-- Two target players (Gleaming Splendor). -/
   | twoPlayers
   /-- Up to one target creature, then target player (e.g. Meager Meal). -/
@@ -395,6 +398,12 @@ def spec : EffectTargetKind → Spec
       noun := "target Equipment you control and up to one target creature you control"
       prefer := .own
       slots := #[.equipmentYouControl, .creatureYouControl] }
+  | .upToOneEquipmentThenCreatureYouControl =>
+    { count := 2
+      noun := "up to one target Equipment you control and target creature you control"
+      prefer := .own
+      slots := #[.equipmentYouControl, .creatureYouControl]
+      optionalSlots := #[0] }
   | .twoPlayers =>
     { count := 2
       noun := "two target players"
