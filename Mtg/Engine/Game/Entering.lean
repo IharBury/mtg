@@ -183,6 +183,25 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     if targetsCreatureYouControl then
       g.putControlledTriggers caster .youCastTargetingCreatureYouControl
     else g
+  let targetedPermanents : Array GameObject :=
+    match g.stack.find? (fun e => e.objectId == spell.id) with
+    | some e => e.targets.filterMap (fun t =>
+        match t with
+        | Target.permanent id => (g.findObject? id).filter (·.isOnBattlefield)
+        | _ => none)
+    | none => #[]
+  let g :=
+    if targetedPermanents.any (·.isCreature) then
+      g.foldControlledPermanents caster none fun g o =>
+        g.putMatchingSourceTriggers caster o .youCastTargetingCreature (cause := some spell)
+    else g
+  let g :=
+    if spell.printed.isInstantOrSorcery &&
+        targetedPermanents.any (fun o => o.types.contains .artifact || o.types.contains .land) then
+      g.foldControlledPermanents caster none fun g o =>
+        g.putMatchingSourceTriggers caster o .youCastInstantSorceryTargetingArtifactOrLand
+          (cause := some spell)
+    else g
   -- Danitha: once per spell, however many targets it has (ruling 849).
   let targetsOpponentOrTheirCreature : Bool :=
     match g.stack.find? (fun e => e.objectId == spell.id) with

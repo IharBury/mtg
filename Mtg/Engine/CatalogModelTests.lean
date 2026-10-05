@@ -879,6 +879,31 @@ is optional. -/
   let g := g.addPlusOnePlusOneTo (namedPermanent g "Grizzly Bears") 1
   !g.waitingTriggers.any (·.source.name == "Invisible Woman, Sue Storm")
 
+/- Storm, Windrider: a spell that targets any creature gives it flying. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw stormWindrider me me) grizzlyBears opp opp
+  let g := castFra g giantGrowth [.target (.permanent (theirs g "Grizzly Bears").id)]
+  let g := passBoth (stackTriggers g)
+  (kw g "Grizzly Bears").flying || (g.currentKeywords (theirs g "Grizzly Bears")).flying
+
+/- Fin Fang Foom copies an instant or sorcery that targets an artifact or land;
+the copy may get a new target. -/
+#guard
+  let g := addPermanent afterDraw finFangFoom me me
+  let g := addPermanent (addPermanent g murmuringVolume opp opp) forest opp opp
+  let g := castFra g fireOfOrthanc [.target (.permanent (theirs g "Murmuring Volume").id)]
+  let g := passBoth (stackTriggers g)
+  let offered := match g.pending with
+    | .fraChoice _ (.newTargetsForCopies _) => true
+    | _ => false
+  let g := settle (mustApply g me (.choosePermanents #[(theirs g "Forest").id]))
+  offered && counters g "Fin Fang Foom" == 2 &&
+    !g.objects.any (fun o => o.isOnBattlefield && (o.name == "Forest" || o.name == "Murmuring Volume") && o.controlledBy opp)
+#guard
+  let g := addPermanent (addPermanent afterDraw finFangFoom me me) grizzlyBears opp opp
+  let g := stackTriggers (castFra g shock [.target (.permanent (theirs g "Grizzly Bears").id)])
+  !g.stack.any (fun e => (g.object! e.objectId).name.startsWith "Fin Fang Foom")
+
 /-! ## Life loss -/
 
 /- The Master of Lake-town: damage and paying life are losses of life; that

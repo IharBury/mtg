@@ -19,6 +19,10 @@ def attackingAlone? (g : Game) (p : PlayerId) : Option GameObject :=
 def attachedHost? (g : Game) (sourceId : Option ObjectId) : Option GameObject :=
   sourceId.bind g.findObject? |>.bind (fun src => src.attachedTo.bind g.findObject?)
 
+/-- The spell that caused the resolving cast trigger. -/
+def castTriggerSpell? (g : Game) : Option GameObject :=
+  ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).bind g.findObject?
+
 /-- Newest non-ability object on the stack (the spell that caused a cast trigger). -/
 def lastStackSpell? (g : Game) : Option GameObject :=
   g.stack.foldl (fun acc e =>
@@ -673,22 +677,16 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     g.beginScry controller 1
   | (.casting .targetsGainFlying) =>
     let ids :=
-      if !targets.isEmpty then
-        targets.filterMap (fun t =>
-          match t with
-          | Target.permanent id => some id
-          | _ => none)
-      else
-        match g.lastStackSpell? with
-        | none => #[]
-        | some spell =>
-          match g.stack.find? (fun e => e.objectId == spell.id) with
-          | none => #[]
-          | some e =>
-            e.targets.filterMap (fun t =>
-              match t with
-              | Target.permanent id => some id
-              | _ => none)
+      match g.castTriggerSpell? with
+      | none => #[]
+      | some spell =>
+        match g.stack.find? (fun (e : StackEntry) => e.objectId == spell.id) with
+        | none => (#[] : Array ObjectId)
+        | some e =>
+          e.targets.filterMap (fun t =>
+            match t with
+            | Target.permanent id => some id
+            | _ => none)
     ids.foldl (fun (g : Game) id =>
       match g.findObject? id with
       | some o =>
@@ -697,22 +695,17 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         else g
       | none => g) g
   | (.casting .copyIfArtifactOrLand) =>
-    let g :=
-      match g.lastStackSpell? with
-      | some spell =>
-        if spell.printed.isInstantOrSorcery then
-          let (g, copy) := g.allocObject spell.printed controller .stack (some controller)
-          let g := g.setObject { copy with
-            kicked := spell.kicked
-            giftPromisedTo := spell.giftPromisedTo
-            chosenX := spell.chosenX
-            isCopy := true }
-          g.putStackEntry controller copy.id
-            |>.logMsg s!"A copy of {spell.name} is created"
-        else g
-      | none => g
-    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
+    let g := g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
       "The source is no longer in play"
+    match g.castTriggerSpell? with
+    | some spell =>
+      if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
+      else
+        let g := g.copyStackSpell spell controller
+        let copyId := (g.stack.back?.map (·.objectId)).getD spell.id
+        { g with pending := .fraChoice controller (.newTargetsForCopies #[copyId]) }.logMsg
+          s!"{(g.player controller).name} may choose new targets for the copy"
+    | none => g
   | (.casting .tapCreatureOrLand) =>
     g.withLegalKindPermanent controller .creature targets
       (fun g o => g.applyPermanentAction o .tap) sourceId

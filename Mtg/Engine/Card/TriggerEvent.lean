@@ -226,6 +226,10 @@ inductive TriggerEvent where
   | youCastVillain
   /-- You cast a spell that targets a creature you control. -/
   | youCastTargetingCreatureYouControl
+  /-- You cast a spell that targets one or more creatures. -/
+  | youCastTargetingCreature
+  /-- You cast an instant or sorcery spell that targets an artifact or land. -/
+  | youCastInstantSorceryTargetingArtifactOrLand
   /-- You cast a spell that targets an opponent or a creature an opponent
   controls. -/
   | youCastTargetingOpponentOrTheirCreature
@@ -534,6 +538,12 @@ def spec : TriggerEvent → Spec
       checkTargets := false }
   | .youCastTargetingCreatureYouControl =>
     { clause := "you cast a spell that targets a creature you control",
+      label := "cast trigger", checkTargets := false }
+  | .youCastTargetingCreature =>
+    { clause := "you cast a spell that targets one or more creatures",
+      label := "cast trigger", checkTargets := false }
+  | .youCastInstantSorceryTargetingArtifactOrLand =>
+    { clause := "you cast an instant or sorcery spell that targets an artifact or land",
       label := "cast trigger", checkTargets := false }
   | .youCastTargetingOpponentOrTheirCreature =>
     { clause := "you cast a spell that targets an opponent or a creature an opponent controls",

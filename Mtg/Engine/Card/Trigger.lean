@@ -1090,9 +1090,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .casting .ironFistTap =>
     { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .ironFistTap }
   | .casting .targetsGainFlying =>
-    { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .targetsGainFlying }
+    { events := #[.youCastTargetingCreature], resolution := .casting .targetsGainFlying }
   | .casting .copyIfArtifactOrLand =>
-    { events := #[.youCastInstantOrSorcery], resolution := .casting .copyIfArtifactOrLand }
+    { events := #[.youCastInstantSorceryTargetingArtifactOrLand], resolution := .casting .copyIfArtifactOrLand }
   | .casting .tapCreatureOrLand =>
     { events := #[.youCastNoncreature], targeting := .of .creature,
       resolution := .casting .tapCreatureOrLand }
