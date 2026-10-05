@@ -739,6 +739,53 @@ it. -/
   let g := settle (mustApply g me .decline)
   warded && onBattlefield g "Lake-town Mariners"
 
+/-! ## Who triggers on entering -/
+
+/- Thranduil, the Elvenking loots only for another legendary Elf. -/
+#guard
+  let g := addPermanent afterDraw thranduilTheElvenking me me
+  let before := handSize g me
+  let g := settle (enterPermanent g llanowarElves me)
+  let noLoot := handSize g me == before
+  let g := settle (enterPermanent g celebornTheWise me)
+  noLoot && handSize g me == before + 1
+
+/- Chief of the Wilds grows only for another Wolf. -/
+#guard
+  let g := addPermanent afterDraw chiefOfTheWilds me me
+  let g := settle (enterPermanent g grizzlyBears me)
+  let none_ := counters g "Chief of the Wilds" == 0
+  let g := settle (enterPermanent g wargling me)
+  none_ && counters g "Chief of the Wilds" == 2
+
+/- Machinesmith Automaton doesn't trigger on itself entering. -/
+#guard
+  let g := settle (enterPermanent afterDraw machinesmithAutomaton me)
+  let alone := counters g "Machinesmith Automaton" == 0
+  let g := settle (enterPermanent g murmuringVolume me)
+  alone && counters g "Machinesmith Automaton" == 1
+
+/- Mister Fantastic: several tokens entering together trigger once. -/
+#guard
+  let g := addPermanent afterDraw misterFantasticReedRichards me me
+  let g := (g.createKindTokens me .treasure 2).flushTokenEnters
+  ((g.waitingTriggers.filter (·.source.name == "Mister Fantastic, Reed Richards")).size == 1)
+
+/- Tokens created by a resolving ability trigger “whenever a token you
+control enters” (Belladonna Took). -/
+#guard
+  let g := addPermanent (addPermanent (addPermanent afterDraw theShire me me) grizzlyBears me me) belladonnaTook me me
+  let g := activateNamed g "The Shire" "Food"
+  let g := settle (pick g #[idOf g "Grizzly Bears"])
+  life g me == 21
+
+/- Getaway Barrel triggers when it's put into a graveyard from the
+battlefield, though it isn't a creature. -/
+#guard
+  let g := addPermanent afterDraw getawayBarrel me me
+  let g := g.destroyPermanent (namedPermanent g "Getaway Barrel")
+  g.waitingTriggers.any (·.source.name == "Getaway Barrel")
+
 /-! ## Damage sources -/
 
 /- Hawkeye, Young Avenger adds his power to noncombat damage a source you

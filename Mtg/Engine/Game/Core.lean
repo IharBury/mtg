@@ -146,6 +146,8 @@ structure Game where
   /-- Damage assigned to each target of the resolving divided-damage ability
 (CR 601.2d). -/
   resolvingDivision : Array Nat := #[]
+  /-- Tokens created since enters triggers were last processed. -/
+  pendingTokenEnters : Array ObjectId := #[]
   /-- Player-controlling effect: (you, the player you control). Last created
   wins (MSH 259). -/
   playerControl : Option (PlayerId × PlayerId) := none

@@ -870,6 +870,8 @@ structure SharedTriggerOpts where
   printed : String := ""
   /-- Reality Fracture intervening “if” clause. -/
   fraCondition : FraCondition := .none
+  /-- The other permanent must be legendary (“another legendary Elf”). -/
+  anotherLegendary : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Ferocious intervening condition (power 4 or greater). -/

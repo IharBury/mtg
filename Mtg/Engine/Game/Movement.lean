@@ -93,14 +93,19 @@ never happens. -/
 def wouldExileInsteadOfDying (g : Game) (dying : GameObject) : Bool :=
   dying.status.untilEotExileIfDies || (g.exileInsteadSource? dying).isSome
 
-/-- Dies triggers of a creature leaving the battlefield for a graveyard
-(CR 700.4 / 603.6c). A replaced death never happens (CR 614.6), so this
-is empty when `dest` is not a graveyard. -/
+/-- “Dies” / “is put into a graveyard from the battlefield” triggers of a
+permanent leaving the battlefield for a graveyard (CR 700.4 / 603.6c). A
+replaced death never happens (CR 614.6), so this is empty when `dest` is not
+a graveyard. Tom, Bert, and William return only if they were a creature. -/
 def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTrigger :=
-  if old.zone == .battlefield && old.isCreature then
+  if old.zone == .battlefield then
     match dest, old.controller with
     | .graveyard _, some p =>
-      old.waitingTriggersFor p .dying (some (g.snapshotPower old))
+      (old.waitingTriggersFor p .dying (some (g.snapshotPower old))).filter (fun w =>
+        old.isCreature ||
+          match w.ability.shared with
+          | .returnAsArtifact => false
+          | _ => true)
     | _, _ => (#[] : Array WaitingTrigger)
   else (#[] : Array WaitingTrigger)
 
@@ -346,7 +351,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             match o.controller with
             | some p =>
               if p == owner then
-                acc ++ o.waitingTriggersFor p .creatureCardsPutIntoYourGy
+                acc ++ (o.waitingTriggersFor p .creatureCardsPutIntoYourGy).filter (fun w =>
+                  !g.waitingTriggers.any (fun x => x.source.id == w.source.id && x.event == w.event))
               else acc
             | none => acc) (#[] : Array WaitingTrigger)
         else (#[] : Array WaitingTrigger)
@@ -500,7 +506,8 @@ def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId) : Game :=
           match o.controller with
           | some p =>
             if gyOwners.any (· == p) then
-              acc ++ o.waitingTriggersFor p .creatureCardsPutIntoYourGy
+              acc ++ (o.waitingTriggersFor p .creatureCardsPutIntoYourGy).filter (fun w =>
+                !g.waitingTriggers.any (fun x => x.source.id == w.source.id && x.event == w.event))
             else acc
           | none => acc) (#[] : Array WaitingTrigger)
   let g := { g with

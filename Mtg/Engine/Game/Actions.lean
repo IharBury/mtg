@@ -10,7 +10,7 @@ resolution helpers that return owned creatures or destroy the rest.
 namespace Mtg.Engine
 namespace Game
 
-def apply (g : Game) (p : PlayerId) : Action → Except String Game
+def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .pass => g.pass p
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
@@ -87,6 +87,17 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .supplyOrder ids => g.supplyOrder ids
   | .supplyIndex i => g.supplyIndex i
   | .chooseName name => g.answerFraChoice p (.name name)
+
+
+/-- Apply an action, then process entering for tokens it created (CR 603.6a)
+and put the resulting triggered abilities on the stack. -/
+def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
+  let g ← g.applyAction p a
+  if g.pendingTokenEnters.isEmpty then return g
+  let g := g.flushTokenEnters
+  if g.pending == .none && !g.waitingTriggers.isEmpty && !g.over then
+    return g.receivePriority g.priority
+  return g
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
   (g.player p).hand.filterMap (fun id => g.findObject? id)

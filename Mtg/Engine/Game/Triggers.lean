@@ -148,7 +148,14 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g.power entered > g.power hulkling || g.toughness entered > g.toughness hulkling
     | .watch .hulklingCompare, _, _ => false
     | _, _, _ => true
-  powerOk && otherOk && lifeOk && hulklingOk &&
+  -- “Whenever another [legendary] Wolf you control enters”.
+  let causeOk :=
+    match cause with
+    | some o =>
+      (ab.opts.thisOrAnotherSubtype.all (g.hasSubtype o ·)) &&
+        (!ab.opts.anotherLegendary || o.isLegendary)
+    | none => true
+  powerOk && otherOk && lifeOk && hulklingOk && causeOk &&
     g.fraInterveningHolds controller ab source cause &&
     g.fraConditionHolds controller ab.opts.fraCondition source (cause.map (·.status))
 

@@ -125,6 +125,8 @@ structure GameObject where
   uncounterableThisCast : Bool := false
   /-- Cards exiled to pay this boast activation (Baron Helmut Zemo; MSH 227). -/
   boastExiled : Array ObjectId := #[]
+  /-- Its entering has been processed (enters triggers queued). -/
+  enterProcessed : Bool := false
   /-- Mana from a Treasure was spent to cast this spell. -/
   treasureManaSpent : Bool := false
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).

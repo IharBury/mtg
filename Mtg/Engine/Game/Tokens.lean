@@ -82,6 +82,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let (g, obj) := g.allocObject printed controller .battlefield (some controller)
       (status := { tapped := tapped, summoningSick := sick })
     let g := g.logMsg s!"{(g.player controller).name} creates {obj.name}"
+    let g := { g with pendingTokenEnters := g.pendingTokenEnters.push obj.id }
     let g := g.applyHopeEnterCounters (g.object! obj.id) asOf
     -- Storied is not a trigger; an artifact token can be the third permanent.
     let g := g.refreshEnduringStory

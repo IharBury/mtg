@@ -396,6 +396,10 @@ def applyEntersWith (g : Game) (o : GameObject) : Game :=
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
+  if (g.findObject? o.id).any (·.enterProcessed) then g else
+  let g := match g.findObject? o.id with
+    | some x => g.setObject { x with enterProcessed := true }
+    | none => g
   -- Storied is granted as the permanent enters, before SBA (legend rule /
   -- 0 toughness) and before enters triggers use the stack.
   let g := g.refreshEnduringStory
@@ -445,7 +449,17 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     let entered := g.object! o.id
     let g :=
       if entered.printed.isToken then
-        g.putControlledTriggers p .tokenYouControlEnters
+        -- “Whenever one or more tokens you control enter” triggers once per
+        -- batch (Mister Fantastic); Belladonna Took triggers per token.
+        g.foldControlledPermanents p none fun g src =>
+          let onceForBatch :=
+            src.printed.triggeredAbilities.any (fun ab =>
+              match ab.shared with
+              | .watch .tokensEnterMayDraw => true
+              | _ => false)
+          if onceForBatch && g.waitingTriggers.any (fun w =>
+              w.source.id == src.id && w.event == .tokenYouControlEnters) then g
+          else g.putMatchingSourceTriggers p src .tokenYouControlEnters
       else g
     let g :=
       if entered.printed.isArtifact then
@@ -480,16 +494,19 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
             (cause := some entered))
       else g
     let g :=
-      if entered.printed.isArtifact then
-        g.putControlledTriggers p .anotherArtifactEnters
+      if entered.types.contains .artifact then
+        g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
+          g.putMatchingSourceTriggers p o .anotherArtifactEnters (cause := some entered))
       else g
     let g :=
       if !entered.printed.isToken && g.hasSubtype entered "Hero" then
-        g.putControlledTriggers p .anotherNontokenHeroEnters
+        g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
+          g.putMatchingSourceTriggers p o .anotherNontokenHeroEnters (cause := some entered))
       else g
     let g :=
-      if !entered.printed.isToken && entered.printed.isArtifact then
-        g.putControlledTriggers p .anotherNontokenArtifactEnters
+      if !entered.printed.isToken && entered.types.contains .artifact then
+        g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
+          g.putMatchingSourceTriggers p o .anotherNontokenArtifactEnters (cause := some entered))
       else g
     -- Reality Fracture “enters” triggers.
     let isCreature := entered.isCreature
@@ -528,6 +545,19 @@ def afterLandEnters (g : Game) (land : GameObject) : Game :=
   let land := g.object! land.id
   if g.enteringCausesNoTriggers land then g
   else g.putLandYouControlEntersTriggers land
+
+/-- Process entering for tokens created since the last check, queueing
+their enters triggers (CR 603.6a). -/
+def flushTokenEnters (g : Game) : Game :=
+  let ids := g.pendingTokenEnters
+  let g := { g with pendingTokenEnters := #[] }
+  ids.foldl (fun g id =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield && !o.enterProcessed then
+        if o.printed.isLand then g.afterLandEnters o else g.afterPermanentEnters o
+      else g
+    | none => g) g
 
 /-- Nick Fury power-up: put a Hero, Equipment, or Vehicle onto the battlefield.
 A daybound front face enters back-face-up at night and cannot transform
