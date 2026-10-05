@@ -713,6 +713,31 @@ the other exiled cards go to the bottom of the library. -/
   let g := mustApply (g.resolveCascade me 8) me .decline
   life g opp == 20 && ((g.player me).library[0]?.map (fun id => (g.object! id).name)) == some "Lightning Bolt"
 
+/-! ## Kicker changes targets -/
+
+/- The Eagles Are Coming! targets a creature you own, even one an opponent
+controls; kicked, it targets any number of them. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears me opp) hillGiant opp me
+  let g := resolved (castFra g theEaglesAreComing [.announceKicker false, tgt g "Grizzly Bears"])
+  inHand g me "Grizzly Bears" && (g.player me).eaglesBirdsNextUpkeep == 1
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears me opp) hillGiant opp me
+  castRejected g theEaglesAreComing [.announceKicker false, tgt g "Hill Giant"]
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears me me) hillGiant me me
+  let g := resolved (castFra g theEaglesAreComing
+    [.announceKicker true, .targets #[perm g "Grizzly Bears", perm g "Hill Giant"]])
+  inHand g me "Grizzly Bears" && inHand g me "Hill Giant" && (g.player me).eaglesBirdsNextUpkeep == 2
+
+/- Galadriel's Dismissal kicked targets a player, and each creature that
+player controls phases out. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears opp opp) hillGiant opp opp
+  let g := resolved (castFra g galadrielSDismissal [.announceKicker true, .target (.player opp)])
+  let phased (n : String) := g.objects.any (fun o => o.name == n && o.zone == .battlefield && o.status.phasedOut)
+  phased "Grizzly Bears" && phased "Hill Giant"
+
 /- Outside the declare blockers step, sneak can't be used. -/
 #guard
   let g := addPermanent afterDraw grizzlyBears me me

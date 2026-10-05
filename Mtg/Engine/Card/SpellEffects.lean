@@ -321,7 +321,8 @@ def supperForSpiders : Effect :=
     (castKind := .draw)
 
 def eaglesAreComing : Effect :=
-  mkSpell (.of .creatureYouControl) (.eaglesAreComing)
+  mkSpell (.of (.filtered { noun := "target creature you own", types := #[.creature], ownedByYou := true }))
+    (.eaglesAreComing)
     (castKind := .draw)
 
 def lookAtTopLandsGainLife (n life : Nat) : Effect :=

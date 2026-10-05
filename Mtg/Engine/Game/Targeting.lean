@@ -128,7 +128,8 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     (!f.enteredThisTurn || o.status.enteredThisTurn) &&
     (!f.untapped || !o.status.tapped) &&
     (!f.nonattacking || !o.status.attacking) &&
-    (!f.withHaste || g.hasHaste o)
+    (!f.withHaste || g.hasHaste o) &&
+    (!f.ownedByYou || o.owner == caster)
 
 /-- Legal targets described by a `TargetFilter` (CR 115.1). -/
 def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)

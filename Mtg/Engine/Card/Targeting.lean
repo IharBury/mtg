@@ -76,6 +76,8 @@ structure TargetFilter where
   untapped : Bool := false
   nonattacking : Bool := false
   withHaste : Bool := false
+  /-- Owned (not necessarily controlled) by the caster. -/
+  ownedByYou : Bool := false
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Whom a spell, activated ability, or triggered ability may target

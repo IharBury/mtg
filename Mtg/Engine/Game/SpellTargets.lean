@@ -55,18 +55,33 @@ def combinedModesEffect (modes : Array Effect) : Option Effect :=
       allowsZeroTargets := modes.all (fun m => !m.requiresTarget || m.allowsZeroTargets)
       maxTargets := modes.foldl (fun acc m => acc + m.maxTargetCount) 0 }
 
+/-- The targets a kicked spell announces instead (CR 702.32 / 601.2c): The
+Eagles Are Coming! chooses any number of creatures you own, and Galadriel's
+Dismissal targets a player. -/
+def kickedSpellEffect (e : Effect) : Effect :=
+  match e.resolution with
+  | .spell .eaglesAreComing =>
+    { e with
+      targeting := .of (.filtered
+        { noun := "any number of target creatures you own", types := #[.creature], ownedByYou := true })
+      allowsZeroTargets := true, maxTargets := 100 }
+  | .spell .phaseOutKicker => { e with targeting := .of .player }
+  | _ => e
+
 /-- Spell effect after a modal choice, if one has been announced (CR 700.2).
 With `extra` modes, the combined effect of all of them. -/
 def spellEffectOf (o : GameObject) (chosenMode : Option Nat) (extra : Array Nat := #[]) :
     Option Effect :=
-  if o.printed.isModal then
-    match chosenMode with
-    | some i =>
-      if extra.isEmpty then o.printed.spellModes[i]?
-      else combinedModesEffect (((#[i] ++ extra).qsort (· < ·)).filterMap (o.printed.spellModes[·]?))
-    | none => none
-  else
-    o.printed.spellEffect
+  let base :=
+    if o.printed.isModal then
+      match chosenMode with
+      | some i =>
+        if extra.isEmpty then o.printed.spellModes[i]?
+        else combinedModesEffect (((#[i] ++ extra).qsort (· < ·)).filterMap (o.printed.spellModes[·]?))
+      | none => none
+    else
+      o.printed.spellEffect
+  if o.kicked then base.map kickedSpellEffect else base
 
 /-- Spell effect of `o` using the mode announced on the stack, if any (CR 700.2). -/
 def currentSpellEffect (g : Game) (o : GameObject) : Option Effect :=
