@@ -713,6 +713,18 @@ the other exiled cards go to the bottom of the library. -/
   let g := mustApply (g.resolveCascade me 8) me .decline
   life g opp == 20 && ((g.player me).library[0]?.map (fun id => (g.object! id).name)) == some "Lightning Bolt"
 
+/-! ## Flashback -/
+
+/- A countered flashback spell is exiled instead of going to the graveyard
+(CR 702.34a). -/
+#guard
+  let g := everyColor (addToGraveyard afterDraw tidingsOfWar me) me
+  let g := mustApply g me (.cast (graveyardObj g me "Tidings of War").id)
+  let g := mustApply g me .pay
+  let spell := (g.stack.back?.map (·.objectId)).getD ⟨0⟩
+  let g := g.counterStackSpell spell
+  inExile g "Tidings of War" && !inGraveyard g me "Tidings of War"
+
 /-! ## Kicker changes targets -/
 
 /- The Eagles Are Coming! targets a creature you own, even one an opponent

@@ -123,7 +123,12 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     old.zone == .battlefield && old.status.untilEotExileIfDies && wouldGoToGy
   let finalityExile :=
     old.zone == .battlefield && wouldGoToGy && old.status.finality > 0
-  let exileInstead := headExile || smiteExile || finalityExile
+  -- CR 702.34a: a spell cast with flashback is exiled whenever it would
+  -- leave the stack for anywhere else.
+  let flashbackExile :=
+    old.zone == .stack && old.castFromGraveyard && old.printed.flashback.isSome &&
+      !old.isCopy && dest != .exile
+  let exileInstead := headExile || smiteExile || finalityExile || flashbackExile
   -- CR 614.6: the original move-to-graveyard event never happens.
   let dest := if exileInstead then Zone.exile else dest
   let g :=
