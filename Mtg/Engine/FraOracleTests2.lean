@@ -4,6 +4,7 @@ import Mtg.Engine.Catalog.RealityFracture
 import Mtg.Engine.FraOracleTests
 import Mtg.Engine.Game
 import Mtg.Engine.OracleData
+import Mtg.Engine.Tests.Abilities
 import Mtg.Engine.Tests.Auras
 import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
@@ -409,6 +410,87 @@ can't go below {G}. -/
 #guard (fraRuling 870).comment.contains "below {G}"
 #guard (fraRuling 872).comment.contains "mana value doesn't change"
 
+/-- A 0/5 creature whose power is the number of cards in your hand. -/
+def testHandSizer : CardDef :=
+  { creature "Test Hand Sizer" ManaCost.empty #["Elemental"] 0 5 with
+    staticAbilities := #[.powerEqualCardsInHand] }
+
+/-- Chandra holds Ghalta the Unstoppable and three other cards and controls
+the hand-sized creature (power 4), then begins casting Ghalta. -/
+def ghaltaProposed : Game :=
+  let g := emptyHand (addPermanent afterDraw testHandSizer ⟨0⟩ ⟨0⟩) ⟨0⟩
+  let g := addToHand (addToHand (addToHand g grizzlyBears ⟨0⟩) grizzlyBears ⟨0⟩) grizzlyBears ⟨0⟩
+  let g := addToHand g ghaltaTheUnstoppable ⟨0⟩
+  mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Ghalta the Unstoppable").id)
+
+/- Ruling 874 (and 824 for Ghalta the Immovable): Ghalta moves to the stack
+first, so the hand-sized creature has power 3 when the cost is determined. -/
+#guard
+  let c := (ghaltaProposed.proposedSpell.map (·.cost)).getD ManaCost.empty
+  c.manaValue == 6 && c.coloredCount .green == 1
+#guard (fraRuling 874).comment.contains "The first step of casting a spell is to move it to the stack"
+#guard (fraRuling 824).comment.contains "The first step of casting a spell is to move it to the stack"
+
+/- Rulings 873 / 826: no player may act until the spell is paid for. -/
+#guard !ghaltaProposed.hasPriority ⟨1⟩
+#guard !(ghaltaProposed.apply ⟨1⟩ .pass).isOk
+#guard (fraRuling 873).comment.contains "no player may take actions until the spell has been paid for"
+#guard (fraRuling 826).comment.contains "no player may take actions until the spell has been paid for"
+
+/- Rulings 871 / 828: the determined cost stays locked even if the greatest
+power changes while paying. -/
+#guard
+  let o := namedPermanent ghaltaProposed "Test Hand Sizer"
+  let g := ghaltaProposed.mapObjectStatus o (fun s => s.addPump 10 0)
+  let g := withGreenMana g ⟨0⟩ 6
+  let g := mustApply g ⟨0⟩ .pay
+  g.stack.size == 1 && (g.player ⟨0⟩).manaPool.total == 0
+#guard (fraRuling 871).comment.contains "the cost to cast Ghalta remains what you previously determined"
+#guard (fraRuling 828).comment.contains "the cost to cast Ghalta remains what you previously determined"
+
+/-!
+## Blazing Crescendo (rulings 388 / 567 / 568)
+-/
+
+def crescendoCast : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let g := withRedMana (addToHand g realityFractureBlazingCrescendo ⟨0⟩) ⟨0⟩ 2
+  let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Blazing Crescendo").id
+    (.permanent (namedPermanent g "Grizzly Bears").id)
+  mustApply g ⟨0⟩ .pay
+
+/- Rulings 567 / 568: with its target gone, the spell doesn't resolve and no
+card is exiled. -/
+#guard
+  let bears := namedPermanent crescendoCast "Grizzly Bears"
+  let (g, _) := crescendoCast.move bears.id (.graveyard ⟨0⟩) none
+  let g := passBoth g
+  !g.objects.any (fun o => o.zone == .exile && o.name == "Mountain") &&
+    (g.player ⟨0⟩).library.size == (crescendoCast.player ⟨0⟩).library.size
+#guard (fraRuling 567).comment.contains "No card will be exiled"
+#guard (fraRuling 568).comment.contains "No card will be exiled"
+
+/-- Ruling 388: an exiled land is played with the normal timing rules — only
+in a main phase with an empty stack. -/
+def crescendoResolved : Game := passBoth crescendoCast
+
+#guard crescendoResolved.power (namedPermanent crescendoResolved "Grizzly Bears") == 5
+#guard
+  let mtn := crescendoResolved.objects.find? (fun o => o.zone == .exile && o.name == "Mountain")
+  match mtn with
+  | some m =>
+    let g := crescendoResolved
+    (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 0 })).apply ⟨0⟩
+      (.playLand m.id) |>.isOk
+  | none => false
+#guard
+  let g := skipTo crescendoResolved .beginningOfCombat 80
+  match g.objects.find? (fun o => o.zone == .exile && o.name == "Mountain") with
+  | some m => !(g.apply ⟨0⟩ (.playLand m.id)).isOk
+  | none => false
+#guard (fraRuling 388).comment.contains "you may play it only during your main phase"
+
 /-!
 ## Split second (rulings 837–841)
 -/
@@ -432,6 +514,31 @@ may still activate a mana ability. -/
 #guard (samutShock.apply ⟨1⟩ (.tapForMana (namedPermanent samutShock "Mountain").id
   (.colored .red))).isOk
 #guard (fraRuling 837).comment.contains "limited to mana abilities"
+
+/- Ruling 838: split second doesn't stop triggered abilities. Guttersnipe
+still triggers when Shock is cast. -/
+#guard
+  let g := addPermanent afterDraw samutTyrantOfNaktamun ⟨0⟩ ⟨0⟩
+  let g := addPermanent g guttersnipe ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g shock ⟨0⟩) ⟨0⟩ 1
+  let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Shock").id (.player ⟨1⟩)
+  let g := mustApply g ⟨0⟩ .pay
+  g.stack.size == 2 && g.splitSecondOnStack &&
+    (resolveStack g 20 |>.player ⟨1⟩).life == 16
+#guard (fraRuling 838).comment.contains "Split second doesn't stop triggered abilities"
+
+/- Ruling 839: a spell can't be cast as part of a resolving ability while a
+spell with split second is on the stack. -/
+#guard
+  let g := addToHand (emptyHand samutShock ⟨0⟩) lightningBolt ⟨0⟩
+  let g := g.castInstantSorceryFromHandMvAtMost ⟨0⟩ 3
+  (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Lightning Bolt") &&
+    g.stack.size == 1
+#guard
+  let g := addToHand (emptyHand afterDraw ⟨0⟩) lightningBolt ⟨0⟩
+  let g := g.castInstantSorceryFromHandMvAtMost ⟨0⟩ 3
+  g.stack.size == 1 && !(g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Lightning Bolt")
+#guard (fraRuling 839).comment.contains "that spell can't be cast if a spell with split second is on the stack"
 
 /-- Ruling 841: once Shock resolves, Nissa may cast spells again. -/
 def samutShockResolved : Game := mustApply samutShock ⟨1⟩ .pass
