@@ -768,6 +768,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .exileFromRevealedHand _ _ => "choose a nonland card to exile"
         | .castCopiesFree _ n left => s!"may cast up to {left} copies with total mana value {n} or less (cast or decline)"
         | .triggerModes _ n _ => if n == 2 then "choose two modes" else "choose a mode"
+        | .allianceMode _ available =>
+          s!"choose an Alliance mode not yet chosen {available}: 0 \{G}\{G}\{G}, 1 +1/+1 on each creature, 2 scry 2 then draw"
+        | .gollumMode _ available =>
+          s!"choose a mode not yet chosen {available}: 0 +1/+1, 1 each opponent loses 2 and you gain 2, 2 draw"
         | .chooseKeyword _ options =>
           let names : List String :=
             (List.range options.size).map (fun i => s!"{i} {fraKeywordName options[i]!}")

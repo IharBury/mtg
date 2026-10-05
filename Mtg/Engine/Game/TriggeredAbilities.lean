@@ -11,6 +11,105 @@ going on the stack.
 namespace Mtg.Engine
 namespace Game
 
+/-- Scry `scryN`, then draw `drawN`. An empty library draws immediately. -/
+def scryThenDraw (g : Game) (p : PlayerId) (scryN drawN : Nat) : Game :=
+  let g := { g with pendingDrawAfterScry := some (p, drawN) }
+  let g := g.beginScry p scryN
+  if g.pendingDrawAfterScry.isSome &&
+      (match g.pending with | .scry _ _ => false | _ => true) then
+    let g := { g with pendingDrawAfterScry := none }
+    g.draw p drawN
+  else g
+
+/-- Apply one Alliance mode of `sourceId` if it has not been chosen this turn.
+If every mode was already chosen, the ability is removed with no effect. -/
+def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
+  match g.findObject? sourceId with
+  | none =>
+    g.logMsg "The ability is removed from the stack with no effect"
+  | some src =>
+    if src.status.allianceModesChosen.size >= 3 ||
+        (g.unusedAllianceModes src).isEmpty then
+      g.logMsg
+        "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
+    else if src.status.allianceModesChosen.contains mode then
+      g.logMsg "That Alliance mode has already been chosen this turn"
+    else
+      let g := g.setObject { src with status :=
+        { src.status with allianceModesChosen := src.status.allianceModesChosen.push mode } }
+      match src.controller, mode with
+      | some c, 0 =>
+        let g := g.modifyPlayer c (fun pl =>
+          { pl with manaPool := pl.manaPool.add (.colored .green) 3 })
+        g.logMsg s!"{(g.player c).name} adds \{G}\{G}\{G}"
+      | some c, 1 =>
+        let creatures := (g.battlefield.filter (fun o => o.isCreature && o.controlledBy c)).map (·.id)
+        let g := creatures.foldl (fun g id =>
+          match g.findObject? id with
+          | some o => g.addPlusOnePlusOneTo o 1
+          | none => g) g
+        g.logMsg s!"{(g.player c).name} puts a +1/+1 counter on each creature they control"
+      | some c, 2 =>
+        g.scryThenDraw c 2 1
+      | _, _ => g
+
+/-- Apply one unused Gollum mode. If every mode was already chosen, the
+ability is removed with no effect and Gollum remains. -/
+def applyGollumMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
+  match g.findObject? sourceId with
+  | none =>
+    g.logMsg "The ability is removed from the stack with no effect"
+  | some src =>
+    if (g.unusedGollumModes src).isEmpty then
+      g.logMsg
+        "all three modes have been chosen. The ability is removed from the stack with no effect"
+    else if src.status.chosenModes.contains mode then
+      g.logMsg "That mode has already been chosen"
+    else
+      let g := g.setObject { src with status :=
+        { src.status with chosenModes := src.status.chosenModes.push mode } }
+      match src.controller, mode with
+      | some _, 0 =>
+        g.addPlusOnePlusOneTo (g.object! sourceId) 1
+      | some c, 1 =>
+        let g := g.forEachOpponent c (fun g pid => g.loseLife pid 2)
+        g.gainLife c 2
+      | some c, 2 =>
+        g.draw c 1
+      | _, _ => g
+
+/-- Ask `sourceId`'s controller for an Alliance mode that hasn't been chosen. -/
+def offerAllianceMode (g : Game) (sourceId : Option ObjectId) : Game :=
+  match sourceId.bind g.findObject? with
+  | none => g.logMsg "The ability is removed from the stack with no effect"
+  | some src =>
+    let available := g.unusedAllianceModes src
+    match src.controller with
+    | none => g.logMsg "The ability is removed from the stack with no effect"
+    | some p =>
+      if available.isEmpty then
+        g.logMsg
+          "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
+      else
+        { g with pending := .fraChoice p (.allianceMode src.id available) }.logMsg
+          s!"{(g.player p).name} chooses an Alliance mode that hasn't been chosen this turn"
+
+/-- Ask `sourceId`'s controller for a Gollum mode that hasn't been chosen. -/
+def offerGollumMode (g : Game) (sourceId : Option ObjectId) : Game :=
+  match sourceId.bind g.findObject? with
+  | none => g.logMsg "The ability is removed from the stack with no effect"
+  | some src =>
+    let available := g.unusedGollumModes src
+    match src.controller with
+    | none => g.logMsg "The ability is removed from the stack with no effect"
+    | some p =>
+      if available.isEmpty then
+        g.logMsg
+          "all three modes have been chosen. The ability is removed from the stack with no effect"
+      else
+        { g with pending := .fraChoice p (.gollumMode src.id available) }.logMsg
+          s!"{(g.player p).name} chooses a mode that hasn't been chosen"
+
 /-- One of `ids`, chosen with the game's RNG. An empty list yields none. -/
 def chooseRandomId (g : Game) (ids : Array ObjectId) : Game × Option ObjectId :=
   if ids.size ≤ 1 then (g, ids[0]?)
@@ -476,13 +575,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
       s!"{(g.player controller).name} creates {n} Bird Soldier token(s)"
   | .allianceMode =>
-    g.applyNextUnusedMode sourceId (g.unusedAllianceModes)
-      applyAllianceMode
-      "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
+    g.offerAllianceMode sourceId
   | .gollumMode =>
-    g.applyNextUnusedMode sourceId (g.unusedGollumModes)
-      applyGollumMode
-      "all three modes have been chosen. The ability is removed from the stack with no effect"
+    g.offerGollumMode sourceId
   | .destroyOtherAmassControllerPower =>
     match targets[0]? with
     | none =>

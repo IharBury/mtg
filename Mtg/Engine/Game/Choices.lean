@@ -74,76 +74,10 @@ then draw). -/
 def unusedAllianceModes (_g : Game) (src : GameObject) : Array Nat :=
   unusedModes src.status.allianceModesChosen
 
-/-- Apply one Alliance mode of `sourceId` if it has not been chosen this turn.
-If every mode was already chosen, the ability is removed with no effect. -/
-def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
-  match g.findObject? sourceId with
-  | none =>
-    g.logMsg "The ability is removed from the stack with no effect"
-  | some src =>
-    if src.status.allianceModesChosen.size >= 3 ||
-        (g.unusedAllianceModes src).isEmpty then
-      g.logMsg
-        "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
-    else if src.status.allianceModesChosen.contains mode then
-      g.logMsg "That Alliance mode has already been chosen this turn"
-    else
-      let g := g.setObject { src with status :=
-        { src.status with allianceModesChosen := src.status.allianceModesChosen.push mode } }
-      match src.controller, mode with
-      | some c, 0 =>
-        let g := g.modifyPlayer c (fun pl =>
-          { pl with manaPool :=
-            pl.manaPool.add (.colored .green) 3 })
-        g.logMsg ((g.player c).name ++ " adds {G}{G}{G}")
-      | some c, 1 =>
-        Id.run do
-          let mut g := g
-          for o in g.battlefield do
-            if o.isCreature && o.controlledBy c then
-              g := g.setObject { o with status := o.status.addPlusOnePlusOne 1 }
-          return g.logMsg
-            s!"{(g.player c).name} puts a +1/+1 counter on each creature they control"
-      | some c, 2 =>
-        (g.draw c 1).logMsg ((g.player c).name ++ " scries 2, then draws a card")
-      | _, _ => g
-
 /-- Unused Gollum modes on `src` (0 = +1/+1, 1 = drain, 2 = draw). Modes last
 for the object's lifetime (ruling 164). -/
 def unusedGollumModes (_g : Game) (src : GameObject) : Array Nat :=
   unusedModes src.status.chosenModes
-
-/-- Apply one unused Gollum mode. If every mode was already chosen, the
-ability is removed with no effect and Gollum remains. -/
-def applyGollumMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
-  match g.findObject? sourceId with
-  | none =>
-    g.logMsg "The ability is removed from the stack with no effect"
-  | some src =>
-    if (g.unusedGollumModes src).isEmpty then
-      g.logMsg
-        "all three modes have been chosen. The ability is removed from the stack with no effect"
-    else if src.status.chosenModes.contains mode then
-      g.logMsg "That mode has already been chosen"
-    else
-      let g := g.setObject { src with status :=
-        { src.status with chosenModes := src.status.chosenModes.push mode } }
-      match src.controller, mode with
-      | some _, 0 =>
-        let src := g.object! sourceId
-        let g := g.setObject { src with status := src.status.addPlusOnePlusOne 1 }
-        g.logMsg s!"{src.name} gets a +1/+1 counter"
-      | some c, 1 =>
-        let g := g.forEachOpponent c (fun g pid =>
-          let pl := g.player pid
-          g.setLife pid (pl.life - 2)
-            s!"{pl.name} loses 2 life ({pl.life - 2} life)")
-        let pl := g.player c
-        g.setLife c (pl.life + 2)
-          s!"{pl.name} gains 2 life ({pl.life + 2} life)"
-      | some c, 2 =>
-        g.draw c 1
-      | _, _ => g
 
 /-- Apply the first unused mode of `sourceId`, or log `gone` / `exhausted`. -/
 def applyNextUnusedMode (g : Game) (sourceId : Option ObjectId)

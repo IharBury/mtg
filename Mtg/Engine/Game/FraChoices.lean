@@ -271,6 +271,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       if (g.findObject? id).any (·.zone == .exile) then g.ceaseToExist id else g) g
     return { g with pendingFreeCopies := none }.finishFraChoice
   | .castCopiesFree .., _ => throw "Cast a copy, or decline"
+  | .allianceMode sourceId available, .mode idx =>
+    if !available.contains idx then throw "That Alliance mode has already been chosen this turn"
+    return (g.applyAllianceMode sourceId idx).finishFraChoice
+  | .allianceMode .., _ => throw "Choose an Alliance mode"
+  | .gollumMode sourceId available, .mode idx =>
+    if !available.contains idx then throw "That mode has already been chosen"
+    return (g.applyGollumMode sourceId idx).finishFraChoice
+  | .gollumMode .., _ => throw "Choose a mode"
   | .triggerModes objId remaining chosen, .mode idx =>
     let some obj := g.findObject? objId | return g.finishFraChoice
     let modes := g.triggerModesOf obj
@@ -596,6 +604,14 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .exileFromRevealedHand victim _ =>
     .choosePermanents ((g.revealedHandChoices victim false).extract 0 1)
   | .castCopiesFree .. => .decline
+  | .allianceMode _ available =>
+    match available[0]? with
+    | some m => .chooseMode m
+    | none => .decline
+  | .gollumMode _ available =>
+    match available[0]? with
+    | some m => .chooseMode m
+    | none => .decline
   | .triggerModes objId _ chosen =>
     match g.findObject? objId with
     | none => .decline

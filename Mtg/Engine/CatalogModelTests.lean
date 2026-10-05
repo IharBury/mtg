@@ -966,6 +966,37 @@ revealed cards on the bottom at random. -/
   onBattlefield g "Burn, Burn, Tree and Fern" && inLibrary g "Mountain" &&
     (g.log.extract n g.log.size).any (fun s => mentions s "bottom")
 
+/- Galadriel's Alliance mode is chosen by the player. Scry 2 then draw
+really scries, and the counters are put by the counter action. -/
+#guard
+  let g := addPermanent afterDraw galadrielLightOfValinor me me
+  let sid := (namedPermanent g "Galadriel, Light of Valinor").id
+  let g := g.applyTriggeredAbility me .onAnotherCreatureYouControlEntersAlliance (some sid)
+  let offered :=
+    match g.pending with
+    | .fraChoice _ (.allianceMode _ available) => available == #[0, 1, 2]
+    | _ => false
+  let g := mustApply g me (.chooseMode 0)
+  offered && (g.player me).manaPool.green == 3
+#guard
+  let g := addPermanent (addPermanent afterDraw galadrielLightOfValinor me me) grizzlyBears me me
+  let sid := (namedPermanent g "Galadriel, Light of Valinor").id
+  let before := handSize g me
+  let g := g.applyTriggeredAbility me .onAnotherCreatureYouControlEntersAlliance (some sid)
+  let g := mustApply g me (.chooseMode 2)
+  let scried := match g.pending with | .scry _ 2 => true | _ => false
+  let g := applyIdle g
+  scried && handSize g me == before + 1
+#guard
+  let g := addPermanent afterDraw gollumRiddleMaster me me
+  let sid := (namedPermanent g "Gollum, Riddle Master").id
+  let g := g.chooseGollumParity sid false
+  let g := g.applyTriggeredAbility me .onOpponentCastsChosenParityModes (some sid)
+  let g := mustApply g me (.chooseMode 1)
+  life g opp == 18 && life g me == 22 &&
+    g.log.any (fun s => mentions s "loses 2 life") &&
+    g.log.any (fun s => mentions s "gains 2 life")
+
 /- Enchanted River's Grasp taps the enchanted creature and removes every counter. -/
 #guard
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me

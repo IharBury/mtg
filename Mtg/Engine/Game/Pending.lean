@@ -263,6 +263,14 @@ inductive FraChoice where
   most `budget` without paying their mana costs (Uldaros Theorix, Baron
   Helmut Zemo). -/
   | castCopiesFree (ids : Array ObjectId) (budget : Nat) (castsLeft : Nat)
+  /-- Choose an Alliance mode of `sourceId` that hasn't been chosen this turn.
+  Answered with `Action.chooseMode` (0 add {G}{G}{G}, 1 +1/+1 counters,
+  2 scry 2 then draw). -/
+  | allianceMode (sourceId : ObjectId) (available : Array Nat)
+  /-- Choose a Gollum mode that hasn't been chosen. Answered with
+  `Action.chooseMode` (0 +1/+1, 1 each opponent loses 2 and you gain 2,
+  2 draw). -/
+  | gollumMode (sourceId : ObjectId) (available : Array Nat)
   /-- Choose `remaining` more modes for the triggered ability `objectId`
   from `CardDef.fraTriggerModes` of its source. -/
   | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
