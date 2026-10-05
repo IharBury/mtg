@@ -127,19 +127,21 @@ def mjolnirMultiplier (g : Game) (src : GameObject) : Nat :=
           | _ => false))).size
   if n == 0 then 1 else Nat.pow 2 n
 
-/-- Apply Hawkeye then Mjölnir. If all damage is prevented, neither
-replacement applies (MSH 177 / 178). Combat assignment happens first;
-this multiplies the already-divided amounts (MSH 179). -/
+/-- Apply Hawkeye then Mjölnir. Hawkeye adds only to noncombat damage dealt
+to an opponent of the source's controller or a permanent an opponent
+controls. If all damage is prevented, neither replacement applies
+(MSH 177 / 178). Combat assignment happens first; this multiplies the
+already-divided amounts (MSH 179). -/
 def replacedDamageAmount (g : Game) (src : GameObject) (n : Int)
-    (combat := false) : Int :=
+    (combat := false) (recipient : Option PlayerId := none) : Int :=
   if g.sourceDamagePrevented src then 0
   else
     let extra :=
-      if combat then (0 : Int)
+      if combat || n ≤ 0 then (0 : Int)
       else
-        match src.controller with
-        | some p => g.hawkeyeNoncombatBonus p
-        | none => (0 : Int)
+        match src.controller, recipient with
+        | some p, some r => if r != p then g.hawkeyeNoncombatBonus p else 0
+        | _, _ => (0 : Int)
     (n + extra) * Int.ofNat (g.mjolnirMultiplier src)
 
 /-- Tomik, Izzet Sparkmage: noncombat damage a source deals to an opponent of
@@ -156,6 +158,17 @@ def tomikNoncombatBonus (g : Game) (src : GameObject) (recipient : PlayerId) : I
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
   g.markDamageOn o n s!"{o.name} is dealt {n} damage"
 
+/-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
+def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  if n == 0 then g
+  else
+    let pl := g.player p
+    let g := g.setLife p (pl.life + (n : Int))
+      s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
+    let g := g.modifyPlayer p (fun pl =>
+      { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + n })
+    g.putControlledTriggers p .youGainLife
+
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     (deathtouch := false) (source : Option GameObject := none) : Game :=
@@ -164,16 +177,23 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     if g.sourceDamagePrevented src then
       g.logMsg s!"damage from {src.name} is prevented"
     else
-      let n := g.replacedDamageAmount src n
+      let n := g.replacedDamageAmount src n (recipient := o.controller)
       let n :=
         if n > 0 then
           match o.controller with
           | some c => n + g.tomikNoncombatBonus src c
           | none => n
         else n
+      let prevented := g.preventsAllDamageTo o || o.status.shield > 0
       let g :=
         g.mapObjectStatus src (fun s => { s with dealtDamageThisTurn := true })
-      g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
+      let g := g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}"
+        (deathtouch || g.hasDeathtouch src)
+      -- CR 702.15b: damage dealt by a source with lifelink.
+      match src.controller with
+      | some c =>
+        if n > 0 && !prevented && g.hasLifelink src then g.gainLife c n.toNat else g
+      | none => g
   | none =>
     g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
 
@@ -185,7 +205,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     | some src =>
       if g.sourceDamagePrevented src then (0 : Int)
       else
-        let n := g.replacedDamageAmount src n
+        let n := g.replacedDamageAmount src n (recipient := some pid)
         if n > 0 then n + g.tomikNoncombatBonus src pid else n
     | none => n
   let pl := g.player pid
@@ -196,6 +216,14 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   else
     let g := if n > 0 then g.modifyPlayer pid (fun pl => { pl with dealtNoncombatDamageThisTurn := true }) else g
     let g := g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+    -- CR 702.15b: damage dealt by a source with lifelink.
+    let g :=
+      match source with
+      | some src =>
+        match src.controller with
+        | some c => if n > 0 && g.hasLifelink src then g.gainLife c n.toNat else g
+        | none => g
+      | none => g
     let g :=
       match source with
       | some src =>
@@ -220,9 +248,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
 
 /-- Deal this creature's power as damage to `dest` (one side of a fight). -/
 def dealFightDamage (g : Game) (src dest : GameObject) : Game :=
-  let n : Int := (g.power src).toNat
-  let n := if n > 0 then n + g.tomikNoncombatBonus src (dest.controller.getD dest.owner) else n
-  g.dealDamageFrom src.name dest n (deathtouch := g.hasDeathtouch src)
+  g.dealDamageFrom src.name dest (g.power src).toNat (source := some src)
 
 /-- Both sides of a fight deal damage simultaneously-looking: `src` first,
 then `dest` if both are still in play. -/
@@ -247,17 +273,6 @@ def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
 def drawThenLoseLife (g : Game) (p : PlayerId) (cards life : Nat) : Game :=
   (g.draw p cards).loseLife p life
 
-/-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
-def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  if n == 0 then g
-  else
-    let pl := g.player p
-    let g := g.setLife p (pl.life + (n : Int))
-      s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
-    let g := g.modifyPlayer p (fun pl =>
-      { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + n })
-    g.putControlledTriggers p .youGainLife
-
 /-- If a shuffle is waiting for a `--norandom` result, leave it. Otherwise
 run a stored draw or life-gain after-action. -/
 def continueIfShuffled (g : Game) : Game :=
@@ -273,16 +288,20 @@ def continueIfShuffled (g : Game) : Game :=
 
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
-  -- Tomik, Izzet Sparkmage applies to the resolving spell or ability.
-  let bonus (recipient : PlayerId) : Int :=
-    match (g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject? with
-    | some src => if n > 0 then g.tomikNoncombatBonus src recipient else 0
-    | none => 0
+  -- The source is the resolving spell, or the source of the resolving
+  -- ability (CR 609.7 / 113.7).
+  let src :=
+    match g.resolvingSpell.bind g.findObject? with
+    | some s => some s
+    | none => (g.resolvingAbility.bind g.findObject?).bind (fun ab => ab.sourceId.bind g.findObject?)
   match t with
-  | Target.player pid => g.dealDamageToPlayer pid (n + bonus pid)
+  | Target.player pid => g.dealDamageToPlayer pid n (source := src)
   | Target.permanent oid =>
     match g.findObject? oid with
-    | some o => g.dealDamageToPermanent o (n + bonus (o.controller.getD o.owner))
+    | some o =>
+      match src with
+      | some s => g.dealDamageFrom s.name o n (source := some s)
+      | none => g.dealDamageToPermanent o n
     | none => g.logMsg "The target is no longer in play"
   | Target.card _ => g.logMsg "The target is no longer legal"
 

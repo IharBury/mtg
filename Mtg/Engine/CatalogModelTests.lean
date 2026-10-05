@@ -739,6 +739,22 @@ it. -/
   let g := settle (mustApply g me .decline)
   warded && onBattlefield g "Lake-town Mariners"
 
+/-! ## Damage sources -/
+
+/- Hawkeye, Young Avenger adds his power to noncombat damage a source you
+control deals to an opponent, here from Stone-Giant's activated ability. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw hawkeyeYoungAvenger me me) stoneGiantOfHighPass me me
+  let g := addPermanent g murmuringVolume me me
+  let g := activateNamed g "Stone-Giant of High Pass" "4 damage" [.target (.player opp)]
+  let g := resolved (pick g #[idOf g "Murmuring Volume"])
+  life g opp == 20 - 4 - power g "Hawkeye, Young Avenger"
+/- It doesn't add to damage dealt to your own permanents. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw hawkeyeYoungAvenger me me) crawWurm me me
+  let g := resolved (castFra g shock [tgt g "Craw Wurm"])
+  (namedPermanent g "Craw Wurm").status.damage == 2
+
 /-! ## Copies -/
 
 /- Photon Blast Barrage copies itself X times when cast; each copy may get a

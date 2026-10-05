@@ -70,8 +70,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         Id.run do
           let mut g := g
           for b in blockers do
-            g := g.dealDamageFrom o.name (g.object! b.id) n
-              (deathtouch := g.hasDeathtouch o)
+            g := g.dealDamageFrom o.name (g.object! b.id) n (source := some o)
           return g
   | .scry n =>
     g.beginScry controller n
@@ -99,7 +98,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .damageFromLastKnownPower =>
     let n := (lastKnownPower.getD 0).toNat
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
-      g.dealDamageFrom sourceName o n
+      g.dealDamageFrom sourceName o n (source := sourceId.bind g.findObject?)
   | .returnElfGainLife =>
     g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
       match t with
@@ -413,7 +412,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let remain := g.toughness o - o.status.damage
       let raw := amt - remain
       let excess : Nat := if raw > 0 then raw.toNat else 0
-      let g := g.dealDamageFrom sourceName o amt
+      let g := g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?)
       if excess > 0 then
         g.amassGoblins controller excess |>.logMsg
           s!"excess damage {excess} — amass Goblins {excess}"
@@ -791,7 +790,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         match (g.battlefield.find? (fun o =>
           o.isCreature && !o.controlledBy controller)) with
         | none => g
-        | some opp => g.dealDamageFrom host.name opp pw
+        | some opp => g.dealDamageFrom host.name opp pw (source := some host)
     | _ => g.logMsg "The target is no longer legal"
   | .plusOneVigilance n =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
