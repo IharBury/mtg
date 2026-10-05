@@ -1105,12 +1105,12 @@ def expensiveCreature : CardDef :=
 cascade spell's. A 9-mana creature cannot be cast off an 8-mana cascade. -/
 def cascadeResultTooExpensive : Bool :=
   let g := addToLibraryTop started expensiveCreature ⟨0⟩
-  match g.objects.find? (fun o => o.name == "Costly Beast") with
-  | none => false
-  | some card =>
-    match g.castCascadeCard ⟨0⟩ card.id 8 with
-    | .error e => e.contains "lesser mana value"
-    | .ok _ => false
+  let g := g.resolveCascade ⟨0⟩ 8
+  -- The 9-mana card is exiled and passed over; nothing may be cast.
+  (match g.pending with
+   | .fraChoice _ (.mayCastCascade id _) => (g.object! id).name != "Costly Beast"
+   | _ => true) &&
+    !g.objects.any (fun o => o.name == "Costly Beast" && o.zone == .stack)
 
 #guard cascadeResultTooExpensive
 

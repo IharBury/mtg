@@ -700,6 +700,19 @@ attacking. -/
   let g := settle g
   let e := namedPermanent g "Elektra, Daughter of the Hand"
   inHand g me "Grizzly Bears" && e.status.tapped && e.status.attacking
+/- Cascade: the player may cast the exiled card without paying its mana cost;
+the other exiled cards go to the bottom of the library. -/
+#guard
+  let g := addToLibraryTop (addToLibraryTop afterDraw lightningBolt me) forest me
+  let g := g.resolveCascade me 8
+  let g := mustApply g me .accept
+  let g := settle (mustApply g me (.target (.player opp)))
+  life g opp == 17 && ((g.player me).library[0]?.map (fun id => (g.object! id).name)) == some "Forest"
+#guard
+  let g := addToLibraryTop afterDraw lightningBolt me
+  let g := mustApply (g.resolveCascade me 8) me .decline
+  life g opp == 20 && ((g.player me).library[0]?.map (fun id => (g.object! id).name)) == some "Lightning Bolt"
+
 /- Outside the declare blockers step, sneak can't be used. -/
 #guard
   let g := addPermanent afterDraw grizzlyBears me me

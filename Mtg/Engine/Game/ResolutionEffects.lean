@@ -38,16 +38,29 @@ def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : 
           let g := g.logMsg s!"{src.name} gets an influence counter"
           g.beginScry src.you 2
 
-/-- After putting a resolving-cast spell on the stack, announce the Aura's
-enchant target (CR 601.2c / 303.4). The mana cost may have been skipped. -/
+/-- Announce the modes and targets of a spell cast while an ability resolves
+(CR 601.2b–c), then finish casting it. A spell that needs a target but has
+none can't be cast and returns to where it was (CR 601.2c / 733.1). -/
 def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Game :=
   let face := prop.original.printed
-  if face.isAura &&
-      (face.allowsZeroTargets || !(g.legalCastTargets p face).isEmpty) then
-    { g with pending := .chooseTargets p, proposedSpell := some prop }
-      |>.logMsg s!"{(g.player p).name} must choose a target to enchant (CR 601.2c)"
-  else g
+  let g := { g with proposedSpell := some prop }
+  if face.isModal then
+    if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+      g.reverseProposedSpell
+    else
+      { g with pending := .chooseMode p }
+        |>.logMsg s!"{(g.player p).name} must choose a mode (CR 601.2b)"
+  else if face.requiresTarget || face.isAura then
+    if (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+      (g.logMsg s!"{face.name} has no legal target and can't be cast").reverseProposedSpell
+    else
+      let what := if face.isAura then "a target to enchant" else "a target"
+      { g with pending := .chooseTargets p }
+        |>.logMsg s!"{(g.player p).name} must choose {what} (CR 601.2c)"
+  else
+    let g := { g with proposedSpell := none }
+    g.becomeCast p (g.object! prop.spellId)
 
 /-- Put a card onto the stack as an ability is resolving. Timing may be
 ignored. The permission does not last after this ability finishes.

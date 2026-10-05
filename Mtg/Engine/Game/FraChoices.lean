@@ -466,6 +466,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := (g.removeFromZoneList abilityId .stack).ceaseToExist abilityId
     return (g.logMsg s!"{(g.player p).name} doesn't boast").receivePriority p
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
+  | .mayCastCascade cardId others, .accept =>
+    let g := g.castAsPartOfResolution p cardId
+    let msg := s!"{(g.player p).name} puts the other exiled cards on the bottom of their library in a random order"
+    let g :=
+      if g.pending == .none then g.requestOrderInto others (.library p) msg
+      else if g.norandom then g.moveIdsInOrder others (.library p) |>.logMsg msg
+      else
+        let (rng, ordered) := g.rng.shuffle others
+        { g with rng := rng }.moveIdsInOrder ordered (.library p) |>.logMsg msg
+    return g.finishFraChoice
+  | .mayCastCascade cardId others, .decline =>
+    return (g.requestOrderInto (others.push cardId) (.library p)
+      s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
+  | .mayCastCascade .., _ => throw "Cast it (accept), or decline"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
@@ -535,6 +549,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       else .chooseMode m
     | none => .decline
   | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
+  | .mayCastCascade .. => .accept
   | .zemoBoastExile .. =>
     .choosePermanents ((g.player p).graveyard.filter (fun id =>
       (g.findObject? id).any (·.printed.colors.contains .black)))

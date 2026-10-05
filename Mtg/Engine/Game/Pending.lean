@@ -293,6 +293,9 @@ inductive FraChoice where
   /-- Choose the black cards to exile from your graveyard to pay the boast
   ability `abilityId` of `sourceId`. Declining cancels the activation. -/
   | zemoBoastExile (abilityId sourceId : ObjectId)
+  /-- Cascade: you may cast `cardId` without paying its mana cost; `others`
+  and an uncast `cardId` go on the bottom in a random order (CR 702.85a). -/
+  | mayCastCascade (cardId : ObjectId) (others : Array ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

@@ -107,8 +107,9 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
     let g := g.putStackEntry controller copy.id
     g.logMsg s!"A copy of {src.name} is created"
 
-/-- Exile from the top until a nonland with mana value less than `maxMv`.
-The resulting spell must also have lesser mana value. Casting is optional. -/
+/-- Cascade (CR 702.85a): exile from the top until a nonland card with mana
+value less than `maxMv`. The player may cast it without paying its mana
+cost; the other exiled cards go on the bottom in a random order. -/
 def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
   Id.run do
     let mut g := g
@@ -127,54 +128,12 @@ def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
     g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
     match found with
     | none =>
-      if g.norandom && exiled.size > 1 then
-        return g.requestOrderInto exiled (.library p)
-          s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
-      for id in exiled.reverse do
-        let (g', _) := g.move id (.library (g.object! id).owner) none
-        g := g'
-      return g.logMsg "No cheaper nonland card was exiled"
+      return g.requestOrderInto exiled (.library p)
+        s!"No cheaper nonland card was exiled; {(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
     | some card =>
       let others := exiled.filter (· != card.id)
-      if g.norandom && others.size > 1 then
-        let g2 :=
-          if card.printed.manaCost.manaValue < maxMv then
-            g.logMsg
-              s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
-          else
-            let (g', _) := g.move card.id (.library card.owner) none
-            g'.logMsg
-              s!"{card.name}'s resulting spell does not have lesser mana value"
-        return g2.requestOrderInto others (.library p)
-          s!"{(g.player p).name} puts the remaining exiled cards on the bottom of their library in a random order"
-      for id in others.reverse do
-        let (g', _) := g.move id (.library (g.object! id).owner) none
-        g := g'
-      if card.printed.manaCost.manaValue < maxMv then
-        return g.logMsg
-          s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
-      else
-        let (g', _) := g.move card.id (.library card.owner) none
-        return g'.logMsg
-          s!"{card.name}'s resulting spell does not have lesser mana value"
-
-/-- Cast `cardId` from exile without paying its mana cost (cascade). -/
-def castCascadeCard (g : Game) (p : PlayerId) (cardId : ObjectId) (maxMv : Nat) :
-    Except String Game := do
-  let some card := g.findObject? cardId | throw "no such card"
-  if card.printed.isLand then
-    throw "A land cannot be cast"
-  if card.printed.manaCost.manaValue >= maxMv then
-    throw "The resulting spell must have lesser mana value than the cascade spell"
-  let (g, newId) := g.move cardId .stack (some p)
-  let o := g.object! newId
-  let g := g.setObject { o with
-    playPermission := some {
-      player := p
-      turnEndsRemaining := 0
-      withoutManaCost := true } }
-  let g := g.putStackEntry p newId
-  return g.becomeCast p (g.object! newId)
+      return { g with pending := .fraChoice p (.mayCastCascade card.id others) }.logMsg
+        s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
 
 /-- Mark the proposed spell kicked and add the kicker cost. Cannot kick twice. -/
 def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
