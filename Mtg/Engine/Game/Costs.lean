@@ -11,6 +11,36 @@ reductions.
 namespace Mtg.Engine
 namespace Game
 
+/-- Move `id` to `to`'s hand and log the return. -/
+def returnToHand (g : Game) (id : ObjectId) (to : PlayerId) : Game :=
+  let name := (g.object! id).name
+  let (g, _) := g.move id (.hand to) none
+  g.logMsg s!"{name} is returned to {(g.player to).name}'s hand"
+
+/-- Legal only during the declare blockers step of the caster's turn. -/
+def canCastForSneak (g : Game) (p : PlayerId) : Bool :=
+  g.activePlayer == p && g.step == .declareBlockers
+
+/-- Pay sneak: return an unblocked attacker you control to hand and mark
+the spell. The creature enters tapped and attacking the same player. -/
+def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : ObjectId) :
+    Except String Game := do
+  if !g.canCastForSneak p then
+    throw "Sneak can be paid only during the declare blockers step on your turn"
+  let some attacker := g.findObject? attackerId | throw "no such object"
+  if !(attacker.isOnBattlefield && attacker.isCreature && attacker.controlledBy p) then
+    throw s!"{attacker.name} is not a creature you control"
+  if !attacker.status.attacking then
+    throw s!"{attacker.name} is not attacking"
+  if attacker.status.blocked then
+    throw s!"{attacker.name} is blocked"
+  let whom := attacker.status.attackingWhom
+  let some _spell := g.findObject? spellId | throw "The spell left the stack"
+  let g := g.returnToHand attackerId attacker.owner
+  let g := g.setObject { (g.object! spellId) with
+    sneakPaid := true, sneakAttackWhom := whom }
+  return g.logMsg s!"{(g.player p).name} pays a sneak cost"
+
 /-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
 need an artifact or creature sacrificed, or a card discarded, wait for
 that action. -/
@@ -50,6 +80,13 @@ def finishProposedSpell (g : Game) : Except String Game := do
     | _, _ => paid
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
+  let g ←
+    match prop.sneakAttacker with
+    | some a =>
+      match g.paySneak prop.caster prop.spellId a with
+      | .ok g => pure g
+      | .error _ => return g.reverseProposedSpell
+    | none => pure g
   match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard with
   | _, true, _ =>
     let g := { g with

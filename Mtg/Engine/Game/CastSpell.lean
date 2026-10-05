@@ -43,8 +43,8 @@ def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : Proposed
     let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
 
-def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := false) :
-    Except String Game := do
+def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := false)
+    (sneakAttacker : Option ObjectId := none) : Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
   if g.splitSecondOnStack then
@@ -81,7 +81,18 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     if others < n then
       throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
   | none => pure ()
-  if face.hasSorcerySpeed && !g.asSorcery? p then
+  let sneakCost ← match sneakAttacker with
+    | none => pure none
+    | some a =>
+      let some c := face.sneakCost | throw s!"{face.name} has no sneak cost"
+      if !g.canCastForSneak p then
+        throw "Sneak can be paid only during the declare blockers step on your turn"
+      let some att := g.findObject? a | throw "no such object"
+      if !(att.isOnBattlefield && att.isCreature && att.controlledBy p &&
+          att.status.attacking && !att.status.blocked) then
+        throw s!"{att.name} is not an unblocked attacker you control"
+      pure (some c)
+  if face.hasSorcerySpeed && !g.asSorcery? p && sneakCost.isNone then
     throw s!"{face.name} has sorcery speed"
   if face.isModal then
     if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
@@ -122,7 +133,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let (g, newId) := g.move id .stack (some p)
   -- CR 601.2a / 601.2f: the total cost is determined after the spell is on
   -- the stack (rulings 824 / 874).
-  let cost := g.playManaCost card face
+  let cost :=
+    match sneakCost with
+    | some c => g.playManaCost card { face with manaCost := c }
+    | none => g.playManaCost card face
   -- Casting the exiled copy of a prepare spell unprepares its permanent. The
   -- spell on the stack is a copy, so it isn't put into a graveyard later
   -- (CR 707.10 / 704.5e).
@@ -182,6 +196,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     needsSacrificeOther := needsSacrifice
     needsDiscardCard := needsFlashbackDiscard
     payLife := lifeInstead
+    sneakAttacker
   }
   let g := g.logMsg s!"{pl.name} begins casting {face.name}"
   return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b / 700.2"

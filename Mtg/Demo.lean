@@ -474,6 +474,7 @@ def helpInteractive (controlAll : Bool := false)
   x <n>                Choose a value for X (CR 107.3a / 601.2b)
   cast <id>            Begin casting a spell (CR 601.2a)
   cast <id> adventure  Cast an adventurer card as its Adventure (CR 715.3)
+  cast <id> sneak <attacker>  Cast for the sneak cost, returning that unblocked attacker to hand
   target <id|name|opponent> [n] ...  Announce every target of one “target” word together (CR 601.2c); n is damage when dividing (CR 601.2d)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
@@ -484,6 +485,7 @@ def helpInteractive (controlAll : Bool := false)
   surveil graveyard <id>...  Put listed cards into the graveyard in that order; rest stay on top
   surveil top <id>... graveyard <id>...  Choose both piles and their orders (CR 701.25)
   convoke <id> [id...]  Tap those creatures to help pay for the spell (CR 702.51)
+  improvise <id> [id...]  Tap those artifacts to help pay for the spell (CR 702.126)
   proliferate [id|name|opponent ...]  Give each chosen permanent and player another counter of each kind it has (CR 701.34)
   discard <id>         Discard a card (CR 701.9), or pay an additional cost
   discard              Choose to discard as an additional cost (CR 601.2b)
@@ -999,6 +1001,10 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
     | some id =>
       let _ ← requireObject g id
       g.apply p (.castAdventure id)
+  | [arg, "sneak", attacker] =>
+    match parseObjectId? arg, parseObjectId? attacker with
+    | some id, some a => g.apply p (.castWithSneak id a)
+    | _, _ => throw castUsage
   | _ => throw castUsage
 
 def targetUsage : String := "usage: target <id|name|opponent>"
@@ -1725,6 +1731,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "surveil" => applySurveil g p args
   | "proliferate" => applyProliferate g p args
   | "convoke" => applyConvoke g p args
+  | "improvise" => applyConvoke g p args
   | "discard" => applyDiscard g p args
   | "attach" => applyAttach g p args
   | "connive" => applyConniveChoice g p args

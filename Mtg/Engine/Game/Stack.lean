@@ -98,6 +98,9 @@ structure ProposedSpell where
   /-- X is the number of +1/+1 counters removed from the source as part of
   the cost (The Astonishing Ant-Man). -/
   removePlusOneX : Bool := false
+  /-- The spell is cast for its sneak cost; this unblocked attacker returns
+  to hand as the cost is paid (MSH sneak). -/
+  sneakAttacker : Option ObjectId := none
 deriving Repr, Inhabited
 
 end Mtg.Engine

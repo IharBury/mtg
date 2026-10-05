@@ -171,6 +171,10 @@ is `{0}` rather than an empty (unpayable) cost (CR 107.4d / 118.7 / 202.1b). -/
 def afterReduction (original result : ManaCost) : ManaCost :=
   if original.includesManaPayment && result.symbols.isEmpty then zero else result
 
+/-- Total generic mana in this cost. -/
+def genericCount (cost : ManaCost) : Nat :=
+  cost.symbols.foldl (fun acc s => match s with | .generic n => acc + n | _ => acc) 0
+
 /-- Reduce generic mana in this cost by `n`, dropping a `{0}` generic symbol
 (CR 118.7d). Colored symbols are unchanged. -/
 def reduceGeneric (cost : ManaCost) (n : Nat) : ManaCost :=

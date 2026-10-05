@@ -24,6 +24,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
     | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
+  | .castWithSneak id attackerId => g.castSpell p id (sneakAttacker := some attackerId)
   | .chooseMode idx =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p (.mode idx)

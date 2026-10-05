@@ -661,4 +661,52 @@ target creature from blocking. -/
   let g := passBoth (mustApply g me (tgt g "Grizzly Bears"))
   (namedPermanent g "Grizzly Bears").status.cantBlockUntilEot && (pool g).red == 0
 
+/-! ## Improvise and sneak -/
+
+/- Arc Reactor has improvise: each untapped artifact tapped pays {1}. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw murmuringVolume me me) murmuringVolume me me
+  let vols := ((g.permanentsOf me).filter (·.name == "Murmuring Volume")).map (·.id)
+  let g := withMana (addToHand g arcReactor me) me .red 3
+  let g := mustApply g me (.cast (handObj g me "Arc Reactor").id)
+  let g := mustApply g me (.choosePermanents vols)
+  let g := settle (mustApply g me .pay)
+  onBattlefield g "Arc Reactor" && vols.all (fun id => (g.object! id).status.tapped) &&
+    (pool g).red == 0
+/- Improvise pays only generic mana, and a creature spell without improvise
+can't use it even with Ironheart granting it to noncreature spells. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw murmuringVolume me me) ironheartCleverChampion me me
+  let g := withMana (addToHand g grizzlyBears me) me .green 4
+  let g := mustApply g me (.cast (handObj g me "Grizzly Bears").id)
+  match g.apply me (.choosePermanents #[idOf g "Murmuring Volume"]) with
+  | .error _ => true
+  | .ok _ => false
+
+/- Elektra, Daughter of the Hand: cast for her sneak cost during the declare
+blockers step by returning an unblocked attacker; she enters tapped and
+attacking. -/
+#guard
+  let g := addPermanent afterDraw grizzlyBears me me
+  let g := addToHand g elektraDaughterOfTheHand me
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g me (.declareAttackers #[idOf g "Grizzly Bears"])
+  let g := skipToPending g .declareBlockers 80
+  let g := mustApply g opp (.declareBlockers #[])
+  let g := withMana (withMana g me .black 2) me .white 1
+  let g := mustApply g me (.castWithSneak (handObj g me "Elektra, Daughter of the Hand").id
+    (idOf g "Grizzly Bears"))
+  let g := mustApply g me .pay
+  let g := settle g
+  let e := namedPermanent g "Elektra, Daughter of the Hand"
+  inHand g me "Grizzly Bears" && e.status.tapped && e.status.attacking
+/- Outside the declare blockers step, sneak can't be used. -/
+#guard
+  let g := addPermanent afterDraw grizzlyBears me me
+  let g := withMana (addToHand g elektraDaughterOfTheHand me) me .black 3
+  match g.apply me (.castWithSneak (handObj g me "Elektra, Daughter of the Hand").id
+      (idOf g "Grizzly Bears")) with
+  | .error _ => true
+  | .ok _ => false
+
 end Mtg.Engine.CatalogModelTests

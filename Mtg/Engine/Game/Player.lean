@@ -163,6 +163,9 @@ inductive Action where
   | cast (id : ObjectId)
   /-- Cast this adventurer card as its Adventure (CR 715.3). -/
   | castAdventure (id : ObjectId)
+  /-- Cast this card for its sneak cost, returning the unblocked attacker
+  `attackerId` you control to hand as part of the cost (MSH sneak). -/
+  | castWithSneak (id attackerId : ObjectId)
   /-- Choose a mode of a modal spell or ability (CR 601.2b). -/
   | chooseMode (idx : Nat)
   /-- Announce a value for `{X}` (CR 107.3a / 601.2b). -/

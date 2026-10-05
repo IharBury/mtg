@@ -134,34 +134,48 @@ def convokePayOne (cost : ManaCost) (colors : ColorSet) : Option ManaCost :=
       | _ => none
     | none => none
 
-/-- Convoke (CR 702.51a): while paying for a spell with convoke, tap untapped
-creatures you control; each pays for {1} or one mana of its colors. It
-applies to the total cost after alternative and additional costs, and
-doesn't change the mana value (rulings 864 / 869). A creature already tapped,
-for example for mana, can't be tapped again (ruling 863). Summoning sickness
-doesn't matter, and an attacking creature stays attacking (rulings 866 / 867). -/
+/-- Convoke (CR 702.51a) and improvise (CR 702.126a): while paying for a spell
+with convoke, tap untapped creatures you control; each pays for {1} or one
+mana of its colors. With improvise, tap untapped artifacts you control; each
+pays for {1}. Both apply to the total cost after alternative and additional
+costs and don't change the mana value (rulings 864 / 869). A permanent
+already tapped, for example for mana, can't be tapped again (ruling 863).
+Summoning sickness doesn't matter, and an attacking creature stays attacking
+(rulings 866 / 867). A creature artifact pays for convoke when the spell has
+convoke. -/
 def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Game := do
   match g.pending, g.proposedSpell with
   | .activateManaAbilities q, some prop =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay"
     let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-    if prop.kind != .spell || !spell.printed.keywords.convoke then
-      throw s!"{spell.name} doesn't have convoke (CR 702.51)"
+    let hasConvoke := prop.kind == .spell && spell.printed.keywords.convoke
+    let hasImprovise := prop.kind == .spell && g.spellHasImprovise spell.printed p
+    if !hasConvoke && !hasImprovise then
+      throw s!"{spell.name} doesn't have convoke or improvise (CR 702.51 / 702.126)"
     let mut g := g
     let mut cost := prop.cost
     let mut tapped := prop.tapped
     for id in ids do
       let some o := g.findObject? id | throw "no such object"
-      if !(o.isOnBattlefield && o.isCreature && o.controlledBy p) then
-        throw s!"{o.name} is not a creature you control"
+      if !(o.isOnBattlefield && o.controlledBy p) then
+        throw s!"You don't control {o.name}"
       if o.status.tapped then
         throw s!"{o.name} is already tapped (ruling 863)"
-      match convokePayOne cost o.printed.colors with
-      | none => throw s!"{o.name} can't pay for any of the remaining cost"
-      | some c => cost := c
-      g := g.becomeTapped o
-      g := g.logMsg s!"{(g.player p).name} taps {o.name} to convoke {spell.name}"
+      if hasConvoke && o.isCreature then
+        match convokePayOne cost o.printed.colors with
+        | none => throw s!"{o.name} can't pay for any of the remaining cost"
+        | some c => cost := c
+        g := g.becomeTapped o
+        g := g.logMsg s!"{(g.player p).name} taps {o.name} to convoke {spell.name}"
+      else if hasImprovise && o.types.contains .artifact then
+        if cost.genericCount == 0 then
+          throw s!"No generic mana is left for {o.name} to pay (CR 702.126a)"
+        cost := cost.reduceGeneric 1
+        g := g.becomeTapped o
+        g := g.logMsg s!"{(g.player p).name} taps {o.name} for improvise"
+      else
+        throw s!"{o.name} can't help pay for {spell.name}"
       tapped := tapped.push id
     return { g with proposedSpell := some { prop with cost, tapped } }
   | _, _ => throw "No spell is being paid for (CR 601.2h)"
