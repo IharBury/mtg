@@ -156,6 +156,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   -- on the battlefield (ruling 742).
   let g :=
     if old.zone == .battlefield then g.removePreparedCopy id else g
+  let g :=
+    if old.zone == .battlefield then
+      let lki := g.lastKnownStatus.push (id, old.status)
+      { g with lastKnownStatus := lki.extract (lki.size - Nat.min lki.size 32) lki.size }
+    else g
   let g := g.removeFromZoneList id old.zone
   let (g, newId) := g.allocId
   let (g, ts) := g.bumpTime
@@ -196,6 +201,16 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           acc ++ o.waitingTriggersFor owner .creatureCardLeavesYourGy) #[]
       else (#[] : Array WaitingTrigger)
     | _, _ => (#[] : Array WaitingTrigger)
+  let creatureDie :=
+    if died then
+      match old.controller with
+      | some p =>
+        g.battlefield.foldl (fun acc o =>
+          if o.id != old.id && o.controlledBy p then
+            acc ++ o.waitingTriggersFor p .creatureYouControlDies
+          else acc) (#[] : Array WaitingTrigger)
+      | none => (#[] : Array WaitingTrigger)
+    else (#[] : Array WaitingTrigger)
   let nontokenDie :=
     if died && !old.printed.isToken then
       match old.controller with
@@ -264,7 +279,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let g := { g with
     waitingTriggers :=
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
-        nontokenDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy
+        nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then

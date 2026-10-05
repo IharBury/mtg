@@ -1023,6 +1023,12 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .triggered .eachUpkeep (Effect.ofTrigger (.createTokens .forestTentacle 1)),
   .triggered .eachOpponentDrawStep (Effect.ofTrigger (.draw 1)),
   .triggered .youCastNoncreature (Effect.ofTrigger (.creaturesYouControlGet 1 0)),
+  .triggered .dies (Effect.ofTrigger .putSourceCountersOnTarget),
+  .triggered .creatureYouControlDies (Effect.ofTrigger .chargeCounterOnSource),
+  .onStep (Effect.ofTrigger .addGreenPerChargeCounter),
+  .triggered .youScryOrSurveil (Effect.ofTrigger (.mayPayPlusOneAndDraw 2)),
+  .triggered .youScryOrSurveil (Effect.ofTrigger (.sourceGets 1 1)),
+  .triggered .youScryOrSurveil (Effect.ofTrigger (.creaturesYouControlGet 1 0)) .once,
 ]
 
 def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[

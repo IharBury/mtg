@@ -76,6 +76,12 @@ structure Game where
   isNight : Bool := false
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
+  /-- Last-known status of objects that left the battlefield, newest last
+  (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
+  lastKnownStatus : Array (ObjectId × Status) := #[]
+  /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
+  permanent (Proft, Consulting Detective). -/
+  mayPayAlsoPlusOneOn : Option ObjectId := none
   /-- The pending library look is a surveil, not a scry: the cards not kept
   on top go to the graveyard instead of the bottom (CR 701.25). -/
   surveilling : Bool := false

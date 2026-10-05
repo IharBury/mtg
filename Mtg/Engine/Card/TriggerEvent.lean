@@ -174,6 +174,10 @@ inductive TriggerEvent where
   | youActivateLoyaltyAbility
   /-- The beginning of each player's upkeep. -/
   | eachUpkeep
+  /-- You scry or surveil (CR 701.20 / 701.25). -/
+  | youScryOrSurveil
+  /-- A creature you control dies. -/
+  | creatureYouControlDies
   /-- The beginning of each opponent's draw step. -/
   | eachOpponentDrawStep
   /-- You cast a spell. -/
@@ -478,6 +482,10 @@ def spec : TriggerEvent → Spec
   | .eachUpkeep =>
     { clause := "the beginning of each player's upkeep", isWhenever := false,
       label := "upkeep trigger", checkTargets := false }
+  | .youScryOrSurveil =>
+    { clause := "you scry or surveil", label := "scry trigger", checkTargets := false }
+  | .creatureYouControlDies =>
+    { clause := "a creature you control dies", label := "dies trigger", checkTargets := false }
   | .eachOpponentDrawStep =>
     { clause := "the beginning of each opponent's draw step", isWhenever := false,
       label := "draw-step trigger", checkTargets := false }

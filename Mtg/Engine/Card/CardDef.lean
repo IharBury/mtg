@@ -159,6 +159,11 @@ structure CardDef where
   /-- Abilities planeswalkers you control have (“Planeswalkers you control
   have …”). -/
   planeswalkersYouControlHave : Array ActivatedAbility := #[]
+  /-- This permanent enters with this many +1/+1 counters (CR 614.1c). -/
+  entersWithPlusOneCounters : Nat := 0
+  /-- `{T}: Choose a color. Add one mana of that color for each different
+  power among creatures you control.` (Loot, the Nexus) -/
+  tapAddChosenColorPerDifferentPower : Bool := false
   /-- A deck can have any number of cards with this name (CR 100.2a). -/
   anyNumberInDeck : Bool := false
   /-- You can't cast this spell unless there are at least this many other
@@ -441,7 +446,7 @@ def manaAbilities (c : CardDef) : Array ManaType :=
         c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
         c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 ||
         c.tapAddAnyColorAmongLegendaries || c.tapAddCommanderIdentity ||
-        c.hasAnyColorActivatedAdd then
+        c.hasAnyColorActivatedAdd || c.tapAddChosenColorPerDifferentPower then
       (Color.all.map ManaType.colored).toArray
      else #[])
 

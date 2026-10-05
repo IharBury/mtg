@@ -736,6 +736,10 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with entersTappedUnlessLegendary := true }
   else if low.contains "enters tapped unless you control an equipment" then
     some { c with entersTappedUnlessEquipment := true }
+  else if low == "this creature enters with a +1/+1 counter on it." then
+    some { c with entersWithPlusOneCounters := 1 }
+  else if low.startsWith "{t}: choose a color. add one mana of that color for each different power among creatures you control" then
+    some { c with tapAddChosenColorPerDifferentPower := true }
   else if low.startsWith "a deck can have any number of cards named" then
     some { c with anyNumberInDeck := true }
   else if low.startsWith "you can't cast this spell unless there are seven or more cards in your graveyard" then

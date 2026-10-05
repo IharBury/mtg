@@ -58,7 +58,13 @@ controls with the listed subtype. `tapAddAnyColorEqualToPower` adds this
 creature's current power (CR 208.2). Mox Amber and Arcane Signet may
 produce 0 when no matching color is available. -/
 def manaFromTap (g : Game) (o : GameObject) (mana : ManaType) : Nat :=
-  if o.printed.tapAddAnyColorEqualToPower then
+  if o.printed.tapAddChosenColorPerDifferentPower then
+    -- Ruling 875: count distinct power values.
+    match mana, o.controller with
+    | .colored _, some p =>
+      ((g.creaturesControlledBy p).map (g.power ·)).toList.eraseDups.length
+    | _, _ => 0
+  else if o.printed.tapAddAnyColorEqualToPower then
     match mana with
     | .colored _ => (g.power o).toNat
     | .colorless => 0

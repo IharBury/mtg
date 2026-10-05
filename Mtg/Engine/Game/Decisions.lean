@@ -258,6 +258,11 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     let g ← g.payCost p (ManaCost.ofGeneric n)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     let g := { g with pending := .none }
+    let g :=
+      match g.mayPayAlsoPlusOneOn.bind g.findObject? with
+      | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
+      | none => g
+    let g := { g with mayPayAlsoPlusOneOn := none }
     let g := g.draw p 1
     return g.receivePriority g.activePlayer
   | .payOrLetCounter q n _spellId =>
@@ -440,6 +445,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
         return g.afterTriggerTargetsChosen
       throw "That spell requires a target (CR 601.2c)"
   | .mayPayGeneric q _ =>
+    let g := { g with mayPayAlsoPlusOneOn := none }
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay"
     let g := g.logMsg s!"{(g.player p).name} declines to pay"

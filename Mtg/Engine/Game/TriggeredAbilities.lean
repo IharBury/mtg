@@ -1348,6 +1348,37 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.draw controller 1
   | .creaturesYouControlGet pw tw =>
     g.pumpControlledCreatures controller pw tw
+  | .putSourceCountersOnTarget =>
+    -- Rulings 756 / 758: each kind of counter it had as it died, in the same
+    -- numbers; nothing moves from the dead creature.
+    match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
+    | none => g.logMsg "The source had no counters"
+    | some (_, last) =>
+      g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+        let g := g.mapObjectStatus o (fun s => s.addCountersExceptPlusOne last)
+        let o := g.object! o.id
+        let g := if last.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o last.plusOnePlusOne else g
+        g.logMsg s!"The counters are put on {o.name}") "No target was chosen"
+  | .chargeCounterOnSource =>
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      let g := g.mapObjectStatus o (fun s => { s with charge := s.charge + 1 })
+      g.logMsg s!"A charge counter is put on {o.name}")
+  | .addGreenPerChargeCounter =>
+    -- Ruling 792: if the source left, use its last-known charge counters.
+    let n :=
+      match sourceId.bind g.findObject? with
+      | some o => if o.isOnBattlefield then o.status.charge else 0
+      | none => 0
+    let n :=
+      if n == 0 then
+        match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
+        | some (_, last) => last.charge
+        | none => n
+      else n
+    g.addManaLogged controller (Array.replicate n (.colored .green))
+  | .mayPayPlusOneAndDraw n =>
+    { g with pending := .mayPayGeneric controller n, mayPayAlsoPlusOneOn := sourceId }.logMsg
+      s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
   | .loyaltyOnSource =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })

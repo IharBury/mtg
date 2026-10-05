@@ -440,6 +440,14 @@ inductive TriggerResolution where
   | sacrificeSourceIfNoPlaneswalker
   /-- Creatures you control get +P/+T until end of turn. -/
   | creaturesYouControlGet (power toughness : Int)
+  /-- Put the source's last-known counters on the target. -/
+  | putSourceCountersOnTarget
+  /-- Put a charge counter on the source. -/
+  | chargeCounterOnSource
+  /-- Add {G} for each charge counter on the source. -/
+  | addGreenPerChargeCounter
+  /-- You may pay `{n}`. If you do, a +1/+1 counter on the source and draw. -/
+  | mayPayPlusOneAndDraw (n : Nat)
   /-- Resolve a leftover StepLeftover. -/
   | step (e : StepLeftover)
   /-- Resolve a leftover DeathLeftover. -/
@@ -545,6 +553,8 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .youCastTargetingOpponentOrTheirCreature => #[.youCastTargetingOpponentOrTheirCreature]
   | .youActivateLoyaltyAbility => #[.youActivateLoyaltyAbility]
   | .eachUpkeep => #[.eachUpkeep]
+  | .youScryOrSurveil => #[.youScryOrSurveil]
+  | .creatureYouControlDies => #[.creatureYouControlDies]
   | .eachOpponentDrawStep => #[.eachOpponentDrawStep]
   | .eachEndStep => #[.eachEndStep]
   | .thisOrNontokenSubtypeEnters => #[.thisOrNontokenSubtypeYouControlEnters]
@@ -856,6 +866,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .sacrificeSourceIfNoPlaneswalker =>
     { events := #[.eachEndStep], resolution := .sacrificeSourceIfNoPlaneswalker }
   | .creaturesYouControlGet p t => { resolution := .creaturesYouControlGet p t }
+  | .putSourceCountersOnTarget =>
+    { targeting := .of .creatureYouControl, allowsZeroTargets := true,
+      resolution := .putSourceCountersOnTarget }
+  | .chargeCounterOnSource => { resolution := .chargeCounterOnSource }
+  | .addGreenPerChargeCounter =>
+    { events := #[.yourFirstMain], resolution := .addGreenPerChargeCounter }
+  | .mayPayPlusOneAndDraw n => { resolution := .mayPayPlusOneAndDraw n }
   | .onEnchanted action => { resolution := .onEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl, resolution := .attachThen followup }

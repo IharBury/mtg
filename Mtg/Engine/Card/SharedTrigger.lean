@@ -308,6 +308,10 @@ inductive SharedTriggerWhen where
   | youActivateLoyaltyAbility
   /-- At the beginning of each player's upkeep. -/
   | eachUpkeep
+  /-- Whenever you scry or surveil. -/
+  | youScryOrSurveil
+  /-- Whenever a creature you control dies. -/
+  | creatureYouControlDies
   /-- At the beginning of each opponent's draw step. -/
   | eachOpponentDrawStep
   /-- At the beginning of each end step. -/
@@ -756,6 +760,16 @@ inductive SharedTrigger where
   | sacrificeSourceIfNoPlaneswalker
   /-- Creatures you control get +P/+T until end of turn. -/
   | creaturesYouControlGet (power toughness : Int)
+  /-- Put the source's last-known counters on up to one target creature you
+  control (Graft Surgeon). -/
+  | putSourceCountersOnTarget
+  /-- Put a charge counter on the source. -/
+  | chargeCounterOnSource
+  /-- Add {G} for each charge counter on the source. -/
+  | addGreenPerChargeCounter
+  /-- You may pay `{n}`. If you do, put a +1/+1 counter on the source and
+  draw a card. -/
+  | mayPayPlusOneAndDraw (n : Nat)
   /-- Apply `action` to the enchanted creature. -/
   | onEnchanted (action : PermanentAction)
   /-- Attach to target, then apply `followup`. -/

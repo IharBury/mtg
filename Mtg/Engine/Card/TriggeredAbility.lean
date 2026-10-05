@@ -659,6 +659,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if you don't control a planeswalker, sacrifice this creature"
   | .creaturesYouControlGet p t =>
     s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
+  | .putSourceCountersOnTarget =>
+    "put its counters on up to one target creature you control"
+  | .chargeCounterOnSource => "put a charge counter on this enchantment"
+  | .addGreenPerChargeCounter => "add {G} for each charge counter on this enchantment"
+  | .mayPayPlusOneAndDraw n =>
+    s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
   | .damageBlockers n =>
     s!"it deals {n} damage to each creature blocking it"
   | .scry n => s!"scry {n}"

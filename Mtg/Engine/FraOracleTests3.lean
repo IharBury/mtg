@@ -12,8 +12,9 @@ Inventory of every FRA judge ruling. Each id is in exactly one list:
   behavior those suites check. The FRA cards that repeat them are not
   modeled further.
 - `fraNotApplicableIds`: rulings whose situation can't arise in the engine:
-  no effect in the catalog names a card (745), triggers on proliferating
-  (884), or uses −1/−1 counters (885).
+  no effect in the catalog names a card (745), copies counters the way The
+  Ozolith does (757), triggers on proliferating (884), or uses −1/−1
+  counters (759 / 760 / 885).
 - `fraUnmodeledIds`: rulings about FRA abilities the engine still keeps as
   printed text. Every FRA card such a ruling names has at least one such
   line, so modeling one of those cards fails this check until its rulings
@@ -31,22 +32,22 @@ open Mtg.Engine.Catalog
 def fraEngineCheckedIds : List Nat := [
   32, 33, 37, 121, 388, 567, 568, 731, 732, 733, 734, 735, 736, 737, 738,
   739, 740, 741, 742, 743, 744, 746, 747, 748, 749, 751, 752, 753, 754, 755,
-  761, 762, 763, 765, 766, 767, 768, 769, 770, 771, 772, 773, 776, 777, 778,
-  779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789, 790, 793, 794, 795,
-  796, 797, 798, 799, 800, 801, 802, 804, 807, 808, 809, 810, 811, 812, 813,
-  814, 815, 816, 817, 821, 822, 823, 824, 825, 826, 827, 828, 829, 830, 831,
-  832, 833, 837, 838, 839, 840, 841, 842, 843, 844, 845, 846, 847, 848, 849,
-  850, 851, 852, 853, 854, 855, 856, 857, 858, 859, 860, 862, 863, 864, 865,
-  866, 867, 868, 869, 870, 871, 872, 873, 874, 876, 877, 878, 879, 880, 881,
-  882, 883, 886, 887, 888, 889, 890, 891, 892, 893]
+  756, 758, 761, 762, 763, 765, 766, 767, 768, 769, 770, 771, 772, 773, 776,
+  777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789, 790, 792,
+  793, 794, 795, 796, 797, 798, 799, 800, 801, 802, 804, 807, 808, 809, 810,
+  811, 812, 813, 814, 815, 816, 817, 821, 822, 823, 824, 825, 826, 827, 828,
+  829, 830, 831, 832, 833, 836, 837, 838, 839, 840, 841, 842, 843, 844, 845,
+  846, 847, 848, 849, 850, 851, 852, 853, 854, 855, 856, 857, 858, 859, 860,
+  862, 863, 864, 865, 866, 867, 868, 869, 870, 871, 872, 873, 874, 875, 876,
+  877, 878, 879, 880, 881, 882, 883, 886, 887, 888, 889, 890, 891, 892, 893]
 
 def fraSharedCheckedIds : List Nat := [153, 314, 403, 405, 413, 416]
 
-def fraNotApplicableIds : List Nat := [745, 884, 885]
+def fraNotApplicableIds : List Nat := [745, 757, 759, 760, 884, 885]
 
 def fraUnmodeledIds : List Nat := [
-  729, 730, 750, 756, 757, 758, 759, 760, 764, 774, 775, 791, 792, 803, 805,
-  806, 818, 819, 820, 834, 835, 836, 861, 875]
+  729, 730, 750, 764, 774, 775, 791, 803, 805, 806, 818, 819, 820, 834, 835,
+  861]
 
 /-- Every FRA ruling id is in exactly one inventory list. -/
 def fraInventoryOk : Bool :=
