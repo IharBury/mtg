@@ -93,6 +93,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       face.additionalCostOrPayGeneric.isNone &&
       (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
     throw s!"{face.name} requires sacrificing an artifact or creature"
+  if face.additionalCostSacrificeCreature && (g.creaturesControlledBy p).isEmpty then
+    throw s!"{face.name} requires sacrificing a creature"
   match card.playPermission.bind (·.prepareSource) with
   | some src =>
     match g.findObject? src with
@@ -109,8 +111,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   -- cast as its Adventure.
   let fromGraveyard := card.zone == .graveyard card.owner
   let needsSacrifice :=
-    face.additionalCostSacrificeArtifactOrCreature &&
-      face.additionalCostOrPayGeneric.isNone
+    face.additionalCostSacrificeCreature ||
+      (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
   let original := card
   let handBefore := pl.hand
   let stackBefore := g.stack

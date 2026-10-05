@@ -589,7 +589,8 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   if g.pending != .none then g else g.receivePriority p
 
 /-- After targets are announced, reduce the locked-in cost if the spell cares
-about a damaged, tapped, or attacking nontoken target (CR 601.2f). -/
+about a damaged, tapped, or attacking nontoken target, or the ability about
+its target's power, counters, or equip discounts (CR 601.2f). -/
 def lockInTargetCostReduction (g : Game) : Game :=
   match g.proposedSpell with
   | none => g
@@ -605,24 +606,35 @@ def lockInTargetCostReduction (g : Game) : Game :=
       | some (Target.permanent oid) =>
         match g.findObject? oid with
         | some o =>
+          let isSpell := prop.kind == .spell
           let nDamaged :=
-            if face.costReductionIfTargetDamaged > 0 && o.status.damage > 0 then
+            if isSpell && face.costReductionIfTargetDamaged > 0 && o.status.damage > 0 then
               face.costReductionIfTargetDamaged
             else 0
           let nTapped :=
-            if face.costReductionIfTargetTapped > 0 && o.status.tapped then
+            if isSpell && face.costReductionIfTargetTapped > 0 && o.status.tapped then
               face.costReductionIfTargetTapped
             else 0
           let nAttacking :=
-            if face.costReductionIfTargetAttackingNontoken > 0 && o.status.attacking then
-              face.costReductionIfTargetAttackingNontoken
-            else if face.costReductionIfTargetAttacking > 0 && o.status.attacking then
-              face.costReductionIfTargetAttacking
-            else 0
+            if !isSpell || !o.status.attacking then 0
+            else if face.costReductionIfTargetAttackingNontoken > 0 then
+              if o.printed.isToken then 0 else face.costReductionIfTargetAttackingNontoken
+            else face.costReductionIfTargetAttacking
           let nCounters :=
             if prop.activation.any (·.costLessPerPlusOneOnTarget) then o.status.plusOnePlusOne
             else 0
-          let n := nDamaged + nTapped + nAttacking + nCounters
+          let nPower :=
+            match prop.activation.bind (·.costReductionIfTargetPowerAtMost) with
+            | some (k, most) => if o.isCreature && g.power o ≤ most then k else 0
+            | none => 0
+          let nEquip :=
+            if prop.activation.any (·.isEquip) && o.controlledBy prop.caster then
+              o.staticAbilities.foldl (fun acc ab =>
+                match ab with
+                | .equipAbilitiesTargetingThisCostLess k => acc + k
+                | _ => acc) 0
+            else 0
+          let n := nDamaged + nTapped + nAttacking + nCounters + nPower + nEquip
           if n == 0 then g
           else
             { g with proposedSpell := some { prop with
@@ -631,7 +643,12 @@ def lockInTargetCostReduction (g : Game) : Game :=
       | _ => g
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
-    (sourceId : Option ObjectId := none) : Game :=
+    (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none) : Game :=
+  let activation := activation <|> g.proposedSpell.bind (·.activation)
+  let g :=
+    if activation.any (·.isEquip) then
+      g.modifyPlayer p (fun pl => { pl with equipActivationsThisTurn := pl.equipActivationsThisTurn + 1 })
+    else g
   let g :=
     match sourceId with
     | none => g
@@ -639,7 +656,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
       match g.findObject? sid with
       | some src =>
         let powerUp :=
-          match g.proposedSpell.bind (·.activation) with
+          match activation with
           | some ab => ab.powerUp
           | none =>
             src.printed.activatedAbilities.any (·.powerUp)
@@ -676,7 +693,7 @@ def completeActivation (g : Game) (prop : ProposedSpell) : Except String Game :=
     return g.logMsg
       s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
   let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
-  return g.becomeActivated prop.caster prop.original.name prop.sourceId
+  return g.becomeActivated prop.caster prop.original.name prop.sourceId prop.activation
 
 /-- Ask `p` to choose what pays the first of `picks`, or finish the
 activation when none remain. -/

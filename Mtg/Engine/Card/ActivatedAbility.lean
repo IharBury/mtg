@@ -245,6 +245,11 @@ def crewAbility (n : Nat) : ActivatedAbility :=
     effect := { resolution := .fra .becomeArtifactCreatureUntilEot
                 phrase := "This Vehicle becomes an artifact creature until end of turn" } }
 
+/-- An equip ability (CR 702.6): attach to target creature you control,
+only as a sorcery. -/
+def isEquip (ab : ActivatedAbility) : Bool :=
+  ab.effect.resolution == .attach && ab.onlyAsSorcery && ab.otherModes.isEmpty
+
 /-- Every mode of this ability; a non-modal ability is a singleton. -/
 def allModes (ab : ActivatedAbility) : Array Effect :=
   #[ab.effect] ++ ab.otherModes

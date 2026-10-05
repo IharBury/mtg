@@ -254,6 +254,11 @@ def choosingCost (g : Game) : Bool :=
 
 def idOf (g : Game) (name : String) : ObjectId := (namedPermanent g name).id
 
+def choosingPick (g : Game) : Bool :=
+  match g.pending with
+  | .fraChoice q (.mayPayPickThen ..) => q == me
+  | _ => false
+
 /- Kingpin's Enforcers: the player chooses the artifact or creature to
 sacrifice. -/
 def enforcersBoard : Game :=
@@ -357,5 +362,102 @@ legendary permanent you control. -/
   let g' := resolved (pick g #[(handObj g me "Misty Knight, Hero for Hire").id])
   pickRejected g #[(handObj g me "Ronin, Shadow Stalker").id] &&
     inGraveyard g' me "Misty Knight, Hero for Hire" && handSize g' me == before + 1
+
+/-- Mana `p` spends activating ability `idx` of `id` with `steps`. -/
+def manaSpent (g : Game) (id : ObjectId) (idx : Nat) (steps : List Action) : Nat :=
+  let g := everyColor g me 6
+  let before := (g.player me).manaPool.total
+  let g := mustApply g me (.activate id idx)
+  let g := steps.foldl (fun g a => mustApply g me a) g
+  let g := match g.pending with
+    | .activateManaAbilities _ => mustApply g me .pay
+    | _ => g
+  before - (g.player me).manaPool.total
+
+/- Raft Security Officer costs {1} less if it targets a creature with power 3
+or less. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw raftSecurityOfficer me me) grizzlyBears opp opp
+  let g := addPermanent g crawWurm opp opp
+  let o := namedPermanent g "Raft Security Officer"
+  manaSpent g o.id 0 [tgt g "Grizzly Bears"] == 1 && manaSpent g o.id 0 [tgt g "Craw Wurm"] == 2
+
+/- Minas Tirith: two creatures attacked this turn, even after combat ends. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw minasTirith me me) grizzlyBears me me
+  let g := addPermanent g hillGiant me me
+  let g := attackThen g #["Grizzly Bears", "Hill Giant"]
+  let before := handSize g me
+  handSize (resolved (activateNamed g "Minas Tirith" "Draw a card")) me == before + 1
+#guard
+  let g := addPermanent (addPermanent afterDraw minasTirith me me) grizzlyBears me me
+  let g := addPermanent g hillGiant me me
+  let g := attackThen g #["Grizzly Bears"]
+  activationRejected g (namedPermanent g "Minas Tirith") "Draw a card"
+
+/- Dwarven Mauler: equip abilities targeting it cost {2} less. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw dwarvenMauler me me) grizzlyBears me me
+  let g := addPermanent g huntersAxe me me
+  let axe := namedPermanent g "Hunter's Axe"
+  manaSpent g axe.id (abIdx g axe "Attach") [tgt g "Dwarven Mauler"] == 0 &&
+    manaSpent g axe.id (abIdx g axe "Attach") [tgt g "Grizzly Bears"] == 2
+
+/- Kíli the Resourceful: with an enduring story, the first equip ability each
+turn costs {0}; the next one costs its equip cost. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw kiliTheResourceful me me) grizzlyBears me me
+  let g := addPermanent (addPermanent g huntersAxe me me) huntersAxe me me
+  let g := g.modifyPlayer me (fun pl => { pl with enduringStory := true })
+  let axes := ((g.permanentsOf me).filter (·.name == "Hunter's Axe")).map (·.id)
+  let idx := abIdx g (g.object! axes[0]!) "Attach"
+  let first := manaSpent g axes[0]! idx [tgt g "Grizzly Bears"]
+  let g := resolved (activateId g axes[0]! idx [tgt g "Grizzly Bears"])
+  let second := manaSpent g axes[1]! idx [tgt g "Grizzly Bears"]
+  first == 0 && second == 2
+#guard
+  let g := addPermanent (addPermanent afterDraw kiliTheResourceful me me) grizzlyBears me me
+  let g := addPermanent g huntersAxe me me
+  let axe := namedPermanent g "Hunter's Axe"
+  manaSpent g axe.id (abIdx g axe "Attach") [tgt g "Grizzly Bears"] == 2
+
+/- Allure of Power (My Precious's Adventure) sacrifices a creature as an
+additional cost; an artifact can't pay it. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears me me) murmuringVolume me me
+  let g := everyColor (addToHand g myPrecious me) me
+  let before := handSize g me
+  let g := mustApply g me (.castAdventure (handObj g me "My Precious").id)
+  let g := mustApply g me .pay
+  let rejected :=
+    match g.apply me (.sacrifice (idOf g "Murmuring Volume")) with
+    | .error _ => true
+    | .ok _ => false
+  let g := resolved (mustApply g me (.sacrifice (idOf g "Grizzly Bears")))
+  rejected && !onBattlefield g "Grizzly Bears" && onBattlefield g "Murmuring Volume" &&
+    handSize g me == before - 1 + 2
+#guard
+  let g := addPermanent afterDraw murmuringVolume me me
+  let g := everyColor (addToHand g myPrecious me) me
+  match g.apply me (.castAdventure (handObj g me "My Precious").id) with
+  | .error _ => true
+  | .ok _ => false
+
+/- Bullseye, Death Dealer: when it enters, you may discard a nonland card;
+when you do, it deals 2 damage to any target. Declining deals no damage. -/
+#guard
+  let g := addToHand (addToHand afterDraw shock me) forest me
+  let g := stackTriggers (enterPermanent g bullseyeDeathDealer me)
+  let g := resolveTop g
+  let offered := choosingPick g
+  let g := mustApply g me (.choosePermanents #[(handObj g me "Shock").id])
+  let g := mustApply (stackTriggers g) me (.target (.player opp))
+  let g := settle g
+  offered && life g opp == 18 && inGraveyard g me "Shock" && inHand g me "Forest"
+#guard
+  let g := addToHand afterDraw shock me
+  let g := resolveTop (stackTriggers (enterPermanent g bullseyeDeathDealer me))
+  let g := settle (mustApply g me .decline)
+  life g opp == 20 && inHand g me "Shock"
 
 end Mtg.Engine.CatalogModelTests

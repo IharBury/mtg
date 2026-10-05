@@ -357,6 +357,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .costPicks _ _ true, .decline =>
     throw "Part of the cost is already paid; the activation can't be cancelled"
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
+  | .mayPayPickThen pick next sourceId, .objects ids =>
+    let g ← g.payCostPick p sourceId sourceId pick ids
+    return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+  | .mayPayPickThen .., .decline => return g.finishFraChoice
+  | .mayPayPickThen pick .., _ => throw s!"Choose what to {pick.phrase}, or decline"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
@@ -412,6 +417,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | some pick =>
       .choosePermanents ((g.costPickCandidates p sourceId pick).extract 0 pick.count)
     | none => .decline
+  | .mayPayPickThen .. => .decline
   | .chooseCardName _ =>
     -- Name a nonland card an opponent owns, else any nonland card.
     let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)

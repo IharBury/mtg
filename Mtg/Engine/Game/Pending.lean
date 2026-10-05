@@ -237,6 +237,9 @@ inductive FraChoice where
   then the rest (CR 601.2h). `paid` is true once one has been paid, after
   which the activation can no longer be cancelled. -/
   | costPicks (sourceId : ObjectId) (picks : Array CostPick) (paid : Bool)
+  /-- You may pay `pick` (sacrifice, discard, …) as an ability of `sourceId`
+  resolves; when you do, do `next`. -/
+  | mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

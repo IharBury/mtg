@@ -782,6 +782,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           let what := (picks[0]?.map CostPick.phrase).getD "pay the cost"
           let cancel := if paid then "" else ", or decline to cancel"
           s!"choose what to {what}: choose <id> ...{cancel}"
+        | .mayPayPickThen pick .. => s!"may {pick.phrase}: choose <id>, or decline"
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=

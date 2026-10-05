@@ -14,13 +14,13 @@ namespace Game
 /-- Permanents `p` may sacrifice to pay “sacrifice another creature or artifact”. -/
 def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : ObjectId) :
     Array GameObject :=
-  let creatureOrPlaneswalker :=
-    match g.findObject? sourceId with
-    | some src => src.printed.additionalCostSacrificeCreatureOrPlaneswalker
-    | none => false
+  let src := g.findObject? sourceId
+  let creatureOrPlaneswalker := src.any (·.printed.additionalCostSacrificeCreatureOrPlaneswalker)
+  let creatureOnly := src.any (·.printed.additionalCostSacrificeCreature)
   g.permanentsOf p |>.filter (fun o =>
     o.id != sourceId &&
       if creatureOrPlaneswalker then o.isCreature || o.printed.isPlaneswalker
+      else if creatureOnly then o.isCreature
       else o.isCreature || o.printed.isArtifact)
 
 /-- Creatures `p` may sacrifice to a “sacrifices a creature of their choice” effect. -/

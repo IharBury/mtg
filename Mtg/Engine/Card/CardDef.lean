@@ -739,6 +739,7 @@ def toCardDef (a : AdventureFace) : CardDef := {
   spellEffect := a.spellEffect
   staticAbilities := a.extraLines.map StaticAbility.printed
   empowerJace := a.empowerJace
+  additionalCostSacrificeCreature := a.additionalCostSacrificeCreature
 }
 
 /-- True when this Adventure's effect is classified as `k`. -/

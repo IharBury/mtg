@@ -46,6 +46,10 @@ structure Player where
   heroEnteredThisTurn : Bool := false
   /-- You attacked with a Hero this turn (Avengers Assemble). -/
   attackedWithHeroThisTurn : Bool := false
+  /-- Creatures this player attacked with this turn (Minas Tirith). -/
+  creaturesAttackedWithThisTurn : Nat := 0
+  /-- Equip abilities this player activated this turn (Kíli the Resourceful). -/
+  equipActivationsThisTurn : Nat := 0
   /-- Cards drawn during your current draw step (Bard, King of Dale). -/
   cardsDrawnThisDrawStep : Nat := 0
   /-- Spells cast this turn (for “second spell each turn” triggers). -/

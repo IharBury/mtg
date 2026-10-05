@@ -1201,7 +1201,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := g.sacrificeToGraveyard victim "Killmonger"
       g.queueModeledReflexive controller sourceId 7
   | .maySacOrDiscardNonlandThenDamage =>
-    g.queueModeledReflexive controller sourceId 1
+    match sourceId with
+    | some sid =>
+      if (g.costPickCandidates controller sid .sacrificeArtifactOrDiscardNonland).isEmpty then g
+      else
+        g.beginFraChoice controller
+          (.mayPayPickThen .sacrificeArtifactOrDiscardNonland (.reflexiveDamageAnyTarget 2) sid)
+          s!"{(g.player controller).name} may sacrifice an artifact or discard a nonland card"
+    | none => g
   | .revealHandExileUntilLeaves =>
     let opp? :=
       match targets[0]? with
@@ -1538,6 +1545,8 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     if attacksSamePlayer then
       g := g.putControlledTriggers p .youAttackWithTwoOrMore
     if !attackerIds.isEmpty then
+      g := g.modifyPlayer p (fun pl => { pl with
+        creaturesAttackedWithThisTurn := pl.creaturesAttackedWithThisTurn + attackerIds.size })
       if attackerIds.any (fun id => g.hasSubtype (g.object! id) "Hero") then
         g := g.modifyPlayer p (fun pl => { pl with attackedWithHeroThisTurn := true })
       let merfolkDefenders :=

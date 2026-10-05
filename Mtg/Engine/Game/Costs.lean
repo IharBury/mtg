@@ -302,8 +302,12 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     match chosenX with
     | some x => cost.substituteX x
     | none => cost
+  let firstEquipFree :=
+    ab.isEquip && g.hasEnduringStory p && (g.player p).equipActivationsThisTurn == 0 &&
+      (g.permanentsOf p).any (·.staticAbilities.any (· == .firstEquipFreeIfEnduringStory))
   let cost :=
-    if ab.powerUp then
+    if firstEquipFree then ManaCost.empty
+    else if ab.powerUp then
       match source with
       | some o =>
         let afterEnter :=

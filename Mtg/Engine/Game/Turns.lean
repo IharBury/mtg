@@ -72,7 +72,8 @@ def clearTurnActivations (g : Game) : Game :=
           pl.scriedOrSurveilledThisTurn || pl.copyNextInstantSorceryThisTurn != 0 ||
           pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
           pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
-          pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered then
+          pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered ||
+          pl.creaturesAttackedWithThisTurn != 0 || pl.equipActivationsThisTurn != 0 then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -86,6 +87,8 @@ def clearTurnActivations (g : Game) : Game :=
           attackPumpPerPlainsThisTurn := 0
           heroEnteredThisTurn := false
           attackedWithHeroThisTurn := false
+          creaturesAttackedWithThisTurn := 0
+          equipActivationsThisTurn := 0
           cardsDiscardedThisTurn := 0
           artifactEnteredThisTurn := false
           jaceLoyaltyAtInstantSpeed := false

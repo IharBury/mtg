@@ -82,9 +82,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       throw "You don't control that permanent"
   if ab.onlyIfYouControlLegendary && !g.controlsLegendaryCreature p then
     throw s!"{o.name}'s ability can be activated only if you control a legendary creature"
-  if ab.onlyIfYouAttackedWithTwoOrMore &&
-      (g.battlefield.filter (fun x =>
-        x.isCreature && x.controlledBy p && x.status.attacking)).size < 2 then
+  if ab.onlyIfYouAttackedWithTwoOrMore && (g.player p).creaturesAttackedWithThisTurn < 2 then
     throw s!"{o.name}'s ability can be activated only if you attacked with two or more creatures this turn"
   if ab.onlyIfOpponentDealtNoncombatDamage &&
       !(g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn) then
