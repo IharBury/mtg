@@ -713,6 +713,32 @@ the other exiled cards go to the bottom of the library. -/
   let g := mustApply (g.resolveCascade me 8) me .decline
   life g opp == 20 && ((g.player me).library[0]?.map (fun id => (g.object! id).name)) == some "Lightning Bolt"
 
+/-! ## Triggered abilities that target: ward and “becomes the target” -/
+
+def killmongerTargets (g : Game) (victim : String) : Game :=
+  let g := addPermanent g grizzlyBears me me
+  let g := resolveTop (stackTriggers (enterPermanent g killmongerScourgeOfWakanda me))
+  let g := mustApply g me (.choosePermanents #[idOf g "Grizzly Bears"])
+  mustApply g me (.target (.permanent (theirs g victim).id))
+
+/- Old Fat Spider draws when a triggered ability an opponent controls targets
+it. -/
+#guard
+  let g := addPermanent afterDraw oldFatSpider opp opp
+  let before := handSize g opp
+  let g := settle (killmongerTargets g "Old Fat Spider")
+  handSize g opp == before + 1 && !onBattlefield g "Old Fat Spider"
+
+/- Ward counters a triggered ability unless its controller pays. -/
+#guard
+  let g := addPermanent afterDraw lakeTownMariners opp opp
+  let g := killmongerTargets g "Lake-town Mariners"
+  let warded := match g.pending with
+    | .payWard q _ (.genericMana 2) => q == me
+    | _ => false
+  let g := settle (mustApply g me .decline)
+  warded && onBattlefield g "Lake-town Mariners"
+
 /-! ## Flashback -/
 
 /- A countered flashback spell is exiled instead of going to the graveyard

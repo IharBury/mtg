@@ -540,6 +540,7 @@ def afterWardResolved (g : Game) : Game :=
       | none => false) }
   let g := g.promptNextWard
   if g.pending != .none then g
+  else if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
   else g.receivePriority g.activePlayer
 
 /-- Queue ward payments for opponent permanents targeted by this spell

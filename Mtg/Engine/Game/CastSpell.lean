@@ -353,7 +353,9 @@ def afterTriggerTargetsChosen (g : Game) : Game :=
   | some _ =>
     promptTriggerTargetsIfNeeded { g with pending := .none }
   | none =>
-    receivePriority { g with pending := .none } g.activePlayer false
+    let g := { g with pending := .none }.promptNextWard
+    if g.pending != .none then g
+    else receivePriority g g.activePlayer false
 
 /-- Loki (MSH 247): when a player or permanent becomes the target of an
 ability you control, those triggers wait on the stack above that ability. -/
@@ -361,6 +363,20 @@ def queueYouTargetTriggers (g : Game) (controller : PlayerId) (obj : GameObject)
   if obj.abilityEffect.isSome || obj.triggeredAbility.isSome then
     g.putControlledTriggers controller .youTargetSomething
   else g
+
+/-- After a triggered ability's targets are announced: “becomes the target”
+and Loki triggers, and ward for each targeted opponent permanent
+(CR 702.21a), which is prompted once no other ability needs targets. -/
+def finishTriggerTargets (g : Game) (p : PlayerId) (obj : GameObject) : Game :=
+  let targets := ((g.stackEntry? obj.id).map (·.targets)).getD #[]
+  let g := g.queueYouTargetTriggers p obj
+  let g := g.queueBecomesTargetTriggers p targets
+  let g := g.foldPermanentTargets targets (unique := true) (f := fun g o =>
+    if o.controller != some p && o.isOnBattlefield then
+      (g.wardCostsOn o).foldl (fun g cost =>
+        { g with wardQueue := g.wardQueue.push { player := p, spellId := obj.id, cost } }) g
+    else g)
+  g.afterTriggerTargetsChosen
 
 /-- Announce targets for the current instance of the word “target”
 (CR 601.2c / 603.3d). Multiple targets of one instance (including a
@@ -414,8 +430,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
       for (t, n) in assignments do
         g := g.logMsg
           s!"{(g.player p).name} chooses {g.targetLogName t} to be dealt {n} damage (CR 601.2d)"
-      g := g.queueYouTargetTriggers p obj
-      return g.afterTriggerTargetsChosen
+      return g.finishTriggerTargets p obj
     | none =>
       if choices.any (fun c => c.2.isSome) then
         throw "That spell or ability does not divide damage (CR 601.2d)"
@@ -443,8 +458,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
             s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
-        g := g.queueYouTargetTriggers p obj
-        return g.afterTriggerTargetsChosen
+        return g.finishTriggerTargets p obj
       if choices.size != 1 then
         throw "Choose each instance of the word \"target\" separately (CR 601.2c)"
       let t := choices[0]!.1
@@ -457,8 +471,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
         return { (g.markTargetsAnnounced obj.id false) with pending := .chooseTargets p }
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
-      let g := g.queueYouTargetTriggers p obj
-      return g.afterTriggerTargetsChosen
+      return g.finishTriggerTargets p obj
   | _ => throw "Not time to choose targets (CR 601.2c)"
 
 /-- Announce one target of the current instance of the word “target”
