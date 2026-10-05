@@ -211,8 +211,9 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
 
 /-- Deal this creature's power as damage to `dest` (one side of a fight). -/
 def dealFightDamage (g : Game) (src dest : GameObject) : Game :=
-  g.dealDamageFrom src.name dest (g.power src).toNat
-    (deathtouch := g.hasDeathtouch src)
+  let n : Int := (g.power src).toNat
+  let n := if n > 0 then n + g.tomikNoncombatBonus src (dest.controller.getD dest.owner) else n
+  g.dealDamageFrom src.name dest n (deathtouch := g.hasDeathtouch src)
 
 /-- Both sides of a fight deal damage simultaneously-looking: `src` first,
 then `dest` if both are still in play. -/
@@ -263,11 +264,16 @@ def continueIfShuffled (g : Game) : Game :=
 
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
+  -- Tomik, Izzet Sparkmage applies to the resolving spell or ability.
+  let bonus (recipient : PlayerId) : Int :=
+    match (g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject? with
+    | some src => if n > 0 then g.tomikNoncombatBonus src recipient else 0
+    | none => 0
   match t with
-  | Target.player pid => g.dealDamageToPlayer pid n
+  | Target.player pid => g.dealDamageToPlayer pid (n + bonus pid)
   | Target.permanent oid =>
     match g.findObject? oid with
-    | some o => g.dealDamageToPermanent o n
+    | some o => g.dealDamageToPermanent o (n + bonus (o.controller.getD o.owner))
     | none => g.logMsg "The target is no longer in play"
   | Target.card _ => g.logMsg "The target is no longer legal"
 
