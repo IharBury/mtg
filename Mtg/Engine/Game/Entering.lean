@@ -60,6 +60,18 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       for _ in [0:spell.printed.cascade] do
         g := g.putTriggeredAbilityOnStack caster spell .onCastCascade "cascade trigger"
       return g
+  -- Photon Blast Barrage: “When you cast this spell, copy it X times.”
+  let copiesSelf :=
+    match spell.printed.spellEffect.map (·.resolution) with
+    | some (.spell (.copyThisSpellXTimesThenDamage _)) => !spell.isCopy
+    | _ => false
+  let g :=
+    if copiesSelf then
+      g.putTriggeredAbilityOnStack caster spell
+        (.triggered .enter { resolution := .fra .copySourceSpellXTimes
+                             phrase := "When you cast this spell, copy it X times. You may choose new targets for the copies" } {})
+        "cast trigger"
+    else g
   let g :=
     if spell.printed.isInstantOrSorcery then
       g.putControlledTriggers caster .youCastInstantOrSorcery

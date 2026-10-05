@@ -795,6 +795,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .hawkeyeModes left _ _ =>
           s!"choose up to {left} modes: 0 Net, 1 Explosive, 2 Boomerang (mode <n>), or decline to stop"
         | .discardThenDraw => "discard a card, then draw: choose <id>"
+        | .newTargetsForCopies copies =>
+          s!"choose a new target for the copy ({copies.size} left): choose <id>, or decline to keep it"
         | .mayCastCascade .. => "cascade: cast the exiled card without paying its mana cost (accept), or decline"
         | .zemoBoastExile .. =>
           "exile black cards with 15+ black mana symbols from your graveyard: choose <id> ..., or decline"

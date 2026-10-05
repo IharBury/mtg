@@ -480,6 +480,28 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.requestOrderInto (others.push cardId) (.library p)
       s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
   | .mayCastCascade .., _ => throw "Cast it (accept), or decline"
+  | .newTargetsForCopies copies, .objects #[id] =>
+    let some c := copies[0]? | return g.finishFraChoice
+    let some obj := g.findObject? c | throw "The copy left the stack"
+    let t := Target.permanent id
+    if !(g.legalTargetsForKind p (g.targetingOf obj).kind (some c)).contains t then
+      throw "Illegal target (CR 601.2c)"
+    let g := g.setStackEntryTargets c #[t]
+    let g := g.queueBecomesTargetTriggers p #[t]
+    let g := g.foldPermanentTargets #[t] (fun g o =>
+      if o.controller != some p && o.isOnBattlefield then
+        (g.wardCostsOn o).foldl (fun g cost =>
+          { g with wardQueue := g.wardQueue.push { player := p, spellId := c, cost } }) g
+      else g)
+    let g := g.logMsg s!"{(g.player p).name} chooses {g.targetLogName t} as the copy's new target"
+    let rest := copies.extract 1 copies.size
+    if rest.isEmpty then return g.promptNextWard.finishFraChoice
+    return { g with pending := .fraChoice p (.newTargetsForCopies rest) }
+  | .newTargetsForCopies copies, .decline =>
+    let rest := copies.extract 1 copies.size
+    if rest.isEmpty then return g.promptNextWard.finishFraChoice
+    return { g with pending := .fraChoice p (.newTargetsForCopies rest) }
+  | .newTargetsForCopies .., _ => throw "Choose a new target for the copy, or decline to keep it"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
@@ -550,6 +572,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | none => .decline
   | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
   | .mayCastCascade .. => .accept
+  | .newTargetsForCopies _ => .decline
   | .zemoBoastExile .. =>
     .choosePermanents ((g.player p).graveyard.filter (fun id =>
       (g.findObject? id).any (·.printed.colors.contains .black)))

@@ -397,6 +397,21 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
           (g.beginFraChoice controller .discardThenDraw
             s!"{(g.player controller).name} discards a card, then draws a card", i)) (g, 0)
     g
+  | .copySourceSpellXTimes =>
+    match sourceId.bind g.findObject? with
+    | some spell =>
+      if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
+      else
+        let x := spell.chosenX.getD 0
+        let (g, copies) := (List.range x).foldl (fun (acc : Game × Array ObjectId) _ =>
+          let g := acc.1.copyStackSpell spell controller
+          (g, acc.2.push ((g.stack.back?.map (·.objectId)).getD spell.id))) (g, #[])
+        let targeted := ((g.stackEntry? spell.id).map (!·.targets.isEmpty)).getD false
+        if copies.isEmpty || !targeted then g
+        else
+          g.beginFraChoice controller (.newTargetsForCopies copies)
+            s!"{(g.player controller).name} may choose new targets for the copies"
+    | none => g
   | .zemoBoastCopies =>
     let exiled := (g.resolvingAbilityObject?.map (·.boastExiled)).getD #[]
     let (g, copies) := exiled.foldl (fun (acc : Game × Array ObjectId) id =>

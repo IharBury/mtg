@@ -281,6 +281,9 @@ inductive FraResolution where
   /-- Copy the cards exiled to pay this boast activation; you may cast up to
   three of the copies without paying their mana costs (Baron Helmut Zemo). -/
   | zemoBoastCopies
+  /-- Copy the source spell X times; you may choose new targets for the
+  copies (Photon Blast Barrage). -/
+  | copySourceSpellXTimes
   /-- The creature that caused this ability gets +P/+T until end of turn. -/
   | causeGetsPump (power toughness : Int)
   /-- Creatures attacking the player recorded as the cause's controller get

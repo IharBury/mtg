@@ -739,6 +739,21 @@ it. -/
   let g := settle (mustApply g me .decline)
   warded && onBattlefield g "Lake-town Mariners"
 
+/-! ## Copies -/
+
+/- Photon Blast Barrage copies itself X times when cast; each copy may get a
+new target. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears opp opp) hillGiant opp opp
+  let g := castFra g photonBlastBarrage [.chooseX 2, tgt g "Grizzly Bears"]
+  let g := passBoth g
+  let offered := match g.pending with
+    | .fraChoice _ (.newTargetsForCopies cs) => cs.size == 2
+    | _ => false
+  let g := mustApply g me (.choosePermanents #[(theirs g "Hill Giant").id])
+  let g := settle (mustApply g me .decline)
+  offered && !onBattlefield g "Grizzly Bears" && (theirs g "Hill Giant").status.damage == 1
+
 /-! ## Flashback -/
 
 /- A countered flashback spell is exiled instead of going to the graveyard

@@ -767,6 +767,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .mshReflexive _ _
   | .hawkeyeArrows _
   | .zemoBoastCopies
+  | .copySourceSpellXTimes
   | .extort =>
     g.applyFraAbility controller effect r targets sourceId
 

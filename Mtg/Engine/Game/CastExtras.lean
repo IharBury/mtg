@@ -88,25 +88,6 @@ def givePromisedGift (g : Game) (to : PlayerId) : Game :=
   let (g, _) := g.createToken to treasureToken
   g.logMsg s!"{(g.player to).name} is given a Treasure (gift)"
 
-/-- Copy a spell on the stack. The copy is also kicked / has the same
-promised gift. It is not cast. -/
-def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
-  if (g.player controller).lost then
-    g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
-  else
-    let (g, copy) := g.allocObject src.printed controller .stack (some controller)
-    let g := g.setObject { copy with
-      kicked := src.kicked
-      giftPromisedTo := src.giftPromisedTo
-      teamworkPaid := src.teamworkPaid
-      sneakPaid := src.sneakPaid
-      sneakAttackWhom := src.sneakAttackWhom
-      chosenX := src.chosenX
-      isCopy := true
-      adventurerCard := src.adventurerCard }
-    let g := g.putStackEntry controller copy.id
-    g.logMsg s!"A copy of {src.name} is created"
-
 /-- Cascade (CR 702.85a): exile from the top until a nonland card with mana
 value less than `maxMv`. The player may cast it without paying its mana
 cost; the other exiled cards go on the bottom in a random order. -/

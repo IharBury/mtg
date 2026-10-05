@@ -38,6 +38,33 @@ def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : 
           let g := g.logMsg s!"{src.name} gets an influence counter"
           g.beginScry src.you 2
 
+/-- Copy a spell on the stack, with its modes, targets, X, and paid optional
+costs (CR 707.10). The copy is not cast. -/
+def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
+  if (g.player controller).lost then
+    g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
+  else
+    let (g, copy) := g.allocObject src.printed controller .stack (some controller)
+    let g := g.setObject { copy with
+      kicked := src.kicked
+      giftPromisedTo := src.giftPromisedTo
+      teamworkPaid := src.teamworkPaid
+      sneakPaid := src.sneakPaid
+      sneakAttackWhom := src.sneakAttackWhom
+      chosenX := src.chosenX
+      isCopy := true
+      adventurerCard := src.adventurerCard }
+    let g := g.putStackEntry controller copy.id
+    let g :=
+      match g.stackEntry? src.id, g.stack.findIdx? (fun e => e.objectId == copy.id) with
+      | some orig, some i =>
+        { g with stack := g.stack.set! i { g.stack[i]! with
+            targets := orig.targets, dividedDamage := orig.dividedDamage
+            chosenMode := orig.chosenMode, extraModes := orig.extraModes
+            targetsAnnounced := true } }
+      | _, _ => g
+    g.logMsg s!"A copy of {src.name} is created"
+
 /-- Announce the modes and targets of a spell cast while an ability resolves
 (CR 601.2b–c), then finish casting it. A spell that needs a target but has
 none can't be cast and returns to where it was (CR 601.2c / 733.1). -/
