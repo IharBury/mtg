@@ -407,6 +407,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.extortDrain p).finishFraChoice
   | .mayPayExtort _, .decline => return (g.logMsg "Extort is not paid").finishFraChoice
   | .mayPayExtort _, _ => throw "Pay {W/B} (accept), or decline"
+  | .mayDrawThenDiscard n k, .accept =>
+    return g.drawThenBeginDiscard p n (discardRounds := k)
+  | .mayDrawThenDiscard .., .decline => return g.finishFraChoice
+  | .mayDrawThenDiscard .., _ => throw "Answer accept or decline"
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .accept
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .mode _ =>
     let times := match answer with | .mode n => n | _ => 1
@@ -562,6 +566,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .payLifeOrEnterTapped _ n => if (g.player p).life > (n : Int) then .accept else .decline
   | .mayPayExtort _ =>
     if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then .accept else .decline
+  | .mayDrawThenDiscard .. => .accept
   | .mayPayManaForReflexive cost _ _ _ =>
     if (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
   | .mayTapSourceThen .. => .accept

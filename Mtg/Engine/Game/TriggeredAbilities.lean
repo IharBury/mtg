@@ -814,8 +814,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let g := g.mapObjectStatus o (fun s => { s with returnedAsArtifact := true })
         g.logMsg s!"{o.name} returns as an artifact"
   | .mayDrawXDiscard2 =>
-    let n := (lastKnownPower.getD 0).toNat
-    g.drawThenBeginDiscard controller n (discardRounds := 2)
+    -- X is the mana spent to cast the triggering spell.
+    let n := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+    if n == 0 then g.logMsg "No mana was spent to cast that spell"
+    else
+      g.beginFraChoice controller (.mayDrawThenDiscard n 2)
+        s!"{(g.player controller).name} may draw {n} cards, then discard two"
   | .plusOneEachIfCityBlessing =>
     let n := if (g.player controller).citysBlessing then 2 else 1
     (g.permanentsOf controller).foldl (fun acc o =>

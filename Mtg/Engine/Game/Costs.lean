@@ -69,6 +69,11 @@ def finishProposedSpell (g : Game) : Except String Game := do
   let paid ← g.payCost prop.caster prop.cost allowElf allowInst
     allowHero allowVillain allowCant allowCreature spend
   let spent (u : FraManaUse) := count paid u < count g u
+  let manaSpent := (g.player prop.caster).manaPool.total - (paid.player prop.caster).manaPool.total
+  let paid :=
+    match prop.kind, paid.findObject? prop.spellId with
+    | .spell, some o => paid.setObject { o with status := { o.status with manaSpentToCast := manaSpent } }
+    | _, _ => paid
   let g :=
     match prop.kind, paid.findObject? prop.spellId with
     | .spell, some o =>

@@ -825,6 +825,18 @@ battlefield, though it isn't a creature. -/
   let g := g.putControlledTriggers me .yourBeginCombat
   !g.waitingTriggers.any (·.source.name == "Lake-town Toymaker")
 
+/- Uncover the Moon-Letters: you may draw X, X being the mana spent on the
+spell, then discard two. -/
+#guard
+  let g := addPermanent afterDraw uncoverTheMoonLetters me me
+  let g := addToHand (addToHand g grizzlyBears me) hillGiant me
+  let g := castFra g shock [.target (.player opp)]
+  let g := passBoth (stackTriggers g)
+  let offered := match g.pending with
+    | .fraChoice _ (.mayDrawThenDiscard 1 2) => true
+    | _ => false
+  offered
+
 /-! ## Life loss -/
 
 /- The Master of Lake-town: damage and paying life are losses of life; that

@@ -168,6 +168,8 @@ structure Status where
   cantBeBlockedExceptByHasteUntilEot : Bool := false
   /-- This creature can't block this turn. -/
   cantBlockUntilEot : Bool := false
+  /-- Mana spent to cast this spell (CR 601.2h). -/
+  manaSpentToCast : Nat := 0
   /-- This permanent dealt damage this turn (Red Guardian; MSH 272). -/
   dealtDamageThisTurn : Bool := false
   /-- Until end of turn, these replace existing creature types and keep

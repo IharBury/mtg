@@ -787,6 +787,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           s!"choose a color for {left} more mana ({use.label}): 0 white, 1 blue, 2 black, 3 red, 4 green"
         | .payLifeOrEnterTapped _ n => s!"pay {n} life (accept), or it enters tapped (decline)"
         | .mayPayExtort _ => "extort: pay {W/B} (accept), or decline"
+        | .mayDrawThenDiscard n k => s!"may draw {n} cards, then discard {k} (accept or decline)"
         | .mayPayManaForReflexive cost maxTimes _ _ =>
           let shown := String.join (cost.toList.map toString)
           if maxTimes > 1 then s!"may pay {shown} up to {maxTimes} times: mode <times>, or decline"

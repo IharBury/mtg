@@ -107,7 +107,9 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       g.foldControlledPermanents caster none fun g o =>
         g.putMatchingSourceTriggers caster o .youCastCreature
           (some (Int.ofNat (g.objectManaValue spell)))
-    else g.putControlledTriggers caster .youCastNoncreature
+    else
+      g.foldControlledPermanents caster none fun g o =>
+        g.putMatchingSourceTriggers caster o .youCastNoncreature (cause := some spell)
   let g :=
     (g.livingOpponents caster).foldl (fun acc pl =>
       acc.putControlledTriggers pl.id .opponentCastsSpell) g

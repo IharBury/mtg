@@ -278,6 +278,8 @@ inductive FraChoice where
   | payLifeOrEnterTapped (objectId : ObjectId) (life : Nat)
   /-- Extort: you may pay {W/B}; if you do, drain each opponent for 1. -/
   | mayPayExtort (sourceId : Option ObjectId)
+  /-- You may draw `draw` cards; if you do, discard `discard` cards. -/
+  | mayDrawThenDiscard (draw discard : Nat)
   /-- You may pay `cost` up to `maxTimes` times (accept pays once; a mode
   index pays that many times); when you do, the reflexive ability `kind`
   triggers. -/
