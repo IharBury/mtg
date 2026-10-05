@@ -34,6 +34,8 @@ structure StackEntry where
   targetsAnnounced : Bool := false
   /-- Chosen mode index for a modal spell (CR 700.2). -/
   chosenMode : Option Nat := none
+  /-- Further modes chosen with `chosenMode` (“choose one or both”). -/
+  extraModes : Array Nat := #[]
   /-- Optional “up to one” slots that were skipped while announcing
   (CR 115.1c / 601.2c). The current instance index is
   `targets.size + skippedOptionalSlots`. -/

@@ -233,6 +233,9 @@ inductive EffectTargetKind where
   /-- One instance of “target” per filter, announced in order. Indices in
   `optional` are “up to one” instances. -/
   | multi (fs : Array TargetFilter) (optional : Array Nat)
+  /-- The instances of “target” of `a`, then those of `b`: two modes of one
+  modal spell chosen together (CR 700.2). -/
+  | pair (a b : EffectTargetKind)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -478,6 +481,17 @@ def spec : EffectTargetKind → Spec
       prefer := .ownThenOpponent
       slots := fs.map EffectTargetKind.filtered
       optionalSlots := optional }
+  | .pair a b =>
+    let sa := spec a
+    let sb := spec b
+    let la := if sa.slots.isEmpty then Array.replicate sa.count a else sa.slots
+    let lb := if sb.slots.isEmpty then Array.replicate sb.count b else sb.slots
+    { count := sa.count + sb.count
+      noun := if sa.noun.isEmpty then sb.noun else sa.noun
+      prefer := sa.prefer
+      slots := la ++ lb
+      optionalSlots := sa.optionalSlots ++ sb.optionalSlots.map (· + la.size)
+      stackSpell := sa.stackSpell || sb.stackSpell }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=

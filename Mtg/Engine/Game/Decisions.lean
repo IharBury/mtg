@@ -444,6 +444,13 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
 “up to one” trigger (CR 601.2c / 115.1c). -/
 def decline (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
+  | .chooseMode q =>
+    if p != q then throw s!"Only {(g.player q).name} may choose modes"
+    match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+    | some spell =>
+      if (g.chosenModesOf spell).isEmpty then throw "Choose a mode (CR 700.2)"
+      return (g.logMsg s!"{(g.player p).name} chooses no more modes").afterModesChosen p
+    | none => throw "Choose a mode (CR 700.2)"
   | .mayCastExiledElseDamage q _ n =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to cast"

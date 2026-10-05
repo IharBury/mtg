@@ -217,16 +217,19 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       let some effect := spell.printed.spellModes[mode]? | throw "No such mode (CR 700.2)"
       if !g.spellModeIsChoosable p effect then
         throw "That mode has no legal target (CR 700.2d)"
-      let g := g.setProposedMode mode
+      let chosen := g.chosenModesOf spell
+      if chosen.contains mode then
+        throw "That mode was already chosen (CR 700.2)"
+      let g := if chosen.isEmpty then g.setProposedMode mode else g.addProposedExtraMode mode
       let g := g.logMsg
         s!"{(g.player p).name} chooses mode {mode + 1} ({effect.toNotation}) (CR 601.2b)"
-      if spell.printed.announcesAdditionalCost then
-        let g := { g with pending := .chooseAdditionalCost p }
-        return g.logMsg s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
-      if effect.requiresTarget then
-        let g := { g with pending := .chooseTargets p }
-        return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
-      return g.afterTargetsChosen
+      let chosen := chosen.push mode
+      let more := (List.range spell.printed.spellModes.size).any (fun i =>
+        !chosen.contains i && g.spellModeIsChoosable p spell.printed.spellModes[i]!)
+      if chosen.size < g.maxModesFor p spell.printed && more then
+        let g := { g with pending := .chooseMode p }
+        return g.logMsg s!"{(g.player p).name} may choose another mode, or decline (CR 700.2)"
+      return g.afterModesChosen p
   | _ => throw "Not time to choose a mode (CR 601.2b)"
 
 /-- Pay a loyalty cost: put or remove loyalty counters on the source and

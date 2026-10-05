@@ -712,6 +712,46 @@ def setProposedTargets (g : Game) (targets : Array Target) : Game :=
   | none => g
   | some prop => g.setStackEntryTargets prop.spellId targets
 
+/-- How many modes `p` may choose for `face` (CR 700.2): two for “choose one
+or both” and for “choose two if you control a [subtype]” while they do. -/
+def maxModesFor (g : Game) (p : PlayerId) (face : CardDef) : Nat :=
+  if face.chooseOneOrBoth then 2
+  else
+    match face.chooseTwoIfYouControlSubtype with
+    | some s => if (g.permanentsOf p).any (fun o => g.hasSubtype o s) then 2 else 1
+    | none => 1
+
+/-- Add `mode` to the proposed spell's chosen modes. -/
+def addProposedExtraMode (g : Game) (mode : Nat) : Game :=
+  match g.proposedSpell with
+  | none => g
+  | some prop =>
+    match g.stack.findIdx? (fun e => e.objectId == prop.spellId) with
+    | none => g
+    | some i =>
+      { g with stack := g.stack.set! i { g.stack[i]! with
+          extraModes := g.stack[i]!.extraModes.push mode } }
+
+/-- After the modes are chosen: additional costs, kicker, gift, and teamwork,
+then targets (CR 601.2b–c). -/
+def afterModesChosen (g : Game) (p : PlayerId) : Game :=
+  match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+  | some prop, some spell =>
+    let face := spell.printed
+    if face.announcesAdditionalCost then
+      { g with pending := .chooseAdditionalCost p }.logMsg
+        s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
+    else if face.kicker.isSome && !prop.kickerAnnounced then
+      { g with pending := .chooseKicker p }.logMsg
+        s!"{(g.player p).name} may kick the spell (CR 702.32 / 601.2b)"
+    else if face.giftTreasure && !prop.giftAnnounced then
+      { g with pending := .chooseGift p }.logMsg s!"{(g.player p).name} may promise a gift (CR 702.185)"
+    else if face.teamwork.isSome && !prop.teamworkAnnounced then
+      { g with pending := .chooseTeamwork p }.logMsg
+        s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
+    else g.afterAdditionalCostAnnounced
+  | _, _ => g
+
 /-- Record the chosen mode on the proposed spell's stack entry (CR 700.2). -/
 def setProposedMode (g : Game) (mode : Nat) : Game :=
   match g.proposedSpell with

@@ -36,18 +36,43 @@ def chosenModeOf (g : Game) (o : GameObject) : Option Nat :=
   | some e => e.chosenMode
   | none => none
 
-/-- Spell effect after a modal choice, if one has been announced (CR 700.2). -/
-def spellEffectOf (o : GameObject) (chosenMode : Option Nat) : Option Effect :=
+/-- Modes chosen for `o` on the stack, in printed order (CR 700.2). -/
+def chosenModesOf (g : Game) (o : GameObject) : Array Nat :=
+  match g.stack.find? (fun e => e.objectId == o.id) with
+  | some e => ((e.chosenMode.toArray ++ e.extraModes).qsort (· < ·))
+  | none => #[]
+
+/-- One effect standing for several chosen modes while targets are
+announced: the instances of “target” of each mode, in printed order. -/
+def combinedModesEffect (modes : Array Effect) : Option Effect :=
+  match modes.toList with
+  | [] => none
+  | [e] => some e
+  | e :: rest =>
+    let kind := rest.foldl (fun k m => EffectTargetKind.pair k m.targetKind) e.targetKind
+    some { e with
+      targeting := .of kind
+      allowsZeroTargets := modes.all (fun m => !m.requiresTarget || m.allowsZeroTargets)
+      maxTargets := modes.foldl (fun acc m => acc + m.maxTargetCount) 0 }
+
+/-- Spell effect after a modal choice, if one has been announced (CR 700.2).
+With `extra` modes, the combined effect of all of them. -/
+def spellEffectOf (o : GameObject) (chosenMode : Option Nat) (extra : Array Nat := #[]) :
+    Option Effect :=
   if o.printed.isModal then
     match chosenMode with
-    | some i => o.printed.spellModes[i]?
+    | some i =>
+      if extra.isEmpty then o.printed.spellModes[i]?
+      else combinedModesEffect (((#[i] ++ extra).qsort (· < ·)).filterMap (o.printed.spellModes[·]?))
     | none => none
   else
     o.printed.spellEffect
 
 /-- Spell effect of `o` using the mode announced on the stack, if any (CR 700.2). -/
 def currentSpellEffect (g : Game) (o : GameObject) : Option Effect :=
-  spellEffectOf o (g.chosenModeOf o)
+  match g.stack.find? (fun e => e.objectId == o.id) with
+  | some e => spellEffectOf o e.chosenMode e.extraModes
+  | none => spellEffectOf o none
 
 /-- Legal targets for card face `c`, using `chosenMode` when a modal mode has
 been announced (CR 115.1, 303.4, 601.2c). `none` on a modal card unions every

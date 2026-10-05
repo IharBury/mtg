@@ -244,6 +244,7 @@ where
     match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
     | none => some .pass
     | some spell =>
+      if !(g.chosenModesOf spell).isEmpty then some .decline else
       match g.defaultMode p spell with
       | some i => some (.chooseMode i)
       | none => some .pass

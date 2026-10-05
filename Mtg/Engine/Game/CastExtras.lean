@@ -325,6 +325,13 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       pending := .none
       proposedSpell := some { prop with teamworkPaid := true, teamworkAnnounced := true } }
     g := g.logMsg s!"{(g.player p).name} pays a teamwork cost"
+    -- “If this spell was cast using teamwork, choose both instead.”
+    if spell.printed.chooseBothIfTeamwork then
+      let chosen := g.chosenModesOf spell
+      for i in [0:spell.printed.spellModes.size] do
+        if !chosen.contains i then
+          g := (if (g.chosenModesOf spell).isEmpty then g.setProposedMode i else g.addProposedExtraMode i)
+      g := g.logMsg s!"{(g.player p).name} chooses both modes (teamwork)"
     return g.afterOptionalAdditionalCost p
   | _ => throw "Not time to tap creatures for teamwork"
 
