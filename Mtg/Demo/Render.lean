@@ -790,6 +790,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .mayDrawThenDiscard n k => s!"may draw {n} cards, then discard {k} (accept or decline)"
         | .sacrificeNontokenEach .. => "sacrifice a nontoken creature: choose <id>"
         | .mayCreateTokens _ n => s!"may create {n} token(s) (accept or decline)"
+        | .mayBecomeBasePT _ pw tw => s!"may have base power and toughness become {pw}/{tw} (accept or decline)"
+        | .mayRevealToHand _ eligible => s!"may reveal one of {eligible.size} card(s): choose <id>, or decline"
         | .mayPayManaForReflexive cost maxTimes _ _ =>
           let shown := String.join (cost.toList.map toString)
           if maxTimes > 1 then s!"may pay {shown} up to {maxTimes} times: mode <times>, or decline"

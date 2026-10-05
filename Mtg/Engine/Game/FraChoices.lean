@@ -420,6 +420,27 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayCreateTokens kind n, .accept => return (g.createKindTokens p kind n).finishFraChoice
   | .mayCreateTokens .., .decline => return g.finishFraChoice
   | .mayCreateTokens .., _ => throw "Answer accept or decline"
+  | .mayBecomeBasePT id pw tw, .accept =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        let g := g.setObject { o with status := { o.status with setBasePT := some (pw, tw) } }
+        return (g.logMsg s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn").finishFraChoice
+      else return g.finishFraChoice
+    | none => return g.finishFraChoice
+  | .mayBecomeBasePT .., .decline => return g.finishFraChoice
+  | .mayBecomeBasePT .., _ => throw "Answer accept or decline"
+  | .mayRevealToHand looked eligible, .objects #[id] =>
+    if !eligible.contains id then throw "Choose one of the eligible cards"
+    let name := (g.object! id).name
+    let (g, _) := g.move id (.hand p) none
+    let g := g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
+    return (g.requestOrderInto (looked.filter (· != id)) (.library p)
+      s!"{(g.player p).name} puts the rest on the bottom of their library in a random order").finishFraChoice
+  | .mayRevealToHand looked _, .decline =>
+    return (g.requestOrderInto looked (.library p)
+      s!"{(g.player p).name} puts the cards on the bottom of their library in a random order").finishFraChoice
+  | .mayRevealToHand .., _ => throw "Choose a card to reveal, or decline"
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .accept
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .mode _ =>
     let times := match answer with | .mode n => n | _ => 1
@@ -577,6 +598,9 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then .accept else .decline
   | .mayDrawThenDiscard .. => .accept
   | .mayCreateTokens .. => .accept
+  | .mayBecomeBasePT .. => .accept
+  | .mayRevealToHand _ eligible =>
+    if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 1)
   | .sacrificeNontokenEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
   | .mayPayManaForReflexive cost _ _ _ =>

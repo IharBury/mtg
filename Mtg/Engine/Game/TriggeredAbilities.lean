@@ -254,20 +254,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let mut g := g
       let mut n : Nat := 0
       for o in g.battlefield do
-        if !o.controlledBy controller &&
-            (o.printed.isArtifact || o.printed.isEnchantment) then
-          let name := o.name
-          let (g', _) := g.move o.id (.graveyard o.owner) none
-          g := g'.logMsg s!"{name} is destroyed"
-          n := n + 1
+        if o.isOnBattlefield && !o.controlledBy controller &&
+            (o.types.contains .artifact || o.types.contains .enchantment) then
+          g := g.destroyPermanent o
+          -- Only permanents actually destroyed count (indestructible ones stay).
+          if !(g.findObject? o.id).any (·.isOnBattlefield) then
+            n := n + 1
       return if n == 0 then g else g.gainLife controller n
   | .damageEqualSubtypeToEachOpponent subtype =>
     let n := g.countSubtype controller subtype
-    Id.run do
-      let mut g := g
-      for pl in g.livingOpponents controller do
-        g := g.loseLife pl.id n
-      return g
+    let src := sourceId.bind g.findObject?
+    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src))
   | .damageEqualTreasures =>
     let n := g.countSubtype controller "Treasure"
     g.applyEffect controller (Effect.dealDamage n) targets
@@ -282,15 +279,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         match g.findObject? oid with
         | none => g.logMsg "The target is no longer legal"
         | some o =>
+          let before := o.status.damage
           let g := g.applyEffect controller (Effect.dealDamage n) #[tgt]
-          if g.hasSubtype o subtype then
-            match g.findObject? oid with
-            | some o =>
-              let name := o.name
-              let (g, _) := g.move o.id (.graveyard o.owner) none
-              g.logMsg s!"{name} is destroyed"
-            | none => g
-          else g
+          -- “If a Dragon is dealt damage this way, destroy it.”
+          match g.findObject? oid with
+          | some o =>
+            if g.hasSubtype o subtype && o.status.damage > before then g.destroyPermanent o
+            else g
+          | none => g
       | _ => g.logMsg "The target is no longer legal")
   | .attachEquipmentToCreature =>
     match targets[0]?, targets[1]? with
@@ -317,39 +313,37 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let (g, _) := g.createToken controller axeToken
     g.logMsg "An Axe token is created"
   | .tapOppOrUntapYours =>
-    g.logMsg "Choose tap an opposing creature or untap yours"
+    g.logMsg "No mode was chosen"
   | .becomePT p t =>
-    g.withTriggerSource sourceId fun g o =>
-      g.setObject { o with status := { o.status with setBasePT := some (p, t) } }
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        g.beginFraChoice controller (.mayBecomeBasePT o.id p t)
+          s!"{(g.player controller).name} may have {o.name}'s base power and toughness become {p}/{t}"
+      else g
+    | none => g
   | .returnOtherPlusOne =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let owner := o.owner
       let (g, _) := g.move o.id (.hand owner) none
       g.applyOnTriggerSource sourceId (.plusOne 1))
   | .lookAtTopRevealTypes n types =>
-    Id.run do
-      let mut g := g
-      let ids := g.scryLookedIds controller n
-      g := g.logLookAtTop controller n
-      let picked :=
-        ids.find? (fun id =>
-          match g.findObject? id with
-          | some o =>
-            types.any (fun t =>
-              t == "permanent" && o.printed.isPermanentCard ||
-                o.printed.hasSubtype t ||
-                (t == "creature" && o.printed.isCreature))
-          | none => false)
-      match picked with
-      | none => pure ()
-      | some id =>
-        let name := (g.object! id).name
-        let (g', _) := g.move id (.hand controller) none
-        g := g'.logMsg s!"{name} is put into {(g'.player controller).name}'s hand"
-      return g.shuffleLibrary controller
+    let ids := g.scryLookedIds controller n
+    let g := g.logLookAtTop controller n
+    let eligible := ids.filter (fun id =>
+      match g.findObject? id with
+      | some o =>
+        types.any (fun t =>
+          (t.toLower == "permanent" && o.printed.isPermanentCard) ||
+            (t.toLower == "creature" && o.printed.isCreature) ||
+            o.printed.hasSubtype t)
+      | none => false)
+    g.beginFraChoice controller (.mayRevealToHand ids eligible)
+      s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
   | .pumpAndDamageOpponents n =>
-    g.applyOnTriggerSource sourceId (.pump 1 1)
-      |>.forEachOpponent controller (fun g pid => g.loseLife pid n)
+    let g := g.applyOnTriggerSource sourceId (.pump 1 1)
+    let src := sourceId.bind g.findObject?
+    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src))
   | .createTappedTreasuresEqualOppArtifacts =>
     let n := g.countOpponentArtifacts controller
     g.createTreasureTokens controller n (tapped := true)
@@ -368,8 +362,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         else if o.isCreature && !o.controlledBy controller then
           g := g.pumpPermanent o oppP oppT
       return g
-  | .putNonlandMvAtMostFromGy _mv =>
-    g.logMsg "A nonland permanent card may enter from a graveyard"
+  | .putNonlandMvAtMostFromGy _ =>
+    g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
+      match t with
+      | Target.card id =>
+        match g.findObject? id with
+        | some card =>
+          let (g, newId) := g.putOntoBattlefield id card.owner
+          let g := g.logMsg s!"{card.name} is put onto the battlefield under its owner's control"
+          g.afterPermanentEnters (g.object! newId)
+        | none => g
+      | _ => g) "No card was chosen"
   | .honeEachEquipment =>
     let eqs :=
       g.battlefield.filter (fun o => o.controlledBy controller && o.printed.isEquipment)

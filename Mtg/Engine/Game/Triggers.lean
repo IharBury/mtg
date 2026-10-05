@@ -13,11 +13,25 @@ batches stacked in APNAP order (CR 603.3b), and `receivePriority`.
 namespace Mtg.Engine
 namespace Game
 
+/-- Modes of a modal triggered ability (“choose one —”) printed outside
+Reality Fracture (CR 700.2). -/
+def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
+  match ab.shared with
+  | .tapOppOrUntapYours =>
+    #[{ targeting := .of .oppCreature, resolution := .onPermanent .tap
+        phrase := "Tap target creature an opponent controls" },
+      { targeting := .of .creatureYouControl, resolution := .onPermanent .untap
+        phrase := "Untap target creature you control" }]
+  | _ => #[]
+
 /-- Modes of the triggered ability `obj` (from its source). -/
 def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
-  match obj.sourceId.bind g.findObject? with
-  | some src => src.printed.fraTriggerModes
-  | none => obj.printed.fraTriggerModes
+  let fra :=
+    match obj.sourceId.bind g.findObject? with
+    | some src => src.printed.fraTriggerModes
+    | none => obj.printed.fraTriggerModes
+  if !fra.isEmpty then fra
+  else (obj.triggeredAbility.map sharedTriggerModes).getD #[]
 
 /-- Whether `p` may choose this mode of a triggered ability (CR 700.2d). -/
 def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
@@ -66,7 +80,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let g := g.logMsg s!"{source.name}'s {event} is put on the stack"
     match ab.effect.resolution with
     | .fra (.chooseTriggerModes n) => g.beginTriggerModeChoice controller obj n
-    | _ => g
+    | _ => if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
 
 /-- True when this trigger would be put on the stack with no legal target (CR 603.3d). -/
 def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)

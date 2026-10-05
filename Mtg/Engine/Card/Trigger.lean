@@ -749,15 +749,18 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       allowsZeroTargets := true, resolution := .attachEquipmentToCreature }
   | .defenderSacsLeastPower => { resolution := .defenderSacsLeastPower }
   | .returnOtherPlusOne =>
-    { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
-      resolution := .returnOtherPlusOne }
+    { targeting := .of (.filtered { noun := "up to one other target permanent you control"
+                                    controller := .you, another := true })
+      allowsZeroTargets := true, resolution := .returnOtherPlusOne }
   | .lookAtTopRevealTypes n types =>
     { resolution := .lookAtTopRevealTypes n types }
   | .createTappedTreasuresEqualOppArtifacts =>
     { resolution := .createTappedTreasuresEqualOppArtifacts }
   | .putNonlandMvAtMostFromGy mv =>
-    { targeting := .of .nonland, allowsZeroTargets := true,
-      resolution := .putNonlandMvAtMostFromGy mv }
+    { targeting := .of (.filtered
+        { noun := s!"up to one target nonland permanent card with mana value {mv} or less from a graveyard"
+          zone := .anyGraveyard, permanentCard := true, nonland := true, mvAtMost := some mv })
+      allowsZeroTargets := true, resolution := .putNonlandMvAtMostFromGy mv }
   | .othersGetAndOppsGet subtypes p t oppP oppT =>
     { resolution := .othersGetAndOppsGet subtypes p t oppP oppT }
   | .wolfPlusOneOrTreasure => { resolution := .wolfPlusOneOrTreasure }

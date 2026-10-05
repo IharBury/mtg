@@ -285,6 +285,12 @@ inductive FraChoice where
   | sacrificeNontokenEach (rest : Array PlayerId) (chosen : Array ObjectId)
   /-- You may create `n` tokens of `kind`. -/
   | mayCreateTokens (kind : TokenKind) (n : Nat)
+  /-- You may have `objectId`'s base power and toughness become `p`/`t`
+  until end of turn. -/
+  | mayBecomeBasePT (objectId : ObjectId) (p t : Int)
+  /-- You may reveal one of `eligible` from among the looked-at `looked` and
+  put it into your hand; the rest go on the bottom in a random order. -/
+  | mayRevealToHand (looked eligible : Array ObjectId)
   /-- You may pay `cost` up to `maxTimes` times (accept pays once; a mode
   index pays that many times); when you do, the reflexive ability `kind`
   triggers. -/

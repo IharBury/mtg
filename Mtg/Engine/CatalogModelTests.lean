@@ -904,6 +904,80 @@ the copy may get a new target. -/
   let g := stackTriggers (castFra g shock [.target (.permanent (theirs g "Grizzly Bears").id)])
   !g.stack.any (fun e => (g.object! e.objectId).name.startsWith "Fin Fang Foom")
 
+/-! ## Triggered ability resolutions -/
+
+/-- Put triggered ability `idx` of permanent `name` on the stack. -/
+def fireTrigger (g : Game) (name : String) (idx : Nat := 0) : Game :=
+  let o := namedPermanent g name
+  (g.putTriggeredAbilityOnStack me o o.printed.triggeredAbilities[idx]! "test trigger").promptTriggerTargetsIfNeeded
+
+/- Elven Raft-Steerer's landfall is modal: tap an opponent's creature or untap
+yours. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw elvenRaftSteerer me me) grizzlyBears opp opp
+  let g := fireTrigger g "Elven Raft-Steerer"
+  let g := mustApply g me (.chooseMode 0)
+  let g := passBoth (mustApply g me (.target (.permanent (theirs g "Grizzly Bears").id)))
+  (theirs g "Grizzly Bears").status.tapped
+
+/- Bilbo, Unexpected Adventurer returns a nonland permanent card with mana
+value 3 or less from any graveyard under its owner's control. -/
+#guard
+  let g := addPermanent afterDraw bilboUnexpectedAdventurer me me
+  let g := addToGraveyard g grizzlyBears opp
+  let g := fireTrigger g "Bilbo, Unexpected Adventurer"
+  let card := graveyardObj g opp "Grizzly Bears"
+  let g := passBoth (mustApply g me (.target (.card card.id)))
+  (theirs g "Grizzly Bears").isOnBattlefield
+
+/- Mirkwood Meditator's landfall is optional. -/
+#guard
+  let g := fireTrigger (addPermanent afterDraw mirkwoodMeditator me me) "Mirkwood Meditator"
+  let g := passBoth g
+  let g := mustApply g me .decline
+  (namedPermanent g "Mirkwood Meditator").status.setBasePT.isNone
+
+/- Mirkwood Nurturer may return any other permanent you control. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw mirkwoodNurturer me me) murmuringVolume me me
+  let g := fireTrigger g "Mirkwood Nurturer"
+  let g := passBoth (mustApply g me (tgt g "Murmuring Volume"))
+  inHand g me "Murmuring Volume" && counters g "Mirkwood Nurturer" == 1
+
+/- Boughside Wanderers: the player chooses a permanent card among the top
+four; the rest go to the bottom. -/
+#guard
+  let g := addToLibraryTop (addToLibraryTop (addToLibraryTop afterDraw shock me) grizzlyBears me) hillGiant me
+  let g := addPermanent g boughsideWanderers me me
+  let g := passBoth (fireTrigger g "Boughside Wanderers")
+  let bears := (g.player me).library.find? (fun id => (g.object! id).name == "Grizzly Bears")
+  let shockId := (g.player me).library.find? (fun id => (g.object! id).name == "Shock")
+  let rejected := match shockId with
+    | some id => (match g.apply me (.choosePermanents #[id]) with | .error _ => true | .ok _ => false)
+    | none => false
+  let g := mustApply g me (.choosePermanents #[bears.getD ⟨0⟩])
+  rejected && inHand g me "Grizzly Bears" &&
+    ((g.player me).library[0]?.any (fun id => ["Shock", "Hill Giant"].contains (g.object! id).name) ||
+     (g.player me).library[1]?.any (fun id => ["Shock", "Hill Giant"].contains (g.object! id).name))
+
+/- Gandalf, Goblins' Bane deals damage (not life loss) to each opponent. -/
+#guard
+  let g := fireTrigger (addPermanent afterDraw gandalfGoblinsBane me me) "Gandalf, Goblins' Bane"
+  let g := passBoth g
+  life g opp == 19 && (g.player opp).dealtNoncombatDamageThisTurn
+
+/- The Black Arrow destroys a Dragon it damaged, but not another creature. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw theBlackArrow me me) smaugWickedWorm opp opp
+  let g := fireTrigger g "The Black Arrow"
+  let g := passBoth (mustApply g me (.target (.permanent (theirs g "Smaug, Wicked Worm").id)))
+  !g.objects.any (fun o => o.name == "Smaug, Wicked Worm" && o.isOnBattlefield)
+#guard
+  let g := addPermanent (addPermanent afterDraw theBlackArrow me me) hillGiant opp opp
+  let g := fireTrigger g "The Black Arrow"
+  let g := passBoth (mustApply g me (.target (.permanent (theirs g "Hill Giant").id)))
+  (theirs g "Hill Giant").isOnBattlefield
+
 /-! ## Life loss -/
 
 /- The Master of Lake-town: damage and paying life are losses of life; that
