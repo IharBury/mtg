@@ -362,6 +362,24 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
   | .mayPayPickThen .., .decline => return g.finishFraChoice
   | .mayPayPickThen pick .., _ => throw s!"Choose what to {pick.phrase}, or decline"
+  | .addManaColors left use, .mode idx =>
+    let some c := Color.all[idx]? | throw "Choose white, blue, black, red, or green (0-4)"
+    let g := g.modifyPlayer p (fun pl =>
+      { pl with manaPool := pl.manaPool.add (.colored c) (fra := some use) })
+    let g := g.logMsg s!"{(g.player p).name} adds {ManaType.colored c} ({use.label})"
+    if left > 1 then return { g with pending := .fraChoice p (.addManaColors (left - 1) use) }
+    return g.finishFraChoice
+  | .addManaColors .., _ => throw "Choose a color for the mana"
+  | .payLifeOrEnterTapped _ n, .accept =>
+    let g ← g.payLifeCost p n
+    return g.finishFraChoice
+  | .payLifeOrEnterTapped id _, .decline =>
+    match g.findObject? id with
+    | some o =>
+      let g := g.setObject { o with status := { o.status with tapped := true } }
+      return (g.logMsg s!"{o.name} enters tapped").finishFraChoice
+    | none => return g.finishFraChoice
+  | .payLifeOrEnterTapped .., _ => throw "Pay the life (accept), or decline"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
@@ -418,6 +436,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       .choosePermanents ((g.costPickCandidates p sourceId pick).extract 0 pick.count)
     | none => .decline
   | .mayPayPickThen .. => .decline
+  | .addManaColors .. => .chooseMode 0
+  | .payLifeOrEnterTapped _ n => if (g.player p).life > (n : Int) then .accept else .decline
   | .chooseCardName _ =>
     -- Name a nonland card an opponent owns, else any nonland card.
     let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)

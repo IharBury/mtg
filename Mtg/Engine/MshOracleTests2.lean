@@ -399,11 +399,10 @@ def shangChiActivateNotHasteOk : Bool :=
   let g := insertObject afterDraw shangChiMasterOfKungFu ⟨0⟩ .battlefield
     (some ⟨0⟩) { summoningSick := true }
   let shang := namedPermanent g "Shang-Chi, Master of Kung Fu"
-  let ab := shang.printed.activatedAbilities[0]!
   shang.hasSummoningSickness &&
     !g.canAttack shang &&
     !g.hasHaste shang &&
-    g.canActivate ⟨0⟩ shang ab &&
+    (g.tapForMana ⟨0⟩ shang.id (.colored .green)).isOk &&
     (mshRuling 632).comment.contains "doesn't grant haste"
 
 #guard shangChiActivateNotHasteOk

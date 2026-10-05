@@ -34,16 +34,20 @@ def finishProposedSpell (g : Game) : Except String Game := do
       return g.reverseProposedSpell
   if prop.needsDiscardCard && (g.player prop.caster).hand.isEmpty then
     return g.reverseProposedSpell
-  let treasureBefore := ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == .fromTreasure)).size
-  let g ← g.payCost prop.caster prop.cost allowElf allowInst
+  let count (g : Game) (u : FraManaUse) :=
+    ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == u)).size
+  let paid ← g.payCost prop.caster prop.cost allowElf allowInst
     allowHero allowVillain allowCant allowCreature spend
-  let treasureAfter := ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == .fromTreasure)).size
+  let spent (u : FraManaUse) := count paid u < count g u
   let g :=
-    if prop.kind == .spell && treasureAfter < treasureBefore then
-      match g.findObject? prop.spellId with
-      | some o => g.setObject { o with treasureManaSpent := true }
-      | none => g
-    else g
+    match prop.kind, paid.findObject? prop.spellId with
+    | .spell, some o =>
+      if spent .legendarySpell then
+        (paid.setObject { o with treasureManaSpent := o.treasureManaSpent || spent .fromTreasure
+                                 uncounterableThisCast := true }).logMsg
+          s!"{o.name} can't be countered (Delighted Halfling)"
+      else paid.setObject { o with treasureManaSpent := spent .fromTreasure }
+    | _, _ => paid
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
   match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard with

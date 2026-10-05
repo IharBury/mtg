@@ -466,10 +466,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.millThenPutFromGy controller n (fun o => o.printed.isLand) (some max)
   | .dealDamageToEachNonDragonThenAddDragonMana n =>
     let g := g.dealDamageToEachNonDragon n
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool := pl.manaPool.add (.colored .red) 4 })
-      |>.logMsg
-        s!"{(g.player controller).name} adds four mana that can be spent only on Dragon spells"
+    g.beginFraChoice controller (.addManaColors 4 .dragonSpell)
+      s!"{(g.player controller).name} chooses the colors of four mana that can be spent only on Dragon spells"
   | .millThenPutAllInstantsOrSorceries n =>
     g.millThenPutFromGy controller n
       (fun o => o.printed.isInstant || o.printed.isSorcery)

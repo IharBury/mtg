@@ -412,6 +412,16 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
           s!"{(g.player p).name} chooses a nonland card name for {o.name}"
       | none => g
     else g
+  -- The Black Gate: “As it enters, you may pay N life. If you don't, it
+  -- enters tapped.”
+  let g :=
+    match o.printed.entersTappedUnlessPayLife, o.controller with
+    | some n, some p =>
+      if o.status.tapped || g.pending != Pending.none then g
+      else
+        { g with pending := .fraChoice p (.payLifeOrEnterTapped o.id n) }.logMsg
+          s!"{(g.player p).name} may pay {n} life, or {o.name} enters tapped"
+    | _, _ => g
   let g := g.addLoreAsSagaEnters o
   let o := g.object! o.id
   if g.enteringCausesNoTriggers o then

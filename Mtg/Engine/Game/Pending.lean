@@ -159,6 +159,32 @@ def CostPick.phrase : CostPick → String
   | .tapUntappedCreature => "tap an untapped creature you control"
   | .tapTwoUntappedArtifacts => "tap two untapped artifacts you control"
 
+/-- Parts of `ab`'s cost the player chooses what to pay with (CR 601.2h). -/
+def costPicksOf (ab : ActivatedAbility) : Array CostPick :=
+  let c := ab.cost
+  let fra : Array CostPick :=
+    match c.fra with
+    | .exileAnotherCreatureCardFromGraveyard => #[.exileAnotherCreatureCardFromGraveyard]
+    | .sacrificeAnotherArtifact => #[.sacrificeAnotherArtifact]
+    | .sacrificeAnotherCreatureOrPlaneswalker => #[.sacrificeAnotherCreatureOrPlaneswalker]
+    | .sacrificeArtifactOrLand => #[.sacrificeArtifactOrLand]
+    | .discardLegendaryCard => #[.discardLegendaryCard]
+    | .tapTwoUntappedArtifacts => #[.tapTwoUntappedArtifacts]
+    | _ => #[]
+  (if c.discardACard then #[CostPick.discardACard] else #[]) ++
+  (if c.discardLegendarySameName then #[CostPick.discardLegendarySameName] else #[]) ++
+  (if c.sacrificeLegendaryArtifact then #[CostPick.sacrificeLegendaryArtifact] else #[]) ++
+  (if c.sacrificeArtifact then #[CostPick.sacrificeArtifact] else #[]) ++
+  (if c.sacrificeArtifactOrCreature then #[CostPick.sacrificeArtifactOrCreature] else #[]) ++
+  (if c.sacrificeArtifactOrDiscardNonland then
+    #[CostPick.sacrificeArtifactOrDiscardNonland] else #[]) ++
+  (if c.sacrificeEquipmentAttachedToSource then
+    #[CostPick.sacrificeEquipmentAttachedToSource] else #[]) ++
+  (if c.tapAnUntappedCreatureYouControl then #[CostPick.tapUntappedCreature] else #[]) ++
+  (match c.sacrificeAnotherSubtype with
+   | some t => #[CostPick.sacrificeAnotherSubtype t]
+   | none => #[]) ++ fra
+
 /-- A choice made while a Reality Fracture effect resolves. The player answers
 with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
 `Action.decline`. -/
@@ -240,6 +266,13 @@ inductive FraChoice where
   /-- You may pay `pick` (sacrifice, discard, …) as an ability of `sourceId`
   resolves; when you do, do `next`. -/
   | mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : ObjectId)
+  /-- Choose the color of each of `left` more mana to add, spendable only as
+  `use` allows. Answered with `Action.chooseMode` (white, blue, black, red,
+  green by index). -/
+  | addManaColors (left : Nat) (use : FraManaUse)
+  /-- As `objectId` enters, pay `life` life (accept), or it enters tapped
+  (decline). -/
+  | payLifeOrEnterTapped (objectId : ObjectId) (life : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

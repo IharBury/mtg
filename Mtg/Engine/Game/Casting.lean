@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.ActivationCosts
+import Mtg.Engine.Game.SpellTargets
 
 /-!
 # Casting legality and payment (CR 601)
@@ -157,15 +157,6 @@ def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
     | none => false
   | .activatedAbility => false
 
-/-- Whether paying this proposed spell may spend legendary-restricted mana. -/
-def proposedAllowsLegendaryRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  match prop.kind with
-  | .spell =>
-    match g.findObject? prop.spellId with
-    | some o => o.isLegendary
-    | none => false
-  | .activatedAbility => false
-
 /-- Object whose types decide Hero / Villain / creature-source restrictions. -/
 def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObject :=
   match prop.kind with
@@ -214,31 +205,32 @@ def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
 /-- What paying `prop` is for, as Reality Fracture mana restrictions see it. -/
 def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
   match prop.kind with
-  | .activatedAbility => {}
+  | .activatedAbility => { equip := prop.activation.any (·.isEquip) }
   | .spell =>
     match g.findObject? prop.spellId with
     | some o =>
       { spell := true, fromHand := prop.original.zone == .hand prop.caster
-        planeswalker := o.printed.isPlaneswalker, noncreature := !o.printed.isCreature }
+        planeswalker := o.printed.isPlaneswalker, noncreature := !o.printed.isCreature
+        legendary := o.isLegendary, artifact := o.printed.isArtifact
+        subtypes := o.printed.subtypes }
     | none => {}
+
+/-- Whether mana with restriction `r` may be spent on `prop` (CR 106.10). -/
+def restrictionAllowsProposed (g : Game) (r : ManaRestriction) (prop : ProposedSpell) : Bool :=
+  match r with
+  | .none => true
+  | .elf => g.proposedAllowsElfRestricted prop
+  | .instantOrSorcery => g.proposedAllowsInstRestricted prop
+  | .hero => g.proposedAllowsHeroRestricted prop
+  | .villain => g.proposedAllowsVillainRestricted prop
+  | .cantNonartifact => g.proposedAllowsCantNonartifact prop
+  | .creatureSource => g.proposedAllowsCreatureRestricted prop
+  | .fra u => u.allows (g.proposedManaSpend prop)
 
 /-- Mana types `src` can produce that may be spent on `prop` (CR 106.10). -/
 def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array ManaType)
     (prop : ProposedSpell) : Array ManaType :=
-  let spend := g.proposedManaSpend prop
-  let types := types.filter (fun t =>
-    match g.fraManaUseOf src t with
-    | some u => u.allows spend
-    | none => true)
-  let allowElf := g.proposedAllowsElfRestricted prop
-  let allowInst := g.proposedAllowsInstRestricted prop
-  let allowLeg := g.proposedAllowsLegendaryRestricted prop
-  if src.printed.tapAddAnyColorEqualToPower && !allowElf then #[]
-  else if src.printed.tapAddAnyColorForInstantOrSorcery && !allowInst then #[]
-  else if src.printed.tapAddAnyColorForLegendary && !allowLeg then
-    types.filter (fun t =>
-      src.printed.simpleTapAddMana.contains t || src.printed.tapAddOneOf.contains t)
-  else types
+  types.filter (fun t => g.restrictionAllowsProposed (g.tapRestrictionOf src t) prop)
 
 /-- Untapped mana sources `p` may activate while paying `prop` (CR 601.2g).
 Sources reserved for `{T}`, or whose mana cannot be spent on this spell or
@@ -255,29 +247,46 @@ def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
 /-- Pool after tapping `src` for `t`, including spending restrictions. -/
 def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType) :
     ManaPool :=
-  pool.add t (g.manaFromTap src t)
-    (elfRestricted := src.printed.tapAddAnyColorEqualToPower)
-    (instRestricted := src.printed.tapAddAnyColorForInstantOrSorcery)
-    (fra := g.fraManaUseOf src t)
+  addRestrictedMana pool (Array.replicate (g.manaFromTap src t) t) (g.tapRestrictionOf src t)
+
+/-- Restricted mana beyond Elf and instant/sorcery mana that may pay a
+cost (CR 106.10). -/
+structure ManaAllowances where
+  hero : Bool := false
+  villain : Bool := false
+  cantNonartifact : Bool := false
+  creature : Bool := false
+  spend : ManaSpend := {}
+deriving Inhabited
+
+/-- What restricted mana may pay for `prop`. -/
+def proposedAllowances (g : Game) (prop : ProposedSpell) : ManaAllowances :=
+  { hero := g.proposedAllowsHeroRestricted prop, villain := g.proposedAllowsVillainRestricted prop
+    cantNonartifact := g.proposedAllowsCantNonartifact prop
+    creature := g.proposedAllowsCreatureRestricted prop, spend := g.proposedManaSpend prop }
 
 /-- Whether some assignment of types from `sources` pays `cost`. -/
 def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf allowInst : Bool) : List (GameObject × Array ManaType) → Bool
-  | [] => pool.canPay cost allowElf allowInst
+    (allowElf allowInst : Bool) (sources : List (GameObject × Array ManaType))
+    (a : ManaAllowances := {}) : Bool :=
+  match sources with
+  | [] => pool.canPay cost allowElf allowInst a.hero a.villain a.cantNonartifact a.creature a.spend
   | (src, types) :: rest =>
     types.any (fun t =>
-      g.canPayFromSources (g.poolAfterTap pool src t) cost allowElf allowInst rest)
+      g.canPayFromSources (g.poolAfterTap pool src t) cost allowElf allowInst rest a)
 
 /-- Whether tapping `src` for `t` covers more of `cost` than the current pool. -/
 def typeHelpsPay (g : Game) (p : PlayerId) (src : GameObject) (t : ManaType)
-    (cost : ManaCost) (allowElfRestricted : Bool) (allowInstRestricted : Bool) : Bool :=
+    (cost : ManaCost) (allowElfRestricted : Bool) (allowInstRestricted : Bool)
+    (a : ManaAllowances := {}) : Bool :=
   let amount := g.manaFromTap src t
   if amount == 0 then false
   else
     let pool := (g.player p).manaPool
-    let before := pool.coveredMana cost allowElfRestricted allowInstRestricted
-    let after := g.poolAfterTap pool src t
-    after.coveredMana cost allowElfRestricted allowInstRestricted > before
+    let covered (pool : ManaPool) :=
+      pool.coveredMana cost allowElfRestricted allowInstRestricted a.hero a.villain
+        a.cantNonartifact a.creature a.spend
+    covered (g.poolAfterTap pool src t) > covered pool
 
 /-- A mana type among `types` that helps pay remaining symbols of `cost`.
 When `src` plus `others` can pay, types that would make the cost unpayable
@@ -287,25 +296,27 @@ if it can be spent. -/
 def preferredManaType (g : Game) (p : PlayerId) (src : GameObject)
     (types : Array ManaType) (cost : ManaCost) (allowElfRestricted : Bool)
     (allowInstRestricted : Bool := false)
-    (others : List (GameObject × Array ManaType) := []) : Option ManaType :=
+    (others : List (GameObject × Array ManaType) := []) (a : ManaAllowances := {}) :
+    Option ManaType :=
   let pool := (g.player p).manaPool
   let helpful := types.filter (fun t =>
-    g.typeHelpsPay p src t cost allowElfRestricted allowInstRestricted)
+    g.typeHelpsPay p src t cost allowElfRestricted allowInstRestricted a)
   let payable :=
     g.canPayFromSources pool cost allowElfRestricted allowInstRestricted
-      ((src, types) :: others)
+      ((src, types) :: others) a
   let viable :=
     if payable then
       helpful.filter (fun t =>
         g.canPayFromSources (g.poolAfterTap pool src t) cost
-          allowElfRestricted allowInstRestricted others)
+          allowElfRestricted allowInstRestricted others a)
     else helpful
   match viable[0]? with
   | none => none
   | some first =>
     match Color.all.find? (fun c =>
       let req := cost.coloredCount c
-      let held := pool.usable (.colored c) allowElfRestricted allowInstRestricted
+      let held := pool.usable (.colored c) allowElfRestricted allowInstRestricted a.hero
+        a.villain a.cantNonartifact a.creature a.spend
       held < req && viable.contains (.colored c)) with
     | some c => some (.colored c)
     | none =>
@@ -331,7 +342,8 @@ def preferredManaTap (g : Game) (p : PlayerId) (prop : ProposedSpell) :
   let sources := g.manaSourcesForProposed p prop
   sources.foldl (fun acc (src, types) =>
     let others := sources.filter (fun (o, _) => o.id != src.id) |>.toList
-    match g.preferredManaType p src types prop.cost allowElf allowInst others with
+    match g.preferredManaType p src types prop.cost allowElf allowInst others
+        (g.proposedAllowances prop) with
     | none => acc
     | some t =>
       match acc with
@@ -660,7 +672,12 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
           | some ab => ab.powerUp
           | none =>
             src.printed.activatedAbilities.any (·.powerUp)
+        let idx := activation.bind (fun ab => (g.activatedAbilitiesOf src).findIdx? (· == ab))
         let g := g.setObject { src with status := { src.status with
+          abilitiesActivatedThisTurn :=
+            match idx with
+            | some i => src.status.abilitiesActivatedThisTurn.push i
+            | none => src.status.abilitiesActivatedThisTurn
           activationsThisTurn := src.status.activationsThisTurn + 1
           powerUpUsed := src.status.powerUpUsed || powerUp
           powerUpActivations :=

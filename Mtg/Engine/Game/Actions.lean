@@ -14,6 +14,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .pass => g.pass p
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
+  | .activateManaAbility id idx mana costIds => g.activateManaAbility p id idx mana costIds
   | .cast id =>
     match g.pending with
     | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)

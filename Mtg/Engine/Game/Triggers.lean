@@ -527,19 +527,6 @@ def fraManaUseOf (g : Game) (o : GameObject) (mana : ManaType) : Option FraManaU
     | some u => some u
     | none => if g.hasSubtype o "Treasure" then some .fromTreasure else none
 
-/-- Printed mana abilities plus those copied from the graveyard or granted
-by another permanent. Restricted MSH `{T}: Add` types are omitted until the
-activation condition holds. -/
-def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
-  if !g.retainsPrintedAbilities o then #[]
-  else
-    let types :=
-      o.printed.manaAbilities ++ g.copiedFromGy o (·.manaAbilities) ++
-        g.grantedManaAbilities o ++ fraManaAbilities o
-    if o.printed.requiresEnteredOrBasicAdd && !g.canUseEnteredOrBasicAdd o then
-      types.filter (fun t => !o.printed.enteredOrBasicAddMana.contains t)
-    else types
-
 /-- If a stacked triggered ability still needs targets, prompt its controller
 (CR 603.3d / 601.2c). -/
 def promptTriggerTargetsIfNeeded (g : Game) : Game :=

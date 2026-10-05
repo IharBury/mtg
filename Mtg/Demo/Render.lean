@@ -783,6 +783,9 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           let cancel := if paid then "" else ", or decline to cancel"
           s!"choose what to {what}: choose <id> ...{cancel}"
         | .mayPayPickThen pick .. => s!"may {pick.phrase}: choose <id>, or decline"
+        | .addManaColors left use =>
+          s!"choose a color for {left} more mana ({use.label}): 0 white, 1 blue, 2 black, 3 red, 4 green"
+        | .payLifeOrEnterTapped _ n => s!"pay {n} life (accept), or it enters tapped (decline)"
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=

@@ -109,6 +109,7 @@ def clearTurnActivations (g : Game) : Game :=
           o.status.loyaltyActivatedThisTurn then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
+          abilitiesActivatedThisTurn := #[]
           loyaltyActivatedThisTurn := false
           firedOnceEachTurn := false
           optionalOnceUsed := false

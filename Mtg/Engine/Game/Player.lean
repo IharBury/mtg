@@ -156,6 +156,10 @@ inductive Action where
   | pass
   | playLand (id : ObjectId)
   | tapForMana (id : ObjectId) (mana : ManaType)
+  /-- Activate mana ability `idx` of `id` (CR 605.3), adding exactly `mana`
+  and paying costs that need chosen objects with `costIds`, in order. -/
+  | activateManaAbility (id : ObjectId) (idx : Nat) (mana : Array ManaType)
+      (costIds : Array ObjectId := #[])
   | cast (id : ObjectId)
   /-- Cast this adventurer card as its Adventure (CR 715.3). -/
   | castAdventure (id : ObjectId)

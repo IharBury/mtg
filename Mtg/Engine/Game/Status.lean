@@ -37,6 +37,9 @@ structure Status where
   blocked : Bool := false
   /-- Non-mana activations this turn, for “only once each turn”. -/
   activationsThisTurn : Nat := 0
+  /-- Indices of activated abilities of this object activated this turn
+  (“Activate only once each turn”). -/
+  abilitiesActivatedThisTurn : Array Nat := #[]
   /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
   plusOnePlusOne : Nat := 0
   /-- Minus-one counters (CR 122.1a). -/

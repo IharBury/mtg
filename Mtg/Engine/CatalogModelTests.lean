@@ -460,4 +460,145 @@ when you do, it deals 2 damage to any target. Declining deals no damage. -/
   let g := settle (mustApply g me .decline)
   life g opp == 20 && inHand g me "Shock"
 
+/-! ## Mana abilities (CR 605) -/
+
+def pool (g : Game) : ManaPool := (g.player me).manaPool
+
+def manaIdx (g : Game) (name : String) (pred : Game.ManaAbilityDef → Bool) : Nat :=
+  let defs := g.manaAbilityDefs (namedPermanent g name)
+  ((List.range defs.size).find? (fun i => pred defs[i]!)).getD 0
+
+def tapFor (g : Game) (name : String) (m : ManaType) : Game :=
+  mustApply g me (.tapForMana (idOf g name) m)
+
+def manaRejected (g : Game) (a : Action) : Bool :=
+  match g.apply me a with
+  | .error _ => true
+  | .ok _ => false
+
+/- Arc Reactor adds {C}{C}{C} immediately, without using the stack. -/
+#guard
+  let g := tapFor (addPermanent afterDraw arcReactor me me) "Arc Reactor" .colorless
+  (pool g).colorless == 3 && g.stack.isEmpty
+
+/- Bolg's Company sacrifices the chosen other Goblin and adds {B}{R}. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw bolgsCompany me me) bolgsCompany me me
+  let ids := ((g.permanentsOf me).filter (·.name == "Bolg's Company")).map (·.id)
+  let o := g.object! ids[0]!
+  let i := manaIdx g "Bolg's Company" (!·.picks.isEmpty)
+  let g' := mustApply g me (.activateManaAbility o.id i #[.colored .black, .colored .red] #[ids[1]!])
+  (pool g').black == 1 && (pool g').red == 1 && g'.stack.isEmpty &&
+    (g'.object! o.id).status.tapped && !(g'.findObject? ids[1]!).any (·.isOnBattlefield) &&
+    manaRejected g (.tapForMana o.id (.colored .black)) &&
+    manaRejected g (.activateManaAbility o.id i #[.colored .black, .colored .red] #[o.id])
+
+/- Mount Doom: {T}, Pay 1 life: Add {B} or {R}. -/
+#guard
+  let g := tapFor (addPermanent afterDraw mountDoom me me) "Mount Doom" (.colored .red)
+  (pool g).red == 1 && life g me == 19
+
+/- Fíli and Kíli, Joyous add {R}{R} spendable only on Dwarf, Equipment, and
+Saga spells. -/
+#guard
+  let g := tapFor (addPermanent afterDraw filiAndKiliJoyous me me) "Fíli and Kíli, Joyous" (.colored .red)
+  (pool g).red == 2 &&
+    (pool g).fraRestricted == #[(.colored .red, .dwarfEquipmentSagaSpell), (.colored .red, .dwarfEquipmentSagaSpell)]
+
+/- Relic of Sauron adds two mana in any combination of {U}, {B}, and {R}. -/
+#guard
+  let g := addPermanent afterDraw relicOfSauron me me
+  let o := namedPermanent g "Relic of Sauron"
+  let g' := mustApply g me (.activateManaAbility o.id 0 #[.colored .blue, .colored .black])
+  (pool g').blue == 1 && (pool g').black == 1 &&
+    manaRejected g (.activateManaAbility o.id 0 #[.colored .green, .colored .blue])
+
+/- Giant's Boulder spends {1} from the pool to add one mana of any color. -/
+#guard
+  let g := withMana (addPermanent afterDraw giantsBoulder me me) me .white 1
+  let g := tapFor g "Giant's Boulder" (.colored .green)
+  (pool g).green == 1 && (pool g).white == 0 && g.stack.isEmpty
+
+/- Baxter Building: {4}, {T}: four mana in any combination of colors. -/
+#guard
+  let g := withMana (addPermanent afterDraw baxterBuilding me me) me .green 4
+  let o := namedPermanent g "Baxter Building"
+  let i := manaIdx g "Baxter Building" (·.cost.includesManaPayment)
+  let g := mustApply g me (.activateManaAbility o.id i
+    #[.colored .white, .colored .blue, .colored .black, .colored .red])
+  (pool g).white == 1 && (pool g).blue == 1 && (pool g).black == 1 && (pool g).red == 1 &&
+    (pool g).green == 0
+
+/- Ronin, Shadow Stalker: Pay 2 life for two mana of one color spendable on
+Equipment; only once each turn. -/
+#guard
+  let g := addPermanent afterDraw roninShadowStalker me me
+  let o := namedPermanent g "Ronin, Shadow Stalker"
+  let i := manaIdx g "Ronin, Shadow Stalker" (·.payLife == 2)
+  let g := mustApply g me (.activateManaAbility o.id i #[.colored .black, .colored .black])
+  (pool g).black == 2 && life g me == 18 && !(namedPermanent g "Ronin, Shadow Stalker").status.tapped &&
+    (pool g).fraRestricted.all (·.2 == .equipmentOrEquip) &&
+    manaRejected g (.activateManaAbility o.id i #[.colored .black, .colored .black])
+
+/- Doc Samson adds X mana of one color, X = its power. -/
+#guard
+  let g := addPermanent afterDraw docSamsonSuperPsychiatrist me me
+  let pw := power g "Doc Samson, Super Psychiatrist"
+  let g := tapFor g "Doc Samson, Super Psychiatrist" (.colored .blue)
+  ((pool g).blue : Int) == pw && pw > 0
+
+/- Hydraulic Helper's {U} can't be spent on a nonartifact spell. -/
+#guard
+  let g := tapFor (addPermanent afterDraw hydraulicHelper me me) "Hydraulic Helper" (.colored .blue)
+  (pool g).cantNonartifactBlue == 1
+
+/- Castle Doom's colored mana may be spent only to cast an artifact spell. -/
+#guard
+  let g := addPermanent afterDraw castleDoom me me
+  let o := namedPermanent g "Castle Doom"
+  let i := manaIdx g "Castle Doom" (·.restriction == .fra .artifactSpell)
+  let g := mustApply g me (.activateManaAbility o.id i #[.colored .red])
+  (pool g).fraRestricted == #[(.colored .red, .artifactSpell)]
+
+/- Chandra, Torch of Defiance's +1 that adds {R}{R} is a loyalty ability, so it
+uses the stack (CR 605.1a). -/
+#guard
+  let g := pw chandraTorchOfDefiance 4
+  let o := namedPermanent g "Chandra, Torch of Defiance"
+  let g := mustApply g me (.activate o.id (abIdx g o "Add"))
+  g.stack.size == 1 && (pool g).red == 0 && (pool (passBoth g)).red == 2
+
+/- The Black Gate: pay 3 life as it enters, or it enters tapped. -/
+#guard
+  let g := addToHand afterDraw theBlackGate me
+  let g := mustApply g me (.playLand (handObj g me "The Black Gate").id)
+  let paid := mustApply g me .accept
+  let tapped := mustApply g me .decline
+  life paid me == 17 && !(namedPermanent paid "The Black Gate").status.tapped &&
+    life tapped me == 20 && (namedPermanent tapped "The Black Gate").status.tapped
+
+/- Delighted Halfling's legendary-only mana makes the spell uncounterable. -/
+#guard
+  let g := withMana (addPermanent afterDraw delightedHalfling me me) me .white 3
+  let g := tapFor g "Delighted Halfling" (.colored .green)
+  let g := addToHand g celebornTheWise me
+  let g := mustApply g me (.cast (handObj g me "Celeborn the Wise").id)
+  let g := mustApply g me .pay
+  let spell := (g.stack.back?.map (·.objectId)).getD ⟨0⟩
+  let g := g.counterStackSpell spell
+  (g.findObject? spell).any (·.zone == .stack)
+/- Its colored mana can't pay for a nonlegendary spell. -/
+#guard
+  let g := tapFor (addPermanent afterDraw delightedHalfling me me) "Delighted Halfling" (.colored .red)
+  (pool g).fraRestricted == #[(.colored .red, .legendarySpell)]
+
+/- Desolation of Smaug: the player chooses the colors of four mana that can be
+spent only on Dragon spells. -/
+#guard
+  let g := castFra afterDraw desolationOfSmaug
+  let g := passBoth g
+  let g := [3, 3, 0, 4].foldl (fun g i => mustApply g me (.chooseMode i)) g
+  let restricted := (pool g).fraRestricted.filter (·.2 == .dragonSpell)
+  restricted.size == 4 && (restricted.filter (·.1 == .colored .red)).size == 2
+
 end Mtg.Engine.CatalogModelTests

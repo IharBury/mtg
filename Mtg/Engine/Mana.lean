@@ -321,6 +321,18 @@ inductive FraManaUse where
   /-- No restriction; tracked so “if mana from a Treasure was spent” can be
   checked (Smaug, Wicked Worm). -/
   | fromTreasure
+  /-- Only casting a legendary spell, which then can't be countered
+  (Delighted Halfling). -/
+  | legendarySpell
+  /-- Only casting Dwarf, Equipment, and Saga spells (Fíli and Kíli, Joyous). -/
+  | dwarfEquipmentSagaSpell
+  /-- Only casting Equipment spells or activating equip abilities (Ronin,
+  Shadow Stalker). -/
+  | equipmentOrEquip
+  /-- Only casting an artifact spell (Castle Doom). -/
+  | artifactSpell
+  /-- Only casting Dragon spells (Desolation of Smaug). -/
+  | dragonSpell
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What a payment is for, as far as `FraManaUse` restrictions care. The
@@ -330,6 +342,12 @@ structure ManaSpend where
   fromHand : Bool := false
   planeswalker : Bool := false
   noncreature : Bool := false
+  legendary : Bool := false
+  artifact : Bool := false
+  /-- Subtypes of the spell being cast. -/
+  subtypes : Array String := #[]
+  /-- Activating an equip ability. -/
+  equip : Bool := false
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Whether mana restricted to `u` may pay for `s`. -/
@@ -338,6 +356,13 @@ def FraManaUse.allows : FraManaUse → ManaSpend → Bool
   | .planeswalkerSpell, s => s.spell && s.planeswalker
   | .noncreatureSpell, s => s.spell && s.noncreature
   | .fromTreasure, _ => true
+  | .legendarySpell, s => s.spell && s.legendary
+  | .dwarfEquipmentSagaSpell, s =>
+    s.spell && (s.subtypes.contains "Dwarf" || s.subtypes.contains "Equipment" ||
+      s.subtypes.contains "Saga")
+  | .equipmentOrEquip, s => (s.spell && s.subtypes.contains "Equipment") || s.equip
+  | .artifactSpell, s => s.spell && s.artifact
+  | .dragonSpell, s => s.spell && s.subtypes.contains "Dragon"
 
 /-- Short label for a restriction in pool notation. -/
 def FraManaUse.label : FraManaUse → String
@@ -345,6 +370,11 @@ def FraManaUse.label : FraManaUse → String
   | .planeswalkerSpell => "planeswalker spells"
   | .noncreatureSpell => "noncreature spells"
   | .fromTreasure => "Treasure"
+  | .legendarySpell => "legendary spells"
+  | .dwarfEquipmentSagaSpell => "Dwarf, Equipment, and Saga spells"
+  | .equipmentOrEquip => "Equipment spells and equip abilities"
+  | .artifactSpell => "artifact spells"
+  | .dragonSpell => "Dragon spells"
 
 /-- Unspent mana a player currently has (CR 106.4). Restricted mana (CR 106.10)
 is a subset of the colored totals. -/

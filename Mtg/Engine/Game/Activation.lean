@@ -10,14 +10,6 @@ Activation legality — timing, zones, once-each-turn limits, boast — and
 namespace Mtg.Engine
 namespace Game
 
-/-- Shang-Chi: activate tap abilities as though creatures had haste
-(MSH 280). Does not grant haste and does not allow attacking. -/
-def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o =>
-    o.staticAbilities.any (fun
-      | .activateCreaturesAsThoughHaste => true
-      | _ => false))
-
 /-- Jace's Machinations lets `p` activate loyalty abilities of Jace
 planeswalkers they control any time they could cast an instant. -/
 def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
@@ -67,6 +59,9 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     Except String Unit := do
   if !g.hasPriority p then
     throw "You don't have priority"
+  if (g.manaAbilityDefs o).any (fun d =>
+      d.activatedIdx.isSome && d.activatedIdx == (g.activatedAbilitiesOf o).findIdx? (· == ab)) then
+    throw s!"{o.name}'s ability is a mana ability (CR 605)"
   if g.splitSecondOnStack && !isManaActivation ab then
     throw "A spell with split second is on the stack (CR 702.61a)"
   if ab.activateFromGraveyard then
@@ -114,7 +109,10 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       if sym != .minusX then throw s!"{o.name}'s X loyalty cost is not supported"
   if ab.onlyDuringYourTurn && g.activePlayer != p then
     throw s!"{o.name}'s ability can be activated only during your turn"
-  if ab.onceEachTurn && o.status.activationsThisTurn != 0 then
+  if ab.onceEachTurn &&
+      (match (g.activatedAbilitiesOf o).findIdx? (· == ab) with
+       | some i => o.status.abilitiesActivatedThisTurn.contains i
+       | none => o.status.activationsThisTurn != 0) then
     throw s!"{o.name}'s ability can be activated only once each turn"
   if ab.powerUp &&
       (Nat.max o.status.powerUpActivations (if o.status.powerUpUsed then 1 else 0)) ≥
@@ -156,14 +154,22 @@ def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbilit
 
 def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
     Except String Game := do
-  if !g.hasPriority p then
-    throw "You don't have priority"
   let some o := g.findObject? id | throw "no such object"
   let abs := g.activatedAbilitiesOf o
   if abs.isEmpty then
     throw s!"{o.name} has no activated ability"
   let some ab := abs[abilityIdx]?
     | throw s!"{o.name} has no such activated ability"
+  let defs := g.manaAbilityDefs o
+  if let some i := (List.range defs.size).find? (fun i => defs[i]!.activatedIdx == some abilityIdx) then
+    -- A mana ability doesn't use the stack (CR 605.3b).
+    let d := defs[i]!
+    match d.output, d.picks.isEmpty with
+    | .fixed m, true => return (← g.activateManaAbility p id i m)
+    | _, _ =>
+      throw s!"{o.name}'s ability is a mana ability: choose the mana it adds and what pays its cost (CR 605.3)"
+  if !g.hasPriority p then
+    throw "You don't have priority"
   g.validateActivation p o ab
   let loyaltyX := ab.cost.loyalty == some .minusX
   let g :=

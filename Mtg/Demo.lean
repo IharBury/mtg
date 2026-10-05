@@ -468,6 +468,7 @@ def helpInteractive (controlAll : Bool := false)
   sacrifice            Choose to sacrifice as an additional cost (CR 601.2b)
   play <id>            Play a land
   tap <id> [id...] [color]  Tap listed permanents for mana (optional W/U/B/R/G)
+  mana <id> <n> <mana> [id...]  Activate mana ability n (1-based) of a permanent, adding the listed mana (e.g. WWU); list the permanents or cards that pay its sacrifice or discard cost
   activate <id> [n]    Begin activating an ability (permanent, hand, or graveyard; then tap for mana and pay). n is 1-based when a card has more than one
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   x <n>                Choose a value for X (CR 107.3a / 601.2b)
@@ -898,6 +899,23 @@ def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Ga
   for (id, m) in jobs do
     g := (← g.apply p (.tapForMana id m))
   return g
+
+def manaUsage : String := "usage: mana <id> <ability number> <mana letters> [id ...]"
+
+/-- Activate one mana ability, naming every mana it adds (CR 605.3). -/
+def applyManaAbility (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  match commandTokens tokens with
+  | idTok :: nTok :: manaTok :: rest =>
+    let some id := parseObjectId? idTok | throw manaUsage
+    let some n := nTok.toNat? | throw manaUsage
+    if n == 0 then throw manaUsage
+    let mana ← manaTok.toList.toArray.mapM (fun c =>
+      match parseManaType? (String.singleton c) with
+      | some m => pure m
+      | none => throw manaUsage)
+    let costIds ← if rest.isEmpty then pure #[] else parseObjectIds rest manaUsage
+    g.apply p (.activateManaAbility id (n - 1) mana costIds)
+  | _ => throw manaUsage
 
 def playUsage : String := "usage: play <id>"
 
@@ -1700,6 +1718,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "mode" => applyMode g p args
   | "x" => applyX g p args
   | "tap" => applyTap g p args
+  | "mana" => applyManaAbility g p args
   | "cast" => applyCast g p args
   | "target" => applyTarget g p args
   | "scry" => applyScry g p args
