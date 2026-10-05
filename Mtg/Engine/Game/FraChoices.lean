@@ -612,6 +612,52 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.requestOrderInto (others.push cardId) (.library victim)
       s!"{(g.player victim).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
   | .mayCastGrima .., _ => throw "Cast it (accept), or decline"
+  | .mayCastCopy copyId, .accept =>
+    let g := g.castAsPartOfResolution p copyId
+    let landed := g.followMoved copyId
+    let onStack :=
+      (g.findObject? landed).any (·.zone == .stack) ||
+        (g.findObject? copyId).any (·.zone == .stack)
+    if onStack then return g.finishFraChoice
+    else
+      let gone :=
+        match g.findObject? copyId with
+        | some o => if o.isCopy then (g.ceaseToExist o.id).logMsg s!"The copy of {o.name} ceases to exist" else g
+        | none =>
+          match g.findObject? landed with
+          | some o => if o.isCopy then (g.ceaseToExist o.id).logMsg s!"The copy of {o.name} ceases to exist" else g
+          | none => g
+      return gone.finishFraChoice
+  | .mayCastCopy copyId, .decline =>
+    let g :=
+      match g.findObject? copyId with
+      | some o =>
+        (g.ceaseToExist o.id).logMsg s!"The copy of {o.name} ceases to exist"
+      | none => g
+    return g.finishFraChoice
+  | .mayCastCopy _, _ => throw "Cast the copy (accept), or decline"
+  | .mayDiscardHandBalin sourceId, .accept =>
+    let n := (g.player p).hand.size
+    let g := g.mayDiscardHandDrawThatMany p true
+    let g :=
+      if !g.hasEnduringStory p || n == 0 then g
+      else
+        match sourceId.bind g.findObject? with
+        | some src =>
+          if src.isOnBattlefield then
+            g.forEachOpponent p (fun g pid =>
+              g.dealDamageToPlayer pid (n : Int) (source := some src))
+          else g
+        | none => g
+    return g.finishFraChoice
+  | .mayDiscardHandBalin _, .decline =>
+    return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice
+  | .mayDiscardHandBalin _, _ => throw "Discard your hand (accept), or decline"
+  | .mayDiscardHandDrawFixed n, .accept =>
+    return (g.discardHandThenDraw p n).finishFraChoice
+  | .mayDiscardHandDrawFixed _, .decline =>
+    return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice
+  | .mayDiscardHandDrawFixed _, _ => throw "Discard your hand (accept), or decline"
   | .palantirMayDraw controller _, .accept =>
     return (g.draw controller 1).finishFraChoice
   | .palantirMayDraw controller sourceId, .decline =>
@@ -775,6 +821,9 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayCastCascade .. => .accept
   | .mayCastGrima .. => .decline
   | .palantirMayDraw .. => .decline
+  | .mayCastCopy _ => .decline
+  | .mayDiscardHandBalin _ => .decline
+  | .mayDiscardHandDrawFixed _ => .decline
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>

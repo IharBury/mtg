@@ -116,10 +116,12 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let stackBefore := g.stack
       let manaBefore := pl.manaPool
       let fromGy := original.zone == .graveyard original.owner
+      let wasCopy := original.isCopy
       let (g, newId) := g.move id .stack (some p)
       let g := g.setObject { (g.object! newId) with
         castFromGraveyard := fromGy
-        exileInstantSorceryInstead := exileInstantSorceryInstead && fromGy }
+        exileInstantSorceryInstead := exileInstantSorceryInstead && fromGy
+        isCopy := wasCopy }
       let g := g.putStackEntry p newId
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let cost :=

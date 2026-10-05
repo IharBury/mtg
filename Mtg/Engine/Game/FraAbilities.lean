@@ -431,6 +431,26 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
       if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
       else g.logMsg s!"{o.name} is no longer in the graveyard"
     | none => g.logMsg "The ability's source is no longer in the graveyard"
+  | .sarumanExileCopyMayCast =>
+    g.withLegalKindTarget controller kind targets (fun g t =>
+      match t with
+      | Target.card id =>
+        match g.findObject? id with
+        | some o =>
+          if !(o.zone == .graveyard o.owner) ||
+              !(o.printed.isEnchantment || o.printed.isInstantOrSorcery) then
+            g.logMsg "The target is no longer legal"
+          else
+            let name := o.name
+            let (g, exId) := g.move id .exile none
+            let g := g.logMsg s!"{name} is exiled"
+            let card := g.object! exId
+            let (g, copy) := g.allocObject card.printed controller .exile (some controller)
+            let g := g.setObject { copy with isCopy := true }
+            g.beginFraChoice controller (.mayCastCopy copy.id)
+              s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer legal") sourceId illegal
   | .zemoBoastCopies =>
     let exiled := (g.resolvingAbilityObject?.map (·.boastExiled)).getD #[]
     let (g, copies) := exiled.foldl (fun (acc : Game × Array ObjectId) id =>

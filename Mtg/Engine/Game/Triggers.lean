@@ -430,14 +430,16 @@ def afterLifeLost (g : Game) (p : PlayerId) (n : Nat) : Game :=
         acc.putMatchingSourceTriggers pl.id o .playerLosesLife
           (lastKnownPower := some (Int.ofNat n)) (lastKnownToughness := some (Int.ofNat p.idx))) g
 
-/-- Put matching triggers of permanents `p` controls that fire on `event`. -/
+/-- Put matching triggers of permanents `p` controls that fire on `event`.
+`cause` is the object that made them trigger, when there is one. -/
 def putControlledTriggers (g : Game) (p : PlayerId)
-    (event : TriggerEvent) (excludeId : Option ObjectId := none) : Game :=
+    (event : TriggerEvent) (excludeId : Option ObjectId := none)
+    (cause : Option GameObject := none) : Game :=
   let g := g.foldControlledPermanents p excludeId fun g o =>
-    g.putMatchingSourceTriggers p o event
+    g.putMatchingSourceTriggers p o event (cause := cause)
   -- Emblems in the command zone trigger too (CR 114.4).
   (g.objects.filter (fun o => o.zone == .command && o.controlledBy p)).foldl
-    (fun g e => g.putMatchingSourceTriggers p e event) g
+    (fun g e => g.putMatchingSourceTriggers p e event (cause := cause)) g
 
 /-- Queue `p`'s triggered abilities whose Reality Fracture event satisfies
 `pred`, with `cause` as the object that caused them. -/

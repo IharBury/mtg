@@ -1177,6 +1177,101 @@ mills and loses life equal to the milled cards' mana values. -/
       (namedPermanent g "Palantír of Orthanc").status.influence == 1
   | _ => false
 
+/-- Saruman's second-spell ability after the opponent's library is only
+Banishing Light under Lightning Bolt. The spell's mana value is 1. -/
+def sarumanMilled : Game :=
+  let g := addPermanent afterDraw sarumanOfManyColors me me
+  let g := g.modifyPlayer opp (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop (addToLibraryTop g banishingLight opp) lightningBolt opp
+  g.applyTriggeredAbility me .onCastSecondSpellMillThenCopy
+    (some (idOf g "Saruman of Many Colors")) (lastKnownPower := some 1)
+
+def gyNamed? (g : Game) (p : PlayerId) (name : String) : Option ObjectId :=
+  (g.player p).graveyard.find? (fun id => (g.object! id).name == name)
+
+/- Saruman mills, then a reflexive ability targets an opponent's
+enchantment, instant, or sorcery of equal or lesser mana value. The copy
+is optional. -/
+#guard
+  match sarumanMilled.stack.back?, gyNamed? sarumanMilled opp "Lightning Bolt",
+      gyNamed? sarumanMilled opp "Banishing Light" with
+  | some entry, some boltId, some lightId =>
+    match sarumanMilled.findObject? entry.objectId with
+    | some obj =>
+      match obj.abilityEffect with
+      | some eff =>
+        let legal := sarumanMilled.legalTargetsForKind me eff.targetKind
+        legal.contains (Target.card boltId) && !legal.contains (Target.card lightId) &&
+          (match sarumanMilled.pending with | .chooseTargets _ => true | _ => false)
+      | none => false
+    | none => false
+  | _, _, _ => false
+#guard
+  match gyNamed? sarumanMilled opp "Lightning Bolt" with
+  | some boltId =>
+    let g := mustApply sarumanMilled me (.target (Target.card boltId))
+    let g := passBoth g
+    let offered :=
+      match g.pending with
+      | .fraChoice _ (.mayCastCopy _) => true
+      | _ => false
+    let g := mustApply g me .decline
+    offered && inExile g "Lightning Bolt" &&
+      !g.objects.any (fun o => o.isCopy && o.name == "Lightning Bolt") &&
+      g.log.any (fun s => mentions s "ceases to exist")
+  | none => false
+#guard
+  match gyNamed? sarumanMilled opp "Lightning Bolt" with
+  | some boltId =>
+    let g := mustApply sarumanMilled me (.target (Target.card boltId))
+    let g := passBoth g
+    let g := mustApply g me .accept
+    g.objects.any (fun o => o.isCopy && o.name == "Lightning Bolt" && o.zone == .stack) &&
+      inExile g "Lightning Bolt" &&
+      (match g.pending with | .chooseTargets _ => true | _ => false)
+  | none => false
+#guard
+  let g := addPermanent afterDraw sarumanOfManyColors me me
+  let g := g.modifyPlayer opp (fun pl => { pl with library := #[] })
+  let g := g.applyTriggeredAbility me .onCastSecondSpellMillThenCopy
+    (some (idOf g "Saruman of Many Colors")) (lastKnownPower := some 1)
+  g.stack.isEmpty && g.pending == .none
+
+/- Sauron may discard a hand, including an empty one, to draw four cards. -/
+#guard
+  let g := addPermanent afterDraw sauronTheDarkLord me me
+  let before := handSize g me
+  let g := g.applyTriggeredAbility me (.onRingTemptsMayDiscardDraw 4)
+    (some (idOf g "Sauron, the Dark Lord"))
+  let g := mustApply g me .decline
+  handSize g me == before &&
+    g.log.any (fun s => mentions s "does not discard")
+#guard
+  let g := addPermanent afterDraw sauronTheDarkLord me me
+  let g := g.modifyPlayer me (fun pl => { pl with hand := #[] })
+  let g := g.applyTriggeredAbility me (.onRingTemptsMayDiscardDraw 4)
+    (some (idOf g "Sauron, the Dark Lord"))
+  let g := mustApply g me .accept
+  handSize g me == 4 && g.log.any (fun s => mentions s "discards 0")
+
+/- Balin may discard the hand and draw that many. An enduring story makes
+him deal that much damage to each opponent. -/
+#guard
+  let g := addPermanent afterDraw balinLoremaster me me
+  let before := handSize g me
+  let g := g.applyTriggeredAbility me (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf")
+    (some (idOf g "Balin, Loremaster"))
+  let g := mustApply g me .decline
+  handSize g me == before && life g opp == 20
+#guard
+  let g := addPermanent afterDraw balinLoremaster me me
+  let n := handSize g me
+  let g := g.modifyPlayer me (fun pl => { pl with enduringStory := true })
+  let g := g.applyTriggeredAbility me (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf")
+    (some (idOf g "Balin, Loremaster"))
+  let g := mustApply g me .accept
+  handSize g me == n && life g opp + (n : Int) == 20
+
 /- Enchanted River's Grasp taps the enchanted creature and removes every counter. -/
 #guard
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me

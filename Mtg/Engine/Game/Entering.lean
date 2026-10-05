@@ -115,7 +115,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       acc.putControlledTriggers pl.id .opponentCastsSpell) g
   let g :=
     if spells == 2 then
-      g.putControlledTriggers caster .youCastSecondSpell
+      g.putControlledTriggers caster .youCastSecondSpell (cause := some spell)
     else g
   let colors := spell.printed.colors
   let g :=

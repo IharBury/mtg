@@ -640,11 +640,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
       | _ => g.logMsg "The target is no longer legal"
   | .discardHandDrawDamageIfStory =>
-    let n := (g.player controller).hand.size
-    let g := g.mayDiscardHandDrawThatMany controller true
-    if g.hasEnduringStory controller then
-      g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
-    else g
+    g.beginFraChoice controller (.mayDiscardHandBalin sourceId)
+      s!"{(g.player controller).name} may discard their hand"
   | .plusOneAndLifelink =>
     match targets[0]? with
     | some (Target.permanent oid) => g.applyBardBowman oid
@@ -995,29 +992,26 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let (g, milled) := g.millThenReflexive opps 2
     if !milled then g
     else
-      match (opps.foldl (fun acc pid =>
-        acc ++ (g.player pid).graveyard) #[]).findSome? (fun id =>
-          match g.findObject? id with
-          | some o =>
-            if o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery then
-              some id
-            else none
-          | none => none) with
-      | none => g
-      | some id =>
-        let o := g.object! id
-        let (g, newId) := g.move id .exile none
-        let g := g.logMsg s!"{o.name} is exiled"
-        g.castAsPartOfResolution controller newId
+      let mv :=
+        match g.fraCause? with
+        | some spell => g.objectManaValue spell
+        | none => (lastKnownPower.getD 0).toNat
+      g.putReflexiveTrigger controller sourceId {
+        targeting := .of (.filtered {
+          noun := s!"target enchantment, instant, or sorcery card with mana value {mv} or less from an opponent's graveyard"
+          zone := .anyGraveyard
+          types := #[.enchantment, .instant, .sorcery]
+          controller := .opponent
+          mvAtMost := some mv })
+        resolution := .fra .sarumanExileCopyMayCast
+        phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
   | .amassOrcs n =>
     g.amassOrcs controller n
   | .ringTempts =>
     g.temptWithTheRing controller
   | .mayDiscardHandDraw n =>
-    let g := g.mayDiscardHandDrawThatMany controller true
-    if (g.player controller).hand.size == 0 && n > 0 then
-      g.draw controller n
-    else g
+    g.beginFraChoice controller (.mayDiscardHandDrawFixed n)
+      s!"{(g.player controller).name} may discard their hand. If they do, they draw {n} cards"
   | .treasuresEqualLastKnown =>
     let n := (lastKnownPower.getD 0).toNat
     g.createTreasureTokens controller n

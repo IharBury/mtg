@@ -761,6 +761,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .drawAndCreateTreasure
   | .damageEqualSourcePower
   | .returnSourceToHand
+  | .sarumanExileCopyMayCast
   | .extort =>
     g.applyFraAbility controller effect r targets sourceId
 

@@ -819,6 +819,9 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .mayCastCascade .. => "cascade: cast the exiled card without paying its mana cost (accept), or decline"
         | .mayCastGrima .. => "may cast the exiled instant or sorcery without paying its mana cost (accept), or decline"
         | .palantirMayDraw .. => "may have that player draw a card (accept), or decline"
+        | .mayCastCopy _ => "may cast the copy without paying its mana cost (accept), or decline"
+        | .mayDiscardHandBalin _ => "may discard your hand, then draw that many (accept), or decline"
+        | .mayDiscardHandDrawFixed n => s!"may discard your hand and draw {n} (accept), or decline"
         | .mayCastFromGraveyard eligible =>
           s!"may cast an artifact, instant, or sorcery from your graveyard ({eligible.size} card(s)): cast <id>, or decline"
         | .maySearchLibrary _ _ _ _ kind =>

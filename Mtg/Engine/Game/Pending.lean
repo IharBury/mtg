@@ -386,6 +386,14 @@ inductive FraChoice where
   /-- Palantír of Orthanc: this opponent may have `controller` draw a card.
   Declining mills X cards and this player loses life equal to their mana values. -/
   | palantirMayDraw (controller : PlayerId) (sourceId : ObjectId)
+  /-- You may cast this copy of an exiled card without paying its mana cost.
+  Declining makes the copy cease to exist (Saruman of Many Colors). -/
+  | mayCastCopy (copyId : ObjectId)
+  /-- You may discard your hand. If you do, draw that many cards. With an
+  enduring story, `sourceId` deals that much damage to each opponent (Balin). -/
+  | mayDiscardHandBalin (sourceId : Option ObjectId)
+  /-- You may discard your hand. If you do, draw `n` cards (Sauron). -/
+  | mayDiscardHandDrawFixed (n : Nat)
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)

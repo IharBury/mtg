@@ -186,6 +186,21 @@ def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Ga
     let g := g.logMsg s!"{(g.player p).name} discards {n} card(s)"
     if n == 0 then g else g.draw p n
 
+/-- Discard the hand, then draw `n` cards. An empty hand is a legal discard
+(Sauron, the Dark Lord). -/
+def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  let ids := (g.player p).hand
+  let discarded := ids.size
+  let g :=
+    ids.foldl (fun acc id =>
+      match acc.findObject? id with
+      | none => acc
+      | some o =>
+        let (acc, _) := acc.move id (.graveyard o.owner) none
+        acc) g
+  let g := g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
+  if n == 0 then g else g.draw p n
+
 /-- Players currently tied for most life. -/
 def playersWithMostLife (g : Game) : Array PlayerId :=
   let living := g.livingPlayers

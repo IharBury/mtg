@@ -293,6 +293,9 @@ inductive FraResolution where
   | damageEqualSourcePower
   /-- Return the source from the graveyard to its owner's hand. -/
   | returnSourceToHand
+  /-- Exile the targeted enchantment, instant, or sorcery. Copy it. You may
+  cast the copy without paying its mana cost (Saruman of Many Colors). -/
+  | sarumanExileCopyMayCast
   /-- The creature that caused this ability gets +P/+T until end of turn. -/
   | causeGetsPump (power toughness : Int)
   /-- Creatures attacking the player recorded as the cause's controller get
