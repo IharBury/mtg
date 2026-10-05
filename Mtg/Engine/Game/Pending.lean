@@ -379,6 +379,13 @@ inductive FraChoice where
   /-- Cascade: you may cast `cardId` without paying its mana cost; `others`
   and an uncast `cardId` go on the bottom in a random order (CR 702.85a). -/
   | mayCastCascade (cardId : ObjectId) (others : Array ObjectId)
+  /-- Gríma: you may cast `cardId` without paying its mana cost. `others`,
+  and `cardId` if it isn't cast, go on the bottom of `victim`'s library
+  in a random order. -/
+  | mayCastGrima (cardId : ObjectId) (others : Array ObjectId) (victim : PlayerId)
+  /-- Palantír of Orthanc: this opponent may have `controller` draw a card.
+  Declining mills X cards and this player loses life equal to their mana values. -/
+  | palantirMayDraw (controller : PlayerId) (sourceId : ObjectId)
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)

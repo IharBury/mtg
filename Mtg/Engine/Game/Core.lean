@@ -79,6 +79,9 @@ structure Game where
   /-- The card discarded for this loot enters tapped if it is a land
   (Silvan Reveler). -/
   lootLandEntersTapped : Bool := false
+  /-- After Palantír of Orthanc finishes scrying, this opponent may have
+  the controller draw. Stores controller, opponent, and the Palantír. -/
+  palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
   /-- Last-known status of objects that left the battlefield, newest last
   (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
   lastKnownStatus : Array (ObjectId × Status) := #[]

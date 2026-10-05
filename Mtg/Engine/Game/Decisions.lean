@@ -35,8 +35,8 @@ def checkLookedPiles (g : Game) (p q : PlayerId) (count : Nat)
   if !isPermutation (top ++ rest) (g.scryLookedIds p count) then
     throw s!"{verb.capitalize} must rearrange the cards you looked at ({rule})"
 
-/-- Clear the finished scry or surveil, draw any follow-up cards, and give
-the active player priority. -/
+/-- Clear the finished scry or surveil, draw any follow-up cards, offer
+Palantír's opponent their choice, and give the active player priority. -/
 def finishLibraryLook (g : Game) : Game :=
   let g := { g with pending := .none, surveilReturnMvAtMost := none
                     surveilReturnNoncreatureNonland := false }
@@ -45,11 +45,18 @@ def finishLibraryLook (g : Game) : Game :=
     | some (c, src, next) =>
       ({ g with fraAfterLook := none }).applyFra c default next.toResolution #[] src
     | none => g
-  match g.pendingDrawAfterScry with
-  | some (q, n) =>
-    let g := { g with pendingDrawAfterScry := none }
-    (g.draw q n).receivePriority g.activePlayer
-  | none => g.receivePriority g.activePlayer
+  let g :=
+    match g.pendingDrawAfterScry with
+    | some (q, n) =>
+      let g := { g with pendingDrawAfterScry := none }
+      g.draw q n
+    | none => g
+  if g.pending != .none then g
+  else
+    match g.palantirAfterScry with
+    | some (controller, opp, sid) =>
+      ({ g with palantirAfterScry := none }).offerPalantirChoice controller opp sid
+    | none => g.receivePriority g.activePlayer
 
 /-- Log putting `top` back on top, unless they stay in the looked-at order. -/
 def logPutOnTop (g : Game) (p : PlayerId) (looked top : Array ObjectId) : Game :=

@@ -256,12 +256,11 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
         let _ := cardName
     return g
 
-/-- Exile cards from `victim`'s library until an instant or sorcery, face up.
-An empty library becomes that player's library again. The found card may be
-cast as this ability resolves, ignoring timing. Uncast cards go on the bottom
-in a random order. -/
-partial def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
-    (castTheCard : Bool) : Game :=
+/-- Exile cards from the top of `victim`'s library until an instant or
+sorcery, face up. Returns the game, that card, and the other exiled cards
+in the order they were exiled. -/
+partial def exileUntilInstantOrSorcery (g : Game) (victim : PlayerId) :
+    Game × Option ObjectId × Array ObjectId :=
   Id.run do
     let mut g := g
     let mut exiled : Array ObjectId := #[]
@@ -277,21 +276,30 @@ partial def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : Play
         found := some newId
       else
         exiled := exiled.push newId
-    match found with
-    | none =>
-      return g.requestOrderInto exiled (.library victim)
-        s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
-    | some instId =>
+    return (g, found, exiled)
+
+/-- Exile cards from `victim`'s library until an instant or sorcery, face up.
+An empty library becomes that player's library again. The found card may be
+cast as this ability resolves, ignoring timing. Uncast cards go on the bottom
+in a random order. -/
+def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
+    (castTheCard : Bool) : Game :=
+  let (g, found, exiled) := g.exileUntilInstantOrSorcery victim
+  match found with
+  | none =>
+    g.requestOrderInto exiled (.library victim)
+      s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
+  | some instId =>
+    let g :=
       if castTheCard then
         let o := g.object! instId
-        let (g', _) := g.move instId .stack (some controller)
-        g := g'.logMsg
+        let (g, _) := g.move instId .stack (some controller)
+        g.logMsg
           s!"{(g.player controller).name} casts {o.name} as the ability resolves"
       else
-        let (g', _) := g.move instId (.library victim) none
-        g := g'
-      return g.requestOrderInto exiled (.library victim)
-        s!"{(g.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
+        (g.move instId (.library victim) none).1
+    g.requestOrderInto exiled (.library victim)
+      s!"{(g.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
 
 /-- An uncast copy ceases the next time state-based actions are checked. -/
 def ceaseUncastCopies (g : Game) : Game :=

@@ -817,6 +817,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .newTargetsForCopies copies =>
           s!"choose a new target for the copy ({copies.size} left): choose <id>, or decline to keep it"
         | .mayCastCascade .. => "cascade: cast the exiled card without paying its mana cost (accept), or decline"
+        | .mayCastGrima .. => "may cast the exiled instant or sorcery without paying its mana cost (accept), or decline"
+        | .palantirMayDraw .. => "may have that player draw a card (accept), or decline"
         | .mayCastFromGraveyard eligible =>
           s!"may cast an artifact, instant, or sorcery from your graveyard ({eligible.size} card(s)): cast <id>, or decline"
         | .maySearchLibrary _ _ _ _ kind =>

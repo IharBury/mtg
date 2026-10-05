@@ -589,6 +589,45 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.requestOrderInto (others.push cardId) (.library p)
       s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
   | .mayCastCascade .., _ => throw "Cast it (accept), or decline"
+  | .mayCastGrima cardId others victim, .accept =>
+    let g := g.castAsPartOfResolution p cardId
+    let landed := g.followMoved cardId
+    let cast := (g.findObject? landed).any (·.zone == .stack)
+    let uncast :=
+      if cast then #[]
+      else if (g.findObject? cardId).any (·.zone == .exile) then #[cardId]
+      else if (g.findObject? landed).any (·.zone == .exile) then #[landed]
+      else #[]
+    let pile := others ++ uncast
+    let msg :=
+      s!"{(g.player victim).name} puts the exiled cards that weren't cast on the bottom of their library in a random order"
+    let g :=
+      if g.pending == .none then g.requestOrderInto pile (.library victim) msg
+      else if g.norandom then g.moveIdsInOrder pile (.library victim) |>.logMsg msg
+      else
+        let (rng, ordered) := g.rng.shuffle pile
+        { g with rng := rng }.moveIdsInOrder ordered (.library victim) |>.logMsg msg
+    return g.finishFraChoice
+  | .mayCastGrima cardId others victim, .decline =>
+    return (g.requestOrderInto (others.push cardId) (.library victim)
+      s!"{(g.player victim).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
+  | .mayCastGrima .., _ => throw "Cast it (accept), or decline"
+  | .palantirMayDraw controller _, .accept =>
+    return (g.draw controller 1).finishFraChoice
+  | .palantirMayDraw controller sourceId, .decline =>
+    let n :=
+      match g.findObject? sourceId with
+      | some src => src.status.influence
+      | none => 0
+    let before := (g.player controller).graveyard.size
+    let g := g.mill controller n
+    let gy := (g.player controller).graveyard
+    let milled := gy.size - before
+    let mv :=
+      (gy.extract (gy.size - milled) gy.size).foldl (fun acc id =>
+        acc + (g.object! id).printed.manaValue) 0
+    return (g.loseLife p mv).finishFraChoice
+  | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
   | .mayCastFromGraveyard eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
     let some o := g.findObject? id | throw "no such object"
@@ -734,6 +773,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | none => .decline
   | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
   | .mayCastCascade .. => .accept
+  | .mayCastGrima .. => .decline
+  | .palantirMayDraw .. => .decline
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>

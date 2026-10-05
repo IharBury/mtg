@@ -21,6 +21,29 @@ def scryThenDraw (g : Game) (p : PlayerId) (scryN drawN : Nat) : Game :=
     g.draw p drawN
   else g
 
+/-- The target opponent may have `controller` draw a card (Palantír). -/
+def offerPalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) : Game :=
+  g.beginFraChoice opp (.palantirMayDraw controller sid)
+    s!"{(g.player opp).name} may have {(g.player controller).name} draw a card"
+
+/-- Scry first when there are cards to look at; otherwise ask immediately. -/
+def schedulePalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) : Game :=
+  match g.pending with
+  | .scry _ _ => { g with palantirAfterScry := some (controller, opp, sid) }
+  | _ => g.offerPalantirChoice controller opp sid
+
+/-- Exile until an instant or sorcery, then ask whether to cast it. -/
+def beginGrimaImpulse (g : Game) (controller victim : PlayerId) : Game :=
+  let (g, found, others) := g.exileUntilInstantOrSorcery victim
+  match found with
+  | none =>
+    g.requestOrderInto others (.library victim)
+      s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
+  | some cardId =>
+    let name := (g.object! cardId).name
+    g.beginFraChoice controller (.mayCastGrima cardId others victim)
+      s!"{(g.player controller).name} may cast {name} without paying its mana cost"
+
 /-- Apply one Alliance mode of `sourceId` if it has not been chosen this turn.
 If every mode was already chosen, the ability is removed with no effect. -/
 def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
@@ -417,7 +440,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .addMana types =>
     g.addManaLogged controller types
   | .defenderSacsLeastPower =>
-    let defn := g.opponent controller
+    let defn :=
+      match sourceId.bind g.findObject? with
+      | some src => src.status.attackingWhom.getD (g.opponent controller)
+      | none => g.opponent controller
     let chosen :=
       match targets[0]? with
       | some (Target.permanent id) => some id
@@ -944,7 +970,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.castInstantSorceryFromHandMvAtMost controller (lastKnownPower.getD 0).toNat
   | .grimaImpulse =>
     let victim := g.lastCombatDamagePlayer.getD (g.opponent controller)
-    g.grimaExileUntilInstantOrSorcery controller victim true
+    g.beginGrimaImpulse controller victim
   | .palantir =>
     let tgt :=
       match targets[0]? with
@@ -953,27 +979,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match sourceId with
     | none => g.logMsg "The source is no longer in play"
     | some sid =>
+      let before := ((g.findObject? sid).map (·.status.influence)).getD 0
       let g := g.applyPalantir sid tgt
       match tgt with
       | none => g
-      | some _ =>
-        -- Opponent declines the optional draw; mill and lose life.
+      | some opp =>
         match g.findObject? sid with
-        | none => g
         | some src =>
-          let n := src.status.influence
-          let before := (g.player controller).graveyard.size
-          let g := g.mill controller n
-          let milled := (g.player controller).graveyard.size - before
-          let mv :=
-            (g.player controller).graveyard.extract
-              ((g.player controller).graveyard.size - milled)
-              (g.player controller).graveyard.size
-            |>.foldl (fun acc id =>
-              acc + (g.object! id).printed.manaValue) 0
-          match tgt with
-          | some pid => g.loseLife pid mv
-          | none => g
+          if src.status.influence > before then
+            g.schedulePalantirChoice controller opp sid
+          else g
+        | none => g
   | .millThenCopy =>
     let opps := (g.livingOpponents controller).map (·.id)
     let (g, milled) := g.millThenReflexive opps 2

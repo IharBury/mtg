@@ -1089,6 +1089,94 @@ counter is removed. -/
     (some (idOf g "Dawn of a New Age"))
   !onBattlefield g "Dawn of a New Age" && life g me == lifeBefore + 4
 
+/-- Three seats. Witch-king attacks Liliana, who is not the seat opponent. -/
+def witchKingAttacksLiliana : Game :=
+  let liliana := { (afterDraw.player ⟨1⟩) with id := ⟨2⟩, name := "Liliana" }
+  let g := { afterDraw with players := afterDraw.players.push liliana }
+  let g := g.modifyPlayer ⟨2⟩ (fun pl => { pl with hand := #[], library := #[], graveyard := #[] })
+  let g := addPermanent g witchKingBringerOfRuin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨2⟩ ⟨2⟩
+  let wk := namedPermanent g "Witch-king, Bringer of Ruin"
+  let g := g.setObject { wk with status :=
+    { wk.status with attacking := true, attackingWhom := some ⟨2⟩ } }
+  g.applyTriggeredAbility ⟨0⟩ .onAttackDefenderSacsLeastPower (some wk.id)
+
+/- Witch-king, Bringer of Ruin makes the player it is attacking sacrifice,
+even when that player is not the seat opponent. -/
+#guard
+  !witchKingAttacksLiliana.battlefield.any (fun o => o.name == "Gray Ogre") &&
+    witchKingAttacksLiliana.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    witchKingAttacksLiliana.pending == .none &&
+    witchKingAttacksLiliana.log.any (fun s => mentions s "Liliana sacrifices Gray Ogre")
+
+/- Gríma asks before casting. Declining puts every exiled card on the bottom;
+accepting casts the instant and bottoms only the cards that weren't cast. -/
+#guard
+  let g := addPermanent afterDraw grimaSarumanSFootman me me
+  let g := addToLibraryTop (addToLibraryTop g lightningBolt opp) mountain opp
+  let g := { g with lastCombatDamagePlayer := some opp }
+  let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
+    (some (idOf g "Gríma, Saruman's Footman"))
+  let offered :=
+    match g.pending with
+    | .fraChoice p (.mayCastGrima _ _ v) => p == me && v == opp
+    | _ => false
+  let g := mustApply g me .decline
+  offered &&
+    (g.player opp).library.any (fun id => (g.object! id).name == "Lightning Bolt") &&
+    (g.player opp).library.any (fun id => (g.object! id).name == "Mountain") &&
+    !inExile g "Lightning Bolt" && !inExile g "Mountain" &&
+    !g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
+    g.log.any (fun s => mentions s "face up")
+#guard
+  let g := addPermanent afterDraw grimaSarumanSFootman me me
+  let g := addToLibraryTop (addToLibraryTop g lightningBolt opp) mountain opp
+  let g := { g with lastCombatDamagePlayer := some opp }
+  let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
+    (some (idOf g "Gríma, Saruman's Footman"))
+  let g := mustApply g me .accept
+  g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
+    g.log.any (fun s => mentions s "as the ability resolves") &&
+    (g.object! (g.player opp).library[0]!).name == "Mountain" &&
+    !inExile g "Mountain" &&
+    (match g.pending with | .chooseTargets _ => true | _ => false)
+
+/- Palantír scries, then the targeted opponent chooses the draw. Declining
+mills and loses life equal to the milled cards' mana values. -/
+#guard
+  let g := onlyLib (addPermanent afterDraw palantirOfOrthanc me me) #[mountain, lightningBolt]
+  let g := g.applyTriggeredAbility me .onYourEndStepPalantir
+    (some (idOf g "Palantír of Orthanc")) #[.player opp]
+  let scried := match g.pending with | .scry _ 2 => true | _ => false
+  let g := applyIdle g
+  let choosing :=
+    match g.pending with
+    | .fraChoice p (.palantirMayDraw c _) => p == opp && c == me
+    | _ => false
+  let g := mustApply g opp .decline
+  scried && choosing &&
+    (namedPermanent g "Palantír of Orthanc").status.influence == 1 &&
+    inGraveyard g me "Lightning Bolt" && life g opp == 19
+#guard
+  let g := onlyLib (addPermanent afterDraw palantirOfOrthanc me me) #[mountain, lightningBolt]
+  let before := handSize g me
+  let g := g.applyTriggeredAbility me .onYourEndStepPalantir
+    (some (idOf g "Palantír of Orthanc")) #[.player opp]
+  let g := applyIdle g
+  let g := mustApply g opp .accept
+  handSize g me == before + 1 && inHand g me "Lightning Bolt" &&
+    life g opp == 20 && !inGraveyard g me "Lightning Bolt"
+#guard
+  let g := onlyLib (addPermanent afterDraw palantirOfOrthanc me me) #[]
+  let g := g.applyTriggeredAbility me .onYourEndStepPalantir
+    (some (idOf g "Palantír of Orthanc")) #[.player opp]
+  match g.pending with
+  | .fraChoice p (.palantirMayDraw c _) =>
+    p == opp && c == me &&
+      (namedPermanent g "Palantír of Orthanc").status.influence == 1
+  | _ => false
+
 /- Enchanted River's Grasp taps the enchanted creature and removes every counter. -/
 #guard
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me
