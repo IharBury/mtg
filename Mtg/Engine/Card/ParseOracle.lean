@@ -1,4 +1,5 @@
 import Std.Data.HashMap
+import Std.Data.HashSet
 import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Card.OracleActivate
 import Mtg.Engine.Card.OracleArgs
@@ -879,13 +880,6 @@ where
         else some (pushMana c t)
       | _ => none
 
-def normEq (cardName a b : String) : Bool :=
-  normalizeUnit cardName a == normalizeUnit cardName b
-
-def linesEq (cardName : String) (printed oracle : List String) : Bool :=
-  printed.length == oracle.length &&
-    (printed.zip oracle).all fun (p, o) => normEq cardName p o
-
 def skipLine (c : CardDef) (line : String) : Bool :=
   let n := normalizeUnit c.name line
   n.isEmpty || n == "enchant creature" ||
@@ -907,38 +901,106 @@ def matchArgLines (pats : List (List Pat)) (norms : List String) (vals : Array S
         | none => none
   go pats norms vals []
 
-/-- Parse `Nat` / `Int` / `String` holes in `proto` from `query` and rebuild `e`. -/
-def matchEffectText (cardName proto query : String) (e : Effect) : Option Effect :=
+/-- Name used when indexing printed abilities. `normalizeUnit` rewrites it to `this`,
+the same way a real card name is rewritten. -/
+private def indexName : String := "CARDNAME"
+
+/-- A chapter or one-line spell effect with its printed line, normal forms, and
+argument holes, prepared once for every card that does not name it. -/
+structure EffectProto where
+  line : NormLine
+  effect : Effect
+  args : Array SlotVal
+  unitPats : List Pat
+  structPats : List Pat
+
+def EffectProto.of (line : String) (e : Effect) : EffectProto :=
+  let line := NormLine.of line
   let args := collectEffect e
-  let tryNorm (norm : String → String → String) : Option (Array SlotVal) :=
-    matchPats (patsOf (norm cardName proto) args) (tokenize (norm cardName query)) args
-  match tryNorm normalizeUnit |>.orElse (fun _ => tryNorm normalizeStructural) with
-  | none => none
-  | some vals => some (if vals == args then e else refillEffect e vals)
+  { line, effect := e, args
+    unitPats := patsOf line.unit args
+    structPats := patsOf line.structural args }
+
+/-- One Oracle line normalized for the card being parsed. -/
+structure EffectQuery where
+  cardName : String
+  /-- `nameKeys cardName`. -/
+  keys : List String
+  unit : String
+  unitToks : List String
+  structToks : List String
+
+def EffectQuery.of (cardName text : String) : EffectQuery :=
+  let unit := normalizeUnit cardName text
+  { cardName, keys := nameKeys cardName, unit
+    unitToks := tokenize unit
+    structToks := tokenize (normalizeStructural cardName text) }
+
+/-- `normalizeUnit` of the prototype line equals `normalizeUnit` of the query. -/
+def EffectProto.sameText (p : EffectProto) (q : EffectQuery) : Bool :=
+  p.line.unitFor q.cardName q.keys == q.unit
+
+/-- Parse `Nat` / `Int` / `String` holes in the prototype line from the query
+and rebuild the effect. -/
+def EffectProto.matchText (p : EffectProto) (q : EffectQuery) : Option Effect :=
+  let named := mentionsNameKey q.keys p.line.base
+  let unitPats :=
+    if named then patsOf (normalizeUnit q.cardName p.line.raw) p.args else p.unitPats
+  let structPats (_ : Unit) :=
+    if named then patsOf (normalizeStructural q.cardName p.line.raw) p.args else p.structPats
+  let found := (matchPats unitPats q.unitToks p.args).orElse fun _ =>
+    matchPats (structPats ()) q.structToks p.args
+  found.map fun vals => if vals == p.args then p.effect else refillEffect p.effect vals
+
+@[irreducible, noinline] def chapterProtos : Thunk (Array EffectProto) :=
+  Thunk.mk fun _ => chapterEffects.get.map fun (stored, e) => EffectProto.of stored e
+
+/-- A spell effect as a chapter or mode candidate. `fixed` is its one printed
+line when that line never includes the card's name; `effectLines` is
+recomputed for the card otherwise. -/
+structure SpellProto where
+  effect : Effect
+  fixed : Option EffectProto
+  namesCard : Bool
+
+@[irreducible, noinline] def spellProtos : Thunk (Array SpellProto) :=
+  Thunk.mk fun _ => spellEffects.get.map fun e =>
+    let lines := effectLines indexName e
+    let namesCard := lines.any (·.contains indexName)
+    let fixed := match lines with
+      | [line] => if namesCard then none else some (EffectProto.of line e)
+      | _ => none
+    { effect := e, fixed, namesCard }
+
+/-- The one-line prototype of a spell effect on this card, if it has one line. -/
+def SpellProto.forCard (p : SpellProto) (cardName : String) : Option EffectProto :=
+  if p.namesCard then
+    match effectLines cardName p.effect with
+    | [line] => some (EffectProto.of line p.effect)
+    | _ => none
+  else p.fixed
+
+/-- Stored text of the first chapter whose printed line reads as `text`. -/
+def chapterStoredText (cardName text : String) : Option String :=
+  let q := EffectQuery.of cardName text
+  chapterProtos.get.find? (·.sameText q) |>.map (·.line.raw)
 
 def matchChapter (cardName text : String) : Option Effect :=
-  let fromTable := chapterEffects.get.find? fun (stored, _) => normEq cardName stored text
-  match fromTable with
-  | some (_, e) => some e
+  let q := EffectQuery.of cardName text
+  let firstSpell (f : EffectProto → Option Effect) : Option Effect :=
+    spellProtos.get.foldl (fun acc p =>
+      match acc with
+      | some _ => acc
+      | none => (p.forCard cardName).bind f) none
+  match chapterProtos.get.find? (·.sameText q) with
+  | some p => some p.effect
   | none =>
-    match spellEffects.get.find? fun e =>
-        linesEq cardName (effectLines cardName e) [text] with
+    match firstSpell fun p => if p.sameText q then some p.effect else none with
     | some e => some e
     | none =>
-      let fromPattern := chapterEffects.get.foldl (fun acc (stored, e) =>
-        match acc with
-        | some _ => acc
-        | none => matchEffectText cardName stored text e) none
-      match fromPattern with
+      match chapterProtos.get.findSome? (·.matchText q) with
       | some e => some e
-      | none =>
-        spellEffects.get.foldl (fun acc e =>
-          match acc with
-          | some _ => acc
-          | none =>
-            match effectLines cardName e with
-            | [line] => matchEffectText cardName line text e
-            | _ => none) none
+      | none => firstSpell (·.matchText q)
 
 def parseModes (cardName line : String) : Option ParsedAbility :=
   let raw := line.trimAscii.copy
@@ -967,15 +1029,20 @@ def parseModes (cardName line : String) : Option ParsedAbility :=
             else none
           some (.modes effects.toArray oneOrBoth teamwork twoIf)
 
-/-- Name used when indexing printed abilities. `normalizeUnit` rewrites it to `this`,
-the same way a real card name is rewritten. -/
-private def indexName : String := "CARDNAME"
-
 /-- Lowercase, strip reminders and punctuation, keep the card name. Used to
 prefer a literal printed match over a phrase-equivalent one. -/
 def lightLine (s : String) : String :=
   collapseWs (keepSignificant (replaceNumberWords (lowerAscii
     (stripAbilityWord (stripChaosSymbol (dropReminderText s))))))
+
+def abilityLines (cardName : String) (ab : ParsedAbility) : List String :=
+  match ab with
+  | .static a => [StaticAbility.toNotation a]
+  | .triggered a =>
+    (TriggeredAbility.toNotation a).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
+  | .activated a => [printedActivated a]
+  | .spell e => effectLines cardName e
+  | .modes .. => []
 
 structure IndexedAbility where
   ability : ParsedAbility
@@ -990,6 +1057,11 @@ structure IndexedAbility where
   pats : List (List Pat)
   /-- Holes learned before phrase equivalences, so open subtypes stay words. -/
   structPats : List (List Pat)
+  /-- `raw` is `abilityLines` of `ability` and does not include `indexName`, so
+  those are the ability's lines on every card and `light` is their light form. -/
+  ownLines : Bool
+  /-- `raw` joined and lowercased, to look for the card's name. -/
+  rawLower : String
 
 def collectParsed (ab : ParsedAbility) : Array SlotVal :=
   match ab with
@@ -1011,7 +1083,9 @@ def indexItem (priority order : Nat) (ability : ParsedAbility) (lines : List Str
     order
     args
     pats := patsOfLines norm args
-    structPats := patsOfLines structNorm args }
+    structPats := patsOfLines structNorm args
+    ownLines := !lines.any (·.contains indexName) && lines == abilityLines indexName ability
+    rawLower := lowerAscii (String.intercalate "\n" lines) }
 
 def refillParsed (ab : ParsedAbility) (vals : Array SlotVal) : ParsedAbility :=
   match ab with
@@ -1097,13 +1171,11 @@ def abstractSubtypeLine (s : String) : Option String :=
           | none => none
   span?.map fun n => String.intercalate " " ("$sub" :: toks.drop n)
 
-def mentionsCard (cardName : String) (lines : List String) : Bool :=
-  let low := lowerAscii (String.intercalate "\n" lines)
-  (nameAliases cardName).any fun a => low.contains (lowerAscii a)
-
-/-- Normalized lines, recomputed when the printed text contains this card's name. -/
-def candidateNorm (cardName : String) (item : IndexedAbility) : List String :=
-  if mentionsCard cardName item.raw then item.raw.map (normalizeUnit cardName) else item.norm
+/-- Normalized lines, recomputed when the printed text contains this card's name.
+`keys` is `nameKeys cardName`. -/
+def candidateNorm (cardName : String) (keys : List String) (item : IndexedAbility) :
+    List String :=
+  if mentionsNameKey keys item.rawLower then item.raw.map (normalizeUnit cardName) else item.norm
 
 /-- One prototype per shape. Later entries that differ only by `Nat`, `Int`, or
 `String` arguments are dropped. -/
@@ -1174,13 +1246,11 @@ def pushBucket (m : Std.HashMap String (Array Nat)) (key : String) (i : Nat) :
     i := i + 1
   return m
 
-def lookupKeys (cardName line : String) : List String :=
-  let lit := lightLine line
-  let norm := normalizeUnit cardName line
-  let aliased :=
-    (nameAliases cardName |>.map lowerAscii).foldl
-      (fun acc a => acc.replace a (lowerAscii indexName)) lit
-  let base := [lit, aliased, norm, normalizeStructural cardName line].foldl (fun acc k =>
+/-- Bucket keys for a rules line, given its `lightLine`, `normalizeUnit`, and
+`normalizeStructural` forms and the card's `nameKeys`. -/
+def lookupKeys (keys : List String) (lit norm struct : String) : List String :=
+  let aliased := keys.foldl (fun acc a => acc.replace a (lowerAscii indexName)) lit
+  let base := [lit, aliased, norm, struct].foldl (fun acc k =>
     if k.isEmpty || acc.any (· == k) then acc else acc ++ [k]) []
   let wild := (base.map wildcardHead).flatMap lineKeys
   let extra :=
@@ -1191,18 +1261,18 @@ def lookupKeys (cardName line : String) : List String :=
   (base ++ base.flatMap lineKeys ++ base.map headWord ++ wild ++ extra).foldl
     (fun acc k => if k.isEmpty || acc.any (· == k) then acc else acc ++ [k]) []
 
-def candidatesFor (cardName : String) (units : List String) : Array IndexedAbility :=
-  match units with
-  | [] => #[]
-  | line :: _ =>
-    let idxs := (lookupKeys cardName line).foldl (fun acc k =>
-      acc ++ ((abilityBuckets.get).getD k #[]).toList) []
-    let idxs := idxs.foldl (fun acc i =>
-      if acc.any (· == i) then acc else acc ++ [i]) []
-    idxs.foldl (fun acc i =>
-      match (indexedAbilities.get)[i]? with
-      | some item => acc.push item
-      | none => acc) #[]
+/-- Indexed abilities filed under any lookup key of the first rules line, in
+key order without repeats. -/
+def candidatesFor (keys : List String) (lit norm struct : String) : Array IndexedAbility :=
+  let (_, out) := (lookupKeys keys lit norm struct).foldl (fun (seen, out) k =>
+    ((abilityBuckets.get).getD k #[]).foldl (fun (seen, out) i =>
+      if seen.contains i then (seen, out)
+      else
+        match (indexedAbilities.get)[i]? with
+        | some item => (seen.insert i, out.push item)
+        | none => (seen.insert i, out)) (seen, out))
+    ((∅ : Std.HashSet Nat), (#[] : Array IndexedAbility))
+  out
 
 def listPrefix (pre rest : List String) : Bool :=
   match pre, rest with
@@ -1212,20 +1282,22 @@ def listPrefix (pre rest : List String) : Bool :=
 
 def adaptLight (cardName : String) (lines : List String) : List String :=
   -- `light` is already lowercased, so the sentinel is `cardname`.
-  lines.map fun s => s.replace (lowerAscii indexName) (lowerAscii cardName)
-
-def abilityLines (cardName : String) (ab : ParsedAbility) : List String :=
-  match ab with
-  | .static a => [StaticAbility.toNotation a]
-  | .triggered a =>
-    (TriggeredAbility.toNotation a).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
-  | .activated a => [printedActivated a]
-  | .spell e => effectLines cardName e
-  | .modes .. => []
+  lines.map fun s => applyReplacements s [(lowerAscii indexName, lowerAscii cardName)]
 
 def coversLight (cardName : String) (ab : ParsedAbility) (lights : List String) : Bool :=
   let lines := (abilityLines cardName ab).map lightLine
   !lines.isEmpty && lines.length <= lights.length && listPrefix lines lights
+
+/-- `coversLight` of the candidate's ability, or of `filled` when arguments were
+read from the card. -/
+def IndexedAbility.coversLight (item : IndexedAbility) (cardName : String)
+    (filled : Option ParsedAbility) (lights : List String) : Bool :=
+  match filled with
+  | none =>
+    if item.ownLines then
+      !item.light.isEmpty && item.light.length <= lights.length && listPrefix item.light lights
+    else Mtg.Engine.coversLight cardName item.ability lights
+  | some ab => Mtg.Engine.coversLight cardName ab lights
 
 def filledAbility (item : IndexedAbility) (norms structNorms : List String) : Option ParsedAbility :=
   let attempt (pats : List (List Pat)) (lines : List String) : Option ParsedAbility :=
@@ -1244,15 +1316,20 @@ Numeric and text arguments are read from `units` when the line has the same shap
   let norms := units.map (normalizeUnit cardName)
   let structNorms := units.map (normalizeStructural cardName)
   let lights := units.map lightLine
-  let best := (candidatesFor cardName units).foldl (fun acc item =>
-    let printed := candidateNorm cardName item
+  let keys := nameKeys cardName
+  let candidates :=
+    match lights, norms, structNorms with
+    | lit :: _, norm :: _, struct :: _ => candidatesFor keys lit norm struct
+    | _, _, _ => #[]
+  let best := candidates.foldl (fun acc item =>
+    let printed := candidateNorm cardName keys item
     let n := printed.length
     let filled := filledAbility item norms structNorms
     let ability := filled.getD item.ability
     let literal : Nat :=
       if n == 0 || n > lights.length then 0
       else if listPrefix (adaptLight cardName item.light) lights ||
-          coversLight cardName ability lights then 1 else 0
+          item.coversLight cardName filled lights then 1 else 0
     let exact := n != 0 && n <= norms.length && listPrefix printed norms
     if n == 0 || n > norms.length || (literal == 0 && !exact && filled.isNone) then acc
     else
@@ -1605,10 +1682,7 @@ partial def parseRules (c : CardDef) (lines : List String)
         | none =>
           match parseChapterHeader line with
           | some (roman, text) =>
-            let printed :=
-              match chapterEffects.get.find? fun (stored, _) => normEq c.name stored text with
-              | some (stored, _) => stored
-              | none => text
+            let printed := (chapterStoredText c.name text).getD text
             match matchChapter c.name text with
             | some e =>
               let ch := SagaChapter.of roman printed e
@@ -1882,556 +1956,5 @@ def oracleRoundtripDiff (source parsed : CardDef) : Option String :=
   let b := reprStr parsed
   if a == b then none
   else some s!"{source.name}: {firstDiff a b}"
-
-#guard parseManaCost "{1}{G}" == some (ManaCost.ofGenericAndColor 1 .green)
-#guard parseManaCost "{W}" == some (ManaCost.ofColor .white)
-#guard parseManaCost "{G/U}" == some (ManaCost.ofHybrid .green .blue)
-#guard (parseTypeLine "Legendary Creature — Dwarf Scout").toOption ==
-  some (#[.legendary], #[.creature], #["Dwarf", "Scout"])
-#guard parsePT "2/2" == some ({ number := some 2 }, { number := some 2 })
-#guard parsePT "2/3" == some ({ number := some 2 }, { number := some 3 })
-#guard parsePT "-1/-1" == some ({ number := some (-1) }, { number := some (-1) })
-#guard parsePT "*/*" == some ({ star := true }, { star := true })
-#guard parsePT "1/*" == some ({ number := some 1 }, { star := true })
-#guard parsePT "*/3" == some ({ star := true }, { number := some 3 })
-#guard parsePT "*/4" == some ({ star := true }, { number := some 4 })
-#guard parsePT "1+*/1+*" == some ({ number := some 1, star := true }, { number := some 1, star := true })
-#guard parsePT "*+1/*+1" == parsePT "1+*/1+*"
-#guard parsePT "1 + */1 + *" == parsePT "1+*/1+*"
-#guard parsePT "*/1+*" == some ({ star := true }, { number := some 1, star := true })
-#guard parsePT "2+*/2+*" == some ({ number := some 2, star := true }, { number := some 2, star := true })
-#guard parsePT "*-1/*-1" == some ({ number := some (-1), star := true }, { number := some (-1), star := true })
-#guard (parsePT "1+*/1+*").map (fun (p, t) => (p.undetermined, t.undetermined)) == some (1, 1)
-#guard (parsePT "*/*").map (fun (p, t) => (p.undetermined, t.undetermined)) == some (0, 0)
-#guard parsePT "+1/+1" == none
-#guard parsePT "2*/2*" == none
-#guard parsePT "1+/1" == none
-#guard parsePT "*+/*+" == none
-#guard parsePT "*1/*1" == none
-#guard (parseOracleCard "Grizzly Bears\n{1}{G}\nCreature — Bear\n2/2").toOption.map
-    (fun c => c.name == "Grizzly Bears" && c.manaCost == ManaCost.ofGenericAndColor 1 .green &&
-      c.power == some 2 && c.toughness == some 2 && !c.powerStar && !c.toughnessStar &&
-      c.isCreature) == some true
-
--- CR 208.2 / 208.2a: power and toughness may include a star. Lost Order of
--- Jarkeld is `1+*`. With no chosen player, the star is 0, so the card is 1/1.
--- `*+1` is that same printed value. A bare star is 0.
-#guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1+*/1+*\nVigilance").toOption.map
-    (fun c => c.power == some 1 && c.toughness == some 1 && c.powerStar && c.toughnessStar &&
-      c.power.getD 0 == 1 && c.toughness.getD 0 == 1 && c.ptString == "1+*/1+*" &&
-      c.keywords.vigilance && c.hasSubtype "Human" && c.hasSubtype "Knight") == some true
-#guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n*+1/*+1").toOption.map
-    (fun c => c.power == some 1 && c.toughness == some 1 && c.powerStar && c.toughnessStar &&
-      c.ptString == "1+*/1+*") == some true
-#guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1 + * / 1 + *").toOption.map
-    (fun c => c.ptString == "1+*/1+*" && c.power.getD 0 == 1) == some true
-#guard
-  match parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1+*/1+*\nVigilance" with
-  | .ok c =>
-    match parseOracleCard (renderFullOracle c) with
-    | .ok d => d.power == some 1 && d.toughness == some 1 && d.powerStar && d.toughnessStar &&
-        d.ptString == "1+*/1+*" && d.keywords.vigilance
-    | .error _ => false
-  | .error _ => false
-#guard (parseOracleCard "Tarmogoyf\n{1}{G}\nCreature — Lhurgoyf\n*/1+*").toOption.map
-    (fun c => c.power.isNone && c.powerStar && c.toughness == some 1 && c.toughnessStar &&
-      c.power.getD 0 == 0 && c.toughness.getD 0 == 1 && c.ptString == "*/1+*") == some true
-#guard (parseOracleCard "Angry Mob\n{2}{W}{W}\nCreature — Human\n2+*/2+*").toOption.map
-    (fun c => c.power == some 2 && c.toughness == some 2 && c.powerStar && c.toughnessStar &&
-      c.power.getD 0 == 2 && c.ptString == "2+*/2+*") == some true
-#guard (parseOracleCard "Maro\n{2}{G}{G}\nCreature — Elemental\n*/*").toOption.map
-    (fun c => c.power.isNone && c.toughness.isNone && c.powerStar && c.toughnessStar &&
-      c.power.getD 0 == 0 && c.toughness.getD 0 == 0 && c.ptString == "*/*") == some true
-#guard (parseOracleCard "Namor the Sub-Mariner\n{1}{U}{U}\nLegendary Creature — Mutant Merfolk Villain\n*/4\nFlying").toOption.map
-    (fun c => c.power.isNone && c.powerStar && c.toughness == some 4 && !c.toughnessStar &&
-      c.ptString == "*/4" && c.keywords.flying) == some true
-#guard (parseOracleCard "Mountain\nBasic Land — Mountain\n({T}: Add {R}.)").toOption.map
-    (fun c => c.isLand && c.hasSupertype .basic && c.hasSubtype "Mountain" &&
-      c.tapAddMana.isEmpty) == some true
-#guard (parseOracleCard "Shock\n{R}\nInstant\nShock deals 5 damage to any target.").toOption.bind
-    (·.spellEffect) == some (Effect.dealDamage 5)
-#guard (parseOracleCard "Insight\n{U}\nSorcery\nDraw seven cards.").toOption.bind
-    (·.spellEffect) == some (Effect.draw 7)
-#guard (parseOracleCard "Wander\n{G}\nInstant\nForestcycling {2}").toOption.bind
-    (fun c => c.activatedAbilities[0]?) ==
-    some (typecyclingAbility "Forest" (ManaCost.ofGeneric 2))
-#guard (parseOracleCard "Sword\n{2}\nArtifact — Equipment\nEquip {5}").toOption.bind
-    (fun c => c.activatedAbilities[0]?) == some (equipAbility (ManaCost.ofGeneric 5))
-#guard (parseOracleCard "Warren Chief\n{1}{R}\nCreature — Goblin\n2/2\nOther Goblin creatures you control get +2/+2.").toOption.bind
-    (fun c => c.staticAbilities[0]?) == some (.otherCreaturesGet #["Goblin"] 2 2)
-#guard (parseOracleCard "Test Saga\n{2}{R}\nEnchantment — Saga\nI — Draw seven cards.").toOption.bind
-    (fun c => c.saga.bind fun s => (s.chapters[0]?).bind (·.chapterEffect)) ==
-    some (Effect.chapterDraw 7)
-#guard (indexedAbilities.get).any fun item =>
-  match item.ability with
-  | .spell e => e == Effect.draw 1
-  | _ => false
-#guard !(indexedAbilities.get).any fun item =>
-  match item.ability with
-  | .spell e => e == Effect.draw 2 || e == Effect.dealDamage 2
-  | _ => false
-#guard !(indexedAbilities.get).any fun item =>
-  match item.ability with
-  | .activated a => a == equipAbility (ManaCost.ofGeneric 1) || a == equipAbility (ManaCost.ofGeneric 2)
-  | _ => false
-#guard (indexedAbilities.get).any fun item =>
-  match item.ability with
-  | .activated a => a == equipAbility (ManaCost.ofGeneric 3)
-  | _ => false
-
-#guard CardType.all.all fun t =>
-  (parseTypeLine t.englishName).toOption == some (#[], #[t], #[])
-#guard (parseTypeLine "Artifact Creature — Golem").toOption ==
-  some (#[], #[.artifact, .creature], #["Golem"])
-#guard (parseTypeLine "Kindred Enchantment — Faerie").toOption ==
-  some (#[], #[.kindred, .enchantment], #["Faerie"])
-#guard (parseTypeLine "kindred instant — goblin").toOption ==
-  some (#[], #[.kindred, .instant], #["goblin"])
-#guard (parseTypeLine "Legendary Planeswalker — Jace").toOption ==
-  some (#[.legendary], #[.planeswalker], #["Jace"])
-#guard (parseTypeLine "Battle — Siege").toOption ==
-  some (#[], #[.battle], #["Siege"])
-#guard (parseTypeLine "Dungeon — Undercity").toOption ==
-  some (#[], #[.dungeon], #["Undercity"])
-#guard Supertype.all.all fun s =>
-  (parseTypeLine s!"{s} Creature").toOption == some (#[s], #[.creature], #[])
-#guard Supertype.all.all fun s =>
-  (parseTypeLine (s.englishName.map Char.toUpper ++ " Land")).toOption ==
-    some (#[s], #[.land], #[])
-#guard (parseTypeLine "Basic Snow Land — Island").toOption ==
-  some (#[.basic, .snow], #[.land], #["Island"])
-#guard (parseTypeLine "LEGENDARY snow Creature — Elemental").toOption ==
-  some (#[.legendary, .snow], #[.creature], #["Elemental"])
-#guard (parseTypeLine "World Enchantment — Aura").toOption ==
-  some (#[.world], #[.enchantment], #["Aura"])
-#guard (parseTypeLine "Legendary Sorcery").toOption ==
-  some (#[.legendary], #[.sorcery], #[])
-#guard (parseTypeLine "Legendary Instant").toOption ==
-  some (#[.legendary], #[.instant], #[])
-#guard (parseTypeLine "Ongoing Scheme").toOption ==
-  some (#[.ongoing], #[.scheme], #[])
-#guard (parseTypeLine "Plane — Bolas's Meditation Realm").toOption ==
-  some (#[], #[.plane], #["Bolas's Meditation Realm"])
-#guard (parseTypeLine "Phenomenon").toOption == some (#[], #[.phenomenon], #[])
-#guard (parseTypeLine "Conspiracy").toOption == some (#[], #[.conspiracy], #[])
-#guard (parseTypeLine "Vanguard").toOption == some (#[], #[.vanguard], #[])
-
-#guard (parseOracleCard "Jace\n{2}{U}{U}\nLegendary Planeswalker — Jace\n3").toOption.map
-    (fun c => c.isPlaneswalker && c.hasSubtype "Jace" && c.loyalty == some 3) == some true
-
--- CR 209.1: the loyalty number is the corner number, labeled or bare, and it
--- may follow the rules text. It is that planeswalker's loyalty off the
--- battlefield. CR 209.2 / 107.7: `[+N]`, `[-N]`, `[0]`, `[+X]`, and `[-X]`
--- (with or without brackets) are loyalty abilities.
-#guard parseLoyaltyAbilityLine "+2: Draw a card." == some (.plus 2, "Draw a card.")
-#guard parseLoyaltyAbilityLine "[+1]: Draw a card." == some (.plus 1, "Draw a card.")
-#guard parseLoyaltyAbilityLine "−1: Scry 2." == some (.minus 1, "Scry 2.")
-#guard parseLoyaltyAbilityLine "–2: Draw a card." == some (.minus 2, "Draw a card.")
-#guard parseLoyaltyAbilityLine "[-X]: Draw a card." == some (.minusX, "Draw a card.")
-#guard parseLoyaltyAbilityLine "[+X]: Scry 1." == some (.plusX, "Scry 1.")
-#guard parseLoyaltyAbilityLine "0: Draw two cards." == some (.zero, "Draw two cards.")
-#guard parseLoyaltyAbilityLine "[0]: Draw a card." == some (.zero, "Draw a card.")
-#guard parseLoyaltyAbilityLine "+1/+1" == none
-#guard parseLoyaltyAbilityLine "Draw a card." == none
-#guard (LoyaltySymbol.plus 2).counters == some 2
-#guard (LoyaltySymbol.minus 1).counters == some (-1)
-#guard LoyaltySymbol.zero.counters == some 0
-#guard LoyaltySymbol.plusX.counters == none
-#guard LoyaltySymbol.minusX.counters == none
-#guard (LoyaltySymbol.minus 3).toNotation == "[-3]"
-#guard (LoyaltySymbol.zero).toNotation == "[0]"
-#guard (parseOracleCard "Jace\n{2}{U}{U}\nLegendary Planeswalker — Jace\nloyalty: 2").toOption.map
-    (·.loyalty) == some (some 2)
-#guard (parseOracleCard "Jace\n{2}{U}{U}\nLegendary Planeswalker — Jace\n+1: Draw a card.\nLoyalty: 5").toOption.map
-    (fun c => c.loyalty == some 5 && c.activatedAbilities.size == 1 &&
-      c.activatedAbilities[0]!.isLoyaltyAbility &&
-      c.activatedAbilities[0]!.cost.loyalty == some (.plus 1) &&
-      c.activatedAbilities[0]!.effect == Effect.draw 1) == some true
-#guard
-  match parseOracleCard "Jace\n{2}{U}{U}\nLegendary Planeswalker — Jace\n+2: Draw a card.\n−1: Scry 2.\n0: Draw two cards.\n[+X]: Scry 1.\n[-X]: Draw a card.\n3" with
-  | .ok c =>
-    c.loyalty == some 3 &&
-    c.activatedAbilities.map (fun ab => ab.cost.loyalty) ==
-      #[some (.plus 2), some (.minus 1), some .zero, some .plusX, some .minusX] &&
-    c.activatedAbilities[0]!.effect == Effect.draw 1 &&
-    c.activatedAbilities[1]!.effect == Effect.scry 2 &&
-    c.activatedAbilities[2]!.effect == Effect.draw 2 &&
-    c.activatedAbilities[3]!.effect == Effect.scry 1 &&
-    c.activatedAbilities[4]!.effect == Effect.draw 1 &&
-    match parseOracleCard (renderFullOracle c) with
-    | .ok d => d.loyalty == c.loyalty && d.activatedAbilities == c.activatedAbilities
-    | .error _ => false
-  | .error _ => false
-#guard
-  match parseOracleCard "Jace\n{U}\nLegendary Planeswalker — Jace\n3\nLoyalty: 4" with
-  | .error e => e == "Jace has more than one loyalty number"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Jace\n{U}\nLegendary Planeswalker — Jace\n3\n+1: Draw a card.\n4" with
-  | .error e => e == "Jace has more than one loyalty number"
-  | .ok _ => false
-#guard (parseOracleCard "Jace\n{U}\nLegendary Planeswalker — Jace\n+1: Draw a card.\nLoyalty: 6\n0: Scry 1.").toOption.map
-    (fun c => c.loyalty == some 6 &&
-      c.activatedAbilities.map (fun ab => ab.cost.loyalty) ==
-        #[some (.plus 1), some .zero]) == some true
-#guard
-  match parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nLoyalty: 3" with
-  | .ok _ => false
-  | .error _ => true
-#guard (parseOracleCard "Relic\n{1}\nArtifact\n+1: Draw a card.").toOption.map
-    (fun c => c.loyalty.isNone && c.activatedAbilities.size == 1 &&
-      c.activatedAbilities[0]!.isLoyaltyAbility &&
-      c.activatedAbilities[0]!.cost.loyalty == some (.plus 1) &&
-      c.activatedAbilities[0]!.effect == Effect.draw 1) == some true
-#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nDefense: 4").toOption.map
-    (fun c => c.isBattle && c.hasSubtype "Siege" && c.defense == some 4 &&
-      c.loyalty.isNone) == some true
-
--- CR 210.1: the defense number is the corner number, labeled or bare, and it
--- may follow the rules text. It is that battle's defense off the battlefield,
--- and the battle enters with that many defense counters.
-#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\n4").toOption.map
-    (fun c => c.isBattle && c.defense == some 4) == some true
-#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\ndefense: 4").toOption.map
-    (·.defense) == some (some 4)
-#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\nDefense: 4").toOption.map
-    (fun c => c.defense == some 4 && c.keywords.flying) == some true
-#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\n4\nFlying").toOption.map
-    (fun c => c.defense == some 4 && c.keywords.flying) == some true
-#guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\n4").toOption.map
-    (·.defense) == some (some 4)
-#guard
-  match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\n4" with
-  | .ok c =>
-    c.defense == some 4 && c.keywords.flying &&
-    match parseOracleCard (renderFullOracle c) with
-    | .ok d => d.defense == c.defense && d.keywords.flying
-    | .error _ => false
-  | .error _ => false
-#guard
-  match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\n4\nDefense: 5" with
-  | .error e => e == "Invasion of Zendikar has more than one defense number"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\n4\nFlying\n5" with
-  | .error e => e == "Invasion of Zendikar has more than one defense number"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nDefense: 4\nDefense: 5" with
-  | .error e => e == "Invasion of Zendikar has more than one defense number"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nDefense: 3" with
-  | .ok _ => false
-  | .error _ => true
-#guard
-  match parseOracleCard "Relic\n{1}\nArtifact\n4" with
-  | .ok _ => false
-  | .error _ => true
-#guard
-  match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\n4\n//\nAwakened Skyclave\nCreature — Elemental\n4/4" with
-  | .ok c =>
-    c.defense == some 4 && c.keywords.flying &&
-    match c.otherFace with
-    | some back => back.isCreature && back.power == some 4 && back.toughness == some 4 &&
-        back.defense.isNone && back.loyalty.isNone
-    | none => false
-  | .error _ => false
-#guard (parseOracleCard "Urza\nVanguard\nHand +1, Life +10").toOption.map
-    (fun c => c.hasType .vanguard && c.isVanguard && c.handModifier == some 1 &&
-      c.lifeModifier == some 10) == some true
-
--- CR 211.1 / 212.1: the hand modifier is the lower-left corner and the life
--- modifier is the lower-right corner. Each is `+N`, `-N`, or `0`. Labels and
--- a bare pair may sit before the rules text or after it.
-#guard parseModifier "0" == some 0
-#guard parseModifier "+0" == some 0
-#guard parseModifier "-0" == some 0
-#guard parseModifier "−0" == some 0
-#guard parseModifier "+2" == some 2
-#guard parseModifier "-3" == some (-3)
-#guard parseModifier "−4" == some (-4)
-#guard parseModifier "–5" == some (-5)
-#guard parseModifier "+ 6" == some 6
-#guard parseModifier "2" == none
-#guard parseModifier "+" == none
-#guard parseModifier "1+*" == none
-#guard parseHandLifeLine "Hand +1, Life +10" == some (1, 10)
-#guard parseHandLifeLine "Life -2, Hand modifier: +1" == some (1, -2)
-#guard parseHandLifeLine "hand: +0, life: 0" == some (0, 0)
-#guard parseBareModifierPair "+1 -2" == some (1, -2)
-#guard parseBareModifierPair "+1, 0" == some (1, 0)
-#guard parseBareModifierPair "Hand +1, Life +10" == none
-#guard (parseOracleCard "Urza\nVanguard\nHand: +1\nLife: -2").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2)) == some true
-#guard (parseOracleCard "Urza\nVanguard\nhand modifier: +1\nlife modifier: −2").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2)) == some true
-#guard (parseOracleCard "Urza\nVanguard\nLife +10, Hand +1").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some 10) == some true
-#guard (parseOracleCard "Urza\nVanguard\n+1\n+10").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some 10 &&
-      c.loyalty.isNone && c.defense.isNone) == some true
-#guard (parseOracleCard "Urza\nVanguard\n+1 -2").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2)) == some true
-#guard (parseOracleCard "Urza\nVanguard\n0\n0").toOption.map
-    (fun c => c.handModifier == some 0 && c.lifeModifier == some 0) == some true
-#guard (parseOracleCard "Urza\nVanguard\nFlying\n+1\n-2").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
-      c.keywords.flying) == some true
-#guard (parseOracleCard "Urza\nVanguard\n+1\n-2\nFlying").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
-      c.keywords.flying) == some true
-#guard (parseOracleCard "Urza\nVanguard\nFlying\nHand: +1\nLife: 0").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some 0 &&
-      c.keywords.flying) == some true
-#guard (parseOracleCard "Urza\nVanguard\n+1\nFlying\n-2").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
-      c.keywords.flying) == some true
-#guard (parseOracleCard "Urza\nVanguard\nHand: +1\nFlying\n-2").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
-      c.keywords.flying) == some true
-#guard (parseOracleCard "Urza\nVanguard\n+1\nFlying\nLife: +10").toOption.map
-    (fun c => c.handModifier == some 1 && c.lifeModifier == some 10 &&
-      c.keywords.flying) == some true
-#guard (parseOracleCard "Urza\nVanguard\n+1: Draw a card.\n+2\n-3").toOption.map
-    (fun c => c.handModifier == some 2 && c.lifeModifier == some (-3) &&
-      c.activatedAbilities.size == 1 &&
-      c.activatedAbilities[0]!.cost.loyalty == some (.plus 1) &&
-      c.activatedAbilities[0]!.effect == Effect.draw 1) == some true
-#guard (parseOracleCard "Urza\nVanguard\nFlying").toOption.map
-    (fun c => c.handModifier.isNone && c.lifeModifier.isNone && c.keywords.flying) ==
-    some true
-#guard
-  match parseOracleCard "Urza\nVanguard\nFlying\n+1\n-2" with
-  | .ok c =>
-    c.handModifier == some 1 && c.lifeModifier == some (-2) && c.keywords.flying &&
-    match parseOracleCard (renderFullOracle c) with
-    | .ok d => d.handModifier == c.handModifier && d.lifeModifier == c.lifeModifier &&
-        d.keywords.flying && d.isVanguard
-    | .error _ => false
-  | .error _ => false
-#guard
-  match parseOracleCard "Urza\nVanguard\nHand: +1\nHand: +2" with
-  | .error e => e == "Urza has more than one hand modifier"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Urza\nVanguard\nHand +1, Life +10\nLife: +3" with
-  | .error e => e == "Urza has more than one life modifier"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Urza\nVanguard\n+1\n+10\nHand: +2" with
-  | .error e => e == "Urza has more than one hand modifier"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Urza\nVanguard\n+1\n+2\nFlying\n+3\n+4" with
-  | .error e => e == "Urza has more than one hand modifier"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Urza\nVanguard\n+1\n+2\n+3" with
-  | .error e => e == "Urza has more than one hand modifier"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Urza\nVanguard\n+1" with
-  | .error e => e == "Urza has only one of its hand and life modifiers"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Urza\nVanguard\nFlying\n-2" with
-  | .error e => e == "Urza has only one of its hand and life modifiers"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Urza\nVanguard\nHand 2\nLife +1" with
-  | .error e => e == "unrecognized Oracle line on Urza: Hand 2"
-  | .ok _ => false
-#guard
-  match parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nHand +1, Life +10" with
-  | .ok _ => false
-  | .error _ => true
-#guard
-  match parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nHand: +1" with
-  | .ok _ => false
-  | .error _ => true
-#guard
-  match parseOracleCard "Relic\n{1}\nArtifact\n+1\n+10" with
-  | .ok _ => false
-  | .error _ => true
-#guard (parseOracleCard "Undercity\nDungeon — Undercity").toOption.map
-    (fun c => c.hasType .dungeon && c.hasSubtype "Undercity") == some true
-#guard (parseOracleCard "Tazeem\nPlane — Zendikar").toOption.map
-    (fun c => c.hasType .plane && c.subtypes == #["Zendikar"]) == some true
-#guard (parseOracleCard "Interplanar Tunnel\nPhenomenon").toOption.map
-    (fun c => c.hasType .phenomenon && c.subtypes.isEmpty) == some true
-#guard (parseOracleCard "All in Good Time\nOngoing Scheme").toOption.map
-    (fun c => c.hasType .scheme && c.hasSupertype .ongoing) == some true
-#guard (parseOracleCard "Snow-Covered Island\nBasic Snow Land — Island\n({T}: Add {U}.)").toOption.map
-    (fun c => c.isLand && c.hasSupertype .basic && c.hasSupertype .snow &&
-      c.hasSubtype "Island" && c.tapAddMana.isEmpty &&
-      c.typeLine == "Basic Snow Land — Island") == some true
-#guard (parseOracleCard "Glacier\n{1}{U}\nSnow Creature — Elemental\n1/1").toOption.map
-    (fun c => c.hasSupertype .snow && c.hasSubtype "Elemental" &&
-      c.power == some 1 && c.toughness == some 1) == some true
-#guard (parseOracleCard "The Abyss\nWorld Enchantment").toOption.map
-    (fun c => c.hasSupertype .world && c.isEnchantment && c.subtypes.isEmpty) == some true
-#guard (parseOracleCard "Urza's Ruinous Blast\n{4}{W}{W}\nLegendary Sorcery").toOption.map
-    (fun c => c.hasSupertype .legendary && c.isSorcery && !c.isCreature) == some true
-#guard (parseOracleCard "Advantageous Proclamation\nConspiracy").toOption.map
-    (fun c => c.hasType .conspiracy) == some true
-#guard (parseOracleCard "Bitterblossom\n{1}{B}\nKindred Enchantment — Faerie").toOption.map
-    (fun c => c.hasType .kindred && c.isEnchantment && c.hasSubtype "Faerie") == some true
-
-#guard CardType.all.all fun t =>
-  match parseOracleCard s!"Relic\n\{1}\nArtifact\n{t} spells you cast cost \{{3}} less to cast." with
-  | .ok c => c.staticAbilities[0]? == some (.typeSpellsCostLess t 3)
-  | .error _ => false
-#guard Supertype.all.all fun s =>
-  match parseOracleCard s!"Relic\n\{1}\nArtifact\n{s} spells you cast cost \{{2}} less to cast." with
-  | .ok c => c.staticAbilities[0]? == some (.supertypeSpellsCostLess s 2)
-  | .error _ => false
-#guard Supertype.all.all fun s =>
-  match parseOracleCard s!"Surge\n\{R}\nSorcery\n{s} spells you cast this turn cost \{{3}} less to cast." with
-  | .ok c => c.spellEffect.map (·.resolution) ==
-      some (.spell (.supertypeSpellsCostLessThisTurn s 3))
-  | .error _ => false
-#guard (parseOracleCard "Walk\n{G}\nInstant\nSnowcycling {2}").toOption.bind
-    (fun c => c.activatedAbilities[0]?) ==
-    some (typecyclingAbility "Snow" (ManaCost.ofGeneric 2))
-#guard (parseOracleCard "Walk\n{G}\nInstant\nBasic landcycling {2}").toOption.bind
-    (fun c => c.activatedAbilities[0]?) ==
-    some (typecyclingAbility "Basic land" (ManaCost.ofGeneric 2))
-#guard (parseOracleCard "Helm\n{1}\nArtifact\nVillain spells you cast cost {1} less to cast.").toOption.bind
-    (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess "Villain" 1)
-#guard (parseOracleCard "Surge\n{R}\nSorcery\nPlaneswalker spells you cast this turn cost {2} less to cast.").toOption.bind
-    (fun c => c.spellEffect.map (·.resolution)) ==
-    some (.spell (.artifactSpellsCostLessThisTurn .planeswalker 2))
-
-#guard artifactTypes.all fun s =>
-  (parseTypeLine s!"Artifact — {s}").toOption == some (#[], #[.artifact], #[s])
-#guard enchantmentTypes.all fun s =>
-  (parseTypeLine s!"Enchantment — {s}").toOption == some (#[], #[.enchantment], #[s])
-#guard landTypes.all fun s =>
-  (parseTypeLine s!"Land — {s}").toOption == some (#[], #[.land], #[s])
-#guard planeswalkerTypes.all fun s =>
-  (parseTypeLine s!"Planeswalker — {s}").toOption == some (#[], #[.planeswalker], #[s])
-#guard spellTypes.all fun s =>
-  (parseTypeLine s!"Instant — {s}").toOption == some (#[], #[.instant], #[s])
-#guard creatureTypes.all fun s =>
-  (parseTypeLine s!"Creature — {s}").toOption == some (#[], #[.creature], #[s])
-#guard planarTypes.all fun s =>
-  (parseTypeLine s!"Plane — {s}").toOption == some (#[], #[.plane], #[s])
-#guard (parseTypeLine "Dungeon — Undercity").toOption ==
-  some (#[], #[.dungeon], #["Undercity"])
-#guard (parseTypeLine "Battle — Siege").toOption ==
-  some (#[], #[.battle], #["Siege"])
-#guard (parseTypeLine "Creature — Human Time Lord").toOption ==
-  some (#[], #[.creature], #["Human", "Time Lord"])
-#guard (parseTypeLine "Kindred Instant — Time Lord").toOption ==
-  some (#[], #[.kindred, .instant], #["Time Lord"])
-#guard (parseTypeLine "Land — Urza’s Mine").toOption ==
-  some (#[], #[.land], #["Urza's", "Mine"])
-
-#guard (parseOracleCard "Romana\n{2}{U}\nCreature — Time Lord\n1/1\nOther Time Lord creatures you control get +1/+1.").toOption.bind
-    (fun c => c.subtypes == #["Time Lord"] &&
-      c.staticAbilities[0]? == some (.otherCreaturesGet #["Time Lord"] 1 1)) == some true
-#guard (parseOracleCard "Pack\n{1}{G}\nCreature — Mouse\n1/1\nOther Mice and Time Lords you control have trample.").toOption.bind
-    (fun c => c.staticAbilities[0]?) ==
-    some (.otherCreaturesHaveTrample #["Mouse", "Time Lord"])
-#guard (parseOracleCard "Worker\n{3}\nArtifact Creature — Assembly-Worker\n2/2\nAssembly-Workercycling {4}").toOption.bind
-    (fun c => c.subtypes == #["Assembly-Worker"] &&
-      c.activatedAbilities[0]? ==
-        some (typecyclingAbility "Assembly-Worker" (ManaCost.ofGeneric 4))) == some true
-#guard (parseOracleCard "Doctor\n{U}\nCreature — Time Lord Doctor\n1/1\nTime Lordcycling {2}").toOption.bind
-    (fun c => c.subtypes == #["Time Lord", "Doctor"] &&
-      c.activatedAbilities[0]? ==
-        some (typecyclingAbility "Time Lord" (ManaCost.ofGeneric 2))) == some true
-#guard (parseOracleCard "Helm\n{1}\nArtifact\nC'tan spells you cast cost {1} less to cast.").toOption.bind
-    (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess "C'tan" 1)
-#guard (parseOracleCard "Walk\n{G}\nSorcery\nSearch your library for a Power-Plant card, reveal it, put it into your hand, then shuffle.").toOption.bind
-    (fun c => c.spellEffect) == some (Effect.searchLandTypeToHand "Power-Plant")
-#guard (parseOracleCard "Walk\n{G}\nSorcery\nSearch your library for a Bolas's Meditation Realm card, reveal it, put it into your hand, then shuffle.").toOption.bind
-    (fun c => c.spellEffect) == some (Effect.searchLandTypeToHand "Bolas's Meditation Realm")
-#guard (parseOracleCard "Saga\n{2}\nEnchantment — Saga\nI — This Saga deals 3 damage to each non-Time Lord creature and each opponent.").toOption.bind
-    (fun c => c.saga.bind fun s => (s.chapters[0]?).bind (·.chapterEffect)) ==
-    some (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 3 "Time Lord")
-
--- CR 207.2c: ability words are not rules text. The ability parses as if the
--- word were absent, including multi-word words and words inside a quote.
-#guard abilityWords.all fun w =>
-  (parseOracleCard s!"Walk\n\{G}\nSorcery\n{w} — Draw seven cards.").toOption.bind
-      (·.spellEffect) ==
-    (parseOracleCard "Walk\n{G}\nSorcery\nDraw seven cards.").toOption.bind
-      (·.spellEffect)
-#guard (parseOracleCard "Cloud\n{4}{B}\nSorcery\nSpell Mastery — This spell costs {3} less to cast if a creature died this turn.").toOption.map
-    (·.costReductionIfCreatureDied) == some 3
-#guard (parseOracleCard "Cloud\n{4}{B}\nSorcery\nThis spell costs {3} less to cast if a creature died this turn.").toOption.map
-    (·.costReductionIfCreatureDied) == some 3
-#guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nWill of the Council — Menace").toOption.map
-    (·.keywords.menace) == some true
-#guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nFathomless Descent — Flying (This creature can't be blocked except by creatures with flying or reach.)").toOption.map
-    (fun c => c.keywords.flying && !c.keywords.reach && c.staticAbilities.isEmpty) ==
-    some true
-#guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nI — Spell Mastery — Draw seven cards.").toOption.map
-    (fun c => match c.saga with
-      | some s => s.chapters.size == 1 &&
-          (s.chapters[0]?).any (fun ch => ch.roman == "I" && ch.chapterEffect.isSome)
-      | none => false) == some true
-#guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
-    (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
-    some (Effect.chapterGainLandfallCreateElf)
-#guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — Council's Dilemma — This Saga gains \"Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
-    (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
-    some (Effect.chapterGainLandfallCreateElf)
-
--- CR 207.4: the chaos symbol is not rules text. Towashi's chaos ability is the
--- text after the symbol, and a `{CHAOS}` that names a planar-die face stays.
-private def towashiChaosAbility : String :=
-  "Whenever chaos ensues, distribute three +1/+1 counters among one, two, or three target creatures you control."
-
-#guard
-  match parseOracleCard s!"Towashi\nPlane — Kamigawa\nMenace\n\{CHAOS} {towashiChaosAbility}",
-        parseOracleCard s!"Towashi\nPlane — Kamigawa\nMenace\n{towashiChaosAbility}" with
-  | .ok a, .ok b => reprStr a == reprStr b
-  | .error a, .error b => a == b
-  | _, _ => false
-#guard (parseOracleCard "Towashi\nPlane — Kamigawa\n{CHAOS} Menace").toOption.map
-    (fun c => c.hasType .plane && c.subtypes == #["Kamigawa"] && c.keywords.menace) ==
-    some true
-#guard (parseOracleCard "Towashi\nPlane — Kamigawa\n{chaos}\nMenace").toOption.map
-    (·.keywords.menace) == some true
-#guard (parseOracleCard "Towashi\nPlane — Kamigawa\n{CHAOS} Draw seven cards.").toOption.bind
-    (·.spellEffect) ==
-  (parseOracleCard "Towashi\nPlane — Kamigawa\nDraw seven cards.").toOption.bind
-    (·.spellEffect)
-#guard
-  match parseOracleCard "Roll\nInstant\nWhenever you roll {CHAOS}, draw a card." with
-  | .error e => e == "unrecognized Oracle line on Roll: Whenever you roll {CHAOS}, draw a card."
-  | .ok _ => false
-#guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — This Saga gains \"{CHAOS} Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
-    (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
-    some (Effect.chapterGainLandfallCreateElf)
-
--- CR 207.2a: reminder text is not rules text, on the ability's line or its own line.
-#guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nMenace (This creature can't be blocked except by two or more creatures.)").toOption.map
-    (fun c => c.keywords.menace && c.staticAbilities.isEmpty && !c.keywords.cantBeBlocked) ==
-    some true
-#guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nMenace\n(This creature can't be blocked except by two or more creatures.)").toOption.map
-    (fun c => c.keywords.menace && c.staticAbilities.isEmpty && c.triggeredAbilities.isEmpty) ==
-    some true
-#guard (parseOracleCard "Mage\n{U}\nCreature — Human Wizard\n1/1\nProwess\n(Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)").toOption.map
-    (fun c => c.keywords.prowess && c.triggeredAbilities.isEmpty && c.staticAbilities.isEmpty) ==
-    some true
-#guard (parseOracleCard "Elf\n{G}\nCreature — Elf Druid\n1/1\n({T}: Add {G}.)").toOption.map
-    (fun c => c.tapAddMana.isEmpty && c.tapAddOneOf.isEmpty && c.activatedAbilities.isEmpty) ==
-    some true
-#guard (parseOracleCard "Elf\n{G}\nCreature — Elf Druid\n1/1\n{T}: Add {G}.").toOption.map
-    (fun c => c.tapAddMana == #[.colored .green]) == some true
-#guard (parseOracleCard "Steam\nLand — Island Mountain\n({T}: Add {U} or {R}.)").toOption.map
-    (fun c => c.tapAddOneOf.isEmpty && c.tapAddMana.isEmpty &&
-      c.basicLandMana == #[.blue, .red]) == some true
-#guard (parseOracleCard "Kick\n{1}{R}\nSorcery\nKicker {1}{R} (You may pay an additional {2}{G} as you cast this spell.)").toOption.map
-    (fun c => c.kicker == some (ManaCost.ofGenericAndColor 1 .red)) == some true
-#guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\n(As this Saga enters and after your draw step, add a lore counter. Sacrifice after I.)\nI — Draw seven cards.\nII — Draw seven cards.\nIII — Draw seven cards.").toOption.map
-    (fun c => match c.saga with
-      | some s => s.chapters.size == 3 && s.finalChapterNumber == 3 &&
-          s.sacrificeAfter == "III" && c.triggeredAbilities.isEmpty
-      | none => false) == some true
 
 end Mtg.Engine

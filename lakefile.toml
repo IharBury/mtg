@@ -1,6 +1,6 @@
 name = "mtg"
 version = "0.1.0"
-defaultTargets = ["Mtg.Engine", "MtgDemo", "mtg-demo"]
+defaultTargets = ["Mtg.Engine", "MtgDemo", "mtg-demo", "oracle-roundtrip"]
 
 [leanOptions]
 autoImplicit = false

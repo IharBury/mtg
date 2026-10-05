@@ -1,4 +1,4 @@
-import Mtg.Engine.Card
+import Mtg.Engine.Card.CardDef
 
 /-!
 # Deck construction (CR 100.2)

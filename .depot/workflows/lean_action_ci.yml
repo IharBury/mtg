@@ -28,6 +28,8 @@ jobs:
         with:
           # Fail if Lean or Lake logs any warning (e.g. deprecations).
           build-args: "--wfail"
+      - name: Check Oracle parsing
+        run: .lake/build/bin/oracle-roundtrip
       - name: Check example games
         run: |
           set -euo pipefail

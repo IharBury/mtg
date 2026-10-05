@@ -1,4 +1,4 @@
-import Mtg.Engine.Card
+import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Deck
 import Mtg.Engine.Mana
 import Mtg.Engine.Rng
