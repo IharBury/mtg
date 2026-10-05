@@ -1026,11 +1026,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .dealDamageToAny n =>
     g.applyEffect controller (Effect.dealDamage n) targets
   | .drawEqualSacrificedPowerThenDiscard =>
-    let n :=
-      match sourceId.bind g.findObject? with
-      | some src => (g.power src).toNat
-      | none => 1
-    g.drawThenBeginDiscard controller (max n 1)
+    g.drawThenBeginDiscard controller ((lastKnownPower.getD 0).toNat)
   | .arwenShare =>
     match sourceId, targets[0]? with
     | some sid, some (Target.permanent tid) => g.resolveArwenShare sid (some tid)
@@ -1169,7 +1165,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .dealDamageToEachCreature n =>
     g.dealDamageToEachCreatureMatching n
   | .createTokensEqualRemovedPlusOnes kind =>
-    g.createKindTokens controller kind 1
+    g.createKindTokens controller kind chosenX
   | .exileTopXPlayThisTurn =>
     let x := g.sourcePowerNatAtResolution sourceId lastKnownPower
     g.exileTopPlayThisTurn controller x

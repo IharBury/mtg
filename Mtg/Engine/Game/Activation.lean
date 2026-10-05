@@ -37,21 +37,13 @@ def fraActivationConditionHolds (g : Game) (p : PlayerId) : FraActivationConditi
   | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
 
 /-- Whether `p` can pay the Reality Fracture part of `o`'s activation cost. -/
-def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) : FraCost → Bool
+def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : FraCost) : Bool :=
+  match c with
   | .none => true
-  | .exileAnotherCreatureCardFromGraveyard =>
-    (g.player p).graveyard.any (fun id =>
-      id != o.id && (g.findObject? id).any (·.printed.isCreature))
-  | .sacrificeAnotherArtifact =>
-    (g.permanentsOf p).any (fun x => x.id != o.id && x.printed.isArtifact)
-  | .sacrificeAnotherCreatureOrPlaneswalker =>
-    (g.permanentsOf p).any (fun x => x.id != o.id && (x.isCreature || x.printed.isPlaneswalker))
-  | .sacrificeArtifactOrLand =>
-    (g.permanentsOf p).any (fun x => x.printed.isArtifact || x.printed.isLand)
-  | .discardLegendaryCard =>
-    (g.player p).hand.any (fun id => (g.findObject? id).any (·.isLegendary))
-  | .tapTwoUntappedArtifacts =>
-    ((g.permanentsOf p).filter (fun x => x.printed.isArtifact && !x.status.tapped)).size ≥ 2
+  | .exileAnotherCreatureCardFromGraveyard | .sacrificeAnotherArtifact
+  | .sacrificeAnotherCreatureOrPlaneswalker | .sacrificeArtifactOrLand
+  | .discardLegendaryCard | .tapTwoUntappedArtifacts =>
+    g.costPicksPayable p o.id (costPicksOf { cost := { fra := c }, effect := default })
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
   | .crew n =>
@@ -137,6 +129,10 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
     throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
+  if !g.costPicksPayable p o.id (costPicksOf ab) then
+    throw s!"{o.name}'s ability has a cost that can't be paid"
+  if ab.cost.removeAnyNumberPlusOne && ab.cost.tap && o.status.tapped then
+    throw s!"{o.name} is already tapped"
   if !g.canPayLife p ab.cost.payLife then
     throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
   if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 &&
@@ -193,12 +189,6 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if let .crew n := ab.cost.fra then
     return { g with pending := .fraChoice p (.crew newId id n) }.logMsg
       s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {o.name}"
-  if !ab.isModal && !ab.effect.requiresTarget && !loyaltyX &&
-      !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&
-      !ab.cost.sacrificeAnotherCreatureOrArtifact then
-    let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
-      ab.cost.payLife ab.cost.discardSource (some ab)
-    return g.becomeActivated p o.name (some id)
   let manaCost := g.activationManaCost p ab (some o)
   let prop : ProposedSpell := {
     caster := p
@@ -222,8 +212,15 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
       | none => if effect.targetKind != ab.effect.targetKind then some effect.targetKind else none
     activation := some ab
     loyaltyX
+    removePlusOneX := ab.cost.removeAnyNumberPlusOne
   }
-  if loyaltyX then
+  if !ab.isModal && !ab.effect.requiresTarget && !loyaltyX &&
+      !ab.cost.removeAnyNumberPlusOne &&
+      !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&
+      !ab.cost.sacrificeAnotherCreatureOrArtifact then
+    let g := { g with proposedSpell := some prop }
+    return (← g.beginActivationPayment prop)
+  if loyaltyX || ab.cost.removeAnyNumberPlusOne then
     let g := { g with pending := .chooseX p, proposedSpell := some prop }
     return g.logMsg s!"{pl.name} must choose a value for X (CR 107.3a / 601.2b)"
   return g.enterProposalWindow p pl prop ab.isModal ab.effect.requiresTarget "CR 601.2b"

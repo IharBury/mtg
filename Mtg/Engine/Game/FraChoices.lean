@@ -347,6 +347,16 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := (g.removeFromZoneList abilityId .stack).ceaseToExist abilityId
     return (g.logMsg s!"{(g.player p).name} doesn't crew").receivePriority p
   | .crew .., _ => throw "Choose creatures to tap, or decline"
+  | .costPicks sourceId picks _, .objects ids =>
+    let some prop := g.proposedSpell | throw "No activation is being paid for"
+    let some pick := picks[0]? | throw "No cost is left to pay"
+    let g ← g.payCostPick p prop.spellId sourceId pick ids
+    return (← g.continueCostPicks prop (picks.extract 1 picks.size) true).finishFraChoice
+  | .costPicks _ _ false, .decline =>
+    return g.reverseProposedSpell
+  | .costPicks _ _ true, .decline =>
+    throw "Part of the cost is already paid; the activation can't be cancelled"
+  | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
@@ -397,6 +407,11 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     let (picked, _) := cands.foldl (fun (acc : Array ObjectId × Nat) c =>
       if acc.2 ≥ n then acc else (acc.1.push c.id, acc.2 + (g.power c).toNat)) (#[], 0)
     .choosePermanents picked
+  | .costPicks sourceId picks _ =>
+    match picks[0]? with
+    | some pick =>
+      .choosePermanents ((g.costPickCandidates p sourceId pick).extract 0 pick.count)
+    | none => .decline
   | .chooseCardName _ =>
     -- Name a nonland card an opponent owns, else any nonland card.
     let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)

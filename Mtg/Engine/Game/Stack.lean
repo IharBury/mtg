@@ -95,6 +95,9 @@ structure ProposedSpell where
   /-- The ability's cost is −X loyalty; X is announced before targets and
   the loyalty is paid then (CR 107.3 / 606.4). -/
   loyaltyX : Bool := false
+  /-- X is the number of +1/+1 counters removed from the source as part of
+  the cost (The Astonishing Ant-Man). -/
+  removePlusOneX : Bool := false
 deriving Repr, Inhabited
 
 end Mtg.Engine

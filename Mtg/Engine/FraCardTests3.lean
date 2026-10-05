@@ -507,9 +507,11 @@ putting the rest on the bottom. -/
 /- Marwyn, the Clearcutter sacrifices an artifact or land to draw. -/
 #guard
   let g := addPermanent (addPermanent afterDraw marwynTheClearcutter me me) murmuringVolume me me
+  let g := addPermanent g forest me me
   let before := handSize g me
-  let g := resolved (activateNamed g "Marwyn, the Clearcutter" "Draw")
-  handSize g me == before + 1 && !onBattlefield g "Murmuring Volume"
+  let g := activateNamed g "Marwyn, the Clearcutter" "Draw"
+  let g := resolved (mustApply g me (.choosePermanents #[(namedPermanent g "Forest").id]))
+  handSize g me == before + 1 && onBattlefield g "Murmuring Volume" && !onBattlefield g "Forest"
 
 /- Skilled Battlecarver has first strike only during your turn. -/
 #guard
@@ -585,7 +587,9 @@ a legendary enchantment. -/
 choice of trample, hexproof, or haste. -/
 #guard
   let g := addPermanent (addPermanent afterDraw hungeringPuppetbeast me me) murmuringVolume me me
-  let g := resolveTop (activateNamed g "Hungering Puppetbeast" "+1/+1 counter")
+  let vol := (namedPermanent g "Murmuring Volume").id
+  let g := activateNamed g "Hungering Puppetbeast" "+1/+1 counter"
+  let g := resolveTop (mustApply g me (.choosePermanents #[vol]))
   let g := mustApply g me (.chooseMode 2)
   counters g "Hungering Puppetbeast" == 1 && (kw g "Hungering Puppetbeast").haste &&
     !onBattlefield g "Murmuring Volume"
@@ -721,9 +725,12 @@ only if you've scried or surveilled this turn. -/
 #guard
   let g := addPermanent afterDraw tenuredTethermage me me
   let g := addPermanent (addPermanent g murmuringVolume me me) murmuringVolume me me
-  let g := resolved (activateNamed g "Tenured Tethermage" "two +1/+1")
-  counters g "Tenured Tethermage" == 2 &&
-    ((g.permanentsOf me).filter (fun o => o.name == "Murmuring Volume" && o.status.tapped)).size == 2
+  let g := addPermanent g murmuringVolume me me
+  let vols := ((g.permanentsOf me).filter (·.name == "Murmuring Volume")).map (·.id)
+  let g := activateNamed g "Tenured Tethermage" "two +1/+1"
+  let g := resolved (mustApply g me (.choosePermanents #[vols[1]!, vols[2]!]))
+  counters g "Tenured Tethermage" == 2 && !(g.object! vols[0]!).status.tapped &&
+    (g.object! vols[1]!).status.tapped && (g.object! vols[2]!).status.tapped
 
 /- Warrior's Blades: equip costs {1} less for each +1/+1 counter on the
 target. -/

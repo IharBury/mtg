@@ -110,6 +110,55 @@ inductive FraSacrifice where
   | creature
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- Part of an activation cost that needs the player to choose what to pay
+with (CR 601.2h / 602.2b). -/
+inductive CostPick where
+  /-- Sacrifice another permanent of this subtype, or another creature when
+  the subtype is `Creature`. -/
+  | sacrificeAnotherSubtype (subtype : String)
+  | sacrificeArtifact
+  | sacrificeLegendaryArtifact
+  | sacrificeArtifactOrCreature
+  | sacrificeAnotherArtifact
+  | sacrificeAnotherCreatureOrPlaneswalker
+  | sacrificeArtifactOrLand
+  | sacrificeEquipmentAttachedToSource
+  /-- Sacrifice an artifact, or discard a nonland card. -/
+  | sacrificeArtifactOrDiscardNonland
+  | discardACard
+  | discardLegendaryCard
+  /-- Discard a legendary card with the same name as a legendary permanent
+  you control. -/
+  | discardLegendarySameName
+  | exileAnotherCreatureCardFromGraveyard
+  | tapUntappedCreature
+  | tapTwoUntappedArtifacts
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- How many objects `pick` takes. -/
+def CostPick.count : CostPick → Nat
+  | .tapTwoUntappedArtifacts => 2
+  | _ => 1
+
+/-- The cost phrase of `pick`, for prompts and logs. -/
+def CostPick.phrase : CostPick → String
+  | .sacrificeAnotherSubtype t => s!"sacrifice another {t.toLower}"
+  | .sacrificeArtifact => "sacrifice an artifact"
+  | .sacrificeLegendaryArtifact => "sacrifice a legendary artifact"
+  | .sacrificeArtifactOrCreature => "sacrifice an artifact or creature"
+  | .sacrificeAnotherArtifact => "sacrifice another artifact"
+  | .sacrificeAnotherCreatureOrPlaneswalker => "sacrifice another creature or planeswalker"
+  | .sacrificeArtifactOrLand => "sacrifice an artifact or land"
+  | .sacrificeEquipmentAttachedToSource => "sacrifice an Equipment attached to the source"
+  | .sacrificeArtifactOrDiscardNonland => "sacrifice an artifact or discard a nonland card"
+  | .discardACard => "discard a card"
+  | .discardLegendaryCard => "discard a legendary card"
+  | .discardLegendarySameName =>
+    "discard a legendary card with the same name as a legendary permanent you control"
+  | .exileAnotherCreatureCardFromGraveyard => "exile another creature card from your graveyard"
+  | .tapUntappedCreature => "tap an untapped creature you control"
+  | .tapTwoUntappedArtifacts => "tap two untapped artifacts you control"
+
 /-- A choice made while a Reality Fracture effect resolves. The player answers
 with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
 `Action.decline`. -/
@@ -184,6 +233,10 @@ inductive FraChoice where
   cost of `vehicleId`'s ability `abilityId` (CR 702.122). Declining cancels
   the activation. -/
   | crew (abilityId vehicleId : ObjectId) (power : Nat)
+  /-- Choose what to pay `picks[0]` of the proposed activation's cost with,
+  then the rest (CR 601.2h). `paid` is true once one has been paid, after
+  which the activation can no longer be cancelled. -/
+  | costPicks (sourceId : ObjectId) (picks : Array CostPick) (paid : Bool)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

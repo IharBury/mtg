@@ -238,4 +238,124 @@ and a mode with no legal target isn't offered. -/
   let g := resolved (mustApply g me .pay)
   inExile g "Craw Wurm" && inExile g "Way of the Wildspeaker"
 
+/-! ## Activation costs paid with chosen objects (CR 601.2h / 602.2b) -/
+
+def pick (g : Game) (ids : Array ObjectId) : Game := mustApply g me (.choosePermanents ids)
+
+def pickRejected (g : Game) (ids : Array ObjectId) : Bool :=
+  match g.apply me (.choosePermanents ids) with
+  | .error _ => true
+  | .ok _ => false
+
+def choosingCost (g : Game) : Bool :=
+  match g.pending with
+  | .fraChoice q (.costPicks ..) => q == me
+  | _ => false
+
+def idOf (g : Game) (name : String) : ObjectId := (namedPermanent g name).id
+
+/- Kingpin's Enforcers: the player chooses the artifact or creature to
+sacrifice. -/
+def enforcersBoard : Game :=
+  let g := addPermanent (addPermanent afterDraw kingpinSEnforcers me me) grizzlyBears me me
+  addPermanent g murmuringVolume me me
+#guard
+  let g := activateNamed enforcersBoard "Kingpin's Enforcers" "Draw"
+  let before := handSize g me
+  let g := resolved (pick g #[idOf g "Grizzly Bears"])
+  choosingCost (activateNamed enforcersBoard "Kingpin's Enforcers" "Draw") &&
+    !onBattlefield g "Grizzly Bears" && onBattlefield g "Murmuring Volume" &&
+    handSize g me == before + 1
+/- A land can't pay it, and declining cancels the activation and returns the
+mana (CR 733.1). -/
+#guard
+  let g := addPermanent enforcersBoard forest me me
+  let g := activateNamed g "Kingpin's Enforcers" "Draw"
+  let pool := (g.player me).manaPool.total
+  let undone := mustApply g me .decline
+  pickRejected g #[idOf g "Forest"] && g.stack.size == 1 && undone.stack.isEmpty &&
+    (undone.player me).manaPool.total == pool + 3 && undone.pending == .none &&
+    onBattlefield undone "Grizzly Bears"
+
+/- Bullseye, Death Dealer: discard a nonland card instead of sacrificing an
+artifact. A land card can't be discarded for it. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw bullseyeDeathDealer me me) murmuringVolume me me
+  let g := addToHand (addToHand g shock me) forest me
+  let g := activateNamed g "Bullseye, Death Dealer" "2 damage" [.target (.player opp)]
+  let forestId := (handObj g me "Forest").id
+  let g' := resolved (pick g #[(handObj g me "Shock").id])
+  pickRejected g #[forestId] && life g' opp == 18 && inGraveyard g' me "Shock" &&
+    onBattlefield g' "Murmuring Volume"
+
+/- The Astonishing Ant-Man removes the chosen number of +1/+1 counters and
+creates that many Insects. -/
+#guard
+  let g := plusOnes (addPermanent afterDraw theAstonishingAntMan me me) "The Astonishing Ant-Man" 3
+  let g := resolved (activateNamed g "The Astonishing Ant-Man" "Insect" [.chooseX 2])
+  creatureTokens g me == 2 && counters g "The Astonishing Ant-Man" == 1
+#guard
+  let g := plusOnes (addPermanent afterDraw theAstonishingAntMan me me) "The Astonishing Ant-Man" 3
+  activationRejected g (namedPermanent g "The Astonishing Ant-Man") "Insect" [.chooseX 4]
+
+/- Jessica Jones, Private Eye gets a stun counter as the cost is paid. -/
+#guard
+  let g := addPermanent afterDraw jessicaJonesPrivateEye me me
+  let g := activateNamed g "Jessica Jones, Private Eye" "Exile the top"
+  (namedPermanent g "Jessica Jones, Private Eye").status.stun == 1 && g.stack.size == 1
+
+/- Ronin, Shadow Stalker sacrifices an Equipment attached to it, not another
+Equipment. -/
+def roninBoard : Game :=
+  let g := addPermanent (addPermanent afterDraw roninShadowStalker me me) dunedainBlade me me
+  let g := equip g "Dúnedain Blade" "Ronin, Shadow Stalker"
+  addPermanent (addPermanent g huntersAxe me me) grizzlyBears opp opp
+#guard
+  let g := activateNamed roninBoard "Ronin, Shadow Stalker" "Target creature gets" [tgt roninBoard "Grizzly Bears"]
+  let g' := resolved (pick g #[idOf g "Dúnedain Blade"])
+  pickRejected g #[idOf g "Hunter's Axe"] && !onBattlefield g' "Grizzly Bears" &&
+    !onBattlefield g' "Dúnedain Blade" && onBattlefield g' "Hunter's Axe"
+#guard
+  let g := addPermanent (addPermanent afterDraw roninShadowStalker me me) huntersAxe me me
+  let g := addPermanent g grizzlyBears opp opp
+  activationRejected g (namedPermanent g "Ronin, Shadow Stalker") "Target creature gets"
+
+/- The Shire taps the chosen untapped creature. -/
+#guard
+  let g := addPermanent (addPermanent (addPermanent afterDraw theShire me me) grizzlyBears me me) hillGiant me me
+  let g := activateNamed g "The Shire" "Food"
+  let g := resolved (pick g #[idOf g "Hill Giant"])
+  (namedPermanent g "Hill Giant").status.tapped && !(namedPermanent g "Grizzly Bears").status.tapped &&
+    (g.permanentsOf me).any (fun o => g.hasSubtype o "Food")
+
+/- Tom, Bert, and William sacrifice another creature (not themselves) and draw
+cards equal to its power, then discard a card. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw tomBertAndWilliam me me) hillGiant me me
+  let g := addPermanent g grizzlyBears me me
+  let g := activateNamed g "Tom, Bert, and William" "Draw cards"
+  let before := handSize g me
+  let g' := resolved (pick g #[idOf g "Hill Giant"])
+  pickRejected g #[idOf g "Tom, Bert, and William"] && !onBattlefield g' "Hill Giant" &&
+    onBattlefield g' "Grizzly Bears" && handSize g' me == before + 3 - 1
+
+/- Misty Knight, Hero for Hire discards the chosen card. -/
+#guard
+  let g := addPermanent afterDraw mistyKnightHeroForHire me me
+  let g := addToHand (addToHand g shock me) giantGrowth me
+  let g := activateNamed g "Misty Knight, Hero for Hire" "Draw a card"
+  let g := resolved (pick g #[(handObj g me "Giant Growth").id])
+  inGraveyard g me "Giant Growth" && inHand g me "Shock"
+
+/- Key to the Side-Door discards a legendary card with the same name as a
+legendary permanent you control. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw keyToTheSideDoor me me) mistyKnightHeroForHire me me
+  let g := addToHand (addToHand g mistyKnightHeroForHire me) roninShadowStalker me
+  let g := activateNamed g "Key to the Side-Door" "Draw two"
+  let before := handSize g me
+  let g' := resolved (pick g #[(handObj g me "Misty Knight, Hero for Hire").id])
+  pickRejected g #[(handObj g me "Ronin, Shadow Stalker").id] &&
+    inGraveyard g' me "Misty Knight, Hero for Hire" && handSize g' me == before + 1
+
 end Mtg.Engine.CatalogModelTests

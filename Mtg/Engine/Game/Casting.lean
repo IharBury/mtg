@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.SpellTargets
+import Mtg.Engine.Game.ActivationCosts
 
 /-!
 # Casting legality and payment (CR 601)
@@ -390,6 +390,10 @@ def reverseProposedSpell (g : Game) : Game :=
           loyaltyCounters := ((src.status.loyaltyCounters : Int) - k).toNat
           loyaltyActivatedThisTurn := false } }
       | _, _, _ => pure ()
+      match prop.kind, prop.sourceId.bind g.findObject?, prop.activation.any (·.exhaust) with
+      | .activatedAbility, some src, true =>
+        g := g.setObject { src with status := { src.status with exhaustUsed := false } }
+      | _, _, _ => pure ()
       let reversed :=
         match prop.kind with
         | .spell => "the casting is reversed (CR 601.2 / 733.1)"
@@ -626,6 +630,76 @@ def lockInTargetCostReduction (g : Game) : Game :=
         | none => g
       | _ => g
 
+def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
+    (sourceId : Option ObjectId := none) : Game :=
+  let g :=
+    match sourceId with
+    | none => g
+    | some sid =>
+      match g.findObject? sid with
+      | some src =>
+        let powerUp :=
+          match g.proposedSpell.bind (·.activation) with
+          | some ab => ab.powerUp
+          | none =>
+            src.printed.activatedAbilities.any (·.powerUp)
+        let g := g.setObject { src with status := { src.status with
+          activationsThisTurn := src.status.activationsThisTurn + 1
+          powerUpUsed := src.status.powerUpUsed || powerUp
+          powerUpActivations :=
+            src.status.powerUpActivations + (if powerUp then 1 else 0) } }
+        let src := g.object! sid
+        if src.isCreature then
+          g.putControlledTriggers p .youActivateCreatureAbility
+        else g
+      | none => g
+  let g :=
+    match g.stack.back? with
+    | some e =>
+      let g := g.queueBecomesTargetTriggers p e.targets
+      g.beginWardsForTargets p e.objectId e.targets
+    | none => g
+  g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
+
+/-- Finish paying the proposed activation once its mana is paid and every
+chosen cost is paid: tap, life, and the source's own costs, then put it on
+the stack (CR 601.2h–i / 602.2b). -/
+def completeActivation (g : Game) (prop : ProposedSpell) : Except String Game := do
+  let some sid := prop.sourceId | throw "The ability has no source"
+  let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
+  let g ← g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
+    prop.payLife prop.discardSource prop.activation (if prop.removePlusOneX then x else 0)
+  if prop.needsSacrificeOther then
+    let g := { g with
+      pending := .sacrificePermanent prop.caster sid
+      consecutivePasses := 0 }
+    return g.logMsg
+      s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
+  let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+  return g.becomeActivated prop.caster prop.original.name prop.sourceId
+
+/-- Ask `p` to choose what pays the first of `picks`, or finish the
+activation when none remain. -/
+def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array CostPick) (paid : Bool) :
+    Except String Game := do
+  match picks[0]?, prop.sourceId with
+  | some pick, some sid =>
+    let g := { g with pending := .fraChoice prop.caster (.costPicks sid picks paid)
+                      consecutivePasses := 0 }
+    return g.logMsg s!"{(g.player prop.caster).name} chooses how to {pick.phrase}"
+  | _, _ => g.completeActivation prop
+
+/-- Start paying the proposed activation's costs that need chosen objects,
+reversing it if they can't be paid (CR 601.2h / 733.1). -/
+def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except String Game := do
+  let picks := (prop.activation.map costPicksOf).getD #[]
+  let payable :=
+    match prop.sourceId with
+    | some sid => g.costPicksPayable prop.caster sid picks
+    | none => true
+  if !payable then return g.reverseProposedSpell
+  g.continueCostPicks prop picks false
+
 /-- Continue after CR 601.2c: determine the total cost (601.2f), then mana
 abilities (601.2g). Additional-cost *choices* are announced earlier, at 601.2b. -/
 def afterTargetsChosen (g : Game) : Game :=
@@ -640,6 +714,10 @@ def afterTargetsChosen (g : Game) : Game :=
           prop.needsDiscardCard then
         { g with pending := .activateManaAbilities prop.caster }
           |>.logMsg s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
+      else if prop.kind == .activatedAbility then
+        match g.beginActivationPayment prop with
+        | .ok g => g
+        | .error _ => g.reverseProposedSpell
       else
         let spell := g.object! prop.spellId
         let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
@@ -762,36 +840,6 @@ def setProposedMode (g : Game) (mode : Nat) : Game :=
     | some i =>
       { g with stack := g.stack.set! i { g.stack[i]! with chosenMode := some mode } }
 
-def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
-    (sourceId : Option ObjectId := none) : Game :=
-  let g :=
-    match sourceId with
-    | none => g
-    | some sid =>
-      match g.findObject? sid with
-      | some src =>
-        let powerUp :=
-          match g.proposedSpell.bind (·.activation) with
-          | some ab => ab.powerUp
-          | none =>
-            src.printed.activatedAbilities.any (·.powerUp)
-        let g := g.setObject { src with status := { src.status with
-          activationsThisTurn := src.status.activationsThisTurn + 1
-          powerUpUsed := src.status.powerUpUsed || powerUp
-          powerUpActivations :=
-            src.status.powerUpActivations + (if powerUp then 1 else 0) } }
-        let src := g.object! sid
-        if src.isCreature then
-          g.putControlledTriggers p .youActivateCreatureAbility
-        else g
-      | none => g
-  let g :=
-    match g.stack.back? with
-    | some e =>
-      let g := g.queueBecomesTargetTriggers p e.targets
-      g.beginWardsForTargets p e.objectId e.targets
-    | none => g
-  g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
 
 end Game
 end Mtg.Engine

@@ -778,6 +778,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .mayMoveAllCounters .. => "may move all counters (accept or decline)"
         | .chooseCardName _ => "name a nonland card: name <card name>"
         | .crew _ _ n => s!"choose creatures with total power {n} to crew: choose <id> ..., or decline"
+        | .costPicks _ picks paid =>
+          let what := (picks[0]?.map CostPick.phrase).getD "pay the cost"
+          let cancel := if paid then "" else ", or decline to cancel"
+          s!"choose what to {what}: choose <id> ...{cancel}"
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=

@@ -170,14 +170,6 @@ def chooseGollumParity (g : Game) (sourceId : ObjectId) (odd : Bool) : Game :=
     g.logMsg
       (if odd then s!"{src.name}: odd is chosen" else s!"{src.name}: even is chosen")
 
-/-- Remove an indestructible counter as a cost (ruling 357). -/
-def payRemoveIndestructibleCounter (g : Game) (o : GameObject) : Except String Game := do
-  if o.status.indestructibleCounters == 0 then
-    throw s!"{o.name} has no indestructible counter"
-  let g := g.setObject { o with status :=
-    { o.status with indestructibleCounters := o.status.indestructibleCounters - 1 } }
-  return g.logMsg s!"{o.name} loses an indestructible counter"
-
 /-- Resolve Arwen, Mortal Queen's activated ability. An illegal target means
 no counters are put on Arwen or the target (ruling 189). -/
 def resolveArwenShare (g : Game) (arwenId : ObjectId) (targetId : Option ObjectId) : Game :=
