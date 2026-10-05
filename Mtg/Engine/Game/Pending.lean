@@ -67,6 +67,34 @@ structure WardObligation where
   cost : WardCost
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- A choice made while a Reality Fracture effect resolves. The player answers
+with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
+`Action.decline`. -/
+inductive FraChoice where
+  /-- Choose a card from `target`'s revealed hand for them to discard: a
+  nonland permanent card if `permanentOnly`, else a nonland card. -/
+  | discardFromRevealedHand (target : PlayerId) (permanentOnly : Bool)
+  /-- The player may discard their hand and draw `n`; `rest` choose after. -/
+  | mayWheel (n : Nat) (rest : Array PlayerId)
+  /-- You may sacrifice a planeswalker to search for one (Entrust the Spark). -/
+  | maySacrificePlaneswalker
+  /-- The owner of `id` puts it on top (accept) or on the bottom (decline) of
+  their library; on top, they are dealt `damage`. -/
+  | topOrBottomDamage (id : ObjectId) (damage : Nat)
+  /-- You may exile `spellId` and four other cards named Sphinx's Approach. -/
+  | sphinxsApproach (spellId : ObjectId)
+  /-- You may reveal two cards with different names from outside the game. -/
+  | extrapolateReveal
+  /-- Choose one of `ids` for `revealer` to put into their hand. -/
+  | extrapolatePick (revealer : PlayerId) (ids : Array ObjectId)
+  /-- You may put one of the milled permanent cards `ids` into your hand;
+  then you gain `life` life. -/
+  | mayPutMilledPermanent (ids : Array ObjectId) (life : Nat)
+  /-- Choose `remaining` more modes for the triggered ability `objectId`
+  from `CardDef.fraTriggerModes` of its source. -/
+  | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Choice that must be made before priority proceeds. -/
 inductive Pending where
   | none
@@ -169,6 +197,8 @@ inductive Pending where
   /-- Choose any number of permanents and players with counters to
   proliferate, `remaining` more times (CR 701.34; Tam, the Possibility). -/
   | chooseProliferate (player : PlayerId) (remaining : Nat)
+  /-- A Reality Fracture choice made while an effect resolves. -/
+  | fraChoice (player : PlayerId) (choice : FraChoice)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
 deriving DecidableEq, Repr, Inhabited, BEq

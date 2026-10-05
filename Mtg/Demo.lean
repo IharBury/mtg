@@ -404,8 +404,8 @@ def loadSeats (players : Array DemoPlayer) : IO (Except String (Array Seat)) := 
     | .file path =>
       match (← loadDeckListFile path) with
       | .error e => return .error e
-      | .ok cards =>
-        seats := seats.push { name := p.name, deck := cards }
+      | .ok (cards, sideboard) =>
+        seats := seats.push { name := p.name, deck := cards, sideboard }
   return .ok seats
 
 /-- Create the demo game after the starting player is known (CR 103.1). -/
@@ -489,6 +489,8 @@ def helpInteractive (controlAll : Bool := false)
   attach <id>          Attach that Equipment you control
   connive              Have the entering Villain connive (Baron Strucker)
   decline              Decline an optional discard, attach, cast, put, connive, or choose no target
+  accept               Agree to an optional action offered while an effect resolves
+  choose <id> [id...]  Choose cards or permanents an effect asks for
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   attack [id...] [at] <name|opponent>  Attack those (or all that can) at that player
@@ -1165,6 +1167,21 @@ def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
   | [] => g.apply p .decline
   | _ => throw declineUsage
 
+def acceptUsage : String := "usage: accept"
+def chooseUsage : String := "usage: choose <id> ..."
+
+/-- Agree to an optional action offered while an effect resolves. -/
+def applyAccept (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  match commandTokens tokens with
+  | [] => g.apply p .accept
+  | _ => throw acceptUsage
+
+/-- Choose cards or permanents for a choice made while an effect resolves. -/
+def applyChoose (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let ids ← parseObjectIds (commandTokens tokens) chooseUsage
+  requireObjects g ids
+  g.apply p (.choosePermanents ids)
+
 /-- Have the entering Villain connive (Baron Strucker; MSH 422). -/
 def applyConniveChoice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match commandTokens tokens with
@@ -1674,6 +1691,8 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "attach" => applyAttach g p args
   | "connive" => applyConniveChoice g p args
   | "decline" => applyDecline g p args
+  | "accept" => applyAccept g p args
+  | "choose" => applyChoose g p args
   | "shuffle" => applyShuffle g args
   | "order" => applyOrder g args
   | "pick" => applyPick g args

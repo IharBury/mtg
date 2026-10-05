@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Decisions
+import Mtg.Engine.Game.FraChoices
 
 /-!
 # Applying player actions
@@ -24,6 +24,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .castAdventure id => g.castSpell p id true
   | .chooseMode idx =>
     match g.pending with
+    | .fraChoice .. => g.answerFraChoice p (.mode idx)
     | .chooseFoodOrTreasure _ => g.chooseFoodOrTreasure p idx
     | .chooseTapOrUntap _ tid => g.chooseTapOrUntap p idx tid
     | _ => g.announceMode p idx
@@ -49,13 +50,27 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .scry top bottom => g.finishScry p top bottom
   | .surveil top graveyard => g.finishSurveil p top graveyard
   | .discard id => g.discardForDraw p id
-  | .decline => g.decline p
+  | .decline =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p .decline
+    | _ => g.decline p
+  | .accept =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p .accept
+    | _ => throw "Nothing to accept now"
   | .haveVillainConnive => g.haveVillainConnive p
   | .payGeneric => g.payGeneric p
-  | .chooseTop => g.chooseLibrarySide p true
-  | .chooseBottom => g.chooseLibrarySide p false
+  | .chooseTop =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p .accept
+    | _ => g.chooseLibrarySide p true
+  | .chooseBottom =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p .decline
+    | _ => g.chooseLibrarySide p false
   | .choosePermanents ids =>
     match g.pending with
+    | .fraChoice .. => g.answerFraChoice p (.objects ids)
     | .activateManaAbilities _ => g.convoke p ids
     | _ => g.choosePermanents p ids
   | .announceKicker kick => g.announceKicker p kick
@@ -117,6 +132,7 @@ def actor (g : Game) : Option PlayerId :=
     | .mayPutArtifactFromHand p _ => who p
     | .mayHaveVillainConnive p _ _ => who p
     | .chooseProliferate p _ => who p
+    | .fraChoice p _ => who p
     | .mayCastExiledElseDamage p _ _ => who p
     | .resolveRandom req =>
       match req with

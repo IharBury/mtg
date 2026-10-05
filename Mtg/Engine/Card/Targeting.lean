@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.Text
+import Mtg.Engine.TypeLine
 
 /-!
 # Targeting (CR 115.1 / 601.2c / 603.3d)
@@ -8,6 +9,61 @@ abilities, plus the `HasTargeting` interface.
 -/
 
 namespace Mtg.Engine
+
+/-- Where a filtered target is found (CR 115.1). -/
+inductive TargetZone where
+  | battlefield
+  | yourGraveyard
+  | anyGraveyard
+  | stack
+  /-- A player rather than an object. `controller` narrows it to you or an
+  opponent. -/
+  | player
+  /-- A spell on the stack or a creature on the battlefield. -/
+  | spellOrCreature
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Who controls (or, for a card in a graveyard, owns) a filtered target. -/
+inductive TargetController where
+  | any
+  | you
+  | opponent
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- A target described by characteristics, with the Oracle noun phrase that
+names it. Every listed restriction must hold. -/
+structure TargetFilter where
+  noun : String
+  zone : TargetZone := .battlefield
+  /-- The target has at least one of these card types. Empty means any
+  permanent, card, or spell. -/
+  types : Array CardType := #[]
+  /-- A legendary object also qualifies (“creature or legendary spell”). -/
+  orLegendary : Bool := false
+  nonland : Bool := false
+  noncreature : Bool := false
+  /-- A permanent card (CR 110.4b). -/
+  permanentCard : Bool := false
+  nontoken : Bool := false
+  legendary : Bool := false
+  nonlegendary : Bool := false
+  controller : TargetController := .any
+  /-- The target is at least one of these colors. Empty means any color. -/
+  colors : Array Color := #[]
+  mvAtLeast : Option Nat := none
+  mvAtMost : Option Nat := none
+  toughnessAtLeast : Option Int := none
+  /-- Not the source of the spell or ability. -/
+  another : Bool := false
+  withFlying : Bool := false
+  withPlusOneCounter : Bool := false
+  attacking : Bool := false
+  attackingOrBlocking : Bool := false
+  attackedThisTurn : Bool := false
+  enteredThisTurn : Bool := false
+  /-- Only a creature that is still untapped (“tap target untapped creature”). -/
+  untapped : Bool := false
+deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Whom a spell, activated ability, or triggered ability may target
 (CR 115.1 / 601.2c / 603.3d). Adding a targeting shape here is a compile error
@@ -164,6 +220,11 @@ inductive EffectTargetKind where
   | permanentOrPlayer
   /-- Up to two target creatures whose total mana value is `n` or less. -/
   | upToTwoCreaturesTotalMvAtMost (n : Nat)
+  /-- One instance of the word “target” described by a `TargetFilter`. -/
+  | filtered (f : TargetFilter)
+  /-- One instance of “target” per filter, announced in order. Indices in
+  `optional` are “up to one” instances. -/
+  | multi (fs : Array TargetFilter) (optional : Array Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -390,6 +451,23 @@ def spec : EffectTargetKind → Spec
       noun := "target planeswalker you control"
       prefer := .ownThenOpponent
       slots := #[.planeswalkerYouControl, .oppCreatureOrPlaneswalker] }
+  | .filtered f =>
+    { noun := f.noun
+      prefer :=
+        match f.zone, f.controller with
+        | .yourGraveyard, _ | .anyGraveyard, _ => .last
+        | .player, .you => .selfPlayer
+        | .player, _ => .opponentPlayer
+        | _, .you => .own
+        | _, .opponent => .opponent
+        | _, .any => .opponent
+      stackSpell := f.zone == .stack || f.zone == .spellOrCreature }
+  | .multi fs optional =>
+    { count := fs.size
+      noun := (fs[0]?.map (·.noun)).getD ""
+      prefer := .ownThenOpponent
+      slots := fs.map EffectTargetKind.filtered
+      optionalSlots := optional }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=

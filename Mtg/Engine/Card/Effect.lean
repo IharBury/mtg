@@ -1,6 +1,7 @@
 import Mtg.Engine.Card.AbilityResolution
 import Mtg.Engine.Card.SharedTrigger
 import Mtg.Engine.Card.StaticAbility
+import Mtg.Engine.Card.FraResolution
 
 /-!
 # Unified one-shot effects (CR 608)
@@ -229,6 +230,8 @@ inductive Resolution where
   /-- You get an emblem with “Whenever you cast a spell, this emblem deals
   `n` damage to any target.” -/
   | emblemCastSpellDamage (n : Nat)
+  /-- A Reality Fracture resolution. -/
+  | fra (r : FraResolution)
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -558,6 +561,8 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"For each creature {noun} controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
   | .becomeCopyLegendRuleOff =>
     s!"This land becomes a copy of {noun} until end of turn. The \"legend rule\" doesn't apply to permanents you control this turn"
+  | .fra r =>
+    FraResolution.toPhrase r noun
   | .sequence rs =>
     sequence rs
   | .spell r =>

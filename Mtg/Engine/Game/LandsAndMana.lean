@@ -139,6 +139,15 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
       (instRestricted := instRestricted)
       (cantNonartifact := cantNonartifact)
   let g := g.modifyPlayer p (fun pl => { pl with manaPool := pool })
+  -- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a).
+  let extraRed :=
+    if g.hasSubtype o "Mountain" && amount > 0 then (g.player p).mountainExtraRedThisTurn else 0
+  let g :=
+    if extraRed > 0 then
+      (g.modifyPlayer p (fun pl =>
+        { pl with manaPool := pl.manaPool.add (.colored .red) extraRed })).logMsg
+        (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
+    else g
   let produced :=
     if amount == 0 then "no mana"
     else if amount == 1 then toString mana

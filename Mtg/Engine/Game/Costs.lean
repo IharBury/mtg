@@ -190,7 +190,11 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
   let afterControl :=
     match face.costReductionIfYouControl with
     | some (n, subtype) =>
-      if g.countSubtype caster subtype > 0 then afterDied.reduceGeneric n
+      let controls :=
+        if subtype == "legendary creature" then
+          (g.permanentsOf caster).any (fun o => o.isCreature && o.isLegendary)
+        else g.countSubtype caster subtype > 0
+      if controls then afterDied.reduceGeneric n
       else afterDied
     | none => afterDied
   let afterGy :=

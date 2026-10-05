@@ -112,7 +112,7 @@ def attachedLosesAbilities (g : Game) (o : GameObject) : Bool :=
 /-- Printed abilities still apply unless The Wondrous Wasp (or similar)
 is making the permanent lose them (MSH 145 / 190), or an Aura strips them. -/
 def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
-  !g.attachedLosesAbilities o &&
+  !g.attachedLosesAbilities o && !o.status.losesAbilitiesUntilEot &&
   !o.status.losesAbilitiesGrantedBy.any (fun id =>
     match g.findObject? id with
     | some src => src.isOnBattlefield

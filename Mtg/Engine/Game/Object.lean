@@ -84,6 +84,8 @@ structure GameObject where
   leaveTriggerExile : Array ObjectId := #[]
   /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
   castFromGraveyard : Bool := false
+  /-- This spell was cast from its owner's hand. -/
+  castFromHand : Bool := false
   /-- This spell's kicker cost was paid (CR 702.32). -/
   kicked : Bool := false
   /-- This spell's teamwork cost was paid (CR 702.194). -/

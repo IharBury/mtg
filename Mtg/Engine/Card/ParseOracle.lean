@@ -712,6 +712,10 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low.startsWith "teamwork " then
     let num := (low.drop "teamwork ".length).takeWhile Char.isDigit
     if num.isEmpty then none else some { c with teamwork := some num.toNat! }
+  else if low.startsWith "as an additional cost to cast this spell, sacrifice a creature or planeswalker or pay" then
+    n.map fun k => { c with additionalCostSacrificeArtifactOrCreature := true
+                            additionalCostSacrificeCreatureOrPlaneswalker := true
+                            additionalCostOrPayGeneric := some k }
   else if low.startsWith "as an additional cost to cast this spell, sacrifice an artifact or creature or pay" then
     n.map fun k => { c with additionalCostSacrificeArtifactOrCreature := true, additionalCostOrPayGeneric := some k }
   else if low.startsWith "as an additional cost to cast this spell, sacrifice an artifact or creature" then
@@ -727,6 +731,10 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with flashIfYouControlSubtype := some t }
   else if low.startsWith "ward " || low.startsWith "ward{" then
     n.map fun k => { c with ward := some k }
+  else if low.startsWith "flashback—" && low.contains ", discard a card" then
+    let costText := (((raw.drop "Flashback—".length).copy).splitOn ",").headD "" |>.trimAscii.copy
+    parseManaCost costText |>.map fun cost =>
+      { c with flashback := some cost, flashbackDiscard := true }
   else if low.startsWith "flashback " then
     let costText :=
       ((stripParentheticals ((raw.drop "Flashback ".length).trimAscii.copy)).trimAscii.copy).replace "." ""
@@ -1020,10 +1028,37 @@ def matchChapter (cardName text : String) : Option Effect :=
       | some e => some e
       | none => firstSpell (·.matchText q)
 
+/-- A modal “When this enters, choose one —” (or “choose two —”) triggered
+ability: the trigger and its modes. -/
+def parseTriggerModes (cardName line : String) : Option (TriggeredAbility × Array Effect) :=
+  let raw := line.trimAscii.copy
+  let low := lowerAscii raw
+  let header := ((raw.splitOn "•").headD "").trimAscii.copy
+  let lowHeader := lowerAscii header
+  let named := collapseWs (prepareLine cardName header)
+  let count :=
+    if lowHeader.endsWith "choose one —" then some 1
+    else if lowHeader.endsWith "choose two —" then some 2
+    else none
+  if !(low.startsWith "when ") || !(named.startsWith "when this enters, choose") then none
+  else
+    match count with
+    | none => none
+    | some n =>
+      let modes := (raw.splitOn "•").drop 1 |>.map (·.trimAscii.copy) |>.filter (· != "")
+      let effects := modes.filterMap fun m => matchChapter cardName (stripAbilityWord m)
+      if modes.isEmpty || effects.length != modes.length then none
+      else
+        let eff : Effect :=
+          { resolution := .fra (.chooseTriggerModes n)
+            phrase := if n == 2 then "choose two" else "choose one" }
+        some (.triggered .enter eff, effects.toArray)
+
 def parseModes (cardName line : String) : Option ParsedAbility :=
   let raw := line.trimAscii.copy
   let low := lowerAscii raw
   if !(low.contains "choose one") then none
+  else if low.startsWith "when " || low.startsWith "whenever " then none
   else if raw.contains "{" && ((raw.splitOn "Choose").headD "").contains "{" then none
   else
     let bullets := raw.splitOn "•" |>.map (·.trimAscii.copy) |>.filter (· != "")
@@ -1663,8 +1698,10 @@ partial def parseRules (c : CardDef) (lines : List String)
     match units with
     | [] => .ok c
     | line :: rest =>
+      -- A modal line keeps its Empower Jace on the mode that prints it.
+      let modal := (lowerAscii line).contains "•"
       let (c, line) :=
-        match spellEmpower line with
+        match if modal then none else spellEmpower line with
         | some (n, leftover) =>
           let amount := match c.empowerJace with | some k => k | none => n
           ({ c with empowerJace := some amount }, leftover)
@@ -1738,6 +1775,11 @@ partial def parseRules (c : CardDef) (lines : List String)
             match parseStructural c line with
             | some c => go c rest
             | none =>
+              match parseTriggerModes c.name line with
+              | some (ab, modes) =>
+                go { c with triggeredAbilities := c.triggeredAbilities.push ab
+                            fraTriggerModes := modes } rest
+              | none =>
               match parseModes c.name line with
               | some ab => go (applyParsed c ab) rest
               | none =>

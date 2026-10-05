@@ -137,6 +137,8 @@ structure Status where
   remain (The Wondrous Wasp; MSH 145 / 190). Later granted abilities still
   apply. -/
   losesAbilitiesGrantedBy : Array ObjectId := #[]
+  /-- This permanent loses all abilities until end of turn. -/
+  losesAbilitiesUntilEot : Bool := false
   /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
   chosenModes : Array Nat := #[]
   /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
@@ -291,7 +293,9 @@ def untilEotFields : List UntilEotField := [
   ⟨fun s => s.pumpPerArtifactUntilEot,
     fun s => { s with pumpPerArtifactUntilEot := false }⟩,
   ⟨fun s => s.ironFistTapGrants != 0,
-    fun s => { s with ironFistTapGrants := 0 }⟩
+    fun s => { s with ironFistTapGrants := 0 }⟩,
+  ⟨fun s => s.losesAbilitiesUntilEot,
+    fun s => { s with losesAbilitiesUntilEot := false }⟩
 ]
 
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or

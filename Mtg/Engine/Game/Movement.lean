@@ -192,6 +192,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     | .hand p => g.modifyPlayer p (fun pl => { pl with hand := pl.hand.push newId })
     | .graveyard p => g.modifyPlayer p (fun pl => { pl with graveyard := pl.graveyard.push newId })
     | _ => g
+  let g :=
+    match old.zone, dest with
+    | .library _, .graveyard p =>
+      g.modifyPlayer p (fun pl => { pl with cardsMilledThisTurn := pl.cardsMilledThisTurn + 1 })
+    | _, _ => g
   let gyLeave :=
     match old.zone, old.owner with
     | .graveyard owner, _ =>

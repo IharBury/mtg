@@ -36,6 +36,8 @@ import Mtg.Engine.Game.LibrarySearch
 import Mtg.Engine.Game.ResolutionHelpers
 import Mtg.Engine.Game.ResolutionEffects
 import Mtg.Engine.Game.ModeledTriggers
+import Mtg.Engine.Game.FraResolve
+import Mtg.Engine.Game.FraChoices
 import Mtg.Engine.Game.EffectResolution
 import Mtg.Engine.Game.CastExtras
 import Mtg.Engine.Game.Chapters
@@ -295,6 +297,8 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p .decline
   | .chooseProliferate _ _, some p =>
     mustApply g p (.targets #[])
+  | .fraChoice _ choice, some p =>
+    mustApply g p (g.defaultFraAction p choice)
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"

@@ -201,6 +201,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.apply p (.cast cardId)) with
       | .ok _ => some (.cast cardId)
       | .error _ => some .decline
+    | .fraChoice _ choice =>
+      some (g.defaultFraAction p choice)
     | .chooseProliferate _ _ =>
       let own := (g.permanentsOf p).filter (·.status.hasCounters) |>.map (Target.permanent ·.id)
       let opps := (g.livingOpponents p).filter (·.poison > 0) |>.map (Target.player ·.id)

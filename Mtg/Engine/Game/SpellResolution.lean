@@ -116,11 +116,14 @@ def resolveTop (g : Game) : Game :=
           | _, _ => g
         let g :=
           match spellEffectOf obj entry.chosenMode with
-          | some e => g.applyUnified entry.controller e entry.targets
-            (castFromGraveyard := obj.castFromGraveyard)
-            (kicked := obj.kicked)
-            (giftPromised := obj.giftPromisedTo.isSome)
-            (chosenX := obj.chosenX.getD 0)
+          | some e =>
+            let g := { g with resolvingSpell := some obj.id }
+            let g := g.applyUnified entry.controller e entry.targets
+              (castFromGraveyard := obj.castFromGraveyard)
+              (kicked := obj.kicked)
+              (giftPromised := obj.giftPromisedTo.isSome)
+              (chosenX := obj.chosenX.getD 0)
+            { g with resolvingSpell := none }
           | none => g
         let g :=
           match obj.printed.empowerJace with

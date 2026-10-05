@@ -286,6 +286,10 @@ def canSeeZoneFaces (viewer : Option PlayerId) : Zone → Bool
     match viewer with
     | none => true
     | some v => v == p
+  | .outside p =>
+    match viewer with
+    | none => true
+    | some v => v == p
   | .battlefield | .graveyard _ | .stack | .exile | .command | .ante => true
 
 /-- Whether `viewer` may look at the cards `scrying` is looking at (CR 701.20).
@@ -731,6 +735,21 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [may cast {name}, or {n} damage to each opponent ({g.player p |>.name})]"
     | .chooseProliferate p n =>
       s!" [proliferate ({n} more, CR 701.34, {g.player p |>.name})]"
+    | .fraChoice p choice =>
+      let what :=
+        match choice with
+        | .discardFromRevealedHand v _ => s!"choose a card from {(g.player v).name}'s hand to discard"
+        | .mayWheel n _ => s!"may discard your hand and draw {n}"
+        | .maySacrificePlaneswalker => "may sacrifice a planeswalker"
+        | .topOrBottomDamage id _ =>
+          let name := ((g.findObject? id).map (fun (o : GameObject) => o.name)).getD "the card"
+          s!"put {name} on top (and be dealt damage) or on the bottom"
+        | .sphinxsApproach _ => "may exile five cards named Sphinx's Approach"
+        | .extrapolateReveal => "may reveal two cards from outside the game"
+        | .extrapolatePick _ _ => "choose one of the revealed cards"
+        | .mayPutMilledPermanent _ _ => "may put a milled permanent card into your hand"
+        | .triggerModes _ n _ => if n == 2 then "choose two modes" else "choose a mode"
+      s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=
         match g.findObject? villainId with
@@ -752,6 +771,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           | .exile => "exile"
           | .command => "command"
           | .ante => "ante"
+          | .outside p => s!"{(g.player p).name}'s cards outside the game"
         s!" [supply a random order into {destName} (--norandom)]"
       | .chooseObject _ =>
         " [pick the randomly chosen object (--norandom)]"
@@ -845,6 +865,7 @@ def zoneLabel (g : Game) : Zone → String
   | .exile => "exile"
   | .command => "command"
   | .ante => "ante"
+  | .outside p => s!"{g.player p |>.name}'s cards outside the game"
 
 /-- Object identities currently occupying `z`, in zone order. -/
 def zoneObjectIds (g : Game) : Zone → Array ObjectId
@@ -856,6 +877,7 @@ def zoneObjectIds (g : Game) : Zone → Array ObjectId
   | .exile => g.objects.filter (fun o => o.zone == .exile) |>.map (·.id)
   | .command => g.objects.filter (fun o => o.zone == .command) |>.map (·.id)
   | .ante => g.objects.filter (fun o => o.zone == .ante) |>.map (·.id)
+  | .outside p => g.objects.filter (fun o => o.zone == .outside p) |>.map (·.id)
 
 /-- Every zone the demo tracks, in a stable print order. -/
 def allZones (g : Game) : Array Zone :=

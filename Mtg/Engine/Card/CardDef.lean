@@ -87,6 +87,9 @@ structure CardDef where
   may be replaced by paying that much generic mana (e.g. Stir Up Trouble).
   The choice is announced at CR 601.2b, before targets. -/
   additionalCostSacrificeArtifactOrCreature : Bool := false
+  /-- The sacrifice alternative of the additional cost is a creature or
+  planeswalker rather than an artifact or creature (Silence the Echo). -/
+  additionalCostSacrificeCreatureOrPlaneswalker : Bool := false
   /-- Alternative additional cost: pay this much generic mana instead of
   sacrificing an artifact or creature (CR 601.2b). -/
   additionalCostOrPayGeneric : Option Nat := none
@@ -115,6 +118,9 @@ structure CardDef where
   costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
   spellModes : Array Effect := #[]
+  /-- Modes of this card's modal triggered ability (“When this creature
+  enters, choose one —”), chosen as it is put on the stack (CR 603.3c). -/
+  fraTriggerModes : Array Effect := #[]
   /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/
   tapAddMana : Array ManaType := #[]
   /-- `{T}: Add {M} for each permanent you control with this subtype
@@ -152,6 +158,8 @@ structure CardDef where
   ward : Option Nat := none
   /-- Flashback cost (CR 702.34). -/
   flashback : Option ManaCost := none
+  /-- Casting with flashback also requires discarding a card (CR 702.34a). -/
+  flashbackDiscard : Bool := false
   /-- This permanent enters tapped unless you control a legendary creature. -/
   entersTappedUnlessLegendary : Bool := false
   /-- This permanent enters tapped unless you control an Equipment. -/

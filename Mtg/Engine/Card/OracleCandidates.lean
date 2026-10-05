@@ -1,4 +1,4 @@
-import Mtg.Engine.Card.OracleActivate
+import Mtg.Engine.Card.FraEffects
 
 /-!
 Modeled abilities the Oracle parser can recognize. Each entry is a shape.
@@ -546,7 +546,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.addMana #[.colored .red, .colored .red],
   Effect.firstDealsStatDamageToSecond false,
   Effect.firstDealsStatDamageToSecond true,
-]
+] ++ FraCandidates.spellEffects
 
 def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .otherCreaturesHaveTrample #["Orc", "Goblin"],

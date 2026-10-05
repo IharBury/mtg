@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.ModeledTriggers
+import Mtg.Engine.Game.FraResolve
 
 /-!
 # Unified effect resolution (CR 608)
@@ -181,6 +181,8 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         let g := g.modifyPlayer controller (fun pl => { pl with legendRuleOffThisTurn := true })
         g.logMsg s!"The legend rule doesn't apply to permanents {(g.player controller).name} controls this turn")
         "The source is no longer in play") sourceId (some "The target is no longer legal"))
+  | .fra r => some (g.applyFra controller effect r targets sourceId)
+  | .teamGain k => some (g.grantUntilEotToControlledCreatures controller k k.joinedAnd)
   | .jaceLoyaltyAtInstantSpeed =>
     let g := g.modifyPlayer controller (fun pl => { pl with jaceLoyaltyAtInstantSpeed := true })
     some (g.logMsg s!"Until end of turn, {(g.player controller).name} may activate loyalty abilities of Jace planeswalkers they control any time they could cast an instant")
@@ -1291,7 +1293,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
   | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn | .returnFromGyWithFinality
   | .firstDealsStatDamageToSecond _
-  | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ =>
+  | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ | .fra _ =>
     g
 
 /-- Resolve a printed activated ability (CR 608). -/

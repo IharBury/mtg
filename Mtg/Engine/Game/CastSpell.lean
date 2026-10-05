@@ -141,6 +141,9 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     if fromGraveyard then
       let o := g.object! newId
       g.setObject { o with castFromGraveyard := true }
+    else if original.zone == .hand original.owner then
+      let o := g.object! newId
+      g.setObject { o with castFromHand := true }
     else g
   let g := g.putStackEntry p newId
   let needsMode := face.isModal
@@ -149,8 +152,12 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsKicker := face.kicker.isSome
   let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
+  -- CR 702.34a: a flashback cost that includes discarding a card.
+  let needsFlashbackDiscard := fromGraveyard && face.flashbackDiscard
+  if needsFlashbackDiscard && (g.player p).hand.isEmpty then
+    throw s!"{face.name}'s flashback cost requires discarding a card"
   if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
-      !needsSacrifice &&
+      !needsSacrifice && !needsFlashbackDiscard &&
       !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork then
     return g.becomeCast p (g.object! newId)
   let lifeInstead :=
@@ -167,6 +174,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     stackBefore := stackBefore
     manaBefore := manaBefore
     needsSacrificeOther := needsSacrifice
+    needsDiscardCard := needsFlashbackDiscard
     payLife := lifeInstead
   }
   let g := g.logMsg s!"{pl.name} begins casting {face.name}"

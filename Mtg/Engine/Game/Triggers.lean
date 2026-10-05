@@ -13,16 +13,42 @@ batches stacked in APNAP order (CR 603.3b), and `receivePriority`.
 namespace Mtg.Engine
 namespace Game
 
-/-- Put a triggered ability of `source` onto the stack (CR 603.3). -/
+/-- Modes of the triggered ability `obj` (from its source). -/
+def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
+  match obj.sourceId.bind g.findObject? with
+  | some src => src.printed.fraTriggerModes
+  | none => obj.printed.fraTriggerModes
+
+/-- Whether `p` may choose this mode of a triggered ability (CR 700.2d). -/
+def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
+  !e.requiresTarget || e.allowsZeroTargets ||
+    !(g.legalTargetsForKind p e.targetKind obj.sourceId).isEmpty
+
+/-- Ask for the modes of a modal triggered ability just put on the stack. -/
+def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count : Nat) : Game :=
+  let modes := g.triggerModesOf obj
+  if !modes.any (g.triggerModeChoosable p obj) then
+    let g := g.removeFromZoneList obj.id .stack |>.ceaseToExist obj.id
+    g.logMsg s!"{obj.name} has no mode that can be chosen and is removed from the stack (CR 700.2d)"
+  else
+    let what := if count == 2 then "two modes" else "a mode"
+    { g with pending := .fraChoice p (.triggerModes obj.id count #[]) }.logMsg
+      s!"{(g.player p).name} chooses {what} for {obj.name} (CR 603.3c)"
+
+/-- Put a triggered ability of `source` onto the stack (CR 603.3). A modal
+ability's modes are chosen as it is put on the stack (CR 603.3c). -/
 def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : String) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) : Game :=
   if (g.player controller).lost then g
   else
-    let (g, _) := g.putStackAbility source controller
+    let (g, obj) := g.putStackAbility source controller
       (triggeredAbility := some ab)
       (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
-    g.logMsg s!"{source.name}'s {event} is put on the stack"
+    let g := g.logMsg s!"{source.name}'s {event} is put on the stack"
+    match ab.effect.resolution with
+    | .fra (.chooseTriggerModes n) => g.beginTriggerModeChoice controller obj n
+    | _ => g
 
 /-- True when this trigger would be put on the stack with no legal target (CR 603.3d). -/
 def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -381,6 +407,7 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
   match g.triggerNeedingTargets with
   | some e =>
     if g.pending == .chooseTargets e.controller then g
+    else if (match g.pending with | .fraChoice .. => true | _ => false) then g
     else
       let msg :=
         match (g.findObject? e.objectId).bind (fun o =>

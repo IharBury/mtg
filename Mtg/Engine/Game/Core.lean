@@ -79,6 +79,8 @@ structure Game where
   /-- Last-known status of objects that left the battlefield, newest last
   (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
   lastKnownStatus : Array (ObjectId × Status) := #[]
+  /-- The spell whose effect is currently resolving (CR 608.2). -/
+  resolvingSpell : Option ObjectId := none
   /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
   permanent (Proft, Consulting Detective). -/
   mayPayAlsoPlusOneOn : Option ObjectId := none
@@ -113,6 +115,9 @@ structure Game where
   /-- Cards in exile that return at the beginning of the next end step
   (Roll-Roll-Roll-Roll and similar delayed blinks). -/
   delayedEndStepReturns : Array ObjectId := #[]
+  /-- Permanents exiled at the beginning of the next end step (Vindictive
+  Triumph). -/
+  delayedEndStepExiles : Array ObjectId := #[]
   /-- Source of the current connive action, if any (MSH / CR 701.47). -/
   conniveSource : Option ObjectId := none
   /-- Most recent creature that became tapped (Captain America, Living Legend). -/

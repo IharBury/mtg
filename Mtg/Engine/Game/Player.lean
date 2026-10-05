@@ -108,6 +108,15 @@ structure Player where
   dealtNoncombatDamageThisTurn : Bool := false
   /-- This player scried or surveilled this turn (Desperate Futurescribe). -/
   scriedOrSurveilledThisTurn : Bool := false
+  /-- Sideboard cards not yet brought into play as objects outside the game
+  (CR 400.11b). -/
+  sideboard : Array CardDef := #[]
+  /-- Cards put into this player's graveyard from their library this turn
+  (Cruel Calculations). -/
+  cardsMilledThisTurn : Nat := 0
+  /-- Until end of turn, each Mountain this player taps for mana adds this
+  many additional {R} (Molten Tide). -/
+  mountainExtraRedThisTurn : Nat := 0
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/
   teammate : Option PlayerId := none
 deriving Repr, Inhabited
@@ -116,6 +125,9 @@ deriving Repr, Inhabited
 structure Seat where
   name : String
   deck : Array CardDef
+  /-- Cards outside the game the player may use, such as a sideboard
+  (CR 400.11b). -/
+  sideboard : Array CardDef := #[]
 deriving Repr, Inhabited
 
 structure StartConfig where
@@ -197,6 +209,8 @@ inductive Action where
   /-- Decline an optional “you may discard a card”, or choose no target for an
   “up to one” trigger (CR 608.2d / 601.2c). -/
   | decline
+  /-- Agree to an optional action offered while an effect resolves. -/
+  | accept
   /-- Have the entering Villain connive (Baron Strucker; MSH 422). -/
   | haveVillainConnive
   /-- Pay a pending generic-mana “you may pay” or “unless pays” cost. -/

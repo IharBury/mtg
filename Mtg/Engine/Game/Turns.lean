@@ -65,7 +65,8 @@ def clearTurnActivations (g : Game) : Game :=
           pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 ||
           pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed ||
           pl.scriedOrSurveilledThisTurn || pl.copyNextInstantSorceryThisTurn != 0 ||
-          pl.dealtNoncombatDamageThisTurn then
+          pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
+          pl.mountainExtraRedThisTurn != 0 then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -84,7 +85,9 @@ def clearTurnActivations (g : Game) : Game :=
           jaceLoyaltyAtInstantSpeed := false
           scriedOrSurveilledThisTurn := false
           copyNextInstantSorceryThisTurn := 0
-          dealtNoncombatDamageThisTurn := false }
+          dealtNoncombatDamageThisTurn := false
+          cardsMilledThisTurn := 0
+          mountainExtraRedThisTurn := 0 }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||
@@ -281,6 +284,15 @@ partial def beginStep (g : Game) (st : Step) : Game :=
                 g := g'.logMsg
                   s!"{name} returns to the battlefield (beginning of end step)"
                 g := g.afterPermanentEnters (g.object! newId)
+        let exiles := g.delayedEndStepExiles
+        g := { g with delayedEndStepExiles := #[] }
+        for id in exiles do
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield then
+              let (g', _) := g.move id .exile none
+              g := g'.logMsg s!"{o.name} is exiled (beginning of end step)"
+          | none => pure ()
         return g
     let g :=
       g.livingPlayers.foldl (fun acc pl =>

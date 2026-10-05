@@ -83,7 +83,10 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
   match o.printed.additionalCostOrPayGeneric, o.printed.additionalCostDiscardOrPayGeneric with
   | some n, _ =>
     (g.permanentsOf p).any (fun perm =>
-      perm.id != o.id && (perm.isCreature || perm.printed.isArtifact)) || payExtra n
+      perm.id != o.id &&
+        if o.printed.additionalCostSacrificeCreatureOrPlaneswalker then
+          perm.isCreature || perm.printed.isPlaneswalker
+        else perm.isCreature || perm.printed.isArtifact) || payExtra n
   | none, some n =>
     (g.player p).hand.any (fun id => id != o.id) || payExtra n
   | none, none => true
