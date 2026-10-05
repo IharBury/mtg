@@ -46,6 +46,13 @@ def splitSecondOnStack (g : Game) : Bool :=
             | _ => false))
     | none => false)
 
+/-- Yuriko, Blade of the Mighty: during combat, players can't cast spells or
+activate abilities that aren't mana abilities. -/
+def combatLocksNonManaAbilities (g : Game) : Bool :=
+  (g.step == .beginningOfCombat || g.step == .declareAttackers ||
+    g.step == .declareBlockers || g.step == .combatDamage || g.step == .endOfCombat) &&
+    g.battlefield.any (·.staticAbilities.any (· == .fra .noSpellsOrAbilitiesDuringCombat))
+
 /-- Mana abilities (CR 605.1a): no target, not a loyalty ability, and the
 effect adds mana. -/
 def isManaActivation (ab : ActivatedAbility) : Bool :=

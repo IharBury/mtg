@@ -1352,4 +1352,16 @@ instance : ToString TriggeredAbility where
 
 end TriggeredAbility
 
+namespace TriggeredAbility
+
+/-- An FRA triggered ability with its printed sentence. -/
+def fra (w : SharedTriggerWhen) (printed : String) (r : Resolution)
+    (kind : EffectTargetKind := .none) (allowsZeroTargets := false) (maxTargets := 0)
+    (once := false) (cond : FraCondition := .none) : TriggeredAbility :=
+  .triggered w { targeting := .of kind, resolution := r, phrase := printed
+                 allowsZeroTargets, maxTargets }
+    { printed, onceEachTurn := once, fraCondition := cond, allowsZeroTargets }
+
+end TriggeredAbility
+
 end Mtg.Engine

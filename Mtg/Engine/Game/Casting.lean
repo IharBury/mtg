@@ -407,6 +407,10 @@ def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
         acc := acc.push (.discardOrPay n)
       | .wardPoisonCounters _ =>
         acc := acc.push .fivePoison
+      | .fra .wardDiscardCard =>
+        acc := acc.push .discardCard
+      | .fra .wardSacrificeThreePermanents =>
+        acc := acc.push (.sacrificePermanents 3 0)
       | _ =>
         match ab.grantedWard? with
         | some n =>
@@ -465,6 +469,10 @@ def promptNextWard (g : Game) : Game :=
           s!"{who} may discard a card or pay \{{n}} or the spell is countered (ward)"
         | .fivePoison =>
           s!"{who} may get five poison counters or the spell is countered (ward)"
+        | .discardCard =>
+          s!"{who} may discard a card or the spell is countered (ward)"
+        | .sacrificePermanents n _ =>
+          s!"{who} may sacrifice {n} permanents or the spell is countered (ward)"
       { g with pending := .payWard w.player w.spellId w.cost, wardQueue := rest
         }.logMsg msg
   | _ => g
@@ -495,6 +503,19 @@ def beginWardsForTargets (g : Game) (caster : PlayerId) (spellId : ObjectId)
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   let g := { g with castingFromTop := false }
   let g := g.logMsg s!"{(g.player p).name} casts {spell.name}"
+  -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card
+  -- is cast from exile, so it can help pay for that spell (ruling 729).
+  let g := g.battlefield.foldl (fun g land =>
+    let kept := land.status.colorlessGrantUntilCast.filter (fun cid => g.followMoved cid != spell.id)
+    if kept.size == land.status.colorlessGrantUntilCast.size then g
+    else g.setObject { land with status := { land.status with colorlessGrantUntilCast := kept } }) g
+  -- Theorist's Proxy: the next spell this player casts this turn.
+  let g :=
+    if (g.player p).nextSpellCantBeCountered && !spell.isCopy then
+      let g := g.modifyPlayer p (fun pl => { pl with nextSpellCantBeCountered := false })
+      (g.setObject { (g.object! spell.id) with uncounterableThisCast := true }).logMsg
+        s!"{spell.name} can't be countered"
+    else g
   let g :=
     match g.stackEntry? spell.id with
     | some e =>
@@ -557,7 +578,10 @@ def lockInTargetCostReduction (g : Game) : Game :=
             else if face.costReductionIfTargetAttacking > 0 && o.status.attacking then
               face.costReductionIfTargetAttacking
             else 0
-          let n := nDamaged + nTapped + nAttacking
+          let nCounters :=
+            if prop.activation.any (·.costLessPerPlusOneOnTarget) then o.status.plusOnePlusOne
+            else 0
+          let n := nDamaged + nTapped + nAttacking + nCounters
           if n == 0 then g
           else
             { g with proposedSpell := some { prop with

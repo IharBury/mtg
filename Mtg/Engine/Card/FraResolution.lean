@@ -252,6 +252,99 @@ inductive FraResolution where
   | sourceFightsTarget
   /-- Exile the target until the source leaves the battlefield. -/
   | exileUntilSourceLeaves
+  /-- Create a 4/4 green Beast creature token with trample. -/
+  | beastToken
+  /-- The creature that caused this ability gets +P/+T until end of turn. -/
+  | causeGetsPump (power toughness : Int)
+  /-- Creatures attacking the player recorded as the cause's controller get
+  +2/+2 and gain trample until end of turn (Garruk, Curse Breaker). -/
+  | attackersOfPlayerGetTwoTwoTrample
+  /-- The target land gains “{T}: Add {C}{C}” until the exiled source is cast
+  from exile, and you may cast the source while it remains exiled (Emrakul). -/
+  | emrakulGrantMana
+  /-- The next spell you cast this turn can't be countered. -/
+  | nextSpellCantBeCountered
+  /-- Exile the target creature or planeswalker you control; reveal until a
+  creature or planeswalker card, put it onto the battlefield, and the rest on
+  the bottom in a random order (Identity Echo). -/
+  | identityEcho
+  /-- Destroy the target artifact or enchantment. If it was a legendary
+  enchantment, draw a card. -/
+  | destroyDrawIfLegendaryEnchantment
+  /-- Put a +1/+1 counter on the source. It gains your choice of the keywords
+  coded in `options` (0 trample, 1 hexproof, 2 haste, 3 deathtouch). -/
+  | plusOneThenChooseKeyword (options : List Nat)
+  /-- The source gains your choice of the keywords coded in `options` until
+  end of turn. -/
+  | chooseKeyword (options : List Nat)
+  /-- Create a Heartwood token. Then the source gets +X/+0 until end of turn,
+  where X is the number of artifacts you control. -/
+  | heartwoodThenPowerPerArtifact
+  /-- Create a Cadet. Then creatures you control gain haste until end of turn. -/
+  | cadetThenTeamHaste
+  /-- Put the target card from your graveyard on the bottom of your library. -/
+  | graveyardCardToLibraryBottom
+  /-- Destroy all creatures. -/
+  | destroyAllCreatures
+  /-- The target's owner shuffles it into their library. -/
+  | ownerShufflesIntoLibrary
+  /-- Until end of turn, whenever the source deals combat damage to a player,
+  draw two cards (Lyra). -/
+  | grantCombatDamageDrawTwo
+  /-- Return the target card from your graveyard to the battlefield. Put a
+  +1/+1 counter on the source. -/
+  | returnTargetThenPlusOneSource
+  /-- The target gets +X/+0 until end of turn, where X is the number of
+  artifacts you control. -/
+  | pumpPerArtifact
+  /-- Put a +1/+1 counter on each creature you control with a +1/+1 counter. -/
+  | plusOneOnEachWithPlusOne
+  /-- Return each legal target to its owner's hand. -/
+  | bounceEachTarget
+  /-- Draw three cards. Then put X +1/+1 counters on each creature you control,
+  where X is the number of cards in your hand. -/
+  | drawThreeThenCountersPerHand
+  /-- Surveil 1. A noncreature, nonland card put into your graveyard this way
+  goes to your hand. -/
+  | surveilReturnNoncreatureNonland
+  /-- Add {U} that can be spent only to cast a noncreature spell. -/
+  | addBlueNoncreatureOnly
+  /-- Tap the target. Put X stun counters on it (X of the loyalty cost). -/
+  | tapAndStunX
+  /-- You get an emblem with “Whenever you cast a spell, draw a card.” -/
+  | emblemDrawOnCast
+  /-- Empower Jace X, where X is the number of Islands you control. -/
+  | empowerJacePerIsland
+  /-- Until your next turn, whenever a creature attacks you or a planeswalker
+  you control, it gets minus five power until end of turn. -/
+  | attackersGetMinusFiveUntilYourTurn
+  /-- Exile all but the bottom card of each opponent's library. -/
+  | exileOpponentLibrariesButBottom
+  /-- Up to one target creature gets minus four power and minus one toughness until your next turn. -/
+  | minusFourMinusOneUntilYourTurn
+  /-- Each player sacrifices a creature. If you did, create a 4/4 Beast. -/
+  | eachPlayerSacrificesThenBeast
+  /-- Each opponent discards two cards; draw a card for each opponent who
+  didn't discard two nonland cards. -/
+  | eachOpponentDiscardsTwoDrawPerShort
+  /-- Discard your hand, then draw a card for each creature you control. -/
+  | discardHandDrawPerCreature
+  /-- This deals `n` damage to each creature except tokens you control. -/
+  | damageEachCreatureExceptYourTokens (n : Nat)
+  /-- You get an emblem with “Creatures you control get +2/+2.” -/
+  | emblemCreaturesGetTwoTwo
+  /-- Untap each legal target land. -/
+  | untapTargets
+  /-- Until your next turn, whenever one or more creatures attack one of your
+  opponents, they get +2/+2 and gain trample until end of turn. -/
+  | attackersGetTwoTwoTrampleUntilYourTurn
+  /-- Put a +1/+1 counter on the target for each land you control. -/
+  | plusOnePerLand
+  /-- You may sacrifice a creature. If you do, create a 4/4 Beast. -/
+  | maySacrificeCreatureForBeast
+  /-- This deals `n` damage to up to one target creature or planeswalker and
+  `n` damage to target player. -/
+  | damageUpToOneAndPlayer (n : Nat)
   /-- Destroy each legal target. -/
   | destroyEachTarget
   /-- This deals `n` damage to each opponent. -/

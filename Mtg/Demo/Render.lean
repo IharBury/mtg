@@ -701,6 +701,13 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         s!" [discard a card or pay \{{n}} or let the spell be countered (ward, {who})]"
       | .fivePoison =>
         s!" [get five poison counters or let the spell be countered (ward, {who})]"
+      | .discardCard =>
+        s!" [discard a card or let the spell be countered (ward, {who})]"
+      | .sacrificePermanents left paid =>
+        if paid == 0 then
+          s!" [sacrifice {left} permanents or let the spell be countered (ward, {who})]"
+        else
+          s!" [sacrifice {left} more permanent(s) (ward, {who})]"
     | .recruitDiscard p =>
       s!" [recruit: discard a card ({g.player p |>.name})]"
     | .chooseKicker p =>
@@ -758,6 +765,13 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .exileFromRevealedHand _ _ => "choose a nonland card to exile"
         | .castCopiesFree _ n => s!"may cast copies with total mana value {n} or less (cast or decline)"
         | .triggerModes _ n _ => if n == 2 then "choose two modes" else "choose a mode"
+        | .chooseKeyword _ options =>
+          let names : List String :=
+            (List.range options.size).map (fun i => s!"{i} {fraKeywordName options[i]!}")
+          "choose a keyword: " ++ String.intercalate ", " names
+        | .chooseColor _ => "choose a color: 0 white, 1 blue, 2 black, 3 red, 4 green"
+        | .sacrificeCreatureEach .. => "sacrifice a creature"
+        | .discardTwo .. => "discard two cards"
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=

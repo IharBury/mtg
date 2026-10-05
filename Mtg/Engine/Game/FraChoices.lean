@@ -219,6 +219,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         match kind with
         | .land => o.printed.isLand
         | .creatureOrPlaneswalker => o.isCreature || o.printed.isPlaneswalker
+        | .creature => o.isCreature
     if !ok then throw s!"Can't sacrifice {o.name}"
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
@@ -270,6 +271,39 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g := g.setObject { obj with abilityEffect := some eff }
       return g.finishFraChoice
   | .triggerModes .., _ => throw "Choose a mode"
+  | .chooseKeyword id options, .mode idx =>
+    let some code := options[idx]? | throw "No such choice"
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        let g := g.logMsg s!"{(g.player p).name} chooses {fraKeywordName code}"
+        return (g.grantKeywordsUntilEot o (fraKeywordOfCode code)).finishFraChoice
+      else return g.finishFraChoice
+    | none => return g.finishFraChoice
+  | .chooseKeyword .., _ => throw "Choose one of the keywords"
+  | .chooseColor id, .mode idx =>
+    let some c := Color.all[idx]? | throw "Choose white, blue, black, red, or green (0-4)"
+    match g.findObject? id with
+    | some o =>
+      let g := g.mapObjectStatus o (fun s => { s with chosenColor := some c })
+      return (g.logMsg s!"{(g.player p).name} chooses {c.englishName} for {o.name}").finishFraChoice
+    | none => return g.finishFraChoice
+  | .chooseColor _, _ => throw "Choose a color"
+  | .sacrificeCreatureEach controller rest chosen, .objects #[id] =>
+    let some o := g.findObject? id | throw "no such object"
+    if !o.isOnBattlefield || !o.isCreature || !o.controlledBy p then
+      throw "Choose a creature you control"
+    let g := g.logMsg s!"{(g.player p).name} chooses {o.name}"
+    return (g.continueSacrificeEach controller rest (chosen.push id)).finishFraChoice
+  | .sacrificeCreatureEach .., _ => throw "Choose a creature to sacrifice"
+  | .discardTwo controller rest draws, .objects ids =>
+    let hand := (g.player p).hand
+    if ids.size != 2 || ids[0]! == ids[1]! || !ids.all hand.contains then
+      throw "Choose two different cards from your hand"
+    let nonland := (ids.filter (fun id => !(g.object! id).printed.isLand)).size
+    let g := ids.foldl (fun g id => g.discardFromHand p id) g
+    return (g.continueDiscardTwo controller rest (if nonland < 2 then draws + 1 else draws)).finishFraChoice
+  | .discardTwo .., _ => throw "Choose two cards to discard"
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
 accepting only Sphinx's Approach and declining other optional actions. -/
@@ -307,6 +341,11 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
           !chosen.contains i && modes[i]?.any (g.triggerModeChoosable p obj)) with
       | some i => .chooseMode i
       | none => .decline
+  | .chooseKeyword .. => .chooseMode 0
+  | .chooseColor _ => .chooseMode 0
+  | .sacrificeCreatureEach .. =>
+    .choosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
+  | .discardTwo .. => .choosePermanents ((g.player p).hand.extract 0 2)
 
 end Game
 end Mtg.Engine

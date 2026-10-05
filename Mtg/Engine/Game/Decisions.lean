@@ -38,7 +38,8 @@ def checkLookedPiles (g : Game) (p q : PlayerId) (count : Nat)
 /-- Clear the finished scry or surveil, draw any follow-up cards, and give
 the active player priority. -/
 def finishLibraryLook (g : Game) : Game :=
-  let g := { g with pending := .none, surveilReturnMvAtMost := none }
+  let g := { g with pending := .none, surveilReturnMvAtMost := none
+                    surveilReturnNoncreatureNonland := false }
   let g :=
     match g.fraAfterLook with
     | some (c, src, next) =>
@@ -101,7 +102,11 @@ def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
         if g.objectManaValue card ≤ n then
           let (g', _) := g.move newId (.hand p) none
           g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
-      | none => pure ()
+      | none =>
+        if g.surveilReturnNoncreatureNonland && !card.printed.isCreature &&
+            !card.printed.isLand then
+          let (g', _) := g.move newId (.hand p) none
+          g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
     return g.finishLibraryLook
   | .scry _ _ => throw "You are scrying, not surveilling; use scry (CR 701.20)"
   | _ => throw "Not time to surveil (CR 701.25)"
@@ -285,6 +290,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
           o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery
         | none => false
       | .discardOrPay _ => true
+      | .discardCard => true
       | _ => false
     if !legal then
       throw "That card cannot pay this ward"
@@ -503,6 +509,8 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     let g := { g with pending := .none }
     let g := g.counterStackSpell spellId
     return g.receivePriority g.activePlayer
+  | .payWard _ _ (.sacrificePermanents _ (paid + 1)) =>
+    throw s!"{(g.player p).name} already began sacrificing permanents for ward and must finish"
   | .payWard q spellId _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay ward"

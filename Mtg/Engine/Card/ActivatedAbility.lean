@@ -41,6 +41,39 @@ def counters : LoyaltySymbol → Option Int
 
 end LoyaltySymbol
 
+/-- Reality Fracture activation costs (CR 602.1 / 118). -/
+inductive FraCost where
+  | none
+  /-- Exile another creature card from your graveyard. -/
+  | exileAnotherCreatureCardFromGraveyard
+  /-- Sacrifice another artifact. -/
+  | sacrificeAnotherArtifact
+  /-- Sacrifice another creature or planeswalker. -/
+  | sacrificeAnotherCreatureOrPlaneswalker
+  /-- Sacrifice an artifact or land. -/
+  | sacrificeArtifactOrLand
+  /-- Discard a legendary card. -/
+  | discardLegendaryCard
+  /-- Tap two untapped artifacts you control. -/
+  | tapTwoUntappedArtifacts
+  /-- Exile this card from your hand. -/
+  | exileSourceFromHand
+  /-- Exile this permanent. -/
+  | exileSource
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- A Reality Fracture “Activate only if …” condition. -/
+inductive FraActivationCondition where
+  | none
+  /-- “Activate only if you've scried or surveilled this turn.” -/
+  | scriedOrSurveilledThisTurn
+  /-- “Activate only if there are `n` or more cards in your graveyard.” -/
+  | graveyardAtLeast (n : Nat)
+  /-- “Activate only if there are `n` or more loyalty counters among Jaces you
+  control.” -/
+  | jaceLoyaltyAtLeast (n : Nat)
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Costs of an activated ability besides announcements (CR 602.1). -/
 structure ActivationCost where
   mana : ManaCost := ManaCost.empty
@@ -81,6 +114,8 @@ structure ActivationCost where
   putStunCounterOnSource : Bool := false
   /-- Sacrifice an Equipment attached to the source. -/
   sacrificeEquipmentAttachedToSource : Bool := false
+  /-- A Reality Fracture cost. -/
+  fra : FraCost := .none
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
@@ -144,6 +179,15 @@ are `{T}: Add` are stored separately on `CardDef.tapAddMana` /
 `CardDef.tapAddManaForEach` / basic land types. -/
 structure ActivatedAbility where
   cost : ActivationCost
+  /-- The ability's printed line, when its wording isn't built from the cost
+  and effect (Reality Fracture). -/
+  printed : String := ""
+  /-- Exhaust: activate this ability only once (CR 702.177). -/
+  exhaust : Bool := false
+  /-- A Reality Fracture “Activate only if …” condition. -/
+  fraCondition : FraActivationCondition := .none
+  /-- Equip that costs {1} less for each +1/+1 counter on the target creature. -/
+  costLessPerPlusOneOnTarget : Bool := false
   /-- First (or only) mode of this ability. -/
   effect : Effect
   /-- Additional modes of a modal ability (CR 700.2). Empty means the ability

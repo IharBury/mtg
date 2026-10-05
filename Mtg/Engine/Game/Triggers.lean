@@ -255,6 +255,25 @@ def addLoreAfterDrawStep (g : Game) : Game :=
   (g.permanentsOf g.activePlayer).foldl (fun acc o =>
     if o.printed.saga.isSome then acc.addOneLoreCounter o else acc) g
 
+/-- Triggered abilities an attached Equipment grants `o` (Hunter's Axe,
+Medic's Kitesail). -/
+def attachedGrantedTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
+  if !o.isOnBattlefield then #[]
+  else
+    g.battlefield.foldl (fun acc eq =>
+      if eq.attachedTo != some o.id then acc
+      else
+        eq.staticAbilities.foldl (fun acc ab =>
+          match ab with
+          | .fra .equippedHuntersAxe =>
+            acc.push (TriggeredAbility.fra .attack
+              "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
+              (.fra (.chooseKeyword [0, 3])))
+          | .fra .equippedMedicsKitesail =>
+            acc.push (TriggeredAbility.fra .attack
+              "Whenever this creature attacks, you gain 1 life." (.gainLife 1))
+          | _ => acc) acc) #[]
+
 /-- Queue each printed trigger of `source` that fires on `event` (CR 603.3). -/
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
     (event : TriggerEvent)
@@ -262,7 +281,8 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
     (cause : Option GameObject := none) : Game :=
   Id.run do
     let mut g := g
-    for ab in source.matchingTriggers event do
+    for ab in source.matchingTriggers event ++
+        (g.attachedGrantedTriggers source).filter (·.firesOn event) do
       let skipInfinity :=
         match ab.shared with
         | .step .harnessedFlicker => !source.status.harnessed
@@ -334,7 +354,7 @@ def putControlledTriggers (g : Game) (p : PlayerId)
 `pred`, with `cause` as the object that caused them. -/
 def putFraEventTriggersWhere (g : Game) (p : PlayerId) (pred : FraEvent → Bool)
     (cause : Option GameObject := none) (excludeId : Option ObjectId := none) : Game :=
-  g.foldControlledPermanents p excludeId fun g o =>
+  let fire (g : Game) (o : GameObject) : Game :=
     (o.printed.triggeredAbilities ++ o.status.grantedTriggeredAbilities).foldl (fun g ab =>
       match ab.timing.events.find? (fun e =>
           match e with
@@ -342,6 +362,9 @@ def putFraEventTriggersWhere (g : Game) (p : PlayerId) (pred : FraEvent → Bool
           | _ => false) with
       | some e => g.queueTrigger p o ab e (cause := cause)
       | none => g) g
+  let g := g.foldControlledPermanents p excludeId fire
+  -- Emblems and effects in the command zone trigger too (CR 114.4).
+  (g.objects.filter (fun o => o.zone == .command && o.controlledBy p)).foldl fire g
 
 /-- Queue `p`'s triggered abilities for the Reality Fracture event `e`. -/
 def putFraEventTriggers (g : Game) (p : PlayerId) (e : FraEvent)

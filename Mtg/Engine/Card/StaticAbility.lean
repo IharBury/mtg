@@ -2,6 +2,7 @@ import Mtg.Engine.Mana
 import Mtg.Engine.TypeLine
 import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.Text
+import Mtg.Engine.Card.FraStatic
 
 /-!
 # Static abilities (CR 604)
@@ -275,6 +276,8 @@ inductive StaticAbility where
   | sneak (cost : ManaCost)
   /-- Boast — exile black cards from your graveyard and copy them. -/
   | boast
+  /-- A Reality Fracture static ability. -/
+  | fra (s : FraStatic)
   /-- Rules text kept when the line is not a modeled static ability. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -445,6 +448,8 @@ inductive StaticShape where
   | getsAndAllTypesIfGyCreatureCards (min : Nat) (power toughness : Int)
   | sneak (cost : ManaCost)
   | boast
+  /-- A Reality Fracture static ability. -/
+  | fra (s : FraStatic)
   /-- Rules text kept when the line is not a modeled static ability. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -650,6 +655,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .getsAndAllTypesIfGyCreatureCards _ _ _ => {}
   | .sneak _ => {}
   | .boast => {}
+  | .fra _ => {}
   | .printed _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
@@ -782,6 +788,7 @@ def shape : StaticAbility → StaticShape
     .getsAndAllTypesIfGyCreatureCards min p t
   | .sneak cost => .sneak cost
   | .boast => .boast
+  | .fra s => .fra s
   | .printed text => .printed text
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
@@ -1034,6 +1041,7 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Sneak {cost}"
   | .boast =>
     "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
+  | .fra s => s.text
   | .printed text => text
 
 instance : ToString StaticAbility where

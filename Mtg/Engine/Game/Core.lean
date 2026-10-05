@@ -99,6 +99,9 @@ structure Game where
   /-- After the pending surveil, a card with mana value at most this put into
   the graveyard goes to its owner's hand (Enlightened Confidant). -/
   surveilReturnMvAtMost : Option Nat := none
+  /-- A noncreature, nonland card put into the graveyard by the pending
+  surveil goes to its owner's hand (Chandra, Chill of Compliance). -/
+  surveilReturnNoncreatureNonland : Bool := false
   /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
   batch, so simultaneous deaths still see those sources (Gatherer).
   Objects are stored so a source that also dies still applies (CR 614.6). -/
@@ -456,6 +459,12 @@ def canMakeIllegalDecision (_g : Game) (_actor _whose : PlayerId) : Bool :=
 (MSH 352). That player may still concede. -/
 def canConcedeAs (_g : Game) (actor whose : PlayerId) : Bool :=
   actor == whose
+
+/-- The object a moved object became, following zone changes (CR 400.7). -/
+partial def followMoved (g : Game) (id : ObjectId) : ObjectId :=
+  match g.movedTo.reverse.find? (·.1 == id) with
+  | some (_, next) => if next == id then id else g.followMoved next
+  | none => id
 
 end Game
 end Mtg.Engine

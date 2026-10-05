@@ -309,6 +309,38 @@ instance : BEq ManaCost where
 
 end ManaCost
 
+/-- What a Reality Fracture restricted mana ability's mana may be spent on
+(CR 106.6). -/
+inductive FraManaUse where
+  /-- Anything except casting spells from your hand (Heartwood Crafter). -/
+  | notSpellsFromHand
+  /-- Only casting a planeswalker spell (Gideon's Memorial). -/
+  | planeswalkerSpell
+  /-- Only casting a noncreature spell (Chandra, Chill of Compliance). -/
+  | noncreatureSpell
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- What a payment is for, as far as `FraManaUse` restrictions care. The
+default is an activated ability or another non-spell payment. -/
+structure ManaSpend where
+  spell : Bool := false
+  fromHand : Bool := false
+  planeswalker : Bool := false
+  noncreature : Bool := false
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Whether mana restricted to `u` may pay for `s`. -/
+def FraManaUse.allows : FraManaUse → ManaSpend → Bool
+  | .notSpellsFromHand, s => !(s.spell && s.fromHand)
+  | .planeswalkerSpell, s => s.spell && s.planeswalker
+  | .noncreatureSpell, s => s.spell && s.noncreature
+
+/-- Short label for a restriction in pool notation. -/
+def FraManaUse.label : FraManaUse → String
+  | .notSpellsFromHand => "not spells from hand"
+  | .planeswalkerSpell => "planeswalker spells"
+  | .noncreatureSpell => "noncreature spells"
+
 /-- Unspent mana a player currently has (CR 106.4). Restricted mana (CR 106.10)
 is a subset of the colored totals. -/
 structure ManaPool where
@@ -359,6 +391,9 @@ structure ManaPool where
   creatureBlack : Nat := 0
   creatureRed : Nat := 0
   creatureGreen : Nat := 0
+  /-- One entry per mana with a Reality Fracture spending restriction. These
+  are included in the totals above. -/
+  fraRestricted : Array (ManaType × FraManaUse) := #[]
 deriving BEq, DecidableEq, Repr, Inhabited
 
 namespace ManaPool
@@ -476,23 +511,31 @@ def setCreature (p : ManaPool) (t : ManaType) (n : Nat) : ManaPool :=
   | .colored .green => { p with creatureGreen := n }
   | .colorless => p
 
+/-- Restricted Reality Fracture mana of this type. -/
+def fraCount (p : ManaPool) (t : ManaType) : Nat :=
+  (p.fraRestricted.filter (·.1 == t)).size
+
+/-- Restricted Reality Fracture mana of this type that may pay for `spend`. -/
+def fraUsable (p : ManaPool) (t : ManaType) (spend : ManaSpend) : Nat :=
+  (p.fraRestricted.filter (fun (t', u) => t' == t && u.allows spend)).size
+
 /-- Mana of this type with no spending restriction. -/
 def unrestricted (p : ManaPool) (t : ManaType) : Nat :=
   match t with
-  | .colorless => p.colorless - p.cantNonartifact
+  | .colorless => p.colorless - p.cantNonartifact - p.fraCount t
   | .colored .blue =>
     p.get t - p.getElf t - p.getInst t - p.getHero t - p.getVillain t
-      - p.getCreature t - p.cantNonartifactBlue
+      - p.getCreature t - p.cantNonartifactBlue - p.fraCount t
   | _ => p.get t - p.getElf t - p.getInst t - p.getHero t - p.getVillain t
-      - p.getCreature t
+      - p.getCreature t - p.fraCount t
 
 /-- Amount of this type that may be spent under the given restrictions. -/
 def usable (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := false)
     (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
     (allowVillainRestricted : Bool := false)
     (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false) : Nat :=
-  p.unrestricted t +
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) : Nat :=
+  p.unrestricted t + p.fraUsable t spend +
     (if allowElfRestricted then p.getElf t else 0) +
     (if allowInstRestricted then p.getInst t else 0) +
     (if allowHeroRestricted then p.getHero t else 0) +
@@ -504,8 +547,12 @@ def usable (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := false)
 def add (p : ManaPool) (t : ManaType) (n : Nat := 1) (elfRestricted : Bool := false)
     (instRestricted : Bool := false) (heroRestricted : Bool := false)
     (villainRestricted : Bool := false) (cantNonartifact : Bool := false)
-    (creatureRestricted : Bool := false) : ManaPool :=
+    (creatureRestricted : Bool := false) (fra : Option FraManaUse := none) : ManaPool :=
   let p := p.set t (p.get t + n)
+  let p :=
+    match fra with
+    | some u => { p with fraRestricted := p.fraRestricted ++ (Array.replicate n (t, u)) }
+    | none => p
   let p := if elfRestricted then p.setElf t (p.getElf t + n) else p
   let p := if instRestricted then p.setInst t (p.getInst t + n) else p
   let p := if heroRestricted then p.setHero t (p.getHero t + n) else p
@@ -525,8 +572,10 @@ def spendOne? (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := false)
     (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
     (allowVillainRestricted : Bool := false)
     (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false) : Option ManaPool :=
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) : Option ManaPool :=
   if p.get t == 0 then none
+  else if let some i := p.fraRestricted.findIdx? (fun (t', u) => t' == t && u.allows spend) then
+    some { p.set t (p.get t - 1) with fraRestricted := p.fraRestricted.eraseIdx! i }
   else if allowHeroRestricted && p.getHero t > 0 then
     some (p.set t (p.get t - 1) |>.setHero t (p.getHero t - 1))
   else if allowVillainRestricted && p.getVillain t > 0 then
@@ -551,11 +600,14 @@ def spendAny? (p : ManaPool) (allowElfRestricted : Bool := false)
     (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
     (allowVillainRestricted : Bool := false)
     (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false) : Option ManaPool :=
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) : Option ManaPool :=
   let colored : List ManaType :=
     [.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
   let order : List ManaType := [.colorless] ++ colored
   Id.run do
+    if let some (t, _) := p.fraRestricted.find? (fun (_, u) => u.allows spend) then
+      if let some p' := p.spendOne? t (spend := spend) then
+        return some p'
     if allowElfRestricted then
       for t in colored do
         if p.getElf t > 0 then
@@ -585,7 +637,7 @@ def spendAny? (p : ManaPool) (allowElfRestricted : Bool := false)
     for t in order do
       if let some p' := p.spendOne? t allowElfRestricted allowInstRestricted
           allowHeroRestricted allowVillainRestricted allowCantNonartifact
-          allowCreatureRestricted then
+          allowCreatureRestricted spend then
         return some p'
     return none
 
@@ -597,7 +649,7 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
     (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
     (allowVillainRestricted : Bool := false)
     (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false) : Option ManaPool :=
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) : Option ManaPool :=
   Id.run do
     let mut pool := p
     let mut unpaidTwobrid : Nat := 0
@@ -610,30 +662,30 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
       | .colored c =>
         match pool.spendOne? (.colored c) allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+            allowCreatureRestricted spend with
         | some p' => pool := p'
         | none => return none
       | .colorless =>
         match pool.spendOne? .colorless allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+            allowCreatureRestricted spend with
         | some p' => pool := p'
         | none => return none
       | .hybrid a b =>
         match pool.spendOne? (.colored a) allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+            allowCreatureRestricted spend with
         | some p' => pool := p'
         | none =>
           match pool.spendOne? (.colored b) allowElfRestricted allowInstRestricted
               allowHeroRestricted allowVillainRestricted allowCantNonartifact
-              allowCreatureRestricted with
+              allowCreatureRestricted spend with
           | some p' => pool := p'
           | none => return none
       | .twobrid c =>
         match pool.spendOne? (.colored c) allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+            allowCreatureRestricted spend with
         | some p' => pool := p'
         | none => unpaidTwobrid := unpaidTwobrid + 1
       | .generic _ | .x => pure () -- CR 107.3g: unpaid `{X}` is 0
@@ -641,7 +693,7 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
       for _ in [0:2] do
         match pool.spendAny? allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+            allowCreatureRestricted spend with
         | some p' => pool := p'
         | none => return none
     for s in cost.symbols do
@@ -650,7 +702,7 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
         for _ in [0:n] do
           match pool.spendAny? allowElfRestricted allowInstRestricted
               allowHeroRestricted allowVillainRestricted allowCantNonartifact
-              allowCreatureRestricted with
+              allowCreatureRestricted spend with
           | some p' => pool := p'
           | none => return none
       | _ => pure ()
@@ -660,10 +712,10 @@ def canPay (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
     (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
     (allowVillainRestricted : Bool := false)
     (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false) : Bool :=
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) : Bool :=
   (p.pay? cost allowElfRestricted allowInstRestricted
     allowHeroRestricted allowVillainRestricted allowCantNonartifact
-    allowCreatureRestricted).isSome
+    allowCreatureRestricted spend).isSome
 
 /-- How much of `cost` this pool can cover, in mana (CR 202.3). Unpayable
 symbols are skipped so leftover generic-capable mana still counts. -/
@@ -671,7 +723,7 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
     (allowInstRestricted : Bool := false) (allowHeroRestricted : Bool := false)
     (allowVillainRestricted : Bool := false)
     (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false) : Nat :=
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) : Nat :=
   Id.run do
     let mut pool := p
     let mut paid := 0
@@ -683,7 +735,7 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
       | .colored c =>
         match pool.spendOne? (.colored c) allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+            allowCreatureRestricted spend with
         | some p' =>
           pool := p'
           paid := paid + 1
@@ -691,7 +743,7 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
       | .colorless =>
         match pool.spendOne? .colorless allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+            allowCreatureRestricted spend with
         | some p' =>
           pool := p'
           paid := paid + 1
@@ -699,14 +751,14 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
       | .hybrid a b =>
         match pool.spendOne? (.colored a) allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+            allowCreatureRestricted spend with
         | some p' =>
           pool := p'
           paid := paid + 1
         | none =>
           match pool.spendOne? (.colored b) allowElfRestricted allowInstRestricted
               allowHeroRestricted allowVillainRestricted allowCantNonartifact
-              allowCreatureRestricted with
+              allowCreatureRestricted spend with
           | some p' =>
             pool := p'
             paid := paid + 1
@@ -714,7 +766,7 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
       | .twobrid c =>
         match pool.spendOne? (.colored c) allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+            allowCreatureRestricted spend with
         | some p' =>
           pool := p'
           paid := paid + 2
@@ -724,7 +776,7 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
       for _ in [0:2] do
         match pool.spendAny? allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+            allowCreatureRestricted spend with
         | some p' =>
           pool := p'
           paid := paid + 1
@@ -735,7 +787,7 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
         for _ in [0:n] do
           match pool.spendAny? allowElfRestricted allowInstRestricted
               allowHeroRestricted allowVillainRestricted allowCantNonartifact
-              allowCreatureRestricted with
+              allowCreatureRestricted spend with
           | some p' =>
             pool := p'
             paid := paid + 1
@@ -768,7 +820,8 @@ def toNotation (p : ManaPool) : String :=
         p.heroRed p.villainRed 0 p.creatureRed ++
       poolPart "G" (p.unrestricted (.colored .green)) p.elfGreen p.instGreen
         p.heroGreen p.villainGreen 0 p.creatureGreen ++
-      poolPart "C" (p.unrestricted .colorless) 0 0 0 0 p.cantNonartifact
+      poolPart "C" (p.unrestricted .colorless) 0 0 0 0 p.cantNonartifact ++
+      p.fraRestricted.toList.map (fun (t, u) => s!"\{{t.letter}} ({u.label})")
     String.intercalate " " parts
 
 instance : ToString ManaPool where

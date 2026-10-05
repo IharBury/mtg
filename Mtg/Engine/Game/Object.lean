@@ -100,6 +100,9 @@ structure GameObject where
   /-- The permanent that exiled this card, for permissions tied to it (Null
   Summoner). -/
   exiledBy : Option ObjectId := none
+  /-- A command-zone effect object that ends when this player's next turn
+  begins (Jace, Reality Sculptor; Garruk, Curse Breaker). -/
+  fraEffectUntilTurnOf : Option PlayerId := none
   /-- The instant or sorcery card in a graveyard has flashback until end of
   turn, with its mana cost as the flashback cost (Stingcaster Mage). -/
   flashbackUntilEot : Bool := false
@@ -211,7 +214,7 @@ def you (o : GameObject) : PlayerId :=
 def isCreature (o : GameObject) : Bool :=
   !o.status.onlyFoodArtifact && !o.status.returnedAsArtifact &&
     (o.printed.isCreature || o.status.additionalCreature ||
-      o.status.additionalCreatureUntilEot)
+      o.status.additionalCreatureUntilEot || o.status.animatedConstruct55)
 
 /-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
 def isLegendary (o : GameObject) : Bool :=
@@ -259,7 +262,8 @@ end GameObject
 /-- Printed and granted triggers of `source` that fire on `event`. -/
 def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
     Array TriggeredAbility :=
-  (source.printed.triggeredAbilities ++ source.status.grantedTriggeredAbilities).filter
+  (source.printed.triggeredAbilities ++ source.status.grantedTriggeredAbilities ++
+      (if source.isOnBattlefield then source.status.grantedTriggersUntilEot else #[])).filter
     (·.firesOn event)
 
 /-- A triggered ability waiting to be put onto the stack the next time a

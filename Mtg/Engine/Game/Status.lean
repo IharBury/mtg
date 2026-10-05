@@ -192,6 +192,24 @@ structure Status where
   controlUntilEot : Bool := false
   /-- Instances of Iron Fist's granted tap ability this turn (MSH 106). -/
   ironFistTapGrants : Nat := 0
+  /-- +P/+T lasting until the listed player's next turn begins (Garruk,
+  Veiled Butcher). -/
+  untilTurnOfPump : Array (PlayerId × Int × Int) := #[]
+  /-- Triggered abilities granted until end of turn (Lyra, Tolarian
+  Archangel). -/
+  grantedTriggersUntilEot : Array TriggeredAbility := #[]
+  /-- An exhaust ability of this permanent has been activated (CR 702.177). -/
+  exhaustUsed : Bool := false
+  /-- This land has “{T}: Add {C}{C}” until the exiled card with this id is
+  cast from exile (Emrakul, the Exigent Doom; rulings 729 / 730). -/
+  colorlessGrantUntilCast : Array ObjectId := #[]
+  /-- Color chosen as this permanent entered (Room of Refuge). -/
+  chosenColor : Option Color := none
+  /-- This permanent has dealt combat damage since it entered (Ruric Thar). -/
+  dealtCombatDamage : Bool := false
+  /-- An attached Aura makes this a 5/5 Construct creature in addition to its
+  other types (Puppet Crafting). Refreshed with state-based actions. -/
+  animatedConstruct55 : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -304,7 +322,9 @@ def untilEotFields : List UntilEotField := [
   ⟨fun s => s.ironFistTapGrants != 0,
     fun s => { s with ironFistTapGrants := 0 }⟩,
   ⟨fun s => s.losesAbilitiesUntilEot,
-    fun s => { s with losesAbilitiesUntilEot := false }⟩
+    fun s => { s with losesAbilitiesUntilEot := false }⟩,
+  ⟨fun s => !s.grantedTriggersUntilEot.isEmpty,
+    fun s => { s with grantedTriggersUntilEot := #[] }⟩
 ]
 
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or

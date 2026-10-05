@@ -480,7 +480,8 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
       (src.zone == .graveyard src.owner && src.owner == prop.caster &&
         !prop.tapSource && !prop.sacrificeSource && !prop.discardSource) ||
       (src.zone == .hand src.owner && src.owner == prop.caster &&
-        prop.discardSource && !prop.tapSource && !prop.sacrificeSource)
+        (prop.discardSource || prop.activation.any (·.cost.fra == .exileSourceFromHand)) &&
+        !prop.tapSource && !prop.sacrificeSource)
 
 end Game
 end Mtg.Engine

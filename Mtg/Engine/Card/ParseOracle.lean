@@ -472,7 +472,8 @@ def typecyclingLand? (ab : ActivatedAbility) : Option String :=
 
 /-- Oracle line for one activated ability, matching the wording catalogs store. -/
 def printedActivated (ab : ActivatedAbility) : String :=
-  if isEquipAbility ab then
+  if !ab.printed.isEmpty then ab.printed
+  else if isEquipAbility ab then
     let pay := if ab.cost.payLife != 0 then s!", Pay {ab.cost.payLife} life" else ""
     match ab.equipSubtype with
     | some t => s!"Equip {t} {ab.cost.mana}{pay}"
@@ -1761,12 +1762,19 @@ partial def parseRules (c : CardDef) (lines : List String)
         | none =>
         match parseLoyaltyAbilityLine line with
         | some (sym, effectText) =>
+          let jaceSuffix :=
+            " Activate only if there are twenty-five or more loyalty counters among Jaces you control."
+          let (effectText, cond) :=
+            if effectText.endsWith jaceSuffix then
+              ((effectText.dropEnd jaceSuffix.length).copy, FraActivationCondition.jaceLoyaltyAtLeast 25)
+            else (effectText, .none)
           match matchModeled c.name (effectText :: rest) with
           | some (.spell e, n) =>
             let more := (effectText :: rest).drop n
             if n > 0 && more.length < (effectText :: rest).length then
+              let ab : ActivatedAbility := activated e (loyalty := some sym)
               go { c with activatedAbilities :=
-                c.activatedAbilities.push (activated e (loyalty := some sym)) } more
+                c.activatedAbilities.push { ab with fraCondition := cond } } more
             else unrecognized c line rest
           | _ => unrecognized c line rest
         | none =>

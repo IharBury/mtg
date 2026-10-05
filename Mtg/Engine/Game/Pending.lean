@@ -58,6 +58,11 @@ inductive WardCost where
   | discardOrPay (n : Nat)
   /-- Ward — get five poison counters. -/
   | fivePoison
+  /-- Ward — discard a card. -/
+  | discardCard
+  /-- Ward — sacrifice `left` more permanents; `paid` were already
+  sacrificed, so the cost can no longer be declined. -/
+  | sacrificePermanents (left paid : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A queued ward obligation waiting to be announced. -/
@@ -80,6 +85,7 @@ inductive FraNext where
   | reflexiveDamageAnyTarget (n : Nat)
   | reflexiveDestroyPerOpponent
   | reflexiveReturnLandTapped
+  | beastToken
 deriving DecidableEq, Repr, Inhabited, BEq
 
 def FraNext.toResolution : FraNext → FraResolution
@@ -93,11 +99,13 @@ def FraNext.toResolution : FraNext → FraResolution
   | .reflexiveDamageAnyTarget n => .reflexiveDamageAnyTarget n
   | .reflexiveDestroyPerOpponent => .reflexiveDestroyPerOpponent
   | .reflexiveReturnLandTapped => .reflexiveReturnLandTapped
+  | .beastToken => .beastToken
 
 /-- What a “you may sacrifice …” choice accepts. -/
 inductive FraSacrifice where
   | land
   | creatureOrPlaneswalker
+  | creature
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A choice made while a Reality Fracture effect resolves. The player answers
@@ -150,6 +158,21 @@ inductive FraChoice where
   /-- Choose `remaining` more modes for the triggered ability `objectId`
   from `CardDef.fraTriggerModes` of its source. -/
   | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
+  /-- `objectId` gains your choice of the keywords coded in `options`
+  (0 trample, 1 hexproof, 2 haste, 3 deathtouch) until end of turn. Answered
+  with the index of an option. -/
+  | chooseKeyword (objectId : ObjectId) (options : Array Nat)
+  /-- Choose a color for `objectId` as it enters (white, blue, black, red,
+  green by index). -/
+  | chooseColor (objectId : ObjectId)
+  /-- Each player sacrifices a creature of their choice; `controller` creates
+  a 4/4 Beast if they sacrificed one (Garruk, Veiled Butcher). `chosen` are
+  sacrificed together once everyone has chosen. -/
+  | sacrificeCreatureEach (controller : PlayerId) (rest : Array PlayerId)
+    (chosen : Array ObjectId)
+  /-- The choosing opponent discards two cards; `controller` draws a card for
+  each opponent who didn't discard two nonland cards. -/
+  | discardTwo (controller : PlayerId) (rest : Array PlayerId) (draws : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

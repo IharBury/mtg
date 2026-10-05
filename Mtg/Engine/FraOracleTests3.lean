@@ -84,17 +84,7 @@ shared ruling names at least one FRA catalog card. -/
   if r.sets.all (· == "fra") then r.cards.all (fun n => (fraCardNamed? n).isSome)
   else r.cards.any (fun n => (fraCardNamed? n).isSome))
 
-/-- Each unmodeled ruling names only FRA cards that still keep printed text. -/
-def fraUnmodeledStillPrintedOk : Bool :=
-  fraUnmodeledIds.all (fun i =>
-    match uniqueOracleRulings.find? (·.id == i) with
-    | none => false
-    | some r =>
-      r.cards.all (fun n =>
-        match fraCardNamed? n with
-        | some c => keepsPrintedText c
-        | none => true))
-
-#guard fraUnmodeledStillPrintedOk
+/- Every FRA card is fully parsed: no rules line is kept as printed text. -/
+#guard realityFractureCards.all (fun c => !keepsPrintedText c)
 
 end Mtg.Engine.FraRulingTests

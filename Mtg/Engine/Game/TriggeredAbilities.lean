@@ -1497,6 +1497,28 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
         o.status.attackingPlaneswalker.isNone
       if alone then
         g := g.putFraEventTriggers p .creatureYouControlAttacksPlayerAlone (cause := some o)
+      -- Jace, Reality Sculptor's effect: a creature attacks that player or a
+      -- planeswalker they control.
+      g := g.putFraEventTriggers whom .creatureAttacksYouOrYourPlaneswalker (cause := some o)
+    -- Garruk, Curse Breaker's effect: once for each opponent attacked. The
+    -- cause records the attacked player as its controller.
+    let attackedPlayers := attackerIds.foldl (fun (acc : Array PlayerId) id =>
+      let o := g.object! id
+      if o.status.attackingPlaneswalker.isSome then acc
+      else
+        let d := o.status.attackingWhom.getD g.defendingPlayer
+        if acc.contains d then acc else acc.push d) #[]
+    for d in attackedPlayers do
+      match attackerIds.find? (fun id =>
+          let o := g.object! id
+          o.status.attackingPlaneswalker.isNone &&
+            o.status.attackingWhom.getD g.defendingPlayer == d) with
+      | some id =>
+        for q in g.livingPlayers do
+          if q.id != d then
+            g := g.putFraEventTriggers q.id .creaturesAttackYourOpponent
+              (cause := some { g.object! id with controller := some d })
+      | none => pure ()
     let attackedWithElves := attackerIds.any (fun id => g.hasSubtype (g.object! id) "Elf")
     if attackedWithElves then
       g := g.putControlledTriggers p .youAttackWithElves

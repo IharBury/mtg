@@ -90,6 +90,9 @@ structure ProposedSpell where
   teamworkAnnounced : Bool := false
   /-- Activated ability being paid, for extra costs. -/
   activation : Option ActivatedAbility := none
+  /-- The ability's cost is −X loyalty; X is announced before targets and
+  the loyalty is paid then (CR 107.3 / 606.4). -/
+  loyaltyX : Bool := false
 deriving Repr, Inhabited
 
 end Mtg.Engine

@@ -670,7 +670,7 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .toughnessAssignsCombatDamage,
   .negativePowerAssignsAsPositive,
   .castFromHandFreeUpToCreatures,
-]
+] ++ FraStatic.all.map StaticAbility.fra
 
 def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .onAttackPumpByGreatestPower,
@@ -1245,7 +1245,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
           (onlyAsSorcery := true),
   activated (Effect.abilityEmpowerJace 2) (ManaCost.ofGeneric 1)
           (activateFromGraveyard := true) (exileSourceFromGraveyard := true),
-]
+] ++ FraCandidates.activatedAbilities
 
 def chapterEffects : Thunk (Array (String × Effect)) := Thunk.mk fun _ => #[
   ("This Saga deals 6 damage to target creature an opponent controls.", Effect.chapterDealDamageToOppCreature 6),

@@ -153,6 +153,17 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         | some o => some (.sacrifice o.id)
         | none => some .decline
       | .fivePoison => some .pay
+      | .discardCard =>
+        match (g.player p).hand.back? with
+        | some id => some (.discard id)
+        | none => some .decline
+      | .sacrificePermanents left paid =>
+        let perms := g.permanentsOf p
+        if paid == 0 && perms.size < left then some .decline
+        else
+          match perms[0]? with
+          | some o => some (.sacrifice o.id)
+          | none => some .decline
     | .recruitDiscard _ =>
       discardBackOrDecline g p
     | .chooseKicker _ =>

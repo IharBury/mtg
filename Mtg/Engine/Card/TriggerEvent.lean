@@ -60,6 +60,10 @@ inductive FraEvent where
   | yourBeginCombatFromGraveyard
   /-- At the beginning of each upkeep, while this card is in your graveyard. -/
   | eachUpkeepFromGraveyard
+  /-- Whenever a creature attacks you or a planeswalker you control. -/
+  | creatureAttacksYouOrYourPlaneswalker
+  /-- Whenever one or more creatures attack one of your opponents. -/
+  | creaturesAttackYourOpponent
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share

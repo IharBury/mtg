@@ -121,6 +121,9 @@ structure Player where
   /-- Until end of turn, each Mountain this player taps for mana adds this
   many additional {R} (Molten Tide). -/
   mountainExtraRedThisTurn : Nat := 0
+  /-- The next spell this player casts this turn can't be countered
+  (Theorist's Proxy). -/
+  nextSpellCantBeCountered : Bool := false
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/
   teammate : Option PlayerId := none
 deriving Repr, Inhabited

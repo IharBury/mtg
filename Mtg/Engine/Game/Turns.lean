@@ -72,7 +72,7 @@ def clearTurnActivations (g : Game) : Game :=
           pl.scriedOrSurveilledThisTurn || pl.copyNextInstantSorceryThisTurn != 0 ||
           pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
           pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
-          pl.activatedLoyaltyThisTurn then
+          pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -95,7 +95,8 @@ def clearTurnActivations (g : Game) : Game :=
           dealtNoncombatDamageLastTurn := pl.dealtNoncombatDamageThisTurn
           activatedLoyaltyThisTurn := false
           cardsMilledThisTurn := 0
-          mountainExtraRedThisTurn := 0 }
+          mountainExtraRedThisTurn := 0
+          nextSpellCantBeCountered := false }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||
@@ -137,9 +138,24 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
                 turnEndsRemaining := perm.turnEndsRemaining - 1 } }
     return g
 
+/-- End Reality Fracture effects that last until `p`'s next turn: Garruk,
+Veiled Butcher's toughness and power reduction and the command-zone effects of Jace, Reality Sculptor
+and Garruk, Curse Breaker (CR 611.2b). -/
+def expireFraUntilTurnEffects (g : Game) (p : PlayerId) : Game :=
+  let g := g.objects.foldl (fun g o =>
+    if o.status.untilTurnOfPump.any (·.1 == p) then
+      g.setObject { o with status := { o.status with
+        untilTurnOfPump := o.status.untilTurnOfPump.filter (·.1 != p) } }
+    else g) g
+  g.objects.foldl (fun g o =>
+    if o.zone == .command && o.fraEffectUntilTurnOf == some p then
+      (g.ceaseToExist o.id).logMsg s!"{o.name} ends"
+    else g) g
+
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
 that player's last-turn information (CR 800.4i). -/
 def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
+  let g := g.expireFraUntilTurnEffects p
   let g :=
     if (g.player p).protectionFromEverything then
       g.setPlayer { (g.player p) with protectionFromEverything := false }
@@ -199,6 +215,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       let mut g := g
       let ap := g.activePlayer
       let apName := (g.player ap).name
+      g := g.expireFraUntilTurnEffects ap
       -- CR 502.1: phased-out permanents phase in before the player untaps.
       g := g.phaseInControlled ap
       g := g.modifyPlayer ap (fun pl =>
@@ -210,6 +227,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         let skipUntap :=
           (o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
             !g.hasEnduringStory ap) ||
+          o.staticAbilities.any (· == .fra .doesntUntap) ||
           g.hostCantBecomeUntapped o
         -- CR 122.1d: a stun counter is removed instead of untapping.
         let stunned := o.status.tapped && !skipUntap && o.status.stun > 0
