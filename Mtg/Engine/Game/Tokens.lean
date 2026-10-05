@@ -325,8 +325,7 @@ def lotusToken : CardDef := {
   name := "Lotus"
   types := #[.artifact]
   isToken := true
-  staticAbilities := #[.printed
-    "{T}, Sacrifice this token: Add three mana of any one color."]
+  staticAbilities := #[.fra .tapSacrificeAddThreeOfOneColor]
 }
 
 /-- A blue Jace planeswalker token with loyalty 0, `[-1]: Surveil 1`, and

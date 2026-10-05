@@ -59,6 +59,10 @@ creature's current power (CR 208.2). Mox Amber and Arcane Signet may
 produce 0 when no matching color is available. -/
 def manaFromTap (g : Game) (o : GameObject) (mana : ManaType) : Nat :=
   if mana == .colorless && !o.status.colorlessGrantUntilCast.isEmpty then 2
+  else if o.staticAbilities.any (· == .fra .tapSacrificeAddThreeOfOneColor) then
+    match mana with
+    | .colored _ => 3
+    | .colorless => 0
   else if o.printed.tapAddChosenColorPerDifferentPower then
     -- Ruling 875: count distinct power values.
     match mana, o.controller with
@@ -131,7 +135,8 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   let cantNonartifact := o.printed.hasSubtype "Vibranium" && mana == .colorless
   let g := g.becomeTapped o
   let g :=
-    if o.printed.tapSacrificeAddAnyColor then
+    if o.printed.tapSacrificeAddAnyColor ||
+        o.staticAbilities.any (· == .fra .tapSacrificeAddThreeOfOneColor) then
       let o := g.object! o.id
       g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     else g

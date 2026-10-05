@@ -105,6 +105,8 @@ inductive FraStatic where
   | doesntUntap
   /-- Creatures you control get +2/+2 (Ajani emblem). -/
   | emblemCreaturesGetTwoTwo
+  /-- `{T}`, Sacrifice this token: Add three mana of any one color (Lotus). -/
+  | tapSacrificeAddThreeOfOneColor
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace FraStatic
@@ -172,6 +174,7 @@ def text : FraStatic → String
   | .artifactCreaturesHaveVigilance => "Artifact creatures you control have vigilance."
   | .doesntUntap => "This creature doesn't untap during your untap step."
   | .emblemCreaturesGetTwoTwo => "Creatures you control get +2/+2."
+  | .tapSacrificeAddThreeOfOneColor => "{T}, Sacrifice this token: Add three mana of any one color."
 
 /-- Every FRA static ability the parser recognizes. The emblem's static is
 created by Ajani's ultimate and never printed on a card. -/

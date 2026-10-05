@@ -922,4 +922,30 @@ def attackingPlaneswalkerSetup (withTomik : Bool) : Game :=
   | .payWard q _ .discardCard => q == opp
   | _ => false
 
+/-! ## Prowess and Lotus tokens -/
+
+/- Prowess triggers for each noncreature spell you cast; Ruric Thar,
+Biomagus has two instances (CR 702.108b). -/
+#guard
+  let g := addPermanent afterDraw ruricTharBiomagus me me
+  let g := settle (castFra g shock [.target (.player opp)])
+  power g "Ruric Thar, Biomagus" == 6 && toughness g "Ruric Thar, Biomagus" == 8
+#guard
+  let g := addPermanent afterDraw tomikIzzetSparkmage me me
+  let g := settle (castFra g shock [.target (.player opp)])
+  let pumped := power g "Tomik, Izzet Sparkmage" == 2
+  let g := settle (castFra g grizzlyBears)
+  pumped && power g "Tomik, Izzet Sparkmage" == 2
+
+/- A Lotus token from Kwia Vigorbloom taps and is sacrificed for three mana
+of one color. -/
+#guard
+  let g := addPermanent afterDraw kwiaVigorbloom me me
+  let g := settle (g.gainLife me 1)
+  onBattlefield g "Lotus"
+#guard
+  let g := afterDraw.createKindTokens me .lotus 1
+  let g := mustApply g me (.tapForMana (namedPermanent g "Lotus").id (.colored .green))
+  (g.player me).manaPool.green == 3 && !onBattlefield g "Lotus"
+
 end Mtg.Engine.FraCardTests3

@@ -259,6 +259,8 @@ structure CardDef where
   /-- If a creature an opponent controls would die, exile it instead
   (e.g. Head of the Hunt). The original die event never happens (CR 614.6). -/
   exileOppCreaturesInstead : Bool := false
+  /-- Printed instances of prowess; each triggers separately (CR 702.108b). -/
+  prowessInstances : Nat := 0
   /-- You may look at the top card of your library any time
   (e.g. Elven Chorus). -/
   mayLookAtTopAnytime : Bool := false

@@ -1779,7 +1779,10 @@ partial def parseRules (c : CardDef) (lines : List String)
           | _ => unrecognized c line rest
         | none =>
         match keywordTokens c.name line with
-        | some toks => go { c with keywords := c.keywords.merge (keywordsFromTokens toks) } rest
+        | some toks =>
+          go { c with
+            keywords := c.keywords.merge (keywordsFromTokens toks)
+            prowessInstances := c.prowessInstances + toks.count "prowess" } rest
         | none =>
           match parseChapterHeader line with
           | some (roman, text) =>

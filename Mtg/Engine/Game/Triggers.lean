@@ -274,6 +274,16 @@ def attachedGrantedTriggers (g : Game) (o : GameObject) : Array TriggeredAbility
               "Whenever this creature attacks, you gain 1 life." (.gainLife 1))
           | _ => acc) acc) #[]
 
+/-- Prowess triggers of `o`, one for each instance (CR 702.108). -/
+def prowessTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
+  if !o.isOnBattlefield then #[]
+  else
+    let printed := if g.retainsPrintedAbilities o then o.printed.prowessInstances else 0
+    let n := if printed == 0 && (g.currentKeywords o).prowess then 1 else printed
+    Array.replicate n (TriggeredAbility.fra .youCastNoncreature
+      "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)"
+      (.onSource (.pump 1 1)))
+
 /-- Queue each printed trigger of `source` that fires on `event` (CR 603.3). -/
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
     (event : TriggerEvent)
@@ -282,7 +292,7 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
   Id.run do
     let mut g := g
     for ab in source.matchingTriggers event ++
-        (g.attachedGrantedTriggers source).filter (·.firesOn event) do
+        (g.attachedGrantedTriggers source ++ g.prowessTriggers source).filter (·.firesOn event) do
       let skipInfinity :=
         match ab.shared with
         | .step .harnessedFlicker => !source.status.harnessed
@@ -474,6 +484,7 @@ def fraManaAbilities (o : GameObject) : Array ManaType :=
     match ab with
     | .fra .tapAddColorlessNotFromHand => acc.push .colorless
     | .fra .tapAddAnyColorPlaneswalkerOnly => acc ++ anyColor
+    | .fra .tapSacrificeAddThreeOfOneColor => acc ++ anyColor
     | .fra .tapAddChosenColor =>
       match o.status.chosenColor with
       | some c => acc.push (.colored c)
