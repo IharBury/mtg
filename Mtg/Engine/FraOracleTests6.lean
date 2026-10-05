@@ -14,7 +14,8 @@ import Mtg.Engine.Tests.Turns
 # Engine behavior for Reality Fracture (FRA) judge rulings (part 6)
 
 Tam, the Possibility: proliferating X times (CR 701.34). Winter, Team
-Player: convoke (CR 702.51) and its cast trigger.
+Player: convoke (CR 702.51) and its cast trigger. Loyalty abilities granted
+to planeswalkers, and Way of the Cryomancer's copy.
 -/
 
 namespace Mtg.Engine.FraRulingTests
@@ -191,5 +192,78 @@ Blossom-Blessed Angel has vigilance, so it is untapped while attacking. -/
   topOfStack g == "Shock" &&
     g.power (namedPermanent g "Winter, Team Player") == 4
 #guard (fraRuling 868).comment.contains "resolves before the spell that caused it to trigger"
+
+/-!
+## Granted loyalty abilities and Way of the Cryomancer (rulings 779 / 843–846)
+-/
+
+/-- Chandra's Jace token has five loyalty and the abilities Way of the
+Cryomancer and Way of the Healer grant: own [−1] and [−3], then the granted
+[−3] copy and [−2] Cadet. -/
+def grantedJace : Game :=
+  let g := afterDraw.empowerJace ⟨0⟩ 5
+  addPermanent (addPermanent g wayOfTheCryomancer ⟨0⟩ ⟨0⟩) wayOfTheHealer ⟨0⟩ ⟨0⟩
+
+#guard (grantedJace.activatedAbilitiesOf (jaceTokenOf grantedJace)).map (·.cost.loyalty) ==
+  #[some (.minus 1), some (.minus 3), some (.minus 3), some (.minus 2)]
+
+/- Ruling 779: with granted abilities, still one loyalty ability per turn. -/
+#guard
+  let g := mustApply grantedJace ⟨0⟩ (.activate (jaceTokenOf grantedJace).id 3)
+  let g := resolveStack g 20
+  g.battlefield.any (fun o => o.name == "Cadet") &&
+    rejects g ⟨0⟩ (.activate (jaceTokenOf g).id 0) "already been activated"
+
+/-- Activate the granted [−3] and resolve it. -/
+def cryomancerReady : Game :=
+  resolveStack (mustApply grantedJace ⟨0⟩ (.activate (jaceTokenOf grantedJace).id 2)) 20
+
+#guard (cryomancerReady.player ⟨0⟩).copyNextInstantSorceryThisTurn == 1
+
+/- Ruling 844: the copy has the same targets. Shock and its copy each deal
+2 damage to Nissa. Only the next instant or sorcery is copied. -/
+#guard
+  let g := castShockAtNissa cryomancerReady
+  g.stack.size == 2 && (resolveStack g 20 |>.player ⟨1⟩).life == 16 &&
+    (g.player ⟨0⟩).copyNextInstantSorceryThisTurn == 0
+#guard (fraRuling 844).comment.contains "The copy will have the same targets"
+
+/-- Ruling 845: the copy has the same value of X. -/
+def testXSorcery : CardDef :=
+  { name := "Test X Sorcery", manaCost := { symbols := #[.x, .colored .white] }
+    types := #[.sorcery], spellEffect := some (Effect.createTokens .cadet 1) }
+
+#guard
+  let g := withWhiteMana (addToHand cryomancerReady testXSorcery ⟨0⟩) ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Test X Sorcery").id)
+  let g := mustApply (mustApply g ⟨0⟩ (.chooseX 2)) ⟨0⟩ .pay
+  g.stack.size == 2 && g.stack.all (fun e => (g.object! e.objectId).chosenX == some 2)
+#guard (fraRuling 845).comment.contains "the copy has the same value of X"
+
+/-- Ruling 846: choices made on resolution are made separately for the copy.
+Each resolution of a create-and-surveil spell surveils on its own. -/
+def testPeerReview : CardDef :=
+  { name := "Test Peer Review", manaCost := ManaCost.ofColor .blue
+    types := #[.sorcery], spellEffect := some (Effect.createTokensThenSurveil .cadet 1 1) }
+
+#guard
+  let g := withBlueMana (addToHand cryomancerReady testPeerReview ⟨0⟩) ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Test Peer Review").id)
+  let g := resolveStack (mustApply g ⟨0⟩ .pay) 30
+  (g.log.filter (fun s => mentions s "surveils 1")).size == 2
+#guard (fraRuling 846).comment.contains "made separately when the copy resolves"
+
+/- Ruling 843: no costs are paid for the copy, but a paid kicker still
+counts for it. -/
+#guard
+  let kicked := { shock with kicker := some (ManaCost.ofGeneric 1) }
+  let g := withRedMana (addToHand (emptyHand cryomancerReady ⟨0⟩) kicked ⟨0⟩) ⟨0⟩ 2
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Shock").id)
+  let g := mustApply g ⟨0⟩ (.announceKicker true)
+  let g := mustApply g ⟨0⟩ (.target (.player ⟨1⟩))
+  let g := mustApply g ⟨0⟩ .pay
+  g.stack.size == 2 && g.pending == .none &&
+    g.stack.all (fun e => (g.object! e.objectId).kicked)
+#guard (fraRuling 843).comment.contains "You can't choose to pay any additional costs for a copied spell"
 
 end Mtg.Engine.FraRulingTests

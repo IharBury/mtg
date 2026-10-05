@@ -44,6 +44,7 @@ structure AdventureFace where
   empowerJace : Option Nat := none
 deriving Repr, Inhabited, BEq
 
+set_option maxRecDepth 1024 in
 /-- Printed (Oracle) characteristics of a card. -/
 structure CardDef where
   name : String
@@ -155,6 +156,9 @@ structure CardDef where
   entersTappedUnlessLegendary : Bool := false
   /-- This permanent enters tapped unless you control an Equipment. -/
   entersTappedUnlessEquipment : Bool := false
+  /-- Abilities planeswalkers you control have (“Planeswalkers you control
+  have …”). -/
+  planeswalkersYouControlHave : Array ActivatedAbility := #[]
   /-- A deck can have any number of cards with this name (CR 100.2a). -/
   anyNumberInDeck : Bool := false
   /-- You can't cast this spell unless there are at least this many other

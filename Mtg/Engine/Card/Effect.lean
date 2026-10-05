@@ -215,6 +215,8 @@ inductive Resolution where
   /-- Proliferate X times, where X is the number of planeswalker types among
   planeswalkers you control (Tam, the Possibility). -/
   | proliferatePlaneswalkerTypesTimes
+  /-- When you next cast an instant or sorcery spell this turn, copy it. -/
+  | copyNextInstantSorceryThisTurn
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -525,6 +527,8 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
   | .jaceLoyaltyAtInstantSpeed =>
     "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
+  | .copyNextInstantSorceryThisTurn =>
+    "When you next cast an instant or sorcery spell this turn, copy that spell. You may choose new targets for the copy"
   | .proliferatePlaneswalkerTypesTimes =>
     "Proliferate X times, where X is the number of planeswalker types among planeswalkers you control"
   | .copyEachCreatureOfTargetPlayer =>

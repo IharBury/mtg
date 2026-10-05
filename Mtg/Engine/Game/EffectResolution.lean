@@ -86,6 +86,10 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       let excess := g.excessDamage o dealt
       if excess > 0 then g.empowerJace controller excess
       else g) sourceId (some "The target is no longer legal"))
+  | .copyNextInstantSorceryThisTurn =>
+    let g := g.modifyPlayer controller (fun pl =>
+      { pl with copyNextInstantSorceryThisTurn := pl.copyNextInstantSorceryThisTurn + 1 })
+    some (g.logMsg s!"When {(g.player controller).name} next casts an instant or sorcery spell this turn, it is copied")
   | .proliferatePlaneswalkerTypesTimes =>
     -- Ruling 878: X is determined once, as the ability resolves.
     let types := (g.permanentsOf controller).foldl (fun acc o =>
@@ -1233,7 +1237,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
   | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
   | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
-  | .proliferatePlaneswalkerTypesTimes =>
+  | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn =>
     g
 
 /-- Resolve a printed activated ability (CR 608). -/

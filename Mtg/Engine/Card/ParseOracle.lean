@@ -1678,6 +1678,26 @@ partial def parseRules (c : CardDef) (lines : List String)
         | some cost => go { c with additionalCostBeholdOrPay := some cost } rest
         | none =>
         -- CR 209.2: a loyalty symbol in the cost makes this a loyalty ability.
+        -- “Planeswalkers you control have "[−N]: …"”: a granted loyalty ability.
+        let grantedPrefix := "planeswalkers you control have \""
+        let granted? : Option ActivatedAbility :=
+          if (lowerAscii line).startsWith grantedPrefix then
+            let inner := ((line.drop grantedPrefix.length).trimAscii.copy)
+            let inner :=
+              if inner.endsWith "\"." then (inner.dropEnd 2).copy
+              else if inner.endsWith "\"" then (inner.dropEnd 1).copy
+              else inner
+            match parseLoyaltyAbilityLine inner with
+            | some (sym, effectText) =>
+              match matchModeled c.name [effectText] with
+              | some (.spell e, 1) => some (activated e (loyalty := some sym))
+              | _ => none
+            | none => none
+          else none
+        match granted? with
+        | some ab =>
+          go { c with planeswalkersYouControlHave := c.planeswalkersYouControlHave.push ab } rest
+        | none =>
         match parseLoyaltyAbilityLine line with
         | some (sym, effectText) =>
           match matchModeled c.name (effectText :: rest) with

@@ -143,6 +143,32 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       (g.livingOpponents caster).foldl (fun acc pl =>
         acc.putControlledTriggers pl.id .opponentCastsFirstNoncreature) g
     else g
+  -- Way of the Cryomancer: copy the next instant or sorcery this turn. The
+  -- copy has the original's targets, mode, X, and paid-cost effects, but
+  -- no costs are paid for it (rulings 843–846).
+  let g :=
+    if spell.printed.isInstantOrSorcery && (g.player caster).copyNextInstantSorceryThisTurn > 0 then
+      let g := g.modifyPlayer caster (fun pl =>
+        { pl with copyNextInstantSorceryThisTurn := pl.copyNextInstantSorceryThisTurn - 1 })
+      let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
+      let g := g.setObject { copy with
+        kicked := spell.kicked
+        giftPromisedTo := spell.giftPromisedTo
+        teamworkPaid := spell.teamworkPaid
+        chosenX := spell.chosenX
+        isCopy := true
+        adventurerCard := spell.adventurerCard }
+      let g := g.putStackEntry caster copy.id
+      let g :=
+        match g.stack.find? (fun e => e.objectId == spell.id),
+            g.stack.findIdx? (fun e => e.objectId == copy.id) with
+        | some orig, some i =>
+          { g with stack := g.stack.set! i { g.stack[i]! with
+              targets := orig.targets, dividedDamage := orig.dividedDamage
+              chosenMode := orig.chosenMode, targetsAnnounced := true } }
+        | _, _ => g
+      g.logMsg s!"A copy of {spell.name} is created (Way of the Cryomancer)"
+    else g
   -- Loki (MSH 109): copy the next instant or sorcery whose mana value is
   -- ≤ Loki's power at cast time (last known if he already left).
   let pw? :=

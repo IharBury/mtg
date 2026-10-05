@@ -966,6 +966,9 @@ def damageThenEmpowerExcess (n : Nat) : Effect :=
 def jaceLoyaltyAtInstantSpeed : Effect :=
   mkAbility ({}) (.jaceLoyaltyAtInstantSpeed)
 
+def copyNextInstantSorceryThisTurn : Effect :=
+  mkAbility ({}) (.copyNextInstantSorceryThisTurn)
+
 def proliferatePlaneswalkerTypesTimes : Effect :=
   mkAbility ({}) (.proliferatePlaneswalkerTypesTimes)
 

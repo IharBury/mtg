@@ -101,6 +101,9 @@ structure Player where
   /-- The legend rule doesn't apply to permanents this player controls this
   turn (Hall of Echoes). Ends in cleanup with the copy effect (ruling 817). -/
   legendRuleOffThisTurn : Bool := false
+  /-- Instant or sorcery spells this player casts this turn that are copied
+  (Way of the Cryomancer). -/
+  copyNextInstantSorceryThisTurn : Nat := 0
   /-- This player scried or surveilled this turn (Desperate Futurescribe). -/
   scriedOrSurveilledThisTurn : Bool := false
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/

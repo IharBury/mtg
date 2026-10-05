@@ -539,6 +539,8 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.creaturesYouControlGetAndGrant 1 0 Keyword.haste,
   Effect.createTokens .pridemate 1,
   Effect.copyEachCreatureOfTargetPlayer,
+  Effect.copyNextInstantSorceryThisTurn,
+  Effect.addMana #[.colored .red],
 ]
 
 def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
