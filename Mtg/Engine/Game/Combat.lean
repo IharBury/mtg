@@ -295,6 +295,11 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         let pl := g.player defn
         g := g.setPlayer { pl with life := pl.life - toPlayer }
         totalDealt := totalDealt + toPlayer
+        if toPlayer > 0 then
+          g := g.mapObjectStatus (g.object! src.id) (fun s =>
+            { s with combatDamageToPlayers :=
+              if s.combatDamageToPlayers.contains defn then s.combatDamageToPlayers
+              else s.combatDamageToPlayers.push defn })
         if src.status.blocked then
           g := g.logMsg
             s!"{src.name} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"

@@ -214,6 +214,8 @@ structure Status where
   chosenColor : Option Color := none
   /-- This permanent has dealt combat damage since it entered (Ruric Thar). -/
   dealtCombatDamage : Bool := false
+  /-- Players this creature dealt combat damage to this turn (Witch-king of Angmar). -/
+  combatDamageToPlayers : Array PlayerId := #[]
   /-- An attached Aura makes this a 5/5 Construct creature in addition to its
   other types (Puppet Crafting). Refreshed with state-based actions. -/
   animatedConstruct55 : Bool := false

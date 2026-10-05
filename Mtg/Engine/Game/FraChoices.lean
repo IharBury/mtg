@@ -658,6 +658,23 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayDiscardHandDrawFixed _, .decline =>
     return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice
   | .mayDiscardHandDrawFixed _, _ => throw "Discard your hand (accept), or decline"
+  | .sacrificeDamager ids rest controller, .objects #[id] =>
+    if !ids.contains id then throw "Choose a creature that dealt combat damage"
+    let some o := g.findObject? id | throw "no such object"
+    if !o.isOnBattlefield || !o.isCreature || !o.controlledBy p then
+      throw s!"Can't sacrifice {o.name}"
+    let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
+    return (g.beginSacDamagers controller rest).finishFraChoice
+  | .sacrificeDamager .., _ => throw "Choose a creature that dealt combat damage"
+  | .mayCastInstantSorceryFromHand eligible, .objects #[id] =>
+    if !eligible.contains id then throw "That card can't be cast this way"
+    let some o := g.findObject? id | throw "no such object"
+    if o.zone != .hand p || !o.printed.isInstantOrSorcery then
+      throw s!"{o.name} is no longer an instant or sorcery in your hand"
+    return (g.castAsPartOfResolution p id).finishFraChoice
+  | .mayCastInstantSorceryFromHand _, .decline =>
+    return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
+  | .mayCastInstantSorceryFromHand _, _ => throw "Choose a spell to cast, or decline"
   | .palantirMayDraw controller _, .accept =>
     return (g.draw controller 1).finishFraChoice
   | .palantirMayDraw controller sourceId, .decline =>
@@ -824,6 +841,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayCastCopy _ => .decline
   | .mayDiscardHandBalin _ => .decline
   | .mayDiscardHandDrawFixed _ => .decline
+  | .sacrificeDamager ids .. => .choosePermanents (ids.extract 0 1)
+  | .mayCastInstantSorceryFromHand _ => .decline
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>

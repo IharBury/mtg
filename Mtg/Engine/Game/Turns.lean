@@ -105,7 +105,8 @@ def clearTurnActivations (g : Game) : Game :=
           !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
           o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn ||
           o.status.becameTappedThisTurn || o.status.gotPlusOneThisTurn ||
-          o.status.loyaltyActivatedThisTurn then
+          o.status.loyaltyActivatedThisTurn ||
+          !o.status.combatDamageToPlayers.isEmpty then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
           abilitiesActivatedThisTurn := #[]
@@ -117,7 +118,8 @@ def clearTurnActivations (g : Game) : Game :=
           declaredAsAttackerThisTurn := false
           boastUsedThisTurn := false
           becameTappedThisTurn := false
-          gotPlusOneThisTurn := false } }
+          gotPlusOneThisTurn := false
+          combatDamageToPlayers := #[] } }
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/

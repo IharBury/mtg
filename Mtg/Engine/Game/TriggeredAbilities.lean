@@ -32,6 +32,43 @@ def schedulePalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectI
   | .scry _ _ => { g with palantirAfterScry := some (controller, opp, sid) }
   | _ => g.offerPalantirChoice controller opp sid
 
+/-- Each opponent sacrifices a creature that dealt combat damage to
+`controller` this turn, then the Ring tempts `controller`. -/
+partial def beginSacDamagers (g : Game) (controller : PlayerId)
+    (opponents : Array PlayerId) : Game :=
+  match opponents[0]? with
+  | none => g.temptWithTheRing controller
+  | some p =>
+    let rest := opponents.extract 1 opponents.size
+    let ids :=
+      ((g.creaturesControlledBy p).filter (fun o =>
+        o.status.combatDamageToPlayers.contains controller)).map (·.id)
+    if ids.isEmpty then
+      let g :=
+        g.logMsg s!"{(g.player p).name} controls no creature that dealt combat damage this turn"
+      g.beginSacDamagers controller rest
+    else if ids.size == 1 then
+      let o := g.object! ids[0]!
+      let g := g.sacrificeToGraveyard o
+        s!"{(g.player p).name} sacrifices {o.name}"
+      g.beginSacDamagers controller rest
+    else
+      g.beginFraChoice p (.sacrificeDamager ids rest controller)
+        s!"{(g.player p).name} chooses a creature that dealt combat damage to sacrifice"
+
+/-- You may cast an instant or sorcery from your hand with mana value at
+most `maxMv`, without paying its mana cost. -/
+def beginMayCastInstantSorceryFromHand (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
+  let eligible := (g.player p).hand.filter (fun id =>
+    (g.findObject? id).any (fun o =>
+      o.printed.isInstantOrSorcery && o.printed.manaValue ≤ maxMv))
+  if eligible.isEmpty then
+    g.logMsg
+      s!"{(g.player p).name} has no instant or sorcery with mana value {maxMv} or less"
+  else
+    g.beginFraChoice p (.mayCastInstantSorceryFromHand eligible)
+      s!"{(g.player p).name} may cast an instant or sorcery spell with mana value {maxMv} or less without paying its mana cost"
+
 /-- Exile until an instant or sorcery, then ask whether to cast it. -/
 def beginGrimaImpulse (g : Game) (controller victim : PlayerId) : Game :=
   let (g, found, others) := g.exileUntilInstantOrSorcery victim
@@ -953,7 +990,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let wizards :=
       (g.permanentsOf controller).filter (fun o =>
         o.isLegendary && g.hasSubtype o "Wizard") |>.size
-    g.castInstantSorceryFromHandMvAtMost controller (wizards * 2)
+    g.beginMayCastInstantSorceryFromHand controller (wizards * 2)
   | .drawPlusOneSource =>
     let g := g.draw controller 1
     g.applyOnTriggerSource sourceId (.plusOne 1)
@@ -964,7 +1001,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           (tapped := true) (land := true)
       else g)
   | .castInstantSorceryMvAtMost =>
-    g.castInstantSorceryFromHandMvAtMost controller (lastKnownPower.getD 0).toNat
+    g.beginMayCastInstantSorceryFromHand controller (lastKnownPower.getD 0).toNat
   | .grimaImpulse =>
     let victim := g.lastCombatDamagePlayer.getD (g.opponent controller)
     g.beginGrimaImpulse controller victim
@@ -1049,10 +1086,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g := g.afterPermanentEnters (g.object! newId)
         return g.putRestOnBottomRandom controller rest
   | .sacDamagersRingTempts =>
-    let g :=
-      (g.livingOpponents controller).foldl (fun acc pl =>
-        acc.beginSacrificeCreature pl.id) g
-    g.temptWithTheRing controller
+    g.beginSacDamagers controller ((g.livingOpponents controller).map (·.id))
   | .chapter _ =>
     g.applyChapterEffect controller ab.effect sourceId targets
   | .pumpTargetPerPlains =>

@@ -394,6 +394,14 @@ inductive FraChoice where
   | mayDiscardHandBalin (sourceId : Option ObjectId)
   /-- You may discard your hand. If you do, draw `n` cards (Sauron). -/
   | mayDiscardHandDrawFixed (n : Nat)
+  /-- Sacrifice one creature that dealt combat damage to `controller`. The
+  other opponents in `rest` choose next, then the Ring tempts `controller`
+  (Witch-king of Angmar). -/
+  | sacrificeDamager (ids : Array ObjectId) (rest : Array PlayerId)
+    (controller : PlayerId)
+  /-- You may cast one of these instant or sorcery cards from your hand
+  without paying its mana cost (Gandalf, Party Guest; Glamdring). -/
+  | mayCastInstantSorceryFromHand (eligible : Array ObjectId)
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)

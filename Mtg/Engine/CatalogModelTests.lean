@@ -1272,6 +1272,79 @@ him deal that much damage to each opponent. -/
   let g := mustApply g me .accept
   handSize g me == n && life g opp + (n : Int) == 20
 
+/- Witch-king of Angmar sacrifices only a creature that dealt combat damage
+to you, then the Ring tempts you. -/
+#guard
+  let g := addPermanent afterDraw witchKingOfAngmar me me
+  let g := addPermanent (addPermanent g grizzlyBears opp opp) grayOgre opp opp
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status :=
+    { bears.status with combatDamageToPlayers := #[me] } }
+  let g := g.applyTriggeredAbility me .onCombatDamageToYouSacRingTempts
+    (some (idOf g "Witch-king of Angmar"))
+  !onBattlefield g "Grizzly Bears" && onBattlefield g "Gray Ogre" &&
+    (g.player me).theRingAbilities == 1 && g.pending == .none
+#guard
+  let g := addPermanent afterDraw witchKingOfAngmar me me
+  let g := addPermanent (addPermanent g grizzlyBears opp opp) grayOgre opp opp
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := g.setObject { bears with status :=
+    { bears.status with combatDamageToPlayers := #[me] } }
+  let g := g.setObject { ogre with status :=
+    { ogre.status with combatDamageToPlayers := #[me] } }
+  let g := g.applyTriggeredAbility me .onCombatDamageToYouSacRingTempts
+    (some (idOf g "Witch-king of Angmar"))
+  let choosing :=
+    match g.pending with
+    | .fraChoice p (.sacrificeDamager ids _ c) =>
+      p == opp && c == me && ids.contains (idOf g "Grizzly Bears") &&
+        ids.contains (idOf g "Gray Ogre")
+    | _ => false
+  let waiting := (g.player me).theRingAbilities == 0
+  let g := mustApply g opp (.choosePermanents #[idOf g "Gray Ogre"])
+  choosing && waiting &&
+    !onBattlefield g "Gray Ogre" && onBattlefield g "Grizzly Bears" &&
+    (g.player me).theRingAbilities == 1
+
+/- Gandalf, Party Guest may cast an instant or sorcery from hand whose mana
+value is at most twice the legendary Wizards you control. -/
+#guard
+  let g := addToHand (addToHand (addPermanent afterDraw gandalfPartyGuest me me) shock me)
+    confusticateAndBebother me
+  let g := g.applyTriggeredAbility me .onYourBeginCombatCastInstantSorceryFromHand
+    (some (idOf g "Gandalf, Party Guest"))
+  let offered :=
+    match g.pending with
+    | .fraChoice _ (.mayCastInstantSorceryFromHand eligible) =>
+      eligible.contains (handObj g me "Shock").id &&
+        !eligible.any (fun id => (g.object! id).name == "Confusticate and Bebother")
+    | _ => false
+  let g := mustApply g me .decline
+  offered && inHand g me "Shock" && inHand g me "Confusticate and Bebother"
+#guard
+  let g := addToHand (addToHand (addPermanent afterDraw gandalfPartyGuest me me) shock me)
+    confusticateAndBebother me
+  let g := g.applyTriggeredAbility me .onYourBeginCombatCastInstantSorceryFromHand
+    (some (idOf g "Gandalf, Party Guest"))
+  let g := mustApply g me (.choosePermanents #[(handObj g me "Shock").id])
+  g.objects.any (fun o => o.name == "Shock" && o.zone == .stack) &&
+    inHand g me "Confusticate and Bebother" &&
+    (match g.pending with | .chooseTargets _ => true | _ => false)
+
+/- Glamdring may cast an instant or sorcery whose mana value is at most the
+combat damage. -/
+#guard
+  let g := addToHand (addToHand (addPermanent afterDraw glamdring me me) shock me)
+    hithlainKnots me
+  let g := g.applyTriggeredAbility me .onEquippedCombatDamageCastInstantSorcery
+    (some (idOf g "Glamdring")) (lastKnownPower := some 1)
+  match g.pending with
+  | .fraChoice _ (.mayCastInstantSorceryFromHand eligible) =>
+    eligible.contains (handObj g me "Shock").id &&
+      !eligible.any (fun id => (g.object! id).name == "Hithlain Knots")
+  | _ => false
+
 /- Enchanted River's Grasp taps the enchanted creature and removes every counter. -/
 #guard
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me
