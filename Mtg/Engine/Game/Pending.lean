@@ -421,6 +421,9 @@ inductive FraChoice where
   /-- Choose a Vision mode that hasn't been chosen this turn.
   0 double strike, 1 indestructible, 2 draw. -/
   | visionMode (sourceId : ObjectId) (available : Array Nat)
+  /-- You may exile the discarded card and play it until the end of your next
+  turn (Moonstone). -/
+  | moonstoneMayExile (cardId : ObjectId)
   /-- You may pay 2 life so creatures you control assign combat damage equal
   to their toughness (The Kingpin of Crime). -/
   | kingpinMayPay2Life

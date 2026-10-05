@@ -309,9 +309,16 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
       match obj.triggeredAbility with
       | some ab =>
         let n := ab.targeting.targetCount
-        let maxN := Nat.max n ab.effect.maxTargetCount
+        let lifeTargets :=
+          match ab.shared with
+          | .resource .gainLifePlusOnes => true
+          | _ => false
+        let maxN :=
+          if lifeTargets then (obj.lastKnownPower.getD 0).toNat
+          else Nat.max n ab.effect.maxTargetCount
         -- “Up to one” is min 0, max the printed count (usually 1).
-        if ab.allowsZeroTargets then (0, maxN) else (n, maxN)
+        -- Heroic Feast’s maximum is the life gained in that event.
+        if lifeTargets || ab.allowsZeroTargets then (0, maxN) else (n, maxN)
       | none => (1, 1)
 
 /-- True when at least the required targets are announced and another

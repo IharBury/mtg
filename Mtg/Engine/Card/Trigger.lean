@@ -1125,7 +1125,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .casting .copyIfArtifactOrLand =>
     { events := #[.youCastInstantSorceryTargetingArtifactOrLand], resolution := .casting .copyIfArtifactOrLand }
   | .casting .tapCreatureOrLand =>
-    { events := #[.youCastNoncreature], targeting := .of .creature,
+    { events := #[.youCastNoncreature],
+      targeting := .of (.filtered {
+        noun := "target creature or land",
+        types := #[.creature, .land] }),
       resolution := .casting .tapCreatureOrLand }
   | .resource .discardExilePlay =>
     { events := #[.youDiscard], resolution := .resource .discardExilePlay }
@@ -1140,8 +1143,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .resource .secondDrawDrain =>
     { events := #[.youDrawSecondCard], resolution := .resource .secondDrawDrain }
   | .resource .gainLifePlusOnes =>
-    { events := #[.youGainLife], targeting := .of .playerOrCreature, allowsZeroTargets := true,
-      resolution := .resource .gainLifePlusOnes }
+    { events := #[.youGainLife], targeting := .of .creatureYouControl,
+      allowsZeroTargets := true, resolution := .resource .gainLifePlusOnes }
   | .resource .plusOneCreateInsectOnce =>
     { events := #[.youPutPlusOne], onceEachTurn := true,
       resolution := .resource .plusOneCreateInsectOnce }

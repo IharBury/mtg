@@ -840,6 +840,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
             else if m == 1 then "1 indestructible"
             else "2 draw a card")
           s!"choose one that hasn't been chosen this turn: {String.intercalate ", " names}"
+        | .moonstoneMayExile _ =>
+          "may exile the discarded card and play it until the end of your next turn (accept), or decline"
         | .kingpinMayPay2Life => "may pay 2 life (accept), or decline"
         | .daredevilMayExile _ => "may exile the top card of your library (accept), or decline"
         | .mayChangeSpellTarget .. =>

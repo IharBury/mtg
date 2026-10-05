@@ -735,6 +735,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !available.contains m then throw "That mode was already chosen this turn"
     return (g.applyVisionMode p sourceId m).finishFraChoice
   | .visionMode .., _ => throw "Choose a mode that hasn't been chosen this turn"
+  | .moonstoneMayExile cardId, .accept =>
+    match g.findObject? cardId with
+    | some o =>
+      if o.zone != .graveyard p then throw s!"{o.name} is no longer in your graveyard"
+      let name := o.name
+      let (g, newId) := g.move o.id .exile none
+      let o := g.object! newId
+      return (g.setObject { o with
+          playPermission := some { player := p, turnEndsRemaining := 2 } }
+        |>.logMsg s!"{name} is exiled. {(g.player p).name} may play it until the end of their next turn").finishFraChoice
+    | none => return g.finishFraChoice
+  | .moonstoneMayExile _, .decline =>
+    return (g.logMsg s!"{(g.player p).name} doesn't exile the discarded card").finishFraChoice
+  | .moonstoneMayExile _, _ => throw "Exile the discarded card (accept), or decline"
   | .kingpinMayPay2Life, .accept =>
     let g ← g.payLifeCost p 2
     return ({ g with assignCombatDamageEqualToughness := some p }
@@ -940,6 +954,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     match available[0]? with
     | some m => .chooseMode m
     | none => .decline
+  | .moonstoneMayExile _ => .decline
   | .kingpinMayPay2Life => .decline
   | .daredevilMayExile _ => .decline
   | .mayChangeSpellTarget .. => .decline

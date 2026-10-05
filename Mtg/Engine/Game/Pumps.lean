@@ -139,12 +139,15 @@ def isWorthyPermanent (_g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield && o.isCreature && o.printed.isWorthy
 
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
-def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
+def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) (entersWith := false) : Game :=
   let n := g.extraCountersOn o.controller n
   let n := g.extraPlusOneOnCreature o n
   let g := g.mapObjectStatus o (fun s =>
     { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 })
-  let g := g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
+  let phrase :=
+    if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
+    else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
+  let g := g.logMsg phrase
   -- “Whenever you put … counters”: “you” is whoever controls the effect
   -- putting them, not necessarily the creature's controller.
   let putter :=

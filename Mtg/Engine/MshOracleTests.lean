@@ -2884,4 +2884,88 @@ def wiccanAnotherNonlandNontokenOk : Bool :=
 
 #guard wiccanAnotherNonlandNontokenOk
 
+/-- Quake taps a creature or a land. -/
+def quakeTapsCreatureOrLandOk : Bool :=
+  let g := addPermanent afterDraw quakeAgentOfSHIELD ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g mountain ⟨1⟩ ⟨1⟩
+  let g := addPermanent g heroicFeast ⟨1⟩ ⟨1⟩
+  let quake := namedPermanent g "Quake, Agent of S.H.I.E.L.D."
+  let bears := namedPermanent g "Grizzly Bears"
+  let land := namedPermanent g "Mountain"
+  let feast := namedPermanent g "Heroic Feast"
+  let kind := (SharedTrigger.timing (.casting .tapCreatureOrLand)).targeting.kind
+  let legal := g.legalTargetsForKind ⟨0⟩ kind (some quake.id)
+  legal.contains (Target.permanent bears.id) &&
+    legal.contains (Target.permanent land.id) &&
+    !legal.contains (Target.permanent feast.id) &&
+    (let gLand := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingTapCreatureOrLand)
+        (some quake.id) #[Target.permanent land.id]
+     (namedPermanent gLand "Mountain").status.tapped) &&
+    (let gMiss := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingTapCreatureOrLand)
+        (some quake.id) #[Target.permanent feast.id]
+     !(namedPermanent gMiss "Heroic Feast").status.tapped &&
+       logContains gMiss "no longer legal")
+
+#guard quakeTapsCreatureOrLandOk
+
+/-- Moonstone may exile the discarded card. Declining leaves it in the graveyard. -/
+def moonstoneMayExileOk : Bool :=
+  let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
+  let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceDiscardExilePlay)
+    none #[] "Moonstone" (some (Int.ofNat bolt.id.raw))
+  match g.pending with
+  | .fraChoice _ (.moonstoneMayExile _) =>
+    let kept := mustApply g ⟨0⟩ .decline
+    (kept.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .graveyard ⟨0⟩)) &&
+      (let exiled := mustApply g ⟨0⟩ .accept
+       exiled.objects.any (fun o =>
+         o.name == "Lightning Bolt" && o.zone == .exile &&
+           (o.playPermission.map (·.turnEndsRemaining)) == some 2))
+  | _ => false
+
+#guard moonstoneMayExileOk
+
+/-- Heroic Feast puts a counter on up to as many creatures you control as the
+life gained in that event. -/
+def heroicFeastUpToLifeOk : Bool :=
+  let g := addPermanent afterDraw heroicFeast ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let feast := namedPermanent g "Heroic Feast"
+  let bears := namedPermanent g "Grizzly Bears"
+  let giant := namedPermanent g "Hill Giant"
+  let bounds :=
+    match heroicFeast.triggeredAbilities.find? (fun ab =>
+      match ab.shared with
+      | .resource .gainLifePlusOnes => true
+      | _ => false) with
+    | none => false
+    | some abil =>
+      let (_, obj) := g.allocStackAbility feast ⟨0⟩
+        (triggeredAbility := some abil) (lastKnownPower := some 1)
+      g.announcedTargetBounds obj == (0, 1)
+  bounds &&
+    (let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceGainLifePlusOnes)
+        (some feast.id) #[Target.permanent bears.id, Target.permanent giant.id]
+        "Heroic Feast" (some 1)
+     (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
+       (namedPermanent g "Hill Giant").status.plusOnePlusOne == 0)
+
+#guard heroicFeastUpToLifeOk
+
+/-- Hellcat returns with a +1/+1 counter as she enters. -/
+def hellcatEntersWithCounterOk : Bool :=
+  let g := addPermanent afterDraw hellcatUndyingVigilante ⟨0⟩ ⟨0⟩
+  let old := (namedPermanent g "Hellcat, Undying Vigilante").id
+  let g := g.destroyPermanent (namedPermanent g "Hellcat, Undying Vigilante")
+  let g := g.applyModeledTrigger ⟨0⟩ (.onDeath Effect.deathHellcatReturn) (some old)
+  let cat := namedPermanent g "Hellcat, Undying Vigilante"
+  cat.status.plusOnePlusOne == 1 && g.hasHaste cat &&
+    logContains g "enters with"
+
+#guard hellcatEntersWithCounterOk
+
 end Mtg.Engine.MshRulingTests

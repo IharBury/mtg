@@ -161,13 +161,22 @@ control returns to hand. -/
   let g := settle (g.draw opp 2)
   handSize g me == before + 1
 
-/- Moonstone, Harsh Mistress exiles a discarded card, which you may play. -/
+/- Moonstone, Harsh Mistress may exile a discarded card. Accepting exiles it
+and lets you play it; the idle answer declines. -/
 #guard
   let g := addPermanent (addToHand afterDraw shock me) moonstoneHarshMistress me me
   let g := g.discardFromHand me (handObj g me "Shock").id
-  let g := settle g
-  inExile g "Shock" &&
-    g.canCast me ((g.objects.find? (fun o => o.zone == .exile && o.name == "Shock")).get!)
+  let g := g.receivePriority me
+  let g := applyIdle (applyIdle g)
+  match g.pending with
+  | .fraChoice _ (.moonstoneMayExile _) =>
+    let declined := settle g
+    let accepted := mustApply g me .accept
+    inGraveyard declined me "Shock" && !inExile declined "Shock" &&
+      inExile accepted "Shock" &&
+      accepted.canCast me
+        ((accepted.objects.find? (fun o => o.zone == .exile && o.name == "Shock")).get!)
+  | _ => false
 
 /-! ## Crew -/
 

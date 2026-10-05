@@ -611,7 +611,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
           status := { o.status with
             losesAbilitiesGrantedBy := o.status.losesAbilitiesGrantedBy.push newId } }
         let o := g.object! newId
-        let g := g.addPlusOnePlusOneTo o 1
+        let g := g.addPlusOnePlusOneTo o 1 (entersWith := true)
         g.afterPermanentEnters (g.object! newId)
           |>.logMsg s!"{o.name} returns, loses all abilities, and gains haste"
   | (.death .deathtouchOppSac) =>
@@ -873,33 +873,26 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
           s!"{(g.player controller).name} may choose new targets for the copy"
     | none => g
   | (.casting .tapCreatureOrLand) =>
-    g.withLegalKindPermanent controller .creature targets
+    let kind := EffectTargetKind.filtered {
+      noun := "target creature or land",
+      types := #[.creature, .land] }
+    g.withLegalKindPermanent controller kind targets
       (fun g o => g.applyPermanentAction o .tap) sourceId
       (some "The target is no longer legal")
   | (.resource .discardExilePlay) =>
     let id? :=
       match lastKnownPower with
       | some n =>
-        if n ≥ 0 then some (⟨n.toNat⟩ : ObjectId) else none
-      | none => (g.player controller).graveyard.back?
-    match id? with
+        if n ≥ 0 then some (g.followMoved ⟨n.toNat⟩) else none
+      | none => none
+    match id?.bind g.findObject? with
+    | some o =>
+      if o.zone == .graveyard controller then
+        { g with pending := .fraChoice controller (.moonstoneMayExile o.id) }
+          |>.logMsg s!"You may exile {o.name} from your graveyard"
+      else
+        g.logMsg "The discarded card is no longer in your graveyard"
     | none => g.logMsg "No discarded card is in the graveyard"
-    | some id =>
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .graveyard controller then
-          let name := o.name
-          let (g, newId) := g.move o.id .exile none
-          let o := g.object! newId
-          g.setObject { o with
-              playPermission := some {
-                player := controller
-                turnEndsRemaining := 2 } }
-            |>.logMsg
-              s!"{name} is exiled. {(g.player controller).name} may play it until the end of their next turn"
-        else
-          g.logMsg "The discarded card is no longer in the graveyard"
-      | none => g.logMsg "The discarded card is no longer in the graveyard"
   | (.resource .secondDrawPlusOneTarget) =>
     g.withLegalKindPermanent controller .creature targets
       (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
@@ -908,16 +901,17 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     let g := g.forEachOpponent controller (fun g pid => g.loseLife pid 1)
     g.gainLife controller 1
   | (.resource .gainLifePlusOnes) =>
-    targets.foldl (fun (g : Game) t =>
+    let n := (lastKnownPower.getD 0).toNat
+    (targets.extract 0 n).foldl (fun (g : Game) t =>
       match t with
       | Target.permanent id =>
         match g.findObject? id with
         | some o =>
           if o.isOnBattlefield && o.isCreature && o.controlledBy controller then
             g.addPlusOnePlusOneTo o 1
-          else g
-        | none => g
-      | _ => g) g
+          else g.logMsg "The target is no longer legal"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer legal") g
   | (.resource .plusOneOnThisOnce) =>
     g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
       "The source is no longer in play"

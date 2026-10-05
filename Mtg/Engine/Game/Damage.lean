@@ -167,7 +167,7 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
       s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
     let g := g.modifyPlayer p (fun pl =>
       { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + n })
-    g.putControlledTriggers p .youGainLife
+    g.putControlledTriggers p .youGainLife (lastKnownPower := some (Int.ofNat n))
 
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
