@@ -971,14 +971,25 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .step .drawToTen =>
     { events := #[.yourEndStep], resolution := .step .drawToTen }
   | .step .copyAbsorbingMan =>
-    { events := #[.yourFirstMain], resolution := .step .copyAbsorbingMan }
+    { events := #[.yourFirstMain]
+      targeting := .of (.filtered {
+        noun := "up to one target artifact, non-Aura enchantment, or land"
+        types := #[.artifact, .enchantment, .land]
+        nonAura := true })
+      allowsZeroTargets := true, maxTargets := 1
+      resolution := .step .copyAbsorbingMan }
   | .step .hydeChoose =>
     { events := #[.yourUpkeep], resolution := .step .hydeChoose }
   | .step .copyTaskmaster =>
-    { events := #[.yourFirstMain], targeting := .of .creature, allowsZeroTargets := true,
+    { events := #[.yourFirstMain], targeting := .of .creatureOrGyCreatureCard,
+      allowsZeroTargets := true, maxTargets := 1
       resolution := .step .copyTaskmaster }
   | .step .harnessedFlicker =>
-    { events := #[.yourEndStep], targeting := .of .nonland, allowsZeroTargets := true,
+    { events := #[.yourEndStep]
+      targeting := .of (.filtered {
+        noun := "up to one other target nonland permanent you control"
+        nonland := true, controller := .you, another := true })
+      allowsZeroTargets := true, maxTargets := 1
       resolution := .step .harnessedFlicker }
   | .death .hellcatReturn =>
     { events := #[.dying], resolution := .death .hellcatReturn }

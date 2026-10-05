@@ -80,6 +80,40 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
         else g
       | none => g) g
 
+/-- Mister Hyde's chosen mode. Mode 0 puts a +1/+1 counter on the source.
+Mode 1 removes a counter from the chosen creature, then draws. -/
+def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (mode : Nat) (targets : Array Target) : Game :=
+  if mode == 0 then
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      g.addPlusOnePlusOneTo o 1) "The source is no longer in play"
+  else
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && o.controlledBy controller && o.status.hasCounters then
+          let g :=
+            if o.status.plusOnePlusOne > 0 then
+              g.mapObjectStatus o (fun s =>
+                { s with plusOnePlusOne := s.plusOnePlusOne - 1 })
+                |>.logMsg s!"A counter is removed from {o.name}"
+            else if o.status.indestructibleCounters > 0 then
+              g.mapObjectStatus o (fun s =>
+                { s with indestructibleCounters := s.indestructibleCounters - 1 })
+                |>.logMsg s!"A counter is removed from {o.name}"
+            else g.logMsg "A counter is removed from the creature"
+          g.draw controller 1
+        else
+          g.logMsg "You must remove a counter from a creature you control if you can"
+      | none =>
+        g.logMsg "You must remove a counter from a creature you control if you can"
+    | _ =>
+      if (g.permanentsOf controller).any (fun o =>
+          o.isCreature && o.status.hasCounters) then
+        g.logMsg "You must remove a counter from a creature you control if you can"
+      else g
+
 /-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
 Effects are applied from that structured payload — not from Oracle text. -/
 def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
@@ -93,25 +127,34 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       | some (Target.permanent id) =>
         match g.findObject? id with
         | some tgt =>
-          g.becomeCopyOf src tgt (untilNextTurn := true)
-            (exceptName := some "Absorbing Man")
-            (forceLegendary := true) (addCreature := true)
-            (addSubtypes := #["Human", "Villain"])
-            (setPT := some (4, 4)) (addVigilance := true)
-        | none => g
-      | _ => g) "The source is no longer in play"
+          let ok := tgt.isOnBattlefield && !tgt.printed.isAura &&
+            (tgt.printed.isArtifact || tgt.printed.isEnchantment || tgt.printed.isLand)
+          if ok then
+            g.becomeCopyOf src tgt (untilNextTurn := true)
+              (exceptName := some "Absorbing Man")
+              (forceLegendary := true) (addCreature := true)
+              (addSubtypes := #["Human", "Villain"])
+              (setPT := some (4, 4)) (addVigilance := true)
+          else g.logMsg "That permanent isn't an artifact, non-Aura enchantment, or land"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "Absorbing Man doesn't become a copy") "The source is no longer in play"
   | (.step .copyTaskmaster) =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with
       | some (Target.permanent id) | some (Target.card id) =>
         match g.findObject? id with
         | some tgt =>
-          g.becomeCopyOf src tgt (untilNextTurn := true)
-            (exceptName := some "Taskmaster, Mercenary Mimic")
-            (forceLegendary := true) (addCreature := true)
-            (addSubtypes := #["Human", "Mercenary", "Villain"])
-        | none => g
-      | _ => g) "The source is no longer in play"
+          let onBf := tgt.isOnBattlefield && tgt.isCreature
+          let inGy := tgt.zone == .graveyard tgt.owner && tgt.printed.isCreature
+          if onBf || inGy then
+            g.becomeCopyOf src tgt (untilNextTurn := true)
+              (exceptName := some "Taskmaster, Mercenary Mimic")
+              (forceLegendary := true) (addCreature := true)
+              (addSubtypes := #["Human", "Mercenary", "Villain"])
+              (replaceCreatureLine := true)
+          else g.logMsg "That isn't a creature or a creature card in a graveyard"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "Taskmaster doesn't become a copy") "The source is no longer in play"
   | (.watch .sheHulkRedirectOnce) =>
     if g.sheHulkDamageUsedThisTurn then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
@@ -238,11 +281,16 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         | some vid =>
           g.beginMayHaveVillainConnive controller src.id vid
   | (.death .attackingReturnHand) =>
-    match g.lastDiedAttacker.bind g.findObject? with
+    let fromCause :=
+      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    let id := fromCause.orElse (fun _ => g.lastDiedAttacker.map g.followMoved)
+    match id.bind g.findObject? with
     | none => g.logMsg "The attacking creature is no longer in the graveyard"
     | some o =>
       if o.printed.isToken then
         g.logMsg s!"{o.name} ceases to exist"
+      else if o.zone != .graveyard o.owner then
+        g.logMsg "The attacking creature is no longer in the graveyard"
       else
         g.returnToHand o.id o.owner
   | (.watch .ultronCopy) =>
@@ -343,29 +391,12 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         |>.logMsg s!"{o.name}'s base power is the number of cards in your hand")
       "The source is no longer in play"
   | (.step .hydeChoose) =>
-    let mode := (lastKnownPower.getD 0).toNat
-    if mode == 0 then
-      g.withSourceOnBattlefield sourceId (fun g o =>
-        g.addPlusOnePlusOneTo o 1) "The source is no longer in play"
-    else
-      match targets[0]? with
-      | some (Target.permanent id) =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield && o.controlledBy controller &&
-              o.status.plusOnePlusOne > 0 then
-            let g := g.mapObjectStatus o (fun s =>
-              { s with plusOnePlusOne := s.plusOnePlusOne - 1 })
-            g.draw controller 1
-          else
-            g.logMsg "You must remove a counter from a creature you control if you can"
-        | none =>
-          g.logMsg "You must remove a counter from a creature you control if you can"
-      | _ =>
-        if (g.permanentsOf controller).any (fun o =>
-            o.isCreature && o.status.plusOnePlusOne > 0) then
-          g.logMsg "You must remove a counter from a creature you control if you can"
-        else g
+    match lastKnownPower with
+    | none =>
+      { g with pending := .fraChoice controller (.hydeMode (sourceId.getD ⟨0⟩)) }
+        |>.logMsg s!"{(g.player controller).name} chooses one — 0 put a +1/+1 counter, 1 remove a counter and draw"
+    | some mode =>
+      g.applyHydeMode controller sourceId mode.toNat targets
   | (.resource .drawIfAnotherHeroDamage) =>
     if (g.permanentsOf controller).any (fun o =>
         g.hasSubtype o "Hero" && some o.id != sourceId) then
@@ -389,15 +420,18 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         | some (Target.permanent id) =>
           match g.findObject? id with
           | some o =>
-            if o.isOnBattlefield && o.id != src.id then
-              let (g, newId) :=
-                let g := g.exileUntilSourceLeaves sourceId o
-                match g.objects.find? (fun x =>
-                  x.name == o.name && x.zone == .exile) with
-                | some ex => (g, ex.id)
-                | none => (g, id)
-              g.returnExiledId newId
-            else g
+            if o.isOnBattlefield && o.controlledBy controller &&
+                !o.printed.isLand && o.id != src.id then
+              let owner := o.owner
+              let name := o.name
+              let (g, exId) := g.move o.id .exile none
+              let (g, retId) := g.move exId .battlefield (some owner)
+              let ret := g.object! retId
+              let g := g.setObject { ret with status :=
+                { ret.status with summoningSick := !ret.printed.keywords.haste } }
+              g.afterPermanentEnters (g.object! retId)
+                |>.logMsg s!"{name} is exiled, then returned"
+            else g.logMsg "The target is no longer legal"
           | none => g.logMsg "The target is no longer legal"
         | _ => g
     | none => g
@@ -447,7 +481,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     | none =>
       g.logMsg "The enchanted creature has left. No card is drawn."
   | (.death .hellcatReturn) =>
-    match sourceId.bind g.findObject? with
+    match (sourceId.map g.followMoved).bind g.findObject? with
     | none => g.logMsg "Hellcat is no longer in the graveyard"
     | some o =>
       if o.zone != .graveyard o.owner then

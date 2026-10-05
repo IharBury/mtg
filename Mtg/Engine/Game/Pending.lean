@@ -405,6 +405,11 @@ inductive FraChoice where
   /-- You may cast up to `left` more of these exiled cards without paying
   their mana costs (Doom Reigns Supreme). -/
   | mayCastUpToFromExile (eligible : Array ObjectId) (left : Nat)
+  /-- Mister Hyde: choose mode 0 (+1/+1 counter) or 1 (remove a counter
+  and draw). -/
+  | hydeMode (sourceId : ObjectId)
+  /-- Remove one counter from one of these creatures, then draw (Mister Hyde). -/
+  | hydeRemoveCounter (ids : Array ObjectId)
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)

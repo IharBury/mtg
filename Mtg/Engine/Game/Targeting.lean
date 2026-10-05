@@ -182,6 +182,10 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
         (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id))
   | .creature =>
     g.legalCreatureTargets caster (fun _ => true)
+  | .creatureOrGyCreatureCard =>
+    g.legalCreatureTargets caster (fun _ => true) ++
+      g.livingPlayers.foldl (fun acc pl =>
+        acc ++ g.legalGraveyardCardTargets pl.id (fun o => o.printed.isCreature)) #[]
   | .creatureWithFlying =>
     g.legalCreatureTargets caster (fun o => g.hasFlying o)
   | .artifactOrLand =>

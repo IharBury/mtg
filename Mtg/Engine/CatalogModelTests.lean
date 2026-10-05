@@ -1458,6 +1458,85 @@ ability may cast up to two of the exiled cards. -/
     !g.objects.any (fun o => o.name == "Shock" && o.zone == .stack) &&
     !(g.objects.any (fun o => o.zone == .exile && o.playPermission.isSome))
 
+/- Absorbing Man copies an artifact, non-Aura enchantment, or land, and may
+copy nothing. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw absorbingMan me me) forest me me
+  let g := addPermanent g grizzlyBears me me
+  let legal := g.legalTargetsForKind me
+    (SharedTrigger.timing (.step .copyAbsorbingMan)).targeting.kind (some (idOf g "Absorbing Man"))
+  let forestOk := legal.contains (Target.permanent (idOf g "Forest"))
+  let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
+  let g := g.applyModeledTrigger me (.onStep Effect.stepCopyAbsorbingMan)
+    (some (idOf g "Absorbing Man")) #[Target.permanent (idOf g "Forest")]
+  let copied := namedPermanent g "Absorbing Man"
+  forestOk && !bearOk && copied.printed.isLand && copied.name == "Absorbing Man" &&
+    g.power copied == 4 && g.hasVigilance copied
+#guard
+  let g := addPermanent afterDraw absorbingMan me me
+  let g := g.applyModeledTrigger me (.onStep Effect.stepCopyAbsorbingMan)
+    (some (idOf g "Absorbing Man"))
+  !(namedPermanent g "Absorbing Man").printed.isLand &&
+    g.log.any (fun s => mentions s "doesn't become a copy")
+
+/- Taskmaster can copy a creature card in a graveyard, and that copy's type
+line is Human Mercenary Villain. -/
+#guard
+  let g := addPermanent afterDraw taskmasterMercenaryMimic me me
+  let g := addToGraveyard g grizzlyBears opp
+  let bear :=
+    (g.player opp).graveyard.find? (fun id => (g.object! id).name == "Grizzly Bears")
+  match bear with
+  | some bearId =>
+    let g := g.applyModeledTrigger me (.onStep Effect.stepCopyTaskmaster)
+      (some (idOf g "Taskmaster, Mercenary Mimic")) #[Target.card bearId]
+    let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
+    tm.name == "Taskmaster, Mercenary Mimic" &&
+      tm.subtypes == #["Human", "Mercenary", "Villain"] &&
+      !tm.subtypes.contains "Bear" && g.power tm == 2
+  | none => false
+
+/- Mister Hyde's upkeep ability asks which mode to use. -/
+#guard
+  let g := addPermanent afterDraw misterHydeMonsterWithin me me
+  let g := g.applyModeledTrigger me (.onStep Effect.stepHydeChoose)
+    (some (idOf g "Mister Hyde, Monster Within"))
+  let choosing :=
+    match g.pending with
+    | .fraChoice _ (.hydeMode _) => true
+    | _ => false
+  let g := mustApply g me (.chooseMode 0)
+  choosing && (namedPermanent g "Mister Hyde, Monster Within").status.plusOnePlusOne == 1
+
+/- The Mind Stone, once harnessed, blinks another nonland you control. -/
+#guard
+  let g := addPermanent afterDraw theMindStone me me
+  let stone := namedPermanent g "The Mind Stone"
+  let g := g.setObject { stone with status := { stone.status with harnessed := true } }
+  let g := addPermanent (addPermanent g forest me me) grizzlyBears me me
+  let legal := g.legalTargetsForKind me
+    (SharedTrigger.timing (.step .harnessedFlicker)).targeting.kind
+    (some (idOf g "The Mind Stone"))
+  let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
+  let landOk := legal.contains (Target.permanent (idOf g "Forest"))
+  let selfOk := legal.contains (Target.permanent (idOf g "The Mind Stone"))
+  let bear := idOf g "Grizzly Bears"
+  let g := g.applyModeledTrigger me (.onStep Effect.stepHarnessedFlicker)
+    (some (idOf g "The Mind Stone")) #[Target.permanent bear]
+  bearOk && !landOk && !selfOk && onBattlefield g "Grizzly Bears" &&
+    (namedPermanent g "The Mind Stone").linkedExile.isEmpty &&
+    g.log.any (fun s => mentions s "exiled, then returned")
+
+/- Hellcat's dies ability finds her after the zone change. -/
+#guard
+  let g := addPermanent afterDraw hellcatUndyingVigilante me me
+  let old := idOf g "Hellcat, Undying Vigilante"
+  let g := g.destroyPermanent (namedPermanent g "Hellcat, Undying Vigilante")
+  let g := g.applyModeledTrigger me (.onDeath Effect.deathHellcatReturn) (some old)
+  onBattlefield g "Hellcat, Undying Vigilante" &&
+    (namedPermanent g "Hellcat, Undying Vigilante").status.plusOnePlusOne == 1 &&
+    g.hasHaste (namedPermanent g "Hellcat, Undying Vigilante")
+
 /- Enchanted River's Grasp taps the enchanted creature and removes every counter. -/
 #guard
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me

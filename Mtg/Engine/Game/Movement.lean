@@ -334,20 +334,22 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | none => (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)
   let attackingDie :=
-    if died && old.status.attacking then
-      match old.controller with
-      | some p =>
-        let fromOthers :=
-          g.battlefield.foldl (fun acc o =>
-            match o.controller with
-            | some q =>
-              if q == p then
-                acc ++ o.waitingTriggersFor q .attackingCreatureYouControlDies
-              else acc
-            | none => acc) (#[] : Array WaitingTrigger)
-        fromOthers ++ old.waitingTriggersFor p .attackingCreatureYouControlDies
-      | none => (#[] : Array WaitingTrigger)
-    else (#[] : Array WaitingTrigger)
+    let raw :=
+      if died && old.status.attacking then
+        match old.controller with
+        | some p =>
+          let fromOthers :=
+            g.battlefield.foldl (fun acc o =>
+              match o.controller with
+              | some q =>
+                if q == p then
+                  acc ++ o.waitingTriggersFor q .attackingCreatureYouControlDies
+                else acc
+              | none => acc) (#[] : Array WaitingTrigger)
+          fromOthers ++ old.waitingTriggersFor p .attackingCreatureYouControlDies
+        | none => (#[] : Array WaitingTrigger)
+      else (#[] : Array WaitingTrigger)
+    raw.map (fun wt => { wt with causeId := some newId, cause := some fresh })
   -- After the object has left: sources still on the battlefield see
   -- creature cards going to a graveyard (Robot Domination; MSH 138).
   let creatureCardToGy :=

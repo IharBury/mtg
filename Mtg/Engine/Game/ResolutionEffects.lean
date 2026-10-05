@@ -822,11 +822,12 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
     (forceLegendary := false) (notLegendary := false)
     (addCreature := false) (addSubtypes : Array String := #[])
     (setPT : Option (Int × Int) := none)
-    (addVigilance := false) : Game :=
+    (addVigilance := false) (replaceCreatureLine := false) : Game :=
   let restore := o.copyRestore.getD o.printed
   let printed0 := src.printed
   let types :=
-    if addCreature && !printed0.types.any (· == .creature) then
+    if replaceCreatureLine then #[.creature]
+    else if addCreature && !printed0.types.any (· == .creature) then
       printed0.types.push .creature
     else printed0.types
   let supertypes :=
@@ -838,7 +839,9 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
     { printed0 with
       name := exceptName.getD printed0.name
       types
-      subtypes := mergeSubtypes printed0.subtypes addSubtypes
+      subtypes :=
+        if replaceCreatureLine then addSubtypes
+        else mergeSubtypes printed0.subtypes addSubtypes
       supertypes
       power :=
         match setPT with

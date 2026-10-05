@@ -693,6 +693,22 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return ({ g with pendingMayCastFromExile := none }
       |>.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
   | .mayCastUpToFromExile .., _ => throw "Choose a spell to cast, or decline"
+  | .hydeMode sourceId, .mode 0 =>
+    return (g.applyHydeMode p (some sourceId) 0 #[]).finishFraChoice
+  | .hydeMode sourceId, .mode 1 =>
+    let ids :=
+      ((g.creaturesControlledBy p).filter (·.status.hasCounters)).map (·.id)
+    if ids.isEmpty then
+      return (g.applyHydeMode p (some sourceId) 1 #[]).finishFraChoice
+    else if ids.size == 1 then
+      return (g.applyHydeMode p (some sourceId) 1 #[Target.permanent ids[0]!]).finishFraChoice
+    else
+      return { g with pending := .fraChoice p (.hydeRemoveCounter ids) }
+  | .hydeMode _, _ => throw "Choose mode 0 or 1"
+  | .hydeRemoveCounter ids, .objects #[id] =>
+    if !ids.contains id then throw "Choose a creature with a counter"
+    return (g.applyHydeMode p none 1 #[Target.permanent id]).finishFraChoice
+  | .hydeRemoveCounter _, _ => throw "Choose a creature with a counter"
   | .palantirMayDraw controller _, .accept =>
     return (g.draw controller 1).finishFraChoice
   | .palantirMayDraw controller sourceId, .decline =>
@@ -862,6 +878,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .sacrificeDamager ids .. => .choosePermanents (ids.extract 0 1)
   | .mayCastInstantSorceryFromHand _ => .decline
   | .mayCastUpToFromExile _ _ => .decline
+  | .hydeMode _ => .chooseMode 0
+  | .hydeRemoveCounter ids => .choosePermanents (ids.extract 0 1)
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>

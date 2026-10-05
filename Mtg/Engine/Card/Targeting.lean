@@ -105,6 +105,8 @@ inductive EffectTargetKind where
   | oppTappedCreature
   /-- Target creature (any controller). -/
   | creature
+  /-- A creature on the battlefield, or a creature card in a graveyard. -/
+  | creatureOrGyCreatureCard
   /-- Target creature with flying. -/
   | creatureWithFlying
   /-- Target artifact or land. -/
@@ -305,6 +307,9 @@ def spec : EffectTargetKind → Spec
     { noun := "target tapped creature an opponent controls" }
   | .creature =>
     { noun := "target creature" }
+  | .creatureOrGyCreatureCard =>
+    { noun := "up to one target creature or creature card in a graveyard",
+      prefer := .last }
   | .creatureWithFlying =>
     { noun := "target creature with flying" }
   | .artifactOrLand =>

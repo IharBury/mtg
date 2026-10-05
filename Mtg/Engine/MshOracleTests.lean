@@ -1887,16 +1887,23 @@ def secretInvasionLeaveOk : Bool :=
 /-- Rulings 121 / 200 / 201 / 322: Absorbing Man copies printed values, no ETB. -/
 def absorbingManCopyOk : Bool :=
   let g := addPermanent afterDraw absorbingMan ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mountain ⟨0⟩ ⟨0⟩
   let g := addPermanent g doctorDoom ⟨0⟩ ⟨0⟩
   let am := namedPermanent g "Absorbing Man"
+  let land := namedPermanent g "Mountain"
   let doom := namedPermanent g "Doctor Doom"
   let before := g.waitingTriggers.size
+  let rejected :=
+    g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyAbsorbingMan) (some am.id)
+      #[Target.permanent doom.id]
   let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyAbsorbingMan) (some am.id)
-    #[Target.permanent doom.id]
+    #[Target.permanent land.id]
   let am := namedPermanent g "Absorbing Man"
-  am.printed.name == "Absorbing Man" &&
+  !(namedPermanent rejected "Absorbing Man").printed.isLand &&
+    am.printed.name == "Absorbing Man" &&
     am.printed.power == some 4 &&
     am.printed.types.any (· == .creature) &&
+    am.printed.isLand &&
     am.copyRestore.isSome &&
     am.copyUntilNextTurn &&
     g.waitingTriggers.size == before &&
