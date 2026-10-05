@@ -335,7 +335,11 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
           g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
         else if perm.anyMana then ManaCost.ofGeneric afterEquip.manaValue
         else afterEquip
-      | none => afterEquip
+      | none =>
+        -- Null Summoner: mana of any type can be spent.
+        if card.zone == .exile && card.exiledBy.isSome then
+          ManaCost.ofGeneric afterEquip.manaValue
+        else afterEquip
   -- Omnipresence: from hand, a spell with mana value at most the number of
   -- creatures you control is cast without paying its mana cost. Spells with
   -- `{X}` are cast normally, so X is never forced to 0. Additional costs are

@@ -1408,6 +1408,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .loyaltyOnSource =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })
+      let g := g.queueLoyaltyPutTriggers controller
       g.logMsg s!"A loyalty counter is put on {o.name}")
   | .grantThenCounterByType k =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
@@ -1417,6 +1418,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let o := g.object! o.id
       if o.printed.isPlaneswalker then
         let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })
+        let g := g.queueLoyaltyPutTriggers controller
         g.logMsg s!"A loyalty counter is put on {o.name}"
       else g)
   | .destroyOppPermanentIfSixLands =>
@@ -1485,6 +1487,16 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
       if !skipIronMan then
         g := g.putMatchingSourceTriggers p o .attacking
           (some (g.snapshotPower o)) (some (g.snapshotToughness o))
+      -- Reality Fracture: each attacking creature, and one attacking a player
+      -- alone (no other creature attacks that player; ruling 861).
+      g := g.putFraEventTriggers p .creatureYouControlAttacks (cause := some o)
+      let whom := o.status.attackingWhom.getD g.defendingPlayer
+      let alone := !attackerIds.any (fun id' =>
+        id' != id && (g.object! id').status.attackingWhom.getD g.defendingPlayer == whom &&
+          (g.object! id').status.attackingPlaneswalker.isNone) &&
+        o.status.attackingPlaneswalker.isNone
+      if alone then
+        g := g.putFraEventTriggers p .creatureYouControlAttacksPlayerAlone (cause := some o)
     let attackedWithElves := attackerIds.any (fun id => g.hasSubtype (g.object! id) "Elf")
     if attackedWithElves then
       g := g.putControlledTriggers p .youAttackWithElves
@@ -1565,6 +1577,16 @@ def putBlockedTriggersOnStack (g : Game) (assignments : Array (ObjectId × Objec
         | none => pure ()
         | some p =>
           g := g.putMatchingSourceTriggers p o .becomesBlocked
+    -- Tetsuko Umezawa, Pursuer: a small creature an opponent controls blocks.
+    let mut blockers : Array ObjectId := #[]
+    for (blockerId, _) in assignments do
+      if !blockers.contains blockerId then
+        blockers := blockers.push blockerId
+        let b := g.object! blockerId
+        if g.power b ≤ 1 || g.toughness b ≤ 1 then
+          for pl in g.livingPlayers do
+            if some pl.id != b.controller then
+              g := g.putFraEventTriggers pl.id .opponentSmallCreatureBlocks (cause := some b)
     return g
 
 end Game

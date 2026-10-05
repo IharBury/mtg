@@ -232,7 +232,7 @@ def artifactCountPump (g : Game) (o : GameObject) : Int × Int :=
     (n, n)
 
 def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
-  let n : Int := o.status.plusOnePlusOne
+  let n : Int := (o.status.plusOnePlusOne : Int) - (o.status.minusOneMinusOne : Int)
   #[g.characteristicBasePT o, o.status.pump, (n, n), g.attachedStatBonus o,
       g.lordStatBonus o, g.enduringStorySelfBonus o, g.enduringStoryTeamBonus o,
       (g.mountainPowerBonus o, (0 : Int)),

@@ -39,6 +39,11 @@ def checkLookedPiles (g : Game) (p q : PlayerId) (count : Nat)
 the active player priority. -/
 def finishLibraryLook (g : Game) : Game :=
   let g := { g with pending := .none, surveilReturnMvAtMost := none }
+  let g :=
+    match g.fraAfterLook with
+    | some (c, src, next) =>
+      ({ g with fraAfterLook := none }).applyFra c default next.toResolution #[] src
+    | none => g
   match g.pendingDrawAfterScry with
   | some (q, n) =>
     let g := { g with pendingDrawAfterScry := none }
@@ -170,6 +175,7 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
     if chosen.toList.eraseDups.length != chosen.size then
       throw "Choose each permanent or player at most once"
     let mut g := g
+    let mut loyaltyPut := false
     for t in chosen do
       match t with
       | .permanent id =>
@@ -178,9 +184,11 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
           throw s!"{o.name} is not a permanent on the battlefield (CR 701.34a)"
         if !o.status.hasCounters then
           throw s!"{o.name} has no counters"
+        let hadLoyalty := o.status.loyaltyCounters > 0
         g := g.mapObjectStatus o Status.proliferatedExceptPlusOne
         let o := g.object! id
         g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 else g
+        if hadLoyalty && o.printed.isPlaneswalker then loyaltyPut := true
         g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
       | .player pid =>
         let pl := g.player pid
@@ -189,6 +197,8 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         g := g.setPlayer { pl with poison := pl.poison + 1 }
         g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
       | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
+    if loyaltyPut then
+      g := g.queueLoyaltyPutTriggers p
     if chosen.isEmpty then
       g := g.logMsg s!"{(g.player p).name} proliferates, choosing nothing"
     if remaining > 1 then

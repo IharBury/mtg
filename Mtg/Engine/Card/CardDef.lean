@@ -160,6 +160,10 @@ structure CardDef where
   flashback : Option ManaCost := none
   /-- Casting with flashback also requires discarding a card (CR 702.34a). -/
   flashbackDiscard : Bool := false
+  /-- “As long as there are seven or more cards in your graveyard, you may
+  cast the exiled card, and mana of any type can be spent to cast that
+  spell” (Null Summoner). -/
+  castExiledWithSevenInGraveyard : Bool := false
   /-- This permanent enters tapped unless you control a legendary creature. -/
   entersTappedUnlessLegendary : Bool := false
   /-- This permanent enters tapped unless you control an Equipment. -/

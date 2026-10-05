@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.PermanentAction
+import Mtg.Engine.Card.TriggerEvent
 import Mtg.Engine.Card.Chapter
 
 /-!
@@ -414,6 +415,8 @@ inductive SharedTriggerWhen where
   | or (a b : SharedTriggerWhen)
   /-- Use the events stored on the shared effect (leftover family wrappers). -/
   | fromEffect
+  /-- A Reality Fracture event. -/
+  | fra (e : FraEvent)
 deriving Repr, Inhabited, BEq
 
 /-- Shared resolution for reusable triggered abilities that only differ by
@@ -823,6 +826,26 @@ inductive SharedTrigger where
   | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
 
+/-- A Reality Fracture intervening “if” clause (CR 603.4), checked when the
+ability triggers and again as it resolves. -/
+inductive FraCondition where
+  | none
+  /-- “if it isn't a token” (the source, as it last existed). -/
+  | sourceNotToken
+  /-- “if two or more creatures died this turn”. -/
+  | twoCreaturesDiedThisTurn
+  /-- “if an opponent was dealt noncombat damage last turn”. -/
+  | opponentDealtNoncombatDamageLastTurn
+  /-- “if you've drawn three or more cards this turn”. -/
+  | drewThreeThisTurn
+  /-- “if you didn't cast a spell this turn”. -/
+  | castNoSpellThisTurn
+  /-- “if you've activated a loyalty ability this turn”. -/
+  | activatedLoyaltyThisTurn
+  /-- “if you cast it”. -/
+  | sourceWasCast
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Optional intervening conditions and wording filters for `triggered`. -/
 structure SharedTriggerOpts where
   onceEachTurn : Bool := false
@@ -838,6 +861,11 @@ structure SharedTriggerOpts where
   watchedSubtype : Option String := none
   /-- Drop targeting from the shared effect (e.g. Guttersnipe). -/
   untargeted : Bool := false
+  /-- The ability's printed sentence, when its wording isn't built from the
+  event and resolution (Reality Fracture). -/
+  printed : String := ""
+  /-- Reality Fracture intervening “if” clause. -/
+  fraCondition : FraCondition := .none
 deriving Repr, Inhabited, BEq
 
 /-- Ferocious intervening condition (power 4 or greater). -/

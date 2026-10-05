@@ -39,6 +39,32 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     if spell.printed.isInstantOrSorcery then
       g.putControlledTriggers caster .youCastInstantOrSorcery
     else g
+  -- Reality Fracture cast triggers.
+  let g := g.putMatchingSourceTriggers caster spell (.fra .castThis)
+  let mvCast := g.objectManaValue spell
+  let g := (g.livingOpponents caster).foldl (fun g pl =>
+    g.putFraEventTriggersWhere pl.id (fun
+      | .opponentCastsSpellMvAtMost n => mvCast ≤ n
+      | _ => false) (cause := some spell)) g
+  let g := if spell.isPreparedSpell then
+      g.putFraEventTriggers caster .youCastPreparedSpell (cause := some spell)
+    else g
+  let g := if spell.printed.isCreature || spell.printed.isArtifact then
+      g.putFraEventTriggers caster .youCastArtifactOrCreature (cause := some spell)
+    else g
+  let targetsOwnCreature : Bool :=
+    match g.stack.find? (fun e => e.objectId == spell.id) with
+    | some e =>
+      e.targets.any (fun t =>
+        match t with
+        | Target.permanent id =>
+          (g.findObject? id).any (fun o => o.isCreature && o.controlledBy caster)
+        | _ => false)
+    | none => false
+  let g := if spell.printed.isEquipment || targetsOwnCreature then
+      g.putFraEventTriggers caster .youCastEquipmentOrTargetingCreatureYouControl
+        (cause := some spell)
+    else g
   let g :=
     if spell.printed.isCreature then
       g.foldControlledPermanents caster none fun g o =>
@@ -249,6 +275,9 @@ def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
     if n > 0 then
       let g := g.setObject { o with status :=
         { o.status with loyaltyCounters := o.status.loyaltyCounters + n.toNat } }
+      let g := match o.controller with
+        | some p => g.queueLoyaltyPutTriggers p
+        | none => g
       g.logMsg s!"{o.name} enters with {n} loyalty counter(s)"
     else g
   | _, _ => g
@@ -391,7 +420,35 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
       if !entered.printed.isToken && entered.printed.isArtifact then
         g.putControlledTriggers p .anotherNontokenArtifactEnters
       else g
-    g
+    -- Reality Fracture “enters” triggers.
+    let isCreature := entered.isCreature
+    let g :=
+      if isCreature || entered.printed.isPlaneswalker then
+        g.putFraEventTriggers p .anotherCreatureOrPlaneswalkerYouControlEnters
+          (cause := some entered) (excludeId := some entered.id)
+      else g
+    let g :=
+      if isCreature then
+        g.putFraEventTriggers p .thisOrAnotherCreatureYouControlEnters (cause := some entered)
+      else g
+    let g :=
+      if isCreature && !entered.printed.isToken then
+        g.putFraEventTriggers p .anotherNontokenCreatureYouControlEnters
+          (cause := some entered) (excludeId := some entered.id)
+      else g
+    let g :=
+      if isCreature then
+        (g.livingOpponents p).foldl (fun g opp =>
+          g.putFraEventTriggers opp.id .creatureOpponentControlsEnters (cause := some entered)) g
+      else g
+    let power := g.power entered
+    let g :=
+      if isCreature then
+        g.putFraEventTriggersWhere p (fun
+          | .creatureYouControlPowerAtLeastEnters n => power ≥ n
+          | _ => false) (cause := some entered)
+      else g
+    g.promptTriggerTargetsIfNeeded
   | none => g
 
 /-- After a land enters, put its enters triggers, Elf-enters triggers, and landfall. -/

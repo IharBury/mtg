@@ -20,6 +20,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
     | .mayPutLandFromHand _ => g.putLandFromHandTapped p id
     | .mayPutArtifactFromHand .. => g.choosePutArtifactFromHand p id
     | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
+    | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .chooseMode idx =>
@@ -59,7 +60,10 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
     | .fraChoice .. => g.answerFraChoice p .accept
     | _ => throw "Nothing to accept now"
   | .haveVillainConnive => g.haveVillainConnive p
-  | .payGeneric => g.payGeneric p
+  | .payGeneric =>
+    match g.pending with
+    | .fraChoice _ (.mayPayThen ..) => g.answerFraChoice p .accept
+    | _ => g.payGeneric p
   | .chooseTop =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p .accept

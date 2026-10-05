@@ -28,6 +28,12 @@ inductive TargetController where
   | any
   | you
   | opponent
+  /-- One particular player, by seat index. -/
+  | specific (idx : Nat)
+  /-- “For each opponent, up to one target … that player controls”: one
+  optional instance per opponent, expanded as the ability is put on the
+  stack. -/
+  | eachOpponent
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- A target described by characteristics, with the Oracle noun phrase that
@@ -457,6 +463,8 @@ def spec : EffectTargetKind → Spec
         match f.zone, f.controller with
         | .yourGraveyard, _ | .anyGraveyard, _ => .last
         | .player, .you => .selfPlayer
+        | _, .specific _ => .opponent
+        | _, .eachOpponent => .opponent
         | .player, _ => .opponentPlayer
         | _, .you => .own
         | _, .opponent => .opponent
@@ -502,6 +510,25 @@ def announcedNoun (k : EffectTargetKind) (i : Nat) : String :=
   else n
 
 end EffectTargetKind
+
+namespace TargetFilter
+
+def creatureOrPlaneswalker : TargetFilter :=
+  { noun := "target creature or planeswalker", types := #[.creature, .planeswalker] }
+
+def creature : TargetFilter :=
+  { noun := "target creature", types := #[.creature] }
+
+def creatureYouControl : TargetFilter :=
+  { noun := "target creature you control", types := #[.creature], controller := .you }
+
+def oppCreatureOrPlaneswalker : TargetFilter :=
+  { noun := "target creature or planeswalker an opponent controls", types := #[.creature, .planeswalker], controller := .opponent }
+
+def spell : TargetFilter :=
+  { noun := "target spell", zone := .stack }
+
+end TargetFilter
 
 /-- Targeting shape plus a default-choice hint used by the demonstration agent. -/
 structure EffectTargeting where

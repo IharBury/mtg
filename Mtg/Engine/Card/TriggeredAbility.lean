@@ -39,6 +39,10 @@ def effect (ab : TriggeredAbility) : Effect :=
   match ab with
   | .triggered _ e _ => e
 
+/-- The options of this triggered ability. -/
+def opts : TriggeredAbility → SharedTriggerOpts
+  | .triggered _ _ o => o
+
 /-- Leftover shared trigger this ability resolves. -/
 def shared (ab : TriggeredAbility) : SharedTrigger :=
   match ab.effect.asTrigger? with
@@ -1206,6 +1210,7 @@ def leadInSentence (ab : TriggeredAbility) (lead : String) : String :=
 def toNotation (ab : TriggeredAbility) : String :=
   match ab with
   | .triggered w e opts =>
+    if !opts.printed.isEmpty then opts.printed else
     match w, e.asTrigger?, opts with
     | .enter, some .bolgMaySacrifice, _ =>
       leadInSentence ab "When Bolg enters"

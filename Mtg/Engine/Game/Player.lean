@@ -111,6 +111,10 @@ structure Player where
   /-- Sideboard cards not yet brought into play as objects outside the game
   (CR 400.11b). -/
   sideboard : Array CardDef := #[]
+  /-- This player was dealt noncombat damage during the previous turn. -/
+  dealtNoncombatDamageLastTurn : Bool := false
+  /-- This player activated a loyalty ability this turn. -/
+  activatedLoyaltyThisTurn : Bool := false
   /-- Cards put into this player's graveyard from their library this turn
   (Cruel Calculations). -/
   cardsMilledThisTurn : Nat := 0

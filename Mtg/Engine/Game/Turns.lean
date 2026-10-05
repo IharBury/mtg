@@ -49,12 +49,17 @@ def clearTurnActivations (g : Game) : Game :=
   Id.run do
     let mut g := { g with
       creatureDiedThisTurn := false
+      creatureDeathsThisTurn := 0
       battlefieldCreaturesToGyThisTurn := #[]
       lastLifeLost := none
       lastNoncombatDamage := none
       sheHulkDamageUsedThisTurn := false
       pendingFreeRGCreature := none
       zemoBoastExiles := #[] }
+    -- Stingcaster Mage: flashback granted until end of turn ends.
+    for o in g.objects do
+      if o.flashbackUntilEot then
+        g := g.setObject { o with flashbackUntilEot := false }
     for pl in g.players do
       if pl.lost then
         -- Keep last-known this-turn info until that turn would have begun
@@ -66,7 +71,8 @@ def clearTurnActivations (g : Game) : Game :=
           pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed ||
           pl.scriedOrSurveilledThisTurn || pl.copyNextInstantSorceryThisTurn != 0 ||
           pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
-          pl.mountainExtraRedThisTurn != 0 then
+          pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
+          pl.activatedLoyaltyThisTurn then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -86,6 +92,8 @@ def clearTurnActivations (g : Game) : Game :=
           scriedOrSurveilledThisTurn := false
           copyNextInstantSorceryThisTurn := 0
           dealtNoncombatDamageThisTurn := false
+          dealtNoncombatDamageLastTurn := pl.dealtNoncombatDamageThisTurn
+          activatedLoyaltyThisTurn := false
           cardsMilledThisTurn := 0
           mountainExtraRedThisTurn := 0 }
     for o in g.battlefield do
@@ -256,10 +264,21 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     let g := g.putControlledTriggers ap .yourUpkeep
     let g :=
       g.livingPlayers.foldl (fun acc pl => acc.putControlledTriggers pl.id .eachUpkeep) g
+    -- Abilities that trigger from a graveyard (Command the Stage).
+    let g :=
+      g.livingPlayers.foldl (fun g pl =>
+        (g.player pl.id).graveyard.foldl (fun g id =>
+          match g.findObject? id with
+          | some card => g.putMatchingSourceTriggers pl.id card (.fra .eachUpkeepFromGraveyard)
+          | none => g) g) g
     g.receivePriority ap
   | .beginningOfCombat =>
     let ap := g.activePlayer
     let g := g.putControlledTriggers ap .yourBeginCombat
+    let g := (g.player ap).graveyard.foldl (fun g id =>
+      match g.findObject? id with
+      | some card => g.putMatchingSourceTriggers ap card (.fra .yourBeginCombatFromGraveyard)
+      | none => g) g
     g.receivePriority ap
   | .end =>
     let ap := g.activePlayer

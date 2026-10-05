@@ -384,6 +384,14 @@ def jacePlaneswalkerTokens (g : Game) (controller : PlayerId) : Array GameObject
   (g.permanentsOf controller).filter (fun o =>
     o.printed.isPlaneswalker && o.hasSubtype "Jace" && o.printed.isToken)
 
+/-- Queue “whenever you put one or more loyalty counters on a planeswalker”
+for `p` (Inspired Tethermage). Entering with loyalty counters counts
+(CR 122.6). -/
+def queueLoyaltyPutTriggers (g : Game) (p : PlayerId) : Game :=
+  let wts := (g.permanentsOf p).foldl (fun acc o =>
+    acc ++ o.waitingTriggersFor p (.fra .youPutLoyaltyCounters)) #[]
+  { g with waitingTriggers := g.waitingTriggers ++ wts }
+
 /-- Empower Jace `n` (Reality Fracture, ruling 732). If you don't control a
 Jace planeswalker token, create one with 0 loyalty. Then put `n` loyalty
 counters on a Jace planeswalker token you control. You can't create a new
@@ -410,6 +418,7 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
   | some o =>
     let g := g.setObject { o with status :=
       { o.status with loyaltyCounters := o.status.loyaltyCounters + n } }
+    let g := if n > 0 then g.queueLoyaltyPutTriggers controller else g
     g.logMsg s!"Empower Jace {n}: {n} loyalty counter(s) are put on {o.name}"
 
 /-- Printed characteristics for a `TokenKind`. -/
@@ -448,6 +457,13 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .beast44trample => beast44trampleToken
   | .dragon55flying => dragon55flyingToken
   | .forestTentacle => forestTentacleToken
+  | .thopter =>
+    creatureToken "Thopter" #["Thopter"] 1 1 (keywords := Keyword.flying)
+      (types := #[.artifact, .creature])
+  | .angel33blue => creatureToken "Angel" #["Angel"] 3 3 (some .blue) (keywords := Keyword.flying)
+  | .illusion11blue => creatureToken "Illusion" #["Illusion"] 1 1 (some .blue)
+  | .leviathan88hexproof =>
+    creatureToken "Leviathan" #["Leviathan"] 8 8 (some .blue) (keywords := Keyword.hexproof)
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)

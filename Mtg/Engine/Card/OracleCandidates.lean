@@ -1034,7 +1034,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .triggered .opponentsDealtCombatDamageYourTurn (Effect.ofTrigger .drawTwoWinIfEmptyShuffleSource),
   .triggered .forestYouControlEnters (Effect.ofTrigger .pumpIfFiveOtherForests),
   .onStep (Effect.ofTrigger .surveilReturnIfGainedLife),
-]
+] ++ FraCandidates.triggeredAbilities
 
 def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   activated (Effect.sourceGets 1 1) (ManaCost.ofGeneric 2)

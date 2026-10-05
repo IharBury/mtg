@@ -81,6 +81,18 @@ structure Game where
   lastKnownStatus : Array (ObjectId × Status) := #[]
   /-- The spell whose effect is currently resolving (CR 608.2). -/
   resolvingSpell : Option ObjectId := none
+  /-- The activated or triggered ability currently resolving. -/
+  resolvingAbility : Option ObjectId := none
+  /-- Where recently moved objects went (old id, new id), most recent last. -/
+  movedTo : Array (ObjectId × ObjectId) := #[]
+  /-- Creatures that died this turn, tokens included. -/
+  creatureDeathsThisTurn : Nat := 0
+  /-- Work left after the pending scry or surveil finishes (Eye of Jace):
+  its controller, source, and what to do. -/
+  fraAfterLook : Option (PlayerId × Option ObjectId × FraNext) := none
+  /-- Copies a player may still cast without paying their mana costs as an
+  ability resolves, with the mana value left (Uldaros Theorix). -/
+  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat) := none
   /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
   permanent (Proft, Consulting Detective). -/
   mayPayAlsoPlusOneOn : Option ObjectId := none

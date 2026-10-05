@@ -122,6 +122,169 @@ inductive FraResolution where
   /-- Mill `n` cards. You may put a permanent card from among them into your
   hand. You gain `life` life. -/
   | millMayPutPermanentGainLife (n life : Nat)
+  /-- Untap all lands you control. -/
+  | untapAllLandsYouControl
+  /-- Exile the target, then return that card to the battlefield under its
+  owner's control. -/
+  | blink
+  /-- You may remove a +1/+1 counter from the source. If you do, put a +1/+1
+  counter on each other creature you control. -/
+  | mayMovePlusOneToEachOther
+  /-- Empower Jace X, where X is the number of creatures you control. -/
+  | empowerJacePerCreature
+  /-- Tap enchanted creature. It becomes unprepared. -/
+  | tapEnchantedUnprepare
+  /-- The owner of the target puts it on their choice of the top or bottom of
+  their library. -/
+  | ownerPutsOnTopOrBottom
+  /-- Draw two cards, then discard two. Tap up to that many target creatures
+  as nonland cards were discarded and stun them (Seasoned Cryomancer). -/
+  | drawTwoDiscardTwoStun
+  /-- If the source wasn't a token, create a token that's a copy of it. -/
+  | copyTokenOfSourceIfNotToken
+  /-- Return the source card from your graveyard to your hand, or to the
+  battlefield (tapped if `tapped`, with `plusOnes` +1/+1 counters). -/
+  | returnSourceFromGy (toHand : Bool) (tapped : Bool) (plusOnes : Nat)
+  /-- You may pay `{n}`. When you do, for each opponent, destroy up to one
+  target creature or planeswalker that player controls (Lich's Relic). -/
+  | mayPayThenDestroyPerOpponent (n : Nat)
+  /-- This deals X damage to the target, where X is the source's X. -/
+  | damageX
+  /-- Creatures you control gain trample and get +X/+0 until end of turn,
+  where X is the number of artifacts you control. -/
+  | trampleAndPowerPerArtifact
+  /-- Search for a card, put it into your hand, shuffle, then discard a card
+  at random. -/
+  | searchCardThenDiscardRandom
+  /-- The target instant or sorcery card in your graveyard gains flashback
+  until end of turn; the flashback cost is its mana cost. -/
+  | grantFlashbackUntilEot
+  /-- You may discard a card. When you do, this deals `n` damage to any target. -/
+  | mayDiscardThenDamage (n : Nat)
+  /-- You may search for up to that many land cards (the damage dealt) and put
+  them onto the battlefield tapped. -/
+  | maySearchLandsEqualDamage
+  /-- You may search for a basic land card and put it onto the battlefield
+  tapped. -/
+  | maySearchBasicLandTapped
+  /-- Return the card that triggered this (an enchanted creature that died)
+  to the battlefield tapped under its owner's control. -/
+  | returnCauseTapped
+  /-- Sacrifice the source. -/
+  | sacrificeSource
+  /-- The creature that triggered this deals `n` damage to each opponent. -/
+  | causeDealsDamageToEachOpponent (n : Nat)
+  /-- The target opponent reveals their hand; you exile a nonland card from it
+  until the source leaves the battlefield (Null Summoner). -/
+  | exileFromHandUntilLeaves
+  /-- Mill `n` cards. When you do, return target land card from your
+  graveyard to the battlefield tapped. -/
+  | millThenReturnLandTapped (n : Nat)
+  /-- You may sacrifice a land. If you do, create two tapped Heartwood tokens. -/
+  | maySacrificeLandForHeartwoods
+  /-- Exile up to one target nonland card of each card type from your
+  graveyard, copy them, and cast copies with total mana value 6 or less
+  free (Uldaros Theorix). -/
+  | uldarosCopies
+  /-- This deals `n` damage to the target and you gain `n` life. -/
+  | damageThenGainLife (n : Nat)
+  /-- Exile up to one target card from a graveyard. -/
+  | exileCardFromGraveyard
+  /-- Copy the spell that triggered this. You may choose new targets. -/
+  | copyCauseSpell
+  /-- Surveil 1. Then if seven or more cards are in your graveyard, sacrifice
+  the source, deal 2 damage to each opponent, and gain 2 life. -/
+  | eyeOfJace
+  /-- Put a loyalty counter on each planeswalker you control. -/
+  | loyaltyOnEachPlaneswalkerYouControl
+  /-- The creature that triggered this gains `k` until end of turn. -/
+  | causeGains (k : Keywords)
+  /-- Untap the source. -/
+  | untapSource
+  /-- For each opponent, tap up to one target creature that player controls;
+  put a stun counter on each. -/
+  | tapAndStunPerOpponent
+  /-- This deals `n` damage to the controller of the object that triggered it. -/
+  | damageCauseController (n : Nat)
+  /-- Remove up to `n` counters from the target. -/
+  | removeUpToCounters (n : Nat)
+  /-- This deals `n` damage to the target and you gain `n` life. -/
+  | damageTargetGainLife (n : Nat)
+  /-- You may sacrifice a creature or planeswalker. When you do, each opponent
+  sacrifices a creature of their choice. -/
+  | maySacrificeThenEdict
+  /-- The source gets +X/+0 until end of turn, where X is the power of the
+  creature that triggered this. -/
+  | sourceGetsCausePower
+  /-- Discard a card, then draw a card; then put a +1/+1 counter on the
+  attacking creature for each card you've discarded this turn. -/
+  | jiangYangguAlone
+  /-- This deals 1 damage to each opponent. If the land is a Mountain, add {R}. -/
+  | kothGeomancer
+  /-- Search for up to X basic land cards with different names, where X is
+  the value paid for the source's X, reveal them, and put them into your hand. -/
+  | fblthpSearch
+  /-- Untap all tokens you control. -/
+  | untapAllTokensYouControl
+  /-- You may discard a card. If you do, search for an enchantment card and put
+  it into your hand. -/
+  | mayDiscardThenSearchEnchantment
+  /-- You gain `n` life. You may play an additional land this turn. -/
+  | gainLifeAndExtraLand (n : Nat)
+  /-- The first target fights up to one second target. -/
+  | firstFightsSecond
+  /-- For each opponent, put X minus-one counters on up to one target creature
+  that player controls, where X is the greatest mana value among cards in
+  your graveyard. -/
+  | minusOnesPerOpponent
+  /-- Draw a card for each color among other artifacts you control. -/
+  | drawPerColorAmongOtherArtifacts
+  /-- Untap the target attacking creature. It can't be blocked this turn. -/
+  | untapUnblockable
+  /-- The target creature gets minus X power until end of turn, where X is
+  the number of cards in your graveyard. -/
+  | minusPowerPerGraveyard
+  /-- Put a +1/+1 counter on each creature you control. -/
+  | plusOneOnEachCreatureYouControl
+  /-- Put `n` +1/+1 counters on the source. -/
+  | plusOneOnSource (n : Nat)
+  /-- The source fights up to one target creature. -/
+  | sourceFightsTarget
+  /-- Exile the target until the source leaves the battlefield. -/
+  | exileUntilSourceLeaves
+  /-- Destroy each legal target. -/
+  | destroyEachTarget
+  /-- This deals `n` damage to each opponent. -/
+  | damageEachOpponent (n : Nat)
+  /-- This deals `n` damage to any target. -/
+  | damageAny (n : Nat)
+  /-- Return the target card from your graveyard to the battlefield tapped. -/
+  | returnFromGyToBattlefieldTapped
+  /-- Search for a basic land card and put it onto the battlefield tapped. -/
+  | searchBasicLandTapped
+  /-- Search for up to `n` land cards and put them onto the battlefield
+  tapped. -/
+  | searchLandsTapped (n : Nat)
+  /-- Search for an enchantment card, reveal it, and put it into your hand. -/
+  | searchEnchantmentToHand
+  /-- Create `n` tapped Heartwood tokens. -/
+  | tappedHeartwoods (n : Nat)
+  /-- Each opponent sacrifices a creature of their choice. -/
+  | eachOpponentSacrificesCreature
+  /-- Draw a card; then put a +1/+1 counter on the creature that triggered
+  this for each card you've discarded this turn (Jiang Yanggu, Alone). -/
+  | drawThenCountersPerDiscard
+  /-- If seven or more cards are in your graveyard, sacrifice the source, deal
+  2 damage to each opponent, and gain 2 life (Eye of Jace). -/
+  | eyeOfJaceCheck
+  /-- Put a reflexive “deal `n` damage to any target” ability on the stack. -/
+  | reflexiveDamageAnyTarget (n : Nat)
+  /-- Put a reflexive “for each opponent, destroy up to one target creature or
+  planeswalker that player controls” ability on the stack. -/
+  | reflexiveDestroyPerOpponent
+  /-- Put a reflexive “return target land card from your graveyard to the
+  battlefield tapped” ability on the stack. -/
+  | reflexiveReturnLandTapped
   /-- Choose `count` modes of this triggered ability as it is put on the
   stack; the modes are `CardDef.fraTriggerModes`. -/
   | chooseTriggerModes (count : Nat)
@@ -211,6 +374,9 @@ def toPhrase (r : FraResolution) (noun : String) : String :=
   | .millMayPutPermanentGainLife n l =>
     s!"Mill {englishNumber n} cards. You may put a permanent card from among them into your hand. You gain {l} life"
   | .chooseTriggerModes n => if n == 2 then "choose two" else "choose one"
+  | .minusPowerPerGraveyard =>
+    s!"{capitalizeAscii noun} gets -X/-0 until end of turn, where X is the number of cards in your graveyard"
+  | _ => ""
 
 end FraResolution
 

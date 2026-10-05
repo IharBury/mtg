@@ -612,6 +612,7 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .nthPlanCounter n => #[.nthPlanCounter n]
   | .or a b => a.events ++ b.events
   | .fromEffect => #[]
+  | .fra e => #[.fra e]
 
 end SharedTriggerWhen
 

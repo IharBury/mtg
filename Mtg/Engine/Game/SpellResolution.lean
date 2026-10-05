@@ -49,6 +49,24 @@ def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : G
   g.logMsg
     s!"{o.name} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
 
+/-- CR 608.2b: an ability whose targets are all illegal doesn't resolve.
+Applied to Reality Fracture triggered abilities, each target checked against
+its own instance of “target”. -/
+def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObject)
+    (t : TriggeredAbility) (targets : Array Target) : Bool :=
+  let isFra :=
+    obj.abilityEffect.isSome ||
+      match t.effect.resolution with
+      | .fra _ => true
+      | .sequence rs => rs.any (fun r => match r with | .fra _ => true | _ => false)
+      | _ => !t.opts.printed.isEmpty
+  let e := obj.abilityEffect.getD t.effect
+  let kind := e.targetKind
+  isFra && !targets.isEmpty &&
+    (List.range targets.size).all (fun i =>
+      !(g.legalTargetsForAtomicKind controller (kind.slotKind (if kind.spec.slots.isEmpty then 0 else i))
+        obj.sourceId).contains targets[i]!)
+
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
   else
@@ -58,14 +76,35 @@ def resolveTop (g : Game) : Game :=
     | none => g.logMsg "The spell left the stack unexpectedly"
     | some obj =>
       if let some e := obj.abilityEffect then
-        let g := g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
-          obj.lastKnownPower (obj.chosenX.getD 0)
+        let g := { g with resolvingAbility := some obj.id }
+        let g :=
+          match obj.triggeredAbility with
+          | some t =>
+            if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
+              let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
+              g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+            else if g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?) then
+              g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
+                obj.lastKnownPower (obj.chosenX.getD 0)
+            else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
+          | none =>
+            g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
+              obj.lastKnownPower (obj.chosenX.getD 0)
+        let g := { g with resolvingAbility := none }
         -- CR 608.2m: after resolution the ability ceases to exist.
         g.ceaseToExist obj.id
       else if let some t := obj.triggeredAbility then
         let srcName := obj.printed.name.replace "'s ability" ""
-        let g := g.applyTriggeredAbility entry.controller t obj.sourceId
-          entry.targets entry.dividedDamage obj.lastKnownPower obj.lastKnownToughness srcName
+        let g := { g with resolvingAbility := some obj.id }
+        let g :=
+          if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
+            let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
+            g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+          else if g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?) then
+            g.applyTriggeredAbility entry.controller t obj.sourceId
+              entry.targets entry.dividedDamage obj.lastKnownPower obj.lastKnownToughness srcName
+          else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
+        let g := { g with resolvingAbility := none }
         let g := g.ceaseToExist obj.id
         match t.shared with
         | .chapter n _ =>
@@ -140,6 +179,9 @@ def resolveTop (g : Game) : Game :=
           let (g, newId) := g.putOntoBattlefield obj.id entry.controller
             (tapped := sneak || g.entersTapped entry.controller obj.printed)
             (summoningSick := sick)
+          -- The permanent remembers X (CR 107.3m) and whether it was cast.
+          let o := g.object! newId
+          let g := g.setObject { o with chosenX := obj.chosenX, wasCast := !obj.isCopy }
           let o := g.object! newId
           let g :=
             if sneak then

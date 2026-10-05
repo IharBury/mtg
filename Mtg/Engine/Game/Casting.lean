@@ -509,7 +509,22 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
     match g.stackEntry? spell.id with
     | some e => g.beginWardsForTargets p spell.id e.targets
     | none => g
-  g.receivePriority p
+  -- Uldaros Theorix: offer the remaining copies until none can be cast.
+  let g :=
+    match g.pendingFreeCopies with
+    | some (q, ids, budget) =>
+      if q != p || g.pending != .none then g
+      else
+        let alive := ids.filter (fun id => (g.findObject? id).any (·.zone == .exile))
+        let castable := alive.filter (fun id =>
+          (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
+        if castable.isEmpty then
+          let g := alive.foldl (fun g id => g.ceaseToExist id) g
+          { g with pendingFreeCopies := none }
+        else
+          { g with pending := .fraChoice q (.castCopiesFree alive budget) }
+    | none => g
+  if g.pending != .none then g else g.receivePriority p
 
 /-- After targets are announced, reduce the locked-in cost if the spell cares
 about a damaged, tapped, or attacking nontoken target (CR 601.2f). -/

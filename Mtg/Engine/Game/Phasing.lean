@@ -23,6 +23,7 @@ def removeFromCombat (g : Game) (o : GameObject) : Game :=
   let g := g.setObject { o with status := { o.status with
     attacking := false
     attackingWhom := none
+    attackingPlaneswalker := none
     blocking := #[] } }
   g.objects.foldl (fun acc x =>
     if x.status.blocking.any (· == o.id) then

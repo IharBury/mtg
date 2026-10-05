@@ -109,6 +109,16 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         else
           g := { g with pending := .none }
       | _ => pure ()
+      -- CR 704.5q: +1/+1 and -1/-1 counters on one permanent are removed in
+      -- pairs.
+      for o in g.battlefield do
+        let k := Nat.min o.status.plusOnePlusOne o.status.minusOneMinusOne
+        if k > 0 then
+          g := g.setObject { o with status := { o.status with
+            plusOnePlusOne := o.status.plusOnePlusOne - k
+            minusOneMinusOne := o.status.minusOneMinusOne - k } }
+          g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
+          changed := true
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
       -- Snapshot exile-instead replacements first so a simultaneous death
       -- of Head of the Hunt still exiles opposing creatures.

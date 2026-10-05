@@ -26,6 +26,10 @@ structure Status where
   attacking : Bool := false
   /-- Player this creature is attacking (CR 508.1). Set with `attacking`. -/
   attackingWhom : Option PlayerId := none
+  /-- The planeswalker this creature is attacking, if it attacks one rather
+  than a player (CR 506.3). `attackingWhom` is that planeswalker's
+  controller. -/
+  attackingPlaneswalker : Option ObjectId := none
   /-- Attacking creatures this creature is blocking (CR 509.1a / 510.1d). -/
   blocking : Array ObjectId := #[]
   /-- Set when this attacker becomes blocked (CR 509.1h). Remains true even if
@@ -35,6 +39,8 @@ structure Status where
   activationsThisTurn : Nat := 0
   /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
   plusOnePlusOne : Nat := 0
+  /-- Minus-one counters (CR 122.1a). -/
+  minusOneMinusOne : Nat := 0
   /-- Loyalty counters on a planeswalker (CR 122.1 / 306.5). -/
   loyaltyCounters : Nat := 0
   /-- A loyalty ability of this permanent was activated this turn (CR 606.3). -/
@@ -211,7 +217,8 @@ def addDamage (s : Status) (n : Int) (deathtouch := false) : Status :=
 
 /-- True when this permanent has a counter (CR 122.1). -/
 def hasCounters (s : Status) : Bool :=
-  s.plusOnePlusOne > 0 || s.loyaltyCounters > 0 || s.hope > 0 || s.charge > 0 ||
+  s.plusOnePlusOne > 0 || s.minusOneMinusOne > 0 || s.loyaltyCounters > 0 || s.hope > 0 ||
+    s.charge > 0 ||
     s.stun > 0 || s.shield > 0 ||
     s.finality > 0 || s.plan > 0 || s.burden > 0 || s.quest > 0 || s.invasion > 0 ||
     s.influence > 0 || s.trampleCounters > 0 || s.indestructibleCounters > 0 ||
@@ -223,6 +230,7 @@ def proliferatedExceptPlusOne (s : Status) : Status :=
   let inc (n : Nat) : Nat := if n > 0 then n + 1 else n
   { s with
     loyaltyCounters := inc s.loyaltyCounters, hope := inc s.hope, charge := inc s.charge
+    minusOneMinusOne := inc s.minusOneMinusOne
     stun := inc s.stun
     shield := inc s.shield
     finality := inc s.finality, plan := inc s.plan, burden := inc s.burden
@@ -237,6 +245,7 @@ counters, which the caller adds so their triggers apply (Graft Surgeon). -/
 def addCountersExceptPlusOne (s «from» : Status) : Status :=
   { s with
     loyaltyCounters := s.loyaltyCounters + «from».loyaltyCounters
+    minusOneMinusOne := s.minusOneMinusOne + «from».minusOneMinusOne
     hope := s.hope + «from».hope, charge := s.charge + «from».charge
     stun := s.stun + «from».stun
     shield := s.shield + «from».shield, finality := s.finality + «from».finality

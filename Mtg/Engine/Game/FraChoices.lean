@@ -23,19 +23,10 @@ deriving Repr, BEq
 
 /-- Clear the choice and let the game continue. -/
 def finishFraChoice (g : Game) : Game :=
-  let g := { g with pending := .none }.promptTriggerTargetsIfNeeded
-  if g.pending == .none then g.receivePriority g.activePlayer else g
-
-/-- `p` discards `id` from their hand (CR 701.9). -/
-def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option PlayerId := none) :
-    Game :=
-  let card := g.object! id
-  let g :=
-    match chooser with
-    | some c => g.logMsg s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
-    | none => g.logMsg s!"{(g.player p).name} discards {card.name}"
-  let (g, _) := g.move id (.graveyard card.owner) none
-  g.modifyPlayer p (fun pl => { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
+  if g.pending != .none then g
+  else
+    let g := g.promptTriggerTargetsIfNeeded
+    if g.pending == .none then g.receivePriority g.activePlayer else g
 
 /-- Combine the chosen modes of a modal triggered ability into one effect.
 At most one chosen mode targets. -/
@@ -51,10 +42,44 @@ def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Eff
       resolution := .sequence (es.map (·.resolution))
       phrase := String.intercalate ". " (es.map (·.phrase)) }
 
+/-- Cast one of the copies of a pending “cast copies without paying their mana
+costs” choice (Uldaros Theorix). X is 0 (ruling 806). -/
+def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
+  let .fraChoice q (.castCopiesFree ids budget) := g.pending | throw "No copy may be cast now"
+  if p != q then throw s!"Only {(g.player q).name} may cast the copies"
+  if !ids.contains id then throw "That isn't one of the copies"
+  let some card := g.findObject? id | throw "no such object"
+  let face := card.printed
+  let mv := g.objectManaValue card
+  if mv > budget then
+    throw s!"{face.name} has mana value {mv}; only {budget} is left"
+  if face.isLand then throw "A land can't be cast"
+  if !face.isModal && face.requiresTarget && (g.legalCastTargets p face).isEmpty &&
+      !face.allowsZeroTargets then
+    throw s!"{face.name} requires a target"
+  let rest := ids.filter (· != id)
+  let stackBefore := g.stack
+  let pool := (g.player p).manaPool
+  let (g, newId) := g.move id .stack (some p)
+  let g := g.setObject { (g.object! newId) with isCopy := true }
+  let g := g.putStackEntry p newId
+  let g := { g with pending := .none, pendingFreeCopies := some (p, rest, budget - mv) }
+  let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
+  let prop : ProposedSpell := {
+    caster := p, cost := ManaCost.empty, spellId := newId, original := card
+    handBefore := (g.player p).hand, stackBefore, manaBefore := pool }
+  if face.isModal then
+    return { g with pending := .chooseMode p, proposedSpell := some prop }
+  else if face.requiresTarget then
+    return { g with pending := .chooseTargets p, proposedSpell := some prop }
+  else
+    return g.becomeCast p (g.object! newId)
+
 def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
   let .fraChoice q choice := g.pending | throw "Nothing to choose now"
   if p != q then
     throw s!"Only {(g.player q).name} may choose"
+  let g := { g with pending := .none }
   match choice, answer with
   | .discardFromRevealedHand victim permanentOnly, .objects #[id] =>
     if !(g.revealedHandChoices victim permanentOnly).contains id then
@@ -141,6 +166,90 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayPutMilledPermanent _ life, .decline =>
     return (g.gainLife p life).finishFraChoice
   | .mayPutMilledPermanent .., _ => throw "Choose a milled permanent card, or decline"
+  | .mayThen next sourceId, .accept =>
+    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
+  | .mayThen .., .decline => return g.finishFraChoice
+  | .mayThen .., _ => throw "Answer accept or decline"
+  | .mayPayThen n next sourceId, .accept =>
+    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
+      throw s!"{(g.player p).name} cannot pay \{{n}}; add mana first"
+    let g ← g.payCost p (ManaCost.ofGeneric n)
+    let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
+    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
+  | .mayPayThen .., .decline => return g.finishFraChoice
+  | .mayPayThen .., _ => throw "Pay or decline"
+  | .mayDiscardThen next sourceId, .objects #[id] =>
+    if !(g.player p).hand.contains id then throw "That card is not in your hand"
+    let g := g.discardFromHand p id
+    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
+  | .mayDiscardThen .., .decline => return g.finishFraChoice
+  | .mayDiscardThen .., _ => throw "Choose a card to discard, or decline"
+  | .discardThen _ _ causeId, .objects #[id] =>
+    if !(g.player p).hand.contains id then throw "That card is not in your hand"
+    let g := g.discardFromHand p id
+    let g := g.draw p 1
+    let n := (g.player p).cardsDiscardedThisTurn
+    let g :=
+      match causeId.bind (fun c => g.findObject? (g.followMoved c)) with
+      | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
+      | none => g
+    return g.finishFraChoice
+  | .discardThen .., _ => throw "Choose a card to discard"
+  | .discardThenStun n sourceId, .objects ids =>
+    let need := Nat.min n (g.player p).hand.size
+    if ids.size != need || !ids.all ((g.player p).hand.contains ·) ||
+        ids.toList.eraseDups.length != ids.size then
+      throw s!"Choose {need} different cards from your hand"
+    let nonland := (ids.filter (fun id => !(g.object! id).printed.isLand)).size
+    let g := ids.foldl (fun g id => g.discardFromHand p id) g
+    let g := { g with pending := .none }
+    let g :=
+      if nonland == 0 then g
+      else
+        g.putReflexiveTrigger p sourceId
+          { targeting := .of (.filtered TargetFilter.creature), maxTargets := nonland
+            allowsZeroTargets := true, resolution := .fra .tapAndStunPerOpponent
+            phrase := "Tap up to that many target creatures and put a stun counter on each of them" }
+    return g.finishFraChoice
+  | .discardThenStun .., _ => throw "Choose the cards to discard"
+  | .maySacrificeThen kind next sourceId, .objects #[id] =>
+    let some o := g.findObject? id | throw "no such object"
+    let ok :=
+      o.isOnBattlefield && o.controlledBy p &&
+        match kind with
+        | .land => o.printed.isLand
+        | .creatureOrPlaneswalker => o.isCreature || o.printed.isPlaneswalker
+    if !ok then throw s!"Can't sacrifice {o.name}"
+    let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
+    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
+  | .maySacrificeThen .., .decline => return g.finishFraChoice
+  | .maySacrificeThen .., _ => throw "Choose a permanent to sacrifice, or decline"
+  | .mayMovePlusOne sourceId, .accept =>
+    match g.findObject? sourceId with
+    | some o =>
+      if o.isOnBattlefield && o.status.plusOnePlusOne > 0 then
+        let g := (g.setObject { o with status := { o.status with
+          plusOnePlusOne := o.status.plusOnePlusOne - 1 } }).logMsg
+          s!"A +1/+1 counter is removed from {o.name}"
+        let g := (g.creaturesControlledBy p).foldl (fun g c =>
+          if c.id == o.id then g else g.addPlusOnePlusOneTo (g.object! c.id) 1) g
+        return g.finishFraChoice
+      else return g.finishFraChoice
+    | none => return g.finishFraChoice
+  | .mayMovePlusOne _, .decline => return g.finishFraChoice
+  | .mayMovePlusOne _, _ => throw "Answer accept or decline"
+  | .exileFromRevealedHand victim sourceId, .objects #[id] =>
+    if !(g.revealedHandChoices victim false).contains id then throw "Choose a nonland card"
+    let name := (g.object! id).name
+    let (g, ex) := g.move id .exile none
+    let g := g.setObject { (g.object! ex) with exiledBy := sourceId }
+    return (g.logMsg s!"{(g.player p).name} exiles {name} from {(g.player victim).name}'s hand").finishFraChoice
+  | .exileFromRevealedHand .., _ => throw "Choose a nonland card from the revealed hand"
+  | .castCopiesFree ids _, .decline =>
+    let g := ids.foldl (fun g id =>
+      if (g.findObject? id).any (·.zone == .exile) then g.ceaseToExist id else g) g
+    return { g with pendingFreeCopies := none }.finishFraChoice
+  | .castCopiesFree .., _ => throw "Cast a copy, or decline"
   | .triggerModes objId remaining chosen, .mode idx =>
     let some obj := g.findObject? objId | return g.finishFraChoice
     let modes := g.triggerModesOf obj
@@ -178,6 +287,17 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     .choosePermanents (picks.map (·.id))
   | .extrapolatePick _ ids => .choosePermanents (ids.extract 0 1)
   | .mayPutMilledPermanent ids _ => .choosePermanents (ids.extract 0 1)
+  | .mayThen .. => .accept
+  | .mayPayThen n .. =>
+    if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then .accept else .decline
+  | .mayDiscardThen .. => .decline
+  | .discardThen .. => .choosePermanents ((g.player p).hand.extract 0 1)
+  | .discardThenStun n _ => .choosePermanents ((g.player p).hand.extract 0 n)
+  | .maySacrificeThen .. => .decline
+  | .mayMovePlusOne _ => .decline
+  | .exileFromRevealedHand victim _ =>
+    .choosePermanents ((g.revealedHandChoices victim false).extract 0 1)
+  | .castCopiesFree .. => .decline
   | .triggerModes objId _ chosen =>
     match g.findObject? objId with
     | none => .decline

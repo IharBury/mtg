@@ -750,6 +750,8 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with entersWithPlusOneCounters := 1 }
   else if low.startsWith "{t}: choose a color. add one mana of that color for each different power among creatures you control" then
     some { c with tapAddChosenColorPerDifferentPower := true }
+  else if low.startsWith "as long as there are seven or more cards in your graveyard, you may cast the exiled card" then
+    some { c with castExiledWithSevenInGraveyard := true }
   else if low.startsWith "a deck can have any number of cards named" then
     some { c with anyNumberInDeck := true }
   else if low.startsWith "you can't cast this spell unless there are seven or more cards in your graveyard" then
@@ -1028,6 +1030,22 @@ def matchChapter (cardName text : String) : Option Effect :=
       | some e => some e
       | none => firstSpell (·.matchText q)
 
+/-- A mode of a modal triggered ability: a spell or ability effect, else a
+Saga chapter effect. -/
+def matchTriggerMode (cardName text : String) : Option Effect :=
+  let q := EffectQuery.of cardName text
+  let firstSpell (f : EffectProto → Option Effect) : Option Effect :=
+    spellProtos.get.foldl (fun acc p =>
+      match acc with
+      | some _ => acc
+      | none => (p.forCard cardName).bind f) none
+  match firstSpell fun p => if p.sameText q then some p.effect else none with
+  | some e => some e
+  | none =>
+    match firstSpell (·.matchText q) with
+    | some e => some e
+    | none => matchChapter cardName text
+
 /-- A modal “When this enters, choose one —” (or “choose two —”) triggered
 ability: the trigger and its modes. -/
 def parseTriggerModes (cardName line : String) : Option (TriggeredAbility × Array Effect) :=
@@ -1046,7 +1064,7 @@ def parseTriggerModes (cardName line : String) : Option (TriggeredAbility × Arr
     | none => none
     | some n =>
       let modes := (raw.splitOn "•").drop 1 |>.map (·.trimAscii.copy) |>.filter (· != "")
-      let effects := modes.filterMap fun m => matchChapter cardName (stripAbilityWord m)
+      let effects := modes.filterMap fun m => matchTriggerMode cardName (stripAbilityWord m)
       if modes.isEmpty || effects.length != modes.length then none
       else
         let eff : Effect :=

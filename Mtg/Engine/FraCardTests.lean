@@ -521,7 +521,7 @@ trample, or add {C}{C}{C}. -/
 #guard
   let g := addPermanent afterDraw sphinxOfFalseConclusions opp opp
   let g := resolved (castFra g konstrariCharm [.chooseMode 0, tgt g "Sphinx of False Conclusions"])
-  !onBattlefield g "Sphinx of False Conclusions"
+  inGraveyard g opp "Sphinx of False Conclusions"
 #guard
   let g := addPermanent afterDraw grizzlyBears me me
   let g := resolved (castFra g konstrariCharm [.chooseMode 1, tgt g "Grizzly Bears"])

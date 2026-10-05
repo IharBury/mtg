@@ -124,7 +124,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     match original.playPermission.bind (·.prepareSource) with
     | some src =>
       let o := g.object! newId
-      let g := g.setObject { o with isCopy := true }
+      let g := g.setObject { o with isCopy := true, isPreparedSpell := true }
       match g.findObject? src with
       | some perm =>
         (g.setObject { perm with status := { perm.status with prepared := false } }).logMsg

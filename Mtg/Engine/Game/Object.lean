@@ -86,6 +86,23 @@ structure GameObject where
   castFromGraveyard : Bool := false
   /-- This spell was cast from its owner's hand. -/
   castFromHand : Bool := false
+  /-- This permanent entered the battlefield as a spell that was cast
+  (“if you cast it”). -/
+  wasCast : Bool := false
+  /-- This spell is a copy of a prepare spell cast from exile (a “prepared
+  spell”). -/
+  isPreparedSpell : Bool := false
+  /-- For a triggered ability on the stack: the object whose event caused it,
+  that object's controller, and its power as the ability triggered. -/
+  fraCauseId : Option ObjectId := none
+  fraCauseController : Option PlayerId := none
+  fraCausePower : Option Int := none
+  /-- The permanent that exiled this card, for permissions tied to it (Null
+  Summoner). -/
+  exiledBy : Option ObjectId := none
+  /-- The instant or sorcery card in a graveyard has flashback until end of
+  turn, with its mana cost as the flashback cost (Stingcaster Mage). -/
+  flashbackUntilEot : Bool := false
   /-- This spell's kicker cost was paid (CR 702.32). -/
   kicked : Bool := false
   /-- This spell's teamwork cost was paid (CR 702.194). -/
@@ -262,6 +279,8 @@ structure WaitingTrigger where
   /-- Object that caused this trigger, if any (the entering Villain for
   Baron Strucker; MSH 422). -/
   causeId : Option ObjectId := none
+  /-- The causing object as it was when the ability triggered. -/
+  cause : Option GameObject := none
 deriving Repr, Inhabited
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/

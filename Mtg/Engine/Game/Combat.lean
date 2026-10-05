@@ -372,6 +372,7 @@ def clearCombat (g : Game) : Game :=
           status := { o.status with
             attacking := false
             attackingWhom := none
+            attackingPlaneswalker := none
             blocking := #[]
             blocked := false } }
     return g

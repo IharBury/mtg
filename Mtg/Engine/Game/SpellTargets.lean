@@ -243,13 +243,15 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
   | none =>
     match obj.abilityEffect with
     | some e =>
-      if e.allowsZeroTargets then (0, e.targetCount) else (e.targetCount, e.targetCount)
+      let maxN := e.maxTargetCount
+      if e.allowsZeroTargets then (0, maxN) else (e.targetCount, maxN)
     | none =>
       match obj.triggeredAbility with
       | some ab =>
         let n := ab.targeting.targetCount
+        let maxN := Nat.max n ab.effect.maxTargetCount
         -- “Up to one” is min 0, max the printed count (usually 1).
-        if ab.allowsZeroTargets then (0, n) else (n, n)
+        if ab.allowsZeroTargets then (0, maxN) else (n, maxN)
       | none => (1, 1)
 
 /-- True when at least the required targets are announced and another

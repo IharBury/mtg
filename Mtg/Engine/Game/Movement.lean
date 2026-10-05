@@ -135,6 +135,34 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | .graveyard _ => true
       | _ => false
   let dying := g.dyingTriggers old dest
+  let pwDied :=
+    old.zone == .battlefield && old.printed.isPlaneswalker &&
+      match dest with
+      | .graveyard _ => true
+      | _ => false
+  let withCause (wts : Array WaitingTrigger) : Array WaitingTrigger :=
+    wts.map (fun wt => { wt with causeId := some old.id, cause := some old })
+  -- Ferocity of the Hunt: “when enchanted creature dies”, seen by the Aura
+  -- while it is still attached.
+  let fraEnchantedDie :=
+    if died then
+      withCause (g.battlefield.foldl (fun acc a =>
+        if a.attachedTo == some old.id then
+          match a.controller with
+          | some p => acc ++ a.waitingTriggersFor p (.fra .enchantedDies)
+          | none => acc
+        else acc) (#[] : Array WaitingTrigger))
+    else #[]
+  let fraAnotherDies :=
+    if died || pwDied then
+      match old.controller with
+      | some p =>
+        withCause (g.battlefield.foldl (fun acc o =>
+          if o.id != old.id && o.controlledBy p then
+            acc ++ o.waitingTriggersFor p (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
+          else acc) (#[] : Array WaitingTrigger))
+      | none => #[]
+    else #[]
   let leaving :=
     if old.zone == .battlefield then
       match old.controller with
@@ -163,6 +191,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else g
   let g := g.removeFromZoneList id old.zone
   let (g, newId) := g.allocId
+  let g :=
+    let m := g.movedTo.push (id, newId)
+    { g with movedTo := m.extract (m.size - Nat.min m.size 64) m.size }
+  let g := if died then { g with creatureDeathsThisTurn := g.creatureDeathsThisTurn + 1 } else g
   let (g, ts) := g.bumpTime
   let leavingPlay :=
     (old.zone == .battlefield || old.zone == .stack) &&
@@ -281,10 +313,29 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             | none => acc) (#[] : Array WaitingTrigger)
         else (#[] : Array WaitingTrigger)
       | _ => (#[] : Array WaitingTrigger)
+  -- CR 701.9: a card moved from a hand to its owner's graveyard is
+  -- discarded. “Whenever a player discards one or more cards” triggers once
+  -- per batch.
+  let discardTriggers :=
+    match old.zone, dest with
+    | .hand p, .graveyard q =>
+      if p == q then
+        let mine := fresh.waitingTriggersFor p (.fra .youDiscardThis)
+        let anyPlayer := g.battlefield.foldl (fun acc o =>
+          match o.controller with
+          | some c =>
+            if g.waitingTriggers.any (fun w =>
+                w.source.id == o.id && w.event == .fra .playerDiscards) then acc
+            else acc ++ o.waitingTriggersFor c (.fra .playerDiscards)
+          | none => acc) (#[] : Array WaitingTrigger)
+        mine ++ anyPlayer
+      else #[]
+    | _, _ => #[]
   let g := { g with
     waitingTriggers :=
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
-        nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy
+        nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
+        fraEnchantedDie ++ fraAnotherDies ++ discardTriggers
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then

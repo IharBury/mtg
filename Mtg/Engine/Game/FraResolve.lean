@@ -120,7 +120,118 @@ def returnCardToBattlefield (g : Game) (controller : PlayerId) (id : ObjectId)
   let g := g.logMsg s!"{name} returns to the battlefield"
   (g, newId)
 
-def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : FraResolution)
+
+/-- `p` discards `id` from their hand (CR 701.9). -/
+def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option PlayerId := none) :
+    Game :=
+  let card := g.object! id
+  let g :=
+    match chooser with
+    | some c => g.logMsg s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
+    | none => g.logMsg s!"{(g.player p).name} discards {card.name}"
+  let (g, _) := g.move id (.graveyard card.owner) none
+  g.modifyPlayer p (fun pl => { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
+
+/-- `p` discards `id`, chosen at random (CR 701.9). -/
+def discardFromHandRandomly (g : Game) (p : PlayerId) (id : ObjectId) : Game :=
+  (g.logMsg s!"{(g.player p).name} discards a card at random").discardFromHand p id
+
+/-- Remove up to `n` counters from `o` (Mabel, Bitter Recluse). The controller
+of the ability removes counters that help an opponent's permanent (loyalty,
+then +1/+1, then other kinds) or hurt their own (stun, then minus-one counters). -/
+def removeUpToCountersFrom (g : Game) (controller : PlayerId) (o : GameObject) (n : Nat) : Game :=
+  let take (have_ left : Nat) : Nat × Nat := (Nat.min have_ left, left - Nat.min have_ left)
+  let s := o.status
+  let s' :=
+    if o.controlledBy controller then
+      let (a, left) := take s.stun n
+      let (b, _) := take s.minusOneMinusOne left
+      { s with stun := s.stun - a, minusOneMinusOne := s.minusOneMinusOne - b }
+    else
+      let (a, left) := take s.loyaltyCounters n
+      let (b, left) := take s.plusOnePlusOne left
+      let (c, left) := take s.shield left
+      let (d, _) := take s.indestructibleCounters left
+      { s with loyaltyCounters := s.loyaltyCounters - a, plusOnePlusOne := s.plusOnePlusOne - b
+               shield := s.shield - c, indestructibleCounters := s.indestructibleCounters - d }
+  (g.setObject { o with status := s' }).logMsg s!"Counters are removed from {o.name}"
+
+/-- The object a moved object became, following zone changes (CR 400.7). -/
+partial def followMoved (g : Game) (id : ObjectId) : ObjectId :=
+  match g.movedTo.reverse.find? (·.1 == id) with
+  | some (_, next) => if next == id then id else g.followMoved next
+  | none => id
+
+/-- The resolving activated or triggered ability's stack object. -/
+def resolvingAbilityObject? (g : Game) : Option GameObject :=
+  g.resolvingAbility.bind g.findObject?
+
+/-- The object that caused the resolving triggered ability, where it is now. -/
+def fraCause? (g : Game) : Option GameObject :=
+  (g.resolvingAbilityObject?.bind (·.fraCauseId)).bind (fun id => g.findObject? (g.followMoved id))
+
+/-- The controller of the object that caused the resolving triggered ability,
+as it last existed. -/
+def fraCauseController? (g : Game) : Option PlayerId :=
+  g.resolvingAbilityObject?.bind (·.fraCauseController)
+
+/-- A stack object to stand for `sourceId` as an ability's source. -/
+def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : GameObject :=
+  match sourceId.bind g.findObject? with
+  | some o => o
+  | none =>
+    { id := sourceId.getD ⟨0⟩, printed := { name := "The ability", types := #[] }
+      owner := controller, controller := some controller, zone := .battlefield }
+
+/-- Put a reflexive triggered ability (“When you do, …”) on the stack with
+`effect` (CR 603.12). Its targets are chosen now. -/
+def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (effect : Effect) : Game :=
+  let src := g.abilitySourceFor controller sourceId
+  let marker : TriggeredAbility := .triggered .enter effect {}
+  if effect.requiresTarget && !effect.allowsZeroTargets &&
+      (g.legalTargetsForKind controller effect.targetKind sourceId).isEmpty then
+    g.logMsg s!"{src.name}'s reflexive ability has no legal target and is removed (CR 603.3d)"
+  else
+    let (g, obj) := g.putStackAbility src controller (abilityEffect := some effect)
+      (triggeredAbility := some marker)
+    let g := g.setObject { obj with sourceId := sourceId }
+    let g := g.logMsg s!"{src.name}'s reflexive ability is put on the stack"
+    g.promptTriggerTargetsIfNeeded
+
+/-- “For each opponent, up to one target creature or planeswalker that
+player controls”: one optional instance per opponent. -/
+def perOpponentKind (g : Game) (controller : PlayerId) (f : TargetFilter) : EffectTargetKind :=
+  let fs := (g.livingOpponents controller).map (fun pl => { f with controller := .specific pl.id.idx })
+  .multi fs ((List.range fs.size).toArray)
+
+/-- Put `n` +1/+1 counters on each creature `p` controls. -/
+def plusOneOnEachCreatureOf (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
+  (g.creaturesControlledBy p).foldl (fun g o => g.addPlusOnePlusOneTo (g.object! o.id) n) g
+
+/-- Put a loyalty counter on each planeswalker `p` controls. -/
+def loyaltyOnEachPlaneswalkerOf (g : Game) (p : PlayerId) : Game :=
+  let pws := (g.permanentsOf p).filter (·.printed.isPlaneswalker)
+  if pws.isEmpty then g
+  else
+    let g := pws.foldl (fun g o =>
+      (g.mapObjectStatus (g.object! o.id) (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })).logMsg
+        s!"A loyalty counter is put on {o.name}") g
+    g.queueLoyaltyPutTriggers p
+
+/-- Search `p`'s library for up to `n` land cards matching `pred` and put them
+onto the battlefield tapped, then shuffle (first matches in library order). -/
+def searchLandsOntoBattlefieldTapped (g : Game) (p : PlayerId) (n : Nat) (pred : CardDef → Bool) : Game :=
+  let ids := ((g.player p).library.filter (fun id =>
+    (g.findObject? id).any (fun o => o.printed.isLand && pred o.printed))).extract 0 n
+  let g := ids.foldl (fun g id =>
+    let name := (g.object! id).name
+    let (g, newId) := g.putOntoBattlefield id p (tapped := true) (summoningSick := false)
+    let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield tapped"
+    g.afterLandEnters (g.object! newId)) g
+  g.shuffleLibrary p
+
+partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : FraResolution)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
@@ -399,6 +510,435 @@ def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : FraResolu
       g.beginFraChoice controller (.mayPutMilledPermanent choices life)
         s!"{(g.player controller).name} may put a permanent card milled this way into their hand"
   | .chooseTriggerModes _ => g
+  | .untapAllLandsYouControl =>
+    (g.permanentsOf controller).foldl (fun g o =>
+      if o.printed.isLand && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
+      else g) g
+  | .blink =>
+    if targets.isEmpty then g
+    else
+      g.withLegalKindPermanent controller kind targets (fun g o =>
+        g.exileThenReturn o "is exiled and returns to the battlefield") sourceId illegal
+  | .mayMovePlusOneToEachOther =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield && o.status.plusOnePlusOne > 0 then
+        g.beginFraChoice controller (.mayMovePlusOne o.id)
+          s!"{(g.player controller).name} may remove a +1/+1 counter from {o.name}"
+      else g
+    | none => g
+  | .empowerJacePerCreature =>
+    g.empowerJace controller (g.creaturesControlledBy controller).size
+  | .tapEnchantedUnprepare =>
+    match (sourceId.bind g.findObject?).bind (·.attachedTo) |>.bind g.findObject? with
+    | some host =>
+      let g := if host.status.tapped then g else g.becomeTapped host
+      g.unprepare (g.object! host.id)
+    | none => g.logMsg "The Aura isn't attached to a creature"
+  | .ownerPutsOnTopOrBottom =>
+    if targets.isEmpty then g
+    else
+      g.withLegalKindPermanent controller kind targets (fun g o =>
+        g.beginFraChoice o.owner (.topOrBottomDamage o.id 0)
+          s!"{(g.player o.owner).name} puts {o.name} on the top or bottom of their library")
+        sourceId illegal
+  | .drawTwoDiscardTwoStun =>
+    let g := g.draw controller 2
+    let n := Nat.min 2 (g.player controller).hand.size
+    if n == 0 then g
+    else
+      g.beginFraChoice controller (.discardThenStun n sourceId)
+        s!"{(g.player controller).name} discards {n} card(s)"
+  | .copyTokenOfSourceIfNotToken =>
+    match sourceId with
+    | none => g
+    | some id =>
+      match g.findObject? (g.followMoved id) with
+      | some card =>
+        let (g, tok) := g.createToken controller { card.printed with isToken := true }
+        let g := g.logMsg s!"{(g.player controller).name} creates a token copy of {card.name}"
+        g.afterPermanentEnters (g.object! tok.id)
+      | none => g.logMsg "The card can't be found"
+  | .returnSourceFromGy toHand tapped plusOnes =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.zone != .graveyard o.owner then g.logMsg s!"{o.name} is no longer in the graveyard"
+      else if toHand then g.returnToHand o.id o.owner
+      else
+        let (g, newId) := g.returnCardToBattlefield controller o.id plusOnes (tapped := tapped)
+        g.afterPermanentEnters (g.object! newId)
+    | none => g.logMsg "The card is no longer in the graveyard"
+  | .mayPayThenDestroyPerOpponent n =>
+    g.beginFraChoice controller (.mayPayThen n .reflexiveDestroyPerOpponent sourceId)
+      s!"{(g.player controller).name} may pay \{{n}}"
+  | .damageX =>
+    let x := (sourceId.bind g.findObject?).bind (·.chosenX) |>.getD 0
+    g.withLegalKindTarget controller kind targets (fun g t =>
+      match t with
+      | Target.player pid => g.dealDamageToPlayer pid x (source := src?)
+      | Target.permanent id => g.dealDamageFrom srcName (g.object! id) x (source := src?)
+      | Target.card _ => g) sourceId illegal
+  | .trampleAndPowerPerArtifact =>
+    let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
+    (g.creaturesControlledBy controller).foldl (fun g o =>
+      let g := g.pumpPermanent (g.object! o.id) n 0
+      g.grantKeywordsUntilEot (g.object! o.id) Keyword.trample) g
+  | .searchCardThenDiscardRandom =>
+    let g := g.resolveLibrarySearchToHand controller (fun _ => true) "card"
+    let hand := (g.player controller).hand
+    if hand.isEmpty then g
+    else
+      let (rng, r) := g.rng.next
+      let g := { g with rng }
+      g.discardFromHandRandomly controller hand[(r.toNat % hand.size)]!
+  | .grantFlashbackUntilEot =>
+    g.withLegalKindTarget controller kind targets (fun g t =>
+      match t with
+      | Target.card id =>
+        match g.findObject? id with
+        | some o =>
+          (g.setObject { o with flashbackUntilEot := true }).logMsg
+            s!"{o.name} gains flashback until end of turn"
+        | none => g
+      | _ => g) sourceId illegal
+  | .mayDiscardThenDamage n =>
+    if (g.player controller).hand.isEmpty then g
+    else
+      g.beginFraChoice controller (.mayDiscardThen (.reflexiveDamageAnyTarget n) sourceId)
+        s!"{(g.player controller).name} may discard a card"
+  | .maySearchLandsEqualDamage =>
+    let n := (g.resolvingAbilityObject?.bind (·.lastKnownPower)).getD 0 |>.toNat
+    if n == 0 then g
+    else
+      g.beginFraChoice controller (.mayThen (.searchLandsTapped n) sourceId)
+        s!"{(g.player controller).name} may search for up to {n} land cards"
+  | .maySearchBasicLandTapped =>
+    g.beginFraChoice controller (.mayThen .searchBasicLandTapped sourceId)
+      s!"{(g.player controller).name} may search for a basic land card"
+  | .returnCauseTapped =>
+    match g.fraCause? with
+    | some card =>
+      if card.zone == .graveyard card.owner then
+        let (g, newId) := g.putOntoBattlefield card.id card.owner (tapped := true)
+        let g := g.logMsg s!"{card.name} returns to the battlefield tapped"
+        g.afterPermanentEnters (g.object! newId)
+      else g.logMsg s!"{card.name} is no longer in the graveyard"
+    | none => g.logMsg "The card is no longer in the graveyard"
+  | .sacrificeSource =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}"
+      else g
+    | none => g
+  | .causeDealsDamageToEachOpponent n =>
+    let cause := g.fraCause?
+    let name := (cause.map (·.name)).getD "The creature"
+    g.forEachOpponent controller (fun g pid =>
+      (g.dealDamageToPlayer pid n (source := cause)).logMsg s!"{name} deals {n} damage")
+  | .exileFromHandUntilLeaves =>
+    g.withLegalKindPlayer controller kind targets (fun g pid =>
+      let g := g.revealHand pid
+      if (g.revealedHandChoices pid false).isEmpty then
+        g.logMsg s!"{(g.player pid).name} has no nonland card"
+      else
+        g.beginFraChoice controller (.exileFromRevealedHand pid sourceId)
+          s!"{(g.player controller).name} chooses a nonland card to exile") sourceId illegal
+  | .millThenReturnLandTapped n =>
+    let g := g.mill controller n
+    g.applyFra controller effect .reflexiveReturnLandTapped #[] sourceId
+  | .maySacrificeLandForHeartwoods =>
+    if (g.permanentsOf controller).any (·.printed.isLand) then
+      g.beginFraChoice controller (.maySacrificeThen .land (.tappedHeartwoods 2) sourceId)
+        s!"{(g.player controller).name} may sacrifice a land"
+    else g
+  | .uldarosCopies =>
+    -- Exile the still-legal targets (one card per card type, no card twice).
+    -- One card for each card type: each chosen card needs a type no earlier
+    -- card used.
+    let (ids, _) := targets.foldl (fun (acc : Array ObjectId × Array CardType) t =>
+      let (ids, used) := acc
+      match t with
+      | Target.card id =>
+        match g.findObject? id with
+        | some o =>
+          if ids.contains id || o.zone != .graveyard controller || o.printed.isLand then acc
+          else
+            match o.printed.types.find? (fun ty => !used.contains ty) with
+            | some ty => (ids.push id, used.push ty)
+            | none => acc
+        | none => acc
+      | _ => acc) (#[], #[])
+    let (g, copies) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
+      let (g, cs) := acc
+      let card := g.object! id
+      let (g, ex) := g.move id .exile none
+      let g := g.logMsg s!"{card.name} is exiled"
+      let printed := (g.object! ex).printed
+      -- Permanent spells cast this way become tokens.
+      let (g, copy) := g.allocObject { printed with isToken := printed.isPermanentCard }
+        controller .exile (some controller)
+      let g := g.setObject { copy with
+        isCopy := true
+        playPermission := some { player := controller, turnEndsRemaining := 0
+                                 whileExiled := true, withoutManaCost := true, ignoreTiming := true } }
+      (g, cs.push copy.id)) (g, #[])
+    if copies.isEmpty then g
+    else
+      g.beginFraChoice controller (.castCopiesFree copies 6)
+        s!"{(g.player controller).name} may cast copies with total mana value 6 or less"
+  | .damageThenGainLife n =>
+    let g := g.withLegalKindTarget controller kind targets (fun g t =>
+      match t with
+      | Target.player pid => g.dealDamageToPlayer pid n (source := src?)
+      | Target.permanent id => g.dealDamageFrom srcName (g.object! id) n (source := src?)
+      | Target.card _ => g) sourceId illegal
+    g.gainLife controller n
+  | .exileCardFromGraveyard =>
+    if targets.isEmpty then g
+    else
+      g.withLegalKindTarget controller kind targets (fun g t =>
+        match t with
+        | Target.card id =>
+          let name := (g.object! id).name
+          let (g, _) := g.move id .exile none
+          g.logMsg s!"{name} is exiled"
+        | _ => g) sourceId illegal
+  | .copyCauseSpell =>
+    match g.fraCause? with
+    | some spell =>
+      if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
+      else
+        let (g, copy) := g.allocObject spell.printed controller .stack (some controller)
+        let g := g.setObject { copy with
+          chosenX := spell.chosenX, isCopy := true, adventurerCard := spell.adventurerCard }
+        let g := g.putStackEntry controller copy.id
+        let g :=
+          match g.stack.find? (fun e => e.objectId == spell.id),
+              g.stack.findIdx? (fun e => e.objectId == copy.id) with
+          | some orig, some i =>
+            { g with stack := g.stack.set! i { g.stack[i]! with
+                targets := orig.targets, dividedDamage := orig.dividedDamage
+                chosenMode := orig.chosenMode, targetsAnnounced := true } }
+          | _, _ => g
+        g.logMsg s!"A copy of {spell.name} is created"
+    | none => g.logMsg "The spell is no longer on the stack"
+  | .eyeOfJace =>
+    let g := g.beginSurveil controller 1
+    match g.pending with
+    | .surveil .. => { g with fraAfterLook := some (controller, sourceId, .eyeOfJaceCheck) }
+    | _ => g.applyFra controller effect .eyeOfJaceCheck targets sourceId
+  | .eyeOfJaceCheck =>
+    if (g.player controller).graveyard.size < 7 then g
+    else
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if !o.isOnBattlefield then g
+        else
+          let g := g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}"
+          g.drainOpponents controller 2 (some o)
+      | none => g
+  | .loyaltyOnEachPlaneswalkerYouControl => g.loyaltyOnEachPlaneswalkerOf controller
+  | .causeGains k =>
+    match g.fraCause? with
+    | some o => if o.isOnBattlefield then g.grantKeywordsUntilEot o k else g
+    | none => g
+  | .untapSource =>
+    match sourceId.bind g.findObject? with
+    | some o => if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
+    | none => g
+  | .tapAndStunPerOpponent =>
+    targets.foldl (fun g t =>
+      match t with
+      | Target.permanent id =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o then
+            g.applyPermanentAction o .tapAndStun
+          else g.illegalAbilityTarget t
+        | none => g
+      | _ => g) g
+  | .damageCauseController n =>
+    match g.fraCauseController? with
+    | some pid => g.dealDamageToPlayer pid n (source := src?)
+    | none => g
+  | .removeUpToCounters n =>
+    g.withLegalKindPermanent controller kind targets (fun g o =>
+      g.removeUpToCountersFrom controller o n) sourceId illegal
+  | .damageTargetGainLife n =>
+    let g := g.withLegalKindPlayer controller kind targets (fun g pid =>
+      g.dealDamageToPlayer pid n (source := src?)) sourceId illegal
+    g.gainLife controller n
+  | .maySacrificeThenEdict =>
+    if (g.permanentsOf controller).any (fun o => o.isCreature || o.printed.isPlaneswalker) then
+      g.beginFraChoice controller
+        (.maySacrificeThen .creatureOrPlaneswalker .eachOpponentSacrificesCreature sourceId)
+        s!"{(g.player controller).name} may sacrifice a creature or planeswalker"
+    else g
+  | .sourceGetsCausePower =>
+    let x : Int :=
+      match g.fraCause? with
+      | some o => if o.isOnBattlefield then g.power o
+                  else (g.resolvingAbilityObject?.bind (·.fraCausePower)).getD 0
+      | none => (g.resolvingAbilityObject?.bind (·.fraCausePower)).getD 0
+    match sourceId.bind g.findObject? with
+    | some o => if o.isOnBattlefield then g.pumpPermanent o x 0 else g
+    | none => g
+  | .jiangYangguAlone =>
+    if (g.player controller).hand.isEmpty then
+      g.applyFra controller effect .drawThenCountersPerDiscard targets sourceId
+    else
+      g.beginFraChoice controller
+        (.discardThen .drawThenCountersPerDiscard sourceId
+          (g.resolvingAbilityObject?.bind (·.fraCauseId)))
+        s!"{(g.player controller).name} discards a card"
+  | .drawThenCountersPerDiscard =>
+    let g := g.draw controller 1
+    let n := (g.player controller).cardsDiscardedThisTurn
+    match g.fraCause? with
+    | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
+    | none => g
+  | .kothGeomancer =>
+    let g := g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid 1 (source := src?))
+    match g.fraCause? with
+    | some land => if g.hasSubtype land "Mountain" then g.addManaLogged controller #[.colored .red] else g
+    | none => g
+  | .fblthpSearch =>
+    let x := (sourceId.bind g.findObject?).bind (·.chosenX) |>.getD 0
+    let (g, _) := (g.player controller).library.foldl (fun (acc : Game × Array String) id =>
+      let (g, names) := acc
+      if names.size ≥ x then acc
+      else
+        match g.findObject? id with
+        | some o =>
+          if isBasicLandCard o.printed && !names.contains o.name then
+            let g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
+            let (g, _) := g.move id (.hand controller) none
+            (g, names.push o.name)
+          else acc
+        | none => acc) (g, #[])
+    g.shuffleLibrary controller
+  | .untapAllTokensYouControl =>
+    (g.permanentsOf controller).foldl (fun g o =>
+      if o.printed.isToken && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
+      else g) g
+  | .mayDiscardThenSearchEnchantment =>
+    if (g.player controller).hand.isEmpty then g
+    else
+      g.beginFraChoice controller (.mayDiscardThen .searchEnchantmentToHand sourceId)
+        s!"{(g.player controller).name} may discard a card"
+  | .gainLifeAndExtraLand n =>
+    let g := g.gainLife controller n
+    (g.modifyPlayer controller (fun pl =>
+      { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })).logMsg
+      s!"{(g.player controller).name} may play an additional land this turn"
+  | .firstFightsSecond =>
+    match g.legalPermanentAt? controller kind targets 0 sourceId,
+        g.legalPermanentAt? controller kind targets 1 sourceId with
+    | some a, some b => g.fightCreatures a b
+    | _, _ => g
+  | .minusOnesPerOpponent =>
+    let x := (g.player controller).graveyard.foldl (fun acc id =>
+      match g.findObject? id with
+      | some o => Nat.max acc (g.objectManaValue o)
+      | none => acc) 0
+    targets.foldl (fun g t =>
+      match t with
+      | Target.permanent id =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 then
+            (g.mapObjectStatus o (fun s => { s with minusOneMinusOne := s.minusOneMinusOne + x })).logMsg
+              s!"{x} -1/-1 counter(s) are put on {o.name}"
+          else g
+        | none => g
+      | _ => g) g
+  | .drawPerColorAmongOtherArtifacts =>
+    let colors := (g.permanentsOf controller).foldl (fun (acc : ColorSet) o =>
+      if o.printed.isArtifact && some o.id != sourceId then ColorSet.union acc o.printed.colors
+      else acc) ColorSet.empty
+    g.draw controller ((Color.all.filter colors.contains).length)
+  | .untapUnblockable =>
+    g.withLegalKindPermanent controller kind targets (fun g o =>
+      let g := g.applyPermanentAction o .untap
+      g.applyPermanentAction (g.object! o.id) .cantBeBlocked) sourceId illegal
+  | .minusPowerPerGraveyard =>
+    let n : Int := Int.ofNat (g.player controller).graveyard.size
+    g.withLegalKindPermanent controller kind targets (fun g o => g.pumpPermanent o (-n) 0)
+      sourceId illegal
+  | .plusOneOnEachCreatureYouControl => g.plusOneOnEachCreatureOf controller
+  | .plusOneOnSource n =>
+    match sourceId.bind g.findObject? with
+    | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o n else g
+    | none => g
+  | .sourceFightsTarget =>
+    if targets.isEmpty then g
+    else
+      match sourceId.bind g.findObject? with
+      | some src =>
+        g.withLegalKindPermanent controller kind targets (fun g o =>
+          if src.isOnBattlefield then g.fightCreatures (g.object! src.id) o else g) sourceId illegal
+      | none => g
+  | .exileUntilSourceLeaves =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if !src.isOnBattlefield then g.logMsg s!"{src.name} has left the battlefield"
+      else
+        g.withLegalKindPermanent controller kind targets (fun g o =>
+          let (g, ex) := g.move o.id .exile none
+          let src := g.object! src.id
+          let g := g.setObject { src with linkedExile := src.linkedExile.push ex }
+          g.logMsg s!"{o.name} is exiled until {src.name} leaves the battlefield") sourceId illegal
+    | none => g
+  | .destroyEachTarget =>
+    targets.foldl (fun g t =>
+      match t with
+      | Target.permanent id =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield && g.canBeTargetedBy controller o then g.destroyPermanent o
+          else g.illegalAbilityTarget t
+        | none => g
+      | _ => g) g
+  | .damageEachOpponent n =>
+    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?))
+  | .damageAny n =>
+    g.withLegalKindTarget controller kind targets (fun g t =>
+      match t with
+      | Target.player pid => g.dealDamageToPlayer pid n (source := src?)
+      | Target.permanent id => g.dealDamageFrom srcName (g.object! id) n (source := src?)
+      | Target.card _ => g) sourceId illegal
+  | .returnFromGyToBattlefieldTapped =>
+    g.withLegalKindTarget controller kind targets (fun g t =>
+      match t with
+      | Target.card id =>
+        let (g, newId) := g.returnCardToBattlefield controller id 0 (tapped := true)
+        g.afterLandEnters (g.object! newId)
+      | _ => g) sourceId illegal
+  | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
+  | .searchLandsTapped n => g.searchLandsOntoBattlefieldTapped controller n (fun _ => true)
+  | .searchEnchantmentToHand =>
+    g.resolveLibrarySearchToHand controller (·.isEnchantment) "enchantment card"
+  | .tappedHeartwoods n => g.createKindTokens controller .heartwood n (tapped := true)
+  | .eachOpponentSacrificesCreature =>
+    g.beginSacrificeCreatures ((g.livingOpponents controller).map (·.id)) #[]
+  | .reflexiveDamageAnyTarget n =>
+    g.putReflexiveTrigger controller sourceId
+      { targeting := .of .playerOrCreature, resolution := .fra (.damageAny n)
+        phrase := s!"This deals {n} damage to any target" }
+  | .reflexiveDestroyPerOpponent =>
+    g.putReflexiveTrigger controller sourceId
+      { targeting := .of (g.perOpponentKind controller
+          { noun := "up to one target creature or planeswalker that player controls"
+            types := #[.creature, .planeswalker] })
+        allowsZeroTargets := true
+        resolution := .fra .destroyEachTarget
+        phrase := "For each opponent, destroy up to one target creature or planeswalker that player controls" }
+  | .reflexiveReturnLandTapped =>
+    g.putReflexiveTrigger controller sourceId
+      { targeting := .of (.filtered { noun := "target land card from your graveyard"
+                                      zone := .yourGraveyard, types := #[.land] })
+        resolution := .fra .returnFromGyToBattlefieldTapped
+        phrase := "Return target land card from your graveyard to the battlefield tapped" }
 
 end Game
 end Mtg.Engine

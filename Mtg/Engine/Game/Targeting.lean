@@ -106,7 +106,8 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     match f.controller with
     | .any => true
     | .you => who == caster
-    | .opponent => who != caster
+    | .opponent | .eachOpponent => who != caster
+    | .specific idx => who.idx == idx
   let mv := g.objectManaValue o
   typeOk && colorOk && controllerOk &&
     (!f.nonland || !objectHasCardType o .land) &&
@@ -144,7 +145,8 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
       match f.controller with
       | .any => true
       | .you => pl.id == caster
-      | .opponent => pl.id != caster))
+      | .opponent | .eachOpponent => pl.id != caster
+      | .specific idx => pl.id.idx == idx))
 
 /-- Legal targets for an atomic targeting shape (no sequential slots). -/
 def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
@@ -158,8 +160,10 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .anotherCreature =>
     g.legalCreatureTargets caster (fun o => some o.id != sourceId)
   | .playerOrCreature =>
+    -- CR 115.4: “any target” is a creature, player, planeswalker, or battle.
     playerTargets g.livingPlayers ++
-      g.legalCreatureTargets caster (fun _ => true)
+      g.legalPermanentTargets caster (fun o =>
+        o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker || o.printed.isBattle))
   | .elfInYourGraveyard =>
     g.legalGraveyardCardTargets caster (fun o => g.hasSubtype o "Elf")
   | .oppCreature =>

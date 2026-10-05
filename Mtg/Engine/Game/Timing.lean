@@ -101,9 +101,19 @@ def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
        | some t => g.controlsAnySubtype p #[t])
   | none => false
 
+/-- Null Summoner: `p` may cast a card it exiled while seven or more cards are
+in their graveyard. -/
+def mayCastExiledBySource (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.zone == .exile &&
+    match o.exiledBy.bind g.findObject? with
+    | some src =>
+      src.isOnBattlefield && src.controlledBy p && src.printed.castExiledWithSevenInGraveyard &&
+        (g.player p).graveyard.size ≥ 7
+    | none => false
+
 /-- Cards in exile that `p` currently may play. -/
 def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
-  g.objects.filter (fun o => g.mayPlayFromExile p o)
+  g.objects.filter (fun o => g.mayPlayFromExile p o || g.mayCastExiledBySource p o)
 
 /-- Mole Man lets you play land cards from your graveyard (MSH 253 / 254).
 Cycling and other activated abilities of those cards are still illegal. -/
@@ -115,7 +125,7 @@ def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p &&
-    (o.printed.flashback.isSome ||
+    (o.printed.flashback.isSome || o.flashbackUntilEot ||
       (o.printed.isLand && g.controlsPlayLandsFromGraveyard p))
 
 /-- True when `p` controls a permanent that lets them look at the library top. -/
@@ -149,11 +159,11 @@ def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
       (o.printed.isLand && g.controlsPlayLandsFromTop p))
 
 def mayPlay (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  (g.player p).hand.contains o.id || g.mayPlayFromExile p o ||
+  (g.player p).hand.contains o.id || g.mayPlayFromExile p o || g.mayCastExiledBySource p o ||
     g.mayPlayFromGraveyard p o || g.mayPlayFromLibraryTop p o
 
 def playZoneError (g : Game) (p : PlayerId) (o : GameObject) : String :=
-  if o.zone == .exile && !g.mayPlayFromExile p o then
+  if o.zone == .exile && !g.mayPlayFromExile p o && !g.mayCastExiledBySource p o then
     "You may not play that card from exile"
   else if o.zone == .graveyard p && !g.mayPlayFromGraveyard p o then
     "You may not play that card from your graveyard"

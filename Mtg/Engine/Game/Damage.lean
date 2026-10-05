@@ -78,9 +78,15 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
       | some p =>
         let already := g.waitingTriggers.any (fun t =>
           t.source.id == o.id && t.event == .sourceDealtDamage)
+        -- The amount dealt rides on last-known power (Hexhaven Invigorator);
+        -- simultaneous damage adds up.
         let g :=
-          if already then g
-          else g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage
+          if already then
+            { g with waitingTriggers := g.waitingTriggers.map (fun t =>
+                if t.source.id == o.id && t.event == .sourceDealtDamage then
+                  { t with lastKnownPower := some ((t.lastKnownPower.getD 0) + n) }
+                else t) }
+          else g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage (some n)
         let hasEnrage :=
           o.printed.triggeredAbilities.any (fun ab =>
             match ab.shared with
@@ -171,7 +177,19 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else
     let g := if n > 0 then g.modifyPlayer pid (fun pl => { pl with dealtNoncombatDamageThisTurn := true }) else g
-    g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+    let g := g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+    if n > 0 then
+      -- Each other player sees an opponent dealt noncombat damage. “One or
+      -- more opponents” triggers once per batch.
+      g.livingPlayers.foldl (fun g q =>
+        if q.id == pid then g
+        else
+          let g := g.putFraEventTriggers q.id .opponentDealtNoncombatDamage
+          g.foldControlledPermanents q.id none fun g o =>
+            if g.waitingTriggers.any (fun w =>
+                w.source.id == o.id && w.event == .fra .opponentsDealtNoncombatDamage) then g
+            else g.putMatchingSourceTriggers q.id o (.fra .opponentsDealtNoncombatDamage)) g
+    else g
 
 /-- Deal this creature's power as damage to `dest` (one side of a fight). -/
 def dealFightDamage (g : Game) (src dest : GameObject) : Game :=

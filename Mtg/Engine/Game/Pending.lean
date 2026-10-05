@@ -67,6 +67,39 @@ structure WardObligation where
   cost : WardCost
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- What happens after a Reality Fracture choice is made. Each one is also a
+`FraResolution`, run through the same interpreter. -/
+inductive FraNext where
+  | searchBasicLandTapped
+  | searchLandsTapped (n : Nat)
+  | searchEnchantmentToHand
+  | tappedHeartwoods (n : Nat)
+  | eachOpponentSacrificesCreature
+  | drawThenCountersPerDiscard
+  | eyeOfJaceCheck
+  | reflexiveDamageAnyTarget (n : Nat)
+  | reflexiveDestroyPerOpponent
+  | reflexiveReturnLandTapped
+deriving DecidableEq, Repr, Inhabited, BEq
+
+def FraNext.toResolution : FraNext → FraResolution
+  | .searchBasicLandTapped => .searchBasicLandTapped
+  | .searchLandsTapped n => .searchLandsTapped n
+  | .searchEnchantmentToHand => .searchEnchantmentToHand
+  | .tappedHeartwoods n => .tappedHeartwoods n
+  | .eachOpponentSacrificesCreature => .eachOpponentSacrificesCreature
+  | .drawThenCountersPerDiscard => .drawThenCountersPerDiscard
+  | .eyeOfJaceCheck => .eyeOfJaceCheck
+  | .reflexiveDamageAnyTarget n => .reflexiveDamageAnyTarget n
+  | .reflexiveDestroyPerOpponent => .reflexiveDestroyPerOpponent
+  | .reflexiveReturnLandTapped => .reflexiveReturnLandTapped
+
+/-- What a “you may sacrifice …” choice accepts. -/
+inductive FraSacrifice where
+  | land
+  | creatureOrPlaneswalker
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- A choice made while a Reality Fracture effect resolves. The player answers
 with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
 `Action.decline`. -/
@@ -90,6 +123,30 @@ inductive FraChoice where
   /-- You may put one of the milled permanent cards `ids` into your hand;
   then you gain `life` life. -/
   | mayPutMilledPermanent (ids : Array ObjectId) (life : Nat)
+  /-- You may do `next` (accept or decline). -/
+  | mayThen (next : FraNext) (sourceId : Option ObjectId)
+  /-- You may pay `{n}`; if you do, do `next`. -/
+  | mayPayThen (n : Nat) (next : FraNext) (sourceId : Option ObjectId)
+  /-- You may discard a card; if you do, do `next`. -/
+  | mayDiscardThen (next : FraNext) (sourceId : Option ObjectId)
+  /-- Discard a card (required while you have one), then do `next`. -/
+  | discardThen (next : FraNext) (sourceId : Option ObjectId)
+    (causeId : Option ObjectId)
+  /-- Discard `n` cards, then tap and stun up to as many target creatures as
+  nonland cards were discarded (Seasoned Cryomancer). -/
+  | discardThenStun (n : Nat) (sourceId : Option ObjectId)
+  /-- You may sacrifice a permanent of `kind` (land, creature or planeswalker);
+  if you do, do `next`. -/
+  | maySacrificeThen (kind : FraSacrifice) (next : FraNext)
+    (sourceId : Option ObjectId)
+  /-- You may remove a +1/+1 counter from `sourceId` (Guiding Hydra). -/
+  | mayMovePlusOne (sourceId : ObjectId)
+  /-- Choose a nonland card from `victim`'s revealed hand to exile, linked to
+  `sourceId` (Null Summoner). -/
+  | exileFromRevealedHand (victim : PlayerId) (sourceId : Option ObjectId)
+  /-- Cast any number of the copies `ids` with total mana value at most
+  `budget` without paying their mana costs (Uldaros Theorix). -/
+  | castCopiesFree (ids : Array ObjectId) (budget : Nat)
   /-- Choose `remaining` more modes for the triggered ability `objectId`
   from `CardDef.fraTriggerModes` of its source. -/
   | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)

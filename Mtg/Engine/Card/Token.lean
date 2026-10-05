@@ -66,6 +66,14 @@ inductive TokenKind where
   | dragon55flying
   /-- A 3/3 green Forest Tentacle land creature token (FRA). -/
   | forestTentacle
+  /-- A 1/1 colorless Thopter artifact creature token with flying (FRA). -/
+  | thopter
+  /-- A 3/3 blue Angel creature token with flying (FRA). -/
+  | angel33blue
+  /-- A 1/1 blue Illusion creature token (FRA). -/
+  | illusion11blue
+  /-- An 8/8 blue Leviathan creature token with hexproof (FRA). -/
+  | leviathan88hexproof
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -107,6 +115,10 @@ def oracleNoun : TokenKind → String
   | .beast44trample => "4/4 green Beast creature token with trample"
   | .dragon55flying => "5/5 red Dragon creature token with flying"
   | .forestTentacle => "3/3 green Forest Tentacle land creature token"
+  | .thopter => "1/1 colorless Thopter artifact creature token with flying"
+  | .angel33blue => "3/3 blue Angel creature token with flying"
+  | .illusion11blue => "1/1 blue Illusion creature token"
+  | .leviathan88hexproof => "8/8 blue Leviathan creature token with hexproof"
 
 /-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
 def pluralNoun (k : TokenKind) : String :=
