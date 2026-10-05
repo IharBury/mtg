@@ -380,6 +380,19 @@ def putControlledTriggersOncePerBatch (g : Game) (p : PlayerId) (event : Trigger
     if g.waitingTriggers.any (fun w => w.source.id == src.id && w.event == event) then g
     else g.putMatchingSourceTriggers p src event
 
+/-- `p` lost `n` life (from damage, payment, or loss; CR 119.3 / 120.3a):
+trigger “whenever a player loses life”. The player and amount ride on the
+trigger as last-known toughness (seat index) and power (The Master of
+Lake-town). -/
+def afterLifeLost (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  if n == 0 then g
+  else
+    let g := { g with lastLifeLost := some (p, n) }
+    g.livingPlayers.foldl (fun acc pl =>
+      acc.foldControlledPermanents pl.id none fun acc o =>
+        acc.putMatchingSourceTriggers pl.id o .playerLosesLife
+          (lastKnownPower := some (Int.ofNat n)) (lastKnownToughness := some (Int.ofNat p.idx))) g
+
 /-- Put matching triggers of permanents `p` controls that fire on `event`. -/
 def putControlledTriggers (g : Game) (p : PlayerId)
     (event : TriggerEvent) (excludeId : Option ObjectId := none) : Game :=

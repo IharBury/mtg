@@ -747,9 +747,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.dealDamageToPlayer pid n)
   | .millThatManyLost =>
-    match g.lastLifeLost with
-    | some (pid, n) => g.mill pid n
-    | none => g
+    match lastKnownPower, lastKnownToughness with
+    | some n, some idx => g.mill ⟨idx.toNat⟩ n.toNat
+    | _, _ => g
   | .drawPerFatGraveyard =>
     g.drawPerSevenCardGraveyard controller
   | .copySelfNonlegendary =>

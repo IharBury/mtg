@@ -216,6 +216,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   else
     let g := if n > 0 then g.modifyPlayer pid (fun pl => { pl with dealtNoncombatDamageThisTurn := true }) else g
     let g := g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+    let g := g.afterLifeLost pid (pl.life - (g.player pid).life).toNat
     -- CR 702.15b: damage dealt by a source with lifelink.
     let g :=
       match source with
@@ -265,9 +266,8 @@ def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
   else
     let pl := g.player p
     let g := g.setLife p (pl.life - (n : Int)) s!"{pl.name} loses {n} life ({pl.life - (n : Int)} life)"
-    let g := { g with lastLifeLost := some (p, n) }
-    g.livingPlayers.foldl (fun acc pl =>
-      acc.putControlledTriggers pl.id .playerLosesLife) g
+    let lost := (pl.life - (g.player p).life).toNat
+    g.afterLifeLost p lost
 
 /-- Draw `cards`, then lose `life` (Night's Whisper, MSH draw-and-lose). -/
 def drawThenLoseLife (g : Game) (p : PlayerId) (cards life : Nat) : Game :=

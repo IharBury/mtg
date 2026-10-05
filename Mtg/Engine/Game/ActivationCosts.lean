@@ -30,8 +30,9 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat) : Except String Game := do
   let pl := g.player p
   if pl.life < (n : Int) then
     throw s!"{pl.name} cannot pay {n} life"
-  return g.setLife p (pl.life - (n : Int))
+  let g := g.setLife p (pl.life - (n : Int))
     s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
+  return g.afterLifeLost p (pl.life - (g.player p).life).toNat
 
 /-- Default order for paying a cost with permanents: tokens first, then the
 lowest mana value. -/

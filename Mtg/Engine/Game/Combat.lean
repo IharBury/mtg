@@ -341,9 +341,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
           if pid == g.activePlayer &&
               !g.waitingTriggers.any (fun w => w.event == .opponentsDealtCombatDamageYourTurn) then
             g := g.putControlledTriggers pid .opponentsDealtCombatDamageYourTurn
-          g := { g with lastLifeLost := some (defn, asgn.toPlayer.toNat) }
-          g := g.livingPlayers.foldl (fun acc pl =>
-            acc.putControlledTriggers pl.id .playerLosesLife) g
+          g := g.afterLifeLost defn asgn.toPlayer.toNat
         | none => pure ()
     let pendingRegular :=
       g.combatHasFirstStrike && !g.firstStrikeDamageDone

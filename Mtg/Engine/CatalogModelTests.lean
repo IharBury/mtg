@@ -808,6 +808,21 @@ battlefield, though it isn't a creature. -/
   let g := g.destroyPermanent (namedPermanent g "Getaway Barrel")
   g.waitingTriggers.any (·.source.name == "Getaway Barrel")
 
+/-! ## Life loss -/
+
+/- The Master of Lake-town: damage and paying life are losses of life; that
+player mills that many. -/
+#guard
+  let g := addPermanent afterDraw theMasterOfLakeTown me me
+  let lib := (g.player opp).library.size
+  let g := settle (castFra g lightningBolt [.target (.player opp)])
+  (g.player opp).library.size == lib - 3
+#guard
+  let g := addPermanent (addPermanent afterDraw theMasterOfLakeTown me me) mountDoom me me
+  let lib := (g.player me).library.size
+  let g := settle (tapFor g "Mount Doom" (.colored .black))
+  (g.player me).library.size == lib - 1
+
 /-! ## Damage sources -/
 
 /- Hawkeye, Young Avenger adds his power to noncombat damage a source you
