@@ -191,6 +191,7 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | .resource .plusOneOnHeroesCreateWall =>
       cause.any (fun c => some c.id != source.map (·.id) && c.controlledBy controller &&
         g.hasSubtype c "Hero")
+    | .watch .sheHulkRedirectOnce => !g.sheHulkDamageUsedThisTurn
     | _ => true
   powerOk && otherOk && lifeOk && hulklingOk && causeOk && interveningOk &&
     g.fraInterveningHolds controller ab source cause &&

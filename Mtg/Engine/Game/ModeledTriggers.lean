@@ -35,14 +35,13 @@ def lastStackSpell? (g : Game) : Option GameObject :=
 def merfolk11blueToken : CardDef :=
   creatureToken "Merfolk" #["Merfolk"] 1 1 (some .blue)
 
-/-- Copy a keyword counter onto Super-Adaptoid when the other creature has it. -/
+/-- Put one keyword counter on Super-Adaptoid when the other creature has that
+keyword and Super-Adaptoid does not. -/
 def copyKeywordCounter (g : Game) (adaptoid other : GameObject)
-    (has : GameObject → Bool) (kw : Keywords) (name : String) : Game :=
+    (has : GameObject → Bool) (apply : Status → Status) (name : String) : Game :=
   if has other && !has adaptoid then
     let src := g.object! adaptoid.id
-    g.setObject { src with
-        printed := { src.printed with
-          keywords := Keywords.merge src.printed.keywords kw } }
+    g.setObject { src with status := apply src.status }
       |>.logMsg s!"{src.name} gets a {name} counter"
   else g
 
@@ -159,12 +158,13 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     if g.sheHulkDamageUsedThisTurn then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
     else
-      let amt := lastKnownPower.getD 0
-      let g :=
-        g.withLegalKindTarget controller .playerOrCreature targets
-          (fun g tgt => g.dealDamageToTarget tgt amt) sourceId none
-      { g with sheHulkDamageUsedThisTurn := true }
-        |>.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
+      let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
+      match targets.find? (legal.contains ·) with
+      | none => g.logMsg "The target is no longer legal"
+      | some t =>
+        let amt := lastKnownPower.getD 0
+        { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
+          |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
   | (.watch .hawkeyeModes) =>
     g.offerPayForReflexive controller sourceId #[.generic 1] 2 (maxTimes := 3)
   | (.thisAttack .equippedDrain) =>
@@ -187,25 +187,28 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     g.withSourceOnBattlefield sourceId (fun g hulkling =>
       let entered :=
         match targets[0]? with
-        | some (Target.permanent id) => g.findObject? id
+        | some (Target.permanent id) | some (Target.card id) => g.findObject? id
         | _ =>
-          let cands := (g.permanentsOf controller).filter (fun (x : GameObject) =>
-            x.isCreature && x.id != hulkling.id && x.status.enteredThisTurn)
-          if cands.isEmpty then none
-          else some (cands.foldl (fun (acc : GameObject) (x : GameObject) =>
-            if x.timestamp > acc.timestamp then x else acc) cands[0]!)
+          let causeId :=
+            ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+          causeId.bind g.findObject?
       match entered with
       | none => g
       | some other =>
-        let op := if other.isOnBattlefield then g.power other
-          else other.lastKnownPower.getD (g.power other)
-        let ot := if other.isOnBattlefield then g.toughness other
-          else other.lastKnownToughness.getD (g.toughness other)
-        if op > g.power hulkling || ot > g.toughness hulkling then
-          g.addPlusOnePlusOneTo hulkling 1
-        else g) "The source is no longer in play"
+        if other.id == hulkling.id then g
+        else
+          let op := if other.isOnBattlefield then g.power other
+            else other.lastKnownPower.getD (g.power other)
+          let ot := if other.isOnBattlefield then g.toughness other
+            else other.lastKnownToughness.getD (g.toughness other)
+          if op > g.power hulkling || ot > g.toughness hulkling then
+            g.addPlusOnePlusOneTo hulkling 1
+          else g) "The source is no longer in play"
   | (.watch .firstTapUntap) =>
-    match g.lastBecameTapped.bind g.findObject? with
+    let fromCause :=
+      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    let id := fromCause.orElse (fun _ => g.lastBecameTapped)
+    match id.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield && o.status.tapped then
         g.applyPermanentAction o .untap
@@ -538,34 +541,55 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       | some (Target.permanent id) =>
         match g.findObject? id with
         | some other =>
-          if !other.isOnBattlefield || other.id == src.id then g
+          if !other.isOnBattlefield || !other.isCreature || other.id == src.id then
+            g.logMsg "The target is no longer legal"
           else
-            let g := g.copyKeywordCounter src other g.hasHaste Keyword.haste "haste"
+            let g := g.copyKeywordCounter src other g.hasHaste
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with haste := s.keywordCounters.haste + 1 } }) "haste"
             let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasFlying Keyword.flying "flying"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasFirstStrike Keyword.firstStrike
-              "first strike"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasDoubleStrike Keyword.doubleStrike
-              "double strike"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasDeathtouch Keyword.deathtouch
-              "deathtouch"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasIndestructible Keyword.indestructible
-              "indestructible"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasLifelink Keyword.lifelink "lifelink"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasMenace Keyword.menace "menace"
+            let g := g.copyKeywordCounter src other g.hasFlying
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with flying := s.keywordCounters.flying + 1 } }) "flying"
             let src := g.object! src.id
             let g := g.copyKeywordCounter src other
-              (fun o => g.hasKeyword o (·.reach)) Keyword.reach "reach"
+              (fun o => g.hasKeyword o (·.firstStrike))
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with
+                  firstStrike := s.keywordCounters.firstStrike + 1 } }) "first strike"
             let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasTrample Keyword.trample "trample"
+            let g := g.copyKeywordCounter src other g.hasDoubleStrike
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with
+                  doubleStrike := s.keywordCounters.doubleStrike + 1 } }) "double strike"
             let src := g.object! src.id
-            g.copyKeywordCounter src other g.hasVigilance Keyword.vigilance "vigilance"
+            let g := g.copyKeywordCounter src other g.hasDeathtouch
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with
+                  deathtouch := s.keywordCounters.deathtouch + 1 } }) "deathtouch"
+            let src := g.object! src.id
+            let g := g.copyKeywordCounter src other g.hasIndestructible
+              (fun s => { s with
+                indestructibleCounters := s.indestructibleCounters + 1 }) "indestructible"
+            let src := g.object! src.id
+            let g := g.copyKeywordCounter src other g.hasLifelink
+              (fun s => { s with lifelinkCounters := s.lifelinkCounters + 1 }) "lifelink"
+            let src := g.object! src.id
+            let g := g.copyKeywordCounter src other g.hasMenace
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with menace := s.keywordCounters.menace + 1 } }) "menace"
+            let src := g.object! src.id
+            let g := g.copyKeywordCounter src other (fun o => g.hasKeyword o (·.reach))
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with reach := s.keywordCounters.reach + 1 } }) "reach"
+            let src := g.object! src.id
+            let g := g.copyKeywordCounter src other g.hasTrample
+              (fun s => { s with trampleCounters := s.trampleCounters + 1 }) "trample"
+            let src := g.object! src.id
+            g.copyKeywordCounter src other g.hasVigilance
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with
+                  vigilance := s.keywordCounters.vigilance + 1 } }) "vigilance"
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal")
       "The source is no longer in play"

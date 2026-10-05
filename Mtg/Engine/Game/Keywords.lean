@@ -91,7 +91,8 @@ def mayAttackDespiteDefender (g : Game) (o : GameObject) : Bool :=
 /-- Printed haste, until-EOT haste, or a static “haste as long as you control
 another …” ability. -/
 def hasHaste (g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.haste || (g.fraGrantedKeywords o).haste ||
+  o.printedOrUntilEot.haste || o.status.keywordCounters.haste > 0 ||
+  (g.fraGrantedKeywords o).haste ||
   (o.isOnBattlefield &&
     o.staticAbilities.any (fun ab =>
       match ab.hasteIfOtherSubtype? with
@@ -217,10 +218,12 @@ def currentKeywords (g : Game) (o : GameObject) : Keywords :=
   let base :=
     Keywords.merge
       (Keywords.merge
-        (Keywords.merge (Keywords.merge printedKw o.grantedUntilEot)
-          (g.attachedGrantedKeywords o))
-        (g.enduringStoryKeywords o))
-      (g.leftoverGrantedKeywords o)
+        (Keywords.merge
+          (Keywords.merge (Keywords.merge printedKw o.grantedUntilEot)
+            (g.attachedGrantedKeywords o))
+          (g.enduringStoryKeywords o))
+        (g.leftoverGrantedKeywords o))
+      o.status.keywordCounters.toKeywords
   if o.status.shadow > 0 then { base with shadow := true } else base
 
 /-- Whether `o` currently has shadow (printed, granted, or from a counter).
@@ -330,7 +333,7 @@ def hasLifelink (g : Game) (o : GameObject) : Bool :=
 Pairwise `canBlock` stays true; the two-or-more restriction is checked on the
 declaration as a whole (CR 509.1c). -/
 def hasMenace (g : Game) (o : GameObject) : Bool :=
-  hasPrintedOrEot o (·.menace) ||
+  hasPrintedOrEot o (·.menace) || o.status.keywordCounters.menace > 0 ||
   (g.leftoverGrantedKeywords o).menace ||
   (o.isOnBattlefield && o.status.plusOnePlusOne > 0 &&
     match o.controller with
@@ -483,7 +486,8 @@ def sourceDamagePrevented (g : Game) (src : GameObject) : Bool :=
 
 /-- Whether `o` has deathtouch, printed or granted until end of turn (CR 702.2). -/
 def hasDeathtouch (g : Game) (o : GameObject) : Bool :=
-  hasPrintedOrEot o (·.deathtouch) || (g.fraGrantedKeywords o).deathtouch
+  hasPrintedOrEot o (·.deathtouch) || o.status.keywordCounters.deathtouch > 0 ||
+    (g.fraGrantedKeywords o).deathtouch
 
 /-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
 make it lose the keyword. -/

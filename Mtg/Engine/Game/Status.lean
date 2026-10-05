@@ -190,6 +190,9 @@ structure Status where
   invasion : Nat := 0
   /-- Trample counters (Beorn the Fierce). -/
   trampleCounters : Nat := 0
+  /-- Haste, flying, and the other keyword counters Super-Adaptoid copies.
+  Trample, lifelink, and indestructible use their own fields. -/
+  keywordCounters : KeywordCounters := {}
   /-- Until end of turn, combat damage to a player creates a Treasure. -/
   combatDamageCreatesTreasure : Bool := false
   /-- This permanent is an artifact and not a creature (Tom, Bert, and William). -/
@@ -251,7 +254,8 @@ def hasCounters (s : Status) : Bool :=
     s.stun > 0 || s.shield > 0 ||
     s.finality > 0 || s.plan > 0 || s.burden > 0 || s.quest > 0 || s.invasion > 0 ||
     s.influence > 0 || s.trampleCounters > 0 || s.indestructibleCounters > 0 ||
-    s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0
+    s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0 ||
+    s.keywordCounters.any
 
 /-- This permanent with every counter removed. -/
 def withoutCounters (s : Status) : Status :=
@@ -259,7 +263,7 @@ def withoutCounters (s : Status) : Status :=
     plusOnePlusOne := 0, minusOneMinusOne := 0, loyaltyCounters := 0, hope := 0, charge := 0
     stun := 0, shield := 0, finality := 0, plan := 0, burden := 0, quest := 0, invasion := 0
     influence := 0, trampleCounters := 0, indestructibleCounters := 0, lifelinkCounters := 0
-    hone := 0, shadow := 0, lore := 0 }
+    hone := 0, shadow := 0, lore := 0, keywordCounters := {} }
 
 /-- Another counter of each kind already on this permanent (CR 701.34a).
 +1/+1 counters are added by the caller so their triggers apply. -/
@@ -275,7 +279,7 @@ def proliferatedExceptPlusOne (s : Status) : Status :=
     trampleCounters := inc s.trampleCounters
     indestructibleCounters := inc s.indestructibleCounters
     lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
-    lore := inc s.lore }
+    lore := inc s.lore, keywordCounters := s.keywordCounters.incPresent }
 
 /-- Put the same number of each kind of counter `from` has, except +1/+1
 counters, which the caller adds so their triggers apply (Graft Surgeon). -/
@@ -293,7 +297,8 @@ def addCountersExceptPlusOne (s «from» : Status) : Status :=
     indestructibleCounters := s.indestructibleCounters + «from».indestructibleCounters
     lifelinkCounters := s.lifelinkCounters + «from».lifelinkCounters
     hone := s.hone + «from».hone, shadow := s.shadow + «from».shadow
-    lore := s.lore + «from».lore }
+    lore := s.lore + «from».lore
+    keywordCounters := s.keywordCounters.add «from».keywordCounters }
 
 /-- Until-end-of-turn +P/+T (CR 613.4c / 611.2a). -/
 def addPump (s : Status) (p t : Int) : Status :=

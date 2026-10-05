@@ -709,6 +709,15 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !ids.contains id then throw "Choose a creature with a counter"
     return (g.applyHydeMode p none 1 #[Target.permanent id]).finishFraChoice
   | .hydeRemoveCounter _, _ => throw "Choose a creature with a counter"
+  | .sheHulkMayDamage amount target sourceId, .accept =>
+    let g := { g with sheHulkDamageUsedThisTurn := true }
+    let g :=
+      g.withLegalKindTarget p .playerOrCreature #[target]
+        (fun g tgt => g.dealDamageToTarget tgt amount) sourceId none
+    return (g.logMsg "The Sensational She-Hulk deals damage (only once each turn)").finishFraChoice
+  | .sheHulkMayDamage .., .decline =>
+    return (g.logMsg s!"{(g.player p).name} declines to have The Sensational She-Hulk deal damage").finishFraChoice
+  | .sheHulkMayDamage .., _ => throw "Have She-Hulk deal damage (accept), or decline"
   | .palantirMayDraw controller _, .accept =>
     return (g.draw controller 1).finishFraChoice
   | .palantirMayDraw controller sourceId, .decline =>
@@ -880,6 +889,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayCastUpToFromExile _ _ => .decline
   | .hydeMode _ => .chooseMode 0
   | .hydeRemoveCounter ids => .choosePermanents (ids.extract 0 1)
+  | .sheHulkMayDamage .. => .decline
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>

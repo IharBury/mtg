@@ -113,6 +113,12 @@ def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTri
 partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (controller : Option PlayerId := none) : Game × ObjectId :=
   let old := g.object! id
+  -- Power and toughness as this permanent last existed on the battlefield
+  -- (CR 113.7a). Captured before attachments and the zone list change.
+  let lkiPower :=
+    if old.zone == .battlefield then some (g.snapshotPower old) else none
+  let lkiToughness :=
+    if old.zone == .battlefield then some (g.snapshotToughness old) else none
   let wouldGoToGy :=
     match dest with
     | .graveyard _ => true
@@ -266,6 +272,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     zone := dest
     status := {}
     timestamp := ts
+    lastKnownPower := lkiPower
+    lastKnownToughness := lkiToughness
   }
   let g : Game :=
     { g with objects := g.objects.filter (fun (o : GameObject) => o.id != id) |>.push fresh }

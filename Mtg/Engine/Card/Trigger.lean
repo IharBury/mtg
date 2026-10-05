@@ -1006,7 +1006,12 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .thisAttack .ifArtifactEnteredDraw =>
     { events := #[.attacking], resolution := .thisAttack .ifArtifactEnteredDraw }
   | .thisAttack .blinkNontoken =>
-    { events := #[.attacking], resolution := .thisAttack .blinkNontoken }
+    { events := #[.attacking]
+      targeting := .of (.filtered {
+        noun := "up to one target nontoken artifact or creature"
+        types := #[.artifact, .creature], nontoken := true })
+      allowsZeroTargets := true, maxTargets := 1
+      resolution := .thisAttack .blinkNontoken }
   | .thisAttack .equippedDrain =>
     { events := #[.attacking], resolution := .thisAttack .equippedDrain }
   | .thisAttack .drawIfPower4 =>
@@ -1014,7 +1019,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .thisAttack .attacksAlonePlus2Indestructible =>
     { events := #[.attacking], resolution := .thisAttack .attacksAlonePlus2Indestructible }
   | .enterOrAttack .copyKeywords =>
-    { events := #[.entering, .attacking], targeting := .of .creature,
+    { events := #[.entering, .attacking], targeting := .of .anotherCreature,
       resolution := .enterOrAttack .copyKeywords }
   | .enterOrAttack .createSquirrel =>
     { events := #[.entering, .attacking], resolution := .enterOrAttack .createSquirrel }
@@ -1029,7 +1034,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.creatureYouControlTapped], resolution := .watch .firstTapUntap }
   | .watch .sheHulkRedirectOnce =>
     { events := #[.creatureYouControlDealtDamage], targeting := .of .playerOrCreature,
-      onceEachTurn := true, resolution := .watch .sheHulkRedirectOnce }
+      resolution := .watch .sheHulkRedirectOnce }
   | .watch .speedballTargeted =>
     { events := #[.spellTargetsSource], resolution := .watch .speedballTargeted }
   | .watch .anyPlayerSecondDraw =>
@@ -1144,7 +1149,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
 
 end SharedTrigger
 
-#guard (SharedTrigger.timing (.watch .sheHulkRedirectOnce)).onceEachTurn
+#guard !(SharedTrigger.timing (.watch .sheHulkRedirectOnce)).onceEachTurn
+#guard (SharedTrigger.timing (.watch .sheHulkRedirectOnce)).targeting.kind ==
+  .playerOrCreature
+#guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).allowsZeroTargets &&
+  (SharedTrigger.timing (.thisAttack .blinkNontoken)).maxTargets == 1
+#guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.kind ==
+  .anotherCreature
 #guard (SharedTrigger.timing (.watch .villainConniveOnce)).optionalOnceEachTurn
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).events ==
   #[TriggerEvent.entering, TriggerEvent.attacking]

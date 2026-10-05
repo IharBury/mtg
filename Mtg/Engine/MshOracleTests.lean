@@ -2000,6 +2000,8 @@ def sheHulkDamageOnceOk : Bool :=
   let she := namedPermanent g "The Sensational She-Hulk"
   let bears := namedPermanent g "Grizzly Bears"
   let giant := namedPermanent g "Hill Giant"
+  let g := g.mapObjectStatus giant (fun s => { s with indestructibleCounters := 1 })
+  let giant := namedPermanent g "Hill Giant"
   let g := g.markDamageOn bears 3 "Bears are dealt 3 damage"
   g.waitingTriggers.any (fun t =>
     t.source.name == "The Sensational She-Hulk") &&
@@ -2007,14 +2009,18 @@ def sheHulkDamageOnceOk : Bool :=
      let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
        (some she.id) #[Target.permanent giant.id]
        "The Sensational She-Hulk" (some 3)
-     let giant := namedPermanent g "Hill Giant"
-     giant.status.damage == 3 &&
-       g.sheHulkDamageUsedThisTurn &&
-       (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
-          (some she.id) #[Target.permanent giant.id]
-          "The Sensational She-Hulk" (some 5)
-        (namedPermanent g "Hill Giant").status.damage == 3 &&
-          logContains g "no effect")) &&
+     match g.pending with
+     | .fraChoice _ (.sheHulkMayDamage ..) =>
+       let g := mustApply g ⟨0⟩ .accept
+       let giant := namedPermanent g "Hill Giant"
+       giant.status.damage == 3 &&
+         g.sheHulkDamageUsedThisTurn &&
+         (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
+            (some she.id) #[Target.permanent giant.id]
+            "The Sensational She-Hulk" (some 5)
+          (namedPermanent g "Hill Giant").status.damage == 3 &&
+            logContains g "no effect")
+     | _ => false) &&
     (mshRuling 448).comment.contains "won't trigger again that turn" &&
     (mshRuling 495).comment.contains "may still have her deal damage" &&
     (mshRuling 512).comment.contains "total amount of damage"
@@ -2327,5 +2333,203 @@ def hawkeyeReflexivePayOk : Bool :=
     (mshRuling 478).comment.contains "reflexive"
 
 #guard hawkeyeReflexivePayOk
+
+/-- She-Hulk's damage is a choice. Declining leaves the ability able to
+trigger again; accepting spends the once-each-turn action. -/
+def sheHulkMayDeclineOk : Bool :=
+  let g := addPermanent afterDraw theSensationalSheHulk ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let she := namedPermanent g "The Sensational She-Hulk"
+  let bears := namedPermanent g "Grizzly Bears"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.markDamageOn bears 1 "Bears are dealt 1 damage"
+  let queued := (g.waitingTriggers.filter (fun t =>
+    t.source.name == "The Sensational She-Hulk")).size
+  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
+    (some she.id) #[Target.permanent giant.id]
+    "The Sensational She-Hulk" (some 1)
+  match g.pending with
+  | .fraChoice _ (.sheHulkMayDamage ..) =>
+    let declined := mustApply g ⟨0⟩ .decline
+    let n := (declined.waitingTriggers.filter (fun t =>
+      t.source.name == "The Sensational She-Hulk")).size
+    let again := declined.markDamageOn (namedPermanent declined "Grizzly Bears") 1
+      "Bears are dealt 1 damage"
+    (namedPermanent declined "Hill Giant").status.damage == 0 &&
+      !declined.sheHulkDamageUsedThisTurn &&
+      queued == 1 &&
+      (again.waitingTriggers.filter (fun t =>
+        t.source.name == "The Sensational She-Hulk")).size == n + 1 &&
+      (let accepted := mustApply g ⟨0⟩ .accept
+       let nAcc := (accepted.waitingTriggers.filter (fun t =>
+         t.source.name == "The Sensational She-Hulk")).size
+       let later := accepted.markDamageOn (namedPermanent accepted "Grizzly Bears") 1
+         "Bears are dealt 1 damage"
+       accepted.sheHulkDamageUsedThisTurn &&
+         (namedPermanent accepted "Hill Giant").status.damage == 1 &&
+         (later.waitingTriggers.filter (fun t =>
+           t.source.name == "The Sensational She-Hulk")).size == nAcc)
+  | _ => false
+
+#guard sheHulkMayDeclineOk
+
+/-- Mighty Thor exiles up to one nontoken artifact or creature and returns it
+tapped under its owner's control. -/
+def mightyThorBlinkOk : Bool :=
+  let g := addPermanent afterDraw theMightyThorJaneFoster ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mountain ⟨0⟩ ⟨0⟩
+  let thor := namedPermanent g "The Mighty Thor, Jane Foster"
+  let bears := namedPermanent g "Grizzly Bears"
+  let stone := namedPermanent g "The Mind Stone"
+  let land := namedPermanent g "Mountain"
+  let gTok := g.setObject { bears with printed := { bears.printed with isToken := true } }
+  let tok := namedPermanent gTok "Grizzly Bears"
+  let kind := (SharedTrigger.timing (.thisAttack .blinkNontoken)).targeting.kind
+  let legal := g.legalTargetsForKind ⟨0⟩ kind (some thor.id)
+  legal.contains (Target.permanent bears.id) &&
+    legal.contains (Target.permanent stone.id) &&
+    legal.contains (Target.permanent thor.id) &&
+    !legal.contains (Target.permanent land.id) &&
+    !(gTok.legalTargetsForKind ⟨0⟩ kind (some thor.id)).contains (Target.permanent tok.id) &&
+    (let g0 := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
+        (some thor.id) #[]
+     (namedPermanent g0 "Grizzly Bears").id == bears.id &&
+       !(namedPermanent g0 "Grizzly Bears").status.tapped) &&
+    (let gBad := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
+        (some thor.id) #[Target.permanent land.id]
+     logContains gBad "no longer legal" &&
+       (namedPermanent gBad "Mountain").id == land.id) &&
+    (let gBlink := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
+        (some thor.id) #[Target.permanent bears.id]
+     let returned := namedPermanent gBlink "Grizzly Bears"
+     returned.id != bears.id && returned.status.tapped &&
+       returned.controller == some ⟨1⟩ && returned.owner == ⟨1⟩ &&
+       returned.isOnBattlefield) &&
+    (let gArt := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
+        (some thor.id) #[Target.permanent stone.id]
+     let returned := namedPermanent gArt "The Mind Stone"
+     returned.status.tapped && returned.owner == ⟨0⟩ && returned.isOnBattlefield)
+
+#guard mightyThorBlinkOk
+
+/-- Super-Adaptoid targets another creature and gains the keywords it lacks
+as counters, not as printed abilities. -/
+def superAdaptoidKeywordCountersOk : Bool :=
+  let g := addPermanent afterDraw superAdaptoid ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let adaptoid := namedPermanent g "Super-Adaptoid"
+  let bears := namedPermanent g "Grizzly Bears"
+  let kw := Keywords.mergeAll #[Keyword.haste, Keyword.flying, Keyword.firstStrike,
+    Keyword.doubleStrike, Keyword.deathtouch, Keyword.menace, Keyword.reach,
+    Keyword.vigilance, Keyword.indestructible, Keyword.lifelink, Keyword.trample]
+  let g := g.mapObjectStatus bears (fun s => { s with untilEotKeywords := kw })
+  let bears := namedPermanent g "Grizzly Bears"
+  let kind := (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.kind
+  let legal := g.legalTargetsForKind ⟨0⟩ kind (some adaptoid.id)
+  kind == .anotherCreature &&
+    legal.contains (Target.permanent bears.id) &&
+    !legal.contains (Target.permanent adaptoid.id) &&
+    (let gSelf := g.applyModeledTrigger ⟨0⟩ (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
+        (some adaptoid.id) #[Target.permanent adaptoid.id]
+     (namedPermanent gSelf "Super-Adaptoid").status.keywordCounters.haste == 0 &&
+       logContains gSelf "no longer legal") &&
+    (let gCopy := g.applyModeledTrigger ⟨0⟩ (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
+        (some adaptoid.id) #[Target.permanent bears.id]
+     let o := namedPermanent gCopy "Super-Adaptoid"
+     o.status.keywordCounters.haste == 1 &&
+       o.status.keywordCounters.flying == 1 &&
+       o.status.keywordCounters.firstStrike == 1 &&
+       o.status.keywordCounters.doubleStrike == 1 &&
+       o.status.keywordCounters.deathtouch == 1 &&
+       o.status.keywordCounters.menace == 1 &&
+       o.status.keywordCounters.reach == 1 &&
+       o.status.keywordCounters.vigilance == 1 &&
+       o.status.trampleCounters == 1 &&
+       o.status.lifelinkCounters == 1 &&
+       o.status.indestructibleCounters == 1 &&
+       !o.printed.keywords.haste &&
+       gCopy.hasHaste o && gCopy.hasFlying o && gCopy.hasTrample o &&
+       gCopy.hasLifelink o && gCopy.hasIndestructible o &&
+       (let gAgain := gCopy.applyModeledTrigger ⟨0⟩
+          (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
+          (some o.id) #[Target.permanent bears.id]
+        (namedPermanent gAgain "Super-Adaptoid").status.keywordCounters.haste == 1))
+
+#guard superAdaptoidKeywordCountersOk
+
+/-- Hulkling compares the creature that caused the trigger. A newer creature
+that also entered is not substituted, and a creature that left uses its
+last power and toughness on the battlefield. -/
+def hulklingComparesCauseOk : Bool :=
+  let g := mshEnter afterDraw hulklingBurgeoningBruiser
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
+  let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
+  let giant := namedPermanent g "Hill Giant"
+  let bot := namedPermanent g "Aerial Doombot"
+  let noCause := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+    (some hulkling.id) #[]
+  (namedPermanent noCause "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0 &&
+    (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
+     let g := g.setObject { ab with fraCauseId := some bot.id }
+     let g := { g with resolvingAbility := some ab.id }
+     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+       (some hulkling.id) #[]
+     (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0) &&
+    (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
+     let g := g.setObject { ab with fraCauseId := some giant.id }
+     let g := { g with resolvingAbility := some ab.id }
+     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+       (some hulkling.id) #[]
+     (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
+    (let giantId := giant.id
+     let g := g.mapObjectStatus giant (fun s => { s with pump := (-2, -2) })
+     let (g, _) := g.move giantId (.graveyard ⟨0⟩) none
+     let gy := g.object! (g.followMoved giantId)
+     gy.lastKnownPower == some 1 && gy.lastKnownToughness == some 1 &&
+       (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
+        let g := g.setObject { ab with fraCauseId := some giantId }
+        let g := { g with resolvingAbility := some ab.id }
+        let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+          (some hulkling.id) #[]
+        (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0))
+
+#guard hulklingComparesCauseOk
+
+/-- Captain America untaps the creature that became tapped, not whichever
+creature tapped most recently. A later tap of a creature that already
+became tapped this turn does not trigger. -/
+def capUntapsTriggeringCreatureOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let early := namedPermanent g "Grizzly Bears"
+  let g := g.applyPermanentAction early .tap
+  let g := g.applyPermanentAction (namedPermanent g "Grizzly Bears") .untap
+  let g := addPermanent g captainAmericaLivingLegend ⟨0⟩ ⟨0⟩
+  let before := (g.waitingTriggers.filter (fun t =>
+    t.source.name == "Captain America, Living Legend")).size
+  let g := g.applyPermanentAction (namedPermanent g "Grizzly Bears") .tap
+  let afterEarly := (g.waitingTriggers.filter (fun t =>
+    t.source.name == "Captain America, Living Legend")).size
+  let g := g.applyPermanentAction (namedPermanent g "Grizzly Bears") .untap
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.applyPermanentAction bears .tap
+  let g := g.applyPermanentAction giant .tap
+  let cap := namedPermanent g "Captain America, Living Legend"
+  let (g, ab) := g.allocStackAbility cap ⟨0⟩
+  let g := g.setObject { ab with fraCauseId := some bears.id }
+  let g := { g with resolvingAbility := some ab.id }
+  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
+    (some cap.id) #[]
+  before == afterEarly &&
+    !(namedPermanent g "Grizzly Bears").status.tapped &&
+    (namedPermanent g "Hill Giant").status.tapped &&
+    g.lastBecameTapped == some giant.id
+
+#guard capUntapsTriggeringCreatureOk
 
 end Mtg.Engine.MshRulingTests

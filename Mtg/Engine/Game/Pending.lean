@@ -410,6 +410,9 @@ inductive FraChoice where
   | hydeMode (sourceId : ObjectId)
   /-- Remove one counter from one of these creatures, then draw (Mister Hyde). -/
   | hydeRemoveCounter (ids : Array ObjectId)
+  /-- You may have The Sensational She-Hulk deal `amount` damage to `target`.
+  Accepting is the once-each-turn action (MSH 448). -/
+  | sheHulkMayDamage (amount : Int) (target : Target) (sourceId : Option ObjectId)
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)

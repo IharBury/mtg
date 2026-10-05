@@ -829,6 +829,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           s!"may cast up to {left} of {eligible.size} exiled cards without paying their mana costs: choose <id>, or decline"
         | .hydeMode _ => "choose one: 0 +1/+1 counter, 1 remove a counter and draw"
         | .hydeRemoveCounter _ => "remove a counter from a creature you control: choose <id>"
+        | .sheHulkMayDamage amount _ _ =>
+          s!"may have The Sensational She-Hulk deal {amount} damage (accept), or decline"
         | .mayCastFromGraveyard eligible =>
           s!"may cast an artifact, instant, or sorcery from your graveyard ({eligible.size} card(s)): cast <id>, or decline"
         | .maySearchLibrary _ _ _ _ kind =>
