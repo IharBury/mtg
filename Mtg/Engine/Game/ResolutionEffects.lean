@@ -85,6 +85,9 @@ def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) 
       let what := if face.isAura then "a target to enchant" else "a target"
       { g with pending := .chooseTargets p }
         |>.logMsg s!"{(g.player p).name} must choose {what} (CR 601.2c)"
+  else if prop.cost.includesManaPayment || prop.needsSacrificeOther || prop.needsDiscardCard then
+    { g with pending := .activateManaAbilities p }
+      |>.logMsg s!"{(g.player p).name} may activate mana abilities (CR 601.2g)"
   else
     let g := { g with proposedSpell := none }
     g.becomeCast p (g.object! prop.spellId)
@@ -93,7 +96,8 @@ def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) 
 ignored. The permission does not last after this ability finishes.
 An Aura still announces a target to enchant (CR 601.2c / 303.4). -/
 def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
-    (ignoreTiming := true) (withoutManaCost := true) : Game :=
+    (ignoreTiming := true) (withoutManaCost := true)
+    (exileInstantSorceryInstead := false) : Game :=
   match g.findObject? id with
   | none => g.logMsg "There is no card to cast"
   | some o =>
@@ -111,7 +115,11 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let handBefore := pl.hand
       let stackBefore := g.stack
       let manaBefore := pl.manaPool
+      let fromGy := original.zone == .graveyard original.owner
       let (g, newId) := g.move id .stack (some p)
+      let g := g.setObject { (g.object! newId) with
+        castFromGraveyard := fromGy
+        exileInstantSorceryInstead := exileInstantSorceryInstead && fromGy }
       let g := g.putStackEntry p newId
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let cost :=

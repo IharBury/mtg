@@ -535,14 +535,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | _ => g
     if g.countSubtype controller "Bear" >= 3 then g.draw controller 2 else g
   | .castFromGyArtifactInstantSorcery =>
-    match (g.player controller).graveyard.findSome? (fun id =>
-      match g.findObject? id with
-      | some o =>
-        if o.printed.isArtifact || o.printed.isInstantOrSorcery then some id
-        else none
-      | none => none) with
-    | none => g.logMsg s!"{(g.player controller).name} has no artifact, instant, or sorcery in the graveyard"
-    | some id => g.castAsPartOfResolution controller id
+    let eligible := (g.player controller).graveyard.filter (fun id =>
+      (g.findObject? id).any (fun o => o.printed.isArtifact || o.printed.isInstantOrSorcery))
+    if eligible.isEmpty then
+      g.logMsg s!"{(g.player controller).name} has no artifact, instant, or sorcery in the graveyard"
+    else
+      { g with pending := .fraChoice controller (.mayCastFromGraveyard eligible) }.logMsg
+        s!"{(g.player controller).name} may cast an artifact, instant, or sorcery spell from their graveyard"
   | .millThenSubtypeToHand n subtype =>
     let before := (g.player controller).graveyard
     let g := g.mill controller n

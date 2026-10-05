@@ -133,7 +133,15 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let flashbackExile :=
     old.zone == .stack && old.castFromGraveyard && old.printed.flashback.isSome &&
       !old.isCopy && dest != .exile
-  let exileInstead := headExile || smiteExile || finalityExile || flashbackExile
+  -- Bilbo, Thief in the Night: an instant or sorcery cast this way is exiled
+  -- instead of going to its owner's graveyard.
+  let bilboExile :=
+    old.zone == .stack && old.exileInstantSorceryInstead &&
+      old.printed.isInstantOrSorcery && !old.isCopy &&
+      match dest with
+      | .graveyard owner => owner == old.owner
+      | _ => false
+  let exileInstead := headExile || smiteExile || finalityExile || flashbackExile || bilboExile
   -- CR 614.6: the original move-to-graveyard event never happens.
   let dest := if exileInstead then Zone.exile else dest
   let g :=

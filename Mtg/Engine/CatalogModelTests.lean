@@ -952,6 +952,46 @@ def fireTrigger (g : Game) (name : String) (idx : Nat := 0) : Game :=
   let g := passBoth (mustApply g me (.chooseMode 1))
   counters g "Bejeweled Warg" == 0 && treasures g me == 1
 
+/- Bilbo, Thief in the Night may cast an artifact, instant, or sorcery from
+the graveyard, paying its cost. Instants and sorceries are exiled instead
+of going to the graveyard. Creatures are not offered. -/
+#guard
+  let g := addPermanent afterDraw bilboThiefInTheNight me me
+  let g := addToGraveyard g shock me
+  let g := passBoth (fireTrigger g "Bilbo, Thief in the Night")
+  let g := mustApply g me .decline
+  inGraveyard g me "Shock" && g.stack.isEmpty
+#guard
+  let g := addPermanent afterDraw bilboThiefInTheNight me me
+  let g := addToGraveyard (addToGraveyard g shock me) grizzlyBears me
+  let g := withMana g me .red 1
+  let g := passBoth (fireTrigger g "Bilbo, Thief in the Night")
+  let shockId := (graveyardObj g me "Shock").id
+  let offered :=
+    match g.pending with
+    | .fraChoice _ (.mayCastFromGraveyard ids) =>
+      ids.contains shockId && !ids.any (fun id => (g.object! id).name == "Grizzly Bears")
+    | _ => false
+  let g := mustApply g me (.cast shockId)
+  let g := mustApply g me (.target (.player opp))
+  let g := passBoth (mustApply g me .pay)
+  offered && inExile g "Shock" && !inGraveyard g me "Shock" && life g opp == 18
+#guard
+  let before := handSize afterDraw me
+  let g := addPermanent afterDraw bilboThiefInTheNight me me
+  let g := addToGraveyard g nightsWhisper me
+  let g := withMana g me .black 1
+  let g := passBoth (fireTrigger g "Bilbo, Thief in the Night")
+  let g := mustApply g me (.cast (graveyardObj g me "Night's Whisper").id)
+  let g := passBoth (mustApply g me .pay)
+  inExile g "Night's Whisper" && handSize g me == before + 2 && life g me == 18
+#guard
+  let g := addPermanent afterDraw bilboThiefInTheNight me me
+  let g := addToGraveyard g wayfarersBauble me
+  let g := passBoth (fireTrigger g "Bilbo, Thief in the Night")
+  let g := passBoth (mustApply g me (.cast (graveyardObj g me "Wayfarer's Bauble").id))
+  onBattlefield g "Wayfarer's Bauble" && !inExile g "Wayfarer's Bauble"
+
 /- Elven Raft-Steerer's landfall is modal: tap an opponent's creature or untap
 yours. -/
 #guard

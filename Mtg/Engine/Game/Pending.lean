@@ -317,6 +317,10 @@ inductive FraChoice where
   /-- You may reveal one of `eligible` from among the looked-at `looked` and
   put it into your hand; the rest go on the bottom in a random order. -/
   | mayRevealToHand (looked eligible : Array ObjectId)
+  /-- You may cast one of these artifact, instant, or sorcery cards from your
+  graveyard, paying its cost (Bilbo, Thief in the Night). An instant or
+  sorcery cast this way is exiled instead of going to the graveyard. -/
+  | mayCastFromGraveyard (eligible : Array ObjectId)
   /-- Search: choose up to `count` of `eligible` (or none, CR 701.19b), send
   them to `dest`, shuffle, then do `after`. `kind` is the logged card phrase. -/
   | searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)

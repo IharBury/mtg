@@ -22,6 +22,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     | .mayPutArtifactFromHand .. => g.choosePutArtifactFromHand p id
     | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
     | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
+    | .fraChoice _ (.mayCastFromGraveyard _) => g.answerFraChoice p (.objects #[id])
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .castWithSneak id attackerId => g.castSpell p id (sneakAttacker := some attackerId)

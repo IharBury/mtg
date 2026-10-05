@@ -84,6 +84,9 @@ structure GameObject where
   leaveTriggerExile : Array ObjectId := #[]
   /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
   castFromGraveyard : Bool := false
+  /-- An instant or sorcery cast this way is exiled instead of being put into
+  its owner's graveyard (Bilbo, Thief in the Night). -/
+  exileInstantSorceryInstead : Bool := false
   /-- This spell was cast from its owner's hand. -/
   castFromHand : Bool := false
   /-- This permanent entered the battlefield as a spell that was cast

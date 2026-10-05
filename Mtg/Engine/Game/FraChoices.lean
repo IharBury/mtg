@@ -514,6 +514,19 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.requestOrderInto (others.push cardId) (.library p)
       s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
   | .mayCastCascade .., _ => throw "Cast it (accept), or decline"
+  | .mayCastFromGraveyard eligible, .objects #[id] =>
+    if !eligible.contains id then throw "That card can't be cast this way"
+    let some o := g.findObject? id | throw "no such object"
+    if o.zone != .graveyard o.owner then throw s!"{o.name} is no longer in the graveyard"
+    if !(o.printed.isArtifact || o.printed.isInstantOrSorcery) then
+      throw s!"{o.name} is not an artifact, instant, or sorcery"
+    if !(g.player p).manaPool.canPay (g.playManaCost o o.printed) then
+      throw s!"{o.name} cannot be cast; add mana first, or decline"
+    return (g.castAsPartOfResolution p id (withoutManaCost := false)
+      (exileInstantSorceryInstead := true)).finishFraChoice
+  | .mayCastFromGraveyard _, .decline =>
+    return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
+  | .mayCastFromGraveyard _, _ => throw "Choose a card to cast, or decline"
   | .maySearchLibrary eligible count dest after kind, .accept =>
     if eligible.isEmpty then
       let g :=
@@ -631,6 +644,12 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | none => .decline
   | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
   | .mayCastCascade .. => .accept
+  | .mayCastFromGraveyard eligible =>
+    match eligible.find? (fun id =>
+      (g.findObject? id).any (fun o =>
+        (g.player p).manaPool.canPay (g.playManaCost o o.printed))) with
+    | some id => .cast id
+    | none => .decline
   | .maySearchLibrary eligible .. =>
     if eligible.isEmpty then .decline else .accept
   | .searchLibrary eligible count .. =>
