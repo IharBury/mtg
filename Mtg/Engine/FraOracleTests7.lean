@@ -17,8 +17,8 @@ import Mtg.Engine.Tests.Turns
 Chandra, Torch of Defiance: casting the exiled card as her ability resolves,
 her mana ability that uses the stack, and her emblem. Graft Surgeon,
 Gardenize, Loot, the Nexus, Proft, Consulting Detective, Fblthp,
-Roiling Canopy, Grim Repriser, Enlightened Confidant, Cryotheory Adept, and
-Campus Crier.
+Roiling Canopy, Grim Repriser, Enlightened Confidant, Cryotheory Adept,
+Campus Crier, and Compel Brutality.
 -/
 
 namespace Mtg.Engine.FraRulingTests
@@ -356,5 +356,42 @@ ability on the stack lets Hill Giant (mana value 4) come back. -/
   let g := mustApply g ⟨0⟩ (.scry #[] (g.scryLookedIds ⟨0⟩ 1))
   (g.player ⟨0⟩).graveyard.any (fun id => (g.object! id).name == "Hill Giant")
 #guard (fraRuling 750).comment.contains "the last part of the ability will check how much life you've gained as the ability resolves"
+
+/-!
+## Compel Brutality (ruling 791)
+-/
+
+/-- Chandra's Grizzly Bears targets Nissa's Hill Giant with the first mode. -/
+def compelCast (mode : Nat) (src dst : String) (g : Game) : Game :=
+  let g := withGreenMana (addToHand (emptyHand g ⟨0⟩) compelBrutality ⟨0⟩) ⟨0⟩ 2
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Compel Brutality").id)
+  let g := mustApply g ⟨0⟩ (.chooseMode mode)
+  let g := mustApply g ⟨0⟩ (.target (.permanent (namedPermanent g src).id))
+  let g := mustApply g ⟨0⟩ (.target (.permanent (namedPermanent g dst).id))
+  mustApply g ⟨0⟩ .pay
+
+def bearsVsGiant : Game :=
+  addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) hillGiant ⟨1⟩ ⟨1⟩
+
+/- The power is checked as the spell resolves: pumped to 4, the Bears kill
+the Giant. -/
+#guard
+  let g := compelCast 0 "Grizzly Bears" "Hill Giant" bearsVsGiant
+  let g := g.mapObjectStatus (namedPermanent g "Grizzly Bears") (fun s => s.addPump 2 0)
+  let g := passBoth g
+  !g.battlefield.any (fun o => o.name == "Hill Giant")
+/- If the Bears leave first, no damage is dealt. -/
+#guard
+  let g := compelCast 0 "Grizzly Bears" "Hill Giant" bearsVsGiant
+  let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨0⟩) none
+  let g := passBoth g
+  (namedPermanent g "Hill Giant").status.damage == 0
+/- The second mode uses a planeswalker's loyalty. -/
+#guard
+  let g := addPermanent (afterDraw.empowerJace ⟨0⟩ 3) hillGiant ⟨1⟩ ⟨1⟩
+  let g := compelCast 1 "Jace" "Hill Giant" g
+  let g := passBoth g
+  !g.battlefield.any (fun o => o.name == "Hill Giant")
+#guard (fraRuling 791).comment.contains "checked as the spell resolves"
 
 end Mtg.Engine.FraRulingTests

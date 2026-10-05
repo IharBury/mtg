@@ -220,6 +220,9 @@ inductive Resolution where
   /-- Return this card from your graveyard to the battlefield with a
   finality counter on it. -/
   | returnFromGyWithFinality
+  /-- The first target deals damage equal to its power (or loyalty) to the
+  second target, checked as the spell resolves (Compel Brutality). -/
+  | firstDealsStatDamageToSecond (useLoyalty : Bool)
   /-- Exile the top card of your library. You may cast it. If you don't, this
   deals `n` damage to each opponent (Chandra, Torch of Defiance). -/
   | exileTopMayCastElseDamageOpponents (n : Nat)
@@ -540,6 +543,11 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Exile the top card of your library. You may cast that card. If you don't, this deals {n} damage to each opponent"
   | .emblemCastSpellDamage n =>
     s!"You get an emblem with \"Whenever you cast a spell, this emblem deals {n} damage to any target.\""
+  | .firstDealsStatDamageToSecond useLoyalty =>
+    if useLoyalty then
+      "Target planeswalker you control deals damage equal to its loyalty to target creature or planeswalker an opponent controls"
+    else
+      "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls"
   | .returnFromGyWithFinality =>
     "Return this card from your graveyard to the battlefield with a finality counter on it"
   | .copyNextInstantSorceryThisTurn =>

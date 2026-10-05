@@ -146,6 +146,16 @@ inductive EffectTargetKind where
   | oppPermanent
   /-- Another target creature you control with power `n` or less. -/
   | anotherCreatureYouControlPowerAtMost (n : Int)
+  /-- Target planeswalker you control. -/
+  | planeswalkerYouControl
+  /-- Target creature or planeswalker an opponent controls. -/
+  | oppCreatureOrPlaneswalker
+  /-- Target creature you control, then a creature or planeswalker an
+  opponent controls. -/
+  | creatureYouControlThenOppCreatureOrPlaneswalker
+  /-- Target planeswalker you control, then a creature or planeswalker an
+  opponent controls. -/
+  | planeswalkerYouControlThenOppCreatureOrPlaneswalker
   /-- Target creature you control that's attacking alone. -/
   | attackingAloneCreatureYouControl
   /-- Target noncreature artifact or noncreature enchantment. -/
@@ -366,6 +376,20 @@ def spec : EffectTargetKind → Spec
     { noun := "target permanent an opponent controls", prefer := .opponent }
   | .anotherCreatureYouControlPowerAtMost n =>
     { noun := s!"another target creature you control with power {n} or less", prefer := .own }
+  | .planeswalkerYouControl =>
+    { noun := "target planeswalker you control", prefer := .own }
+  | .oppCreatureOrPlaneswalker =>
+    { noun := "target creature or planeswalker an opponent controls", prefer := .opponent }
+  | .creatureYouControlThenOppCreatureOrPlaneswalker =>
+    { count := 2
+      noun := "target creature you control"
+      prefer := .ownThenOpponent
+      slots := #[.creatureYouControl, .oppCreatureOrPlaneswalker] }
+  | .planeswalkerYouControlThenOppCreatureOrPlaneswalker =>
+    { count := 2
+      noun := "target planeswalker you control"
+      prefer := .ownThenOpponent
+      slots := #[.planeswalkerYouControl, .oppCreatureOrPlaneswalker] }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=

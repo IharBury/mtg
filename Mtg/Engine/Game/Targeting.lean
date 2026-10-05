@@ -245,6 +245,15 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .oppPermanent =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && o.controller.isSome && !o.controlledBy caster)
+  | .planeswalkerYouControl =>
+    g.legalPermanentTargets caster (fun o =>
+      o.isOnBattlefield && o.printed.isPlaneswalker && o.controlledBy caster)
+  | .oppCreatureOrPlaneswalker =>
+    g.legalPermanentTargets caster (fun o =>
+      o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker) &&
+        o.controller.isSome && !o.controlledBy caster)
+  | .creatureYouControlThenOppCreatureOrPlaneswalker => #[]
+  | .planeswalkerYouControlThenOppCreatureOrPlaneswalker => #[]
   | .anotherCreatureYouControlPowerAtMost n =>
     g.legalCreatureTargets caster (fun o =>
       o.controlledBy caster && some o.id != sourceId && g.snapshotPower o <= n)

@@ -544,6 +544,8 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.exileTopMayCastElseDamageOpponents 2,
   Effect.emblemCastSpellDamage 5,
   Effect.addMana #[.colored .red, .colored .red],
+  Effect.firstDealsStatDamageToSecond false,
+  Effect.firstDealsStatDamageToSecond true,
 ]
 
 def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[

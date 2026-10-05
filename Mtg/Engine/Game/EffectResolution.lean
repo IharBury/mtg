@@ -108,6 +108,26 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         (Effect.ofTrigger (.onPermanent .playerOrCreature (.dealDamage n)))] }
     let (g, _) := g.allocObject emblem controller .command (some controller)
     some (g.logMsg s!"{(g.player controller).name} gets an emblem")
+  | .firstDealsStatDamageToSecond useLoyalty =>
+    -- Ruling 791: the power or loyalty is checked as the spell resolves; if
+    -- that permanent is gone, no damage is dealt.
+    let kinds := effect.targetKind.spec.slots
+    let legalAt (i : Nat) (t : Target) : Bool :=
+      match kinds[i]? with
+      | some k => (g.legalTargetsForAtomicKind controller k none).contains t
+      | none => false
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent srcId), some (Target.permanent dstId) =>
+      if !legalAt 0 (Target.permanent srcId) then
+        some (g.logMsg "The first target is no longer legal. No damage is dealt")
+      else if !legalAt 1 (Target.permanent dstId) then
+        some (g.logMsg "The second target is no longer legal. No damage is dealt")
+      else
+        let src := g.object! srcId
+        let dst := g.object! dstId
+        let n : Int := if useLoyalty then Int.ofNat src.status.loyaltyCounters else g.power src
+        some (g.dealDamageFrom src.name dst (max n 0) (source := some src))
+    | _, _ => some (g.logMsg "The targets are no longer legal")
   | .returnFromGyWithFinality =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -1270,6 +1290,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
   | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
   | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn | .returnFromGyWithFinality
+  | .firstDealsStatDamageToSecond _
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ =>
     g
 

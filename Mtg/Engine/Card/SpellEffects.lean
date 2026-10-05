@@ -975,6 +975,12 @@ def emblemCastSpellDamage (n : Nat) : Effect :=
 def returnFromGyWithFinality : Effect :=
   mkAbility ({}) (.returnFromGyWithFinality)
 
+def firstDealsStatDamageToSecond (useLoyalty : Bool) : Effect :=
+  { mkAbility (.of (if useLoyalty then .planeswalkerYouControlThenOppCreatureOrPlaneswalker
+        else .creatureYouControlThenOppCreatureOrPlaneswalker))
+      (.firstDealsStatDamageToSecond useLoyalty)
+      with spellCastKind := .fight }
+
 def tapAndStunTargetCreature : Effect :=
   mkAbility (.of .creature) (.onPermanent .tapAndStun)
 
