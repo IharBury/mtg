@@ -86,6 +86,17 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       let excess := g.excessDamage o dealt
       if excess > 0 then g.empowerJace controller excess
       else g) sourceId (some "The target is no longer legal"))
+  | .proliferatePlaneswalkerTypesTimes =>
+    -- Ruling 878: X is determined once, as the ability resolves.
+    let types := (g.permanentsOf controller).foldl (fun acc o =>
+      if o.printed.isPlaneswalker then
+        o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc
+      else acc) (#[] : Array String)
+    if types.isEmpty then
+      some (g.logMsg s!"{(g.player controller).name} controls no planeswalker types. X is 0")
+    else
+      some ({ g with pending := .chooseProliferate controller types.size }.logMsg
+        s!"{(g.player controller).name} proliferates {types.size} time(s)")
   | .copyEachCreatureOfTargetPlayer =>
     -- Rulings 784–789: each token copies the creature's copiable values only
     -- (no counters or status). All tokens are created before any of them is
@@ -1221,7 +1232,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
   | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
   | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
-  | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer =>
+  | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
+  | .proliferatePlaneswalkerTypesTimes =>
     g
 
 /-- Resolve a printed activated ability (CR 608). -/

@@ -8,11 +8,14 @@ Inventory of every FRA judge ruling. Each id is in exactly one list:
 
 - `fraEngineCheckedIds`: checked against game states in
   `Mtg.Engine.FraOracleTests`, `Mtg.Engine.FraOracleTests2`,
-  `Mtg.Engine.FraOracleTests4`, and `Mtg.Engine.FraOracleTests5`.
+  `Mtg.Engine.FraOracleTests4`, `Mtg.Engine.FraOracleTests5`, and
+  `Mtg.Engine.FraOracleTests6`.
 - `fraSharedCheckedIds`: comments shared with HOB/HOC or MSH cards, whose
   behavior those suites check. The FRA cards that repeat them are not
   modeled further.
-- `fraNotApplicableIds`: no effect in the catalog lets a player name a card.
+- `fraNotApplicableIds`: rulings whose situation can't arise in the engine:
+  no effect in the catalog names a card (745), triggers on proliferating
+  (884), or uses −1/−1 counters (885).
 - `fraUnmodeledIds`: rulings about FRA abilities the engine still keeps as
   printed text. Every FRA card such a ruling names has at least one such
   line, so modeling one of those cards fails this check until its rulings
@@ -35,18 +38,17 @@ def fraEngineCheckedIds : List Nat := [
   796, 797, 798, 799, 800, 801, 802, 804, 807, 808, 809, 810, 811, 812, 813,
   814, 815, 816, 817, 821, 822, 823, 824, 825, 826, 827, 828, 829, 830, 831,
   832, 833, 837, 838, 839, 840, 841, 842, 847, 848, 849, 850, 851, 852, 853,
-  856, 862, 870, 871, 872, 873, 874, 876, 877, 887, 888, 889, 890, 891, 892,
-  893]
+  856, 862, 870, 871, 872, 873, 874, 876, 877, 878, 879, 880, 881, 882, 883,
+  886, 887, 888, 889, 890, 891, 892, 893]
 
 def fraSharedCheckedIds : List Nat := [153, 314, 403, 405, 413, 416]
 
-def fraNotApplicableIds : List Nat := [745]
+def fraNotApplicableIds : List Nat := [745, 884, 885]
 
 def fraUnmodeledIds : List Nat := [
   729, 730, 750, 756, 757, 758, 759, 760, 764, 774, 775, 791, 792, 803, 805,
   806, 818, 819, 820, 834, 835, 836, 843, 844, 845, 846, 854, 855, 857, 858,
-  859, 860, 861, 863, 864, 865, 866, 867, 868, 869, 875, 878, 879, 880, 881,
-  882, 883, 884, 885, 886]
+  859, 860, 861, 863, 864, 865, 866, 867, 868, 869, 875]
 
 /-- Every FRA ruling id is in exactly one inventory list. -/
 def fraInventoryOk : Bool :=

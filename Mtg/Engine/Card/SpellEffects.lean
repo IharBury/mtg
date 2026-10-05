@@ -966,6 +966,9 @@ def damageThenEmpowerExcess (n : Nat) : Effect :=
 def jaceLoyaltyAtInstantSpeed : Effect :=
   mkAbility ({}) (.jaceLoyaltyAtInstantSpeed)
 
+def proliferatePlaneswalkerTypesTimes : Effect :=
+  mkAbility ({}) (.proliferatePlaneswalkerTypesTimes)
+
 def copyEachCreatureOfTargetPlayer : Effect :=
   { mkAbility (.of .player) (.copyEachCreatureOfTargetPlayer)
       with spellCastKind := .extraLand }

@@ -1042,6 +1042,14 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
     | _ :: _ :: _ => throw sequentialTargetUsage
     | _ => throw targetUsage
 
+/-- Proliferate once (CR 701.34): `proliferate` chooses nothing;
+`proliferate <id|player> ...` gives each another counter of each kind. -/
+def applyProliferate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let ts ← (commandTokens tokens).foldlM (fun acc arg => do
+    let t ← parseTarget g p arg
+    pure (acc.push t)) #[]
+  g.apply p (.targets ts)
+
 def scryUsage : String := "usage: scry [top <id> ...] [bottom <id> ...]"
 
 /-- Finish a pending scry (CR 701.20). Bare `scry` keeps the looked-at cards
@@ -1608,6 +1616,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "cast" => applyCast g p args
   | "target" => applyTarget g p args
   | "scry" => applyScry g p args
+  | "proliferate" => applyProliferate g p args
   | "discard" => applyDiscard g p args
   | "attach" => applyAttach g p args
   | "connive" => applyConniveChoice g p args

@@ -195,6 +195,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       | none => some .decline
     | .mayHaveVillainConnive _ _ _ =>
       some .haveVillainConnive
+    | .chooseProliferate _ _ =>
+      let own := (g.permanentsOf p).filter (·.status.hasCounters) |>.map (Target.permanent ·.id)
+      let opps := (g.livingOpponents p).filter (·.poison > 0) |>.map (Target.player ·.id)
+      some (.targets (own ++ opps))
     | .resolveRandom _ =>
       -- Random results are supplied by the host (`--norandom`), never the heuristic.
       none

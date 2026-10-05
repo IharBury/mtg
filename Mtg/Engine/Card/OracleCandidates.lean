@@ -1219,6 +1219,8 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
           (ManaCost.ofColors [.white, .blue, .black, .red, .green]) (tap := true),
   activated (Effect.becomeCopyLegendRuleOff) (ManaCost.ofGeneric 5),
   activated (Effect.cantBeBlockedAnotherPowerAtMost 2) (ManaCost.ofGeneric 1) (tap := true),
+  activated (Effect.proliferatePlaneswalkerTypesTimes)
+          (ManaCost.ofColors [.white, .blue, .black, .red, .green]) (tap := true),
 ]
 
 def chapterEffects : Thunk (Array (String × Effect)) := Thunk.mk fun _ => #[

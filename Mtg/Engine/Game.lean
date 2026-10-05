@@ -289,6 +289,8 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p .decline
   | .mayHaveVillainConnive _ _ _, some p =>
     mustApply g p .decline
+  | .chooseProliferate _ _, some p =>
+    mustApply g p (.targets #[])
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"

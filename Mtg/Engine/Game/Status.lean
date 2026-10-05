@@ -203,6 +203,26 @@ def addDamage (s : Status) (n : Int) (deathtouch := false) : Status :=
     damage := s.damage + n
     dealtDeathtouch := s.dealtDeathtouch || (deathtouch && n > 0) }
 
+/-- True when this permanent has a counter (CR 122.1). -/
+def hasCounters (s : Status) : Bool :=
+  s.plusOnePlusOne > 0 || s.loyaltyCounters > 0 || s.hope > 0 || s.shield > 0 ||
+    s.finality > 0 || s.plan > 0 || s.burden > 0 || s.quest > 0 || s.invasion > 0 ||
+    s.influence > 0 || s.trampleCounters > 0 || s.indestructibleCounters > 0 ||
+    s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0
+
+/-- Another counter of each kind already on this permanent (CR 701.34a).
++1/+1 counters are added by the caller so their triggers apply. -/
+def proliferatedExceptPlusOne (s : Status) : Status :=
+  let inc (n : Nat) : Nat := if n > 0 then n + 1 else n
+  { s with
+    loyaltyCounters := inc s.loyaltyCounters, hope := inc s.hope, shield := inc s.shield
+    finality := inc s.finality, plan := inc s.plan, burden := inc s.burden
+    quest := inc s.quest, invasion := inc s.invasion, influence := inc s.influence
+    trampleCounters := inc s.trampleCounters
+    indestructibleCounters := inc s.indestructibleCounters
+    lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
+    lore := inc s.lore }
+
 /-- Until-end-of-turn +P/+T (CR 613.4c / 611.2a). -/
 def addPump (s : Status) (p t : Int) : Status :=
   { s with pump := (s.pump.1 + p, s.pump.2 + t) }

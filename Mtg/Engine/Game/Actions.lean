@@ -28,7 +28,10 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
     | _ => g.announceMode p idx
   | .chooseX n => g.announceX p n
   | .target t => g.announceTarget p t
-  | .targets ts => g.announceTargets p ts
+  | .targets ts =>
+    match g.pending with
+    | .chooseProliferate .. => g.finishProliferate p ts
+    | _ => g.announceTargets p ts
   | .divideDamage as => g.announceDividedDamage p as
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
@@ -107,6 +110,7 @@ def actor (g : Game) : Option PlayerId :=
     | .maySacArtifactOrDiscard p => who p
     | .mayPutArtifactFromHand p _ => who p
     | .mayHaveVillainConnive p _ _ => who p
+    | .chooseProliferate p _ => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p

@@ -159,6 +159,9 @@ inductive Pending where
   | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)
   /-- You may have this entering Villain connive (Baron Strucker; MSH 422). -/
   | mayHaveVillainConnive (player : PlayerId) (sourceId : ObjectId) (villainId : ObjectId)
+  /-- Choose any number of permanents and players with counters to
+  proliferate, `remaining` more times (CR 701.34; Tam, the Possibility). -/
+  | chooseProliferate (player : PlayerId) (remaining : Nat)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
 deriving DecidableEq, Repr, Inhabited, BEq

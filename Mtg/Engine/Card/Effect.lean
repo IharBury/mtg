@@ -212,6 +212,9 @@ inductive Resolution where
   /-- For each creature the target player controls, create a token copy with
   haste that is sacrificed at end step unless you control a planeswalker. -/
   | copyEachCreatureOfTargetPlayer
+  /-- Proliferate X times, where X is the number of planeswalker types among
+  planeswalkers you control (Tam, the Possibility). -/
+  | proliferatePlaneswalkerTypesTimes
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -522,6 +525,8 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
   | .jaceLoyaltyAtInstantSpeed =>
     "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
+  | .proliferatePlaneswalkerTypesTimes =>
+    "Proliferate X times, where X is the number of planeswalker types among planeswalkers you control"
   | .copyEachCreatureOfTargetPlayer =>
     s!"For each creature {noun} controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
   | .becomeCopyLegendRuleOff =>

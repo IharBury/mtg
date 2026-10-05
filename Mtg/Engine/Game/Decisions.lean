@@ -66,6 +66,47 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
       return g.receivePriority g.activePlayer
   | _ => throw "Not time to scry or surveil (CR 701.20 / 701.25)"
 
+/-- Proliferate once (CR 701.34a): give each chosen permanent and player
+another counter of each kind already there. Any subset may be chosen,
+including none and opponents' permanents (rulings 881 / 882); cards in other
+zones can't be (ruling 881). No player can act between proliferations
+(ruling 880), and each one may choose a different set (ruling 886). -/
+def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
+    Except String Game := do
+  match g.pending with
+  | .chooseProliferate q remaining =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may proliferate"
+    if chosen.toList.eraseDups.length != chosen.size then
+      throw "Choose each permanent or player at most once"
+    let mut g := g
+    for t in chosen do
+      match t with
+      | .permanent id =>
+        let some o := g.findObject? id | throw "no such object"
+        if !o.isOnBattlefield then
+          throw s!"{o.name} is not a permanent on the battlefield (CR 701.34a)"
+        if !o.status.hasCounters then
+          throw s!"{o.name} has no counters"
+        g := g.mapObjectStatus o Status.proliferatedExceptPlusOne
+        let o := g.object! id
+        g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 else g
+        g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
+      | .player pid =>
+        let pl := g.player pid
+        if pl.poison == 0 then
+          throw s!"{pl.name} has no counters"
+        g := g.setPlayer { pl with poison := pl.poison + 1 }
+        g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
+      | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
+    if chosen.isEmpty then
+      g := g.logMsg s!"{(g.player p).name} proliferates, choosing nothing"
+    if remaining > 1 then
+      return { g with pending := .chooseProliferate p (remaining - 1) }
+    else
+      return ({ g with pending := .none }).receivePriority g.activePlayer
+  | _ => throw "Not time to proliferate (CR 701.34)"
+
 /-- Shared pending-discard core (CR 701.9): `p` must be the pending player
 `q` and `id` must be in `p`'s hand; the discard is logged (with `logSuffix`)
 and the card moves to its owner's graveyard. `countDiscard` bumps
