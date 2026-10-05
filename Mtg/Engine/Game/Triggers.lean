@@ -40,6 +40,22 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
 
+/-- Reality Fracture intervening “if” clauses, checked when the ability would
+trigger and again as it resolves (rulings 743 / 889). -/
+def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (source : Option GameObject) : Bool :=
+  match ab.shared with
+  | .destroyOppPermanentIfSixLands =>
+    ((g.permanentsOf controller).filter (·.printed.isLand)).size ≥ 6
+  | .prepareSourceIfNot =>
+    match source.bind (fun o => g.findObject? o.id) with
+    | some o => !o.status.prepared
+    | none => true
+  | .prepareSourceIfThreeDied => g.battlefieldCreaturesToGyThisTurn.size ≥ 3
+  | .sacrificeSourceIfNoPlaneswalker =>
+    !(g.permanentsOf controller).any (·.printed.isPlaneswalker)
+  | _ => true
+
 /-- True when any intervening trigger condition holds (e.g. Ferocious). -/
 def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (cause : Option GameObject := none) (source : Option GameObject := none) : Bool :=
@@ -64,7 +80,8 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g.power entered > g.power hulkling || g.toughness entered > g.toughness hulkling
     | .watch .hulklingCompare, _, _ => false
     | _, _, _ => true
-  powerOk && otherOk && lifeOk && hulklingOk
+  powerOk && otherOk && lifeOk && hulklingOk &&
+    g.fraInterveningHolds controller ab source
 
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/

@@ -304,6 +304,10 @@ inductive SharedTriggerWhen where
   | youCastTargetingOpponentOrTheirCreature
   /-- Whenever you activate a loyalty ability. -/
   | youActivateLoyaltyAbility
+  /-- At the beginning of each player's upkeep. -/
+  | eachUpkeep
+  /-- At the beginning of each opponent's draw step. -/
+  | eachOpponentDrawStep
   /-- At the beginning of each end step. -/
   | eachEndStep
   /-- Whenever this or another nontoken permanent of a listed subtype enters. -/
@@ -735,6 +739,19 @@ inductive SharedTrigger where
   | drawIfRemovedTwoLoyalty
   /-- Put a +1/+1 counter on each permanent of this subtype you control. -/
   | plusOneOnEachSubtypeYouControl (subtype : String)
+  /-- Put a loyalty counter on the source (Ajani Resolute). -/
+  | loyaltyOnSource
+  /-- Target permanent you control gains these keywords until end of turn; a
+  +1/+1 counter if it's a creature, a loyalty counter if it's a planeswalker. -/
+  | grantThenCounterByType (k : Keywords)
+  /-- If you control six or more lands, destroy target permanent an opponent
+  controls; its controller creates a Treasure. -/
+  | destroyOppPermanentIfSixLands
+  /-- Another target creature you control gets +1/+1 until end of turn, or a
+  +1/+1 counter instead if you've scried or surveilled this turn. -/
+  | pumpOrCounterIfScried
+  /-- If you don't control a planeswalker, sacrifice the source. -/
+  | sacrificeSourceIfNoPlaneswalker
   /-- Apply `action` to the enchanted creature. -/
   | onEnchanted (action : PermanentAction)
   /-- Attach to target, then apply `followup`. -/

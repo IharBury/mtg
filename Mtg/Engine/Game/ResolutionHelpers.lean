@@ -201,6 +201,8 @@ def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
   let g := if n == 0 then g else g.queueScryTriggers p count
+  let g := if n == 0 then g else
+    g.modifyPlayer p (fun pl => { pl with scriedOrSurveilledThisTurn := true })
   if count == 0 then
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
@@ -212,6 +214,8 @@ order. Shares the scry decision; the bottom pile goes to the graveyard. -/
 def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
+  let g := if n == 0 then g else
+    g.modifyPlayer p (fun pl => { pl with scriedOrSurveilledThisTurn := true })
   if count == 0 then
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else

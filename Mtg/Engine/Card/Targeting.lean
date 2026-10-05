@@ -140,6 +140,12 @@ inductive EffectTargetKind where
   | twoArtifactsYouControl
   /-- Target creature or planeswalker. -/
   | creatureOrPlaneswalker
+  /-- Target permanent you control. -/
+  | permanentYouControl
+  /-- Target permanent an opponent controls. -/
+  | oppPermanent
+  /-- Another target creature you control with power `n` or less. -/
+  | anotherCreatureYouControlPowerAtMost (n : Int)
   /-- Target creature you control that's attacking alone. -/
   | attackingAloneCreatureYouControl
   /-- Target noncreature artifact or noncreature enchantment. -/
@@ -354,6 +360,12 @@ def spec : EffectTargetKind → Spec
       noun := s!"up to two target creatures with total mana value {n} or less" }
   | .creatureOrPlaneswalker =>
     { noun := "target creature or planeswalker" }
+  | .permanentYouControl =>
+    { noun := "target permanent you control", prefer := .own }
+  | .oppPermanent =>
+    { noun := "target permanent an opponent controls", prefer := .opponent }
+  | .anotherCreatureYouControlPowerAtMost n =>
+    { noun := s!"another target creature you control with power {n} or less", prefer := .own }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=

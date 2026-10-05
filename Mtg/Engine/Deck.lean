@@ -63,7 +63,9 @@ def countNames (cards : Array CardDef) : List (String × Nat) :=
           acc.set i (c.name, acc[i]!.snd + 1)
     return acc
 
-/-- Validate a deck against format construction rules (CR 100.2). -/
+/-- Validate a deck against format construction rules (CR 100.2). Basic
+lands and cards saying a deck can have any number of them are not limited to
+four (ruling 769). -/
 def validateDeck (fmt : Format) (cards : Array CardDef) : Except DeckError Unit := do
   let need := fmt.minDeckSize
   if cards.size < need then
@@ -71,11 +73,11 @@ def validateDeck (fmt : Format) (cards : Array CardDef) : Except DeckError Unit 
   if fmt == .constructed then
     for (name, n) in countNames cards do
       let sample := cards.find? (fun c => c.name == name)
-      let basic :=
+      let unlimited :=
         match sample with
-        | some c => isBasicLandCard c
+        | some c => isBasicLandCard c || c.anyNumberInDeck
         | none => false
-      if !basic && n > 4 then
+      if !unlimited && n > 4 then
         throw (.tooManyCopies name n)
   return ()
 

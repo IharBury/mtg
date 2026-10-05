@@ -328,6 +328,21 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         else if perm.anyMana then ManaCost.ofGeneric afterEquip.manaValue
         else afterEquip
       | none => afterEquip
+  -- Omnipresence: from hand, a spell with mana value at most the number of
+  -- creatures you control is cast without paying its mana cost. Spells with
+  -- `{X}` are cast normally, so X is never forced to 0. Additional costs are
+  -- still paid (rulings 794 / 795).
+  let caster := card.owner
+  let omnipresent :=
+    card.zone == .hand caster && !face.manaCost.containsX &&
+      face.manaValue ≤ (g.creaturesControlledBy caster).size &&
+      (g.permanentsOf caster).any (fun o =>
+        o.staticAbilities.any (fun
+          | .castFromHandFreeUpToCreatures => true
+          | _ => false))
+  let cost :=
+    if omnipresent then g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+    else cost
   ManaCost.afterReduction face.manaCost cost
 
 /-- True when `face` has a mana cost that would not be paid to play `card`. -/

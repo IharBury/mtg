@@ -537,6 +537,8 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.damageThenEmpowerExcess 6,
   Effect.jaceLoyaltyAtInstantSpeed,
   Effect.creaturesYouControlGetAndGrant 1 0 Keyword.haste,
+  Effect.createTokens .pridemate 1,
+  Effect.copyEachCreatureOfTargetPlayer,
 ]
 
 def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
@@ -658,6 +660,9 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .ptEqualGraveyardCardTypes,
   .artifactTokensBecomeDragons,
   .smallCreaturesYouControlUnblockable,
+  .toughnessAssignsCombatDamage,
+  .negativePowerAssignsAsPositive,
+  .castFromHandFreeUpToCreatures,
 ]
 
 def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
@@ -1005,6 +1010,13 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .triggered .youCastTargetingOpponentOrTheirCreature (Effect.ofTrigger .plusOneOnSource),
   .triggered .landYouControlEnters (Effect.ofTrigger (.gainLife 1)),
   .triggered (.subtypeYouControlEnters "Plains") (Effect.ofTrigger (.plusOneOn .creature)),
+  .triggered .youGainLife (Effect.ofTrigger .loyaltyOnSource),
+  .triggered .enter (Effect.ofTrigger (.grantThenCounterByType Keyword.hexproof)),
+  .triggered .enter (Effect.ofTrigger (.grantThenCounterByType Keyword.deathtouch)),
+  .triggered .enter (Effect.ofTrigger .destroyOppPermanentIfSixLands),
+  .onStep (Effect.ofTrigger .pumpOrCounterIfScried),
+  .triggered .eachUpkeep (Effect.ofTrigger (.createTokens .forestTentacle 1)),
+  .triggered .eachOpponentDrawStep (Effect.ofTrigger (.draw 1)),
 ]
 
 def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
@@ -1206,6 +1218,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   activated (Effect.eachCreatureYouControlBecomesPrepared)
           (ManaCost.ofColors [.white, .blue, .black, .red, .green]) (tap := true),
   activated (Effect.becomeCopyLegendRuleOff) (ManaCost.ofGeneric 5),
+  activated (Effect.cantBeBlockedAnotherPowerAtMost 2) (ManaCost.ofGeneric 1) (tap := true),
 ]
 
 def chapterEffects : Thunk (Array (String × Effect)) := Thunk.mk fun _ => #[

@@ -187,6 +187,8 @@ def takeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
   | .enchantmentMvAtLeast n => return .enchantmentMvAtLeast (← takeNat n)
   | .oppCreaturePowerAtMost n => return .oppCreaturePowerAtMost (← takeInt n)
   | .upToTwoCreaturesTotalMvAtMost n => return .upToTwoCreaturesTotalMvAtMost (← takeNat n)
+  | .anotherCreatureYouControlPowerAtMost n =>
+    return .anotherCreatureYouControlPowerAtMost (← takeInt n)
   | k => return k
 
 def takeTargeting (t : EffectTargeting) : ArgM EffectTargeting := do

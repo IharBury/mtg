@@ -240,6 +240,14 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .creatureOrPlaneswalker =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker))
+  | .permanentYouControl =>
+    g.legalPermanentTargets caster (fun o => o.isOnBattlefield && o.controlledBy caster)
+  | .oppPermanent =>
+    g.legalPermanentTargets caster (fun o =>
+      o.isOnBattlefield && o.controller.isSome && !o.controlledBy caster)
+  | .anotherCreatureYouControlPowerAtMost n =>
+    g.legalCreatureTargets caster (fun o =>
+      o.controlledBy caster && some o.id != sourceId && g.snapshotPower o <= n)
   | .attackingAloneCreatureYouControl =>
     let attackers :=
       g.legalCreatureTargets caster (fun o =>

@@ -648,6 +648,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if you removed two or more loyalty counters to activate it, draw a card"
   | .plusOneOnEachSubtypeYouControl s =>
     s!"put a +1/+1 counter on each {s} you control"
+  | .loyaltyOnSource => "put a loyalty counter on this"
+  | .grantThenCounterByType k =>
+    s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
+  | .destroyOppPermanentIfSixLands =>
+    s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
+  | .pumpOrCounterIfScried =>
+    s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
+  | .sacrificeSourceIfNoPlaneswalker =>
+    "if you don't control a planeswalker, sacrifice this creature"
   | .damageBlockers n =>
     s!"it deals {n} damage to each creature blocking it"
   | .scry n => s!"scry {n}"
@@ -1190,6 +1199,12 @@ def toNotation (ab : TriggeredAbility) : String :=
       leadInSentence ab "Whenever this creature deals combat damage to a player"
     | .enterOrOpponentDrawsExceptFirst, some .deal1ThenAmassOrcs, _ =>
     "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
+    | .eachUpkeep, some (.createTokens k n), _ =>
+    s!"At the beginning of each player's upkeep, you {TokenKind.createPhrase k n}."
+    | .eachOpponentDrawStep, some (.draw 1), _ =>
+    "At the beginning of each opponent's draw step, you draw a card."
+    | .youGainLife, some .loyaltyOnSource, _ =>
+    "Whenever you gain life, put a loyalty counter on Ajani."
     | .opponentDrawsSecond, some (.createTokens .treasure 1), _ =>
     "Whenever an opponent draws their second card each turn, you create a Treasure token."
     | .youAttackWithTotalPower, some (.untapAttackersExtraCombat n), _ =>

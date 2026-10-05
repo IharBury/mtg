@@ -211,6 +211,15 @@ inductive StaticAbility where
   /-- Creatures you control with power or toughness 1 or less can't be
   blocked (Tetsuko Umezawa, Fugitive). -/
   | smallCreaturesYouControlUnblockable
+  /-- Each creature you control with toughness greater than its power assigns
+  combat damage equal to its toughness (Ghalta, the Immovable). -/
+  | toughnessAssignsCombatDamage
+  /-- If this creature's power is negative, it assigns combat damage as
+  though its power were positive (Loot, the Anomaly). -/
+  | negativePowerAssignsAsPositive
+  /-- You may cast spells with mana value at most the number of creatures you
+  control from your hand without paying their mana costs (Omnipresence). -/
+  | castFromHandFreeUpToCreatures
   /-- If you would put one or more counters on a permanent you control, put
   that many plus one of each of those kinds instead. -/
   | extraCounterOnPermanents
@@ -409,6 +418,9 @@ inductive StaticShape where
   | ptEqualGraveyardCardTypes
   | artifactTokensBecomeDragons
   | smallCreaturesYouControlUnblockable
+  | toughnessAssignsCombatDamage
+  | negativePowerAssignsAsPositive
+  | castFromHandFreeUpToCreatures
   | extraCounterOnPermanents
   | mayBeginOnBattlefield
   | enchantedHasWard (w : Nat)
@@ -609,6 +621,9 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .ptEqualGraveyardCardTypes => {}
   | .artifactTokensBecomeDragons => {}
   | .smallCreaturesYouControlUnblockable => {}
+  | .toughnessAssignsCombatDamage => {}
+  | .negativePowerAssignsAsPositive => {}
+  | .castFromHandFreeUpToCreatures => {}
   | .extraCounterOnPermanents => {}
   | .mayBeginOnBattlefield => {}
   | .enchantedHasWard w => { grantedWard := some w }
@@ -737,6 +752,9 @@ def shape : StaticAbility → StaticShape
   | .ptEqualGraveyardCardTypes => .ptEqualGraveyardCardTypes
   | .artifactTokensBecomeDragons => .artifactTokensBecomeDragons
   | .smallCreaturesYouControlUnblockable => .smallCreaturesYouControlUnblockable
+  | .toughnessAssignsCombatDamage => .toughnessAssignsCombatDamage
+  | .negativePowerAssignsAsPositive => .negativePowerAssignsAsPositive
+  | .castFromHandFreeUpToCreatures => .castFromHandFreeUpToCreatures
   | .extraCounterOnPermanents => .extraCounterOnPermanents
   | .mayBeginOnBattlefield => .mayBeginOnBattlefield
   | .enchantedCreatureHasWard w => .enchantedHasWard w
@@ -958,6 +976,12 @@ def toNotation (ab : StaticAbility) : String :=
     "If one or more artifact tokens would be created under your control, that many 5/5 red Dragon creature tokens with flying are created instead."
   | .smallCreaturesYouControlUnblockable =>
     "Creatures you control with power or toughness 1 or less can't be blocked."
+  | .toughnessAssignsCombatDamage =>
+    "Each creature you control with toughness greater than its power assigns combat damage equal to its toughness rather than its power."
+  | .negativePowerAssignsAsPositive =>
+    "If Loot's power is negative, he assigns combat damage as though his power were positive."
+  | .castFromHandFreeUpToCreatures =>
+    "You may cast spells with mana value less than or equal to the number of creatures you control from your hand without paying their mana costs."
   | .extraCounterOnPermanents =>
     "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead."
   | .mayBeginOnBattlefield =>

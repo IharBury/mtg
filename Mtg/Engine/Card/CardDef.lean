@@ -155,6 +155,11 @@ structure CardDef where
   entersTappedUnlessLegendary : Bool := false
   /-- This permanent enters tapped unless you control an Equipment. -/
   entersTappedUnlessEquipment : Bool := false
+  /-- A deck can have any number of cards with this name (CR 100.2a). -/
+  anyNumberInDeck : Bool := false
+  /-- You can't cast this spell unless there are at least this many other
+  cards in your graveyard. -/
+  castOnlyIfGraveyardAtLeast : Option Nat := none
   /-- This permanent enters tapped unless you control a planeswalker. -/
   entersTappedUnlessPlaneswalker : Bool := false
   /-- This permanent enters tapped unless you control two or more other lands. -/

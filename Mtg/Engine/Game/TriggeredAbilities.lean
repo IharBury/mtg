@@ -1346,6 +1346,38 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | none => g.logMsg "The source is no longer on the battlefield"
   | .drawIfRemovedTwoLoyalty =>
     g.draw controller 1
+  | .loyaltyOnSource =>
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })
+      g.logMsg s!"A loyalty counter is put on {o.name}")
+  | .grantThenCounterByType k =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      let g := g.grantUntilEotLogged o k
+      let o := g.object! o.id
+      let g := if o.isCreature then g.addPlusOnePlusOneTo o 1 else g
+      let o := g.object! o.id
+      if o.printed.isPlaneswalker then
+        let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })
+        g.logMsg s!"A loyalty counter is put on {o.name}"
+      else g)
+  | .destroyOppPermanentIfSixLands =>
+    if ((g.permanentsOf controller).filter (·.printed.isLand)).size < 6 then
+      g.logMsg "You control fewer than six lands. The ability doesn't resolve (ruling 889)"
+    else
+      g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+        let owner := o.controller.getD o.owner
+        let g := g.destroyPermanent o
+        g.createTreasureTokens owner 1)
+  | .pumpOrCounterIfScried =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      if (g.player controller).scriedOrSurveilledThisTurn then g.addPlusOnePlusOneTo o 1
+      else g.pumpPermanent o 1 1)
+  | .sacrificeSourceIfNoPlaneswalker =>
+    if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
+      g.logMsg "You control a planeswalker. The ability does nothing"
+    else
+      g.withSourceOnBattlefield sourceId (fun g o =>
+        g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}")
   | .plusOneOnEachSubtypeYouControl s =>
     (g.permanentsOf controller).foldl (fun g o =>
       if g.hasSubtype o s then g.addPlusOnePlusOneTo (g.object! o.id) 1 else g) g

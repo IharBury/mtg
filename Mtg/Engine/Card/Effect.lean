@@ -209,6 +209,9 @@ inductive Resolution where
   /-- The source becomes a copy of the target creature until end of turn, and
   the legend rule doesn't apply to permanents you control this turn. -/
   | becomeCopyLegendRuleOff
+  /-- For each creature the target player controls, create a token copy with
+  haste that is sacrificed at end step unless you control a planeswalker. -/
+  | copyEachCreatureOfTargetPlayer
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -519,6 +522,8 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
   | .jaceLoyaltyAtInstantSpeed =>
     "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
+  | .copyEachCreatureOfTargetPlayer =>
+    s!"For each creature {noun} controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
   | .becomeCopyLegendRuleOff =>
     s!"This land becomes a copy of {noun} until end of turn. The \"legend rule\" doesn't apply to permanents you control this turn"
   | .sequence rs =>

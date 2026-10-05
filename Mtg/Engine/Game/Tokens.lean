@@ -365,7 +365,14 @@ def mowuToken : CardDef := {
 
 /-- A 2/2 white Cat Soldier creature token named Ajani's Pridemate. -/
 def pridemateToken : CardDef :=
-  creatureToken "Ajani's Pridemate" #["Cat", "Soldier"] 2 2 (some .white)
+  { creatureToken "Ajani's Pridemate" #["Cat", "Soldier"] 2 2 (some .white) with
+    triggeredAbilities := #[TriggeredAbility.onGainLifePlusOne] }
+
+/-- A 3/3 green Forest Tentacle land creature token. It isn't basic (ruling
+802); the Forest type gives it `{T}: Add {G}`. -/
+def forestTentacleToken : CardDef :=
+  creatureToken "Forest Tentacle" #["Forest", "Tentacle"] 3 3 (some .green)
+    (types := #[.land, .creature])
 
 /-- A 4/4 green Beast creature token with trample. -/
 def beast44trampleToken : CardDef :=
@@ -440,6 +447,7 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .pridemate => pridemateToken
   | .beast44trample => beast44trampleToken
   | .dragon55flying => dragon55flyingToken
+  | .forestTentacle => forestTentacleToken
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)

@@ -86,6 +86,24 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       let excess := g.excessDamage o dealt
       if excess > 0 then g.empowerJace controller excess
       else g) sourceId (some "The target is no longer legal"))
+  | .copyEachCreatureOfTargetPlayer =>
+    -- Rulings 784–789: each token copies the creature's copiable values only
+    -- (no counters or status). All tokens are created before any of them is
+    -- treated as entering, so they see each other enter.
+    some (g.withLegalKindPlayer controller effect.targetKind targets (fun g pid =>
+      let sacrifice : TriggeredAbility :=
+        .triggered .fromEffect (Effect.ofTrigger .sacrificeSourceIfNoPlaneswalker)
+      let (g, ids) := (g.creaturesControlledBy pid).foldl
+        (fun (acc : Game × Array ObjectId) c =>
+          let printed := { c.printed with
+            keywords := c.printed.keywords.merge Keyword.haste
+            triggeredAbilities := c.printed.triggeredAbilities.push sacrifice }
+          let (g, tok) := acc.1.createToken controller printed
+          (g, acc.2.push tok.id)) (g, #[])
+      ids.foldl (fun g id =>
+        match g.findObject? id with
+        | some o => g.afterPermanentEnters o
+        | none => g) g) sourceId)
   | .becomeCopyLegendRuleOff =>
     some (g.withLegalKindPermanent controller effect.targetKind targets (fun g target =>
       g.withSourceOnBattlefield sourceId (fun g src =>
@@ -1203,7 +1221,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
   | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
   | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
-  | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff =>
+  | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer =>
     g
 
 /-- Resolve a printed activated ability (CR 608). -/

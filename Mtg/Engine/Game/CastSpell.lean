@@ -70,6 +70,13 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let pl := g.player p
   if face.isLand then
     throw "Lands are played, not cast (CR 305)"
+  match face.castOnlyIfGraveyardAtLeast with
+  | some n =>
+    -- Ruling 852: the card itself doesn't count if it's in the graveyard.
+    let others := (g.player p).graveyard.filter (· != id) |>.size
+    if others < n then
+      throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+  | none => pure ()
   if face.hasSorcerySpeed && !g.asSorcery? p then
     throw s!"{face.name} has sorcery speed"
   if face.isModal then

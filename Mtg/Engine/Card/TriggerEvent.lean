@@ -172,6 +172,10 @@ inductive TriggerEvent where
   | youCastFirstNoncreature
   /-- You activate a loyalty ability. -/
   | youActivateLoyaltyAbility
+  /-- The beginning of each player's upkeep. -/
+  | eachUpkeep
+  /-- The beginning of each opponent's draw step. -/
+  | eachOpponentDrawStep
   /-- You cast a spell. -/
   | youCastSpell
   /-- You discard a card. -/
@@ -471,6 +475,12 @@ def spec : TriggerEvent → Spec
   | .youActivateLoyaltyAbility =>
     { clause := "you activate a loyalty ability",
       label := "loyalty trigger", checkTargets := false }
+  | .eachUpkeep =>
+    { clause := "the beginning of each player's upkeep", isWhenever := false,
+      label := "upkeep trigger", checkTargets := false }
+  | .eachOpponentDrawStep =>
+    { clause := "the beginning of each opponent's draw step", isWhenever := false,
+      label := "draw-step trigger", checkTargets := false }
   | .youCastSpell =>
     { clause := "you cast a spell", label := "cast trigger", checkTargets := false }
   | .youDiscard =>

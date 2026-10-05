@@ -966,6 +966,13 @@ def damageThenEmpowerExcess (n : Nat) : Effect :=
 def jaceLoyaltyAtInstantSpeed : Effect :=
   mkAbility ({}) (.jaceLoyaltyAtInstantSpeed)
 
+def copyEachCreatureOfTargetPlayer : Effect :=
+  { mkAbility (.of .player) (.copyEachCreatureOfTargetPlayer)
+      with spellCastKind := .extraLand }
+
+def cantBeBlockedAnotherPowerAtMost (n : Int) : Effect :=
+  mkAbility (.of (.anotherCreatureYouControlPowerAtMost n)) (.onPermanent .cantBeBlocked)
+
 def becomeCopyLegendRuleOff : Effect :=
   mkAbility (.of .creatureYouControl) (.becomeCopyLegendRuleOff)
 

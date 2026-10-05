@@ -736,6 +736,10 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with entersTappedUnlessLegendary := true }
   else if low.contains "enters tapped unless you control an equipment" then
     some { c with entersTappedUnlessEquipment := true }
+  else if low.startsWith "a deck can have any number of cards named" then
+    some { c with anyNumberInDeck := true }
+  else if low.startsWith "you can't cast this spell unless there are seven or more cards in your graveyard" then
+    some { c with castOnlyIfGraveyardAtLeast := some 7 }
   else if low.contains "enters tapped unless you control a planeswalker" then
     some { c with entersTappedUnlessPlaneswalker := true }
   else if low.contains "enters tapped unless you control two or more other lands" then

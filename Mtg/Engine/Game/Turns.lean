@@ -63,7 +63,8 @@ def clearTurnActivations (g : Game) : Game :=
       else if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
           pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
           pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 ||
-          pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed then
+          pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed ||
+          pl.scriedOrSurveilledThisTurn then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -79,7 +80,8 @@ def clearTurnActivations (g : Game) : Game :=
           attackedWithHeroThisTurn := false
           cardsDiscardedThisTurn := 0
           artifactEnteredThisTurn := false
-          jaceLoyaltyAtInstantSpeed := false }
+          jaceLoyaltyAtInstantSpeed := false
+          scriedOrSurveilledThisTurn := false }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||
@@ -209,7 +211,11 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g.logMsg s!"{g.player g.activePlayer |>.name} skips their first draw step (CR 103.8a)"
         |>.beginStep .precombatMain
     else
-      g.draw g.activePlayer |>.receivePriority g.activePlayer
+      -- The turn-based draw happens before triggers (ruling 770).
+      let g := g.draw g.activePlayer
+      let g := (g.livingOpponents g.activePlayer).foldl (fun acc pl =>
+        acc.putControlledTriggers pl.id .eachOpponentDrawStep) g
+      g.receivePriority g.activePlayer
   | .declareAttackers =>
     { g with pending := .declareAttackers }
   | .declareBlockers =>
@@ -236,6 +242,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
             s!"{pl.name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
       return g
     let g := g.putControlledTriggers ap .yourUpkeep
+    let g :=
+      g.livingPlayers.foldl (fun acc pl => acc.putControlledTriggers pl.id .eachUpkeep) g
     g.receivePriority ap
   | .beginningOfCombat =>
     let ap := g.activePlayer

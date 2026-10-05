@@ -92,7 +92,7 @@ legal division under 510.1c/d. With trample, lethal is assigned to each
 blocker before leftover goes to the defending player. -/
 def defaultCombatAssignment (g : Game) (source : GameObject) (forAttackers : Bool)
     (already : Array CreatureCombatAssignment) : CreatureCombatAssignment :=
-  let dmg := max (g.power source) 0
+  let dmg := g.combatDamageAmount source
   let defender := source.status.attackingWhom.getD g.defendingPlayer
   let playerDmg := if (g.player defender).lost then 0 else dmg
   if forAttackers then
@@ -151,7 +151,7 @@ def checkCombatAssignment (g : Game) (asgn : CreatureCombatAssignment) (forAttac
   if !src.isOnBattlefield then
     throw s!"{src.name} is not on the battlefield"
   let defender := src.status.attackingWhom.getD g.defendingPlayer
-  let dmg := max (g.power src) 0
+  let dmg := g.combatDamageAmount src
   if asgn.toPlayer < 0 || asgn.toCreatures.any (fun (_, n) => n < 0) then
     throw "Combat damage amounts cannot be negative"
   let mut seenTargets : Array ObjectId := #[]

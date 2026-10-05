@@ -427,6 +427,17 @@ inductive TriggerResolution where
   | drawIfRemovedTwoLoyalty
   /-- Put a +1/+1 counter on each permanent of this subtype you control. -/
   | plusOneOnEachSubtypeYouControl (subtype : String)
+  /-- Put a loyalty counter on the source. -/
+  | loyaltyOnSource
+  /-- Grant keywords, then a +1/+1 or loyalty counter by the target's type. -/
+  | grantThenCounterByType (k : Keywords)
+  /-- If you control six or more lands, destroy the target; its controller
+  creates a Treasure. -/
+  | destroyOppPermanentIfSixLands
+  /-- +1/+1 until end of turn, or a +1/+1 counter if you scried or surveilled. -/
+  | pumpOrCounterIfScried
+  /-- If you don't control a planeswalker, sacrifice the source. -/
+  | sacrificeSourceIfNoPlaneswalker
   /-- Resolve a leftover StepLeftover. -/
   | step (e : StepLeftover)
   /-- Resolve a leftover DeathLeftover. -/
@@ -530,6 +541,8 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .youCastFirstNoncreature => #[.youCastFirstNoncreature]
   | .youCastTargetingOpponentOrTheirCreature => #[.youCastTargetingOpponentOrTheirCreature]
   | .youActivateLoyaltyAbility => #[.youActivateLoyaltyAbility]
+  | .eachUpkeep => #[.eachUpkeep]
+  | .eachOpponentDrawStep => #[.eachOpponentDrawStep]
   | .eachEndStep => #[.eachEndStep]
   | .thisOrNontokenSubtypeEnters => #[.thisOrNontokenSubtypeYouControlEnters]
   | .thisOrAnotherSubtypeEnters => #[.thisOrAnotherSubtypeYouControlEnters]
@@ -829,6 +842,16 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.eachEndStep], resolution := .prepareSourceIfThreeDied }
   | .drawIfRemovedTwoLoyalty => { resolution := .drawIfRemovedTwoLoyalty }
   | .plusOneOnEachSubtypeYouControl s => { resolution := .plusOneOnEachSubtypeYouControl s }
+  | .loyaltyOnSource => { resolution := .loyaltyOnSource }
+  | .grantThenCounterByType k =>
+    { targeting := .of .permanentYouControl, resolution := .grantThenCounterByType k }
+  | .destroyOppPermanentIfSixLands =>
+    { targeting := .of .oppPermanent, resolution := .destroyOppPermanentIfSixLands }
+  | .pumpOrCounterIfScried =>
+    { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
+      resolution := .pumpOrCounterIfScried }
+  | .sacrificeSourceIfNoPlaneswalker =>
+    { events := #[.eachEndStep], resolution := .sacrificeSourceIfNoPlaneswalker }
   | .onEnchanted action => { resolution := .onEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl, resolution := .attachThen followup }
