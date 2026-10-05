@@ -448,8 +448,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       for o in g.battlefield do
         if o.status.attacking then
           g := g.applyPermanentAction o .untap
-      return g.logMsg
-        "Attacking creatures untap. An additional combat phase will occur"
+      return { g with additionalCombatPhases := g.additionalCombatPhases + 1 }.logMsg
+        "Attacking creatures untap. After this phase, there is an additional combat phase"
   | .eaglesCreateBirds =>
     let n := lastKnownPower.getD 0
     g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
@@ -594,20 +594,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some host =>
         let g := g.applyPermanentAction host .tap
         let host := g.object! host.id
-        let g := g.setObject { host with status :=
-          { host.status with
-            plusOnePlusOne := 0
-            hope := 0
-            hone := 0
-            shadow := 0
-            burden := 0
-            quest := 0
-            trampleCounters := 0
-            influence := 0
-            lore := 0
-            invasion := 0
-            indestructibleCounters := 0
-            lifelinkCounters := 0 } }
+        let g := g.setObject { host with status := host.status.withoutCounters }
         g.logMsg s!"counters are removed from {host.name}"
   | .revealTopPutRandomCreature n =>
     Id.run do

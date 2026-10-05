@@ -22,6 +22,12 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
         phrase := "Tap target creature an opponent controls" },
       { targeting := .of .creatureYouControl, resolution := .onPermanent .untap
         phrase := "Untap target creature you control" }]
+  | .wolfPlusOneOrTreasure =>
+    #[{ targeting := .of (.creatureYouControlAnySubtype #["Wolf"])
+        resolution := .onPermanent (.plusOne 1)
+        phrase := "Put a +1/+1 counter on target Wolf you control" },
+      { resolution := .createTokens .treasure 1
+        phrase := "Create a Treasure token" }]
   | _ => #[]
 
 /-- Modes of the triggered ability `obj` (from its source). -/

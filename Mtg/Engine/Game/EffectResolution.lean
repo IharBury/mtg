@@ -1267,6 +1267,15 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     match targets[0]? with
     | some (Target.permanent id) => g.applyConnive controller (some id)
     | _ => g.applyConnive controller none
+  | .trigger .exileOppNonlandEachUntilLeaves =>
+    g.withSourceStillOnBattlefield sourceId fun g _ =>
+      targets.foldl (fun acc t =>
+        match t with
+        | Target.permanent oid =>
+          match acc.findObject? oid with
+          | some o => acc.exileUntilSourceLeaves sourceId o
+          | none => acc
+        | _ => acc) g
   | .sequence _ | .shuffleSource | .amassGoblins _ | .discard _ | .spell _ | .trigger _ =>
     g
   | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _

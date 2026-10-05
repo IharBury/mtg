@@ -770,7 +770,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .millThenSubtypeToHand n subtype =>
     { resolution := .millThenSubtypeToHand n subtype }
   | .exileOppNonlandEachUntilLeaves =>
-    { targeting := .of .oppNonland, allowsZeroTargets := true,
+    { targeting := .of (.filtered
+        { noun := "for each opponent, up to one target nonland permanent that player controls"
+          nonland := true, controller := .eachOpponent })
+      allowsZeroTargets := true
       resolution := .exileOppNonlandEachUntilLeaves }
   | .plusOneEqualLastKnownMv =>
     { targeting := .of .creatureYouControl, resolution := .plusOneEqualLastKnownMv }

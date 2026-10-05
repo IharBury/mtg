@@ -911,6 +911,47 @@ def fireTrigger (g : Game) (name : String) (idx : Nat := 0) : Game :=
   let o := namedPermanent g name
   (g.putTriggeredAbilityOnStack me o o.printed.triggeredAbilities[idx]! "test trigger").promptTriggerTargetsIfNeeded
 
+/- Enchanted River's Grasp taps the enchanted creature and removes every counter. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me
+  let g := equip g "Enchanted River's Grasp" "Grizzly Bears"
+  let host := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { host with status :=
+    { host.status with plusOnePlusOne := 2, stun := 1, minusOneMinusOne := 1 } }
+  let g := passBoth (fireTrigger g "Enchanted River's Grasp")
+  let h := namedPermanent g "Grizzly Bears"
+  h.status.tapped && h.status.plusOnePlusOne == 0 && h.status.stun == 0 &&
+    h.status.minusOneMinusOne == 0
+
+/- Desert Were-Worm untaps attackers and schedules another combat phase. -/
+#guard
+  let g := addPermanent afterDraw desertWereWorm me me
+  let w := namedPermanent g "Desert Were-Worm"
+  let g := g.setObject { w with status := { w.status with attacking := true, tapped := true } }
+  let g := passBoth (fireTrigger g "Desert Were-Worm")
+  !(namedPermanent g "Desert Were-Worm").status.tapped && g.additionalCombatPhases == 1
+
+/- Celebrate the Mountain-king exiles up to one nonland each opponent controls. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw mountain opp opp) grizzlyBears opp opp
+  let g := addPermanent g celebrateTheMountainKing me me
+  let g := fireTrigger g "Celebrate the Mountain-king"
+  let g := passBoth (mustApply g me (.target (.permanent (idOf g "Grizzly Bears"))))
+  inExile g "Grizzly Bears" && onBattlefield g "Mountain"
+
+/- Bejeweled Warg's combat-damage trigger is a real mode choice. -/
+#guard
+  let g := addPermanent afterDraw bejeweledWarg me me
+  let g := fireTrigger g "Bejeweled Warg"
+  let g := mustApply g me (.chooseMode 0)
+  let g := passBoth (mustApply g me (.target (.permanent (idOf g "Bejeweled Warg"))))
+  counters g "Bejeweled Warg" == 1 && treasures g me == 0
+#guard
+  let g := addPermanent afterDraw bejeweledWarg me me
+  let g := fireTrigger g "Bejeweled Warg"
+  let g := passBoth (mustApply g me (.chooseMode 1))
+  counters g "Bejeweled Warg" == 0 && treasures g me == 1
+
 /- Elven Raft-Steerer's landfall is modal: tap an opponent's creature or untap
 yours. -/
 #guard
