@@ -145,11 +145,29 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (fun s =>
     { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 })
   let g := g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
-  match o.controller with
+  -- “Whenever you put … counters”: “you” is whoever controls the effect
+  -- putting them, not necessarily the creature's controller.
+  let putter :=
+    ((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject?).bind (·.controller)
+      |>.orElse (fun _ => o.controller)
+  let g :=
+    match putter with
+    | some q =>
+      if n > 0 then
+        g.foldControlledPermanents q none fun g src =>
+          -- Invisible Woman: one or more counters at once trigger once.
+          let oncePerBatch := src.printed.triggeredAbilities.any (fun ab =>
+            match ab.shared with
+            | .resource .plusOneOnHeroesCreateWall => true
+            | _ => false)
+          if oncePerBatch && g.waitingTriggers.any (fun w =>
+              w.source.id == src.id && w.event == .youPutPlusOne) then g
+          else g.putMatchingSourceTriggers q src .youPutPlusOne (cause := some (g.object! o.id))
+      else g
+    | none => g
+  match putter with
   | none => g
   | some p =>
-    let g :=
-      if n > 0 then g.putControlledTriggers p .youPutPlusOne else g
     if n > 0 &&
         (g.hasSubtype o "Goblin" || g.hasSubtype o "Orc" || g.hasSubtype o "Army") then
       g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy

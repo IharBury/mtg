@@ -58,6 +58,24 @@ def exileLibraryUntilNonland (g : Game) (pid : PlayerId) : Game × Option Object
         if !o.printed.isLand then found := some newId
     return (g, found)
 
+/-- Ask the next player in `players` with a nontoken creature to choose one
+to sacrifice; once all have chosen, sacrifice them together. -/
+def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : Array ObjectId) :
+    Game :=
+  let hasOne (p : PlayerId) := (g.permanentsOf p).any (fun o => o.isCreature && !o.printed.isToken)
+  match (players.filter hasOne).toList with
+  | p :: rest =>
+    { g with pending := .fraChoice p (.sacrificeNontokenEach rest.toArray chosen) }.logMsg
+      s!"{(g.player p).name} sacrifices a nontoken creature"
+  | [] =>
+    chosen.foldl (fun g id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield then
+          g.sacrificeToGraveyard o s!"{(g.player (o.controller.getD o.owner)).name} sacrifices {o.name}"
+        else g
+      | none => g) g
+
 /-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
 Effects are applied from that structured payload — not from Oracle text. -/
 def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
@@ -278,7 +296,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.resource .plusOneCreateInsectOnce) =>
     g.createKindTokens controller .insect11green 1
   | (.resource .plusOneOnHeroesCreateWall) =>
-    g.createKindTokens controller .wall04defender 1
+    { g with pending := .fraChoice controller (.mayCreateTokens .wall04defender 1) }.logMsg
+      s!"{(g.player controller).name} may create a 0/4 Wall creature token with defender"
   | (.resource .secondDrawBecome66) =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.mapObjectStatus o (fun s =>
@@ -446,12 +465,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         g.afterPermanentEnters (g.object! newId)
           |>.logMsg s!"{o.name} returns, loses all abilities, and gains haste"
   | (.death .deathtouchOppSac) =>
-    (g.livingOpponents controller).foldl (fun (g : Game) pl =>
-      match (g.permanentsOf pl.id).find? (fun o => o.isCreature && !o.printed.isToken) with
-      | some o => g.sacrificeToGraveyard o
-          s!"{(g.player pl.id).name} sacrifices {o.name}"
-      | none =>
-        g.logMsg s!"{(g.player pl.id).name} has no nontoken creature to sacrifice") g
+    g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
   | (.thisAttack .mayPayPlusOne) =>
     g.offerPayForReflexive controller sourceId #[.generic 1] 12
   | (.thisAttack .blinkNontoken) =>

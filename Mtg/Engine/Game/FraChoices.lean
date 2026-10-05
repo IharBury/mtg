@@ -411,6 +411,15 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return g.drawThenBeginDiscard p n (discardRounds := k)
   | .mayDrawThenDiscard .., .decline => return g.finishFraChoice
   | .mayDrawThenDiscard .., _ => throw "Answer accept or decline"
+  | .sacrificeNontokenEach rest chosen, .objects #[id] =>
+    let some o := g.findObject? id | throw "no such object"
+    if !o.isOnBattlefield || !o.isCreature || o.printed.isToken || !o.controlledBy p then
+      throw "Choose a nontoken creature you control"
+    return (g.continueNontokenSacrifices rest (chosen.push id)).finishFraChoice
+  | .sacrificeNontokenEach .., _ => throw "Choose a nontoken creature to sacrifice"
+  | .mayCreateTokens kind n, .accept => return (g.createKindTokens p kind n).finishFraChoice
+  | .mayCreateTokens .., .decline => return g.finishFraChoice
+  | .mayCreateTokens .., _ => throw "Answer accept or decline"
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .accept
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .mode _ =>
     let times := match answer with | .mode n => n | _ => 1
@@ -567,6 +576,9 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayPayExtort _ =>
     if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then .accept else .decline
   | .mayDrawThenDiscard .. => .accept
+  | .mayCreateTokens .. => .accept
+  | .sacrificeNontokenEach .. =>
+    .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
   | .mayPayManaForReflexive cost _ _ _ =>
     if (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
   | .mayTapSourceThen .. => .accept

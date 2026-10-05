@@ -287,7 +287,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | some p =>
         g.battlefield.foldl (fun acc o =>
           if o.id != old.id && o.controlledBy p then
-            acc ++ o.waitingTriggersFor p .creatureYouControlDies
+            acc ++ (o.waitingTriggersFor p .creatureYouControlDies).map (fun w =>
+              { w with cause := some old, causeId := some old.id })
           else acc) (#[] : Array WaitingTrigger)
       | none => (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)

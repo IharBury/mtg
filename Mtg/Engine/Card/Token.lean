@@ -74,7 +74,7 @@ inductive TokenKind where
   | illusion11blue
   /-- An 8/8 blue Leviathan creature token with hexproof (FRA). -/
   | leviathan88hexproof
-deriving Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TokenKind
 

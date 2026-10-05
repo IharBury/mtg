@@ -837,6 +837,48 @@ spell, then discard two. -/
     | _ => false
   offered
 
+/-- Resolve the top of the stack until a choice is pending. -/
+def untilFraChoice (g : Game) : Nat → Game
+  | 0 => g
+  | n + 1 =>
+    match g.pending with
+    | .fraChoice .. => g
+    | .chooseTriggerToStack q => untilFraChoice (mustApply g q (.stackTriggers (g.defaultTriggerSourceIds q))) n
+    | _ => if g.stack.isEmpty then g else untilFraChoice (passBoth g) n
+
+/- The Serpent Society: another creature with deathtouch dying makes each
+opponent sacrifice a nontoken creature of their choice. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw theSerpentSociety me me) theMasterOfLakeTown me me
+  let g := addPermanent (addPermanent g grizzlyBears opp opp) hillGiant opp opp
+  let g := g.destroyPermanent (namedPermanent g "The Master of Lake-town")
+  let g := untilFraChoice (stackTriggers g) 6
+  let asked := match g.pending with
+    | .fraChoice q (.sacrificeNontokenEach ..) => q == opp
+    | _ => false
+  let g := settle (mustApply g opp (.choosePermanents #[(theirs g "Hill Giant").id]))
+  asked && !g.objects.any (fun o => o.name == "Hill Giant" && o.isOnBattlefield) &&
+    (theirs g "Grizzly Bears").isOnBattlefield
+#guard
+  let g := addPermanent (addPermanent afterDraw theSerpentSociety me me) grizzlyBears me me
+  let g := stackTriggers (g.destroyPermanent (namedPermanent g "Grizzly Bears"))
+  !g.stack.any (fun e => (g.object! e.objectId).name.startsWith "The Serpent Society")
+
+/- Knight of Wundagore: counters on another creature, not on itself. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw knightOfWundagore me me) grizzlyBears me me
+  let self := g.addPlusOnePlusOneTo (namedPermanent g "Knight of Wundagore") 1
+  let other := g.addPlusOnePlusOneTo (namedPermanent g "Grizzly Bears") 1
+  !self.waitingTriggers.any (·.source.name == "Knight of Wundagore") &&
+    other.waitingTriggers.any (·.source.name == "Knight of Wundagore")
+
+/- Invisible Woman: only counters on other Heroes you control, and the Wall
+is optional. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw invisibleWomanSueStorm me me) grizzlyBears me me
+  let g := g.addPlusOnePlusOneTo (namedPermanent g "Grizzly Bears") 1
+  !g.waitingTriggers.any (·.source.name == "Invisible Woman, Sue Storm")
+
 /-! ## Life loss -/
 
 /- The Master of Lake-town: damage and paying life are losses of life; that

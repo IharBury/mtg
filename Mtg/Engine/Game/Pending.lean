@@ -280,6 +280,11 @@ inductive FraChoice where
   | mayPayExtort (sourceId : Option ObjectId)
   /-- You may draw `draw` cards; if you do, discard `discard` cards. -/
   | mayDrawThenDiscard (draw discard : Nat)
+  /-- Each player in turn sacrifices a nontoken creature of their choice;
+  `chosen` are sacrificed together at the end (The Serpent Society). -/
+  | sacrificeNontokenEach (rest : Array PlayerId) (chosen : Array ObjectId)
+  /-- You may create `n` tokens of `kind`. -/
+  | mayCreateTokens (kind : TokenKind) (n : Nat)
   /-- You may pay `cost` up to `maxTimes` times (accept pays once; a mode
   index pays that many times); when you do, the reflexive ability `kind`
   triggers. -/
