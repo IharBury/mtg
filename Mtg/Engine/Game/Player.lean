@@ -188,6 +188,9 @@ inductive Action where
   /-- Finish scrying: `top` (last = new top) go on top of the library in that
   order; `bottom` (first = new bottom) go to the bottom (CR 701.20). -/
   | scry (top : Array ObjectId) (bottom : Array ObjectId)
+  /-- Finish surveilling: `top` (last = new top) go on top of the library in
+  that order; `graveyard` go to the graveyard in that order (CR 701.25). -/
+  | surveil (top : Array ObjectId) (graveyard : Array ObjectId)
   /-- Discard this card from hand; if a pending “may discard, then draw” is
   waiting, draw afterward (CR 701.9). -/
   | discard (id : ObjectId)

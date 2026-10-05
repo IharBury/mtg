@@ -95,6 +95,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.putOnBottom ((g.player p).hand.extract 0 n))
     | .scry _ n =>
       some (.scry (g.scryLookedIds p n) #[])
+    | .surveil _ n =>
+      some (.surveil (g.scryLookedIds p n) #[])
     | .mayDiscardDraw _ _ =>
       discardBackOrDecline g p
     | .chooseAdditionalCost _ =>

@@ -95,6 +95,9 @@ inductive Pending where
   | putOnBottom (player : PlayerId) (count : Nat)
   /-- This player is looking at the top `count` cards of their library (CR 701.20). -/
   | scry (player : PlayerId) (count : Nat)
+  /-- This player is looking at the top `count` cards of their library to
+  surveil (CR 701.25). -/
+  | surveil (player : PlayerId) (count : Nat)
   /-- This player may discard a card; if they do, they draw `drawCount` (CR 701.9). -/
   | mayDiscardDraw (player : PlayerId) (drawCount : Nat)
   /-- The player must announce an additional or alternative additional cost

@@ -1364,7 +1364,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let n := (g.player controller).lifeGainedThisTurn
     let g := g.beginSurveil controller 1
     match g.pending with
-    | .scry _ _ => { g with surveilReturnMvAtMost := some n }
+    | .surveil _ _ => { g with surveilReturnMvAtMost := some n }
     | _ => g
   | .drawTwoWinIfEmptyShuffleSource =>
     -- Ruling 835: you win while the ability resolves, before the

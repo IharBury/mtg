@@ -477,7 +477,11 @@ def helpInteractive (controlAll : Bool := false)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
-  scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20); when surveilling, the bottom pile goes to the graveyard (CR 701.25)
+  scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
+  surveil              Finish surveilling; keep looked-at cards on top
+  surveil top <id>...  Keep listed cards on top (last = new top); rest go to the graveyard
+  surveil graveyard <id>...  Put listed cards into the graveyard in that order; rest stay on top
+  surveil top <id>... graveyard <id>...  Choose both piles and their orders (CR 701.25)
   convoke <id> [id...]  Tap those creatures to help pay for the spell (CR 702.51)
   proliferate [id|name|opponent ...]  Give each chosen permanent and player another counter of each kind it has (CR 701.34)
   discard <id>         Discard a card (CR 701.9), or pay an additional cost
@@ -1095,7 +1099,45 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
           pure ids
       g.apply p (.scry topIds bottomIds)
     | _ => throw scryUsage
+  | .surveil _ _ => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
   | _ => throw "Not time to scry (CR 701.20)"
+
+def surveilUsage : String := "usage: surveil [top <id> ...] [graveyard <id> ...]"
+
+/-- Finish a pending surveil (CR 701.25). Bare `surveil` keeps the looked-at
+cards on top in their current order. `surveil graveyard <ids>` puts those
+cards into the graveyard in that order and the rest stay on top in their
+current relative order. `surveil top <ids>` keeps those cards on top
+(last = new top) and puts the rest into the graveyard. Both piles may be
+listed to choose each order. -/
+def applySurveil (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  match g.pending with
+  | .surveil q n =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may surveil"
+    let looked := g.scryLookedIds p n
+    match commandTokens tokens with
+    | [] => g.apply p (.surveil looked #[])
+    | "graveyard" :: rest =>
+      let ids ← parseObjectIds rest surveilUsage
+      requireObjects g ids
+      g.apply p (.surveil (looked.filter (fun id => !ids.contains id)) ids)
+    | "top" :: rest =>
+      let (topToks, gyRest) := splitAtKeyword "graveyard" rest
+      let topIds ← parseObjectIds topToks surveilUsage
+      requireObjects g topIds
+      let graveyardIds ←
+        match gyRest with
+        | none => pure (looked.filter (fun id => !topIds.contains id))
+        | some [] => pure #[]
+        | some ts =>
+          let ids ← parseObjectIds ts surveilUsage
+          requireObjects g ids
+          pure ids
+      g.apply p (.surveil topIds graveyardIds)
+    | _ => throw surveilUsage
+  | .scry _ _ => throw "You are scrying, not surveilling; use scry (CR 701.20)"
+  | _ => throw "Not time to surveil (CR 701.25)"
 
 def discardUsage : String := "usage: discard <id>"
 
@@ -1625,6 +1667,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "cast" => applyCast g p args
   | "target" => applyTarget g p args
   | "scry" => applyScry g p args
+  | "surveil" => applySurveil g p args
   | "proliferate" => applyProliferate g p args
   | "convoke" => applyConvoke g p args
   | "discard" => applyDiscard g p args

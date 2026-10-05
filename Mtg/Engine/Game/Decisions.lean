@@ -3,7 +3,7 @@ import Mtg.Engine.Game.Mulligans
 /-!
 # Decision handlers
 
-Handlers for `Pending` decisions: finishing scry, discarding, paying
+Handlers for `Pending` decisions: finishing scry and surveil, discarding, paying
 generic costs, library-side and permanent choices, declining, keeping
 the opening hand, the legend rule, ordering triggers, taking mulligans,
 and supplying outside randomness.
@@ -24,54 +24,82 @@ def uniqueObjectIds (ids : Array ObjectId) : Bool :=
 def isPermutation (a b : Array ObjectId) : Bool :=
   a.size == b.size && uniqueObjectIds a && a.all (fun x => b.contains x)
 
+/-- Check that `top ++ rest` rearranges the `count` cards `p` is looking at
+as `q`'s pending scry or surveil. -/
+def checkLookedPiles (g : Game) (p q : PlayerId) (count : Nat)
+    (top rest : Array ObjectId) (verb rule : String) : Except String Unit := do
+  if p != q then
+    throw s!"Only {(g.player q).name} may {verb}"
+  if !uniqueObjectIds (top ++ rest) then
+    throw "Duplicate card"
+  if !isPermutation (top ++ rest) (g.scryLookedIds p count) then
+    throw s!"{verb.capitalize} must rearrange the cards you looked at ({rule})"
+
+/-- Clear the finished scry or surveil, draw any follow-up cards, and give
+the active player priority. -/
+def finishLibraryLook (g : Game) : Game :=
+  let g := { g with pending := .none, surveilReturnMvAtMost := none }
+  match g.pendingDrawAfterScry with
+  | some (q, n) =>
+    let g := { g with pendingDrawAfterScry := none }
+    (g.draw q n).receivePriority g.activePlayer
+  | none => g.receivePriority g.activePlayer
+
+/-- Log putting `top` back on top, unless they stay in the looked-at order. -/
+def logPutOnTop (g : Game) (p : PlayerId) (looked top : Array ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    if top != looked then
+      for id in top do
+        g := g.logMsg
+          s!"{(g.player p).name} puts {(g.object! id).name} on top of their library"
+    return g
+
 /-- Finish scrying: put `bottom` on the bottom (first = new bottom) and `top`
 on top (last = new top) of the library, each pile in the given order (CR 701.20). -/
 def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     Except String Game := do
   match g.pending with
   | .scry q count =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may scry"
-    if !uniqueObjectIds (top ++ bottom) then
-      throw "Duplicate card"
+    g.checkLookedPiles p q count top bottom "scry" "CR 701.20"
     let looked := g.scryLookedIds p count
-    if !isPermutation (top ++ bottom) looked then
-      throw "Scry must rearrange the cards you looked at (CR 701.20)"
     let pl := g.player p
     let lower := pl.library.extract 0 (pl.library.size - count)
     let mut g := g
-    let surveil := g.surveilling
-    if !surveil then
-      for id in bottom do
-        g := g.logMsg
-          s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
-    if top != looked then
-      for id in top do
-        g := g.logMsg
-          s!"{(g.player p).name} puts {(g.object! id).name} on top of their library"
+    for id in bottom do
+      g := g.logMsg
+        s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
+    g := g.logPutOnTop p looked top
     g := g.setPlayer { (g.player p) with library := bottom ++ lower ++ top }
-    if surveil then
-      -- CR 701.25a: the cards not kept on top go to the graveyard.
-      for id in bottom do
-        let card := g.object! id
-        let (g', newId) := g.move id (.graveyard p) none
-        g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their graveyard (surveil)"
-        match g.surveilReturnMvAtMost with
-        | some n =>
-          if g.objectManaValue card ≤ n then
-            let (g', _) := g.move newId (.hand p) none
-            g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
-        | none => pure ()
-    g := { g with surveilReturnMvAtMost := none }
-    g := { g with pending := .none, surveilling := false }
-    match g.pendingDrawAfterScry with
-    | some (q, n) =>
-      g := { g with pendingDrawAfterScry := none }
-      g := g.draw q n
-      return g.receivePriority g.activePlayer
-    | none =>
-      return g.receivePriority g.activePlayer
-  | _ => throw "Not time to scry or surveil (CR 701.20 / 701.25)"
+    return g.finishLibraryLook
+  | .surveil _ _ => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
+  | _ => throw "Not time to scry (CR 701.20)"
+
+/-- Finish surveilling: put `graveyard` into the graveyard in that order and
+`top` back on top (last = new top) of the library (CR 701.25). -/
+def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
+    Except String Game := do
+  match g.pending with
+  | .surveil q count =>
+    g.checkLookedPiles p q count top graveyard "surveil" "CR 701.25"
+    let looked := g.scryLookedIds p count
+    let pl := g.player p
+    let lower := pl.library.extract 0 (pl.library.size - count)
+    let mut g := g.logPutOnTop p looked top
+    g := g.setPlayer { (g.player p) with library := graveyard ++ lower ++ top }
+    for id in graveyard do
+      let card := g.object! id
+      let (g', newId) := g.move id (.graveyard p) none
+      g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their graveyard (surveil)"
+      match g.surveilReturnMvAtMost with
+      | some n =>
+        if g.objectManaValue card ≤ n then
+          let (g', _) := g.move newId (.hand p) none
+          g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
+      | none => pure ()
+    return g.finishLibraryLook
+  | .scry _ _ => throw "You are scrying, not surveilling; use scry (CR 701.20)"
+  | _ => throw "Not time to surveil (CR 701.25)"
 
 /-- Remove one symbol a convoking creature of `colors` can pay: a colored
 (or hybrid) symbol of one of its colors, else one generic mana (ruling 865). -/

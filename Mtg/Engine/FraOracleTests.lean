@@ -114,15 +114,18 @@ def jaceMinusOne : Game :=
 graveyard (CR 701.25). -/
 def jaceSurveilling : Game := passBoth jaceMinusOne
 
-#guard jaceSurveilling.pending == .scry ⟨0⟩ 1 && jaceSurveilling.surveilling
+#guard jaceSurveilling.pending == .surveil ⟨0⟩ 1
 
 def jaceSurveilledToGraveyard : Game :=
   let top := jaceSurveilling.scryLookedIds ⟨0⟩ 1
-  mustApply jaceSurveilling ⟨0⟩ (.scry #[] top)
+  mustApply jaceSurveilling ⟨0⟩ (.surveil #[] top)
 
 #guard (jaceSurveilledToGraveyard.player ⟨0⟩).graveyard.any (fun id =>
   (jaceSurveilledToGraveyard.object! id).name == "Grizzly Bears")
-#guard !jaceSurveilledToGraveyard.surveilling
+#guard jaceSurveilledToGraveyard.pending == .none
+/- Surveil is its own decision: finishing it as a scry is refused. -/
+#guard rejects jaceSurveilling ⟨0⟩
+  (.scry #[] (jaceSurveilling.scryLookedIds ⟨0⟩ 1)) "use surveil"
 
 /- Ruling 779: only one loyalty ability of each planeswalker per turn
 (CR 606.3). -/

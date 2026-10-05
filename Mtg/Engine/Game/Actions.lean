@@ -47,6 +47,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .takeMulligan => g.takeMulligan p
   | .putOnBottom ids => g.putCardsOnBottom p ids
   | .scry top bottom => g.finishScry p top bottom
+  | .surveil top graveyard => g.finishSurveil p top graveyard
   | .discard id => g.discardForDraw p id
   | .decline => g.decline p
   | .haveVillainConnive => g.haveVillainConnive p
@@ -87,6 +88,7 @@ def actor (g : Game) : Option PlayerId :=
     | .declareMulligan p => who p
     | .putOnBottom p _ => who p
     | .scry p _ => who p
+    | .surveil p _ => who p
     | .mayDiscardDraw p _ => who p
     | .chooseAdditionalCost p => who p
     | .chooseSacrificeCreature p _ _ => who p

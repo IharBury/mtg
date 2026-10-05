@@ -187,6 +187,8 @@ def proftScrying : Game :=
   withMana (g.beginScry ⟨0⟩ 1) ⟨0⟩ .blue 2
 
 #guard proftScrying.pending == .scry ⟨0⟩ 1 && proftScrying.stack.isEmpty
+#guard rejects proftScrying ⟨0⟩
+  (.surveil (proftScrying.scryLookedIds ⟨0⟩ 1) #[]) "use scry"
 #guard
   let g := mustApply proftScrying ⟨0⟩ (.scry (proftScrying.scryLookedIds ⟨0⟩ 1) #[])
   let hand := (g.player ⟨0⟩).hand.size
@@ -342,18 +344,18 @@ def confidantEndStep (life : Nat) (top : CardDef) : Game :=
 goes to Chandra's hand. -/
 #guard
   let g := passBoth (confidantEndStep 3 grizzlyBears)
-  let g := mustApply g ⟨0⟩ (.scry #[] (g.scryLookedIds ⟨0⟩ 1))
+  let g := mustApply g ⟨0⟩ (.surveil #[] (g.scryLookedIds ⟨0⟩ 1))
   (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Grizzly Bears")
 /- The life gained is checked as it resolves: gaining 1 more with the
 ability on the stack lets Hill Giant (mana value 4) come back. -/
 #guard
   let g := confidantEndStep 3 hillGiant
   let g := passBoth (g.gainLife ⟨0⟩ 1)
-  let g := mustApply g ⟨0⟩ (.scry #[] (g.scryLookedIds ⟨0⟩ 1))
+  let g := mustApply g ⟨0⟩ (.surveil #[] (g.scryLookedIds ⟨0⟩ 1))
   (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Hill Giant")
 #guard
   let g := passBoth (confidantEndStep 3 hillGiant)
-  let g := mustApply g ⟨0⟩ (.scry #[] (g.scryLookedIds ⟨0⟩ 1))
+  let g := mustApply g ⟨0⟩ (.surveil #[] (g.scryLookedIds ⟨0⟩ 1))
   (g.player ⟨0⟩).graveyard.any (fun id => (g.object! id).name == "Hill Giant")
 #guard (fraRuling 750).comment.contains "the last part of the ability will check how much life you've gained as the ability resolves"
 

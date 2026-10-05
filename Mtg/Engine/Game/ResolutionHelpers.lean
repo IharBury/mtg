@@ -221,11 +221,11 @@ def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if count == 0 then
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
-    { g with pending := .scry p count, surveilling := false, surveilReturnMvAtMost := none }.logMsg s!"{pl.name} scries {n}"
+    { g with pending := .scry p count, surveilReturnMvAtMost := none }.logMsg s!"{pl.name} scries {n}"
 
 /-- Start surveilling `n` during resolution (CR 701.25): look at the top
 `n` cards, put any number into the graveyard and the rest back on top in any
-order. Shares the scry decision; the bottom pile goes to the graveyard. -/
+order. -/
 def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
@@ -235,7 +235,7 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if count == 0 then
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else
-    { g with pending := .scry p count, surveilling := true }.logMsg
+    { g with pending := .surveil p count }.logMsg
       s!"{pl.name} surveils {n}"
 
 /-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.13). -/

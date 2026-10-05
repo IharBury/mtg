@@ -148,7 +148,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .chooseTeamwork q | .chooseTeamworkCreatures q _ =>
     if q == p then { g with pending := .none, proposedSpell := none } else g
   | .sacrificePermanent q _ | .discardForAdditionalCost q
-  | .sacrificeCreature q | .scry q _
+  | .sacrificeCreature q | .scry q _ | .surveil q _
   | .mayDiscardDraw q _ | .mayAttachEquipment q _ | .tapHumans q
   | .recruitDiscard q | .chooseRingBearer q | .chooseLibraryPlacement q _
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _

@@ -85,9 +85,6 @@ structure Game where
   /-- After the pending surveil, a card with mana value at most this put into
   the graveyard goes to its owner's hand (Enlightened Confidant). -/
   surveilReturnMvAtMost : Option Nat := none
-  /-- The pending library look is a surveil, not a scry: the cards not kept
-  on top go to the graveyard instead of the bottom (CR 701.25). -/
-  surveilling : Bool := false
   /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
   batch, so simultaneous deaths still see those sources (Gatherer).
   Objects are stored so a source that also dies still applies (CR 614.6). -/
