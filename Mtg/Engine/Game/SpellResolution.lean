@@ -78,14 +78,38 @@ def resolveTop (g : Game) : Game :=
           | none => g
         | _ => g
       else
-        -- CR 608.2b: checked before the spell's effects change the game.
+        -- CR 608.2b: an instant or sorcery whose targets are all illegal
+        -- doesn't resolve, so none of its effects happen (rulings 734 / 749).
+        -- Each target is checked against its own slot.
         let allTargetsIllegal :=
-          !entry.targets.isEmpty &&
+          obj.printed.isInstantOrSorcery && !entry.targets.isEmpty &&
             match spellEffectOf obj entry.chosenMode with
             | some e =>
-              let legal := g.legalTargetsForKind entry.controller e.targetKind (some obj.id)
+              let kind := e.targetKind
+              let legal :=
+                if kind.spec.slots.isEmpty then
+                  g.legalTargetsForKind entry.controller kind (some obj.id)
+                else
+                  kind.spec.slots.foldl (fun acc k =>
+                    acc ++ g.legalTargetsForAtomicKind entry.controller k (some obj.id)) #[]
               entry.targets.all (fun t => !legal.contains t)
             | none => false
+        if allTargetsIllegal then
+          let g := entry.targets.foldl (fun g t => g.illegalAbilityTarget t) g
+          let g := g.logMsg
+            s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+          if obj.isCopy then
+            (g.ceaseToExist obj.id).logMsg
+              s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
+          else if obj.castFromGraveyard then
+            let (g, _) := g.move obj.id .exile none
+            g.logMsg s!"{obj.name} is exiled (flashback)"
+          else
+            -- An Adventure that doesn't resolve isn't exiled (ruling 5).
+            let g := g.setObject { obj with
+              printed := obj.adventurerCard.getD obj.printed, adventurerCard := none }
+            g.moveToOwnerGraveyard (g.object! obj.id) s!"{obj.name} goes to the graveyard"
+        else
         let g :=
           match obj.giftPromisedTo, obj.printed.isInstantOrSorcery with
           | some to, true => g.givePromisedGift to
@@ -98,14 +122,9 @@ def resolveTop (g : Game) : Game :=
             (giftPromised := obj.giftPromisedTo.isSome)
             (chosenX := obj.chosenX.getD 0)
           | none => g
-        -- Ruling 734: a spell whose targets are all illegal doesn't resolve,
-        -- so it doesn't empower Jace.
         let g :=
           match obj.printed.empowerJace with
-          | some n =>
-            if allTargetsIllegal then
-              g.logMsg s!"{obj.name}'s targets are all illegal. Jace isn't empowered"
-            else g.empowerJace entry.controller n
+          | some n => g.empowerJace entry.controller n
           | none => g
         if obj.isAdventureSpell then
           g.resolveAdventureSpell entry (g.object! obj.id)
