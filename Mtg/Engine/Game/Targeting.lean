@@ -371,7 +371,7 @@ def triggerStillNeedsTargets (e : StackEntry) (ab : TriggeredAbility) : Bool :=
   match ab.dividedDamage? with
   | some (amount, _) => assignedDividedDamage e < amount
   | none =>
-    if ab.allowsZeroTargets then !e.targetsAnnounced
+    if ab.allowsZeroTargets || ab.targeting.kind.spec.slots.size > 1 then !e.targetsAnnounced
     else ab.requiresTarget && e.targets.isEmpty
 
 /-- Stack entry for a triggered ability that still needs targets announced
@@ -384,7 +384,7 @@ def triggerNeedingTargets (g : Game) : Option StackEntry :=
       match o.triggeredAbility, o.abilityEffect with
       | some _, some eff =>
         -- A modal trigger whose modes were chosen (CR 603.3c).
-        if eff.allowsZeroTargets then !e.targetsAnnounced
+        if eff.allowsZeroTargets || eff.targetKind.spec.slots.size > 1 then !e.targetsAnnounced
         else eff.requiresTarget && e.targets.isEmpty
       | some ab, none =>
         match ab.effect.resolution with

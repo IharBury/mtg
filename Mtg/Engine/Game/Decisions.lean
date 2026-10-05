@@ -487,13 +487,13 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
           return { g with pending := .chooseTargets p }
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
-        return g.afterTriggerTargetsChosen
+        return (g.markTargetsAnnounced obj.id true).afterTriggerTargetsChosen
       else if g.canFinishOptionalTargets obj then
         let g := g.logMsg
           s!"{(g.player p).name} finishes choosing targets (CR 601.2c)"
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
-        return g.afterTriggerTargetsChosen
+        return (g.markTargetsAnnounced obj.id true).afterTriggerTargetsChosen
       throw "That spell requires a target (CR 601.2c)"
   | .mayPayGeneric q _ =>
     let g := { g with mayPayAlsoPlusOneOn := none }
@@ -509,7 +509,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     let g := { g with pending := .none }
     let g := g.counterStackSpell spellId
     return g.receivePriority g.activePlayer
-  | .payWard _ _ (.sacrificePermanents _ (paid + 1)) =>
+  | .payWard _ _ (.sacrificePermanents _ (_ + 1)) =>
     throw s!"{(g.player p).name} already began sacrificing permanents for ward and must finish"
   | .payWard q spellId _ =>
     if p != q then

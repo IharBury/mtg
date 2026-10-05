@@ -426,7 +426,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
       let g := g.logMsg
         s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
       if g.currentTargetSlot obj < kind.spec.slots.size then
-        return { g with pending := .chooseTargets p }
+        return { (g.markTargetsAnnounced obj.id false) with pending := .chooseTargets p }
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
       let g := g.queueYouTargetTriggers p obj
