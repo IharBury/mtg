@@ -176,6 +176,8 @@ inductive TriggerEvent where
   | eachUpkeep
   /-- You scry or surveil (CR 701.20 / 701.25). -/
   | youScryOrSurveil
+  /-- One or more of your opponents are dealt combat damage during your turn. -/
+  | opponentsDealtCombatDamageYourTurn
   /-- A creature you control dies. -/
   | creatureYouControlDies
   /-- The beginning of each opponent's draw step. -/
@@ -484,6 +486,9 @@ def spec : TriggerEvent → Spec
       label := "upkeep trigger", checkTargets := false }
   | .youScryOrSurveil =>
     { clause := "you scry or surveil", label := "scry trigger", checkTargets := false }
+  | .opponentsDealtCombatDamageYourTurn =>
+    { clause := "one or more of your opponents are dealt combat damage during your turn",
+      isWhenever := false, label := "combat-damage trigger", checkTargets := false }
   | .creatureYouControlDies =>
     { clause := "a creature you control dies", label := "dies trigger", checkTargets := false }
   | .eachOpponentDrawStep =>

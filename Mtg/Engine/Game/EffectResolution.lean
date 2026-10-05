@@ -108,6 +108,16 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         (Effect.ofTrigger (.onPermanent .playerOrCreature (.dealDamage n)))] }
     let (g, _) := g.allocObject emblem controller .command (some controller)
     some (g.logMsg s!"{(g.player controller).name} gets an emblem")
+  | .returnFromGyWithFinality =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.zone == .graveyard o.owner then
+        let (g, newId) := g.putOntoBattlefield o.id controller
+        let g := g.logMsg s!"{o.name} returns to the battlefield"
+        let g := g.addFinalityTo (g.object! newId) 1
+        some (g.afterPermanentEnters (g.object! newId))
+      else some (g.logMsg s!"{o.name} is no longer in the graveyard")
+    | none => some (g.logMsg "The card is no longer in the graveyard")
   | .copyNextInstantSorceryThisTurn =>
     let g := g.modifyPlayer controller (fun pl =>
       { pl with copyNextInstantSorceryThisTurn := pl.copyNextInstantSorceryThisTurn + 1 })
@@ -1259,7 +1269,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
   | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
   | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
-  | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn
+  | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn | .returnFromGyWithFinality
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ =>
     g
 

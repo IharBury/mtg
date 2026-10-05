@@ -170,6 +170,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   else if preventable && pl.protectionFromEverything then
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else
+    let g := if n > 0 then g.modifyPlayer pid (fun pl => { pl with dealtNoncombatDamageThisTurn := true }) else g
     g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
 
 /-- Deal this creature's power as damage to `dest` (one side of a fight). -/

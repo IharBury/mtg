@@ -64,7 +64,8 @@ def clearTurnActivations (g : Game) : Game :=
           pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
           pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 ||
           pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed ||
-          pl.scriedOrSurveilledThisTurn || pl.copyNextInstantSorceryThisTurn != 0 then
+          pl.scriedOrSurveilledThisTurn || pl.copyNextInstantSorceryThisTurn != 0 ||
+          pl.dealtNoncombatDamageThisTurn then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -82,7 +83,8 @@ def clearTurnActivations (g : Game) : Game :=
           artifactEnteredThisTurn := false
           jaceLoyaltyAtInstantSpeed := false
           scriedOrSurveilledThisTurn := false
-          copyNextInstantSorceryThisTurn := 0 }
+          copyNextInstantSorceryThisTurn := 0
+          dealtNoncombatDamageThisTurn := false }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||

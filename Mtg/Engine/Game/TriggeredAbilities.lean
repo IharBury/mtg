@@ -1348,6 +1348,25 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.draw controller 1
   | .creaturesYouControlGet pw tw =>
     g.pumpControlledCreatures controller pw tw
+  | .pumpIfFiveOtherForests =>
+    -- Rulings 818 / 819: count Forests other than the one that caused the
+    -- trigger, whether or not that one is still on the battlefield.
+    let cause : Option ObjectId := lastKnownPower.map (fun n => ⟨n.toNat⟩)
+    let others := ((g.permanentsOf controller).filter (fun o =>
+      g.hasSubtype o "Forest" && some o.id != cause)).size
+    if others < 5 then
+      g.logMsg "You control fewer than five other Forests. The ability doesn't resolve"
+    else
+      g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+        g.pumpPermanent o 3 3)
+  | .drawTwoWinIfEmptyShuffleSource =>
+    -- Ruling 835: you win while the ability resolves, before the
+    -- state-based action for drawing from an empty library.
+    let g := g.draw controller 2
+    if (g.player controller).library.isEmpty then
+      { g with result := some (.won controller) }.logMsg
+        s!"{(g.player controller).name} wins the game"
+    else g.shuffleSourceIntoLibrary sourceId
   | .putSourceCountersOnTarget =>
     -- Rulings 756 / 758: each kind of counter it had as it died, in the same
     -- numbers; nothing moves from the dead creature.

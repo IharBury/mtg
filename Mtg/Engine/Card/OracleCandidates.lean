@@ -1029,6 +1029,8 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .triggered .youScryOrSurveil (Effect.ofTrigger (.mayPayPlusOneAndDraw 2)),
   .triggered .youScryOrSurveil (Effect.ofTrigger (.sourceGets 1 1)),
   .triggered .youScryOrSurveil (Effect.ofTrigger (.creaturesYouControlGet 1 0)) .once,
+  .triggered .opponentsDealtCombatDamageYourTurn (Effect.ofTrigger .drawTwoWinIfEmptyShuffleSource),
+  .triggered .forestYouControlEnters (Effect.ofTrigger .pumpIfFiveOtherForests),
 ]
 
 def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
@@ -1233,6 +1235,8 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   activated (Effect.cantBeBlockedAnotherPowerAtMost 2) (ManaCost.ofGeneric 1) (tap := true),
   activated (Effect.proliferatePlaneswalkerTypesTimes)
           (ManaCost.ofColors [.white, .blue, .black, .red, .green]) (tap := true),
+  activated (Effect.returnFromGyWithFinality) (ManaCost.ofColors [.black, .red])
+          (activateFromGraveyard := true) (onlyIfOpponentDealtNoncombatDamage := true),
 ]
 
 def chapterEffects : Thunk (Array (String × Effect)) := Thunk.mk fun _ => #[

@@ -448,6 +448,10 @@ inductive TriggerResolution where
   | addGreenPerChargeCounter
   /-- You may pay `{n}`. If you do, a +1/+1 counter on the source and draw. -/
   | mayPayPlusOneAndDraw (n : Nat)
+  /-- Draw two; win if the library is empty; shuffle the source away. -/
+  | drawTwoWinIfEmptyShuffleSource
+  /-- +3/+3 if you control at least five Forests other than the cause. -/
+  | pumpIfFiveOtherForests
   /-- Resolve a leftover StepLeftover. -/
   | step (e : StepLeftover)
   /-- Resolve a leftover DeathLeftover. -/
@@ -554,6 +558,7 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .youActivateLoyaltyAbility => #[.youActivateLoyaltyAbility]
   | .eachUpkeep => #[.eachUpkeep]
   | .youScryOrSurveil => #[.youScryOrSurveil]
+  | .opponentsDealtCombatDamageYourTurn => #[.opponentsDealtCombatDamageYourTurn]
   | .creatureYouControlDies => #[.creatureYouControlDies]
   | .eachOpponentDrawStep => #[.eachOpponentDrawStep]
   | .eachEndStep => #[.eachEndStep]
@@ -873,6 +878,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .addGreenPerChargeCounter =>
     { events := #[.yourFirstMain], resolution := .addGreenPerChargeCounter }
   | .mayPayPlusOneAndDraw n => { resolution := .mayPayPlusOneAndDraw n }
+  | .drawTwoWinIfEmptyShuffleSource => { resolution := .drawTwoWinIfEmptyShuffleSource }
+  | .pumpIfFiveOtherForests =>
+    { targeting := .of .creatureYouControl, resolution := .pumpIfFiveOtherForests }
   | .onEnchanted action => { resolution := .onEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl, resolution := .attachThen followup }

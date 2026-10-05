@@ -16,7 +16,8 @@ import Mtg.Engine.Tests.Turns
 
 Chandra, Torch of Defiance: casting the exiled card as her ability resolves,
 her mana ability that uses the stack, and her emblem. Graft Surgeon,
-Gardenize, Loot, the Nexus, and Proft, Consulting Detective.
+Gardenize, Loot, the Nexus, Proft, Consulting Detective, Fblthp,
+Roiling Canopy, and Grim Repriser.
 -/
 
 namespace Mtg.Engine.FraRulingTests
@@ -193,5 +194,102 @@ def proftScrying : Game :=
   (namedPermanent g "Proft, Consulting Detective").status.plusOnePlusOne == 1 &&
     (g.player ⟨0⟩).hand.size == hand + 1
 #guard (fraRuling 836).comment.contains "Proft's ability goes on the stack after you finish scrying or surveilling"
+
+/-!
+## Fblthp, Impossibly Lost (ruling 835)
+-/
+
+/-- Fblthp's combat damage triggers its ability. With one card left, the
+second draw is from an empty library, but Chandra wins as it resolves,
+before that state-based action. -/
+def fblthpWins : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g forest ⟨0⟩
+  let g := addPermanent g fblthpImpossiblyLost ⟨0⟩ ⟨0⟩
+  resolveStack (attackWith g #["Fblthp, Impossibly Lost"]) 20
+
+#guard fblthpWins.result == some (.won ⟨0⟩)
+#guard (fraRuling 835).comment.contains "this happens before those state-based actions"
+
+/- With cards left, Chandra draws two and Fblthp is shuffled into her
+library. -/
+#guard
+  let g := addPermanent afterDraw fblthpImpossiblyLost ⟨0⟩ ⟨0⟩
+  let lib := (g.player ⟨0⟩).library.size
+  let g := resolveStack (attackWith g #["Fblthp, Impossibly Lost"]) 20
+  g.result.isNone && !g.battlefield.any (fun o => o.name == "Fblthp, Impossibly Lost") &&
+    (g.player ⟨0⟩).library.size == lib - 2 + 1
+
+/-!
+## Roiling Canopy (rulings 818–820)
+-/
+
+def withForests (g : Game) (n : Nat) : Game :=
+  (List.range n).foldl (fun g _ => addPermanent g forest ⟨0⟩ ⟨0⟩) g
+
+def canopyBoard (forests : Nat) : Game :=
+  let g := addPermanent afterDraw roilingCanopy ⟨0⟩ ⟨0⟩
+  withForests (addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩) forests
+
+/- Ruling 818: with five other Forests, a Forest entering triggers it; with
+four, it doesn't trigger. -/
+#guard
+  let g := resolveStack (playLandNamed (canopyBoard 5) forest) 20
+  g.power (namedPermanent g "Grizzly Bears") == 5
+#guard
+  let g := playLandNamed (canopyBoard 4) forest
+  g.stack.isEmpty && g.waitingTriggers.isEmpty
+#guard (fraRuling 818).comment.contains "intervening 'if' clause"
+
+/-- Ruling 819: if the Forest that caused it leaves, the count is the same;
+if another Forest leaves, the count drops and the ability does nothing. -/
+def canopyTriggered : Game :=
+  let g := playLandNamed (canopyBoard 5) forest
+  match g.pending with
+  | .chooseTargets _ => mustApply g ⟨0⟩ (.target (.permanent (namedPermanent g "Grizzly Bears").id))
+  | _ => g
+
+#guard
+  let newest := (canopyTriggered.battlefield.filter (fun o => o.name == "Forest")).back!
+  let (g, _) := canopyTriggered.move newest.id (.graveyard ⟨0⟩) none
+  let g := resolveStack g 20
+  g.power (namedPermanent g "Grizzly Bears") == 5
+#guard
+  let oldest := (canopyTriggered.battlefield.filter (fun o => o.name == "Forest"))[0]!
+  let (g, _) := canopyTriggered.move oldest.id (.graveyard ⟨0⟩) none
+  let g := resolveStack g 20
+  g.power (namedPermanent g "Grizzly Bears") == 2
+#guard (fraRuling 819).comment.contains "Roiling Canopy's count isn't affected"
+
+/- Ruling 820: two Forests entering together each trigger it, each counting
+the other. -/
+#guard
+  let g := canopyBoard 4
+  let g := addPermanent (addPermanent g forest ⟨0⟩ ⟨0⟩) forest ⟨0⟩ ⟨0⟩
+  let forests := g.battlefield.filter (fun o => o.name == "Forest")
+  let g := g.afterLandEnters forests[4]!
+  let g := g.afterLandEnters (g.object! forests[5]!.id)
+  let g := resolveStack (g.receivePriority ⟨0⟩) 30
+  g.power (namedPermanent g "Grizzly Bears") == 8
+#guard (fraRuling 820).comment.contains "takes into consideration the other Forests that entered at the same time"
+
+/-!
+## Grim Repriser (ruling 805)
+-/
+
+def repriserInGraveyard : Game :=
+  withMana (withMana (addToGraveyard afterDraw grimRepriser ⟨0⟩) ⟨0⟩ .black 1) ⟨0⟩ .red 1
+
+/- It can't be activated until an opponent is dealt noncombat damage this
+turn; it didn't need to be in the graveyard then. It returns with a
+finality counter. -/
+#guard rejects repriserInGraveyard ⟨0⟩
+  (.activate (graveyardCard repriserInGraveyard ⟨0⟩ "Grim Repriser").id 0) "noncombat damage"
+#guard
+  let g := repriserInGraveyard.dealDamageToPlayer ⟨1⟩ 1
+  let g := mustApply g ⟨0⟩ (.activate (graveyardCard g ⟨0⟩ "Grim Repriser").id 0)
+  let g := resolveStack (mustApply g ⟨0⟩ .pay) 20
+  (namedPermanent g "Grim Repriser").status.finality == 1
+#guard (fraRuling 805).comment.contains "doesn't need to have been in your graveyard"
 
 end Mtg.Engine.FraRulingTests

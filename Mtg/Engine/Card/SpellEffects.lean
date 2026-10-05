@@ -972,6 +972,9 @@ def exileTopMayCastElseDamageOpponents (n : Nat) : Effect :=
 def emblemCastSpellDamage (n : Nat) : Effect :=
   mkAbility ({}) (.emblemCastSpellDamage n)
 
+def returnFromGyWithFinality : Effect :=
+  mkAbility ({}) (.returnFromGyWithFinality)
+
 def copyNextInstantSorceryThisTurn : Effect :=
   mkAbility ({}) (.copyNextInstantSorceryThisTurn)
 

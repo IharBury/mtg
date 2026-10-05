@@ -217,6 +217,9 @@ inductive Resolution where
   | proliferatePlaneswalkerTypesTimes
   /-- When you next cast an instant or sorcery spell this turn, copy it. -/
   | copyNextInstantSorceryThisTurn
+  /-- Return this card from your graveyard to the battlefield with a
+  finality counter on it. -/
+  | returnFromGyWithFinality
   /-- Exile the top card of your library. You may cast it. If you don't, this
   deals `n` damage to each opponent (Chandra, Torch of Defiance). -/
   | exileTopMayCastElseDamageOpponents (n : Nat)
@@ -537,6 +540,8 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Exile the top card of your library. You may cast that card. If you don't, this deals {n} damage to each opponent"
   | .emblemCastSpellDamage n =>
     s!"You get an emblem with \"Whenever you cast a spell, this emblem deals {n} damage to any target.\""
+  | .returnFromGyWithFinality =>
+    "Return this card from your graveyard to the battlefield with a finality counter on it"
   | .copyNextInstantSorceryThisTurn =>
     "When you next cast an instant or sorcery spell this turn, copy that spell. You may choose new targets for the copy"
   | .proliferatePlaneswalkerTypesTimes =>

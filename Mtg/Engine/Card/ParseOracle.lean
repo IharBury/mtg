@@ -505,6 +505,8 @@ def printedActivated (ab : ActivatedAbility) : String :=
           " Activate only if you control a legendary creature." else "") ++
         (if ab.onlyIfYouAttackedWithTwoOrMore then
           " Activate only if you attacked with two or more creatures this turn." else "") ++
+        (if ab.onlyIfOpponentDealtNoncombatDamage then
+          " Activate only if an opponent has been dealt noncombat damage this turn." else "") ++
         (if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 then
           s!" Activate only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater."
          else "") ++

@@ -663,6 +663,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put its counters on up to one target creature you control"
   | .chargeCounterOnSource => "put a charge counter on this enchantment"
   | .addGreenPerChargeCounter => "add {G} for each charge counter on this enchantment"
+  | .drawTwoWinIfEmptyShuffleSource =>
+    "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
+  | .pumpIfFiveOtherForests =>
+    s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
   | .mayPayPlusOneAndDraw n =>
     s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
   | .damageBlockers n =>

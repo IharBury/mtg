@@ -170,6 +170,8 @@ structure ActivatedAbility where
   costReductionPerEquipment : Nat := 0
   /-- “Activate only if you attacked with two or more creatures this turn.” -/
   onlyIfYouAttackedWithTwoOrMore : Bool := false
+  /-- “Activate only if an opponent has been dealt noncombat damage this turn.” -/
+  onlyIfOpponentDealtNoncombatDamage : Bool := false
   /-- Power-up (CR 702.193): activate only once; if the source entered this
   turn, the cost is reduced by the permanent's mana cost. -/
   powerUp : Bool := false
@@ -213,7 +215,9 @@ def toNotation (ab : ActivatedAbility) : String :=
     (if ab.onlyIfYouControlLegendary then
       " (activate only if you control a legendary creature)" else "") ++
     (if ab.onlyIfYouAttackedWithTwoOrMore then
-      " (activate only if you attacked with two or more creatures this turn)" else "")
+      " (activate only if you attacked with two or more creatures this turn)" else "") ++
+    (if ab.onlyIfOpponentDealtNoncombatDamage then
+      " (activate only if an opponent has been dealt noncombat damage this turn)" else "")
   let body :=
     if ab.isModal then
       let modes := ab.allModes.toList.map Effect.toNotation

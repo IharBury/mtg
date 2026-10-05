@@ -310,6 +310,8 @@ inductive SharedTriggerWhen where
   | eachUpkeep
   /-- Whenever you scry or surveil. -/
   | youScryOrSurveil
+  /-- When one or more of your opponents are dealt combat damage during your turn. -/
+  | opponentsDealtCombatDamageYourTurn
   /-- Whenever a creature you control dies. -/
   | creatureYouControlDies
   /-- At the beginning of each opponent's draw step. -/
@@ -770,6 +772,12 @@ inductive SharedTrigger where
   /-- You may pay `{n}`. If you do, put a +1/+1 counter on the source and
   draw a card. -/
   | mayPayPlusOneAndDraw (n : Nat)
+  /-- Draw two cards; if your library is then empty, you win; the owner
+  shuffles the source into their library (Fblthp, Impossibly Lost). -/
+  | drawTwoWinIfEmptyShuffleSource
+  /-- If you control at least five other Forests, target creature you
+  control gets +3/+3 until end of turn (Roiling Canopy). -/
+  | pumpIfFiveOtherForests
   /-- Apply `action` to the enchanted creature. -/
   | onEnchanted (action : PermanentAction)
   /-- Attach to target, then apply `followup`. -/

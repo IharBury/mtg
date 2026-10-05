@@ -104,6 +104,8 @@ structure Player where
   /-- Instant or sorcery spells this player casts this turn that are copied
   (Way of the Cryomancer). -/
   copyNextInstantSorceryThisTurn : Nat := 0
+  /-- This player was dealt noncombat damage this turn (Grim Repriser). -/
+  dealtNoncombatDamageThisTurn : Bool := false
   /-- This player scried or surveilled this turn (Desperate Futurescribe). -/
   scriedOrSurveilledThisTurn : Bool := false
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/

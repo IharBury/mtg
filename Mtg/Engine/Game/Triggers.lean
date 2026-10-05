@@ -43,8 +43,11 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
 /-- Reality Fracture intervening “if” clauses, checked when the ability would
 trigger and again as it resolves (rulings 743 / 889). -/
 def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (source : Option GameObject) : Bool :=
+    (source : Option GameObject) (cause : Option GameObject := none) : Bool :=
   match ab.shared with
+  | .pumpIfFiveOtherForests =>
+    ((g.permanentsOf controller).filter (fun o =>
+      g.hasSubtype o "Forest" && some o.id != cause.map (·.id))).size ≥ 5
   | .destroyOppPermanentIfSixLands =>
     ((g.permanentsOf controller).filter (·.printed.isLand)).size ≥ 6
   | .prepareSourceIfNot =>
@@ -81,7 +84,7 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | .watch .hulklingCompare, _, _ => false
     | _, _, _ => true
   powerOk && otherOk && lifeOk && hulklingOk &&
-    g.fraInterveningHolds controller ab source
+    g.fraInterveningHolds controller ab source cause
 
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/
@@ -448,6 +451,7 @@ def lastKnownPowerForTrigger (ab : TriggeredAbility) (lastKnownPower : Option In
     (causeId : Option ObjectId) : Option Int :=
   match ab.shared, causeId with
   | .watch .villainConniveOnce, some id => some (Int.ofNat id.raw)
+  | .pumpIfFiveOtherForests, some id => some (Int.ofNat id.raw)
   | _, _ => lastKnownPower
 
 /-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d). -/
@@ -548,6 +552,12 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
       let g :=
         if g.hasSubtype land "Mountain" then
           g.putControlledTriggers landController .mountainYouControlEnters
+        else g
+      let g :=
+        if g.hasSubtype land "Forest" then
+          (g.foldControlledPermanents landController none fun g o =>
+            g.putMatchingSourceTriggers landController o .forestYouControlEnters
+              (cause := some land)).promptTriggerTargetsIfNeeded
         else g
       (g.player landController).graveyard.foldl (fun acc id =>
         match acc.findObject? id with
