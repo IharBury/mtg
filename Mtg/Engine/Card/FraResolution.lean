@@ -286,6 +286,13 @@ inductive FraResolution where
   | copySourceSpellXTimes
   /-- You gain `n` life. -/
   | gainLife (n : Nat)
+  /-- Draw a card and create a Treasure (The Sackville-Bagginses). -/
+  | drawAndCreateTreasure
+  /-- The source deals damage equal to its power to the target creature
+  (Thorin, Mountain-king). -/
+  | damageEqualSourcePower
+  /-- Return the source from the graveyard to its owner's hand. -/
+  | returnSourceToHand
   /-- The creature that caused this ability gets +P/+T until end of turn. -/
   | causeGetsPump (power toughness : Int)
   /-- Creatures attacking the player recorded as the cause's controller get

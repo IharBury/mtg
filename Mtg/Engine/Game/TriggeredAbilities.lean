@@ -299,8 +299,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         match g.findObject? src.id with
         | some src =>
           if src.status.hope == 0 then
-            let g := g.logMsg s!"{src.name} is sacrificed"
-            let (g, _) := g.move src.id (.graveyard src.owner) none
+            let g := g.sacrificeToGraveyard src s!"{src.name} is sacrificed"
             g.gainLife controller 4
           else g
         | none => g
@@ -754,8 +753,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .millPlayer n =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n)
   | .treasuresPerChosenType =>
-    let n := g.countCreaturesControlledBy controller
-    g.createTreasureTokens controller n
+    let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
+      o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
+    if types.isEmpty then
+      g.logMsg s!"{(g.player controller).name} controls no creatures, so no Treasures are created"
+    else
+      g.beginFraChoice controller (.chooseCreatureType types)
+        s!"{(g.player controller).name} chooses a creature type"
   | .revealUntilCreature =>
     Id.run do
       let mut g := g
@@ -792,20 +796,33 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           g := g.afterPermanentEnters (g.object! newId)
         return g.putRestOnBottomRandom controller rest
   | .attackSacPlusOneEqualPower =>
-    match (g.permanentsOf controller).find? (fun o =>
-      o.isCreature && some o.id != sourceId) with
+    match sourceId with
     | none => g.logMsg "No other creature to sacrifice"
-    | some sac =>
-      let pw := g.power sac
-      let (g, _) := g.move sac.id (.graveyard sac.owner) none
-      g.applyOnTriggerSource sourceId (.plusOne pw.toNat)
+    | some sid =>
+      let others := (g.creaturesControlledBy controller).filter (·.id != sid)
+      if others.isEmpty then g.logMsg "No other creature to sacrifice"
+      else
+        g.beginFraChoice controller (.maySacrificeAnotherCreatureForPower sid)
+          s!"{(g.player controller).name} may sacrifice another creature"
   | .amassGoblinsEqualPower =>
     let n := (lastKnownPower.getD 0).toNat
     g.amassGoblins controller n
   | .payReturnFromGy =>
-    g.returnSourceFromGraveyard sourceId controller (toHand := true)
+    match sourceId.bind g.findObject? with
+    | none => g.logMsg "The ability's source is no longer in the graveyard"
+    | some src =>
+      if src.zone != .graveyard src.owner then
+        g.logMsg s!"{src.name} is no longer in the graveyard"
+      else
+        let symbols := #[ManaSymbol.generic 1, ManaSymbol.colored .green, ManaSymbol.colored .blue]
+        g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
+          s!"{(g.player controller).name} may pay \{1}\{G}\{U} to return {src.name} to their hand"
   | .lootLandEntersTapped =>
-    g.drawThenBeginDiscard controller
+    let g := { g with lootLandEntersTapped := true }
+    let g := g.drawThenBeginDiscard controller
+    match g.pending with
+    | .chooseDiscardCard .. => g
+    | _ => { g with lootLandEntersTapped := false }
   | .honePerOppAttach =>
     let opp :=
       match targets[0]? with
@@ -847,14 +864,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let (g, _) := g.createToken controller face
         g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
   | .maySacDrawTreasure =>
-    match (g.permanentsOf controller).find? (fun o =>
-      (o.isCreature || o.printed.isArtifact) && some o.id != sourceId) with
+    match sourceId with
     | none => g.logMsg "Nothing to sacrifice"
-    | some sac =>
-      let g := g.sacrificeToGraveyard sac
-        s!"{(g.player controller).name} sacrifices {sac.name}"
-      let g := g.draw controller 1
-      g.createTreasureTokens controller 1
+    | some sid =>
+      let any := (g.permanentsOf controller).any (fun o =>
+        o.id != sid && (o.isCreature || o.printed.isArtifact))
+      if !any then g.logMsg "Nothing to sacrifice"
+      else
+        g.beginFraChoice controller (.maySacrificeAnotherForDrawTreasure sid)
+          s!"{(g.player controller).name} may sacrifice another creature or artifact"
   | .targetOpponentLosesLife n =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.loseLife pid n)
@@ -864,15 +882,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match g.findObject? hid with
       | none => g.logMsg "The target is no longer legal"
       | some host =>
-        let eqs :=
-          (g.permanentsOf controller).filter (fun o => o.printed.isEquipment)
-        let g := eqs.foldl (fun acc eq => acc.attachSourceTo eq host) g
-        let host := g.object! host.id
-        let pw := g.power host
-        match (g.battlefield.find? (fun o =>
-          o.isCreature && !o.controlledBy controller)) with
-        | none => g
-        | some opp => g.dealDamageFrom host.name opp pw (source := some host)
+        if !host.isOnBattlefield || !host.isCreature then
+          g.logMsg "The target is no longer legal"
+        else
+          let eligible :=
+            ((g.permanentsOf controller).filter (fun o =>
+              o.printed.isEquipment && o.attachedTo != some host.id)).map (·.id)
+          if eligible.isEmpty then
+            g.logMsg "No Equipment was attached this way"
+          else
+            g.beginFraChoice controller (.attachAnyEquipment host.id eligible)
+              s!"{(g.player controller).name} chooses any number of Equipment to attach to {host.name}"
     | _ => g.logMsg "The target is no longer legal"
   | .plusOneVigilance n =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>

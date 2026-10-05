@@ -384,6 +384,73 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .costPicks _ _ true, .decline =>
     throw "Part of the cost is already paid; the activation can't be cancelled"
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
+  | .chooseCreatureType types, .mode idx =>
+    let some t := types[idx]? | throw "No such creature type"
+    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o t)).size
+    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
+    return (g.createTreasureTokens p n).finishFraChoice
+  | .chooseCreatureType _, .name t =>
+    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o t)).size
+    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
+    return (g.createTreasureTokens p n).finishFraChoice
+  | .chooseCreatureType _, _ => throw "Choose a creature type"
+  | .maySacrificeAnotherCreatureForPower sourceId, .objects #[id] =>
+    let some o := g.findObject? id | throw "no such object"
+    if o.id == sourceId || !o.isOnBattlefield || !o.controlledBy p || !o.isCreature then
+      throw s!"Can't sacrifice {o.name}"
+    let pw := (g.power o).toNat
+    let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
+    let g :=
+      match g.findObject? sourceId with
+      | some src => if src.isOnBattlefield then g.addPlusOnePlusOneTo src pw else g
+      | none => g
+    return g.finishFraChoice
+  | .maySacrificeAnotherCreatureForPower _, .decline => return g.finishFraChoice
+  | .maySacrificeAnotherCreatureForPower _, _ => throw "Choose a creature to sacrifice, or decline"
+  | .maySacrificeAnotherForDrawTreasure sourceId, .objects #[id] =>
+    let some o := g.findObject? id | throw "no such object"
+    if o.id == sourceId || !o.isOnBattlefield || !o.controlledBy p ||
+        !(o.isCreature || o.printed.isArtifact) then
+      throw s!"Can't sacrifice {o.name}"
+    let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
+    return (g.applyFra p default .drawAndCreateTreasure #[] (some sourceId)).finishFraChoice
+  | .maySacrificeAnotherForDrawTreasure _, .decline => return g.finishFraChoice
+  | .maySacrificeAnotherForDrawTreasure _, _ => throw "Choose a creature or artifact to sacrifice, or decline"
+  | .mayPaySymbolsThen symbols next sourceId, .accept =>
+    let cost : ManaCost := { symbols := symbols }
+    if !(g.player p).manaPool.canPay cost then
+      throw s!"{(g.player p).name} cannot pay that cost; add mana first"
+    let g ← g.payCost p cost
+    return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+  | .mayPaySymbolsThen .., .decline => return g.finishFraChoice
+  | .mayPaySymbolsThen .., _ => throw "Pay (accept), or decline"
+  | .attachAnyEquipment hostId eligible, .objects ids =>
+    if !ids.all (eligible.contains ·) || ids.toList.eraseDups.length != ids.size then
+      throw "Choose Equipment you control"
+    let some host := g.findObject? hostId | return g.finishFraChoice
+    let mut g := g
+    let mut attached : Nat := 0
+    for id in ids do
+      match g.findObject? id with
+      | some eq =>
+        if eq.attachedTo != some hostId && eq.isOnBattlefield then
+          g := g.attachSourceTo eq (g.object! hostId)
+          attached := attached + 1
+      | none => pure ()
+    if attached == 0 || !host.isOnBattlefield then
+      return g.finishFraChoice
+    let host := g.object! hostId
+    let effect : Effect :=
+      { targeting := .of .creature, allowsZeroTargets := true
+        resolution := .fra .damageEqualSourcePower
+        phrase := s!"{host.name} deals damage equal to its power to up to one target creature" }
+    return (g.putReflexiveTrigger p (some hostId) effect).finishFraChoice
+  | .attachAnyEquipment .., .decline => return g.finishFraChoice
+  | .attachAnyEquipment .., _ => throw "Choose Equipment to attach, or decline"
+  | .sacrificeLeastPower ids, .objects #[id] =>
+    if !ids.contains id then throw "Choose a creature tied for the least power"
+    return (g.sacrificeLeastPowerCreature p (some id)).finishFraChoice
+  | .sacrificeLeastPower _, _ => throw "Choose a creature tied for the least power"
   | .mayPayPickThen pick next sourceId, .objects ids =>
     let g ← g.payCostPick p sourceId sourceId pick ids
     return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
@@ -639,6 +706,13 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       .choosePermanents ((g.costPickCandidates p sourceId pick).extract 0 pick.count)
     | none => .decline
   | .mayPayPickThen .. => .decline
+  | .chooseCreatureType _ => .chooseMode 0
+  | .maySacrificeAnotherCreatureForPower _ => .decline
+  | .maySacrificeAnotherForDrawTreasure _ => .decline
+  | .mayPaySymbolsThen symbols .. =>
+    if (g.player p).manaPool.canPay { symbols := symbols } then .accept else .decline
+  | .attachAnyEquipment _ eligible => .choosePermanents eligible
+  | .sacrificeLeastPower ids => .choosePermanents (ids.extract 0 1)
   | .addManaColors .. => .chooseMode 0
   | .payLifeOrEnterTapped _ n => if (g.player p).life > (n : Int) then .accept else .decline
   | .mayPayExtort _ =>

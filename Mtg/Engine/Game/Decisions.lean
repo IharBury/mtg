@@ -264,6 +264,18 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
   | .chooseDiscardCard q remaining =>
     let (g, card) ← g.discardPendingCard p q id
     let g := g.finishConniveDiscard card
+    let g : Game :=
+      if !g.lootLandEntersTapped || !card.printed.isLand then
+        { g with lootLandEntersTapped := false }
+      else
+        let landed := g.followMoved card.id
+        let g : Game := { g with lootLandEntersTapped := false }
+        match g.findObject? landed with
+        | none => g
+        | some o =>
+          let entered := g.putOntoBattlefield o.id q (tapped := true) (summoningSick := false)
+          let g : Game := entered.1.logMsg s!"{o.name} enters the battlefield tapped"
+          g.afterLandEnters (g.object! entered.2)
     if g.thirstDiscardsLeft > 0 then
       let left := if card.printed.isArtifact then 0 else g.thirstDiscardsLeft - 1
       let g := { g with thirstDiscardsLeft := left }

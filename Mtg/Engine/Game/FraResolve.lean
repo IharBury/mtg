@@ -758,6 +758,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .zemoBoastCopies
   | .copySourceSpellXTimes
   | .gainLife _
+  | .drawAndCreateTreasure
+  | .damageEqualSourcePower
+  | .returnSourceToHand
   | .extort =>
     g.applyFraAbility controller effect r targets sourceId
 

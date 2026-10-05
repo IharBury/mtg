@@ -95,6 +95,10 @@ inductive FraNext where
   | proliferate (times : Nat)
   | mshReflexive (kind paid : Nat)
   | gainLife (n : Nat)
+  /-- Draw a card and create a Treasure. -/
+  | drawAndTreasure
+  /-- Return the source from the graveyard to its owner's hand. -/
+  | returnSourceToHand
 deriving DecidableEq, Repr, Inhabited, BEq
 
 def FraNext.toResolution : FraNext → FraResolution
@@ -112,6 +116,8 @@ def FraNext.toResolution : FraNext → FraResolution
   | .proliferate n => .proliferate n
   | .mshReflexive k paid => .queueMshReflexive k paid
   | .gainLife n => .gainLife n
+  | .drawAndTreasure => .drawAndCreateTreasure
+  | .returnSourceToHand => .returnSourceToHand
 
 /-- Where cards found by a library search go (CR 701.19). -/
 inductive SearchDest where
@@ -305,6 +311,22 @@ inductive FraChoice where
   /-- You may pay `pick` (sacrifice, discard, …) as an ability of `sourceId`
   resolves; when you do, do `next`. -/
   | mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : ObjectId)
+  /-- Choose a creature type you control. `types` are offered by index
+  (Orcrist). Answered with `Action.chooseMode` or `Action.chooseName`. -/
+  | chooseCreatureType (types : Array String)
+  /-- You may sacrifice another creature. If you do, the source gets +1/+1
+  counters equal to that creature's power (Rhovanion Rampager). -/
+  | maySacrificeAnotherCreatureForPower (sourceId : ObjectId)
+  /-- You may sacrifice another creature or artifact. If you do, draw a card
+  and create a Treasure (The Sackville-Bagginses). -/
+  | maySacrificeAnotherForDrawTreasure (sourceId : ObjectId)
+  /-- You may pay `symbols`. If you do, do `next` (Silvan Reveler). -/
+  | mayPaySymbolsThen (symbols : Array ManaSymbol) (next : FraNext) (sourceId : ObjectId)
+  /-- Choose any number of Equipment to attach to `hostId`. Declining
+  attaches none (Thorin, Mountain-king). -/
+  | attachAnyEquipment (hostId : ObjectId) (eligible : Array ObjectId)
+  /-- Choose one of the tied least-power creatures to sacrifice. -/
+  | sacrificeLeastPower (ids : Array ObjectId)
   /-- Choose the color of each of `left` more mana to add, spendable only as
   `use` allows. Answered with `Action.chooseMode` (white, blue, black, red,
   green by index). -/

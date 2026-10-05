@@ -787,6 +787,16 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           let cancel := if paid then "" else ", or decline to cancel"
           s!"choose what to {what}: choose <id> ...{cancel}"
         | .mayPayPickThen pick .. => s!"may {pick.phrase}: choose <id>, or decline"
+        | .chooseCreatureType types =>
+          s!"choose a creature type: {String.intercalate ", " ((List.range types.size).map (fun i => s!"{i} {types[i]!}"))}"
+        | .maySacrificeAnotherCreatureForPower _ =>
+          "may sacrifice another creature: choose <id>, or decline"
+        | .maySacrificeAnotherForDrawTreasure _ =>
+          "may sacrifice another creature or artifact: choose <id>, or decline"
+        | .mayPaySymbolsThen .. => "may pay the cost (accept), or decline"
+        | .attachAnyEquipment _ eligible =>
+          s!"attach any number of Equipment ({eligible.size}): choose <id> ..., or decline"
+        | .sacrificeLeastPower _ => "choose a creature tied for the least power: choose <id>"
         | .addManaColors left use =>
           s!"choose a color for {left} more mana ({use.label}): 0 white, 1 blue, 2 black, 3 red, 4 green"
         | .payLifeOrEnterTapped _ n => s!"pay {n} life (accept), or it enters tapped (decline)"

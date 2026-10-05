@@ -55,14 +55,15 @@ def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
   else
     let pick :=
       match chosen with
-      | some id => tied.find? (fun o => o.id == id)
+      | some chosenId => tied.find? (fun (o : GameObject) => o.id == chosenId)
       | none => if tied.size == 1 then some tied[0]! else none
     match pick with
     | some o =>
       g.sacrificeToGraveyard o
         s!"{(g.player p).name} sacrifices {o.name} (least power)"
     | none =>
-      g.logMsg
+      let ids : Array ObjectId := tied.map (fun (o : GameObject) => o.id)
+      { g with pending := .fraChoice p (.sacrificeLeastPower ids) }.logMsg
         s!"{(g.player p).name} chooses one of the creatures tied for least power to sacrifice"
 
 /-- Modes in `all` that have not yet been chosen. -/

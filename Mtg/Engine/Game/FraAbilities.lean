@@ -413,6 +413,24 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
             s!"{(g.player controller).name} may choose new targets for the copies"
     | none => g
   | .gainLife n => g.gainLife controller n
+  | .drawAndCreateTreasure =>
+    let g := g.draw controller 1
+    g.createTreasureTokens controller 1
+  | .damageEqualSourcePower =>
+    let n :=
+      match sourceId.bind g.findObject? with
+      | some o => (g.power o).toNat
+      | none => 0
+    let srcName := (sourceId.bind g.findObject?).map (·.name) |>.getD "The creature"
+    g.withLegalKindPermanent controller .creature targets (fun g o =>
+      g.dealDamageFrom srcName o n (source := sourceId.bind g.findObject?))
+      sourceId (some "The target is no longer legal")
+  | .returnSourceToHand =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
+      else g.logMsg s!"{o.name} is no longer in the graveyard"
+    | none => g.logMsg "The ability's source is no longer in the graveyard"
   | .zemoBoastCopies =>
     let exiled := (g.resolvingAbilityObject?.map (·.boastExiled)).getD #[]
     let (g, copies) := exiled.foldl (fun (acc : Game × Array ObjectId) id =>

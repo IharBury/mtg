@@ -823,7 +823,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .anotherCreatureYouControl,
       resolution := .beginCombatIfDrawnTwoPump }
   | .honePerOppAttach =>
-    { targeting := .of .creatureYouControl, allowsZeroTargets := true,
+    { targeting := .of (.multi #[
+        { noun := "target opponent", zone := .player, controller := .opponent },
+        { noun := "target creature you control", controller := .you, types := #[.creature] }
+      ] #[1])
       resolution := .honePerOppAttach }
   | .damageTargetOpponent n =>
     { targeting := .of .opponent, resolution := .damageTargetOpponent n }

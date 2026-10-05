@@ -997,6 +997,98 @@ really scries, and the counters are put by the counter action. -/
     g.log.any (fun s => mentions s "loses 2 life") &&
     g.log.any (fun s => mentions s "gains 2 life")
 
+/- Orcrist creates a Treasure for each creature you control of the chosen type. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw orcristGoblinCleaver me me) grizzlyBears me me
+  let g := addPermanent g llanowarElves me me
+  let g := g.applyTriggeredAbility me .onEquippedCombatDamageTreasuresPerChosenType
+    (some (idOf g "Orcrist, Goblin-cleaver"))
+  let elf :=
+    match g.pending with
+    | .fraChoice _ (.chooseCreatureType types) => types.findIdx? (· == "Elf")
+    | _ => none
+  let g := mustApply g me (.chooseMode elf.get!)
+  elf.isSome && treasures g me == 1
+
+/- Rhovanion Rampager may sacrifice another creature for +1/+1 counters
+equal to its power. Declining does nothing. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw rhovanionRampager me me) grizzlyBears me me
+  let g := g.applyTriggeredAbility me .onAttackMaySacAnotherPlusOneEqualPower
+    (some (idOf g "Rhovanion Rampager"))
+  let g := mustApply g me .decline
+  onBattlefield g "Grizzly Bears" && counters g "Rhovanion Rampager" == 0
+#guard
+  let g := addPermanent (addPermanent afterDraw rhovanionRampager me me) grizzlyBears me me
+  let g := g.applyTriggeredAbility me .onAttackMaySacAnotherPlusOneEqualPower
+    (some (idOf g "Rhovanion Rampager"))
+  let g := mustApply g me (.choosePermanents #[idOf g "Grizzly Bears"])
+  !onBattlefield g "Grizzly Bears" && counters g "Rhovanion Rampager" == 2
+
+/- The Sackville-Bagginses may sacrifice another creature or artifact to
+draw and create a Treasure. -/
+#guard
+  let before := handSize (addPermanent afterDraw theSackvilleBagginses me me) me
+  let g := addPermanent (addPermanent afterDraw theSackvilleBagginses me me) grizzlyBears me me
+  let g := g.applyTriggeredAbility me .onEnterMaySacDrawTreasure
+    (some (idOf g "The Sackville-Bagginses"))
+  let g := mustApply g me (.choosePermanents #[idOf g "Grizzly Bears"])
+  !onBattlefield g "Grizzly Bears" && treasures g me == 1 && handSize g me == before + 1
+
+/- Silvan Reveler puts a discarded land onto the battlefield tapped, and
+its graveyard ability asks to pay {1}{G}{U}. -/
+#guard
+  let g := addPermanent afterDraw silvanReveler me me
+  let g := g.modifyPlayer me (fun pl => { pl with hand := #[] })
+  let g := onlyLib g #[forest]
+  let g := g.applyTriggeredAbility me .onEnterLootLandEntersTapped
+    (some (idOf g "Silvan Reveler"))
+  let fid := (g.player me).hand.back!
+  let g := mustApply g me (.discard fid)
+  onBattlefield g "Forest" && (namedPermanent g "Forest").status.tapped
+#guard
+  let g := addToGraveyard afterDraw silvanReveler me
+  let id := (graveyardObj g me "Silvan Reveler").id
+  let g := withMana (withMana g me .green 2) me .blue 1
+  let g := g.applyTriggeredAbility me .onLandYouControlEntersPayReturnFromGy (some id)
+  let g := mustApply g me .accept
+  inHand g me "Silvan Reveler"
+
+/- Sting's enters ability counts a target opponent's creatures and attaches
+to a creature you choose. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw stingBilboSSword me me) grizzlyBears opp opp
+  let g := addPermanent (addPermanent g grayOgre opp opp) llanowarElves me me
+  let src := namedPermanent g "Sting, Bilbo's Sword"
+  let g := (g.putTriggeredAbilityOnStack me src src.printed.triggeredAbilities[0]! "enters").promptTriggerTargetsIfNeeded
+  let g := mustApply g me (.target (.player opp))
+  let g := passBoth (mustApply g me (.target (.permanent (idOf g "Llanowar Elves"))))
+  (namedPermanent g "Sting, Bilbo's Sword").status.hone == 2 &&
+    (namedPermanent g "Sting, Bilbo's Sword").attachedTo == some (idOf g "Llanowar Elves")
+
+/- Thorin attaches only the chosen Equipment, then the creature's damage
+is a reflexive ability. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw thorinMountainKing me me) huntersAxe me me
+  let g := addPermanent (addPermanent g grizzlyBears me me) hillGiant opp opp
+  let giant := idOf g "Hill Giant"
+  let g := g.applyTriggeredAbility me .onEnterAttachEquipmentThenFight
+    (some (idOf g "Thorin, Mountain-king")) #[.permanent (idOf g "Grizzly Bears")]
+  let g := mustApply g me (.choosePermanents #[idOf g "Hunter's Axe"])
+  let g := passBoth (mustApply g me (.target (.permanent giant)))
+  (namedPermanent g "Hunter's Axe").attachedTo == some (idOf g "Grizzly Bears") &&
+    (inGraveyard g opp "Hill Giant" ||
+      (g.findObject? giant).any (fun o => o.status.damage > 0))
+
+/- Dawn of a New Age is sacrificed and you gain 4 life when its last hope
+counter is removed. -/
+#guard
+  let g := enterPermanent (addPermanent afterDraw grizzlyBears me me) dawnOfANewAge me
+  let lifeBefore := life g me
+  let g := g.applyTriggeredAbility me .onYourEndStepRemoveHopeDrawSac
+    (some (idOf g "Dawn of a New Age"))
+  !onBattlefield g "Dawn of a New Age" && life g me == lifeBefore + 4
+
 /- Enchanted River's Grasp taps the enchanted creature and removes every counter. -/
 #guard
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me
