@@ -495,6 +495,7 @@ def helpInteractive (controlAll : Bool := false)
   attack <id> [id...]  Attack with the listed creatures
   attack [id...] [at] <name|opponent>  Attack those (or all that can) at that player
   attack <id> [at] <name> <id> [at] <name> ...  Each listed creature attacks that player
+  attack <id> at <planeswalker id>  Attack that planeswalker
   noattack             Declare no attackers
   block                Block each attacker with a legal unused blocker
   block <b> <a> [...]  Assign listed blocker/attacker pairs

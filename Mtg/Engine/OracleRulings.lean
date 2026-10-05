@@ -16,6 +16,7 @@ import Mtg.Engine.FraOracleTests6
 import Mtg.Engine.FraOracleTests7
 import Mtg.Engine.FraCardTests
 import Mtg.Engine.FraCardTests2
+import Mtg.Engine.FraCardTests3
 
 /-!
 # Unique Oracle rulings

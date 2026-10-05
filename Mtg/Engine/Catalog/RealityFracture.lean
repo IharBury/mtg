@@ -5,9 +5,9 @@ import Mtg.Engine.Catalog
 # Reality Fracture catalog
 
 Oracle characteristics for every card in Magic: The Gathering | Reality Fracture
-(FRA). Each card is defined by its printed text. Lines the engine does not model
-yet are kept as printed text. Empower Jace, prepare spells, convoke, and
-`{2/C}` hybrid mana are modeled.
+(FRA). Each card is defined by its printed text, and every rules line is
+modeled: no card keeps a line as printed text. Empower Jace, prepare spells,
+convoke, and `{2/C}` hybrid mana are modeled.
 
 Source: Scryfall set `fra`.
 -/
