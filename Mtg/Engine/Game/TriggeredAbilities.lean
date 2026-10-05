@@ -11,6 +11,27 @@ going on the stack.
 namespace Mtg.Engine
 namespace Game
 
+/-- One of `ids`, chosen with the game's RNG. An empty list yields none. -/
+def chooseRandomId (g : Game) (ids : Array ObjectId) : Game × Option ObjectId :=
+  if ids.size ≤ 1 then (g, ids[0]?)
+  else
+    let (rng, shuffled) := g.rng.shuffle ids
+    ({ g with rng }, shuffled[0]?)
+
+/-- Put `chosen` from the revealed cards onto the battlefield, then the other
+revealed cards on the bottom of the library in a random order. -/
+def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array ObjectId)
+    (chosen : ObjectId) : Game :=
+  let g :=
+    match g.findObject? chosen with
+    | some o =>
+      let name := o.name
+      let (g, newId) := g.putOntoBattlefield chosen p
+      let g := g.logMsg s!"{name} enters the battlefield"
+      g.afterPermanentEnters (g.object! newId)
+    | none => g
+  g.putRestOnBottomRandom p (revealed.filter (· != chosen))
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -596,37 +617,25 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let g := g.setObject { host with status := host.status.withoutCounters }
         g.logMsg s!"counters are removed from {host.name}"
   | .revealTopPutRandomCreature n =>
-    Id.run do
-      let mut g := g
-      let ids := g.scryLookedIds controller n
-      let creatures :=
-        ids.filter (fun id =>
-          match g.findObject? id with
-          | some o => o.printed.isCreature
-          | none => false)
-      if g.norandom && creatures.size > 1 then
-        return { g with
-          pending := .resolveRandom (.chooseObject creatures)
-          afterRandom := .putCreatureThenShuffle controller }
-          |>.logMsg
-            s!"{(g.player controller).name} reveals the top {n} cards and puts a random creature onto the battlefield"
-      match creatures[0]? with
-      | none =>
-        g := g.logMsg "No creature card was revealed"
-      | some cid =>
-        let name := (g.object! cid).name
-        let (g', _) := g.putOntoBattlefield cid controller
-        g := g'.logMsg s!"{name} enters the battlefield"
-        g := g.afterPermanentEnters (g.object! cid)
-      for id in ids do
-        if creatures[0]? != some id then
-          match g.findObject? id with
-          | some o =>
-            if o.zone == .library controller then
-              let (g', _) := g.move id (.library controller) none
-              g := g'
-          | none => pure ()
-      return g.shuffleLibrary controller
+    let ids := g.scryLookedIds controller n
+    let g := ids.foldl (fun g id =>
+      match g.findObject? id with
+      | some o => g.logMsg s!"{(g.player controller).name} reveals {o.name}"
+      | none => g) g
+    let creatures := ids.filter (fun id => (g.findObject? id).any (·.printed.isCreature))
+    if creatures.isEmpty then
+      (g.logMsg "No creature card was revealed").putRestOnBottomRandom controller ids
+    else if g.norandom && creatures.size > 1 then
+      { g with
+        pending := .resolveRandom (.chooseObject creatures)
+        afterRandom := .revealRandomCreatureThenBottom controller ids }
+        |>.logMsg
+          s!"{(g.player controller).name} puts a random creature from among them onto the battlefield"
+    else
+      let (g, chosen) := g.chooseRandomId creatures
+      match chosen with
+      | some id => g.resolveRandomCreatureReveal controller ids id
+      | none => g.putRestOnBottomRandom controller ids
   | .beginCombatIfDrawnTwoPump =>
     if (g.player controller).cardsDrawnThisTurn < 2 then g
     else
@@ -669,7 +678,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           rest := rest.push newId
       match found with
       | none =>
-        return rest.foldl (fun acc id => (acc.move id (.library controller) none).1) g
+        return g.putRestOnBottomRandom controller rest
       | some cid =>
         let o := g.object! cid
         let lands := g.landsYouControl controller
@@ -679,10 +688,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           else
             g.move cid (.hand controller) none
         g := g'
-        g := g.logMsg s!"{o.name} is put into play or hand"
+        g :=
+          if o.printed.manaValue <= lands then
+            g.logMsg s!"{o.name} enters the battlefield"
+          else
+            g.logMsg s!"{o.name} is put into {(g.player controller).name}'s hand"
         if o.printed.manaValue <= lands then
           g := g.afterPermanentEnters (g.object! newId)
-        return rest.foldl (fun acc id => (acc.move id (.library controller) none).1) g
+        return g.putRestOnBottomRandom controller rest
   | .attackSacPlusOneEqualPower =>
     match (g.permanentsOf controller).find? (fun o =>
       o.isCreature && some o.id != sourceId) with
@@ -903,11 +916,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           rest := rest.push newId
       match found with
       | none =>
-        return rest.foldl (fun acc id => (acc.move id (.library controller) none).1) g
+        return g.putRestOnBottomRandom controller rest
       | some sid =>
+        let name := (g.object! sid).name
         let (g', newId) := g.putOntoBattlefield sid controller
-        g := g'.afterPermanentEnters (g.object! newId)
-        return rest.foldl (fun acc id => (acc.move id (.library controller) none).1) g
+        g := g'.logMsg s!"{name} enters the battlefield"
+        g := g.afterPermanentEnters (g.object! newId)
+        return g.putRestOnBottomRandom controller rest
   | .sacDamagersRingTempts =>
     let g :=
       (g.livingOpponents controller).foldl (fun acc pl =>

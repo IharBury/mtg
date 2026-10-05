@@ -808,6 +808,13 @@ battlefield, though it isn't a creature. -/
   let g := g.destroyPermanent (namedPermanent g "Getaway Barrel")
   g.waitingTriggers.any (·.source.name == "Getaway Barrel")
 
+def inLibrary (g : Game) (name : String) : Bool :=
+  (g.player me).library.any (fun id => (g.object! id).name == name)
+
+def onlyLib (g : Game) (cards : Array CardDef) : Game :=
+  let g := g.modifyPlayer me (fun pl => { pl with library := #[] })
+  cards.foldl (fun g c => addToLibraryTop g c me) g
+
 /-! ## Intervening “if” clauses (CR 603.4) -/
 
 /- The One Ring gives protection only if it was cast. -/
@@ -910,6 +917,54 @@ the copy may get a new target. -/
 def fireTrigger (g : Game) (name : String) (idx : Nat := 0) : Game :=
   let o := namedPermanent g name
   (g.putTriggeredAbilityOnStack me o o.printed.triggeredAbilities[idx]! "test trigger").promptTriggerTargetsIfNeeded
+
+/- Getaway Barrel puts one random revealed creature onto the battlefield and
+the other revealed cards on the bottom. The rest of the library stays. -/
+#guard
+  let g := onlyLib (addPermanent afterDraw getawayBarrel me me) #[grizzlyBears, forest, mountain]
+  let n := g.log.size
+  let g := passBoth (fireTrigger g "Getaway Barrel")
+  onBattlefield g "Grizzly Bears" && inLibrary g "Forest" && inLibrary g "Mountain" &&
+    !inLibrary g "Grizzly Bears" &&
+    (g.log.extract n g.log.size).any (fun s => mentions s "bottom") &&
+    !(g.log.extract n g.log.size).any (fun s => mentions s "shuffles their library")
+#guard
+  let g := onlyLib (addPermanent afterDraw getawayBarrel me me) #[forest, mountain]
+  let g := passBoth (fireTrigger g "Getaway Barrel")
+  inLibrary g "Forest" && inLibrary g "Mountain" &&
+    g.log.any (fun s => mentions s "No creature card was revealed")
+#guard
+  let g := onlyLib (addPermanent afterDraw getawayBarrel me me) #[grizzlyBears, hillGiant, forest]
+  let g := { g with norandom := true }
+  let g := passBoth (fireTrigger g "Getaway Barrel")
+  let choosing :=
+    match g.pending with
+    | .resolveRandom (.chooseObject ids) => ids.size == 2
+    | _ => false
+  let gid := ((g.player me).library.find? (fun id => (g.object! id).name == "Grizzly Bears")).get!
+  let g := mustApply g me (.supplyOrder #[gid])
+  choosing && onBattlefield g "Grizzly Bears" &&
+    match g.pending with
+    | .resolveRandom (.orderInto _ (.library _)) => true
+    | _ => false
+
+/- Part in Friendship puts the revealed noncreatures on the bottom at random,
+and the creature into the hand when it costs more than the lands you control. -/
+#guard
+  let g := onlyLib (addPermanent afterDraw partInFriendship me me) #[grizzlyBears, forest]
+  let n := g.log.size
+  let g := passBoth (fireTrigger g "Part in Friendship")
+  inHand g me "Grizzly Bears" && inLibrary g "Forest" &&
+    (g.log.extract n g.log.size).any (fun s => mentions s "bottom")
+
+/- Tom Bombadil puts the revealed Saga onto the battlefield and the other
+revealed cards on the bottom at random. -/
+#guard
+  let g := onlyLib (addPermanent afterDraw tomBombadil me me) #[burnBurnTreeAndFern, mountain]
+  let n := g.log.size
+  let g := passBoth (fireTrigger g "Tom Bombadil")
+  onBattlefield g "Burn, Burn, Tree and Fern" && inLibrary g "Mountain" &&
+    (g.log.extract n g.log.size).any (fun s => mentions s "bottom")
 
 /- Enchanted River's Grasp taps the enchanted creature and removes every counter. -/
 #guard
@@ -1144,10 +1199,6 @@ player controls phases out. -/
 
 def shuffledSince (before : Nat) (g : Game) : Bool :=
   (g.log.extract before g.log.size).any (fun s => mentions s "shuffles")
-
-def onlyLib (g : Game) (cards : Array CardDef) : Game :=
-  let g := g.modifyPlayer me (fun pl => { pl with library := #[] })
-  cards.foldl (fun g c => addToLibraryTop g c me) g
 
 /- A library search is the player's choice. Declining finds nothing and still
 shuffles; Old Thrush's optional search does not shuffle when declined. -/

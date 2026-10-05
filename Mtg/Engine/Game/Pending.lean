@@ -41,8 +41,10 @@ inductive AfterRandom where
   | mulliganQueue (drawn : PlayerId) (rest : Array PlayerId)
   /-- Seat `i` takes the first turn; then opening shuffles. -/
   | setStartingPlayer (i : Nat)
-  /-- Put the chosen creature onto the battlefield for `controller`, then shuffle. -/
-  | putCreatureThenShuffle (controller : PlayerId)
+  /-- Put the chosen creature from `revealed` onto the battlefield, then the
+  other revealed cards on the bottom of `controller`'s library in a random
+  order (Getaway Barrel). -/
+  | revealRandomCreatureThenBottom (controller : PlayerId) (revealed : Array ObjectId)
   /-- Put these cards on top of `p`'s library after shuffling. -/
   | putOnTop (p : PlayerId) (ids : Array ObjectId)
   /-- Behold `subtype`; if you do, untap `landId` (Elven Passage). -/

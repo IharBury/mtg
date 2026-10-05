@@ -755,7 +755,7 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
       let g := { g with startingPlayer := sp, activePlayer := sp, priority := sp }
       let g := g.logMsg s!"Starting player: {(g.player sp).name}"
       continueOpeningShuffles g 0
-    | .putCreatureThenShuffle _ => g
+    | .revealRandomCreatureThenBottom _ _ => g
     | .putOnTop p ids => g.putIdsOnTop p ids
     | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
   if grantPriority && g.pending == .none && !g.openingHandsPending && !g.over
@@ -789,14 +789,9 @@ def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
         if !choices.contains id then
           throw "That is not one of the random choices"
         match g.afterRandom with
-        | .putCreatureThenShuffle controller =>
-          let some o := g.findObject? id | throw "no such object"
-          let name := o.name
-          let (g, newId) := g.putOntoBattlefield id controller
-          let g := g.logMsg s!"{name} enters the battlefield"
-          let g := g.afterPermanentEnters (g.object! newId)
+        | .revealRandomCreatureThenBottom controller revealed =>
           let g := { g with pending := .none, afterRandom := .none }
-          let g := g.shuffleLibrary controller
+          let g := g.resolveRandomCreatureReveal controller revealed id
           match g.pendingRandom? with
           | some _ => return g
           | none => return g.finishAfterRandom true

@@ -180,5 +180,13 @@ def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
     let (rng, ordered) := g.rng.shuffle ids
     { g with rng := rng }.moveIdsInOrder ordered dest |>.logMsg log
 
+/-- Put `ids` on the bottom of `p`'s library in a random order. The rest of
+the library stays above them, in its current order. -/
+def putRestOnBottomRandom (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
+  if ids.isEmpty then g
+  else
+    g.requestOrderInto ids (.library p)
+      s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+
 end Game
 end Mtg.Engine
