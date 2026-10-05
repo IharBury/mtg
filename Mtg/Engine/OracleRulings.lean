@@ -8,6 +8,7 @@ import Mtg.Engine.MshOracleTests5
 import Mtg.Engine.MshOracleTests6
 import Mtg.Engine.MshOracleTests7
 import Mtg.Engine.FraOracleTests
+import Mtg.Engine.FraOracleTests2
 
 /-!
 # Unique Oracle rulings
