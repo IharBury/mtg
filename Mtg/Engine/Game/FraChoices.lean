@@ -675,6 +675,24 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayCastInstantSorceryFromHand _, .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
   | .mayCastInstantSorceryFromHand _, _ => throw "Choose a spell to cast, or decline"
+  | .mayCastUpToFromExile eligible left, .objects #[id] =>
+    if left == 0 || !eligible.contains id then throw "That card can't be cast this way"
+    let some o := g.findObject? id | throw "no such object"
+    if o.zone != .exile || o.printed.isLand then
+      throw s!"{o.name} can't be cast this way"
+    let rest := eligible.filter (· != id)
+    let g := g.castAsPartOfResolution p id
+    let cast := (g.findObject? (g.followMoved id)).any (·.zone == .stack)
+    if !cast || left <= 1 || rest.isEmpty then
+      return { g with pendingMayCastFromExile := none }.finishFraChoice
+    else if g.pending != .none then
+      return { g with pendingMayCastFromExile := some (p, rest, left - 1) }.finishFraChoice
+    else
+      return { g with pending := .fraChoice p (.mayCastUpToFromExile rest (left - 1)) }
+  | .mayCastUpToFromExile _ _, .decline =>
+    return ({ g with pendingMayCastFromExile := none }
+      |>.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
+  | .mayCastUpToFromExile .., _ => throw "Choose a spell to cast, or decline"
   | .palantirMayDraw controller _, .accept =>
     return (g.draw controller 1).finishFraChoice
   | .palantirMayDraw controller sourceId, .decline =>
@@ -843,6 +861,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayDiscardHandDrawFixed _ => .decline
   | .sacrificeDamager ids .. => .choosePermanents (ids.extract 0 1)
   | .mayCastInstantSorceryFromHand _ => .decline
+  | .mayCastUpToFromExile _ _ => .decline
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>

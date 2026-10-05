@@ -291,7 +291,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           g.gainLife controller n
       | _ => g.logMsg "The target is no longer legal"
   | .damageEachOpponent n =>
-    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
+    let src := sourceId.bind g.findObject?
+    if ab.opts.untargeted then
+      g.forEachOpponent controller (fun g pid =>
+        g.dealDamageToPlayer pid n (source := src))
+    else
+      g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
+        g.dealDamageToPlayer pid n (source := src))
   | .pumpByLookedAt =>
     let n := (lastKnownPower.getD 0).toNat
     g.applyOnTriggerSource sourceId (.pump (n : Int) (n : Int))
@@ -400,8 +406,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       "The Equipment is no longer in play"
   | .amassThenAttach n =>
     let g := g.amassGoblins controller n
-    let army :=
-      (g.permanentsOf controller).find? (fun o => g.hasSubtype o "Army")
+    let army := g.newestArmy? controller
     match army, sourceId.bind g.findObject? with
     | some host, some src =>
       if src.isOnBattlefield then g.attachSourceTo src host else g
@@ -746,8 +751,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       (some "The target is no longer legal")
   | .createAxeAttach =>
     let (g, tok) := g.createToken controller axeToken
-    g.withLegalKindPermanent controller .creatureYouControl targets (fun g host =>
-      g.attachSourceTo tok host) sourceId (some "No creature was chosen")
+    g.putReflexiveTrigger controller (some tok.id) {
+      targeting := .of .creatureYouControl
+      resolution := .attach
+      phrase := "Attach it to target creature you control" }
   | .equippedAttackersGainDoubleStrike =>
     Id.run do
       let mut g := g
@@ -1099,8 +1106,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.logMsg s!"{(g.player controller).name} investigates"
   | .plusOneOnSourceAndDraw =>
     g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.setObject { o with status := { o.status with
-        plusOnePlusOne := o.status.plusOnePlusOne + 1 } }
+      let g := g.addPlusOnePlusOneTo o 1
       g.draw controller 1
   | .connive =>
     g.applyConnive controller sourceId
@@ -1146,7 +1152,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.incrementPlanThen controller sourceId (fun g _ =>
       let g := (g.livingOpponents controller).foldl (fun acc pl =>
         acc.loseLife pl.id n) g
-      g.modifyPlayer controller (fun pl => { pl with life := pl.life + (n : Int) }))
+      g.gainLife controller n)
   | .drawLoseLifeAndPlan =>
     g.incrementPlanThen controller sourceId (fun g _ =>
       g.drawThenLoseLife controller 1 1)
@@ -1162,14 +1168,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let src := g.object! src.id
         let g := g.putMatchingSourceTriggers controller src
           (.nthPlanCounter src.status.plan)
-        g.mapObjectStatus o (fun s => { s with plusOnePlusOne := s.plusOnePlusOne + 1 }))
+        g.addPlusOnePlusOneTo o 1)
         "The target is no longer legal. You won't put counters on anything."
   | .planFinishDrawPlusOneEach =>
     let g := g.sacrificePlanIfOnBattlefield sourceId
     let g := g.draw controller 1
     g.foldBattlefield (fun c => c.controlledBy controller && c.isCreature)
-      (fun g c => g.mapObjectStatus c (fun s =>
-        { s with plusOnePlusOne := s.plusOnePlusOne + 1 }))
+      (fun g c => g.addPlusOnePlusOneTo c 1)
   | .planFinishReturnInstants =>
     g.sacrificePlanThenQueueReflexive controller sourceId 11
   | .planFinishControlOpponent =>

@@ -82,8 +82,8 @@ def doomReignsSupremeReflexiveOk : Bool :=
     g.hasModeledReflexiveOnStack &&
     (let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
      (g.player ⟨1⟩).library.size == lib0 - 5 &&
-       (g.objects.filter (fun o =>
-         o.zone == .exile && o.playPermission.isSome)).size == 5) &&
+       (g.objects.filter (fun o => o.zone == .exile)).size >= 5 &&
+       !(g.objects.any (fun o => o.zone == .exile && o.playPermission.isSome))) &&
     (mshRuling 714).comment.contains "reflexive"
 
 #guard doomReignsSupremeReflexiveOk

@@ -402,6 +402,9 @@ inductive FraChoice where
   /-- You may cast one of these instant or sorcery cards from your hand
   without paying its mana cost (Gandalf, Party Guest; Glamdring). -/
   | mayCastInstantSorceryFromHand (eligible : Array ObjectId)
+  /-- You may cast up to `left` more of these exiled cards without paying
+  their mana costs (Doom Reigns Supreme). -/
+  | mayCastUpToFromExile (eligible : Array ObjectId) (left : Nat)
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)

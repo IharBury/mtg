@@ -99,6 +99,9 @@ structure Game where
   /-- Copies a player may still cast without paying their mana costs as an
   ability resolves, with the mana value left (Uldaros Theorix). -/
   pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
+  /-- Spells exiled by a resolving ability that may still be cast without
+  paying their mana costs, and how many casts remain (Doom Reigns Supreme). -/
+  pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat) := none
   /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
   permanent (Proft, Consulting Detective). -/
   mayPayAlsoPlusOneOn : Option ObjectId := none

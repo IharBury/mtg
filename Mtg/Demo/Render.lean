@@ -825,6 +825,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .sacrificeDamager .. => "choose a creature that dealt combat damage: choose <id>"
         | .mayCastInstantSorceryFromHand eligible =>
           s!"may cast an instant or sorcery from your hand ({eligible.size}): choose <id>, or decline"
+        | .mayCastUpToFromExile eligible left =>
+          s!"may cast up to {left} of {eligible.size} exiled cards without paying their mana costs: choose <id>, or decline"
         | .mayCastFromGraveyard eligible =>
           s!"may cast an artifact, instant, or sorcery from your graveyard ({eligible.size} card(s)): cast <id>, or decline"
         | .maySearchLibrary _ _ _ _ kind =>

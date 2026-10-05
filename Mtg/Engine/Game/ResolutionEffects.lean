@@ -649,8 +649,36 @@ def sacrificePlanThenQueueReflexive (g : Game) (controller : PlayerId)
       "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger.")
   if stillThere then g.queueModeledReflexive controller sourceId kind else g
 
+/-- Ask `caster` to cast up to `casts` of the exiled nonland cards. -/
+def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
+    (casts : Nat) : Game :=
+  { g with pending := .fraChoice caster (.mayCastUpToFromExile spells casts) }
+    |>.logMsg s!"{(g.player caster).name} may cast up to {casts} spells from among the exiled cards without paying their mana costs"
+
+/-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may cast up
+to `casts` nonland cards from among them without paying their mana costs. -/
+def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat) : Game :=
+  Id.run do
+    let mut g := g
+    let mut ids : Array ObjectId := #[]
+    for _ in [0:n] do
+      let pl := g.player fromPlayer
+      if pl.library.isEmpty then
+        g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+      else
+        let top := pl.library.back!
+        let name := (g.object! top).name
+        let (g', newId) := g.move top .exile none
+        g := g'
+        ids := ids.push newId
+        g := g.logMsg s!"{pl.name} exiles {name}"
+    let spells := ids.filter (fun id =>
+      (g.findObject? id).any (fun o => !o.printed.isLand))
+    if spells.isEmpty || casts == 0 then g
+    else g.offerExileCasts caster spells casts
+
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
-them this turn (Doom Reigns Supreme). -/
+them this turn. -/
 def exileTopMayCast (g : Game) (fromPlayer caster : PlayerId) (n : Nat) : Game :=
   g.exileTopForPlay fromPlayer caster n fun owner card =>
     s!"{owner} exiles {card}; {(g.player caster).name} may cast it"
@@ -697,11 +725,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
       (fun g tgt => g.dealDamageToTarget tgt 2) sourceId illegal
   | 3 =>
     g.withLegalKindPermanent controller tkind targets
-      (fun g o =>
-        g.mapObjectStatus o (fun s =>
-          { s with indestructibleCounters := s.indestructibleCounters + 1 })
-          |>.logMsg s!"{o.name} gets an indestructible counter")
-      sourceId illegal
+      (fun g o => g.addIndestructibleCounter o) sourceId illegal
   | 4 =>
     g.withLegalKindPlayer controller tkind targets (fun g pid =>
       let g := g.setPlayerControl controller pid
@@ -709,7 +733,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
       sourceId illegal
   | 5 =>
     g.withLegalKindPlayer controller tkind targets
-      (fun g pid => g.exileTopMayCast pid controller 5) sourceId illegal
+      (fun g pid => g.exileTopMayCastUpTo pid controller 5 2) sourceId illegal
   | 6 =>
     g.withLegalKindTarget controller tkind targets (fun g tgt =>
       match tgt with

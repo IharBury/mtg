@@ -584,6 +584,21 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
     match g.stackEntry? spell.id with
     | some e => g.beginWardsForTargets p spell.id e.targets
     | none => g
+  -- Doom Reigns Supreme: offer another exiled spell after this cast finishes.
+  let g : Game :=
+    match g.pendingMayCastFromExile with
+    | some (q, ids, left) =>
+      if g.pending != Pending.none then g
+      else
+        let alive := ids.filter (fun id =>
+          (g.findObject? id).any (fun (o : GameObject) =>
+            o.zone == Zone.exile && !o.printed.isLand))
+        let g := { g with pendingMayCastFromExile := none }
+        if q != p || alive.isEmpty || left == 0 then g
+        else
+          { g with pending := .fraChoice q (.mayCastUpToFromExile alive left) }
+            |>.logMsg s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
+    | none => g
   -- Uldaros Theorix: offer the remaining copies until none can be cast.
   let g :=
     match g.pendingFreeCopies with

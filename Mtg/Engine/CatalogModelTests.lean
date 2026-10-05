@@ -1345,6 +1345,119 @@ combat damage. -/
       !eligible.any (fun id => (g.object! id).name == "Hithlain Knots")
   | _ => false
 
+/-- Aragorn's red-spell trigger aimed at a third player. -/
+def aragornDamagesLiliana : Game :=
+  let liliana := { (afterDraw.player ⟨1⟩) with id := ⟨2⟩, name := "Liliana" }
+  let g := { afterDraw with players := afterDraw.players.push liliana }
+  let g := g.modifyPlayer ⟨2⟩ (fun pl => { pl with hand := #[], library := #[], graveyard := #[] })
+  let g := addPermanent g aragornTheUniter ⟨0⟩ ⟨0⟩
+  g.applyTriggeredAbility ⟨0⟩ (.onCastColorDamageOpponent .red 3)
+    (some (idOf g "Aragorn, the Uniter")) #[Target.player ⟨2⟩]
+
+/- Aragorn deals 3 damage to the targeted opponent, not to every opponent. -/
+#guard
+  life aragornDamagesLiliana ⟨2⟩ == 17 && life aragornDamagesLiliana ⟨1⟩ == 20
+
+/- Gandalf, Shadow's Foe exiles lands you control, not creatures. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw gandalfShadowSFoe me me) forest me me
+  let g := addPermanent g grizzlyBears me me
+  let legal := g.legalTargetsForKind me
+    TriggeredAbility.onEnterExileLandsThenReturnTapped.effect.targetKind
+  let forestOk := legal.contains (Target.permanent (idOf g "Forest"))
+  let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
+  let g := g.applyTriggeredAbility me .onEnterExileLandsThenReturnTapped
+    (some (idOf g "Gandalf, Shadow's Foe")) #[Target.permanent (idOf g "Forest")]
+  forestOk && !bearOk && onBattlefield g "Forest" &&
+    (namedPermanent g "Forest").status.tapped && onBattlefield g "Grizzly Bears"
+
+/- Dáin creates an Axe, then a reflexive ability attaches it to a creature
+you choose. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw dainIronfoot me me) grizzlyBears me me
+  let g := g.applyTriggeredAbility me .onEnterCreateAxeAttach
+    (some (idOf g "Dáin Ironfoot"))
+  let waiting :=
+    match g.pending with
+    | .chooseTargets _ => (namedPermanent g "Axe").attachedTo.isNone
+    | _ => false
+  let g := mustApply g me (.target (Target.permanent (idOf g "Grizzly Bears")))
+  let g := passBoth g
+  waiting && (namedPermanent g "Axe").attachedTo == some (idOf g "Grizzly Bears")
+
+/- Goblin Plate Mail attaches to the Army that was just amassed. -/
+#guard
+  let g := addPermanent afterDraw goblinPlateMail me me
+  let (g, old) := g.createToken me Game.goblinArmyToken
+  let (g, newer) := g.createToken me Game.goblinArmyToken
+  let g := g.applyTriggeredAbility me (.onEnterAmassThenAttach 1)
+    (some (idOf g "Goblin Plate Mail"))
+  (namedPermanent g "Goblin Plate Mail").attachedTo == some newer.id &&
+    (g.object! newer.id).status.plusOnePlusOne == 1 &&
+    (g.object! old.id).status.plusOnePlusOne == 0
+
+/- Agent Maria Hill's teamwork trigger puts a +1/+1 counter through the
+counter action and draws. -/
+#guard
+  let g := addPermanent afterDraw agentMariaHill me me
+  let before := handSize g me
+  let g := g.applyTriggeredAbility me .onTappedForTeamworkPlusOneAndDraw
+    (some (idOf g "Agent Maria Hill"))
+  (namedPermanent g "Agent Maria Hill").status.plusOnePlusOne == 1 &&
+    (namedPermanent g "Agent Maria Hill").status.gotPlusOneThisTurn &&
+    handSize g me == before + 1
+
+/- Claim the Kingdom's landfall puts a +1/+1 counter through the counter
+action and a plan counter on the enchantment. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw claimTheKingdom me me) grizzlyBears me me
+  let g := g.applyTriggeredAbility me .onLandYouControlEntersPlusOneAndPlan
+    (some (idOf g "Claim the Kingdom")) #[Target.permanent (idOf g "Grizzly Bears")]
+  (namedPermanent g "Grizzly Bears").status.gotPlusOneThisTurn &&
+    (namedPermanent g "Claim the Kingdom").status.plan == 1
+
+/- Political Triumph's completed Plan puts +1/+1 counters through the
+counter action. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw politicalTriumph me me) grizzlyBears me me
+  let g := g.applyTriggeredAbility me .onFourthPlanDrawPlusOneEach
+    (some (idOf g "Political Triumph"))
+  !onBattlefield g "Political Triumph" &&
+    (namedPermanent g "Grizzly Bears").status.gotPlusOneThisTurn
+
+/- Doom Reigns Supreme drains with the life actions, and its reflexive
+ability may cast up to two of the exiled cards. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw doomReignsSupreme me me) hYDRATroopers me me
+  let g := g.applyTriggeredAbility me (.onVillainYouControlEntersDrainAndPlan 1)
+    (some (idOf g "Doom Reigns Supreme"))
+  life g opp == 19 && life g me == 21 &&
+    (g.player me).lifeGainedThisTurn == 1 &&
+    (namedPermanent g "Doom Reigns Supreme").status.plan == 1 &&
+    g.log.any (fun s => mentions s "gains 1 life")
+#guard
+  let g := addPermanent afterDraw doomReignsSupreme me me
+  let g := g.modifyPlayer opp (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g grizzlyBears opp
+  let g := addToLibraryTop g mountain opp
+  let g := addToLibraryTop g forest opp
+  let g := addToLibraryTop g lightningBolt opp
+  let g := addToLibraryTop g shock opp
+  let g := g.applyTriggeredAbility me .onFifthPlanExileTopCast
+    (some (idOf g "Doom Reigns Supreme"))
+  let g := g.applyModeledReflexive #[Target.player opp]
+  let shock := g.objects.find? (fun o => o.zone == .exile && o.name == "Shock")
+  let offered :=
+    match shock, g.pending with
+    | some s, .fraChoice _ (.mayCastUpToFromExile eligible left) =>
+      left == 2 && eligible.contains s.id &&
+        !eligible.any (fun id => (g.object! id).name == "Mountain")
+    | _, _ => false
+  let g := mustApply g me .decline
+  offered && inExile g "Shock" &&
+    !g.objects.any (fun o => o.name == "Shock" && o.zone == .stack) &&
+    !(g.objects.any (fun o => o.zone == .exile && o.playPermission.isSome))
+
 /- Enchanted River's Grasp taps the enchanted creature and removes every counter. -/
 #guard
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me

@@ -699,8 +699,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .gainLifeSearchBasicOnTop n => { resolution := .gainLifeSearchBasicOnTop n }
   | .addMana types => { resolution := .addMana types }
   | .createAxe => { resolution := .createAxe }
-  | .createAxeAttach =>
-    { targeting := .of .creatureYouControl, resolution := .createAxeAttach }
+  | .createAxeAttach => { resolution := .createAxeAttach }
   | .tapOppOrUntapYours => { resolution := .tapOppOrUntapYours }
   | .gainControlOppUntilEot =>
     { targeting := .of .oppCreature, resolution := .gainControlOppUntilEot }
@@ -835,7 +834,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .creatureYouControl, resolution := .attachEquipmentThenFight }
   | .returnAsArtifact => { resolution := .returnAsArtifact }
   | .exileLandsThenReturnTapped =>
-    { targeting := .of .creatureOrLandYouControl, allowsZeroTargets := true,
+    { targeting := .of (.filtered {
+        noun := "up to three target lands you control"
+        types := #[.land], controller := .you })
+      allowsZeroTargets := true, maxTargets := 3
       resolution := .exileLandsThenReturnTapped }
   | .grimaImpulse => { resolution := .grimaImpulse }
   | .palantir =>
