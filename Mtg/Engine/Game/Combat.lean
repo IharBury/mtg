@@ -71,6 +71,18 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
         a.status.attacking && a.status.attackingPlaneswalker == some pw.id)).size
       if n > 1 then
         throw s!"No more than one creature can attack {pw.name} each combat"
+  for o in g.permanentsOf p do
+    if g.mustAttackIfAble o && !ids.contains o.id then
+      throw s!"{o.name} must attack if able"
+  let tax := ids.foldl (fun acc id =>
+    match (g.object! id).status.attackingWhom with
+    | some dest => acc + g.attackTaxPerCreature dest
+    | none => acc) 0
+  if tax > 0 then
+    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric tax) then
+      throw s!"{(g.player p).name} must pay {tax} to attack"
+    g ← g.payCost p (ManaCost.ofGeneric tax)
+    g := g.logMsg s!"{(g.player p).name} pays {tax} to attack"
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"
   g := g.putAttackTriggersOnStack p ids
@@ -288,6 +300,11 @@ def dealAssignedCombatDamage (g : Game) : Game :=
             g := g.markDamageOn pw amt s!"{src.name} deals {amt} combat damage to {pw.name}"
               (deathtouch := g.hasDeathtouch src) (combat := true)
             totalDealt := totalDealt + amt
+            match src.controller with
+            | some pid =>
+              if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
+                g := g.createTreasureTokens pid amt.toNat
+            | none => pure ()
         | none => pure ()
       else if !g.sourceDamagePrevented src && asgn.toPlayer > 0 &&
           !(g.player defn).lost then
@@ -295,6 +312,11 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         let pl := g.player defn
         g := g.setPlayer { pl with life := pl.life - toPlayer }
         totalDealt := totalDealt + toPlayer
+        if toPlayer > 0 then
+          g := g.mapObjectStatus (g.object! src.id) (fun s =>
+            { s with combatDamageToPlayers :=
+              if s.combatDamageToPlayers.contains defn then s.combatDamageToPlayers
+              else s.combatDamageToPlayers.push defn })
         if src.status.blocked then
           g := g.logMsg
             s!"{src.name} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"
@@ -312,6 +334,9 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         | some pid =>
           g := { g with lastCombatDamagePlayer := some defn }
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
+            (lastKnownToughness := some (Int.ofNat defn.idx))
+          if g.hasSubtype src "Hero" then
+            g := g.putControlledTriggersOncePerBatch pid .heroesDealDamageToPlayer
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayerOrBattle
           if src.isCreature then
             for o in g.permanentsOf pid do
@@ -333,15 +358,13 @@ def dealAssignedCombatDamage (g : Game) : Game :=
                   .equippedDealsCombatDamageToPlayer
                   (some asgn.toPlayer)
               | none => pure ()
-          if src.status.combatDamageCreatesTreasure then
+          if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
             g := g.createTreasureTokens pid asgn.toPlayer.toNat
           g := g.putControlledTriggers defn .combatDamageToYou
           if pid == g.activePlayer &&
               !g.waitingTriggers.any (fun w => w.event == .opponentsDealtCombatDamageYourTurn) then
             g := g.putControlledTriggers pid .opponentsDealtCombatDamageYourTurn
-          g := { g with lastLifeLost := some (defn, asgn.toPlayer.toNat) }
-          g := g.livingPlayers.foldl (fun acc pl =>
-            acc.putControlledTriggers pl.id .playerLosesLife) g
+          g := g.afterLifeLost defn asgn.toPlayer.toNat
         | none => pure ()
     let pendingRegular :=
       g.combatHasFirstStrike && !g.firstStrikeDamageDone

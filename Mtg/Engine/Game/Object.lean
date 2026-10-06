@@ -84,6 +84,9 @@ structure GameObject where
   leaveTriggerExile : Array ObjectId := #[]
   /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
   castFromGraveyard : Bool := false
+  /-- An instant or sorcery cast this way is exiled instead of being put into
+  its owner's graveyard (Bilbo, Thief in the Night). -/
+  exileInstantSorceryInstead : Bool := false
   /-- This spell was cast from its owner's hand. -/
   castFromHand : Bool := false
   /-- This permanent entered the battlefield as a spell that was cast
@@ -123,6 +126,12 @@ structure GameObject where
   /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
   legendary spell, so it can't be countered. Copies do not inherit this. -/
   uncounterableThisCast : Bool := false
+  /-- Cards exiled to pay this boast activation (Baron Helmut Zemo; MSH 227). -/
+  boastExiled : Array ObjectId := #[]
+  /-- Its entering has been processed (enters triggers queued). -/
+  enterProcessed : Bool := false
+  /-- Mana from a Treasure was spent to cast this spell. -/
+  treasureManaSpent : Bool := false
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
   Off the stack, `{X}` is 0. -/
   chosenX : Option Nat := none
@@ -299,6 +308,9 @@ structure WaitingTrigger where
   causeId : Option ObjectId := none
   /-- The causing object as it was when the ability triggered. -/
   cause : Option GameObject := none
+  /-- “Only once each turn” and extra trigger copies were already applied
+  when this was queued. -/
+  checked : Bool := false
 deriving Repr, Inhabited
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/

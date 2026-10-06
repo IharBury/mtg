@@ -172,7 +172,7 @@ def gandalfSplitResolved : Game := passBoth gandalfSplitAnnounced
 #guard (gandalfSplitResolved.player ⟨1⟩).life == 18
 #guard (namedPermanent gandalfSplitResolved "Grizzly Bears").status.damage == 1
 #guard gandalfSplitResolved.log.any (fun s => mentions s "Nissa is dealt 2 damage")
-#guard gandalfSplitResolved.log.any (fun s => mentions s "Grizzly Bears is dealt 1 damage")
+#guard gandalfSplitResolved.log.any (fun s => mentions s "deals 1 damage to Grizzly Bears")
 
 /-- Three targets, 1 damage each. -/
 def gandalfThreeAnnounced : Game :=

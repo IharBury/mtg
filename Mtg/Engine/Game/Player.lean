@@ -46,6 +46,10 @@ structure Player where
   heroEnteredThisTurn : Bool := false
   /-- You attacked with a Hero this turn (Avengers Assemble). -/
   attackedWithHeroThisTurn : Bool := false
+  /-- Creatures this player attacked with this turn (Minas Tirith). -/
+  creaturesAttackedWithThisTurn : Nat := 0
+  /-- Equip abilities this player activated this turn (Kíli the Resourceful). -/
+  equipActivationsThisTurn : Nat := 0
   /-- Cards drawn during your current draw step (Bard, King of Dale). -/
   cardsDrawnThisDrawStep : Nat := 0
   /-- Spells cast this turn (for “second spell each turn” triggers). -/
@@ -91,6 +95,11 @@ structure Player where
   lifeLocked : Bool := false
   /-- Cards discarded this turn (Misty Knight; MSH 375). -/
   cardsDiscardedThisTurn : Nat := 0
+  /-- Generic mana less to cast spells of each of these types this turn
+  (Armor Wars II). -/
+  typeSpellCostLessThisTurn : Array (CardType × Nat) := #[]
+  /-- Generic mana less to cast spells of each of these supertypes this turn. -/
+  supertypeSpellCostLessThisTurn : Array (Supertype × Nat) := #[]
   /-- An artifact entered under this player's control this turn (Iron Man;
   MSH 242 / 323). Still true if that artifact later left or changed types. -/
   artifactEnteredThisTurn : Bool := false
@@ -152,9 +161,16 @@ inductive Action where
   | pass
   | playLand (id : ObjectId)
   | tapForMana (id : ObjectId) (mana : ManaType)
+  /-- Activate mana ability `idx` of `id` (CR 605.3), adding exactly `mana`
+  and paying costs that need chosen objects with `costIds`, in order. -/
+  | activateManaAbility (id : ObjectId) (idx : Nat) (mana : Array ManaType)
+      (costIds : Array ObjectId := #[])
   | cast (id : ObjectId)
   /-- Cast this adventurer card as its Adventure (CR 715.3). -/
   | castAdventure (id : ObjectId)
+  /-- Cast this card for its sneak cost, returning the unblocked attacker
+  `attackerId` you control to hand as part of the cost (MSH sneak). -/
+  | castWithSneak (id attackerId : ObjectId)
   /-- Choose a mode of a modal spell or ability (CR 601.2b). -/
   | chooseMode (idx : Nat)
   /-- Announce a value for `{X}` (CR 107.3a / 601.2b). -/

@@ -145,7 +145,7 @@ def pass (g : Game) (p : PlayerId) : Except String Game := do
   let g := { g with consecutivePasses := g.consecutivePasses + 1 }
   if g.consecutivePasses ≥ g.livingPlayers.size then
     if !g.stack.isEmpty then
-      let g := g.resolveTop
+      let g := g.resolveTop.flushTokenEnters
       if g.pending != .none then
         return g
       return g.receivePriority g.activePlayer

@@ -21,6 +21,9 @@ inductive TargetZone where
   | player
   /-- A spell on the stack or a creature on the battlefield. -/
   | spellOrCreature
+  /-- “Any target”: a player, or a creature, planeswalker, or battle
+  (CR 115.4). -/
+  | anyTarget
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Who controls (or, for a card in a graveyard, owns) a filtered target. -/
@@ -44,6 +47,8 @@ structure TargetFilter where
   /-- The target has at least one of these card types. Empty means any
   permanent, card, or spell. -/
   types : Array CardType := #[]
+  /-- The target has at least one of these subtypes. Empty means any subtype. -/
+  subtypes : Array String := #[]
   /-- A legendary object also qualifies (“creature or legendary spell”). -/
   orLegendary : Bool := false
   nonland : Bool := false
@@ -71,6 +76,10 @@ structure TargetFilter where
   enteredThisTurn : Bool := false
   /-- Only a creature that is still untapped (“tap target untapped creature”). -/
   untapped : Bool := false
+  nonattacking : Bool := false
+  withHaste : Bool := false
+  /-- Owned (not necessarily controlled) by the caster. -/
+  ownedByYou : Bool := false
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Whom a spell, activated ability, or triggered ability may target
@@ -90,14 +99,21 @@ inductive EffectTargetKind where
   | anotherCreature
   /-- A player or a creature (e.g. damage to any target). -/
   | playerOrCreature
+  /-- Target player, then target creature (Panther Pounce). -/
+  | playerThenCreature
   /-- Target Elf card in your graveyard. -/
   | elfInYourGraveyard
   /-- Target creature an opponent controls. -/
   | oppCreature
+  /-- Target creature an opponent controls, then up to one creature you
+  control (Trickster's Stratagem). -/
+  | oppCreatureThenUpToOneCreatureYouControl
   /-- Target tapped creature an opponent controls. -/
   | oppTappedCreature
   /-- Target creature (any controller). -/
   | creature
+  /-- A creature on the battlefield, or a creature card in a graveyard. -/
+  | creatureOrGyCreatureCard
   /-- Target creature with flying. -/
   | creatureWithFlying
   /-- Target artifact or land. -/
@@ -166,6 +182,9 @@ inductive EffectTargetKind where
   | twoCreaturesOrLandsYouControl
   /-- Target Equipment you control, then up to one target creature you control. -/
   | equipmentYouControlThenCreatureYouControl
+  /-- Up to one target Equipment you control, then target creature you control
+  (Swordsman). -/
+  | upToOneEquipmentThenCreatureYouControl
   /-- Two target players (Gleaming Splendor). -/
   | twoPlayers
   /-- Up to one target creature, then target player (e.g. Meager Meal). -/
@@ -233,6 +252,9 @@ inductive EffectTargetKind where
   /-- One instance of “target” per filter, announced in order. Indices in
   `optional` are “up to one” instances. -/
   | multi (fs : Array TargetFilter) (optional : Array Nat)
+  /-- The instances of “target” of `a`, then those of `b`: two modes of one
+  modal spell chosen together (CR 700.2). -/
+  | pair (a b : EffectTargetKind)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -287,14 +309,28 @@ def spec : EffectTargetKind → Spec
     { noun := "another target creature" }
   | .playerOrCreature =>
     { noun := "any target", prefer := .opponentPlayer }
+  | .playerThenCreature =>
+    { count := 2
+      noun := "target player and target creature"
+      prefer := .opponentPlayer
+      slots := #[.player, .creature] }
   | .elfInYourGraveyard =>
     { noun := "target Elf card from your graveyard", prefer := .last }
   | .oppCreature =>
     { noun := "target creature an opponent controls" }
+  | .oppCreatureThenUpToOneCreatureYouControl =>
+    { count := 2
+      noun := "target creature an opponent controls and up to one target creature you control"
+      prefer := .opponent
+      slots := #[.oppCreature, .creatureYouControl]
+      optionalSlots := #[1] }
   | .oppTappedCreature =>
     { noun := "target tapped creature an opponent controls" }
   | .creature =>
     { noun := "target creature" }
+  | .creatureOrGyCreatureCard =>
+    { noun := "up to one target creature or creature card in a graveyard",
+      prefer := .last }
   | .creatureWithFlying =>
     { noun := "target creature with flying" }
   | .artifactOrLand =>
@@ -380,6 +416,12 @@ def spec : EffectTargetKind → Spec
       noun := "target Equipment you control and up to one target creature you control"
       prefer := .own
       slots := #[.equipmentYouControl, .creatureYouControl] }
+  | .upToOneEquipmentThenCreatureYouControl =>
+    { count := 2
+      noun := "up to one target Equipment you control and target creature you control"
+      prefer := .own
+      slots := #[.equipmentYouControl, .creatureYouControl]
+      optionalSlots := #[0] }
   | .twoPlayers =>
     { count := 2
       noun := "two target players"
@@ -478,6 +520,17 @@ def spec : EffectTargetKind → Spec
       prefer := .ownThenOpponent
       slots := fs.map EffectTargetKind.filtered
       optionalSlots := optional }
+  | .pair a b =>
+    let sa := spec a
+    let sb := spec b
+    let la := if sa.slots.isEmpty then Array.replicate sa.count a else sa.slots
+    let lb := if sb.slots.isEmpty then Array.replicate sb.count b else sb.slots
+    { count := sa.count + sb.count
+      noun := if sa.noun.isEmpty then sb.noun else sa.noun
+      prefer := sa.prefer
+      slots := la ++ lb
+      optionalSlots := sa.optionalSlots ++ sb.optionalSlots.map (· + la.size)
+      stackSpell := sa.stackSpell || sb.stackSpell }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=

@@ -34,6 +34,8 @@ structure StackEntry where
   targetsAnnounced : Bool := false
   /-- Chosen mode index for a modal spell (CR 700.2). -/
   chosenMode : Option Nat := none
+  /-- Further modes chosen with `chosenMode` (“choose one or both”). -/
+  extraModes : Array Nat := #[]
   /-- Optional “up to one” slots that were skipped while announcing
   (CR 115.1c / 601.2c). The current instance index is
   `targets.size + skippedOptionalSlots`. -/
@@ -93,6 +95,12 @@ structure ProposedSpell where
   /-- The ability's cost is −X loyalty; X is announced before targets and
   the loyalty is paid then (CR 107.3 / 606.4). -/
   loyaltyX : Bool := false
+  /-- X is the number of +1/+1 counters removed from the source as part of
+  the cost (The Astonishing Ant-Man). -/
+  removePlusOneX : Bool := false
+  /-- The spell is cast for its sneak cost; this unblocked attacker returns
+  to hand as the cost is paid (MSH sneak). -/
+  sneakAttacker : Option ObjectId := none
 deriving Repr, Inhabited
 
 end Mtg.Engine

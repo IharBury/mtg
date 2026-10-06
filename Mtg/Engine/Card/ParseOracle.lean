@@ -11,7 +11,8 @@ import Mtg.Engine.Card.OracleNorm
 
 `parseOracleCard` reads one card's printed text — name, mana cost, type line,
 power and toughness, and rules text — into a `CardDef`. The rules text is
-matched to the abilities the engine models. The resulting `CardDef` does not
+matched to the abilities the engine models. Parsing fails when a line is not
+recognized or an effect would not resolve. The resulting `CardDef` does not
 keep the source text.
 -/
 
@@ -1957,21 +1958,26 @@ or after the rules text (CR 210.1). A vanguard's hand modifier (lower left)
 and life modifier (lower right) are `+N`, `-N`, or `0`, labeled or bare,
 before or after the rules text (CR 211.1 / 212.1). A line that is exactly
 `//` starts the back face. An Adventure is introduced by `//ADV//`.
-A prepare spell is introduced by `//PREP//`. `keepUnrecognized` stores a line
-the parser does not model instead of rejecting the card. -/
+A prepare spell is introduced by `//PREP//`. `keepUnrecognized` records a line
+the parser does not recognize; the card is still rejected unless every line
+is parsed and every effect is modelled. -/
 @[irreducible, noinline] def parseOracleCard (text : String)
     (keepUnrecognized : Bool := false) : Except String CardDef :=
   let lines := nonEmptyLines text
   let (front, back) := splitBackFace lines
+  let finish (c : CardDef) : Except String CardDef :=
+    match c.modellingError? with
+    | some e => .error e
+    | none => .ok c
   match parseFace front keepUnrecognized with
   | .error e => .error e
   | .ok front =>
     match back with
-    | none => .ok front
+    | none => finish front
     | some backLines =>
       match parseFace backLines keepUnrecognized with
       | .error e => .error e
-      | .ok back => .ok { front with otherFace := some back }
+      | .ok back => finish { front with otherFace := some back }
 
 /-- Parse a card, keeping unrecognized rules lines as printed text. -/
 @[irreducible, noinline] def parseOracleCardKeeping (text : String) : Except String CardDef :=

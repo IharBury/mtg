@@ -468,11 +468,13 @@ def helpInteractive (controlAll : Bool := false)
   sacrifice            Choose to sacrifice as an additional cost (CR 601.2b)
   play <id>            Play a land
   tap <id> [id...] [color]  Tap listed permanents for mana (optional W/U/B/R/G)
+  mana <id> <n> <mana> [id...]  Activate mana ability n (1-based) of a permanent, adding the listed mana (e.g. WWU); list the permanents or cards that pay its sacrifice or discard cost
   activate <id> [n]    Begin activating an ability (permanent, hand, or graveyard; then tap for mana and pay). n is 1-based when a card has more than one
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   x <n>                Choose a value for X (CR 107.3a / 601.2b)
   cast <id>            Begin casting a spell (CR 601.2a)
   cast <id> adventure  Cast an adventurer card as its Adventure (CR 715.3)
+  cast <id> sneak <attacker>  Cast for the sneak cost, returning that unblocked attacker to hand
   target <id|name|opponent> [n] ...  Announce every target of one “target” word together (CR 601.2c); n is damage when dividing (CR 601.2d)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
@@ -483,6 +485,7 @@ def helpInteractive (controlAll : Bool := false)
   surveil graveyard <id>...  Put listed cards into the graveyard in that order; rest stay on top
   surveil top <id>... graveyard <id>...  Choose both piles and their orders (CR 701.25)
   convoke <id> [id...]  Tap those creatures to help pay for the spell (CR 702.51)
+  improvise <id> [id...]  Tap those artifacts to help pay for the spell (CR 702.126)
   proliferate [id|name|opponent ...]  Give each chosen permanent and player another counter of each kind it has (CR 701.34)
   discard <id>         Discard a card (CR 701.9), or pay an additional cost
   discard              Choose to discard as an additional cost (CR 601.2b)
@@ -899,6 +902,23 @@ def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Ga
     g := (← g.apply p (.tapForMana id m))
   return g
 
+def manaUsage : String := "usage: mana <id> <ability number> <mana letters> [id ...]"
+
+/-- Activate one mana ability, naming every mana it adds (CR 605.3). -/
+def applyManaAbility (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  match commandTokens tokens with
+  | idTok :: nTok :: manaTok :: rest =>
+    let some id := parseObjectId? idTok | throw manaUsage
+    let some n := nTok.toNat? | throw manaUsage
+    if n == 0 then throw manaUsage
+    let mana ← manaTok.toList.toArray.mapM (fun c =>
+      match parseManaType? (String.singleton c) with
+      | some m => pure m
+      | none => throw manaUsage)
+    let costIds ← if rest.isEmpty then pure #[] else parseObjectIds rest manaUsage
+    g.apply p (.activateManaAbility id (n - 1) mana costIds)
+  | _ => throw manaUsage
+
 def playUsage : String := "usage: play <id>"
 
 /-- Play the named land from a zone the player is allowed to play from. -/
@@ -981,6 +1001,10 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
     | some id =>
       let _ ← requireObject g id
       g.apply p (.castAdventure id)
+  | [arg, "sneak", attacker] =>
+    match parseObjectId? arg, parseObjectId? attacker with
+    | some id, some a => g.apply p (.castWithSneak id a)
+    | _, _ => throw castUsage
   | _ => throw castUsage
 
 def targetUsage : String := "usage: target <id|name|opponent>"
@@ -1700,12 +1724,14 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "mode" => applyMode g p args
   | "x" => applyX g p args
   | "tap" => applyTap g p args
+  | "mana" => applyManaAbility g p args
   | "cast" => applyCast g p args
   | "target" => applyTarget g p args
   | "scry" => applyScry g p args
   | "surveil" => applySurveil g p args
   | "proliferate" => applyProliferate g p args
   | "convoke" => applyConvoke g p args
+  | "improvise" => applyConvoke g p args
   | "discard" => applyDiscard g p args
   | "attach" => applyAttach g p args
   | "connive" => applyConniveChoice g p args

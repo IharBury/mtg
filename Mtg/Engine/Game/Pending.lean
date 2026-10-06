@@ -41,8 +41,16 @@ inductive AfterRandom where
   | mulliganQueue (drawn : PlayerId) (rest : Array PlayerId)
   /-- Seat `i` takes the first turn; then opening shuffles. -/
   | setStartingPlayer (i : Nat)
-  /-- Put the chosen creature onto the battlefield for `controller`, then shuffle. -/
-  | putCreatureThenShuffle (controller : PlayerId)
+  /-- Put the chosen creature from `revealed` onto the battlefield, then the
+  other revealed cards on the bottom of `controller`'s library in a random
+  order (Getaway Barrel). -/
+  | revealRandomCreatureThenBottom (controller : PlayerId) (revealed : Array ObjectId)
+  /-- Put these cards on top of `p`'s library after shuffling. -/
+  | putOnTop (p : PlayerId) (ids : Array ObjectId)
+  /-- Behold `subtype`; if you do, untap `landId` (Elven Passage). -/
+  | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : String)
+  /-- Put a +1/+1 counter on this creature after the shuffle (Restorative Technique). -/
+  | plusOne (id : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Payment a player may make to stop ward from countering their spell
@@ -87,6 +95,12 @@ inductive FraNext where
   | reflexiveReturnLandTapped
   | beastToken
   | proliferate (times : Nat)
+  | mshReflexive (kind paid : Nat)
+  | gainLife (n : Nat)
+  /-- Draw a card and create a Treasure. -/
+  | drawAndTreasure
+  /-- Return the source from the graveyard to its owner's hand. -/
+  | returnSourceToHand
 deriving DecidableEq, Repr, Inhabited, BEq
 
 def FraNext.toResolution : FraNext → FraResolution
@@ -102,12 +116,128 @@ def FraNext.toResolution : FraNext → FraResolution
   | .reflexiveReturnLandTapped => .reflexiveReturnLandTapped
   | .beastToken => .beastToken
   | .proliferate n => .proliferate n
+  | .mshReflexive k paid => .queueMshReflexive k paid
+  | .gainLife n => .gainLife n
+  | .drawAndTreasure => .drawAndCreateTreasure
+  | .returnSourceToHand => .returnSourceToHand
+
+/-- Where cards found by a library search go (CR 701.19). -/
+inductive SearchDest where
+  | battlefield (tapped : Bool)
+  | hand
+  | graveyard
+  /-- On top of the library after shuffling. -/
+  | topAfterShuffle
+  /-- Exiled, linked to the source. -/
+  | exileLinked (sourceId : Option ObjectId)
+  /-- The first chosen card onto the battlefield tapped, the second into the
+  hand (Troop of Ponies). -/
+  | battlefieldTappedThenHand
+  /-- Onto the battlefield tapped; you may behold a `subtype`, and if you do,
+  untap it (Elven Passage). -/
+  | battlefieldTappedBeholdUntap (subtype : String)
+  /-- Onto the battlefield from the hand or library; shuffle only if the
+  library was searched (Last Light of Durin's Day). -/
+  | battlefieldFromHandOrLibrary
+deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What a “you may sacrifice …” choice accepts. -/
 inductive FraSacrifice where
   | land
   | creatureOrPlaneswalker
   | creature
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Part of an activation cost that needs the player to choose what to pay
+with (CR 601.2h / 602.2b). -/
+inductive CostPick where
+  /-- Sacrifice another permanent of this subtype, or another creature when
+  the subtype is `Creature`. -/
+  | sacrificeAnotherSubtype (subtype : String)
+  | sacrificeArtifact
+  | sacrificeLegendaryArtifact
+  | sacrificeArtifactOrCreature
+  | sacrificeAnotherArtifact
+  | sacrificeAnotherCreatureOrPlaneswalker
+  | sacrificeArtifactOrLand
+  | sacrificeEquipmentAttachedToSource
+  /-- Sacrifice an artifact, or discard a nonland card. -/
+  | sacrificeArtifactOrDiscardNonland
+  | discardACard
+  | discardLegendaryCard
+  /-- Discard a legendary card with the same name as a legendary permanent
+  you control. -/
+  | discardLegendarySameName
+  | exileAnotherCreatureCardFromGraveyard
+  | tapUntappedCreature
+  | tapTwoUntappedArtifacts
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- How many objects `pick` takes. -/
+def CostPick.count : CostPick → Nat
+  | .tapTwoUntappedArtifacts => 2
+  | _ => 1
+
+/-- The cost phrase of `pick`, for prompts and logs. -/
+def CostPick.phrase : CostPick → String
+  | .sacrificeAnotherSubtype t => s!"sacrifice another {t.toLower}"
+  | .sacrificeArtifact => "sacrifice an artifact"
+  | .sacrificeLegendaryArtifact => "sacrifice a legendary artifact"
+  | .sacrificeArtifactOrCreature => "sacrifice an artifact or creature"
+  | .sacrificeAnotherArtifact => "sacrifice another artifact"
+  | .sacrificeAnotherCreatureOrPlaneswalker => "sacrifice another creature or planeswalker"
+  | .sacrificeArtifactOrLand => "sacrifice an artifact or land"
+  | .sacrificeEquipmentAttachedToSource => "sacrifice an Equipment attached to the source"
+  | .sacrificeArtifactOrDiscardNonland => "sacrifice an artifact or discard a nonland card"
+  | .discardACard => "discard a card"
+  | .discardLegendaryCard => "discard a legendary card"
+  | .discardLegendarySameName =>
+    "discard a legendary card with the same name as a legendary permanent you control"
+  | .exileAnotherCreatureCardFromGraveyard => "exile another creature card from your graveyard"
+  | .tapUntappedCreature => "tap an untapped creature you control"
+  | .tapTwoUntappedArtifacts => "tap two untapped artifacts you control"
+
+/-- Parts of `ab`'s cost the player chooses what to pay with (CR 601.2h). -/
+def costPicksOf (ab : ActivatedAbility) : Array CostPick :=
+  let c := ab.cost
+  let fra : Array CostPick :=
+    match c.fra with
+    | .exileAnotherCreatureCardFromGraveyard => #[.exileAnotherCreatureCardFromGraveyard]
+    | .sacrificeAnotherArtifact => #[.sacrificeAnotherArtifact]
+    | .sacrificeAnotherCreatureOrPlaneswalker => #[.sacrificeAnotherCreatureOrPlaneswalker]
+    | .sacrificeArtifactOrLand => #[.sacrificeArtifactOrLand]
+    | .discardLegendaryCard => #[.discardLegendaryCard]
+    | .tapTwoUntappedArtifacts => #[.tapTwoUntappedArtifacts]
+    | _ => #[]
+  (if c.discardACard then #[CostPick.discardACard] else #[]) ++
+  (if c.discardLegendarySameName then #[CostPick.discardLegendarySameName] else #[]) ++
+  (if c.sacrificeLegendaryArtifact then #[CostPick.sacrificeLegendaryArtifact] else #[]) ++
+  (if c.sacrificeArtifact then #[CostPick.sacrificeArtifact] else #[]) ++
+  (if c.sacrificeArtifactOrCreature then #[CostPick.sacrificeArtifactOrCreature] else #[]) ++
+  (if c.sacrificeArtifactOrDiscardNonland then
+    #[CostPick.sacrificeArtifactOrDiscardNonland] else #[]) ++
+  (if c.sacrificeEquipmentAttachedToSource then
+    #[CostPick.sacrificeEquipmentAttachedToSource] else #[]) ++
+  (if c.tapAnUntappedCreatureYouControl then #[CostPick.tapUntappedCreature] else #[]) ++
+  (match c.sacrificeAnotherSubtype with
+   | some t => #[CostPick.sacrificeAnotherSubtype t]
+   | none => #[]) ++ fra
+
+/-- What to do with cards chosen from a looked-at, milled, or battlefield set. -/
+inductive CardChoice where
+  /-- Put the chosen cards into your hand. `mustOne` requires exactly one
+  when any card can be chosen. -/
+  | toHand (mustOne : Bool)
+  /-- Put the chosen creature cards onto the battlefield. -/
+  | creaturesToBattlefield
+  /-- Put the chosen lands onto the battlefield tapped, then shuffle and
+  gain `life` life. -/
+  | landsTappedGainLife (life : Nat)
+  /-- The chosen creatures are kept. Every other creature is destroyed. -/
+  | keepDestroyRest
+  /-- Amass `subtype` `n` onto the chosen Army. `attach` is an Equipment to
+  attach afterward (Goblin Plate Mail). -/
+  | amassArmy (subtype : String) (n : Nat) (attach : Option ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A choice made while a Reality Fracture effect resolves. The player answers
@@ -154,9 +284,18 @@ inductive FraChoice where
   /-- Choose a nonland card from `victim`'s revealed hand to exile, linked to
   `sourceId` (Null Summoner). -/
   | exileFromRevealedHand (victim : PlayerId) (sourceId : Option ObjectId)
-  /-- Cast any number of the copies `ids` with total mana value at most
-  `budget` without paying their mana costs (Uldaros Theorix). -/
-  | castCopiesFree (ids : Array ObjectId) (budget : Nat)
+  /-- Cast up to `castsLeft` of the copies `ids` with total mana value at
+  most `budget` without paying their mana costs (Uldaros Theorix, Baron
+  Helmut Zemo). -/
+  | castCopiesFree (ids : Array ObjectId) (budget : Nat) (castsLeft : Nat)
+  /-- Choose an Alliance mode of `sourceId` that hasn't been chosen this turn.
+  Answered with `Action.chooseMode` (0 add {G}{G}{G}, 1 +1/+1 counters,
+  2 scry 2 then draw). -/
+  | allianceMode (sourceId : ObjectId) (available : Array Nat)
+  /-- Choose a Gollum mode that hasn't been chosen. Answered with
+  `Action.chooseMode` (0 +1/+1, 1 each opponent loses 2 and you gain 2,
+  2 draw). -/
+  | gollumMode (sourceId : ObjectId) (available : Array Nat)
   /-- Choose `remaining` more modes for the triggered ability `objectId`
   from `CardDef.fraTriggerModes` of its source. -/
   | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
@@ -180,6 +319,203 @@ inductive FraChoice where
   /-- Choose a nonland card name for `objectId` as it enters (Meddling
   Mage). Answered with `Action.chooseName`. -/
   | chooseCardName (objectId : ObjectId)
+  /-- Tap untapped creatures with total power `power` or more to pay the crew
+  cost of `vehicleId`'s ability `abilityId` (CR 702.122). Declining cancels
+  the activation. -/
+  | crew (abilityId vehicleId : ObjectId) (power : Nat)
+  /-- Choose what to pay `picks[0]` of the proposed activation's cost with,
+  then the rest (CR 601.2h). `paid` is true once one has been paid, after
+  which the activation can no longer be cancelled. -/
+  | costPicks (sourceId : ObjectId) (picks : Array CostPick) (paid : Bool)
+  /-- You may pay `pick` (sacrifice, discard, …) as an ability of `sourceId`
+  resolves; when you do, do `next`. -/
+  | mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : ObjectId)
+  /-- Choose a creature type you control. `types` are offered by index
+  (Orcrist). Answered with `Action.chooseMode` or `Action.chooseName`. -/
+  | chooseCreatureType (types : Array String)
+  /-- You may sacrifice another creature. If you do, the source gets +1/+1
+  counters equal to that creature's power (Rhovanion Rampager). -/
+  | maySacrificeAnotherCreatureForPower (sourceId : ObjectId)
+  /-- You may sacrifice another creature or artifact. If you do, draw a card
+  and create a Treasure (The Sackville-Bagginses). -/
+  | maySacrificeAnotherForDrawTreasure (sourceId : ObjectId)
+  /-- You may pay `symbols`. If you do, do `next` (Silvan Reveler). -/
+  | mayPaySymbolsThen (symbols : Array ManaSymbol) (next : FraNext) (sourceId : ObjectId)
+  /-- Choose any number of Equipment to attach to `hostId`. Declining
+  attaches none (Thorin, Mountain-king). -/
+  | attachAnyEquipment (hostId : ObjectId) (eligible : Array ObjectId)
+  /-- Choose one of the tied least-power creatures to sacrifice. -/
+  | sacrificeLeastPower (ids : Array ObjectId)
+  /-- Choose the color of each of `left` more mana to add, spendable only as
+  `use` allows. Answered with `Action.chooseMode` (white, blue, black, red,
+  green by index). -/
+  | addManaColors (left : Nat) (use : FraManaUse)
+  /-- As `objectId` enters, pay `life` life (accept), or it enters tapped
+  (decline). -/
+  | payLifeOrEnterTapped (objectId : ObjectId) (life : Nat)
+  /-- Extort: you may pay {W/B}; if you do, drain each opponent for 1. -/
+  | mayPayExtort (sourceId : Option ObjectId)
+  /-- You may draw `draw` cards; if you do, discard `discard` cards. -/
+  | mayDrawThenDiscard (draw discard : Nat)
+  /-- Each player in turn sacrifices a nontoken creature of their choice;
+  `chosen` are sacrificed together at the end (The Serpent Society). -/
+  | sacrificeNontokenEach (rest : Array PlayerId) (chosen : Array ObjectId)
+  /-- You may create `n` tokens of `kind`. -/
+  | mayCreateTokens (kind : TokenKind) (n : Nat)
+  /-- You may have `objectId`'s base power and toughness become `p`/`t`
+  until end of turn. -/
+  | mayBecomeBasePT (objectId : ObjectId) (p t : Int)
+  /-- You may reveal one of `eligible` from among the looked-at `looked` and
+  put it into your hand. The rest go on the bottom at random, or in an order
+  you choose when `anyOrder` is true (Avengers Tower). -/
+  | mayRevealToHand (looked eligible : Array ObjectId) (anyOrder : Bool)
+  /-- You may put one of `eligible` onto the battlefield (Nick Fury). The rest
+  of `looked` go on the bottom in a random order. -/
+  | nickFuryPut (looked eligible : Array ObjectId)
+  /-- You may transform the double-faced card just put onto the battlefield,
+  then the other looked-at cards go on the bottom in a random order. -/
+  | nickFuryMayTransform (permanentId : ObjectId) (rest : Array ObjectId)
+  /-- Put these cards on the bottom of your library. The first card is the
+  bottom. Every card must be included. -/
+  | orderLibraryBottom (ids : Array ObjectId)
+  /-- You may cast one of these artifact, instant, or sorcery cards from your
+  graveyard, paying its cost (Bilbo, Thief in the Night). An instant or
+  sorcery cast this way is exiled instead of going to the graveyard. -/
+  | mayCastFromGraveyard (eligible : Array ObjectId)
+  /-- Search: choose up to `count` of `eligible` (or none, CR 701.19b), send
+  them to `dest`, shuffle, then do `after`. `kind` is the logged card phrase. -/
+  | searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
+    (after : Option FraNext) (kind : String)
+  /-- You may search (Old Thrush). Declining does not shuffle. Accepting
+  continues as `searchLibrary`. -/
+  | maySearchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
+    (after : Option FraNext) (kind : String)
+  /-- You may pay `cost` up to `maxTimes` times (accept pays once; a mode
+  index pays that many times); when you do, the reflexive ability `kind`
+  triggers. -/
+  | mayPayManaForReflexive (cost : Array ManaSymbol) (maxTimes : Nat) (kind : Nat)
+    (sourceId : Option ObjectId)
+  /-- You may tap the untapped source; if you do, do `next`. -/
+  | mayTapSourceThen (next : FraNext) (sourceId : ObjectId)
+  /-- Choose up to `left` more different modes of Hawkeye's Trick Arrows
+  (0 Net, 1 Explosive, 2 Boomerang); decline to stop. -/
+  | hawkeyeModes (left : Nat) (chosen : Array Nat) (sourceId : Option ObjectId)
+  /-- Discard a card, then draw a card. -/
+  | discardThenDraw
+  /-- Choose the black cards to exile from your graveyard to pay the boast
+  ability `abilityId` of `sourceId`. Declining cancels the activation. -/
+  | zemoBoastExile (abilityId sourceId : ObjectId)
+  /-- Cascade: you may cast `cardId` without paying its mana cost; `others`
+  and an uncast `cardId` go on the bottom in a random order (CR 702.85a). -/
+  | mayCastCascade (cardId : ObjectId) (others : Array ObjectId)
+  /-- Gríma: you may cast `cardId` without paying its mana cost. `others`,
+  and `cardId` if it isn't cast, go on the bottom of `victim`'s library
+  in a random order. -/
+  | mayCastGrima (cardId : ObjectId) (others : Array ObjectId) (victim : PlayerId)
+  /-- Palantír of Orthanc: this opponent may have `controller` draw a card.
+  Declining mills X cards and this player loses life equal to their mana values. -/
+  | palantirMayDraw (controller : PlayerId) (sourceId : ObjectId)
+  /-- You may cast this copy of an exiled card without paying its mana cost.
+  Declining makes the copy cease to exist (Saruman of Many Colors). -/
+  | mayCastCopy (copyId : ObjectId)
+  /-- You may discard your hand. If you do, draw that many cards. With an
+  enduring story, `sourceId` deals that much damage to each opponent (Balin). -/
+  | mayDiscardHandBalin (sourceId : Option ObjectId)
+  /-- You may discard your hand. If you do, draw `n` cards (Sauron). -/
+  | mayDiscardHandDrawFixed (n : Nat)
+  /-- Sacrifice one creature that dealt combat damage to `controller`. The
+  other opponents in `rest` choose next, then the Ring tempts `controller`
+  (Witch-king of Angmar). -/
+  | sacrificeDamager (ids : Array ObjectId) (rest : Array PlayerId)
+    (controller : PlayerId)
+  /-- You may cast one of these instant or sorcery cards from your hand
+  without paying its mana cost (Gandalf, Party Guest; Glamdring). -/
+  | mayCastInstantSorceryFromHand (eligible : Array ObjectId)
+  /-- You may cast up to `left` more of these exiled cards without paying
+  their mana costs (Doom Reigns Supreme). -/
+  | mayCastUpToFromExile (eligible : Array ObjectId) (left : Nat)
+  /-- Mister Hyde: choose mode 0 (+1/+1 counter) or 1 (remove a counter
+  and draw). -/
+  | hydeMode (sourceId : ObjectId)
+  /-- Remove one counter from one of these creatures, then draw (Mister Hyde). -/
+  | hydeRemoveCounter (ids : Array ObjectId)
+  /-- You may have The Sensational She-Hulk deal `amount` damage to `target`.
+  Accepting is the once-each-turn action (MSH 448). -/
+  | sheHulkMayDamage (amount : Int) (target : Target) (sourceId : Option ObjectId)
+  /-- You may put a +1/+1 counter on Black Widow. If you don't, you may cast
+  `exiled` until end of turn. -/
+  | widowMayCounter (sourceId : Option ObjectId) (exiled : Option ObjectId)
+  /-- You may pay {2} to copy the nontoken artifact that entered (Ultron). -/
+  | ultronMayPay (artifactId : ObjectId)
+  /-- Choose a Vision mode that hasn't been chosen this turn.
+  0 double strike, 1 indestructible, 2 draw. -/
+  | visionMode (sourceId : ObjectId) (available : Array Nat)
+  /-- You may exile the discarded card and play it until the end of your next
+  turn (Moonstone). -/
+  | moonstoneMayExile (cardId : ObjectId)
+  /-- The owner puts `creatureId` second from the top (accept / choose top)
+  or on the bottom (decline / choose bottom), then `caster` connives
+  `connive` (Trickster's Stratagem). -/
+  | tricksterLibrary (caster : PlayerId) (creatureId : ObjectId)
+      (connive : Option ObjectId)
+  /-- You may put one of these milled cards into your hand, then gain `lifeAfter`
+  life (Rapid Rescue, Rick Jones). Declining still gains the life. -/
+  | mayTakeMilled (ids : Array ObjectId) (lifeAfter : Nat)
+  /-- You may draw `n` cards. If you do, each opponent draws a card (Armor Wars). -/
+  | mayDrawThenEachOpponentDraws (n : Nat)
+  /-- You may put one of these Hero cards from your hand onto the battlefield.
+  If you don't, draw a card (Origin of the Avengers). -/
+  | mayPutHeroFromHandOrDraw (ids : Array ObjectId)
+  /-- Choose even (mode 0) or odd (mode 1), then destroy each other creature
+  whose mana value has that quality (Thanos). -/
+  | oddOrEvenDestroy (sourceId : Option ObjectId)
+  /-- Search the library as well as the graveyard (accept), or only the
+  graveyard (decline), for Vision Quest. -/
+  | visionQuestZones (libIds gyIds : Array ObjectId) (x : Nat)
+  /-- Put one of these artifact creatures onto the battlefield with `x`
+  +1/+1 counters. Shuffle afterward when `shuffle` is true. -/
+  | visionQuestPick (ids : Array ObjectId) (x : Nat) (shuffle : Bool)
+  /-- You may pay 2 life so creatures you control assign combat damage equal
+  to their toughness (The Kingpin of Crime). -/
+  | kingpinMayPay2Life
+  /-- You may exile the top card of your library (Daredevil). -/
+  | daredevilMayExile (sourceId : Option ObjectId)
+  /-- You may choose a new target for one slot of `spellId`, or decline to
+  keep it. `index` walks the spell's targets (Speedball). -/
+  | mayChangeSpellTarget (spellId : ObjectId) (index : Nat)
+  /-- Choose a new target for the first of `copies`, or decline to keep its
+  target; then the rest. -/
+  | newTargetsForCopies (copies : Array ObjectId)
+  /-- Separate `looked` into a face-up pile (the chosen cards) and a face-down
+  pile (Riddles in the Dark). An empty pile is legal. -/
+  | riddlesSplit (looked : Array ObjectId)
+  /-- An opponent chooses the face-up pile (accept) or the face-down pile
+  (decline) for `controller`'s hand. -/
+  | riddlesChoosePile (controller : PlayerId) (faceUp faceDown : Array ObjectId)
+  /-- Choose one creature type among `types`, then return every creature that
+  isn't that type (Raise the Palisade). -/
+  | palisadeCreatureType (types : Array String)
+  /-- `eligible` are this player's creature cards in hand. `rest` choose next.
+  `exiled` return to their owners' hands after `chosen` enter (Worlds Within
+  Worlds). -/
+  | worldsPutCreatures (eligible : Array ObjectId) (rest : Array PlayerId)
+      (exiled chosen : Array ObjectId) (sourceId : Option ObjectId)
+  /-- Put creature cards from `creatures` onto the battlefield. At most one
+  when `anyNumber` is false (Earth's Mightiest Heroes). The rest of `looked`
+  go to the graveyard. -/
+  | revealPutCreatures (looked creatures : Array ObjectId) (anyNumber : Bool)
+  /-- Choose up to `max` of `ids`. `purpose` says what the chosen cards do. -/
+  | chooseCards (ids : Array ObjectId) (max : Nat) (purpose : CardChoice)
+  /-- Choose a player tied for most life. The creature can't be blocked by
+  that player's creatures this turn (The Black Gate). -/
+  | blackGatePlayer (creatureId : ObjectId) (players : Array PlayerId)
+  /-- As this permanent enters, choose a creature type (An Unexpected Party). -/
+  | entersCreatureType (objectId : ObjectId)
+  /-- As this permanent enters, choose even (0) or odd (1) (Gollum, Riddle Master). -/
+  | entersOddEven (objectId : ObjectId)
+  /-- You may begin the game with the first of these cards on the battlefield
+  (Quicksilver). The rest are asked next. -/
+  | mayBeginOnBattlefield (ids : Array ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/
@@ -271,7 +607,7 @@ inductive Pending where
   /-- Choose tap or untap for this nonland permanent. -/
   | chooseTapOrUntap (player : PlayerId) (targetId : ObjectId)
   /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
-  | maySacArtifactOrDiscard (player : PlayerId)
+  | maySacArtifactOrDiscard (player : PlayerId) (draw : Nat)
   /-- You may put an artifact card from your hand onto the battlefield.
   If it is Equipment, attach it to `hostId`. -/
   | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)

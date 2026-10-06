@@ -37,6 +37,9 @@ structure Status where
   blocked : Bool := false
   /-- Non-mana activations this turn, for “only once each turn”. -/
   activationsThisTurn : Nat := 0
+  /-- Indices of activated abilities of this object activated this turn
+  (“Activate only once each turn”). -/
+  abilitiesActivatedThisTurn : Array Nat := #[]
   /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
   plusOnePlusOne : Nat := 0
   /-- Minus-one counters (CR 122.1a). -/
@@ -147,6 +150,11 @@ structure Status where
   losesAbilitiesUntilEot : Bool := false
   /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
   chosenModes : Array Nat := #[]
+  /-- Modes of The Vision chosen this turn. Cleared as the turn ends. -/
+  modesChosenThisTurn : Array Nat := #[]
+  /-- Until end of turn, base power equals the number of cards in your hand
+  (Ms. Marvel). -/
+  cardsInHandPowerUntilEot : Bool := false
   /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
   chosenOdd : Option Bool := none
   /-- Lore counters on a Saga (CR 714). -/
@@ -163,6 +171,10 @@ structure Status where
   /-- Until end of turn, this creature can be blocked only by creatures with
   haste (Speed, Young Avenger). -/
   cantBeBlockedExceptByHasteUntilEot : Bool := false
+  /-- This creature can't block this turn. -/
+  cantBlockUntilEot : Bool := false
+  /-- Mana spent to cast this spell (CR 601.2h). -/
+  manaSpentToCast : Nat := 0
   /-- This permanent dealt damage this turn (Red Guardian; MSH 272). -/
   dealtDamageThisTurn : Bool := false
   /-- Until end of turn, these replace existing creature types and keep
@@ -183,6 +195,9 @@ structure Status where
   invasion : Nat := 0
   /-- Trample counters (Beorn the Fierce). -/
   trampleCounters : Nat := 0
+  /-- Haste, flying, and the other keyword counters Super-Adaptoid copies.
+  Trample, lifelink, and indestructible use their own fields. -/
+  keywordCounters : KeywordCounters := {}
   /-- Until end of turn, combat damage to a player creates a Treasure. -/
   combatDamageCreatesTreasure : Bool := false
   /-- This permanent is an artifact and not a creature (Tom, Bert, and William). -/
@@ -190,6 +205,9 @@ structure Status where
   /-- A control-changing effect lasts until end of turn (Act of Treason,
   Sauron, the Lidless Eye). Cleared in cleanup; ending it may exile (CR 800.4c). -/
   controlUntilEot : Bool := false
+  /-- Endings of this object's controller's turns before control reverts
+  (Evil's Thrall: 2 means until the end of your next turn). -/
+  controlTurnEndsLeft : Nat := 0
   /-- Instances of Iron Fist's granted tap ability this turn (MSH 106). -/
   ironFistTapGrants : Nat := 0
   /-- +P/+T lasting until the listed player's next turn begins (Garruk,
@@ -207,6 +225,8 @@ structure Status where
   chosenColor : Option Color := none
   /-- This permanent has dealt combat damage since it entered (Ruric Thar). -/
   dealtCombatDamage : Bool := false
+  /-- Players this creature dealt combat damage to this turn (Witch-king of Angmar). -/
+  combatDamageToPlayers : Array PlayerId := #[]
   /-- An attached Aura makes this a 5/5 Construct creature in addition to its
   other types (Puppet Crafting). Refreshed with state-based actions. -/
   animatedConstruct55 : Bool := false
@@ -242,7 +262,8 @@ def hasCounters (s : Status) : Bool :=
     s.stun > 0 || s.shield > 0 ||
     s.finality > 0 || s.plan > 0 || s.burden > 0 || s.quest > 0 || s.invasion > 0 ||
     s.influence > 0 || s.trampleCounters > 0 || s.indestructibleCounters > 0 ||
-    s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0
+    s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0 ||
+    s.keywordCounters.any
 
 /-- This permanent with every counter removed. -/
 def withoutCounters (s : Status) : Status :=
@@ -250,12 +271,12 @@ def withoutCounters (s : Status) : Status :=
     plusOnePlusOne := 0, minusOneMinusOne := 0, loyaltyCounters := 0, hope := 0, charge := 0
     stun := 0, shield := 0, finality := 0, plan := 0, burden := 0, quest := 0, invasion := 0
     influence := 0, trampleCounters := 0, indestructibleCounters := 0, lifelinkCounters := 0
-    hone := 0, shadow := 0, lore := 0 }
+    hone := 0, shadow := 0, lore := 0, keywordCounters := {} }
 
 /-- Another counter of each kind already on this permanent (CR 701.34a).
 +1/+1 counters are added by the caller so their triggers apply. -/
-def proliferatedExceptPlusOne (s : Status) : Status :=
-  let inc (n : Nat) : Nat := if n > 0 then n + 1 else n
+def proliferatedExceptPlusOne (s : Status) (extra : Nat := 0) : Status :=
+  let inc (n : Nat) : Nat := if n > 0 then n + 1 + extra else n
   { s with
     loyaltyCounters := inc s.loyaltyCounters, hope := inc s.hope, charge := inc s.charge
     minusOneMinusOne := inc s.minusOneMinusOne
@@ -266,25 +287,27 @@ def proliferatedExceptPlusOne (s : Status) : Status :=
     trampleCounters := inc s.trampleCounters
     indestructibleCounters := inc s.indestructibleCounters
     lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
-    lore := inc s.lore }
+    lore := inc s.lore, keywordCounters := s.keywordCounters.incPresent extra }
 
 /-- Put the same number of each kind of counter `from` has, except +1/+1
 counters, which the caller adds so their triggers apply (Graft Surgeon). -/
-def addCountersExceptPlusOne (s «from» : Status) : Status :=
+def addCountersExceptPlusOne (s «from» : Status) (extra : Nat := 0) : Status :=
+  let bump (n : Nat) : Nat := if n == 0 then 0 else n + extra
   { s with
-    loyaltyCounters := s.loyaltyCounters + «from».loyaltyCounters
-    minusOneMinusOne := s.minusOneMinusOne + «from».minusOneMinusOne
-    hope := s.hope + «from».hope, charge := s.charge + «from».charge
-    stun := s.stun + «from».stun
-    shield := s.shield + «from».shield, finality := s.finality + «from».finality
-    plan := s.plan + «from».plan, burden := s.burden + «from».burden
-    quest := s.quest + «from».quest, invasion := s.invasion + «from».invasion
-    influence := s.influence + «from».influence
-    trampleCounters := s.trampleCounters + «from».trampleCounters
-    indestructibleCounters := s.indestructibleCounters + «from».indestructibleCounters
-    lifelinkCounters := s.lifelinkCounters + «from».lifelinkCounters
-    hone := s.hone + «from».hone, shadow := s.shadow + «from».shadow
-    lore := s.lore + «from».lore }
+    loyaltyCounters := s.loyaltyCounters + bump «from».loyaltyCounters
+    minusOneMinusOne := s.minusOneMinusOne + bump «from».minusOneMinusOne
+    hope := s.hope + bump «from».hope, charge := s.charge + bump «from».charge
+    stun := s.stun + bump «from».stun
+    shield := s.shield + bump «from».shield, finality := s.finality + bump «from».finality
+    plan := s.plan + bump «from».plan, burden := s.burden + bump «from».burden
+    quest := s.quest + bump «from».quest, invasion := s.invasion + bump «from».invasion
+    influence := s.influence + bump «from».influence
+    trampleCounters := s.trampleCounters + bump «from».trampleCounters
+    indestructibleCounters := s.indestructibleCounters + bump «from».indestructibleCounters
+    lifelinkCounters := s.lifelinkCounters + bump «from».lifelinkCounters
+    hone := s.hone + bump «from».hone, shadow := s.shadow + bump «from».shadow
+    lore := s.lore + bump «from».lore
+    keywordCounters := s.keywordCounters.add («from».keywordCounters.plusExtra extra) }
 
 /-- Until-end-of-turn +P/+T (CR 613.4c / 611.2a). -/
 def addPump (s : Status) (p t : Int) : Status :=
@@ -323,6 +346,7 @@ def untilEotFields : List UntilEotField := [
     fun s => { s with cantBeBlockedByPlayer := none }⟩,
   ⟨fun s => s.cantBeBlockedExceptByHasteUntilEot,
     fun s => { s with cantBeBlockedExceptByHasteUntilEot := false }⟩,
+  ⟨fun s => s.cantBlockUntilEot, fun s => { s with cantBlockUntilEot := false }⟩,
   ⟨fun s => s.dealtDamageThisTurn,
     fun s => { s with dealtDamageThisTurn := false }⟩,
   ⟨fun s => s.replacedCreatureTypesUntilEot.isSome,
@@ -334,7 +358,9 @@ def untilEotFields : List UntilEotField := [
   ⟨fun s => s.losesAbilitiesUntilEot,
     fun s => { s with losesAbilitiesUntilEot := false }⟩,
   ⟨fun s => !s.grantedTriggersUntilEot.isEmpty,
-    fun s => { s with grantedTriggersUntilEot := #[] }⟩
+    fun s => { s with grantedTriggersUntilEot := #[] }⟩,
+  ⟨fun s => s.cardsInHandPowerUntilEot,
+    fun s => { s with cardsInHandPowerUntilEot := false }⟩
 ]
 
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or

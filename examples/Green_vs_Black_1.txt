@@ -422,6 +422,7 @@ pass
 pass
 pass
 pass
+choose 9
 stack 101 135
 target 147
 pass

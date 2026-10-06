@@ -21,7 +21,7 @@ def apnapOrder (g : Game) : Array PlayerId :=
 
 /-- Legendary permanents `p` currently controls. -/
 def legendaryPermanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
-  (g.permanentsOf p).filter (·.isLegendary)
+  (g.permanentsOf p).filter (g.treatedAsLegendary)
 
 /-- First legend-rule group that needs a choice (CR 704.5j / 201.2a): two or
 more legendary permanents with the same name controlled by the same player,
@@ -178,9 +178,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
                 match o.controller with
                 | some p =>
                   if gyOwners.any (· == p) then
-                    g := { g with waitingTriggers :=
-                      g.waitingTriggers ++
-                        o.waitingTriggersFor p .creatureCardsPutIntoYourGy }
+                    let wts := (o.waitingTriggersFor p .creatureCardsPutIntoYourGy).filter (fun w =>
+                      !g.waitingTriggers.any (fun x => x.source.id == w.source.id && x.event == w.event))
+                    g := { g with waitingTriggers := g.waitingTriggers ++ wts }
                 | none => pure ()
             g := { g with suppressCreatureCardsToGy := true }
       for pair in victims do

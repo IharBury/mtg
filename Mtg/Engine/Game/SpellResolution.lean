@@ -76,7 +76,7 @@ def resolveTop (g : Game) : Game :=
     | none => g.logMsg "The spell left the stack unexpectedly"
     | some obj =>
       if let some e := obj.abilityEffect then
-        let g := { g with resolvingAbility := some obj.id }
+        let g := { g with resolvingAbility := some obj.id, resolvingDivision := entry.dividedDamage }
         let g :=
           match obj.triggeredAbility with
           | some t =>
@@ -91,7 +91,7 @@ def resolveTop (g : Game) : Game :=
           | none =>
             g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
               obj.lastKnownPower (obj.chosenX.getD 0)
-        let g := { g with resolvingAbility := none }
+        let g := { g with resolvingAbility := none, resolvingDivision := #[] }
         -- CR 608.2m: after resolution the ability ceases to exist.
         g.ceaseToExist obj.id
       else if let some t := obj.triggeredAbility then
@@ -124,7 +124,7 @@ def resolveTop (g : Game) : Game :=
         -- Each target is checked against its own slot.
         let allTargetsIllegal :=
           obj.printed.isInstantOrSorcery && !entry.targets.isEmpty &&
-            match spellEffectOf obj entry.chosenMode with
+            match spellEffectOf obj entry.chosenMode entry.extraModes with
             | some e =>
               let kind := e.targetKind
               let legal :=
@@ -155,17 +155,27 @@ def resolveTop (g : Game) : Game :=
           match obj.giftPromisedTo, obj.printed.isInstantOrSorcery with
           | some to, true => g.givePromisedGift to
           | _, _ => g
-        let g :=
-          match spellEffectOf obj entry.chosenMode with
-          | some e =>
-            let g := { g with resolvingSpell := some obj.id }
-            let g := g.applyUnified entry.controller e entry.targets
-              (castFromGraveyard := obj.castFromGraveyard)
-              (kicked := obj.kicked)
-              (giftPromised := obj.giftPromisedTo.isSome)
-              (chosenX := obj.chosenX.getD 0)
-            { g with resolvingSpell := none }
-          | none => g
+        let modeEffects : Array Effect :=
+          if entry.extraModes.isEmpty then (spellEffectOf obj entry.chosenMode).toArray
+          else
+            ((entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)).filterMap
+              (obj.printed.spellModes[·]?)
+        -- Several chosen modes resolve in printed order, each with the targets
+        -- announced for its own instances of “target” (CR 700.2 / 608.2c).
+        let g := { g with resolvingSpell := some obj.id }
+        let (g, _) := modeEffects.foldl (fun (acc : Game × Array Target) e =>
+          let (g, rest) := acc
+          let n := Nat.min rest.size
+            (if e.targetKind.spec.slots.isEmpty then e.targetKind.targetCount
+             else e.targetKind.spec.slots.size)
+          let n := if modeEffects.size == 1 then rest.size else n
+          let g := g.applyUnified entry.controller e (rest.extract 0 n)
+            (castFromGraveyard := obj.castFromGraveyard)
+            (kicked := obj.kicked)
+            (giftPromised := obj.giftPromisedTo.isSome)
+            (chosenX := obj.chosenX.getD 0)
+          (g, rest.extract n rest.size)) (g, entry.targets)
+        let g := { g with resolvingSpell := none }
         let g :=
           match obj.printed.empowerJace with
           | some n => g.empowerJace entry.controller n

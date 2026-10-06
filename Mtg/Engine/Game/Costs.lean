@@ -3,184 +3,43 @@ import Mtg.Engine.Game.Choices
 /-!
 # Total costs (CR 601.2f–h)
 
-Paying life (CR 118.3b), additional activation costs, finishing a
-proposed spell, cast cost reductions (CR 601.2f / 118.7), and
-activation mana costs including power-up reductions.
+Finishing a proposed spell or ability, cast cost reductions
+(CR 601.2f / 118.7), and activation mana costs including power-up
+reductions.
 -/
 
 namespace Mtg.Engine
 namespace Game
 
-/-- Whether `p` can pay `n` life (CR 119.4). Paying 0 life is always legal. -/
-def canPayLife (g : Game) (p : PlayerId) (n : Nat) : Bool :=
-  n == 0 || (g.player p).life ≥ (n : Int)
+/-- Move `id` to `to`'s hand and log the return. -/
+def returnToHand (g : Game) (id : ObjectId) (to : PlayerId) : Game :=
+  let name := (g.object! id).name
+  let (g, _) := g.move id (.hand to) none
+  g.logMsg s!"{name} is returned to {(g.player to).name}'s hand"
 
-/-- Pay `n` life as a cost (CR 118.3b / 119.4). Payment of life is not damage. -/
-def payLifeCost (g : Game) (p : PlayerId) (n : Nat) : Except String Game := do
-  if n == 0 then
-    return g
-  let pl := g.player p
-  if pl.life < (n : Int) then
-    throw s!"{pl.name} cannot pay {n} life"
-  return g.setLife p (pl.life - (n : Int))
-    s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
+/-- Legal only during the declare blockers step of the caster's turn. -/
+def canCastForSneak (g : Game) (p : PlayerId) : Bool :=
+  g.activePlayer == p && g.step == .declareBlockers
 
-/-- Sacrifice choice for an activation cost, preferring tokens, then the
-permanent with the lowest mana value. -/
-def cheapestToSacrifice (g : Game) (cands : Array GameObject) : Option GameObject :=
-  cands.foldl (fun acc o =>
-    match acc with
-    | none => some o
-    | some b =>
-      let key (x : GameObject) : Nat := (if x.printed.isToken then 0 else 1000) + g.objectManaValue x
-      if key o < key b then some o else acc) none
-
-/-- Pay the Reality Fracture part of an activation cost from the battlefield,
-choosing the cheapest permanents or cards automatically. -/
-def payFraBattlefieldCost (g : Game) (p : PlayerId) (sourceId : ObjectId) (c : FraCost) :
+/-- Pay sneak: return an unblocked attacker you control to hand and mark
+the spell. The creature enters tapped and attacking the same player. -/
+def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : ObjectId) :
     Except String Game := do
-  let sac (g : Game) (pred : GameObject → Bool) (what : String) : Except String Game :=
-    match g.cheapestToSacrifice ((g.permanentsOf p).filter pred) with
-    | none => throw s!"No {what} to sacrifice"
-    | some o => pure (g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}")
-  match c with
-  | .sacrificeAnotherArtifact =>
-    sac g (fun o => o.id != sourceId && o.printed.isArtifact) "other artifact"
-  | .sacrificeAnotherCreatureOrPlaneswalker =>
-    sac g (fun o => o.id != sourceId && (o.isCreature || o.printed.isPlaneswalker))
-      "other creature or planeswalker"
-  | .sacrificeArtifactOrLand =>
-    match g.cheapestToSacrifice ((g.permanentsOf p).filter (fun o =>
-        o.id != sourceId && o.printed.isArtifact)) with
-    | some _ => sac g (fun o => o.id != sourceId && o.printed.isArtifact) "artifact"
-    | none => sac g (fun o => o.printed.isArtifact || o.printed.isLand) "artifact or land"
-  | .discardLegendaryCard =>
-    match (g.player p).hand.find? (fun id => (g.findObject? id).any (·.isLegendary)) with
-    | none => throw "No legendary card to discard"
-    | some hid =>
-      let card := g.object! hid
-      let g := g.logMsg s!"{(g.player p).name} discards {card.name}"
-      let (g, _) := g.move hid (.graveyard card.owner) none
-      pure (g.modifyPlayer p (fun pl => { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 }))
-  | .tapTwoUntappedArtifacts =>
-    let arts := (g.permanentsOf p).filter (fun o => o.printed.isArtifact && !o.status.tapped)
-    let arts := arts.filter (·.id != sourceId) ++ arts.filter (·.id == sourceId)
-    if arts.size < 2 then throw "Not enough untapped artifacts to tap"
-    pure ((arts.extract 0 2).foldl (fun g o => g.becomeTapped (g.object! o.id)) g)
-  | _ => pure g
-
-/-- Pay `{T}`, life, discard, and/or sacrifice the source as part of an activation cost
-(CR 601.2h / 118.3b / 702.29). -/
-def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
-    (tapSource sacrificeSource : Bool) (payLife : Nat := 0)
-    (discardSource : Bool := false)
-    (ab : Option ActivatedAbility := none) : Except String Game := do
-  let some src := g.findObject? sourceId | throw "The source is no longer in play"
-  if ab.any (·.cost.fra == .exileSourceFromHand) then
-    if !(src.zone == .hand src.owner && src.owner == p) then
-      throw s!"{src.name} is not in your hand"
-    let g ← g.payLifeCost p payLife
-    let g := g.logMsg s!"{(g.player p).name} exiles {src.name} from their hand"
-    return (g.move sourceId .exile none).1
-  if discardSource then
-    if !(src.zone == .hand src.owner && src.owner == p) then
-      throw s!"{src.name} is not in your hand"
-    let g ← g.payLifeCost p payLife
-    let src := g.object! sourceId
-    let g := g.logMsg s!"{(g.player p).name} discards {src.name}"
-    let (g, _) := g.move sourceId (.graveyard src.owner) none
-    return g
-  let fromGraveyard := src.zone == .graveyard src.owner && src.owner == p
-  if fromGraveyard && !tapSource && !sacrificeSource then
-    let g ← g.payLifeCost p payLife
-    let g ←
-      if ab.any (·.cost.fra == .exileAnotherCreatureCardFromGraveyard) then
-        match (g.player p).graveyard.find? (fun id =>
-            id != sourceId && (g.findObject? id).any (·.printed.isCreature)) with
-        | none => throw "No other creature card in your graveyard to exile"
-        | some cid =>
-          let name := (g.object! cid).name
-          pure ((g.move cid .exile none).1.logMsg s!"{(g.player p).name} exiles {name} from their graveyard")
-      else pure g
-    if ab.any (·.cost.exileSourceFromGraveyard) then
-      let g := g.logMsg s!"{(g.player p).name} exiles {src.name} from their graveyard"
-      return (g.move sourceId .exile none).1
-    return g
-  if !src.isOnBattlefield then
-    throw "The source is no longer on the battlefield"
-  if !src.controlledBy p then
-    throw "You don't control that permanent"
-  let mut g := g
-  if tapSource then
-    let src := g.object! sourceId
-    if src.status.tapped then
-      throw s!"{src.name} is already tapped"
-    g := g.becomeTapped src
-  g := (← g.payLifeCost p payLife)
-  match ab with
-  | some a =>
-    if a.cost.removeIndestructibleCounter then
-      g := (← g.payRemoveIndestructibleCounter (g.object! sourceId))
-    if a.cost.discardACard then
-      match (g.player p).hand[0]? with
-      | none => throw "No card to discard"
-      | some hid =>
-        let card := g.object! hid
-        g := g.logMsg s!"{(g.player p).name} discards {card.name}"
-        let (g', _) := g.move hid (.graveyard card.owner) none
-        g := g'.modifyPlayer p (fun pl =>
-          { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
-    if a.cost.discardLegendarySameName then
-      let names :=
-        (g.permanentsOf p).filterMap (fun o =>
-          if o.isLegendary then some o.name else none)
-      match (g.player p).hand.findSome? (fun hid =>
-        match g.findObject? hid with
-        | some o =>
-          if o.isLegendary && names.contains o.name then some hid else none
-        | none => none) with
-      | none => throw "No legendary card of the same name to discard"
-      | some hid =>
-        let card := g.object! hid
-        g := g.logMsg s!"{(g.player p).name} discards {card.name}"
-        let (g', _) := g.move hid (.graveyard card.owner) none
-        g := g'
-    if a.cost.sacrificeLegendaryArtifact then
-      match (g.permanentsOf p).find? (fun o =>
-        o.printed.isArtifact && o.isLegendary &&
-          !(sacrificeSource && o.id == sourceId)) with
-      | none => throw "No legendary artifact to sacrifice"
-      | some art =>
-        g := g.sacrificeToGraveyard art
-          s!"{(g.player p).name} sacrifices {art.name}"
-    if a.cost.sacrificeArtifact then
-      match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with
-      | none => throw "No artifact to sacrifice"
-      | some art =>
-        g := g.sacrificeToGraveyard art
-          s!"{(g.player p).name} sacrifices {art.name}"
-    g := (← g.payFraBattlefieldCost p sourceId a.cost.fra)
-    if let some t := a.cost.sacrificeAnotherSubtype then
-      match (g.permanentsOf p).find? (fun o =>
-        o.id != sourceId && g.hasSubtype o t) with
-      | none => throw s!"No other {t} to sacrifice"
-      | some o =>
-        g := g.sacrificeToGraveyard o
-          s!"{(g.player p).name} sacrifices {o.name}"
-  | none => pure ()
-  if sacrificeSource then
-    match g.findObject? sourceId with
-    | none => pure ()
-    | some src =>
-      g := g.sacrificeToGraveyard src
-        s!"{(g.player p).name} sacrifices {src.name}"
-  if ab.any (·.cost.fra == .exileSource) then
-    match g.findObject? sourceId with
-    | some src =>
-      if src.isOnBattlefield then
-        g := (g.move sourceId .exile none).1.logMsg s!"{(g.player p).name} exiles {src.name}"
-    | none => pure ()
-  return g
+  if !g.canCastForSneak p then
+    throw "Sneak can be paid only during the declare blockers step on your turn"
+  let some attacker := g.findObject? attackerId | throw "no such object"
+  if !(attacker.isOnBattlefield && attacker.isCreature && attacker.controlledBy p) then
+    throw s!"{attacker.name} is not a creature you control"
+  if !attacker.status.attacking then
+    throw s!"{attacker.name} is not attacking"
+  if attacker.status.blocked then
+    throw s!"{attacker.name} is blocked"
+  let whom := attacker.status.attackingWhom
+  let some _spell := g.findObject? spellId | throw "The spell left the stack"
+  let g := g.returnToHand attackerId attacker.owner
+  let g := g.setObject { (g.object! spellId) with
+    sneakPaid := true, sneakAttackWhom := whom }
+  return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
 /-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
 need an artifact or creature sacrificed, or a card discarded, wait for
@@ -205,39 +64,50 @@ def finishProposedSpell (g : Game) : Except String Game := do
       return g.reverseProposedSpell
   if prop.needsDiscardCard && (g.player prop.caster).hand.isEmpty then
     return g.reverseProposedSpell
-  let g ← g.payCost prop.caster prop.cost allowElf allowInst
+  let count (g : Game) (u : FraManaUse) :=
+    ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == u)).size
+  let paid ← g.payCost prop.caster prop.cost allowElf allowInst
     allowHero allowVillain allowCant allowCreature spend
+  let spent (u : FraManaUse) := count paid u < count g u
+  let manaSpent := (g.player prop.caster).manaPool.total - (paid.player prop.caster).manaPool.total
+  let paid :=
+    match prop.kind, paid.findObject? prop.spellId with
+    | .spell, some o => paid.setObject { o with status := { o.status with manaSpentToCast := manaSpent } }
+    | _, _ => paid
+  let g :=
+    match prop.kind, paid.findObject? prop.spellId with
+    | .spell, some o =>
+      if spent .legendarySpell then
+        (paid.setObject { o with treasureManaSpent := o.treasureManaSpent || spent .fromTreasure
+                                 uncounterableThisCast := true }).logMsg
+          s!"{o.name} can't be countered (Delighted Halfling)"
+      else paid.setObject { o with treasureManaSpent := spent .fromTreasure }
+    | _, _ => paid
+  if prop.kind == .activatedAbility then
+    return (← g.beginActivationPayment prop)
   let g ←
-    match prop.kind, prop.sourceId with
-    | .activatedAbility, some sid =>
-      g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
-        prop.payLife prop.discardSource prop.activation
-    | _, _ => pure g
-  match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard, prop.sourceId with
-  | .spell, true, _, _ =>
+    match prop.sneakAttacker with
+    | some a =>
+      match g.paySneak prop.caster prop.spellId a with
+      | .ok g => pure g
+      | .error _ => return g.reverseProposedSpell
+    | none => pure g
+  match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard with
+  | _, true, _ =>
     let g := { g with
       pending := .sacrificePermanent prop.caster prop.spellId
       consecutivePasses := 0 }
     return g.logMsg
       s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
-  | .spell, _, true, _ =>
+  | _, _, true =>
     let g := { g with
       pending := .discardForAdditionalCost prop.caster
       consecutivePasses := 0 }
     return g.logMsg
       s!"{(g.player prop.caster).name} must discard a card"
-  | .spell, _, _, _ =>
+  | _, _, _ =>
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeCast prop.caster (g.object! prop.spellId)
-  | .activatedAbility, true, _, some sid =>
-    let g := { g with
-      pending := .sacrificePermanent prop.caster sid
-      consecutivePasses := 0 }
-    return g.logMsg
-      s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
-  | .activatedAbility, _, _, _ =>
-    let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
-    return g.becomeActivated prop.caster prop.original.name prop.sourceId
 
 /-- Starting mana cost of `face` before increases and reductions (CR 118.7). -/
 def playCostStart (card : GameObject) (face : CardDef) : ManaCost :=
@@ -379,7 +249,13 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.staticAbilities.any (· == .fra .costsLessIfCastNoncreature) &&
         (g.player caster).noncreatureSpellsCastThisTurn > 0 then 2
     else 0
-  afterWitch.reduceGeneric (subtypeLess + selfLess)
+  let pl := g.player caster
+  let thisTurnLess :=
+    (pl.typeSpellCostLessThisTurn.foldl (fun acc (ty, n) =>
+      if face.hasType ty then acc + n else acc) 0) +
+    (pl.supertypeSpellCostLessThisTurn.foldl (fun acc (s, n) =>
+      if face.hasSupertype s then acc + n else acc) 0)
+  afterWitch.reduceGeneric (subtypeLess + selfLess + thisTurnLess)
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
 (CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
@@ -478,8 +354,12 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     match chosenX with
     | some x => cost.substituteX x
     | none => cost
+  let firstEquipFree :=
+    ab.isEquip && g.hasEnduringStory p && (g.player p).equipActivationsThisTurn == 0 &&
+      (g.permanentsOf p).any (·.staticAbilities.any (· == .firstEquipFreeIfEnduringStory))
   let cost :=
-    if ab.powerUp then
+    if firstEquipFree then ManaCost.empty
+    else if ab.powerUp then
       match source with
       | some o =>
         let afterEnter :=

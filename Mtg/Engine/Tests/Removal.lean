@@ -490,6 +490,12 @@ def resolvedSmiteOnFireleaper : Game :=
 def wolfCount (g : Game) : Nat :=
   g.battlefield.filter (fun o => o.name == "Wolf") |>.size
 
+/-- Resolve Head of the Hunt's reflexive Wolf trigger, if it is waiting. -/
+def wolvesAfterReflexive (g : Game) : Nat :=
+  let waiting := g.waitingTriggers.any (fun w => w.event == .bolgSacrificedForReflexive)
+  let g := if waiting then passBoth (g.receivePriority ⟨0⟩) else g
+  wolfCount g
+
 /-- How many waiting copies of `ab` are pending. -/
 def countWaitingAbility (g : Game) (ab : TriggeredAbility) : Nat :=
   g.waitingTriggers.filter (fun wt => wt.ability == ab) |>.size
@@ -522,7 +528,8 @@ def headExilesPreyBeeSilent : Game :=
 #guard countWaitingAbility headExilesPreyBeeSilent
   (.onOneOrMoreOtherCreaturesDieScry 1) == 0
 #guard !headExilesPreyBeeSilent.creatureDiedThisTurn
-#guard wolfCount headExilesPreyBeeSilent == 1
+#guard wolfCount headExilesPreyBeeSilent == 0
+#guard wolvesAfterReflexive headExilesPreyBeeSilent == 1
 #guard headExilesPreyBeeSilent.log.any (fun s => mentions s "CR 614.6")
 
 /-- Bee itself dying does not see an opposing creature that was exiled instead
@@ -542,7 +549,8 @@ def beeDiesWhileHeadExilesPrey : Game :=
 #guard countWaitingAbility beeDiesWhileHeadExilesPrey
   (.onOneOrMoreOtherCreaturesDieScry 1) == 0
 #guard beeDiesWhileHeadExilesPrey.creatureDiedThisTurn
-#guard wolfCount beeDiesWhileHeadExilesPrey == 1
+#guard wolfCount beeDiesWhileHeadExilesPrey == 0
+#guard wolvesAfterReflexive beeDiesWhileHeadExilesPrey == 1
 
 /-- Simultaneous death of Head of the Hunt still replaces the opposing death
 and creates exactly one Wolf from the snapshot source. -/
@@ -557,7 +565,8 @@ def headDiesWithPreyOneWolf : Game :=
 #guard headDiesWithPreyOneWolf.objects.any (fun o =>
   o.name == "Head of the Hunt" &&
     match o.zone with | .graveyard _ => true | _ => false)
-#guard wolfCount headDiesWithPreyOneWolf == 1
+#guard wolfCount headDiesWithPreyOneWolf == 0
+#guard wolvesAfterReflexive headDiesWithPreyOneWolf == 1
 
 /-- The modified exile/leave event still triggers leaves-the-battlefield
 abilities (CR 614.6). Fiend Hunter's return is a trigger, not an immediate

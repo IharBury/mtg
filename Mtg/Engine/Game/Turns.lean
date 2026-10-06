@@ -23,6 +23,13 @@ def clearEOT (g : Game) : Game :=
     for o in g.battlefield do
       if o.status.controlUntilEot then
         g := g.endControlChangingEffect (g.object! o.id)
+      else if o.status.controlTurnEndsLeft > 0 && o.controller == some g.activePlayer then
+        let left := o.status.controlTurnEndsLeft - 1
+        if left == 0 then
+          g := g.endControlChangingEffect (g.object! o.id)
+        else
+          g := g.mapObjectStatus (g.object! o.id) (fun s =>
+            { s with controlTurnEndsLeft := left })
       if (g.object! o.id).status.clearsAtCleanup then
         g := g.mapObjectStatus (g.object! o.id) Status.clearedAtCleanup
     return g
@@ -54,8 +61,7 @@ def clearTurnActivations (g : Game) : Game :=
       lastLifeLost := none
       lastNoncombatDamage := none
       sheHulkDamageUsedThisTurn := false
-      pendingFreeRGCreature := none
-      zemoBoastExiles := #[] }
+      pendingFreeRGCreature := none }
     -- Stingcaster Mage: flashback granted until end of turn ends.
     for o in g.objects do
       if o.flashbackUntilEot then
@@ -72,7 +78,10 @@ def clearTurnActivations (g : Game) : Game :=
           pl.scriedOrSurveilledThisTurn || pl.copyNextInstantSorceryThisTurn != 0 ||
           pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
           pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
-          pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered then
+          pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered ||
+          pl.creaturesAttackedWithThisTurn != 0 || pl.equipActivationsThisTurn != 0 ||
+          !pl.typeSpellCostLessThisTurn.isEmpty ||
+          !pl.supertypeSpellCostLessThisTurn.isEmpty then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -86,6 +95,8 @@ def clearTurnActivations (g : Game) : Game :=
           attackPumpPerPlainsThisTurn := 0
           heroEnteredThisTurn := false
           attackedWithHeroThisTurn := false
+          creaturesAttackedWithThisTurn := 0
+          equipActivationsThisTurn := 0
           cardsDiscardedThisTurn := 0
           artifactEnteredThisTurn := false
           jaceLoyaltyAtInstantSpeed := false
@@ -96,16 +107,21 @@ def clearTurnActivations (g : Game) : Game :=
           activatedLoyaltyThisTurn := false
           cardsMilledThisTurn := 0
           mountainExtraRedThisTurn := 0
-          nextSpellCantBeCountered := false }
+          nextSpellCantBeCountered := false
+          typeSpellCostLessThisTurn := #[]
+          supertypeSpellCostLessThisTurn := #[] }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||
           !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
           o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn ||
           o.status.becameTappedThisTurn || o.status.gotPlusOneThisTurn ||
-          o.status.loyaltyActivatedThisTurn then
+          o.status.loyaltyActivatedThisTurn ||
+          !o.status.combatDamageToPlayers.isEmpty ||
+          !o.status.modesChosenThisTurn.isEmpty then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
+          abilitiesActivatedThisTurn := #[]
           loyaltyActivatedThisTurn := false
           firedOnceEachTurn := false
           optionalOnceUsed := false
@@ -114,7 +130,9 @@ def clearTurnActivations (g : Game) : Game :=
           declaredAsAttackerThisTurn := false
           boastUsedThisTurn := false
           becameTappedThisTurn := false
-          gotPlusOneThisTurn := false } }
+          gotPlusOneThisTurn := false
+          combatDamageToPlayers := #[]
+          modesChosenThisTurn := #[] } }
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/
@@ -182,21 +200,39 @@ until that turn expire when it would have begun (CR 800.4m). -/
 def startNextTurn (g : Game) : Game :=
   let ending := g.activePlayer
   let g := g.expirePlayPermissions ending |>.clearTurnActivations
-  let n := g.players.size
   Id.run do
     let mut g := g
-    for k in [1:n+1] do
-      let q : PlayerId := ⟨(ending.idx + k) % n⟩
-      if (g.player q).lost then
+    let extraN := g.extraTurns.size
+    for _ in [0:extraN] do
+      if !g.extraTurns.isEmpty && (g.player g.extraTurns[0]!).lost then
+        let q := g.extraTurns[0]!
         g := g.expireUntilNextTurnEffects q
-      else
-        g := { g with
-          activePlayer := q
-          turnNumber := g.turnNumber + 1
-          isFirstTurn := false
-          cleanupGivesPriority := false }
-        return g.logMsg s!"It is now {g.player q |>.name}'s turn {g.turnNumber}"
-    return g
+        g := { g with extraTurns := g.extraTurns.extract 1 g.extraTurns.size }
+    match g.extraTurns[0]? with
+    | some q =>
+      g := { g with
+        extraTurns := g.extraTurns.extract 1 g.extraTurns.size
+        activePlayer := q
+        powerUpsForbidden := true
+        turnNumber := g.turnNumber + 1
+        isFirstTurn := false
+        cleanupGivesPriority := false }
+      return g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}"
+    | none =>
+      let n := g.players.size
+      for k in [1:n+1] do
+        let q : PlayerId := ⟨(ending.idx + k) % n⟩
+        if (g.player q).lost then
+          g := g.expireUntilNextTurnEffects q
+        else
+          g := { g with
+            activePlayer := q
+            powerUpsForbidden := false
+            turnNumber := g.turnNumber + 1
+            isFirstTurn := false
+            cleanupGivesPriority := false }
+          return g.logMsg s!"It is now {(g.player q).name}'s turn {g.turnNumber}"
+      return g
 
 /-- `partial` because a silent cleanup (CR 514.3) immediately begins the next
 turn, and a skipped draw step (CR 103.8a / 500.11) immediately begins
@@ -228,7 +264,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           (o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
             !g.hasEnduringStory ap) ||
           o.staticAbilities.any (· == .fra .doesntUntap) ||
-          g.hostCantBecomeUntapped o
+          g.hostCantBecomeUntapped o ||
+          g.hostSkipsUntapStep o
         -- CR 122.1d: a stun counter is removed instead of untapping.
         let stunned := o.status.tapped && !skipUntap && o.status.stun > 0
         if o.status.tapped && !skipUntap && !stunned then
@@ -289,10 +326,18 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           match g.findObject? id with
           | some card => g.putMatchingSourceTriggers pl.id card (.fra .eachUpkeepFromGraveyard)
           | none => g) g) g
+    -- Auras with “at the beginning of the upkeep of enchanted creature's controller”.
+    let g := g.battlefield.foldl (fun g aura =>
+      match aura.attachedTo.bind g.findObject?, aura.controller with
+      | some host, some c =>
+        if host.controlledBy ap then g.putMatchingSourceTriggers c aura .enchantedControllerUpkeep
+        else g
+      | _, _ => g) g
     g.receivePriority ap
   | .beginningOfCombat =>
     let ap := g.activePlayer
     let g := g.putControlledTriggers ap .yourBeginCombat
+    let g := g.livingPlayers.foldl (fun g pl => g.putControlledTriggers pl.id .eachBeginCombat) g
     let g := (g.player ap).graveyard.foldl (fun g id =>
       match g.findObject? id with
       | some card => g.putMatchingSourceTriggers ap card (.fra .yourBeginCombatFromGraveyard)
@@ -320,7 +365,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
                 let (g', newId) := g.putOntoBattlefield id owner (summoningSick := sick)
                 g := g'.logMsg
                   s!"{name} returns to the battlefield (beginning of end step)"
-                g := g.afterPermanentEnters (g.object! newId)
+                let back := g.object! newId
+                g :=
+                  if back.printed.isLand then g.afterLandEnters back
+                  else g.afterPermanentEnters back
         let exiles := g.delayedEndStepExiles
         g := { g with delayedEndStepExiles := #[] }
         for id in exiles do

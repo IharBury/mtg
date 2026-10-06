@@ -83,16 +83,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       | some o => g.destroyPermanent o
       | none => g) g
   | .searchPlaneswalkerToTop =>
-    match g.findLibraryCard? controller (·.isPlaneswalker) with
-    | none =>
-      (g.logMsg s!"{(g.player controller).name} searches their library and finds no planeswalker card").shuffleLibrary controller
-    | some id =>
-      let name := (g.object! id).name
-      let g := g.logMsg s!"{(g.player controller).name} reveals {name}"
-      let g := g.shuffleLibrary controller
-      let g := g.modifyPlayer controller (fun pl =>
-        { pl with library := (pl.library.filter (· != id)).push id })
-      g.logMsg s!"{(g.player controller).name} puts {name} on top of their library"
+    g.beginLibrarySearch controller (·.isPlaneswalker) "a planeswalker card" .topAfterShuffle
   | .plusOneOnEachTarget n =>
     targets.foldl (fun g t =>
       match t with
@@ -259,10 +250,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       { pl with mountainExtraRedThisTurn := pl.mountainExtraRedThisTurn + 1 })
     g.logMsg s!"Until end of turn, whenever {(g.player controller).name} taps a Mountain for mana, they add an additional \{R}"
   | .searchLandToGraveyard =>
-    g.resolveLibrarySearch controller (·.isLand) "land card" fun g id =>
-      let name := (g.object! id).name
-      let (g, _) := g.move id (.graveyard controller) none
-      g.logMsg s!"{(g.player controller).name} puts {name} into their graveyard"
+    g.beginLibrarySearch controller (·.isLand) "a land card" .graveyard
   | .counter =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
@@ -464,7 +452,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       (g, cs.push copy.id)) (g, #[])
     if copies.isEmpty then g
     else
-      g.beginFraChoice controller (.castCopiesFree copies 6)
+      g.beginFraChoice controller (.castCopiesFree copies 6 copies.size)
         s!"{(g.player controller).name} may cast copies with total mana value 6 or less"
   | .damageThenGainLife n =>
     let g := g.withLegalKindTarget controller kind targets (fun g t =>
@@ -627,8 +615,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
         match g.findObject? id with
         | some o =>
           if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 then
-            (g.mapObjectStatus o (fun s => { s with minusOneMinusOne := s.minusOneMinusOne + x })).logMsg
-              s!"{x} -1/-1 counter(s) are put on {o.name}"
+            let n := g.countersYouPut o x (putter := some controller)
+            (g.mapObjectStatus o (fun s => { s with minusOneMinusOne := s.minusOneMinusOne + n })).logMsg
+              s!"{n} -1/-1 counter(s) are put on {o.name}"
           else g
         | none => g
       | _ => g) g
@@ -695,7 +684,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
         g.afterLandEnters (g.object! newId)
       | _ => g) sourceId illegal
   | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
-  | .searchLandsTapped n => g.searchLandsOntoBattlefieldTapped controller n (fun _ => true)
+  | .searchLandsTapped n =>
+    g.beginLibrarySearch controller (·.isLand) "a land card" (.battlefield true) (count := n)
   | .searchEnchantmentToHand =>
     g.resolveLibrarySearchToHand controller (·.isEnchantment) "enchantment card"
   | .tappedHeartwoods n => g.createKindTokens controller .heartwood n (tapped := true)
@@ -761,7 +751,19 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .putCauseCountersOnSource
   | .mayMoveSourceCountersToTarget
   | .mayPayThenProliferate _ _
-  | .proliferate _ =>
+  | .proliferate _
+  | .becomeArtifactCreatureUntilEot
+  | .queueMshReflexive _ _
+  | .mshReflexive _ _
+  | .hawkeyeArrows _
+  | .zemoBoastCopies
+  | .copySourceSpellXTimes
+  | .gainLife _
+  | .drawAndCreateTreasure
+  | .damageEqualSourcePower
+  | .returnSourceToHand
+  | .sarumanExileCopyMayCast
+  | .extort =>
     g.applyFraAbility controller effect r targets sourceId
 
 end Game

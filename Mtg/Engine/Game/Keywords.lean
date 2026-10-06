@@ -88,37 +88,6 @@ def mayAttackDespiteDefender (g : Game) (o : GameObject) : Bool :=
       (g.player p).scriedOrSurveilledThisTurn) ||
     (g.permanentsOf p).any (·.staticAbilities.any (· == .fra .creaturesAttackDespiteDefender))
 
-/-- Printed haste, until-EOT haste, or a static “haste as long as you control
-another …” ability. -/
-def hasHaste (g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.haste || (g.fraGrantedKeywords o).haste ||
-  (o.isOnBattlefield &&
-    o.staticAbilities.any (fun ab =>
-      match ab.hasteIfOtherSubtype? with
-      | none => false
-      | some t =>
-        match o.controller with
-        | none => false
-        | some p =>
-          (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)))
-
-def canAttack (g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield && o.isCreature &&
-  o.controlledBy g.activePlayer &&
-  !o.status.tapped && (!o.printedOrUntilEot.defender || g.mayAttackDespiteDefender o) &&
-  !(o.status.summoningSick && !g.hasHaste o) &&
-  !g.enchantedCantAttackOrBlock o &&
-  o.staticAbilities.all (fun ab =>
-    match ab.cantAttackUnlessNOther? with
-    | none => true
-    | some (n, subtype) =>
-      match o.controller with
-      | none => false
-      | some p =>
-        let others :=
-          (g.permanentsOf p).filter (fun x =>
-            x.id != o.id && g.hasSubtype x subtype) |>.size
-        others >= n)
 
 /-- Whether `p` currently controls a permanent with any of these subtypes. -/
 def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array String) : Bool :=
@@ -186,6 +155,22 @@ def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
     | some src => src.isOnBattlefield
     | none => false)
 
+/-- During your turn, creatures you control that are equipped gain these
+keywords (Long-Lost Lances). -/
+def equippedDuringYourTurnKeywords (g : Game) (o : GameObject) : Keywords :=
+  if !o.isOnBattlefield || !o.isCreature || g.attachedEquipmentCount o == 0 then
+    Keywords.none
+  else
+    match o.controller with
+    | none => Keywords.none
+    | some p =>
+      if g.activePlayer != p then Keywords.none
+      else
+        (g.permanentsOf p).foldl (fun acc src =>
+          src.staticAbilities.foldl (fun acc ab =>
+            Keywords.merge acc (ab.equippedTeamKeywordsDuringYourTurn)) acc)
+          Keywords.none
+
 def leftoverGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
   let self :=
     o.staticAbilities.foldl (fun acc ab =>
@@ -217,11 +202,47 @@ def currentKeywords (g : Game) (o : GameObject) : Keywords :=
   let base :=
     Keywords.merge
       (Keywords.merge
-        (Keywords.merge (Keywords.merge printedKw o.grantedUntilEot)
-          (g.attachedGrantedKeywords o))
-        (g.enduringStoryKeywords o))
-      (g.leftoverGrantedKeywords o)
+        (Keywords.merge
+          (Keywords.merge
+            (Keywords.merge (Keywords.merge printedKw o.grantedUntilEot)
+              (g.attachedGrantedKeywords o))
+            (g.enduringStoryKeywords o))
+          (g.leftoverGrantedKeywords o))
+        (g.equippedDuringYourTurnKeywords o))
+      o.status.keywordCounters.toKeywords
   if o.status.shadow > 0 then { base with shadow := true } else base
+
+/-- Haste from printed text, attachments, enduring story, counters, or
+“haste as long as you control another …”. Lost abilities are omitted. -/
+def hasHaste (g : Game) (o : GameObject) : Bool :=
+  (g.currentKeywords o).haste ||
+  (o.isOnBattlefield &&
+    o.staticAbilities.any (fun ab =>
+      match ab.hasteIfOtherSubtype? with
+      | none => false
+      | some t =>
+        match o.controller with
+        | none => false
+        | some p =>
+          (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)))
+
+def canAttack (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield && o.isCreature &&
+  o.controlledBy g.activePlayer &&
+  !o.status.tapped && (!(g.currentKeywords o).defender || g.mayAttackDespiteDefender o) &&
+  !(o.status.summoningSick && !g.hasHaste o) &&
+  !g.enchantedCantAttackOrBlock o &&
+  o.staticAbilities.all (fun ab =>
+    match ab.cantAttackUnlessNOther? with
+    | none => true
+    | some (n, subtype) =>
+      match o.controller with
+      | none => false
+      | some p =>
+        let others :=
+          (g.permanentsOf p).filter (fun x =>
+            x.id != o.id && g.hasSubtype x subtype) |>.size
+        others >= n)
 
 /-- Whether `o` currently has shadow (printed, granted, or from a counter).
 Multiple instances are redundant. -/
@@ -330,8 +351,7 @@ def hasLifelink (g : Game) (o : GameObject) : Bool :=
 Pairwise `canBlock` stays true; the two-or-more restriction is checked on the
 declaration as a whole (CR 509.1c). -/
 def hasMenace (g : Game) (o : GameObject) : Bool :=
-  hasPrintedOrEot o (·.menace) ||
-  (g.leftoverGrantedKeywords o).menace ||
+  (g.currentKeywords o).menace ||
   (o.isOnBattlefield && o.status.plusOnePlusOne > 0 &&
     match o.controller with
     | none => false
@@ -349,11 +369,25 @@ def minBlockersRequired (g : Game) (o : GameObject) : Nat :=
       | none => acc) 0
   max fromStatic (if g.hasMenace o then 2 else 0)
 
+/-- Maximum number of creatures that may block `o`, if a static caps it. -/
+def maxBlockersAllowed (_g : Game) (o : GameObject) : Option Nat :=
+  o.staticAbilities.foldl (fun acc ab =>
+    match ab.cantBeBlockedByMoreThan? with
+    | some n =>
+      some (match acc with
+        | some m => min m n
+        | none => n)
+    | none => acc) none
+
 /-- True when `n` blockers is a legal number for `attacker` (CR 702.111b).
 Zero is always legal (the attacker is unblocked). -/
 def legalBlockerCount (g : Game) (attacker : GameObject) (n : Nat) : Bool :=
   let need := g.minBlockersRequired attacker
-  n == 0 || need <= 1 || n >= need
+  let underMax :=
+    match g.maxBlockersAllowed attacker with
+    | none => true
+    | some m => n ≤ m
+  (n == 0 || need <= 1 || n >= need) && underMax
 
 /-- Creatures with flying can't attack this player or block their creatures. -/
 def leftoverFlyingRestriction (g : Game) (p : PlayerId) : Bool :=
@@ -374,7 +408,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
       (g.permanentsOf defender).any (fun o => g.hasSubtype o "Island")
   blocker.isOnBattlefield && blocker.isCreature &&
   blocker.controlledBy defender && !blocker.status.tapped &&
-  blocker.status.blocking.isEmpty &&
+  blocker.status.blocking.isEmpty && !blocker.status.cantBlockUntilEot &&
   g.mayDeclareAsBlocker blocker &&
   !g.enchantedCantAttackOrBlock blocker &&
   (!g.creaturesWithoutFlyingCantBlock || g.hasFlying blocker) &&
@@ -470,11 +504,21 @@ def hasHexproof (g : Game) (o : GameObject) : Bool :=
          src.status.shield > 0 &&
            src.staticAbilities.any (fun
              | .youAndOtherSubtypeHaveHexproofIfShield subtype =>
-               src.id == o.id ||
-                 (o.id != src.id && g.hasSubtype o subtype) ||
-                 -- "you and other Heroes" — the player has hexproof via a dummy check
-                 false
+               -- “You and other Heroes”: the source itself is not included.
+               src.id != o.id && g.hasSubtype o subtype
              | _ => false)))
+
+/-- The player has hexproof from opponents (Captain America, Super-Soldier). -/
+def playerHasHexproof (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun src =>
+    src.status.shield > 0 &&
+      src.staticAbilities.any (fun
+        | .youAndOtherSubtypeHaveHexproofIfShield _ => true
+        | _ => false))
+
+/-- Hexproof stops an opponent from targeting that player (CR 702.11c). -/
+def playerCanBeTargetedBy (g : Game) (caster target : PlayerId) : Bool :=
+  caster == target || !g.playerHasHexproof target
 
 /-- True when damage that would be dealt by `src` is prevented (Old Fat
 Spider chapter II). -/
@@ -483,7 +527,8 @@ def sourceDamagePrevented (g : Game) (src : GameObject) : Bool :=
 
 /-- Whether `o` has deathtouch, printed or granted until end of turn (CR 702.2). -/
 def hasDeathtouch (g : Game) (o : GameObject) : Bool :=
-  hasPrintedOrEot o (·.deathtouch) || (g.fraGrantedKeywords o).deathtouch
+  hasPrintedOrEot o (·.deathtouch) || o.status.keywordCounters.deathtouch > 0 ||
+    (g.fraGrantedKeywords o).deathtouch
 
 /-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
 make it lose the keyword. -/
@@ -499,7 +544,7 @@ def leftoverIndestructible (g : Game) (o : GameObject) : Bool :=
         (x.isCreature && x.printed.isArtifact) || g.hasSubtype x "Plan")
 
 def hasIndestructible (g : Game) (o : GameObject) : Bool :=
-  (o.printedOrUntilEot.indestructible ||
+  ((g.currentKeywords o).indestructible ||
     o.status.indestructibleCounters > 0 ||
     g.loreThresholdProtection o ||
     g.leftoverIndestructible o) &&
@@ -512,18 +557,21 @@ def objectManaValue (_g : Game) (o : GameObject) : Nat :=
   if o.zone != .stack then printed
   else printed + o.chosenX.getD 0
 
-/-- Whether `o` has trample, printed, granted until end of turn, or granted by
-a static ability (CR 702.19, 604.2). -/
-def hasTrample (g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.trample ||
-  o.status.trampleCounters > 0 ||
-  (g.leftoverGrantedKeywords o).trample ||
-  (o.isOnBattlefield && g.battlefield.any (fun src =>
-    g.grantsTrampleTo src o ||
-      (src.attachedTo == some o.id &&
-        src.staticAbilities.any (fun
+/-- The Reaver Cleaver: combat damage to a player or planeswalker makes Treasures. -/
+def equippedCreatesCombatTreasures (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    g.battlefield.any (fun eq =>
+      eq.attachedTo == some o.id &&
+        eq.staticAbilities.any (fun
           | .equippedGetsTrampleAndCombatTreasures _ _ => true
-          | _ => false))))
+          | _ => false))
+
+/-- Whether `o` has trample, printed, granted, or from a lord (CR 702.19). -/
+def hasTrample (g : Game) (o : GameObject) : Bool :=
+  (g.currentKeywords o).trample ||
+  o.status.trampleCounters > 0 ||
+  (o.isOnBattlefield && g.battlefield.any (fun src => g.grantsTrampleTo src o)) ||
+  g.equippedCreatesCombatTreasures o
 
 /-- Keywords including those granted by static abilities and until-EOT effects.
 Only trample (lords) and indestructible (until-EOT loss) differ from

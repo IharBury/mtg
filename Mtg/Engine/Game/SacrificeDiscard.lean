@@ -80,8 +80,10 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
         { g with conniveSource := none }.logMsg
           "No card is discarded; the conniving creature does not receive a +1/+1 counter"
       else g
-    { g with pending := .none, thirstDiscardsLeft := 0, pendingDiscardsLeft := 0 }
-      |>.receivePriority g.activePlayer
+    let g := { g with pending := .none, thirstDiscardsLeft := 0, pendingDiscardsLeft := 0 }
+    -- A following +1/+1 counter waits until the caller finishes the discards.
+    if g.plusOneAfterDiscards.isSome then g
+    else g.receivePriority g.activePlayer
   | some (p, rest) =>
     { g with pending := .chooseDiscardCard p rest }
       |>.logMsg s!"{(g.player p).name} must discard a card"
@@ -95,14 +97,15 @@ def drawThenBeginDiscard (g : Game) (p : PlayerId) (cards : Nat := 1)
 the battlefield, put a +1/+1 counter on it. The creature still connives if it
 has left (MSH / CR 701.47). -/
 def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
-  let extraDraw :=
-    (g.permanentsOf controller).any (fun o =>
+  let leaders :=
+    ((g.permanentsOf controller).filter (fun o =>
       o.staticAbilities.any (fun
         | .extraDrawOnConnive => true
-        | _ => false))
+        | _ => false))).size
   let g := { g with conniveSource := sourceId }
   let g := g.logMsg s!"{(g.player controller).name}'s creature connives"
-  let g := if extraDraw then g.draw controller 1 else g
+  -- Each Leader replaces the connive with a draw, then that connive.
+  let g := if leaders > 0 then g.draw controller leaders else g
   let g := g.draw controller 1
   if (g.player controller).hand.isEmpty then
     let g := { g with conniveSource := none }
@@ -122,9 +125,7 @@ def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
       match g.findObject? sid with
       | some o =>
         if o.isOnBattlefield then
-          let g := g.setObject { o with status := { o.status with
-            plusOnePlusOne := o.status.plusOnePlusOne + 1 } }
-          g.logMsg s!"{o.name} gets a +1/+1 counter"
+          g.addPlusOnePlusOneTo o 1 (byPlayer := o.controller)
         else
           g.logMsg "The conniving creature has left the battlefield; no +1/+1 counter is put"
       | none =>
@@ -177,9 +178,9 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
   | _ => throw "Not time to have a Villain connive"
 
 /-- After paying K'un-Lun's optional cost, draw a card. -/
-def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) : Game :=
+def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let g := { g with pending := .none }
-  g.draw p 1 |>.receivePriority g.activePlayer
+  g.draw p n |>.receivePriority g.activePlayer
 
 /-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.17). -/
 def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -198,7 +199,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       match prop.kind with
       | .spell => return g.becomeCast prop.caster (g.object! prop.spellId)
       | .activatedAbility =>
-        return g.becomeActivated p prop.original.name prop.sourceId
+        return g.becomeActivated p prop.original.name prop.sourceId prop.activation
     | none =>
       let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
       return g.becomeActivated p (g.object! sourceId).name (some sourceId)
@@ -261,7 +262,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name} (ward)"
     return g.afterWardResolved
-  | .maySacArtifactOrDiscard q =>
+  | .maySacArtifactOrDiscard q n =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
     let some sac := g.findObject? id | throw "no such object"
@@ -269,7 +270,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       throw s!"Can't sacrifice {sac.name}"
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name}"
-    return g.finishSacArtifactOrDiscardDraw p
+    return g.finishSacArtifactOrDiscardDraw p n
   | _ => throw "Not time to sacrifice a permanent"
 
 end Game

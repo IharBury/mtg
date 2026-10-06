@@ -263,6 +263,39 @@ inductive FraResolution where
   | mayPayThenProliferate (pay times : Nat)
   /-- Proliferate `times` times (CR 701.34). -/
   | proliferate (times : Nat)
+  /-- The source Vehicle becomes an artifact creature until end of turn
+  (crew, CR 702.122). -/
+  | becomeArtifactCreatureUntilEot
+  /-- Extort: you may pay {W/B}. If you do, each opponent loses 1 life and
+  you gain that much life (CR 702.101). -/
+  | extort
+  /-- Put the reflexive triggered ability `kind` of an MSH card on the stack
+  (“When you do, …”; MSH 359–369). `paid` is how many times its cost was
+  paid. -/
+  | queueMshReflexive (kind paid : Nat)
+  /-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
+  | mshReflexive (kind paid : Nat)
+  /-- Hawkeye's Trick Arrows: resolve the chosen modes (0 Net, 1 Explosive,
+  2 Boomerang) in order. -/
+  | hawkeyeArrows (modes : List Nat)
+  /-- Copy the cards exiled to pay this boast activation; you may cast up to
+  three of the copies without paying their mana costs (Baron Helmut Zemo). -/
+  | zemoBoastCopies
+  /-- Copy the source spell X times; you may choose new targets for the
+  copies (Photon Blast Barrage). -/
+  | copySourceSpellXTimes
+  /-- You gain `n` life. -/
+  | gainLife (n : Nat)
+  /-- Draw a card and create a Treasure (The Sackville-Bagginses). -/
+  | drawAndCreateTreasure
+  /-- The source deals damage equal to its power to the target creature
+  (Thorin, Mountain-king). -/
+  | damageEqualSourcePower
+  /-- Return the source from the graveyard to its owner's hand. -/
+  | returnSourceToHand
+  /-- Exile the targeted enchantment, instant, or sorcery. Copy it. You may
+  cast the copy without paying its mana cost (Saruman of Many Colors). -/
+  | sarumanExileCopyMayCast
   /-- The creature that caused this ability gets +P/+T until end of turn. -/
   | causeGetsPump (power toughness : Int)
   /-- Creatures attacking the player recorded as the cause's controller get

@@ -83,18 +83,89 @@ at the beginning of combat. -/
 #guard (fraRuling 37).comment.contains "you can cast a sorcery using flashback only when"
 
 /-!
-## `{X}` in mana value (rulings 751, 763, 765, 777, 807)
+## X in mana value (rulings 751, 763, 765, 777, 807)
+
+Off the stack, X in a mana cost is 0 (CR 107.3g). Guiding Hydra costs
+X and one white, so its mana value is 1 in every zone except the stack.
 -/
 
-/- Off the stack, `{X}` is 0 (CR 107.3g): Guiding Hydra's mana value is 1 in
-the graveyard and on the battlefield. -/
+/- Ruling 751: a graveyard card's X is 0, so Enlightened Confidant
+returns Guiding Hydra after gaining 1 life. -/
 #guard
   let g := addToGraveyard afterDraw guidingHydra ⟨0⟩
-  g.objectManaValue (graveyardCard g ⟨0⟩ "Guiding Hydra") == 1
+  g.objectManaValue (graveyardCard g ⟨0⟩ "Guiding Hydra") == 1 &&
+    (let g := addPermanent afterDraw enlightenedConfidant ⟨0⟩ ⟨0⟩
+     let g := addToLibraryTop g guidingHydra ⟨0⟩
+     let g := skipTo (g.gainLife ⟨0⟩ 1) .end 80
+     let g := passBoth g
+     let g := mustApply g ⟨0⟩ (.surveil #[] (g.scryLookedIds ⟨0⟩ 1))
+     (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Guiding Hydra")) &&
+    (fraRuling 751).comment.contains "graveyard" &&
+    (fraRuling 751).comment.contains "X is 0"
+
+/- Ruling 763: Your Fate Ends Here sees a battlefield X creature as
+mana value 1, so Guiding Hydra is not a legal target and Hill Giant is. -/
 #guard
-  let g := addPermanent afterDraw guidingHydra ⟨0⟩ ⟨0⟩
-  g.objectManaValue (namedPermanent g "Guiding Hydra") == 1
-#guard [751, 763, 765, 777, 807].all (fun i => (fraRuling i).comment.contains "X")
+  match yourFateEndsHere.spellEffect with
+  | some e =>
+    let g := addPermanent afterDraw guidingHydra ⟨1⟩ ⟨1⟩
+    let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+    let hydra := (namedPermanent g "Guiding Hydra").id
+    let giant := (namedPermanent g "Hill Giant").id
+    g.objectManaValue (g.object! hydra) == 1 &&
+      !(g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.permanent hydra) &&
+      (g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.permanent giant) &&
+      (fraRuling 763).comment.contains "creature or planeswalker" &&
+      (fraRuling 763).comment.contains "X is 0"
+  | none => false
+
+/- Ruling 765: Unwind History can target Guiding Hydra on the battlefield
+because its mana value is 1, and cannot target Hill Giant. -/
+#guard
+  match divinerOfVictory.prepareFace.bind (·.spellEffect) with
+  | some e =>
+    let g := addPermanent afterDraw guidingHydra ⟨1⟩ ⟨1⟩
+    let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+    let hydra := (namedPermanent g "Guiding Hydra").id
+    let giant := (namedPermanent g "Hill Giant").id
+    (g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.permanent hydra) &&
+      !(g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.permanent giant) &&
+      (fraRuling 765).comment.contains "battlefield" &&
+      (fraRuling 765).comment.contains "X is 0"
+  | none => false
+
+/- Ruling 777: Rewrite Regrets can return Guiding Hydra from the graveyard
+because X there is 0. On the stack the chosen X is included. -/
+#guard
+  match rewriteRegrets.spellEffect with
+  | some e =>
+    let g := addToGraveyard afterDraw guidingHydra ⟨0⟩
+    let card := graveyardCard g ⟨0⟩ "Guiding Hydra"
+    let (gStack, spell) := g.allocObject guidingHydra ⟨0⟩ .stack (some ⟨0⟩)
+    let gStack := gStack.setObject { spell with chosenX := some 5 }
+    g.objectManaValue card == 1 &&
+      (g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.card card.id) &&
+      gStack.objectManaValue (gStack.object! spell.id) == 6 &&
+      (fraRuling 777).comment.contains "graveyard" &&
+      (fraRuling 777).comment.contains "X is 0"
+  | none => false
+
+/- Ruling 807: Vindictive Triumph uses the permanent's mana value with
+X as 0, so Guiding Hydra returns tapped even if a value was chosen for X. -/
+#guard
+  match vindictiveTriumph.spellEffect with
+  | some e =>
+    let g := addPermanent afterDraw guidingHydra ⟨1⟩ ⟨1⟩
+    let o := namedPermanent g "Guiding Hydra"
+    let g := g.setObject { o with chosenX := some 9 }
+    let id := (namedPermanent g "Guiding Hydra").id
+    g.objectManaValue (g.object! id) == 1 &&
+      (let g := g.applyEffect ⟨0⟩ e #[Target.permanent id]
+       let back := namedPermanent g "Guiding Hydra"
+       back.controlledBy ⟨0⟩ && back.status.tapped) &&
+      (fraRuling 807).comment.contains "mana value" &&
+      (fraRuling 807).comment.contains "X is 0"
+  | none => false
 
 /-!
 ## Life gain triggers (rulings 761 / 762 / 876 / 877)

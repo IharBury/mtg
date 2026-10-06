@@ -253,8 +253,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
       let g := if o.status.tapped then g else g.becomeTapped o
       if chosenX == 0 then g
       else
-        (g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + chosenX })).logMsg
-          s!"{chosenX} stun counter(s) are put on {o.name}") sourceId illegal
+        let n := g.countersYouPut (g.object! o.id) chosenX (putter := some controller)
+        (g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + n })).logMsg
+          s!"{n} stun counter(s) are put on {o.name}") sourceId illegal
   | .emblemDrawOnCast =>
     let emblem : CardDef := {
       name := "Chandra, Chill of Compliance Emblem", types := #[]
@@ -366,6 +367,114 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
   | .mayPayThenProliferate pay times =>
     g.beginFraChoice controller (.mayPayThen pay (.proliferate times) sourceId)
       s!"{(g.player controller).name} may pay \{{pay}}"
+  | .becomeArtifactCreatureUntilEot =>
+    onSource (fun g o =>
+      (g.mapObjectStatus o (fun s => { s with additionalCreatureUntilEot := true })).logMsg
+        s!"{o.name} becomes an artifact creature until end of turn")
+  | .queueMshReflexive kind paid =>
+    if kind == 2 then
+      g.beginFraChoice controller (.hawkeyeModes paid #[] sourceId)
+        s!"{(g.player controller).name} chooses up to {paid} Trick Arrows modes"
+    else g.queueModeledReflexive controller sourceId kind paid
+  | .mshReflexive kind paid =>
+    g.resolveModeledReflexive controller sourceId kind paid targets g.resolvingDivision
+  | .hawkeyeArrows modes =>
+    let src := sourceId.bind g.findObject?
+    let illegal := some "The target is no longer legal"
+    let (g, _) := modes.foldl (fun (acc : Game × Nat) m =>
+      let (g, i) := acc
+      let slice := targets.extract i (i + 1)
+      match m with
+      | 0 =>
+        (g.withLegalKindPermanent controller .creature slice (fun g o =>
+          (g.mapObjectStatus o (fun s => { s with cantBlockUntilEot := true })).logMsg
+            s!"{o.name} can't block this turn") sourceId illegal, i + 1)
+      | 1 =>
+        (g.withLegalKindPlayer controller .player slice
+          (fun g pid => g.dealDamageToPlayer pid 2 (source := src)) sourceId illegal, i + 1)
+      | _ =>
+        if (g.player controller).hand.isEmpty then (g.draw controller 1, i)
+        else
+          (g.beginFraChoice controller .discardThenDraw
+            s!"{(g.player controller).name} discards a card, then draws a card", i)) (g, 0)
+    g
+  | .copySourceSpellXTimes =>
+    match sourceId.bind g.findObject? with
+    | some spell =>
+      if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
+      else
+        let x := spell.chosenX.getD 0
+        let (g, copies) := (List.range x).foldl (fun (acc : Game × Array ObjectId) _ =>
+          let g := acc.1.copyStackSpell spell controller
+          (g, acc.2.push ((g.stack.back?.map (·.objectId)).getD spell.id))) (g, #[])
+        let targeted := ((g.stackEntry? spell.id).map (!·.targets.isEmpty)).getD false
+        if copies.isEmpty || !targeted then g
+        else
+          g.beginFraChoice controller (.newTargetsForCopies copies)
+            s!"{(g.player controller).name} may choose new targets for the copies"
+    | none => g
+  | .gainLife n => g.gainLife controller n
+  | .drawAndCreateTreasure =>
+    let g := g.draw controller 1
+    g.createTreasureTokens controller 1
+  | .damageEqualSourcePower =>
+    let n :=
+      match sourceId.bind g.findObject? with
+      | some o => (g.power o).toNat
+      | none => 0
+    let srcName := (sourceId.bind g.findObject?).map (·.name) |>.getD "The creature"
+    g.withLegalKindPermanent controller .creature targets (fun g o =>
+      g.dealDamageFrom srcName o n (source := sourceId.bind g.findObject?))
+      sourceId (some "The target is no longer legal")
+  | .returnSourceToHand =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
+      else g.logMsg s!"{o.name} is no longer in the graveyard"
+    | none => g.logMsg "The ability's source is no longer in the graveyard"
+  | .sarumanExileCopyMayCast =>
+    g.withLegalKindTarget controller kind targets (fun g t =>
+      match t with
+      | Target.card id =>
+        match g.findObject? id with
+        | some o =>
+          if !(o.zone == .graveyard o.owner) ||
+              !(o.printed.isEnchantment || o.printed.isInstantOrSorcery) then
+            g.logMsg "The target is no longer legal"
+          else
+            let name := o.name
+            let (g, exId) := g.move id .exile none
+            let g := g.logMsg s!"{name} is exiled"
+            let card := g.object! exId
+            let (g, copy) := g.allocObject card.printed controller .exile (some controller)
+            let g := g.setObject { copy with isCopy := true }
+            g.beginFraChoice controller (.mayCastCopy copy.id)
+              s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer legal") sourceId illegal
+  | .zemoBoastCopies =>
+    let exiled := (g.resolvingAbilityObject?.map (·.boastExiled)).getD #[]
+    let (g, copies) := exiled.foldl (fun (acc : Game × Array ObjectId) id =>
+      let (g, cs) := acc
+      match g.findObject? id with
+      | some card =>
+        if card.zone != .exile then (g, cs)
+        else
+          let (g, copy) := g.allocObject { card.printed with isToken := card.printed.isPermanentCard }
+            controller .exile (some controller)
+          let g := g.setObject { copy with
+            isCopy := true
+            playPermission := some { player := controller, turnEndsRemaining := 0
+                                     whileExiled := true, withoutManaCost := true, ignoreTiming := true } }
+          (g, cs.push copy.id)
+      | none => (g, cs)) (g, #[])
+    if copies.isEmpty then g.logMsg "No exiled card is left to copy"
+    else
+      g.beginFraChoice controller (.castCopiesFree copies 1000 3)
+        s!"{(g.player controller).name} may cast up to three of the copies without paying their mana costs"
+  | .extort =>
+    g.beginFraChoice controller (.mayPayExtort sourceId)
+      s!"{(g.player controller).name} may pay \{W/B} (extort)"
   | .proliferate times =>
     if times == 0 then g
     else

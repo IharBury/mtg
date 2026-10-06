@@ -733,7 +733,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [create a Food token or a Treasure token ({g.player p |>.name})]"
     | .chooseTapOrUntap p _ =>
       s!" [choose tap or untap ({g.player p |>.name})]"
-    | .maySacArtifactOrDiscard p =>
+    | .maySacArtifactOrDiscard p _ =>
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>
       s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
@@ -766,8 +766,12 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .maySacrificeThen .. => "may sacrifice a permanent (choose or decline)"
         | .mayMovePlusOne _ => "may remove a +1/+1 counter (accept or decline)"
         | .exileFromRevealedHand _ _ => "choose a nonland card to exile"
-        | .castCopiesFree _ n => s!"may cast copies with total mana value {n} or less (cast or decline)"
+        | .castCopiesFree _ n left => s!"may cast up to {left} copies with total mana value {n} or less (cast or decline)"
         | .triggerModes _ n _ => if n == 2 then "choose two modes" else "choose a mode"
+        | .allianceMode _ available =>
+          s!"choose an Alliance mode not yet chosen {available}: 0 \{G}\{G}\{G}, 1 +1/+1 on each creature, 2 scry 2 then draw"
+        | .gollumMode _ available =>
+          s!"choose a mode not yet chosen {available}: 0 +1/+1, 1 each opponent loses 2 and you gain 2, 2 draw"
         | .chooseKeyword _ options =>
           let names : List String :=
             (List.range options.size).map (fun i => s!"{i} {fraKeywordName options[i]!}")
@@ -777,6 +781,130 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .discardTwo .. => "discard two cards"
         | .mayMoveAllCounters .. => "may move all counters (accept or decline)"
         | .chooseCardName _ => "name a nonland card: name <card name>"
+        | .crew _ _ n => s!"choose creatures with total power {n} to crew: choose <id> ..., or decline"
+        | .costPicks _ picks paid =>
+          let what := (picks[0]?.map CostPick.phrase).getD "pay the cost"
+          let cancel := if paid then "" else ", or decline to cancel"
+          s!"choose what to {what}: choose <id> ...{cancel}"
+        | .mayPayPickThen pick .. => s!"may {pick.phrase}: choose <id>, or decline"
+        | .chooseCreatureType types =>
+          s!"choose a creature type: {String.intercalate ", " ((List.range types.size).map (fun i => s!"{i} {types[i]!}"))}"
+        | .maySacrificeAnotherCreatureForPower _ =>
+          "may sacrifice another creature: choose <id>, or decline"
+        | .maySacrificeAnotherForDrawTreasure _ =>
+          "may sacrifice another creature or artifact: choose <id>, or decline"
+        | .mayPaySymbolsThen .. => "may pay the cost (accept), or decline"
+        | .attachAnyEquipment _ eligible =>
+          s!"attach any number of Equipment ({eligible.size}): choose <id> ..., or decline"
+        | .sacrificeLeastPower _ => "choose a creature tied for the least power: choose <id>"
+        | .addManaColors left use =>
+          s!"choose a color for {left} more mana ({use.label}): 0 white, 1 blue, 2 black, 3 red, 4 green"
+        | .payLifeOrEnterTapped _ n => s!"pay {n} life (accept), or it enters tapped (decline)"
+        | .mayPayExtort _ => "extort: pay {W/B} (accept), or decline"
+        | .mayDrawThenDiscard n k => s!"may draw {n} cards, then discard {k} (accept or decline)"
+        | .sacrificeNontokenEach .. => "sacrifice a nontoken creature: choose <id>"
+        | .mayCreateTokens _ n => s!"may create {n} token(s) (accept or decline)"
+        | .mayBecomeBasePT _ pw tw => s!"may have base power and toughness become {pw}/{tw} (accept or decline)"
+        | .mayRevealToHand _ eligible anyOrder =>
+          let order := if anyOrder then " The rest go on the bottom in any order." else ""
+          s!"may reveal one of {eligible.size} card(s): choose <id>, or decline.{order}"
+        | .nickFuryPut _ eligible =>
+          s!"may put one of {eligible.size} card(s) onto the battlefield: choose <id>, or decline"
+        | .nickFuryMayTransform _ _ => "may transform it (accept), or decline"
+        | .orderLibraryBottom ids =>
+          s!"put {ids.size} card(s) on the bottom in any order: choose <id> ... with the first card on the bottom"
+        | .chooseCards ids max purpose =>
+          let what :=
+            match purpose with
+            | .toHand true => "choose one card for your hand"
+            | .toHand false => s!"choose up to {max} card(s) for your hand"
+            | .creaturesToBattlefield => "put any number of creature cards onto the battlefield"
+            | .landsTappedGainLife _ => "put any number of land cards onto the battlefield tapped"
+            | .keepDestroyRest => s!"choose up to {max} creature(s) to keep"
+            | .amassArmy subtype n _ => s!"choose an Army to amass {subtype}s {n}"
+          s!"{what} ({ids.size} card(s)): choose <id> ..., or decline"
+        | .blackGatePlayer _ players =>
+          let names := (List.range players.size).map (fun i =>
+            s!"{i} {(g.player players[i]!).name}")
+          s!"choose a player with the most life: {String.intercalate ", " names}"
+        | .mayPayManaForReflexive cost maxTimes _ _ =>
+          let shown := String.join (cost.toList.map toString)
+          if maxTimes > 1 then s!"may pay {shown} up to {maxTimes} times: mode <times>, or decline"
+          else s!"may pay {shown}: accept or decline"
+        | .mayTapSourceThen .. => "may tap it: accept or decline"
+        | .hawkeyeModes left _ _ =>
+          s!"choose up to {left} modes: 0 Net, 1 Explosive, 2 Boomerang (mode <n>), or decline to stop"
+        | .discardThenDraw => "discard a card, then draw: choose <id>"
+        | .newTargetsForCopies copies =>
+          s!"choose a new target for the copy ({copies.size} left): choose <id>, or decline to keep it"
+        | .mayCastCascade .. => "cascade: cast the exiled card without paying its mana cost (accept), or decline"
+        | .mayCastGrima .. => "may cast the exiled instant or sorcery without paying its mana cost (accept), or decline"
+        | .palantirMayDraw .. => "may have that player draw a card (accept), or decline"
+        | .mayCastCopy _ => "may cast the copy without paying its mana cost (accept), or decline"
+        | .mayDiscardHandBalin _ => "may discard your hand, then draw that many (accept), or decline"
+        | .mayDiscardHandDrawFixed n => s!"may discard your hand and draw {n} (accept), or decline"
+        | .sacrificeDamager .. => "choose a creature that dealt combat damage: choose <id>"
+        | .mayCastInstantSorceryFromHand eligible =>
+          s!"may cast an instant or sorcery from your hand ({eligible.size}): choose <id>, or decline"
+        | .mayCastUpToFromExile eligible left =>
+          s!"may cast up to {left} of {eligible.size} exiled cards without paying their mana costs: choose <id>, or decline"
+        | .hydeMode _ => "choose one: 0 +1/+1 counter, 1 remove a counter and draw"
+        | .hydeRemoveCounter _ => "remove a counter from a creature you control: choose <id>"
+        | .sheHulkMayDamage amount _ _ =>
+          s!"may have The Sensational She-Hulk deal {amount} damage (accept), or decline"
+        | .widowMayCounter .. =>
+          "may put a +1/+1 counter on Black Widow (accept); otherwise you may cast the exiled card"
+        | .ultronMayPay _ => "may pay {2} to copy the artifact (accept), or decline"
+        | .visionMode _ available =>
+          let names := available.toList.map (fun m =>
+            if m == 0 then "0 double strike"
+            else if m == 1 then "1 indestructible"
+            else "2 draw a card")
+          s!"choose one that hasn't been chosen this turn: {String.intercalate ", " names}"
+        | .moonstoneMayExile _ =>
+          "may exile the discarded card and play it until the end of your next turn (accept), or decline"
+        | .tricksterLibrary .. =>
+          "put that creature second from the top of your library (top), or on the bottom (bottom)"
+        | .mayTakeMilled ids _ =>
+          s!"may put one of {ids.size} milled card(s) into your hand: choose <id>, or decline"
+        | .mayDrawThenEachOpponentDraws n =>
+          s!"may draw {n} (accept); if you do, each opponent draws a card"
+        | .mayPutHeroFromHandOrDraw ids =>
+          s!"may put a Hero creature card from your hand onto the battlefield ({ids.size}), or decline to draw"
+        | .oddOrEvenDestroy _ => "choose even (0) or odd (1)"
+        | .visionQuestZones .. =>
+          "search your library as well (accept), or only your graveyard (decline)"
+        | .visionQuestPick ids _ _ =>
+          s!"choose an artifact creature card ({ids.size}), or decline to find nothing"
+        | .kingpinMayPay2Life => "may pay 2 life (accept), or decline"
+        | .daredevilMayExile _ => "may exile the top card of your library (accept), or decline"
+        | .mayChangeSpellTarget .. =>
+          "may choose a new target for the spell: choose <id>, or decline to keep it"
+        | .mayCastFromGraveyard eligible =>
+          s!"may cast an artifact, instant, or sorcery from your graveyard ({eligible.size} card(s)): cast <id>, or decline"
+        | .maySearchLibrary _ _ _ _ kind =>
+          s!"may search for {kind}: accept, or decline"
+        | .searchLibrary eligible count .. =>
+          s!"search: choose up to {count} of {eligible.size} card(s), or decline to find nothing"
+        | .zemoBoastExile .. =>
+          "exile black cards with 15+ black mana symbols from your graveyard: choose <id> ..., or decline"
+        | .riddlesSplit looked =>
+          s!"separate {looked.size} cards into a face-up pile (choose <id> ...) and a face-down pile, or decline for all face-down"
+        | .riddlesChoosePile .. =>
+          "choose the face-up pile for that player's hand (accept), or the face-down pile (decline)"
+        | .palisadeCreatureType types =>
+          s!"choose a creature type: {String.intercalate ", " ((List.range types.size).map (fun i => s!"{i} {types[i]!}"))}"
+        | .worldsPutCreatures eligible .. =>
+          s!"may put any number of creature cards from your hand ({eligible.size}): choose <id> ..., or decline"
+        | .revealPutCreatures _ creatures anyNumber =>
+          if anyNumber then
+            s!"put any number of creature cards ({creatures.size}): choose <id> ..., or decline"
+          else
+            s!"may put a creature card ({creatures.size}): choose <id>, or decline"
+        | .entersCreatureType _ => "choose a creature type as it enters: name <type>"
+        | .entersOddEven _ => "choose even (0) or odd (1) as it enters"
+        | .mayBeginOnBattlefield ids =>
+          s!"may begin the game with it on the battlefield ({ids.size} left): accept, or decline"
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=

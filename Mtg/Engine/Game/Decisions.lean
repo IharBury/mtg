@@ -35,8 +35,8 @@ def checkLookedPiles (g : Game) (p q : PlayerId) (count : Nat)
   if !isPermutation (top ++ rest) (g.scryLookedIds p count) then
     throw s!"{verb.capitalize} must rearrange the cards you looked at ({rule})"
 
-/-- Clear the finished scry or surveil, draw any follow-up cards, and give
-the active player priority. -/
+/-- Clear the finished scry or surveil, draw any follow-up cards, offer
+Palantír's opponent their choice, and give the active player priority. -/
 def finishLibraryLook (g : Game) : Game :=
   let g := { g with pending := .none, surveilReturnMvAtMost := none
                     surveilReturnNoncreatureNonland := false }
@@ -45,11 +45,18 @@ def finishLibraryLook (g : Game) : Game :=
     | some (c, src, next) =>
       ({ g with fraAfterLook := none }).applyFra c default next.toResolution #[] src
     | none => g
-  match g.pendingDrawAfterScry with
-  | some (q, n) =>
-    let g := { g with pendingDrawAfterScry := none }
-    (g.draw q n).receivePriority g.activePlayer
-  | none => g.receivePriority g.activePlayer
+  let g :=
+    match g.pendingDrawAfterScry with
+    | some (q, n) =>
+      let g := { g with pendingDrawAfterScry := none }
+      g.draw q n
+    | none => g
+  if g.pending != .none then g
+  else
+    match g.palantirAfterScry with
+    | some (controller, opp, sid) =>
+      ({ g with palantirAfterScry := none }).offerPalantirChoice controller opp sid
+    | none => g.receivePriority g.activePlayer
 
 /-- Log putting `top` back on top, unless they stay in the looked-at order. -/
 def logPutOnTop (g : Game) (p : PlayerId) (looked top : Array ObjectId) : Game :=
@@ -134,34 +141,48 @@ def convokePayOne (cost : ManaCost) (colors : ColorSet) : Option ManaCost :=
       | _ => none
     | none => none
 
-/-- Convoke (CR 702.51a): while paying for a spell with convoke, tap untapped
-creatures you control; each pays for {1} or one mana of its colors. It
-applies to the total cost after alternative and additional costs, and
-doesn't change the mana value (rulings 864 / 869). A creature already tapped,
-for example for mana, can't be tapped again (ruling 863). Summoning sickness
-doesn't matter, and an attacking creature stays attacking (rulings 866 / 867). -/
+/-- Convoke (CR 702.51a) and improvise (CR 702.126a): while paying for a spell
+with convoke, tap untapped creatures you control; each pays for {1} or one
+mana of its colors. With improvise, tap untapped artifacts you control; each
+pays for {1}. Both apply to the total cost after alternative and additional
+costs and don't change the mana value (rulings 864 / 869). A permanent
+already tapped, for example for mana, can't be tapped again (ruling 863).
+Summoning sickness doesn't matter, and an attacking creature stays attacking
+(rulings 866 / 867). A creature artifact pays for convoke when the spell has
+convoke. -/
 def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Game := do
   match g.pending, g.proposedSpell with
   | .activateManaAbilities q, some prop =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay"
     let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-    if prop.kind != .spell || !spell.printed.keywords.convoke then
-      throw s!"{spell.name} doesn't have convoke (CR 702.51)"
+    let hasConvoke := prop.kind == .spell && spell.printed.keywords.convoke
+    let hasImprovise := prop.kind == .spell && g.spellHasImprovise spell.printed p
+    if !hasConvoke && !hasImprovise then
+      throw s!"{spell.name} doesn't have convoke or improvise (CR 702.51 / 702.126)"
     let mut g := g
     let mut cost := prop.cost
     let mut tapped := prop.tapped
     for id in ids do
       let some o := g.findObject? id | throw "no such object"
-      if !(o.isOnBattlefield && o.isCreature && o.controlledBy p) then
-        throw s!"{o.name} is not a creature you control"
+      if !(o.isOnBattlefield && o.controlledBy p) then
+        throw s!"You don't control {o.name}"
       if o.status.tapped then
         throw s!"{o.name} is already tapped (ruling 863)"
-      match convokePayOne cost o.printed.colors with
-      | none => throw s!"{o.name} can't pay for any of the remaining cost"
-      | some c => cost := c
-      g := g.becomeTapped o
-      g := g.logMsg s!"{(g.player p).name} taps {o.name} to convoke {spell.name}"
+      if hasConvoke && o.isCreature then
+        match convokePayOne cost o.printed.colors with
+        | none => throw s!"{o.name} can't pay for any of the remaining cost"
+        | some c => cost := c
+        g := g.becomeTapped o
+        g := g.logMsg s!"{(g.player p).name} taps {o.name} to convoke {spell.name}"
+      else if hasImprovise && o.types.contains .artifact then
+        if cost.genericCount == 0 then
+          throw s!"No generic mana is left for {o.name} to pay (CR 702.126a)"
+        cost := cost.reduceGeneric 1
+        g := g.becomeTapped o
+        g := g.logMsg s!"{(g.player p).name} taps {o.name} for improvise"
+      else
+        throw s!"{o.name} can't help pay for {spell.name}"
       tapped := tapped.push id
     return { g with proposedSpell := some { prop with cost, tapped } }
   | _, _ => throw "No spell is being paid for (CR 601.2h)"
@@ -235,6 +256,14 @@ def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
     else g
   return (g, card)
 
+/-- Continue a discard chain. When no one is left to discard, put the waiting
++1/+1 counter (Ninja of the Hand). -/
+def continueAfterDiscard (g : Game) (players : Array PlayerId) : Except String Game := do
+  let g := g.beginDiscardCards players
+  if g.pending == .none && g.plusOneAfterDiscards.isSome then
+    return (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
+  return g
+
 /-- Discard `id` from hand; if this finishes a pending “may discard, then draw”,
 draw that many cards (CR 701.9). -/
 def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -244,12 +273,24 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     let g := g.draw p n
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
-  | .maySacArtifactOrDiscard q =>
+  | .maySacArtifactOrDiscard q n =>
     let (g, _) ← g.discardPendingCard p q id
-    return g.finishSacArtifactOrDiscardDraw p
+    return g.finishSacArtifactOrDiscardDraw p n
   | .chooseDiscardCard q remaining =>
     let (g, card) ← g.discardPendingCard p q id
     let g := g.finishConniveDiscard card
+    let g : Game :=
+      if !g.lootLandEntersTapped || !card.printed.isLand then
+        { g with lootLandEntersTapped := false }
+      else
+        let landed := g.followMoved card.id
+        let g : Game := { g with lootLandEntersTapped := false }
+        match g.findObject? landed with
+        | none => g
+        | some o =>
+          let entered := g.putOntoBattlefield o.id q (tapped := true) (summoningSick := false)
+          let g : Game := entered.1.logMsg s!"{o.name} enters the battlefield tapped"
+          g.afterLandEnters (g.object! entered.2)
     if g.thirstDiscardsLeft > 0 then
       let left := if card.printed.isArtifact then 0 else g.thirstDiscardsLeft - 1
       let g := { g with thirstDiscardsLeft := left }
@@ -261,10 +302,11 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       let left := g.pendingDiscardsLeft - 1
       let g := { g with pendingDiscardsLeft := left }
       if left == 0 then
-        return g.beginDiscardCards remaining
+        g.continueAfterDiscard remaining
       else
-        return g.beginDiscardCards #[p]
-    return g.beginDiscardCards remaining
+        g.continueAfterDiscard #[p]
+    else
+      g.continueAfterDiscard remaining
   | .recruitDiscard q =>
     let (g, card) ← g.discardPendingCard p q id (countDiscard := false)
     let g := { g with pending := .none }
@@ -444,6 +486,13 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
 “up to one” trigger (CR 601.2c / 115.1c). -/
 def decline (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
+  | .chooseMode q =>
+    if p != q then throw s!"Only {(g.player q).name} may choose modes"
+    match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+    | some spell =>
+      if (g.chosenModesOf spell).isEmpty then throw "Choose a mode (CR 700.2)"
+      return (g.logMsg s!"{(g.player p).name} chooses no more modes").afterModesChosen p
+    | none => throw "Choose a mode (CR 700.2)"
   | .mayCastExiledElseDamage q _ n =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to cast"
@@ -549,7 +598,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       s!"{(g.player p).name} declines to put a land onto the battlefield"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
-  | .maySacArtifactOrDiscard q =>
+  | .maySacArtifactOrDiscard q _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline"
     let g := g.logMsg
@@ -734,7 +783,10 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
       let g := { g with startingPlayer := sp, activePlayer := sp, priority := sp }
       let g := g.logMsg s!"Starting player: {(g.player sp).name}"
       continueOpeningShuffles g 0
-    | .putCreatureThenShuffle _ => g
+    | .revealRandomCreatureThenBottom _ _ => g
+    | .putOnTop p ids => g.putIdsOnTop p ids
+    | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
+    | .plusOne id => g.addPlusOneIfStillCreature id
   if grantPriority && g.pending == .none && !g.openingHandsPending && !g.over
       && !g.players.isEmpty then
     g.receivePriority g.activePlayer
@@ -766,14 +818,9 @@ def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
         if !choices.contains id then
           throw "That is not one of the random choices"
         match g.afterRandom with
-        | .putCreatureThenShuffle controller =>
-          let some o := g.findObject? id | throw "no such object"
-          let name := o.name
-          let (g, newId) := g.putOntoBattlefield id controller
-          let g := g.logMsg s!"{name} enters the battlefield"
-          let g := g.afterPermanentEnters (g.object! newId)
+        | .revealRandomCreatureThenBottom controller revealed =>
           let g := { g with pending := .none, afterRandom := .none }
-          let g := g.shuffleLibrary controller
+          let g := g.resolveRandomCreatureReveal controller revealed id
           match g.pendingRandom? with
           | some _ => return g
           | none => return g.finishAfterRandom true

@@ -321,7 +321,8 @@ def supperForSpiders : Effect :=
     (castKind := .draw)
 
 def eaglesAreComing : Effect :=
-  mkSpell (.of .creatureYouControl) (.eaglesAreComing)
+  mkSpell (.of (.filtered { noun := "target creature you own", types := #[.creature], ownedByYou := true }))
+    (.eaglesAreComing)
     (castKind := .draw)
 
 def lookAtTopLandsGainLife (n life : Nat) : Effect :=
@@ -407,7 +408,7 @@ def destroyCreatureSurveil : Effect :=
     (castKind := .destroyCreature)
 
 def investigatePumpFlyingUntap : Effect :=
-  mkSpell (.of .playerOrCreature) (.investigatePumpFlyingUntap)
+  mkSpell (.of .playerThenCreature) (.investigatePumpFlyingUntap)
     (castKind := .pump)
 
 def plusOneLifelinkIndestructible : Effect :=
@@ -427,7 +428,12 @@ def doublePowerAndToughness : Effect :=
     (castKind := .pump)
 
 def returnGySubtypeToHand (subtype : String) : Effect :=
-  mkSpell (.of .creatureCardInYourGraveyard) (.returnGySubtypeToHand subtype)
+  mkSpell (.of (.filtered {
+      noun := s!"target {subtype} card in your graveyard"
+      zone := .yourGraveyard
+      controller := .you
+      subtypes := #[subtype] }))
+    (.returnGySubtypeToHand subtype)
     (castKind := .draw)
 
 def grantVigilanceUnblockable : Effect :=
@@ -447,9 +453,8 @@ def eachOpponentLosesLife (n : Nat) : Effect :=
     (castKind := .burn)
 
 def fight : Effect :=
-  mkSpell (.of .creatureYouControlThenOppCreature) (.fight)
+  mkSpell (.of .creatureYouControlThenOppCreature) (.mutualFight)
     (castKind := .fight)
-    (phraseOverride := some "target creature you control fights target creature an opponent controls")
 
 def fightUpToOne : Effect :=
   mkSpell (.of .creatureYouControlThenOppCreature) (.fightUpToOne)
@@ -530,7 +535,7 @@ def nextFreeRGCreature : Effect :=
     (castKind := .extraLand)
 
 def ownerPutsLibraryThenConnive : Effect :=
-  mkSpell (.of .oppCreature) (.ownerPutsLibraryThenConnive)
+  mkSpell (.of .oppCreatureThenUpToOneCreatureYouControl) (.ownerPutsLibraryThenConnive)
     (castKind := .counter)
 
 def copyThisSpellXTimesThenDamage (n : Nat) : Effect :=
@@ -554,7 +559,12 @@ def chooseTargetDoubleAndTrample : Effect :=
     (castKind := .pump)
 
 def returnUpToTwoGyModal : Effect :=
-  mkSpell (.of .none) (.returnUpToTwoGyModal)
+  mkSpell (.of (.filtered {
+      noun := "up to two target artifact, creature, enchantment, and/or land cards in your graveyard"
+      zone := .yourGraveyard
+      types := #[.artifact, .creature, .enchantment, .land]
+      controller := .you }))
+    (.returnUpToTwoGyModal) (allowsZeroTargets := true) (maxTargets := 2)
     (castKind := .draw)
 
 def artifactSpellsCostLessThisTurn (n : Nat) : Effect :=
@@ -694,7 +704,7 @@ def damageEachOpponent (n : Nat) : Effect :=
   mkAbility ({}) (.damageEachOpponent n)
 
 def chooseTwoDestroyRest : Effect :=
-  mkAbility (.of .creature) (.chooseTwoDestroyRest)
+  mkAbility (.of .none) (.chooseTwoDestroyRest)
 
 def blackGateUnblockable : Effect :=
   mkAbility (.of .creature) (.blackGateUnblockable)

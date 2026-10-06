@@ -47,6 +47,9 @@ structure Game where
   /-- Spell or ability proposed and waiting for mana abilities / payment
   (CR 601.2f–h / 602.2b). -/
   proposedSpell : Option ProposedSpell := none
+  /-- Opening hands are kept and a “may begin on the battlefield” choice is
+  still unfinished. The first turn starts when that choice ends. -/
+  awaitingOpeningBegin : Bool := false
   /-- Players still to declare keep-or-mulligan in the current CR 103.5 round. -/
   mulliganToDeclare : Array PlayerId := #[]
   /-- Players who declared they will mulligan this round; taken together after
@@ -76,6 +79,12 @@ structure Game where
   isNight : Bool := false
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
+  /-- The card discarded for this loot enters tapped if it is a land
+  (Silvan Reveler). -/
+  lootLandEntersTapped : Bool := false
+  /-- After Palantír of Orthanc finishes scrying, this opponent may have
+  the controller draw. Stores controller, opponent, and the Palantír. -/
+  palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
   /-- Last-known status of objects that left the battlefield, newest last
   (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
   lastKnownStatus : Array (ObjectId × Status) := #[]
@@ -92,7 +101,10 @@ structure Game where
   fraAfterLook : Option (PlayerId × Option ObjectId × FraNext) := none
   /-- Copies a player may still cast without paying their mana costs as an
   ability resolves, with the mana value left (Uldaros Theorix). -/
-  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat) := none
+  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
+  /-- Spells exiled by a resolving ability that may still be cast without
+  paying their mana costs, and how many casts remain (Doom Reigns Supreme). -/
+  pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat) := none
   /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
   permanent (Proft, Consulting Detective). -/
   mayPayAlsoPlusOneOn : Option ObjectId := none
@@ -130,11 +142,18 @@ structure Game where
   /-- Cards in exile that return at the beginning of the next end step
   (Roll-Roll-Roll-Roll and similar delayed blinks). -/
   delayedEndStepReturns : Array ObjectId := #[]
+  /-- Extra turns to take before the next player in turn order (Kang). -/
+  extraTurns : Array PlayerId := #[]
+  /-- Power-up abilities can't be activated during this extra turn (Kang). -/
+  powerUpsForbidden : Bool := false
   /-- Permanents exiled at the beginning of the next end step (Vindictive
   Triumph). -/
   delayedEndStepExiles : Array ObjectId := #[]
   /-- Source of the current connive action, if any (MSH / CR 701.47). -/
   conniveSource : Option ObjectId := none
+  /-- Put a +1/+1 counter on this permanent after the current discard choices
+  finish (Ninja of the Hand). -/
+  plusOneAfterDiscards : Option ObjectId := none
   /-- Most recent creature that became tapped (Captain America, Living Legend). -/
   lastBecameTapped : Option ObjectId := none
   /-- Extra combat phases still to begin after the current combat (Hulk enrage). -/
@@ -143,12 +162,11 @@ structure Game where
   enrageGrantsAdditionalCombat : Nat := 0
   /-- The Sensational She-Hulk chose to deal damage this turn (MSH 95 / 142). -/
   sheHulkDamageUsedThisTurn : Bool := false
-  /-- A pending MSH reflexive trigger: (controller, source, kind tag).
-  Kind is `0` grant-indestructible, `1` deal-2, `2` Hawkeye modes (paid count
-  in `pendingMshReflexivePaid`). -/
-  pendingMshReflexive : Option (PlayerId × Option ObjectId × Nat) := none
-  /-- Times Hawkeye paid for Trick Arrows (0–3). -/
-  pendingMshReflexivePaid : Nat := 0
+  /-- Damage assigned to each target of the resolving divided-damage ability
+(CR 601.2d). -/
+  resolvingDivision : Array Nat := #[]
+  /-- Tokens created since enters triggers were last processed. -/
+  pendingTokenEnters : Array ObjectId := #[]
   /-- Player-controlling effect: (you, the player you control). Last created
   wins (MSH 259). -/
   playerControl : Option (PlayerId × PlayerId) := none
@@ -158,10 +176,6 @@ structure Game where
   /-- Loki delayed copy: (controller, Loki's id if still known, last-known
   power). Compared at cast time (MSH 109). -/
   pendingLokiCopy : Option (PlayerId × Option ObjectId × Int) := none
-  /-- Extort triggers waiting for a pay/don't-pay decision (MSH 371). -/
-  pendingExtort : Nat := 0
-  /-- Controller of the pending extort trigger. -/
-  pendingExtortController : Option PlayerId := none
   /-- Until EOT, this player's creatures with toughness greater than power
   assign combat damage equal to toughness (The Kingpin of Crime; MSH 287). -/
   assignCombatDamageEqualToughness : Option PlayerId := none
@@ -170,8 +184,9 @@ structure Game where
   /-- World War Hulk chapter I: the next red or green creature spell this
   player casts this turn may be cast without paying its mana cost (MSH 343). -/
   pendingFreeRGCreature : Option PlayerId := none
-  /-- Cards exiled to pay the current Zemo boast activation (MSH 227). -/
-  zemoBoastExiles : Array ObjectId := #[]
+  /-- After the current library search shuffles, put a +1/+1 counter on this
+  creature if it is still a creature (Restorative Technique). -/
+  plusOneAfterSearch : Option ObjectId := none
   /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
   card finishes the requirement early. -/
   thirstDiscardsLeft : Nat := 0
@@ -313,6 +328,10 @@ def setObject (g : Game) (o : GameObject) : Game :=
   match g.objects.findIdx? (fun x => x.id == o.id) with
   | some i => { g with objects := g.objects.set! i o }
   | none => { g with objects := g.objects.push o }
+
+/-- Update `o`'s status in place. -/
+def mapObjectStatus (g : Game) (o : GameObject) (f : Status → Status) : Game :=
+  g.setObject { o with status := f o.status }
 
 def battlefield (g : Game) : Array GameObject :=
   g.objects.filter GameObject.isOnBattlefield
@@ -465,6 +484,42 @@ partial def followMoved (g : Game) (id : ObjectId) : ObjectId :=
   match g.movedTo.reverse.find? (·.1 == id) with
   | some (_, next) => if next == id then id else g.followMoved next
   | none => id
+
+/-- Player putting counters: the resolving spell or ability's controller,
+or `fallback` when none is resolving. -/
+def counterPutter (g : Game) (fallback : Option PlayerId) : Option PlayerId :=
+  ((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject?).bind
+    (·.controller) |>.orElse (fun _ => fallback)
+
+/-- Extra counters from each Doc Samson `putter` controls, when that player
+also controls the permanent (`host`) (MSH 517 / 590). -/
+def docSamsonBonus (g : Game) (putter host : Option PlayerId) : Nat :=
+  match putter, host with
+  | some p, some c =>
+    if p != c then 0
+    else
+      ((g.permanentsOf p).filter (fun o =>
+        o.printed.staticAbilities.any (fun
+          | .extraCounterOnPermanents => true
+          | _ => false))).size
+  | _, _ => 0
+
+/-- `n`, plus one of that kind per Doc Samson, when `putter` puts counters
+on a permanent controlled by `host`. Zero stays zero. `host` defaults to
+`putter`. -/
+def extraCountersOn (g : Game) (putter : Option PlayerId) (n : Nat)
+    (host : Option PlayerId := putter) : Nat :=
+  if n == 0 then 0 else n + g.docSamsonBonus putter host
+
+/-- Counters of one kind actually put on `o`. An enters-with replacement is
+put by the permanent's controller (ruling 517). Otherwise the explicit
+`putter`, the resolving spell or ability, or `o`'s controller. -/
+def countersYouPut (g : Game) (o : GameObject) (n : Nat)
+    (putter : Option PlayerId := none) (entersWith := false) : Nat :=
+  let who :=
+    if entersWith then o.controller
+    else putter.orElse (fun _ => g.counterPutter o.controller)
+  g.extraCountersOn who n (host := o.controller)
 
 end Game
 end Mtg.Engine

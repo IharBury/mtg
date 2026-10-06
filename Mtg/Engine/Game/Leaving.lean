@@ -41,7 +41,8 @@ def endControlChangingEffect (g : Game) (o : GameObject) : Game :=
   | none => g
   | some o =>
     if !o.controlChanged then
-      g.setObject { o with status := { o.status with controlUntilEot := false } }
+      g.setObject { o with status := { o.status with
+        controlUntilEot := false, controlTurnEndsLeft := 0 } }
     else
       let dest := o.defaultController.getD o.owner
       if (g.player dest).lost then
@@ -52,7 +53,7 @@ def endControlChangingEffect (g : Game) (o : GameObject) : Game :=
         let g := g.setObject { o with
           controller := some dest
           controlChanged := false
-          status := { o.status with controlUntilEot := false } }
+          status := { o.status with controlUntilEot := false, controlTurnEndsLeft := 0 } }
         g.logMsg s!"{o.name} reverts to {(g.player dest).name}'s control"
 
 /-- Gain control of `o` until end of turn (CR 611.2a). -/
@@ -153,7 +154,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .recruitDiscard q | .chooseRingBearer q | .chooseLibraryPlacement q _
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
   | .mayPutLandFromHand q | .chooseFoodOrTreasure q | .chooseTapOrUntap q _
-  | .maySacArtifactOrDiscard q | .mayPutArtifactFromHand q _
+  | .maySacArtifactOrDiscard q _ | .mayPutArtifactFromHand q _
   | .mayHaveVillainConnive q _ _ | .declareMulligan q | .chooseProliferate q _
   | .fraChoice q _
   | .mayCastExiledElseDamage q _ _ =>

@@ -90,7 +90,7 @@ def resolvedSpewFlame : Game := passBoth paidSpewFlame
 
 #guard resolvedSpewFlame.stack.isEmpty
 #guard !(resolvedSpewFlame.battlefield.any (fun o => o.name == "Grizzly Bears"))
-#guard resolvedSpewFlame.log.any (fun s => mentions s "Grizzly Bears is dealt 5 damage")
+#guard resolvedSpewFlame.log.any (fun s => mentions s "deals 5 damage to Grizzly Bears")
 #guard resolvedSpewFlame.objects.any (fun o =>
   o.zone == .exile && o.name == "Smaug, the Great Calamity")
 #guard !((resolvedSpewFlame.player ⟨0⟩).graveyard.any (fun id =>

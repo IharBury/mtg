@@ -118,7 +118,7 @@ def paidBauble : Game :=
   | some .pay => true
   | _ => false
 
-def resolvedBauble : Game := passBoth paidBauble
+def resolvedBauble : Game := applyIdle (passBoth paidBauble)
 
 #guard resolvedBauble.stack.isEmpty
 #guard (resolvedBauble.battlefield.filter (fun o => o.name == "Mountain")).size == 3

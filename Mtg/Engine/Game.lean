@@ -252,6 +252,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
         match g.findObject? prop.spellId with
         | none => panic! "expected a proposed spell while choosing a mode"
         | some spell =>
+          if !(g.chosenModesOf spell).isEmpty then mustApply g p .decline else
           match g.defaultMode p spell with
           | none => panic! "no legal mode (CR 601.2b)"
           | some i => mustApply g p (.chooseMode i)
@@ -289,7 +290,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p (.chooseMode 0)
   | .chooseTapOrUntap _ _, some p =>
     mustApply g p (.chooseMode 0)
-  | .maySacArtifactOrDiscard _, some p =>
+  | .maySacArtifactOrDiscard _ _, some p =>
     mustApply g p .decline
   | .mayPutArtifactFromHand _ _, some p =>
     mustApply g p .decline

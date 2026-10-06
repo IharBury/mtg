@@ -10,10 +10,11 @@ resolution helpers that return owned creatures or destroy the rest.
 namespace Mtg.Engine
 namespace Game
 
-def apply (g : Game) (p : PlayerId) : Action → Except String Game
+def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .pass => g.pass p
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
+  | .activateManaAbility id idx mana costIds => g.activateManaAbility p id idx mana costIds
   | .cast id =>
     match g.pending with
     | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
@@ -21,8 +22,10 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
     | .mayPutArtifactFromHand .. => g.choosePutArtifactFromHand p id
     | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
     | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
+    | .fraChoice _ (.mayCastFromGraveyard _) => g.answerFraChoice p (.objects #[id])
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
+  | .castWithSneak id attackerId => g.castSpell p id (sneakAttacker := some attackerId)
   | .chooseMode idx =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p (.mode idx)
@@ -86,6 +89,17 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .supplyIndex i => g.supplyIndex i
   | .chooseName name => g.answerFraChoice p (.name name)
 
+
+/-- Apply an action, then process entering for tokens it created (CR 603.6a)
+and put the resulting triggered abilities on the stack. -/
+def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
+  let g ← g.applyAction p a
+  if g.pendingTokenEnters.isEmpty then return g
+  let g := g.flushTokenEnters
+  if g.pending == .none && !g.waitingTriggers.isEmpty && !g.over then
+    return g.receivePriority g.priority
+  return g
+
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
   (g.player p).hand.filterMap (fun id => g.findObject? id)
 
@@ -133,7 +147,7 @@ def actor (g : Game) : Option PlayerId :=
     | .mayPutLandFromHand p => who p
     | .chooseFoodOrTreasure p => who p
     | .chooseTapOrUntap p _ => who p
-    | .maySacArtifactOrDiscard p => who p
+    | .maySacArtifactOrDiscard p _ => who p
     | .mayPutArtifactFromHand p _ => who p
     | .mayHaveVillainConnive p _ _ => who p
     | .chooseProliferate p _ => who p

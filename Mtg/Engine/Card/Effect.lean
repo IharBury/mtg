@@ -304,8 +304,8 @@ def spellResolution (e : Effect) : SpellResolution :=
     | [.createTokens kind n _, .spell (.creaturesYouControlPump p t)] =>
       .createTokensThenTeamPump kind n p t
     | [.onPermanent .destroy, .gainLife n] => .destroyArtifactOrEnchantmentGainLife n
-    | _ => .extraLand
-  | _ => .extraLand
+    | _ => .unrecognized
+  | _ => .unrecognized
 
 /-- Recover a Saga chapter stored on this effect, if any. -/
 def asChapter? (e : Effect) : Option ChapterResolution :=
@@ -602,6 +602,35 @@ def ofSpell : SpellResolution → Resolution
 effect so leftover family events remain recoverable. -/
 def ofSharedTrigger (e : SharedTrigger) : Resolution :=
   .trigger e
+
+/-- True when resolving `r` as a spell or Saga chapter would do nothing.
+Chapter payloads are resolved by `applyChapterEffect`. -/
+partial def doesNothingAsSpell (r : Resolution) : Bool :=
+  match r with
+  | .sequence rs => rs.any doesNothingAsSpell
+  | .shuffleSource | .gainLife _ | .recruit | .addMana _ | .discard _ | .onSource _ => false
+  | .fra _ | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
+  | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
+  | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
+  | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _
+  | .firstDealsStatDamageToSecond _ | .returnFromGyWithFinality
+  | .copyNextInstantSorceryThisTurn | .proliferatePlaneswalkerTypesTimes
+  | .copyEachCreatureOfTargetPlayer | .becomeCopyLegendRuleOff
+  | .teamGain _ | .jaceLoyaltyAtInstantSpeed => false
+  | .trigger (.chapter _ _) => false
+  | .searchBasicLand | .searchLandTypeToHand _ | .searchBasicLandToHand | .exileTop => false
+  | .spell .unrecognized => true
+  | r => ({ resolution := r } : Effect).spellResolution == .unrecognized
+
+/-- True when resolving `r` as an activated ability would do nothing. -/
+partial def doesNothingAsActivated (r : Resolution) : Bool :=
+  match r with
+  | .spell .unrecognized => true
+  | .trigger .exileOppNonlandEachUntilLeaves => false
+  | .trigger (.chapter _ _) => false
+  | .trigger _ => true
+  | .sequence rs => rs.any doesNothingAsActivated
+  | _ => false
 
 end Resolution
 

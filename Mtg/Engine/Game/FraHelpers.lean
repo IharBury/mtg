@@ -168,30 +168,6 @@ as it last existed. -/
 def fraCauseController? (g : Game) : Option PlayerId :=
   g.resolvingAbilityObject?.bind (·.fraCauseController)
 
-/-- A stack object to stand for `sourceId` as an ability's source. -/
-def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : GameObject :=
-  match sourceId.bind g.findObject? with
-  | some o => o
-  | none =>
-    { id := sourceId.getD ⟨0⟩, printed := { name := "The ability", types := #[] }
-      owner := controller, controller := some controller, zone := .battlefield }
-
-/-- Put a reflexive triggered ability (“When you do, …”) on the stack with
-`effect` (CR 603.12). Its targets are chosen now. -/
-def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (effect : Effect) : Game :=
-  let src := g.abilitySourceFor controller sourceId
-  let marker : TriggeredAbility := .triggered .enter effect {}
-  if effect.requiresTarget && !effect.allowsZeroTargets &&
-      (g.legalTargetsForKind controller effect.targetKind sourceId).isEmpty then
-    g.logMsg s!"{src.name}'s reflexive ability has no legal target and is removed (CR 603.3d)"
-  else
-    let (g, obj) := g.putStackAbility src controller (abilityEffect := some effect)
-      (triggeredAbility := some marker)
-    let g := g.setObject { obj with sourceId := sourceId }
-    let g := g.logMsg s!"{src.name}'s reflexive ability is put on the stack"
-    g.promptTriggerTargetsIfNeeded
-
 /-- “For each opponent, up to one target creature or planeswalker that
 player controls”: one optional instance per opponent. -/
 def perOpponentKind (g : Game) (controller : PlayerId) (f : TargetFilter) : EffectTargetKind :=
@@ -208,21 +184,11 @@ def loyaltyOnEachPlaneswalkerOf (g : Game) (p : PlayerId) : Game :=
   if pws.isEmpty then g
   else
     let g := pws.foldl (fun g o =>
-      (g.mapObjectStatus (g.object! o.id) (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })).logMsg
+      let n := g.countersYouPut (g.object! o.id) 1 (putter := some p)
+      (g.mapObjectStatus (g.object! o.id) (fun s =>
+        { s with loyaltyCounters := s.loyaltyCounters + n })).logMsg
         s!"A loyalty counter is put on {o.name}") g
     g.queueLoyaltyPutTriggers p
-
-/-- Search `p`'s library for up to `n` land cards matching `pred` and put them
-onto the battlefield tapped, then shuffle (first matches in library order). -/
-def searchLandsOntoBattlefieldTapped (g : Game) (p : PlayerId) (n : Nat) (pred : CardDef → Bool) : Game :=
-  let ids := ((g.player p).library.filter (fun id =>
-    (g.findObject? id).any (fun o => o.printed.isLand && pred o.printed))).extract 0 n
-  let g := ids.foldl (fun g id =>
-    let name := (g.object! id).name
-    let (g, newId) := g.putOntoBattlefield id p (tapped := true) (summoningSick := false)
-    let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield tapped"
-    g.afterLandEnters (g.object! newId)) g
-  g.shuffleLibrary p
 
 end Game
 end Mtg.Engine

@@ -234,6 +234,7 @@ def approachGraveyard : Game :=
 #guard
   let g := passBoth (castFra approachGraveyard sphinxsApproach)
   let g := mustApply g me .accept
+  let g := applyIdle g
   onBattlefield g "Sphinx of False Conclusions" &&
     (g.objects.filter (fun o => o.zone == .exile && o.name == "Sphinx's Approach")).size == 5
 #guard
@@ -434,7 +435,7 @@ adds an additional {R}. -/
 
 #guard carnivorousCultivator.prepareFace.any (·.spellEffect == some Effect.enroot)
 #guard
-  let g := afterDraw.applyEffect me Effect.enroot #[]
+  let g := applyIdle (afterDraw.applyEffect me Effect.enroot #[])
   (g.player me).graveyard.any (fun id => (g.object! id).printed.isLand)
 
 /- Flourishing Grapple: a red or white creature or planeswalker an opponent
@@ -500,6 +501,7 @@ and is dealt 2 damage, or puts it on the bottom. -/
   let g := addToLibraryTop (afterDraw.empowerJace me 1) jaceRealitySculptor me
   let g := passBoth (castFra g entrustTheSpark)
   let g := mustApply g me (.choosePermanents #[(jaceTokenOf g).id])
+  let g := applyIdle g
   onBattlefield g "Jace, Reality Sculptor" && (g.jacePlaneswalkerTokens me).isEmpty
 
 /- Fatehold Charm: draw and empower Jace 2 (only that mode empowers), bounce a

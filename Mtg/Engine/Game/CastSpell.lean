@@ -43,8 +43,8 @@ def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : Proposed
     let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
 
-def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := false) :
-    Except String Game := do
+def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := false)
+    (sneakAttacker : Option ObjectId := none) : Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
   if g.splitSecondOnStack then
@@ -81,7 +81,18 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     if others < n then
       throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
   | none => pure ()
-  if face.hasSorcerySpeed && !g.asSorcery? p then
+  let sneakCost ← match sneakAttacker with
+    | none => pure none
+    | some a =>
+      let some c := face.sneakCost | throw s!"{face.name} has no sneak cost"
+      if !g.canCastForSneak p then
+        throw "Sneak can be paid only during the declare blockers step on your turn"
+      let some att := g.findObject? a | throw "no such object"
+      if !(att.isOnBattlefield && att.isCreature && att.controlledBy p &&
+          att.status.attacking && !att.status.blocked) then
+        throw s!"{att.name} is not an unblocked attacker you control"
+      pure (some c)
+  if face.hasSorcerySpeed && !g.asSorcery? p && sneakCost.isNone then
     throw s!"{face.name} has sorcery speed"
   if face.isModal then
     if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
@@ -93,6 +104,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       face.additionalCostOrPayGeneric.isNone &&
       (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
     throw s!"{face.name} requires sacrificing an artifact or creature"
+  if face.additionalCostSacrificeCreature && (g.creaturesControlledBy p).isEmpty then
+    throw s!"{face.name} requires sacrificing a creature"
   match card.playPermission.bind (·.prepareSource) with
   | some src =>
     match g.findObject? src with
@@ -109,8 +122,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   -- cast as its Adventure.
   let fromGraveyard := card.zone == .graveyard card.owner
   let needsSacrifice :=
-    face.additionalCostSacrificeArtifactOrCreature &&
-      face.additionalCostOrPayGeneric.isNone
+    face.additionalCostSacrificeCreature ||
+      (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
   let original := card
   let handBefore := pl.hand
   let stackBefore := g.stack
@@ -120,7 +133,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let (g, newId) := g.move id .stack (some p)
   -- CR 601.2a / 601.2f: the total cost is determined after the spell is on
   -- the stack (rulings 824 / 874).
-  let cost := g.playManaCost card face
+  let cost :=
+    match sneakCost with
+    | some c => g.playManaCost card { face with manaCost := c }
+    | none => g.playManaCost card face
   -- Casting the exiled copy of a prepare spell unprepares its permanent. The
   -- spell on the stack is a copy, so it isn't put into a graveyard later
   -- (CR 707.10 / 704.5e).
@@ -180,6 +196,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     needsSacrificeOther := needsSacrifice
     needsDiscardCard := needsFlashbackDiscard
     payLife := lifeInstead
+    sneakAttacker
   }
   let g := g.logMsg s!"{pl.name} begins casting {face.name}"
   return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b / 700.2"
@@ -217,16 +234,19 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       let some effect := spell.printed.spellModes[mode]? | throw "No such mode (CR 700.2)"
       if !g.spellModeIsChoosable p effect then
         throw "That mode has no legal target (CR 700.2d)"
-      let g := g.setProposedMode mode
+      let chosen := g.chosenModesOf spell
+      if chosen.contains mode then
+        throw "That mode was already chosen (CR 700.2)"
+      let g := if chosen.isEmpty then g.setProposedMode mode else g.addProposedExtraMode mode
       let g := g.logMsg
         s!"{(g.player p).name} chooses mode {mode + 1} ({effect.toNotation}) (CR 601.2b)"
-      if spell.printed.announcesAdditionalCost then
-        let g := { g with pending := .chooseAdditionalCost p }
-        return g.logMsg s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
-      if effect.requiresTarget then
-        let g := { g with pending := .chooseTargets p }
-        return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
-      return g.afterTargetsChosen
+      let chosen := chosen.push mode
+      let more := (List.range spell.printed.spellModes.size).any (fun i =>
+        !chosen.contains i && g.spellModeIsChoosable p spell.printed.spellModes[i]!)
+      if chosen.size < g.maxModesFor p spell.printed && more then
+        let g := { g with pending := .chooseMode p }
+        return g.logMsg s!"{(g.player p).name} may choose another mode, or decline (CR 700.2)"
+      return g.afterModesChosen p
   | _ => throw "Not time to choose a mode (CR 601.2b)"
 
 /-- Pay a loyalty cost: put or remove loyalty counters on the source and
@@ -284,6 +304,12 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         if src.status.loyaltyCounters < x then
           throw s!"{src.name} doesn't have {x} loyalty counters to remove (CR 606.4)"
         pure ((g.payLoyaltyCost src (.minus x)).queueLoyaltyActivationTriggers p (.minus x))
+      else if prop.removePlusOneX then
+        let some src := prop.sourceId.bind g.findObject?
+          | throw "The source left the battlefield"
+        if src.status.plusOnePlusOne < x then
+          throw s!"{src.name} doesn't have {x} +1/+1 counters to remove"
+        pure g
       else pure g
     let cost :=
       match prop.kind, prop.activation, prop.sourceId.bind g.findObject? with
@@ -327,7 +353,9 @@ def afterTriggerTargetsChosen (g : Game) : Game :=
   | some _ =>
     promptTriggerTargetsIfNeeded { g with pending := .none }
   | none =>
-    receivePriority { g with pending := .none } g.activePlayer false
+    let g := { g with pending := .none }.promptNextWard
+    if g.pending != .none then g
+    else receivePriority g g.activePlayer false
 
 /-- Loki (MSH 247): when a player or permanent becomes the target of an
 ability you control, those triggers wait on the stack above that ability. -/
@@ -335,6 +363,20 @@ def queueYouTargetTriggers (g : Game) (controller : PlayerId) (obj : GameObject)
   if obj.abilityEffect.isSome || obj.triggeredAbility.isSome then
     g.putControlledTriggers controller .youTargetSomething
   else g
+
+/-- After a triggered ability's targets are announced: “becomes the target”
+and Loki triggers, and ward for each targeted opponent permanent
+(CR 702.21a), which is prompted once no other ability needs targets. -/
+def finishTriggerTargets (g : Game) (p : PlayerId) (obj : GameObject) : Game :=
+  let targets := ((g.stackEntry? obj.id).map (·.targets)).getD #[]
+  let g := g.queueYouTargetTriggers p obj
+  let g := g.queueBecomesTargetTriggers p targets
+  let g := g.foldPermanentTargets targets (unique := true) (f := fun g o =>
+    if o.controller != some p && o.isOnBattlefield then
+      (g.wardCostsOn o).foldl (fun g cost =>
+        { g with wardQueue := g.wardQueue.push { player := p, spellId := obj.id, cost } }) g
+    else g)
+  g.afterTriggerTargetsChosen
 
 /-- Announce targets for the current instance of the word “target”
 (CR 601.2c / 603.3d). Multiple targets of one instance (including a
@@ -388,8 +430,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
       for (t, n) in assignments do
         g := g.logMsg
           s!"{(g.player p).name} chooses {g.targetLogName t} to be dealt {n} damage (CR 601.2d)"
-      g := g.queueYouTargetTriggers p obj
-      return g.afterTriggerTargetsChosen
+      return g.finishTriggerTargets p obj
     | none =>
       if choices.any (fun c => c.2.isSome) then
         throw "That spell or ability does not divide damage (CR 601.2d)"
@@ -417,8 +458,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
             s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
-        g := g.queueYouTargetTriggers p obj
-        return g.afterTriggerTargetsChosen
+        return g.finishTriggerTargets p obj
       if choices.size != 1 then
         throw "Choose each instance of the word \"target\" separately (CR 601.2c)"
       let t := choices[0]!.1
@@ -431,8 +471,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
         return { (g.markTargetsAnnounced obj.id false) with pending := .chooseTargets p }
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
-      let g := g.queueYouTargetTriggers p obj
-      return g.afterTriggerTargetsChosen
+      return g.finishTriggerTargets p obj
   | _ => throw "Not time to choose targets (CR 601.2c)"
 
 /-- Announce one target of the current instance of the word “target”

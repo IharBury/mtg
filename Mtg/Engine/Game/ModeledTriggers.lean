@@ -19,6 +19,11 @@ def attackingAlone? (g : Game) (p : PlayerId) : Option GameObject :=
 def attachedHost? (g : Game) (sourceId : Option ObjectId) : Option GameObject :=
   sourceId.bind g.findObject? |>.bind (fun src => src.attachedTo.bind g.findObject?)
 
+/-- The spell that caused the resolving cast trigger. -/
+def castTriggerSpell? (g : Game) : Option GameObject :=
+  ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).bind
+    (fun id => g.findObject? (g.followMoved id))
+
 /-- Newest non-ability object on the stack (the spell that caused a cast trigger). -/
 def lastStackSpell? (g : Game) : Option GameObject :=
   g.stack.foldl (fun acc e =>
@@ -31,14 +36,19 @@ def lastStackSpell? (g : Game) : Option GameObject :=
 def merfolk11blueToken : CardDef :=
   creatureToken "Merfolk" #["Merfolk"] 1 1 (some .blue)
 
-/-- Copy a keyword counter onto Super-Adaptoid when the other creature has it. -/
+/-- Put one keyword counter on Super-Adaptoid when the other creature has that
+keyword and Super-Adaptoid does not. -/
 def copyKeywordCounter (g : Game) (adaptoid other : GameObject)
-    (has : GameObject → Bool) (kw : Keywords) (name : String) : Game :=
+    (has : GameObject → Bool) (apply : Status → Status) (name : String) : Game :=
   if has other && !has adaptoid then
+    let n := g.countersYouPut adaptoid 1
     let src := g.object! adaptoid.id
-    g.setObject { src with
-        printed := { src.printed with
-          keywords := Keywords.merge src.printed.keywords kw } }
+    let status := Id.run do
+      let mut s := src.status
+      for _ in [0:n] do
+        s := apply s
+      return s
+    g.setObject { src with status := status }
       |>.logMsg s!"{src.name} gets a {name} counter"
   else g
 
@@ -58,6 +68,160 @@ def exileLibraryUntilNonland (g : Game) (pid : PlayerId) : Game × Option Object
         if !o.printed.isLand then found := some newId
     return (g, found)
 
+/-- Ask the next player in `players` with a nontoken creature to choose one
+to sacrifice; once all have chosen, sacrifice them together. -/
+def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : Array ObjectId) :
+    Game :=
+  let hasOne (p : PlayerId) := (g.permanentsOf p).any (fun o => o.isCreature && !o.printed.isToken)
+  match (players.filter hasOne).toList with
+  | p :: rest =>
+    { g with pending := .fraChoice p (.sacrificeNontokenEach rest.toArray chosen) }.logMsg
+      s!"{(g.player p).name} sacrifices a nontoken creature"
+  | [] =>
+    chosen.foldl (fun g id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield then
+          g.sacrificeToGraveyard o s!"{(g.player (o.controller.getD o.owner)).name} sacrifices {o.name}"
+        else g
+      | none => g) g
+
+/-- Let `controller` cast the exiled nonland with any type of mana until end of turn. -/
+def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId) : Game :=
+  match exiled.bind g.findObject? with
+  | none => g.logMsg "No nonland card was exiled"
+  | some o =>
+    g.setObject { o with
+        playPermission := some {
+          player := controller
+          turnEndsRemaining := 1
+          anyMana := true } }
+      |>.logMsg s!"{(g.player controller).name} may cast {o.name} until end of turn"
+
+/-- Copy the nontoken artifact that entered, then make a noncreature token a
+2/2 Robot Villain after it enters (Ultron; MSH 574 / 656). -/
+def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectId) : Game :=
+  match g.findObject? (g.followMoved artifactId) with
+  | none => g.logMsg "Ultron has nothing to copy"
+  | some src =>
+    if src.printed.isToken || !src.printed.isArtifact then
+      g.logMsg "That permanent isn't a nontoken artifact"
+    else
+      let (g, tok) := g.copyBattlefieldPermanent src controller
+      let tok := g.object! tok.id
+      let g := g.afterPermanentEnters tok
+      let tok := g.object! tok.id
+      if tok.isCreature then g
+      else
+        let printed :=
+          { tok.printed with
+            types :=
+              if tok.printed.types.any (· == .creature) then tok.printed.types
+              else tok.printed.types.push .creature
+            subtypes := mergeSubtypes tok.printed.subtypes #["Robot", "Villain"]
+            power := some 2
+            toughness := some 2 }
+        g.setObject { tok with printed }
+          |>.logMsg s!"{printed.name} becomes a 2/2 Robot Villain creature after it enters"
+
+/-- Exile the top card of your library. A Hero card pumps Daredevil. The
+exiled card may be played this turn either way (MSH 685). -/
+def applyDaredevilExile (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
+  let top? := (g.player controller).library.back?
+  let isHero :=
+    match top? with
+    | some top => (g.object! top).hasSubtype "Hero"
+    | none => false
+  let g := g.exileTopPlayThisTurn controller 1
+  if isHero then
+    g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
+      "Daredevil is no longer on the battlefield"
+  else g
+
+/-- The Vision's chosen mode that hasn't been chosen yet this turn.
+0 double strike, 1 indestructible, 2 draw. -/
+def applyVisionMode (g : Game) (controller : PlayerId) (sourceId : ObjectId) (mode : Nat) : Game :=
+  match g.findObject? (g.followMoved sourceId) with
+  | none =>
+    if mode == 2 then g.draw controller 1
+    else g.logMsg "The Vision is no longer in play"
+  | some src =>
+    if src.status.modesChosenThisTurn.contains mode || src.status.modesChosenThisTurn.size >= 3 then
+      g.logMsg "The Vision's ability is removed from the stack with no effect"
+    else if !src.isOnBattlefield then
+      if mode == 2 then g.draw controller 1
+      else g.logMsg "The Vision is no longer in play"
+    else
+      let g := g.mapObjectStatus src (fun s =>
+        { s with modesChosenThisTurn := s.modesChosenThisTurn.push mode })
+      if mode == 0 then
+        g.mapObjectStatus (g.object! src.id) (·.grantUntilEot Keyword.doubleStrike)
+      else if mode == 1 then
+        g.mapObjectStatus (g.object! src.id) (·.grantUntilEot Keyword.indestructible)
+      else
+        g.draw controller 1
+
+/-- Ask to change the spell's target at `index`, then the later slots. -/
+def offerSpellRetarget (g : Game) (controller : PlayerId) (spellId : ObjectId) (index : Nat) : Game :=
+  match g.stackEntry? spellId with
+  | none => g
+  | some e =>
+    if index < e.targets.size then
+      { g with pending := .fraChoice controller (.mayChangeSpellTarget spellId index) }
+        |>.logMsg "You may choose a new target for the spell"
+    else g
+
+/-- Replace one target of a spell when the replacement is legal. An illegal
+choice leaves that target unchanged (MSH 722). -/
+def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target) : Game :=
+  match g.stack.findIdx? (fun e => e.objectId == spellId) with
+  | none => g.logMsg "The spell is no longer on the stack"
+  | some i =>
+    let e := g.stack[i]!
+    match g.findObject? spellId with
+    | none => g.logMsg "The spell is no longer on the stack"
+    | some spell =>
+      let legal := g.legalTargetsForKind e.controller (g.targetingOf spell).kind (some spellId)
+      if index < e.targets.size && legal.contains neu then
+        { g with stack := g.stack.set! i { e with targets := e.targets.set! index neu } }
+          |>.logMsg "A new target is chosen for the spell"
+      else
+        g.logMsg "That target stays unchanged"
+
+/-- Mister Hyde's chosen mode. Mode 0 puts a +1/+1 counter on the source.
+Mode 1 removes a counter from the chosen creature, then draws. -/
+def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (mode : Nat) (targets : Array Target) : Game :=
+  if mode == 0 then
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      g.addPlusOnePlusOneTo o 1) "The source is no longer in play"
+  else
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && o.controlledBy controller && o.status.hasCounters then
+          let g :=
+            if o.status.plusOnePlusOne > 0 then
+              g.mapObjectStatus o (fun s =>
+                { s with plusOnePlusOne := s.plusOnePlusOne - 1 })
+                |>.logMsg s!"A counter is removed from {o.name}"
+            else if o.status.indestructibleCounters > 0 then
+              g.mapObjectStatus o (fun s =>
+                { s with indestructibleCounters := s.indestructibleCounters - 1 })
+                |>.logMsg s!"A counter is removed from {o.name}"
+            else g.logMsg "A counter is removed from the creature"
+          g.draw controller 1
+        else
+          g.logMsg "You must remove a counter from a creature you control if you can"
+      | none =>
+        g.logMsg "You must remove a counter from a creature you control if you can"
+    | _ =>
+      if (g.permanentsOf controller).any (fun o =>
+          o.isCreature && o.status.hasCounters) then
+        g.logMsg "You must remove a counter from a creature you control if you can"
+      else g
+
 /-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
 Effects are applied from that structured payload — not from Oracle text. -/
 def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
@@ -71,39 +235,47 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       | some (Target.permanent id) =>
         match g.findObject? id with
         | some tgt =>
-          g.becomeCopyOf src tgt (untilNextTurn := true)
-            (exceptName := some "Absorbing Man")
-            (forceLegendary := true) (addCreature := true)
-            (addSubtypes := #["Human", "Villain"])
-            (setPT := some (4, 4)) (addVigilance := true)
-        | none => g
-      | _ => g) "The source is no longer in play"
+          let ok := tgt.isOnBattlefield && !tgt.printed.isAura &&
+            (tgt.printed.isArtifact || tgt.printed.isEnchantment || tgt.printed.isLand)
+          if ok then
+            g.becomeCopyOf src tgt (untilNextTurn := true)
+              (exceptName := some "Absorbing Man")
+              (forceLegendary := true) (addCreature := true)
+              (addSubtypes := #["Human", "Villain"])
+              (setPT := some (4, 4)) (addVigilance := true)
+          else g.logMsg "That permanent isn't an artifact, non-Aura enchantment, or land"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "Absorbing Man doesn't become a copy") "The source is no longer in play"
   | (.step .copyTaskmaster) =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with
       | some (Target.permanent id) | some (Target.card id) =>
         match g.findObject? id with
         | some tgt =>
-          g.becomeCopyOf src tgt (untilNextTurn := true)
-            (exceptName := some "Taskmaster, Mercenary Mimic")
-            (forceLegendary := true) (addCreature := true)
-            (addSubtypes := #["Human", "Mercenary", "Villain"])
-        | none => g
-      | _ => g) "The source is no longer in play"
+          let onBf := tgt.isOnBattlefield && tgt.isCreature
+          let inGy := tgt.zone == .graveyard tgt.owner && tgt.printed.isCreature
+          if onBf || inGy then
+            g.becomeCopyOf src tgt (untilNextTurn := true)
+              (exceptName := some "Taskmaster, Mercenary Mimic")
+              (forceLegendary := true) (addCreature := true)
+              (addSubtypes := #["Human", "Mercenary", "Villain"])
+              (replaceCreatureLine := true)
+          else g.logMsg "That isn't a creature or a creature card in a graveyard"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "Taskmaster doesn't become a copy") "The source is no longer in play"
   | (.watch .sheHulkRedirectOnce) =>
     if g.sheHulkDamageUsedThisTurn then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
     else
-      let amt := lastKnownPower.getD 0
-      let g :=
-        g.withLegalKindTarget controller .playerOrCreature targets
-          (fun g tgt => g.dealDamageToTarget tgt amt) sourceId none
-      { g with sheHulkDamageUsedThisTurn := true }
-        |>.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
+      let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
+      match targets.find? (legal.contains ·) with
+      | none => g.logMsg "The target is no longer legal"
+      | some t =>
+        let amt := lastKnownPower.getD 0
+        { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
+          |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
   | (.watch .hawkeyeModes) =>
-    let paid := (lastKnownPower.getD (0 : Int)).toNat
-    g.queueModeledReflexiveIfPaid controller sourceId 2 paid
-      "Hawkeye didn't pay. The reflexive ability doesn't trigger."
+    g.offerPayForReflexive controller sourceId #[.generic 1] 2 (maxTimes := 3)
   | (.thisAttack .equippedDrain) =>
     let x :=
       match sourceId.bind g.findObject? with
@@ -124,25 +296,28 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     g.withSourceOnBattlefield sourceId (fun g hulkling =>
       let entered :=
         match targets[0]? with
-        | some (Target.permanent id) => g.findObject? id
+        | some (Target.permanent id) | some (Target.card id) => g.findObject? id
         | _ =>
-          let cands := (g.permanentsOf controller).filter (fun (x : GameObject) =>
-            x.isCreature && x.id != hulkling.id && x.status.enteredThisTurn)
-          if cands.isEmpty then none
-          else some (cands.foldl (fun (acc : GameObject) (x : GameObject) =>
-            if x.timestamp > acc.timestamp then x else acc) cands[0]!)
+          let causeId :=
+            ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+          causeId.bind g.findObject?
       match entered with
       | none => g
       | some other =>
-        let op := if other.isOnBattlefield then g.power other
-          else other.lastKnownPower.getD (g.power other)
-        let ot := if other.isOnBattlefield then g.toughness other
-          else other.lastKnownToughness.getD (g.toughness other)
-        if op > g.power hulkling || ot > g.toughness hulkling then
-          g.addPlusOnePlusOneTo hulkling 1
-        else g) "The source is no longer in play"
+        if other.id == hulkling.id then g
+        else
+          let op := if other.isOnBattlefield then g.power other
+            else other.lastKnownPower.getD (g.power other)
+          let ot := if other.isOnBattlefield then g.toughness other
+            else other.lastKnownToughness.getD (g.toughness other)
+          if op > g.power hulkling || ot > g.toughness hulkling then
+            g.addPlusOnePlusOneTo hulkling 1
+          else g) "The source is no longer in play"
   | (.watch .firstTapUntap) =>
-    match g.lastBecameTapped.bind g.findObject? with
+    let fromCause :=
+      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    let id := fromCause.orElse (fun _ => g.lastBecameTapped)
+    match id.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield && o.status.tapped then
         g.applyPermanentAction o .untap
@@ -173,40 +348,48 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     | none =>
       g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
   | (.thisAttack .payReturnAttacking) =>
-    g.queueModeledReflexiveIfPaid controller sourceId 6
-      (lastKnownPower.getD (0 : Int)).toNat
-      "Grim Reaper's cost wasn't paid. The reflexive ability doesn't trigger."
+    g.offerPayForReflexive controller sourceId #[.generic 3, .colored .black] 6
   | (.casting .mayPayHasteUnblockable) =>
-    g.queueModeledReflexiveIfPaid controller sourceId 9
-      (lastKnownPower.getD (0 : Int)).toNat
-      "Speed's cost wasn't paid. The reflexive ability doesn't trigger."
+    g.offerPayForReflexive controller sourceId #[.generic 1] 9
   | (.watch .speedballTargeted) =>
-    g.withSourceOnBattlefield sourceId (fun g o => g.pumpPermanent o 2 2)
-      "Speedball is no longer on the battlefield"
+    let g :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.pumpPermanent o 2 2
+        else g.logMsg "Speedball is no longer on the battlefield"
+      | none => g.logMsg "Speedball is no longer on the battlefield"
+    let fromCause :=
+      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    let targetingSource (e : StackEntry) : Bool :=
+      e.targets.any (fun t =>
+        match t, sourceId with
+        | Target.permanent id, some sid => id == sid
+        | _, _ => false)
+    let fromStack :=
+      g.stack.foldl (fun acc e =>
+        if targetingSource e then some e.objectId else acc) none
+    match fromCause.orElse (fun _ => fromStack) with
+    | none => g
+    | some spellId => g.offerSpellRetarget controller spellId 0
   | (.youAttacking .exileTopHeroPump) =>
-    -- Daredevil: exile the top card. Hero-ness only affects the pump;
-    -- the card may be played this turn either way (MSH 333).
-    let top? := (g.player controller).library.back?
-    let isHero :=
-      match top? with
-      | some top => (g.object! top).hasSubtype "Hero"
-      | none => false
-    let g := g.exileTopPlayThisTurn controller 1
-    if isHero then
-      g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
-        "Daredevil is no longer on the battlefield"
-    else g
+    { g with pending := .fraChoice controller (.daredevilMayExile sourceId) }
+      |>.logMsg "You may exile the top card of your library"
   | (.youAttacking .pay2LifeToughness) =>
-    g.ifPaid (lastKnownPower.getD (0 : Int)).toNat "The Kingpin's cost wasn't paid"
-      fun g =>
-        { g with assignCombatDamageEqualToughness := some controller }
-          |>.logMsg "Creatures you control assign combat damage equal to their toughness"
+    if g.canPayLife controller 2 then
+      { g with pending := .fraChoice controller .kingpinMayPay2Life }
+        |>.logMsg "You may pay 2 life"
+    else
+      g.logMsg "The Kingpin's cost wasn't paid"
   | (.watch .villainPlusOneDamageOnce) =>
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      let g := g.addPlusOnePlusOneTo o 1
-      g.forEachOpponent controller (fun g pid =>
-        g.dealDamageToPlayer pid 2 (source := some (g.object! o.id))))
-      "Crossbones is no longer on the battlefield"
+    let src? := sourceId.bind (fun id => g.findObject? (g.followMoved id))
+    let g :=
+      match src? with
+      | some o =>
+        if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1
+        else g.logMsg "Crossbones is no longer on the battlefield. No counter is put."
+      | none => g.logMsg "Crossbones is no longer on the battlefield. No counter is put."
+    g.forEachOpponent controller (fun g pid =>
+      g.dealDamageToPlayer pid 2 (source := src?))
   | (.watch .villainConniveOnce) =>
     match sourceId.bind g.findObject? with
     | none =>
@@ -222,40 +405,42 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         | some vid =>
           g.beginMayHaveVillainConnive controller src.id vid
   | (.death .attackingReturnHand) =>
-    match g.lastDiedAttacker.bind g.findObject? with
+    let fromCause :=
+      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    let id := fromCause.orElse (fun _ => g.lastDiedAttacker.map g.followMoved)
+    match id.bind g.findObject? with
     | none => g.logMsg "The attacking creature is no longer in the graveyard"
     | some o =>
       if o.printed.isToken then
         g.logMsg s!"{o.name} ceases to exist"
+      else if o.zone != .graveyard o.owner then
+        g.logMsg "The attacking creature is no longer in the graveyard"
       else
         g.returnToHand o.id o.owner
   | (.watch .ultronCopy) =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
+    let fromTarget :=
+      match targets[0]? with
+      | some (Target.permanent id) => some id
+      | _ => none
+    let fromCause :=
+      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    match fromTarget.orElse (fun _ => fromCause) with
+    | none => g.logMsg "Ultron has nothing to copy"
+    | some id =>
+      match g.findObject? (g.followMoved id) with
       | some src =>
-        if src.isOnBattlefield && src.printed.isArtifact && !src.printed.isToken then
-          let (g, tok) := g.copyBattlefieldPermanent src controller
-          let tok := g.object! tok.id
-          let g := g.afterPermanentEnters tok
-          let tok := g.object! tok.id
-          if tok.isCreature then g
-          else
-            let printed :=
-              { tok.printed with
-                types :=
-                  if tok.printed.types.any (· == .creature) then tok.printed.types
-                  else tok.printed.types.push .creature
-                subtypes := mergeSubtypes tok.printed.subtypes #["Robot", "Villain"]
-                power := some 2
-                toughness := some 2 }
-            g.setObject { tok with printed }
-              |>.logMsg s!"{printed.name} becomes a 2/2 Robot Villain creature after it enters"
-        else g
-      | none => g
-    | _ => g
+        if src.printed.isToken || !src.printed.isArtifact || some src.id == sourceId then
+          g.logMsg "That permanent isn't another nontoken artifact"
+        else
+          { g with pending := .fraChoice controller (.ultronMayPay id) }
+            |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {src.name}"
+      | none => g.logMsg "Ultron has nothing to copy"
   | (.death .villainReturnAsHero) =>
-    match targets[0]? with
+    let causeId := (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)
+    let it := match targets[0]? with
+      | some t => some t
+      | none => causeId.map (fun id => Target.card (g.followMoved id))
+    match it with
     | some (Target.card id) | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
@@ -267,8 +452,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
             if o.printed.subtypes.any (· == "Hero") then o.printed.subtypes
             else o.printed.subtypes.push "Hero"
           let g := g.setObject { o with
-            printed := { o.printed with subtypes }
-            status := { o.status with finality := o.status.finality + 1 } }
+            printed := { o.printed with subtypes } }
+          let g := g.addFinalityTo (g.object! newId) 1 (byPlayer := some controller)
           g.afterPermanentEnters (g.object! newId)
         else g
       | none => g
@@ -280,7 +465,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.resource .plusOneCreateInsectOnce) =>
     g.createKindTokens controller .insect11green 1
   | (.resource .plusOneOnHeroesCreateWall) =>
-    g.createKindTokens controller .wall04defender 1
+    { g with pending := .fraChoice controller (.mayCreateTokens .wall04defender 1) }.logMsg
+      s!"{(g.player controller).name} may create a 0/4 Wall creature token with defender"
   | (.resource .secondDrawBecome66) =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.mapObjectStatus o (fun s =>
@@ -290,23 +476,17 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         |>.logMsg s!"{o.name}'s base power and toughness become 6/6")
       "The source is no longer in play"
   | (.casting .visionModes) =>
-    match sourceId.bind g.findObject? with
+    match sourceId.bind (fun id => g.findObject? (g.followMoved id)) with
     | some src =>
-      if src.status.chosenModes.size >= 3 then
+      let available :=
+        #[0, 1, 2].filter (fun m => !src.status.modesChosenThisTurn.contains m)
+      if available.isEmpty then
         g.logMsg "The Vision's ability is removed from the stack with no effect"
       else
-        let mode := (lastKnownPower.getD 0).toNat
-        let g := g.mapObjectStatus src (fun s =>
-          { s with chosenModes := s.chosenModes.push mode })
-        if mode == 0 then
-          g.mapObjectStatus (g.object! src.id)
-            (·.grantUntilEot Keyword.doubleStrike)
-        else if mode == 1 then
-          g.mapObjectStatus (g.object! src.id)
-            (·.grantUntilEot Keyword.indestructible)
-        else
-          g.draw controller 1
-    | none => g.logMsg "The Vision is no longer in play"
+        { g with pending := .fraChoice controller (.visionMode src.id available) }
+          |>.logMsg "Choose one that hasn't been chosen this turn"
+    | none =>
+      g.logMsg "The Vision is no longer in play"
   | (.casting .ironFistTap) =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.mapObjectStatus o (fun s =>
@@ -316,35 +496,16 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.casting .drawPowerEqualHand) =>
     let g := g.draw controller 1
     g.withSourceOnBattlefield sourceId (fun g o =>
-      g.mapObjectStatus o (fun s =>
-        { s with grantedStaticAbilities :=
-            s.grantedStaticAbilities.push .powerEqualCardsInHand })
-        |>.logMsg s!"{o.name}'s base power is the number of cards in your hand")
+      g.mapObjectStatus o (fun s => { s with cardsInHandPowerUntilEot := true })
+        |>.logMsg s!"{o.name}'s base power is the number of cards in your hand until end of turn")
       "The source is no longer in play"
   | (.step .hydeChoose) =>
-    let mode := (lastKnownPower.getD 0).toNat
-    if mode == 0 then
-      g.withSourceOnBattlefield sourceId (fun g o =>
-        g.addPlusOnePlusOneTo o 1) "The source is no longer in play"
-    else
-      match targets[0]? with
-      | some (Target.permanent id) =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield && o.controlledBy controller &&
-              o.status.plusOnePlusOne > 0 then
-            let g := g.mapObjectStatus o (fun s =>
-              { s with plusOnePlusOne := s.plusOnePlusOne - 1 })
-            g.draw controller 1
-          else
-            g.logMsg "You must remove a counter from a creature you control if you can"
-        | none =>
-          g.logMsg "You must remove a counter from a creature you control if you can"
-      | _ =>
-        if (g.permanentsOf controller).any (fun o =>
-            o.isCreature && o.status.plusOnePlusOne > 0) then
-          g.logMsg "You must remove a counter from a creature you control if you can"
-        else g
+    match lastKnownPower with
+    | none =>
+      { g with pending := .fraChoice controller (.hydeMode (sourceId.getD ⟨0⟩)) }
+        |>.logMsg s!"{(g.player controller).name} chooses one — 0 put a +1/+1 counter, 1 remove a counter and draw"
+    | some mode =>
+      g.applyHydeMode controller sourceId mode.toNat targets
   | (.resource .drawIfAnotherHeroDamage) =>
     if (g.permanentsOf controller).any (fun o =>
         g.hasSubtype o "Hero" && some o.id != sourceId) then
@@ -368,15 +529,18 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         | some (Target.permanent id) =>
           match g.findObject? id with
           | some o =>
-            if o.isOnBattlefield && o.id != src.id then
-              let (g, newId) :=
-                let g := g.exileUntilSourceLeaves sourceId o
-                match g.objects.find? (fun x =>
-                  x.name == o.name && x.zone == .exile) with
-                | some ex => (g, ex.id)
-                | none => (g, id)
-              g.returnExiledId newId
-            else g
+            if o.isOnBattlefield && o.controlledBy controller &&
+                !o.printed.isLand && o.id != src.id then
+              let owner := o.owner
+              let name := o.name
+              let (g, exId) := g.move o.id .exile none
+              let (g, retId) := g.move exId .battlefield (some owner)
+              let ret := g.object! retId
+              let g := g.setObject { ret with status :=
+                { ret.status with summoningSick := !ret.printed.keywords.haste } }
+              g.afterPermanentEnters (g.object! retId)
+                |>.logMsg s!"{name} is exiled, then returned"
+            else g.logMsg "The target is no longer legal"
           | none => g.logMsg "The target is no longer legal"
         | _ => g
     | none => g
@@ -400,16 +564,25 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     | none =>
       g.logMsg "The enchanted creature has left. Equipment stays where it is."
   | (.watch .villainAttachEquipment) =>
-    match targets[0]?, targets[1]? with
-    | some (Target.permanent eqId), some (Target.permanent crId) =>
+    match targets.toList with
+    | [Target.permanent eqId, Target.permanent crId] =>
       match g.findObject? eqId, g.findObject? crId with
       | some eq, some cr =>
-        if eq.isOnBattlefield && cr.isOnBattlefield && eq.printed.isEquipment then
+        if eq.isOnBattlefield && cr.isOnBattlefield && eq.printed.isEquipment &&
+            cr.isCreature then
           g.attachSourceTo eq cr
         else
           g.logMsg "The Equipment won't move"
       | _, _ => g.logMsg "The Equipment won't move"
-    | _, _ => g.logMsg "The Equipment won't move"
+    | [Target.permanent id] =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && o.printed.isEquipment then
+          g.logMsg "The Equipment won't move"
+        else
+          g.logMsg "No Equipment was chosen"
+      | none => g.logMsg "The Equipment won't move"
+    | _ => g.logMsg "The Equipment won't move"
   | (.thisAttack .ifArtifactEnteredDraw) =>
     if (g.player controller).artifactEnteredThisTurn then
       g.draw controller 1
@@ -426,7 +599,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     | none =>
       g.logMsg "The enchanted creature has left. No card is drawn."
   | (.death .hellcatReturn) =>
-    match sourceId.bind g.findObject? with
+    match (sourceId.map g.followMoved).bind g.findObject? with
     | none => g.logMsg "Hellcat is no longer in the graveyard"
     | some o =>
       if o.zone != .graveyard o.owner then
@@ -440,26 +613,15 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
             keywords := Keyword.haste
             triggeredAbilities := #[]
             activatedAbilities := #[]
-            staticAbilities := #[] }
-          status := { o.status with
-            losesAbilitiesGrantedBy := o.status.losesAbilitiesGrantedBy.push newId } }
+            staticAbilities := #[] } }
         let o := g.object! newId
-        let g := g.addPlusOnePlusOneTo o 1
+        let g := g.addPlusOnePlusOneTo o 1 (entersWith := true)
         g.afterPermanentEnters (g.object! newId)
           |>.logMsg s!"{o.name} returns, loses all abilities, and gains haste"
   | (.death .deathtouchOppSac) =>
-    (g.livingOpponents controller).foldl (fun (g : Game) pl =>
-      match (g.permanentsOf pl.id).find? (fun o => o.isCreature && !o.printed.isToken) with
-      | some o => g.sacrificeToGraveyard o
-          s!"{(g.player pl.id).name} sacrifices {o.name}"
-      | none =>
-        g.logMsg s!"{(g.player pl.id).name} has no nontoken creature to sacrifice") g
+    g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
   | (.thisAttack .mayPayPlusOne) =>
-    g.ifPaid (lastKnownPower.getD (0 : Int)).toNat "Ant-Man's cost wasn't paid"
-      fun g =>
-        g.withLegalKindPermanent controller .creature targets
-          (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
-          (some "The target is no longer legal")
+    g.offerPayForReflexive controller sourceId #[.generic 1] 12
   | (.thisAttack .blinkNontoken) =>
     match targets[0]? with
     | some (Target.permanent id) =>
@@ -492,34 +654,55 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       | some (Target.permanent id) =>
         match g.findObject? id with
         | some other =>
-          if !other.isOnBattlefield || other.id == src.id then g
+          if !other.isOnBattlefield || !other.isCreature || other.id == src.id then
+            g.logMsg "The target is no longer legal"
           else
-            let g := g.copyKeywordCounter src other g.hasHaste Keyword.haste "haste"
+            let g := g.copyKeywordCounter src other g.hasHaste
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with haste := s.keywordCounters.haste + 1 } }) "haste"
             let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasFlying Keyword.flying "flying"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasFirstStrike Keyword.firstStrike
-              "first strike"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasDoubleStrike Keyword.doubleStrike
-              "double strike"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasDeathtouch Keyword.deathtouch
-              "deathtouch"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasIndestructible Keyword.indestructible
-              "indestructible"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasLifelink Keyword.lifelink "lifelink"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasMenace Keyword.menace "menace"
+            let g := g.copyKeywordCounter src other g.hasFlying
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with flying := s.keywordCounters.flying + 1 } }) "flying"
             let src := g.object! src.id
             let g := g.copyKeywordCounter src other
-              (fun o => g.hasKeyword o (·.reach)) Keyword.reach "reach"
+              (fun o => g.hasKeyword o (·.firstStrike))
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with
+                  firstStrike := s.keywordCounters.firstStrike + 1 } }) "first strike"
             let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasTrample Keyword.trample "trample"
+            let g := g.copyKeywordCounter src other g.hasDoubleStrike
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with
+                  doubleStrike := s.keywordCounters.doubleStrike + 1 } }) "double strike"
             let src := g.object! src.id
-            g.copyKeywordCounter src other g.hasVigilance Keyword.vigilance "vigilance"
+            let g := g.copyKeywordCounter src other g.hasDeathtouch
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with
+                  deathtouch := s.keywordCounters.deathtouch + 1 } }) "deathtouch"
+            let src := g.object! src.id
+            let g := g.copyKeywordCounter src other g.hasIndestructible
+              (fun s => { s with
+                indestructibleCounters := s.indestructibleCounters + 1 }) "indestructible"
+            let src := g.object! src.id
+            let g := g.copyKeywordCounter src other g.hasLifelink
+              (fun s => { s with lifelinkCounters := s.lifelinkCounters + 1 }) "lifelink"
+            let src := g.object! src.id
+            let g := g.copyKeywordCounter src other g.hasMenace
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with menace := s.keywordCounters.menace + 1 } }) "menace"
+            let src := g.object! src.id
+            let g := g.copyKeywordCounter src other (fun o => g.hasKeyword o (·.reach))
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with reach := s.keywordCounters.reach + 1 } }) "reach"
+            let src := g.object! src.id
+            let g := g.copyKeywordCounter src other g.hasTrample
+              (fun s => { s with trampleCounters := s.trampleCounters + 1 }) "trample"
+            let src := g.object! src.id
+            g.copyKeywordCounter src other g.hasVigilance
+              (fun s => { s with keywordCounters :=
+                { s.keywordCounters with
+                  vigilance := s.keywordCounters.vigilance + 1 } }) "vigilance"
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal")
       "The source is no longer in play"
@@ -528,28 +711,21 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       match targets[0]? with
       | some (Target.player p) => some p
       | _ =>
-        match (g.livingOpponents controller)[0]? with
-        | some pl => some pl.id
-        | none => none
+        (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness)
+          |>.map (fun n => ⟨n.toNat⟩)
     match pid with
-    | none => g
+    | none => g.logMsg "Black Widow didn't deal combat damage to a player"
     | some pid =>
       let (g, nonland?) := g.exileLibraryUntilNonland pid
-      if (lastKnownPower.getD 1) != 0 then
-        g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-          "Black Widow is no longer on the battlefield"
+      let onBf :=
+        match sourceId.bind g.findObject? with
+        | some o => o.isOnBattlefield
+        | none => false
+      if onBf then
+        { g with pending := .fraChoice controller (.widowMayCounter sourceId nonland?) }
+          |>.logMsg "You may put a +1/+1 counter on Black Widow"
       else
-        match nonland? with
-        | none => g
-        | some id =>
-          let o := g.object! id
-          g.setObject { o with
-              playPermission := some {
-                player := controller
-                turnEndsRemaining := 1
-                anyMana := true } }
-            |>.logMsg
-              s!"{(g.player controller).name} may cast {o.name} until end of turn"
+        g.grantWidowCast controller nonland?
   | (.watch .attacksAloneDrain) =>
     g.withLegalKindTarget controller .opponent targets (fun g tgt =>
       match tgt with
@@ -595,7 +771,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       else g.logMsg "The equipped creature has left"
     | none => g.logMsg "The equipped creature has left"
   | (.watch .equippedAttacksTap) =>
-    g.withLegalKindPermanent controller .creature targets
+    g.withLegalKindPermanent controller .defendingPlayerCreature targets
       (fun g o => g.applyPermanentAction o .tap) sourceId
       (some "The target is no longer legal")
   | (.watch .equippedTappedDamage) =>
@@ -613,14 +789,42 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.watch .tokensEnterMayDraw) =>
     g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
       fun g => g.draw controller 1
+  | (.casting .exileFlicker) =>
+    let kind := EffectTargetKind.filtered {
+      noun := "another target nonland, nontoken permanent"
+      nonland := true, nontoken := true, another := true }
+    g.withLegalKindPermanent controller kind targets (fun g o =>
+      let name := o.name
+      let (g, newId) := g.move o.id .exile none
+      { g with delayedEndStepReturns := g.delayedEndStepReturns.push newId }
+        |>.logMsg s!"{name} is exiled until the beginning of the next end step")
+      sourceId (some "The target is no longer legal")
+  | (.casting .damageEqualMv) =>
+    let n :=
+      match g.castTriggerSpell? with
+      | some spell => spell.printed.manaValue + spell.chosenX.getD 0
+      | none =>
+        match lastKnownPower with
+        | some p => p.toNat
+        | none =>
+          match g.lastStackSpell? with
+          | some o => o.printed.manaValue + o.chosenX.getD 0
+          | none =>
+            match (g.player controller).castManaValuesThisTurn.back? with
+            | some mv => mv
+            | none => 0
+    g.applyDamageToKindTarget controller .playerOrCreature targets n sourceId none
   | (.casting .merfolkFromBlue) =>
     let n :=
-      match lastKnownPower with
-      | some p => p.toNat
+      match g.castTriggerSpell? with
+      | some spell => spell.printed.manaCost.symbolsIncludingColor .blue
       | none =>
-        match g.lastStackSpell? with
-        | some o => o.printed.manaCost.symbolsIncludingColor .blue
-        | none => 0
+        match lastKnownPower with
+        | some p => p.toNat
+        | none =>
+          match g.lastStackSpell? with
+          | some o => o.printed.manaCost.symbolsIncludingColor .blue
+          | none => 0
     if n == 0 then
       g.logMsg "No blue mana symbols. No Merfolk are created."
     else
@@ -633,28 +837,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.casting .plusOneEachOther) =>
     g.forEachControlledCreature controller (fun g o =>
       if some o.id != sourceId then g.addPlusOnePlusOneTo o 1 else g)
-  | (.casting .exileFlicker) =>
-    g.withLegalKindPermanent controller .nonland targets (fun g o =>
-      if o.printed.isToken then
-        g.logMsg "The target is a token and can't be flickered"
-      else
-        let name := o.name
-        let (g, newId) := g.move o.id .exile none
-        { g with delayedEndStepReturns := g.delayedEndStepReturns.push newId }
-          |>.logMsg s!"{name} is exiled until the beginning of the next end step")
-      sourceId (some "The target is no longer legal")
-  | (.casting .damageEqualMv) =>
-    let n :=
-      match lastKnownPower with
-      | some p => p.toNat
-      | none =>
-        match g.lastStackSpell? with
-        | some o => o.printed.manaValue
-        | none =>
-          match (g.player controller).castManaValuesThisTurn.back? with
-          | some mv => mv
-          | none => 0
-    g.applyDamageToKindTarget controller .playerOrCreature targets n sourceId none
   | (.casting .plusOneThis) =>
     g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
       "The source is no longer in play"
@@ -665,22 +847,16 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     g.beginScry controller 1
   | (.casting .targetsGainFlying) =>
     let ids :=
-      if !targets.isEmpty then
-        targets.filterMap (fun t =>
-          match t with
-          | Target.permanent id => some id
-          | _ => none)
-      else
-        match g.lastStackSpell? with
-        | none => #[]
-        | some spell =>
-          match g.stack.find? (fun e => e.objectId == spell.id) with
-          | none => #[]
-          | some e =>
-            e.targets.filterMap (fun t =>
-              match t with
-              | Target.permanent id => some id
-              | _ => none)
+      match g.castTriggerSpell? with
+      | none => #[]
+      | some spell =>
+        match g.stack.find? (fun (e : StackEntry) => e.objectId == spell.id) with
+        | none => (#[] : Array ObjectId)
+        | some e =>
+          e.targets.filterMap (fun t =>
+            match t with
+            | Target.permanent id => some id
+            | _ => none)
     ids.foldl (fun (g : Game) id =>
       match g.findObject? id with
       | some o =>
@@ -689,50 +865,38 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         else g
       | none => g) g
   | (.casting .copyIfArtifactOrLand) =>
-    let g :=
-      match g.lastStackSpell? with
-      | some spell =>
-        if spell.printed.isInstantOrSorcery then
-          let (g, copy) := g.allocObject spell.printed controller .stack (some controller)
-          let g := g.setObject { copy with
-            kicked := spell.kicked
-            giftPromisedTo := spell.giftPromisedTo
-            chosenX := spell.chosenX
-            isCopy := true }
-          g.putStackEntry controller copy.id
-            |>.logMsg s!"A copy of {spell.name} is created"
-        else g
-      | none => g
-    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
+    let g := g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
       "The source is no longer in play"
+    match g.castTriggerSpell? with
+    | some spell =>
+      if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
+      else
+        let g := g.copyStackSpell spell controller
+        let copyId := (g.stack.back?.map (·.objectId)).getD spell.id
+        { g with pending := .fraChoice controller (.newTargetsForCopies #[copyId]) }.logMsg
+          s!"{(g.player controller).name} may choose new targets for the copy"
+    | none => g
   | (.casting .tapCreatureOrLand) =>
-    g.withLegalKindPermanent controller .creature targets
+    let kind := EffectTargetKind.filtered {
+      noun := "target creature or land",
+      types := #[.creature, .land] }
+    g.withLegalKindPermanent controller kind targets
       (fun g o => g.applyPermanentAction o .tap) sourceId
       (some "The target is no longer legal")
   | (.resource .discardExilePlay) =>
     let id? :=
       match lastKnownPower with
       | some n =>
-        if n ≥ 0 then some (⟨n.toNat⟩ : ObjectId) else none
-      | none => (g.player controller).graveyard.back?
-    match id? with
+        if n ≥ 0 then some (g.followMoved ⟨n.toNat⟩) else none
+      | none => none
+    match id?.bind g.findObject? with
+    | some o =>
+      if o.zone == .graveyard controller then
+        { g with pending := .fraChoice controller (.moonstoneMayExile o.id) }
+          |>.logMsg s!"You may exile {o.name} from your graveyard"
+      else
+        g.logMsg "The discarded card is no longer in your graveyard"
     | none => g.logMsg "No discarded card is in the graveyard"
-    | some id =>
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .graveyard controller then
-          let name := o.name
-          let (g, newId) := g.move o.id .exile none
-          let o := g.object! newId
-          g.setObject { o with
-              playPermission := some {
-                player := controller
-                turnEndsRemaining := 2 } }
-            |>.logMsg
-              s!"{name} is exiled. {(g.player controller).name} may play it until the end of their next turn"
-        else
-          g.logMsg "The discarded card is no longer in the graveyard"
-      | none => g.logMsg "The discarded card is no longer in the graveyard"
   | (.resource .secondDrawPlusOneTarget) =>
     g.withLegalKindPermanent controller .creature targets
       (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
@@ -741,16 +905,17 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     let g := g.forEachOpponent controller (fun g pid => g.loseLife pid 1)
     g.gainLife controller 1
   | (.resource .gainLifePlusOnes) =>
-    targets.foldl (fun (g : Game) t =>
+    let n := (lastKnownPower.getD 0).toNat
+    (targets.extract 0 n).foldl (fun (g : Game) t =>
       match t with
       | Target.permanent id =>
         match g.findObject? id with
         | some o =>
           if o.isOnBattlefield && o.isCreature && o.controlledBy controller then
             g.addPlusOnePlusOneTo o 1
-          else g
-        | none => g
-      | _ => g) g
+          else g.logMsg "The target is no longer legal"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer legal") g
   | (.resource .plusOneOnThisOnce) =>
     g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
       "The source is no longer in play"
@@ -833,8 +998,11 @@ def applyOwnerPutsLibraryThenConnive (g : Game) (_controller : PlayerId)
       if o.isOnBattlefield then
         let owner := o.owner
         if putOnBottom then
-          let (g, _) := g.move id (.library owner) none
-          g.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
+          let (g, newId) := g.move id (.library owner) none
+          let pl := g.player owner
+          let without := pl.library.filter (· != newId)
+          g.setPlayer { pl with library := #[newId] ++ without }
+            |>.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
         else
           let (g, newId) := g.move id (.library owner) none
           let pl := g.player owner
@@ -872,49 +1040,9 @@ def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
       | some o =>
         let owner := o.owner
         let g := g.destroyPermanent o
-        g.logMsg s!"{(g.player owner).name} may search for a basic land"
+        g.offerMaySearchBasics owner
       | none => g
     else g
-
-/-- Black mana symbols among `ids` for Zemo's boast, counting hybrid symbols
-that include black (MSH 128). -/
-def zemoBoastBlackSymbols (g : Game) (ids : Array ObjectId) : Nat :=
-  ids.foldl (fun n id =>
-    match g.findObject? id with
-    | some o => n + o.printed.manaCost.symbolsIncludingColor .black
-    | none => n) 0
-
-/-- True when `ids` are black cards in `p`'s graveyard whose mana costs have
-fifteen or more black mana symbols, including `{B/x}` hybrids (MSH 128). -/
-def canPayZemoBoast (g : Game) (p : PlayerId) (ids : Array ObjectId) : Bool :=
-  !ids.isEmpty &&
-    ids.all (fun id =>
-      match g.findObject? id with
-      | some o =>
-        o.zone == .graveyard p && o.printed.colors.contains .black
-      | none => false) &&
-    g.zemoBoastBlackSymbols ids >= 15
-
-/-- Baron Helmut Zemo boast: copy only the cards exiled to this activation
-(MSH 227). Copies are cast while the ability is resolving (MSH 353). -/
-def applyZemoBoast (g : Game) (controller : PlayerId) (exileIds : Array ObjectId)
-    (castN : Nat := 0) : Game :=
-  Id.run do
-    let mut g := g
-    let mut copied : Array ObjectId := #[]
-    for id in exileIds do
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .graveyard controller then
-          let (g', newId) := g.move id .exile none
-          g := g'
-          copied := copied.push newId
-      | none => pure ()
-    g := { g with zemoBoastExiles := copied }
-    g := g.logMsg s!"Zemo copies {copied.size} card(s) exiled to this activation"
-    for id in copied.take castN do
-      g := g.castAsPartOfResolution controller id
-    return g
 
 /-- Cast up to `n` cards that currently have a free-cast exile permission,
 as the ability resolves (Doom Reigns; MSH 357). -/
@@ -930,7 +1058,7 @@ def castExiledAsResolves (g : Game) (p : PlayerId) (n : Nat) : Game :=
 
 /-- Whether the resolving stack object paid its teamwork cost. -/
 def resolvingTeamworkPaid (g : Game) : Bool :=
-  g.stack.back?.any (fun e => (g.findObject? e.objectId).any (·.teamworkPaid))
+  g.spellPaidTeamwork
 
 /-- `alt` if the resolving spell paid teamwork; otherwise `base`. -/
 def teamworkAmount (g : Game) (base alt : Nat) : Nat :=

@@ -216,7 +216,7 @@ def castAsResolvesOk : Bool :=
   let bolt := cosmicCubeLookedNamed g "Lightning Bolt"
   let giant := cosmicCubeLookedNamed g "Hill Giant"
   let land := cosmicCubeLookedNamed g "Mountain"
-  let (gEx, card) := afterDraw.allocObject helicarrierStrike ⟨1⟩ .exile none
+  let (gEx, card) := afterDraw.allocObject nightsWhisper ⟨1⟩ .exile none
   let gEx := gEx.setObject { card with playPermission := some {
     player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
   let gEx := gEx.castExiledAsResolves ⟨0⟩ 1
@@ -241,7 +241,7 @@ def castAsResolvesOk : Bool :=
          gDec.log.any (fun s => mentions s "declines to cast") &&
          (gDec.player ⟨0⟩).library.any (fun id =>
            (gDec.findObject? id).any (·.name == "Lightning Bolt"))) &&
-      gEx.objects.any (fun o => o.name == "Helicarrier Strike" && o.zone == .stack) &&
+      gEx.objects.any (fun o => o.name == "Night's Whisper" && o.zone == .stack) &&
       gEx.log.any (fun s => mentions s "as the ability resolves") &&
       (mshRuling 708).comment.contains "can't wait to cast one later" &&
       (mshRuling 709).comment.contains "can't wait to cast them later"

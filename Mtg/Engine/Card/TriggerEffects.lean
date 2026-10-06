@@ -17,6 +17,7 @@ def ofTrigger (e : SharedTrigger) : Effect :=
   let t := e.timing
   { targeting := t.targeting
     allowsZeroTargets := t.allowsZeroTargets
+    maxTargets := t.maxTargets
     dividedDamage := t.dividedDamage
     resolution := Resolution.ofSharedTrigger e
     phrase := "" }

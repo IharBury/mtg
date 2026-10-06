@@ -881,7 +881,7 @@ def woodElvesEntered : Game := passBoth paidWoodElves
 def woodElvesKnownLib : Game :=
   addToLibraryTop (addToLibraryTop woodElvesEntered forest ⟨0⟩) mountain ⟨0⟩
 
-def woodElvesResolved : Game := passBoth woodElvesKnownLib
+def woodElvesResolved : Game := applyIdle (passBoth woodElvesKnownLib)
 
 #guard woodElvesResolved.pending == .none
 #guard woodElvesResolved.hasPriority ⟨0⟩
@@ -915,7 +915,7 @@ def woodElvesResolved : Game := passBoth woodElvesKnownLib
 #guard
   let g := addToLibraryTop afterDraw forest ⟨0⟩
   let beforeLands := (g.player ⟨0⟩).landsPlayedThisTurn
-  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterSearchForest none
+  let g := applyIdle (g.applyTriggeredAbility ⟨0⟩ .onEnterSearchForest none)
   g.battlefield.any (fun o => o.name == "Forest" && !o.status.tapped) &&
     (g.player ⟨0⟩).landsPlayedThisTurn == beforeLands &&
     g.log.any (fun s => mentions s "puts Forest onto the battlefield") &&
@@ -925,7 +925,7 @@ def woodElvesResolved : Game := passBoth woodElvesKnownLib
 def woodElvesLeftBeforeTrigger : Game :=
   let id := (namedPermanent woodElvesKnownLib "Wood Elves").id
   let (g, _) := woodElvesKnownLib.move id (.graveyard ⟨0⟩) none
-  passBoth g
+  applyIdle (passBoth g)
 
 #guard !(woodElvesLeftBeforeTrigger.battlefield.any (fun o => o.name == "Wood Elves"))
 #guard (woodElvesLeftBeforeTrigger.player ⟨0⟩).graveyard.any (fun id =>
@@ -944,7 +944,7 @@ def woodElvesNoForest : Game := passBoth woodElvesEntered
 /-- A nonbasic Forest card is a legal find (CR 305.7). -/
 def woodElvesNonbasic : Game :=
   let g := addToLibraryTop woodElvesEntered tropicalIsland ⟨0⟩
-  passBoth g
+  applyIdle (passBoth g)
 
 #guard woodElvesNonbasic.battlefield.any (fun o => o.name == "Tropical Island")
 #guard !(namedPermanent woodElvesNonbasic "Tropical Island").status.tapped
@@ -955,7 +955,7 @@ def woodElvesNonbasic : Game :=
 def woodElvesLandfallPending : Game :=
   let g := addPermanent woodElvesKnownLib beornsHospitality ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  passBoth g
+  applyIdle (passBoth g)
 
 #guard woodElvesLandfallPending.pending == .chooseTargets ⟨0⟩
 #guard woodElvesLandfallPending.battlefield.any (fun o => o.name == "Forest")

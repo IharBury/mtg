@@ -15,6 +15,11 @@ namespace Game
 def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject) : Bool :=
   !g.hasHexproof o || o.controlledBy caster
 
+/-- Player targets `caster` may choose. A player with hexproof is not a
+legal target for an opponent (CR 702.11c). -/
+def legalPlayerTargets (g : Game) (caster : PlayerId) (ps : Array Player) : Array Target :=
+  playerTargets (ps.filter (fun pl => g.playerCanBeTargetedBy caster pl.id))
+
 /-- Battlefield permanents matching `pred` that `caster` may target. -/
 def legalPermanentTargets (g : Game) (caster : PlayerId) (pred : GameObject → Bool) :
     Array Target :=
@@ -109,7 +114,8 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     | .opponent | .eachOpponent => who != caster
     | .specific idx => who.idx == idx
   let mv := g.objectManaValue o
-  typeOk && colorOk && controllerOk &&
+  let subtypeOk := f.subtypes.isEmpty || f.subtypes.any (g.hasSubtype o)
+  typeOk && colorOk && controllerOk && subtypeOk &&
     (!f.nonland || !objectHasCardType o .land) &&
     (!f.noncreature || !objectHasCardType o .creature) &&
     (!f.nonAura || !o.printed.isAura) &&
@@ -126,7 +132,10 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     (!f.attackingOrBlocking || o.status.attacking || !o.status.blocking.isEmpty) &&
     (!f.attackedThisTurn || o.status.declaredAsAttackerThisTurn) &&
     (!f.enteredThisTurn || o.status.enteredThisTurn) &&
-    (!f.untapped || !o.status.tapped)
+    (!f.untapped || !o.status.tapped) &&
+    (!f.nonattacking || !o.status.attacking) &&
+    (!f.withHaste || g.hasHaste o) &&
+    (!f.ownedByYou || o.owner == caster)
 
 /-- Legal targets described by a `TargetFilter` (CR 115.1). -/
 def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
@@ -141,6 +150,10 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
   | .spellOrCreature =>
     g.legalStackSpellTargets ok ++
       g.legalPermanentTargets caster (fun o => o.isOnBattlefield && o.isCreature && ok o)
+  | .anyTarget =>
+    playerTargets g.livingPlayers ++
+      g.legalPermanentTargets caster (fun o =>
+        o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker || o.printed.isBattle) && ok o)
   | .player =>
     playerTargets (g.livingPlayers.filter (fun pl =>
       match f.controller with
@@ -148,6 +161,19 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
       | .you => pl.id == caster
       | .opponent | .eachOpponent => pl.id != caster
       | .specific idx => pl.id.idx == idx))
+
+/-- Whether the spell being cast or resolved paid its teamwork cost.
+`resolvingSpell` is set after the spell leaves the stack (CR 608). During
+target announcement the proposal or the top stack object still has the flag. -/
+def spellPaidTeamwork (g : Game) : Bool :=
+  match g.resolvingSpell.bind g.findObject? with
+  | some o => o.teamworkPaid
+  | none =>
+    if g.proposedSpell.any (·.teamworkPaid) then true
+    else
+      match g.stack.back? with
+      | some e => (g.findObject? e.objectId).any (·.teamworkPaid)
+      | none => false
 
 /-- Legal targets for an atomic targeting shape (no sequential slots). -/
 def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
@@ -162,7 +188,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalCreatureTargets caster (fun o => some o.id != sourceId)
   | .playerOrCreature =>
     -- CR 115.4: “any target” is a creature, player, planeswalker, or battle.
-    playerTargets g.livingPlayers ++
+    g.legalPlayerTargets caster g.livingPlayers ++
       g.legalPermanentTargets caster (fun o =>
         o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker || o.printed.isBattle))
   | .elfInYourGraveyard =>
@@ -175,6 +201,10 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
         (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id))
   | .creature =>
     g.legalCreatureTargets caster (fun _ => true)
+  | .creatureOrGyCreatureCard =>
+    g.legalCreatureTargets caster (fun _ => true) ++
+      g.livingPlayers.foldl (fun acc pl =>
+        acc ++ g.legalGraveyardCardTargets pl.id (fun o => o.printed.isCreature)) #[]
   | .creatureWithFlying =>
     g.legalCreatureTargets caster (fun o => g.hasFlying o)
   | .artifactOrLand =>
@@ -182,10 +212,12 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .colorlessNonland =>
     g.legalPermanentTargets caster (·.isColorlessNonland)
   | .creatureYouControlThenOppCreature => #[]
+  | .playerThenCreature => #[]
+  | .oppCreatureThenUpToOneCreatureYouControl => #[]
   | .player =>
-    playerTargets g.livingPlayers
+    g.legalPlayerTargets caster g.livingPlayers
   | .opponent =>
-    playerTargets (g.livingOpponents caster)
+    g.legalPlayerTargets caster (g.livingOpponents caster)
   | .oppGraveyardCard =>
     g.livingOpponents caster
       |>.foldl (fun acc pl => acc ++ g.legalGraveyardCardTargets pl.id (fun _ => true)) #[]
@@ -215,8 +247,17 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
         ((o.printed.power.getD 0) <= (n : Int) ||
           (o.printed.toughness.getD 0) <= (n : Int)))
   | .defendingPlayerCreature =>
-    g.legalCreatureTargets caster (fun o =>
-      o.controlledBy g.defendingPlayer)
+    let defender :=
+      match sourceId.bind g.findObject? with
+      | some src =>
+        let fromHost :=
+          match src.attachedTo.bind g.findObject? with
+          | some host => host.status.attackingWhom
+          | none => none
+        let fromSelf := if src.status.attacking then src.status.attackingWhom else none
+        (fromHost.orElse (fun _ => fromSelf)).getD g.defendingPlayer
+      | none => g.defendingPlayer
+    g.legalCreatureTargets caster (fun o => o.controlledBy defender)
   | .twoNonlandsSharingType => #[]
   | .creaturePowerAtLeast n =>
     g.legalCreatureTargets caster (fun o => g.power o >= n)
@@ -242,8 +283,9 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.isOnBattlefield && o.printed.isArtifact &&
         (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id))
   | .creatureCardInYourGraveyardMvAtMost n =>
+    let anyCreature := g.spellPaidTeamwork
     g.legalGraveyardCardTargets caster (fun o =>
-      o.printed.isCreature && o.printed.manaValue ≤ n)
+      o.printed.isCreature && (anyCreature || o.printed.manaValue ≤ n))
   | .artifactToken =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && o.printed.isArtifact && o.printed.isToken)
@@ -257,13 +299,15 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.controlledBy caster && (o.isCreature || o.printed.isLand))
   | .twoCreaturesOrLandsYouControl => #[]
   | .equipmentYouControlThenCreatureYouControl => #[]
+  | .upToOneEquipmentThenCreatureYouControl => #[]
   | .twoPlayers => #[]
   | .upToOneCreatureThenPlayer => #[]
   | .attackingOrBlockingCreature =>
     g.legalCreatureTargets caster (fun o =>
       o.status.attacking || !o.status.blocking.isEmpty)
   | .creatureMvAtMost n =>
-    g.legalCreatureTargets caster (fun o => o.printed.manaValue ≤ n)
+    let anyCreature := g.spellPaidTeamwork
+    g.legalCreatureTargets caster (fun o => anyCreature || o.printed.manaValue ≤ n)
   | .creatureToughnessAtLeast n =>
     g.legalCreatureTargets caster (fun o => g.toughness o >= n)
   | .enchantmentMvAtLeast n =>
@@ -329,12 +373,12 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.isOnBattlefield && !o.isCreature &&
         (o.printed.isArtifact || o.printed.isEnchantment))
   | .permanentOrPlayer =>
-    playerTargets g.livingPlayers ++
+    g.legalPlayerTargets caster g.livingPlayers ++
       g.legalPermanentTargets caster (·.isOnBattlefield)
   | .upToTwoCreaturesTotalMvAtMost n =>
     g.legalCreatureTargets caster (fun o => o.printed.manaValue ≤ n)
   | .filtered f => g.legalFilteredTargets caster f sourceId
-  | .multi .. => #[]
+  | .multi .. | .pair .. => #[]
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
 `sourceId` excludes the source of an “another” creature. Shapes with

@@ -36,6 +36,9 @@ inductive StaticAbility where
   /-- This creature can't be blocked except by `n` or more creatures
   (e.g. Troll of Khazad-dûm with 3). Menace is the keyword for `n = 2`. -/
   | cantBeBlockedExceptBy (n : Nat)
+  /-- This creature can't be blocked by more than `n` creatures
+  (The Tiger God, `n = 1`). -/
+  | cantBeBlockedByMoreThan (n : Nat)
   /-- Enchanted creature is only this subtype and can't attack or block
   (e.g. Fog on the Barrow-Downs). -/
   | enchantedIsOnlySubtypeCantAttackOrBlock (subtype : String)
@@ -319,6 +322,8 @@ inductive StaticShape where
   | cantBlockUnless (subtypes : Array String)
   /-- This creature can't be blocked except by `n` or more creatures. -/
   | cantBeBlockedExcept (n : Nat)
+  /-- This creature can't be blocked by more than `n` creatures. -/
+  | cantBeBlockedByMoreThan (n : Nat)
   /-- Enchanted creature is only this subtype and can't attack or block. -/
   | enchantedOnlySubtypeCantAttackOrBlock (subtype : String)
   /-- Characteristic-defining power equal to cards in your hand. -/
@@ -463,6 +468,8 @@ structure StaticMeta where
   landsYouControlPT : Bool := false
   cantBlockUnless : Option (Array String) := none
   cantBeBlockedExcept : Option Nat := none
+  /-- Maximum number of creatures that may block this creature. -/
+  cantBeBlockedByMoreThan : Option Nat := none
   enchantedOnlySubtype : Option String := none
   cardsInHandPower : Bool := false
   hostKeywords : Keywords := Keywords.none
@@ -528,6 +535,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .landsYouControlPT => { landsYouControlPT := true }
   | .cantBlockUnless subtypes => { cantBlockUnless := some subtypes }
   | .cantBeBlockedExcept n => { cantBeBlockedExcept := some n }
+  | .cantBeBlockedByMoreThan n => { cantBeBlockedByMoreThan := some n }
   | .enchantedOnlySubtypeCantAttackOrBlock subtype =>
     { enchantedOnlySubtype := some subtype }
   | .cardsInHandPower => { cardsInHandPower := true }
@@ -574,8 +582,7 @@ def StaticShape.spec : StaticShape → StaticMeta
     { equipTargetingThisCostLess := some n }
   | .firstEquipFreeIfEnduringStory =>
     { firstEquipFreeIfEnduringStory := true }
-  | .chosenTypePump p t =>
-    { lordPump := some (#[], p, t), lordIncludesSelf := true }
+  | .chosenTypePump _ _ => {}
   | .instantSorceryCostReductionEqualEquippedPower => {}
   | .otherSubtypePowerPerArtifactToken _ => {}
   | .extraTriggerIfEnduringStorySubtype _ => {}
@@ -589,7 +596,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .exileOppDeathCreateWolf => {}
   | .copyActivatedFromGySubtype _ => {}
   | .equippedGetsTrampleAndCombatTreasures p t =>
-    { hostBonus := (p, t) }
+    { hostBonus := (p, t), hostKeywords := Keyword.trample }
   | .wardDiscardEnchantmentInstantOrSorcery => {}
   | .wardSacrificeLegendary => {}
   | .teamPumpSubtype subtype p t =>
@@ -668,6 +675,7 @@ def shape : StaticAbility → StaticShape
   | .powerToughnessEqualLandsYouControl => .landsYouControlPT
   | .cantBlockUnlessYouControl subtypes => .cantBlockUnless subtypes
   | .cantBeBlockedExceptBy n => .cantBeBlockedExcept n
+  | .cantBeBlockedByMoreThan n => .cantBeBlockedByMoreThan n
   | .enchantedIsOnlySubtypeCantAttackOrBlock subtype =>
     .enchantedOnlySubtypeCantAttackOrBlock subtype
   | .powerEqualCardsInHand => .cardsInHandPower
@@ -812,6 +820,8 @@ def toNotation (ab : StaticAbility) : String :=
       s!"This creature can't block unless you control a {String.intercalate " or " xs}."
   | .cantBeBlockedExcept n =>
     s!"This creature can't be blocked except by {englishNumber n} or more creatures."
+  | .cantBeBlockedByMoreThan n =>
+    s!"This creature can't be blocked by more than {englishNumber n} creature(s)."
   | .enchantedOnlySubtypeCantAttackOrBlock subtype =>
     s!"Enchanted creature is a {subtype} and can't attack or block."
   | .cardsInHandPower =>
@@ -1071,6 +1081,10 @@ def cantBlockUnless? (ab : StaticAbility) : Option (Array String) :=
 /-- Minimum number of blockers required, if this ability restricts blocking. -/
 def cantBeBlockedExcept? (ab : StaticAbility) : Option Nat :=
   ab.shape.spec.cantBeBlockedExcept
+
+/-- Maximum number of blockers, if this ability caps how many may block. -/
+def cantBeBlockedByMoreThan? (ab : StaticAbility) : Option Nat :=
+  ab.shape.spec.cantBeBlockedByMoreThan
 
 /-- Enchanted-only subtype that also prevents attacking and blocking. -/
 def enchantedOnlySubtype? (ab : StaticAbility) : Option String :=

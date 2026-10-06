@@ -33,27 +33,72 @@ def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : 
           g.logMsg
             "The target is no longer legal. No influence counter, scry, draw, or mill."
         else
+          let n := g.countersYouPut src 1 (putter := src.controller)
           let g := g.setObject { src with status :=
-            { src.status with influence := src.status.influence + 1 } }
+            { src.status with influence := src.status.influence + n } }
           let g := g.logMsg s!"{src.name} gets an influence counter"
           g.beginScry src.you 2
 
-/-- After putting a resolving-cast spell on the stack, announce the Aura's
-enchant target (CR 601.2c / 303.4). The mana cost may have been skipped. -/
+/-- Copy a spell on the stack, with its modes, targets, X, and paid optional
+costs (CR 707.10). The copy is not cast. -/
+def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
+  if (g.player controller).lost then
+    g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
+  else
+    let (g, copy) := g.allocObject src.printed controller .stack (some controller)
+    let g := g.setObject { copy with
+      kicked := src.kicked
+      giftPromisedTo := src.giftPromisedTo
+      teamworkPaid := src.teamworkPaid
+      sneakPaid := src.sneakPaid
+      sneakAttackWhom := src.sneakAttackWhom
+      chosenX := src.chosenX
+      isCopy := true
+      adventurerCard := src.adventurerCard }
+    let g := g.putStackEntry controller copy.id
+    let g :=
+      match g.stackEntry? src.id, g.stack.findIdx? (fun e => e.objectId == copy.id) with
+      | some orig, some i =>
+        { g with stack := g.stack.set! i { g.stack[i]! with
+            targets := orig.targets, dividedDamage := orig.dividedDamage
+            chosenMode := orig.chosenMode, extraModes := orig.extraModes
+            targetsAnnounced := true } }
+      | _, _ => g
+    g.logMsg s!"A copy of {src.name} is created"
+
+/-- Announce the modes and targets of a spell cast while an ability resolves
+(CR 601.2b–c), then finish casting it. A spell that needs a target but has
+none can't be cast and returns to where it was (CR 601.2c / 733.1). -/
 def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Game :=
   let face := prop.original.printed
-  if face.isAura &&
-      (face.allowsZeroTargets || !(g.legalCastTargets p face).isEmpty) then
-    { g with pending := .chooseTargets p, proposedSpell := some prop }
-      |>.logMsg s!"{(g.player p).name} must choose a target to enchant (CR 601.2c)"
-  else g
+  let g := { g with proposedSpell := some prop }
+  if face.isModal then
+    if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+      g.reverseProposedSpell
+    else
+      { g with pending := .chooseMode p }
+        |>.logMsg s!"{(g.player p).name} must choose a mode (CR 601.2b)"
+  else if face.requiresTarget || face.isAura then
+    if (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
+      (g.logMsg s!"{face.name} has no legal target and can't be cast").reverseProposedSpell
+    else
+      let what := if face.isAura then "a target to enchant" else "a target"
+      { g with pending := .chooseTargets p }
+        |>.logMsg s!"{(g.player p).name} must choose {what} (CR 601.2c)"
+  else if prop.cost.includesManaPayment || prop.needsSacrificeOther || prop.needsDiscardCard then
+    { g with pending := .activateManaAbilities p }
+      |>.logMsg s!"{(g.player p).name} may activate mana abilities (CR 601.2g)"
+  else
+    let g := { g with proposedSpell := none }
+    g.becomeCast p (g.object! prop.spellId)
 
 /-- Put a card onto the stack as an ability is resolving. Timing may be
 ignored. The permission does not last after this ability finishes.
 An Aura still announces a target to enchant (CR 601.2c / 303.4). -/
 def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
-    (ignoreTiming := true) (withoutManaCost := true) : Game :=
+    (ignoreTiming := true) (withoutManaCost := true)
+    (exileInstantSorceryInstead := false) : Game :=
   match g.findObject? id with
   | none => g.logMsg "There is no card to cast"
   | some o =>
@@ -71,7 +116,13 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let handBefore := pl.hand
       let stackBefore := g.stack
       let manaBefore := pl.manaPool
+      let fromGy := original.zone == .graveyard original.owner
+      let wasCopy := original.isCopy
       let (g, newId) := g.move id .stack (some p)
+      let g := g.setObject { (g.object! newId) with
+        castFromGraveyard := fromGy
+        exileInstantSorceryInstead := exileInstantSorceryInstead && fromGy
+        isCopy := wasCopy }
       let g := g.putStackEntry p newId
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let cost :=
@@ -352,15 +403,22 @@ def theVoidToken : CardDef :=
     supertypes := #[.legendary]
     staticAbilities := #[.attacksEachCombatIfAble] }
 
+def galactusAttackTrigger : Effect := {
+  targeting := .of (.filtered { noun := "target land", types := #[.land] })
+  resolution := .onPermanent .destroy
+  phrase := "Whenever Galactus attacks, destroy target land."
+}
+
 def galactusToken : CardDef :=
   { (creatureToken "Galactus" #["Elder", "Alien"] 16 16 (some .black)
       ((Keyword.flying).merge Keyword.trample)) with
-    supertypes := #[.legendary] }
+    supertypes := #[.legendary]
+    triggeredAbilities := #[.triggered .attack galactusAttackTrigger] }
 
 def tigerGodToken : CardDef :=
   { (creatureToken "The Tiger God" #["Cat", "God"] 4 4 (some .green)) with
     supertypes := #[.legendary]
-    staticAbilities := #[.cantBeBlockedExceptBy 2] }
+    staticAbilities := #[.cantBeBlockedByMoreThan 1] }
 
 def sturdyShieldToken : CardDef :=
   { name := "Sturdy Shield"
@@ -400,10 +458,18 @@ then run `k`. -/
 def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (k : Game → GameObject → Game) : Game :=
   g.withSourceOnBattlefield sourceId fun g o =>
-    let g := g.setObject { o with status := { o.status with plan := o.status.plan + 1 } }
-    let o := g.object! o.id
-    let g := g.putMatchingSourceTriggers controller o (.nthPlanCounter o.status.plan)
-    k g o
+    let n := g.countersYouPut o 1 (putter := some controller)
+    let g := Id.run do
+      let mut g := g
+      for _ in [0:n] do
+        match g.findObject? o.id with
+        | some cur =>
+          g := g.setObject { cur with status := { cur.status with plan := cur.status.plan + 1 } }
+          let cur := g.object! cur.id
+          g := g.putMatchingSourceTriggers controller cur (.nthPlanCounter cur.status.plan)
+        | none => pure ()
+      return g
+    k g (g.object! o.id)
 
 /-- Current power of `sourceId` if it is still on the battlefield; otherwise
 last-known power, falling back to the object's current power. -/
@@ -466,51 +532,110 @@ def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
   g.exileTopForPlay p p n fun owner card =>
     s!"{owner} exiles {card} and may play it this turn"
 
-/-- Resolve one pending extort trigger. You may pay at most once (MSH 371).
-Life gained equals life actually lost (MSH 292). Extort does not target
-(MSH 296). -/
-def applyExtort (g : Game) (pay : Bool) : Game :=
-  match g.pendingExtortController with
-  | none => g.logMsg "No extort trigger is pending"
-  | some controller =>
-    if g.pendingExtort == 0 then
-      g.logMsg "No extort trigger is pending"
-    else
-      let g := { g with
-        pendingExtort := g.pendingExtort - 1
-        pendingExtortController :=
-          if g.pendingExtort - 1 == 0 then none else some controller }
-      if !pay then
-        g.logMsg "Extort is not paid"
-      else
-        let (g, lost) :=
-          (g.livingOpponents controller).foldl (fun (acc : Game × Nat) pl =>
-            let before := (acc.1.player pl.id).life
-            let g := acc.1.loseLife pl.id 1
-            let after := (g.player pl.id).life
-            let delta :=
-              if before > after then (before - after).toNat else 0
-            (g, acc.2 + delta)) (g, 0)
-        g.gainLife controller lost |>.logMsg "Extort is paid"
+/-- Extort is paid: each opponent loses 1 life and `controller` gains the
+life actually lost (CR 702.101a / MSH 292). Extort does not target (MSH 296). -/
+def extortDrain (g : Game) (controller : PlayerId) : Game :=
+  let (g, lost) :=
+    (g.livingOpponents controller).foldl (fun (acc : Game × Nat) pl =>
+      let before := (acc.1.player pl.id).life
+      let g := acc.1.loseLife pl.id 1
+      let after := (g.player pl.id).life
+      let delta := if before > after then (before - after).toNat else 0
+      (g, acc.2 + delta)) (g, 0)
+  g.gainLife controller lost |>.logMsg "Extort is paid"
 
-/-- Queue a reflexive MSH trigger. The first ability has no targets; the
-second is chosen after the "if you do" (MSH 359–369). -/
+/-- A stack object to stand for `sourceId` as an ability's source. -/
+def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : GameObject :=
+  match sourceId.bind g.findObject? with
+  | some o => o
+  | none =>
+    { id := sourceId.getD ⟨0⟩, printed := { name := "The ability", types := #[] }
+      owner := controller, controller := some controller, zone := .battlefield }
+
+/-- Put a reflexive triggered ability (“When you do, …”) on the stack with
+`effect` (CR 603.12). Its targets are chosen now. -/
+def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (effect : Effect) : Game :=
+  let src := g.abilitySourceFor controller sourceId
+  let marker : TriggeredAbility := .triggered .enter effect {}
+  if effect.requiresTarget && !effect.allowsZeroTargets &&
+      (g.legalTargetsForKind controller effect.targetKind sourceId).isEmpty then
+    g.logMsg s!"{src.name}'s reflexive ability has no legal target and is removed (CR 603.3d)"
+  else
+    let (g, obj) := g.putStackAbility src controller (abilityEffect := some effect)
+      (triggeredAbility := some marker)
+    let g := g.setObject { obj with sourceId := sourceId }
+    let g := g.logMsg s!"{src.name}'s reflexive ability is put on the stack"
+    g.promptTriggerTargetsIfNeeded
+
+/-- The reflexive triggered ability `kind` of an MSH card, with its targets
+(MSH 359–369). -/
+def modeledReflexiveEffect (kind paid : Nat) : Effect :=
+  let base : Effect := { resolution := .fra (.mshReflexive kind paid) }
+  let creature (f : TargetFilter) : TargetFilter := { f with types := #[.creature] }
+  match kind with
+  | 0 =>
+    { base with
+      targeting := .of (.filtered (creature
+        { noun := "another target nonattacking creature you control", controller := .you
+          another := true, nonattacking := true }))
+      phrase := "Another target nonattacking creature you control gains indestructible until end of turn" }
+  | 1 => { base with targeting := .of .playerOrCreature, phrase := "This deals 2 damage to any target" }
+  | 3 =>
+    { base with targeting := .of .creatureYouControl
+                phrase := "Put an indestructible counter on target creature you control" }
+  | 4 =>
+    { base with targeting := .of .opponent
+                phrase := "You control target opponent during their next turn" }
+  | 5 =>
+    { base with targeting := .of .opponent
+                phrase := "Target opponent exiles the top five cards of their library" }
+  | 6 =>
+    { base with targeting := .of .creatureCardInYourGraveyard
+                phrase := "Return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it" }
+  | 7 =>
+    { base with targeting := .of .oppNonland
+                phrase := "Destroy target nonland permanent an opponent controls" }
+  | 8 =>
+    { base with
+      targeting := .of (.filtered { noun := "any other target", zone := .anyTarget, another := true })
+      phrase := "This deals damage equal to the number of +1/+1 counters on it to any other target" }
+  | 9 =>
+    { base with
+      targeting := .of (.filtered (creature { noun := "target creature with haste", withHaste := true }))
+      phrase := "Target creature with haste can't be blocked this turn except by creatures with haste" }
+  | 10 =>
+    { base with targeting := .of .playerOrCreature, dividedDamage := some (7, 2)
+                phrase := "It deals 7 damage divided as you choose among one or two targets" }
+  | 11 =>
+    { base with
+      targeting := .of (.filtered
+        { noun := "up to two target instant and/or sorcery cards from your graveyard"
+          zone := .yourGraveyard, types := #[.instant, .sorcery] })
+      maxTargets := 2, allowsZeroTargets := true
+      phrase := "Return up to two target instant and/or sorcery cards from your graveyard to your hand" }
+  | 12 =>
+    { base with targeting := .of .creature, phrase := "Put a +1/+1 counter on target creature" }
+  | _ => base
+
+/-- Put MSH reflexive ability `kind` on the stack; its targets are chosen now
+(CR 603.12 / MSH 359–369). -/
 def queueModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (kind : Nat) (paid : Nat := 0) : Game :=
-  { g with
-      pendingMshReflexive := some (controller, sourceId, kind)
-      pendingMshReflexivePaid := paid }
-    |>.logMsg "A reflexive triggered ability triggers"
+  g.putReflexiveTrigger controller sourceId (modeledReflexiveEffect kind paid)
 
 /-- Run `act` when `paid` is positive; otherwise log `unpaid`. -/
 def ifPaid (g : Game) (paid : Nat) (unpaid : String) (act : Game → Game) : Game :=
   if paid == 0 then g.logMsg unpaid else act g
 
-/-- Queue a reflexive trigger when a cost (`paid`) was actually paid. -/
-def queueModeledReflexiveIfPaid (g : Game) (controller : PlayerId)
-    (sourceId : Option ObjectId) (kind : Nat) (paid : Nat) (unpaid : String) :
-    Game :=
-  g.ifPaid paid unpaid fun g => g.queueModeledReflexive controller sourceId kind paid
+/-- Offer to pay `cost` up to `maxTimes` times; when the player does, MSH
+reflexive ability `kind` triggers (MSH 359–369). -/
+def offerPayForReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (cost : Array ManaSymbol) (kind : Nat) (maxTimes : Nat := 1) : Game :=
+  let shown := String.join (cost.toList.map toString)
+  let times := if maxTimes > 1 then s!" up to {maxTimes} times" else ""
+  { g with pending := .fraChoice controller (.mayPayManaForReflexive cost maxTimes kind sourceId) }
+    |>.logMsg s!"{(g.player controller).name} may pay {shown}{times}"
 
 /-- Sacrifice the Plan if it is still on the battlefield. `gone` is logged
 when the source left; `missing` when it was never found. -/
@@ -540,8 +665,36 @@ def sacrificePlanThenQueueReflexive (g : Game) (controller : PlayerId)
       "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger.")
   if stillThere then g.queueModeledReflexive controller sourceId kind else g
 
+/-- Ask `caster` to cast up to `casts` of the exiled nonland cards. -/
+def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
+    (casts : Nat) : Game :=
+  { g with pending := .fraChoice caster (.mayCastUpToFromExile spells casts) }
+    |>.logMsg s!"{(g.player caster).name} may cast up to {casts} spells from among the exiled cards without paying their mana costs"
+
+/-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may cast up
+to `casts` nonland cards from among them without paying their mana costs. -/
+def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat) : Game :=
+  Id.run do
+    let mut g := g
+    let mut ids : Array ObjectId := #[]
+    for _ in [0:n] do
+      let pl := g.player fromPlayer
+      if pl.library.isEmpty then
+        g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+      else
+        let top := pl.library.back!
+        let name := (g.object! top).name
+        let (g', newId) := g.move top .exile none
+        g := g'
+        ids := ids.push newId
+        g := g.logMsg s!"{pl.name} exiles {name}"
+    let spells := ids.filter (fun id =>
+      (g.findObject? id).any (fun o => !o.printed.isLand))
+    if spells.isEmpty || casts == 0 then g
+    else g.offerExileCasts caster spells casts
+
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
-them this turn (Doom Reigns Supreme). -/
+them this turn. -/
 def exileTopMayCast (g : Game) (fromPlayer caster : PlayerId) (n : Nat) : Game :=
   g.exileTopForPlay fromPlayer caster n fun owner card =>
     s!"{owner} exiles {card}; {(g.player caster).name} may cast it"
@@ -573,128 +726,102 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
       let o := g.object! newId
       g.afterPermanentEnters o |>.logMsg s!"{o.name} enters tapped and attacking"
 
-/-- Resolve the pending MSH reflexive trigger with the now-chosen targets.
-If every target is illegal, nothing happens (MSH 125). -/
+/-- Resolve MSH reflexive ability `kind` with its announced targets. A target
+that is no longer legal is skipped (MSH 125). -/
+def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (kind paid : Nat) (targets : Array Target) (division : Array Nat := #[]) : Game :=
+  let tkind := (modeledReflexiveEffect kind paid).targetKind
+  let illegal := some "The target is no longer legal"
+  match kind with
+  | 0 =>
+    g.withLegalKindPermanent controller tkind targets
+      (fun g o => g.grantUntilEotLogged o Keyword.indestructible) sourceId illegal
+  | 1 =>
+    g.withLegalKindTarget controller tkind targets
+      (fun g tgt => g.dealDamageToTarget tgt 2) sourceId illegal
+  | 3 =>
+    g.withLegalKindPermanent controller tkind targets
+      (fun g o => g.addIndestructibleCounter o) sourceId illegal
+  | 4 =>
+    g.withLegalKindPlayer controller tkind targets (fun g pid =>
+      let g := g.setPlayerControl controller pid
+      { g with controlOnNextTakenTurn := true })
+      sourceId illegal
+  | 5 =>
+    g.withLegalKindPlayer controller tkind targets
+      (fun g pid => g.exileTopMayCastUpTo pid controller 5 2) sourceId illegal
+  | 6 =>
+    g.withLegalKindTarget controller tkind targets (fun g tgt =>
+      match tgt with
+      | Target.card id | Target.permanent id => g.returnFromGyTappedAttackingFinality controller id
+      | _ => g) sourceId illegal
+  | 7 =>
+    g.withLegalKindPermanent controller tkind targets
+      (fun g o => g.destroyPermanent o) sourceId illegal
+  | 8 =>
+    let counters :=
+      match sourceId.bind g.findObject? with
+      | some o => if o.isOnBattlefield then o.status.plusOnePlusOne else paid
+      | none => paid
+    g.withLegalKindTarget controller tkind targets
+      (fun g tgt => g.dealDamageToTarget tgt (Int.ofNat counters)) sourceId illegal
+  | 9 =>
+    g.withLegalKindPermanent controller tkind targets
+      (fun g o =>
+        g.mapObjectStatus o (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
+          |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste")
+      sourceId illegal
+  | 10 =>
+    let legal := g.legalTargetsForKind controller tkind sourceId
+    (List.range targets.size).foldl (fun g i =>
+      let tgt := targets[i]!
+      if legal.contains tgt then g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
+      else g.illegalAbilityTarget tgt) g
+  | 11 =>
+    let legal := g.legalTargetsForKind controller tkind sourceId
+    targets.foldl (fun g tgt =>
+      match tgt with
+      | Target.card id =>
+        if legal.contains tgt then g.returnToHand id controller else g.illegalAbilityTarget tgt
+      | _ => g) g
+  | 12 =>
+    g.withLegalKindPermanent controller tkind targets
+      (fun g o => g.addPlusOnePlusOneTo o 1) sourceId illegal
+  | _ => g
+
+/-- Whether an MSH reflexive ability is on the stack. -/
+def hasModeledReflexiveOnStack (g : Game) : Bool :=
+  g.stack.any (fun e =>
+    match ((g.findObject? e.objectId).bind (·.abilityEffect)).map Effect.resolution with
+    | some (Resolution.fra (FraResolution.mshReflexive _ _)) => true
+    | _ => false)
+
+/-- Resolve the newest MSH reflexive ability on the stack with `targets`
+(and `division` for divided damage), as if they had been announced. -/
 def applyModeledReflexive (g : Game) (targets : Array Target := #[])
     (division : Array Nat := #[]) : Game :=
-  match g.pendingMshReflexive with
-  | none => g.logMsg "No reflexive triggered ability is pending"
-  | some (controller, sourceId, kind) =>
-    let paid := g.pendingMshReflexivePaid
-    let g := { g with pendingMshReflexive := none, pendingMshReflexivePaid := 0 }
-    if kind == 0 then
-      g.withLegalKindPermanent controller .creatureYouControl targets
-        (fun g o => g.grantUntilEotLogged o Keyword.indestructible)
-        sourceId (some "The target is no longer legal")
-    else if kind == 1 then
-      g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
-        match tgt with
-        | Target.player pid => g.dealDamageToPlayer pid 2
-        | Target.permanent id =>
-          match g.findObject? id with
-          | some o => g.dealDamageToPermanent o 2
-          | none => g
-        | _ => g) sourceId (some "The target is no longer legal")
-    else if kind == 2 then
-      if targets.isEmpty then
-        g.drawThenBeginDiscard controller
-      else
-        g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
-          match tgt with
-          | Target.player pid =>
-            let _ := paid
-            g.dealDamageToPlayer pid 2
-          | Target.permanent id =>
-            match g.findObject? id with
-            | some o => g.mapObjectStatus o (·.grantUntilEot Keyword.cantBeBlocked)
-            | none => g
-          | Target.card _ => g) sourceId (some "The target is no longer legal")
-    else if kind == 3 then
-      g.withLegalKindPermanent controller .creatureYouControl targets
-        (fun g o =>
-          g.mapObjectStatus o (fun s =>
-            { s with indestructibleCounters := s.indestructibleCounters + 1 })
-            |>.logMsg s!"{o.name} gets an indestructible counter")
-        sourceId (some "The target is no longer legal")
-    else if kind == 4 then
-      g.withLegalKindPlayer controller .opponent targets (fun g pid =>
-        let g := g.setPlayerControl controller pid
-        { g with controlOnNextTakenTurn := true })
-        sourceId (some "The target is no longer legal")
-    else if kind == 5 then
-      g.withLegalKindPlayer controller .opponent targets
-        (fun g pid => g.exileTopMayCast pid controller 5)
-        sourceId (some "The target is no longer legal")
-    else if kind == 6 then
-      match targets[0]? with
-      | some (Target.card id) | some (Target.permanent id) =>
-        g.returnFromGyTappedAttackingFinality controller id
-      | _ => g.logMsg "The target is no longer legal"
-    else if kind == 7 then
-      g.withLegalKindPermanent controller .oppNonland targets
-        (fun g o => g.destroyPermanent o) sourceId (some "The target is no longer legal")
-    else if kind == 8 then
-      let amt : Int := Int.ofNat paid
-      g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
-        match tgt with
-        | Target.player pid => g.dealDamageToPlayer pid amt
-        | Target.permanent id =>
-          if sourceId == some id then
-            g.logMsg "Red Hulk can't target himself"
-          else
-            match g.findObject? id with
-            | some o => g.dealDamageToPermanent o amt
-            | none => g
-        | _ => g) sourceId (some "The target is no longer legal")
-    else if kind == 9 then
-      g.withLegalKindPermanent controller .creature targets
-        (fun g o =>
-          if g.hasHaste o then
-            g.mapObjectStatus o (fun s =>
-              { s with cantBeBlockedExceptByHasteUntilEot := true })
-              |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
-          else
-            g.logMsg s!"{o.name} doesn't have haste")
-        sourceId (some "The target is no longer legal")
-    else if kind == 10 then
-      if targets.isEmpty then
-        g.logMsg "No targets were chosen"
-      else if targets.size > 2 then
-        g.logMsg "Choose one or two targets"
-      else
-        let amounts :=
-          if division.isEmpty then
-            if targets.size == 1 then #[7] else #[4, 3]
-          else division
-        if amounts.size != targets.size then
-          g.logMsg "Each target must be assigned a damage amount"
-        else if amounts.any (· == 0) then
-          g.logMsg "Each target must receive at least 1 damage"
-        else if amounts.foldl (· + ·) 0 != 7 then
-          g.logMsg "Must assign all 7 damage among the chosen targets"
-        else
-          Id.run do
-            let mut g := g
-            for i in [0:targets.size] do
-              let tgt := targets[i]!
-              let n := amounts[i]!
-              g := g.withLegalKindTarget controller .playerOrCreature #[tgt]
-                (fun g t => g.dealDamageToTarget t (Int.ofNat n))
-                sourceId (some "The target is no longer legal")
-            return g
-    else if kind == 11 then
-      targets.foldl (fun g tgt =>
-        match tgt with
-        | Target.card id | Target.permanent id =>
-          match g.findObject? id with
-          | some o =>
-            if o.zone == .graveyard controller && o.printed.isInstantOrSorcery then
-              g.returnToHand id controller
-            else g
-          | none => g
-        | _ => g) g
-    else
-      g
+  let found := g.stack.reverse.findSome? (fun e =>
+    match ((g.findObject? e.objectId).bind (·.abilityEffect)).map Effect.resolution with
+    | some (Resolution.fra (FraResolution.mshReflexive kind paid)) =>
+      some (e.objectId, e.controller, kind, paid)
+    | _ => none)
+  match found with
+  | none => g.logMsg "No reflexive triggered ability is on the stack"
+  | some (id, controller, kind, paid) =>
+    let sourceId := (g.findObject? id).bind (·.sourceId)
+    let g := { (g.removeFromZoneList id .stack).ceaseToExist id with pending := .none }
+    if kind == 10 then
+      let division :=
+        if !division.isEmpty then division
+        else if targets.size == 1 then #[7] else #[4, 3]
+      if targets.isEmpty || targets.size > 2 || division.size != targets.size then
+        g.logMsg "Choose one or two targets, each assigned a damage amount (CR 601.2d)"
+      else if division.any (· == 0) then
+        g.logMsg "Each target must receive at least 1 damage (CR 601.2d)"
+      else if division.foldl (· + ·) 0 != 7 then
+        g.logMsg "Must assign all 7 damage among the chosen targets (CR 601.2d)"
+      else g.resolveModeledReflexive controller sourceId kind paid targets division
+    else g.resolveModeledReflexive controller sourceId kind paid targets division
 
 /-- Merge subtype names without duplicates. -/
 def mergeSubtypes (xs ys : Array String) : Array String :=
@@ -711,11 +838,12 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
     (forceLegendary := false) (notLegendary := false)
     (addCreature := false) (addSubtypes : Array String := #[])
     (setPT : Option (Int × Int) := none)
-    (addVigilance := false) : Game :=
+    (addVigilance := false) (replaceCreatureLine := false) : Game :=
   let restore := o.copyRestore.getD o.printed
   let printed0 := src.printed
   let types :=
-    if addCreature && !printed0.types.any (· == .creature) then
+    if replaceCreatureLine then #[.creature]
+    else if addCreature && !printed0.types.any (· == .creature) then
       printed0.types.push .creature
     else printed0.types
   let supertypes :=
@@ -727,7 +855,9 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
     { printed0 with
       name := exceptName.getD printed0.name
       types
-      subtypes := mergeSubtypes printed0.subtypes addSubtypes
+      subtypes :=
+        if replaceCreatureLine then addSubtypes
+        else mergeSubtypes printed0.subtypes addSubtypes
       supertypes
       power :=
         match setPT with
@@ -787,8 +917,65 @@ def revealHand (g : Game) (p : PlayerId) : Game :=
       | none => acc) ""
   g.logMsg s!"{(g.player p).name} reveals their hand ({names})"
 
-/-- Worlds Within Worlds (MSH 96): exile creatures, put creature cards from
-hands onto the battlefield, return the exiled cards to hands, exile the spell. -/
+/-- After every player has chosen, the chosen creature cards enter together,
+the exiled cards return to their owners' hands, and the spell is exiled. -/
+def finishWorldsWithinWorlds (g : Game) (exiled chosen : Array ObjectId)
+    (sourceId : Option ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    let mut entered : Array ObjectId := #[]
+    for id in chosen do
+      match g.findObject? id with
+      | some o =>
+        if o.zone == .hand o.owner && o.printed.isCreature then
+          let pid := o.owner
+          let (g', newId) := g.putOntoBattlefield id pid
+          g := g'
+          entered := entered.push newId
+          g := g.logMsg s!"{(g.player pid).name} puts {o.name} onto the battlefield"
+        else pure ()
+      | none => pure ()
+    for id in entered do
+      match g.findObject? id with
+      | some o => g := g.afterPermanentEnters o
+      | none => pure ()
+    for nid in exiled do
+      match g.findObject? nid with
+      | some o =>
+        if o.zone == .exile then
+          let (g', _) := g.move o.id (.hand o.owner) none
+          g := g'.logMsg s!"{o.name} is returned to its owner's hand"
+        else pure ()
+      | none => pure ()
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.zone == .exile then return g
+      else
+        let (g', _) := g.move src.id .exile none
+        return g'.logMsg s!"{src.name} is exiled"
+    | none => return g
+
+/-- Ask the next player who has a creature card in hand, in the order given. -/
+def offerWorldsCreatures (g : Game) (rest : List PlayerId)
+    (exiled chosen : Array ObjectId) (sourceId : Option ObjectId) : Game :=
+  match rest with
+  | [] => g.finishWorldsWithinWorlds exiled chosen sourceId
+  | pid :: more =>
+    let eligible :=
+      (g.player pid).hand.filter (fun id =>
+        (g.findObject? id).any (·.printed.isCreature))
+    if eligible.isEmpty then
+      g.offerWorldsCreatures more exiled chosen sourceId
+    else
+      { g with pending :=
+          .fraChoice pid (.worldsPutCreatures eligible more.toArray exiled chosen sourceId) }
+        |>.logMsg
+          s!"{(g.player pid).name} may put any number of creature cards from their hand onto the battlefield"
+
+/-- Worlds Within Worlds (MSH 96 / ruling 449): exile creatures, then each
+player may put any number of creature cards from hand. Those creatures enter
+together, the exiled cards return to their owners' hands, then the spell
+is exiled. -/
 def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) : Game :=
   Id.run do
@@ -805,31 +992,7 @@ def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
       let apnap := g.apnapOrder
       if apnap.isEmpty then #[controller]
       else apnap
-    for pid in order do
-      let ids := (g.player pid).hand
-      for id in ids do
-        match g.findObject? id with
-        | some o =>
-          if o.printed.isCreature then
-            let (g', _) := g.putOntoBattlefield o.id pid
-            g := g'
-            g := g.logMsg s!"{(g.player pid).name} puts {o.name} onto the battlefield"
-          else g := g
-        | none => pure ()
-    for nid in exiled do
-      match g.findObject? nid with
-      | some o =>
-        if o.zone == .exile then
-          let (g', _) := g.move o.id (.hand o.owner) none
-          g := g'.logMsg s!"{o.name} is returned to its owner's hand"
-        else pure ()
-      | none => pure ()
-    match sourceId.bind g.findObject? with
-    | some src =>
-      let (g', _) := g.move src.id .exile none
-      return g'.logMsg s!"{src.name} is exiled"
-    | none =>
-      return g
+    return g.offerWorldsCreatures order.toList exiled #[] sourceId
 
 end Game
 end Mtg.Engine

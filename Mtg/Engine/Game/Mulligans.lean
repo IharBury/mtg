@@ -52,24 +52,40 @@ def beginsOnBattlefieldFromOpeningHand (o : GameObject) : Bool :=
     | .mayBeginOnBattlefield => true
     | _ => false)
 
-/-- After mulligans, the starting player takes opening-hand actions first,
-then each other player in turn order (MSH 84). -/
-def applyOpeningHandActions (g : Game) : Game :=
+/-- Opening-hand cards that may begin the game on the battlefield, starting
+player first (MSH 84). -/
+def openingBeginCandidates (g : Game) : Array ObjectId :=
   Id.run do
-    let mut g := g
-    let order := g.playersInOrderFrom g.startingPlayer (fun pl => !pl.lost)
-    for pid in order do
-      let ids := (g.player pid).hand
-      for id in ids do
+    let mut ids : Array ObjectId := #[]
+    for pid in g.playersInOrderFrom g.startingPlayer (fun pl => !pl.lost) do
+      for id in (g.player pid).hand do
         match g.findObject? id with
         | some o =>
           if beginsOnBattlefieldFromOpeningHand o then
-            let name := o.name
-            let (g', _) := g.move o.id .battlefield (some pid)
-            g := g'
-            g := g.logMsg s!"{name} begins the game on the battlefield"
+            ids := ids.push id
         | none => pure ()
-    return g
+    return ids
+
+/-- Ask about the next “you may begin the game with this on the battlefield”
+card, or start the first turn when that was why the game was waiting. -/
+partial def continueOpeningBegin (g : Game) (rest : Array ObjectId) : Game :=
+  if rest.isEmpty then
+    if g.awaitingOpeningBegin then
+      let g := { g with awaitingOpeningBegin := false }
+      g.logMsg s!"{g.player g.startingPlayer |>.name} takes the first turn"
+        |>.beginTurn
+    else g
+  else
+    match g.findObject? rest[0]! with
+    | some o =>
+      { g with pending := .fraChoice o.owner (.mayBeginOnBattlefield rest) }
+        |>.logMsg s!"{(g.player o.owner).name} may begin the game with {o.name} on the battlefield"
+    | none => g.continueOpeningBegin (rest.extract 1 rest.size)
+
+/-- After mulligans, the starting player takes opening-hand actions first,
+then each other player in turn order (MSH 84). -/
+def applyOpeningHandActions (g : Game) : Game :=
+  g.continueOpeningBegin g.openingBeginCandidates
 
 /-- After every remaining player has kept, opening-hand actions resolve,
 then the starting player takes their first turn (CR 103.8 / MSH 84). -/
@@ -78,10 +94,9 @@ def finishOpeningHands (g : Game) : Game :=
     pending := .none
     mulliganToDeclare := #[]
     willMulligan := #[]
-    mulliganToBottom := #[] }
-  let g := g.applyOpeningHandActions
-  let g := g.logMsg s!"{g.player g.startingPlayer |>.name} takes the first turn"
-  g.beginTurn
+    mulliganToBottom := #[]
+    awaitingOpeningBegin := true }
+  g.applyOpeningHandActions
 
 /-- Start (or restart) a CR 103.5 round: eligible players declare in turn
 order. When nobody remains, the game begins. -/

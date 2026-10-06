@@ -102,7 +102,7 @@ def delightedHalflingCeleborn : Game :=
 #guard
   match delightedHalflingCeleborn.proposedSpell with
   | some prop =>
-    delightedHalflingCeleborn.proposedAllowsLegendaryRestricted prop &&
+    delightedHalflingCeleborn.restrictionAllowsProposed (.fra .legendarySpell) prop &&
       (delightedHalflingCeleborn.manaSourcesForProposed ⟨0⟩ prop).any (fun (o, types) =>
         o.name == "Delighted Halfling" && types.contains (.colored .green))
   | none => false

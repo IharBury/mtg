@@ -5,7 +5,7 @@ import Mtg.Engine.Game.Damage
 
 Until-end-of-turn pumps and keyword grants, +1/+1 counters and amass
 (CR 701.47), finality counters, hand-size effects, improvise
-(CR 702.126), boast, and sneak (MSH).
+(CR 702.126).
 -/
 
 namespace Mtg.Engine
@@ -61,26 +61,20 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
       pumpPerArtifactUntilEot := pumpPerArtifact || s.pumpPerArtifactUntilEot })
     |>.logMsg msg
 
-/-- Move `id` to `to`'s hand and log the return. -/
-def returnToHand (g : Game) (id : ObjectId) (to : PlayerId) : Game :=
-  let name := (g.object! id).name
-  let (g, _) := g.move id (.hand to) none
-  g.logMsg s!"{name} is returned to {(g.player to).name}'s hand"
-
 /-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
-def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
-  let n := g.extraCountersOn o.controller n
+def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
+    (byPlayer : Option PlayerId := none) : Game :=
+  let n := g.countersYouPut o n (putter := byPlayer)
   let g := g.mapObjectStatus o (fun s => { s with finality := s.finality + n })
   g.logMsg s!"{o.name} gets a finality counter"
 
-/-- Frozen in Ice, Enchanted River's Grasp, or Spider-Woman prevents this
-permanent becoming untapped. -/
+/-- Frozen in Ice, or a granted “can't become untapped”, blocks every untap.
+Enchanted River's Grasp only skips the untap step. -/
 def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
   let frozen :=
     g.battlefield.any (fun aura =>
       aura.attachedTo == some o.id &&
         aura.staticAbilities.any (fun
-          | .enchantedLosesAbilitiesDoesntUntap => true
           | .enchantedLosesAbilitiesCantUntap => true
           | _ => false))
   let granted :=
@@ -89,6 +83,14 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
       | some src => src.isOnBattlefield
       | none => false)
   frozen || granted
+
+/-- Enchanted River's Grasp: doesn't untap during its controller's untap step. -/
+def hostSkipsUntapStep (g : Game) (o : GameObject) : Bool :=
+  g.battlefield.any (fun aura =>
+    aura.attachedTo == some o.id &&
+      aura.staticAbilities.any (fun
+        | .enchantedLosesAbilitiesDoesntUntap => true
+        | _ => false))
 
 /-- Timestamp-ordered maximum hand size (MSH 184 / 376). `10000` is "no maximum". -/
 def grantsNoMaxHandSize (o : GameObject) : Bool :=
@@ -139,89 +141,111 @@ def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     g := g.becomeTapped o
   return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
 
-/-- True when a boast ability of `o` may be activated (MSH / CR 702.111). -/
-def canActivateBoast (_g : Game) (o : GameObject) : Bool :=
-  o.printed.hasBoast && o.status.declaredAsAttackerThisTurn && !o.status.boastUsedThisTurn
-
-/-- Mark a boast activation used for the turn. -/
-def markBoastUsed (g : Game) (o : GameObject) : Game :=
-  g.mapObjectStatus o (fun s => { s with boastUsedThisTurn := true })
-    |>.logMsg s!"{o.name}'s boast ability is activated"
-
-/-- Legal only during the declare blockers step of the caster's turn. -/
-def canCastForSneak (g : Game) (p : PlayerId) : Bool :=
-  g.activePlayer == p && g.step == .declareBlockers
-
-/-- Pay sneak: return an unblocked attacker you control to hand and mark
-the spell. The creature enters tapped and attacking the same player. -/
-def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : ObjectId) :
-    Except String Game := do
-  if !g.canCastForSneak p then
-    throw "Sneak can be paid only during the declare blockers step on your turn"
-  let some attacker := g.findObject? attackerId | throw "no such object"
-  if !(attacker.isOnBattlefield && attacker.isCreature && attacker.controlledBy p) then
-    throw s!"{attacker.name} is not a creature you control"
-  if !attacker.status.attacking then
-    throw s!"{attacker.name} is not attacking"
-  if attacker.status.blocked then
-    throw s!"{attacker.name} is blocked"
-  let whom := attacker.status.attackingWhom
-  let some _spell := g.findObject? spellId | throw "The spell left the stack"
-  let g := g.returnToHand attackerId attacker.owner
-  let g := g.setObject { (g.object! spellId) with
-    sneakPaid := true, sneakAttackWhom := whom }
-  return g.logMsg s!"{(g.player p).name} pays a sneak cost"
-
 /-- Equip worthy may attach only to a legendary non-Villain red or white
 creature. Other attach effects ignore this restriction. -/
 def isWorthyPermanent (_g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield && o.isCreature && o.printed.isWorthy
 
-/-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
-def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
-  let n := g.extraCountersOn o.controller n
-  let n := g.extraPlusOneOnCreature o n
-  let g := g.mapObjectStatus o (fun s =>
-    { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 })
-  let g := g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
+/-- Put a +1/+1 counter on `id` when it is still a creature. -/
+def addPlusOneIfStillCreature (g : Game) (id : ObjectId) : Game :=
+  match g.findObject? id with
+  | some o =>
+    if o.isOnBattlefield && o.isCreature then g.addPlusOnePlusOneTo o 1
+    else g.logMsg "The target is no longer legal"
+  | none => g.logMsg "The target is no longer legal"
+
+/-- The Army `controller` controls with the latest timestamp, if any. -/
+def newestArmy? (g : Game) (controller : PlayerId) : Option GameObject :=
+  let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Army")
+  armies.foldl (fun best o =>
+    match best with
+    | none => some o
+    | some b => if o.timestamp ≥ b.timestamp then some o else some b) none
+
+/-- Put-counter triggers for Goblin, Orc, and Army permanents (CR 122.1). -/
+def queueGoblinOrcArmyCounterTriggers (g : Game) (o : GameObject) : Game :=
   match o.controller with
-  | none => g
   | some p =>
-    let g :=
-      if n > 0 then g.putControlledTriggers p .youPutPlusOne else g
-    if n > 0 &&
-        (g.hasSubtype o "Goblin" || g.hasSubtype o "Orc" || g.hasSubtype o "Army") then
+    if g.hasSubtype o "Goblin" || g.hasSubtype o "Orc" || g.hasSubtype o "Army" then
       g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
     else g
+  | none => g
+
+/-- Put an indestructible counter on `o`. -/
+def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
+    (byPlayer : Option PlayerId := none) : Game :=
+  let n := g.countersYouPut o n (putter := byPlayer)
+  let g := g.mapObjectStatus o (fun s =>
+    { s with indestructibleCounters := s.indestructibleCounters + n })
+  let g := g.logMsg s!"{o.name} gets an indestructible counter"
+  if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
+
+/-- Put a lifelink counter on `o`. -/
+def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
+    (byPlayer : Option PlayerId := none) : Game :=
+  let n := g.countersYouPut o n (putter := byPlayer)
+  let g := g.mapObjectStatus o (fun s =>
+    { s with lifelinkCounters := s.lifelinkCounters + n })
+  let g := g.logMsg s!"{o.name} gets a lifelink counter"
+  if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
+
+/-- Put a burden counter on `o`. The log includes the new total. -/
+def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
+    (byPlayer : Option PlayerId := none) : Game :=
+  let n := g.countersYouPut o n (putter := byPlayer)
+  let g := g.mapObjectStatus o (fun s => { s with burden := s.burden + n })
+  let total := (g.object! o.id).status.burden
+  let g := g.logMsg s!"{o.name} gets a burden counter ({total})"
+  if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
+
+/-- Put the amass counters and subtype on `armyId`. -/
+def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
+    (subtype : String) (n : Nat) (attach : Option ObjectId := none) : Game :=
+  match g.findObject? armyId with
+  | none => g.logMsg "That Army is no longer on the battlefield"
+  | some army =>
+    if !army.isOnBattlefield || !army.controlledBy controller || !g.hasSubtype army "Army" then
+      g.logMsg "That Army is no longer on the battlefield"
+    else
+      let g :=
+        if g.hasSubtype army subtype then g
+        else
+          g.mapObjectStatus army (fun s =>
+            { s with additionalSubtypes := s.additionalSubtypes.push subtype })
+      let army := g.object! army.id
+      let g := g.addPlusOnePlusOneTo army n
+      let g := g.logMsg
+        s!"{(g.player controller).name} amasses {subtype}s {n} ({army.name} is the amassed Army)"
+      match attach with
+      | none => g
+      | some sid =>
+        match g.findObject? sid with
+        | some src =>
+          if src.isOnBattlefield then g.attachSourceTo src (g.object! army.id) else g
+        | none => g
 
 /-- Amass `[subtype]` `n` (CR 701.43). If you control no Army, the token
 enters as 0/0 and triggers see that power before counters are put on it. If
-you control more than one Army, the newest is chosen (the player would
-choose; tests use a single Army). -/
-def amass (g : Game) (controller : PlayerId) (subtype : String) (n : Nat) : Game :=
+you control more than one Army, you choose which one. -/
+def amass (g : Game) (controller : PlayerId) (subtype : String) (n : Nat)
+    (attach : Option ObjectId := none) : Game :=
   let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Army")
-  let createdFresh := armies.isEmpty
-  let (g, army) :=
-    match armies.toList with
-    | [] => g.createToken controller (armyToken subtype)
-    | x :: xs =>
-      (g, xs.foldl (fun (best : GameObject) (o : GameObject) =>
-        if o.timestamp ≥ best.timestamp then o else best) x)
-  let g :=
-    if createdFresh then
-      let g := g.afterPermanentEnters (g.object! army.id)
-      g.logMsg s!"the amassed Army entered as a 0/0 creature"
-    else g
-  let army := g.object! army.id
-  let g :=
-    if g.hasSubtype army subtype then g
-    else
-      g.mapObjectStatus army (fun s =>
-        { s with additionalSubtypes := s.additionalSubtypes.push subtype })
-  let army := g.object! army.id
-  let g := g.addPlusOnePlusOneTo army n
-  g.logMsg
-    s!"{(g.player controller).name} amasses {subtype}s {n} ({army.name} is the amassed Army)"
+  if armies.size > 1 then
+    let ids := armies.map (fun (o : GameObject) => o.id)
+    { g with pending := .fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach)) }
+      |>.logMsg s!"{(g.player controller).name} chooses an Army to amass"
+  else
+    let createdFresh := armies.isEmpty
+    let (g, army) :=
+      match armies[0]? with
+      | none => g.createToken controller (armyToken subtype)
+      | some army => (g, army)
+    let g :=
+      if createdFresh then
+        let g := g.afterPermanentEnters (g.object! army.id)
+        g.logMsg s!"the amassed Army entered as a 0/0 creature"
+      else g
+    g.finishAmassOn controller (g.object! army.id).id subtype n attach
 
 /-- Amass Goblins `n` (CR 701.43). -/
 def amassGoblins (g : Game) (controller : PlayerId) (n : Nat) : Game :=

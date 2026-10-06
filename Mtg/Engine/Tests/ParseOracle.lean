@@ -61,7 +61,28 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Grizzly Bears\n{1}{G}\nCreature — Bear\n2/2").toOption.map
     (fun c => c.name == "Grizzly Bears" && c.manaCost == ManaCost.ofGenericAndColor 1 .green &&
       c.power == some 2 && c.toughness == some 2 && !c.powerStar && !c.toughnessStar &&
-      c.isCreature) == some true
+      c.isCreature && c.modellingError?.isNone) == some true
+
+-- A line the engine does not recognize is rejected, including when the caller
+-- asks to keep unrecognized text. An effect that would not resolve is rejected
+-- even if the line was stored.
+#guard
+  match parseOracleCard "Bogus\n{R}\nInstant\nFrobnicate the widget." with
+  | .error e => e.contains "unrecognized" || e.contains "unparsed" || e.contains "not fully modelled"
+  | .ok _ => false
+#guard
+  match parseOracleCardKeeping "Bogus\n{R}\nInstant\nFrobnicate the widget." with
+  | .error e => e.contains "unparsed" || e.contains "unrecognized" || e.contains "not fully modelled"
+  | .ok _ => false
+#guard
+  let bogus : CardDef := {
+    name := "Bogus"
+    types := #[.instant]
+    spellEffect := some { resolution := .spell .unrecognized }
+  }
+  match bogus.modellingError? with
+  | some e => e.contains "not fully modelled"
+  | none => false
 
 -- CR 208.2 / 208.2a: power and toughness may include a star. Lost Order of
 -- Jarkeld is `1+*`. With no chosen player, the star is 0, so the card is 1/1.

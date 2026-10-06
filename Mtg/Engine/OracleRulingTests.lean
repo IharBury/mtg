@@ -155,28 +155,39 @@ def mentorIgnoresGiant : Game :=
 
 #guard mentorIgnoresGiant.stack.isEmpty
 
-/-- Ruling 16 / 52: with several Armies, the newest is the amassed Army. -/
+/-- Ruling 16 / 52: with several Armies, you choose which one is amassed.
+Both start with a counter so the Army that was not chosen survives. -/
 def twoArmiesThenAmass : Game :=
-  let (g, _) := started.createToken ⟨0⟩ Game.goblinArmyToken
-  let (g, _) := g.createToken ⟨0⟩ Game.orcArmyToken
-  g.amassGoblins ⟨0⟩ 1
+  let (g, goblin) := started.createToken ⟨0⟩ Game.goblinArmyToken
+  let g := g.addPlusOnePlusOneTo goblin 1
+  let (g, orc) := g.createToken ⟨0⟩ Game.orcArmyToken
+  let g := g.addPlusOnePlusOneTo orc 1
+  let g := g.amassGoblins ⟨0⟩ 1
+  mustApply g ⟨0⟩ (.choosePermanents #[orc.id])
 
 def twoArmiesThenAmassOk : Bool :=
   let orc := namedPermanent twoArmiesThenAmass "Orc Army"
-  orc.status.plusOnePlusOne == 1 && twoArmiesThenAmass.hasSubtype orc "Goblin" &&
-    (namedPermanent twoArmiesThenAmass "Goblin Army").status.plusOnePlusOne == 0
+  let goblin := namedPermanent twoArmiesThenAmass "Goblin Army"
+  orc.status.plusOnePlusOne == 2 && twoArmiesThenAmass.hasSubtype orc "Goblin" &&
+    goblin.status.plusOnePlusOne == 1
 
 #guard twoArmiesThenAmassOk
 
-/-- Ruling 52: with several Armies, amass Orcs chooses one and makes it an Orc. -/
+/-- Ruling 52: with several Armies, amass Orcs chooses one and makes it an Orc.
+Both start with a counter so the Army that was not chosen survives. -/
 def twoArmiesThenAmassOrcs : Game :=
-  let (g, _) := started.createToken ⟨0⟩ Game.goblinArmyToken
-  let (g, _) := g.createToken ⟨0⟩ Game.zombieArmyToken
-  g.amassOrcs ⟨0⟩ 1
+  let (g, goblin) := started.createToken ⟨0⟩ Game.goblinArmyToken
+  let g := g.addPlusOnePlusOneTo goblin 1
+  let (g, zombie) := g.createToken ⟨0⟩ Game.zombieArmyToken
+  let g := g.addPlusOnePlusOneTo zombie 1
+  let g := g.amassOrcs ⟨0⟩ 1
+  mustApply g ⟨0⟩ (.choosePermanents #[zombie.id])
 
 def twoArmiesThenAmassOrcsOk : Bool :=
   let z := namedPermanent twoArmiesThenAmassOrcs "Zombie Army"
-  z.status.plusOnePlusOne == 1 && twoArmiesThenAmassOrcs.hasSubtype z "Orc" &&
+  let goblin := namedPermanent twoArmiesThenAmassOrcs "Goblin Army"
+  z.status.plusOnePlusOne == 2 && twoArmiesThenAmassOrcs.hasSubtype z "Orc" &&
+    goblin.status.plusOnePlusOne == 1 &&
     (ruling 52).comment.contains "multiple Army creatures"
 
 #guard twoArmiesThenAmassOrcsOk
@@ -1105,12 +1116,12 @@ def expensiveCreature : CardDef :=
 cascade spell's. A 9-mana creature cannot be cast off an 8-mana cascade. -/
 def cascadeResultTooExpensive : Bool :=
   let g := addToLibraryTop started expensiveCreature ⟨0⟩
-  match g.objects.find? (fun o => o.name == "Costly Beast") with
-  | none => false
-  | some card =>
-    match g.castCascadeCard ⟨0⟩ card.id 8 with
-    | .error e => e.contains "lesser mana value"
-    | .ok _ => false
+  let g := g.resolveCascade ⟨0⟩ 8
+  -- The 9-mana card is exiled and passed over; nothing may be cast.
+  (match g.pending with
+   | .fraChoice _ (.mayCastCascade id _) => (g.object! id).name != "Costly Beast"
+   | _ => true) &&
+    !g.objects.any (fun o => o.name == "Costly Beast" && o.zone == .stack)
 
 #guard cascadeResultTooExpensive
 
@@ -1989,7 +2000,8 @@ def archdruidOk : Bool :=
 /-- Ruling 94: a characteristic search may find nothing. -/
 def woodElvesSkipFind : Game :=
   let g := addToLibraryTop afterDraw forest ⟨0⟩
-  g.resolveSearchForest ⟨0⟩ (find := false)
+  let g := g.resolveSearchForest ⟨0⟩
+  mustApply g ⟨0⟩ .decline
 
 def optionalSearchOk : Bool :=
   woodElvesSkipFind.log.any (fun s => mentions s "chooses not to find") &&
@@ -2358,10 +2370,14 @@ def headExilesInstead : Game :=
   (g.move bears.id (.graveyard ⟨1⟩) none).1
 
 def headExilesInsteadOk : Bool :=
-  headExilesInstead.objects.any (fun o =>
+  let waited := headExilesInstead
+  let resolved := passBoth (waited.receivePriority ⟨0⟩)
+  waited.objects.any (fun o =>
     o.name == "Grizzly Bears" && o.zone == .exile) &&
-    (headExilesInstead.battlefield.filter (fun o => o.name == "Wolf")).size == 1 &&
-    headExilesInstead.log.any (fun s => mentions s "CR 614.6") &&
+    !(waited.battlefield.any (fun o => o.name == "Wolf")) &&
+    waited.log.any (fun s => mentions s "Wolf trigger") &&
+    (resolved.battlefield.filter (fun o => o.name == "Wolf")).size == 1 &&
+    waited.log.any (fun s => mentions s "CR 614.6") &&
     (ruling 100).comment.contains "discarded or milled"
 
 #guard headExilesInsteadOk
@@ -4661,6 +4677,7 @@ def supperForSpidersFoodOnlyOk : Bool :=
   let g := g.supperForSpidersReturn ⟨0⟩ #[card.id]
   let food := namedPermanent g "Dáin, Lord of the Iron Hills"
   food.status.onlyFoodArtifact &&
+    food.status.enteredThisTurn &&
     !food.isCreature &&
     food.types == #[.artifact] &&
     food.subtypes == #["Food"] &&
@@ -4751,6 +4768,26 @@ def minasTirithTapDrawAtomicOk : Bool :=
     (ruling 339).comment.contains "No player may take any other actions between"
 
 #guard minasTirithTapDrawAtomicOk
+
+/-- Layer 7a: hand size is power until a layer-7b set overwrites it.
+Pumps still add, and the ability works in other zones. -/
+def garrisonHandSizeLayerOk : Bool :=
+  let g := addPermanent afterDraw minasTirithGarrison ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Minas Tirith Garrison"
+  let hand := Int.ofNat (g.player ⟨0⟩).hand.size
+  let set := g.mapObjectStatus o (fun s => { s with setBasePT := some (1, 1) })
+  let setO := namedPermanent set "Minas Tirith Garrison"
+  let pumped := set.pumpPermanent setO 2 0
+  let inHand := addToHand afterDraw minasTirithGarrison ⟨0⟩
+  let card := handCardNamed inHand ⟨0⟩ "Minas Tirith Garrison"
+  g.basePower o == hand &&
+    set.basePower setO == 1 &&
+    set.toughness setO == 1 &&
+    pumped.power (namedPermanent pumped "Minas Tirith Garrison") == 3 &&
+    pumped.toughness (namedPermanent pumped "Minas Tirith Garrison") == 1 &&
+    inHand.power card == Int.ofNat (inHand.player ⟨0⟩).hand.size
+
+#guard garrisonHandSizeLayerOk
 
 /-!
 ## 345, 349 — Riddles: face-down pile not revealed; 4+0 legal

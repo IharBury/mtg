@@ -267,7 +267,7 @@ def onYouAttackPumpTargetPerPlains : TriggeredAbility :=
   .triggered .youAttack (Effect.ofTrigger .pumpTargetPerPlains)
 def onAnotherLegendarySubtypeEntersLoot (subtype : String) : TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.drawThenDiscard 2))
-    { thisOrAnotherSubtype := some subtype }
+    { thisOrAnotherSubtype := some subtype, anotherLegendary := true }
 def onRingTemptsMayDiscardDraw (n : Nat) : TriggeredAbility :=
   .triggered .theRingTemptsYou (Effect.ofTrigger (.mayDiscardHandDraw n))
 def onScryPumpSelfForEachLookedAt : TriggeredAbility :=

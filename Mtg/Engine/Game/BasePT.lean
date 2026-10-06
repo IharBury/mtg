@@ -38,9 +38,16 @@ def characteristicBase (g : Game) (o : GameObject) (printed setBase : Option Int
     if g.hasLandsYouControlPT o then g.landsYouControlPT o else printed.getD 0
   if o.isOnBattlefield then setBase.getD fromCdaOrPrinted else fromCdaOrPrinted
 
-/-- Whether `o` currently has a “power equal to cards in your hand” ability. -/
-def hasCardsInHandPower (_g : Game) (o : GameObject) : Bool :=
-  o.staticAbilities.any StaticAbility.isCardsInHandPower
+/-- Layer-7b “power becomes the number of cards in your hand” (Ms. Marvel).
+This overwrites an earlier effect that set power (ruling 640). -/
+def hasHandSizeSetPower (o : GameObject) : Bool :=
+  o.status.cardsInHandPowerUntilEot ||
+    o.status.grantedStaticAbilities.any StaticAbility.isCardsInHandPower
+
+/-- Printed layer-7a “power equal to the number of cards in your hand”
+(Minas Tirith Garrison). A layer-7b set overwrites it. -/
+def hasPrintedCardsInHandPower (o : GameObject) : Bool :=
+  o.printed.staticAbilities.any StaticAbility.isCardsInHandPower
 
 /-- Characteristic power and toughness before pumps, counters, and attached
 bonuses: an until-EOT layer-7b set on the battlefield, else lands you control
@@ -100,9 +107,12 @@ def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
     else (n, n + 1)
   else
   let power :=
-    if g.hasCardsInHandPower o then
-      -- Ms. Marvel (ruling 288): this set-P/T overwrites previous layer-7b sets.
+    if hasHandSizeSetPower o then
+      -- Ms. Marvel (ruling 640): this layer-7b set overwrites earlier sets.
       Int.ofNat (g.player o.you).hand.size
+    else if hasPrintedCardsInHandPower o then
+      let cda : Int := Int.ofNat (g.player o.you).hand.size
+      if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
     else if let some subtype := powerEqualSubtype? o then
       let cda : Int :=
         Int.ofNat ((g.permanentsOf o.you).filter (fun p => p.hasSubtype subtype) |>.size)

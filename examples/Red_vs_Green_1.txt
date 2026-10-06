@@ -271,6 +271,7 @@ tap 100 111
 pay
 pass
 pass
+choose 9
 pass
 pass
 pass
