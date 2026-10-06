@@ -86,8 +86,7 @@ creature you control. -/
 #guard
   let g := addPermanent afterDraw baronHelmutZemo me me
   let before := (g.player me).graveyard.size
-  let g := settle (castFra g (fromOracleKeeping ["Night's Whisper", "{1}{B}", "Sorcery",
-    "You draw two cards and you lose 2 life."]))
+  let g := settle (castFra g nightsWhisper)
   (g.player me).graveyard.size ≥ before + 2
 
 /-! ## Combat, upkeep, and tapping -/
