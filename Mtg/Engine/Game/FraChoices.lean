@@ -749,6 +749,22 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .moonstoneMayExile _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't exile the discarded card").finishFraChoice
   | .moonstoneMayExile _, _ => throw "Exile the discarded card (accept), or decline"
+  | .tricksterLibrary caster id connive, .accept | .tricksterLibrary caster id connive, .decline =>
+    let onBottom :=
+      match answer with
+      | .decline => true
+      | _ => false
+    let g :=
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && o.isCreature then
+          g.applyOwnerPutsLibraryThenConnive caster #[Target.permanent id]
+            (putOnBottom := onBottom)
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+    return (g.conniveTricksterTarget caster connive).finishFraChoice
+  | .tricksterLibrary .., _ =>
+    throw "Put the creature second from the top (choose top), or on the bottom (choose bottom)"
   | .mayTakeMilled ids life, .objects #[id] =>
     if !ids.contains id then throw "That card wasn't milled"
     let some o := g.findObject? id | throw "no such object"
@@ -999,6 +1015,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | some m => .chooseMode m
     | none => .decline
   | .moonstoneMayExile _ => .decline
+  | .tricksterLibrary .. => .chooseTop
   | .mayTakeMilled _ _ => .decline
   | .mayDrawThenEachOpponentDraws _ => .decline
   | .mayPutHeroFromHandOrDraw _ => .decline

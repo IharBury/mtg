@@ -408,7 +408,7 @@ def destroyCreatureSurveil : Effect :=
     (castKind := .destroyCreature)
 
 def investigatePumpFlyingUntap : Effect :=
-  mkSpell (.of .playerOrCreature) (.investigatePumpFlyingUntap)
+  mkSpell (.of .playerThenCreature) (.investigatePumpFlyingUntap)
     (castKind := .pump)
 
 def plusOneLifelinkIndestructible : Effect :=
@@ -428,7 +428,12 @@ def doublePowerAndToughness : Effect :=
     (castKind := .pump)
 
 def returnGySubtypeToHand (subtype : String) : Effect :=
-  mkSpell (.of .creatureCardInYourGraveyard) (.returnGySubtypeToHand subtype)
+  mkSpell (.of (.filtered {
+      noun := s!"target {subtype} card in your graveyard"
+      zone := .yourGraveyard
+      controller := .you
+      subtypes := #[subtype] }))
+    (.returnGySubtypeToHand subtype)
     (castKind := .draw)
 
 def grantVigilanceUnblockable : Effect :=
@@ -530,7 +535,7 @@ def nextFreeRGCreature : Effect :=
     (castKind := .extraLand)
 
 def ownerPutsLibraryThenConnive : Effect :=
-  mkSpell (.of .oppCreature) (.ownerPutsLibraryThenConnive)
+  mkSpell (.of .oppCreatureThenUpToOneCreatureYouControl) (.ownerPutsLibraryThenConnive)
     (castKind := .counter)
 
 def copyThisSpellXTimesThenDamage (n : Nat) : Effect :=

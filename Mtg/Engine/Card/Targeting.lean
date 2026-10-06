@@ -47,6 +47,8 @@ structure TargetFilter where
   /-- The target has at least one of these card types. Empty means any
   permanent, card, or spell. -/
   types : Array CardType := #[]
+  /-- The target has at least one of these subtypes. Empty means any subtype. -/
+  subtypes : Array String := #[]
   /-- A legendary object also qualifies (“creature or legendary spell”). -/
   orLegendary : Bool := false
   nonland : Bool := false
@@ -97,10 +99,15 @@ inductive EffectTargetKind where
   | anotherCreature
   /-- A player or a creature (e.g. damage to any target). -/
   | playerOrCreature
+  /-- Target player, then target creature (Panther Pounce). -/
+  | playerThenCreature
   /-- Target Elf card in your graveyard. -/
   | elfInYourGraveyard
   /-- Target creature an opponent controls. -/
   | oppCreature
+  /-- Target creature an opponent controls, then up to one creature you
+  control (Trickster's Stratagem). -/
+  | oppCreatureThenUpToOneCreatureYouControl
   /-- Target tapped creature an opponent controls. -/
   | oppTappedCreature
   /-- Target creature (any controller). -/
@@ -302,10 +309,21 @@ def spec : EffectTargetKind → Spec
     { noun := "another target creature" }
   | .playerOrCreature =>
     { noun := "any target", prefer := .opponentPlayer }
+  | .playerThenCreature =>
+    { count := 2
+      noun := "target player and target creature"
+      prefer := .opponentPlayer
+      slots := #[.player, .creature] }
   | .elfInYourGraveyard =>
     { noun := "target Elf card from your graveyard", prefer := .last }
   | .oppCreature =>
     { noun := "target creature an opponent controls" }
+  | .oppCreatureThenUpToOneCreatureYouControl =>
+    { count := 2
+      noun := "target creature an opponent controls and up to one target creature you control"
+      prefer := .opponent
+      slots := #[.oppCreature, .creatureYouControl]
+      optionalSlots := #[1] }
   | .oppTappedCreature =>
     { noun := "target tapped creature an opponent controls" }
   | .creature =>

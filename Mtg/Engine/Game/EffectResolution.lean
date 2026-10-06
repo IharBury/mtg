@@ -540,6 +540,18 @@ def beginVisionQuest (g : Game) (p : PlayerId) (x : Nat) : Game :=
     { g with pending := .fraChoice p (.visionQuestZones lib gy x) }
       |>.logMsg s!"{(g.player p).name} may search their library and their graveyard"
 
+/-- Connive `id` when it is still a creature the spell's controller controls. -/
+def conniveTricksterTarget (g : Game) (controller : PlayerId) (id? : Option ObjectId) : Game :=
+  match id? with
+  | none => g
+  | some id =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield && o.isCreature && o.controlledBy controller then
+        g.applyConnive controller (some id)
+      else g.logMsg "The target is no longer legal"
+    | none => g.logMsg "The target is no longer legal"
+
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
@@ -717,10 +729,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             g := g.illegalAbilityTarget t
         | Target.player pid =>
           if playerLegal.contains t then
-            if n != 0 then
-              let pl := g.player pid
-              g := g.setLife pid (pl.life + (n : Int))
-                s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
+            g := g.gainLife pid n
           else
             g := g.illegalAbilityTarget t
         | Target.card _ =>
@@ -1010,19 +1019,26 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .counterUnlessPaysTeamwork n teamworkN =>
     let amt := g.teamworkAmount n teamworkN
     g.beginPayOrLetCounter targets amt
-  | .exileCreatureMvAtMostOrAnyIfTeamwork _n life =>
+  | .exileCreatureMvAtMostOrAnyIfTeamwork n life =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      let (g, _) := g.move o.id .exile none
-      if g.resolvingTeamworkPaid then
-        g.modifyPlayer controller (fun pl => { pl with life := pl.life + (life : Int) })
-      else g)
-  | .returnGyCreatureMvAtMostOrAny _n =>
+      let teamwork := g.resolvingTeamworkPaid
+      if o.isOnBattlefield && o.isCreature &&
+          (teamwork || o.printed.manaValue ≤ n) then
+        let (g, _) := g.move o.id .exile none
+        if teamwork then g.gainLife controller life else g
+      else g.logMsg "The target is no longer legal")
+      none (some "The target is no longer legal")
+  | .returnGyCreatureMvAtMostOrAny n =>
     match targets[0]? with
     | some (Target.card id) =>
       match g.findObject? id with
-      | some _ =>
-        let (g, _) := g.putOntoBattlefield id controller
-        g
+      | some o =>
+        let teamwork := g.resolvingTeamworkPaid
+        if o.zone == Zone.graveyard controller && o.printed.isCreature &&
+            (teamwork || o.printed.manaValue ≤ n) then
+          let (g, newId) := g.putOntoBattlefield id controller
+          g.afterPermanentEnters (g.object! newId)
+        else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
   | .revealTopPutCreatures n =>
@@ -1072,12 +1088,32 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     else
       g.logMsg "The target is no longer legal. You won't surveil."
   | .investigatePumpFlyingUntap =>
-    let g := (g.createToken controller clueToken).1
-    g.withLegalKindPermanent controller .creature targets (fun g o =>
-      let g := g.mapObjectStatus o (·.grantUntilEot Keyword.flying)
-      let o := g.object! o.id
-      let g := g.applyPermanentAction o .untap
-      g.applyPermanentAction (g.object! o.id) (.pump 1 0))
+    let player? := targets.findSome? (fun t =>
+      match t with
+      | Target.player pid => some pid
+      | _ => none)
+    let creature? := targets.findSome? (fun t =>
+      match t with
+      | Target.permanent id => some id
+      | _ => none)
+    let g :=
+      match player? with
+      | some pid =>
+        if (g.player pid).lost then g.logMsg "The target is no longer legal"
+        else (g.createToken pid clueToken).1
+      | none => g.logMsg "The target is no longer legal"
+    match creature? with
+    | none => g.logMsg "The target is no longer legal"
+    | some id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && o.isCreature then
+          let g := g.mapObjectStatus o (·.grantUntilEot Keyword.flying)
+          let o := g.object! o.id
+          let g := g.applyPermanentAction o .untap
+          g.applyPermanentAction (g.object! o.id) (.pump 1 0)
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
   | .plusOneLifelinkIndestructible =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let g := g.mapObjectStatus o (fun s =>
@@ -1095,11 +1131,14 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       let p := g.power o
       let t := g.toughness o
       g.applyPermanentAction o (.pump p t))
-  | .returnGySubtypeToHand _subtype =>
+  | .returnGySubtypeToHand subtype =>
     match targets[0]? with
     | some (Target.card id) =>
       match g.findObject? id with
-      | some o => (g.move o.id (.hand o.owner) none).1
+      | some o =>
+        if o.zone == Zone.graveyard controller && g.hasSubtype o subtype then
+          g.returnToHand o.id o.owner
+        else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
   | .grantVigilanceUnblockable =>
@@ -1199,7 +1238,24 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     { g with pendingFreeRGCreature := some controller }
       |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
   | .ownerPutsLibraryThenConnive =>
-    g.applyOwnerPutsLibraryThenConnive controller targets
+    let connive :=
+      match targets[1]? with
+      | some (Target.permanent id) => some id
+      | _ => none
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && o.isCreature && !o.controlledBy controller then
+          { g with pending := .fraChoice o.owner (.tricksterLibrary controller id connive) }
+            |>.logMsg s!"{(g.player o.owner).name} puts {o.name} second from the top or on the bottom of their library"
+        else
+          let g := g.logMsg "The target is no longer legal"
+          g.conniveTricksterTarget controller connive
+      | none =>
+        g.conniveTricksterTarget controller connive
+    | _ =>
+      g.conniveTricksterTarget controller connive
   | .copyThisSpellXTimesThenDamage n =>
     g.applyDamageToKindTarget controller .creature targets n
   | .mayDrawPerArtifactOppsDraw =>

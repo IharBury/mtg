@@ -3404,4 +3404,132 @@ def fightBothSidesOk : Bool :=
 
 #guard fightBothSidesOk
 
+/-- Trickster's Stratagem asks the owner for second-from-the-top or bottom,
+then the creature you control connives. -/
+def tricksterChoiceAndConniveOk : Bool :=
+  let g := addPermanent afterDraw grayOgre ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let ogre := namedPermanent g "Gray Ogre"
+  let bears := namedPermanent g "Grizzly Bears"
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := g.applyEffect ⟨0⟩ Effect.ownerPutsLibraryThenConnive
+    #[Target.permanent ogre.id, Target.permanent bears.id]
+  match g.pending with
+  | .fraChoice ⟨1⟩ (.tricksterLibrary _ _ (some connive)) =>
+    connive == bears.id &&
+      (let gTop := mustApply g ⟨1⟩ .chooseTop
+       let lib := (gTop.player ⟨1⟩).library
+       lib.size ≥ 2 && (gTop.object! lib[lib.size - 2]!).name == "Gray Ogre" &&
+         (gTop.player ⟨0⟩).hand.size == hand0 + 1 &&
+         logContains gTop "connives") &&
+      (let gBot := mustApply g ⟨1⟩ .chooseBottom
+       let lib := (gBot.player ⟨1⟩).library
+       lib.size ≥ 1 && (gBot.object! lib[0]!).name == "Gray Ogre")
+  | _ => false
+
+#guard tricksterChoiceAndConniveOk
+
+/-- Panther Pounce investigates for the targeted player and pumps the creature. -/
+def pantherPounceTargetsOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status := { bears.status with tapped := true } }
+  let g := g.applyEffect ⟨0⟩ Effect.investigatePumpFlyingUntap
+    #[Target.player ⟨1⟩, Target.permanent bears.id]
+  (g.permanentsOf ⟨1⟩).any (fun o => o.name == "Clue") &&
+    !(g.permanentsOf ⟨0⟩).any (fun o => o.name == "Clue") &&
+    (let bears := namedPermanent g "Grizzly Bears"
+     !bears.status.tapped && bears.status.pump == (1, 0) && g.hasFlying bears)
+
+#guard pantherPounceTargetsOk
+
+/-- Decoy Ploy returns only the chosen subtype. -/
+def decoyPloySubtypeOk : Bool :=
+  decoyPloy.chooseOneOrBoth && decoyPloy.spellModes.size == 2 &&
+    (let g := addToGraveyard (addToGraveyard (addToGraveyard afterDraw doctorDoom ⟨0⟩)
+        reptilDinomorpher ⟨0⟩) grizzlyBears ⟨0⟩
+     let doom := namedGraveyardCard g ⟨0⟩ "Doctor Doom"
+     let hero := namedGraveyardCard g ⟨0⟩ "Reptil, Dinomorpher"
+     let bear := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+     let gVillain := g.applyEffect ⟨0⟩ (Effect.returnGySubtypeToHand "Villain")
+       #[Target.card doom.id]
+     (gVillain.player ⟨0⟩).hand.any (fun id => (gVillain.object! id).name == "Doctor Doom") &&
+       (let gMiss := g.applyEffect ⟨0⟩ (Effect.returnGySubtypeToHand "Villain")
+           #[Target.card bear.id]
+        (gMiss.player ⟨0⟩).graveyard.any (fun id => (gMiss.object! id).name == "Grizzly Bears") &&
+          logContains gMiss "no longer legal") &&
+       (let gHero := g.applyEffect ⟨0⟩ (Effect.returnGySubtypeToHand "Hero")
+           #[Target.card hero.id]
+        (gHero.player ⟨0⟩).hand.any (fun id =>
+          (gHero.object! id).name == "Reptil, Dinomorpher")))
+
+#guard decoyPloySubtypeOk
+
+/-- Too Evil to Stay Dead returns only mana value 4 or less, unless teamwork
+was paid, and the creature's enters triggers run. -/
+def tooEvilTeamworkEntersOk : Bool :=
+  let g := addToGraveyard (addToGraveyard afterDraw savageLandDinosaur ⟨0⟩)
+    grizzlyBears ⟨0⟩
+  let dino := namedGraveyardCard g ⟨0⟩ "Savage Land Dinosaur"
+  let bear := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+  let gMiss := g.applyEffect ⟨0⟩ (Effect.returnGyCreatureMvAtMostOrAny 4)
+    #[Target.card dino.id]
+  (gMiss.player ⟨0⟩).graveyard.any (fun id =>
+      (gMiss.object! id).name == "Savage Land Dinosaur") &&
+    (let gBear := g.applyEffect ⟨0⟩ (Effect.returnGyCreatureMvAtMostOrAny 4)
+        #[Target.card bear.id]
+     let returned := namedPermanent gBear "Grizzly Bears"
+     returned.status.enteredThisTurn) &&
+    (let paid := g.setObject { (namedGraveyardCard g ⟨0⟩ "Grizzly Bears") with
+        teamworkPaid := true }
+     let paid := { paid with resolvingSpell := some bear.id }
+     let paid := paid.applyEffect ⟨0⟩ (Effect.returnGyCreatureMvAtMostOrAny 4)
+       #[Target.card dino.id]
+     (namedPermanent paid "Savage Land Dinosaur").status.enteredThisTurn)
+
+#guard tooEvilTeamworkEntersOk
+
+/-- Cruel Alliance exiles only mana value 3 or less, and teamwork exiles any
+creature and gains 3 life. -/
+def cruelAllianceTeamworkOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let giant := namedPermanent g "Hill Giant"
+  let kind := (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3).targetKind
+  let legal := g.legalTargetsForKind ⟨0⟩ kind
+  legal.contains (Target.permanent bears.id) &&
+    !legal.contains (Target.permanent giant.id) &&
+    (let gExile := g.applyEffect ⟨0⟩ (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
+        #[Target.permanent bears.id]
+     !gExile.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+       (gExile.player ⟨0⟩).lifeGainedThisTurn == 0) &&
+    (let gMiss := g.applyEffect ⟨0⟩ (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
+        #[Target.permanent giant.id]
+     gMiss.battlefield.any (fun o => o.name == "Hill Giant")) &&
+    (let paid := g.setObject { bears with teamworkPaid := true }
+     let paid := { paid with resolvingSpell := some bears.id }
+     let wide := paid.legalTargetsForKind ⟨0⟩ kind
+     wide.contains (Target.permanent giant.id) &&
+       (let paid := paid.applyEffect ⟨0⟩ (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
+           #[Target.permanent giant.id]
+        !paid.battlefield.any (fun o => o.name == "Hill Giant") &&
+          (paid.player ⟨0⟩).life == 23 &&
+          (paid.player ⟨0⟩).lifeGainedThisTurn == 3))
+
+#guard cruelAllianceTeamworkOk
+
+/-- Meager Meal gains life through the life-gain action. -/
+def meagerMealGainLifeOk : Bool :=
+  let g := addPermanent afterDraw heroicFeast ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyEffect ⟨0⟩ (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+    #[Target.permanent bears.id, Target.player ⟨0⟩]
+  (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (g.player ⟨0⟩).lifeGainedThisTurn == 2 &&
+    g.waitingTriggers.any (fun w => w.event == .youGainLife)
+
+#guard meagerMealGainLifeOk
+
 end Mtg.Engine.MshRulingTests

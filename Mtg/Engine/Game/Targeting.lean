@@ -109,7 +109,8 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     | .opponent | .eachOpponent => who != caster
     | .specific idx => who.idx == idx
   let mv := g.objectManaValue o
-  typeOk && colorOk && controllerOk &&
+  let subtypeOk := f.subtypes.isEmpty || f.subtypes.any (g.hasSubtype o)
+  typeOk && colorOk && controllerOk && subtypeOk &&
     (!f.nonland || !objectHasCardType o .land) &&
     (!f.noncreature || !objectHasCardType o .creature) &&
     (!f.nonAura || !o.printed.isAura) &&
@@ -156,6 +157,19 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
       | .opponent | .eachOpponent => pl.id != caster
       | .specific idx => pl.id.idx == idx))
 
+/-- Whether the spell being cast or resolved paid its teamwork cost.
+`resolvingSpell` is set after the spell leaves the stack (CR 608). During
+target announcement the proposal or the top stack object still has the flag. -/
+def spellPaidTeamwork (g : Game) : Bool :=
+  match g.resolvingSpell.bind g.findObject? with
+  | some o => o.teamworkPaid
+  | none =>
+    if g.proposedSpell.any (·.teamworkPaid) then true
+    else
+      match g.stack.back? with
+      | some e => (g.findObject? e.objectId).any (·.teamworkPaid)
+      | none => false
+
 /-- Legal targets for an atomic targeting shape (no sequential slots). -/
 def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
     (sourceId : Option ObjectId) : Array Target :=
@@ -193,6 +207,8 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .colorlessNonland =>
     g.legalPermanentTargets caster (·.isColorlessNonland)
   | .creatureYouControlThenOppCreature => #[]
+  | .playerThenCreature => #[]
+  | .oppCreatureThenUpToOneCreatureYouControl => #[]
   | .player =>
     playerTargets g.livingPlayers
   | .opponent =>
@@ -262,8 +278,9 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.isOnBattlefield && o.printed.isArtifact &&
         (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id))
   | .creatureCardInYourGraveyardMvAtMost n =>
+    let anyCreature := g.spellPaidTeamwork
     g.legalGraveyardCardTargets caster (fun o =>
-      o.printed.isCreature && o.printed.manaValue ≤ n)
+      o.printed.isCreature && (anyCreature || o.printed.manaValue ≤ n))
   | .artifactToken =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && o.printed.isArtifact && o.printed.isToken)
@@ -284,7 +301,8 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalCreatureTargets caster (fun o =>
       o.status.attacking || !o.status.blocking.isEmpty)
   | .creatureMvAtMost n =>
-    g.legalCreatureTargets caster (fun o => o.printed.manaValue ≤ n)
+    let anyCreature := g.spellPaidTeamwork
+    g.legalCreatureTargets caster (fun o => anyCreature || o.printed.manaValue ≤ n)
   | .creatureToughnessAtLeast n =>
     g.legalCreatureTargets caster (fun o => g.toughness o >= n)
   | .enchantmentMvAtLeast n =>

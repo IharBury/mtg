@@ -842,6 +842,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           s!"choose one that hasn't been chosen this turn: {String.intercalate ", " names}"
         | .moonstoneMayExile _ =>
           "may exile the discarded card and play it until the end of your next turn (accept), or decline"
+        | .tricksterLibrary .. =>
+          "put that creature second from the top of your library (top), or on the bottom (bottom)"
         | .mayTakeMilled ids _ =>
           s!"may put one of {ids.size} milled card(s) into your hand: choose <id>, or decline"
         | .mayDrawThenEachOpponentDraws n =>

@@ -994,8 +994,11 @@ def applyOwnerPutsLibraryThenConnive (g : Game) (_controller : PlayerId)
       if o.isOnBattlefield then
         let owner := o.owner
         if putOnBottom then
-          let (g, _) := g.move id (.library owner) none
-          g.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
+          let (g, newId) := g.move id (.library owner) none
+          let pl := g.player owner
+          let without := pl.library.filter (· != newId)
+          g.setPlayer { pl with library := #[newId] ++ without }
+            |>.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
         else
           let (g, newId) := g.move id (.library owner) none
           let pl := g.player owner
@@ -1051,7 +1054,7 @@ def castExiledAsResolves (g : Game) (p : PlayerId) (n : Nat) : Game :=
 
 /-- Whether the resolving stack object paid its teamwork cost. -/
 def resolvingTeamworkPaid (g : Game) : Bool :=
-  g.stack.back?.any (fun e => (g.findObject? e.objectId).any (·.teamworkPaid))
+  g.spellPaidTeamwork
 
 /-- `alt` if the resolving spell paid teamwork; otherwise `base`. -/
 def teamworkAmount (g : Game) (base alt : Nat) : Nat :=

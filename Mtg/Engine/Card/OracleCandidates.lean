@@ -276,6 +276,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.watchCombatDamageExileUntilNonland,
   Effect.pump (-4) (-4),
   Effect.returnGySubtypeToHand "Villain",
+  Effect.returnGySubtypeToHand "Hero",
   Effect.enterDestroy (.oppCreaturePowerAtMost 3),
   Effect.watchAttacksAloneDrain,
   Effect.connive,

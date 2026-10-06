@@ -426,6 +426,11 @@ inductive FraChoice where
   /-- You may exile the discarded card and play it until the end of your next
   turn (Moonstone). -/
   | moonstoneMayExile (cardId : ObjectId)
+  /-- The owner puts `creatureId` second from the top (accept / choose top)
+  or on the bottom (decline / choose bottom), then `caster` connives
+  `connive` (Trickster's Stratagem). -/
+  | tricksterLibrary (caster : PlayerId) (creatureId : ObjectId)
+      (connive : Option ObjectId)
   /-- You may put one of these milled cards into your hand, then gain `lifeAfter`
   life (Rapid Rescue, Rick Jones). Declining still gains the life. -/
   | mayTakeMilled (ids : Array ObjectId) (lifeAfter : Nat)
