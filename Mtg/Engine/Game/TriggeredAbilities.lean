@@ -201,6 +201,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   else
   match ab.effect.resolution with
   | .sequence rs =>
+    if g.sequenceAllTargetsIllegal controller ab.effect targets sourceId then
+      g.logIllegalSequenceTargets targets
+    else
     match rs.flatMap Resolution.flatten with
     | [.shuffleSource, .draw n] =>
       g.shuffleSourceIntoLibrary sourceId (.draw controller n)

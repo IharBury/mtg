@@ -47,7 +47,7 @@ namespace CardDef
 #guard Resolution.toPhrase (.createTokens .treasure 1 (tapped := true)) "" ==
   "Create a tapped Treasure token"
 #guard (Effect.drawLoseLifeThenAmass 2).resolution ==
-  Resolution.sequence [.spell (.drawAndLoseLife 1 1), .amassGoblins 2]
+  Resolution.sequence [.draw 1, .fra (.loseLife 1), .amassGoblins 2]
 #guard (Effect.createTokensThenTeamPump .villain21menace 1 1 0).resolution ==
   Resolution.sequence
     [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
@@ -316,8 +316,8 @@ namespace CardDef
 #guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution == .fight
 #guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)
-#guard Effect.destroyArtifactOrLandNonflyersCantBlock.spellResolution ==
-  .onPermanent .destroyThenNonflyersCantBlock
+#guard Effect.destroyArtifactOrLandNonflyersCantBlock.resolution ==
+  .sequence [.onPermanent .destroy, .creaturesWithoutFlyingCantBlock]
 #guard
   let c : CardDef := {
     name := "Silent Club"

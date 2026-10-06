@@ -268,6 +268,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     printed
     owner := old.owner
     controller := controller
+    lastController :=
+      if old.zone == .battlefield then old.controller else old.lastController
     defaultController := if dest == .battlefield then controller else none
     zone := dest
     status := {}

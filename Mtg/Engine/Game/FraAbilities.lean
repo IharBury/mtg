@@ -165,16 +165,6 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
       g.beginChooseKeyword controller o.id options.toArray)
   | .chooseKeyword options =>
     onSource (fun g o => g.beginChooseKeyword controller o.id options.toArray)
-  | .heartwoodThenPowerPerArtifact =>
-    let g := g.createKindTokens controller .heartwood 1
-    let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
-    match source? with
-    | some o => if o.isOnBattlefield then g.pumpPermanent o n 0 else g
-    | none => g
-  | .cadetThenTeamHaste =>
-    let g := g.createKindTokens controller .cadet 1
-    (g.creaturesControlledBy controller).foldl (fun g o =>
-      g.grantKeywordsUntilEot (g.object! o.id) Keyword.haste) g
   | .graveyardCardToLibraryBottom =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
@@ -200,15 +190,10 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
       (g.mapObjectStatus o (fun s =>
         { s with grantedTriggersUntilEot := s.grantedTriggersUntilEot.push ab })).logMsg
         s!"Until end of turn, whenever {o.name} deals combat damage to a player, {(g.player controller).name} draws two cards")
-  | .returnTargetThenPlusOneSource =>
-    let g := g.withLegalKindTarget controller kind targets (fun g t =>
-      match t with
-      | Target.card id =>
-        let (g, newId) := g.returnCardToBattlefield controller id
-        g.afterPermanentEnters (g.object! newId)
-      | _ => g) sourceId illegal
+  | .sourceGetsPowerPerArtifact =>
+    let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
     match source? with
-    | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
+    | some o => if o.isOnBattlefield then g.pumpPermanent o n 0 else g
     | none => g
   | .pumpPerArtifact =>
     let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
