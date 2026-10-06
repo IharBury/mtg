@@ -4126,4 +4126,71 @@ def amassChoosesArmyOk : Bool :=
 
 #guard amassChoosesArmyOk
 
+/-- Burglar's Plot exchanges control of two nonlands that still share a type. -/
+def exchangeControlSwapsOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := g.applyEffect ⟨0⟩ Effect.exchangeControlSharingType
+    #[Target.permanent bears.id, Target.permanent ogre.id]
+  (namedPermanent g "Grizzly Bears").controller == some ⟨1⟩ &&
+    (namedPermanent g "Gray Ogre").controller == some ⟨0⟩
+
+#guard exchangeControlSwapsOk
+
+/-- A land, or a permanent that no longer shares a card type, stops the exchange. -/
+def exchangeControlRecheckOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let land := namedPermanent g "Forest"
+  let gLand := g.applyEffect ⟨0⟩ Effect.exchangeControlSharingType
+    #[Target.permanent bears.id, Target.permanent land.id]
+  let g2 := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g2 := addPermanent g2 grayOgre ⟨1⟩ ⟨1⟩
+  let ogre := namedPermanent g2 "Gray Ogre"
+  let g2 := g2.mapObjectStatus ogre (fun s => { s with onlyFoodArtifact := true })
+  let bears2 := namedPermanent g2 "Grizzly Bears"
+  let ogre2 := namedPermanent g2 "Gray Ogre"
+  let g2 := g2.applyEffect ⟨0⟩ Effect.exchangeControlSharingType
+    #[Target.permanent bears2.id, Target.permanent ogre2.id]
+  (namedPermanent gLand "Grizzly Bears").controller == some ⟨0⟩ &&
+    (namedPermanent gLand "Forest").controller == some ⟨1⟩ &&
+    (namedPermanent g2 "Grizzly Bears").controller == some ⟨0⟩ &&
+    (namedPermanent g2 "Gray Ogre").controller == some ⟨1⟩
+
+#guard exchangeControlRecheckOk
+
+/-- Atlantis Attacks returns each nonland that is still a legal target. -/
+def returnOneOrTwoPartialOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let land := namedPermanent g "Forest"
+  let ogre := namedPermanent g "Gray Ogre"
+  let handBefore := (g.player ⟨1⟩).hand.size
+  let g := (g.move ogre.id (.graveyard ⟨1⟩) none).1
+  let g := g.applyEffect ⟨0⟩ Effect.returnOneOrTwoNonlands
+    #[Target.permanent bears.id, Target.permanent land.id, Target.permanent ogre.id]
+  (g.player ⟨1⟩).hand.size == handBefore + 1 &&
+    !onBattlefield g "Grizzly Bears" &&
+    onBattlefield g "Forest" &&
+    g.objects.any (fun o => o.name == "Gray Ogre" && o.zone == .graveyard ⟨1⟩)
+
+#guard returnOneOrTwoPartialOk
+
+/-- A resolution that is not a spell shape does not play an additional land. -/
+def unrecognizedIsNotExtraLandOk : Bool :=
+  let e : Effect := { resolution := .mill 3 }
+  let before := (afterDraw.player ⟨0⟩).additionalLandsThisTurn
+  let g := afterDraw.applyEffect ⟨0⟩ e #[]
+  e.spellResolution == .unrecognized &&
+    (g.player ⟨0⟩).additionalLandsThisTurn == before &&
+    (let g2 := afterDraw.applyEffect ⟨0⟩ Effect.playAdditionalLandThisTurn #[]
+     (g2.player ⟨0⟩).additionalLandsThisTurn == before + 1)
+
+#guard unrecognizedIsNotExtraLandOk
+
 end Mtg.Engine.MshRulingTests

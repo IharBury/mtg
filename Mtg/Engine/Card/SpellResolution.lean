@@ -265,6 +265,8 @@ inductive SpellResolution where
   | artifactSpellsCostLessThisTurn (ty : CardType) (n : Nat)
   /-- Spells of this supertype cost `{n}` less this turn (CR 205.4a). -/
   | supertypeSpellsCostLessThisTurn (s : Supertype) (n : Nat)
+  /-- A resolution that is not a spell shape. It does not play an extra land. -/
+  | unrecognized
 deriving Repr, Inhabited, BEq
 
 
@@ -279,6 +281,7 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
   | .mutualFight =>
     "target creature you control fights target creature an opponent controls"
   | .extraLand => "you may play an additional land this turn"
+  | .unrecognized => "this effect does nothing"
   | .drawAndLoseLife cards life =>
     s!"you draw {cardPhrase cards} and lose {life} life"
   | .onPermanent action => PermanentAction.toNotation action noun

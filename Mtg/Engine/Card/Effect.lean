@@ -304,8 +304,8 @@ def spellResolution (e : Effect) : SpellResolution :=
     | [.createTokens kind n _, .spell (.creaturesYouControlPump p t)] =>
       .createTokensThenTeamPump kind n p t
     | [.onPermanent .destroy, .gainLife n] => .destroyArtifactOrEnchantmentGainLife n
-    | _ => .extraLand
-  | _ => .extraLand
+    | _ => .unrecognized
+  | _ => .unrecognized
 
 /-- Recover a Saga chapter stored on this effect, if any. -/
 def asChapter? (e : Effect) : Option ChapterResolution :=

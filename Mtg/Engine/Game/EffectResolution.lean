@@ -740,6 +740,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.modifyPlayer controller (fun pl =>
       { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
+  | .unrecognized =>
+    g.logMsg "The effect does nothing"
   | .drawAndLoseLife cards life =>
     g.drawThenLoseLife controller cards life
   | .onPermanent action =>
@@ -825,7 +827,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | some (Target.permanent a), some (Target.permanent b) =>
       match g.findObject? a, g.findObject? b with
       | some oa, some ob =>
-        if oa.isOnBattlefield && ob.isOnBattlefield then
+        -- Both must still be nonland permanents that share a card type.
+        -- If either is illegal, the exchange does not happen.
+        let nonland (o : GameObject) :=
+          o.isOnBattlefield && !o.types.any (· == .land)
+        let share := oa.types.any (fun t => ob.types.contains t)
+        if a != b && nonland oa && nonland ob && share then
           let ca := oa.controller
           let cb := ob.controller
           let g :=
@@ -833,13 +840,17 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             | some p => g.changeControl oa p
             | none => g.setObject { oa with controller := none }
           let g :=
-            match ca with
-            | some p => g.changeControl (g.object! b) p
-            | none => g.setObject { (g.object! b) with controller := none }
+            match g.findObject? b, ca with
+            | some ob, some p => g.changeControl ob p
+            | some ob, none => g.setObject { ob with controller := none }
+            | none, _ => g
           g.logMsg s!"{oa.name} and {ob.name} exchange control"
-        else g.logMsg "The target is no longer legal"
-      | _, _ => g.logMsg "The target is no longer legal"
-    | _, _ => g.logMsg "The target is no longer legal"
+        else
+          g.logMsg "A target is no longer legal. The exchange doesn't happen."
+      | _, _ =>
+        g.logMsg "A target is no longer legal. The exchange doesn't happen."
+    | _, _ =>
+      g.logMsg "A target is no longer legal. The exchange doesn't happen."
   | .plusOneAndPlayerGainsLife n =>
     Id.run do
       let creatureLegal := g.legalTargetsForAtomicKind controller .creature none
@@ -1208,9 +1219,13 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match t with
       | Target.permanent oid =>
         match g.findObject? oid with
-        | some o => (g.move o.id (.hand o.owner) none).1
-        | none => g
-      | _ => g) g
+        | some o =>
+          if o.isOnBattlefield && !o.types.any (· == .land) then
+            g.returnToHand o.id o.owner
+          else
+            g.logMsg "The target is no longer legal"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer legal") g
   | .targetPlayerCreatesTokens kind n =>
     let pid :=
       match targets[0]? with
