@@ -107,6 +107,7 @@ def applySearchAfter (g : Game) : Game :=
   match after with
   | .putOnTop p ids => g.putIdsOnTop p ids
   | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
+  | .plusOne id => g.addPlusOneIfStillCreature id
   | other => { g with afterRandom := other }
 
 /-- Shuffle, then run `onDone`. A `--norandom` pause keeps `onDone` until the
@@ -122,6 +123,24 @@ def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
     let g := g.applySearchAfter
     if g.pending == .none then { g with pending := saved } else g
 
+/-- The post-shuffle action, including a +1/+1 counter waiting on this search. -/
+def searchDone (g : Game) (p : PlayerId) (after : Option FraNext) : Game × AfterRandom :=
+  match g.plusOneAfterSearch with
+  | some id => ({ g with plusOneAfterSearch := none }, .plusOne id)
+  | none => (g, searchAfter p after)
+
+/-- Shuffle, then run the search's after-action. -/
+def shuffleSearch (g : Game) (p : PlayerId) (after : Option FraNext) : Game :=
+  let (g, done) := g.searchDone p after
+  g.shuffleThen p done
+
+/-- Put the waiting post-search counter when this search does not shuffle. -/
+def applyWaitingPlusOne (g : Game) : Game :=
+  match g.plusOneAfterSearch with
+  | none => g
+  | some id =>
+    addPlusOneIfStillCreature { g with plusOneAfterSearch := none } id
+
 /-- Send the chosen cards to `dest`, shuffle, then do `after`. An empty `ids`
 is "chooses not to find" (CR 701.19b). -/
 def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
@@ -129,18 +148,18 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
   let noun := searchNoun kind
   if ids.isEmpty then
     let g := g.logMsg s!"{(g.player p).name} chooses not to find a {noun}"
-    if shufflesWhenNoneFound dest then g.shuffleThen p (searchAfter p after) else g
+    if shufflesWhenNoneFound dest then g.shuffleSearch p after else g.applyWaitingPlusOne
   else
     match dest with
     | .battlefield tapped =>
       let g := ids.foldl (fun g id => (g.placeSearched p id tapped).1) g
-      g.shuffleThen p (searchAfter p after)
+      g.shuffleSearch p after
     | .hand =>
       let g := ids.foldl (fun g id => g.placeSearchedHand p id) g
-      g.shuffleThen p (searchAfter p after)
+      g.shuffleSearch p after
     | .graveyard =>
       let g := ids.foldl (fun g id => g.placeSearchedGraveyard id) g
-      g.shuffleThen p (searchAfter p after)
+      g.shuffleSearch p after
     | .topAfterShuffle =>
       let g := ids.foldl (fun g id =>
         match g.findObject? id with
@@ -149,27 +168,27 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
       g.shuffleThen p (.putOnTop p ids)
     | .exileLinked source =>
       let g := ids.foldl (fun g id => g.exileSearchedLinked p id source) g
-      g.shuffleThen p (searchAfter p after)
+      g.shuffleSearch p after
     | .battlefieldTappedThenHand =>
       let g :=
         match ids[0]? with
         | some id => (g.placeSearched p id true).1
         | none => g
       let g := (ids.extract 1 ids.size).foldl (fun g id => g.placeSearchedHand p id) g
-      g.shuffleThen p (searchAfter p after)
+      g.shuffleSearch p after
     | .battlefieldTappedBeholdUntap subtype =>
       match ids[0]? with
-      | none => g.shuffleThen p (searchAfter p after)
+      | none => g.shuffleSearch p after
       | some id =>
         let (g, newId) := g.placeSearched p id true
         match newId with
         | some landId => g.shuffleThen p (.beholdUntap p landId subtype)
-        | none => g.shuffleThen p (searchAfter p after)
+        | none => g.shuffleSearch p after
     | .battlefieldFromHandOrLibrary =>
       let fromLibrary := ids.any (fun id =>
         (g.findObject? id).any (·.zone == .library p))
       let g := ids.foldl (fun g id => (g.placeSearched p id false).1) g
-      if fromLibrary then g.shuffleThen p (searchAfter p after) else g
+      if fromLibrary then g.shuffleSearch p after else g.applyWaitingPlusOne
 
 /-- Search `p`'s library for up to `count` cards matching `pred` (CR 701.19).
 The player chooses which, or none (CR 701.19b). `optional` may skip the
@@ -184,7 +203,7 @@ def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind
     { g with pending := .fraChoice p (.maySearchLibrary eligible count dest after kind) }.logMsg
       s!"{pl.name} may search for {kind}"
   else if eligible.isEmpty then
-    (g.logMsg s!"{pl.name} finds no {searchNoun kind}").shuffleThen p (searchAfter p after)
+    (g.logMsg s!"{pl.name} finds no {searchNoun kind}").shuffleSearch p after
   else
     { g with pending := .fraChoice p (.searchLibrary eligible count dest after kind) }.logMsg
       s!"{pl.name} searches for {kind}"

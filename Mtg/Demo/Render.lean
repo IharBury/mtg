@@ -733,7 +733,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [create a Food token or a Treasure token ({g.player p |>.name})]"
     | .chooseTapOrUntap p _ =>
       s!" [choose tap or untap ({g.player p |>.name})]"
-    | .maySacArtifactOrDiscard p =>
+    | .maySacArtifactOrDiscard p _ =>
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>
       s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
@@ -842,6 +842,17 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           s!"choose one that hasn't been chosen this turn: {String.intercalate ", " names}"
         | .moonstoneMayExile _ =>
           "may exile the discarded card and play it until the end of your next turn (accept), or decline"
+        | .mayTakeMilled ids _ =>
+          s!"may put one of {ids.size} milled card(s) into your hand: choose <id>, or decline"
+        | .mayDrawThenEachOpponentDraws n =>
+          s!"may draw {n} (accept); if you do, each opponent draws a card"
+        | .mayPutHeroFromHandOrDraw ids =>
+          s!"may put a Hero creature card from your hand onto the battlefield ({ids.size}), or decline to draw"
+        | .oddOrEvenDestroy _ => "choose even (0) or odd (1)"
+        | .visionQuestZones .. =>
+          "search your library as well (accept), or only your graveyard (decline)"
+        | .visionQuestPick ids _ _ =>
+          s!"choose an artifact creature card ({ids.size}), or decline to find nothing"
         | .kingpinMayPay2Life => "may pay 2 life (accept), or decline"
         | .daredevilMayExile _ => "may exile the top card of your library (accept), or decline"
         | .mayChangeSpellTarget .. =>

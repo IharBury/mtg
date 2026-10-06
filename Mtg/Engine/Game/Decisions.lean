@@ -265,9 +265,9 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     let g := g.draw p n
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
-  | .maySacArtifactOrDiscard q =>
+  | .maySacArtifactOrDiscard q n =>
     let (g, _) ← g.discardPendingCard p q id
-    return g.finishSacArtifactOrDiscardDraw p
+    return g.finishSacArtifactOrDiscardDraw p n
   | .chooseDiscardCard q remaining =>
     let (g, card) ← g.discardPendingCard p q id
     let g := g.finishConniveDiscard card
@@ -589,7 +589,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       s!"{(g.player p).name} declines to put a land onto the battlefield"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
-  | .maySacArtifactOrDiscard q =>
+  | .maySacArtifactOrDiscard q _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline"
     let g := g.logMsg
@@ -777,6 +777,7 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
     | .revealRandomCreatureThenBottom _ _ => g
     | .putOnTop p ids => g.putIdsOnTop p ids
     | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
+    | .plusOne id => g.addPlusOneIfStillCreature id
   if grantPriority && g.pending == .none && !g.openingHandsPending && !g.over
       && !g.players.isEmpty then
     g.receivePriority g.activePlayer

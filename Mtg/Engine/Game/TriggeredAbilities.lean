@@ -1260,7 +1260,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         if g.hasSubtype o "Hero" && some o.id != sourceId then 2 else 1
       g.addPlusOnePlusOneTo o n) sourceId (some "The target is no longer legal")
   | .maySacArtifactOrDiscardDraw =>
-    { g with pending := .maySacArtifactOrDiscard controller }.logMsg
+    { g with pending := .maySacArtifactOrDiscard controller 1 }.logMsg
       s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw a card"
   | .targetOpponentDiscards n =>
     g.withLegalKindTarget controller .opponent targets (fun g tgt =>

@@ -49,6 +49,8 @@ inductive AfterRandom where
   | putOnTop (p : PlayerId) (ids : Array ObjectId)
   /-- Behold `subtype`; if you do, untap `landId` (Elven Passage). -/
   | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : String)
+  /-- Put a +1/+1 counter on this creature after the shuffle (Restorative Technique). -/
+  | plusOne (id : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Payment a player may make to stop ward from countering their spell
@@ -424,6 +426,23 @@ inductive FraChoice where
   /-- You may exile the discarded card and play it until the end of your next
   turn (Moonstone). -/
   | moonstoneMayExile (cardId : ObjectId)
+  /-- You may put one of these milled cards into your hand, then gain `lifeAfter`
+  life (Rapid Rescue, Rick Jones). Declining still gains the life. -/
+  | mayTakeMilled (ids : Array ObjectId) (lifeAfter : Nat)
+  /-- You may draw `n` cards. If you do, each opponent draws a card (Armor Wars). -/
+  | mayDrawThenEachOpponentDraws (n : Nat)
+  /-- You may put one of these Hero cards from your hand onto the battlefield.
+  If you don't, draw a card (Origin of the Avengers). -/
+  | mayPutHeroFromHandOrDraw (ids : Array ObjectId)
+  /-- Choose even (mode 0) or odd (mode 1), then destroy each other creature
+  whose mana value has that quality (Thanos). -/
+  | oddOrEvenDestroy (sourceId : Option ObjectId)
+  /-- Search the library as well as the graveyard (accept), or only the
+  graveyard (decline), for Vision Quest. -/
+  | visionQuestZones (libIds gyIds : Array ObjectId) (x : Nat)
+  /-- Put one of these artifact creatures onto the battlefield with `x`
+  +1/+1 counters. Shuffle afterward when `shuffle` is true. -/
+  | visionQuestPick (ids : Array ObjectId) (x : Nat) (shuffle : Bool)
   /-- You may pay 2 life so creatures you control assign combat damage equal
   to their toughness (The Kingpin of Crime). -/
   | kingpinMayPay2Life
@@ -526,7 +545,7 @@ inductive Pending where
   /-- Choose tap or untap for this nonland permanent. -/
   | chooseTapOrUntap (player : PlayerId) (targetId : ObjectId)
   /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
-  | maySacArtifactOrDiscard (player : PlayerId)
+  | maySacArtifactOrDiscard (player : PlayerId) (draw : Nat)
   /-- You may put an artifact card from your hand onto the battlefield.
   If it is Equipment, attach it to `hostId`. -/
   | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)

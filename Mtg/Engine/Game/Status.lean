@@ -205,6 +205,9 @@ structure Status where
   /-- A control-changing effect lasts until end of turn (Act of Treason,
   Sauron, the Lidless Eye). Cleared in cleanup; ending it may exile (CR 800.4c). -/
   controlUntilEot : Bool := false
+  /-- Endings of this object's controller's turns before control reverts
+  (Evil's Thrall: 2 means until the end of your next turn). -/
+  controlTurnEndsLeft : Nat := 0
   /-- Instances of Iron Fist's granted tap ability this turn (MSH 106). -/
   ironFistTapGrants : Nat := 0
   /-- +P/+T lasting until the listed player's next turn begins (Garruk,

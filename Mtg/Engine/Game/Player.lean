@@ -95,6 +95,11 @@ structure Player where
   lifeLocked : Bool := false
   /-- Cards discarded this turn (Misty Knight; MSH 375). -/
   cardsDiscardedThisTurn : Nat := 0
+  /-- Generic mana less to cast spells of each of these types this turn
+  (Armor Wars II). -/
+  typeSpellCostLessThisTurn : Array (CardType × Nat) := #[]
+  /-- Generic mana less to cast spells of each of these supertypes this turn. -/
+  supertypeSpellCostLessThisTurn : Array (Supertype × Nat) := #[]
   /-- An artifact entered under this player's control this turn (Iron Man;
   MSH 242 / 323). Still true if that artifact later left or changed types. -/
   artifactEnteredThisTurn : Bool := false

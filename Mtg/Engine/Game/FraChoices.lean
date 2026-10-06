@@ -749,6 +749,50 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .moonstoneMayExile _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't exile the discarded card").finishFraChoice
   | .moonstoneMayExile _, _ => throw "Exile the discarded card (accept), or decline"
+  | .mayTakeMilled ids life, .objects #[id] =>
+    if !ids.contains id then throw "That card wasn't milled"
+    let some o := g.findObject? id | throw "no such object"
+    if o.zone != .graveyard p then throw s!"{o.name} is no longer in your graveyard"
+    let g := g.returnToHand o.id p
+    return (g.gainLife p life).finishFraChoice
+  | .mayTakeMilled _ life, .decline =>
+    return (g.gainLife p life).finishFraChoice
+  | .mayTakeMilled .., _ => throw "Put a milled card into your hand, or decline"
+  | .mayDrawThenEachOpponentDraws n, .accept =>
+    let g := g.draw p n
+    let g := g.forEachOpponent p (fun g opp => g.draw opp 1)
+    return (g.logMsg s!"{(g.player p).name} draws, so each opponent draws a card").finishFraChoice
+  | .mayDrawThenEachOpponentDraws _, .decline =>
+    return (g.logMsg s!"{(g.player p).name} doesn't draw").finishFraChoice
+  | .mayDrawThenEachOpponentDraws _, _ => throw "Draw (accept), or decline"
+  | .mayPutHeroFromHandOrDraw ids, .objects #[id] =>
+    if !ids.contains id then throw "That card can't be put onto the battlefield"
+    let some o := g.findObject? id | throw "no such object"
+    if o.zone != .hand p || !o.printed.isCreature || !g.hasSubtype o "Hero" then
+      throw s!"{o.name} is not a Hero creature card in your hand"
+    let (g, newId) := g.putOntoBattlefield id p
+    return (g.afterPermanentEnters (g.object! newId)).finishFraChoice
+  | .mayPutHeroFromHandOrDraw _, .decline =>
+    return (g.draw p 1).finishFraChoice
+  | .mayPutHeroFromHandOrDraw _, _ => throw "Put a Hero onto the battlefield, or decline to draw"
+  | .oddOrEvenDestroy sourceId, .mode m =>
+    if m > 1 then throw "Choose 0 for even or 1 for odd"
+    return (g.destroyCreaturesByManaParity sourceId (m == 0)).finishFraChoice
+  | .oddOrEvenDestroy _, _ => throw "Choose even (0) or odd (1)"
+  | .visionQuestZones lib gy x, .accept =>
+    return { g with pending := .fraChoice p (.visionQuestPick (lib ++ gy) x true) }
+  | .visionQuestZones _ gy x, .decline =>
+    if gy.isEmpty then
+      return (g.logMsg s!"{(g.player p).name} finds no artifact creature card").finishFraChoice
+    else
+      return { g with pending := .fraChoice p (.visionQuestPick gy x false) }
+  | .visionQuestZones .., _ => throw "Search your library as well (accept), or only your graveyard (decline)"
+  | .visionQuestPick ids x shuffle, .objects #[id] =>
+    if !ids.contains id then throw "That card can't be found"
+    return (g.finishVisionQuest p (some id) x shuffle).finishFraChoice
+  | .visionQuestPick _ x shuffle, .decline =>
+    return (g.finishVisionQuest p none x shuffle).finishFraChoice
+  | .visionQuestPick .., _ => throw "Choose an artifact creature, or decline to find nothing"
   | .kingpinMayPay2Life, .accept =>
     let g ← g.payLifeCost p 2
     return ({ g with assignCombatDamageEqualToughness := some p }
@@ -808,7 +852,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .maySearchLibrary eligible count dest after kind, .accept =>
     if eligible.isEmpty then
       let g :=
-        (g.logMsg s!"{(g.player p).name} finds no {searchNoun kind}").shuffleThen p (searchAfter p after)
+        (g.logMsg s!"{(g.player p).name} finds no {searchNoun kind}").shuffleSearch p after
       return g.finishFraChoice
     else
       return { g with pending := .fraChoice p (.searchLibrary eligible count dest after kind) }
@@ -955,6 +999,15 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | some m => .chooseMode m
     | none => .decline
   | .moonstoneMayExile _ => .decline
+  | .mayTakeMilled _ _ => .decline
+  | .mayDrawThenEachOpponentDraws _ => .decline
+  | .mayPutHeroFromHandOrDraw _ => .decline
+  | .oddOrEvenDestroy _ => .chooseMode 0
+  | .visionQuestZones _ _ _ => .accept
+  | .visionQuestPick ids _ _ =>
+    match ids[0]? with
+    | some id => .choosePermanents #[id]
+    | none => .decline
   | .kingpinMayPay2Life => .decline
   | .daredevilMayExile _ => .decline
   | .mayChangeSpellTarget .. => .decline

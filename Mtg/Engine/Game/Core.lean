@@ -174,6 +174,9 @@ structure Game where
   /-- World War Hulk chapter I: the next red or green creature spell this
   player casts this turn may be cast without paying its mana cost (MSH 343). -/
   pendingFreeRGCreature : Option PlayerId := none
+  /-- After the current library search shuffles, put a +1/+1 counter on this
+  creature if it is still a creature (Restorative Technique). -/
+  plusOneAfterSearch : Option ObjectId := none
   /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
   card finishes the requirement early. -/
   thirstDiscardsLeft : Nat := 0

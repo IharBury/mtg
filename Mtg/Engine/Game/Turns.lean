@@ -23,6 +23,13 @@ def clearEOT (g : Game) : Game :=
     for o in g.battlefield do
       if o.status.controlUntilEot then
         g := g.endControlChangingEffect (g.object! o.id)
+      else if o.status.controlTurnEndsLeft > 0 && o.controller == some g.activePlayer then
+        let left := o.status.controlTurnEndsLeft - 1
+        if left == 0 then
+          g := g.endControlChangingEffect (g.object! o.id)
+        else
+          g := g.mapObjectStatus (g.object! o.id) (fun s =>
+            { s with controlTurnEndsLeft := left })
       if (g.object! o.id).status.clearsAtCleanup then
         g := g.mapObjectStatus (g.object! o.id) Status.clearedAtCleanup
     return g
@@ -72,7 +79,9 @@ def clearTurnActivations (g : Game) : Game :=
           pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
           pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
           pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered ||
-          pl.creaturesAttackedWithThisTurn != 0 || pl.equipActivationsThisTurn != 0 then
+          pl.creaturesAttackedWithThisTurn != 0 || pl.equipActivationsThisTurn != 0 ||
+          !pl.typeSpellCostLessThisTurn.isEmpty ||
+          !pl.supertypeSpellCostLessThisTurn.isEmpty then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -98,7 +107,9 @@ def clearTurnActivations (g : Game) : Game :=
           activatedLoyaltyThisTurn := false
           cardsMilledThisTurn := 0
           mountainExtraRedThisTurn := 0
-          nextSpellCantBeCountered := false }
+          nextSpellCantBeCountered := false
+          typeSpellCostLessThisTurn := #[]
+          supertypeSpellCostLessThisTurn := #[] }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||

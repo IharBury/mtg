@@ -177,9 +177,9 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
   | _ => throw "Not time to have a Villain connive"
 
 /-- After paying K'un-Lun's optional cost, draw a card. -/
-def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) : Game :=
+def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let g := { g with pending := .none }
-  g.draw p 1 |>.receivePriority g.activePlayer
+  g.draw p n |>.receivePriority g.activePlayer
 
 /-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.17). -/
 def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -261,7 +261,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name} (ward)"
     return g.afterWardResolved
-  | .maySacArtifactOrDiscard q =>
+  | .maySacArtifactOrDiscard q n =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
     let some sac := g.findObject? id | throw "no such object"
@@ -269,7 +269,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       throw s!"Can't sacrifice {sac.name}"
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name}"
-    return g.finishSacArtifactOrDiscardDraw p
+    return g.finishSacArtifactOrDiscardDraw p n
   | _ => throw "Not time to sacrifice a permanent"
 
 end Game

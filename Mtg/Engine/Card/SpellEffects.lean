@@ -555,7 +555,12 @@ def chooseTargetDoubleAndTrample : Effect :=
     (castKind := .pump)
 
 def returnUpToTwoGyModal : Effect :=
-  mkSpell (.of .none) (.returnUpToTwoGyModal)
+  mkSpell (.of (.filtered {
+      noun := "up to two target artifact, creature, enchantment, and/or land cards in your graveyard"
+      zone := .yourGraveyard
+      types := #[.artifact, .creature, .enchantment, .land]
+      controller := .you }))
+    (.returnUpToTwoGyModal) (allowsZeroTargets := true) (maxTargets := 2)
     (castKind := .draw)
 
 def artifactSpellsCostLessThisTurn (n : Nat) : Effect :=

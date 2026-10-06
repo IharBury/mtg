@@ -249,7 +249,13 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.staticAbilities.any (· == .fra .costsLessIfCastNoncreature) &&
         (g.player caster).noncreatureSpellsCastThisTurn > 0 then 2
     else 0
-  afterWitch.reduceGeneric (subtypeLess + selfLess)
+  let pl := g.player caster
+  let thisTurnLess :=
+    (pl.typeSpellCostLessThisTurn.foldl (fun acc (ty, n) =>
+      if face.hasType ty then acc + n else acc) 0) +
+    (pl.supertypeSpellCostLessThisTurn.foldl (fun acc (s, n) =>
+      if face.hasSupertype s then acc + n else acc) 0)
+  afterWitch.reduceGeneric (subtypeLess + selfLess + thisTurnLess)
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
 (CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every

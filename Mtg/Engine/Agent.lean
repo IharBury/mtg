@@ -205,7 +205,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.chooseMode 0)
     | .chooseTapOrUntap _ _ =>
       some (.chooseMode 0)
-    | .maySacArtifactOrDiscard _ =>
+    | .maySacArtifactOrDiscard _ _ =>
       match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with
       | some o => some (.sacrifice o.id)
       | none => discardBackOrDecline g p

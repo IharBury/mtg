@@ -176,6 +176,14 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) (entersWith :
       g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
     else g
 
+/-- Put a +1/+1 counter on `id` when it is still a creature. -/
+def addPlusOneIfStillCreature (g : Game) (id : ObjectId) : Game :=
+  match g.findObject? id with
+  | some o =>
+    if o.isOnBattlefield && o.isCreature then g.addPlusOnePlusOneTo o 1
+    else g.logMsg "The target is no longer legal"
+  | none => g.logMsg "The target is no longer legal"
+
 /-- The Army `controller` controls with the latest timestamp, if any. -/
 def newestArmy? (g : Game) (controller : PlayerId) : Option GameObject :=
   let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Army")

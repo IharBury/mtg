@@ -290,7 +290,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p (.chooseMode 0)
   | .chooseTapOrUntap _ _, some p =>
     mustApply g p (.chooseMode 0)
-  | .maySacArtifactOrDiscard _, some p =>
+  | .maySacArtifactOrDiscard _ _, some p =>
     mustApply g p .decline
   | .mayPutArtifactFromHand _ _, some p =>
     mustApply g p .decline
