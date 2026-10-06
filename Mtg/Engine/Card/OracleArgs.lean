@@ -320,7 +320,7 @@ def takeChapter (c : ChapterResolution) : ArgM ChapterResolution := do
 
 def takeEnter (e : EnterLeftover) : ArgM EnterLeftover := do
   match e with
-  | .destroy k => return .destroy (← takeKind k)
+  | .destroy k => return .destroy (← takeWholeKind k)
   | .dealDamageUpToOne n => return .dealDamageUpToOne (← takeNat n)
   | e => return e
 
@@ -457,7 +457,18 @@ def takeEffect (e : Effect) : ArgM Effect := do
   | .onPermanent .destroy =>
     let kind ← takeWholeKind e.targeting.kind
     return { e with targeting := { e.targeting with kind } }
-  | _ =>
+  | .onPermanent (.plusOne n) =>
+    match e.targeting.kind with
+    | .creatureYouControl | .creatureYouControlAnySubtype _ =>
+      let kind ← takeWholeKind e.targeting.kind
+      let n ← takeNat n
+      return { e with
+        targeting := { e.targeting with kind }
+        resolution := .onPermanent (.plusOne n) }
+    | _ => takeEffectRest e
+  | _ => takeEffectRest e
+where
+  takeEffectRest (e : Effect) : ArgM Effect := do
     let targeting ← takeTargeting e.targeting
     let resolution ← takeResolution e.resolution
     let maxTargets ← if e.maxTargets == 0 then pure e.maxTargets else takeNat e.maxTargets
@@ -682,6 +693,38 @@ def withInt (toks : List String) (lead suffix : List String)
 def natKind (n : Int) (build : Nat → EffectTargetKind) : Option EffectTargetKind :=
   if n >= 0 then some (build n.toNat) else none
 
+/-- `target Elf you control`, `target Goblin or Orc you control`, and
+`target Bear, Spider, or Wolf you control` (commas already dropped). -/
+def anySubtypeYouControl (toks : List String) : Option (EffectTargetKind × Nat) :=
+  match afterLits toks ["target"] with
+  | none => none
+  | some rest =>
+    let rec go (fuel : Nat) (acc : Array String) (ts : List String) (afterOr : Bool) :
+        Option (Array String × List String) :=
+      match fuel with
+      | 0 => if acc.isEmpty || afterOr then none else some (acc, ts)
+      | fuel + 1 =>
+        match matchSubtypeForm false ts with
+        | none => if acc.isEmpty || afterOr then none else some (acc, ts)
+        | some (name, n) =>
+          let rest := ts.drop n
+          match rest with
+          | "or" :: more =>
+            if afterOr then none else go fuel (acc.push name) more true
+          | _ =>
+            if afterOr then some (acc.push name, rest)
+            else
+              match matchSubtypeForm false rest with
+              | some _ => go fuel (acc.push name) rest false
+              | none => some (acc.push name, rest)
+    match go 4 #[] rest false with
+    | some (ss, after) =>
+      match afterLits after ["you", "control"] with
+      | some left =>
+        some (.creatureYouControlAnySubtype ss, toks.length - left.length)
+      | none => none
+    | none => none
+
 /-- Longest target noun at the front of `toks` (already normalized). -/
 def fromNounPrefix (toks : List String) : Option (EffectTargetKind × Nat) :=
   let closed := EffectTargetKind.closedKinds.filterMap fun k =>
@@ -713,7 +756,8 @@ def fromNounPrefix (toks : List String) : Option (EffectTargetKind × Nat) :=
     withInt toks ["up", "to", "two", "target", "creatures", "with", "total", "mana", "value"]
       ["or", "less"] fun n => natKind n .upToTwoCreaturesTotalMvAtMost,
   ].filterMap id
-  (closed ++ numeric).foldl (fun best c =>
+  let subtype := anySubtypeYouControl toks
+  (closed ++ numeric ++ subtype.toList).foldl (fun best c =>
     match best with
     | none => some c
     | some b => if c.2 > b.2 then some c else some b) none
@@ -1340,6 +1384,10 @@ def finishEffect (old new : Effect) : Effect :=
       phrase := "" }
   | .onPermanent .destroy =>
     Effect.canonicalDestroy new.targeting.kind
+  | .onPermanent (.plusOne n) =>
+    match Effect.canonicalPlusOne n new.targeting.kind with
+    | some e => e
+    | none => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
   | _ => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
 
 def refillEffect (e : Effect) (vals : Array SlotVal) : Effect :=
@@ -1461,5 +1509,53 @@ private def matchesDestroy (target : Effect) : Bool :=
   let args := collectEffect proto
   let line := normalizeUnit "X" Effect.destroyArtifactOrLandNonflyersCantBlock.phrase
   matchPats (patsOf (normalizeUnit "X" proto.phrase) args) (tokenize line) args == none
+
+/-- `Effect.plusOneOnTarget 2` refills to the other counter counts and subtype lists. -/
+private def matchesPlus (target : Effect) : Bool :=
+  let proto := Effect.plusOneOnTarget 2
+  let args := collectEffect proto
+  match matchPats (patsOf (normalizeUnit "X" proto.phrase) args)
+      (tokenize (normalizeUnit "X" target.phrase)) args with
+  | some vals => refillEffect proto vals == target
+  | none => false
+
+#guard matchesPlus (Effect.plusOneOnTarget 2)
+#guard matchesPlus (Effect.plusOneOnTarget 1)
+#guard matchesPlus (Effect.plusOneOnTarget 2 #["Elf"])
+#guard matchesPlus (Effect.plusOneOnTarget 1 #["Goblin", "Orc"])
+#guard matchesPlus (Effect.plusOneOnTarget 2 #["Bear", "Spider", "Wolf"])
+#guard matchesPlus Effect.plusOneOnCreature
+#guard
+  let proto := Effect.plusOneOnTarget 2
+  let args := collectEffect proto
+  let line := normalizeUnit "X" "Put a +1/+1 counter on target creature. You gain 1 life"
+  matchPats (patsOf (normalizeUnit "X" proto.phrase) args) (tokenize line) args == none
+
+/-- One enters-and-destroy prototype refills to the other target noun. -/
+private def matchesEnterDestroy (target : TriggeredAbility) : Bool :=
+  let proto := TriggeredAbility.onEnter (Effect.enterDestroy .oppCreatureDealtDamageThisTurn)
+  let args := collectTriggered proto
+  let line := TriggeredAbility.toNotation proto
+  match matchPats (patsOf (normalizeUnit "X" line) args)
+      (tokenize (normalizeUnit "X" (TriggeredAbility.toNotation target))) args with
+  | some vals => refillTriggered proto vals == target
+  | none => false
+
+#guard matchesEnterDestroy
+  (TriggeredAbility.onEnter (Effect.enterDestroy .oppCreatureDealtDamageThisTurn))
+#guard matchesEnterDestroy
+  (TriggeredAbility.onEnter (Effect.enterDestroy (.oppCreaturePowerAtMost 3)))
+#guard matchesEnterDestroy
+  (TriggeredAbility.onEnter (Effect.enterDestroy .oppCreature))
+
+#guard
+  let noun := tokenize (lowerAscii (EffectTargetKind.noun .creatureYouControl))
+  fromNounPrefix noun == some (.creatureYouControl, noun.length)
+#guard
+  let noun := tokenize (lowerAscii (EffectTargetKind.noun .legendaryCreatureYouControl))
+  fromNounPrefix noun == some (.legendaryCreatureYouControl, noun.length)
+#guard
+  let noun := tokenize (lowerAscii (EffectTargetKind.noun .equipmentYouControl))
+  fromNounPrefix noun == some (.equipmentYouControl, noun.length)
 
 end Mtg.Engine.OracleArgs
