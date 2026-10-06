@@ -229,43 +229,36 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   match r with
   | .onPermanent a => return .onPermanent (← takeAction a)
   | .allCreaturesPump p t => return .allCreaturesPump (← takeInt p) (← takeInt t)
-  | .drawAndLoseLife cards life => return .drawAndLoseLife (← takeNat cards) (← takeNat life)
-  | .playerDrawLoseLife cards life =>
-    return .playerDrawLoseLife (← takeNat cards) (← takeNat life)
   | .creaturesOfPlayerPump p t => return .creaturesOfPlayerPump (← takeInt p) (← takeInt t)
-  | .destroyAndControllerLosesLife n => return .destroyAndControllerLosesLife (← takeNat n)
   | .draw n => return .draw (← takeNat n)
-  | .drawThenDiscard n => return .drawThenDiscard (← takeNat n)
+  | .discard n => return .discard (← takeNat n)
+  | .loseLife n => return .loseLife (← takeNat n)
+  | .gainLife n => return .gainLife (← takeNat n)
   | .scry n => return .scry (← takeNat n)
+  | .surveil n => return .surveil (← takeNat n)
   | .tapScryDraw a b => return .tapScryDraw (← takeNat a) (← takeNat b)
   | .counterUnlessPays n => return .counterUnlessPays (← takeNat n)
-  | .untapPumpMaybeAttach p t => return .untapPumpMaybeAttach (← takeInt p) (← takeInt t)
   | .plusOneAndPlayerGainsLife n => return .plusOneAndPlayerGainsLife (← takeNat n)
+  | .plusOneOnFirstTarget n => return .plusOneOnFirstTarget (← takeNat n)
   | .creaturesYouControlPump p t => return .creaturesYouControlPump (← takeInt p) (← takeInt t)
-  | .destroyArtifactOrEnchantmentGainLife n =>
-    return .destroyArtifactOrEnchantmentGainLife (← takeNat n)
   | .amassGoblins n => return .amassGoblins (← takeNat n)
-  | .drawLoseLifeThenAmass n => return .drawLoseLifeThenAmass (← takeNat n)
-  | .returnCreatureFromGyThenAmass n => return .returnCreatureFromGyThenAmass (← takeNat n)
   | .counterThenRecruitIfMvAtMost n => return .counterThenRecruitIfMvAtMost (← takeNat n)
-  | .plusOneThenFight n => return .plusOneThenFight (← takeNat n)
   | .drawIfFromGy a b => return .drawIfFromGy (← takeNat a) (← takeNat b)
   | .amassGoblinsOrFromGy a b => return .amassGoblinsOrFromGy (← takeNat a) (← takeNat b)
   | .dealDamageToEachOppCreature n => return .dealDamageToEachOppCreature (← takeNat n)
   | .targetPlayerDraw n => return .targetPlayerDraw (← takeNat n)
-  | .dealDamageToCreatureExileIfDies n => return .dealDamageToCreatureExileIfDies (← takeNat n)
+  | .targetPlayerLosesLife n => return .targetPlayerLosesLife (← takeNat n)
+  | .controllerOfTargetLosesLife n => return .controllerOfTargetLosesLife (← takeNat n)
   | .dealDamageToEachNonDragon n => return .dealDamageToEachNonDragon (← takeNat n)
   | .millThenPutInstantOrSorcery n => return .millThenPutInstantOrSorcery (← takeNat n)
   | .millThenPutLands a b => return .millThenPutLands (← takeNat a) (← takeNat b)
-  | .dealDamageToEachNonDragonThenAddDragonMana n =>
-    return .dealDamageToEachNonDragonThenAddDragonMana (← takeNat n)
+  | .exileTopPlayUntilNext n => return .exileTopPlayUntilNext (← takeNat n)
   | .millThenPutAllInstantsOrSorceries n => return .millThenPutAllInstantsOrSorceries (← takeNat n)
   | .exileTopPlayIfYouControlSubtype n s =>
     return .exileTopPlayIfYouControlSubtype (← takeNat n) (← takeStr s)
   | .lookAtTopLandsGainLife a b => return .lookAtTopLandsGainLife (← takeNat a) (← takeNat b)
   | .dealDamageTeamwork a b => return .dealDamageTeamwork (← takeNat a) (← takeNat b)
-  | .dealDamageThenControllerIfTeamwork a b =>
-    return .dealDamageThenControllerIfTeamwork (← takeNat a) (← takeNat b)
+  | .damageControllerIfTeamwork n => return .damageControllerIfTeamwork (← takeNat n)
   | .counterUnlessPaysTeamwork a b => return .counterUnlessPaysTeamwork (← takeNat a) (← takeNat b)
   | .exileCreatureMvAtMostOrAnyIfTeamwork a b =>
     return .exileCreatureMvAtMostOrAnyIfTeamwork (← takeNat a) (← takeNat b)
@@ -277,13 +270,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeStr s)
   | .eachOpponentLosesLife n => return .eachOpponentLosesLife (← takeNat n)
   | .plusOneOnCreatureN n => return .plusOneOnCreatureN (← takeNat n)
-  | .pumpThenDraw p t => return .pumpThenDraw (← takeInt p) (← takeInt t)
-  | .pumpThenExileTopPlay p t => return .pumpThenExileTopPlay (← takeInt p) (← takeInt t)
-  | .createTokensThenTeamPump k n p t =>
-    return .createTokensThenTeamPump k (← takeNat n) (← takeInt p) (← takeInt t)
   | .createTokensPerSubtype k s => return .createTokensPerSubtype k (← takeStr s)
-  | .creaturesYouControlGetAndGrant p t k =>
-    return .creaturesYouControlGetAndGrant (← takeInt p) (← takeInt t) k
   | .millThenPutPermanentGainLife a b =>
     return .millThenPutPermanentGainLife (← takeNat a) (← takeNat b)
   | .gainLifeSearchBasicPlusOne n => return .gainLifeSearchBasicPlusOne (← takeNat n)
@@ -294,6 +281,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .artifactSpellsCostLessThisTurn (← takeCardType ty) (← takeNat n)
   | .supertypeSpellsCostLessThisTurn s n =>
     return .supertypeSpellsCostLessThisTurn (← takeSupertype s) (← takeNat n)
+  | .sequence rs => return .sequence (← rs.mapM takeSpell)
   | r => return r
 
 def takeChapter (c : ChapterResolution) : ArgM ChapterResolution := do

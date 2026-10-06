@@ -531,28 +531,31 @@ def spellBody (cardName : String) (e : Effect) : String :=
 
 /-- Lines a spell effect contributes, in printed order. -/
 def effectLines (cardName : String) (e : Effect) : List String :=
+  let fallback :=
+    (spellBody cardName e).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
   match e.spellResolution with
   | .tapScryDraw scryN drawN =>
     [s!"Tap target creature. Scry {scryN}.",
       if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
-  | .returnSpellDraw =>
+  | .sequence [.returnTargetSpell, .draw 1] =>
     ["Return target spell to its owner's hand.", "Draw a card."]
-  | .drawLoseLifeThenAmass n =>
+  | .sequence [.draw 1, .loseLife 1, .amassGoblins n] =>
     ["You draw a card and lose 1 life.", s!"Amass Goblins {n}."]
-  | .returnCreatureFromGyThenAmass n =>
+  | .sequence [.returnFromGyToHand, .amassGoblins n] =>
     ["Return up to one target creature card from your graveyard to your hand.",
       s!"Amass Goblins {n}."]
-  | .dealDamageToEachNonDragonThenAddDragonMana n =>
+  | .sequence [.dealDamageToEachNonDragon n, .addFourManaDragonSpells] =>
     [s!"{cardName} deals {n} damage to each non-Dragon creature.",
       "Add four mana in any combination of colors. Spend this mana only to cast Dragon spells."]
-  | .grantVigilanceUnblockable =>
-    ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
-      "Draw a card."]
+  | .sequence [.onPermanent (.grantKeywords k), .draw 1] =>
+    if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
+      ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
+        "Draw a card."]
+    else fallback
   | .becomeArtifactCreature44Flying =>
     ["Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness 4/4 and gains flying.",
       "Draw a card."]
-  | _ =>
-    (spellBody cardName e).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
+  | _ => fallback
 
 inductive ParsedAbility where
   | static (ab : StaticAbility)

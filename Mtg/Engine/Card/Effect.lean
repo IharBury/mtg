@@ -277,52 +277,6 @@ def castKind (e : Effect) : SpellCastKind :=
 def abilityKind (e : Effect) : AbilityCastKind :=
   e.abilityCastKind
 
-/-- Recover the leftover spell resolution (common shapes lift back). -/
-def spellResolution (e : Effect) : SpellResolution :=
-  match e.resolution with
-  | .spell r => r
-  | .draw n => .draw n
-  | .scry n => .scry n
-  | .onPermanent a => .onPermanent a
-  | .amassGoblins n => .amassGoblins n
-  | .createTokens kind n _ => .createTokens kind n
-  | .onSource a => .onPermanent a
-  | .creaturesYouControlPump p t => .creaturesYouControlPump p t
-  | .createTokensX kind => .createTokensX kind
-  | .dealDamageToEachCreature n => .dealDamageToEachCreature n
-  | .targetPlayerDraw n => .targetPlayerDraw n
-  | .sequence rs =>
-    match rs with
-    | [.draw n, .discard 1] => .drawThenDiscard n
-    | [.draw cards, .fra (.loseLife life)] => .drawAndLoseLife cards life
-    | [.draw 1, .fra (.loseLife 1), .amassGoblins n] => .drawLoseLifeThenAmass n
-    | [.targetPlayerDraw cards, .targetPlayerLoseLife life] =>
-      .playerDrawLoseLife cards life
-    | [.onPermanent .destroy, .controllerOfTargetLosesLife n] =>
-      .destroyAndControllerLosesLife n
-    | [.returnTargetSpell, .draw 1] => .returnSpellDraw
-    | [.fra .returnFromGyToHand, .amassGoblins n] =>
-      .returnCreatureFromGyThenAmass n
-    | [.createTokens kind n _, .creaturesYouControlPump p t] =>
-      .createTokensThenTeamPump kind n p t
-    | [.createTokens kind n _, .spell (.creaturesYouControlPump p t)] =>
-      .createTokensThenTeamPump kind n p t
-    | [.onPermanent .destroy, .gainLife n] => .destroyArtifactOrEnchantmentGainLife n
-    | [.onPermanent .destroy, .surveil 1] => .destroyCreatureSurveil
-    | [.onPermanent (.pump p t), .draw 1] => .pumpThenDraw p t
-    | [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords k)] =>
-      if k == Keyword.lifelink.merge Keyword.indestructible then
-        .plusOneLifelinkIndestructible
-      else .unrecognized
-    | [.onPermanent (.grantKeywords k), .draw 1] =>
-      if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
-        .grantVigilanceUnblockable
-      else .unrecognized
-    | [.creaturesYouControlPump p t, .teamGain k] =>
-      .creaturesYouControlGetAndGrant p t k
-    | _ => .unrecognized
-  | _ => .unrecognized
-
 /-- Recover a Saga chapter stored on this effect, if any. -/
 def asChapter? (e : Effect) : Option ChapterResolution :=
   match e.resolution with
@@ -590,47 +544,76 @@ def toPhrase (r : Resolution) (noun : String) : String :=
   | .sequence rs => String.intercalate ". " (rs.map (fun step => toPhrase step noun))
   | r => phraseWith r noun fun _ => ""
 
-/-- Lift a spell resolution onto the shared `Resolution` vocabulary. -/
-def ofSpell : SpellResolution → Resolution
+/-- One spell step as a shared resolution. `sequence` is handled by `ofSpell`. -/
+def ofSpellStep : SpellResolution → Resolution
   | .draw n => .draw n
   | .scry n => .scry n
   | .onPermanent a => .onPermanent a
-  | .drawThenDiscard n => .sequence [.draw n, .discard 1]
-  | .drawAndLoseLife cards life =>
-    .sequence [.draw cards, .fra (.loseLife life)]
-  | .playerDrawLoseLife cards life =>
-    .sequence [.targetPlayerDraw cards, .targetPlayerLoseLife life]
-  | .destroyAndControllerLosesLife n =>
-    .sequence [.onPermanent .destroy, .controllerOfTargetLosesLife n]
-  | .returnSpellDraw =>
-    .sequence [.returnTargetSpell, .draw 1]
-  | .returnCreatureFromGyThenAmass n =>
-    .sequence [.fra .returnFromGyToHand, .amassGoblins n]
+  | .discard n => .discard n
+  | .loseLife n => .fra (.loseLife n)
+  | .gainLife n => .gainLife n
+  | .surveil n => .surveil n
+  | .teamGain k => .teamGain k
+  | .targetPlayerLosesLife n => .targetPlayerLoseLife n
+  | .controllerOfTargetLosesLife n => .controllerOfTargetLosesLife n
+  | .returnTargetSpell => .returnTargetSpell
+  | .returnFromGyToHand => .fra .returnFromGyToHand
   | .amassGoblins n => .amassGoblins n
   | .createTokens kind n => .createTokens kind n
-  | .drawLoseLifeThenAmass n =>
-    .sequence [.draw 1, .fra (.loseLife 1), .amassGoblins n]
-  | .createTokensThenTeamPump kind n p t =>
-    .sequence [.createTokens kind n, .creaturesYouControlPump p t]
-  | .destroyArtifactOrEnchantmentGainLife n =>
-    .sequence [.onPermanent .destroy, .gainLife n]
-  | .destroyCreatureSurveil =>
-    .sequence [.onPermanent .destroy, .surveil 1]
-  | .pumpThenDraw p t =>
-    .sequence [.onPermanent (.pump p t), .draw 1]
-  | .plusOneLifelinkIndestructible =>
-    .sequence [.onPermanent (.plusOne 1),
-      .onPermanent (.grantKeywords (Keyword.lifelink.merge Keyword.indestructible))]
-  | .grantVigilanceUnblockable =>
-    .sequence [.onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.cantBeBlocked)),
-      .draw 1]
-  | .creaturesYouControlGetAndGrant p t k =>
-    .sequence [.creaturesYouControlPump p t, .teamGain k]
   | .creaturesYouControlPump p t => .creaturesYouControlPump p t
   | .createTokensX kind => .createTokensX kind
   | .dealDamageToEachCreature n => .dealDamageToEachCreature n
   | .targetPlayerDraw n => .targetPlayerDraw n
+  | .sequence rs => .sequence (rs.map ofSpellStep)
   | r => .spell r
+
+/-- Lift a spell resolution onto the shared `Resolution` vocabulary. -/
+def ofSpell (r : SpellResolution) : Resolution :=
+  match r with
+  | .sequence rs => .sequence ((rs.map ofSpell).flatMap flatten)
+  | r => ofSpellStep r
+
+/-- A shared resolution as a spell step, when every part of it is one. -/
+def toSpellStep : Resolution → Option SpellResolution
+  | .draw n => some (.draw n)
+  | .scry n => some (.scry n)
+  | .onPermanent a => some (.onPermanent a)
+  | .discard n => some (.discard n)
+  | .fra (.loseLife n) => some (.loseLife n)
+  | .fra .returnFromGyToHand => some .returnFromGyToHand
+  | .gainLife n => some (.gainLife n)
+  | .surveil n => some (.surveil n)
+  | .teamGain k => some (.teamGain k)
+  | .targetPlayerLoseLife n => some (.targetPlayerLosesLife n)
+  | .controllerOfTargetLosesLife n => some (.controllerOfTargetLosesLife n)
+  | .returnTargetSpell => some .returnTargetSpell
+  | .amassGoblins n => some (.amassGoblins n)
+  | .createTokens kind n false => some (.createTokens kind n)
+  | .creaturesYouControlPump p t => some (.creaturesYouControlPump p t)
+  | .createTokensX kind => some (.createTokensX kind)
+  | .dealDamageToEachCreature n => some (.dealDamageToEachCreature n)
+  | .targetPlayerDraw n => some (.targetPlayerDraw n)
+  | .spell .unrecognized => none
+  | .spell (.sequence _) => none
+  | .spell r => some r
+  | _ => none
+
+/-- The spell view of `r`. A sequence is a spell sequence only when every
+step lifts; otherwise it stays unrecognized, as before. -/
+def toSpell (r : Resolution) : Option SpellResolution :=
+  match r with
+  | .sequence rs =>
+    match rs.flatMap flatten |>.mapM toSpellStep with
+    | some steps => some (.sequence steps)
+    | none => none
+  | r => toSpellStep r
+
+/-- Recover the leftover spell resolution (common shapes lift back). -/
+def _root_.Mtg.Engine.Effect.spellResolution (e : Effect) : SpellResolution :=
+  match e.resolution with
+  | .onSource a => .onPermanent a
+  | .createTokens kind n _ => .createTokens kind n
+  | r => r.toSpell.getD .unrecognized
 
 /-- Store a shared trigger on `Resolution`. Timing stays on the nested
 effect so leftover family events remain recoverable. -/
