@@ -80,8 +80,10 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
         { g with conniveSource := none }.logMsg
           "No card is discarded; the conniving creature does not receive a +1/+1 counter"
       else g
-    { g with pending := .none, thirstDiscardsLeft := 0, pendingDiscardsLeft := 0 }
-      |>.receivePriority g.activePlayer
+    let g := { g with pending := .none, thirstDiscardsLeft := 0, pendingDiscardsLeft := 0 }
+    -- A following +1/+1 counter waits until the caller finishes the discards.
+    if g.plusOneAfterDiscards.isSome then g
+    else g.receivePriority g.activePlayer
   | some (p, rest) =>
     { g with pending := .chooseDiscardCard p rest }
       |>.logMsg s!"{(g.player p).name} must discard a card"

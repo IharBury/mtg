@@ -3918,4 +3918,55 @@ def avengersTowerHeroOrderOk : Bool :=
 
 #guard avengersTowerHeroOrderOk
 
+/-- Ninja of the Hand has each opponent discard, then gets a +1/+1 counter. -/
+def ninjaEachOpponentDiscardsOk : Bool :=
+  let g := addPermanent afterDraw ninjaOfTheHand ⟨0⟩ ⟨0⟩
+  let ninja := namedPermanent g "Ninja of the Hand"
+  let hand1 := (g.player ⟨1⟩).hand.size
+  let g := g.applyAbilityEffect ⟨0⟩ Effect.eachOppDiscardThenPlusOne #[] (some ninja.id)
+  hand1 > 0 &&
+    (namedPermanent g "Ninja of the Hand").status.plusOnePlusOne == 0 &&
+    match g.pending with
+    | .chooseDiscardCard ⟨1⟩ rest =>
+      rest.isEmpty &&
+        (let card := (g.player ⟨1⟩).hand.back!
+         let g2 := mustApply g ⟨1⟩ (.discard card)
+         (namedPermanent g2 "Ninja of the Hand").status.plusOnePlusOne == 1 &&
+           (g2.player ⟨1⟩).hand.size == hand1 - 1 &&
+           g2.plusOneAfterDiscards.isNone)
+    | _ => false
+
+#guard ninjaEachOpponentDiscardsOk
+
+/-- Echo's copy may take a new target. Declining keeps the original target. -/
+def echoCopyNewTargetOk : Bool :=
+  let g := addPermanent afterDraw echoPerceptiveProdigy ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let echo := namedPermanent g "Echo, Perceptive Prodigy"
+  let bears := namedPermanent g "Grizzly Bears"
+  let giant := namedPermanent g "Hill Giant"
+  let (g, ab) := g.allocStackAbility echo ⟨0⟩ (abilityEffect := some (Effect.dealDamage 2))
+  let g := g.putStackEntry ⟨0⟩ ab.id
+  let g := g.setStackEntryTargets ab.id #[Target.permanent bears.id]
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.copyControlledAbility true)
+    #[Target.card ab.id] (some echo.id)
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.newTargetsForCopies #[copyId]) =>
+    match g.stack.find? (fun e => e.objectId == copyId) with
+    | some e =>
+      e.targets == #[Target.permanent bears.id] &&
+        (let gNew := mustApply g ⟨0⟩ (.choosePermanents #[giant.id])
+         match gNew.stack.find? (fun e => e.objectId == copyId) with
+         | some copied => copied.targets == #[Target.permanent giant.id]
+         | none => false) &&
+        (let gKeep := mustApply g ⟨0⟩ .decline
+         match gKeep.stack.find? (fun e => e.objectId == copyId) with
+         | some copied => copied.targets == #[Target.permanent bears.id]
+         | none => false)
+    | none => false
+  | _ => false
+
+#guard echoCopyNewTargetOk
+
 end Mtg.Engine.MshRulingTests

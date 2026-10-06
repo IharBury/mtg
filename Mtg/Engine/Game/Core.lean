@@ -148,6 +148,9 @@ structure Game where
   delayedEndStepExiles : Array ObjectId := #[]
   /-- Source of the current connive action, if any (MSH / CR 701.47). -/
   conniveSource : Option ObjectId := none
+  /-- Put a +1/+1 counter on this permanent after the current discard choices
+  finish (Ninja of the Hand). -/
+  plusOneAfterDiscards : Option ObjectId := none
   /-- Most recent creature that became tapped (Captain America, Living Legend). -/
   lastBecameTapped : Option ObjectId := none
   /-- Extra combat phases still to begin after the current combat (Hulk enrage). -/

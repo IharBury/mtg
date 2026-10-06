@@ -256,6 +256,14 @@ def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
     else g
   return (g, card)
 
+/-- Continue a discard chain. When no one is left to discard, put the waiting
++1/+1 counter (Ninja of the Hand). -/
+def continueAfterDiscard (g : Game) (players : Array PlayerId) : Except String Game := do
+  let g := g.beginDiscardCards players
+  if g.pending == .none && g.plusOneAfterDiscards.isSome then
+    return (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
+  return g
+
 /-- Discard `id` from hand; if this finishes a pending “may discard, then draw”,
 draw that many cards (CR 701.9). -/
 def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -294,10 +302,11 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       let left := g.pendingDiscardsLeft - 1
       let g := { g with pendingDiscardsLeft := left }
       if left == 0 then
-        return g.beginDiscardCards remaining
+        g.continueAfterDiscard remaining
       else
-        return g.beginDiscardCards #[p]
-    return g.beginDiscardCards remaining
+        g.continueAfterDiscard #[p]
+    else
+      g.continueAfterDiscard remaining
   | .recruitDiscard q =>
     let (g, card) ← g.discardPendingCard p q id (countDiscard := false)
     let g := { g with pending := .none }

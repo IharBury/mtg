@@ -1435,6 +1435,17 @@ def beginLookPutTypes (g : Game) (p : PlayerId) (n : Nat) (types : Array String)
       g.beginFraChoice p (.nickFuryPut looked eligible)
         s!"{(g.player p).name} may put a card from among them onto the battlefield"
 
+/-- Put the +1/+1 counter that waited for each opponent's discard. -/
+def finishPlusOneAfterDiscards (g : Game) : Game :=
+  match g.plusOneAfterDiscards with
+  | none => g
+  | some id =>
+    let g := { g with plusOneAfterDiscards := none }
+    match g.findObject? (g.followMoved id) with
+    | some o =>
+      if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
+    | none => g
+
 /-- Resolve a unified activated-ability `Effect` (CR 608). -/
 partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
@@ -1627,12 +1638,12 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.withSourceOnBattlefield sourceId fun g o =>
       g.addPlusOnePlusOneTo o chosenX
   | .eachOppDiscardThenPlusOne =>
-    let g :=
-      (g.livingOpponents controller).foldl (fun acc pl =>
-        acc.beginDiscardCards #[pl.id]) g
-    g.withSourceOnBattlefield sourceId fun g o =>
-      g.setObject { o with status := { o.status with
-        plusOnePlusOne := o.status.plusOnePlusOne + 1 } }
+    let opps := (g.livingOpponents controller).map (·.id)
+    let g := { g with plusOneAfterDiscards := sourceId }
+    let g := g.beginDiscardCards opps
+    if g.pending == .none then
+      (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
+    else g
   | .lookAtTopPutTypes n types =>
     let g :=
       match sourceId.bind g.findObject? with
@@ -1714,7 +1725,17 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     | some (Target.card id) | some (Target.permanent id) =>
       match g.findObject? id with
       | some o =>
-        if o.zone == .stack then g.copyStackAbility o controller
+        if o.zone == .stack && (o.abilityEffect.isSome || o.triggeredAbility.isSome) then
+          let g := g.copyStackAbility o controller
+          let copyId := (g.stack.back?.map (·.objectId)).getD o.id
+          let hasTargets :=
+            match g.stack.find? (fun e => e.objectId == copyId) with
+            | some e => !e.targets.isEmpty
+            | none => false
+          if hasTargets then
+            { g with pending := .fraChoice controller (.newTargetsForCopies #[copyId]) }
+              |>.logMsg s!"{(g.player controller).name} may choose new targets for the copy"
+          else g
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
     | _ => g
