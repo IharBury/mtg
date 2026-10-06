@@ -130,7 +130,8 @@ def normLineAgrees (cardName line : String) : Bool :=
     ("Depower\n{2}{U}\nInstant\nThis spell costs {2} less to cast if it targets an attacking creature.\n" ++
       "Target creature gets -4/-0 until end of turn.\nDraw a card.")).toOption.bind
     (fun c => c.spellEffect.map (·.spellResolution)) ==
-    some (some (SpellResolution.pumpThenDraw (-4) 0))
+    some (some (SpellResolution.sequence
+      [.onPermanent (.pump (-4) 0), .draw 1]))
 #guard (parseOracleCard "Wander\n{G}\nInstant\nForestcycling {2}").toOption.bind
     (fun c => c.activatedAbilities[0]?) ==
     some (typecyclingAbility "Forest" (ManaCost.ofGeneric 2))

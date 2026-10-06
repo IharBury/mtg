@@ -57,22 +57,19 @@ inductive SpellResolution where
   | onPermanent (action : PermanentAction)
   /-- All creatures get +P/+T until end of turn. -/
   | allCreaturesPump (power toughness : Int)
-  /-- You draw `cards` cards and lose `life` life. Loss of life is not
-  damage (CR 118.3a / 120.3). -/
-  | drawAndLoseLife (cards life : Nat)
-  /-- The targeted player draws `cards` and loses `life` life. -/
-  | playerDrawLoseLife (cards life : Nat)
   /-- Creatures the targeted player controls get +P/+T until end of turn. -/
   | creaturesOfPlayerPump (power toughness : Int)
-  /-- Destroy the targeted creature; its controller loses `life` life. -/
-  | destroyAndControllerLosesLife (life : Nat)
   /-- Exile creature cards from the targeted player's graveyard and grant
   permission to cast them, spending mana as though it were any type. -/
   | exileGraveyardCreaturesGrantCast
   /-- Draw `n` cards. -/
   | draw (n : Nat)
-  /-- Draw `n` cards, then discard a card. -/
-  | drawThenDiscard (n : Nat)
+  /-- Discard `n` cards. -/
+  | discard (n : Nat)
+  /-- You lose `n` life. Loss of life is not damage (CR 118.3a / 120.3). -/
+  | loseLife (n : Nat)
+  /-- You gain `n` life. -/
+  | gainLife (n : Nat)
   /-- Scry `n`. -/
   | scry (n : Nat)
   /-- Tap the target, then scry and draw. -/
@@ -87,28 +84,28 @@ inductive SpellResolution where
   | counterExilePermanentMayCast
   /-- Owner puts the targeted creature on top or bottom of their library. -/
   | putOnTopOrBottom
-  /-- Untap, pump, and maybe attach Equipment if the target is a Dwarf. -/
-  | untapPumpMaybeAttach (power toughness : Int)
+  /-- If the targeted creature is a Dwarf, its controller may attach an Equipment. -/
+  | mayAttachEquipmentIfDwarf
   /-- Exchange control of the two targeted permanents. -/
   | exchangeControl
   /-- Put a +1/+1 counter on an optional creature target; a player gains life. -/
   | plusOneAndPlayerGainsLife (life : Nat)
-  /-- Return the targeted spell to its owner's hand, then draw a card. -/
-  | returnSpellDraw
+  /-- Return the targeted spell to its owner's hand. -/
+  | returnTargetSpell
   /-- Creatures you control get +P/+T until end of turn. -/
   | creaturesYouControlPump (power toughness : Int)
-  /-- Destroy the targeted artifact or enchantment; you gain life. -/
-  | destroyArtifactOrEnchantmentGainLife (life : Nat)
+  /-- Creatures you control gain these keywords until end of turn. -/
+  | teamGain (k : Keywords)
   /-- Amass Goblins `n`. -/
   | amassGoblins (n : Nat)
-  /-- Draw a card, lose 1 life, then amass Goblins `n`. -/
-  | drawLoseLifeThenAmass (n : Nat)
-  /-- Return an optional graveyard creature card, then amass Goblins `n`. -/
-  | returnCreatureFromGyThenAmass (n : Nat)
+  /-- Return the targeted graveyard card to hand. -/
+  | returnFromGyToHand
   /-- Counter the targeted spell; recruit if its mana value was `n` or less. -/
   | counterThenRecruitIfMvAtMost (n : Nat)
-  /-- +1/+1 counters on the first target, then it fights the second. -/
-  | plusOneThenFight (n : Nat)
+  /-- Put `n` +1/+1 counters on the first targeted creature you control. -/
+  | plusOneOnFirstTarget (n : Nat)
+  /-- The first targeted creature fights the second. -/
+  | fightAnnouncedCreatures
   /-- +1/+1 on the target; if from the graveyard, also each other. -/
   | plusOneThenEachOtherIfFromGy
   /-- Draw `n`, or `fromGy` if cast from a graveyard. -/
@@ -121,8 +118,12 @@ inductive SpellResolution where
   | dealDamageToEachOppCreature (n : Nat)
   /-- Target player draws `n` cards. -/
   | targetPlayerDraw (n : Nat)
-  /-- Deal `n` damage; if the creature would die this turn, exile it. -/
-  | dealDamageToCreatureExileIfDies (n : Nat)
+  /-- The targeted player loses `n` life. -/
+  | targetPlayerLosesLife (n : Nat)
+  /-- The targeted permanent's controller loses `n` life. -/
+  | controllerOfTargetLosesLife (n : Nat)
+  /-- If the targeted creature would die this turn, exile it instead. -/
+  | exileIfDiesThisTurn
   /-- Add {R} for each artifact opponents control. -/
   | addRedPerOppArtifacts
   /-- Deal `n` damage to each non-Dragon creature. -/
@@ -137,8 +138,8 @@ inductive SpellResolution where
   | millThenPutLands (n max : Nat)
   /-- Exile targeted permanents you control, then return them. -/
   | exileThenReturnYouControl
-  /-- Deal `n` to each non-Dragon, then add Dragon-restricted mana. -/
-  | dealDamageToEachNonDragonThenAddDragonMana (n : Nat)
+  /-- Add four mana in any combination of colors, spendable only on Dragon spells. -/
+  | addFourManaDragonSpells
   /-- Mill `n`, then put all instants and sorceries into hand. -/
   | millThenPutAllInstantsOrSorceries (n : Nat)
   /-- Exile attacking creatures; that player may search basics. -/
@@ -147,8 +148,8 @@ inductive SpellResolution where
   | createTokensX (kind : TokenKind)
   /-- Exile the top `n`; play them if you control this subtype. -/
   | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
-  /-- Return the targeted spell; if a gift was promised, lock casts. -/
-  | returnSpellCantCastIfGift
+  /-- If a gift was promised, players can't cast spells this turn. -/
+  | playersCantCastIfGift
   /-- Exile the top X of the targeted opponent; play them for life. -/
   | exileTopXOppPlayForLife
   /-- Riddles in the Dark piles. -/
@@ -167,10 +168,10 @@ inductive SpellResolution where
   | phaseOutKicker
   /-- Deal `n` to the target; `teamworkN` if the spell was cast using teamwork. -/
   | dealDamageTeamwork (n teamworkN : Nat)
-  /-- Deal `n` to the target; if teamwork, `extra` to its controller. -/
-  | dealDamageThenControllerIfTeamwork (n extra : Nat)
-  /-- Grant double strike; also trample if teamwork. -/
-  | grantDoubleStrikeTeamworkTrample
+  /-- If this spell was cast using teamwork, deal `n` damage to the target's controller. -/
+  | damageControllerIfTeamwork (n : Nat)
+  /-- If this spell was cast using teamwork, the target gains trample until end of turn. -/
+  | grantTrampleIfTeamwork
   /-- Counter unless `n`; `teamworkN` if teamwork. -/
   | counterUnlessPaysTeamwork (n teamworkN : Nat)
   /-- Exile MV-limited creature, or any plus gain life if teamwork. -/
@@ -187,26 +188,24 @@ inductive SpellResolution where
   | returnOneOrTwoNonlands
   /-- Target player creates tokens. -/
   | targetPlayerCreatesTokens (kind : TokenKind) (n : Nat)
-  /-- Destroy the targeted creature, then surveil 1. -/
-  | destroyCreatureSurveil
-  /-- Investigate, pump +1/+0 and flying, untap. -/
-  | investigatePumpFlyingUntap
-  /-- +1/+1, lifelink, and indestructible on the target. -/
-  | plusOneLifelinkIndestructible
+  /-- Surveil `n` (CR 701.25). -/
+  | surveil (n : Nat)
+  /-- The targeted player investigates. -/
+  | targetPlayerInvestigates
+  /-- The targeted creature gets +1/+0, gains flying, and untaps. -/
+  | targetCreaturePumpFlyingUntap
   /-- Deal `n` damage to each creature. -/
   | dealDamageToEachCreature (n : Nat)
-  /-- Destroy the targeted land; its controller may search a basic. -/
-  | destroyLandSearchBasic
+  /-- The targeted permanent's owner may search for a basic land. -/
+  | ownerMaySearchBasic
   /-- Double the targeted creature's power and toughness. -/
   | doublePowerAndToughness
   /-- Return a graveyard card of this subtype to hand. -/
   | returnGySubtypeToHand (subtype : String)
-  /-- Grant vigilance and unblockable. -/
-  | grantVigilanceUnblockable
   /-- Become a 4/4 artifact creature with flying. -/
   | becomeArtifactCreature44Flying
-  /-- Draw three, then discard two unless an artifact. -/
-  | drawThreeDiscardUnlessArtifact
+  /-- Discard two cards unless an artifact card is discarded. -/
+  | discardTwoUnlessArtifact
   /-- Each opponent loses `n` life. -/
   | eachOpponentLosesLife (n : Nat)
   /-- Fight up to one other creature. -/
@@ -215,18 +214,12 @@ inductive SpellResolution where
   | plusOneOnEachYouControl
   /-- `n` +1/+1 counters on a creature you control. -/
   | plusOneOnCreatureN (n : Nat)
-  /-- Pump then draw. -/
-  | pumpThenDraw (power toughness : Int)
-  /-- Pump then exile the top card to play. -/
-  | pumpThenExileTopPlay (power toughness : Int)
+  /-- Exile the top `n` cards. You may play them until your next turn. -/
+  | exileTopPlayUntilNext (n : Nat)
   /-- Controlled creature deals twice its power. -/
   | creatureYouControlDealsTwicePower
-  /-- Create tokens, then pump the team. -/
-  | createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int)
   /-- Create a token per controlled subtype. -/
   | createTokensPerSubtype (kind : TokenKind) (subtype : String)
-  /-- Team pump and grant keywords. -/
-  | creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords)
   /-- Destroy up to one nonland. -/
   | destroyUpToOneNonland
   /-- Create Galactus. -/
@@ -257,14 +250,14 @@ inductive SpellResolution where
   | mayPutHeroMvOrDraw (n : Nat)
   /-- Maybe sacrifice or discard, then draw. -/
   | maySacArtifactOrDiscardDraw (cards : Nat)
-  /-- Double P/T and grant trample. -/
-  | chooseTargetDoubleAndTrample
   /-- Return up to two modal graveyard cards. -/
   | returnUpToTwoGyModal
   /-- Spells of this card type cost `{n}` less this turn (CR 205.2a). -/
   | artifactSpellsCostLessThisTurn (ty : CardType) (n : Nat)
   /-- Spells of this supertype cost `{n}` less this turn (CR 205.4a). -/
   | supertypeSpellsCostLessThisTurn (s : Supertype) (n : Nat)
+  /-- Apply each resolution in order. -/
+  | sequence (rs : List SpellResolution)
   /-- A resolution that is not a spell shape. It does not play an extra land. -/
   | unrecognized
 deriving Repr, Inhabited, BEq
@@ -272,9 +265,9 @@ deriving Repr, Inhabited, BEq
 
 namespace SpellResolution
 
-/-- Oracle-style reminder from targeting and resolution. `fight` here is the
-Quarrel wording; `Effect.fight` overrides the phrase for the actual fight spell. -/
-def toPhrase (r : SpellResolution) (noun : String) : String :=
+/-- One step, not a sequence. Sequence phrasing stays outside this match so
+the constructor splitter is not recursive. -/
+private def phraseOne (r : SpellResolution) (noun : String) : String :=
   match r with
   | .fight =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
@@ -282,21 +275,24 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     "target creature you control fights target creature an opponent controls"
   | .extraLand => "you may play an additional land this turn"
   | .unrecognized => "this effect does nothing"
-  | .drawAndLoseLife cards life =>
-    s!"you draw {cardPhrase cards} and lose {life} life"
+  | .sequence _ => ""
+  | .discard n => s!"discard {cardPhrase n}"
+  | .loseLife n => s!"lose {n} life"
+  | .gainLife n => s!"you gain {n} life"
+  | .surveil n => s!"surveil {n}"
+  | .teamGain k => s!"creatures you control gain {k.joinedAnd} until end of turn"
+  | .targetPlayerLosesLife n => s!"{noun} loses {n} life"
+  | .controllerOfTargetLosesLife n => s!"its controller loses {n} life"
+  | .returnTargetSpell => s!"return {noun} to its owner's hand"
+  | .returnFromGyToHand => s!"return up to one {noun} to your hand"
   | .onPermanent action => PermanentAction.toNotation action noun
   | .allCreaturesPump p t =>
     s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
-  | .playerDrawLoseLife cards life =>
-    s!"{noun} draws {cardPhrase cards} and loses {life} life"
   | .creaturesOfPlayerPump p t =>
     s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
-  | .destroyAndControllerLosesLife n =>
-    s!"destroy {noun}. Its controller loses {n} life"
   | .exileGraveyardCreaturesGrantCast =>
     "exile all creature cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them"
   | .draw n => s!"draw {cardPhrase n}"
-  | .drawThenDiscard n => s!"draw {cardPhrase n}, then discard a card"
   | .scry n => s!"scry {n}"
   | .tapScryDraw scryN drawN =>
     s!"tap {noun}. Scry {scryN}. Draw {cardPhrase drawN}"
@@ -308,28 +304,22 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     s!"counter {noun}. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled"
   | .putOnTopOrBottom =>
     s!"{noun}'s owner puts it on their choice of the top or bottom of their library"
-  | .untapPumpMaybeAttach p t =>
-    s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's a Dwarf, you may attach an Equipment you control to it"
+  | .mayAttachEquipmentIfDwarf =>
+    s!"if {noun} is a Dwarf, you may attach an Equipment you control to it"
   | .exchangeControl =>
     "exchange control of two target nonland permanents that share a card type"
   | .plusOneAndPlayerGainsLife n =>
     s!"put a +1/+1 counter on up to one target creature. Target player gains {n} life"
-  | .returnSpellDraw =>
-    s!"return {noun} to its owner's hand. Draw a card"
   | .creaturesYouControlPump p t =>
     s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
-  | .destroyArtifactOrEnchantmentGainLife n =>
-    s!"destroy {noun}. You gain {n} life"
   | .amassGoblins n =>
     s!"amass Goblins {n}"
-  | .drawLoseLifeThenAmass n =>
-    s!"you draw a card and lose 1 life. Amass Goblins {n}"
-  | .returnCreatureFromGyThenAmass n =>
-    s!"return up to one {noun} to your hand. Amass Goblins {n}"
   | .counterThenRecruitIfMvAtMost n =>
     s!"counter {noun}. If that spell's mana value was {n} or less, recruit"
-  | .plusOneThenFight n =>
-    s!"put {plusOnePlusOneCountersPhrase n} on target creature you control. Then it fights target creature an opponent controls"
+  | .plusOneOnFirstTarget n =>
+    s!"put {plusOnePlusOneCountersPhrase n} on target creature you control"
+  | .fightAnnouncedCreatures =>
+    "it fights target creature an opponent controls"
   | .plusOneThenEachOtherIfFromGy =>
     "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
   | .drawIfFromGy n fromGy =>
@@ -342,8 +332,8 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     s!"deals {n} damage to each creature your opponents control"
   | .targetPlayerDraw n =>
     s!"{noun} draws {cardPhrase n}"
-  | .dealDamageToCreatureExileIfDies n =>
-    s!"deals {n} damage to {noun}. If that creature would die this turn, exile it instead"
+  | .exileIfDiesThisTurn =>
+    s!"if {noun} would die this turn, exile it instead"
   | .addRedPerOppArtifacts =>
     "add {R} for each artifact your opponents control"
   | .dealDamageToEachNonDragon n =>
@@ -358,8 +348,8 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     s!"mill {n} cards, then put up to {englishNumber max} land cards from among them into your hand"
   | .exileThenReturnYouControl =>
     "exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control"
-  | .dealDamageToEachNonDragonThenAddDragonMana n =>
-    s!"deals {n} damage to each non-Dragon creature. Add four mana in any combination of colors. Spend this mana only to cast Dragon spells"
+  | .addFourManaDragonSpells =>
+    "add four mana in any combination of colors. Spend this mana only to cast Dragon spells"
   | .millThenPutAllInstantsOrSorceries n =>
     s!"mill {n} cards, then put all instant and sorcery cards from among them into your hand"
   | .exileAttackersSearchBasics =>
@@ -368,8 +358,8 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     s!"create X {kind.pluralNoun}"
   | .exileTopPlayIfYouControlSubtype n subtype =>
     s!"look at the top {n} cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a {subtype}"
-  | .returnSpellCantCastIfGift =>
-    "return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn"
+  | .playersCantCastIfGift =>
+    "if the gift was promised, players can't cast spells this turn"
   | .exileTopXOppPlayForLife =>
     "exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost"
   | .riddlesInTheDark =>
@@ -388,10 +378,10 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     "target creature phases out. If this spell was kicked, each creature target player controls phases out instead"
   | .dealDamageTeamwork n teamworkN =>
     s!"deals {n} damage to target attacking or blocking creature. If this spell was cast using teamwork, it deals {teamworkN} damage to that creature instead"
-  | .dealDamageThenControllerIfTeamwork n extra =>
-    s!"deals {n} damage to target creature. If this spell was cast using teamwork, it also deals {extra} damage to that creature's controller"
-  | .grantDoubleStrikeTeamworkTrample =>
-    "target creature gains double strike until end of turn. If this spell was cast using teamwork, that creature also gains trample until end of turn"
+  | .damageControllerIfTeamwork n =>
+    s!"if this spell was cast using teamwork, it also deals {n} damage to that creature's controller"
+  | .grantTrampleIfTeamwork =>
+    "if this spell was cast using teamwork, that creature also gains trample until end of turn"
   | .counterUnlessPaysTeamwork n teamworkN =>
     s!"counter target spell unless its controller pays \{{n}}. Counter that spell unless its controller pays \{{teamworkN}} instead if this spell was cast using teamwork"
   | .exileCreatureMvAtMostOrAnyIfTeamwork n life =>
@@ -408,26 +398,22 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     "return one or two target nonland permanents to their owners' hands"
   | .targetPlayerCreatesTokens kind n =>
     s!"{noun} creates {TokenKind.createdTokensPhrase kind n}"
-  | .destroyCreatureSurveil =>
-    s!"destroy {noun}. Surveil 1"
-  | .investigatePumpFlyingUntap =>
-    "target player investigates. Target creature gets +1/+0 and gains flying until end of turn. Untap it"
-  | .plusOneLifelinkIndestructible =>
-    "put a +1/+1 counter on target creature. It gains lifelink and indestructible until end of turn"
+  | .targetPlayerInvestigates =>
+    "target player investigates"
+  | .targetCreaturePumpFlyingUntap =>
+    "target creature gets +1/+0 and gains flying until end of turn. Untap it"
   | .dealDamageToEachCreature n =>
     s!"deals {n} damage to each creature"
-  | .destroyLandSearchBasic =>
-    s!"destroy {noun}. Its controller may {searchBasicLandTappedPhrase "their"}"
+  | .ownerMaySearchBasic =>
+    s!"its controller may {searchBasicLandTappedPhrase "their"}"
   | .doublePowerAndToughness =>
     s!"double {noun}'s power and toughness until end of turn"
   | .returnGySubtypeToHand subtype =>
     s!"return target {subtype} card from your graveyard to your hand"
-  | .grantVigilanceUnblockable =>
-    s!"{noun} gains vigilance until end of turn and can't be blocked this turn"
   | .becomeArtifactCreature44Flying =>
     s!"until end of turn, {noun} becomes an artifact creature with base power and toughness 4/4 and gains flying"
-  | .drawThreeDiscardUnlessArtifact =>
-    "draw three cards. Then discard two cards unless you discard an artifact card"
+  | .discardTwoUnlessArtifact =>
+    "discard two cards unless you discard an artifact card"
   | .eachOpponentLosesLife n =>
     s!"each opponent loses {n} life"
   | .fightUpToOne =>
@@ -436,20 +422,12 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     "put a +1/+1 counter on each creature you control"
   | .plusOneOnCreatureN n =>
     s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
-  | .pumpThenDraw p t =>
-    let tStr := if t == 0 && p < 0 then "-0" else signedStat t
-    s!"Target creature gets {signedStat p}/{tStr} until end of turn.\nDraw a card."
-  | .pumpThenExileTopPlay p t =>
-    s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. {playThatCardUntilNextTurnPhrase}."
+  | .exileTopPlayUntilNext _ =>
+    s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
   | .creatureYouControlDealsTwicePower =>
     "Target creature you control deals damage equal to twice its power to target creature an opponent controls."
-  | .createTokensThenTeamPump kind n p t =>
-    let tokens := capitalizeAscii (TokenKind.createPhrase kind n)
-    s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
   | .createTokensPerSubtype kind subtype =>
     s!"Create a {kind.oracleNoun} for each {subtype} you control"
-  | .creaturesYouControlGetAndGrant p t k =>
-    s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
   | .destroyUpToOneNonland =>
     "Destroy up to one target nonland permanent"
   | .createGalactus =>
@@ -480,14 +458,97 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     s!"You may put a Hero creature card with mana value {n} or less from your hand onto the battlefield. If you don't, draw a card"
   | .maySacArtifactOrDiscardDraw cards =>
     s!"You may sacrifice an artifact or discard a card. If you do, draw {cardPhrase cards}."
-  | .chooseTargetDoubleAndTrample =>
-    "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
   | .returnUpToTwoGyModal =>
     "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
   | .artifactSpellsCostLessThisTurn ty n =>
     s!"{ty} spells you cast this turn cost \{{n}} less to cast"
   | .supertypeSpellsCostLessThisTurn s n =>
     s!"{s} spells you cast this turn cost \{{n}} less to cast"
+
+/-- Nested `sequence` constructors, left to right. -/
+def flatten : SpellResolution → List SpellResolution
+  | .sequence rs => rs.flatMap flatten
+  | r => [r]
+
+/-- Printed wording of a flat sequence. Known shapes keep their Oracle text;
+other sequences join each step. -/
+private def phraseSequence (rs : List SpellResolution) (noun : String) : String :=
+  match rs with
+  | [.draw n, .discard 1] =>
+    s!"draw {cardPhrase n}, then discard a card"
+  | [.draw cards, .loseLife life] =>
+    s!"you draw {cardPhrase cards} and lose {life} life"
+  | [.targetPlayerDraw cards, .targetPlayerLosesLife life] =>
+    s!"{noun} draws {cardPhrase cards} and loses {life} life"
+  | [.onPermanent .destroy, .controllerOfTargetLosesLife n] =>
+    s!"destroy {noun}. Its controller loses {n} life"
+  | [.returnTargetSpell, .draw 1] =>
+    s!"return {noun} to its owner's hand. Draw a card"
+  | [.returnFromGyToHand, .amassGoblins n] =>
+    s!"return up to one {noun} to your hand. Amass Goblins {n}"
+  | [.draw 1, .loseLife 1, .amassGoblins n] =>
+    s!"you draw a card and lose 1 life. Amass Goblins {n}"
+  | [.createTokens kind n, .creaturesYouControlPump p t] =>
+    let tokens := capitalizeAscii (TokenKind.createPhrase kind n)
+    s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
+  | [.onPermanent .destroy, .gainLife n] =>
+    s!"destroy {noun}. You gain {n} life"
+  | [.onPermanent .destroy, .surveil 1] =>
+    s!"destroy {noun}. Surveil 1"
+  | [.onPermanent (.pump p t), .draw 1] =>
+    let tStr := if t == 0 && p < 0 then "-0" else signedStat t
+    s!"Target creature gets {signedStat p}/{tStr} until end of turn.\nDraw a card."
+  | [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords k)] =>
+    if k == Keyword.lifelink.merge Keyword.indestructible then
+      "put a +1/+1 counter on target creature. It gains lifelink and indestructible until end of turn"
+    else
+      String.intercalate ". " (rs.map (phraseOne · noun))
+  | [.onPermanent (.grantKeywords k), .draw 1] =>
+    if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
+      s!"{noun} gains vigilance until end of turn and can't be blocked this turn"
+    else
+      String.intercalate ". " (rs.map (phraseOne · noun))
+  | [.creaturesYouControlPump p t, .teamGain k] =>
+    s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
+  | [.onPermanent .untap, .onPermanent (.pump p t), .mayAttachEquipmentIfDwarf] =>
+    s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's a Dwarf, you may attach an Equipment you control to it"
+  | [.plusOneOnFirstTarget n, .fightAnnouncedCreatures] =>
+    s!"put {plusOnePlusOneCountersPhrase n} on target creature you control. Then it fights target creature an opponent controls"
+  | [.dealDamageToEachNonDragon n, .addFourManaDragonSpells] =>
+    s!"deals {n} damage to each non-Dragon creature. Add four mana in any combination of colors. Spend this mana only to cast Dragon spells"
+  | [.returnTargetSpell, .playersCantCastIfGift] =>
+    "return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn"
+  | [.onPermanent (.dealDamage n), .damageControllerIfTeamwork extra] =>
+    s!"deals {n} damage to target creature. If this spell was cast using teamwork, it also deals {extra} damage to that creature's controller"
+  | [.onPermanent (.grantKeywords k), .grantTrampleIfTeamwork] =>
+    if k == Keyword.doubleStrike then
+      "target creature gains double strike until end of turn. If this spell was cast using teamwork, that creature also gains trample until end of turn"
+    else
+      String.intercalate ". " (rs.map (phraseOne · noun))
+  | [.targetPlayerInvestigates, .targetCreaturePumpFlyingUntap] =>
+    "target player investigates. Target creature gets +1/+0 and gains flying until end of turn. Untap it"
+  | [.onPermanent .destroy, .ownerMaySearchBasic] =>
+    s!"destroy {noun}. Its controller may {searchBasicLandTappedPhrase "their"}"
+  | [.draw 3, .discardTwoUnlessArtifact] =>
+    "draw three cards. Then discard two cards unless you discard an artifact card"
+  | [.exileIfDiesThisTurn, .onPermanent (.dealDamage n)] =>
+    s!"deals {n} damage to {noun}. If that creature would die this turn, exile it instead"
+  | [.onPermanent (.pump p t), .exileTopPlayUntilNext 1] =>
+    s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. {playThatCardUntilNextTurnPhrase}."
+  | [.doublePowerAndToughness, .onPermanent (.grantKeywords k)] =>
+    if k == Keyword.trample then
+      "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
+    else
+      String.intercalate ". " (rs.map (phraseOne · noun))
+  | _ =>
+    String.intercalate ". " (rs.map (phraseOne · noun))
+
+/-- Oracle-style reminder from targeting and resolution. `fight` here is the
+Quarrel wording; `Effect.fight` overrides the phrase for the actual fight spell. -/
+def toPhrase (r : SpellResolution) (noun : String) : String :=
+  match r with
+  | .sequence rs => phraseSequence (rs.flatMap flatten) noun
+  | r => phraseOne r noun
 
 end SpellResolution
 

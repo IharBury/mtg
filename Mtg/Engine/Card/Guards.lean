@@ -55,24 +55,30 @@ namespace CardDef
   Resolution.sequence [.onPermanent .destroy, .gainLife 2]
 #guard Effect.destroyCreatureSurveil.resolution ==
   Resolution.sequence [.onPermanent .destroy, .surveil 1]
-#guard Effect.destroyCreatureSurveil.spellResolution == .destroyCreatureSurveil
+#guard Effect.destroyCreatureSurveil.spellResolution ==
+  .sequence [.onPermanent .destroy, .surveil 1]
 #guard (Effect.pumpThenDraw (-4) 0).resolution ==
   Resolution.sequence [.onPermanent (.pump (-4) 0), .draw 1]
-#guard (Effect.pumpThenDraw (-4) 0).spellResolution == .pumpThenDraw (-4) 0
+#guard (Effect.pumpThenDraw (-4) 0).spellResolution ==
+  .sequence [.onPermanent (.pump (-4) 0), .draw 1]
 #guard Effect.plusOneLifelinkIndestructible.resolution ==
   Resolution.sequence [.onPermanent (.plusOne 1),
     .onPermanent (.grantKeywords (Keyword.lifelink.merge Keyword.indestructible))]
 #guard Effect.plusOneLifelinkIndestructible.spellResolution ==
-  .plusOneLifelinkIndestructible
+  .sequence [.onPermanent (.plusOne 1),
+    .onPermanent (.grantKeywords (Keyword.lifelink.merge Keyword.indestructible))]
 #guard Effect.grantVigilanceUnblockable.resolution ==
   Resolution.sequence
     [.onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.cantBeBlocked)),
      .draw 1]
-#guard Effect.grantVigilanceUnblockable.spellResolution == .grantVigilanceUnblockable
+#guard Effect.grantVigilanceUnblockable.spellResolution ==
+  .sequence
+    [.onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.cantBeBlocked)),
+     .draw 1]
 #guard (Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance).resolution ==
   Resolution.sequence [.creaturesYouControlPump 1 1, .teamGain Keyword.vigilance]
 #guard (Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance).spellResolution ==
-  .creaturesYouControlGetAndGrant 1 1 Keyword.vigilance
+  .sequence [.creaturesYouControlPump 1 1, .teamGain Keyword.vigilance]
 #guard Effect.sourceGainsIndestructibleTap.resolution ==
   Resolution.sequence
     [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap]
@@ -80,7 +86,8 @@ namespace CardDef
   "Witch-king of Angmar gains indestructible until end of turn. Tap him"
 #guard (Effect.drawThenDiscard 2).resolution ==
   Resolution.sequence [.draw 2, .discard 1]
-#guard (Effect.drawThenDiscard 2).spellResolution == .drawThenDiscard 2
+#guard (Effect.drawThenDiscard 2).spellResolution ==
+  .sequence [.draw 2, .discard 1]
 #guard (Effect.abilityDrawThenDiscard 2).resolution ==
   Resolution.sequence [.draw 2, .discard 1]
 #guard (Effect.ownerShuffleSourceDraw 3).resolution ==
@@ -120,7 +127,7 @@ namespace CardDef
 #guard (Effect.subtypesGainMenace #["Elf"]).phrase ==
   "Elves you control gain menace until end of turn"
 #guard (Effect.drawLoseLifeThenAmass 2).spellResolution ==
-  .drawLoseLifeThenAmass 2
+  .sequence [.draw 1, .loseLife 1, .amassGoblins 2]
 #guard Resolution.flatten
     (.sequence [.sequence [.draw 1, .gainLife 1], .amassGoblins 2]) ==
   [.draw 1, .gainLife 1, .amassGoblins 2]
@@ -312,7 +319,8 @@ namespace CardDef
 #guard Effect.destroyCreatureWithFlying.spellResolution == .onPermanent .destroy
 #guard Effect.destroyCreature.spellResolution == .onPermanent .destroy
 #guard Effect.playAdditionalLandThisTurn.spellResolution == .extraLand
-#guard (Effect.drawAndLoseLife 2 2).spellResolution == .drawAndLoseLife 2 2
+#guard (Effect.drawAndLoseLife 2 2).spellResolution ==
+  .sequence [.draw 2, .loseLife 2]
 #guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution == .fight
 #guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)
