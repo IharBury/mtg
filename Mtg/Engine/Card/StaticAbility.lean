@@ -582,8 +582,7 @@ def StaticShape.spec : StaticShape → StaticMeta
     { equipTargetingThisCostLess := some n }
   | .firstEquipFreeIfEnduringStory =>
     { firstEquipFreeIfEnduringStory := true }
-  | .chosenTypePump p t =>
-    { lordPump := some (#[], p, t), lordIncludesSelf := true }
+  | .chosenTypePump _ _ => {}
   | .instantSorceryCostReductionEqualEquippedPower => {}
   | .otherSubtypePowerPerArtifactToken _ => {}
   | .extraTriggerIfEnduringStorySubtype _ => {}

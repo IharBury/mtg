@@ -436,6 +436,25 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
           s!"{(g.player p).name} chooses a color for {o.name}"
       | none => g
     else g
+  -- An Unexpected Party: “As this enchantment enters, choose a creature type.”
+  let g :=
+    if o.printed.asEntersChooseCreatureType && o.status.chosenCreatureType.isNone &&
+        g.pending == .none then
+      match o.controller with
+      | some p =>
+        { g with pending := .fraChoice p (.entersCreatureType o.id) }.logMsg
+          s!"{(g.player p).name} chooses a creature type for {o.name}"
+      | none => g
+    else g
+  -- Gollum, Riddle Master: “As Gollum enters, choose odd or even.”
+  let g :=
+    if o.printed.asEntersChooseOddEven && o.status.chosenOdd.isNone && g.pending == .none then
+      match o.controller with
+      | some p =>
+        { g with pending := .fraChoice p (.entersOddEven o.id) }.logMsg
+          s!"{(g.player p).name} chooses odd or even for {o.name}"
+      | none => g
+    else g
   -- Meddling Mage: “As it enters, choose a nonland card name.”
   let g :=
     if o.staticAbilities.any (· == .fra .entersChooseNonlandCardName) && o.status.chosenName.isNone &&

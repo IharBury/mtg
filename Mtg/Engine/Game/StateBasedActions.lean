@@ -21,7 +21,7 @@ def apnapOrder (g : Game) : Array PlayerId :=
 
 /-- Legendary permanents `p` currently controls. -/
 def legendaryPermanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
-  (g.permanentsOf p).filter (·.isLegendary)
+  (g.permanentsOf p).filter (g.treatedAsLegendary)
 
 /-- First legend-rule group that needs a choice (CR 704.5j / 201.2a): two or
 more legendary permanents with the same name controlled by the same player,

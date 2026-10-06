@@ -4268,4 +4268,76 @@ def dainAttackTaxOk : Bool :=
 
 #guard dainAttackTaxOk
 
+/-- An Unexpected Party asks for a creature type as it enters, and pumps only that type. -/
+def unexpectedPartyChoosesTypeOk : Bool :=
+  let g := addPermanent afterDraw anUnexpectedParty ⟨0⟩ ⟨0⟩
+  let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let party := namedPermanent g "An Unexpected Party"
+  let bare := g.power (namedPermanent g "Lakeshore Apothecary") == 1 &&
+    g.power (namedPermanent g "Gray Ogre") == 2
+  let g := g.afterPermanentEnters party
+  anUnexpectedParty.asEntersChooseCreatureType && bare &&
+    match g.pending with
+    | .fraChoice ⟨0⟩ (.entersCreatureType id) =>
+      id == party.id &&
+        (let g := mustApply g ⟨0⟩ (.chooseName "Human")
+         (namedPermanent g "An Unexpected Party").status.chosenCreatureType == some "Human" &&
+           g.power (namedPermanent g "Lakeshore Apothecary") == 3 &&
+           g.power (namedPermanent g "Gray Ogre") == 2)
+    | _ => false
+
+#guard unexpectedPartyChoosesTypeOk
+
+/-- Gollum, Riddle Master chooses odd or even as he enters. -/
+def gollumChoosesParityOk : Bool :=
+  let g := addPermanent afterDraw gollumRiddleMaster ⟨0⟩ ⟨0⟩
+  let gollum := namedPermanent g "Gollum, Riddle Master"
+  let g := g.afterPermanentEnters gollum
+  gollumRiddleMaster.asEntersChooseOddEven &&
+    match g.pending with
+    | .fraChoice ⟨0⟩ (.entersOddEven id) =>
+      id == gollum.id &&
+        (let g := mustApply g ⟨0⟩ (.chooseMode 1)
+         (namedPermanent g "Gollum, Riddle Master").status.chosenOdd == some true)
+    | _ => false
+
+#guard gollumChoosesParityOk
+
+/-- Undercover Skrull is every creature type, and gets +2/+2, with two creature cards in the graveyard. -/
+def undercoverSkrullTypesOk : Bool :=
+  let g := addPermanent afterDraw undercoverSkrull ⟨0⟩ ⟨0⟩
+  let one := addToGraveyard g grizzlyBears ⟨0⟩
+  let two := addToGraveyard one grayOgre ⟨0⟩
+  let shy := namedPermanent one "Undercover Skrull"
+  let bold := namedPermanent two "Undercover Skrull"
+  one.power shy == 1 && !one.hasSubtype shy "Goblin" &&
+    two.power bold == 3 && two.toughness bold == 3 &&
+    two.hasSubtype bold "Goblin" && two.hasSubtype bold "Elf" &&
+    !two.hasSubtype bold "Equipment"
+
+#guard undercoverSkrullTypesOk
+
+/-- Super-Soldier Serum makes the enchanted creature a legendary Soldier with +2/+2,
+first strike, and vigilance. -/
+def serumLegendarySoldierOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g superSoldierSerum ⟨0⟩ ⟨0⟩
+  let g := addPermanent g superSoldierSerum ⟨0⟩ ⟨0⟩
+  let bears := g.battlefield.filter (fun o => o.name == "Grizzly Bears")
+  let serums := g.battlefield.filter (fun o => o.name == "Super-Soldier Serum")
+  let g := g.attachSourceTo serums[0]! bears[0]!
+  let g := g.attachSourceTo serums[1]! bears[1]!
+  let host := g.object! bears[0]!.id
+  g.power host == 4 && g.toughness host == 4 &&
+    g.hasFirstStrike host && g.hasVigilance host &&
+    g.hasSubtype host "Soldier" && g.hasSubtype host "Bear" &&
+    g.treatedAsLegendary host &&
+    match g.firstLegendRuleChoice? with
+    | some (_, name, ids) => name == "Grizzly Bears" && ids.size == 2
+    | none => false
+
+#guard serumLegendarySoldierOk
+
 end Mtg.Engine.MshRulingTests

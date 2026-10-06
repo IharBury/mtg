@@ -36,6 +36,33 @@ def currentSubtypes (g : Game) (o : GameObject) : Array Subtype :=
     | some s => #[s]
     | none => o.subtypes
 
+/-- Creature cards in `p`'s graveyard. -/
+def gyCreatureCards (g : Game) (p : PlayerId) : Nat :=
+  (g.player p).graveyard.filter (fun id =>
+    (g.findObject? id).any (·.printed.isCreature)) |>.size
+
+/-- Undercover Skrull: all creature types while enough creature cards are
+in your graveyard. -/
+def hasAllCreatureTypes (g : Game) (o : GameObject) : Bool :=
+  match o.controller with
+  | none => false
+  | some p =>
+    o.staticAbilities.any fun
+      | .getsAndAllTypesIfGyCreatureCards min _ _ => g.gyCreatureCards p >= min
+      | _ => false
+
+/-- Types an attached Aura adds, including the word "legendary". -/
+def auraAddedTypes (g : Game) (o : GameObject) : Array String :=
+  if !o.isOnBattlefield then #[]
+  else
+    g.battlefield.foldl (fun acc a =>
+      if a.attachedTo != some o.id then acc
+      else
+        a.staticAbilities.foldl (fun acc ab =>
+          match ab with
+          | .enchantedCreatureGetsHasAndTypes _ _ _ types => acc ++ types
+          | _ => acc) acc) #[]
+
 /-- Whether `o` currently has subtype `s`, including Fog-style overwrites.
 Changeling grants every creature type (CR 702.72 / MSH 72–73) unless a
 type-setting Aura overwrites the subtypes. -/
@@ -45,7 +72,14 @@ def hasSubtype (g : Game) (o : GameObject) (s : String) : Bool :=
       a.attachedTo == some o.id &&
         a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome))
   (g.currentSubtypes o).any (· == s) ||
-    (!fogged && o.printedOrUntilEot.changeling && !isNoncreatureSubtype s)
+    (g.auraAddedTypes o).any (· == s) ||
+    (!fogged && (o.printedOrUntilEot.changeling || g.hasAllCreatureTypes o) &&
+      !isNoncreatureSubtype s)
+
+/-- Printed legendary, or an Aura that adds the legendary supertype. -/
+def treatedAsLegendary (g : Game) (o : GameObject) : Bool :=
+  o.isLegendary ||
+    (g.auraAddedTypes o).any (fun t => t == "legendary" || t == "Legendary")
 
 /-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.3c). -/
 def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
@@ -72,6 +106,11 @@ def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
             src.controller != target.controller then
           addStats acc (p, t)
         else acc
+      | .chosenTypeCreaturesGet p t =>
+        match src.status.chosenCreatureType with
+        | some ty =>
+          if sameController && g.hasSubtype target ty then addStats acc (p, t) else acc
+        | none => acc
       | _ =>
         match ab.lordPump? with
         | none => acc

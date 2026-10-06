@@ -509,6 +509,10 @@ inductive FraChoice where
   /-- Choose a player tied for most life. The creature can't be blocked by
   that player's creatures this turn (The Black Gate). -/
   | blackGatePlayer (creatureId : ObjectId) (players : Array PlayerId)
+  /-- As this permanent enters, choose a creature type (An Unexpected Party). -/
+  | entersCreatureType (objectId : ObjectId)
+  /-- As this permanent enters, choose even (0) or odd (1) (Gollum, Riddle Master). -/
+  | entersOddEven (objectId : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

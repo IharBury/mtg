@@ -1022,6 +1022,15 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if rest.isEmpty then return g.promptNextWard.finishFraChoice
     return { g with pending := .fraChoice p (.newTargetsForCopies rest) }
   | .newTargetsForCopies .., _ => throw "Choose a new target for the copy, or decline to keep it"
+  | .entersCreatureType id, .name t =>
+    if !isCreatureType t then throw s!"{t} is not a creature type"
+    return (g.chooseCreatureTypeAsEnters id t).finishFraChoice
+  | .entersCreatureType _, _ => throw "Name a creature type"
+  | .entersOddEven id, .mode 0 =>
+    return (g.chooseGollumParity id false).finishFraChoice
+  | .entersOddEven id, .mode 1 =>
+    return (g.chooseGollumParity id true).finishFraChoice
+  | .entersOddEven _, _ => throw "Choose even (0) or odd (1)"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
@@ -1196,6 +1205,13 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)
     let any := g.knownCardFaces.find? (fun c => !c.isLand)
     .chooseName ((opp.map (·.name)).getD ((any.map (·.name)).getD ""))
+  | .entersCreatureType _ =>
+    let yours :=
+      (g.permanentsOf p).foldl (fun acc o =>
+        o.subtypes.foldl (fun acc s =>
+          if isCreatureType s && !acc.contains s then acc.push s else acc) acc) #[]
+    .chooseName (yours[0]?.getD "Human")
+  | .entersOddEven _ => .chooseMode 0
 
 end Game
 end Mtg.Engine
