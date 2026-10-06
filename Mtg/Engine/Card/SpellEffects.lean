@@ -159,6 +159,12 @@ def draw (n : Nat) : Effect :=
   mkSpell (.of .none) (.draw n)
     (castKind := .draw)
 
+/-- Discard `n` cards. The Oracle parser joins this with `draw` on “, then”,
+so “draw N cards, then discard a card” is not its own prototype. -/
+def discardCards (n : Nat) : Effect :=
+  { resolution := .discard n
+    phrase := s!"discard {cardPhrase n}" }
+
 def drawThenDiscard (n : Nat) : Effect :=
   mkSpell (.of .none) (.drawThenDiscard n)
     (castKind := .draw)

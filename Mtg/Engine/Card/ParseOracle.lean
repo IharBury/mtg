@@ -1015,22 +1015,72 @@ def chapterStoredText (cardName text : String) : Option String :=
   let q := EffectQuery.of cardName text
   chapterProtos.get.find? (·.sameText q) |>.map (·.line.raw)
 
+/-- First spell prototype whose printed line matches `text`. -/
+def firstSpellProto (cardName : String) (f : EffectProto → Option Effect) : Option Effect :=
+  spellProtos.get.foldl (fun acc p =>
+    match acc with
+    | some _ => acc
+    | none => (p.forCard cardName).bind f) none
+
+/-- `text` as one spell prototype, exact wording before a refilled one. -/
+def matchSpellProto (cardName text : String) : Option Effect :=
+  let q := EffectQuery.of cardName text
+  match firstSpellProto cardName fun p => if p.sameText q then some p.effect else none with
+  | some e => some e
+  | none => firstSpellProto cardName (·.matchText q)
+
+/-- The two clauses of one “, then” sentence, when there is exactly one. -/
+def splitOnThen (s : String) : Option (String × String) :=
+  match s.splitOn ", then " with
+  | [a, b] =>
+    let a := a.trimAscii.copy
+    let b := b.trimAscii.copy
+    if a.isEmpty || b.isEmpty then none else some (a, b)
+  | _ => none
+
+/-- One effect whose steps are `es`, phrased with “, then” between them. -/
+def joinThenEffects (es : List Effect) : Effect :=
+  match es with
+  | [] => { resolution := .sequence [] }
+  | [e] => e
+  | _ =>
+    let targeted := es.find? (·.requiresTarget) |>.getD es.head!
+    let steps := es.flatMap fun e =>
+      match e.resolution with
+      | .sequence rs => rs.flatMap Resolution.flatten
+      | r => [r]
+    { targeted with
+      resolution := .sequence steps
+      phrase := String.intercalate ", then " (es.map (·.phrase)) }
+
+/-- “Draw N cards, then discard a card”, from the `draw` and `discardCards`
+prototypes. The discard stays the last step, so its pending choice does not
+block a later step. A line that is already one prototype is not split. -/
+def matchDrawThenDiscard (cardName text : String) : Option Effect :=
+  match splitOnThen text with
+  | none => none
+  | some (drawText, discardText) =>
+    match matchSpellProto cardName drawText, matchSpellProto cardName discardText with
+    | some drawE, some discardE =>
+      match drawE.resolution, discardE.resolution with
+      | .draw _, .discard _ => some (joinThenEffects [drawE, discardE])
+      | _, _ => none
+    | _, _ => none
+
 def matchChapter (cardName text : String) : Option Effect :=
   let q := EffectQuery.of cardName text
-  let firstSpell (f : EffectProto → Option Effect) : Option Effect :=
-    spellProtos.get.foldl (fun acc p =>
-      match acc with
-      | some _ => acc
-      | none => (p.forCard cardName).bind f) none
   match chapterProtos.get.find? (·.sameText q) with
   | some p => some p.effect
   | none =>
-    match firstSpell fun p => if p.sameText q then some p.effect else none with
+    match firstSpellProto cardName fun p => if p.sameText q then some p.effect else none with
     | some e => some e
     | none =>
       match chapterProtos.get.findSome? (·.matchText q) with
       | some e => some e
-      | none => firstSpell (·.matchText q)
+      | none =>
+        match firstSpellProto cardName (·.matchText q) with
+        | some e => some e
+        | none => matchDrawThenDiscard cardName text
 
 /-- A mode of a modal triggered ability: a spell or ability effect, else a
 Saga chapter effect. -/
@@ -1439,18 +1489,41 @@ def joinSpellEffects (es : List Effect) : Effect :=
       resolution := .sequence (es.flatMap effectSteps)
       phrase := String.intercalate ". " (es.map (·.phrase)) }
 
-/-- `line` is a sequence of spell effects, each sentence already in `spellEffects`. -/
+/-- One sentence as a spell prototype, or as draw-then-discard. -/
+def matchSpellSentence (cardName s : String) : Option Effect :=
+  match matchModeled cardName [s] with
+  | some (.spell e, 1) => some e
+  | _ => matchDrawThenDiscard cardName s
+
+/-- `line` is a sequence of spell effects, each sentence already in `spellEffects`,
+or a single “draw N cards, then discard a card” sentence. -/
 def spellSentenceSequence (cardName line : String) : Option Effect :=
   let sents := oracleSentences line
-  if sents.length < 2 then none
-  else
-    let rec go : List String → Option (List Effect)
-      | [] => some []
-      | s :: rest =>
-        match matchModeled cardName [s] with
-        | some (.spell e, 1) => (go rest).map (e :: ·)
-        | _ => none
-    (go sents).map joinSpellEffects
+  let rec go : List String → Option (List Effect)
+    | [] => some []
+    | s :: rest =>
+      match matchSpellSentence cardName s with
+      | some e => (go rest).map (e :: ·)
+      | none => none
+  match sents with
+  | [] => none
+  | [s] => matchDrawThenDiscard cardName s
+  | _ => (go sents).map joinSpellEffects
+
+#guard matchChapter "Card" "Draw two cards, then discard a card." ==
+  some (Effect.drawThenDiscard 2)
+#guard matchChapter "Card" "Draw a card, then discard a card" ==
+  some (Effect.drawThenDiscard 1)
+#guard matchChapter "Card" "Discard a card, then draw a card." == none
+#guard matchChapter "Card" (Effect.millThenDraw 3 1).phrase ==
+  some (Effect.millThenDraw 3 1)
+#guard matchChapter "Card" Effect.searchTwoBasicsSplit.phrase ==
+  some Effect.searchTwoBasicsSplit
+#guard spellSentenceSequence "Card" "Draw two cards, then discard a card." ==
+  some (Effect.drawThenDiscard 2)
+#guard spellSentenceSequence "Card"
+    "Draw two cards, then discard a card. You gain 3 life." ==
+  some (joinSpellEffects [Effect.drawThenDiscard 2, Effect.gainLife 3])
 
 /-- Append later spell lines to `e` when each of them is its own spell effect.
 A second targeted step stays a separate ability. -/

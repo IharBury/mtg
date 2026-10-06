@@ -9,6 +9,8 @@ artifact.” Each list keeps one prototype per shape. Another entry that
 differs only by those arguments is the same ability, so it is not listed again.
 A spell whose text is several of these shapes in a row is parsed as a
 `Resolution.sequence` of those shapes, so the sequence itself is not listed.
+“Draw N cards, then discard a card” is `draw` followed by `discardCards`,
+so that sentence is not listed either.
 -/
 
 namespace Mtg.Engine.OracleCandidates
@@ -25,6 +27,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.exileAttackersSearchBasics,
   Effect.dealDamage 3,
   Effect.draw 1,
+  Effect.discardCards 1,
   Effect.searchTwoBasicsSplit,
   Effect.targetCantBeBlockedPowerAtMost 2,
   Effect.playAdditionalLandThisTurn,
@@ -125,8 +128,6 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.plusOneUpToOneAndPlayerGainsLife 2,
   Effect.drawAndLoseLife 2 2,
   Effect.drawLoseLifeThenAmass 2,
-  Effect.drawThenDiscard 2,
-  Effect.abilityDrawThenDiscard 2,
   Effect.ownerShuffleSourceDraw 3,
   Effect.creaturesYouControlGetOppsLoseLife 2 0 2,
   Effect.plusOneAndCreateTokens 2 .robotVillain22,
@@ -160,7 +161,6 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.plusOneThenFight 2,
   Effect.searchLegendaryCreatureToHand,
   Effect.addMana #[.colored .black, .colored .red],
-  Effect.abilityDrawThenDiscard 1,
   Effect.millThenPutInstantOrSorcery 4,
   Effect.exileThenReturnYouControl,
   Effect.dealDamageToCreatureExileIfDies 3,
@@ -607,7 +607,6 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.plusOneVigilanceIndestructible,
   Effect.fraTapTargetCreature,
   Effect.untapTargetCreature,
-  Effect.drawThenDiscardOne,
   Effect.destroyNoncreatureNonland,
   Effect.gainLifeMode 4,
   Effect.minusPowerPerGraveyard,
