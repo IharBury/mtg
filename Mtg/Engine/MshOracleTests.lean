@@ -4193,4 +4193,79 @@ def unrecognizedIsNotExtraLandOk : Bool :=
 
 #guard unrecognizedIsNotExtraLandOk
 
+def withGraveyard (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  (List.range n).foldl (fun g _ => addToGraveyard g forest p) g
+
+def attackStep (g : Game) : Game :=
+  { g with step := .declareAttackers, pending := .declareAttackers, activePlayer := ⟨0⟩, priority := ⟨0⟩ }
+
+/-- Threshold gives +1/+1 once seven cards are in your graveyard. -/
+def thresholdGetsOk : Bool :=
+  let g := addPermanent afterDraw mostDecrepitOldBird ⟨0⟩ ⟨0⟩
+  let shy := namedPermanent g "Most Decrepit Old Bird"
+  let six := withGraveyard g ⟨0⟩ 6
+  let seven := withGraveyard g ⟨0⟩ 7
+  let opp := withGraveyard g ⟨1⟩ 7
+  g.power shy == 1 && g.toughness shy == 1 &&
+    six.power (namedPermanent six "Most Decrepit Old Bird") == 1 &&
+    seven.power (namedPermanent seven "Most Decrepit Old Bird") == 2 &&
+    seven.toughness (namedPermanent seven "Most Decrepit Old Bird") == 2 &&
+    opp.power (namedPermanent opp "Most Decrepit Old Bird") == 1
+
+#guard thresholdGetsOk
+
+/-- Long-Lost Lances pumps its host, and equipped creatures you control have
+first strike and vigilance on your turn. -/
+def longLostLancesOk : Bool :=
+  let g := addPermanent afterDraw longLostLances ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := g.attachSourceTo (namedPermanent g "Long-Lost Lances")
+    (namedPermanent g "Grizzly Bears")
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  let theirs := { g with activePlayer := ⟨1⟩ }
+  g.power bears == 4 && g.toughness bears == 2 &&
+    g.hasFirstStrike bears && g.hasVigilance bears &&
+    !g.hasFirstStrike ogre && !g.hasVigilance ogre &&
+    !theirs.hasFirstStrike (namedPermanent theirs "Grizzly Bears") &&
+    theirs.power (namedPermanent theirs "Grizzly Bears") == 4
+
+#guard longLostLancesOk
+
+/-- With an enduring story, attacking Dáin's controller costs {1} per creature.
+A creature that must attack may decline when that cost is the only way. -/
+def dainAttackTaxOk : Bool :=
+  let g := addPermanent afterDraw dainLordOfTheIronHills ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bearsId := (namedPermanent g "Grizzly Bears").id
+  let free := attackStep g
+  let taxed := attackStep (g.modifyPlayer ⟨1⟩ (fun pl => { pl with enduringStory := true }))
+  let paid := taxed.modifyPlayer ⟨0⟩ (fun pl =>
+    { pl with manaPool := pl.manaPool.add .colorless 1 })
+  let withAres := attackStep (addPermanent g aresGodOfWar ⟨0⟩ ⟨0⟩)
+  let aresTaxed := attackStep
+    ((addPermanent g aresGodOfWar ⟨0⟩ ⟨0⟩).modifyPlayer ⟨1⟩
+      (fun pl => { pl with enduringStory := true }))
+  (match free.apply ⟨0⟩ (.declareAttackers #[bearsId]) with
+    | .ok g => (namedPermanent g "Grizzly Bears").status.attacking
+    | .error _ => false) &&
+    (match taxed.apply ⟨0⟩ (.declareAttackers #[bearsId]) with
+      | .error _ => true
+      | .ok _ => false) &&
+    (match paid.apply ⟨0⟩ (.declareAttackers #[bearsId]) with
+      | .ok g =>
+        (namedPermanent g "Grizzly Bears").status.attacking &&
+          !(g.player ⟨0⟩).manaPool.canPay (ManaCost.ofGeneric 1)
+      | .error _ => false) &&
+    (match withAres.apply ⟨0⟩ (.declareAttackers #[]) with
+      | .error _ => true
+      | .ok _ => false) &&
+    !aresTaxed.mustAttackIfAble (namedPermanent aresTaxed "Ares, God of War") &&
+    (match aresTaxed.apply ⟨0⟩ (.declareAttackers #[]) with
+      | .ok _ => true
+      | .error _ => false)
+
+#guard dainAttackTaxOk
+
 end Mtg.Engine.MshRulingTests

@@ -56,8 +56,16 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
   else
     match g.pending with
     | .declareAttackers =>
-      let ids := g.battlefield.filter (g.canAttack) |>.map (·.id)
-      some (.declareAttackers ids)
+      let attackers := g.battlefield.filter (g.canAttack)
+      let dest := g.opponent p
+      let rate := g.attackTaxPerCreature dest
+      let n :=
+        if rate == 0 then attackers.size
+        else
+          (List.range (attackers.size + 1)).foldl (fun best k =>
+            if (g.player p).manaPool.canPay (ManaCost.ofGeneric (k * rate)) then k
+            else best) 0
+      some (.declareAttackers ((attackers.extract 0 n).map (·.id)))
     | .declareBlockers =>
       -- Naive: don't block. The demo still exercises the declare-blockers step.
       some (.declareBlockers #[])

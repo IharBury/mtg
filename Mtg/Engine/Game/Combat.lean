@@ -71,6 +71,18 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
         a.status.attacking && a.status.attackingPlaneswalker == some pw.id)).size
       if n > 1 then
         throw s!"No more than one creature can attack {pw.name} each combat"
+  for o in g.permanentsOf p do
+    if g.mustAttackIfAble o && !ids.contains o.id then
+      throw s!"{o.name} must attack if able"
+  let tax := ids.foldl (fun acc id =>
+    match (g.object! id).status.attackingWhom with
+    | some dest => acc + g.attackTaxPerCreature dest
+    | none => acc) 0
+  if tax > 0 then
+    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric tax) then
+      throw s!"{(g.player p).name} must pay {tax} to attack"
+    g ← g.payCost p (ManaCost.ofGeneric tax)
+    g := g.logMsg s!"{(g.player p).name} pays {tax} to attack"
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"
   g := g.putAttackTriggersOnStack p ids

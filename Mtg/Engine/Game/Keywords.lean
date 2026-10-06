@@ -187,6 +187,22 @@ def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
     | some src => src.isOnBattlefield
     | none => false)
 
+/-- During your turn, creatures you control that are equipped gain these
+keywords (Long-Lost Lances). -/
+def equippedDuringYourTurnKeywords (g : Game) (o : GameObject) : Keywords :=
+  if !o.isOnBattlefield || !o.isCreature || g.attachedEquipmentCount o == 0 then
+    Keywords.none
+  else
+    match o.controller with
+    | none => Keywords.none
+    | some p =>
+      if g.activePlayer != p then Keywords.none
+      else
+        (g.permanentsOf p).foldl (fun acc src =>
+          src.staticAbilities.foldl (fun acc ab =>
+            Keywords.merge acc (ab.equippedTeamKeywordsDuringYourTurn)) acc)
+          Keywords.none
+
 def leftoverGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
   let self :=
     o.staticAbilities.foldl (fun acc ab =>
@@ -219,10 +235,12 @@ def currentKeywords (g : Game) (o : GameObject) : Keywords :=
     Keywords.merge
       (Keywords.merge
         (Keywords.merge
-          (Keywords.merge (Keywords.merge printedKw o.grantedUntilEot)
-            (g.attachedGrantedKeywords o))
-          (g.enduringStoryKeywords o))
-        (g.leftoverGrantedKeywords o))
+          (Keywords.merge
+            (Keywords.merge (Keywords.merge printedKw o.grantedUntilEot)
+              (g.attachedGrantedKeywords o))
+            (g.enduringStoryKeywords o))
+          (g.leftoverGrantedKeywords o))
+        (g.equippedDuringYourTurnKeywords o))
       o.status.keywordCounters.toKeywords
   if o.status.shadow > 0 then { base with shadow := true } else base
 

@@ -190,6 +190,20 @@ def mountainPowerBonus (g : Game) (o : GameObject) : Int :=
       (g.permanentsOf o.you).filter (fun p => g.hasSubtype p "Mountain") |>.size
     Int.ofNat (o.printed.powerPerMountain * n)
 
+/-- Threshold: +P/+T while seven or more cards are in your graveyard. -/
+def thresholdBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    match o.controller with
+    | none => (0, 0)
+    | some p =>
+      if (g.player p).graveyard.size < 7 then (0, 0)
+      else
+        o.staticAbilities.foldl (fun acc ab =>
+          match ab.thresholdGets? with
+          | some (pw, tw) => addStats acc (pw, tw)
+          | none => acc) (0, 0)
+
 /-- +P/+0 from graveyards with seven or more cards (Master's Councillors). -/
 def fatGraveyardPowerBonus (g : Game) (o : GameObject) : Int :=
   o.staticAbilities.foldl (fun acc ab =>
@@ -280,7 +294,8 @@ def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
       g.lordStatBonus o, g.enduringStorySelfBonus o, g.enduringStoryTeamBonus o,
       (g.mountainPowerBonus o, (0 : Int)),
       (g.fatGraveyardPowerBonus o, (0 : Int)),
-      g.artifactCountPump o, g.leftoverSelfBonus o, g.fraStatBonus o].foldl
+      g.artifactCountPump o, g.leftoverSelfBonus o, g.fraStatBonus o,
+      g.thresholdBonus o].foldl
     addStats (0, 0)
 
 /-- Power of `o` as last known information (CR 113.7a / 208.2). -/
