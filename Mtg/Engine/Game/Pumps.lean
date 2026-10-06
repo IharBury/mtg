@@ -192,18 +192,35 @@ def newestArmy? (g : Game) (controller : PlayerId) : Option GameObject :=
     | none => some o
     | some b => if o.timestamp ≥ b.timestamp then some o else some b) none
 
+/-- Put-counter triggers for Goblin, Orc, and Army permanents (CR 122.1). -/
+def queueGoblinOrcArmyCounterTriggers (g : Game) (o : GameObject) : Game :=
+  match o.controller with
+  | some p =>
+    if g.hasSubtype o "Goblin" || g.hasSubtype o "Orc" || g.hasSubtype o "Army" then
+      g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
+    else g
+  | none => g
+
 /-- Put an indestructible counter on `o`. -/
 def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (fun s =>
     { s with indestructibleCounters := s.indestructibleCounters + n })
   let g := g.logMsg s!"{o.name} gets an indestructible counter"
-  match o.controller with
-  | some p =>
-    if n > 0 &&
-        (g.hasSubtype o "Goblin" || g.hasSubtype o "Orc" || g.hasSubtype o "Army") then
-      g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
-    else g
-  | none => g
+  if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
+
+/-- Put a lifelink counter on `o`. -/
+def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
+  let g := g.mapObjectStatus o (fun s =>
+    { s with lifelinkCounters := s.lifelinkCounters + n })
+  let g := g.logMsg s!"{o.name} gets a lifelink counter"
+  if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
+
+/-- Put a burden counter on `o`. The log includes the new total. -/
+def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
+  let g := g.mapObjectStatus o (fun s => { s with burden := s.burden + n })
+  let total := (g.object! o.id).status.burden
+  let g := g.logMsg s!"{o.name} gets a burden counter ({total})"
+  if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
 
 /-- Amass `[subtype]` `n` (CR 701.43). If you control no Army, the token
 enters as 0/0 and triggers see that power before counters are put on it. If

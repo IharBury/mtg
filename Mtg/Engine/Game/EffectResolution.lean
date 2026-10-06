@@ -1196,8 +1196,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       | none => g.logMsg "The target is no longer legal"
   | .plusOneLifelinkIndestructible =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      let g := g.mapObjectStatus o (fun s =>
-        { s with plusOnePlusOne := s.plusOnePlusOne + 1 })
+      let g := g.addPlusOnePlusOneTo o 1
       g.grantUntilEotKeywords (g.object! o.id) [Keyword.lifelink, Keyword.indestructible])
   | .dealDamageToEachCreature n =>
     g.dealDamageToEachCreatureMatching n
@@ -1435,6 +1434,27 @@ def beginLookPutTypes (g : Game) (p : PlayerId) (n : Nat) (types : Array String)
       g.beginFraChoice p (.nickFuryPut looked eligible)
         s!"{(g.player p).name} may put a card from among them onto the battlefield"
 
+/-- Resolve Arwen, Mortal Queen's activated ability. An illegal target means
+no counters are put on Arwen or the target (ruling 189). -/
+def resolveArwenShare (g : Game) (arwenId : ObjectId) (targetId : Option ObjectId) : Game :=
+  match targetId.bind g.findObject? with
+  | none =>
+    g.logMsg "The target is no longer legal. The ability does nothing."
+  | some o =>
+    if !o.isOnBattlefield || !o.isCreature || o.id == arwenId then
+      g.logMsg "The target is no longer legal. The ability does nothing."
+    else
+      let putCounters (g : Game) (oid : ObjectId) : Game :=
+        match g.findObject? oid with
+        | none => g
+        | some x =>
+          let g := g.addPlusOnePlusOneTo x 1
+          g.addLifelinkCounter (g.object! x.id)
+      let g := g.setObject { o with status := o.status.grantUntilEot Keyword.indestructible }
+      let g := g.logMsg s!"{o.name} gains indestructible until end of turn"
+      let g := putCounters g o.id
+      putCounters g arwenId
+
 /-- Put the +1/+1 counter that waited for each opponent's discard. -/
 def finishPlusOneAfterDiscards (g : Game) : Game :=
   match g.plusOneAfterDiscards with
@@ -1606,9 +1626,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     | _ => g.logMsg "The target is no longer legal"
   | .burdenThenDraw =>
     g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.setObject { o with status := { o.status with burden := o.status.burden + 1 } }
+      let g := g.addBurdenCounter o
       let n := (g.object! o.id).status.burden
-      let g := g.logMsg s!"{o.name} gets a burden counter ({n})"
       g.draw controller n
   | .teamGain k =>
     g.grantUntilEotToControlledCreatures controller k k.joinedAnd
@@ -1621,13 +1640,11 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .plusOneOnEachOtherSubtype subtype n =>
     g.foldBattlefield (fun o =>
         o.controlledBy controller && o.id != sourceId.getD ⟨0⟩ && g.hasSubtype o subtype)
-      (fun g o => g.mapObjectStatus o (fun s =>
-        { s with plusOnePlusOne := s.plusOnePlusOne + n }))
+      (fun g o => g.addPlusOnePlusOneTo o n)
   | .plusOneAndIndestructibleCounter =>
     g.withSourceOnBattlefield sourceId fun g o =>
-      g.setObject { o with status := { o.status with
-        plusOnePlusOne := o.status.plusOnePlusOne + 1
-        indestructibleCounters := o.status.indestructibleCounters + 1 } }
+      let g := g.addPlusOnePlusOneTo o 1
+      g.addIndestructibleCounter (g.object! o.id)
   | .plusOneAndExtraTurn =>
     g.withSourceOnBattlefield sourceId fun g o =>
       let g := g.addPlusOnePlusOneTo o 1

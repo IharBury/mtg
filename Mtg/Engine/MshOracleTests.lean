@@ -3969,4 +3969,37 @@ def echoCopyNewTargetOk : Bool :=
 
 #guard echoCopyNewTargetOk
 
+/-- +1/+1 counters from Take Up the Shield, Agent Phil Coulson, and Captain
+Marvel are put through the counter action, so “you put a +1/+1 counter”
+triggers. -/
+def directPlusOneCountersOk : Bool :=
+  let g := addPermanent afterDraw antManColonyCommander ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let gShield := g.applyEffect ⟨0⟩ Effect.plusOneLifelinkIndestructible
+    #[Target.permanent bears.id]
+  let shielded := namedPermanent gShield "Grizzly Bears"
+  shielded.status.plusOnePlusOne == 1 &&
+    gShield.hasLifelink shielded && gShield.hasIndestructible shielded &&
+    gShield.waitingTriggers.any (fun w => w.event == .youPutPlusOne) &&
+    (let gHero := addPermanent afterDraw agentPhilCoulson ⟨0⟩ ⟨0⟩
+     let gHero := addPermanent gHero antManColonyCommander ⟨0⟩ ⟨0⟩
+     let gHero := addPermanent gHero whiteTigerAvaAyala ⟨0⟩ ⟨0⟩
+     let coulson := namedPermanent gHero "Agent Phil Coulson"
+     let gHero := gHero.applyAbilityEffect ⟨0⟩
+       (Effect.plusOneOnEachOtherSubtype "Hero" 1) #[] (some coulson.id)
+     (namedPermanent gHero "White Tiger, Ava Ayala").status.plusOnePlusOne == 1 &&
+       (namedPermanent gHero "Agent Phil Coulson").status.plusOnePlusOne == 0 &&
+       gHero.waitingTriggers.any (fun w => w.event == .youPutPlusOne)) &&
+    (let gCap := addPermanent afterDraw captainMarvelEarthSProtector ⟨0⟩ ⟨0⟩
+     let gCap := addPermanent gCap antManColonyCommander ⟨0⟩ ⟨0⟩
+     let cap := namedPermanent gCap "Captain Marvel, Earth's Protector"
+     let gCap := gCap.applyAbilityEffect ⟨0⟩ Effect.plusOneAndIndestructibleCounter
+       #[] (some cap.id)
+     let cap := namedPermanent gCap "Captain Marvel, Earth's Protector"
+     cap.status.plusOnePlusOne == 1 && cap.status.indestructibleCounters == 1 &&
+       gCap.waitingTriggers.any (fun w => w.event == .youPutPlusOne))
+
+#guard directPlusOneCountersOk
+
 end Mtg.Engine.MshRulingTests

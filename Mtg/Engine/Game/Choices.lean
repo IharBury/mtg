@@ -105,30 +105,6 @@ def chooseGollumParity (g : Game) (sourceId : ObjectId) (odd : Bool) : Game :=
     g.logMsg
       (if odd then s!"{src.name}: odd is chosen" else s!"{src.name}: even is chosen")
 
-/-- Resolve Arwen, Mortal Queen's activated ability. An illegal target means
-no counters are put on Arwen or the target (ruling 189). -/
-def resolveArwenShare (g : Game) (arwenId : ObjectId) (targetId : Option ObjectId) : Game :=
-  match targetId.bind g.findObject? with
-  | none =>
-    g.logMsg "The target is no longer legal. The ability does nothing."
-  | some o =>
-    if !o.isOnBattlefield || !o.isCreature || o.id == arwenId then
-      g.logMsg "The target is no longer legal. The ability does nothing."
-    else
-      let putCounters (g : Game) (oid : ObjectId) : Game :=
-        match g.findObject? oid with
-        | none => g
-        | some x =>
-          let g := g.setObject { x with status :=
-            { x.status with
-              plusOnePlusOne := x.status.plusOnePlusOne + 1
-              lifelinkCounters := x.status.lifelinkCounters + 1 } }
-          g.logMsg s!"{x.name} gets a +1/+1 counter and a lifelink counter"
-      let g := g.setObject { o with status := o.status.grantUntilEot Keyword.indestructible }
-      let g := g.logMsg s!"{o.name} gains indestructible until end of turn"
-      let g := putCounters g o.id
-      putCounters g arwenId
-
 /-- Behold a quality: choose a matching permanent you control or reveal a
 matching card from your hand. Later zone changes do not un-behold (117). -/
 def beholdQuality (g : Game) (p : PlayerId) (quality : String) : Game :=
