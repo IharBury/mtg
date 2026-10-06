@@ -29,16 +29,18 @@ inductive PermanentAction where
   | dealDamage (amount : Nat)
   /-- Damage plus lose-indestructible and exile-if-dies this turn. -/
   | dealDamageLoseIndestructibleExile (amount : Nat)
-  /-- Destroy, then creatures without flying can't block this turn. -/
-  | destroyThenNonflyersCantBlock
   /-- The permanent can't be blocked this turn. -/
   | cantBeBlocked
-  /-- Until-end-of-turn +P/+T and lifelink. -/
-  | pumpAndLifelink (power toughness : Int)
   /-- Until-end-of-turn +P/+T. If the creature would die this turn, exile it instead. -/
   | pumpAndExileIfDies (power toughness : Int)
   /-- Grant these keywords until end of turn. -/
   | grantKeywords (k : Keywords)
+  /-- Put an indestructible counter on the permanent. -/
+  | indestructibleCounter
+  /-- Put a double strike counter on the permanent. -/
+  | doubleStrikeCounter
+  /-- Put a burden counter on the permanent. -/
+  | burdenCounter
   /-- Tap the permanent. -/
   | tap
   /-- Untap the permanent. -/
@@ -46,8 +48,6 @@ inductive PermanentAction where
   /-- Until end of turn, this becomes an artifact in addition to its other
   types and gains indestructible. -/
   | becomeArtifactIndestructible
-  /-- Until-end-of-turn +P/+T and these keywords. -/
-  | pumpAndGrant (power toughness : Int) (k : Keywords)
   /-- The permanent becomes prepared (Reality Fracture). -/
   | becomePrepared
   /-- Until-end-of-turn layer-7b base power and toughness (CR 613.4b). -/
@@ -75,21 +75,21 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
     | .dealDamage n => damage n
     | .dealDamageLoseIndestructibleExile n =>
       s!"{damage n}. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
-    | .destroyThenNonflyersCantBlock =>
-      s!"destroy {noun}. Creatures without flying can't block this turn"
     | .cantBeBlocked => s!"{noun} can't be blocked this turn"
-    | .pumpAndLifelink p t =>
-      s!"{noun} gets {signedStat p}/{signedStat t} and gains lifelink until end of turn"
     | .pumpAndExileIfDies p t =>
       s!"{noun} gets {signedStat p}/{signedStat t} until end of turn. If that creature would die this turn, exile it instead"
     | .grantKeywords k =>
       s!"{noun} gains {k.joinedAnd} until end of turn"
+    | .indestructibleCounter =>
+      s!"put an indestructible counter on {noun}"
+    | .doubleStrikeCounter =>
+      s!"put a double strike counter on {noun}"
+    | .burdenCounter =>
+      s!"put a burden counter on {noun}"
     | .tap => s!"tap {noun}"
     | .untap => s!"untap {noun}"
     | .becomeArtifactIndestructible =>
       s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
-    | .pumpAndGrant p t k =>
-      s!"{noun} gets {signedStat p}/{signedStat t} and gains {k.joinedAnd} until end of turn"
     | .becomePrepared => s!"{noun} becomes prepared"
     | .setBasePT p t =>
       s!"{noun} has base power and toughness {p}/{t} until end of turn"

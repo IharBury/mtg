@@ -141,14 +141,7 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .dealDamage n => g.dealDamageToPermanent o n
   | .dealDamageLoseIndestructibleExile n =>
     g.dealDamageLoseIndestructibleExileTo o n
-  | .destroyThenNonflyersCantBlock =>
-    let g := g.destroyPermanent o
-    let g := { g with creaturesWithoutFlyingCantBlock := true }
-    g.logMsg "Creatures without flying can't block this turn"
   | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
-  | .pumpAndLifelink pw tw =>
-    let g := g.pumpPermanent o pw tw
-    g.grantUntilEotLogged (g.object! o.id) Keyword.lifelink
   | .pumpAndExileIfDies pw tw =>
     let g := g.pumpPermanent o pw tw
     let o := g.object! o.id
@@ -156,6 +149,12 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     g.logMsg s!"If {o.name} would die this turn, exile it instead"
   | .grantKeywords k =>
     g.grantUntilEotLogged o k
+  | .indestructibleCounter => g.addIndestructibleCounter o
+  | .doubleStrikeCounter =>
+    let g := g.mapObjectStatus o (fun s => { s with keywordCounters :=
+      { s.keywordCounters with doubleStrike := s.keywordCounters.doubleStrike + 1 } })
+    g.logMsg s!"{o.name} gets a double strike counter"
+  | .burdenCounter => g.addBurdenCounter o
   | .tap => g.becomeTapped o
   | .untap =>
     if g.hostCantBecomeUntapped o then
@@ -175,9 +174,6 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
         untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.indestructible })
     g.logMsg
       s!"{o.name} becomes an artifact and gains indestructible until end of turn"
-  | .pumpAndGrant pw tw k =>
-    let g := g.pumpPermanent o pw tw
-    g.grantUntilEotLogged (g.object! o.id) k
   | .becomePrepared => g.becomePrepared o
   | .tapAndStun =>
     -- Ruling 764: an already tapped creature still gets the stun counter.

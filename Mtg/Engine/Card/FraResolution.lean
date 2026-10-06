@@ -22,12 +22,8 @@ inductive FraResolution where
   | destroyDrawIfNotAttacking
   /-- You lose `n` life. -/
   | loseLife (n : Nat)
-  /-- This deals `n` damage to each opponent and you gain `n` life. -/
-  | damageEachOpponentGainLife (n : Nat)
   /-- This deals `n` damage to each player. -/
   | damageEachPlayer (n : Nat)
-  /-- You draw `cards` cards and gain `life` life. -/
-  | drawAndGainLife (cards life : Nat)
   /-- Deal `n` damage to the first target. Put a +1/+1 counter on the
   second target, if any (Awaken the Inferno). -/
   | damageThenPlusOneOnSecond (n : Nat)
@@ -75,13 +71,6 @@ inductive FraResolution where
   /-- The first target loses all abilities until end of turn; the second
   deals damage equal to its power to it (Flourishing Grapple). -/
   | loseAbilitiesThenFight
-  /-- The target gets +P/+T and gains `k` until end of turn. Untap it. -/
-  | pumpGrantUntap (power toughness : Int) (k : Keywords)
-  /-- The target gets +P/+T and gains `k` until end of turn. Put `n` +1/+1
-  counters on it. -/
-  | pumpGrantPlusOne (power toughness : Int) (k : Keywords) (n : Nat)
-  /-- Put `n` +1/+1 counters on the target. It gains `k` until end of turn. -/
-  | plusOneThenGrant (n : Nat) (k : Keywords)
   /-- The owner of the target may put it on top of their library; if they do,
   this deals 2 damage to them. Otherwise they put it on the bottom. -/
   | clashOfElements
@@ -112,8 +101,6 @@ inductive FraResolution where
   | counter
   /-- Counter the target spell unless its controller pays `{n}`. -/
   | counterUnlessPays (n : Nat)
-  /-- Mill `m` cards, then draw `d` cards. -/
-  | millThenDraw (m d : Nat)
   /-- Destroy the target permanent. -/
   | destroy
   /-- Deal `n` damage to the target. If that permanent would die this turn,
@@ -186,8 +173,6 @@ inductive FraResolution where
   graveyard, copy them, and cast copies with total mana value 6 or less
   free (Uldaros Theorix). -/
   | uldarosCopies
-  /-- This deals `n` damage to the target and you gain `n` life. -/
-  | damageThenGainLife (n : Nat)
   /-- Exile up to one target card from a graveyard. -/
   | exileCardFromGraveyard
   /-- Copy the spell that triggered this. You may choose new targets. -/
@@ -208,8 +193,6 @@ inductive FraResolution where
   | damageCauseController (n : Nat)
   /-- Remove up to `n` counters from the target. -/
   | removeUpToCounters (n : Nat)
-  /-- This deals `n` damage to the target and you gain `n` life. -/
-  | damageTargetGainLife (n : Nat)
   /-- You may sacrifice a creature or planeswalker. When you do, each opponent
   sacrifices a creature of their choice. -/
   | maySacrificeThenEdict
@@ -229,8 +212,6 @@ inductive FraResolution where
   /-- You may discard a card. If you do, search for an enchantment card and put
   it into your hand. -/
   | mayDiscardThenSearchEnchantment
-  /-- You gain `n` life. You may play an additional land this turn. -/
-  | gainLifeAndExtraLand (n : Nat)
   /-- The first target fights up to one second target. -/
   | firstFightsSecond
   /-- For each opponent, put X minus-one counters on up to one target creature
@@ -319,11 +300,6 @@ inductive FraResolution where
   /-- The source gains your choice of the keywords coded in `options` until
   end of turn. -/
   | chooseKeyword (options : List Nat)
-  /-- Create a Heartwood token. Then the source gets +X/+0 until end of turn,
-  where X is the number of artifacts you control. -/
-  | heartwoodThenPowerPerArtifact
-  /-- Create a Cadet. Then creatures you control gain haste until end of turn. -/
-  | cadetThenTeamHaste
   /-- Put the target card from your graveyard on the bottom of your library. -/
   | graveyardCardToLibraryBottom
   /-- Destroy all creatures. -/
@@ -333,9 +309,9 @@ inductive FraResolution where
   /-- Until end of turn, whenever the source deals combat damage to a player,
   draw two cards (Lyra). -/
   | grantCombatDamageDrawTwo
-  /-- Return the target card from your graveyard to the battlefield. Put a
-  +1/+1 counter on the source. -/
-  | returnTargetThenPlusOneSource
+  /-- The source gets +X/+0 until end of turn, where X is the number of
+  artifacts you control. -/
+  | sourceGetsPowerPerArtifact
   /-- The target gets +X/+0 until end of turn, where X is the number of
   artifacts you control. -/
   | pumpPerArtifact
@@ -435,10 +411,7 @@ def toPhrase (r : FraResolution) (noun : String) : String :=
   | .destroyDrawIfNotAttacking =>
     s!"Destroy {noun}. If it wasn't attacking, its controller draws a card"
   | .loseLife n => s!"You lose {n} life"
-  | .damageEachOpponentGainLife n =>
-    s!"This deals {n} damage to each opponent and you gain {n} life"
   | .damageEachPlayer n => s!"This deals {n} damage to each player"
-  | .drawAndGainLife c l => s!"You draw {cardPhrase c} and gain {l} life"
   | .damageThenPlusOneOnSecond n =>
     s!"This deals {n} damage to {noun}. Put a +1/+1 counter on up to one target creature you control"
   | .returnFromGyToBattlefield n =>
@@ -474,12 +447,6 @@ def toPhrase (r : FraResolution) (noun : String) : String :=
     s!"This deals {n} damage to each creature and planeswalker your opponents control"
   | .loseAbilitiesThenFight =>
     s!"{capitalizeAscii noun} loses all abilities until end of turn. Target creature you control deals damage equal to its power to that permanent"
-  | .pumpGrantUntap p t k =>
-    s!"{capitalizeAscii noun} gets {signedStat p}/{signedStat t} and gains {k.joinedAnd} until end of turn. Untap it"
-  | .pumpGrantPlusOne p t k n =>
-    s!"{capitalizeAscii noun} gets {signedStat p}/{signedStat t} and gains {k.joinedAnd} until end of turn. Put {plusOnePlusOneCountersPhrase n} on it"
-  | .plusOneThenGrant n k =>
-    s!"Put {plusOnePlusOneCountersPhrase n} on {noun}. It gains {k.joinedAnd} until end of turn"
   | .clashOfElements =>
     "Choose target nonland permanent. Its owner may put it on top of their library. If they do, this deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom"
   | .entrustTheSpark =>
@@ -502,7 +469,6 @@ def toPhrase (r : FraResolution) (noun : String) : String :=
     "Search your library for a land card, put it into your graveyard, then shuffle"
   | .counter => s!"Counter {noun}"
   | .counterUnlessPays n => s!"Counter {noun} unless its controller pays \{{n}}"
-  | .millThenDraw m d => s!"Mill {englishNumber m} cards, then draw {cardPhrase d}"
   | .destroy => s!"Destroy {noun}"
   | .damageExileIfDies n =>
     s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead"

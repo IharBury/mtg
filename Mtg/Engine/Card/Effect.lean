@@ -83,6 +83,8 @@ inductive Resolution where
   | dealDamageToAny (n : Nat)
   /-- Draw equal to sacrificed power, then discard. -/
   | drawEqualSacrificedPowerThenDiscard
+  /-- Draw a card for each burden counter on the source. -/
+  | drawEqualToBurdenCounters
   /-- Arwen share. -/
   | arwenShare
   /-- Grant a combat-damage Treasure trigger. -/
@@ -95,23 +97,17 @@ inductive Resolution where
   | chooseTwoDestroyRest
   /-- Black Gate unblockable. -/
   | blackGateUnblockable
-  /-- Burden then draw. -/
-  | burdenThenDraw
   /-- Creatures you control gain this keyword. -/
   | teamGain (k : Keywords)
-  /-- Source gains indestructible and taps. -/
-  | sourceGainsIndestructibleTap
   /-- +1/+1 on each other permanent of this subtype. -/
   | plusOneOnEachOtherSubtype (subtype : String) (n : Nat)
-  /-- +1/+1 and an indestructible counter on the source. -/
-  | plusOneAndIndestructibleCounter
-  /-- +1/+1 on the source and an extra turn. -/
-  | plusOneAndExtraTurn
+  /-- Take an extra turn after this one. Power-up abilities can't be activated during it. -/
+  | extraTurn
   /-- X +1/+1 counters on the source. -/
   | plusOneX
   /-- Each opponent discards; +1/+1 on the source. -/
   | eachOppDiscardThenPlusOne
-  /-- Look at the top `n`; put a card of one of these types onto the battlefield. -/
+  /-- Look at the top `n`; you may put a card of one of these types onto the battlefield. -/
   | lookAtTopPutTypes (n : Nat) (types : Array String)
   /-- Transform the source. -/
   | transform
@@ -157,14 +153,10 @@ inductive Resolution where
   | lookAtTopRevealSubtype (n : Nat) (subtype : String)
   /-- Mill `n`. You may put a card of this subtype or an enchantment into your hand. -/
   | millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String)
-  /-- Put a +1/+1 counter and a double strike counter on this. -/
-  | plusOneAndDoubleStrikeCounter
-  /-- Put a +1/+1 counter on this. It fights up to one target creature an opponent controls. -/
-  | plusOneThenFightUpToOne
-  /-- Put a +1/+1 counter on this and create The Tiger God. -/
-  | plusOneAndCreateTigerGod
-  /-- Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with that MV. -/
-  | plusTwoThenOddEvenDestroy
+  /-- Create The Tiger God token. -/
+  | createTigerGod
+  /-- Choose odd or even. Destroy each other creature with that mana value. -/
+  | chooseOddOrEvenDestroy
   /-- Return this from your graveyard with a finality counter. Then you may attach an Equipment. -/
   | returnFromGyFinalityAttach
   /-- Return up to one target creature card from your graveyard to your hand. Put `n` +1/+1 counters on this. -/
@@ -173,8 +165,6 @@ inductive Resolution where
   | revealTopDrawIfArtifact
   /-- Target artifact you control becomes a copy of a second until EOT, except it isn't legendary. -/
   | copyArtifactYouControlNotLegendary
-  /-- Target creature you control that's attacking alone gets +1/+0. You gain 1 life. -/
-  | pumpAttackingAloneGainLife
   /-- Until end of turn, this becomes these types with base P/T and these keywords. -/
   | becomeTypes (types : Array String) (power toughness : Int) (k : Keywords)
   /-- When you next cast an instant or sorcery with MV ≤ this's power this turn, copy it. -/
@@ -194,9 +184,17 @@ inductive Resolution where
   | mayDiscardDraw (n : Nat)
   /-- Create X tokens, where X is the life you gained this turn. -/
   | createTokensLifeGained (kind : TokenKind)
-  /-- Target opponent sacrifices a creature or planeswalker with the greatest
-  mana value among those they control. You gain `life` life. -/
-  | oppSacrificesGreatestMvGainLife (life : Nat)
+  /-- The target opponent sacrifices a creature or planeswalker with the
+  greatest mana value among those they control. -/
+  | oppSacrificesGreatestMv
+  /-- Creatures without flying can't block this turn. -/
+  | creaturesWithoutFlyingCantBlock
+  /-- The targeted player loses `n` life. -/
+  | targetPlayerLoseLife (n : Nat)
+  /-- The controller of the targeted permanent loses `n` life. -/
+  | controllerOfTargetLosesLife (n : Nat)
+  /-- Return the targeted spell to its owner's hand. -/
+  | returnTargetSpell
   /-- Each creature you control becomes prepared. -/
   | eachCreatureYouControlBecomesPrepared
   /-- Deal `n` damage to the target. If excess damage was dealt, empower Jace
@@ -296,7 +294,15 @@ def spellResolution (e : Effect) : SpellResolution :=
   | .sequence rs =>
     match rs with
     | [.draw n, .discard 1] => .drawThenDiscard n
-    | [.spell (.drawAndLoseLife 1 1), .amassGoblins n] => .drawLoseLifeThenAmass n
+    | [.draw cards, .fra (.loseLife life)] => .drawAndLoseLife cards life
+    | [.draw 1, .fra (.loseLife 1), .amassGoblins n] => .drawLoseLifeThenAmass n
+    | [.targetPlayerDraw cards, .targetPlayerLoseLife life] =>
+      .playerDrawLoseLife cards life
+    | [.onPermanent .destroy, .controllerOfTargetLosesLife n] =>
+      .destroyAndControllerLosesLife n
+    | [.returnTargetSpell, .draw 1] => .returnSpellDraw
+    | [.fra .returnFromGyToHand, .amassGoblins n] =>
+      .returnCreatureFromGyThenAmass n
     | [.createTokens kind n _, .creaturesYouControlPump p t] =>
       .createTokensThenTeamPump kind n p t
     | [.createTokens kind n _, .spell (.creaturesYouControlPump p t)] =>
@@ -436,18 +442,14 @@ private def phraseWith (r : Resolution) (noun : String)
     "Choose up to two creatures, then destroy the rest"
   | .blackGateUnblockable =>
     "Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn"
-  | .burdenThenDraw =>
-    "Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring"
+  | .drawEqualToBurdenCounters =>
+    "Draw a card for each burden counter on this"
   | .teamGain k =>
     s!"Creatures you control gain {k.joinedAnd} until end of turn"
-  | .sourceGainsIndestructibleTap =>
-    "Witch-king of Angmar gains indestructible until end of turn. Tap him"
   | .plusOneOnEachOtherSubtype subtype n =>
     s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
-  | .plusOneAndIndestructibleCounter =>
-    "Put a +1/+1 counter and an indestructible counter on this"
-  | .plusOneAndExtraTurn =>
-    "Put a +1/+1 counter on this. Take an extra turn after this one. During that turn, power-up abilities can't be activated"
+  | .extraTurn =>
+    "Take an extra turn after this one. During that turn, power-up abilities can't be activated"
   | .plusOneX =>
     "Put X +1/+1 counters on this"
   | .eachOppDiscardThenPlusOne =>
@@ -455,7 +457,7 @@ private def phraseWith (r : Resolution) (noun : String)
   | .lookAtTopPutTypes n types =>
     let listed := orJoin types.toList
     let art := indefinite (types[0]?.getD "")
-    s!"Put two +1/+1 counters on this, then look at the top {n} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}"
+    s!"Look at the top {n} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}"
   | .transform =>
     "Transform this"
   | .drawX =>
@@ -501,14 +503,10 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Look at the top {n} cards of your library. You may reveal a {subtype} card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
   | .millThenPutSubtypeOrEnchantment n subtype =>
     s!"Mill {n} cards. You may put {indefinite subtype} {subtype} or enchantment card from among those cards into your hand"
-  | .plusOneAndDoubleStrikeCounter =>
-    "Put a +1/+1 counter and a double strike counter on this"
-  | .plusOneThenFightUpToOne =>
-    "Put a +1/+1 counter on this. This fights up to one target creature an opponent controls"
-  | .plusOneAndCreateTigerGod =>
-    "Put a +1/+1 counter on this and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
-  | .plusTwoThenOddEvenDestroy =>
-    "Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with mana value of the chosen quality"
+  | .createTigerGod =>
+    "Create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
+  | .chooseOddOrEvenDestroy =>
+    "Choose odd or even. Destroy each other creature with mana value of the chosen quality"
   | .returnFromGyFinalityAttach =>
     "Return this card from your graveyard to the battlefield with a finality counter on him. Then you may attach an Equipment you control to him"
   | .returnGyCreatureThenPlusOne n =>
@@ -517,8 +515,6 @@ private def phraseWith (r : Resolution) (noun : String)
     "Reveal the top card of your library. If it's an artifact card, draw a card"
   | .copyArtifactYouControlNotLegendary =>
     "Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary"
-  | .pumpAttackingAloneGainLife =>
-    "Target creature you control that's attacking alone gets +1/+0 until end of turn. You gain 1 life"
   | .becomeTypes types p t k =>
     let joined :=
       if k.reach && k.vigilance then "reach and vigilance"
@@ -542,8 +538,16 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"You may discard a card. If you do, draw {cardPhrase n}"
   | .createTokensLifeGained kind =>
     s!"Create X {kind.pluralNoun}, where X is the amount of life you gained this turn"
-  | .oppSacrificesGreatestMvGainLife life =>
-    s!"{capitalizeAscii noun} sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control. You gain {life} life"
+  | .oppSacrificesGreatestMv =>
+    s!"{capitalizeAscii noun} sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control"
+  | .creaturesWithoutFlyingCantBlock =>
+    "Creatures without flying can't block this turn"
+  | .targetPlayerLoseLife n =>
+    s!"{noun} loses {n} life"
+  | .controllerOfTargetLosesLife n =>
+    s!"Its controller loses {n} life"
+  | .returnTargetSpell =>
+    s!"Return {noun} to its owner's hand"
   | .eachCreatureYouControlBecomesPrepared =>
     "Each creature you control becomes prepared"
   | .damageThenEmpowerExcess n =>
@@ -592,10 +596,20 @@ def ofSpell : SpellResolution → Resolution
   | .scry n => .scry n
   | .onPermanent a => .onPermanent a
   | .drawThenDiscard n => .sequence [.draw n, .discard 1]
+  | .drawAndLoseLife cards life =>
+    .sequence [.draw cards, .fra (.loseLife life)]
+  | .playerDrawLoseLife cards life =>
+    .sequence [.targetPlayerDraw cards, .targetPlayerLoseLife life]
+  | .destroyAndControllerLosesLife n =>
+    .sequence [.onPermanent .destroy, .controllerOfTargetLosesLife n]
+  | .returnSpellDraw =>
+    .sequence [.returnTargetSpell, .draw 1]
+  | .returnCreatureFromGyThenAmass n =>
+    .sequence [.fra .returnFromGyToHand, .amassGoblins n]
   | .amassGoblins n => .amassGoblins n
   | .createTokens kind n => .createTokens kind n
   | .drawLoseLifeThenAmass n =>
-    .sequence [.spell (.drawAndLoseLife 1 1), .amassGoblins n]
+    .sequence [.draw 1, .fra (.loseLife 1), .amassGoblins n]
   | .createTokensThenTeamPump kind n p t =>
     .sequence [.createTokens kind n, .creaturesYouControlPump p t]
   | .destroyArtifactOrEnchantmentGainLife n =>
@@ -630,7 +644,10 @@ partial def doesNothingAsSpell (r : Resolution) : Bool :=
   | .sequence rs => rs.any doesNothingAsSpell
   | .shuffleSource | .gainLife _ | .recruit | .addMana _ | .discard _ | .onSource _ => false
   | .fra _ | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
-  | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
+  | .createTokensLifeGained _ | .oppSacrificesGreatestMv
+  | .createTigerGod | .extraTurn | .drawEqualToBurdenCounters
+  | .creaturesWithoutFlyingCantBlock | .targetPlayerLoseLife _
+  | .controllerOfTargetLosesLife _ | .returnTargetSpell | .chooseOddOrEvenDestroy
   | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _
   | .firstDealsStatDamageToSecond _ | .returnFromGyWithFinality

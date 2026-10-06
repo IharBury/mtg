@@ -111,8 +111,10 @@ def playAdditionalLandThisTurn : Effect :=
     (castKind := .extraLand)
 
 def destroyArtifactOrLandNonflyersCantBlock : Effect :=
-  mkSpell (.of .artifactOrLand) (.onPermanent .destroyThenNonflyersCantBlock)
-    (castKind := .destroyArtifactOrLand)
+  { targeting := .of .artifactOrLand
+    spellCastKind := .destroyArtifactOrLand
+    resolution := .sequence [.onPermanent .destroy, .creaturesWithoutFlyingCantBlock]
+    phrase := "destroy target artifact or land. Creatures without flying can't block this turn" }
 
 def destroyTargetCreatureControllerLosesLife (life : Nat) : Effect :=
   mkSpell (.of .creature) (.destroyAndControllerLosesLife life)
@@ -136,8 +138,13 @@ def creaturesTargetPlayerGet (power toughness : Int) : Effect :=
     (castKind := .massPump)
 
 def pumpAndLifelink (power toughness : Int) : Effect :=
-  mkSpell (.of .creature .own) (.onPermanent (.pumpAndLifelink power toughness))
-    (castKind := .pump)
+  { targeting := .of .creature .own
+    spellCastKind := .pump
+    resolution := .sequence
+      [.onPermanent (.pump power toughness),
+       .onPermanent (.grantKeywords Keyword.lifelink)]
+    phrase :=
+      s!"target creature gets {signedStat power}/{signedStat toughness} and gains lifelink until end of turn" }
 
 def pumpAndExileIfDies (power toughness : Int) : Effect :=
   mkSpell (.of .creature) (.onPermanent (.pumpAndExileIfDies power toughness))
@@ -151,6 +158,12 @@ def exileGraveyardCreaturesGrantCast : Effect :=
 def draw (n : Nat) : Effect :=
   mkSpell (.of .none) (.draw n)
     (castKind := .draw)
+
+/-- Discard `n` cards. The Oracle parser joins this with `draw` on “, then”,
+so “draw N cards, then discard a card” is not its own prototype. -/
+def discardCards (n : Nat) : Effect :=
+  { resolution := .discard n
+    phrase := s!"discard {cardPhrase n}" }
 
 def drawThenDiscard (n : Nat) : Effect :=
   mkSpell (.of .none) (.drawThenDiscard n)
@@ -226,8 +239,12 @@ def becomeArtifactGainIndestructible : Effect :=
     (castKind := .pump)
 
 def pumpAndGrantKeywords (power toughness : Int) (k : Keywords) : Effect :=
-  mkSpell (.of .creature .own) (.onPermanent (.pumpAndGrant power toughness k))
-    (castKind := .pump)
+  { targeting := .of .creature .own
+    spellCastKind := .pump
+    resolution := .sequence
+      [.onPermanent (.pump power toughness), .onPermanent (.grantKeywords k)]
+    phrase :=
+      s!"target creature gets {signedStat power}/{signedStat toughness} and gains {k.joinedAnd} until end of turn" }
 
 def amassGoblins (n : Nat) : Effect :=
   mkSpell (.of .none) (.amassGoblins n)
@@ -734,7 +751,10 @@ def blackGateUnblockable : Effect :=
   mkAbility (.of .creature) (.blackGateUnblockable)
 
 def burdenThenDraw : Effect :=
-  mkAbility ({}) (.burdenThenDraw)
+  mkAbility ({})
+    (.sequence [.onSource .burdenCounter, .drawEqualToBurdenCounters])
+    (phraseOverride := some
+      "Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring")
 
 def teamGain (k : Keywords) : Effect :=
   mkAbility ({}) (.teamGain k)
@@ -752,7 +772,10 @@ def plusOneOnEachOtherSubtype (subtype : String) (n : Nat) : Effect :=
   mkAbility ({}) (.plusOneOnEachOtherSubtype subtype n)
 
 def plusOneAndIndestructibleCounter : Effect :=
-  mkAbility ({}) (.plusOneAndIndestructibleCounter)
+  mkAbility ({})
+    (.sequence [.onSource (.plusOne 1), .onSource .indestructibleCounter])
+    (phraseOverride := some
+      "Put a +1/+1 counter and an indestructible counter on this")
 
 def plusOneAndDraw (plus cards : Nat) : Effect :=
   { resolution := .sequence [.onSource (.plusOne plus), .draw cards]
@@ -760,7 +783,10 @@ def plusOneAndDraw (plus cards : Nat) : Effect :=
       s!"Put {plusOnePlusOneCountersPhrase plus} on this and draw {cardPhrase cards}" }
 
 def plusOneAndExtraTurn : Effect :=
-  mkAbility ({}) (.plusOneAndExtraTurn)
+  mkAbility ({})
+    (.sequence [.onSource (.plusOne 1), .extraTurn])
+    (phraseOverride := some
+      "Put a +1/+1 counter on this. Take an extra turn after this one. During that turn, power-up abilities can't be activated")
 
 def plusOneX : Effect :=
   mkAbility ({}) (.plusOneX)
@@ -769,7 +795,12 @@ def eachOppDiscardThenPlusOne : Effect :=
   mkAbility ({}) (.eachOppDiscardThenPlusOne)
 
 def lookAtTopPutTypes (n : Nat) (types : Array String) : Effect :=
-  mkAbility ({}) (.lookAtTopPutTypes n types)
+  let listed := orJoin types.toList
+  let art := indefinite (types[0]?.getD "")
+  mkAbility ({})
+    (.sequence [.onSource (.plusOne 2), .lookAtTopPutTypes n types])
+    (phraseOverride := some
+      s!"Put two +1/+1 counters on this, then look at the top {n} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}")
 
 def lookAtTopPutHeroEquipVehicle (n : Nat) : Effect :=
   lookAtTopPutTypes n #["Hero", "Equipment", "Vehicle"]
@@ -856,11 +887,17 @@ def millThenPutHeroOrEnchantment (n : Nat) : Effect :=
   millThenPutSubtypeOrEnchantment n "Hero"
 
 def plusOneAndDoubleStrikeCounter : Effect :=
-  mkAbility ({}) (.plusOneAndDoubleStrikeCounter)
+  mkAbility ({})
+    (.sequence [.onSource (.plusOne 1), .onSource .doubleStrikeCounter])
+    (phraseOverride := some
+      "Put a +1/+1 counter and a double strike counter on this")
 
 def plusOneThenFightUpToOne : Effect :=
-  mkAbility (.of .oppCreature) (.plusOneThenFightUpToOne)
+  mkAbility (.of .oppCreature)
+    (.sequence [.onSource (.plusOne 1), .fra .sourceFightsTarget])
     (allowsZeroTargets := true)
+    (phraseOverride := some
+      "Put a +1/+1 counter on this. This fights up to one target creature an opponent controls")
 
 def plusOneAndGrant (k : Keywords) : Effect :=
   let joined :=
@@ -871,7 +908,10 @@ def plusOneAndGrant (k : Keywords) : Effect :=
     phrase := s!"Put a +1/+1 counter on this. He gains {joined} until end of turn" }
 
 def plusOneAndCreateTigerGod : Effect :=
-  mkAbility ({}) (.plusOneAndCreateTigerGod)
+  mkAbility ({})
+    (.sequence [.onSource (.plusOne 1), .createTigerGod])
+    (phraseOverride := some
+      "Put a +1/+1 counter on this and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\"")
 
 def plusOneAndCreateTokens (n : Nat) (kind : TokenKind) : Effect :=
   { resolution := .sequence [.onSource (.plusOne n), .createTokens kind 1]
@@ -879,7 +919,10 @@ def plusOneAndCreateTokens (n : Nat) (kind : TokenKind) : Effect :=
       s!"Put {plusOnePlusOneCountersPhrase n} on this creature and {TokenKind.createPhrase kind 1}" }
 
 def plusTwoThenOddEvenDestroy : Effect :=
-  mkAbility ({}) (.plusTwoThenOddEvenDestroy)
+  mkAbility ({})
+    (.sequence [.onSource (.plusOne 2), .chooseOddOrEvenDestroy])
+    (phraseOverride := some
+      "Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with mana value of the chosen quality")
 
 def returnFromGyFinalityAttach : Effect :=
   mkAbility ({}) (.returnFromGyFinalityAttach)
@@ -895,7 +938,8 @@ def copyArtifactYouControlNotLegendary : Effect :=
   mkAbility (.of .twoArtifactsYouControl) (.copyArtifactYouControlNotLegendary)
 
 def pumpAttackingAloneGainLife : Effect :=
-  mkAbility (.of .attackingAloneCreatureYouControl) (.pumpAttackingAloneGainLife)
+  mkAbility (.of .attackingAloneCreatureYouControl)
+    (.sequence [.onPermanent (.pump 1 0), .gainLife 1])
 
 def becomeTypes (types : Array String) (power toughness : Int) (k : Keywords) : Effect :=
   mkAbility ({}) (.becomeTypes types power toughness k)
@@ -916,7 +960,10 @@ def targetSubtypeConnives (subtype : String) : Effect :=
   mkAbility (.of (.creatureYouControlSubtype subtype)) (.targetSubtypeConnives subtype)
 
 def anotherYouControlGetsAndGrant (p t : Int) (k : Keywords) : Effect :=
-  mkAbility (.of .anotherCreatureYouControl) (.onPermanent (.pumpAndGrant p t k))
+  mkAbility (.of .anotherCreatureYouControl)
+    (.sequence [.onPermanent (.pump p t), .onPermanent (.grantKeywords k)])
+    (phraseOverride := some
+      s!"Another target creature you control gets {signedStat p}/{signedStat t} and gains {k.joinedAnd} until end of turn")
 
 def tapTargetCreature : Effect :=
   mkAbility (.of .creature) (.onPermanent .tap)
@@ -992,7 +1039,10 @@ def setBasePT (power toughness : Int) : Effect :=
       with spellCastKind := .creatureDamage }
 
 def oppSacrificesGreatestMvGainLife (life : Nat) : Effect :=
-  { mkAbility (.of .opponent) (.oppSacrificesGreatestMvGainLife life)
+  { mkAbility (.of .opponent)
+      (.sequence [.oppSacrificesGreatestMv, .gainLife life])
+      (phraseOverride := some
+        s!"Target opponent sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control. You gain {life} life")
       with spellCastKind := .destroyCreature }
 
 def damageThenEmpowerExcess (n : Nat) : Effect :=

@@ -47,10 +47,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       let g := g.destroyPermanent o
       if wasAttacking then g else g.draw ctrl 1) sourceId illegal
   | .loseLife n => g.loseLife controller n
-  | .damageEachOpponentGainLife n => g.drainOpponents controller n src?
   | .damageEachPlayer n =>
     g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n (source := src?)) g
-  | .drawAndGainLife c l => (g.draw controller c).gainLife controller l
   | .damageThenPlusOneOnSecond n =>
     let g :=
       match g.legalPermanentAt? controller kind targets 0 sourceId with
@@ -67,13 +65,15 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
         g.afterPermanentEnters (g.object! newId)
       | _ => g) sourceId illegal
   | .returnFromGyToHand =>
+    -- `none` so an “up to one” sequence with no target still continues.
+    -- An announced illegal target is reported by `withLegalTarget`.
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
       | Target.card id =>
         match g.findObject? id with
         | some o => g.returnToHand id o.owner
         | none => g
-      | _ => g) sourceId illegal
+      | _ => g) sourceId none
   | .destroyAllNotChosenType =>
     let chosen := g.chooseCreatureTypeFor controller
     let g := g.logMsg s!"{(g.player controller).name} chooses {chosen}"
@@ -169,22 +169,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
         g.dealDamageFrom striker.name (g.object! victim.id) (max (g.power striker) 0)
           (source := some striker)
       | none => g.logMsg "The second target is no longer legal. No damage is dealt"
-  | .pumpGrantUntap p t k =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.pumpPermanent o p t
-      let g := g.grantKeywordsUntilEot (g.object! o.id) k
-      g.applyPermanentAction (g.object! o.id) .untap) sourceId illegal
-  | .pumpGrantPlusOne p t k n =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.pumpPermanent o p t
-      let g := g.grantKeywordsUntilEot (g.object! o.id) k
-      g.addPlusOnePlusOneTo (g.object! o.id) n) sourceId illegal
-  | .plusOneThenGrant n k =>
-    if targets.isEmpty then g
-    else
-      g.withLegalKindPermanent controller kind targets (fun g o =>
-        let g := g.addPlusOnePlusOneTo o n
-        g.grantKeywordsUntilEot (g.object! o.id) k) sourceId illegal
   | .clashOfElements =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.beginFraChoice o.owner (.topOrBottomDamage o.id 2)
@@ -259,7 +243,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .counterUnlessPays n =>
     g.withLegalKindTarget controller kind targets (fun g _ =>
       g.beginPayOrLetCounter targets n) sourceId illegal
-  | .millThenDraw m d => (g.mill controller m).draw controller d
   | .destroy =>
     g.withLegalKindPermanent controller kind targets (fun g o => g.destroyPermanent o)
       sourceId illegal
@@ -454,13 +437,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
     else
       g.beginFraChoice controller (.castCopiesFree copies 6 copies.size)
         s!"{(g.player controller).name} may cast copies with total mana value 6 or less"
-  | .damageThenGainLife n =>
-    let g := g.withLegalKindTarget controller kind targets (fun g t =>
-      match t with
-      | Target.player pid => g.dealDamageToPlayer pid n (source := src?)
-      | Target.permanent id => g.dealDamageFrom srcName (g.object! id) n (source := src?)
-      | Target.card _ => g) sourceId illegal
-    g.gainLife controller n
   | .exileCardFromGraveyard =>
     if targets.isEmpty then g
     else
@@ -532,10 +508,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .removeUpToCounters n =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.removeUpToCountersFrom controller o n) sourceId illegal
-  | .damageTargetGainLife n =>
-    let g := g.withLegalKindPlayer controller kind targets (fun g pid =>
-      g.dealDamageToPlayer pid n (source := src?)) sourceId illegal
-    g.gainLife controller n
   | .maySacrificeThenEdict =>
     if (g.permanentsOf controller).any (fun o => o.isCreature || o.printed.isPlaneswalker) then
       g.beginFraChoice controller
@@ -594,11 +566,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
     else
       g.beginFraChoice controller (.mayDiscardThen .searchEnchantmentToHand sourceId)
         s!"{(g.player controller).name} may discard a card"
-  | .gainLifeAndExtraLand n =>
-    let g := g.gainLife controller n
-    (g.modifyPlayer controller (fun pl =>
-      { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })).logMsg
-      s!"{(g.player controller).name} may play an additional land this turn"
   | .firstFightsSecond =>
     match g.legalPermanentAt? controller kind targets 0 sourceId,
         g.legalPermanentAt? controller kind targets 1 sourceId with
@@ -716,13 +683,11 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .destroyDrawIfLegendaryEnchantment
   | .plusOneThenChooseKeyword _
   | .chooseKeyword _
-  | .heartwoodThenPowerPerArtifact
-  | .cadetThenTeamHaste
   | .graveyardCardToLibraryBottom
   | .destroyAllCreatures
   | .ownerShufflesIntoLibrary
   | .grantCombatDamageDrawTwo
-  | .returnTargetThenPlusOneSource
+  | .sourceGetsPowerPerArtifact
   | .pumpPerArtifact
   | .plusOneOnEachWithPlusOne
   | .bounceEachTarget

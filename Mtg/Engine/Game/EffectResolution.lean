@@ -71,9 +71,41 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
   | .createTokensLifeGained kind =>
     -- Ruling 755: counts life gained, ignoring life lost this turn.
     some (g.createKindTokens controller kind (g.player controller).lifeGainedThisTurn)
-  | .oppSacrificesGreatestMvGainLife life =>
-    some (g.withLegalKindPlayer controller effect.targetKind targets (fun g pid =>
-      (g.sacrificeGreatestManaValue pid).gainLife controller life) sourceId)
+  | .oppSacrificesGreatestMv =>
+    some (g.withLegalKindPlayer controller effect.targetKind targets
+      (fun g pid => g.sacrificeGreatestManaValue pid) sourceId)
+  | .createTigerGod => some (g.createNamedToken controller tigerGodToken)
+  | .extraTurn =>
+    some ({ g with extraTurns := g.extraTurns.push controller }
+      |>.logMsg s!"{(g.player controller).name} takes an extra turn after this one. During that turn, power-up abilities can't be activated.")
+  | .drawEqualToBurdenCounters =>
+    some (g.withSourceOnBattlefield sourceId fun g o => g.draw controller o.status.burden)
+  | .creaturesWithoutFlyingCantBlock =>
+    some ({ g with creaturesWithoutFlyingCantBlock := true }
+      |>.logMsg "Creatures without flying can't block this turn")
+  | .targetPlayerLoseLife n =>
+    some (g.withLegalKindPlayer controller effect.targetKind targets
+      (fun g pid => g.loseLife pid n))
+  | .controllerOfTargetLosesLife n =>
+    some (match targets[0]? with
+      | some (Target.permanent id) =>
+        match g.findObject? (g.followMoved id) with
+        | some o =>
+          let pid? :=
+            if o.zone == .battlefield then o.controller
+            else o.lastController.orElse (fun _ => o.controller)
+          match pid? with
+          | some pid => g.loseLife pid n
+          | none => g
+        | none => g
+      | _ => g)
+  | .returnTargetSpell =>
+    some (match targets[0]? with
+      | some (Target.card id) => g.returnStackSpell id
+      | _ => g.logMsg "The target is no longer legal")
+  | .chooseOddOrEvenDestroy =>
+    some ({ g with pending := .fraChoice controller (.oddOrEvenDestroy sourceId) }
+      |>.logMsg s!"{(g.player controller).name} chooses odd or even")
   | .eachCreatureYouControlBecomesPrepared =>
     some ((g.permanentsOf controller).foldl (fun g o =>
       if o.isCreature && o.printed.prepareFace.isSome then g.becomePrepared (g.object! o.id)
@@ -1739,32 +1771,12 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
-  | .burdenThenDraw =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.addBurdenCounter o
-      let n := (g.object! o.id).status.burden
-      g.draw controller n
   | .teamGain k =>
     g.grantUntilEotToControlledCreatures controller k k.joinedAnd
-  | .sourceGainsIndestructibleTap =>
-    let resolution :=
-      Resolution.sequence [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap]
-    g.applyUnifiedAbility controller { effect with resolution } targets
-      sourceId lastKnownPower chosenX
   | .plusOneOnEachOtherSubtype subtype n =>
     g.foldBattlefield (fun o =>
         o.controlledBy controller && o.id != sourceId.getD ⟨0⟩ && g.hasSubtype o subtype)
       (fun g o => g.addPlusOnePlusOneTo o n)
-  | .plusOneAndIndestructibleCounter =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.addPlusOnePlusOneTo o 1
-      g.addIndestructibleCounter (g.object! o.id)
-  | .plusOneAndExtraTurn =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.addPlusOnePlusOneTo o 1
-      { g with extraTurns := g.extraTurns.push controller }
-        |>.logMsg
-          s!"{(g.player controller).name} takes an extra turn after this one. During that turn, power-up abilities can't be activated."
   | .plusOneX =>
     g.withSourceOnBattlefield sourceId fun g o =>
       g.addPlusOnePlusOneTo o chosenX
@@ -1776,11 +1788,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
     else g
   | .lookAtTopPutTypes n types =>
-    let g :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.addPlusOnePlusOneTo o 2 else g
-      | none => g
     g.beginLookPutTypes controller n types
   | .transform =>
     g.withSourceOnBattlefield sourceId fun g o =>
@@ -1900,21 +1907,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.beginLookRevealToHand controller n (fun o => o.printed.hasSubtype subtype) true
   | .millThenPutSubtypeOrEnchantment n subtype =>
     g.millMayPutSubtypeOrEnchantment controller n subtype
-  | .plusOneAndDoubleStrikeCounter =>
-    g.plusOneAndDoubleStrike sourceId
-  | .plusOneThenFightUpToOne =>
-    g.plusOneThenFight controller sourceId targets
-  | .plusOneAndCreateTigerGod =>
-    let g :=
-      g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-        "The source is no longer in play"
-    g.createNamedToken controller tigerGodToken
-  | .plusTwoThenOddEvenDestroy =>
-    let g :=
-      g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
-        "The source is no longer in play"
-    { g with pending := .fraChoice controller (.oddOrEvenDestroy sourceId) }
-      |>.logMsg s!"{(g.player controller).name} chooses odd or even"
   | .returnFromGyFinalityAttach =>
     g.returnFromGyFinalityAttach controller sourceId
   | .returnGyCreatureThenPlusOne n =>
@@ -1936,11 +1928,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.logMsg "The target is no longer legal. The ability has no effect."
     | _, _ =>
       g.logMsg "The target is no longer legal. The ability has no effect."
-  | .pumpAttackingAloneGainLife =>
-    g.withLegalKindPermanent controller .creatureYouControl targets (fun g o =>
-      let g := g.pumpPermanent o 1 0
-      g.gainLife controller 1)
-      sourceId (some "The target is no longer legal. You won't gain life.")
   | .becomeTypes types p t k =>
     let typeWords := String.intercalate " " types.toList
     g.withSourceOnBattlefield sourceId (fun g o =>
@@ -1976,7 +1963,10 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .sequence _ | .shuffleSource | .amassGoblins _ | .discard _ | .spell _ | .trigger _ =>
     g
   | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
-  | .createTokensLifeGained _ | .oppSacrificesGreatestMvGainLife _
+  | .createTokensLifeGained _ | .oppSacrificesGreatestMv
+  | .createTigerGod | .extraTurn | .drawEqualToBurdenCounters
+  | .creaturesWithoutFlyingCantBlock | .targetPlayerLoseLife _
+  | .controllerOfTargetLosesLife _ | .returnTargetSpell | .chooseOddOrEvenDestroy
   | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
   | .jaceLoyaltyAtInstantSpeed | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
   | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn | .returnFromGyWithFinality

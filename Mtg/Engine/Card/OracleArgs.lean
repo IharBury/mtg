@@ -221,9 +221,7 @@ def takeAction (a : PermanentAction) : ArgM PermanentAction := do
   | .dealDamage n => return .dealDamage (← takeNat n)
   | .dealDamageLoseIndestructibleExile n =>
     return .dealDamageLoseIndestructibleExile (← takeNat n)
-  | .pumpAndLifelink p t => return .pumpAndLifelink (← takeInt p) (← takeInt t)
   | .pumpAndExileIfDies p t => return .pumpAndExileIfDies (← takeInt p) (← takeInt t)
-  | .pumpAndGrant p t k => return .pumpAndGrant (← takeInt p) (← takeInt t) k
   | .setBasePT p t => return .setBasePT (← takeInt p) (← takeInt t)
   | a => return a
 
@@ -442,7 +440,11 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .surveil n => return .surveil (← takeNat n)
   | .millSelf n => return .millSelf (← takeNat n)
   | .mayDiscardDraw n => return .mayDiscardDraw (← takeNat n)
-  | .oppSacrificesGreatestMvGainLife n => return .oppSacrificesGreatestMvGainLife (← takeNat n)
+  | .targetPlayerLoseLife n => return .targetPlayerLoseLife (← takeNat n)
+  | .controllerOfTargetLosesLife n => return .controllerOfTargetLosesLife (← takeNat n)
+  | .fra (.loseLife n) => return .fra (.loseLife (← takeNat n))
+  | .fra (.damageEachOpponent n) => return .fra (.damageEachOpponent (← takeNat n))
+  | .fra (.damageAny n) => return .fra (.damageAny (← takeNat n))
   | .damageThenEmpowerExcess n => return .damageThenEmpowerExcess (← takeNat n)
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
   | .spell s => return .spell (← takeSpell s)

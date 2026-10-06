@@ -49,6 +49,9 @@ structure GameObject where
   printed : CardDef
   owner : PlayerId
   controller : Option PlayerId := none
+  /-- Controller as this object last existed on the battlefield (CR 608.2c).
+  Zone changes clear `controller`; this keeps “its controller” readable. -/
+  lastController : Option PlayerId := none
   /-- Player under whose control this object entered the battlefield
   (CR 110.2). Used when a control-changing effect ends (CR 800.4a / 800.4c). -/
   defaultController : Option PlayerId := none

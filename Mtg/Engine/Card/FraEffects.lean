@@ -82,7 +82,7 @@ def surgicalPrecisionDestroy : Effect :=
     (castKind := .destroyCreature)
 
 def drawAndGainLife (cards life : Nat) : Effect :=
-  fraUntargeted (.fra (.drawAndGainLife cards life))
+  fraUntargeted (.sequence [.draw cards, .gainLife life])
     s!"You draw {cardPhrase cards} and gain {life} life"
     (castKind := .draw)
 
@@ -152,7 +152,7 @@ def castAwayDoubt : Effect :=
 
 def extendedAbsence : Effect :=
   fraSpell (.filtered TargetFilter.creatureOrPlaneswalker)
-    (.sequence [.fra .exile, .fra (.damageEachOpponentGainLife 1)])
+    (.sequence [.fra .exile, .fra (.damageEachOpponent 1), .gainLife 1])
     "Exile target creature or planeswalker. This spell deals 1 damage to each opponent and you gain 1 life"
     (castKind := .destroyCreature)
 
@@ -273,7 +273,9 @@ def somethingWorthSaving : Effect :=
     (castKind := .draw)
 
 def tethermagesAdvantage : Effect :=
-  fraSpellOn TargetFilter.creature (.pumpGrantUntap 2 2 Keyword.reach)
+  fraSpell (.filtered TargetFilter.creature)
+    (.sequence [.onPermanent (.pump 2 2), .onPermanent (.grantKeywords Keyword.reach),
+      .onPermanent .untap])
     "Target creature gets +2/+2 and gains reach until end of turn. Untap it"
     (castKind := .pump)
 
@@ -285,7 +287,9 @@ def creaturesYouControlGetUntilEot (p t : Int) : Effect :=
     (castKind := .pump)
 
 def chargeTheSanctumPump : Effect :=
-  fraSpellOn TargetFilter.creature (.pumpGrantPlusOne 2 0 Keyword.firstStrike 1)
+  fraSpell (.filtered TargetFilter.creature)
+    (.sequence [.onPermanent (.pump 2 0), .onPermanent (.grantKeywords Keyword.firstStrike),
+      .onPermanent (.plusOne 1)])
     "Target creature gets +2/+0 and gains first strike until end of turn. Put a +1/+1 counter on it"
     (castKind := .pump)
 
@@ -318,7 +322,8 @@ def damageToCreatureWithFlying (n : Nat) : Effect :=
 
 def plusOneThenGrant (n : Nat) (k : Keywords) (upToOne := false) : Effect :=
   let noun := if upToOne then "up to one target creature" else "target creature"
-  fraSpell (.filtered { TargetFilter.creature with noun }) (.fra (.plusOneThenGrant n k))
+  fraSpell (.filtered { TargetFilter.creature with noun })
+    (.sequence [.onPermanent (.plusOne n), .onPermanent (.grantKeywords k)])
     s!"Put {plusOnePlusOneCountersPhrase n} on {noun}. It gains {k.joinedAnd} until end of turn"
     (castKind := .pump) (allowsZeroTargets := upToOne)
 
@@ -354,7 +359,7 @@ def theorixCounter : Effect :=
     (castKind := .counter)
 
 def millThenDraw (m d : Nat) : Effect :=
-  fraUntargeted (.fra (.millThenDraw m d))
+  fraUntargeted (.sequence [.millSelf m, .draw d])
     s!"Mill {englishNumber m} cards, then draw {cardPhrase d}"
     (castKind := .draw)
 
@@ -392,7 +397,8 @@ def returnLegendaryCardToHand : Effect :=
 
 def plusOneVigilanceIndestructible : Effect :=
   fraSpell (.filtered TargetFilter.creature)
-    (.fra (.plusOneThenGrant 1 (Keyword.vigilance.merge Keyword.indestructible)))
+    (.sequence [.onPermanent (.plusOne 1),
+      .onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.indestructible))])
     "Put a +1/+1 counter on target creature. It gains vigilance and indestructible until end of turn"
     (castKind := .pump)
 
