@@ -171,7 +171,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       g := (← g.payRemoveIndestructibleCounter (g.object! sourceId))
     if a.cost.putStunCounterOnSource then
       let src := g.object! sourceId
-      g := (g.setObject { src with status := { src.status with stun := src.status.stun + 1 } }).logMsg
+      let n := g.countersYouPut src 1 (putter := some p)
+      g := (g.setObject { src with status := { src.status with stun := src.status.stun + n } }).logMsg
         s!"{(g.player p).name} puts a stun counter on {src.name}"
     if a.cost.removeAnyNumberPlusOne then
       let src := g.object! sourceId

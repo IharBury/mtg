@@ -184,7 +184,9 @@ def loyaltyOnEachPlaneswalkerOf (g : Game) (p : PlayerId) : Game :=
   if pws.isEmpty then g
   else
     let g := pws.foldl (fun g o =>
-      (g.mapObjectStatus (g.object! o.id) (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })).logMsg
+      let n := g.countersYouPut (g.object! o.id) 1 (putter := some p)
+      (g.mapObjectStatus (g.object! o.id) (fun s =>
+        { s with loyaltyCounters := s.loyaltyCounters + n })).logMsg
         s!"A loyalty counter is put on {o.name}") g
     g.queueLoyaltyPutTriggers p
 

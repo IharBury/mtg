@@ -33,8 +33,9 @@ def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : 
           g.logMsg
             "The target is no longer legal. No influence counter, scry, draw, or mill."
         else
+          let n := g.countersYouPut src 1 (putter := src.controller)
           let g := g.setObject { src with status :=
-            { src.status with influence := src.status.influence + 1 } }
+            { src.status with influence := src.status.influence + n } }
           let g := g.logMsg s!"{src.name} gets an influence counter"
           g.beginScry src.you 2
 
@@ -457,10 +458,18 @@ then run `k`. -/
 def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (k : Game → GameObject → Game) : Game :=
   g.withSourceOnBattlefield sourceId fun g o =>
-    let g := g.setObject { o with status := { o.status with plan := o.status.plan + 1 } }
-    let o := g.object! o.id
-    let g := g.putMatchingSourceTriggers controller o (.nthPlanCounter o.status.plan)
-    k g o
+    let n := g.countersYouPut o 1 (putter := some controller)
+    let g := Id.run do
+      let mut g := g
+      for _ in [0:n] do
+        match g.findObject? o.id with
+        | some cur =>
+          g := g.setObject { cur with status := { cur.status with plan := cur.status.plan + 1 } }
+          let cur := g.object! cur.id
+          g := g.putMatchingSourceTriggers controller cur (.nthPlanCounter cur.status.plan)
+        | none => pure ()
+      return g
+    k g (g.object! o.id)
 
 /-- Current power of `sourceId` if it is still on the battlefield; otherwise
 last-known power, falling back to the object's current power. -/

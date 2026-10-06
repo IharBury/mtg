@@ -23,10 +23,6 @@ def destroyPermanent (g : Game) (o : GameObject) : Game :=
   else
     g.moveToOwnerGraveyard o s!"{o.name} is destroyed"
 
-/-- Update `o`'s status in place. -/
-def mapObjectStatus (g : Game) (o : GameObject) (f : Status → Status) : Game :=
-  g.setObject { o with status := f o.status }
-
 /-- Queue “a creature you control is dealt damage” triggers (She-Hulk). -/
 def queueCreatureYouControlDealtDamage (g : Game) (o : GameObject) (n : Int) : Game :=
   if n <= 0 || !o.isCreature then g

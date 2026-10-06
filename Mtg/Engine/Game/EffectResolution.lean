@@ -484,10 +484,11 @@ def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target
       | some o =>
         if o.isOnBattlefield && o.status.hasCounters then
           let plus := o.status.plusOnePlusOne
+          let extra := g.docSamsonBonus (some controller) o.controller
           let g :=
-            if plus > 0 then g.addPlusOnePlusOneTo o 1 else g
+            if plus > 0 then g.addPlusOnePlusOneTo o 1 (byPlayer := some controller) else g
           let o := g.object! id
-          g.setObject { o with status := o.status.proliferatedExceptPlusOne }
+          g.setObject { o with status := o.status.proliferatedExceptPlusOne extra }
             |>.logMsg s!"{o.name} gets another counter of each kind"
         else g.logMsg s!"{o.name} has no counters"
       | none => g.logMsg "The target is no longer legal"

@@ -275,8 +275,8 @@ def withoutCounters (s : Status) : Status :=
 
 /-- Another counter of each kind already on this permanent (CR 701.34a).
 +1/+1 counters are added by the caller so their triggers apply. -/
-def proliferatedExceptPlusOne (s : Status) : Status :=
-  let inc (n : Nat) : Nat := if n > 0 then n + 1 else n
+def proliferatedExceptPlusOne (s : Status) (extra : Nat := 0) : Status :=
+  let inc (n : Nat) : Nat := if n > 0 then n + 1 + extra else n
   { s with
     loyaltyCounters := inc s.loyaltyCounters, hope := inc s.hope, charge := inc s.charge
     minusOneMinusOne := inc s.minusOneMinusOne
@@ -287,26 +287,27 @@ def proliferatedExceptPlusOne (s : Status) : Status :=
     trampleCounters := inc s.trampleCounters
     indestructibleCounters := inc s.indestructibleCounters
     lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
-    lore := inc s.lore, keywordCounters := s.keywordCounters.incPresent }
+    lore := inc s.lore, keywordCounters := s.keywordCounters.incPresent extra }
 
 /-- Put the same number of each kind of counter `from` has, except +1/+1
 counters, which the caller adds so their triggers apply (Graft Surgeon). -/
-def addCountersExceptPlusOne (s «from» : Status) : Status :=
+def addCountersExceptPlusOne (s «from» : Status) (extra : Nat := 0) : Status :=
+  let bump (n : Nat) : Nat := if n == 0 then 0 else n + extra
   { s with
-    loyaltyCounters := s.loyaltyCounters + «from».loyaltyCounters
-    minusOneMinusOne := s.minusOneMinusOne + «from».minusOneMinusOne
-    hope := s.hope + «from».hope, charge := s.charge + «from».charge
-    stun := s.stun + «from».stun
-    shield := s.shield + «from».shield, finality := s.finality + «from».finality
-    plan := s.plan + «from».plan, burden := s.burden + «from».burden
-    quest := s.quest + «from».quest, invasion := s.invasion + «from».invasion
-    influence := s.influence + «from».influence
-    trampleCounters := s.trampleCounters + «from».trampleCounters
-    indestructibleCounters := s.indestructibleCounters + «from».indestructibleCounters
-    lifelinkCounters := s.lifelinkCounters + «from».lifelinkCounters
-    hone := s.hone + «from».hone, shadow := s.shadow + «from».shadow
-    lore := s.lore + «from».lore
-    keywordCounters := s.keywordCounters.add «from».keywordCounters }
+    loyaltyCounters := s.loyaltyCounters + bump «from».loyaltyCounters
+    minusOneMinusOne := s.minusOneMinusOne + bump «from».minusOneMinusOne
+    hope := s.hope + bump «from».hope, charge := s.charge + bump «from».charge
+    stun := s.stun + bump «from».stun
+    shield := s.shield + bump «from».shield, finality := s.finality + bump «from».finality
+    plan := s.plan + bump «from».plan, burden := s.burden + bump «from».burden
+    quest := s.quest + bump «from».quest, invasion := s.invasion + bump «from».invasion
+    influence := s.influence + bump «from».influence
+    trampleCounters := s.trampleCounters + bump «from».trampleCounters
+    indestructibleCounters := s.indestructibleCounters + bump «from».indestructibleCounters
+    lifelinkCounters := s.lifelinkCounters + bump «from».lifelinkCounters
+    hone := s.hone + bump «from».hone, shadow := s.shadow + bump «from».shadow
+    lore := s.lore + bump «from».lore
+    keywordCounters := s.keywordCounters.add («from».keywordCounters.plusExtra extra) }
 
 /-- Until-end-of-turn +P/+T (CR 613.4c / 611.2a). -/
 def addPump (s : Status) (p t : Int) : Status :=

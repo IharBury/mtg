@@ -97,14 +97,15 @@ def drawThenBeginDiscard (g : Game) (p : PlayerId) (cards : Nat := 1)
 the battlefield, put a +1/+1 counter on it. The creature still connives if it
 has left (MSH / CR 701.47). -/
 def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
-  let extraDraw :=
-    (g.permanentsOf controller).any (fun o =>
+  let leaders :=
+    ((g.permanentsOf controller).filter (fun o =>
       o.staticAbilities.any (fun
         | .extraDrawOnConnive => true
-        | _ => false))
+        | _ => false))).size
   let g := { g with conniveSource := sourceId }
   let g := g.logMsg s!"{(g.player controller).name}'s creature connives"
-  let g := if extraDraw then g.draw controller 1 else g
+  -- Each Leader replaces the connive with a draw, then that connive.
+  let g := if leaders > 0 then g.draw controller leaders else g
   let g := g.draw controller 1
   if (g.player controller).hand.isEmpty then
     let g := { g with conniveSource := none }
@@ -124,9 +125,7 @@ def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
       match g.findObject? sid with
       | some o =>
         if o.isOnBattlefield then
-          let g := g.setObject { o with status := { o.status with
-            plusOnePlusOne := o.status.plusOnePlusOne + 1 } }
-          g.logMsg s!"{o.name} gets a +1/+1 counter"
+          g.addPlusOnePlusOneTo o 1 (byPlayer := o.controller)
         else
           g.logMsg "The conniving creature has left the battlefield; no +1/+1 counter is put"
       | none =>

@@ -269,9 +269,8 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
         g := g.enqueueWaitingTriggers #[wt]
       return g
 
-/-- Put one lore counter on `saga` and queue the matching chapter abilities
-(CR 714.2 / 714.3). Counters are added one at a time. -/
-def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
+/-- Put exactly one lore counter on `saga` and queue that chapter. -/
+def addOneLoreRaw (g : Game) (saga : GameObject) : Game :=
   match saga.controller, saga.printed.saga with
   | some p, some sdef =>
     match g.findObject? saga.id with
@@ -291,15 +290,22 @@ def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
               .sagaChapter) g
   | _, _ => g
 
-/-- Add `n` lore counters one at a time (CR 714.3c). -/
+/-- Add `n` lore counters one at a time, plus one per Doc Samson the
+controller has (CR 714.3c / MSH 517). -/
 def addLoreCounters (g : Game) (saga : GameObject) (n : Nat) : Game :=
+  let n := g.countersYouPut saga n
   Id.run do
     let mut g := g
     for _ in [0:n] do
       match g.findObject? saga.id with
-      | some o => g := g.addOneLoreCounter o
+      | some o => g := g.addOneLoreRaw o
       | none => pure ()
     return g
+
+/-- Put one lore counter on `saga` and queue the matching chapter abilities
+(CR 714.2 / 714.3). Counters are added one at a time. -/
+def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
+  g.addLoreCounters saga 1
 
 /-- As a Saga enters, put a lore counter on it (CR 714.2a). -/
 def addLoreAsSagaEnters (g : Game) (o : GameObject) : Game :=

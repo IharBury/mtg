@@ -615,8 +615,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
         match g.findObject? id with
         | some o =>
           if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 then
-            (g.mapObjectStatus o (fun s => { s with minusOneMinusOne := s.minusOneMinusOne + x })).logMsg
-              s!"{x} -1/-1 counter(s) are put on {o.name}"
+            let n := g.countersYouPut o x (putter := some controller)
+            (g.mapObjectStatus o (fun s => { s with minusOneMinusOne := s.minusOneMinusOne + n })).logMsg
+              s!"{n} -1/-1 counter(s) are put on {o.name}"
           else g
         | none => g
       | _ => g) g

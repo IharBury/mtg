@@ -253,8 +253,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
       let g := if o.status.tapped then g else g.becomeTapped o
       if chosenX == 0 then g
       else
-        (g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + chosenX })).logMsg
-          s!"{chosenX} stun counter(s) are put on {o.name}") sourceId illegal
+        let n := g.countersYouPut (g.object! o.id) chosenX (putter := some controller)
+        (g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + n })).logMsg
+          s!"{n} stun counter(s) are put on {o.name}") sourceId illegal
   | .emblemDrawOnCast =>
     let emblem : CardDef := {
       name := "Chandra, Chill of Compliance Emblem", types := #[]

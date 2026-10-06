@@ -554,7 +554,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let eqs :=
       g.battlefield.filter (fun o => o.controlledBy controller && o.printed.isEquipment)
     eqs.foldl (init := g) fun acc eq =>
-      acc.mapObjectStatus eq (fun s => { s with hone := s.hone + 1 })
+      let n := acc.countersYouPut eq 1 (putter := some controller)
+      acc.mapObjectStatus eq (fun s => { s with hone := s.hone + n })
         |>.logMsg s!"{eq.name} received a hone counter"
   | .cascade =>
     let maxMv :=
@@ -701,9 +702,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           let extra :=
             if g.hasSubtype o "Bear" then o.status.additionalSubtypes
             else o.status.additionalSubtypes.push "Bear"
+          let n := g.countersYouPut o 1 (putter := some controller)
           let g := g.setObject { o with status :=
             { o.status with
-              trampleCounters := o.status.trampleCounters + 1
+              trampleCounters := o.status.trampleCounters + n
               additionalSubtypes := extra } }
           g.logMsg s!"{o.name} gets a trample counter and becomes a Bear"
         | none => g
@@ -801,8 +803,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         "The target is no longer legal"
   | .mountainQuestDragon =>
     g.withTriggerSource sourceId fun g src =>
+      let n := g.countersYouPut src 1 (putter := some controller)
       let g := g.setObject { src with status :=
-        { src.status with quest := src.status.quest + 1 } }
+        { src.status with quest := src.status.quest + n } }
       let src := g.object! src.id
       let g := g.logMsg s!"{src.name} gets a quest counter ({src.status.quest})"
       if src.status.quest >= 6 then
@@ -894,8 +897,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let n := g.countCreaturesControlledBy opp
     let g :=
       g.withTriggerSource sourceId fun g src =>
-        g.mapObjectStatus src (fun s => { s with hone := s.hone + n })
-          |>.logMsg s!"{src.name} gets {n} hone counter(s)"
+        let k := g.countersYouPut src n (putter := some controller)
+        g.mapObjectStatus src (fun s => { s with hone := s.hone + k })
+          |>.logMsg s!"{src.name} gets {k} hone counter(s)"
     match targets[1]?, targets[0]? with
     | some (Target.permanent hid), _
     | none, some (Target.permanent hid) =>
@@ -1157,13 +1161,20 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .plusOneOnTargetAndPlan =>
     g.withSourceOnBattlefield sourceId fun g src =>
       g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-        let src := g.object! src.id
-        let g := g.setObject { src with status :=
-          { src.status with plan := src.status.plan + 1 } }
-        let src := g.object! src.id
-        let g := g.putMatchingSourceTriggers controller src
-          (.nthPlanCounter src.status.plan)
-        g.addPlusOnePlusOneTo o 1)
+        let n := g.countersYouPut src 1 (putter := some controller)
+        let g := Id.run do
+          let mut g := g
+          for _ in [0:n] do
+            match g.findObject? src.id with
+            | some cur =>
+              g := g.setObject { cur with status :=
+                { cur.status with plan := cur.status.plan + 1 } }
+              let cur := g.object! cur.id
+              g := g.putMatchingSourceTriggers controller cur
+                (.nthPlanCounter cur.status.plan)
+            | none => pure ()
+          return g
+        g.addPlusOnePlusOneTo o 1 (byPlayer := some controller))
         "The target is no longer legal. You won't put counters on anything."
   | .planFinishDrawPlusOneEach =>
     let g := g.sacrificePlanIfOnBattlefield sourceId
@@ -1275,7 +1286,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let (g, tok) := g.createToken controller alien11redHasteToken
     let g := if n == 0 then g else g.addPlusOnePlusOneTo (g.object! tok.id) n
     g.withSourceOnBattlefield sourceId (fun g src =>
-      g.mapObjectStatus src (fun s => { s with invasion := s.invasion + 1 })
+      let n := g.countersYouPut src 1 (putter := some controller)
+      g.mapObjectStatus src (fun s => { s with invasion := s.invasion + n })
         |>.logMsg s!"{src.name} gets an invasion counter")
       "The source is no longer in play"
   | .mayPutArtifactAttachEquipment =>
@@ -1542,13 +1554,18 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | none => g.logMsg "The source had no counters"
     | some (_, last) =>
       g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-        let g := g.mapObjectStatus o (fun s => s.addCountersExceptPlusOne last)
+        let extra := g.docSamsonBonus (some controller) o.controller
+        let g := g.mapObjectStatus o (fun s => s.addCountersExceptPlusOne last extra)
         let o := g.object! o.id
-        let g := if last.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o last.plusOnePlusOne else g
+        let g :=
+          if last.plusOnePlusOne > 0 then
+            g.addPlusOnePlusOneTo o last.plusOnePlusOne (byPlayer := some controller)
+          else g
         g.logMsg s!"The counters are put on {o.name}") "No target was chosen"
   | .chargeCounterOnSource =>
     g.withSourceOnBattlefield sourceId (fun g o =>
-      let g := g.mapObjectStatus o (fun s => { s with charge := s.charge + 1 })
+      let n := g.countersYouPut o 1 (putter := some controller)
+      let g := g.mapObjectStatus o (fun s => { s with charge := s.charge + n })
       g.logMsg s!"A charge counter is put on {o.name}")
   | .addGreenPerChargeCounter =>
     -- Ruling 792: if the source left, use its last-known charge counters.
@@ -1568,7 +1585,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
   | .loyaltyOnSource =>
     g.withSourceOnBattlefield sourceId (fun g o =>
-      let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })
+      let n := g.countersYouPut o 1 (putter := some controller)
+      let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + n })
       let g := g.queueLoyaltyPutTriggers controller
       g.logMsg s!"A loyalty counter is put on {o.name}")
   | .grantThenCounterByType k =>
@@ -1578,7 +1596,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := if o.isCreature then g.addPlusOnePlusOneTo o 1 else g
       let o := g.object! o.id
       if o.printed.isPlaneswalker then
-        let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + 1 })
+        let n := g.countersYouPut o 1 (putter := some controller)
+        let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + n })
         let g := g.queueLoyaltyPutTriggers controller
         g.logMsg s!"A loyalty counter is put on {o.name}"
       else g)

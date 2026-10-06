@@ -62,8 +62,9 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
     |>.logMsg msg
 
 /-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
-def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
-  let n := g.extraCountersOn o.controller n
+def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
+    (byPlayer : Option PlayerId := none) : Game :=
+  let n := g.countersYouPut o n (putter := byPlayer)
   let g := g.mapObjectStatus o (fun s => { s with finality := s.finality + n })
   g.logMsg s!"{o.name} gets a finality counter"
 
@@ -145,44 +146,6 @@ creature. Other attach effects ignore this restriction. -/
 def isWorthyPermanent (_g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield && o.isCreature && o.printed.isWorthy
 
-/-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
-def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) (entersWith := false) : Game :=
-  let n := g.extraCountersOn o.controller n
-  let n := g.extraPlusOneOnCreature o n
-  let g := g.mapObjectStatus o (fun s =>
-    { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 })
-  let phrase :=
-    if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
-    else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
-  let g := g.logMsg phrase
-  -- “Whenever you put … counters”: “you” is whoever controls the effect
-  -- putting them, not necessarily the creature's controller.
-  let putter :=
-    ((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject?).bind (·.controller)
-      |>.orElse (fun _ => o.controller)
-  let g :=
-    match putter with
-    | some q =>
-      if n > 0 then
-        g.foldControlledPermanents q none fun g src =>
-          -- Invisible Woman: one or more counters at once trigger once.
-          let oncePerBatch := src.printed.triggeredAbilities.any (fun ab =>
-            match ab.shared with
-            | .resource .plusOneOnHeroesCreateWall => true
-            | _ => false)
-          if oncePerBatch && g.waitingTriggers.any (fun w =>
-              w.source.id == src.id && w.event == .youPutPlusOne) then g
-          else g.putMatchingSourceTriggers q src .youPutPlusOne (cause := some (g.object! o.id))
-      else g
-    | none => g
-  match putter with
-  | none => g
-  | some p =>
-    if n > 0 &&
-        (g.hasSubtype o "Goblin" || g.hasSubtype o "Orc" || g.hasSubtype o "Army") then
-      g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
-    else g
-
 /-- Put a +1/+1 counter on `id` when it is still a creature. -/
 def addPlusOneIfStillCreature (g : Game) (id : ObjectId) : Game :=
   match g.findObject? id with
@@ -209,21 +172,27 @@ def queueGoblinOrcArmyCounterTriggers (g : Game) (o : GameObject) : Game :=
   | none => g
 
 /-- Put an indestructible counter on `o`. -/
-def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
+def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
+    (byPlayer : Option PlayerId := none) : Game :=
+  let n := g.countersYouPut o n (putter := byPlayer)
   let g := g.mapObjectStatus o (fun s =>
     { s with indestructibleCounters := s.indestructibleCounters + n })
   let g := g.logMsg s!"{o.name} gets an indestructible counter"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
 
 /-- Put a lifelink counter on `o`. -/
-def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
+def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
+    (byPlayer : Option PlayerId := none) : Game :=
+  let n := g.countersYouPut o n (putter := byPlayer)
   let g := g.mapObjectStatus o (fun s =>
     { s with lifelinkCounters := s.lifelinkCounters + n })
   let g := g.logMsg s!"{o.name} gets a lifelink counter"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
 
 /-- Put a burden counter on `o`. The log includes the new total. -/
-def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
+def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
+    (byPlayer : Option PlayerId := none) : Game :=
+  let n := g.countersYouPut o n (putter := byPlayer)
   let g := g.mapObjectStatus o (fun s => { s with burden := s.burden + n })
   let total := (g.object! o.id).status.burden
   let g := g.logMsg s!"{o.name} gets a burden counter ({total})"

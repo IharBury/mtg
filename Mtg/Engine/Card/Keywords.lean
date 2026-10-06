@@ -163,8 +163,8 @@ def any (k : KeywordCounters) : Bool :=
   k.haste > 0 || k.vigilance > 0 || k.flying > 0 || k.menace > 0 ||
     k.reach > 0 || k.deathtouch > 0 || k.firstStrike > 0 || k.doubleStrike > 0
 
-def incPresent (k : KeywordCounters) : KeywordCounters :=
-  let inc (n : Nat) : Nat := if n > 0 then n + 1 else n
+def incPresent (k : KeywordCounters) (extra : Nat := 0) : KeywordCounters :=
+  let inc (n : Nat) : Nat := if n > 0 then n + 1 + extra else n
   { haste := inc k.haste, vigilance := inc k.vigilance, flying := inc k.flying
     menace := inc k.menace, reach := inc k.reach, deathtouch := inc k.deathtouch
     firstStrike := inc k.firstStrike, doubleStrike := inc k.doubleStrike }
@@ -175,6 +175,13 @@ def add (a b : KeywordCounters) : KeywordCounters :=
     reach := a.reach + b.reach, deathtouch := a.deathtouch + b.deathtouch
     firstStrike := a.firstStrike + b.firstStrike
     doubleStrike := a.doubleStrike + b.doubleStrike }
+
+/-- Add `extra` to each kind that is already present. -/
+def plusExtra (k : KeywordCounters) (extra : Nat) : KeywordCounters :=
+  let bump (n : Nat) : Nat := if n == 0 then 0 else n + extra
+  { haste := bump k.haste, vigilance := bump k.vigilance, flying := bump k.flying
+    menace := bump k.menace, reach := bump k.reach, deathtouch := bump k.deathtouch
+    firstStrike := bump k.firstStrike, doubleStrike := bump k.doubleStrike }
 
 def toKeywords (k : KeywordCounters) : Keywords :=
   { haste := k.haste > 0, vigilance := k.vigilance > 0, flying := k.flying > 0

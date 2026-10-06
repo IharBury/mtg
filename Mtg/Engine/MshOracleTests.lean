@@ -1546,6 +1546,79 @@ def docSamsonExtraCountersOk : Bool :=
 
 #guard docSamsonExtraCountersOk
 
+/-- Doc Samson adds one of each kind you put on a permanent you control,
+including enters-with and proliferate, and not counters an opponent puts
+or counters you put on their permanent. -/
+def docSamsonYouPutAllKindsOk : Bool :=
+  let g := addPermanent afterDraw docSamsonSuperPsychiatrist ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.addIndestructibleCounter bears
+  let g := g.addBurdenCounter (g.object! bears.id)
+  let g := g.addLifelinkCounter (g.object! bears.id)
+  let g := g.applyPermanentAction (g.object! bears.id) .tapAndStun
+  let marked := g.object! bears.id
+  let kinds :=
+    marked.status.indestructibleCounters == 2 &&
+      marked.status.burden == 2 &&
+      marked.status.lifelinkCounters == 2 &&
+      marked.status.stun == 2
+  let (gSpell, spell) := g.allocObject lightningBolt ⟨1⟩ .stack (some ⟨1⟩)
+  let gOpp := { gSpell with resolvingSpell := some spell.id }
+  let gOpp := gOpp.addPlusOnePlusOneTo (gOpp.object! bears.id) 1
+  let opponentPuts := (gOpp.object! bears.id).status.plusOnePlusOne == 1
+  let gTheirs := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let oppId :=
+    ((gTheirs.battlefield.filter (fun o =>
+      o.name == "Grizzly Bears" && o.controlledBy ⟨1⟩)).map
+        (fun (o : GameObject) => o.id))[0]!
+  let gTheirs := gTheirs.addPlusOnePlusOneTo (gTheirs.object! oppId) 1 (byPlayer := some ⟨0⟩)
+  let notTheirs := (gTheirs.object! oppId).status.plusOnePlusOne == 1
+  let gPlan := addPermanent g claimTheKingdom ⟨0⟩ ⟨0⟩
+  let plan := namedPermanent gPlan "Claim the Kingdom"
+  let gPlan := gPlan.incrementPlanThen ⟨0⟩ (some plan.id) (fun g _ => g)
+  let planOk := (gPlan.object! plan.id).status.plan == 2
+  let gCap := addPermanent afterDraw docSamsonSuperPsychiatrist ⟨0⟩ ⟨0⟩
+  let gCap := addPermanent gCap captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩
+  let gCap := gCap.afterPermanentEnters (namedPermanent gCap "Captain America, Super-Soldier")
+  let shieldOk :=
+    (namedPermanent gCap "Captain America, Super-Soldier").status.shield == 2
+  let gPro := addPermanent afterDraw docSamsonSuperPsychiatrist ⟨0⟩ ⟨0⟩
+  let gPro := addPermanent gPro grizzlyBears ⟨0⟩ ⟨0⟩
+  let bear := namedPermanent gPro "Grizzly Bears"
+  let gPro := gPro.setObject { bear with
+    status := { bear.status with plusOnePlusOne := 1, stun := 2 } }
+  let gPro := gPro.proliferateTarget ⟨0⟩ #[Target.permanent bear.id]
+  let grown := gPro.object! bear.id
+  let proliferateOk := grown.status.plusOnePlusOne == 3 && grown.status.stun == 4
+  let gCon := addPermanent afterDraw docSamsonSuperPsychiatrist ⟨0⟩ ⟨0⟩
+  let gCon := addPermanent gCon grizzlyBears ⟨0⟩ ⟨0⟩
+  let gCon := addToHand gCon lightningBolt ⟨0⟩
+  let gCon := gCon.applyConnive ⟨0⟩ (some (namedPermanent gCon "Grizzly Bears").id)
+  let gCon := discardNamed gCon ⟨0⟩ "Lightning Bolt"
+  let conniveOk := (namedPermanent gCon "Grizzly Bears").status.plusOnePlusOne == 2
+  kinds && opponentPuts && notTheirs && planOk && shieldOk && proliferateOk && conniveOk &&
+    (mshRuling 517).comment.contains "that many plus one" &&
+    (mshRuling 590).comment.contains "plus two"
+
+#guard docSamsonYouPutAllKindsOk
+
+/-- Each Leader is its own replacement, so two of them draw two extra cards. -/
+def leaderExtraDrawPerReplacementOk : Bool :=
+  let one := addPermanent afterDraw leaderSuperGenius ⟨0⟩ ⟨0⟩
+  let one := addPermanent one grizzlyBears ⟨0⟩ ⟨0⟩
+  let before1 := (one.player ⟨0⟩).hand.size
+  let one := one.applyConnive ⟨0⟩ (some (namedPermanent one "Grizzly Bears").id)
+  let two := addPermanent afterDraw leaderSuperGenius ⟨0⟩ ⟨0⟩
+  let two := addPermanent two leaderSuperGenius ⟨0⟩ ⟨0⟩
+  let two := addPermanent two grizzlyBears ⟨0⟩ ⟨0⟩
+  let before2 := (two.player ⟨0⟩).hand.size
+  let two := two.applyConnive ⟨0⟩ (some (namedPermanent two "Grizzly Bears").id)
+  (one.player ⟨0⟩).hand.size == before1 + 2 &&
+    (two.player ⟨0⟩).hand.size == before2 + 3
+
+#guard leaderExtraDrawPerReplacementOk
+
 def namorPowerAllZonesOk : Bool :=
   let g := addPermanent afterDraw namorTheSubMariner ⟨0⟩ ⟨0⟩
   let namor := namedPermanent g "Namor the Sub-Mariner"

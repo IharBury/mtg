@@ -304,18 +304,6 @@ def putAnotherCreatureYouControlEntersTriggers (g : Game) (entering : GameObject
           (cause := some entering))
       |>.promptTriggerTargetsIfNeeded
 
-/-- Extra counters Doc Samson puts on a permanent you control (MSH 165 / 238). -/
-def extraCountersOn (g : Game) (controller : Option PlayerId) (n : Nat) : Nat :=
-  if n == 0 then 0
-  else
-    match controller with
-    | none => n
-    | some p =>
-      n + ((g.permanentsOf p).filter (fun o =>
-        o.printed.staticAbilities.any (fun
-          | .extraCounterOnPermanents => true
-          | _ => false))).size
-
 /-- Yoshimaru, Beloved Companion: one more +1/+1 counter for each such
 permanent the creature's controller controls. -/
 def extraPlusOneOnCreature (g : Game) (o : GameObject) (n : Nat) : Nat :=
@@ -325,6 +313,43 @@ def extraPlusOneOnCreature (g : Game) (o : GameObject) (n : Nat) : Nat :=
     | none => n
     | some p =>
       n + ((g.permanentsOf p).filter (·.staticAbilities.any (· == .fra .extraPlusOneCounter))).size
+
+/-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
+def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
+    (entersWith := false) (byPlayer : Option PlayerId := none) : Game :=
+  let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
+  let n := g.extraPlusOneOnCreature o n
+  let g := g.mapObjectStatus o (fun s =>
+    { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 })
+  let phrase :=
+    if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
+    else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
+  let g := g.logMsg phrase
+  -- “Whenever you put … counters”: “you” is whoever puts them.
+  let putter :=
+    byPlayer.orElse (fun _ => g.counterPutter o.controller)
+  let g :=
+    match putter with
+    | some q =>
+      if n > 0 then
+        g.foldControlledPermanents q none fun g src =>
+          -- Invisible Woman: one or more counters at once trigger once.
+          let oncePerBatch := src.printed.triggeredAbilities.any (fun ab =>
+            match ab.shared with
+            | .resource .plusOneOnHeroesCreateWall => true
+            | _ => false)
+          if oncePerBatch && g.waitingTriggers.any (fun w =>
+              w.source.id == src.id && w.event == .youPutPlusOne) then g
+          else g.putMatchingSourceTriggers q src .youPutPlusOne (cause := some (g.object! o.id))
+      else g
+    | none => g
+  match putter with
+  | none => g
+  | some p =>
+    if n > 0 &&
+        (g.hasSubtype o "Goblin" || g.hasSubtype o "Orc" || g.hasSubtype o "Army") then
+      g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
+    else g
 
 /-- Karn, Argent Defender: an artifact or creature entering doesn't cause
 abilities to trigger. Checked with the permanent as it exists on the
@@ -342,12 +367,13 @@ def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
   match o.printed.isPlaneswalker, o.printed.loyalty with
   | true, some n =>
     if n > 0 then
+      let k := g.extraCountersOn o.controller n.toNat
       let g := g.setObject { o with status :=
-        { o.status with loyaltyCounters := o.status.loyaltyCounters + n.toNat } }
+        { o.status with loyaltyCounters := o.status.loyaltyCounters + k } }
       let g := match o.controller with
         | some p => g.queueLoyaltyPutTriggers p
         | none => g
-      g.logMsg s!"{o.name} enters with {n} loyalty counter(s)"
+      g.logMsg s!"{o.name} enters with {k} loyalty counter(s)"
     else g
   | _, _ => g
 
@@ -362,8 +388,9 @@ def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
 
 def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
   if o.printed.entersWithIndestructibleCounter then
+    let n := g.extraCountersOn o.controller 1
     let g := g.setObject { o with status :=
-      { o.status with indestructibleCounters := o.status.indestructibleCounters + 1 } }
+      { o.status with indestructibleCounters := o.status.indestructibleCounters + n } }
     g.logMsg s!"{o.name} enters with an indestructible counter"
   else g
 
@@ -391,7 +418,7 @@ def enterWithHope (g : Game) (o : GameObject) : Game :=
   if o.printed.entersWithHopePerCreature then
     match o.controller with
     | some p =>
-      let n := g.countCreaturesControlledBy p
+      let n := g.extraCountersOn (some p) (g.countCreaturesControlledBy p)
       let g := g.setObject { o with status := { o.status with hope := n } }
       g.logMsg s!"{o.name} enters with {n} hope counter(s)"
     | none => g

@@ -416,10 +416,11 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
   match pick with
   | none => g.logMsg "Empower Jace creates no token"
   | some o =>
+    let k := g.countersYouPut o n (putter := some controller)
     let g := g.setObject { o with status :=
-      { o.status with loyaltyCounters := o.status.loyaltyCounters + n } }
-    let g := if n > 0 then g.queueLoyaltyPutTriggers controller else g
-    g.logMsg s!"Empower Jace {n}: {n} loyalty counter(s) are put on {o.name}"
+      { o.status with loyaltyCounters := o.status.loyaltyCounters + k } }
+    let g := if k > 0 then g.queueLoyaltyPutTriggers controller else g
+    g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {o.name}"
 
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=

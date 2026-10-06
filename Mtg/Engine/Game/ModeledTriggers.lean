@@ -41,8 +41,14 @@ keyword and Super-Adaptoid does not. -/
 def copyKeywordCounter (g : Game) (adaptoid other : GameObject)
     (has : GameObject → Bool) (apply : Status → Status) (name : String) : Game :=
   if has other && !has adaptoid then
+    let n := g.countersYouPut adaptoid 1
     let src := g.object! adaptoid.id
-    g.setObject { src with status := apply src.status }
+    let status := Id.run do
+      let mut s := src.status
+      for _ in [0:n] do
+        s := apply s
+      return s
+    g.setObject { src with status := status }
       |>.logMsg s!"{src.name} gets a {name} counter"
   else g
 
@@ -446,8 +452,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
             if o.printed.subtypes.any (· == "Hero") then o.printed.subtypes
             else o.printed.subtypes.push "Hero"
           let g := g.setObject { o with
-            printed := { o.printed with subtypes }
-            status := { o.status with finality := o.status.finality + 1 } }
+            printed := { o.printed with subtypes } }
+          let g := g.addFinalityTo (g.object! newId) 1 (byPlayer := some controller)
           g.afterPermanentEnters (g.object! newId)
         else g
       | none => g

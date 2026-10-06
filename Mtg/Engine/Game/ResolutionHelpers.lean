@@ -182,7 +182,8 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .tapAndStun =>
     -- Ruling 764: an already tapped creature still gets the stun counter.
     let g := if o.status.tapped then g else g.becomeTapped o
-    let g := g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + 1 })
+    let n := g.countersYouPut (g.object! o.id) 1
+    let g := g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + n })
     g.logMsg s!"A stun counter is put on {o.name}"
   | .setBasePT pw tw =>
     let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })

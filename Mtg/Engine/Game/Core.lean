@@ -329,6 +329,10 @@ def setObject (g : Game) (o : GameObject) : Game :=
   | some i => { g with objects := g.objects.set! i o }
   | none => { g with objects := g.objects.push o }
 
+/-- Update `o`'s status in place. -/
+def mapObjectStatus (g : Game) (o : GameObject) (f : Status → Status) : Game :=
+  g.setObject { o with status := f o.status }
+
 def battlefield (g : Game) : Array GameObject :=
   g.objects.filter GameObject.isOnBattlefield
 
@@ -480,6 +484,42 @@ partial def followMoved (g : Game) (id : ObjectId) : ObjectId :=
   match g.movedTo.reverse.find? (·.1 == id) with
   | some (_, next) => if next == id then id else g.followMoved next
   | none => id
+
+/-- Player putting counters: the resolving spell or ability's controller,
+or `fallback` when none is resolving. -/
+def counterPutter (g : Game) (fallback : Option PlayerId) : Option PlayerId :=
+  ((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject?).bind
+    (·.controller) |>.orElse (fun _ => fallback)
+
+/-- Extra counters from each Doc Samson `putter` controls, when that player
+also controls the permanent (`host`) (MSH 517 / 590). -/
+def docSamsonBonus (g : Game) (putter host : Option PlayerId) : Nat :=
+  match putter, host with
+  | some p, some c =>
+    if p != c then 0
+    else
+      ((g.permanentsOf p).filter (fun o =>
+        o.printed.staticAbilities.any (fun
+          | .extraCounterOnPermanents => true
+          | _ => false))).size
+  | _, _ => 0
+
+/-- `n`, plus one of that kind per Doc Samson, when `putter` puts counters
+on a permanent controlled by `host`. Zero stays zero. `host` defaults to
+`putter`. -/
+def extraCountersOn (g : Game) (putter : Option PlayerId) (n : Nat)
+    (host : Option PlayerId := putter) : Nat :=
+  if n == 0 then 0 else n + g.docSamsonBonus putter host
+
+/-- Counters of one kind actually put on `o`. An enters-with replacement is
+put by the permanent's controller (ruling 517). Otherwise the explicit
+`putter`, the resolving spell or ability, or `o`'s controller. -/
+def countersYouPut (g : Game) (o : GameObject) (n : Nat)
+    (putter : Option PlayerId := none) (entersWith := false) : Nat :=
+  let who :=
+    if entersWith then o.controller
+    else putter.orElse (fun _ => g.counterPutter o.controller)
+  g.extraCountersOn who n (host := o.controller)
 
 end Game
 end Mtg.Engine

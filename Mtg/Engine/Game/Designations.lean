@@ -120,8 +120,9 @@ def putShadowCounter (g : Game) (o : GameObject) : Game :=
   let extra :=
     if o.status.additionalSubtypes.any (· == "Wraith") then o.status.additionalSubtypes
     else o.status.additionalSubtypes.push "Wraith"
+  let n := g.countersYouPut o 1
   g.setObject { o with status := { o.status with
-    shadow := o.status.shadow + 1
+    shadow := o.status.shadow + n
     additionalSubtypes := extra } }
     |>.logMsg s!"{o.name} gets a shadow counter"
 
