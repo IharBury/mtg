@@ -1030,6 +1030,18 @@ def copyEachCreatureOfTargetPlayer : Effect :=
 def cantBeBlockedAnotherPowerAtMost (n : Int) : Effect :=
   mkAbility (.of (.anotherCreatureYouControlPowerAtMost n)) (.onPermanent .cantBeBlocked)
 
+/-- The printed “put N +1/+1 counters on” effect for `kind`.
+`creature` is the pump spell; a creature you control, including a subtype
+list, is the activated ability. -/
+def canonicalPlusOne (n : Nat) (kind : EffectTargetKind) : Option Effect :=
+  match kind with
+  | .creature =>
+    some (mkSpell (.of .creature) (.onPermanent (.plusOne n)) (castKind := .pump))
+  | .creatureYouControl => some (plusOneOnTarget n)
+  | .creatureYouControlAnySubtype ss =>
+    some (if ss.isEmpty then plusOneOnTarget n else plusOneOnTarget n ss)
+  | _ => none
+
 def becomeCopyLegendRuleOff : Effect :=
   mkAbility (.of .creatureYouControl) (.becomeCopyLegendRuleOff)
 
