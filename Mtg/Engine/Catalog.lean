@@ -174,7 +174,8 @@ toughness, and rules. A line that is exactly `//` starts the back face. -/
 @[irreducible, noinline] def fromOracle (lines : List String) : CardDef :=
   parseOracleCard! (String.intercalate "\n" lines)
 
-/-- Parse printed text, keeping rules lines the engine does not model yet. -/
+/-- Parse printed text. Fails when a line is not fully parsed or an effect is
+not fully modelled, the same as `fromOracle`. -/
 @[irreducible, noinline] def fromOracleKeeping (lines : List String) : CardDef :=
   match parseOracleCardKeeping (String.intercalate "\n" lines) with
   | .ok c => c

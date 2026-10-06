@@ -742,7 +742,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
   | .unrecognized =>
-    g.logMsg "The effect does nothing"
+    match effect.resolution with
+    | .searchBasicLand => g.resolveSearchBasicLandTapped controller
+    | .searchLandTypeToHand t => g.resolveSearchLandTypeToHand controller t
+    | .searchBasicLandToHand => g.resolveSearchBasicLandToHand controller
+    | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
+    | _ => g.logMsg "The effect does nothing"
   | .drawAndLoseLife cards life =>
     g.drawThenLoseLife controller cards life
   | .onPermanent action =>

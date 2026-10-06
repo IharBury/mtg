@@ -726,6 +726,65 @@ def isWorthy (c : CardDef) : Bool :=
 def hasEquipWorthy (c : CardDef) : Bool :=
   c.activatedAbilities.any (·.equipWorthy)
 
+/-- Spell, modal, adventure, prepare, and Saga-chapter effects on this face. -/
+def spellLikeEffects (c : CardDef) : Array Effect :=
+  let modes := if c.spellModes.isEmpty then
+      match c.spellEffect with
+      | some e => #[e]
+      | none => #[]
+    else c.spellModes
+  let adv := match c.adventure with
+    | some a => match a.spellEffect with
+      | some e => #[e]
+      | none => #[]
+    | none => #[]
+  let prep := match c.prepareFace with
+    | some a => match a.spellEffect with
+      | some e => #[e]
+      | none => #[]
+    | none => #[]
+  let chapters := match c.saga with
+    | some s => s.chapters.filterMap (·.chapterEffect)
+    | none => #[]
+  modes ++ adv ++ prep ++ chapters
+
+/-- Why this face is not fully parsed or its effects are not fully modelled.
+Does not look at `otherFace`. -/
+def faceModellingError? (c : CardDef) : Option String :=
+  let unparsed : Option String :=
+    c.staticAbilities.foldl (fun acc ab =>
+      match acc, ab with
+      | some e, _ => some e
+      | none, .printed line => some s!"unparsed rules line on {c.name}: {line}"
+      | none, _ => none) none
+      <|> (c.adventure.bind fun a =>
+        a.extraLines[0]?.map fun line => s!"unparsed rules line on {a.name}: {line}")
+      <|> (c.prepareFace.bind fun a =>
+        a.extraLines[0]?.map fun line => s!"unparsed rules line on {a.name}: {line}")
+  let spell : Option String :=
+    c.spellLikeEffects.foldl (fun acc e =>
+      match acc with
+      | some err => some err
+      | none =>
+        if e.resolution.doesNothingAsSpell then
+          some s!"{c.name} is not fully modelled: {e.toNotation}"
+        else none) none
+  let activated : Option String :=
+    c.activatedAbilities.foldl (fun acc ab =>
+      match acc with
+      | some err => some err
+      | none =>
+        if ab.effect.resolution.doesNothingAsActivated then
+          some s!"{c.name} activated ability is not fully modelled: {ab.effect.toNotation}"
+        else none) none
+  unparsed <|> spell <|> activated
+
+/-- Why `c` or its back face is not fully parsed or fully modelled.
+`none` when every rules line was recognized and every spell, mode,
+adventure, prepare face, Saga chapter, and activated ability resolves. -/
+def modellingError? (c : CardDef) : Option String :=
+  c.faceModellingError? <|> (c.otherFace.bind faceModellingError?)
+
 end CardDef
 
 namespace AdventureFace
