@@ -181,8 +181,6 @@ inductive Resolution where
   | nextInstantSorceryCopyIfMvAtMostSourcePower
   /-- Harness this Infinity Stone. -/
   | harnessInfinityStone
-  /-- Destroy target noncreature artifact or noncreature enchantment. -/
-  | destroyTargetNoncreatureArtOrEnch
   /-- Target permanent you control of this subtype connives. -/
   | targetSubtypeConnives (subtype : String)
   /-- Empower Jace `n` (Reality Fracture): put `n` loyalty counters on a Jace
@@ -520,8 +518,6 @@ private def phraseWith (r : Resolution) (noun : String)
     "When you next cast an instant or sorcery spell with mana value less than or equal to this creature's power this turn, copy that spell. You may choose new targets for the copy"
   | .harnessInfinityStone =>
     "Harness this"
-  | .destroyTargetNoncreatureArtOrEnch =>
-    "Destroy target noncreature artifact or noncreature enchantment"
   | .targetSubtypeConnives subtype =>
     s!"Target {subtype} you control connives"
   | .empowerJace n =>

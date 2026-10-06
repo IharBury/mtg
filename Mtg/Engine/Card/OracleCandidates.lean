@@ -2,10 +2,11 @@ import Mtg.Engine.Card.FraEffects
 
 /-!
 Modeled abilities the Oracle parser can recognize. Each entry is a shape.
-`Nat`, `Int`, and `String` arguments are read from the card's own Oracle
-text, so a prototype such as `Effect.draw 1` also matches “Draw seven cards.”
-Each list keeps one prototype per shape. Another entry that differs only
-by those arguments is the same ability, so it is not listed again.
+`Nat`, `Int`, `String`, and target-kind arguments are read from the card's
+own Oracle text, so a prototype such as `Effect.draw 1` also matches “Draw
+seven cards,” and `Effect.destroyCreature` also matches “Destroy target
+artifact.” Each list keeps one prototype per shape. Another entry that
+differs only by those arguments is the same ability, so it is not listed again.
 -/
 
 namespace Mtg.Engine.OracleCandidates
@@ -14,7 +15,6 @@ open Mtg.Engine
 open Mtg.Engine.OracleActivate
 
 def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
-  Effect.destroyTargetColorlessNonland,
   Effect.searchBasicLandTapped,
   Effect.sourceGets 1 1,
   Effect.amassGoblins 1,
@@ -123,7 +123,6 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.resourceSecondDrawDrain,
   Effect.deathHellcatReturn,
   Effect.plusOneUpToOneAndPlayerGainsLife 2,
-  Effect.destroyCreatureWithFlying,
   Effect.drawAndLoseLife 2 2,
   Effect.drawLoseLifeThenAmass 2,
   Effect.drawThenDiscard 2,
@@ -151,10 +150,8 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.pumpAndGrantKeywords 3 0 (Keyword.reach.merge Keyword.firstStrike),
   Effect.creaturesYouControlGet 2 1,
   Effect.destroyArtifactOrEnchantmentGainLife 2,
-  Effect.destroyCreaturePowerAtLeast 4,
   Effect.becomeArtifactGainIndestructible,
   Effect.addAnyColor,
-  Effect.destroyTargetPermanent,
   Effect.returnCreatureFromGyThenAmass 3,
   Effect.counterThenRecruitIfMvAtMost 2,
   Effect.plusOneThenEachOtherIfFromGy,
@@ -166,7 +163,6 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.millThenPutInstantOrSorcery 4,
   Effect.exileThenReturnYouControl,
   Effect.dealDamageToCreatureExileIfDies 3,
-  Effect.destroyArtifactToken,
   Effect.abilityCreateTokens .dwarf 1,
   Effect.millThenPutLands 4 2,
   Effect.dealDamageToEachOppCreature 1,
@@ -206,7 +202,6 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.chapterPlusOneUpToOne,
   Effect.lookAtTopLandsGainLife 20 8,
   Effect.drawEqualSacrificedPowerThenDiscard,
-  Effect.destroyTargetArtifactOrEnchantment,
   Effect.millPlayer 3,
   Effect.counterCreatureSpellPTAtMost 2,
   Effect.returnFromGraveyardTapped,
@@ -216,7 +211,6 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.returnSpellDraw,
   Effect.abilityScry 2,
   Effect.targetPlayerDraw 2,
-  Effect.destroyTargetArtifact,
   Effect.drawEqualToughnessThenPutCreatures,
   Effect.addRedPerOppArtifacts,
   Effect.abilityCreateTokensX .treasure,
@@ -297,7 +291,6 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.castingCopyIfArtifactOrLand,
   Effect.exileHandDrawPlayUntilNext,
   Effect.createTokensThenTeamPump .villain21menace 1 1 0,
-  Effect.destroyNoncreatureArtifact,
   Effect.watchVillainOrArtifactDamage,
   Effect.enterDealDamageUpToOne 4,
   Effect.abilityDealDamageToEachCreature 2,
@@ -312,7 +305,6 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.revealTopPutCreatures 8,
   Effect.fight,
   Effect.plusOneOnCreature,
-  Effect.destroyTargetNoncreatureArtOrEnch,
   Effect.plusOneAndGrant ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste),
   Effect.resourceGainLifePlusOnes,
   Effect.enterCreateZabu,
