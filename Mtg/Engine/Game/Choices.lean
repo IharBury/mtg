@@ -242,6 +242,8 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
         let o := acc.object! newId
         let acc := acc.setObject { o with status :=
           { o.status with onlyFoodArtifact := true, summoningSick := true } }
+        let acc := acc.afterPermanentEnters (acc.object! newId)
+        let o := acc.object! newId
         acc.logMsg s!"{o.name} returns as a Food artifact") g
 
 /-- Exile the top `n` cards face down. They may be played while exiled if you
@@ -357,6 +359,29 @@ def riddlesInTheDark (g : Game) (p : PlayerId) (faceUpCount : Nat)
       g.logMsg "The face-down pile is put into hand without being revealed"
     else
       g.logMsg "The face-up pile is put into hand"
+  let g :=
+    toHand.foldl (fun acc id =>
+      (acc.move id (.hand p) none).1) g
+  toGy.foldl (fun acc id =>
+    (acc.move id (.graveyard p) none).1) g
+
+/-- Put one Riddles pile into `p`'s hand and the other into the graveyard.
+The face-down pile is not revealed when it is the one that goes to hand. -/
+def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectId)
+    (chooseFaceDown : Bool) : Game :=
+  let g := g.logMsg
+    s!"{(g.player p).name} separates {faceUp.size} face-up and {faceDown.size} face-down"
+  let toHand := if chooseFaceDown then faceDown else faceUp
+  let toGy := if chooseFaceDown then faceUp else faceDown
+  let g :=
+    if chooseFaceDown then
+      g.logMsg "The face-down pile is put into hand without being revealed"
+    else
+      let g := g.logMsg "The face-up pile is put into hand"
+      faceUp.foldl (fun acc id =>
+        match acc.findObject? id with
+        | some o => acc.logMsg s!"{(acc.player p).name} reveals {o.name}"
+        | none => acc) g
   let g :=
     toHand.foldl (fun acc id =>
       (acc.move id (.hand p) none).1) g

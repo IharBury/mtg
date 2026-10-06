@@ -459,6 +459,24 @@ inductive FraChoice where
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)
+  /-- Separate `looked` into a face-up pile (the chosen cards) and a face-down
+  pile (Riddles in the Dark). An empty pile is legal. -/
+  | riddlesSplit (looked : Array ObjectId)
+  /-- An opponent chooses the face-up pile (accept) or the face-down pile
+  (decline) for `controller`'s hand. -/
+  | riddlesChoosePile (controller : PlayerId) (faceUp faceDown : Array ObjectId)
+  /-- Choose one creature type among `types`, then return every creature that
+  isn't that type (Raise the Palisade). -/
+  | palisadeCreatureType (types : Array String)
+  /-- `eligible` are this player's creature cards in hand. `rest` choose next.
+  `exiled` return to their owners' hands after `chosen` enter (Worlds Within
+  Worlds). -/
+  | worldsPutCreatures (eligible : Array ObjectId) (rest : Array PlayerId)
+      (exiled chosen : Array ObjectId) (sourceId : Option ObjectId)
+  /-- Put creature cards from `creatures` onto the battlefield. At most one
+  when `anyNumber` is false (Earth's Mightiest Heroes). The rest of `looked`
+  go to the graveyard. -/
+  | revealPutCreatures (looked creatures : Array ObjectId) (anyNumber : Bool)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

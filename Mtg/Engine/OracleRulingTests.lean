@@ -4662,6 +4662,7 @@ def supperForSpidersFoodOnlyOk : Bool :=
   let g := g.supperForSpidersReturn ⟨0⟩ #[card.id]
   let food := namedPermanent g "Dáin, Lord of the Iron Hills"
   food.status.onlyFoodArtifact &&
+    food.status.enteredThisTurn &&
     !food.isCreature &&
     food.types == #[.artifact] &&
     food.subtypes == #["Food"] &&

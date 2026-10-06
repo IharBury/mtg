@@ -95,6 +95,21 @@ def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
   { targeting, resolution := .fra (.hawkeyeArrows sorted.toList)
     phrase := String.intercalate ". " names }
 
+/-- Reveal the face-up pile, then let an opponent choose which pile goes to hand. -/
+def continueRiddlesSplit (g : Game) (controller : PlayerId)
+    (faceUp faceDown : Array ObjectId) : Game :=
+  let g :=
+    faceUp.foldl (fun acc id =>
+      match acc.findObject? id with
+      | some o => acc.logMsg s!"{(acc.player controller).name} reveals {o.name}"
+      | none => acc) g
+  match (g.livingOpponents controller)[0]? with
+  | some opp =>
+    g.beginFraChoice opp.id (.riddlesChoosePile controller faceUp faceDown)
+      s!"{opp.name} chooses which pile goes to {(g.player controller).name}'s hand"
+  | none =>
+    g.applyRiddlesPiles controller faceUp faceDown false
+
 def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
   let .fraChoice q choice := g.pending | throw "Nothing to choose now"
   if p != q then
@@ -883,6 +898,45 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .searchLibrary _ _ dest after kind, .decline =>
     return (g.finishLibrarySearch p #[] dest after kind).finishFraChoice
   | .searchLibrary .., _ => throw "Choose cards from the search, or decline to find nothing"
+  | .riddlesSplit looked, .objects ids =>
+    if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
+    if !ids.all (looked.contains ·) then throw "That card isn't among the cards you looked at"
+    let faceDown := looked.filter (!ids.contains ·)
+    return (g.continueRiddlesSplit p ids faceDown).finishFraChoice
+  | .riddlesSplit looked, .decline =>
+    return (g.continueRiddlesSplit p #[] looked).finishFraChoice
+  | .riddlesSplit _, _ => throw "Choose the face-up pile, or decline for all face-down"
+  | .riddlesChoosePile controller faceUp faceDown, .accept =>
+    return (g.applyRiddlesPiles controller faceUp faceDown false).finishFraChoice
+  | .riddlesChoosePile controller faceUp faceDown, .decline =>
+    return (g.applyRiddlesPiles controller faceUp faceDown true).finishFraChoice
+  | .riddlesChoosePile .., _ => throw "Choose the face-up pile (accept) or the face-down pile (decline)"
+  | .palisadeCreatureType types, .mode idx =>
+    let some t := types[idx]? | throw "No such creature type"
+    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
+    return (g.returnCreaturesNotOfType t).finishFraChoice
+  | .palisadeCreatureType types, .name t =>
+    if !types.contains t then throw "Choose an existing creature type"
+    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
+    return (g.returnCreaturesNotOfType t).finishFraChoice
+  | .palisadeCreatureType _, _ => throw "Choose a creature type"
+  | .worldsPutCreatures eligible rest exiled chosen sourceId, .objects ids =>
+    if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
+    if !ids.all (eligible.contains ·) then throw "That card isn't a creature card in your hand"
+    let g := g.offerWorldsCreatures rest.toList exiled (chosen ++ ids) sourceId
+    return g.finishFraChoice
+  | .worldsPutCreatures _ rest exiled chosen sourceId, .decline =>
+    let g := g.offerWorldsCreatures rest.toList exiled chosen sourceId
+    return g.finishFraChoice
+  | .worldsPutCreatures .., _ => throw "Choose creature cards from your hand, or decline"
+  | .revealPutCreatures looked creatures anyNumber, .objects ids =>
+    if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
+    if !ids.all (creatures.contains ·) then throw "That card isn't a revealed creature card"
+    if !anyNumber && ids.size > 1 then throw "Choose at most one creature card"
+    return (g.finishRevealPutCreatures p looked ids).finishFraChoice
+  | .revealPutCreatures looked _ _, .decline =>
+    return (g.finishRevealPutCreatures p looked #[]).finishFraChoice
+  | .revealPutCreatures .., _ => throw "Choose creature cards to put onto the battlefield, or decline"
   | .newTargetsForCopies copies, .objects #[id] =>
     let some c := copies[0]? | return g.finishFraChoice
     let some obj := g.findObject? c | throw "The copy left the stack"
@@ -1039,6 +1093,11 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .searchLibrary eligible count .. =>
     if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 count)
   | .newTargetsForCopies _ => .decline
+  | .riddlesSplit looked => .choosePermanents looked
+  | .riddlesChoosePile .. => .accept
+  | .palisadeCreatureType _ => .chooseMode 0
+  | .worldsPutCreatures .. => .decline
+  | .revealPutCreatures .. => .decline
   | .zemoBoastExile .. =>
     .choosePermanents ((g.player p).graveyard.filter (fun id =>
       (g.findObject? id).any (·.printed.colors.contains .black)))

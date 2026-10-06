@@ -552,6 +552,58 @@ def conniveTricksterTarget (g : Game) (controller : PlayerId) (id? : Option Obje
       else g.logMsg "The target is no longer legal"
     | none => g.logMsg "The target is no longer legal"
 
+/-- Mana value of spells `p` has cast this turn other than the spell resolving
+now (ruling 110). Cascade spells that were actually cast are included. A
+resolving copy was not cast, so its mana value is not subtracted. -/
+def otherSpellsManaValue (g : Game) (p : PlayerId) : Nat :=
+  let total := (g.player p).castManaValuesThisTurn.foldl (· + ·) 0
+  let own :=
+    match g.resolvingSpell.bind g.findObject? with
+    | some spell =>
+      if spell.isCopy || spell.controller != some p then 0
+      else g.objectManaValue spell
+    | none => 0
+  total - own
+
+/-- Creature types present on the battlefield, one word each. -/
+def battlefieldCreatureTypes (g : Game) : Array String :=
+  g.battlefield.foldl (fun acc o =>
+    if !o.isCreature then acc
+    else
+      o.subtypes.foldl (fun acc t =>
+        if isCreatureType t && !acc.contains t then acc.push t else acc) acc) #[]
+
+/-- Return each creature that doesn't have `chosen` to its owner's hand. -/
+def returnCreaturesNotOfType (g : Game) (chosen : String) : Game :=
+  g.foldBattlefield (fun o => o.isCreature && !g.hasSubtype o chosen)
+    (fun g o => g.returnToHand o.id o.owner)
+
+/-- Put `put` onto the battlefield, then the rest of `looked` into their
+owners' graveyards. Enters abilities run after every chosen creature is on
+the battlefield. -/
+def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    let mut entered : Array ObjectId := #[]
+    for id in looked do
+      match g.findObject? id with
+      | some o =>
+        if put.contains id && o.printed.isCreature && o.zone == .library p then
+          let (g', newId) := g.putOntoBattlefield id p
+          g := g'
+          entered := entered.push newId
+          g := g.logMsg s!"{(g.player p).name} puts {o.name} onto the battlefield"
+        else if o.zone == .library o.owner then
+          let (g', _) := g.move id (.graveyard o.owner) none
+          g := g'
+        else pure ()
+      | none => pure ()
+    for id in entered do
+      match g.findObject? id with
+      | some o => g := g.afterPermanentEnters o
+      | none => pure ()
+    return g
+
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
@@ -814,11 +866,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .dealDamageToEachNonDragon n =>
     g.dealDamageToEachNonDragon n
   | .chooseTypeReturnOthers =>
-    let chosen :=
-      (g.battlefield.find? (fun o => o.isCreature && o.controlledBy controller)
-        |>.bind (fun o => o.printed.subtypes[0]?)).getD "Elf"
-    g.foldBattlefield (fun o => o.isCreature && !g.hasSubtype o chosen)
-      (fun g o => g.returnToHand o.id o.owner)
+    let types := g.battlefieldCreatureTypes
+    if types.isEmpty then
+      g.logMsg s!"{(g.player controller).name} has no creature type to choose"
+    else
+      g.beginFraChoice controller (.palisadeCreatureType types)
+        s!"{(g.player controller).name} chooses a creature type"
   | .drawEqualToughnessThenPutCreatures =>
     let greatest :=
       (g.permanentsOf controller).foldl (fun acc o =>
@@ -909,13 +962,18 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
               playPermission := some {
                 player := controller
                 turnEndsRemaining := 1
-                whileExiled := true
                 payLifeEqualManaValue := true } }
             g := g.logMsg s!"{(g.player controller).name} exiles {name}"
         return g
     | _ => g.logMsg "The target is no longer legal"
   | .riddlesInTheDark =>
-    g.riddlesInTheDark controller 2 false
+    let looked := g.scryLookedIds controller 4
+    if looked.isEmpty then
+      g.logMsg s!"{(g.player controller).name}'s library has no cards to look at"
+    else
+      let g := g.logLookAtTop controller looked.size
+      g.beginFraChoice controller (.riddlesSplit looked)
+        s!"{(g.player controller).name} separates {looked.size} cards into a face-up pile and a face-down pile"
   | .supperForSpiders =>
     let ids :=
       g.battlefieldCreaturesToGyThisTurn.filter (fun id =>
@@ -973,8 +1031,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         g.changeControl o controller
       else g)
   | .damageOppCreaturesEqualOtherSpellsMv =>
-    let xs := (g.player controller).castManaValuesThisTurn
-    let n : Nat := (xs.extract 0 xs.size.pred).foldl (fun a b => a + b) 0
+    let n := g.otherSpellsManaValue controller
     g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
       |>.logMsg s!"deals {n} damage to each opposing creature"
   | .phaseOutKicker =>
@@ -1042,21 +1099,20 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
   | .revealTopPutCreatures n =>
-    Id.run do
-      let mut g := g
-      let top := g.scryLookedIds controller n
-      let teamwork := g.resolvingTeamworkPaid
-      let mut putOne := false
-      for id in top do
-        let o := g.object! id
-        if o.printed.isCreature && (teamwork || !putOne) then
-          let (g', _) := g.putOntoBattlefield id controller
-          g := g'
-          putOne := true
-        else
-          let (g', _) := g.move id (.graveyard o.owner) none
-          g := g'
-      return g
+    let top := g.scryLookedIds controller n
+    let g :=
+      top.foldl (fun g id =>
+        match g.findObject? id with
+        | some o => g.logMsg s!"{(g.player controller).name} reveals {o.name}"
+        | none => g) g
+    let creatures :=
+      top.filter (fun id => (g.findObject? id).any (·.printed.isCreature))
+    if creatures.isEmpty then
+      g.finishRevealPutCreatures controller top #[]
+    else
+      g.beginFraChoice controller
+        (.revealPutCreatures top creatures g.resolvingTeamworkPaid)
+        s!"{(g.player controller).name} may put creature cards from among them onto the battlefield"
   | .createTokens kind n =>
     g.createKindTokens controller kind n
   | .exileTarget =>

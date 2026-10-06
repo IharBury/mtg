@@ -2061,18 +2061,31 @@ def worldsWithinWorldsOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let g := addToHand g aerialDoombot ⟨0⟩
+  let g := addToHand g grayOgre ⟨1⟩
+  let doom := handCardNamed g ⟨0⟩ "Aerial Doombot"
   let (g, spell) := g.allocObject worldsWithinWorlds ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.applyWorldsWithinWorlds ⟨0⟩ (some spell.id)
-  g.battlefield.any (fun o => o.name == "Aerial Doombot") &&
-    !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
-    !g.battlefield.any (fun o => o.name == "Hill Giant") &&
-    (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Grizzly Bears") &&
-    (g.player ⟨1⟩).hand.any (fun id => (g.object! id).name == "Hill Giant") &&
-    (match g.findObject? spell.id with
-     | some o => o.zone == .exile
-     | none =>
-       g.objects.any (fun o => o.name == "Worlds Within Worlds" && o.zone == .exile)) &&
-    (mshRuling 449).comment.contains "Worlds Within Worlds"
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.worldsPutCreatures eligible _ _ _ _) =>
+    eligible.contains doom.id &&
+      (let g1 := mustApply g ⟨0⟩ (.choosePermanents #[doom.id])
+       match g1.pending with
+       | .fraChoice ⟨1⟩ (.worldsPutCreatures ogres _ _ chosen _) =>
+         chosen.contains doom.id &&
+           ogres.any (fun id => (g1.object! id).name == "Gray Ogre") &&
+           (let g2 := mustApply g1 ⟨1⟩ .decline
+            g2.pending == .none &&
+              (namedPermanent g2 "Aerial Doombot").status.enteredThisTurn &&
+              !g2.battlefield.any (fun o => o.name == "Gray Ogre") &&
+              !g2.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+              !g2.battlefield.any (fun o => o.name == "Hill Giant") &&
+              (g2.player ⟨0⟩).hand.any (fun id => (g2.object! id).name == "Grizzly Bears") &&
+              (g2.player ⟨1⟩).hand.any (fun id => (g2.object! id).name == "Hill Giant") &&
+              (g2.player ⟨1⟩).hand.any (fun id => (g2.object! id).name == "Gray Ogre") &&
+              g2.objects.any (fun o => o.name == "Worlds Within Worlds" && o.zone == .exile) &&
+              (mshRuling 449).comment.contains "Worlds Within Worlds")
+       | _ => false)
+  | _ => false
 
 #guard worldsWithinWorldsOk
 
@@ -3531,5 +3544,161 @@ def meagerMealGainLifeOk : Bool :=
     g.waitingTriggers.any (fun w => w.event == .youGainLife)
 
 #guard meagerMealGainLifeOk
+
+/-- Call Forth counts other spells cast this turn, including a cascade spell
+cast after it, and leaves out the resolving spell itself. A copy that was
+not cast is not subtracted. -/
+def callForthCountsOtherSpellsOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let (g, spell) := g.allocObject callForthTheTempest ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with castManaValuesThisTurn := #[2, 8, 1] })
+  let g := { g with resolvingSpell := some spell.id }
+  let dealt := g.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
+  (namedPermanent dealt "Hill Giant").status.damage == 3 &&
+    (namedPermanent dealt "Grizzly Bears").status.damage == 0 &&
+    (let (g0, spell0) :=
+        (addPermanent afterDraw hillGiant ⟨1⟩ ⟨1⟩).allocObject callForthTheTempest ⟨0⟩ .stack (some ⟨0⟩)
+     let g0 := g0.modifyPlayer ⟨0⟩ (fun pl => { pl with castManaValuesThisTurn := #[8] })
+     let g0 := { g0 with resolvingSpell := some spell0.id }
+     let dealt0 := g0.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
+     (namedPermanent dealt0 "Hill Giant").status.damage == 0) &&
+    (let gCopy := addPermanent afterDraw hillGiant ⟨1⟩ ⟨1⟩
+     let (gCopy, spellC) := gCopy.allocObject callForthTheTempest ⟨0⟩ .stack (some ⟨0⟩)
+     let gCopy := gCopy.setObject { (gCopy.object! spellC.id) with isCopy := true }
+     let gCopy := gCopy.modifyPlayer ⟨0⟩ (fun pl => { pl with castManaValuesThisTurn := #[2] })
+     let gCopy := { gCopy with resolvingSpell := some spellC.id }
+     let dealtC := gCopy.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
+     (namedPermanent dealtC "Hill Giant").status.damage == 2)
+
+#guard callForthCountsOtherSpellsOk
+
+/-- Inside Information's play permission lasts this turn and then expires. -/
+def insideInformationExpiresThisTurnOk : Bool :=
+  let g := addToLibraryTop afterDraw shock ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ Effect.exileTopXOppPlayForLife #[Target.player ⟨1⟩]
+    (chosenX := 1)
+  match g.objects.find? (fun o => o.name == "Shock" && o.zone == .exile) with
+  | some card =>
+    match card.playPermission with
+    | some perm =>
+      perm.payLifeEqualManaValue && perm.turnEndsRemaining == 1 &&
+        !perm.whileExiled && !perm.ignoreTiming && !perm.anyMana &&
+        !perm.withoutManaCost &&
+        g.mayPlayFromExile ⟨0⟩ card &&
+        (let kept := g.expirePlayPermissions ⟨1⟩
+         (kept.objects.find? (fun o => o.name == "Shock" && o.zone == .exile)).any
+           (fun c => c.playPermission.isSome && kept.mayPlayFromExile ⟨0⟩ c)) &&
+        (let expired := g.expirePlayPermissions ⟨0⟩
+         match expired.objects.find? (fun o => o.name == "Shock" && o.zone == .exile) with
+         | some c => c.playPermission.isNone && !expired.mayPlayFromExile ⟨0⟩ c
+         | none => false)
+    | none => false
+  | none => false
+
+#guard insideInformationExpiresThisTurnOk
+
+/-- Riddles asks for a face-up pile, then an opponent chooses which pile
+goes to hand. A 4/0 face-down pile is not revealed. -/
+def riddlesPileChoiceOk : Bool :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g shock ⟨0⟩
+  let g := addToLibraryTop g lightningBolt ⟨0⟩
+  let g := addToLibraryTop g grizzlyBears ⟨0⟩
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := g.applyEffect ⟨0⟩ Effect.riddlesInTheDark #[]
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.riddlesSplit looked) =>
+    looked.size == 4 &&
+      (let allDown := mustApply g ⟨0⟩ .decline
+       match allDown.pending with
+       | .fraChoice ⟨1⟩ (.riddlesChoosePile _ faceUp faceDown) =>
+         faceUp.isEmpty && faceDown.size == 4 &&
+           (let gHand := mustApply allDown ⟨1⟩ .decline
+            (gHand.player ⟨0⟩).hand.size == hand0 + 4 &&
+              (gHand.player ⟨0⟩).library.isEmpty &&
+              logContains gHand "without being revealed" &&
+              !logContains gHand "reveals")
+       | _ => false) &&
+      (let top := looked.back!
+       let gUp := mustApply g ⟨0⟩ (.choosePermanents #[top])
+       logContains gUp "reveals" &&
+         match gUp.pending with
+         | .fraChoice ⟨1⟩ (.riddlesChoosePile ..) =>
+           let gHand := mustApply gUp ⟨1⟩ .accept
+           (gHand.player ⟨0⟩).hand.any (fun id => (gHand.object! id).name == "Mountain") &&
+             gHand.objects.any (fun o => o.name == "Shock" && o.zone == .graveyard ⟨0⟩) &&
+             logContains gHand "face-up pile is put into hand"
+         | _ => false)
+  | _ => false
+
+#guard riddlesPileChoiceOk
+
+/-- Raise the Palisade offers creature types on the battlefield. -/
+def palisadeChoosesCreatureTypeOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ Effect.chooseTypeReturnOthers #[]
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.palisadeCreatureType types) =>
+    types.contains "Bear" && types.contains "Giant" && !types.contains "Elf" &&
+      (match g.apply ⟨0⟩ (.chooseName "Elf") with
+       | .error _ => true
+       | .ok _ => false) &&
+      (match types.findIdx? (· == "Bear") with
+       | some i =>
+         let g2 := mustApply g ⟨0⟩ (.chooseMode i)
+         g2.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+           !g2.battlefield.any (fun o => o.name == "Hill Giant") &&
+           (g2.player ⟨1⟩).hand.any (fun id => (g2.object! id).name == "Hill Giant")
+       | none => false) &&
+      (let empty := afterDraw.applyEffect ⟨0⟩ Effect.chooseTypeReturnOthers #[]
+       empty.pending == .none && logContains empty "creature type")
+  | _ => false
+
+#guard palisadeChoosesCreatureTypeOk
+
+/-- Earth's Mightiest Heroes may put one revealed creature, or any number
+once teamwork is paid. The chosen creatures' enters abilities run. -/
+def earthsMightiestChoosesOk : Bool :=
+  let base := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let base := addToLibraryTop base mountain ⟨0⟩
+  let base := addToLibraryTop base grizzlyBears ⟨0⟩
+  let g := base.applyEffect ⟨0⟩ (Effect.revealTopPutCreatures 8) #[]
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.revealPutCreatures _ creatures false) =>
+    creatures.size == 1 && logContains g "reveals" &&
+      (let gPut := mustApply g ⟨0⟩ (.choosePermanents creatures)
+       (namedPermanent gPut "Grizzly Bears").status.enteredThisTurn &&
+         gPut.objects.any (fun o => o.name == "Mountain" && o.zone == .graveyard ⟨0⟩)) &&
+      (let gNo := mustApply g ⟨0⟩ .decline
+       !gNo.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+         gNo.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .graveyard ⟨0⟩)) &&
+      (let two := addToLibraryTop base hillGiant ⟨0⟩
+       let gTwo := two.applyEffect ⟨0⟩ (Effect.revealTopPutCreatures 8) #[]
+       match gTwo.pending with
+       | .fraChoice ⟨0⟩ (.revealPutCreatures _ both false) =>
+         both.size == 2 &&
+           (match gTwo.apply ⟨0⟩ (.choosePermanents both) with
+            | .error _ => true
+            | .ok _ => false)
+       | _ => false) &&
+      (let two := addToLibraryTop base hillGiant ⟨0⟩
+       let (two, spell) := two.allocObject earthSMightiestHeroes ⟨0⟩ .stack (some ⟨0⟩)
+       let two := two.setObject { (two.object! spell.id) with teamworkPaid := true }
+       let two := { two with resolvingSpell := some spell.id }
+       let gTeam := two.applyEffect ⟨0⟩ (Effect.revealTopPutCreatures 8) #[]
+       match gTeam.pending with
+       | .fraChoice ⟨0⟩ (.revealPutCreatures _ both true) =>
+         both.size == 2 &&
+           (let gPut := mustApply gTeam ⟨0⟩ (.choosePermanents both)
+            (namedPermanent gPut "Grizzly Bears").status.enteredThisTurn &&
+              (namedPermanent gPut "Hill Giant").status.enteredThisTurn &&
+              gPut.objects.any (fun o => o.name == "Mountain" && o.zone == .graveyard ⟨0⟩))
+       | _ => false)
+  | _ => false
+
+#guard earthsMightiestChoosesOk
 
 end Mtg.Engine.MshRulingTests

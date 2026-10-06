@@ -901,8 +901,65 @@ def revealHand (g : Game) (p : PlayerId) : Game :=
       | none => acc) ""
   g.logMsg s!"{(g.player p).name} reveals their hand ({names})"
 
-/-- Worlds Within Worlds (MSH 96): exile creatures, put creature cards from
-hands onto the battlefield, return the exiled cards to hands, exile the spell. -/
+/-- After every player has chosen, the chosen creature cards enter together,
+the exiled cards return to their owners' hands, and the spell is exiled. -/
+def finishWorldsWithinWorlds (g : Game) (exiled chosen : Array ObjectId)
+    (sourceId : Option ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    let mut entered : Array ObjectId := #[]
+    for id in chosen do
+      match g.findObject? id with
+      | some o =>
+        if o.zone == .hand o.owner && o.printed.isCreature then
+          let pid := o.owner
+          let (g', newId) := g.putOntoBattlefield id pid
+          g := g'
+          entered := entered.push newId
+          g := g.logMsg s!"{(g.player pid).name} puts {o.name} onto the battlefield"
+        else pure ()
+      | none => pure ()
+    for id in entered do
+      match g.findObject? id with
+      | some o => g := g.afterPermanentEnters o
+      | none => pure ()
+    for nid in exiled do
+      match g.findObject? nid with
+      | some o =>
+        if o.zone == .exile then
+          let (g', _) := g.move o.id (.hand o.owner) none
+          g := g'.logMsg s!"{o.name} is returned to its owner's hand"
+        else pure ()
+      | none => pure ()
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.zone == .exile then return g
+      else
+        let (g', _) := g.move src.id .exile none
+        return g'.logMsg s!"{src.name} is exiled"
+    | none => return g
+
+/-- Ask the next player who has a creature card in hand, in the order given. -/
+def offerWorldsCreatures (g : Game) (rest : List PlayerId)
+    (exiled chosen : Array ObjectId) (sourceId : Option ObjectId) : Game :=
+  match rest with
+  | [] => g.finishWorldsWithinWorlds exiled chosen sourceId
+  | pid :: more =>
+    let eligible :=
+      (g.player pid).hand.filter (fun id =>
+        (g.findObject? id).any (·.printed.isCreature))
+    if eligible.isEmpty then
+      g.offerWorldsCreatures more exiled chosen sourceId
+    else
+      { g with pending :=
+          .fraChoice pid (.worldsPutCreatures eligible more.toArray exiled chosen sourceId) }
+        |>.logMsg
+          s!"{(g.player pid).name} may put any number of creature cards from their hand onto the battlefield"
+
+/-- Worlds Within Worlds (MSH 96 / ruling 449): exile creatures, then each
+player may put any number of creature cards from hand. Those creatures enter
+together, the exiled cards return to their owners' hands, then the spell
+is exiled. -/
 def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) : Game :=
   Id.run do
@@ -919,31 +976,7 @@ def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
       let apnap := g.apnapOrder
       if apnap.isEmpty then #[controller]
       else apnap
-    for pid in order do
-      let ids := (g.player pid).hand
-      for id in ids do
-        match g.findObject? id with
-        | some o =>
-          if o.printed.isCreature then
-            let (g', _) := g.putOntoBattlefield o.id pid
-            g := g'
-            g := g.logMsg s!"{(g.player pid).name} puts {o.name} onto the battlefield"
-          else g := g
-        | none => pure ()
-    for nid in exiled do
-      match g.findObject? nid with
-      | some o =>
-        if o.zone == .exile then
-          let (g', _) := g.move o.id (.hand o.owner) none
-          g := g'.logMsg s!"{o.name} is returned to its owner's hand"
-        else pure ()
-      | none => pure ()
-    match sourceId.bind g.findObject? with
-    | some src =>
-      let (g', _) := g.move src.id .exile none
-      return g'.logMsg s!"{src.name} is exiled"
-    | none =>
-      return g
+    return g.offerWorldsCreatures order.toList exiled #[] sourceId
 
 end Game
 end Mtg.Engine

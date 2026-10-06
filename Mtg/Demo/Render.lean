@@ -867,6 +867,19 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           s!"search: choose up to {count} of {eligible.size} card(s), or decline to find nothing"
         | .zemoBoastExile .. =>
           "exile black cards with 15+ black mana symbols from your graveyard: choose <id> ..., or decline"
+        | .riddlesSplit looked =>
+          s!"separate {looked.size} cards into a face-up pile (choose <id> ...) and a face-down pile, or decline for all face-down"
+        | .riddlesChoosePile .. =>
+          "choose the face-up pile for that player's hand (accept), or the face-down pile (decline)"
+        | .palisadeCreatureType types =>
+          s!"choose a creature type: {String.intercalate ", " ((List.range types.size).map (fun i => s!"{i} {types[i]!}"))}"
+        | .worldsPutCreatures eligible .. =>
+          s!"may put any number of creature cards from your hand ({eligible.size}): choose <id> ..., or decline"
+        | .revealPutCreatures _ creatures anyNumber =>
+          if anyNumber then
+            s!"put any number of creature cards ({creatures.size}): choose <id> ..., or decline"
+          else
+            s!"may put a creature card ({creatures.size}): choose <id>, or decline"
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=
