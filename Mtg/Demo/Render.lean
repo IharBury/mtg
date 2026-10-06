@@ -813,6 +813,20 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .nickFuryMayTransform _ _ => "may transform it (accept), or decline"
         | .orderLibraryBottom ids =>
           s!"put {ids.size} card(s) on the bottom in any order: choose <id> ... with the first card on the bottom"
+        | .chooseCards ids max purpose =>
+          let what :=
+            match purpose with
+            | .toHand true => "choose one card for your hand"
+            | .toHand false => s!"choose up to {max} card(s) for your hand"
+            | .creaturesToBattlefield => "put any number of creature cards onto the battlefield"
+            | .landsTappedGainLife _ => "put any number of land cards onto the battlefield tapped"
+            | .keepDestroyRest => s!"choose up to {max} creature(s) to keep"
+            | .amassArmy subtype n _ => s!"choose an Army to amass {subtype}s {n}"
+          s!"{what} ({ids.size} card(s)): choose <id> ..., or decline"
+        | .blackGatePlayer _ players =>
+          let names := (List.range players.size).map (fun i =>
+            s!"{i} {(g.player players[i]!).name}")
+          s!"choose a player with the most life: {String.intercalate ", " names}"
         | .mayPayManaForReflexive cost maxTimes _ _ =>
           let shown := String.join (cost.toList.map toString)
           if maxTimes > 1 then s!"may pay {shown} up to {maxTimes} times: mode <times>, or decline"

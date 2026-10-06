@@ -223,6 +223,23 @@ def costPicksOf (ab : ActivatedAbility) : Array CostPick :=
    | some t => #[CostPick.sacrificeAnotherSubtype t]
    | none => #[]) ++ fra
 
+/-- What to do with cards chosen from a looked-at, milled, or battlefield set. -/
+inductive CardChoice where
+  /-- Put the chosen cards into your hand. `mustOne` requires exactly one
+  when any card can be chosen. -/
+  | toHand (mustOne : Bool)
+  /-- Put the chosen creature cards onto the battlefield. -/
+  | creaturesToBattlefield
+  /-- Put the chosen lands onto the battlefield tapped, then shuffle and
+  gain `life` life. -/
+  | landsTappedGainLife (life : Nat)
+  /-- The chosen creatures are kept. Every other creature is destroyed. -/
+  | keepDestroyRest
+  /-- Amass `subtype` `n` onto the chosen Army. `attach` is an Equipment to
+  attach afterward (Goblin Plate Mail). -/
+  | amassArmy (subtype : String) (n : Nat) (attach : Option ObjectId)
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- A choice made while a Reality Fracture effect resolves. The player answers
 with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
 `Action.decline`. -/
@@ -487,6 +504,11 @@ inductive FraChoice where
   when `anyNumber` is false (Earth's Mightiest Heroes). The rest of `looked`
   go to the graveyard. -/
   | revealPutCreatures (looked creatures : Array ObjectId) (anyNumber : Bool)
+  /-- Choose up to `max` of `ids`. `purpose` says what the chosen cards do. -/
+  | chooseCards (ids : Array ObjectId) (max : Nat) (purpose : CardChoice)
+  /-- Choose a player tied for most life. The creature can't be blocked by
+  that player's creatures this turn (The Black Gate). -/
+  | blackGatePlayer (creatureId : ObjectId) (players : Array PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

@@ -155,28 +155,39 @@ def mentorIgnoresGiant : Game :=
 
 #guard mentorIgnoresGiant.stack.isEmpty
 
-/-- Ruling 16 / 52: with several Armies, the newest is the amassed Army. -/
+/-- Ruling 16 / 52: with several Armies, you choose which one is amassed.
+Both start with a counter so the Army that was not chosen survives. -/
 def twoArmiesThenAmass : Game :=
-  let (g, _) := started.createToken ⟨0⟩ Game.goblinArmyToken
-  let (g, _) := g.createToken ⟨0⟩ Game.orcArmyToken
-  g.amassGoblins ⟨0⟩ 1
+  let (g, goblin) := started.createToken ⟨0⟩ Game.goblinArmyToken
+  let g := g.addPlusOnePlusOneTo goblin 1
+  let (g, orc) := g.createToken ⟨0⟩ Game.orcArmyToken
+  let g := g.addPlusOnePlusOneTo orc 1
+  let g := g.amassGoblins ⟨0⟩ 1
+  mustApply g ⟨0⟩ (.choosePermanents #[orc.id])
 
 def twoArmiesThenAmassOk : Bool :=
   let orc := namedPermanent twoArmiesThenAmass "Orc Army"
-  orc.status.plusOnePlusOne == 1 && twoArmiesThenAmass.hasSubtype orc "Goblin" &&
-    (namedPermanent twoArmiesThenAmass "Goblin Army").status.plusOnePlusOne == 0
+  let goblin := namedPermanent twoArmiesThenAmass "Goblin Army"
+  orc.status.plusOnePlusOne == 2 && twoArmiesThenAmass.hasSubtype orc "Goblin" &&
+    goblin.status.plusOnePlusOne == 1
 
 #guard twoArmiesThenAmassOk
 
-/-- Ruling 52: with several Armies, amass Orcs chooses one and makes it an Orc. -/
+/-- Ruling 52: with several Armies, amass Orcs chooses one and makes it an Orc.
+Both start with a counter so the Army that was not chosen survives. -/
 def twoArmiesThenAmassOrcs : Game :=
-  let (g, _) := started.createToken ⟨0⟩ Game.goblinArmyToken
-  let (g, _) := g.createToken ⟨0⟩ Game.zombieArmyToken
-  g.amassOrcs ⟨0⟩ 1
+  let (g, goblin) := started.createToken ⟨0⟩ Game.goblinArmyToken
+  let g := g.addPlusOnePlusOneTo goblin 1
+  let (g, zombie) := g.createToken ⟨0⟩ Game.zombieArmyToken
+  let g := g.addPlusOnePlusOneTo zombie 1
+  let g := g.amassOrcs ⟨0⟩ 1
+  mustApply g ⟨0⟩ (.choosePermanents #[zombie.id])
 
 def twoArmiesThenAmassOrcsOk : Bool :=
   let z := namedPermanent twoArmiesThenAmassOrcs "Zombie Army"
-  z.status.plusOnePlusOne == 1 && twoArmiesThenAmassOrcs.hasSubtype z "Orc" &&
+  let goblin := namedPermanent twoArmiesThenAmassOrcs "Goblin Army"
+  z.status.plusOnePlusOne == 2 && twoArmiesThenAmassOrcs.hasSubtype z "Orc" &&
+    goblin.status.plusOnePlusOne == 1 &&
     (ruling 52).comment.contains "multiple Army creatures"
 
 #guard twoArmiesThenAmassOrcsOk

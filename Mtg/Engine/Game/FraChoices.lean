@@ -977,6 +977,29 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .revealPutCreatures looked _ _, .decline =>
     return (g.finishRevealPutCreatures p looked #[]).finishFraChoice
   | .revealPutCreatures .., _ => throw "Choose creature cards to put onto the battlefield, or decline"
+  | .chooseCards ids max purpose, .objects chosen =>
+    if chosen.size > max then throw s!"Choose at most {max} card(s)"
+    if chosen.toList.eraseDups.length != chosen.size then throw "Choose each card only once"
+    if !chosen.all (ids.contains ·) then throw "That card can't be chosen"
+    match purpose with
+    | .toHand true =>
+      if !ids.isEmpty && chosen.size != 1 then throw "Choose one card"
+    | .amassArmy .. =>
+      if chosen.size != 1 then throw "Choose one Army"
+    | _ => pure ()
+    return (g.finishChooseCards p chosen purpose).finishFraChoice
+  | .chooseCards ids _ purpose, .decline =>
+    match purpose with
+    | .toHand true =>
+      if !ids.isEmpty then throw "Choose one card"
+    | .amassArmy .. => throw "Choose an Army"
+    | _ => pure ()
+    return (g.finishChooseCards p #[] purpose).finishFraChoice
+  | .chooseCards .., _ => throw "Choose cards, or decline"
+  | .blackGatePlayer creature players, .mode idx =>
+    let some pid := players[idx]? | throw "No such player"
+    return (g.applyBlackGateUnblockable creature pid).finishFraChoice
+  | .blackGatePlayer .., _ => throw "Choose a player with the most life"
   | .newTargetsForCopies copies, .objects #[id] =>
     let some c := copies[0]? | return g.finishFraChoice
     let some obj := g.findObject? c | throw "The copy left the stack"
@@ -1082,6 +1105,30 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .nickFuryPut _ _ => .decline
   | .nickFuryMayTransform _ _ => .decline
   | .orderLibraryBottom ids => .choosePermanents ids
+  | .chooseCards ids max purpose =>
+    match purpose with
+    | .amassArmy .. =>
+      let best :=
+        ids.foldl (fun best id =>
+          match best, g.findObject? id with
+          | none, _ => some id
+          | some b, some o =>
+            match g.findObject? b with
+            | some prev => if o.timestamp ≥ prev.timestamp then some id else some b
+            | none => some id
+          | some b, none => some b) none
+      match best with
+      | some id => .choosePermanents #[id]
+      | none => .decline
+    | .toHand true =>
+      if ids.isEmpty then .decline else .choosePermanents (ids.extract 0 1)
+    | .toHand false => .choosePermanents (ids.extract 0 max)
+    | .creaturesToBattlefield | .landsTappedGainLife _ => .choosePermanents ids
+    | .keepDestroyRest =>
+      let yours := ids.filter (fun id => (g.findObject? id).any (·.controlledBy p))
+      let pick := if yours.isEmpty then ids else yours
+      .choosePermanents (pick.extract 0 max)
+  | .blackGatePlayer _ _ => .chooseMode 0
   | .sacrificeNontokenEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
   | .mayPayManaForReflexive cost _ _ _ =>

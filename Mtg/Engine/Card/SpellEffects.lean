@@ -704,7 +704,7 @@ def damageEachOpponent (n : Nat) : Effect :=
   mkAbility ({}) (.damageEachOpponent n)
 
 def chooseTwoDestroyRest : Effect :=
-  mkAbility (.of .creature) (.chooseTwoDestroyRest)
+  mkAbility (.of .none) (.chooseTwoDestroyRest)
 
 def blackGateUnblockable : Effect :=
   mkAbility (.of .creature) (.blackGateUnblockable)

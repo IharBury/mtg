@@ -222,34 +222,54 @@ def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.logMsg s!"{o.name} gets a burden counter ({total})"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
 
+/-- Put the amass counters and subtype on `armyId`. -/
+def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
+    (subtype : String) (n : Nat) (attach : Option ObjectId := none) : Game :=
+  match g.findObject? armyId with
+  | none => g.logMsg "That Army is no longer on the battlefield"
+  | some army =>
+    if !army.isOnBattlefield || !army.controlledBy controller || !g.hasSubtype army "Army" then
+      g.logMsg "That Army is no longer on the battlefield"
+    else
+      let g :=
+        if g.hasSubtype army subtype then g
+        else
+          g.mapObjectStatus army (fun s =>
+            { s with additionalSubtypes := s.additionalSubtypes.push subtype })
+      let army := g.object! army.id
+      let g := g.addPlusOnePlusOneTo army n
+      let g := g.logMsg
+        s!"{(g.player controller).name} amasses {subtype}s {n} ({army.name} is the amassed Army)"
+      match attach with
+      | none => g
+      | some sid =>
+        match g.findObject? sid with
+        | some src =>
+          if src.isOnBattlefield then g.attachSourceTo src (g.object! army.id) else g
+        | none => g
+
 /-- Amass `[subtype]` `n` (CR 701.43). If you control no Army, the token
 enters as 0/0 and triggers see that power before counters are put on it. If
-you control more than one Army, the newest is chosen (the player would
-choose; tests use a single Army). -/
-def amass (g : Game) (controller : PlayerId) (subtype : String) (n : Nat) : Game :=
+you control more than one Army, you choose which one. -/
+def amass (g : Game) (controller : PlayerId) (subtype : String) (n : Nat)
+    (attach : Option ObjectId := none) : Game :=
   let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Army")
-  let createdFresh := armies.isEmpty
-  let (g, army) :=
-    match armies.toList with
-    | [] => g.createToken controller (armyToken subtype)
-    | x :: xs =>
-      (g, xs.foldl (fun (best : GameObject) (o : GameObject) =>
-        if o.timestamp ≥ best.timestamp then o else best) x)
-  let g :=
-    if createdFresh then
-      let g := g.afterPermanentEnters (g.object! army.id)
-      g.logMsg s!"the amassed Army entered as a 0/0 creature"
-    else g
-  let army := g.object! army.id
-  let g :=
-    if g.hasSubtype army subtype then g
-    else
-      g.mapObjectStatus army (fun s =>
-        { s with additionalSubtypes := s.additionalSubtypes.push subtype })
-  let army := g.object! army.id
-  let g := g.addPlusOnePlusOneTo army n
-  g.logMsg
-    s!"{(g.player controller).name} amasses {subtype}s {n} ({army.name} is the amassed Army)"
+  if armies.size > 1 then
+    let ids := armies.map (fun (o : GameObject) => o.id)
+    { g with pending := .fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach)) }
+      |>.logMsg s!"{(g.player controller).name} chooses an Army to amass"
+  else
+    let createdFresh := armies.isEmpty
+    let (g, army) :=
+      match armies[0]? with
+      | none => g.createToken controller (armyToken subtype)
+      | some army => (g, army)
+    let g :=
+      if createdFresh then
+        let g := g.afterPermanentEnters (g.object! army.id)
+        g.logMsg s!"the amassed Army entered as a 0/0 creature"
+      else g
+    g.finishAmassOn controller (g.object! army.id).id subtype n attach
 
 /-- Amass Goblins `n` (CR 701.43). -/
 def amassGoblins (g : Game) (controller : PlayerId) (n : Nat) : Game :=

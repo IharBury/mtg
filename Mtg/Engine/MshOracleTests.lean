@@ -4002,4 +4002,128 @@ def directPlusOneCountersOk : Bool :=
 
 #guard directPlusOneCountersOk
 
+/-- Speak Secrets asks which instant or sorcery to take from the milled cards. -/
+def speakSecretsChoosesOk : Bool :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let g := addToLibraryTop g shock ⟨0⟩
+  let g := addToLibraryTop g lightningBolt ⟨0⟩
+  let g := g.applyEffect ⟨0⟩ (Effect.millThenPutInstantOrSorcery 4) #[]
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.chooseCards ids 1 (.toHand true)) =>
+    ids.size == 2 &&
+      match ids.find? (fun id => (g.object! id).name == "Lightning Bolt") with
+      | some bolt =>
+        let g2 := mustApply g ⟨0⟩ (.choosePermanents #[bolt])
+        (g2.player ⟨0⟩).hand.any (fun id => (g2.object! id).name == "Lightning Bolt") &&
+          g2.objects.any (fun o => o.name == "Shock" && o.zone == .graveyard ⟨0⟩)
+      | none => false
+  | _ => false
+
+#guard speakSecretsChoosesOk
+
+/-- Silvan Rally may put up to two of the milled lands into hand. -/
+def silvanRallyUpToTwoOk : Bool :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let g := addToLibraryTop g forest ⟨0⟩
+  let g := addToLibraryTop g shock ⟨0⟩
+  let g := g.applyEffect ⟨0⟩ (Effect.millThenPutLands 4 2) #[]
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.chooseCards ids 2 (.toHand false)) =>
+    ids.size == 2 &&
+      (let before := (g.player ⟨0⟩).hand.size
+       let gNo := mustApply g ⟨0⟩ .decline
+       (gNo.player ⟨0⟩).hand.size == before &&
+         gNo.objects.any (fun o => o.name == "Mountain" && o.zone == .graveyard ⟨0⟩) &&
+         gNo.objects.any (fun o => o.name == "Forest" && o.zone == .graveyard ⟨0⟩))
+  | _ => false
+
+#guard silvanRallyUpToTwoOk
+
+/-- Last March of the Ents may put any number of creature cards from hand. -/
+def lastMarchChoosesCreaturesOk : Bool :=
+  let g := addToHand afterDraw whiteTigerAvaAyala ⟨0⟩
+  let tiger := handCardNamed g ⟨0⟩ "White Tiger, Ava Ayala"
+  let g := g.applyEffect ⟨0⟩ Effect.drawEqualToughnessThenPutCreatures #[]
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.chooseCards ids _ .creaturesToBattlefield) =>
+    ids.contains tiger.id &&
+      (let gPut := mustApply g ⟨0⟩ (.choosePermanents #[tiger.id])
+       (namedPermanent gPut "White Tiger, Ava Ayala").status.enteredThisTurn) &&
+      (let gNo := mustApply g ⟨0⟩ .decline
+       (gNo.player ⟨0⟩).hand.any (fun id => (gNo.object! id).name == "White Tiger, Ava Ayala") &&
+         !gNo.battlefield.any (fun o => o.name == "White Tiger, Ava Ayala"))
+  | _ => false
+
+#guard lastMarchChoosesCreaturesOk
+
+/-- Through the Forest Gate may put any number of the looked-at lands. -/
+def forestGateChoosesLandsOk : Bool :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g shock ⟨0⟩
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let life0 := (g.player ⟨0⟩).life
+  let g := g.applyEffect ⟨0⟩ (Effect.lookAtTopLandsGainLife 20 8) #[]
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.chooseCards ids _ (.landsTappedGainLife 8)) =>
+    ids.size == 1 &&
+      (let gPut := mustApply g ⟨0⟩ (.choosePermanents ids)
+       let land := namedPermanent gPut "Mountain"
+       land.status.tapped && (gPut.player ⟨0⟩).life == life0 + 8) &&
+      (let gNo := mustApply g ⟨0⟩ .decline
+       !gNo.battlefield.any (fun o => o.name == "Mountain") &&
+         (gNo.player ⟨0⟩).life == life0 + 8)
+  | _ => false
+
+#guard forestGateChoosesLandsOk
+
+/-- The Black Gate asks which tied player has the most life. -/
+def blackGateTieChoosesPlayerOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyAbilityEffect ⟨0⟩ Effect.blackGateUnblockable
+    #[Target.permanent bears.id]
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.blackGatePlayer id players) =>
+    id == bears.id && players.size == 2 &&
+      (let g0 := mustApply g ⟨0⟩ (.chooseMode 1)
+       (namedPermanent g0 "Grizzly Bears").status.cantBeBlockedByPlayer == some ⟨1⟩)
+  | _ => false
+
+#guard blackGateTieChoosesPlayerOk
+
+/-- Mount Doom chooses up to two creatures to keep. They are not targets. -/
+def mountDoomChoosesKeepersOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyAbilityEffect ⟨0⟩ Effect.chooseTwoDestroyRest #[]
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.chooseCards _ 2 .keepDestroyRest) =>
+    Effect.chooseTwoDestroyRest.targetKind == .none &&
+      (let gKeep := mustApply g ⟨0⟩ (.choosePermanents #[bears.id])
+       gKeep.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+         !gKeep.battlefield.any (fun o => o.name == "Gray Ogre"))
+  | _ => false
+
+#guard mountDoomChoosesKeepersOk
+
+/-- Amass asks which Army when you control more than one. -/
+def amassChoosesArmyOk : Bool :=
+  let g := afterDraw.amassGoblins ⟨0⟩ 1
+  let (g, _) := g.createToken ⟨0⟩ Game.goblinArmyToken
+  let first := namedPermanent g "Goblin Army"
+  let before := first.status.plusOnePlusOne
+  let g := g.amassGoblins ⟨0⟩ 1
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.chooseCards ids 1 (.amassArmy "Goblin" 1 _)) =>
+    ids.size == 2 &&
+      (let g2 := mustApply g ⟨0⟩ (.choosePermanents #[first.id])
+       (g2.battlefield.filter (fun o => o.name == "Goblin Army" &&
+         o.status.plusOnePlusOne == before + 1)).size == 1)
+  | _ => false
+
+#guard amassChoosesArmyOk
+
 end Mtg.Engine.MshRulingTests

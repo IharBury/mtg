@@ -1401,9 +1401,11 @@ you choose. -/
   let (g, newer) := g.createToken me Game.goblinArmyToken
   let g := g.applyTriggeredAbility me (.onEnterAmassThenAttach 1)
     (some (idOf g "Goblin Plate Mail"))
+  let g := g.addPlusOnePlusOneTo old 1
+  let g := mustApply g me (.choosePermanents #[newer.id])
   (namedPermanent g "Goblin Plate Mail").attachedTo == some newer.id &&
     (g.object! newer.id).status.plusOnePlusOne == 1 &&
-    (g.object! old.id).status.plusOnePlusOne == 0
+    (g.object! old.id).status.plusOnePlusOne == 1
 
 /- Agent Maria Hill's teamwork trigger puts a +1/+1 counter through the
 counter action and draws. -/

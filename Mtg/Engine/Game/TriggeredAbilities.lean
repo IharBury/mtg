@@ -405,12 +405,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src tok)
       "The Equipment is no longer in play"
   | .amassThenAttach n =>
-    let g := g.amassGoblins controller n
-    let army := g.newestArmy? controller
-    match army, sourceId.bind g.findObject? with
-    | some host, some src =>
-      if src.isOnBattlefield then g.attachSourceTo src host else g
-    | _, _ => g
+    g.amass controller "Goblin" n (attach := sourceId)
   | .attachSourceToTarget =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g host =>
       g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src host)

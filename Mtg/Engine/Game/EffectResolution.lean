@@ -604,6 +604,81 @@ def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array Objec
       | none => pure ()
     return g
 
+/-- Carry out a `chooseCards` answer. -/
+def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
+    (purpose : CardChoice) : Game :=
+  match purpose with
+  | .toHand _ =>
+    chosen.foldl (fun g id =>
+      match g.findObject? id with
+      | some o =>
+        if o.zone == .graveyard o.owner || o.zone == .hand o.owner then
+          let name := o.name
+          (g.move id (.hand p) none).1.logMsg s!"{(g.player p).name} puts {name} into their hand"
+        else g
+      | none => g) g
+  | .creaturesToBattlefield =>
+    chosen.foldl (fun g id =>
+      match g.findObject? id with
+      | some o =>
+        if o.zone == .hand o.owner && o.printed.isCreature then
+          let sick := !o.printed.keywords.haste
+          let (g, newId) := g.putOntoBattlefield id p (summoningSick := sick)
+          let g := g.logMsg s!"{o.name} enters the battlefield"
+          g.afterPermanentEnters (g.object! newId)
+        else g
+      | none => g) g
+  | .landsTappedGainLife life =>
+    let g :=
+      chosen.foldl (fun g id =>
+        match g.findObject? id with
+        | some o =>
+          if o.printed.isLand && o.zone == .library o.owner then
+            let name := o.name
+            let (g, newId) := g.putOntoBattlefield id p (tapped := true)
+            let g := g.setObject { (g.object! newId) with
+              status := { (g.object! newId).status with tapped := true } }
+            let g := g.logMsg s!"{name} enters tapped"
+            g.afterLandEnters (g.object! newId)
+          else g
+        | none => g) g
+    let g := g.requestShuffle p (.gainLife p life)
+    g.continueIfShuffled
+  | .keepDestroyRest =>
+    g.battlefield.foldl (fun g o =>
+      if o.isCreature && !chosen.contains o.id then
+        match g.findObject? o.id with
+        | some o => g.destroyPermanent o
+        | none => g
+      else g) g
+      |>.logMsg "Chosen creatures are kept; the rest are destroyed"
+  | .amassArmy subtype n attach =>
+    match chosen[0]? with
+    | some id => g.finishAmassOn p id subtype n attach
+    | none => g.logMsg s!"{(g.player p).name} doesn't choose an Army"
+
+/-- Ask `p` to choose up to `max` of `ids`, or resolve immediately when there
+is nothing to decide. -/
+def offerCardChoice (g : Game) (p : PlayerId) (ids : Array ObjectId) (max : Nat)
+    (purpose : CardChoice) (msg : String) : Game :=
+  if ids.isEmpty || max == 0 then g.finishChooseCards p #[] purpose
+  else g.beginFraChoice p (.chooseCards ids max purpose) msg
+
+/-- Mill `n`, then choose matching cards from among them for your hand. -/
+def millThenChooseForHand (g : Game) (p : PlayerId) (n : Nat)
+    (pred : GameObject → Bool) (max : Nat) (mustOne : Bool) : Game :=
+  let g := g.mill p n
+  let gy := (g.player p).graveyard
+  let take := gy.size.min n
+  let milled := gy.extract (gy.size - take) gy.size
+  let eligible := milled.filter (fun id => (g.findObject? id).any pred)
+  if eligible.isEmpty then g
+  else if mustOne && eligible.size == 1 then
+    g.finishChooseCards p eligible (.toHand true)
+  else
+    g.offerCardChoice p eligible max (.toHand mustOne)
+      s!"{(g.player p).name} chooses cards to put into their hand"
+
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
@@ -900,21 +975,16 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       (g.permanentsOf controller).foldl (fun acc o =>
         if o.isCreature then max acc (g.toughness o).toNat else acc) 0
     let g := g.draw controller greatest
-    Id.run do
-      let mut g := g
-      for id in (g.player controller).hand do
-        let o := g.object! id
-        if o.printed.isCreature then
-          let sick := !o.printed.keywords.haste
-          let (g', newId) := g.putOntoBattlefield id controller (summoningSick := sick)
-          g := g'.logMsg s!"{o.name} enters the battlefield"
-          g := g.afterPermanentEnters (g.object! newId)
-      return g
+    let creatures :=
+      (g.player controller).hand.filter (fun id =>
+        (g.findObject? id).any (·.printed.isCreature))
+    g.offerCardChoice controller creatures creatures.size .creaturesToBattlefield
+      s!"{(g.player controller).name} may put any number of creature cards from their hand onto the battlefield"
   | .millThenPutInstantOrSorcery n =>
-    g.millThenPutFromGy controller n
-      (fun o => o.printed.isInstant || o.printed.isSorcery) (some 1)
+    g.millThenChooseForHand controller n
+      (fun o => o.printed.isInstant || o.printed.isSorcery) 1 true
   | .millThenPutLands n max =>
-    g.millThenPutFromGy controller n (fun o => o.printed.isLand) (some max)
+    g.millThenChooseForHand controller n (fun o => o.printed.isLand) max false
   | .dealDamageToEachNonDragonThenAddDragonMana n =>
     let g := g.dealDamageToEachNonDragon n
     g.beginFraChoice controller (.addManaColors 4 .dragonSpell)
@@ -1031,24 +1101,15 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
       return g
   | .lookAtTopLandsGainLife n life =>
-    Id.run do
-      let mut g := g
-      let ids := g.scryLookedIds controller n
-      for id in ids do
-        match g.findObject? id with
-        | some o =>
-          if o.printed.isLand then
-            let name := o.name
-            let (g', newId) := g.putOntoBattlefield id controller (tapped := true)
-            g := g'
-            g := g.setObject { (g.object! newId) with
-              status := { (g.object! newId).status with tapped := true } }
-            g := g.logMsg s!"{name} enters tapped"
-            g := g.afterLandEnters (g.object! newId)
-          else pure ()
-        | none => pure ()
-      g := g.requestShuffle controller (.gainLife controller life)
-      return g.continueIfShuffled
+    let ids := g.scryLookedIds controller n
+    let g := g.logLookAtTop controller ids.size
+    let lands := ids.filter (fun id => (g.findObject? id).any (·.printed.isLand))
+    if lands.isEmpty then
+      let g := g.requestShuffle controller (.gainLife controller life)
+      g.continueIfShuffled
+    else
+      g.offerCardChoice controller lands lands.size (.landsTappedGainLife life)
+        s!"{(g.player controller).name} may put any number of land cards from among them onto the battlefield tapped"
   | .gainControlOppArtifacts =>
     g.foldPermanentTargets targets (fun g o =>
       if o.isOnBattlefield && o.printed.isArtifact && !o.controlledBy controller then
@@ -1609,20 +1670,24 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .damageEachOpponent n =>
     g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
   | .chooseTwoDestroyRest =>
-    let keep :=
-      targets.filterMap (fun | Target.permanent id => some id | _ => none)
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && !keep.contains o.id then
-          g := g.destroyPermanent o
-      return g.logMsg "Chosen creatures are kept; the rest are destroyed"
+    let creatures := (g.battlefield.filter (·.isCreature)).map (·.id)
+    g.offerCardChoice controller creatures 2 .keepDestroyRest
+      s!"{(g.player controller).name} chooses up to two creatures to keep"
   | .blackGateUnblockable =>
     match targets[0]? with
     | some (Target.permanent oid) =>
-      match g.playersWithMostLife[0]? with
-      | some pid => g.applyBlackGateUnblockable oid pid
-      | none => g
+      match g.findObject? oid with
+      | some o =>
+        if o.isOnBattlefield && o.isCreature then
+          let tied := g.playersWithMostLife
+          match tied.toList with
+          | [] => g
+          | [pid] => g.applyBlackGateUnblockable oid pid
+          | _ =>
+            g.beginFraChoice controller (.blackGatePlayer oid tied)
+              s!"{(g.player controller).name} chooses a player with the most life"
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
   | .burdenThenDraw =>
     g.withSourceOnBattlefield sourceId fun g o =>
