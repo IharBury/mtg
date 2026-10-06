@@ -680,6 +680,27 @@ def millThenChooseForHand (g : Game) (p : PlayerId) (n : Nat)
     g.offerCardChoice p eligible max (.toHand mustOne)
       s!"{(g.player p).name} chooses cards to put into their hand"
 
+/-- True when a targeted sequence must not resolve (CR 608.2b).
+A missing or illegal required target means none of the steps happen, so
+destroy-then-surveil does not surveil and pump-then-draw does not draw.
+“Up to” effects with no announced target still resolve. -/
+def sequenceAllTargetsIllegal (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (sourceId : Option ObjectId := none) : Bool :=
+  let kind := effect.targetKind
+  effect.requiresTarget &&
+    !(effect.allowsZeroTargets && targets.isEmpty) &&
+    (targets.isEmpty ||
+      (List.range targets.size).all (fun i =>
+        let slot := kind.slotKind (if kind.spec.slots.isEmpty then 0 else i)
+        !(g.legalTargetsForAtomicKind controller slot sourceId).contains targets[i]!))
+
+/-- Log why a sequence with a required target did not resolve. -/
+def logIllegalSequenceTargets (g : Game) (targets : Array Target) : Game :=
+  if targets.isEmpty then
+    g.logMsg "The target is no longer legal"
+  else
+    targets.foldl (fun g t => g.illegalAbilityTarget t) g
+
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
@@ -689,17 +710,22 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | none =>
   match effect.resolution with
   | .sequence rs =>
-    match rs.flatMap Resolution.flatten with
-    | [.shuffleSource, .draw n] =>
-      g.shuffleSourceIntoLibrary none (.draw controller n)
-    | steps =>
-      steps.foldl (fun g r =>
-        g.applyUnified controller { effect with resolution := r } targets
-          (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-          (giftPromised := giftPromised) (chosenX := chosenX)) g
+    if g.sequenceAllTargetsIllegal controller effect targets then
+      g.logIllegalSequenceTargets targets
+    else
+      match rs.flatMap Resolution.flatten with
+      | [.shuffleSource, .draw n] =>
+        g.shuffleSourceIntoLibrary none (.draw controller n)
+      | steps =>
+        steps.foldl (fun g r =>
+          g.applyUnified controller { effect with resolution := r } targets
+            (castFromGraveyard := castFromGraveyard) (kicked := kicked)
+            (giftPromised := giftPromised) (chosenX := chosenX)) g
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary none
   | .gainLife n => g.gainLife controller n
+  | .teamGain k =>
+    g.grantUntilEotToControlledCreatures controller k k.joinedAnd
   | .recruit => g.beginRecruit controller
   | .addMana types =>
     g.addManaLogged controller types
@@ -1557,13 +1583,16 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | none =>
   match effect.resolution with
   | .sequence rs =>
-    match rs.flatMap Resolution.flatten with
-    | [.shuffleSource, .draw n] =>
-      g.shuffleSourceIntoLibrary sourceId (.draw controller n)
-    | steps =>
-      steps.foldl (fun g r =>
-        g.applyUnifiedAbility controller { effect with resolution := r } targets
-          sourceId lastKnownPower chosenX) g
+    if g.sequenceAllTargetsIllegal controller effect targets sourceId then
+      g.logIllegalSequenceTargets targets
+    else
+      match rs.flatMap Resolution.flatten with
+      | [.shuffleSource, .draw n] =>
+        g.shuffleSourceIntoLibrary sourceId (.draw controller n)
+      | steps =>
+        steps.foldl (fun g r =>
+          g.applyUnifiedAbility controller { effect with resolution := r } targets
+            sourceId lastKnownPower chosenX) g
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary sourceId
   | .amassGoblins n => g.amassGoblins controller n
@@ -1718,11 +1747,10 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .teamGain k =>
     g.grantUntilEotToControlledCreatures controller k k.joinedAnd
   | .sourceGainsIndestructibleTap =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.mapObjectStatus o (·.grantUntilEot Keyword.indestructible)
-      let o := g.object! o.id
-      let g := g.logMsg s!"{o.name} gains indestructible until end of turn"
-      g.becomeTapped o
+    let resolution :=
+      Resolution.sequence [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap]
+    g.applyUnifiedAbility controller { effect with resolution } targets
+      sourceId lastKnownPower chosenX
   | .plusOneOnEachOtherSubtype subtype n =>
     g.foldBattlefield (fun o =>
         o.controlledBy controller && o.id != sourceId.getD ⟨0⟩ && g.hasSubtype o subtype)

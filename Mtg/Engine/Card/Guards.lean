@@ -53,6 +53,31 @@ namespace CardDef
     [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
 #guard (Effect.destroyArtifactOrEnchantmentGainLife 2).resolution ==
   Resolution.sequence [.onPermanent .destroy, .gainLife 2]
+#guard Effect.destroyCreatureSurveil.resolution ==
+  Resolution.sequence [.onPermanent .destroy, .surveil 1]
+#guard Effect.destroyCreatureSurveil.spellResolution == .destroyCreatureSurveil
+#guard (Effect.pumpThenDraw (-4) 0).resolution ==
+  Resolution.sequence [.onPermanent (.pump (-4) 0), .draw 1]
+#guard (Effect.pumpThenDraw (-4) 0).spellResolution == .pumpThenDraw (-4) 0
+#guard Effect.plusOneLifelinkIndestructible.resolution ==
+  Resolution.sequence [.onPermanent (.plusOne 1),
+    .onPermanent (.grantKeywords (Keyword.lifelink.merge Keyword.indestructible))]
+#guard Effect.plusOneLifelinkIndestructible.spellResolution ==
+  .plusOneLifelinkIndestructible
+#guard Effect.grantVigilanceUnblockable.resolution ==
+  Resolution.sequence
+    [.onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.cantBeBlocked)),
+     .draw 1]
+#guard Effect.grantVigilanceUnblockable.spellResolution == .grantVigilanceUnblockable
+#guard (Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance).resolution ==
+  Resolution.sequence [.creaturesYouControlPump 1 1, .teamGain Keyword.vigilance]
+#guard (Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance).spellResolution ==
+  .creaturesYouControlGetAndGrant 1 1 Keyword.vigilance
+#guard Effect.sourceGainsIndestructibleTap.resolution ==
+  Resolution.sequence
+    [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap]
+#guard Effect.sourceGainsIndestructibleTap.phrase ==
+  "Witch-king of Angmar gains indestructible until end of turn. Tap him"
 #guard (Effect.drawThenDiscard 2).resolution ==
   Resolution.sequence [.draw 2, .discard 1]
 #guard (Effect.drawThenDiscard 2).spellResolution == .drawThenDiscard 2
