@@ -1185,7 +1185,262 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .triggered .opponentsDealtCombatDamageYourTurn (Effect.ofTrigger .drawTwoWinIfEmptyShuffleSource),
   .triggered .forestYouControlEnters (Effect.ofTrigger .pumpIfFiveOtherForests),
   .onStep (Effect.ofTrigger .surveilReturnIfGainedLife),
-] ++ FraCandidates.triggeredAbilities ++ FraCandidates.rulingSupportTriggers
+  TriggeredAbility.fra (.fra .castThis) "When you cast this spell, untap all lands you control."
+    (.fra .untapAllLandsYouControl),
+  TriggeredAbility.fra .youCastCreature
+    "Whenever you cast a creature spell, exile up to one other target creature you control, then return that card to the battlefield under its owner's control."
+    (.fra .blink)
+    (.filtered { noun := "up to one other target creature you control", types := #[.creature], controller := .you, another := true })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra .yourBeginCombat
+    "At the beginning of combat on your turn, you may remove a +1/+1 counter from this creature. If you do, put a +1/+1 counter on each other creature you control."
+    (.fra .mayMovePlusOneToEachOther),
+  TriggeredAbility.fra .attack
+    "Whenever this creature attacks, empower Jace X, where X is the number of creatures you control."
+    (.fra .empowerJacePerCreature),
+  TriggeredAbility.fra .enter "When this Aura enters, tap enchanted creature. It becomes unprepared."
+    (.fra .tapEnchantedUnprepare),
+  TriggeredAbility.fra .enter
+    "When this enchantment enters, the owner of up to one other target nonland permanent puts it on their choice of the top or bottom of their library."
+    (.fra .ownerPutsOnTopOrBottom)
+    (.filtered { noun := "up to one other target nonland permanent", nonland := true, another := true })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra .enter
+    "When this creature enters, draw two cards, then discard two cards. When you discard one or more nonland cards this way, tap up to that many target creatures and put a stun counter on each of them."
+    (.fra .drawTwoDiscardTwoStun),
+  TriggeredAbility.fra .attack "Whenever this creature attacks, draw a card, then discard a card."
+    (.sequence [.draw 1, .discard 1]),
+  TriggeredAbility.fra .dies "When this creature dies, if it isn't a token, create a token that's a copy of it."
+    (.fra .copyTokenOfSourceIfNotToken) (cond := .sourceNotToken),
+  TriggeredAbility.fra (.or .enter .dies) "When this creature enters or dies, you gain 2 life." (.gainLife 2),
+  TriggeredAbility.fra .enter "When this creature enters, mill three cards." (.millSelf 3),
+  TriggeredAbility.fra (.fra .yourBeginCombatFromGraveyard)
+    "At the beginning of combat on your turn, if two or more creatures died this turn, return this card from your graveyard to the battlefield."
+    (.fra (.returnSourceFromGy false false 0)) (cond := .twoCreaturesDiedThisTurn),
+  TriggeredAbility.fra .enter
+    "When this Equipment enters, you may pay {2}. When you do, for each opponent, destroy up to one target creature or planeswalker that player controls."
+    (.fra (.mayPayThenDestroyPerOpponent 2)),
+  TriggeredAbility.fra .enter "When this creature enters, target creature gets +2/+2 and gains deathtouch until end of turn."
+    (.onPermanent (.pumpAndGrant 2 2 Keyword.deathtouch)) (.filtered TargetFilter.creature),
+  TriggeredAbility.fra .attack "Whenever this creature attacks, it deals 1 damage to each opponent and you gain 1 life."
+    (.fra (.damageEachOpponentGainLife 1)),
+  TriggeredAbility.fra .enter "When this enchantment enters, it deals X damage to any target." (.fra .damageX) .playerOrCreature,
+  TriggeredAbility.fra .youCastNoncreature "Whenever you cast a noncreature spell, put a +1/+1 counter on this creature."
+    (.fra (.plusOneOnSource 1)),
+  TriggeredAbility.fra (.fra .eachUpkeepFromGraveyard)
+    "At the beginning of each upkeep, if an opponent was dealt noncombat damage last turn, return this card from your graveyard to your hand."
+    (.fra (.returnSourceFromGy true false 0)) (cond := .opponentDealtNoncombatDamageLastTurn),
+  TriggeredAbility.fra .enter
+    "When this creature enters, creatures you control gain trample and get +X/+0 until end of turn, where X is the number of artifacts you control."
+    (.fra .trampleAndPowerPerArtifact),
+  TriggeredAbility.fra .enter
+    "When this creature enters, search your library for a card, put it into your hand, shuffle, then discard a card at random."
+    (.fra .searchCardThenDiscardRandom),
+  TriggeredAbility.fra .enter "When this creature enters, create a 2/2 colorless Wizard Soldier creature token named Cadet."
+    (.createTokens .cadet 1),
+  TriggeredAbility.fra (.fra .opponentsDealtNoncombatDamage)
+    "Whenever one or more opponents are dealt noncombat damage, creatures you control get +1/+0 until end of turn."
+    (.creaturesYouControlPump 1 0),
+  TriggeredAbility.fra .enter
+    "When this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost."
+    (.fra .grantFlashbackUntilEot)
+    (.filtered { noun := "target instant or sorcery card in your graveyard", zone := .yourGraveyard, types := #[.instant, .sorcery] }),
+  TriggeredAbility.fra .enter "When this creature enters, you may discard a card. When you do, this creature deals 2 damage to any target."
+    (.fra (.mayDiscardThenDamage 2)),
+  TriggeredAbility.fra .combatDamageToPlayer
+    "Whenever this creature deals combat damage to a player, return target land card from your graveyard to your hand."
+    (.fra .returnFromGyToHand)
+    (.filtered { noun := "target land card from your graveyard", zone := .yourGraveyard, types := #[.land] }),
+  TriggeredAbility.fra .anotherCreatureYouControlEnters "Whenever another creature you control enters, you gain 1 life."
+    (.gainLife 1),
+  TriggeredAbility.fra .sourceDealtDamage
+    "Whenever this creature is dealt damage, you may search your library for up to that many land cards, put them onto the battlefield tapped, then shuffle."
+    (.fra .maySearchLandsEqualDamage),
+  TriggeredAbility.fra .enter "When this creature enters, create a Heartwood token." (.createTokens .heartwood 1),
+  TriggeredAbility.fra (.fra .youPutLoyaltyCounters)
+    "Whenever you put one or more loyalty counters on a planeswalker, put a +1/+1 counter on this creature."
+    (.fra (.plusOneOnSource 1)),
+  TriggeredAbility.fra .enter
+    "When this creature enters, you may search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
+    (.fra .maySearchBasicLandTapped),
+  TriggeredAbility.fra .enter "When this creature enters, put three +1/+1 counters on target creature."
+    (.onPermanent (.plusOne 3)) (.filtered TargetFilter.creature),
+  TriggeredAbility.fra (.or .enter .dies) "When this creature enters or dies, create a Heartwood token."
+    (.createTokens .heartwood 1),
+  TriggeredAbility.fra .youGainLife "Whenever you gain life, draw a card. This ability triggers only once each turn."
+    (.draw 1) (once := true),
+  TriggeredAbility.fra .youScryOrSurveil "Whenever you scry or surveil, put a +1/+1 counter on each creature you control."
+    (.fra .plusOneOnEachCreatureYouControl),
+  TriggeredAbility.fra (.fra .enchantedDies)
+    "When enchanted creature dies, return that card to the battlefield tapped under its owner's control."
+    (.fra .returnCauseTapped),
+  TriggeredAbility.fra .eachEndStep "At the beginning of the end step, sacrifice this creature." (.fra .sacrificeSource),
+  TriggeredAbility.fra (.fra .creatureYouControlAttacks)
+    "Whenever a creature you control attacks, that creature deals 1 damage to each opponent."
+    (.fra (.causeDealsDamageToEachOpponent 1)),
+  TriggeredAbility.fra .youGainLife
+    "Whenever you gain life, create a colorless artifact token named Lotus with \"{T}, Sacrifice this token: Add three mana of any one color.\" This ability triggers only once each turn."
+    (.createTokens .lotus 1) (once := true),
+  TriggeredAbility.fra .enter "When this creature enters, it fights up to one target creature an opponent controls."
+    (.fra .sourceFightsTarget)
+    (.filtered { noun := "up to one target creature an opponent controls", types := #[.creature], controller := .opponent })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra .enter
+    "When this creature enters, if you cast it, target opponent reveals their hand. You choose a nonland card from it. Exile that card."
+    (.fra .exileFromHandUntilLeaves) .opponent (cond := .sourceWasCast),
+  TriggeredAbility.fra .enter
+    "When this creature enters, mill four cards. When you do, return target land card from your graveyard to the battlefield tapped."
+    (.fra (.millThenReturnLandTapped 4)),
+  TriggeredAbility.fra (.fra .thisOrAnotherCreatureYouControlEnters)
+    "Whenever this creature or another creature you control enters, surveil 1." (.surveil 1),
+  TriggeredAbility.fra (.fra (.opponentCastsSpellMvAtMost 2))
+    "Whenever an opponent casts a spell with mana value 2 or less, you gain 2 life." (.gainLife 2),
+  TriggeredAbility.fra .enter
+    "When this artifact enters, exile target nonland permanent an opponent controls with mana value 3 or less until this artifact leaves the battlefield."
+    (.fra .exileUntilSourceLeaves)
+    (.filtered { noun := "target nonland permanent an opponent controls with mana value 3 or less", nonland := true, controller := .opponent, mvAtMost := some 3 }),
+  TriggeredAbility.fra .enter
+    "When this creature enters, you may sacrifice a land. If you do, create two tapped Heartwood tokens."
+    (.fra .maySacrificeLandForHeartwoods),
+  TriggeredAbility.fra .enter
+    "When this creature enters, if you cast him, exile up to one target nonland card of each card type from your graveyard. Copy those cards. You may cast any number of spells with total mana value 6 or less from among the copies without paying their mana costs."
+    (.fra .uldarosCopies)
+    (.filtered { noun := "up to one target nonland card of each card type from your graveyard"
+                 zone := .yourGraveyard, nonland := true })
+    (allowsZeroTargets := true) (maxTargets := 8) (cond := .sourceWasCast),
+  TriggeredAbility.fra .enter "When this Equipment enters, it deals 3 damage to any target and you gain 3 life."
+    (.fra (.damageThenGainLife 3)) .playerOrCreature,
+  TriggeredAbility.fra .attack "Whenever this creature attacks, exile up to one target card from a graveyard."
+    (.fra .exileCardFromGraveyard)
+    (.filtered { noun := "up to one target card from a graveyard", zone := .anyGraveyard })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra (.fra .youCastPreparedSpell)
+    "Whenever you cast a prepared spell, copy it. You may choose new targets for the copy."
+    (.fra .copyCauseSpell),
+  TriggeredAbility.fra .enter "When this artifact enters, draw a card, then discard a card." (.sequence [.draw 1, .discard 1]),
+  TriggeredAbility.fra .yourUpkeep
+    "At the beginning of your upkeep, surveil 1. Then if there are seven or more cards in your graveyard, sacrifice this artifact, it deals 2 damage to each opponent, and you gain 2 life."
+    (.fra .eyeOfJace),
+  TriggeredAbility.fra (.fra .youCastEquipmentOrTargetingCreatureYouControl)
+    "Whenever you cast an Equipment spell or a spell that targets a creature you control, draw a card. This ability triggers only once each turn."
+    (.draw 1) (once := true),
+  TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlEnters)
+    "Whenever another creature or planeswalker you control enters, you gain 1 life." (.gainLife 1),
+  TriggeredAbility.fra .youScryOrSurveil
+    "Whenever you scry or surveil, create a 1/1 colorless Thopter artifact creature token with flying. This ability triggers only once each turn."
+    (.createTokens .thopter 1) (once := true),
+  TriggeredAbility.fra .youGainLife "Whenever you gain life, put a loyalty counter on each planeswalker you control."
+    (.fra .loyaltyOnEachPlaneswalkerYouControl),
+  TriggeredAbility.fra (.fra .creatureYouControlAttacksPlayerAlone)
+    "Whenever a creature you control attacks a player alone, it gains double strike until end of turn."
+    (.fra (.causeGains Keyword.doubleStrike)),
+  TriggeredAbility.fra (.fra .anotherNontokenCreatureYouControlEnters)
+    "Whenever another nontoken creature you control enters, untap this creature." (.fra .untapSource),
+  TriggeredAbility.fra .enter
+    "When this creature enters, for each opponent, tap up to one target creature that player controls. Put a stun counter on each of those creatures."
+    (.fra .tapAndStunPerOpponent) (.filtered { noun := "up to one target creature that player controls", types := #[.creature], controller := .eachOpponent })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra .eachEndStep
+    "At the beginning of each end step, if you've drawn three or more cards this turn, create a 3/3 blue Angel creature token with flying."
+    (.createTokens .angel33blue 1) (cond := .drewThreeThisTurn),
+  TriggeredAbility.fra (.fra .creatureOpponentControlsEnters)
+    "Whenever a creature an opponent controls enters, this creature deals 1 damage to that player."
+    (.fra (.damageCauseController 1)),
+  TriggeredAbility.fra (.fra .opponentActivatesLoyaltyAbility)
+    "Whenever an opponent activates a loyalty ability, this creature deals 1 damage to that player."
+    (.fra (.damageCauseController 1)),
+  TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlEnters)
+    "Whenever another creature or planeswalker you control enters, mill two cards." (.millSelf 2),
+  TriggeredAbility.fra .enter "When this creature enters, remove up to three counters from another target creature or planeswalker."
+    (.fra (.removeUpToCounters 3))
+    (.filtered { TargetFilter.creatureOrPlaneswalker with noun := "another target creature or planeswalker", another := true }),
+  TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
+    "Whenever another creature or planeswalker you control dies, this creature deals 1 damage to target opponent and you gain 1 life."
+    (.fra (.damageTargetGainLife 1)) .opponent,
+  TriggeredAbility.fra (.fra .opponentDealtNoncombatDamage)
+    "Whenever an opponent is dealt noncombat damage, put a +1/+1 counter on this creature."
+    (.fra (.plusOneOnSource 1)),
+  TriggeredAbility.fra (.fra .playerDiscards)
+    "Whenever a player discards one or more cards, this creature deals 1 damage to each opponent."
+    (.fra (.damageEachOpponent 1)),
+  TriggeredAbility.fra .creatureYouControlDies
+    "Whenever a creature you control dies, put a loyalty counter on each planeswalker you control."
+    (.fra .loyaltyOnEachPlaneswalkerYouControl),
+  TriggeredAbility.fra .enter
+    "When this creature enters, you may sacrifice a creature or planeswalker. When you do, each opponent sacrifices a creature of their choice."
+    (.fra .maySacrificeThenEdict),
+  TriggeredAbility.fra .anotherCreatureYouControlEnters
+    "Whenever another creature you control enters, this creature gets +X/+0 until end of turn, where X is that creature's power."
+    (.fra .sourceGetsCausePower),
+  TriggeredAbility.fra (.fra .creatureYouControlAttacksPlayerAlone)
+    "Whenever a creature you control attacks a player alone, discard a card, then draw a card. Then put a +1/+1 counter on that creature for each card you've discarded this turn."
+    (.fra .jiangYangguAlone),
+  TriggeredAbility.fra .enter "When this creature enters, create a 5/5 red Dragon creature token with flying."
+    (.createTokens .dragon55flying 1),
+  TriggeredAbility.fra .landYouControlEnters
+    "Whenever a land you control enters, this creature deals 1 damage to each opponent. If that land is a Mountain, add {R}."
+    (.fra .kothGeomancer),
+  TriggeredAbility.fra .enter "When this creature enters, create a 1/1 colorless Thopter artifact creature token with flying."
+    (.createTokens .thopter 1),
+  TriggeredAbility.fra (.fra .opponentSmallCreatureBlocks)
+    "Whenever a creature an opponent controls with power or toughness 1 or less blocks, this creature deals 1 damage to that creature's controller."
+    (.fra (.damageCauseController 1)),
+  TriggeredAbility.fra .yourEndStep
+    "At the beginning of your end step, if you didn't cast a spell this turn, put two +1/+1 counters on this creature."
+    (.fra (.plusOneOnSource 2)) (cond := .castNoSpellThisTurn),
+  TriggeredAbility.fra .enter
+    "When this creature enters, search your library for up to X basic land cards with different names, reveal them, put them into your hand, then shuffle."
+    (.fra .fblthpSearch),
+  TriggeredAbility.fra (.fra (.creatureYouControlPowerAtLeastEnters 4))
+    "Whenever a creature you control with power 4 or greater enters, draw a card." (.draw 1),
+  TriggeredAbility.fra .enter "When this creature enters, create Mowu, a legendary 3/3 green Dog creature token."
+    (.createTokens .mowu 1),
+  TriggeredAbility.fra .yourEndStep "At the beginning of your end step, untap all tokens you control."
+    (.fra .untapAllTokensYouControl),
+  TriggeredAbility.fra .enter
+    "When this creature enters, you may discard a card. If you do, search your library for an enchantment card, reveal it, put it into your hand, then shuffle."
+    (.fra .mayDiscardThenSearchEnchantment),
+  TriggeredAbility.fra (.fra .youDiscardThis) "When you discard this card, you gain 3 life." (.gainLife 3),
+  TriggeredAbility.fra .youActivateLoyaltyAbility
+    "Whenever you activate a loyalty ability, you gain 1 life. You may play an additional land this turn."
+    (.fra (.gainLifeAndExtraLand 1)),
+  TriggeredAbility.fra .enter
+    "When this creature enters, another target creature you control fights up to one target creature an opponent controls."
+    (.fra .firstFightsSecond)
+    (.multi #[{ noun := "another target creature you control", types := #[.creature], controller := .you, another := true },
+      { noun := "up to one target creature an opponent controls", types := #[.creature], controller := .opponent }] #[1]),
+  TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
+    "Whenever another creature or planeswalker you control dies, you gain 1 life." (.gainLife 1),
+  TriggeredAbility.fra .enter
+    "When this creature enters, for each opponent, put X -1/-1 counters on up to one target creature that player controls, where X is the greatest mana value among cards in your graveyard."
+    (.fra .minusOnesPerOpponent) (.filtered { noun := "up to one target creature that player controls", types := #[.creature], controller := .eachOpponent })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra .enter "When this creature enters, draw a card for each color among other artifacts you control."
+    (.fra .drawPerColorAmongOtherArtifacts),
+  TriggeredAbility.fra .youAttack
+    "Whenever you attack, if you've activated a loyalty ability this turn, untap target attacking creature. It can't be blocked this turn."
+    (.fra .untapUnblockable)
+    (.filtered { noun := "target attacking creature", types := #[.creature], attacking := true })
+    (cond := .activatedLoyaltyThisTurn),
+  TriggeredAbility.fra (.fra .thisOrAnotherCreatureYouControlEnters)
+    "Whenever this creature or another creature you control enters, put a +1/+1 counter on target creature that entered this turn."
+    (.onPermanent (.plusOne 1))
+    (.filtered { noun := "target creature that entered this turn", types := #[.creature], enteredThisTurn := true }),
+  TriggeredAbility.fra .youCastNoncreature
+    "Whenever you cast a noncreature spell, create a 1/1 colorless Thopter artifact creature token with flying."
+    (.createTokens .thopter 1),
+  TriggeredAbility.fra (.fra .youCastArtifactOrCreature) "Whenever you cast an artifact or creature spell, untap this creature."
+    (.fra .untapSource),
+  TriggeredAbility.fra (.fra .creatureYouControlLeaves)
+    "Whenever a creature you control leaves the battlefield, if it had counters on it, put those counters on this artifact."
+    (.fra .putCauseCountersOnSource) (cond := .causeHadCounters),
+  TriggeredAbility.fra .yourBeginCombat
+    "At the beginning of combat on your turn, if this artifact has counters on it, you may move all counters from this artifact onto target creature."
+    (.fra .mayMoveSourceCountersToTarget) (.filtered TargetFilter.creature) (cond := .sourceHasCounters),
+  TriggeredAbility.fra .enter "When this creature enters, you may pay {3}. If you do, proliferate twice."
+    (.fra (.mayPayThenProliferate 3 2)),
+  TriggeredAbility.fra (.fra .youProliferate) "Whenever you proliferate, draw a card." (.draw 1),
+]
 
 def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   activated (Effect.sourceGets 1 1) (ManaCost.ofGeneric 2)
