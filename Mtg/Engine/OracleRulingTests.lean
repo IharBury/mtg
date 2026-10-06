@@ -4769,6 +4769,26 @@ def minasTirithTapDrawAtomicOk : Bool :=
 
 #guard minasTirithTapDrawAtomicOk
 
+/-- Layer 7a: hand size is power until a layer-7b set overwrites it.
+Pumps still add, and the ability works in other zones. -/
+def garrisonHandSizeLayerOk : Bool :=
+  let g := addPermanent afterDraw minasTirithGarrison ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Minas Tirith Garrison"
+  let hand := Int.ofNat (g.player ⟨0⟩).hand.size
+  let set := g.mapObjectStatus o (fun s => { s with setBasePT := some (1, 1) })
+  let setO := namedPermanent set "Minas Tirith Garrison"
+  let pumped := set.pumpPermanent setO 2 0
+  let inHand := addToHand afterDraw minasTirithGarrison ⟨0⟩
+  let card := handCardNamed inHand ⟨0⟩ "Minas Tirith Garrison"
+  g.basePower o == hand &&
+    set.basePower setO == 1 &&
+    set.toughness setO == 1 &&
+    pumped.power (namedPermanent pumped "Minas Tirith Garrison") == 3 &&
+    pumped.toughness (namedPermanent pumped "Minas Tirith Garrison") == 1 &&
+    inHand.power card == Int.ofNat (inHand.player ⟨0⟩).hand.size
+
+#guard garrisonHandSizeLayerOk
+
 /-!
 ## 345, 349 — Riddles: face-down pile not revealed; 4+0 legal
 -/
