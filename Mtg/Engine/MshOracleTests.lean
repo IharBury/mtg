@@ -4340,4 +4340,75 @@ def serumLegendarySoldierOk : Bool :=
 
 #guard serumLegendarySoldierOk
 
+/-- Granted haste, from an Aura or an enduring story, removes summoning sickness. -/
+def grantedHasteRemovesSicknessOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g superSpeed ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.mapObjectStatus bears (fun s => { s with summoningSick := true })
+  let g := g.attachSourceTo (namedPermanent g "Super Speed") (namedPermanent g "Grizzly Bears")
+  let sped := namedPermanent g "Grizzly Bears"
+  let oin := addPermanent afterDraw oinTheBrave ⟨0⟩ ⟨0⟩
+  let sick := oin.mapObjectStatus (namedPermanent oin "Óin the Brave")
+    (fun s => { s with summoningSick := true })
+  let story := sick.modifyPlayer ⟨0⟩ (fun pl => { pl with enduringStory := true })
+  let brave := namedPermanent story "Óin the Brave"
+  g.hasHaste sped && g.canAttack sped && g.power sped == 3 &&
+    !sick.hasHaste (namedPermanent sick "Óin the Brave") &&
+    !sick.canAttack (namedPermanent sick "Óin the Brave") &&
+    story.hasHaste brave && story.canAttack brave && story.power brave == 2
+
+#guard grantedHasteRemovesSicknessOk
+
+/-- Equipment keywords are read for menace, indestructible, and trample. -/
+def hostKeywordChecksOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g goblinPlateMail ⟨0⟩ ⟨0⟩
+  let g := g.attachSourceTo (namedPermanent g "Goblin Plate Mail")
+    (namedPermanent g "Grizzly Bears")
+  let mail := namedPermanent g "Grizzly Bears"
+  let g2 := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g2 := addPermanent g2 mithrilCoat ⟨0⟩ ⟨0⟩
+  let g2 := g2.attachSourceTo (namedPermanent g2 "Mithril Coat")
+    (namedPermanent g2 "Grizzly Bears")
+  let coat := namedPermanent g2 "Grizzly Bears"
+  let g3 := addPermanent afterDraw theReaverCleaver ⟨0⟩ ⟨0⟩
+  let g3 := addPermanent g3 grizzlyBears ⟨0⟩ ⟨0⟩
+  let g3 := g3.attachSourceTo (namedPermanent g3 "The Reaver Cleaver")
+    (namedPermanent g3 "Grizzly Bears")
+  let armed := namedPermanent g3 "Grizzly Bears"
+  let g3 := g3.setObject { armed with status :=
+    { armed.status with attacking := true, attackingWhom := some ⟨1⟩ } }
+  let g3 := { g3 with assignedCombatDamage := #[{ source := armed.id, toPlayer := 3 }] }
+  let g3 := g3.dealAssignedCombatDamage
+  g.hasMenace mail && g.power mail == 3 &&
+    g2.hasIndestructible coat &&
+    g3.hasTrample (g3.object! armed.id) &&
+    (g3.battlefield.filter (fun o => o.name == "Treasure")).size == 3
+
+#guard hostKeywordChecksOk
+
+/-- Frozen in Ice removes abilities and blocks every untap. River's Grasp
+removes abilities and skips only the untap step. -/
+def loseAbilitiesUntapOk : Bool :=
+  let g := addPermanent afterDraw largeBear ⟨0⟩ ⟨0⟩
+  let g := g.mapObjectStatus (namedPermanent g "Large Bear") (fun s => { s with tapped := true })
+  let ice := addPermanent g frozenInIce ⟨0⟩ ⟨0⟩
+  let ice := ice.attachSourceTo (namedPermanent ice "Frozen in Ice")
+    (namedPermanent ice "Large Bear")
+  let bear := namedPermanent ice "Large Bear"
+  let iced := ice.applyPermanentAction bear .untap
+  let river := addPermanent g enchantedRiverSGrasp ⟨0⟩ ⟨0⟩
+  let river := river.attachSourceTo (namedPermanent river "Enchanted River's Grasp")
+    (namedPermanent river "Large Bear")
+  let freed := river.applyPermanentAction (namedPermanent river "Large Bear") .untap
+  let held := river.beginStep .untap
+  !ice.hasTrample bear && !ice.hasHaste bear &&
+    (namedPermanent iced "Large Bear").status.tapped &&
+    !river.hasTrample (namedPermanent river "Large Bear") &&
+    !(namedPermanent freed "Large Bear").status.tapped &&
+    (namedPermanent held "Large Bear").status.tapped
+
+#guard loseAbilitiesUntapOk
+
 end Mtg.Engine.MshRulingTests

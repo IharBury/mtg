@@ -67,14 +67,13 @@ def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (fun s => { s with finality := s.finality + n })
   g.logMsg s!"{o.name} gets a finality counter"
 
-/-- Frozen in Ice, Enchanted River's Grasp, or Spider-Woman prevents this
-permanent becoming untapped. -/
+/-- Frozen in Ice, or a granted “can't become untapped”, blocks every untap.
+Enchanted River's Grasp only skips the untap step. -/
 def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
   let frozen :=
     g.battlefield.any (fun aura =>
       aura.attachedTo == some o.id &&
         aura.staticAbilities.any (fun
-          | .enchantedLosesAbilitiesDoesntUntap => true
           | .enchantedLosesAbilitiesCantUntap => true
           | _ => false))
   let granted :=
@@ -83,6 +82,14 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
       | some src => src.isOnBattlefield
       | none => false)
   frozen || granted
+
+/-- Enchanted River's Grasp: doesn't untap during its controller's untap step. -/
+def hostSkipsUntapStep (g : Game) (o : GameObject) : Bool :=
+  g.battlefield.any (fun aura =>
+    aura.attachedTo == some o.id &&
+      aura.staticAbilities.any (fun
+        | .enchantedLosesAbilitiesDoesntUntap => true
+        | _ => false))
 
 /-- Timestamp-ordered maximum hand size (MSH 184 / 376). `10000` is "no maximum". -/
 def grantsNoMaxHandSize (o : GameObject) : Bool :=

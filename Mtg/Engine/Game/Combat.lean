@@ -300,6 +300,11 @@ def dealAssignedCombatDamage (g : Game) : Game :=
             g := g.markDamageOn pw amt s!"{src.name} deals {amt} combat damage to {pw.name}"
               (deathtouch := g.hasDeathtouch src) (combat := true)
             totalDealt := totalDealt + amt
+            match src.controller with
+            | some pid =>
+              if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
+                g := g.createTreasureTokens pid amt.toNat
+            | none => pure ()
         | none => pure ()
       else if !g.sourceDamagePrevented src && asgn.toPlayer > 0 &&
           !(g.player defn).lost then
@@ -353,7 +358,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
                   .equippedDealsCombatDamageToPlayer
                   (some asgn.toPlayer)
               | none => pure ()
-          if src.status.combatDamageCreatesTreasure then
+          if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
             g := g.createTreasureTokens pid asgn.toPlayer.toNat
           g := g.putControlledTriggers defn .combatDamageToYou
           if pid == g.activePlayer &&

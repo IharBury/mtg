@@ -264,7 +264,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           (o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
             !g.hasEnduringStory ap) ||
           o.staticAbilities.any (· == .fra .doesntUntap) ||
-          g.hostCantBecomeUntapped o
+          g.hostCantBecomeUntapped o ||
+          g.hostSkipsUntapStep o
         -- CR 122.1d: a stun counter is removed instead of untapping.
         let stunned := o.status.tapped && !skipUntap && o.status.stun > 0
         if o.status.tapped && !skipUntap && !stunned then

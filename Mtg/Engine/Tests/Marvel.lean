@@ -486,7 +486,9 @@ def riverGraspOnGoblin : Game :=
 
 #guard !riverGraspOnGoblin.hasKeyword
   (namedPermanent riverGraspOnGoblin "Raging Goblin") (·.haste)
-#guard riverGraspOnGoblin.hostCantBecomeUntapped
+#guard riverGraspOnGoblin.hostSkipsUntapStep
+  (namedPermanent riverGraspOnGoblin "Raging Goblin")
+#guard !riverGraspOnGoblin.hostCantBecomeUntapped
   (namedPermanent riverGraspOnGoblin "Raging Goblin")
 
 def riverGraspOnElf : Game :=

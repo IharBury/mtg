@@ -596,7 +596,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .exileOppDeathCreateWolf => {}
   | .copyActivatedFromGySubtype _ => {}
   | .equippedGetsTrampleAndCombatTreasures p t =>
-    { hostBonus := (p, t) }
+    { hostBonus := (p, t), hostKeywords := Keyword.trample }
   | .wardDiscardEnchantmentInstantOrSorcery => {}
   | .wardSacrificeLegendary => {}
   | .teamPumpSubtype subtype p t =>
