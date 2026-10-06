@@ -3297,4 +3297,111 @@ def rickJonesMillOk : Bool :=
 
 #guard rickJonesMillOk
 
+/-- Create X tokens uses the chosen X, including zero. -/
+def createTokensXOk : Bool :=
+  let g := afterDraw.applyEffect ⟨0⟩ (Effect.createTokensX .dwarf) #[] (chosenX := 3)
+  let dwarves := g.battlefield.filter (fun o => o.printed.isToken && g.hasSubtype o "Dwarf")
+  dwarves.size == 3 && dwarves.all (fun o => g.power o == 2) &&
+    (let gZero := afterDraw.applyEffect ⟨0⟩ (Effect.createTokensX .dwarf) #[] (chosenX := 0)
+     (gZero.battlefield.filter (fun o => o.printed.isToken)).isEmpty) &&
+    (let treasures := afterDraw.applyUnifiedAbility ⟨0⟩
+        (Effect.abilityCreateTokensX .treasure) #[] (chosenX := 2)
+     (treasures.battlefield.filter (fun o => treasures.hasSubtype o "Treasure")).size == 2)
+
+#guard createTokensXOk
+
+/-- Settle the Wreckage exiles the attackers, then that player may search for
+that many basic lands. -/
+def settleSearchOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let g := g.mapObjectStatus (namedPermanent g "Grizzly Bears")
+    (fun s => { s with attacking := true })
+  let g := g.mapObjectStatus (namedPermanent g "Hill Giant")
+    (fun s => { s with attacking := true })
+  let g := g.applyEffect ⟨0⟩ Effect.exileAttackersSearchBasics #[Target.player ⟨1⟩]
+  !g.battlefield.any (fun o => o.status.attacking) &&
+    match g.pending with
+    | .fraChoice ⟨1⟩ (.maySearchLibrary _ 2 _ _ _) =>
+      let g := mustApply g ⟨1⟩ .accept
+      match g.pending with
+      | .fraChoice _ (.searchLibrary eligible _ _ _ _) =>
+        let lands := eligible.filter (fun id => (g.object! id).printed.isLand)
+        let pick := lands.extract 0 2
+        pick.size == 2 &&
+          (let g := mustApply g ⟨1⟩ (.choosePermanents pick)
+           (g.battlefield.filter (fun o =>
+              o.printed.isLand && o.status.tapped && o.controlledBy ⟨1⟩)).size == 2)
+      | _ => false
+    | _ => false
+
+#guard settleSearchOk
+
+/-- Destroying the land still lets its controller search, including when the
+land is indestructible. -/
+def avengersLandSearchOk : Bool :=
+  let g := addPermanent (addToLibraryTop afterDraw forest ⟨1⟩) forest ⟨1⟩ ⟨1⟩
+  let land := namedPermanent g "Forest"
+  let g := g.applyEffect ⟨0⟩ Effect.destroyLandSearchBasic #[Target.permanent land.id]
+  !g.battlefield.any (fun o => o.name == "Forest" && !o.printed.isToken) &&
+    match g.pending with
+    | .fraChoice ⟨1⟩ (.maySearchLibrary _ 1 _ _ _) =>
+      let kept := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
+      let land := namedPermanent kept "Forest"
+      let kept := kept.setObject { land with status :=
+        { land.status with indestructibleCounters := 1 } }
+      let kept := kept.applyEffect ⟨0⟩ Effect.destroyLandSearchBasic
+        #[Target.permanent (namedPermanent kept "Forest").id]
+      kept.battlefield.any (fun o => o.name == "Forest") &&
+        match kept.pending with
+        | .fraChoice ⟨1⟩ (.maySearchLibrary _ 1 _ _ _) => true
+        | _ => false
+    | _ => false
+
+#guard avengersLandSearchOk
+
+/-- Hour of Defeat destroys the creature, then surveils. -/
+def hourOfDefeatSurveilOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyEffect ⟨0⟩ Effect.destroyCreatureSurveil #[Target.permanent bears.id]
+  !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    match g.pending with
+    | .surveil ⟨0⟩ 1 => true
+    | _ => false
+
+#guard hourOfDefeatSurveilOk
+
+/-- Punishing Punch deals twice the creature's power, and the other creature
+does not hit back. -/
+def punishingPunchTwiceOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.applyEffect ⟨0⟩ Effect.creatureYouControlDealsTwicePower
+    #[Target.permanent bears.id, Target.permanent giant.id]
+  (namedPermanent g "Hill Giant").status.damage == 4 &&
+    (namedPermanent g "Grizzly Bears").status.damage == 0
+
+#guard punishingPunchTwiceOk
+
+/-- A fight deals damage both ways. With no second creature, nothing is dealt. -/
+def fightBothSidesOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.applyEffect ⟨0⟩ Effect.fight
+    #[Target.permanent bears.id, Target.permanent giant.id]
+  (namedPermanent g "Grizzly Bears").status.damage == 3 &&
+    (namedPermanent g "Hill Giant").status.damage == 2 &&
+    (let fresh := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+     let bears := namedPermanent fresh "Grizzly Bears"
+     let alone := fresh.applyEffect ⟨0⟩ Effect.fightUpToOne #[Target.permanent bears.id]
+     (namedPermanent alone "Grizzly Bears").status.damage == 0 &&
+       logContains alone "nothing to fight")
+
+#guard fightBothSidesOk
+
 end Mtg.Engine.MshRulingTests

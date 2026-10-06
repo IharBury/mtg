@@ -1033,7 +1033,7 @@ def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
       | some o =>
         let owner := o.owner
         let g := g.destroyPermanent o
-        g.logMsg s!"{(g.player owner).name} may search for a basic land"
+        g.offerMaySearchBasics owner
       | none => g
     else g
 

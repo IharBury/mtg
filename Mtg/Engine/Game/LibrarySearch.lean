@@ -208,6 +208,18 @@ def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind
     { g with pending := .fraChoice p (.searchLibrary eligible count dest after kind) }.logMsg
       s!"{pl.name} searches for {kind}"
 
+/-- `p` may search for `count` basic land cards and put them onto the
+battlefield tapped (Settle the Wreckage, Avengers Disassembled). Declining
+does not shuffle. -/
+def offerMaySearchBasics (g : Game) (p : PlayerId) (count : Nat := 1) : Game :=
+  if count == 0 || (g.player p).lost then g
+  else
+    let kind :=
+      if count == 1 then "a basic land card"
+      else s!"{count} basic land cards"
+    g.beginLibrarySearch p isBasicLandCard kind (.battlefield true) count
+      (optional := true)
+
 /-- Search `p`'s library for a card matching `pred` and put it onto the
 battlefield (tapped if `tapped`), then shuffle (CR 701.19). -/
 def resolveSearchLibrary (g : Game) (p : PlayerId) (pred : CardDef → Bool)

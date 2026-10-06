@@ -49,6 +49,9 @@ inductive SpellResolution where
   | extraLand
   /-- A creature you control deals its power to an opposing creature. -/
   | fight
+  /-- The two creatures fight (CR 701.12): each deals damage equal to its
+  power to the other. -/
+  | mutualFight
   /-- Affect a still-legal target. Damage can hit a player or a creature;
   other actions require a permanent. -/
   | onPermanent (action : PermanentAction)
@@ -273,6 +276,8 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
   match r with
   | .fight =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
+  | .mutualFight =>
+    "target creature you control fights target creature an opponent controls"
   | .extraLand => "you may play an additional land this turn"
   | .drawAndLoseLife cards life =>
     s!"you draw {cardPhrase cards} and lose {life} life"

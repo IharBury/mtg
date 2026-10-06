@@ -448,9 +448,8 @@ def eachOpponentLosesLife (n : Nat) : Effect :=
     (castKind := .burn)
 
 def fight : Effect :=
-  mkSpell (.of .creatureYouControlThenOppCreature) (.fight)
+  mkSpell (.of .creatureYouControlThenOppCreature) (.mutualFight)
     (castKind := .fight)
-    (phraseOverride := some "target creature you control fights target creature an opponent controls")
 
 def fightUpToOne : Effect :=
   mkSpell (.of .creatureYouControlThenOppCreature) (.fightUpToOne)
