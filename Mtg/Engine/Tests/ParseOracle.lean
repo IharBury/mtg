@@ -123,6 +123,14 @@ def normLineAgrees (cardName line : String) : Bool :=
     (·.spellEffect) == some (Effect.dealDamage 5)
 #guard (parseOracleCard "Insight\n{U}\nSorcery\nDraw seven cards.").toOption.bind
     (·.spellEffect) == some (Effect.draw 7)
+#guard (parseOracleCard
+    "Hour of Defeat\n{3}{B}\nInstant\nDestroy target creature. Surveil 1.").toOption.bind
+    (·.spellEffect) == some Effect.destroyCreatureSurveil
+#guard (parseOracleCard
+    ("Depower\n{2}{U}\nInstant\nThis spell costs {2} less to cast if it targets an attacking creature.\n" ++
+      "Target creature gets -4/-0 until end of turn.\nDraw a card.")).toOption.bind
+    (fun c => c.spellEffect.map (·.spellResolution)) ==
+    some (some (SpellResolution.pumpThenDraw (-4) 0))
 #guard (parseOracleCard "Wander\n{G}\nInstant\nForestcycling {2}").toOption.bind
     (fun c => c.activatedAbilities[0]?) ==
     some (typecyclingAbility "Forest" (ManaCost.ofGeneric 2))
