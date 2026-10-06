@@ -7,6 +7,8 @@ own Oracle text, so a prototype such as `Effect.draw 1` also matches “Draw
 seven cards,” and `Effect.destroyCreature` also matches “Destroy target
 artifact.” Each list keeps one prototype per shape. Another entry that
 differs only by those arguments is the same ability, so it is not listed again.
+A spell whose text is several of these shapes in a row is parsed as a
+`Resolution.sequence` of those shapes, so the sequence itself is not listed.
 -/
 
 namespace Mtg.Engine.OracleCandidates
@@ -41,8 +43,6 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.abilityDraw 1,
   Effect.addTwoAnyColorCreatureSources,
   Effect.watchVillainConniveOnce,
-  Effect.pumpThenDraw (-4) 0,
-  Effect.destroyCreatureSurveil,
   Effect.grantVigilanceUnblockable,
   Effect.pumpThenExileTopPlay 3 1,
   Effect.dealDamageThenControllerIfTeamwork 5 2,
@@ -139,6 +139,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.grantHexproofIndestructible,
   Effect.abilityCreaturesYouControlGet 1 1,
   Effect.scry 2,
+  Effect.abilitySurveil 1,
   Effect.counterUnlessPays 4,
   Effect.counterExilePermanentMayCast,
   Effect.exchangeControlSharingType,

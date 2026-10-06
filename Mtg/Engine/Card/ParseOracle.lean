@@ -1415,6 +1415,53 @@ Numeric and text arguments are read from `units` when the line has the same shap
         else acc) none
   best.map fun (n, _, _, _, ab) => (ab, n)
 
+/-- Sentences of one Oracle line, split on a period that ends a sentence. -/
+def oracleSentences (line : String) : List String :=
+  ((line.splitOn ". ").map fun s =>
+    let s := s.trimAscii.copy
+    if s.endsWith "." then (s.dropEnd 1).trimAscii.copy else s).filter (· != "")
+
+/-- Resolutions of `e`, flattening a sequence so a later join stays one list. -/
+def effectSteps (e : Effect) : List Resolution :=
+  match e.resolution with
+  | .sequence rs => rs.flatMap Resolution.flatten
+  | r => [r]
+
+/-- One spell whose steps are `es` in printed order.
+Targeting and cast kind come from the step that chooses a target. -/
+def joinSpellEffects (es : List Effect) : Effect :=
+  match es with
+  | [] => { resolution := .sequence [] }
+  | [e] => e
+  | _ =>
+    let targeted := es.find? (·.requiresTarget) |>.getD es.head!
+    { targeted with
+      resolution := .sequence (es.flatMap effectSteps)
+      phrase := String.intercalate ". " (es.map (·.phrase)) }
+
+/-- `line` is a sequence of spell effects, each sentence already in `spellEffects`. -/
+def spellSentenceSequence (cardName line : String) : Option Effect :=
+  let sents := oracleSentences line
+  if sents.length < 2 then none
+  else
+    let rec go : List String → Option (List Effect)
+      | [] => some []
+      | s :: rest =>
+        match matchModeled cardName [s] with
+        | some (.spell e, 1) => (go rest).map (e :: ·)
+        | _ => none
+    (go sents).map joinSpellEffects
+
+/-- Append later spell lines to `e` when each of them is its own spell effect.
+A second targeted step stays a separate ability. -/
+partial def extendSpellSequence (cardName : String) (e : Effect) (rest : List String) :
+    Effect × List String :=
+  match matchModeled cardName rest with
+  | some (.spell e2, n) =>
+    if n == 0 || n > rest.length || (e.requiresTarget && e2.requiresTarget) then (e, rest)
+    else extendSpellSequence cardName (joinSpellEffects [e, e2]) (rest.drop n)
+  | _ => (e, rest)
+
 /-- `Loyalty: N` (any case), the labeled form of the corner number. -/
 def parseLoyaltyLabel (line : String) : Option Nat :=
   prefixRest line "Loyalty:" |>.bind parseUnsignedNat
@@ -1773,11 +1820,19 @@ partial def parseRules (c : CardDef) (lines : List String)
           | some (.spell e, n) =>
             let more := (effectText :: rest).drop n
             if n > 0 && more.length < (effectText :: rest).length then
+              let (e, more) :=
+                if n == 1 then extendSpellSequence c.name e more else (e, more)
               let ab : ActivatedAbility := activated e (loyalty := some sym)
               go { c with activatedAbilities :=
                 c.activatedAbilities.push { ab with fraCondition := cond } } more
             else unrecognized c line rest
-          | _ => unrecognized c line rest
+          | _ =>
+            match spellSentenceSequence c.name effectText with
+            | some e =>
+              let ab : ActivatedAbility := activated e (loyalty := some sym)
+              go { c with activatedAbilities :=
+                c.activatedAbilities.push { ab with fraCondition := cond } } rest
+            | none => unrecognized c line rest
         | none =>
         match keywordTokens c.name line with
         | some toks =>
@@ -1814,12 +1869,24 @@ partial def parseRules (c : CardDef) (lines : List String)
               | some ab => go (applyParsed c ab) rest
               | none =>
                 match matchModeled c.name units with
+                | some (.spell e, n) =>
+                  let more := units.drop n
+                  if n == 0 || more.length == units.length then unrecognized c line rest
+                  else
+                    let (e, more) :=
+                      if c.isInstantOrSorcery then extendSpellSequence c.name e more
+                      else (e, more)
+                    go (applyParsed c (.spell e)) more
                 | some (ab, n) =>
                   let more := units.drop n
                   if more.length < units.length then go (applyParsed c ab) more
                   else unrecognized c line rest
                 | none =>
-                  unrecognized c line rest
+                  match if c.isInstantOrSorcery then spellSentenceSequence c.name line else none with
+                  | some e =>
+                    let (e, more) := extendSpellSequence c.name e rest
+                    go (applyParsed c (.spell e)) more
+                  | none => unrecognized c line rest
   go c units
 
 def parseAdventure (lines : List String) (keepUnrecognized : Bool := false) :

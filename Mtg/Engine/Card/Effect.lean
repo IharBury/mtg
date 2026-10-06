@@ -302,6 +302,18 @@ def spellResolution (e : Effect) : SpellResolution :=
     | [.createTokens kind n _, .spell (.creaturesYouControlPump p t)] =>
       .createTokensThenTeamPump kind n p t
     | [.onPermanent .destroy, .gainLife n] => .destroyArtifactOrEnchantmentGainLife n
+    | [.onPermanent .destroy, .surveil 1] => .destroyCreatureSurveil
+    | [.onPermanent (.pump p t), .draw 1] => .pumpThenDraw p t
+    | [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords k)] =>
+      if k == Keyword.lifelink.merge Keyword.indestructible then
+        .plusOneLifelinkIndestructible
+      else .unrecognized
+    | [.onPermanent (.grantKeywords k), .draw 1] =>
+      if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
+        .grantVigilanceUnblockable
+      else .unrecognized
+    | [.creaturesYouControlPump p t, .teamGain k] =>
+      .creaturesYouControlGetAndGrant p t k
     | _ => .unrecognized
   | _ => .unrecognized
 
@@ -588,6 +600,18 @@ def ofSpell : SpellResolution → Resolution
     .sequence [.createTokens kind n, .creaturesYouControlPump p t]
   | .destroyArtifactOrEnchantmentGainLife n =>
     .sequence [.onPermanent .destroy, .gainLife n]
+  | .destroyCreatureSurveil =>
+    .sequence [.onPermanent .destroy, .surveil 1]
+  | .pumpThenDraw p t =>
+    .sequence [.onPermanent (.pump p t), .draw 1]
+  | .plusOneLifelinkIndestructible =>
+    .sequence [.onPermanent (.plusOne 1),
+      .onPermanent (.grantKeywords (Keyword.lifelink.merge Keyword.indestructible))]
+  | .grantVigilanceUnblockable =>
+    .sequence [.onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.cantBeBlocked)),
+      .draw 1]
+  | .creaturesYouControlGetAndGrant p t k =>
+    .sequence [.creaturesYouControlPump p t, .teamGain k]
   | .creaturesYouControlPump p t => .creaturesYouControlPump p t
   | .createTokensX kind => .createTokensX kind
   | .dealDamageToEachCreature n => .dealDamageToEachCreature n

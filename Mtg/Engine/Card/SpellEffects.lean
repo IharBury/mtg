@@ -743,7 +743,10 @@ def teamGainDoubleStrike : Effect :=
   teamGain Keyword.doubleStrike
 
 def sourceGainsIndestructibleTap : Effect :=
-  mkAbility ({}) (.sourceGainsIndestructibleTap)
+  mkAbility ({})
+    (.sequence [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap])
+    (phraseOverride := some
+      "Witch-king of Angmar gains indestructible until end of turn. Tap him")
 
 def plusOneOnEachOtherSubtype (subtype : String) (n : Nat) : Effect :=
   mkAbility ({}) (.plusOneOnEachOtherSubtype subtype n)

@@ -1399,6 +1399,7 @@ def illegalTargetDoesNothingOk : Bool :=
       (some (namedPermanent g "Taskmaster, Mercenary Mimic").id) gone
   (gDepower.player ⟨0⟩).hand.size == hand0 &&
     (gHour.player ⟨0⟩).library.size == lib0 &&
+    gHour.pending == .none &&
     (gPym.player ⟨0⟩).hand.size == hand0 &&
     (gCrescendo.player ⟨0⟩).library.size == lib0 &&
     (gRepulsor.player ⟨1⟩).life == (gGone.player ⟨1⟩).life &&
