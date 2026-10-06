@@ -200,21 +200,39 @@ until that turn expire when it would have begun (CR 800.4m). -/
 def startNextTurn (g : Game) : Game :=
   let ending := g.activePlayer
   let g := g.expirePlayPermissions ending |>.clearTurnActivations
-  let n := g.players.size
   Id.run do
     let mut g := g
-    for k in [1:n+1] do
-      let q : PlayerId := ⟨(ending.idx + k) % n⟩
-      if (g.player q).lost then
+    let extraN := g.extraTurns.size
+    for _ in [0:extraN] do
+      if !g.extraTurns.isEmpty && (g.player g.extraTurns[0]!).lost then
+        let q := g.extraTurns[0]!
         g := g.expireUntilNextTurnEffects q
-      else
-        g := { g with
-          activePlayer := q
-          turnNumber := g.turnNumber + 1
-          isFirstTurn := false
-          cleanupGivesPriority := false }
-        return g.logMsg s!"It is now {g.player q |>.name}'s turn {g.turnNumber}"
-    return g
+        g := { g with extraTurns := g.extraTurns.extract 1 g.extraTurns.size }
+    match g.extraTurns[0]? with
+    | some q =>
+      g := { g with
+        extraTurns := g.extraTurns.extract 1 g.extraTurns.size
+        activePlayer := q
+        powerUpsForbidden := true
+        turnNumber := g.turnNumber + 1
+        isFirstTurn := false
+        cleanupGivesPriority := false }
+      return g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}"
+    | none =>
+      let n := g.players.size
+      for k in [1:n+1] do
+        let q : PlayerId := ⟨(ending.idx + k) % n⟩
+        if (g.player q).lost then
+          g := g.expireUntilNextTurnEffects q
+        else
+          g := { g with
+            activePlayer := q
+            powerUpsForbidden := false
+            turnNumber := g.turnNumber + 1
+            isFirstTurn := false
+            cleanupGivesPriority := false }
+          return g.logMsg s!"It is now {(g.player q).name}'s turn {g.turnNumber}"
+      return g
 
 /-- `partial` because a silent cleanup (CR 514.3) immediately begins the next
 turn, and a skipped draw step (CR 103.8a / 500.11) immediately begins
@@ -346,7 +364,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
                 let (g', newId) := g.putOntoBattlefield id owner (summoningSick := sick)
                 g := g'.logMsg
                   s!"{name} returns to the battlefield (beginning of end step)"
-                g := g.afterPermanentEnters (g.object! newId)
+                let back := g.object! newId
+                g :=
+                  if back.printed.isLand then g.afterLandEnters back
+                  else g.afterPermanentEnters back
         let exiles := g.delayedEndStepExiles
         g := { g with delayedEndStepExiles := #[] }
         for id in exiles do

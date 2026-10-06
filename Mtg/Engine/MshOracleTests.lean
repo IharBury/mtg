@@ -3701,4 +3701,125 @@ def earthsMightiestChoosesOk : Bool :=
 
 #guard earthsMightiestChoosesOk
 
+/-- Galactus attacks and destroys a target land. -/
+def galactusAttacksDestroyLandOk : Bool :=
+  let g := afterDraw.applyEffect ⟨0⟩ Effect.createGalactus #[]
+  let gal := namedPermanent g "Galactus"
+  gal.printed.keywords.flying && gal.printed.keywords.trample &&
+    match gal.printed.triggeredAbilities[0]? with
+    | some ab =>
+      ab.firesOn .attacking &&
+        (let e := ab.effect
+         let g := addPermanent g mountain ⟨1⟩ ⟨1⟩
+         let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+         let land := namedPermanent g "Mountain"
+         let bears := namedPermanent g "Grizzly Bears"
+         let legal := g.legalTargetsForKind ⟨0⟩ e.targetKind (some gal.id)
+         legal.contains (Target.permanent land.id) &&
+           !legal.contains (Target.permanent bears.id) &&
+           (let g2 := g.applyAbilityEffect ⟨0⟩ e #[Target.permanent land.id] (some gal.id)
+            !g2.battlefield.any (fun o => o.name == "Mountain") &&
+              g2.battlefield.any (fun o => o.name == "Galactus")))
+    | none => false
+
+#guard galactusAttacksDestroyLandOk
+
+/-- The Tiger God can't be blocked by more than one creature. -/
+def tigerGodOneBlockerOk : Bool :=
+  let g := addPermanent afterDraw whiteTigerAvaAyala ⟨0⟩ ⟨0⟩
+  let tiger := namedPermanent g "White Tiger, Ava Ayala"
+  let g := g.applyAbilityEffect ⟨0⟩ Effect.plusOneAndCreateTigerGod #[] (some tiger.id)
+  let god := namedPermanent g "The Tiger God"
+  god.staticAbilities == #[.cantBeBlockedByMoreThan 1] &&
+    g.legalBlockerCount god 0 && g.legalBlockerCount god 1 &&
+    !g.legalBlockerCount god 2
+
+#guard tigerGodOneBlockerOk
+
+/-- Gone Fishing returns a land, and that land's landfall abilities trigger. -/
+def lakeTownLandfallOk : Bool :=
+  let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mountain ⟨0⟩ ⟨0⟩
+  let land := namedPermanent g "Mountain"
+  let bears := namedPermanent g "Grizzly Bears"
+  let gLand := g.applyEffect ⟨0⟩ Effect.exileThenReturnYouControl #[Target.permanent land.id]
+  gLand.battlefield.any (fun o => o.name == "Mountain") &&
+    gLand.waitingTriggers.any (fun w => w.event == .landYouControlEnters) &&
+    (let gCreature := g.applyEffect ⟨0⟩ Effect.exileThenReturnYouControl
+        #[Target.permanent bears.id]
+     gCreature.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+       !gCreature.waitingTriggers.any (fun w => w.event == .landYouControlEnters))
+
+#guard lakeTownLandfallOk
+
+/-- Troll Negotiations puts the counters even when the opposing creature is
+gone, and fights only while both creatures are still legal. -/
+def trollNegotiationsPartialOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let giant := namedPermanent g "Hill Giant"
+  let gFight := g.applyEffect ⟨0⟩ (Effect.plusOneThenFight 2)
+    #[Target.permanent bears.id, Target.permanent giant.id]
+  (namedPermanent gFight "Grizzly Bears").status.plusOnePlusOne == 2 &&
+    (namedPermanent gFight "Hill Giant").status.damage == 4 &&
+    (namedPermanent gFight "Grizzly Bears").status.damage == 3 &&
+    (let (gGone, _) := g.move giant.id (.graveyard ⟨1⟩) none
+     let gCounters := gGone.applyEffect ⟨0⟩ (Effect.plusOneThenFight 2)
+       #[Target.permanent bears.id, Target.permanent giant.id]
+     (namedPermanent gCounters "Grizzly Bears").status.plusOnePlusOne == 2 &&
+       (namedPermanent gCounters "Grizzly Bears").status.damage == 0)
+
+#guard trollNegotiationsPartialOk
+
+/-- Sound the Trumpets uses the spell's mana value on the stack, including X. -/
+def soundTheTrumpetsManaValueOk : Bool :=
+  let (g, shockId) := afterDraw.allocObject shock ⟨1⟩ .stack (some ⟨1⟩)
+  let gShock := g.applyEffect ⟨0⟩ (Effect.counterThenRecruitIfMvAtMost 2)
+    #[Target.card shockId.id]
+  (match gShock.pending with | .recruitDiscard ⟨0⟩ => true | _ => false) &&
+    (let (gX, spell) := afterDraw.allocObject insideInformation ⟨1⟩ .stack (some ⟨1⟩)
+     let gX := gX.setObject { spell with chosenX := some 3 }
+     let gX := gX.applyEffect ⟨0⟩ (Effect.counterThenRecruitIfMvAtMost 2)
+       #[Target.card spell.id]
+     gX.pending == .none &&
+       gX.objects.any (fun o => o.name == "Inside Information" && o.zone == .graveyard ⟨1⟩))
+
+#guard soundTheTrumpetsManaValueOk
+
+/-- Elrond exiles the permanent and returns it at the next end step. -/
+def elrondReturnsAtEndStepOk : Bool :=
+  let g := addPermanent afterDraw elrondMoonReader ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let elrond := namedPermanent g "Elrond, Moon-Reader"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyAbilityEffect ⟨0⟩ Effect.exileThenReturnNextEnd
+    #[Target.permanent bears.id] (some elrond.id)
+  !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    g.delayedEndStepReturns.size == 1 &&
+    g.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile) &&
+    (let gEnd := g.beginStep .end
+     (namedPermanent gEnd "Grizzly Bears").status.enteredThisTurn &&
+       gEnd.delayedEndStepReturns.isEmpty)
+
+#guard elrondReturnsAtEndStepOk
+
+/-- Kang takes an extra turn, and power-up abilities can't be activated then. -/
+def kangExtraTurnOk : Bool :=
+  let g := addPermanent afterDraw kangTheConqueror ⟨0⟩ ⟨0⟩
+  let kang := namedPermanent g "Kang the Conqueror"
+  let g := g.applyAbilityEffect ⟨0⟩ Effect.plusOneAndExtraTurn #[] (some kang.id)
+  (namedPermanent g "Kang the Conqueror").status.plusOnePlusOne == 1 &&
+    g.extraTurns == #[⟨0⟩] &&
+    (let gEx := g.startNextTurn
+     gEx.activePlayer == ⟨0⟩ && gEx.powerUpsForbidden && gEx.extraTurns.isEmpty &&
+       (match gEx.apply ⟨0⟩ (.activate (namedPermanent gEx "Kang the Conqueror").id 0) with
+        | .error _ => true
+        | .ok _ => false) &&
+       (let gNext := gEx.startNextTurn
+        gNext.activePlayer == ⟨1⟩ && !gNext.powerUpsForbidden))
+
+#guard kangExtraTurnOk
+
 end Mtg.Engine.MshRulingTests

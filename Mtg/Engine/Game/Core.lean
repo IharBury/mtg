@@ -139,6 +139,10 @@ structure Game where
   /-- Cards in exile that return at the beginning of the next end step
   (Roll-Roll-Roll-Roll and similar delayed blinks). -/
   delayedEndStepReturns : Array ObjectId := #[]
+  /-- Extra turns to take before the next player in turn order (Kang). -/
+  extraTurns : Array PlayerId := #[]
+  /-- Power-up abilities can't be activated during this extra turn (Kang). -/
+  powerUpsForbidden : Bool := false
   /-- Permanents exiled at the beginning of the next end step (Vindictive
   Triumph). -/
   delayedEndStepExiles : Array ObjectId := #[]

@@ -352,11 +352,25 @@ def minBlockersRequired (g : Game) (o : GameObject) : Nat :=
       | none => acc) 0
   max fromStatic (if g.hasMenace o then 2 else 0)
 
+/-- Maximum number of creatures that may block `o`, if a static caps it. -/
+def maxBlockersAllowed (_g : Game) (o : GameObject) : Option Nat :=
+  o.staticAbilities.foldl (fun acc ab =>
+    match ab.cantBeBlockedByMoreThan? with
+    | some n =>
+      some (match acc with
+        | some m => min m n
+        | none => n)
+    | none => acc) none
+
 /-- True when `n` blockers is a legal number for `attacker` (CR 702.111b).
 Zero is always legal (the attacker is unblocked). -/
 def legalBlockerCount (g : Game) (attacker : GameObject) (n : Nat) : Bool :=
   let need := g.minBlockersRequired attacker
-  n == 0 || need <= 1 || n >= need
+  let underMax :=
+    match g.maxBlockersAllowed attacker with
+    | none => true
+    | some m => n ≤ m
+  (n == 0 || need <= 1 || n >= need) && underMax
 
 /-- Creatures with flying can't attack this player or block their creatures. -/
 def leftoverFlyingRestriction (g : Game) (p : PlayerId) : Bool :=

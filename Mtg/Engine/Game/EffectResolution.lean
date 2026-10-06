@@ -817,19 +817,42 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match g.findObject? id with
       | none => g.logMsg "The target is no longer legal"
       | some o =>
-        let mv := o.printed.manaValue
-        let g := g.counterStackSpell id
-        if mv <= n then g.beginRecruit controller else g
+        if o.zone != .stack then g.logMsg "The target is no longer legal"
+        else
+          let mv := g.objectManaValue o
+          let g := g.counterStackSpell id
+          if mv ≤ n then g.beginRecruit controller else g
     | _ => g.logMsg "The target is no longer legal"
   | .plusOneThenFight n =>
-    match targets[0]?, targets[1]? with
-    | some (Target.permanent srcId), some (Target.permanent destId) =>
-      match g.findObject? srcId, g.findObject? destId with
-      | some src, some dest =>
-        let g := g.addPlusOnePlusOneTo src n
-        g.fightCreatures (g.object! src.id) (g.object! dest.id)
-      | _, _ => g.logMsg "The target is no longer legal"
-    | _, _ => g.logMsg "The target is no longer legal"
+    let src? :=
+      match targets[0]? with
+      | some (Target.permanent id) => g.findObject? id
+      | _ => none
+    let dest? :=
+      match targets[1]? with
+      | some (Target.permanent id) => g.findObject? id
+      | _ => none
+    let srcLegal (o : GameObject) : Bool :=
+      o.isOnBattlefield && o.isCreature && o.controlledBy controller
+    let destLegal (o : GameObject) : Bool :=
+      o.isOnBattlefield && o.isCreature && !o.controlledBy controller
+    let g :=
+      match src? with
+      | some src =>
+        if srcLegal src then g.addPlusOnePlusOneTo src n
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+    let srcNow :=
+      match src? with
+      | some s => g.findObject? (g.followMoved s.id)
+      | none => none
+    match srcNow, dest? with
+    | some src, some dest =>
+      if srcLegal src && destLegal dest then g.fightCreatures src dest
+      else if destLegal dest then g
+      else g.logMsg "The target is no longer legal"
+    | _, some _ => g.logMsg "The target is no longer legal"
+    | _, none => g
   | .plusOneThenEachOtherIfFromGy =>
     match targets[0]? with
     | some (Target.permanent oid) =>
@@ -923,8 +946,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.exileTopPlayIfYouControlSubtype controller n subtype
   | .exileThenReturnYouControl =>
     g.foldPermanentTargets targets (fun g o =>
-      if o.controlledBy controller then
+      if o.controlledBy controller && o.isOnBattlefield then
         g.exileThenReturn o "is exiled, then returned to the battlefield"
+          (land := o.printed.isLand)
       else g)
   | .destroyArtifactOrEnchantmentGainLife n =>
     let g := g.applyOnPermanent controller effect.targetKind targets .destroy
@@ -1471,13 +1495,14 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.grantUntilEotToControlledCreatures controller Keyword.menace "menace"
       (fun g o => subtypes.any (g.hasSubtype o))
   | .exileThenReturnNextEnd =>
-    -- Return immediately for this engine (next end step is modeled as a
-    -- delayed return at the next end step via eagles-style bookkeeping:
-    -- bounce now, then put back tapped next end).
     g.foldPermanentTargets targets (fun g o =>
-      if o.controlledBy controller && !o.printed.isLand && some o.id != sourceId then
-        g.exileThenReturn o "is exiled, then returned" (clearExileFields := true)
-      else g)
+      if o.isOnBattlefield && o.controlledBy controller && !o.printed.isLand &&
+          some o.id != sourceId then
+        let name := o.name
+        let (g, newId) := g.move o.id .exile none
+        { g with delayedEndStepReturns := g.delayedEndStepReturns.push newId }
+          |>.logMsg s!"{name} is exiled until the beginning of the next end step"
+      else g.logMsg "The target is no longer legal")
   | .searchBasicBeholdSubtypeUntap subtype =>
     g.beginLibrarySearch controller isBasicLandCard "a basic land card"
       (.battlefieldTappedBeholdUntap subtype)
@@ -1551,9 +1576,10 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         indestructibleCounters := o.status.indestructibleCounters + 1 } }
   | .plusOneAndExtraTurn =>
     g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.setObject { o with status := { o.status with
-        plusOnePlusOne := o.status.plusOnePlusOne + 1 } }
-      g.logMsg s!"{(g.player controller).name} takes an extra turn after this one"
+      let g := g.addPlusOnePlusOneTo o 1
+      { g with extraTurns := g.extraTurns.push controller }
+        |>.logMsg
+          s!"{(g.player controller).name} takes an extra turn after this one. During that turn, power-up abilities can't be activated."
   | .plusOneX =>
     g.withSourceOnBattlefield sourceId fun g o =>
       g.addPlusOnePlusOneTo o chosenX

@@ -119,6 +119,8 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
        | some i => o.status.abilitiesActivatedThisTurn.contains i
        | none => o.status.activationsThisTurn != 0) then
     throw s!"{o.name}'s ability can be activated only once each turn"
+  if ab.powerUp && g.powerUpsForbidden then
+    throw s!"Power-up abilities can't be activated during this extra turn"
   if ab.powerUp &&
       (Nat.max o.status.powerUpActivations (if o.status.powerUpUsed then 1 else 0)) ≥
         g.powerUpActivationLimit p then

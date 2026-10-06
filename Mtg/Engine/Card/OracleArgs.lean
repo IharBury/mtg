@@ -450,6 +450,7 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   | .equippedCreatureGets p t => return .equippedCreatureGets (← takeInt p) (← takeInt t)
   | .cantBlockUnlessYouControl ss => return .cantBlockUnlessYouControl (← takeStrs ss)
   | .cantBeBlockedExceptBy n => return .cantBeBlockedExceptBy (← takeNat n)
+  | .cantBeBlockedByMoreThan n => return .cantBeBlockedByMoreThan (← takeNat n)
   | .enchantedIsOnlySubtypeCantAttackOrBlock s =>
     return .enchantedIsOnlySubtypeCantAttackOrBlock (← takeStr s)
   | .enchantedCreatureGetsAndHas p t k =>

@@ -402,15 +402,22 @@ def theVoidToken : CardDef :=
     supertypes := #[.legendary]
     staticAbilities := #[.attacksEachCombatIfAble] }
 
+def galactusAttackTrigger : Effect := {
+  targeting := .of (.filtered { noun := "target land", types := #[.land] })
+  resolution := .onPermanent .destroy
+  phrase := "Whenever Galactus attacks, destroy target land."
+}
+
 def galactusToken : CardDef :=
   { (creatureToken "Galactus" #["Elder", "Alien"] 16 16 (some .black)
       ((Keyword.flying).merge Keyword.trample)) with
-    supertypes := #[.legendary] }
+    supertypes := #[.legendary]
+    triggeredAbilities := #[.triggered .attack galactusAttackTrigger] }
 
 def tigerGodToken : CardDef :=
   { (creatureToken "The Tiger God" #["Cat", "God"] 4 4 (some .green)) with
     supertypes := #[.legendary]
-    staticAbilities := #[.cantBeBlockedExceptBy 2] }
+    staticAbilities := #[.cantBeBlockedByMoreThan 1] }
 
 def sturdyShieldToken : CardDef :=
   { name := "Sturdy Shield"
