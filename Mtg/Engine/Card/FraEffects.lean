@@ -637,56 +637,6 @@ def activatedAbilities : Array ActivatedAbility :=
     { mana := ManaCost.ofGeneric 2, fra := .sacrificeAnotherCreatureOrPlaneswalker }
   ]
 
-/-- FRA loyalty abilities and abilities granted to planeswalkers, as effects
-the parser reads after the loyalty cost. -/
-def loyaltyEffects : Array Effect :=
-  let perOpp (noun : String) (types : Array CardType) : EffectTargetKind :=
-    .filtered { noun, types, controller := .eachOpponent }
-  #[
-  ab (.createTokens .illusion11blue 1) "Create a 1/1 blue Illusion creature token",
-  ab (.fra .bounceEachTarget)
-    "For each opponent, return up to one target artifact or creature that player controls to its owner's hand"
-    (perOpp "up to one target artifact or creature that player controls" #[.artifact, .creature])
-    (allowsZeroTargets := true),
-  ab (.fra .drawThreeThenCountersPerHand)
-    "Draw three cards. Then put X +1/+1 counters on each creature you control, where X is the number of cards in your hand",
-  ab (.fra .surveilReturnNoncreatureNonland)
-    "Surveil 1. If you put a noncreature, nonland card into your graveyard this way, put that card into your hand",
-  ab (.fra .addBlueNoncreatureOnly) "Add {U}. Spend this mana only to cast a noncreature spell",
-  ab (.fra .tapAndStunX) "Tap target artifact or creature. Put X stun counters on it"
-    (.filtered { noun := "target artifact or creature", types := #[.artifact, .creature] }),
-  ab (.fra .emblemDrawOnCast) "You get an emblem with \"Whenever you cast a spell, draw a card.\"",
-  ab (.fra .empowerJacePerIsland) "Empower Jace X, where X is the number of Islands you control",
-  ab (.fra .attackersGetMinusFiveUntilYourTurn)
-    "Until your next turn, whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn",
-  ab (.fra .exileOpponentLibrariesButBottom) "Exile all but the bottom card of each opponent's library",
-  ab (.fra .minusFourMinusOneUntilYourTurn) "Up to one target creature gets -4/-1 until your next turn"
-    (.filtered { TargetFilter.creature with noun := "up to one target creature" }) (allowsZeroTargets := true),
-  ab (.fra .eachPlayerSacrificesThenBeast)
-    "Each player sacrifices a creature of their choice. If you sacrificed a creature this way, create a 4/4 green Beast creature token with trample",
-  ab (.fra .eachOpponentDiscardsTwoDrawPerShort)
-    "Each opponent discards two cards. For each opponent who didn't discard two nonland cards this way, you draw a card",
-  ab (.fra .discardHandDrawPerCreature) "Discard your hand, then draw a card for each creature you control",
-  ab (.fra (.damageEachCreatureExceptYourTokens 4)) "This deals 4 damage to each creature except for tokens you control",
-  ab (.fra .emblemCreaturesGetTwoTwo) "You get an emblem with \"Creatures you control get +2/+2.\"",
-  ab (.fra .untapTargets) "Untap up to two target lands"
-    (.filtered { noun := "up to two target lands", types := #[.land] }) (allowsZeroTargets := true) (maxTargets := 2),
-  ab (.fra .attackersGetTwoTwoTrampleUntilYourTurn)
-    "Until your next turn, whenever one or more creatures attack one of your opponents, those creatures get +2/+2 and gain trample until end of turn",
-  ab (.fra (.damageEachOpponentGainLife 1))
-    "This planeswalker deals 1 damage to each opponent and you gain 1 life",
-  ab (.fra .plusOnePerLand) "Put a +1/+1 counter on target creature for each land you control"
-    (.filtered TargetFilter.creature),
-  ab (.fra .maySacrificeCreatureForBeast)
-    "You may sacrifice a creature. If you do, create a 4/4 green Beast creature token with trample",
-  ab (.fra (.damageUpToOneAndPlayer 2))
-    "This planeswalker deals 2 damage to up to one target creature or planeswalker and 2 damage to target player"
-    (.multi #[{ TargetFilter.creatureOrPlaneswalker with noun := "up to one target creature or planeswalker" },
-      { noun := "target player", zone := .player }] #[0]),
-  ab (.createTokens .leviathan88hexproof 1) "Create an 8/8 blue Leviathan creature token with hexproof"
-  ]
-
-
 open TriggeredAbility in
 /-- Triggered abilities of cards from other sets that FRA rulings name
 (The Ozolith; Ezuri, Stalker of Spheres). -/
