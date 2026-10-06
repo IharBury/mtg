@@ -537,7 +537,127 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.addMana #[.colored .red, .colored .red],
   Effect.firstDealsStatDamageToSecond false,
   Effect.firstDealsStatDamageToSecond true,
-] ++ FraCandidates.spellEffects
+  Effect.generousRevival,
+  Effect.hexhavenBattalion,
+  Effect.kindredJudgment,
+  Effect.loyalTutor,
+  Effect.predictivePreparations,
+  Effect.prophesiedEnd,
+  Effect.refuteDestiny,
+  Effect.returnToTheLightRealms,
+  Effect.surgicalPrecisionDestroy,
+  Effect.drawAndGainLife 1 2,
+  Effect.yourFateEndsHere,
+  Effect.counterTargetSpell,
+  Effect.cruelCalculations,
+  Effect.icyReceptionCounter,
+  Effect.targetCreatureGets (-5) 0,
+  Effect.preciseRedaction,
+  Effect.sphinxsApproach,
+  Effect.unsummon,
+  Effect.unwindHistory,
+  Effect.arcOfFortune,
+  Effect.castAwayDoubt,
+  Effect.extendedAbsence,
+  Effect.extrapolateTheImpossible,
+  Effect.overwriteTheMultiverse,
+  Effect.rewriteRegrets,
+  Effect.riseDraw,
+  Effect.allCreaturesGet (-3) (-3),
+  Effect.destroyTargetCreatureOrPlaneswalker,
+  Effect.solveForDisappointment,
+  Effect.terminalCriticism,
+  Effect.vraskasMercyDestroy,
+  Effect.vraskasMercyEmpower,
+  Effect.artifistAcumen,
+  Effect.awakenTheInferno,
+  Effect.commandTheStage,
+  Effect.essenceBurn,
+  Effect.fulminousForteSweep,
+  Effect.damageToCreatureOrPlaneswalker 5,
+  Effect.moltenTide,
+  Effect.enroot,
+  Effect.flourishingGrapple,
+  Effect.restoreWithEmpathy,
+  Effect.somethingWorthSaving,
+  Effect.tethermagesAdvantage,
+  Effect.creaturesYouControlGetUntilEot 2 0,
+  Effect.chargeTheSanctumPump,
+  Effect.clashOfElements,
+  Effect.entrustTheSpark,
+  Effect.drawThenEmpower 1 2,
+  Effect.bounceSpellOrCreature,
+  Effect.damageToCreatureWithFlying 6,
+  Effect.plusOneThenGrant 2 Keyword.trample,
+  Effect.addColorless 3,
+  Effect.recursiveRecruitment,
+  Effect.targetCreatureGains (Keyword.firstStrike.merge Keyword.deathtouch)
+    "first strike and deathtouch",
+  Effect.cadetWithHaste,
+  Effect.stingingVitriol,
+  Effect.theorixCounter,
+  Effect.millThenDraw 3 1,
+  Effect.twinnedVision,
+  Effect.twistedFates,
+  Effect.permanentYouControlGains (Keyword.hexproof.merge Keyword.indestructible),
+  Effect.drawAndGainLife 1 3,
+  Effect.vindictiveTriumph,
+  Effect.tamsResistance,
+  Effect.returnLegendaryCardToHand,
+  Effect.plusOneVigilanceIndestructible,
+  Effect.fraTapTargetCreature,
+  Effect.untapTargetCreature,
+  Effect.drawThenDiscardOne,
+  Effect.destroyNoncreatureNonland,
+  Effect.gainLifeMode 4,
+  Effect.minusPowerPerGraveyard,
+  Effect.surveilMode 2,
+  Effect.sourceDealsDamageToCreatureOrPlaneswalker 4,
+  Effect.createCadetMode,
+  Effect.drawMode,
+  FraCandidates.ab (.createTokens .illusion11blue 1) "Create a 1/1 blue Illusion creature token",
+  FraCandidates.ab (.fra .bounceEachTarget)
+    "For each opponent, return up to one target artifact or creature that player controls to its owner's hand"
+    (.filtered { noun := "up to one target artifact or creature that player controls",
+                 types := #[.artifact, .creature], controller := .eachOpponent })
+    (allowsZeroTargets := true),
+  FraCandidates.ab (.fra .drawThreeThenCountersPerHand)
+    "Draw three cards. Then put X +1/+1 counters on each creature you control, where X is the number of cards in your hand",
+  FraCandidates.ab (.fra .surveilReturnNoncreatureNonland)
+    "Surveil 1. If you put a noncreature, nonland card into your graveyard this way, put that card into your hand",
+  FraCandidates.ab (.fra .addBlueNoncreatureOnly) "Add {U}. Spend this mana only to cast a noncreature spell",
+  FraCandidates.ab (.fra .tapAndStunX) "Tap target artifact or creature. Put X stun counters on it"
+    (.filtered { noun := "target artifact or creature", types := #[.artifact, .creature] }),
+  FraCandidates.ab (.fra .emblemDrawOnCast) "You get an emblem with \"Whenever you cast a spell, draw a card.\"",
+  FraCandidates.ab (.fra .empowerJacePerIsland) "Empower Jace X, where X is the number of Islands you control",
+  FraCandidates.ab (.fra .attackersGetMinusFiveUntilYourTurn)
+    "Until your next turn, whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn",
+  FraCandidates.ab (.fra .exileOpponentLibrariesButBottom) "Exile all but the bottom card of each opponent's library",
+  FraCandidates.ab (.fra .minusFourMinusOneUntilYourTurn) "Up to one target creature gets -4/-1 until your next turn"
+    (.filtered { TargetFilter.creature with noun := "up to one target creature" }) (allowsZeroTargets := true),
+  FraCandidates.ab (.fra .eachPlayerSacrificesThenBeast)
+    "Each player sacrifices a creature of their choice. If you sacrificed a creature this way, create a 4/4 green Beast creature token with trample",
+  FraCandidates.ab (.fra .eachOpponentDiscardsTwoDrawPerShort)
+    "Each opponent discards two cards. For each opponent who didn't discard two nonland cards this way, you draw a card",
+  FraCandidates.ab (.fra .discardHandDrawPerCreature) "Discard your hand, then draw a card for each creature you control",
+  FraCandidates.ab (.fra (.damageEachCreatureExceptYourTokens 4)) "This deals 4 damage to each creature except for tokens you control",
+  FraCandidates.ab (.fra .emblemCreaturesGetTwoTwo) "You get an emblem with \"Creatures you control get +2/+2.\"",
+  FraCandidates.ab (.fra .untapTargets) "Untap up to two target lands"
+    (.filtered { noun := "up to two target lands", types := #[.land] }) (allowsZeroTargets := true) (maxTargets := 2),
+  FraCandidates.ab (.fra .attackersGetTwoTwoTrampleUntilYourTurn)
+    "Until your next turn, whenever one or more creatures attack one of your opponents, those creatures get +2/+2 and gain trample until end of turn",
+  FraCandidates.ab (.fra (.damageEachOpponentGainLife 1))
+    "This planeswalker deals 1 damage to each opponent and you gain 1 life",
+  FraCandidates.ab (.fra .plusOnePerLand) "Put a +1/+1 counter on target creature for each land you control"
+    (.filtered TargetFilter.creature),
+  FraCandidates.ab (.fra .maySacrificeCreatureForBeast)
+    "You may sacrifice a creature. If you do, create a 4/4 green Beast creature token with trample",
+  FraCandidates.ab (.fra (.damageUpToOneAndPlayer 2))
+    "This planeswalker deals 2 damage to up to one target creature or planeswalker and 2 damage to target player"
+    (.multi #[{ TargetFilter.creatureOrPlaneswalker with noun := "up to one target creature or planeswalker" },
+      { noun := "target player", zone := .player }] #[0]),
+  FraCandidates.ab (.createTokens .leviathan88hexproof 1) "Create an 8/8 blue Leviathan creature token with hexproof",
+]
 
 def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .otherCreaturesHaveTrample #["Orc", "Goblin"],
@@ -661,7 +781,48 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .toughnessAssignsCombatDamage,
   .negativePowerAssignsAsPositive,
   .castFromHandFreeUpToCreatures,
-] ++ FraStatic.all.map StaticAbility.fra
+  .fra .attackDespiteDefenderIfScried,
+  .fra .powerPerSevenInGraveyard,
+  .fra .creaturesYouControlHaveTrample,
+  .fra .firstStrikeDuringYourTurn,
+  .fra .equippedHuntersAxe,
+  .fra .enchantArtifactOrNonAuraEnchantment,
+  .fra .enchantedIsConstruct55,
+  .fra .enchantedGetsOneAndDeathtouch,
+  .fra .vigilanceIfJace,
+  .fra .powerAndFlyingIfSevenInGraveyard,
+  .fra .plusOneCreaturesHaveVigilance,
+  .fra .flyingHasteIfOpponentDealtNoncombat,
+  .fra .equippedMedicsKitesail,
+  .fra .entersTappedChooseColor,
+  .fra .tapAddChosenColor,
+  .fra .creaturesAttackDespiteDefender,
+  .fra .creatureTokensGetOneAndVigilance,
+  .fra .tapAddColorlessNotFromHand,
+  .fra .tapAddAnyColorPlaneswalkerOnly,
+  .fra .opponentsNoncreatureSpellsCostMore,
+  .fra .planeswalkersAttackedByOneAtMost,
+  .fra .extraPlusOneCounter,
+  .fra .noSpellsOrAbilitiesDuringCombat,
+  .fra .noncreatureSpellsCostLess,
+  .fra .costsLessIfCastNoncreature,
+  .fra .exileOpponentsDyingCreatures,
+  .fra .wardDiscardCard,
+  .fra .wardSacrificeThreePermanents,
+  .fra .powerPerCreatureAndPlaneswalkerCard,
+  .fra .otherPlusOneCreaturesHaveHaste,
+  .fra .creaturesYouControlHaveHaste,
+  .fra .noncombatDamagePlusOne,
+  .fra .powerEqualsBasicLandTypes,
+  .fra .otherCreaturesHaveTrample,
+  .fra .landsHaveHexproof,
+  .fra .hexproofUntilCombatDamage,
+  .fra .thoptersHaveHaste,
+  .fra .artifactCreaturesHaveVigilance,
+  .fra .doesntUntap,
+  .fra .entersChooseNonlandCardName,
+  .fra .chosenNameSpellsCantBeCast,
+]
 
 def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .onAttackPumpByGreatestPower,
@@ -1024,7 +1185,262 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .triggered .opponentsDealtCombatDamageYourTurn (Effect.ofTrigger .drawTwoWinIfEmptyShuffleSource),
   .triggered .forestYouControlEnters (Effect.ofTrigger .pumpIfFiveOtherForests),
   .onStep (Effect.ofTrigger .surveilReturnIfGainedLife),
-] ++ FraCandidates.triggeredAbilities ++ FraCandidates.rulingSupportTriggers
+  TriggeredAbility.fra (.fra .castThis) "When you cast this spell, untap all lands you control."
+    (.fra .untapAllLandsYouControl),
+  TriggeredAbility.fra .youCastCreature
+    "Whenever you cast a creature spell, exile up to one other target creature you control, then return that card to the battlefield under its owner's control."
+    (.fra .blink)
+    (.filtered { noun := "up to one other target creature you control", types := #[.creature], controller := .you, another := true })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra .yourBeginCombat
+    "At the beginning of combat on your turn, you may remove a +1/+1 counter from this creature. If you do, put a +1/+1 counter on each other creature you control."
+    (.fra .mayMovePlusOneToEachOther),
+  TriggeredAbility.fra .attack
+    "Whenever this creature attacks, empower Jace X, where X is the number of creatures you control."
+    (.fra .empowerJacePerCreature),
+  TriggeredAbility.fra .enter "When this Aura enters, tap enchanted creature. It becomes unprepared."
+    (.fra .tapEnchantedUnprepare),
+  TriggeredAbility.fra .enter
+    "When this enchantment enters, the owner of up to one other target nonland permanent puts it on their choice of the top or bottom of their library."
+    (.fra .ownerPutsOnTopOrBottom)
+    (.filtered { noun := "up to one other target nonland permanent", nonland := true, another := true })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra .enter
+    "When this creature enters, draw two cards, then discard two cards. When you discard one or more nonland cards this way, tap up to that many target creatures and put a stun counter on each of them."
+    (.fra .drawTwoDiscardTwoStun),
+  TriggeredAbility.fra .attack "Whenever this creature attacks, draw a card, then discard a card."
+    (.sequence [.draw 1, .discard 1]),
+  TriggeredAbility.fra .dies "When this creature dies, if it isn't a token, create a token that's a copy of it."
+    (.fra .copyTokenOfSourceIfNotToken) (cond := .sourceNotToken),
+  TriggeredAbility.fra (.or .enter .dies) "When this creature enters or dies, you gain 2 life." (.gainLife 2),
+  TriggeredAbility.fra .enter "When this creature enters, mill three cards." (.millSelf 3),
+  TriggeredAbility.fra (.fra .yourBeginCombatFromGraveyard)
+    "At the beginning of combat on your turn, if two or more creatures died this turn, return this card from your graveyard to the battlefield."
+    (.fra (.returnSourceFromGy false false 0)) (cond := .twoCreaturesDiedThisTurn),
+  TriggeredAbility.fra .enter
+    "When this Equipment enters, you may pay {2}. When you do, for each opponent, destroy up to one target creature or planeswalker that player controls."
+    (.fra (.mayPayThenDestroyPerOpponent 2)),
+  TriggeredAbility.fra .enter "When this creature enters, target creature gets +2/+2 and gains deathtouch until end of turn."
+    (.onPermanent (.pumpAndGrant 2 2 Keyword.deathtouch)) (.filtered TargetFilter.creature),
+  TriggeredAbility.fra .attack "Whenever this creature attacks, it deals 1 damage to each opponent and you gain 1 life."
+    (.fra (.damageEachOpponentGainLife 1)),
+  TriggeredAbility.fra .enter "When this enchantment enters, it deals X damage to any target." (.fra .damageX) .playerOrCreature,
+  TriggeredAbility.fra .youCastNoncreature "Whenever you cast a noncreature spell, put a +1/+1 counter on this creature."
+    (.fra (.plusOneOnSource 1)),
+  TriggeredAbility.fra (.fra .eachUpkeepFromGraveyard)
+    "At the beginning of each upkeep, if an opponent was dealt noncombat damage last turn, return this card from your graveyard to your hand."
+    (.fra (.returnSourceFromGy true false 0)) (cond := .opponentDealtNoncombatDamageLastTurn),
+  TriggeredAbility.fra .enter
+    "When this creature enters, creatures you control gain trample and get +X/+0 until end of turn, where X is the number of artifacts you control."
+    (.fra .trampleAndPowerPerArtifact),
+  TriggeredAbility.fra .enter
+    "When this creature enters, search your library for a card, put it into your hand, shuffle, then discard a card at random."
+    (.fra .searchCardThenDiscardRandom),
+  TriggeredAbility.fra .enter "When this creature enters, create a 2/2 colorless Wizard Soldier creature token named Cadet."
+    (.createTokens .cadet 1),
+  TriggeredAbility.fra (.fra .opponentsDealtNoncombatDamage)
+    "Whenever one or more opponents are dealt noncombat damage, creatures you control get +1/+0 until end of turn."
+    (.creaturesYouControlPump 1 0),
+  TriggeredAbility.fra .enter
+    "When this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost."
+    (.fra .grantFlashbackUntilEot)
+    (.filtered { noun := "target instant or sorcery card in your graveyard", zone := .yourGraveyard, types := #[.instant, .sorcery] }),
+  TriggeredAbility.fra .enter "When this creature enters, you may discard a card. When you do, this creature deals 2 damage to any target."
+    (.fra (.mayDiscardThenDamage 2)),
+  TriggeredAbility.fra .combatDamageToPlayer
+    "Whenever this creature deals combat damage to a player, return target land card from your graveyard to your hand."
+    (.fra .returnFromGyToHand)
+    (.filtered { noun := "target land card from your graveyard", zone := .yourGraveyard, types := #[.land] }),
+  TriggeredAbility.fra .anotherCreatureYouControlEnters "Whenever another creature you control enters, you gain 1 life."
+    (.gainLife 1),
+  TriggeredAbility.fra .sourceDealtDamage
+    "Whenever this creature is dealt damage, you may search your library for up to that many land cards, put them onto the battlefield tapped, then shuffle."
+    (.fra .maySearchLandsEqualDamage),
+  TriggeredAbility.fra .enter "When this creature enters, create a Heartwood token." (.createTokens .heartwood 1),
+  TriggeredAbility.fra (.fra .youPutLoyaltyCounters)
+    "Whenever you put one or more loyalty counters on a planeswalker, put a +1/+1 counter on this creature."
+    (.fra (.plusOneOnSource 1)),
+  TriggeredAbility.fra .enter
+    "When this creature enters, you may search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
+    (.fra .maySearchBasicLandTapped),
+  TriggeredAbility.fra .enter "When this creature enters, put three +1/+1 counters on target creature."
+    (.onPermanent (.plusOne 3)) (.filtered TargetFilter.creature),
+  TriggeredAbility.fra (.or .enter .dies) "When this creature enters or dies, create a Heartwood token."
+    (.createTokens .heartwood 1),
+  TriggeredAbility.fra .youGainLife "Whenever you gain life, draw a card. This ability triggers only once each turn."
+    (.draw 1) (once := true),
+  TriggeredAbility.fra .youScryOrSurveil "Whenever you scry or surveil, put a +1/+1 counter on each creature you control."
+    (.fra .plusOneOnEachCreatureYouControl),
+  TriggeredAbility.fra (.fra .enchantedDies)
+    "When enchanted creature dies, return that card to the battlefield tapped under its owner's control."
+    (.fra .returnCauseTapped),
+  TriggeredAbility.fra .eachEndStep "At the beginning of the end step, sacrifice this creature." (.fra .sacrificeSource),
+  TriggeredAbility.fra (.fra .creatureYouControlAttacks)
+    "Whenever a creature you control attacks, that creature deals 1 damage to each opponent."
+    (.fra (.causeDealsDamageToEachOpponent 1)),
+  TriggeredAbility.fra .youGainLife
+    "Whenever you gain life, create a colorless artifact token named Lotus with \"{T}, Sacrifice this token: Add three mana of any one color.\" This ability triggers only once each turn."
+    (.createTokens .lotus 1) (once := true),
+  TriggeredAbility.fra .enter "When this creature enters, it fights up to one target creature an opponent controls."
+    (.fra .sourceFightsTarget)
+    (.filtered { noun := "up to one target creature an opponent controls", types := #[.creature], controller := .opponent })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra .enter
+    "When this creature enters, if you cast it, target opponent reveals their hand. You choose a nonland card from it. Exile that card."
+    (.fra .exileFromHandUntilLeaves) .opponent (cond := .sourceWasCast),
+  TriggeredAbility.fra .enter
+    "When this creature enters, mill four cards. When you do, return target land card from your graveyard to the battlefield tapped."
+    (.fra (.millThenReturnLandTapped 4)),
+  TriggeredAbility.fra (.fra .thisOrAnotherCreatureYouControlEnters)
+    "Whenever this creature or another creature you control enters, surveil 1." (.surveil 1),
+  TriggeredAbility.fra (.fra (.opponentCastsSpellMvAtMost 2))
+    "Whenever an opponent casts a spell with mana value 2 or less, you gain 2 life." (.gainLife 2),
+  TriggeredAbility.fra .enter
+    "When this artifact enters, exile target nonland permanent an opponent controls with mana value 3 or less until this artifact leaves the battlefield."
+    (.fra .exileUntilSourceLeaves)
+    (.filtered { noun := "target nonland permanent an opponent controls with mana value 3 or less", nonland := true, controller := .opponent, mvAtMost := some 3 }),
+  TriggeredAbility.fra .enter
+    "When this creature enters, you may sacrifice a land. If you do, create two tapped Heartwood tokens."
+    (.fra .maySacrificeLandForHeartwoods),
+  TriggeredAbility.fra .enter
+    "When this creature enters, if you cast him, exile up to one target nonland card of each card type from your graveyard. Copy those cards. You may cast any number of spells with total mana value 6 or less from among the copies without paying their mana costs."
+    (.fra .uldarosCopies)
+    (.filtered { noun := "up to one target nonland card of each card type from your graveyard"
+                 zone := .yourGraveyard, nonland := true })
+    (allowsZeroTargets := true) (maxTargets := 8) (cond := .sourceWasCast),
+  TriggeredAbility.fra .enter "When this Equipment enters, it deals 3 damage to any target and you gain 3 life."
+    (.fra (.damageThenGainLife 3)) .playerOrCreature,
+  TriggeredAbility.fra .attack "Whenever this creature attacks, exile up to one target card from a graveyard."
+    (.fra .exileCardFromGraveyard)
+    (.filtered { noun := "up to one target card from a graveyard", zone := .anyGraveyard })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra (.fra .youCastPreparedSpell)
+    "Whenever you cast a prepared spell, copy it. You may choose new targets for the copy."
+    (.fra .copyCauseSpell),
+  TriggeredAbility.fra .enter "When this artifact enters, draw a card, then discard a card." (.sequence [.draw 1, .discard 1]),
+  TriggeredAbility.fra .yourUpkeep
+    "At the beginning of your upkeep, surveil 1. Then if there are seven or more cards in your graveyard, sacrifice this artifact, it deals 2 damage to each opponent, and you gain 2 life."
+    (.fra .eyeOfJace),
+  TriggeredAbility.fra (.fra .youCastEquipmentOrTargetingCreatureYouControl)
+    "Whenever you cast an Equipment spell or a spell that targets a creature you control, draw a card. This ability triggers only once each turn."
+    (.draw 1) (once := true),
+  TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlEnters)
+    "Whenever another creature or planeswalker you control enters, you gain 1 life." (.gainLife 1),
+  TriggeredAbility.fra .youScryOrSurveil
+    "Whenever you scry or surveil, create a 1/1 colorless Thopter artifact creature token with flying. This ability triggers only once each turn."
+    (.createTokens .thopter 1) (once := true),
+  TriggeredAbility.fra .youGainLife "Whenever you gain life, put a loyalty counter on each planeswalker you control."
+    (.fra .loyaltyOnEachPlaneswalkerYouControl),
+  TriggeredAbility.fra (.fra .creatureYouControlAttacksPlayerAlone)
+    "Whenever a creature you control attacks a player alone, it gains double strike until end of turn."
+    (.fra (.causeGains Keyword.doubleStrike)),
+  TriggeredAbility.fra (.fra .anotherNontokenCreatureYouControlEnters)
+    "Whenever another nontoken creature you control enters, untap this creature." (.fra .untapSource),
+  TriggeredAbility.fra .enter
+    "When this creature enters, for each opponent, tap up to one target creature that player controls. Put a stun counter on each of those creatures."
+    (.fra .tapAndStunPerOpponent) (.filtered { noun := "up to one target creature that player controls", types := #[.creature], controller := .eachOpponent })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra .eachEndStep
+    "At the beginning of each end step, if you've drawn three or more cards this turn, create a 3/3 blue Angel creature token with flying."
+    (.createTokens .angel33blue 1) (cond := .drewThreeThisTurn),
+  TriggeredAbility.fra (.fra .creatureOpponentControlsEnters)
+    "Whenever a creature an opponent controls enters, this creature deals 1 damage to that player."
+    (.fra (.damageCauseController 1)),
+  TriggeredAbility.fra (.fra .opponentActivatesLoyaltyAbility)
+    "Whenever an opponent activates a loyalty ability, this creature deals 1 damage to that player."
+    (.fra (.damageCauseController 1)),
+  TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlEnters)
+    "Whenever another creature or planeswalker you control enters, mill two cards." (.millSelf 2),
+  TriggeredAbility.fra .enter "When this creature enters, remove up to three counters from another target creature or planeswalker."
+    (.fra (.removeUpToCounters 3))
+    (.filtered { TargetFilter.creatureOrPlaneswalker with noun := "another target creature or planeswalker", another := true }),
+  TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
+    "Whenever another creature or planeswalker you control dies, this creature deals 1 damage to target opponent and you gain 1 life."
+    (.fra (.damageTargetGainLife 1)) .opponent,
+  TriggeredAbility.fra (.fra .opponentDealtNoncombatDamage)
+    "Whenever an opponent is dealt noncombat damage, put a +1/+1 counter on this creature."
+    (.fra (.plusOneOnSource 1)),
+  TriggeredAbility.fra (.fra .playerDiscards)
+    "Whenever a player discards one or more cards, this creature deals 1 damage to each opponent."
+    (.fra (.damageEachOpponent 1)),
+  TriggeredAbility.fra .creatureYouControlDies
+    "Whenever a creature you control dies, put a loyalty counter on each planeswalker you control."
+    (.fra .loyaltyOnEachPlaneswalkerYouControl),
+  TriggeredAbility.fra .enter
+    "When this creature enters, you may sacrifice a creature or planeswalker. When you do, each opponent sacrifices a creature of their choice."
+    (.fra .maySacrificeThenEdict),
+  TriggeredAbility.fra .anotherCreatureYouControlEnters
+    "Whenever another creature you control enters, this creature gets +X/+0 until end of turn, where X is that creature's power."
+    (.fra .sourceGetsCausePower),
+  TriggeredAbility.fra (.fra .creatureYouControlAttacksPlayerAlone)
+    "Whenever a creature you control attacks a player alone, discard a card, then draw a card. Then put a +1/+1 counter on that creature for each card you've discarded this turn."
+    (.fra .jiangYangguAlone),
+  TriggeredAbility.fra .enter "When this creature enters, create a 5/5 red Dragon creature token with flying."
+    (.createTokens .dragon55flying 1),
+  TriggeredAbility.fra .landYouControlEnters
+    "Whenever a land you control enters, this creature deals 1 damage to each opponent. If that land is a Mountain, add {R}."
+    (.fra .kothGeomancer),
+  TriggeredAbility.fra .enter "When this creature enters, create a 1/1 colorless Thopter artifact creature token with flying."
+    (.createTokens .thopter 1),
+  TriggeredAbility.fra (.fra .opponentSmallCreatureBlocks)
+    "Whenever a creature an opponent controls with power or toughness 1 or less blocks, this creature deals 1 damage to that creature's controller."
+    (.fra (.damageCauseController 1)),
+  TriggeredAbility.fra .yourEndStep
+    "At the beginning of your end step, if you didn't cast a spell this turn, put two +1/+1 counters on this creature."
+    (.fra (.plusOneOnSource 2)) (cond := .castNoSpellThisTurn),
+  TriggeredAbility.fra .enter
+    "When this creature enters, search your library for up to X basic land cards with different names, reveal them, put them into your hand, then shuffle."
+    (.fra .fblthpSearch),
+  TriggeredAbility.fra (.fra (.creatureYouControlPowerAtLeastEnters 4))
+    "Whenever a creature you control with power 4 or greater enters, draw a card." (.draw 1),
+  TriggeredAbility.fra .enter "When this creature enters, create Mowu, a legendary 3/3 green Dog creature token."
+    (.createTokens .mowu 1),
+  TriggeredAbility.fra .yourEndStep "At the beginning of your end step, untap all tokens you control."
+    (.fra .untapAllTokensYouControl),
+  TriggeredAbility.fra .enter
+    "When this creature enters, you may discard a card. If you do, search your library for an enchantment card, reveal it, put it into your hand, then shuffle."
+    (.fra .mayDiscardThenSearchEnchantment),
+  TriggeredAbility.fra (.fra .youDiscardThis) "When you discard this card, you gain 3 life." (.gainLife 3),
+  TriggeredAbility.fra .youActivateLoyaltyAbility
+    "Whenever you activate a loyalty ability, you gain 1 life. You may play an additional land this turn."
+    (.fra (.gainLifeAndExtraLand 1)),
+  TriggeredAbility.fra .enter
+    "When this creature enters, another target creature you control fights up to one target creature an opponent controls."
+    (.fra .firstFightsSecond)
+    (.multi #[{ noun := "another target creature you control", types := #[.creature], controller := .you, another := true },
+      { noun := "up to one target creature an opponent controls", types := #[.creature], controller := .opponent }] #[1]),
+  TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
+    "Whenever another creature or planeswalker you control dies, you gain 1 life." (.gainLife 1),
+  TriggeredAbility.fra .enter
+    "When this creature enters, for each opponent, put X -1/-1 counters on up to one target creature that player controls, where X is the greatest mana value among cards in your graveyard."
+    (.fra .minusOnesPerOpponent) (.filtered { noun := "up to one target creature that player controls", types := #[.creature], controller := .eachOpponent })
+    (allowsZeroTargets := true),
+  TriggeredAbility.fra .enter "When this creature enters, draw a card for each color among other artifacts you control."
+    (.fra .drawPerColorAmongOtherArtifacts),
+  TriggeredAbility.fra .youAttack
+    "Whenever you attack, if you've activated a loyalty ability this turn, untap target attacking creature. It can't be blocked this turn."
+    (.fra .untapUnblockable)
+    (.filtered { noun := "target attacking creature", types := #[.creature], attacking := true })
+    (cond := .activatedLoyaltyThisTurn),
+  TriggeredAbility.fra (.fra .thisOrAnotherCreatureYouControlEnters)
+    "Whenever this creature or another creature you control enters, put a +1/+1 counter on target creature that entered this turn."
+    (.onPermanent (.plusOne 1))
+    (.filtered { noun := "target creature that entered this turn", types := #[.creature], enteredThisTurn := true }),
+  TriggeredAbility.fra .youCastNoncreature
+    "Whenever you cast a noncreature spell, create a 1/1 colorless Thopter artifact creature token with flying."
+    (.createTokens .thopter 1),
+  TriggeredAbility.fra (.fra .youCastArtifactOrCreature) "Whenever you cast an artifact or creature spell, untap this creature."
+    (.fra .untapSource),
+  TriggeredAbility.fra (.fra .creatureYouControlLeaves)
+    "Whenever a creature you control leaves the battlefield, if it had counters on it, put those counters on this artifact."
+    (.fra .putCauseCountersOnSource) (cond := .causeHadCounters),
+  TriggeredAbility.fra .yourBeginCombat
+    "At the beginning of combat on your turn, if this artifact has counters on it, you may move all counters from this artifact onto target creature."
+    (.fra .mayMoveSourceCountersToTarget) (.filtered TargetFilter.creature) (cond := .sourceHasCounters),
+  TriggeredAbility.fra .enter "When this creature enters, you may pay {3}. If you do, proliferate twice."
+    (.fra (.mayPayThenProliferate 3 2)),
+  TriggeredAbility.fra (.fra .youProliferate) "Whenever you proliferate, draw a card." (.draw 1),
+]
 
 def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   activated (Effect.sourceGets 1 1) (ManaCost.ofGeneric 2)
@@ -1235,7 +1651,187 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
           (onlyAsSorcery := true),
   activated (Effect.abilityEmpowerJace 2) (ManaCost.ofGeneric 1)
           (activateFromGraveyard := true) (exileSourceFromGraveyard := true),
-] ++ FraCandidates.activatedAbilities
+  ActivatedAbility.fra
+    "{3}, Exile this card from your hand: Target land gains \"{T}: Add {C}{C}\" until this card is cast from exile. You may cast this card for as long as it remains exiled."
+    (FraCandidates.ab (.fra .emrakulGrantMana) "Target land gains \"{T}: Add {C}{C}\" until this card is cast from exile. You may cast this card for as long as it remains exiled"
+      (.filtered { noun := "target land", types := #[.land] }))
+    { mana := ManaCost.ofGeneric 3, fra := .exileSourceFromHand } (activateFromHand := true),
+  ActivatedAbility.fra "{4}{W}: Creatures you control get +1/+1 until end of turn."
+    (FraCandidates.ab (.creaturesYouControlPump 1 1) "Creatures you control get +1/+1 until end of turn")
+    { mana := ⟨#[.generic 4, .colored .white]⟩ },
+  ActivatedAbility.fra "{3}{U}{U}, Exile this card from your graveyard: Draw two cards."
+    (FraCandidates.ab (.draw 2) "Draw two cards")
+    { mana := ⟨#[.generic 3, .colored .blue, .colored .blue]⟩, exileSourceFromGraveyard := true }
+    (activateFromGraveyard := true),
+  ActivatedAbility.fra "{3}{U}: Surveil 1." (FraCandidates.ab (.surveil 1) "Surveil 1")
+    { mana := ⟨#[.generic 3, .colored .blue]⟩ },
+  ActivatedAbility.fra "{U}, Sacrifice this creature: The next spell you cast this turn can't be countered."
+    (FraCandidates.ab (.fra .nextSpellCantBeCountered) "The next spell you cast this turn can't be countered")
+    { mana := ⟨#[.colored .blue]⟩, sacrificeSource := true },
+  ActivatedAbility.fra "{2}: This creature gets +1/-1 until end of turn."
+    (FraCandidates.ab (.onSource (.pump 1 (-1))) "This creature gets +1/-1 until end of turn")
+    { mana := ManaCost.ofGeneric 2 },
+  ActivatedAbility.fra "{3}{B}, Exile this card from your graveyard: Return another target creature card from your graveyard to your hand."
+    (FraCandidates.ab (.fra .returnFromGyToHand) "Return another target creature card from your graveyard to your hand"
+      (.filtered { noun := "another target creature card from your graveyard", zone := .yourGraveyard
+                   types := #[.creature], another := true }))
+    { mana := ⟨#[.generic 3, .colored .black]⟩, exileSourceFromGraveyard := true }
+    (activateFromGraveyard := true),
+  ActivatedAbility.fra "{T}, Discard a card: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
+    { tap := true, discardACard := true },
+  ActivatedAbility.fra
+    "{3}{R}: Exile target creature or planeswalker you control. Reveal cards from the top of your library until you reveal a creature or planeswalker card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. Activate only as a sorcery."
+    (FraCandidates.ab (.fra .identityEcho) "Exile target creature or planeswalker you control"
+      (.filtered { TargetFilter.creatureOrPlaneswalker with
+        noun := "target creature or planeswalker you control", controller := .you }))
+    { mana := ⟨#[.generic 3, .colored .red]⟩ } (onlyAsSorcery := true),
+  ActivatedAbility.fra
+    "Sacrifice this creature: Destroy target artifact or enchantment. If that permanent was a legendary enchantment, draw a card. Activate only as a sorcery."
+    (FraCandidates.ab (.fra .destroyDrawIfLegendaryEnchantment) "Destroy target artifact or enchantment"
+      (.filtered { noun := "target artifact or enchantment", types := #[.artifact, .enchantment] }))
+    { sacrificeSource := true } (onlyAsSorcery := true),
+  ActivatedAbility.fra
+    "{1}, Sacrifice another artifact: Put a +1/+1 counter on this creature. It gains your choice of trample, hexproof, or haste until end of turn."
+    (FraCandidates.ab (.fra (.plusOneThenChooseKeyword [0, 1, 2])) "Put a +1/+1 counter on this creature")
+    { mana := ManaCost.ofGeneric 1, fra := .sacrificeAnotherArtifact },
+  ActivatedAbility.fra "{4}{G}: Return this card from your graveyard to your hand."
+    (FraCandidates.ab .returnFromGraveyardToHand "Return this card from your graveyard to your hand")
+    { mana := ⟨#[.generic 4, .colored .green]⟩ } (activateFromGraveyard := true),
+  ActivatedAbility.fra "{3}{G}, Discard this card: Destroy target creature with flying."
+    (FraCandidates.ab (.fra .destroy) "Destroy target creature with flying"
+      (.filtered { TargetFilter.creature with noun := "target creature with flying", withFlying := true }))
+    { mana := ⟨#[.generic 3, .colored .green]⟩, discardSource := true } (activateFromHand := true),
+  ActivatedAbility.fra "{6}{G}{G}: This creature gets +4/+4 and gains trample until end of turn."
+    (FraCandidates.ab (.onSource (.pumpAndTrample 4 4)) "This creature gets +4/+4 and gains trample until end of turn")
+    { mana := ⟨#[.generic 6, .colored .green, .colored .green]⟩ },
+  ActivatedAbility.fra
+    "{6}: Create a Heartwood token. Then this creature gets +X/+0 until end of turn, where X is the number of artifacts you control."
+    (FraCandidates.ab (.fra .heartwoodThenPowerPerArtifact) "Create a Heartwood token")
+    { mana := ManaCost.ofGeneric 6 },
+  ActivatedAbility.fra "{2}{W/B}: Return this card from your graveyard to your hand."
+    (FraCandidates.ab .returnFromGraveyardToHand "Return this card from your graveyard to your hand")
+    { mana := ⟨#[.generic 2, .hybrid .white .black]⟩ } (activateFromGraveyard := true),
+  ActivatedAbility.fra "{4}{G}{W}: Target creature gains trample and lifelink until end of turn."
+    (FraCandidates.ab (.onPermanent (.grantKeywords (Keyword.trample.merge Keyword.lifelink)))
+      "Target creature gains trample and lifelink until end of turn" (.filtered TargetFilter.creature))
+    { mana := ⟨#[.generic 4, .colored .green, .colored .white]⟩ },
+  ActivatedAbility.fra
+    "{4}: Create a 2/2 colorless Wizard Soldier creature token named Cadet. Then creatures you control gain haste until end of turn."
+    (FraCandidates.ab (.fra .cadetThenTeamHaste) "Create a Cadet") { mana := ManaCost.ofGeneric 4 },
+  ActivatedAbility.fra "{2}: Put target card from your graveyard on the bottom of your library."
+    (FraCandidates.ab (.fra .graveyardCardToLibraryBottom) "Put target card from your graveyard on the bottom of your library"
+      (.filtered { noun := "target card from your graveyard", zone := .yourGraveyard }))
+    { mana := ManaCost.ofGeneric 2 },
+  ActivatedAbility.fra
+    "{W}{U}: Return this card from your graveyard to the battlefield with a finality counter on it. Activate only if you've scried or surveilled this turn."
+    (FraCandidates.ab .returnFromGyWithFinality "Return this card from your graveyard to the battlefield with a finality counter on it")
+    { mana := ⟨#[.colored .white, .colored .blue]⟩ } (activateFromGraveyard := true)
+    (cond := .scriedOrSurveilledThisTurn),
+  ActivatedAbility.fra "{1}, {T}, Discard a legendary card: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
+    { mana := ManaCost.ofGeneric 1, tap := true, fra := .discardLegendaryCard },
+  ActivatedAbility.fra "Tap two untapped artifacts you control: Put two +1/+1 counters on this creature."
+    (FraCandidates.ab (.onSource (.plusOne 2)) "Put two +1/+1 counters on this creature")
+    { fra := .tapTwoUntappedArtifacts },
+  { ActivatedAbility.fra
+      "Equip {3}. This ability costs {1} less to activate for each +1/+1 counter on the creature it targets."
+      Effect.attachToTargetCreatureYouControl { mana := ManaCost.ofGeneric 3 } (onlyAsSorcery := true)
+    with costLessPerPlusOneOnTarget := true },
+  ActivatedAbility.fra "{2}: This creature gains flying until end of turn."
+    (FraCandidates.ab (.onSource (.grantKeywords Keyword.flying)) "This creature gains flying until end of turn")
+    { mana := ManaCost.ofGeneric 2 },
+  ActivatedAbility.fra "{5}, {T}, Exile this artifact: Destroy all creatures. Activate only as a sorcery."
+    (FraCandidates.ab (.fra .destroyAllCreatures) "Destroy all creatures")
+    { mana := ManaCost.ofGeneric 5, tap := true, fra := .exileSource } (onlyAsSorcery := true),
+  ActivatedAbility.fra
+    "{6}, Sacrifice this creature: Choose target creature or planeswalker an opponent controls. Its owner shuffles it into their library."
+    (FraCandidates.ab (.fra .ownerShufflesIntoLibrary) "Its owner shuffles it into their library"
+      (.filtered TargetFilter.oppCreatureOrPlaneswalker))
+    { mana := ManaCost.ofGeneric 6, sacrificeSource := true },
+  ActivatedAbility.fra "{2}, {T}, Discard a card: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
+    { mana := ManaCost.ofGeneric 2, tap := true, discardACard := true },
+  ActivatedAbility.fra
+    "{2}, {T}: Target creature that attacked this turn becomes prepared. Activate only as a sorcery."
+    (FraCandidates.ab (.onPermanent .becomePrepared) "Target creature that attacked this turn becomes prepared"
+      (.filtered { TargetFilter.creature with noun := "target creature that attacked this turn", attackedThisTurn := true }))
+    { mana := ManaCost.ofGeneric 2, tap := true } (onlyAsSorcery := true),
+  ActivatedAbility.fra "{1}{W}, Discard this card: It deals 4 damage to target attacking or blocking creature."
+    (FraCandidates.ab (.onPermanent (.dealDamage 4)) "It deals 4 damage to target attacking or blocking creature"
+      (.filtered { TargetFilter.creature with noun := "target attacking or blocking creature", attackingOrBlocking := true }))
+    { mana := ⟨#[.generic 1, .colored .white]⟩, discardSource := true } (activateFromHand := true),
+  ActivatedAbility.fra
+    "{1}, {T}, Discard a card: Another target creature or planeswalker you control gains hexproof until end of turn."
+    (FraCandidates.ab (.onPermanent (.grantKeywords Keyword.hexproof)) "Another target creature or planeswalker you control gains hexproof until end of turn"
+      (.filtered { TargetFilter.creatureOrPlaneswalker with
+        noun := "another target creature or planeswalker you control", controller := .you, another := true }))
+    { mana := ManaCost.ofGeneric 1, tap := true, discardACard := true },
+  ActivatedAbility.fra "{T}: Return another target permanent you control to its owner's hand. Activate only during your turn."
+    (FraCandidates.ab (.fra .bounce) "Return another target permanent you control to its owner's hand"
+      (.filtered { noun := "another target permanent you control", controller := .you, another := true }))
+    { tap := true } (onlyDuringYourTurn := true),
+  ActivatedAbility.fra "{T}: Target creature with a +1/+1 counter on it gains flying until end of turn."
+    (FraCandidates.ab (.onPermanent (.grantKeywords Keyword.flying)) "Target creature with a +1/+1 counter on it gains flying until end of turn"
+      (.filtered { TargetFilter.creature with noun := "target creature with a +1/+1 counter on it", withPlusOneCounter := true }))
+    { tap := true },
+  ActivatedAbility.fra "{6}: Put a +1/+1 counter on target legendary creature."
+    (FraCandidates.ab (.onPermanent (.plusOne 1)) "Put a +1/+1 counter on target legendary creature"
+      (.filtered { TargetFilter.creature with noun := "target legendary creature", legendary := true }))
+    { mana := ManaCost.ofGeneric 6 },
+  ActivatedAbility.fra "{6}: Put a +1/+1 counter on target nonlegendary creature."
+    (FraCandidates.ab (.onPermanent (.plusOne 1)) "Put a +1/+1 counter on target nonlegendary creature"
+      (.filtered { TargetFilter.creature with noun := "target nonlegendary creature", nonlegendary := true }))
+    { mana := ManaCost.ofGeneric 6 },
+  ActivatedAbility.fra "{T}: Draw a card, then discard a card."
+    (FraCandidates.ab (.sequence [.draw 1, .discard 1]) "Draw a card, then discard a card") { tap := true },
+  ActivatedAbility.fra "{2}{U}: Untap target creature."
+    (FraCandidates.ab (.onPermanent .untap) "Untap target creature" (.filtered TargetFilter.creature))
+    { mana := ⟨#[.generic 2, .colored .blue]⟩ },
+  ActivatedAbility.fra
+    "{3}{U}{U}: Until end of turn, whenever this creature deals combat damage to a player, draw two cards."
+    (FraCandidates.ab (.fra .grantCombatDamageDrawTwo) "Until end of turn, whenever this creature deals combat damage to a player, draw two cards")
+    { mana := ⟨#[.generic 3, .colored .blue, .colored .blue]⟩ },
+  ActivatedAbility.fra
+    "{4}{B}, Exile another creature card from your graveyard: Return this card from your graveyard to the battlefield tapped with a +1/+1 counter on her."
+    (FraCandidates.ab (.fra (.returnSourceFromGy false true 1)) "Return this card from your graveyard to the battlefield tapped")
+    { mana := ⟨#[.generic 4, .colored .black]⟩, fra := .exileAnotherCreatureCardFromGraveyard }
+    (activateFromGraveyard := true),
+  ActivatedAbility.fra
+    "{5}{B}: Return target creature or planeswalker card from your graveyard to the battlefield. Put a +1/+1 counter on this creature. Activate only as a sorcery."
+    (FraCandidates.ab (.fra .returnTargetThenPlusOneSource) "Return target creature or planeswalker card from your graveyard to the battlefield"
+      (.filtered { noun := "target creature or planeswalker card from your graveyard", zone := .yourGraveyard
+                   types := #[.creature, .planeswalker] }))
+    { mana := ⟨#[.generic 5, .colored .black]⟩ } (onlyAsSorcery := true) (exhaust := true),
+  ActivatedAbility.fra
+    "Sacrifice another creature or planeswalker: This creature gets -2/-0 until end of turn. Activate only if there are seven or more cards in your graveyard."
+    (FraCandidates.ab (.onSource (.pump (-2) 0)) "This creature gets -2/-0 until end of turn")
+    { fra := .sacrificeAnotherCreatureOrPlaneswalker } (cond := .graveyardAtLeast 7),
+  ActivatedAbility.fra "{B}, Discard this card: Target creature gets -3/-1 until end of turn."
+    (FraCandidates.ab (.onPermanent (.pump (-3) (-1))) "Target creature gets -3/-1 until end of turn" (.filtered TargetFilter.creature))
+    { mana := ⟨#[.colored .black]⟩, discardSource := true } (activateFromHand := true),
+  ActivatedAbility.fra "{1}{R}, {T}: Put a +1/+1 counter on target creature that entered this turn."
+    (FraCandidates.ab (.onPermanent (.plusOne 1)) "Put a +1/+1 counter on target creature that entered this turn"
+      (.filtered { TargetFilter.creature with noun := "target creature that entered this turn", enteredThisTurn := true }))
+    { mana := ⟨#[.generic 1, .colored .red]⟩, tap := true },
+  ActivatedAbility.fra "{8}: Create a 5/5 red Dragon creature token with flying."
+    (FraCandidates.ab (.createTokens .dragon55flying 1) "Create a 5/5 red Dragon creature token with flying")
+    { mana := ManaCost.ofGeneric 8 },
+  ActivatedAbility.fra "{2}, {T}, Sacrifice an artifact or land: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
+    { mana := ManaCost.ofGeneric 2, tap := true, fra := .sacrificeArtifactOrLand },
+  ActivatedAbility.fra
+    "{5}{R}: Target creature gets +X/+0 until end of turn, where X is the number of artifacts you control."
+    (FraCandidates.ab (.fra .pumpPerArtifact) "Target creature gets +X/+0 until end of turn" (.filtered TargetFilter.creature))
+    { mana := ⟨#[.generic 5, .colored .red]⟩ },
+  ActivatedAbility.fra "{4}{G}: Put a +1/+1 counter on each creature you control with a +1/+1 counter on it."
+    (FraCandidates.ab (.fra .plusOneOnEachWithPlusOne) "Put a +1/+1 counter on each creature you control with a +1/+1 counter on it")
+    { mana := ⟨#[.generic 4, .colored .green]⟩ },
+  ActivatedAbility.fra "{2}: Return target land card from your graveyard to your hand."
+    (FraCandidates.ab (.fra .returnFromGyToHand) "Return target land card from your graveyard to your hand"
+      (.filtered { noun := "target land card from your graveyard", zone := .yourGraveyard, types := #[.land] }))
+    { mana := ManaCost.ofGeneric 2 },
+  ActivatedAbility.fra
+    "{2}, Sacrifice another creature or planeswalker: Put a +1/+1 counter on this creature. He gains menace until end of turn."
+    (FraCandidates.ab (.sequence [.onSource (.plusOne 1), .onSource (.grantKeywords Keyword.menace)]) "Put a +1/+1 counter on this creature")
+    { mana := ManaCost.ofGeneric 2, fra := .sacrificeAnotherCreatureOrPlaneswalker },
+]
 
 def chapterEffects : Thunk (Array (String × Effect)) := Thunk.mk fun _ => #[
   ("This Saga deals 6 damage to target creature an opponent controls.", Effect.chapterDealDamageToOppCreature 6),

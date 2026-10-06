@@ -182,25 +182,6 @@ def text : FraStatic → String
   | .entersChooseNonlandCardName => "As this creature enters, choose a nonland card name."
   | .chosenNameSpellsCantBeCast => "Spells with the chosen name can't be cast."
 
-/-- Every FRA static ability the parser recognizes. The emblem's static is
-created by Ajani's ultimate and never printed on a card. -/
-def all : Array FraStatic := #[
-  .attackDespiteDefenderIfScried, .powerPerSevenInGraveyard, .creaturesYouControlHaveTrample,
-  .firstStrikeDuringYourTurn, .equippedHuntersAxe, .enchantArtifactOrNonAuraEnchantment,
-  .enchantedIsConstruct55, .enchantedGetsOneAndDeathtouch, .vigilanceIfJace,
-  .powerAndFlyingIfSevenInGraveyard, .plusOneCreaturesHaveVigilance,
-  .flyingHasteIfOpponentDealtNoncombat, .equippedMedicsKitesail, .entersTappedChooseColor,
-  .tapAddChosenColor, .creaturesAttackDespiteDefender, .creatureTokensGetOneAndVigilance,
-  .tapAddColorlessNotFromHand, .tapAddAnyColorPlaneswalkerOnly,
-  .opponentsNoncreatureSpellsCostMore, .planeswalkersAttackedByOneAtMost, .extraPlusOneCounter,
-  .noSpellsOrAbilitiesDuringCombat, .noncreatureSpellsCostLess, .costsLessIfCastNoncreature,
-  .exileOpponentsDyingCreatures, .wardDiscardCard, .wardSacrificeThreePermanents,
-  .powerPerCreatureAndPlaneswalkerCard, .otherPlusOneCreaturesHaveHaste,
-  .creaturesYouControlHaveHaste, .noncombatDamagePlusOne, .powerEqualsBasicLandTypes,
-  .otherCreaturesHaveTrample, .landsHaveHexproof, .hexproofUntilCombatDamage,
-  .thoptersHaveHaste, .artifactCreaturesHaveVigilance, .doesntUntap,
-  .entersChooseNonlandCardName, .chosenNameSpellsCantBeCast]
-
 /-- The restricted mana this ability adds, if it is a mana ability. -/
 def manaUse? : FraStatic → Option FraManaUse
   | .tapAddColorlessNotFromHand => some .notSpellsFromHand
