@@ -39,6 +39,22 @@ def mkAbility (targeting : EffectTargeting) (resolution : Resolution)
     resolution
     phrase := phraseOverride.getD (Resolution.toPhrase resolution targeting.kind.noun) }
 
+/-- Destroy one target of `kind`.
+Pass `spellKind` for a spell (lowercase phrase, `SpellCastKind`).
+Otherwise this is an activated ability. -/
+def destroyTarget (kind : EffectTargetKind)
+    (spellKind : Option SpellCastKind := none)
+    (abilityKind : AbilityCastKind := .destroyColorless)
+    (preferAsDefaultMode := false) : Effect :=
+  match spellKind with
+  | some castKind =>
+    mkSpell (.of kind) (.onPermanent .destroy)
+      (castKind := castKind)
+      (preferAsDefaultMode := preferAsDefaultMode)
+  | none =>
+    mkAbility (.of kind) (.onPermanent .destroy)
+      (castKind := abilityKind)
+
 /-- Printed leftover constructors as unified `Effect` values.
 Call sites should use these instead of leftover inductives. -/
 
@@ -51,13 +67,11 @@ def pump (power toughness : Int) : Effect :=
     (castKind := .pump)
 
 def destroyCreatureWithFlying : Effect :=
-  mkSpell (.of .creatureWithFlying) (.onPermanent .destroy)
-    (castKind := .destroyFlying)
+  destroyTarget .creatureWithFlying (spellKind := some .destroyFlying)
     (preferAsDefaultMode := true)
 
 def destroyCreature : Effect :=
-  mkSpell (.of .creature) (.onPermanent .destroy)
-    (castKind := .destroyCreature)
+  destroyTarget .creature (spellKind := some .destroyCreature)
 
 def plusOnePlusOneTrampleHexproof : Effect :=
   mkSpell (.of .creatureYouControl) (.onPermanent .plusOnePlusOneTrampleHexproof)
@@ -187,8 +201,7 @@ def destroyArtifactOrEnchantmentGainLife (life : Nat) : Effect :=
     (castKind := .destroyArtifactOrLand)
 
 def destroyCreaturePowerAtLeast (n : Int) : Effect :=
-  mkSpell (.of (.creaturePowerAtLeast n)) (.onPermanent .destroy)
-    (castKind := .destroyCreature)
+  destroyTarget (.creaturePowerAtLeast n) (spellKind := some .destroyCreature)
     (preferAsDefaultMode := true)
 
 def becomeArtifactGainIndestructible : Effect :=
@@ -241,8 +254,7 @@ def dealDamageToEachOppCreature (n : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def destroyTargetArtifact : Effect :=
-  mkSpell (.of .artifact) (.onPermanent .destroy)
-    (castKind := .destroyArtifactOrLand)
+  destroyTarget .artifact (spellKind := some .destroyArtifactOrLand)
 
 def targetPlayerDraw (n : Nat) : Effect :=
   mkSpell (.of .player .selfPlayer) (.targetPlayerDraw n)
@@ -253,8 +265,7 @@ def dealDamageToCreatureExileIfDies (n : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def destroyArtifactToken : Effect :=
-  mkSpell (.of .artifactToken) (.onPermanent .destroy)
-    (castKind := .destroyArtifactOrLand)
+  destroyTarget .artifactToken (spellKind := some .destroyArtifactOrLand)
 
 def addRedPerOppArtifacts : Effect :=
   mkSpell (.of .none) (.addRedPerOppArtifacts)
@@ -392,8 +403,7 @@ def grantDeathtouch : Effect :=
     (castKind := .pump)
 
 def destroyNoncreatureArtifact : Effect :=
-  mkSpell (.of .noncreatureArtifact) (.onPermanent .destroy)
-    (castKind := .destroyArtifactOrLand)
+  destroyTarget .noncreatureArtifact (spellKind := some .destroyArtifactOrLand)
 
 def plusOneOnCreature : Effect :=
   mkSpell (.of .creature) (.onPermanent (.plusOne 1))
@@ -589,8 +599,7 @@ def dealDamageToTargetCreature (amount : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def destroyTargetColorlessNonland : Effect :=
-  mkAbility (.of .colorlessNonland) (.onPermanent .destroy)
-    (castKind := .destroyColorless)
+  destroyTarget .colorlessNonland
 
 def attachToTargetCreatureYouControl : Effect :=
   mkAbility (.of .creatureYouControl) (.attach)
@@ -617,8 +626,7 @@ def returnFromGraveyardToHand : Effect :=
   mkAbility ({}) (.returnFromGraveyardToHand)
 
 def destroyTargetArtifactOrEnchantment : Effect :=
-  mkAbility (.of .artifactOrEnchantment) (.onPermanent .destroy)
-    (castKind := .destroyColorless)
+  destroyTarget .artifactOrEnchantment
 
 def millPlayer (n : Nat) : Effect :=
   mkAbility (.of .player) (.mill n)
@@ -627,8 +635,7 @@ def addAnyColor : Effect :=
   mkAbility ({}) (.addAnyColor)
 
 def destroyTargetPermanent : Effect :=
-  mkAbility (.of .permanent) (.onPermanent .destroy)
-    (castKind := .destroyColorless)
+  destroyTarget .permanent
 
 def plusOneOnTarget (n : Nat) (subtypes : Array String := #[]) : Effect :=
   mkAbility (.of (if subtypes.isEmpty then .creatureYouControl
@@ -883,8 +890,7 @@ def harnessInfinityStone : Effect :=
   mkAbility ({}) (.harnessInfinityStone)
 
 def destroyTargetNoncreatureArtOrEnch : Effect :=
-  mkAbility (.of .noncreatureArtifactOrEnchantment) (.destroyTargetNoncreatureArtOrEnch)
-    (castKind := .destroyColorless)
+  destroyTarget .noncreatureArtifactOrEnchantment
 
 def targetSubtypeConnives (subtype : String) : Effect :=
   mkAbility (.of (.creatureYouControlSubtype subtype)) (.targetSubtypeConnives subtype)

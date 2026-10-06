@@ -1932,9 +1932,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.withSourceOnBattlefield sourceId (fun g o =>
       let g := g.mapObjectStatus o (fun s => { s with harnessed := true })
       g.logMsg s!"{o.name} is harnessed") "The source is no longer in play"
-  | .destroyTargetNoncreatureArtOrEnch =>
-    g.withLegalKindPermanent controller .noncreatureArtifactOrEnchantment targets
-      (fun g o => g.applyPermanentAction o .destroy) sourceId none
   | .targetSubtypeConnives _ =>
     match targets[0]? with
     | some (Target.permanent id) => g.applyConnive controller (some id)

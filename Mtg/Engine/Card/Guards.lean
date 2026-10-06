@@ -361,6 +361,21 @@ namespace CardDef
   .onPermanent (.dealDamage 2)
 #guard Effect.destroyTargetColorlessNonland.resolution ==
   .onPermanent .destroy
+#guard Effect.destroyTargetPermanent == Effect.destroyTarget .permanent
+#guard Effect.destroyTargetArtifactOrEnchantment ==
+  Effect.destroyTarget .artifactOrEnchantment
+#guard Effect.destroyTargetNoncreatureArtOrEnch ==
+  Effect.destroyTarget .noncreatureArtifactOrEnchantment
+#guard Effect.destroyTargetNoncreatureArtOrEnch.phrase ==
+  "Destroy target noncreature artifact or noncreature enchantment"
+#guard Effect.destroyCreature ==
+  Effect.destroyTarget .creature (spellKind := some .destroyCreature)
+#guard Effect.destroyTargetArtifact ==
+  Effect.destroyTarget .artifact (spellKind := some .destroyArtifactOrLand)
+#guard Effect.destroyTargetPermanent.resolution ==
+  Effect.destroyTargetColorlessNonland.resolution
+#guard Effect.destroyTargetPermanent.abilityKind ==
+  Effect.destroyTargetColorlessNonland.abilityKind
 #guard Effect.targetCantBeBlockedThisTurn.resolution ==
   .onPermanent .cantBeBlocked
 #guard (Effect.sourceGets 1 0).resolution == .onSource (.pump 1 0)
