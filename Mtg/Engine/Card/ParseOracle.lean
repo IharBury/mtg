@@ -1022,13 +1022,6 @@ def firstSpellProto (cardName : String) (f : EffectProto → Option Effect) : Op
     | some _ => acc
     | none => (p.forCard cardName).bind f) none
 
-/-- `text` as one spell prototype, exact wording before a refilled one. -/
-def matchSpellProto (cardName text : String) : Option Effect :=
-  let q := EffectQuery.of cardName text
-  match firstSpellProto cardName fun p => if p.sameText q then some p.effect else none with
-  | some e => some e
-  | none => firstSpellProto cardName (·.matchText q)
-
 /-- The two clauses of one “, then” sentence, when there is exactly one. -/
 def splitOnThen (s : String) : Option (String × String) :=
   match s.splitOn ", then " with
@@ -1053,6 +1046,24 @@ def joinThenEffects (es : List Effect) : Effect :=
       resolution := .sequence steps
       phrase := String.intercalate ", then " (es.map (·.phrase)) }
 
+/-- First spell prototype that matches `text` and whose resolution passes `ok`.
+An earlier prototype can share the printed words and name a different effect
+(`Draw two cards` is also the legendary-discard ability). -/
+def matchSpellProtoSuchThat (cardName text : String) (ok : Resolution → Bool) : Option Effect :=
+  let q := EffectQuery.of cardName text
+  spellProtos.get.foldl (fun acc p =>
+    match acc with
+    | some _ => acc
+    | none =>
+      match p.forCard cardName with
+      | none => none
+      | some proto =>
+        let matched :=
+          if proto.sameText q then some proto.effect else proto.matchText q
+        match matched with
+        | some e => if ok e.resolution then some e else none
+        | none => none) none
+
 /-- “Draw N cards, then discard a card”, from the `draw` and `discardCards`
 prototypes. The discard stays the last step, so its pending choice does not
 block a later step. A line that is already one prototype is not split. -/
@@ -1060,11 +1071,11 @@ def matchDrawThenDiscard (cardName text : String) : Option Effect :=
   match splitOnThen text with
   | none => none
   | some (drawText, discardText) =>
-    match matchSpellProto cardName drawText, matchSpellProto cardName discardText with
-    | some drawE, some discardE =>
-      match drawE.resolution, discardE.resolution with
-      | .draw _, .discard _ => some (joinThenEffects [drawE, discardE])
-      | _, _ => none
+    match matchSpellProtoSuchThat cardName drawText (fun r =>
+        match r with | .draw _ => true | _ => false),
+      matchSpellProtoSuchThat cardName discardText (fun r =>
+        match r with | .discard _ => true | _ => false) with
+    | some drawE, some discardE => some (joinThenEffects [drawE, discardE])
     | _, _ => none
 
 def matchChapter (cardName text : String) : Option Effect :=
@@ -1510,18 +1521,18 @@ def spellSentenceSequence (cardName line : String) : Option Effect :=
   | [s] => matchDrawThenDiscard cardName s
   | _ => (go sents).map joinSpellEffects
 
-#guard matchChapter "Card" "Draw two cards, then discard a card." ==
+#guard matchChapter "Bear" "Draw two cards, then discard a card." ==
   some (Effect.drawThenDiscard 2)
-#guard matchChapter "Card" "Draw a card, then discard a card" ==
+#guard matchChapter "Bear" "Draw a card, then discard a card" ==
   some (Effect.drawThenDiscard 1)
-#guard matchChapter "Card" "Discard a card, then draw a card." == none
-#guard matchChapter "Card" (Effect.millThenDraw 3 1).phrase ==
+#guard matchChapter "Bear" "Discard a card, then draw a card." == none
+#guard matchChapter "Bear" (Effect.millThenDraw 3 1).phrase ==
   some (Effect.millThenDraw 3 1)
-#guard matchChapter "Card" Effect.searchTwoBasicsSplit.phrase ==
+#guard matchChapter "Bear" Effect.searchTwoBasicsSplit.phrase ==
   some Effect.searchTwoBasicsSplit
-#guard spellSentenceSequence "Card" "Draw two cards, then discard a card." ==
+#guard spellSentenceSequence "Bear" "Draw two cards, then discard a card." ==
   some (Effect.drawThenDiscard 2)
-#guard spellSentenceSequence "Card"
+#guard spellSentenceSequence "Bear"
     "Draw two cards, then discard a card. You gain 3 life." ==
   some (joinSpellEffects [Effect.drawThenDiscard 2, Effect.gainLife 3])
 
