@@ -1250,8 +1250,8 @@ def candidateNorm (cardName : String) (keys : List String) (item : IndexedAbilit
     List String :=
   if mentionsNameKey keys item.rawLower then item.raw.map (normalizeUnit cardName) else item.norm
 
-/-- One prototype per shape. Later entries that differ only by `Nat`, `Int`, or
-`String` arguments are dropped. -/
+/-- One prototype per shape. Later entries that differ only by `Nat`, `Int`,
+`String`, or target-kind arguments are dropped. -/
 @[irreducible, noinline] def indexedAbilities : Thunk (Array IndexedAbility) :=
   Thunk.mk fun _ => Id.run do
   let mut out : Array IndexedAbility := #[]

@@ -55,6 +55,23 @@ def destroyTarget (kind : EffectTargetKind)
     mkAbility (.of kind) (.onPermanent .destroy)
       (castKind := abilityKind)
 
+/-- The printed destroy-one-target effect for `kind`, including the cast
+category used by the named constructors. The Oracle matcher refills a single
+prototype to this so lines that differ only by the target noun stay one shape. -/
+def canonicalDestroy (kind : EffectTargetKind) : Effect :=
+  match kind with
+  | .creatureWithFlying =>
+    destroyTarget kind (spellKind := some .destroyFlying) (preferAsDefaultMode := true)
+  | .creaturePowerAtLeast _ =>
+    destroyTarget kind (spellKind := some .destroyCreature) (preferAsDefaultMode := true)
+  | .artifact | .artifactToken | .noncreatureArtifact =>
+    destroyTarget kind (spellKind := some .destroyArtifactOrLand)
+  | .colorlessNonland | .artifactOrEnchantment | .permanent
+  | .noncreatureArtifactOrEnchantment =>
+    destroyTarget kind
+  | _ =>
+    destroyTarget kind (spellKind := some .destroyCreature)
+
 /-- Printed leftover constructors as unified `Effect` values.
 Call sites should use these instead of leftover inductives. -/
 
