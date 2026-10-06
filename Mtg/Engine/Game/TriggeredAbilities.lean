@@ -520,7 +520,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             (t.toLower == "creature" && o.printed.isCreature) ||
             o.printed.hasSubtype t)
       | none => false)
-    g.beginFraChoice controller (.mayRevealToHand ids eligible)
+    g.beginFraChoice controller (.mayRevealToHand ids eligible false)
       s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
   | .pumpAndDamageOpponents n =>
     let g := g.applyOnTriggerSource sourceId (.pump 1 1)

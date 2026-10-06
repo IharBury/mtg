@@ -3822,4 +3822,100 @@ def kangExtraTurnOk : Bool :=
 
 #guard kangExtraTurnOk
 
+/-- Nick Fury puts two +1/+1 counters, then may put a Hero, Equipment, or
+Vehicle from the top seven onto the battlefield and may transform a
+double-faced card. -/
+def nickFuryLookPutOk : Bool :=
+  let g := addPermanent afterDraw nickFuryAgentOfSHIELD ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let g := addToLibraryTop g whiteTigerAvaAyala ⟨0⟩
+  let g := addToLibraryTop g tonyStark ⟨0⟩
+  let nick := namedPermanent g "Nick Fury, Agent of S.H.I.E.L.D."
+  let g := g.applyAbilityEffect ⟨0⟩
+    (Effect.lookAtTopPutTypes 7 #["Hero", "Equipment", "Vehicle"]) #[] (some nick.id)
+  (namedPermanent g "Nick Fury, Agent of S.H.I.E.L.D.").status.plusOnePlusOne == 2 &&
+    match g.pending with
+    | .fraChoice ⟨0⟩ (.nickFuryPut looked eligible) =>
+      looked.size == 3 &&
+        match eligible.find? (fun id => (g.object! id).name == "Tony Stark"),
+            eligible.find? (fun id => (g.object! id).name == "White Tiger, Ava Ayala") with
+        | some tony, some tiger =>
+          !eligible.any (fun id => (g.object! id).name == "Mountain") &&
+            (let gTiger := mustApply g ⟨0⟩ (.choosePermanents #[tiger])
+             gTiger.battlefield.any (fun o => o.name == "White Tiger, Ava Ayala") &&
+               (gTiger.player ⟨0⟩).library.size == 2 &&
+               !gTiger.battlefield.any (fun o => o.name == "Tony Stark")) &&
+            (let gTony := mustApply g ⟨0⟩ (.choosePermanents #[tony])
+             match gTony.pending with
+             | .fraChoice ⟨0⟩ (.nickFuryMayTransform _ _) =>
+               (let gIron := mustApply gTony ⟨0⟩ .accept
+                gIron.battlefield.any (fun o => o.name == "The Invincible Iron Man")) &&
+                 (let gStay := mustApply gTony ⟨0⟩ .decline
+                  gStay.battlefield.any (fun o => o.name == "Tony Stark") &&
+                    !gStay.battlefield.any (fun o => o.name == "The Invincible Iron Man"))
+             | _ => false) &&
+            (let gNo := mustApply g ⟨0⟩ .decline
+             !gNo.battlefield.any (fun o => o.name == "White Tiger, Ava Ayala") &&
+               (gNo.player ⟨0⟩).library.size == 3 &&
+               (namedPermanent gNo "Nick Fury, Agent of S.H.I.E.L.D.").status.plusOnePlusOne == 2)
+        | _, _ => false
+    | _ => false
+
+#guard nickFuryLookPutOk
+
+/-- Tony Stark may reveal an artifact from the top four and put it into his hand. -/
+def tonyStarkRevealArtifactOk : Bool :=
+  let g := addPermanent afterDraw tonyStark ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let g := addToLibraryTop g superSuit ⟨0⟩
+  let src := namedPermanent g "Tony Stark"
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.lookAtTopRevealArtifact 4) #[] (some src.id)
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.mayRevealToHand _ eligible false) =>
+    eligible.size == 1 &&
+      (let gHand := mustApply g ⟨0⟩ (.choosePermanents eligible)
+       (gHand.player ⟨0⟩).hand.any (fun id => (gHand.object! id).name == "Super Suit") &&
+         (gHand.player ⟨0⟩).library.any (fun id => (gHand.object! id).name == "Mountain") &&
+         gHand.pending == .none)
+  | _ => false
+
+#guard tonyStarkRevealArtifactOk
+
+/-- Avengers Tower may reveal a Hero, then the rest go on the bottom in the
+chosen order. -/
+def avengersTowerHeroOrderOk : Bool :=
+  let g := addPermanent afterDraw avengersTower ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let g := addToLibraryTop g shock ⟨0⟩
+  let g := addToLibraryTop g whiteTigerAvaAyala ⟨0⟩
+  let tower := namedPermanent g "Avengers Tower"
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.lookAtTopRevealSubtype 3 "Hero") #[]
+    (some tower.id)
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.mayRevealToHand _ eligible true) =>
+    match eligible[0]? with
+    | some hero =>
+      (g.object! hero).name == "White Tiger, Ava Ayala" &&
+        (let g1 := mustApply g ⟨0⟩ (.choosePermanents #[hero])
+         match g1.pending with
+         | .fraChoice ⟨0⟩ (.orderLibraryBottom ids) =>
+           match ids.find? (fun id => (g1.object! id).name == "Shock"),
+               ids.find? (fun id => (g1.object! id).name == "Mountain") with
+           | some s, some m =>
+             let g2 := mustApply g1 ⟨0⟩ (.choosePermanents #[s, m])
+             let lib := (g2.player ⟨0⟩).library
+             lib.size == 2 && (g2.object! lib[0]!).name == "Shock" &&
+               (g2.object! lib[1]!).name == "Mountain" &&
+               (g2.player ⟨0⟩).hand.any (fun id =>
+                 (g2.object! id).name == "White Tiger, Ava Ayala")
+           | _, _ => false
+         | _ => false)
+    | none => false
+  | _ => false
+
+#guard avengersTowerHeroOrderOk
+
 end Mtg.Engine.MshRulingTests

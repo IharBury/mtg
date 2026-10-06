@@ -349,8 +349,18 @@ inductive FraChoice where
   until end of turn. -/
   | mayBecomeBasePT (objectId : ObjectId) (p t : Int)
   /-- You may reveal one of `eligible` from among the looked-at `looked` and
-  put it into your hand; the rest go on the bottom in a random order. -/
-  | mayRevealToHand (looked eligible : Array ObjectId)
+  put it into your hand. The rest go on the bottom at random, or in an order
+  you choose when `anyOrder` is true (Avengers Tower). -/
+  | mayRevealToHand (looked eligible : Array ObjectId) (anyOrder : Bool)
+  /-- You may put one of `eligible` onto the battlefield (Nick Fury). The rest
+  of `looked` go on the bottom in a random order. -/
+  | nickFuryPut (looked eligible : Array ObjectId)
+  /-- You may transform the double-faced card just put onto the battlefield,
+  then the other looked-at cards go on the bottom in a random order. -/
+  | nickFuryMayTransform (permanentId : ObjectId) (rest : Array ObjectId)
+  /-- Put these cards on the bottom of your library. The first card is the
+  bottom. Every card must be included. -/
+  | orderLibraryBottom (ids : Array ObjectId)
   /-- You may cast one of these artifact, instant, or sorcery cards from your
   graveyard, paying its cost (Bilbo, Thief in the Night). An instant or
   sorcery cast this way is exiled instead of going to the graveyard. -/

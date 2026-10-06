@@ -1392,6 +1392,49 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
          else s!"{name} returns to the battlefield")
       g.afterPermanentEnters (g.object! newId)
 
+/-- True when `o` has the looked-at type, including an Equipment artifact. -/
+def cardHasLookType (o : GameObject) (t : String) : Bool :=
+  o.printed.hasSubtype t || (t == "Equipment" && o.printed.isEquipment)
+
+/-- Put `ids` on the bottom. One card needs no order. Two or more are ordered
+by the player, first card on the bottom. -/
+def offerBottomAnyOrder (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
+  if ids.size ≤ 1 then
+    (g.moveIdsInOrder ids (.library p)).logMsg
+      s!"{(g.player p).name} puts the rest on the bottom of their library"
+  else
+    g.beginFraChoice p (.orderLibraryBottom ids)
+      s!"{(g.player p).name} puts the rest on the bottom of their library in any order"
+
+/-- Look at the top `n` cards. You may reveal one matching card to your hand. -/
+def beginLookRevealToHand (g : Game) (p : PlayerId) (n : Nat)
+    (ok : GameObject → Bool) (anyOrder : Bool) : Game :=
+  let looked := g.scryLookedIds p n
+  let g := g.logLookAtTop p looked.size
+  if looked.isEmpty then g
+  else
+    let eligible := looked.filter (fun id => (g.findObject? id).any ok)
+    if eligible.isEmpty then
+      if anyOrder then g.offerBottomAnyOrder p looked
+      else g.putRestOnBottomRandom p looked
+    else
+      g.beginFraChoice p (.mayRevealToHand looked eligible anyOrder)
+        s!"{(g.player p).name} may reveal a card from among them and put it into their hand"
+
+/-- Look at the top `n` cards. You may put one card of `types` onto the
+battlefield (Nick Fury). -/
+def beginLookPutTypes (g : Game) (p : PlayerId) (n : Nat) (types : Array String) : Game :=
+  let looked := g.scryLookedIds p n
+  let g := g.logLookAtTop p looked.size
+  if looked.isEmpty then g
+  else
+    let eligible := looked.filter (fun id =>
+      (g.findObject? id).any (fun o => types.any (cardHasLookType o)))
+    if eligible.isEmpty then g.putRestOnBottomRandom p looked
+    else
+      g.beginFraChoice p (.nickFuryPut looked eligible)
+        s!"{(g.player p).name} may put a card from among them onto the battlefield"
+
 /-- Resolve a unified activated-ability `Effect` (CR 608). -/
 partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
@@ -1590,11 +1633,13 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.withSourceOnBattlefield sourceId fun g o =>
       g.setObject { o with status := { o.status with
         plusOnePlusOne := o.status.plusOnePlusOne + 1 } }
-  | .lookAtTopPutTypes n _types =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.setObject { o with status := { o.status with
-        plusOnePlusOne := o.status.plusOnePlusOne + 2 } }
-      g.logLookAtTop controller n
+  | .lookAtTopPutTypes n types =>
+    let g :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.addPlusOnePlusOneTo o 2 else g
+      | none => g
+    g.beginLookPutTypes controller n types
   | .transform =>
     g.withSourceOnBattlefield sourceId fun g o =>
       if o.status.cantTransform then
@@ -1611,7 +1656,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .drawX =>
     g.draw controller chosenX
   | .lookAtTopRevealArtifact n =>
-    g.logLookAtTop controller n
+    g.beginLookRevealToHand controller n (fun o => o.printed.isArtifact) false
   | .connive =>
     g.applyConnive controller sourceId
   | .addAnyColorSpendOnlySubtype subtype =>
@@ -1699,8 +1744,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           (additionalCreature := true) (additionalArtifact := true)
           (pumpPerArtifact := true)
     | none => g.logMsg "The Equipment is no longer in play"
-  | .lookAtTopRevealSubtype n _subtype =>
-    g.logLookAtTop controller n
+  | .lookAtTopRevealSubtype n subtype =>
+    g.beginLookRevealToHand controller n (fun o => o.printed.hasSubtype subtype) true
   | .millThenPutSubtypeOrEnchantment n subtype =>
     g.millMayPutSubtypeOrEnchantment controller n subtype
   | .plusOneAndDoubleStrikeCounter =>

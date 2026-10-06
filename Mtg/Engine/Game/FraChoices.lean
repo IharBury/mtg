@@ -520,17 +520,57 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | none => return g.finishFraChoice
   | .mayBecomeBasePT .., .decline => return g.finishFraChoice
   | .mayBecomeBasePT .., _ => throw "Answer accept or decline"
-  | .mayRevealToHand looked eligible, .objects #[id] =>
+  | .mayRevealToHand looked eligible anyOrder, .objects #[id] =>
     if !eligible.contains id then throw "Choose one of the eligible cards"
     let name := (g.object! id).name
     let (g, _) := g.move id (.hand p) none
     let g := g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
-    return (g.requestOrderInto (looked.filter (· != id)) (.library p)
-      s!"{(g.player p).name} puts the rest on the bottom of their library in a random order").finishFraChoice
-  | .mayRevealToHand looked _, .decline =>
-    return (g.requestOrderInto looked (.library p)
-      s!"{(g.player p).name} puts the cards on the bottom of their library in a random order").finishFraChoice
+    let rest := looked.filter (· != id)
+    let g :=
+      if anyOrder then g.offerBottomAnyOrder p rest
+      else g.requestOrderInto rest (.library p)
+        s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+    return g.finishFraChoice
+  | .mayRevealToHand looked _ anyOrder, .decline =>
+    let g :=
+      if anyOrder then g.offerBottomAnyOrder p looked
+      else g.requestOrderInto looked (.library p)
+        s!"{(g.player p).name} puts the cards on the bottom of their library in a random order"
+    return g.finishFraChoice
   | .mayRevealToHand .., _ => throw "Choose a card to reveal, or decline"
+  | .nickFuryPut looked eligible, .objects #[id] =>
+    if !eligible.contains id then throw "That card can't be put onto the battlefield"
+    let rest := looked.filter (· != id)
+    let g := g.enterFromNickFury p id
+    let newId := g.followMoved id
+    let g :=
+      match g.findObject? newId with
+      | some o =>
+        if o.isOnBattlefield && o.printed.otherFace.isSome && !o.status.cantTransform then
+          g.beginFraChoice p (.nickFuryMayTransform newId rest)
+            s!"{(g.player p).name} may transform {o.name}"
+        else g.putRestOnBottomRandom p rest
+      | none => g.putRestOnBottomRandom p rest
+    return g.finishFraChoice
+  | .nickFuryPut looked _, .decline =>
+    return (g.putRestOnBottomRandom p looked).finishFraChoice
+  | .nickFuryPut .., _ => throw "Put a card onto the battlefield, or decline"
+  | .nickFuryMayTransform id rest, .accept =>
+    let g := g.applyAbilityEffect p Effect.transform #[] (some id)
+    return (g.putRestOnBottomRandom p rest).finishFraChoice
+  | .nickFuryMayTransform _ rest, .decline =>
+    return (g.putRestOnBottomRandom p rest).finishFraChoice
+  | .nickFuryMayTransform .., _ => throw "Transform it (accept), or decline"
+  | .orderLibraryBottom ids, .objects ordered =>
+    if ordered.size != ids.size || ordered.toList.eraseDups.length != ordered.size ||
+        !ordered.all (ids.contains ·) then
+      throw "Put every remaining card on the bottom, in the order you choose"
+    return (g.moveIdsInOrder ordered (.library p)
+      |>.logMsg s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order").finishFraChoice
+  | .orderLibraryBottom ids, .decline =>
+    return (g.moveIdsInOrder ids (.library p)
+      |>.logMsg s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order").finishFraChoice
+  | .orderLibraryBottom _, _ => throw "Choose the order for the bottom of your library"
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .accept
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .mode _ =>
     let times := match answer with | .mode n => n | _ => 1
@@ -1037,8 +1077,11 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayDrawThenDiscard .. => .accept
   | .mayCreateTokens .. => .accept
   | .mayBecomeBasePT .. => .accept
-  | .mayRevealToHand _ eligible =>
+  | .mayRevealToHand _ eligible _ =>
     if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 1)
+  | .nickFuryPut _ _ => .decline
+  | .nickFuryMayTransform _ _ => .decline
+  | .orderLibraryBottom ids => .choosePermanents ids
   | .sacrificeNontokenEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
   | .mayPayManaForReflexive cost _ _ _ =>
