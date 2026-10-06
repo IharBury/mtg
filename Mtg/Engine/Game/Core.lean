@@ -47,6 +47,9 @@ structure Game where
   /-- Spell or ability proposed and waiting for mana abilities / payment
   (CR 601.2f–h / 602.2b). -/
   proposedSpell : Option ProposedSpell := none
+  /-- Opening hands are kept and a “may begin on the battlefield” choice is
+  still unfinished. The first turn starts when that choice ends. -/
+  awaitingOpeningBegin : Bool := false
   /-- Players still to declare keep-or-mulligan in the current CR 103.5 round. -/
   mulliganToDeclare : Array PlayerId := #[]
   /-- Players who declared they will mulligan this round; taken together after

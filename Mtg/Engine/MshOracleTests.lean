@@ -4411,4 +4411,60 @@ def loseAbilitiesUntapOk : Bool :=
 
 #guard loseAbilitiesUntapOk
 
+/-- Captain America's shield gives you and other Heroes hexproof, not himself. -/
+def capShieldHexproofOk : Bool :=
+  let g := addPermanent afterDraw captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩
+  let g := g.afterPermanentEnters (namedPermanent g "Captain America, Super-Soldier")
+  let g := addPermanent g whiteTigerAvaAyala ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let cap := namedPermanent g "Captain America, Super-Soldier"
+  let hero := namedPermanent g "White Tiger, Ava Ayala"
+  let ogre := namedPermanent g "Gray Ogre"
+  cap.status.shield > 0 &&
+    !g.hasHexproof cap &&
+    g.hasHexproof hero &&
+    !g.hasHexproof ogre &&
+    g.playerHasHexproof ⟨0⟩ &&
+    !(g.legalTargetsForKind ⟨1⟩ .player).contains (Target.player ⟨0⟩) &&
+    (g.legalTargetsForKind ⟨1⟩ .player).contains (Target.player ⟨1⟩) &&
+    (g.legalTargetsForKind ⟨1⟩ .creature).contains (Target.permanent cap.id) &&
+    !(g.legalTargetsForKind ⟨1⟩ .creature).contains (Target.permanent hero.id)
+
+#guard capShieldHexproofOk
+
+/-- Quicksilver may stay in the opening hand. -/
+def quicksilverMayStayInHandOk : Bool :=
+  let g := addToHand afterDraw quicksilverBrashBlur ⟨0⟩
+  let g := g.applyOpeningHandActions
+  match g.pending with
+  | .fraChoice ⟨0⟩ (.mayBeginOnBattlefield _) =>
+    let g := mustApply g ⟨0⟩ .decline
+    (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Quicksilver, Brash Blur") &&
+      !g.battlefield.any (fun o => o.name == "Quicksilver, Brash Blur")
+  | _ => false
+
+#guard quicksilverMayStayInHandOk
+
+/-- Printed prowess and prowess from Wizard's Staff are separate triggers. -/
+def prowessPrintedPlusGrantedOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let host := namedPermanent g "Grizzly Bears"
+  let printedOnly := { host with printed := { host.printed with prowessInstances := 2 } }
+  let g1 := g.setObject printedOnly
+  let both := { printedOnly with status :=
+    { printedOnly.status with untilEotKeywords := Keyword.prowess } }
+  let g2 := g.setObject both
+  let gStaff := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let gStaff := addPermanent gStaff wizardSStaff ⟨0⟩ ⟨0⟩
+  let gStaff := gStaff.attachSourceTo (namedPermanent gStaff "Wizard's Staff")
+    (namedPermanent gStaff "Grizzly Bears")
+  let armed := namedPermanent gStaff "Grizzly Bears"
+  let armed := { armed with printed := { armed.printed with prowessInstances := 1 } }
+  let gStaff := gStaff.setObject armed
+  (g1.prowessTriggers (g1.object! host.id)).size == 2 &&
+    (g2.prowessTriggers (g2.object! host.id)).size == 3 &&
+    (gStaff.prowessTriggers (gStaff.object! armed.id)).size == 2
+
+#guard prowessPrintedPlusGrantedOk
+
 end Mtg.Engine.MshRulingTests

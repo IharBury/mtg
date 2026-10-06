@@ -2370,10 +2370,14 @@ def headExilesInstead : Game :=
   (g.move bears.id (.graveyard ⟨1⟩) none).1
 
 def headExilesInsteadOk : Bool :=
-  headExilesInstead.objects.any (fun o =>
+  let waited := headExilesInstead
+  let resolved := passBoth (waited.receivePriority ⟨0⟩)
+  waited.objects.any (fun o =>
     o.name == "Grizzly Bears" && o.zone == .exile) &&
-    (headExilesInstead.battlefield.filter (fun o => o.name == "Wolf")).size == 1 &&
-    headExilesInstead.log.any (fun s => mentions s "CR 614.6") &&
+    !(waited.battlefield.any (fun o => o.name == "Wolf")) &&
+    waited.log.any (fun s => mentions s "Wolf trigger") &&
+    (resolved.battlefield.filter (fun o => o.name == "Wolf")).size == 1 &&
+    waited.log.any (fun s => mentions s "CR 614.6") &&
     (ruling 100).comment.contains "discarded or milled"
 
 #guard headExilesInsteadOk

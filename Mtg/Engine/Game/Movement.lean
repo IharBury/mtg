@@ -472,16 +472,21 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           | none => pure ()
         return g
     else g
-  -- The modified exile event may include creating a Wolf (Head of the Hunt).
-  -- Use the snapshot source: the original die event never happened (CR 614.6).
+  -- Head of the Hunt: “When you do, create a Wolf” is a reflexive trigger.
+  -- The exile replacement already happened (CR 614.6); the token waits for the stack.
   let g :=
     match headSource with
     | some src =>
       if createsWolfOnOppExileDeath? src then
         match src.controller with
         | some p =>
-          let (g, _) := g.createToken p wolfToken
-          g.logMsg s!"{(g.player p).name} creates a Wolf (exiled instead of dying)"
+          let ab := TriggeredAbility.fra .fromEffect
+            "When you do, create a 2/2 green Wolf creature token."
+            (.createTokens .wolf 1)
+          { g with waitingTriggers := g.waitingTriggers.push {
+              controller := p, source := src, ability := ab,
+              event := .bolgSacrificedForReflexive, checked := true } }
+            |>.logMsg s!"{(g.player p).name}'s Wolf trigger is waiting to go on the stack"
         | none => g
       else g
     | none => g

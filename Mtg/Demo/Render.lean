@@ -903,6 +903,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
             s!"may put a creature card ({creatures.size}): choose <id>, or decline"
         | .entersCreatureType _ => "choose a creature type as it enters: name <type>"
         | .entersOddEven _ => "choose even (0) or odd (1) as it enters"
+        | .mayBeginOnBattlefield ids =>
+          s!"may begin the game with it on the battlefield ({ids.size} left): accept, or decline"
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=

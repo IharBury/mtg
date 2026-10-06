@@ -621,6 +621,8 @@ def quicksilverOpeningHandOk : Bool :=
   let g := addToHand afterDraw quicksilverBrashBlur ⟨0⟩
   let g := addToHand g quicksilverBrashBlur ⟨1⟩
   let g := g.applyOpeningHandActions
+  let g := mustApply g ⟨0⟩ .accept
+  let g := mustApply g ⟨1⟩ .accept
   let p0 := g.battlefield.find? (fun o =>
     o.name == "Quicksilver, Brash Blur" && o.controlledBy ⟨0⟩)
   let p1 := g.battlefield.find? (fun o =>

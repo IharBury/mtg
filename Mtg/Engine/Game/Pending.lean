@@ -513,6 +513,9 @@ inductive FraChoice where
   | entersCreatureType (objectId : ObjectId)
   /-- As this permanent enters, choose even (0) or odd (1) (Gollum, Riddle Master). -/
   | entersOddEven (objectId : ObjectId)
+  /-- You may begin the game with the first of these cards on the battlefield
+  (Quicksilver). The rest are asked next. -/
+  | mayBeginOnBattlefield (ids : Array ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

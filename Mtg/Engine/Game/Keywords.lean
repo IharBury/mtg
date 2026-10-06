@@ -504,11 +504,21 @@ def hasHexproof (g : Game) (o : GameObject) : Bool :=
          src.status.shield > 0 &&
            src.staticAbilities.any (fun
              | .youAndOtherSubtypeHaveHexproofIfShield subtype =>
-               src.id == o.id ||
-                 (o.id != src.id && g.hasSubtype o subtype) ||
-                 -- "you and other Heroes" — the player has hexproof via a dummy check
-                 false
+               -- “You and other Heroes”: the source itself is not included.
+               src.id != o.id && g.hasSubtype o subtype
              | _ => false)))
+
+/-- The player has hexproof from opponents (Captain America, Super-Soldier). -/
+def playerHasHexproof (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun src =>
+    src.status.shield > 0 &&
+      src.staticAbilities.any (fun
+        | .youAndOtherSubtypeHaveHexproofIfShield _ => true
+        | _ => false))
+
+/-- Hexproof stops an opponent from targeting that player (CR 702.11c). -/
+def playerCanBeTargetedBy (g : Game) (caster target : PlayerId) : Bool :=
+  caster == target || !g.playerHasHexproof target
 
 /-- True when damage that would be dealt by `src` is prevented (Old Fat
 Spider chapter II). -/

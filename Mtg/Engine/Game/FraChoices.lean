@@ -1031,6 +1031,34 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .entersOddEven id, .mode 1 =>
     return (g.chooseGollumParity id true).finishFraChoice
   | .entersOddEven _, _ => throw "Choose even (0) or odd (1)"
+  | .mayBeginOnBattlefield ids, .accept =>
+    let g ←
+      match ids[0]? with
+      | some id =>
+        match g.findObject? id with
+        | some o =>
+          if o.zone != .hand o.owner then pure g
+          else
+            let name := o.name
+            let (g, newId) := g.move id .battlefield (some o.owner)
+            let g := g.logMsg s!"{name} begins the game on the battlefield"
+            if g.pending != .none then pure g
+            else pure (g.afterPermanentEnters (g.object! newId))
+        | none => pure g
+      | none => pure g
+    if g.pending != .none then return g
+    return (g.continueOpeningBegin (ids.extract 1 ids.size)).finishFraChoice
+  | .mayBeginOnBattlefield ids, .decline =>
+    let g :=
+      match ids[0]? with
+      | some id =>
+        match g.findObject? id with
+        | some o => g.logMsg s!"{(g.player o.owner).name} leaves {o.name} in their hand"
+        | none => g
+      | none => g
+    return (g.continueOpeningBegin (ids.extract 1 ids.size)).finishFraChoice
+  | .mayBeginOnBattlefield _, _ =>
+    throw "Begin the game with it on the battlefield (accept), or decline"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
@@ -1212,6 +1240,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
           if isCreatureType s && !acc.contains s then acc.push s else acc) acc) #[]
     .chooseName (yours[0]?.getD "Human")
   | .entersOddEven _ => .chooseMode 0
+  | .mayBeginOnBattlefield _ => .decline
 
 end Game
 end Mtg.Engine

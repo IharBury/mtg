@@ -15,6 +15,11 @@ namespace Game
 def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject) : Bool :=
   !g.hasHexproof o || o.controlledBy caster
 
+/-- Player targets `caster` may choose. A player with hexproof is not a
+legal target for an opponent (CR 702.11c). -/
+def legalPlayerTargets (g : Game) (caster : PlayerId) (ps : Array Player) : Array Target :=
+  playerTargets (ps.filter (fun pl => g.playerCanBeTargetedBy caster pl.id))
+
 /-- Battlefield permanents matching `pred` that `caster` may target. -/
 def legalPermanentTargets (g : Game) (caster : PlayerId) (pred : GameObject → Bool) :
     Array Target :=
@@ -183,7 +188,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalCreatureTargets caster (fun o => some o.id != sourceId)
   | .playerOrCreature =>
     -- CR 115.4: “any target” is a creature, player, planeswalker, or battle.
-    playerTargets g.livingPlayers ++
+    g.legalPlayerTargets caster g.livingPlayers ++
       g.legalPermanentTargets caster (fun o =>
         o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker || o.printed.isBattle))
   | .elfInYourGraveyard =>
@@ -210,9 +215,9 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .playerThenCreature => #[]
   | .oppCreatureThenUpToOneCreatureYouControl => #[]
   | .player =>
-    playerTargets g.livingPlayers
+    g.legalPlayerTargets caster g.livingPlayers
   | .opponent =>
-    playerTargets (g.livingOpponents caster)
+    g.legalPlayerTargets caster (g.livingOpponents caster)
   | .oppGraveyardCard =>
     g.livingOpponents caster
       |>.foldl (fun acc pl => acc ++ g.legalGraveyardCardTargets pl.id (fun _ => true)) #[]
@@ -368,7 +373,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.isOnBattlefield && !o.isCreature &&
         (o.printed.isArtifact || o.printed.isEnchantment))
   | .permanentOrPlayer =>
-    playerTargets g.livingPlayers ++
+    g.legalPlayerTargets caster g.livingPlayers ++
       g.legalPermanentTargets caster (·.isOnBattlefield)
   | .upToTwoCreaturesTotalMvAtMost n =>
     g.legalCreatureTargets caster (fun o => o.printed.manaValue ≤ n)

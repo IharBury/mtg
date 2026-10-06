@@ -335,7 +335,10 @@ def prowessTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
   if !o.isOnBattlefield then #[]
   else
     let printed := if g.retainsPrintedAbilities o then o.printed.prowessInstances else 0
-    let n := if printed == 0 && (g.currentKeywords o).prowess then 1 else printed
+    let granted :=
+      (g.attachedGrantedKeywords o).prowess || o.grantedUntilEot.prowess ||
+        (g.enduringStoryKeywords o).prowess || (g.leftoverGrantedKeywords o).prowess
+    let n := printed + (if granted then 1 else 0)
     Array.replicate n (TriggeredAbility.fra .youCastNoncreature
       "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)"
       (.onSource (.pump 1 1)))
