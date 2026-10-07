@@ -225,6 +225,9 @@ The first slice of the engine models the two-player game:
   (CR 608.2b); every Reality Fracture card is fully parsed and modeled,
   including its activated, loyalty, and static abilities, restricted mana,
   and ward costs other than mana
+- Reality Fracture Commander: every FRC card is parsed and modeled, including
+  commander mana, pain and filter lands, morph, impending, cycling, monarch,
+  toxic, and the set's triggered and loyalty abilities
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,
   including choosing the starting player (CR 103.1), `autopay` to activate

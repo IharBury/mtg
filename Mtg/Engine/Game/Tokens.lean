@@ -116,7 +116,7 @@ def replaceArtifactTokenWithDragon (g : Game) (controller : PlayerId)
 /-- Create a token under `controller`, applying token-doubling and
 Food-and-Treasure replacement effects. -/
 def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
-    (tapped := false) : Game × GameObject :=
+    (tapped := false) (batch := false) : Game × GameObject :=
   if (g.player controller).lost then
     g.createOneToken controller printed (tapped := tapped)
   else
@@ -136,6 +136,8 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
         let (g', _) := g.createOneToken controller
           (g.replaceArtifactTokenWithDragon controller treasureToken) (tapped := tapped)
         g := g'
+      if !batch && (printed.isCreature || original.isCreature) then
+        g := g.noteCreatureTokenEvent controller
       match last with
       | some obj => (g, g.object! obj.id)
       | none => (g, g.object! ⟨0⟩)
@@ -477,8 +479,11 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     let mut g := g
     let mut ids : Array ObjectId := #[]
     let dest := if attacking then some g.defendingPlayer else none
+    let printed := tokenPrinted kind
+    let creature :=
+      printed.isCreature || (g.replaceArtifactTokenWithDragon controller printed).isCreature
     for _ in [0:n] do
-      let (g', obj) := g.createToken controller (tokenPrinted kind) (tapped := tapped)
+      let (g', obj) := g.createToken controller printed (tapped := tapped) (batch := true)
       g := g'
       ids := ids.push obj.id
       if attacking then
@@ -486,7 +491,10 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
           status := { (g.object! obj.id).status with
             attacking := true
             attackingWhom := dest } }
-    return { g with recentTokenIds := ids }
+    g := { g with recentTokenIds := ids }
+    if n > 0 && creature then
+      g := g.noteCreatureTokenEvent controller
+    return g
 
 end Game
 end Mtg.Engine

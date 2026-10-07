@@ -232,6 +232,27 @@ structure Status where
   animatedConstruct55 : Bool := false
   /-- Card name chosen as this permanent entered (Meddling Mage). -/
   chosenName : Option String := none
+  /-- Face down (morph, CR 702.37). A 2/2 creature with no abilities. -/
+  faceDown : Bool := false
+  /-- Goaded for as long as this flag remains (CR 701.38). -/
+  goaded : Bool := false
+  /-- Story counters (Staff of the Storyteller). -/
+  story : Nat := 0
+  /-- Time counters (impending, CR 702.176). -/
+  time : Nat := 0
+  /-- This permanent is not a creature (impending, until the last time counter). -/
+  notACreature : Bool := false
+  /-- Windcrag Siege chose Mardu. Jeskai is `false`. -/
+  windcragMardu : Bool := true
+  /-- Card type chosen as this permanent entered (Serra's Emissary). -/
+  chosenCardType : Option String := none
+  /-- This card may be cast from its owner's graveyard without paying its
+  mana cost, ignoring timing, until end of turn. -/
+  freeCastFromGraveyard : Bool := false
+  /-- This permanent is a commander. -/
+  isCommander : Bool := false
+  /-- First strike only during its controller's turn, until end of turn. -/
+  firstStrikeOnYourTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -263,6 +284,7 @@ def hasCounters (s : Status) : Bool :=
     s.finality > 0 || s.plan > 0 || s.burden > 0 || s.quest > 0 || s.invasion > 0 ||
     s.influence > 0 || s.trampleCounters > 0 || s.indestructibleCounters > 0 ||
     s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0 ||
+    s.story > 0 || s.time > 0 ||
     s.keywordCounters.any
 
 /-- This permanent with every counter removed. -/
@@ -271,7 +293,7 @@ def withoutCounters (s : Status) : Status :=
     plusOnePlusOne := 0, minusOneMinusOne := 0, loyaltyCounters := 0, hope := 0, charge := 0
     stun := 0, shield := 0, finality := 0, plan := 0, burden := 0, quest := 0, invasion := 0
     influence := 0, trampleCounters := 0, indestructibleCounters := 0, lifelinkCounters := 0
-    hone := 0, shadow := 0, lore := 0, keywordCounters := {} }
+    hone := 0, shadow := 0, lore := 0, story := 0, time := 0, keywordCounters := {} }
 
 /-- Another counter of each kind already on this permanent (CR 701.34a).
 +1/+1 counters are added by the caller so their triggers apply. -/
@@ -287,7 +309,8 @@ def proliferatedExceptPlusOne (s : Status) (extra : Nat := 0) : Status :=
     trampleCounters := inc s.trampleCounters
     indestructibleCounters := inc s.indestructibleCounters
     lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
-    lore := inc s.lore, keywordCounters := s.keywordCounters.incPresent extra }
+    lore := inc s.lore, story := inc s.story, time := inc s.time
+    keywordCounters := s.keywordCounters.incPresent extra }
 
 /-- Put the same number of each kind of counter `from` has, except +1/+1
 counters, which the caller adds so their triggers apply (Graft Surgeon). -/
@@ -307,6 +330,7 @@ def addCountersExceptPlusOne (s «from» : Status) (extra : Nat := 0) : Status :
     lifelinkCounters := s.lifelinkCounters + bump «from».lifelinkCounters
     hone := s.hone + bump «from».hone, shadow := s.shadow + bump «from».shadow
     lore := s.lore + bump «from».lore
+    story := s.story + bump «from».story, time := s.time + bump «from».time
     keywordCounters := s.keywordCounters.add («from».keywordCounters.plusExtra extra) }
 
 /-- Until-end-of-turn +P/+T (CR 613.4c / 611.2a). -/
@@ -360,7 +384,9 @@ def untilEotFields : List UntilEotField := [
   ⟨fun s => !s.grantedTriggersUntilEot.isEmpty,
     fun s => { s with grantedTriggersUntilEot := #[] }⟩,
   ⟨fun s => s.cardsInHandPowerUntilEot,
-    fun s => { s with cardsInHandPowerUntilEot := false }⟩
+    fun s => { s with cardsInHandPowerUntilEot := false }⟩,
+  ⟨fun s => s.firstStrikeOnYourTurn,
+    fun s => { s with firstStrikeOnYourTurn := false }⟩
 ]
 
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or

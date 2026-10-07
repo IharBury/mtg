@@ -1,4 +1,5 @@
 import Mtg.Engine.Game.FraAbilities
+import Mtg.Engine.Game.FrcResolve
 
 /-!
 # Reality Fracture effect resolution
@@ -18,6 +19,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   let srcName := g.fraSourceName sourceId
   let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
   match r with
+  | .frc e => g.applyFrc controller effect e targets sourceId
   | .bounce =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
@@ -586,7 +588,12 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       | Target.permanent id =>
         match g.findObject? id with
         | some o =>
-          if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 then
+          let shielded :=
+            match o.controller with
+            | some c => (g.permanentsOf c).any (·.printed.creaturesCantGetMinusCounters)
+            | none => false
+          if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 &&
+              !shielded then
             let n := g.countersYouPut o x (putter := some controller)
             (g.mapObjectStatus o (fun s => { s with minusOneMinusOne := s.minusOneMinusOne + n })).logMsg
               s!"{n} -1/-1 counter(s) are put on {o.name}"

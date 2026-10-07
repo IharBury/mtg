@@ -259,7 +259,19 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
         | some o => g.setObject { o with status := { o.status with firedOnceEachTurn := true } }
         | none => g
       else g
-    let copies := g.extraTriggerCopies controller source + 1
+    let attackEvent :=
+      match event with
+      | .attacking => true
+      | .fra fe =>
+        match fe with
+        | .creatureYouControlAttacks | .creatureYouControlAttacksPlayerAlone
+        | .zombieTokenAttacks | .sphinxesAttack => true
+        | _ => false
+      | _ => false
+    let mardu :=
+      if attackEvent && (g.permanentsOf controller).any (fun o =>
+          o.printed.asEntersChooseMarduOrJeskai && o.status.windcragMardu) then 1 else 0
+    let copies := g.extraTriggerCopies controller source + 1 + mardu
     let wt : WaitingTrigger := {
       controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
       causeId := cause.map (·.id), cause, checked := true }
@@ -439,6 +451,8 @@ Lake-town). -/
 def afterLifeLost (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then g
   else
+    let g := g.modifyPlayer p (fun pl =>
+      { pl with lifeLostThisTurn := pl.lifeLostThisTurn + n })
     let g := { g with lastLifeLost := some (p, n) }
     g.livingPlayers.foldl (fun acc pl =>
       acc.foldControlledPermanents pl.id none fun acc o =>
@@ -461,14 +475,15 @@ def putControlledTriggers (g : Game) (p : PlayerId)
 /-- Queue `p`'s triggered abilities whose Reality Fracture event satisfies
 `pred`, with `cause` as the object that caused them. -/
 def putFraEventTriggersWhere (g : Game) (p : PlayerId) (pred : FraEvent → Bool)
-    (cause : Option GameObject := none) (excludeId : Option ObjectId := none) : Game :=
+    (cause : Option GameObject := none) (excludeId : Option ObjectId := none)
+    (lastKnownPower : Option Int := none) : Game :=
   let fire (g : Game) (o : GameObject) : Game :=
     (o.printed.triggeredAbilities ++ o.status.grantedTriggeredAbilities).foldl (fun g ab =>
       match ab.timing.events.find? (fun e =>
           match e with
           | .fra fe => pred fe
           | _ => false) with
-      | some e => g.queueTrigger p o ab e (cause := cause)
+      | some e => g.queueTrigger p o ab e (lastKnownPower := lastKnownPower) (cause := cause)
       | none => g) g
   let g := g.foldControlledPermanents p excludeId fire
   -- Emblems and effects in the command zone trigger too (CR 114.4).
@@ -476,8 +491,9 @@ def putFraEventTriggersWhere (g : Game) (p : PlayerId) (pred : FraEvent → Bool
 
 /-- Queue `p`'s triggered abilities for the Reality Fracture event `e`. -/
 def putFraEventTriggers (g : Game) (p : PlayerId) (e : FraEvent)
-    (cause : Option GameObject := none) (excludeId : Option ObjectId := none) : Game :=
-  g.putFraEventTriggersWhere p (· == e) cause excludeId
+    (cause : Option GameObject := none) (excludeId : Option ObjectId := none)
+    (lastKnownPower : Option Int := none) : Game :=
+  g.putFraEventTriggersWhere p (· == e) cause excludeId lastKnownPower
 
 /-- Queue “whenever you sacrifice a token” if `o` was a token when sacrificed. -/
 def queueYouSacrificeToken (g : Game) (o : GameObject) : Game :=
@@ -518,6 +534,13 @@ def copiedFromGy {α : Type} (g : Game) (o : GameObject) (sel : CardDef → Arra
 
 /-- Printed activated abilities plus those copied from the graveyard. -/
 def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
+  if o.status.faceDown then
+    match o.printed.morph with
+    | some cost =>
+      #[{ effect := { resolution := .fra (.frc .turnFaceUp), phrase := "Turn this face up." }
+          cost := { mana := cost } }]
+    | none => #[]
+  else
   let own :=
     if !g.retainsPrintedAbilities o then #[]
     else
@@ -748,6 +771,12 @@ After that batch, check state-based actions again. Repeat until idle, then
 `p` receives priority. `recheckSba` is false while still placing the current
 batch (targets or the next player's triggers). -/
 partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Game :=
+  let g :=
+    if g.pendingCreatureTokenCreators.isEmpty then g
+    else
+      let ps := g.pendingCreatureTokenCreators
+      let g := { g with pendingCreatureTokenCreators := #[] }
+      ps.foldl (fun g pid => g.putFraEventTriggers pid .youCreateCreatureTokens) g
   let p := g.priorityInstead p
   let g := if recheckSba then g.checkSBA else g
   if g.over then g
@@ -828,6 +857,32 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
         | some o =>
           acc.putMatchingSourceTriggers landController o .landYouControlEnters
             (keep := fromGraveyard)) g
+
+/-- Queue “whenever you scry” triggers for permanents `p` controls (CR 701.20). -/
+def queueScryTriggers (g : Game) (p : PlayerId) (lookedAt : Nat) : Game :=
+  g.foldControlledPermanents p none fun g o =>
+    g.enqueueWaitingTriggers
+      (o.waitingTriggersFor p .youScry (some (Int.ofNat lookedAt)))
+
+/-- Queue “whenever you scry or surveil” triggers. They wait until the
+scry or surveil is finished (ruling 836). -/
+def queueScryOrSurveilTriggers (g : Game) (p : PlayerId) : Game :=
+  g.foldControlledPermanents p none fun g o =>
+    g.putMatchingSourceTriggers p o .youScryOrSurveil
+
+/-- Start scrying `n` as a keyword action (CR 701.20).
+Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.20c). -/
+def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  let pl := g.player p
+  let count := min n pl.library.size
+  let g := if n == 0 then g else g.queueScryTriggers p count
+  let g := if n == 0 then g else g.queueScryOrSurveilTriggers p
+  let g := if n == 0 then g else
+    g.modifyPlayer p (fun pl => { pl with scriedOrSurveilledThisTurn := true })
+  if count == 0 then
+    g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+  else
+    { g with pending := .scry p count, surveilReturnMvAtMost := none }.logMsg s!"{pl.name} scries {n}"
 
 end Game
 end Mtg.Engine

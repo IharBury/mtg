@@ -47,6 +47,12 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
           else pure (some pw)
         | none => throw "no such planeswalker"
       | _ => pure none
+    if (g.player p).cantAttackJaces then
+      match pw? with
+      | some pw =>
+        if pw.name.startsWith "Jace" || g.hasSubtype pw "Jace" then
+          throw s!"{o.name} can't attack {pw.name} this turn"
+      | none => pure ()
     let dest ←
       match pw? with
       | some pw => pure (pw.controller.getD pw.owner)
@@ -85,6 +91,15 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     g := g.logMsg s!"{(g.player p).name} pays {tax} to attack"
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"
+  let mut sphinxes := 0
+  for id in ids do
+    let a := g.object! id
+    if a.printed.isToken && g.hasSubtype a "Zombie" && g.snapshotPower a >= 6 then
+      g := g.putFraEventTriggers p .zombieTokenAttacks (cause := some a)
+    if g.hasSubtype a "Sphinx" then
+      sphinxes := sphinxes + 1
+  if sphinxes > 0 then
+    g := g.putFraEventTriggers p .sphinxesAttack (lastKnownPower := some (Int.ofNat sphinxes))
   g := g.putAttackTriggersOnStack p ids
   g := { g with pending := .none }
   g := g.promptTriggerTargetsIfNeeded
@@ -310,19 +325,27 @@ def dealAssignedCombatDamage (g : Game) : Game :=
           !(g.player defn).lost then
         let toPlayer := g.replacedDamageAmount src asgn.toPlayer (combat := true)
         let pl := g.player defn
-        g := g.setPlayer { pl with life := pl.life - toPlayer }
-        totalDealt := totalDealt + toPlayer
-        if toPlayer > 0 then
-          g := g.mapObjectStatus (g.object! src.id) (fun s =>
-            { s with combatDamageToPlayers :=
-              if s.combatDamageToPlayers.contains defn then s.combatDamageToPlayers
-              else s.combatDamageToPlayers.push defn })
-        if src.status.blocked then
-          g := g.logMsg
-            s!"{src.name} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"
+        if pl.protectionFromEverything then
+          g := g.logMsg s!"combat damage to {pl.name} is prevented"
+        else if pl.lifeLocked || pl.lifeCantChange then
+          g := g.logMsg s!"{pl.name}'s life total can't change"
         else
-          g := g.logMsg
-            s!"{src.name} deals {toPlayer} combat damage to {pl.name} ({(g.player defn).life} life)"
+          g := g.setPlayer { pl with life := pl.life - toPlayer }
+          totalDealt := totalDealt + toPlayer
+          if toPlayer > 0 && src.printed.toxic > 0 then
+            g := g.modifyPlayer defn (fun q => { q with poison := q.poison + src.printed.toxic })
+            g := g.logMsg s!"{pl.name} gets {src.printed.toxic} poison counter(s) (toxic)"
+          if toPlayer > 0 then
+            g := g.mapObjectStatus (g.object! src.id) (fun s =>
+              { s with combatDamageToPlayers :=
+                if s.combatDamageToPlayers.contains defn then s.combatDamageToPlayers
+                else s.combatDamageToPlayers.push defn })
+          if src.status.blocked then
+            g := g.logMsg
+              s!"{src.name} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"
+          else
+            g := g.logMsg
+              s!"{src.name} deals {toPlayer} combat damage to {pl.name} ({(g.player defn).life} life)"
       if g.hasLifelink src && totalDealt > 0 then
         match src.controller with
         | some pid => g := g.gainLife pid totalDealt.toNat
@@ -360,11 +383,13 @@ def dealAssignedCombatDamage (g : Game) : Game :=
               | none => pure ()
           if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
             g := g.createTreasureTokens pid asgn.toPlayer.toNat
-          g := g.putControlledTriggers defn .combatDamageToYou
+          g := g.putControlledTriggers defn .combatDamageToYou (cause := some src)
           if pid == g.activePlayer &&
               !g.waitingTriggers.any (fun w => w.event == .opponentsDealtCombatDamageYourTurn) then
             g := g.putControlledTriggers pid .opponentsDealtCombatDamageYourTurn
-          g := g.afterLifeLost defn asgn.toPlayer.toNat
+          if !(g.player defn).protectionFromEverything &&
+              !(g.player defn).lifeLocked && !(g.player defn).lifeCantChange then
+            g := g.afterLifeLost defn asgn.toPlayer.toNat
         | none => pure ()
     let pendingRegular :=
       g.combatHasFirstStrike && !g.firstStrikeDamageDone

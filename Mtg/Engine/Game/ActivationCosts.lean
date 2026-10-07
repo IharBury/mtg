@@ -146,7 +146,15 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     let g ← g.payLifeCost p payLife
     let src := g.object! sourceId
     let g := g.logMsg s!"{(g.player p).name} discards {src.name}"
-    let (g, _) := g.move sourceId (.graveyard src.owner) none
+    let (g, newId) := g.move sourceId (.graveyard src.owner) none
+    let g :=
+      if src.printed.cycling.isSome then
+        match g.findObject? newId, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+        | some card, spell? =>
+          let x := spell?.bind (·.chosenX)
+          g.putMatchingSourceTriggers p card (.fra .youCycle) (lastKnownPower := x.map Int.ofNat)
+        | _, _ => g
+      else g
     return g
   let fromGraveyard := src.zone == .graveyard src.owner && src.owner == p
   if fromGraveyard && !tapSource && !sacrificeSource then
@@ -168,6 +176,12 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   g := (← g.payLifeCost p payLife)
   match ab with
   | some a =>
+    if a.cost.removeStoryCounter then
+      let src := g.object! sourceId
+      if src.status.story == 0 then
+        throw s!"{src.name} has no story counter"
+      g := g.setObject { src with status := { src.status with story := src.status.story - 1 } }
+      g := g.logMsg s!"{(g.player p).name} removes a story counter from {src.name}"
     if a.cost.removeIndestructibleCounter then
       g := (← g.payRemoveIndestructibleCounter (g.object! sourceId))
     if a.cost.putStunCounterOnSource then

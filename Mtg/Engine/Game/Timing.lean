@@ -132,7 +132,7 @@ def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p &&
-    (o.printed.flashback.isSome || o.flashbackUntilEot ||
+    (o.printed.flashback.isSome || o.flashbackUntilEot || o.status.freeCastFromGraveyard ||
       (o.printed.isLand && g.controlsPlayLandsFromGraveyard p))
 
 /-- True when `p` controls a permanent that lets them look at the library top. -/

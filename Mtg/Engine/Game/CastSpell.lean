@@ -92,7 +92,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
           att.status.attacking && !att.status.blocked) then
         throw s!"{att.name} is not an unblocked attacker you control"
       pure (some c)
-  if face.hasSorcerySpeed && !g.asSorcery? p && sneakCost.isNone then
+  if face.hasSorcerySpeed && !g.asSorcery? p && sneakCost.isNone &&
+      !(card.status.freeCastFromGraveyard && card.zone == .graveyard p) then
     throw s!"{face.name} has sorcery speed"
   if face.isModal then
     if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
@@ -169,7 +170,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsMode := face.isModal
   let needsTarget := face.requiresTarget && !needsMode
   let needsAdditionalCostChoice := face.announcesAdditionalCost
-  let needsKicker := face.kicker.isSome
+  let needsKicker := face.kicker.isSome || face.morph.isSome || face.impending.isSome
   let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
   -- CR 702.34a: a flashback cost that includes discarding a card.
@@ -341,7 +342,8 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       return g.enterProposalWindow p pl prop face.isModal
         (face.requiresTarget && !face.isModal) "CR 601.2b / 700.2"
         (needsAdditionalCost := face.announcesAdditionalCost)
-        (needsKicker := face.kicker.isSome) (needsGift := face.giftTreasure)
+        (needsKicker := face.kicker.isSome || face.morph.isSome || face.impending.isSome)
+        (needsGift := face.giftTreasure)
         (needsTeamwork := face.teamwork.isSome)
   | _ => throw "Not time to choose X (CR 601.2b)"
 

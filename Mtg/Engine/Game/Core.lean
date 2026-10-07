@@ -201,6 +201,18 @@ structure Game where
   pendingDiscardsLeft : Nat := 0
   /-- Ward payments still to announce after the current one (CR 702.21). -/
   wardQueue : Array WardObligation := #[]
+  /-- Permanents sacrificed at the beginning of the next end step. -/
+  delayedEndStepSacrifices : Array ObjectId := #[]
+  /-- Graveyard cards that return under a chosen player at the next end step. -/
+  delayedGraveReturns : Array (ObjectId × PlayerId) := #[]
+  /-- At the next end step, reveal this many creature cards (Synthetic Destiny). -/
+  delayedSynthetic : Array (PlayerId × Nat) := #[]
+  /-- After the current search, untap the land if its controller has this many lands. -/
+  untapSearchedIfLands : Option Nat := none
+  /-- Players who created one or more creature tokens since the last priority. -/
+  pendingCreatureTokenCreators : Array PlayerId := #[]
+  /-- Lands tapped for commander-identity mana that scries a matching creature. -/
+  ancestryLandsTapped : Array ObjectId := #[]
 deriving Repr, Inhabited
 
 namespace Game
@@ -221,10 +233,17 @@ def modifyPlayer (g : Game) (p : PlayerId) (f : Player → Player) : Game :=
 
 /-- Set `p`'s life total and log `msg`. -/
 def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String) : Game :=
-  if (g.player p).lifeLocked && life != (g.player p).life then
-    g.logMsg s!"{(g.player p).name}'s life total can't change"
+  let pl := g.player p
+  if (pl.lifeLocked || pl.lifeCantChange) && life != pl.life then
+    g.logMsg s!"{pl.name}'s life total can't change"
   else
-    g.setPlayer { (g.player p) with life := life } |>.logMsg msg
+    g.setPlayer { pl with life := life } |>.logMsg msg
+
+/-- Remember that `p` created one or more creature tokens (CR 603.2c).
+One instruction notes the player once. -/
+def noteCreatureTokenEvent (g : Game) (p : PlayerId) : Game :=
+  if (g.player p).lost || g.pendingCreatureTokenCreators.contains p then g
+  else { g with pendingCreatureTokenCreators := g.pendingCreatureTokenCreators.push p }
 
 def livingPlayers (g : Game) : Array Player :=
   g.players.filter (fun pl => !pl.lost)

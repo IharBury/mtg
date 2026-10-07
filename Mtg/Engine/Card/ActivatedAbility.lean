@@ -123,6 +123,8 @@ structure ActivationCost where
   sacrificeEquipmentAttachedToSource : Bool := false
   /-- A Reality Fracture cost. -/
   fra : FraCost := .none
+  /-- Remove a story counter from the source. -/
+  removeStoryCounter : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost

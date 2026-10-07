@@ -89,7 +89,13 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- if the game continues (CR 800.4 / 800.4a).
       for pl in g.players do
         if !pl.lost then
-          if pl.life ≤ 0 then
+          let shielded :=
+            (g.permanentsOf pl.id).any (·.printed.cantLoseGame) ||
+              (g.objects.filter (fun o =>
+                o.zone == .command && o.controlledBy pl.id)).any (·.printed.cantLoseGame)
+          if shielded then
+            pure ()
+          else if pl.life ≤ 0 then
             g := g.setPlayer { pl with lost := true }
             g := g.logMsg s!"{pl.name} loses the game (life total {pl.life})"
             changed := true

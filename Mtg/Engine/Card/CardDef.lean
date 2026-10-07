@@ -312,6 +312,70 @@ structure CardDef where
   prepareFace : Option AdventureFace := none
   /-- Additional cost: behold this quality, or pay this much generic mana. -/
   additionalCostBeholdOrPay : Option (String × Nat) := none
+  /-- `{T}: Add` these mana as one ability (Sol Ring adds {C}{C}). -/
+  tapAddTogether : Array ManaType := #[]
+  /-- `{T}: Add one of these types. This permanent deals `n` damage to you.` -/
+  tapAddOneOfDealsDamage : Option (Array ManaType × Nat) := none
+  /-- `{T}: Add one mana of any color that a land an opponent controls could produce.` -/
+  tapAddOppCouldProduce : Bool := false
+  /-- `{T}: Add one mana of any type that a land you control could produce.` -/
+  tapAddYouCouldProduce : Bool := false
+  /-- Lands you control have `{T}: Add one mana of any color.` -/
+  grantLandsTapAnyColor : Bool := false
+  /-- Pay `cost`, `{T}`: add two mana in any combination of these colors. -/
+  filterMana : Option (ManaCost × Array ManaType) := none
+  /-- Enters tapped unless you control a land of one of these subtypes. -/
+  entersTappedUnlessAnySubtype : Array String := #[]
+  /-- Enters tapped unless you control at least this many basic lands. -/
+  entersTappedUnlessNBasics : Option Nat := none
+  /-- Enters tapped unless opponents control at least this many lands. -/
+  entersTappedUnlessOppLands : Option Nat := none
+  /-- Spending commander-identity mana from this land to cast a creature spell
+  that shares a creature type with your commander scries 1 (Path of Ancestry). -/
+  commanderIdentityScryCreature : Bool := false
+  /-- Morph cost (CR 702.37). Face-down cast is a 2/2 for {3}. -/
+  morph : Option ManaCost := none
+  /-- Impending `n`—`cost`. Enters with `n` time counters and isn't a creature
+  until the last is removed. -/
+  impending : Option (Nat × ManaCost) := none
+  /-- Protection from each of these colors. -/
+  protectionFromColors : Array Color := #[]
+  /-- Cycling cost (CR 702.29). -/
+  cycling : Option ManaCost := none
+  /-- If you control a commander, you may cast this spell without paying its mana cost. -/
+  freeCastIfControlCommander : Bool := false
+  /-- This planeswalker can be your commander. -/
+  canBeCommander : Bool := false
+  /-- Your opponents can't gain life. -/
+  opponentsCantGainLife : Bool := false
+  /-- You can't lose the game. -/
+  cantLoseGame : Bool := false
+  /-- Your opponents can't win the game. -/
+  opponentsCantWin : Bool := false
+  /-- Creatures you control can't have minus counters put on them. -/
+  creaturesCantGetMinusCounters : Bool := false
+  /-- This creature gets +1/+1 for each unspent mana you have. -/
+  powerPerUnspentMana : Bool := false
+  /-- If you would lose unspent mana, that mana becomes colorless instead. -/
+  unspentManaBecomesColorless : Bool := false
+  /-- Eminence: other Sphinx spells you cast cost this much less while this is
+  in the command zone or on the battlefield. -/
+  eminenceSphinxReduction : Nat := 0
+  /-- As this creature enters, choose a card type. -/
+  asEntersChooseCardType : Bool := false
+  /-- You and creatures you control have protection from the chosen card type. -/
+  protectionFromChosenCardType : Bool := false
+  /-- Corrupted — creatures you control with toxic have lifelink while an
+  opponent has three or more poison counters. -/
+  corruptedToxicLifelink : Bool := false
+  /-- As this enchantment enters, choose Mardu or Jeskai. -/
+  asEntersChooseMarduOrJeskai : Bool := false
+  /-- Toxic `n` (CR 702.164). -/
+  toxic : Nat := 0
+  /-- This creature can't block. -/
+  cantBlock : Bool := false
+  /-- Emblem: creatures you control get +2/+2 and have flying. -/
+  grantTeamPlusTwoFlying : Bool := false
 deriving Repr, Inhabited
 
 namespace CardDef

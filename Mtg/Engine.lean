@@ -5,6 +5,7 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Catalog.RealityFracture
+import Mtg.Engine.Catalog.RealityFractureCommander
 import Mtg.Engine.Catalog.Supported
 import Mtg.Engine.Color
 import Mtg.Engine.Deck

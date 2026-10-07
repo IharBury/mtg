@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.AbilityResolution
+import Mtg.Engine.Card.FrcEffect
 import Mtg.Engine.Card.SharedTrigger
 import Mtg.Engine.Card.StaticAbility
 
@@ -402,6 +403,8 @@ inductive FraResolution where
   /-- Choose `count` modes of this triggered ability as it is put on the
   stack; the modes are `CardDef.fraTriggerModes`. -/
   | chooseTriggerModes (count : Nat)
+  /-- A Reality Fracture Commander resolution. -/
+  | frc (e : FrcEffect)
 deriving Repr, Inhabited, BEq
 
 namespace FraResolution

@@ -125,11 +125,22 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     return { g with proposedSpell := some { prop with
       kicked := false, kickerAnnounced := true } }
   let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-  match spell.printed.kicker with
-  | none => throw "That spell has no kicker"
-  | some kicker =>
+  let face := spell.printed
+  match face.morph, face.impending, face.kicker with
+  | some alt, _, none =>
+    let g := g.setObject { spell with status := { spell.status with faceDown := true } }
+    let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
+    return { g with proposedSpell := some { prop with
+      kicked := true, kickerAnnounced := true, cost } }
+  | _, some (n, alt), none =>
+    let g := g.setObject { spell with status :=
+      { spell.status with time := n, notACreature := true } }
+    let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
+    return { g with proposedSpell := some { prop with
+      kicked := true, kickerAnnounced := true, cost } }
+  | _, _, none => throw "That spell has no kicker"
+  | _, _, some kicker =>
     let g := g.setObject { spell with kicked := true }
-    let face := spell.printed
     let start :=
       if !prop.cost.includesManaPayment && (playCostStart spell face).includesManaPayment then
         ManaCost.empty
@@ -172,9 +183,12 @@ def announceKicker (g : Game) (p : PlayerId) (kick : Bool) : Except String Game 
     if caster != p then
       throw s!"Only {(g.player caster).name} may announce kicker"
     let g ← g.applyKickerToProposed kick
+    let face? := g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) |>.map (·.printed)
     let g := g.logMsg
-      (if kick then s!"{(g.player p).name} kicks the spell"
-       else s!"{(g.player p).name} does not kick the spell")
+      (if kick && (face?.bind (·.morph)).isSome then s!"{(g.player p).name} casts the spell face down"
+       else if kick && (face?.bind (·.impending)).isSome then s!"{(g.player p).name} casts the spell for its impending cost"
+       else if kick then s!"{(g.player p).name} kicks the spell"
+       else s!"{(g.player p).name} pays the printed cost")
     return g.afterOptionalAdditionalCost p
   | _ => throw "Not time to announce kicker"
 

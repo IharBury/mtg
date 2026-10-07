@@ -3,6 +3,7 @@ import Std.Data.HashSet
 import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Card.OracleActivate
 import Mtg.Engine.Card.OracleArgs
+import Mtg.Engine.Card.FrcParse
 import Mtg.Engine.Card.OracleCandidates
 import Mtg.Engine.Card.OracleNorm
 
@@ -881,7 +882,8 @@ where
     else if low.contains "among legendary creatures and planeswalkers" then
       some { c with tapAddAnyColorAmongLegendaries := true }
     else if low.contains "in your commander's color identity" then
-      some { c with tapAddCommanderIdentity := true }
+      some { c with tapAddCommanderIdentity := true
+                    commanderIdentityScryCreature := low.contains "scry" }
     else if low.contains "sacrifice this artifact: add one mana of any color" ||
         low.contains "sacrifice this token: add one mana of any color" then
       some { c with tapSacrificeAddAnyColor := true }
@@ -902,6 +904,21 @@ where
       match life, manaLetters add with
       | some n, some ts => some { c with tapPayLifeAddOneOf := some (n, ts.toArray) }
       | _, _ => none
+    else if low.contains "deals" && low.contains "damage to you" then
+      let n :=
+        match (low.splitOn "deals ").getLastD "" |>.takeWhile Char.isDigit with
+        | "" => 1
+        | d => d.toNat!
+      let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
+      match manaLetters add with
+      | some ts => some { c with tapAddOneOfDealsDamage := some (ts.toArray, n) }
+      | none => none
+    else if low.contains "land an opponent controls could produce" then
+      some { c with tapAddOppCouldProduce := true }
+    else if low.contains "land you control could produce" then
+      some { c with tapAddYouCouldProduce := true }
+    else if low.contains "one mana of any color" && !low.contains "spend this mana" then
+      some { c with tapAddAnyColor := true }
     else if low.contains " or " then
       let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
       manaLetters add |>.map fun ts => { c with tapAddOneOf := ts.toArray }
@@ -911,7 +928,13 @@ where
       | some [t] =>
         if c.basicLandMana.any (fun col => ManaType.colored col == t) && c.isLand then none
         else some (pushMana c t)
-      | _ => none
+      | some ts =>
+        -- `{T}: Add {C}{C}` is one ability. A sacrifice or other cost before
+        -- the mana stays with the activated-ability parser.
+        if ts.length ≥ 2 && low.startsWith "{t}: add" && !low.contains "sacrifice" then
+          some { c with tapAddTogether := ts.toArray }
+        else none
+      | none => none
 
 def skipLine (c : CardDef) (line : String) : Bool :=
   let n := normalizeUnit c.name line
@@ -1919,7 +1942,13 @@ partial def parseRules (c : CardDef) (lines : List String)
               let ab : ActivatedAbility := activated e (loyalty := some sym)
               go { c with activatedAbilities :=
                 c.activatedAbilities.push { ab with fraCondition := cond } } rest
-            | none => unrecognized c line rest
+            | none =>
+              match parseFrcLoyaltyEffect effectText with
+              | some e =>
+                let ab : ActivatedAbility := activated e (loyalty := some sym)
+                go { c with activatedAbilities :=
+                  c.activatedAbilities.push { ab with fraCondition := cond } } rest
+              | none => unrecognized c line rest
         | none =>
         match keywordTokens c.name line with
         | some toks =>
@@ -1973,7 +2002,10 @@ partial def parseRules (c : CardDef) (lines : List String)
                   | some e =>
                     let (e, more) := extendSpellSequence c.name e rest
                     go (applyParsed c (.spell e)) more
-                  | none => unrecognized c line rest
+                  | none =>
+                    match parseFrcLine c line with
+                    | some c => go c rest
+                    | none => unrecognized c line rest
   go c units
 
 def parseAdventure (lines : List String) (keepUnrecognized : Bool := false) :

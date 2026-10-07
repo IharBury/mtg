@@ -194,32 +194,6 @@ def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.applyPermanentAction o action) sourceId missing
 
-/-- Queue “whenever you scry” triggers for permanents `p` controls (CR 701.20). -/
-def queueScryTriggers (g : Game) (p : PlayerId) (lookedAt : Nat) : Game :=
-  g.foldControlledPermanents p none fun g o =>
-    g.enqueueWaitingTriggers
-      (o.waitingTriggersFor p .youScry (some (Int.ofNat lookedAt)))
-
-/-- Queue “whenever you scry or surveil” triggers. They wait until the
-scry or surveil is finished (ruling 836). -/
-def queueScryOrSurveilTriggers (g : Game) (p : PlayerId) : Game :=
-  g.foldControlledPermanents p none fun g o =>
-    g.putMatchingSourceTriggers p o .youScryOrSurveil
-
-/-- Start scrying `n` as a keyword action during resolution (CR 701.20).
-Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.20c). -/
-def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  let pl := g.player p
-  let count := min n pl.library.size
-  let g := if n == 0 then g else g.queueScryTriggers p count
-  let g := if n == 0 then g else g.queueScryOrSurveilTriggers p
-  let g := if n == 0 then g else
-    g.modifyPlayer p (fun pl => { pl with scriedOrSurveilledThisTurn := true })
-  if count == 0 then
-    g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
-  else
-    { g with pending := .scry p count, surveilReturnMvAtMost := none }.logMsg s!"{pl.name} scries {n}"
-
 /-- Start surveilling `n` during resolution (CR 701.25): look at the top
 `n` cards, put any number into the graveyard and the rest back on top in any
 order. -/

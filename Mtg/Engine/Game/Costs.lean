@@ -111,7 +111,9 @@ def finishProposedSpell (g : Game) : Except String Game := do
 
 /-- Starting mana cost of `face` before increases and reductions (CR 118.7). -/
 def playCostStart (card : GameObject) (face : CardDef) : ManaCost :=
-  if card.castFromGraveyard || card.zone == .graveyard card.owner then
+  if card.status.freeCastFromGraveyard && card.zone == .graveyard card.owner then
+    ManaCost.empty
+  else if card.castFromGraveyard || card.zone == .graveyard card.owner then
     face.flashback.getD face.manaCost
   else face.manaCost
 
@@ -255,7 +257,14 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       if face.hasType ty then acc + n else acc) 0) +
     (pl.supertypeSpellCostLessThisTurn.foldl (fun acc (s, n) =>
       if face.hasSupertype s then acc + n else acc) 0)
-  afterWitch.reduceGeneric (subtypeLess + selfLess + thisTurnLess)
+  let sphinxLess :=
+    if face.hasSubtype "Sphinx" then
+      let zone (o : GameObject) :=
+        o.id != card.id && o.controlledBy caster &&
+          (o.isOnBattlefield || o.zone == .command)
+      (g.objects.filter zone).foldl (fun acc o => acc + o.printed.eminenceSphinxReduction) 0
+    else 0
+  (afterWitch.reduceGeneric (subtypeLess + selfLess + thisTurnLess)).reduceGeneric sphinxLess
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
 (CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
@@ -311,6 +320,13 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
           | _ => false))
   let cost :=
     if omnipresent then g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+    else cost
+  let freeCommander :=
+    face.freeCastIfControlCommander &&
+      (g.permanentsOf caster).any (·.status.isCommander)
+  let cost :=
+    if freeCommander || card.status.freeCastFromGraveyard then
+      g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
     else cost
   ManaCost.afterReduction face.manaCost cost
 

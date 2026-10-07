@@ -93,7 +93,8 @@ def basicLandTypesAmong (g : Game) (p : PlayerId) : Nat :=
     (g.permanentsOf p).any (fun o => o.printed.isLand && o.hasSubtype t))).size
 
 def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
-  if o.isOnBattlefield && o.status.animatedConstruct55 then
+  if o.status.faceDown then (2, 2)
+  else if o.isOnBattlefield && o.status.animatedConstruct55 then
     (o.status.setBasePower.getD 5, o.status.setBaseToughness.getD 5)
   else if o.staticAbilities.any (· == .fra .powerEqualsBasicLandTypes) then
     let cda : Int := Int.ofNat (g.basicLandTypesAmong o.you)
