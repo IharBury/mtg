@@ -337,6 +337,8 @@ inductive FraManaUse where
   | artifactSpell
   /-- Only casting Dragon spells (Desolation of Smaug). -/
   | dragonSpell
+  /-- Only casting spells of this subtype. -/
+  | subtypeSpell (subtype : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What a payment is for, as far as `FraManaUse` restrictions care. The
@@ -367,6 +369,7 @@ def FraManaUse.allows : FraManaUse → ManaSpend → Bool
   | .equipmentOrEquip, s => (s.spell && s.subtypes.contains "Equipment") || s.equip
   | .artifactSpell, s => s.spell && s.artifact
   | .dragonSpell, s => s.spell && s.subtypes.contains "Dragon"
+  | .subtypeSpell sub, s => s.spell && s.subtypes.contains sub
 
 /-- Short label for a restriction in pool notation. -/
 def FraManaUse.label : FraManaUse → String
@@ -379,6 +382,7 @@ def FraManaUse.label : FraManaUse → String
   | .equipmentOrEquip => "Equipment spells and equip abilities"
   | .artifactSpell => "artifact spells"
   | .dragonSpell => "Dragon spells"
+  | .subtypeSpell sub => s!"{sub} spells"
 
 /-- Unspent mana a player currently has (CR 106.4). Restricted mana (CR 106.10)
 is a subset of the colored totals. -/

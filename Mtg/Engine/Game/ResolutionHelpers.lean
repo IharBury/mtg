@@ -105,11 +105,12 @@ def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTar
 
 /-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
 permission to cast them, spending mana as though it were any type. -/
-def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId) : Game :=
+def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
+    (ty : CardType := .creature) : Game :=
   let ids :=
     (g.player fromPlayer).graveyard.filter (fun id =>
       match g.findObject? id with
-      | some o => o.printed.isCreature
+      | some o => o.printed.hasType ty
       | none => false)
   Id.run do
     let mut g := g
@@ -274,9 +275,9 @@ def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
   g.foldBattlefield (fun o => o.isCreature && pred o)
     (fun g o => g.dealDamageToPermanent o n)
 
-/-- Deal `n` damage to each non-Dragon creature. -/
-def dealDamageToEachNonDragon (g : Game) (n : Nat) : Game :=
-  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o "Dragon")
+/-- Deal `n` damage to each creature that is not `subtype`. -/
+def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : String := "Dragon") : Game :=
+  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
 
 end Game
 end Mtg.Engine

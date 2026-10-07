@@ -85,6 +85,15 @@ def fields : List Field := [
   ⟨(·.convoke), fun k b => { k with convoke := b }, "convoke"⟩
 ]
 
+/-- The keyword set named by Oracle text (`trample`, `flying`), if modeled. -/
+def ofName? (s : String) : Option Keywords :=
+  let key := s.map Char.toLower
+  fields.find? (fun f => f.name.map Char.toLower == key) |>.map (fun f => f.set none true)
+
+#guard ofName? "trample" == some { trample := true }
+#guard ofName? "Flying" == some { flying := true }
+#guard (ofName? "not a keyword").isNone
+
 /-- Union of two keyword sets (printed or granted). -/
 def merge (a b : Keywords) : Keywords :=
   fields.foldl (fun acc f => f.set acc (f.get a || f.get b)) none

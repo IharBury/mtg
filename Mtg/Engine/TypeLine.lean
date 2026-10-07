@@ -48,6 +48,10 @@ def englishName : CardType → String
   | .scheme => "Scheme"
   | .conspiracy => "Conspiracy"
 
+/-- Lowercase Oracle word (`artifact`, `creature`). -/
+def oracleWord (t : CardType) : String :=
+  t.englishName.map Char.toLower
+
 instance : ToString CardType where
   toString := englishName
 
@@ -110,6 +114,10 @@ def englishName : Supertype → String
   | .ongoing => "Ongoing"
   | .snow => "Snow"
   | .world => "World"
+
+/-- Lowercase Oracle word (`legendary`, `basic`). -/
+def oracleWord (s : Supertype) : String :=
+  s.englishName.map Char.toLower
 
 instance : ToString Supertype where
   toString := englishName

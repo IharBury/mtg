@@ -539,21 +539,21 @@ def effectLines (cardName : String) (e : Effect) : List String :=
       if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
   | .sequence [.returnTargetSpell, .draw 1] =>
     ["Return target spell to its owner's hand.", "Draw a card."]
-  | .sequence [.draw 1, .loseLife 1, .amassGoblins n] =>
-    ["You draw a card and lose 1 life.", s!"Amass Goblins {n}."]
-  | .sequence [.returnFromGyToHand, .amassGoblins n] =>
+  | .sequence [.draw 1, .loseLife 1, .amassGoblins n subtype] =>
+    ["You draw a card and lose 1 life.", s!"Amass {pluralizeName subtype} {n}."]
+  | .sequence [.returnFromGyToHand, .amassGoblins n subtype] =>
     ["Return up to one target creature card from your graveyard to your hand.",
-      s!"Amass Goblins {n}."]
-  | .sequence [.dealDamageToEachNonDragon n, .addFourManaDragonSpells] =>
-    [s!"{cardName} deals {n} damage to each non-Dragon creature.",
-      "Add four mana in any combination of colors. Spend this mana only to cast Dragon spells."]
+      s!"Amass {pluralizeName subtype} {n}."]
+  | .sequence [.dealDamageToEachNonDragon n sub, .addFourManaDragonSpells m sub2] =>
+    [s!"{cardName} deals {n} damage to each non-{sub} creature.",
+      s!"Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells."]
   | .sequence [.onPermanent (.grantKeywords k), .draw 1] =>
     if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
       ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
         "Draw a card."]
     else fallback
-  | .becomeArtifactCreature44Flying =>
-    ["Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness 4/4 and gains flying.",
+  | .becomeArtifactCreature44Flying p t kw =>
+    [s!"Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness {p}/{t} and gains {kw}.",
       "Draw a card."]
   | _ => fallback
 

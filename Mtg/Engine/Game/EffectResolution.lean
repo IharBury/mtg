@@ -349,12 +349,13 @@ def applyGainLifeSearchBasicPlusOne (g : Game) (_controller : PlayerId)
           | none => g.logMsg "The target is no longer legal"
       g.beginLibrarySearch pid isBasicLandCard "a basic land card" (.battlefield true)
 
-/-- You may draw one card for each artifact you control. If you do, each
-opponent draws a card (Armor Wars). -/
-def mayDrawPerArtifact (g : Game) (p : PlayerId) : Game :=
-  let n := ((g.permanentsOf p).filter (fun o => o.printed.isArtifact)).size
+/-- You may draw one card for each permanent of type `ty` you control. If you
+do, each opponent draws a card (Armor Wars). -/
+def mayDrawPerArtifact (g : Game) (p : PlayerId) (ty : CardType := .artifact) : Game :=
+  let n := ((g.permanentsOf p).filter (fun o => o.printed.hasType ty)).size
   if n == 0 then
-    g.logMsg s!"{(g.player p).name} controls no artifacts, so no cards are drawn"
+    let what := if ty == .artifact then "artifacts" else ty.pluralName
+    g.logMsg s!"{(g.player p).name} controls no {what}, so no cards are drawn"
   else
     { g with pending := .fraChoice p (.mayDrawThenEachOpponentDraws n) }
       |>.logMsg s!"{(g.player p).name} may draw {n}"
@@ -362,14 +363,15 @@ def mayDrawPerArtifact (g : Game) (p : PlayerId) : Game :=
 /-- You may put a Hero creature card with mana value `maxMv` or less from
 your hand onto the battlefield. If you don't, draw a card (Origin of the
 Avengers; ruling 507). -/
-def mayPutHeroOrDraw (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
+def mayPutHeroOrDraw (g : Game) (p : PlayerId) (maxMv : Nat)
+    (subtype : String := "Hero") : Game :=
   let ids := (g.player p).hand.filter (fun id =>
     (g.findObject? id).any (fun o =>
-      o.printed.isCreature && g.hasSubtype o "Hero" && o.printed.manaValue ≤ maxMv))
+      o.printed.isCreature && g.hasSubtype o subtype && o.printed.manaValue ≤ maxMv))
   if ids.isEmpty then g.draw p 1
   else
     { g with pending := .fraChoice p (.mayPutHeroFromHandOrDraw ids) }
-      |>.logMsg s!"{(g.player p).name} may put a Hero creature card onto the battlefield"
+      |>.logMsg s!"{(g.player p).name} may put {indefinite subtype} {subtype} creature card onto the battlefield"
 
 /-- Spells of type `ty` cost `{n}` less this turn. -/
 def grantTypeCostLessThisTurn (g : Game) (p : PlayerId) (ty : CardType) (n : Nat) : Game :=
@@ -817,9 +819,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .creaturesOfPlayerPump pw tw =>
     g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.pumpControlledCreatures pid pw tw)
-  | .exileGraveyardCreaturesGrantCast =>
+  | .exileGraveyardCreaturesGrantCast ty =>
     g.withLegalKindPlayer controller effect.targetKind targets
-      (fun g pid => g.exileCreaturesFromGraveyard controller pid)
+      (fun g pid => g.exileCreaturesFromGraveyard controller pid ty)
   | .draw n =>
     g.draw controller n
   | .scry n =>
@@ -866,9 +868,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
-  | .mayAttachEquipmentIfDwarf =>
+  | .mayAttachEquipmentIfDwarf subtype =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      if g.hasSubtype o "Dwarf" then
+      if g.hasSubtype o subtype then
         { g with pending := .mayAttachEquipment controller o.id }.logMsg
           s!"{(g.player controller).name} may attach an Equipment to {o.name}"
       else g)
@@ -901,7 +903,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         g.logMsg "A target is no longer legal. The exchange doesn't happen."
     | _, _ =>
       g.logMsg "A target is no longer legal. The exchange doesn't happen."
-  | .plusOneOnCreatureTargets =>
+  | .plusOneOnCreatureTargets n =>
     Id.run do
       let creatureLegal := g.legalTargetsForAtomicKind controller .creature none
       let mut g := g
@@ -910,7 +912,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | Target.permanent oid =>
           if creatureLegal.contains t then
             match g.findObject? oid with
-            | some o => g := g.addPlusOnePlusOneTo o 1
+            | some o => g := g.addPlusOnePlusOneTo o n
             | none => g := g.logMsg "The target is no longer in play"
           else
             g := g.illegalAbilityTarget t
@@ -933,8 +935,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       return g
   | .creaturesYouControlPump pw tw =>
     g.pumpControlledCreatures controller pw tw
-  | .amassGoblins n =>
-    g.amassGoblins controller n
+  | .amassGoblins n subtype =>
+    g.amass controller subtype n
   | .counterThenRecruitIfMvAtMost n =>
     match targets[0]? with
     | some (Target.card id) =>
@@ -977,25 +979,25 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       else g.logMsg "The target is no longer legal"
     | _, some _ => g.logMsg "The target is no longer legal"
     | _, none => g
-  | .plusOneThenEachOtherIfFromGy =>
+  | .plusOneThenEachOtherIfFromGy n =>
     match targets[0]? with
     | some (Target.permanent oid) =>
       match g.findObject? oid with
       | none => g.logMsg "The target is no longer legal"
       | some o =>
-        let g := g.addPlusOnePlusOneTo o 1
+        let g := g.addPlusOnePlusOneTo o n
         if !castFromGraveyard then g
         else
           g.forEachControlledCreature controller
-            (fun g c => g.addPlusOnePlusOneTo c 1) (some oid)
+            (fun g c => g.addPlusOnePlusOneTo c n) (some oid)
     | _ => g.logMsg "The target is no longer legal"
   | .drawIfFromGy n fromGy =>
     g.draw controller (if castFromGraveyard then fromGy else n)
-  | .amassGoblinsOrFromGy n fromGy =>
-    g.amassGoblins controller (if castFromGraveyard then fromGy else n)
-  | .searchLegendaryCreatureToHand =>
+  | .amassGoblinsOrFromGy n fromGy subtype =>
+    g.amass controller subtype (if castFromGraveyard then fromGy else n)
+  | .searchLegendaryCreatureToHand s ty =>
     g.resolveLibrarySearchToHand controller (fun c =>
-      c.isCreature && c.hasSupertype .legendary) "legendary creature card"
+      c.hasType ty && c.hasSupertype s) s!"{s.oracleWord} {ty.oracleWord} card"
   | .dealDamageToEachOppCreature n =>
     g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
   | .targetPlayerDraw n =>
@@ -1004,13 +1006,14 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileIfDiesThisTurn =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true }))
-  | .addRedPerOppArtifacts =>
-    let n := g.countOpponentArtifacts controller
+  | .addRedPerOppArtifacts ty =>
+    let n := g.battlefield.filter (fun o =>
+      o.printed.hasType ty && !o.controlledBy controller) |>.size
     let g := g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .red) n })
     g.logMsg s!"{(g.player controller).name} adds {n} red mana"
-  | .dealDamageToEachNonDragon n =>
-    g.dealDamageToEachNonDragon n
+  | .dealDamageToEachNonDragon n subtype =>
+    g.dealDamageToEachNonDragon n subtype
   | .chooseTypeReturnOthers =>
     let types := g.battlefieldCreatureTypes
     if types.isEmpty then
@@ -1028,17 +1031,17 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         (g.findObject? id).any (·.printed.isCreature))
     g.offerCardChoice controller creatures creatures.size .creaturesToBattlefield
       s!"{(g.player controller).name} may put any number of creature cards from their hand onto the battlefield"
-  | .millThenPutInstantOrSorcery n =>
+  | .millThenPutInstantOrSorcery n a b =>
     g.millThenChooseForHand controller n
-      (fun o => o.printed.isInstant || o.printed.isSorcery) 1 true
-  | .millThenPutLands n max =>
-    g.millThenChooseForHand controller n (fun o => o.printed.isLand) max false
-  | .addFourManaDragonSpells =>
-    g.beginFraChoice controller (.addManaColors 4 .dragonSpell)
-      s!"{(g.player controller).name} chooses the colors of four mana that can be spent only on Dragon spells"
-  | .millThenPutAllInstantsOrSorceries n =>
+      (fun o => o.printed.hasType a || o.printed.hasType b) 1 true
+  | .millThenPutLands n max ty =>
+    g.millThenChooseForHand controller n (fun o => o.printed.hasType ty) max false
+  | .addFourManaDragonSpells n subtype =>
+    g.beginFraChoice controller (.addManaColors n (.subtypeSpell subtype))
+      s!"{(g.player controller).name} chooses the colors of {englishNumber n} mana that can be spent only on {subtype} spells"
+  | .millThenPutAllInstantsOrSorceries n a b =>
     g.millThenPutFromGy controller n
-      (fun o => o.printed.isInstant || o.printed.isSorcery)
+      (fun o => o.printed.hasType a || o.printed.hasType b)
   | .exileAttackersSearchBasics =>
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
       match tgt with
@@ -1096,8 +1099,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             g := g.logMsg s!"{(g.player controller).name} exiles {name}"
         return g
     | _ => g.logMsg "The target is no longer legal"
-  | .riddlesInTheDark =>
-    let looked := g.scryLookedIds controller 4
+  | .riddlesInTheDark n =>
+    let looked := g.scryLookedIds controller n
     if looked.isEmpty then
       g.logMsg s!"{(g.player controller).name}'s library has no cards to look at"
     else
@@ -1195,10 +1198,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           | none => g
         | none => g
       | _ => g
-  | .grantTrampleIfTeamwork =>
+  | .grantTrampleIfTeamwork kw =>
     if g.resolvingTeamworkPaid then
       g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-        g.mapObjectStatus o (·.grantUntilEot Keyword.trample))
+        match Keywords.ofName? kw with
+        | some k => g.mapObjectStatus o (·.grantUntilEot k)
+        | none => g)
     else g
   | .counterUnlessPaysTeamwork n teamworkN =>
     let amt := g.teamworkAmount n teamworkN
@@ -1287,11 +1292,15 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       | none => g.logMsg "The target is no longer legal"
   | .dealDamageToEachCreature n =>
     g.dealDamageToEachCreatureMatching n
-  | .ownerMaySearchBasic =>
+  | .ownerMaySearchBasic s ty =>
     match targets[0]? with
     | some (Target.permanent id) =>
       match g.findObject? (g.followMoved id) with
-      | some o => g.offerMaySearchBasics o.owner
+      | some o =>
+        g.beginLibrarySearch o.owner
+          (fun c => c.hasType ty && c.hasSupertype s)
+          s!"a {s.oracleWord} {ty.oracleWord} card"
+          (.battlefield true) (optional := true)
       | none => g
     | _ => g
   | .doublePowerAndToughness =>
@@ -1309,13 +1318,13 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
-  | .becomeArtifactCreature44Flying =>
+  | .becomeArtifactCreature44Flying p t kw =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      g.setUntilEotForm o (4, 4) Keyword.flying
-        s!"{o.name} becomes a 4/4 artifact creature with flying until end of turn"
+      g.setUntilEotForm o (p, t) ((Keywords.ofName? kw).getD Keywords.none)
+        s!"{o.name} becomes a {p}/{t} artifact creature with {kw} until end of turn"
         (additionalCreature := true) (additionalArtifact := true))
-  | .discardTwoUnlessArtifact =>
-    let g := { g with thirstDiscardsLeft := 2 }
+  | .discardTwoUnlessArtifact n ty =>
+    let g := { g with thirstDiscardsLeft := n, thirstDiscardType := ty }
     g.beginDiscardCards #[controller]
   | .eachOpponentLosesLife n =>
     g.forEachOpponent controller (fun g pid => g.loseLife pid n)
@@ -1334,14 +1343,14 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       | some src => g.logMsg s!"{src.name} has nothing to fight"
       | none => g.logMsg "The target is no longer legal"
     | _, _ => g.logMsg "The target is no longer legal"
-  | .plusOneOnEachYouControl =>
-    g.forEachControlledCreature controller (fun g o => g.addPlusOnePlusOneTo o 1)
+  | .plusOneOnEachYouControl n =>
+    g.forEachControlledCreature controller (fun g o => g.addPlusOnePlusOneTo o n)
   | .plusOneOnCreatureN n =>
     g.withLegalKindPermanent controller .creatureYouControl targets
       (fun g o => g.addPlusOnePlusOneTo o n)
   | .exileTopPlayUntilNext n =>
     g.exileTopPlayThisTurn controller n
-  | .creatureYouControlDealsTwicePower =>
+  | .creatureYouControlDealsTwicePower k =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
       match g.findObject? a, g.findObject? b with
@@ -1351,7 +1360,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             !dest.controlledBy controller then
           let n :=
             let pw := g.power src
-            if pw > 0 then pw * 2 else 0
+            if pw > 0 then pw * (k : Int) else 0
           g.dealDamageFrom src.name dest n (source := some src)
         else g.logMsg "The target is no longer legal"
       | _, _ => g.logMsg "The target is no longer legal"
@@ -1401,10 +1410,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.conniveTricksterTarget controller connive
   | .copyThisSpellXTimesThenDamage n =>
     g.applyDamageToKindTarget controller .creature targets n
-  | .mayDrawPerArtifactOppsDraw =>
-    g.mayDrawPerArtifact controller
-  | .mayPutHeroMvOrDraw n =>
-    g.mayPutHeroOrDraw controller n
+  | .mayDrawPerArtifactOppsDraw ty =>
+    g.mayDrawPerArtifact controller ty
+  | .mayPutHeroMvOrDraw n subtype =>
+    g.mayPutHeroOrDraw controller n subtype
   | .maySacArtifactOrDiscardDraw cards =>
     { g with pending := .maySacArtifactOrDiscard controller cards }
       |>.logMsg s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw {cards}"
