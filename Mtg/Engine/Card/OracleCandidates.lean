@@ -19,643 +19,4369 @@ open Mtg.Engine
 open Mtg.Engine.OracleActivate
 
 def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
-  Effect.searchBasicLandTapped,
-  Effect.sourceGets 1 1,
-  Effect.amassGoblins 1,
-  Effect.searchLandTypeToHand "Mountain",
-  Effect.tapScryDraw 1 1,
-  Effect.exileAttackersSearchBasics,
-  Effect.dealDamage 3,
-  Effect.draw 1,
-  Effect.discardCards 1,
-  Effect.searchTwoBasicsSplit,
-  Effect.targetCantBeBlockedPowerAtMost 2,
-  Effect.playAdditionalLandThisTurn,
-  Effect.becomeBearCreatureWithLandsPT,
-  Effect.chooseTypeReturnOthers,
-  Effect.returnFromGyAttachPowerAtMost 1,
-  Effect.putOnTopOrBottom,
-  Effect.transform,
-  Effect.harnessInfinityStone,
-  Effect.drawThreeDiscardUnlessArtifact,
-  Effect.pump 3 3,
-  Effect.addAnyColorSpendOnlyHero,
-  Effect.returnFromGyFinalityAttach,
-  Effect.watchEnchantedAttachEquipment,
-  Effect.plusOneAndDraw 1 2,
-  Effect.abilityDraw 1,
-  Effect.addTwoAnyColorCreatureSources,
-  Effect.watchVillainConniveOnce,
-  Effect.grantVigilanceUnblockable,
-  Effect.pumpThenExileTopPlay 3 1,
-  Effect.dealDamageThenControllerIfTeamwork 5 2,
-  Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3,
-  Effect.pumpAttackingAloneGainLife,
-  Effect.stepCopyAbsorbingMan,
-  Effect.stepCopyTaskmaster,
-  Effect.becomeArtifactCreature44Flying,
-  Effect.enterTapOppCantUntapWhileControl,
-  Effect.watchHulklingCompare,
-  Effect.plusOneAndCreateTigerGod,
-  Effect.doublePowerAndToughness,
-  Effect.addBlueCantNonartifact,
-  Effect.watchFirstTapUntap,
-  Effect.watchEquippedTappedDamage,
-  Effect.enterRevealHandExileUntilLeaves,
-  Effect.copyArtifactYouControlNotLegendary,
-  Effect.watchSheHulkRedirectOnce,
-  Effect.thisAttackDrawIfPower4,
-  Effect.exileTopXPlayThisTurn,
-  Effect.thisAttackEquippedDrain,
-  Effect.enterMaySacOrDiscardNonlandThenDamage,
-  Effect.enterMayTapThenGrantIndestructible,
-  Effect.watchHawkeyeModes,
-  Effect.thisAttackPayReturnAttacking,
-  Effect.enterMaySacAnotherThenDestroyOppNonland,
-  Effect.watchRedHulk,
-  Effect.castingMayPayHasteUnblockable,
-  Effect.watchSpeedballTargeted,
-  Effect.youAttackingPay2LifeToughness,
-  Effect.drawPerDiscardedThisTurn,
-  Effect.deathAttackingReturnHand,
-  Effect.enterDestroy .oppCreatureDealtDamageThisTurn,
-  Effect.equipmentBecomesConstructHero,
-  Effect.youAttackingExileTopHeroPump,
-  Effect.watchVillainPlusOneDamageOnce,
-  Effect.createTokensEqualSubtype .squirrel11green "Squirrel",
-  Effect.enterTapLoseAbilitiesWhileSource,
-  Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6,
-  Effect.nextInstantSorceryCopyIfMvAtMostSourcePower,
-  Effect.deathVillainReturnAsHero,
-  Effect.dealDamageToTargetCreature 1,
-  Effect.castingIronFistTap,
-  Effect.creatureYouControlDealsPowerToOppCreature,
-  Effect.enterRevealDiscardFromHand,
-  Effect.watchUltronCopy,
-  Effect.castingVisionModes,
-  Effect.watchVillainAttachEquipment,
-  Effect.stepHydeChoose,
-  Effect.resourceDrawIfAnotherHeroDamage,
-  Effect.becomeDinosaurHero 3 5 (Keyword.reach.merge Keyword.vigilance),
-  Effect.becomeDinosaurHero 6 6 Keyword.trample,
-  Effect.enterChooseUpToXModes,
-  Effect.resourceSecondDrawBecome66,
-  Effect.createTappedTokens .villain21menace 1,
-  Effect.stepDrawToTen,
-  Effect.nextFreeRGCreature,
-  Effect.youAttackingLookSixCast,
-  Effect.plusOneX,
-  Effect.attachToTargetCreatureYouControl,
-  Effect.targetCantBeBlockedThisTurn,
-  Effect.gainLife 3,
-  Effect.dealDamageToCreature 5,
-  Effect.putPlusOnePlusOneOnSource 1,
-  Effect.enterExileGyPlayUntilNextTurn,
-  Effect.enterFightUpToOne,
-  Effect.enterReturnNonlandNontoken,
-  Effect.dealDamageLoseIndestructibleExile 3,
-  Effect.destroyCreature,
-  Effect.destroyArtifactOrLandNonflyersCantBlock,
-  Effect.plusOnePlusOneTrampleHexproof,
-  Effect.untapPumpMaybeAttach 2 2,
-  Effect.castingPlusOneScry,
-  Effect.stepEnchantedControllerDraws,
-  Effect.thisAttackAttacksAlonePlus2Indestructible,
-  Effect.castingPlusOneThis,
-  Effect.watchNontokenHeroModal,
-  Effect.resourceSecondDrawDrain,
-  Effect.deathHellcatReturn,
-  Effect.plusOneUpToOneAndPlayerGainsLife 2,
-  Effect.drawAndLoseLife 2 2,
-  Effect.drawLoseLifeThenAmass 2,
-  Effect.ownerShuffleSourceDraw 3,
-  Effect.creaturesYouControlGetOppsLoseLife 2 0 2,
-  Effect.plusOneAndCreateTokens 2 .robotVillain22,
-  Effect.subtypesGainMenace #["Goblin", "Orc"],
-  Effect.subtypesGainMenace #["Elf"],
-  Effect.teamGain Keyword.menace,
-  Effect.amassGoblinsOrFromGy 1 3,
-  Effect.exileTopPlayUntilEndOfNextTurn,
-  Effect.tapOneOrTwoCreatures,
-  Effect.grantHexproofIndestructible,
-  Effect.abilityCreaturesYouControlGet 1 1,
-  Effect.scry 2,
-  Effect.abilitySurveil 1,
-  Effect.counterUnlessPays 4,
-  Effect.counterExilePermanentMayCast,
-  Effect.exchangeControlSharingType,
-  Effect.returnFromGraveyardToHand,
-  Effect.pumpAndExileIfDies (-5) (-5),
-  Effect.creaturesTargetPlayerGet (-1) (-1),
-  Effect.targetPlayerDrawLoseLife 2 2,
-  Effect.pumpAndLifelink 2 2,
-  Effect.pumpAndGrantKeywords 3 0 (Keyword.reach.merge Keyword.firstStrike),
-  Effect.creaturesYouControlGet 2 1,
-  Effect.destroyArtifactOrEnchantmentGainLife 2,
-  Effect.becomeArtifactGainIndestructible,
-  Effect.addAnyColor,
-  Effect.returnCreatureFromGyThenAmass 3,
-  Effect.counterThenRecruitIfMvAtMost 2,
-  Effect.plusOneThenEachOtherIfFromGy,
-  Effect.drawIfFromGy 1 2,
-  Effect.plusOneThenFight 2,
-  Effect.searchLegendaryCreatureToHand,
-  Effect.addMana #[.colored .black, .colored .red],
-  Effect.millThenPutInstantOrSorcery 4,
-  Effect.exileThenReturnYouControl,
-  Effect.dealDamageToCreatureExileIfDies 3,
-  Effect.abilityCreateTokens .dwarf 1,
-  Effect.millThenPutLands 4 2,
-  Effect.dealDamageToEachOppCreature 1,
-  Effect.dealDamageToEachNonDragonThenAddDragonMana 3,
-  Effect.millThenPutAllInstantsOrSorceries 6,
-  Effect.exileTopPlayIfYouControlSubtype 2 "Wizard",
-  Effect.createTokensX .dwarf,
-  Effect.returnSpellCantCastIfGift,
-  Effect.chapterDealDamageToOppCreature 6,
-  Effect.chapterDestroyOppArtifact,
-  Effect.chapterAddMana (.colored .red),
-  Effect.chapterSearchBasicLandToHand,
-  Effect.chapterGainLandfallCreateElf,
-  Effect.chapterElvesGetVigilance 1,
-  Effect.chapterOpponentDiscardsNonland,
-  Effect.chapterAmassGoblins 1,
-  Effect.chapterOpponentLosesYouGain 1,
-  Effect.exileThenReturnNextEnd,
-  Effect.searchBasicBeholdSubtypeUntap "Elf",
-  Effect.twoPlayersDraw,
-  Effect.exileTopXOppPlayForLife,
-  Effect.discardLegendarySameNameDraw,
-  Effect.chapterGrantHexproofWhileRemains,
-  Effect.chapterPreventDamageWhileRemains,
-  Effect.chapterDraw 1,
-  Effect.riddlesInTheDark,
-  Effect.chapterSearchBasicPlainsExileGainLife 2 2,
-  Effect.chapterReturnLinkedExileToHand,
-  Effect.chapterGrantAttackPumpPerPlainsThisTurn,
-  Effect.chapterBlinkUntilEndStep,
-  Effect.dealDamageToAny 4,
-  Effect.supperForSpiders,
-  Effect.eaglesAreComing,
-  Effect.chapterTreasureThenDragonIfFour,
-  Effect.chapterRecruit,
-  Effect.chapterReturnCreatureFromGyMvAtMost 3,
-  Effect.chapterPlusOneUpToOne,
-  Effect.lookAtTopLandsGainLife 20 8,
-  Effect.drawEqualSacrificedPowerThenDiscard,
-  Effect.millPlayer 3,
-  Effect.counterCreatureSpellPTAtMost 2,
-  Effect.returnFromGraveyardTapped,
-  Effect.allCreaturesGet (-4) (-4),
-  Effect.exileGraveyardCreaturesGrantCast,
-  Effect.destroyTargetCreatureControllerLosesLife 2,
-  Effect.returnSpellDraw,
-  Effect.abilityScry 2,
-  Effect.targetPlayerDraw 2,
-  Effect.drawEqualToughnessThenPutCreatures,
-  Effect.addRedPerOppArtifacts,
-  Effect.abilityCreateTokensX .treasure,
-  Effect.abilityCreateTokens .food 1,
-  Effect.arwenShare,
-  Effect.gainControlOppArtifacts,
-  Effect.damageOppCreaturesEqualOtherSpellsMv,
-  Effect.grantCombatDamageCreateTreasure,
-  Effect.phaseOutKicker,
-  Effect.putShadowCounter,
-  Effect.damageEachOpponent 1,
-  Effect.chooseTwoDestroyRest,
-  Effect.blackGateUnblockable,
-  Effect.burdenThenDraw,
-  Effect.teamGain Keyword.doubleStrike,
-  Effect.sourceGainsIndestructibleTap,
-  Effect.castingPlusOneEachOther,
-  Effect.watchHulk,
-  Effect.plusOneOnEachOtherSubtype "Hero" 1,
-  Effect.createTokens .hero32vigilance 2,
-  Effect.plusOneAndIndestructibleCounter,
-  Effect.dealDamageToAttackerOrBlocker 2 4,
-  Effect.resourcePlusOneOnHeroesCreateWall,
-  Effect.stepHarnessedFlicker,
-  Effect.exileCreatureToughnessAtLeast 4,
-  Effect.exileEnchantmentMvAtLeast 4,
-  Effect.lookAtTopPutTypes 7 #["Hero", "Equipment", "Vehicle"],
-  Effect.enterReturnGyPermanentThisTurn,
-  Effect.mayPutHeroMvOrDraw 3,
-  Effect.plusOneOnEachYouControl,
-  Effect.investigatePumpFlyingUntap,
-  Effect.anotherYouControlGetsAndGrant 2 0 Keyword.hexproof,
-  Effect.castingTapCreatureOrLand,
-  Effect.tapTargetCreature,
-  Effect.enterOppCreatesTheVoid,
-  Effect.watchEquippedAttacksAloneUntapScry,
-  Effect.plusOneLifelinkIndestructible,
-  Effect.enterPlusOnesOrReturnArtEnch,
-  Effect.targetPlayerCreatesTokens .leviathan65hexproof 1,
-  Effect.returnOneOrTwoNonlands,
-  Effect.watchMerfolkAttackDraw,
-  Effect.drawX,
-  Effect.copyControlledAbility true,
-  Effect.enterCreateRedwing,
-  Effect.revealTopDrawIfArtifact,
-  Effect.watchJusticeBounce,
-  Effect.plusOneAndExtraTurn,
-  Effect.watchYouTargetDrawOnce,
-  Effect.watchTokensEnterMayDraw,
-  Effect.castingDrawPowerEqualHand,
-  Effect.copyNontokenCreaturesYouControl,
-  Effect.castingMerfolkFromBlue,
-  Effect.lookAtTopRevealArtifact 4,
-  Effect.ownerPutsLibraryThenConnive,
-  Effect.counterUnlessPaysTeamwork 2 4,
-  Effect.castingExileFlicker,
-  Effect.watchCombatDamageExileUntilNonland,
-  Effect.pump (-4) (-4),
-  Effect.returnGySubtypeToHand "Villain",
-  Effect.returnGySubtypeToHand "Hero",
-  Effect.watchAttacksAloneDrain,
-  Effect.connive,
-  Effect.resourceDiscardExilePlay,
-  Effect.eachOppDiscardThenPlusOne,
-  Effect.addTwoAnyColorEquipment,
-  Effect.targetGets (-4) (-4),
-  Effect.resourceSecondDrawPlusOneTarget,
-  Effect.abilityCreateTokens .wall04defender 1,
-  Effect.abilityTargetPlayerDraw 4,
-  Effect.returnGyCreatureMvAtMostOrAny 4,
-  Effect.returnGyCreatureThenPlusOne 2,
-  Effect.grantDeathtouch,
-  Effect.watchVillainPlusOneLifelink,
-  Effect.dealDamageToEachCreature 3,
-  Effect.destroyLandSearchBasic,
-  Effect.gainControlUntilEotOrNextIfVillain,
-  Effect.castingCopyIfArtifactOrLand,
-  Effect.exileHandDrawPlayUntilNext,
-  Effect.createTokensThenTeamPump .villain21menace 1 1 0,
-  Effect.watchVillainOrArtifactDamage,
-  Effect.enterDealDamageUpToOne 4,
-  Effect.abilityDealDamageToEachCreature 2,
-  Effect.copyThisSpellXTimesThenDamage 1,
-  Effect.plusOneAndDoubleStrikeCounter,
-  Effect.abilityCreateTokens .treasure 1,
-  Effect.grantDoubleStrikeTeamworkTrample,
-  Effect.castingDamageEqualMv,
-  Effect.maySacArtifactOrDiscardDraw 2,
-  Effect.returnUpToTwoGyModal,
-  Effect.addAnyColorEqualToSourcePower,
-  Effect.revealTopPutCreatures 8,
-  Effect.fight,
-  Effect.plusOneOnCreature,
-  Effect.plusOneAndGrant ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste),
-  Effect.resourceGainLifePlusOnes,
-  Effect.enterCreateZabu,
-  Effect.resourcePlusOneOnThisOnce,
-  Effect.plusOneAndCreateTokens 1 .hero32vigilance,
-  Effect.proliferateEachKind,
-  Effect.creatureYouControlDealsTwicePower,
-  Effect.millThenPutPermanentGainLife 2 2,
-  Effect.gainLifeSearchBasicPlusOne 2,
-  Effect.millThenPutSubtypeOrEnchantment 4 "Hero",
-  Effect.destroyUpToOneThenPlusOne,
-  Effect.watchHeroesDamagePlusTwo,
-  Effect.enterOrAttackCreateSquirrel,
-  Effect.plusOneOnCreatureN 3,
-  Effect.chooseTargetDoubleAndTrample,
-  Effect.plusOneThenFightUpToOne,
-  Effect.thisAttackMayPayPlusOne,
-  Effect.resourcePlusOneCreateInsectOnce,
-  Effect.mayDrawPerArtifactOppsDraw,
-  Effect.artifactSpellsCostLessThisTurn 1,
-  Effect.supertypeSpellsCostLessThisTurn 1,
-  Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv,
-  Effect.createTokensEqualRemovedPlusOnes .insect11green,
-  Effect.createTokens .villain21menace 2,
-  Effect.chapterDealDamageToEachNonSubtypeAndOpponents 2 "Villain",
-  Effect.createTokensPerSubtype .treasure "Villain",
-  Effect.watchAttacksAloneFirstStrikeMenace,
-  Effect.destroyUpToOneNonland,
-  Effect.eachOpponentLosesLife 2,
-  Effect.createGalactus,
-  Effect.thisAttackIfArtifactEnteredDraw,
-  Effect.watchAnyPlayerSecondDraw,
-  Effect.castingVillainToken,
-  Effect.thisAttackBlinkNontoken,
-  Effect.copyControlledAbility false,
-  Effect.deathDeathtouchOppSac,
-  Effect.castingTargetsGainFlying,
-  Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance,
-  Effect.fightUpToOne,
-  Effect.plusTwoThenOddEvenDestroy,
-  Effect.enterCreateSturdyShieldAttach,
-  Effect.searchLibraryOrGyArtifactCreatureX,
-  Effect.worldsWithinWorlds,
-  Effect.addMana #[.colorless, .colorless, .colorless],
-  Effect.watchEquippedAttacksTap,
-  Effect.enterOrAttackCopyKeywords,
-  Effect.lookAtTopRevealSubtype 3 "Hero",
-  Effect.addFourAnyCombination,
-  Effect.addAnyColorSpendOnlyArtifactSpell,
-  Effect.abilityCreateTokens .doombot 1,
-  Effect.targetSubtypeConnives "Villain",
-  Effect.ofTrigger (.scry 2),
-  Effect.drawAndLoseLife 1 0,
-  Effect.becomeSubtypeWithLandsPT "Elf",
-  Effect.plusOneOnTarget 2,
-  Effect.ofTrigger (.draw 1),
-  Effect.ofTrigger (.createTokens .treasure 1 true),
-  Effect.ofTrigger (.dividedDamage 3 3),
-  Effect.ofTrigger .opponentSacrificesCreature,
-  Effect.ofTrigger (.attachTo .legendaryCreatureYouControl),
-  Effect.ofTrigger (.plusOneOn .creatureYouControl),
-  Effect.ofTrigger (.createTokens .wall 1),
-  Effect.ofTrigger .connive,
-  Effect.ofTrigger .plusOneOnSource,
-  Effect.ofTrigger .drawAndLoseLife,
-  Effect.ofTrigger (.gainLife 2),
-  Effect.ofTrigger (.pumpTarget .creature 4 4),
-  Effect.ofTrigger (.exileUntilLeaves .oppTappedCreature),
-  Effect.ofTrigger .youRecruit,
-  Effect.ofTrigger (.damageEachOpponent 2),
-  Effect.ofTrigger .exileTop,
-  Effect.ofTrigger (.mayDiscardDraw 2),
-  Effect.ofTrigger .eachOpponentDiscards,
-  Effect.ofTrigger (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0)),
-  Effect.ofTrigger .investigate,
-  Effect.ofTrigger (.amassOrcs 1),
-  Effect.ofTrigger .searchForest,
-  Effect.ofTrigger .eachPlayerSacrificesCreature,
-  Effect.ofTrigger .loot,
-  Effect.ofTrigger .plusOneEachYouControl,
-  Effect.ofTrigger .pumpByLookedAt,
-  Effect.ofTrigger .pumpAndUnblockable,
-  Effect.ofTrigger (.mayDiscardHandDraw 4),
-  Effect.ofTrigger (.plusOneAndLifelink .creature),
-  Effect.ofTrigger .pumpGreatestPower,
-  Effect.ofTrigger (.damageBlockers 1),
-  Effect.ofTrigger (.createThenAttach .treasure),
-  Effect.ofTrigger .drawPlusOneSource,
-  Effect.ofTrigger .ringTempts,
-  Effect.ofTrigger .setOtherBasePT,
-  Effect.ofTrigger .returnElfGainLife,
-  Effect.ofTrigger .damageFromLastKnownPower,
-  Effect.ofTrigger (.exileOppGyCardOppsLoseLife 2),
-  Effect.ofTrigger (.creaturesYouControlPumpAndFirstStrike 1),
-  Effect.ofTrigger (.mayPayGenericDraw 1),
-  Effect.ofTrigger .drawThenBottomIfNoLegendary,
-  Effect.ofTrigger .removeHopeDrawSac,
-  Effect.ofTrigger .tapHumansDraw,
-  Effect.ofTrigger (.untapPlusOneIfSubtype "Bear"),
-  Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife,
-  Effect.ofTrigger (.damageEqualSubtypeToEachOpponent "Dwarf"),
-  Effect.ofTrigger .damageEqualTreasures,
-  Effect.ofTrigger .loseLifeCreateTreasure,
-  Effect.ofTrigger (.dealDamageDestroyIfSubtype 1 "Dragon"),
-  Effect.ofTrigger .attachEquipmentToCreature,
-  Effect.ofTrigger .defenderSacsLeastPower,
-  Effect.ofTrigger .returnOtherPlusOne,
-  Effect.ofTrigger (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"]),
-  Effect.ofTrigger .createTappedTreasuresEqualOppArtifacts,
-  Effect.ofTrigger (.putNonlandMvAtMostFromGy 3),
-  Effect.ofTrigger (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)),
-  Effect.ofTrigger .wolfPlusOneOrTreasure,
-  Effect.ofTrigger .trampleCounterBecomeBear,
-  Effect.ofTrigger (.millThenSubtypeToHand 4 "Elf"),
-  Effect.ofTrigger .exileOppNonlandEachUntilLeaves,
-  Effect.ofTrigger .plusOneEqualLastKnownMv,
-  Effect.ofTrigger .mountainQuestDragon,
-  Effect.ofTrigger .treasuresPerChosenType,
-  Effect.ofTrigger .revealUntilCreature,
-  Effect.ofTrigger .attackSacPlusOneEqualPower,
-  Effect.ofTrigger .lootLandEntersTapped,
-  Effect.ofTrigger .millThatManyLost,
-  Effect.ofTrigger .drawPerFatGraveyard,
-  Effect.ofTrigger .maySacDrawTreasure,
-  Effect.ofTrigger .plusOneEachIfCityBlessing,
-  Effect.ofTrigger .castInstantSorceryFromHand,
-  Effect.ofTrigger .castInstantSorceryMvAtMost,
-  Effect.ofTrigger .millThenCopy,
-  Effect.ofTrigger .pumpTargetBySourcePower,
-  Effect.ofTrigger .createAlienPerInvasion,
-  Effect.ofTrigger .mayPutArtifactAttachEquipment,
-  Effect.ofTrigger .cascade,
-  Effect.ofTrigger .bolgMaySacrifice,
-  Effect.ofTrigger (.surveil 2),
-  Effect.ofTrigger (.targetOpponentLosesLife 1),
-  Effect.ofTrigger .amassGoblinsEqualPower,
-  Effect.ofTrigger .recruit,
-  Effect.ofTrigger (.plusOneOn .creature),
-  Effect.ofTrigger (.attachTo .creatureYouControl),
-  Effect.ofTrigger (.conniveTarget .creatureYouControl),
-  Effect.ofTrigger (.exileUntilLeaves .oppNonland),
-  Effect.ofTrigger (.exileUntilLeaves .defendingPlayerCreature),
-  Effect.ofTrigger (.sourceGets 1 1),
-  Effect.ofTrigger (.createTokens .treasure 1),
-  Effect.ofTrigger .searchBasicToHand,
-  Effect.ofTrigger (.exileTarget .anotherCreature),
-  Effect.ofTrigger .returnCreatureFromGyToHand,
-  Effect.ofTrigger .honeEachEquipment,
-  Effect.ofTrigger .plusOneEachOtherGainLife,
-  Effect.ofTrigger .pumpTargetPerPlains,
-  Effect.ofTrigger (.drawThenDiscard 2),
-  Effect.ofTrigger .pumpForEachOtherCreature,
-  Effect.ofTrigger (.grantFlying .attackingCreatureWithoutFlying),
-  Effect.ofTrigger .returnLinkedExile,
-  Effect.ofTrigger .createAxe,
-  Effect.ofTrigger .tapOppOrUntapYours,
-  Effect.ofTrigger .gainControlOppUntilEot,
-  Effect.ofTrigger .createAxeAttach,
-  Effect.ofTrigger .payReturnFromGy,
-  Effect.ofTrigger (.plusOneVigilance 2),
-  Effect.ofTrigger .mayDrawXDiscard2,
-  Effect.ofTrigger .belladonnaTokenReward,
-  Effect.ofTrigger .bolgDealSacrificedPower,
-  Effect.ofTrigger .createSpiritsForEquipped,
-  Effect.ofTrigger .createTreasuresEqualDamagedPlayerArtifacts,
-  Effect.ofTrigger .deal1ThenAmassOrcs,
-  Effect.ofTrigger .allianceMode,
-  Effect.ofTrigger .destroyOtherAmassControllerPower,
-  Effect.ofTrigger .gollumMode,
-  Effect.ofTrigger .discardHandDrawDamageIfStory,
-  Effect.ofTrigger .castFromGyArtifactInstantSorcery,
-  Effect.ofTrigger .equippedAttackersGainDoubleStrike,
-  Effect.ofTrigger .tapEnchantedRemoveCounters,
-  Effect.ofTrigger .beginCombatIfDrawnTwoPump,
-  Effect.ofTrigger .honePerOppAttach,
-  Effect.ofTrigger (.damageTargetOpponent 2),
-  Effect.ofTrigger .copySelfNonlegendary,
-  Effect.ofTrigger .attachEquipmentThenFight,
-  Effect.ofTrigger .returnAsArtifact,
-  Effect.ofTrigger .exileLandsThenReturnTapped,
-  Effect.ofTrigger .grimaImpulse,
-  Effect.ofTrigger .palantir,
-  Effect.ofTrigger .treasuresEqualLastKnown,
-  Effect.ofTrigger .protectionEverything,
-  Effect.ofTrigger .loseLifePerBurden,
-  Effect.ofTrigger .revealSaga,
-  Effect.ofTrigger .sacDamagersRingTempts,
-  Effect.ofTrigger .plusOneOnSourceAndDraw,
-  Effect.ofTrigger .lootAndPlan,
-  Effect.ofTrigger .createVillainAndPlan,
-  Effect.ofTrigger .drawLoseLifeAndPlan,
-  Effect.ofTrigger .treasureTappedAndPlan,
-  Effect.ofTrigger .plusOneOnTargetAndPlan,
-  Effect.ofTrigger .planFinishDrawPlusOneEach,
-  Effect.ofTrigger .planFinishReturnInstants,
-  Effect.ofTrigger .planFinishControlOpponent,
-  Effect.ofTrigger .planFinishExileTopCast,
-  Effect.ofTrigger (.planFinishCreateRobots 3),
-  Effect.ofTrigger (.planFinishDividedDamage 7),
-  Effect.ofTrigger .planFinishIndestructibleOnTarget,
-  Effect.ofTrigger .exileOtherCopyEnchanted,
-  Effect.ofTrigger .exileUntilNextEndStep,
-  Effect.ofTrigger .tapOrUntapNonland,
-  Effect.ofTrigger .createFoodOrTreasure,
-  Effect.ofTrigger .villainIfGyElseMill,
-  Effect.ofTrigger .drawMayPutLandTapped,
-  Effect.ofTrigger .drawGainLifeIfAnotherHero,
-  Effect.ofTrigger .plusOneOrTwoIfAnotherHero,
-  Effect.ofTrigger .maySacArtifactOrDiscardDraw,
-  Effect.pumpAndGrantKeywords 2 2 Keyword.flying,
-  Effect.plusOneThenGainLife 1 1,
-  Effect.damageTargetOpponent 1,
-  Effect.millSelf 3,
-  Effect.mayDiscardDraw 1,
-  Effect.createTokens .heartwood 1,
-  Effect.createTokens .beast44trample 1,
-  Effect.createTokensThenSurveil .cadet 1 1,
-  Effect.createTokensLifeGained .cadet,
-  Effect.setBasePT 0 0,
-  Effect.oppSacrificesGreatestMvGainLife 2,
-  Effect.damageThenEmpowerExcess 6,
-  Effect.jaceLoyaltyAtInstantSpeed,
-  Effect.creaturesYouControlGetAndGrant 1 0 Keyword.haste,
-  Effect.createTokens .pridemate 1,
-  Effect.copyEachCreatureOfTargetPlayer,
-  Effect.copyNextInstantSorceryThisTurn,
-  Effect.addMana #[.colored .red],
-  Effect.exileTopMayCastElseDamageOpponents 2,
-  Effect.emblemCastSpellDamage 5,
-  Effect.addMana #[.colored .red, .colored .red],
-  Effect.firstDealsStatDamageToSecond false,
-  Effect.firstDealsStatDamageToSecond true,
-  Effect.generousRevival,
-  Effect.hexhavenBattalion,
-  Effect.kindredJudgment,
-  Effect.loyalTutor,
-  Effect.predictivePreparations,
-  Effect.prophesiedEnd,
-  Effect.refuteDestiny,
-  Effect.returnToTheLightRealms,
-  Effect.surgicalPrecisionDestroy,
-  Effect.drawAndGainLife 1 2,
-  Effect.yourFateEndsHere,
-  Effect.counterTargetSpell,
-  Effect.cruelCalculations,
-  Effect.icyReceptionCounter,
-  Effect.targetCreatureGets (-5) 0,
-  Effect.preciseRedaction,
-  Effect.sphinxsApproach,
-  Effect.unsummon,
-  Effect.unwindHistory,
-  Effect.arcOfFortune,
-  Effect.castAwayDoubt,
-  Effect.extendedAbsence,
-  Effect.extrapolateTheImpossible,
-  Effect.overwriteTheMultiverse,
-  Effect.rewriteRegrets,
-  Effect.riseDraw,
-  Effect.allCreaturesGet (-3) (-3),
-  Effect.destroyTargetCreatureOrPlaneswalker,
-  Effect.solveForDisappointment,
-  Effect.terminalCriticism,
-  Effect.vraskasMercyDestroy,
-  Effect.vraskasMercyEmpower,
-  Effect.artifistAcumen,
-  Effect.awakenTheInferno,
-  Effect.commandTheStage,
-  Effect.essenceBurn,
-  Effect.fulminousForteSweep,
-  Effect.damageToCreatureOrPlaneswalker 5,
-  Effect.moltenTide,
-  Effect.enroot,
-  Effect.flourishingGrapple,
-  Effect.restoreWithEmpathy,
-  Effect.somethingWorthSaving,
-  Effect.tethermagesAdvantage,
-  Effect.creaturesYouControlGetUntilEot 2 0,
-  Effect.chargeTheSanctumPump,
-  Effect.clashOfElements,
-  Effect.entrustTheSpark,
-  Effect.drawThenEmpower 1 2,
-  Effect.bounceSpellOrCreature,
-  Effect.damageToCreatureWithFlying 6,
-  Effect.plusOneThenGrant 2 Keyword.trample,
-  Effect.addColorless 3,
-  Effect.recursiveRecruitment,
-  Effect.targetCreatureGains (Keyword.firstStrike.merge Keyword.deathtouch)
-    "first strike and deathtouch",
-  Effect.cadetWithHaste,
-  Effect.stingingVitriol,
-  Effect.theorixCounter,
-  Effect.millThenDraw 3 1,
-  Effect.twinnedVision,
-  Effect.twistedFates,
-  Effect.permanentYouControlGains (Keyword.hexproof.merge Keyword.indestructible),
-  Effect.drawAndGainLife 1 3,
-  Effect.vindictiveTriumph,
-  Effect.tamsResistance,
-  Effect.returnLegendaryCardToHand,
-  Effect.plusOneVigilanceIndestructible,
-  Effect.fraTapTargetCreature,
-  Effect.untapTargetCreature,
-  Effect.destroyNoncreatureNonland,
-  Effect.gainLifeMode 4,
-  Effect.minusPowerPerGraveyard,
-  Effect.surveilMode 2,
-  Effect.sourceDealsDamageToCreatureOrPlaneswalker 4,
-  Effect.createCadetMode,
-  Effect.drawMode,
+  {
+    resolution := .searchBasicLand
+    phrase := Resolution.toPhrase .searchBasicLand EffectTargetKind.none.noun
+  },
+  {
+    resolution := .onSource (.pump 1 1)
+    phrase := Resolution.toPhrase (.onSource (.pump 1 1)) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.amassGoblins 1)
+    phrase := SpellResolution.toPhrase (.amassGoblins 1) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .searchLandTypeToHand "Mountain"
+    phrase := Resolution.toPhrase (.searchLandTypeToHand "Mountain") EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.tapScryDraw 1 1)
+    phrase := SpellResolution.toPhrase (.tapScryDraw 1 1) EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of .player
+    spellCastKind := .destroyCreature
+    resolution := Resolution.ofSpell (.exileAttackersSearchBasics)
+    phrase := SpellResolution.toPhrase .exileAttackersSearchBasics EffectTargetKind.player.noun
+  },
+  {
+    targeting := .of .playerOrCreature
+    spellCastKind := .burn
+    resolution := Resolution.ofSpell (.onPermanent (.dealDamage 3))
+    phrase := SpellResolution.toPhrase (.onPermanent (.dealDamage 3)) EffectTargetKind.playerOrCreature.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.draw 1)
+    phrase := SpellResolution.toPhrase (.draw 1) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .discard 1
+    phrase := s!"discard {cardPhrase 1}"
+  },
+  {
+    resolution := .searchTwoBasicsSplit
+    phrase := Resolution.toPhrase .searchTwoBasicsSplit EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of (.creaturePowerAtMost 2)
+    resolution := .onPermanent .cantBeBlocked
+    phrase := Resolution.toPhrase (.onPermanent .cantBeBlocked) (EffectTargetKind.creaturePowerAtMost 2).noun
+  },
+  {
+    resolution := Resolution.ofSpell (.extraLand)
+    phrase := SpellResolution.toPhrase .extraLand EffectTargetKind.none.noun
+  },
+  {
+    resolution := .becomeSubtypeWithLandsPT "Bear"
+    phrase := Resolution.toPhrase (.becomeSubtypeWithLandsPT "Bear") EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.chooseTypeReturnOthers)
+    phrase := SpellResolution.toPhrase .chooseTypeReturnOthers EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of (.creatureYouControlPowerAtMost 1)
+    resolution := .returnFromGyAttach
+    phrase := Resolution.toPhrase .returnFromGyAttach (EffectTargetKind.creatureYouControlPowerAtMost 1).noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.putOnTopOrBottom)
+    phrase := SpellResolution.toPhrase .putOnTopOrBottom EffectTargetKind.creature.noun
+  },
+  {
+    resolution := .transform
+    phrase := Resolution.toPhrase .transform EffectTargetKind.none.noun
+  },
+  {
+    resolution := .harnessInfinityStone
+    phrase := Resolution.toPhrase .harnessInfinityStone EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.sequence [.draw 3, .discardTwoUnlessArtifact])
+    phrase := SpellResolution.toPhrase (.sequence [.draw 3, .discardTwoUnlessArtifact]) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature .own
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.onPermanent (.pump 3 3))
+    phrase := SpellResolution.toPhrase (.onPermanent (.pump 3 3)) EffectTargetKind.creature.noun
+  },
+  {
+    resolution := .addAnyColorSpendOnlySubtype "Hero"
+    phrase := Resolution.toPhrase (.addAnyColorSpendOnlySubtype "Hero") EffectTargetKind.none.noun
+  },
+  {
+    resolution := .returnFromGyFinalityAttach
+    phrase := Resolution.toPhrase .returnFromGyFinalityAttach EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.watch .enchantedAttachEquipment).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .enchantedAttachEquipment)
+    }
+  ),
+  {
+    resolution := .sequence [.onSource (.plusOne 1), .draw 2]
+    phrase := s!"Put {plusOnePlusOneCountersPhrase 1} on this and draw {cardPhrase 2}"
+  },
+  {
+    resolution := .draw 1
+    phrase := Resolution.toPhrase (.draw 1) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .addTwoAnyColorCreatureSources
+    phrase := Resolution.toPhrase .addTwoAnyColorCreatureSources EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.watch .villainConniveOnce).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .villainConniveOnce)
+    }
+  ),
+  {
+    targeting := .of .creature
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.sequence [
+      .onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.cantBeBlocked)),
+      .draw 1])
+    phrase := SpellResolution.toPhrase (.sequence [
+      .onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.cantBeBlocked)),
+      .draw 1]) EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.sequence [.onPermanent (.pump 3 1), .exileTopPlayUntilNext 1])
+    phrase := SpellResolution.toPhrase (.sequence [.onPermanent (.pump 3 1), .exileTopPlayUntilNext 1]) EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .creatureDamage
+    resolution := Resolution.ofSpell (.sequence [.onPermanent (.dealDamage 5), .damageControllerIfTeamwork 2])
+    phrase := SpellResolution.toPhrase (.sequence [.onPermanent (.dealDamage 5), .damageControllerIfTeamwork 2]) EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of (.creatureMvAtMost 3)
+    spellCastKind := .destroyCreature
+    resolution := Resolution.ofSpell (.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
+    phrase := SpellResolution.toPhrase (.exileCreatureMvAtMostOrAnyIfTeamwork 3 3) (EffectTargetKind.creatureMvAtMost 3).noun
+  },
+  {
+    targeting := .of .attackingAloneCreatureYouControl
+    resolution := .sequence [.onPermanent (.pump 1 0), .gainLife 1]
+    phrase := Resolution.toPhrase (.sequence [.onPermanent (.pump 1 0), .gainLife 1]) EffectTargetKind.attackingAloneCreatureYouControl.noun
+  },
+  (
+    let t := (SharedTrigger.step .copyAbsorbingMan).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.step .copyAbsorbingMan)
+    }
+  ),
+  (
+    let t := (SharedTrigger.step .copyTaskmaster).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.step .copyTaskmaster)
+    }
+  ),
+  {
+    targeting := .of .artifactOrCreatureYouControl
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.becomeArtifactCreature44Flying)
+    phrase := SpellResolution.toPhrase .becomeArtifactCreature44Flying EffectTargetKind.artifactOrCreatureYouControl.noun
+  },
+  (
+    let t := (SharedTrigger.enter .tapOppCantUntapWhileControl).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .tapOppCantUntapWhileControl)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .hulklingCompare).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .hulklingCompare)
+    }
+  ),
+  {
+    resolution := .sequence [.onSource (.plusOne 1), .createTigerGod]
+    phrase := "Put a +1/+1 counter on this and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.doublePowerAndToughness)
+    phrase := SpellResolution.toPhrase .doublePowerAndToughness EffectTargetKind.creature.noun
+  },
+  {
+    resolution := .addBlueCantNonartifact
+    phrase := Resolution.toPhrase .addBlueCantNonartifact EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.watch .firstTapUntap).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .firstTapUntap)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .equippedTappedDamage).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .equippedTappedDamage)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enter .revealHandExileUntilLeaves).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .revealHandExileUntilLeaves)
+    }
+  ),
+  {
+    targeting := .of .twoArtifactsYouControl
+    resolution := .copyArtifactYouControlNotLegendary
+    phrase := Resolution.toPhrase .copyArtifactYouControlNotLegendary EffectTargetKind.twoArtifactsYouControl.noun
+  },
+  (
+    let t := (SharedTrigger.watch .sheHulkRedirectOnce).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .sheHulkRedirectOnce)
+    }
+  ),
+  (
+    let t := (SharedTrigger.thisAttack .drawIfPower4).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.thisAttack .drawIfPower4)
+    }
+  ),
+  {
+    resolution := .exileTopXPlayThisTurn
+    phrase := Resolution.toPhrase .exileTopXPlayThisTurn EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.thisAttack .equippedDrain).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.thisAttack .equippedDrain)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enter .maySacOrDiscardNonlandThenDamage).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .maySacOrDiscardNonlandThenDamage)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enter .mayTapThenGrantIndestructible).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .mayTapThenGrantIndestructible)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .hawkeyeModes).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .hawkeyeModes)
+    }
+  ),
+  (
+    let t := (SharedTrigger.thisAttack .payReturnAttacking).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.thisAttack .payReturnAttacking)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enter .maySacAnotherThenDestroyOppNonland).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .maySacAnotherThenDestroyOppNonland)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .redHulk).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .redHulk)
+    }
+  ),
+  (
+    let t := (SharedTrigger.casting .mayPayHasteUnblockable).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .mayPayHasteUnblockable)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .speedballTargeted).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .speedballTargeted)
+    }
+  ),
+  (
+    let t := (SharedTrigger.youAttacking .pay2LifeToughness).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.youAttacking .pay2LifeToughness)
+    }
+  ),
+  {
+    resolution := .drawPerDiscardedThisTurn
+    phrase := Resolution.toPhrase .drawPerDiscardedThisTurn EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.death .attackingReturnHand).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.death .attackingReturnHand)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enter (.destroy .oppCreatureDealtDamageThisTurn)).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter (.destroy .oppCreatureDealtDamageThisTurn))
+    }
+  ),
+  {
+    resolution := .equipmentBecomesConstructHero
+    phrase := Resolution.toPhrase .equipmentBecomesConstructHero EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.youAttacking .exileTopHeroPump).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.youAttacking .exileTopHeroPump)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .villainPlusOneDamageOnce).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .villainPlusOneDamageOnce)
+    }
+  ),
+  {
+    resolution := .createTokensEqualSubtype .squirrel11green "Squirrel"
+    phrase := Resolution.toPhrase (.createTokensEqualSubtype .squirrel11green "Squirrel") EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.enter .tapLoseAbilitiesWhileSource).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .tapLoseAbilitiesWhileSource)
+    }
+  ),
+  {
+    targeting := .of (.upToTwoCreaturesTotalMvAtMost 6)
+    allowsZeroTargets := true
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 (.gainControlOfUpToTwoCreaturesTotalMvAtMost 6))
+    phrase := s!"Gain control of up to two target creatures with total mana value {6} or less for as long as this Saga remains on the battlefield"
+  },
+  {
+    resolution := .nextInstantSorceryCopyIfMvAtMostSourcePower
+    phrase := Resolution.toPhrase .nextInstantSorceryCopyIfMvAtMostSourcePower EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.death .villainReturnAsHero).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.death .villainReturnAsHero)
+    }
+  ),
+  {
+    targeting := .of .creature
+    abilityCastKind := .creatureDamage
+    resolution := .onPermanent (.dealDamage 1)
+    phrase := Resolution.toPhrase (.onPermanent (.dealDamage 1)) EffectTargetKind.creature.noun
+  },
+  (
+    let t := (SharedTrigger.casting .ironFistTap).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .ironFistTap)
+    }
+  ),
+  {
+    targeting := .of .creatureYouControlThenOppCreature
+    spellCastKind := .fight
+    resolution := Resolution.ofSpell (.fight)
+    phrase := SpellResolution.toPhrase .fight EffectTargetKind.creatureYouControlThenOppCreature.noun
+  },
+  (
+    let t := (SharedTrigger.enter .revealDiscardFromHand).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .revealDiscardFromHand)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .ultronCopy).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .ultronCopy)
+    }
+  ),
+  (
+    let t := (SharedTrigger.casting .visionModes).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .visionModes)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .villainAttachEquipment).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .villainAttachEquipment)
+    }
+  ),
+  (
+    let t := (SharedTrigger.step .hydeChoose).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.step .hydeChoose)
+    }
+  ),
+  (
+    let t := (SharedTrigger.resource .drawIfAnotherHeroDamage).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.resource .drawIfAnotherHeroDamage)
+    }
+  ),
+  {
+    resolution := .becomeTypes #["Dinosaur", "Hero"] 3 5 (Keyword.reach.merge Keyword.vigilance)
+    phrase := Resolution.toPhrase (.becomeTypes #["Dinosaur", "Hero"] 3 5 (Keyword.reach.merge Keyword.vigilance)) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .becomeTypes #["Dinosaur", "Hero"] 6 6 Keyword.trample
+    phrase := Resolution.toPhrase (.becomeTypes #["Dinosaur", "Hero"] 6 6 Keyword.trample) EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.enter .chooseUpToXModes).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .chooseUpToXModes)
+    }
+  ),
+  (
+    let t := (SharedTrigger.resource .secondDrawBecome66).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.resource .secondDrawBecome66)
+    }
+  ),
+  {
+    resolution := .createTokens .villain21menace 1 (tapped := true)
+    phrase := Resolution.toPhrase (.createTokens .villain21menace 1 (tapped := true)) EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.step .drawToTen).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.step .drawToTen)
+    }
+  ),
+  {
+    resolution := Resolution.ofSpell (.nextFreeRGCreature)
+    phrase := SpellResolution.toPhrase .nextFreeRGCreature EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.youAttacking .lookSixCast).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.youAttacking .lookSixCast)
+    }
+  ),
+  {
+    resolution := .plusOneX
+    phrase := Resolution.toPhrase .plusOneX EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creatureYouControl
+    resolution := .attach
+    phrase := Resolution.toPhrase .attach EffectTargetKind.creatureYouControl.noun
+  },
+  {
+    targeting := .of .creature .own
+    resolution := .onPermanent .cantBeBlocked
+    phrase := Resolution.toPhrase (.onPermanent .cantBeBlocked) EffectTargetKind.creature.noun
+  },
+  {
+    resolution := .gainLife 3
+    phrase := Resolution.toPhrase (.gainLife 3) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .creatureDamage
+    resolution := Resolution.ofSpell (.onPermanent (.dealDamage 5))
+    phrase := SpellResolution.toPhrase (.onPermanent (.dealDamage 5)) EffectTargetKind.creature.noun
+  },
+  {
+    resolution := .onSource (.plusOne 1)
+    phrase := Resolution.toPhrase (.onSource (.plusOne 1)) EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.enter .exileGyPlayUntilNextTurn).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .exileGyPlayUntilNextTurn)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enter .fightUpToOne).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .fightUpToOne)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enter .returnNonlandNontoken).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .returnNonlandNontoken)
+    }
+  ),
+  {
+    targeting := .of .creature
+    spellCastKind := .creatureDamage
+    resolution := Resolution.ofSpell (.onPermanent (.dealDamageLoseIndestructibleExile 3))
+    phrase := SpellResolution.toPhrase (.onPermanent (.dealDamageLoseIndestructibleExile 3)) EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .destroyCreature
+    resolution := Resolution.ofSpell (.onPermanent .destroy)
+    phrase := SpellResolution.toPhrase (.onPermanent .destroy) EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of .artifactOrLand
+    spellCastKind := .destroyArtifactOrLand
+    resolution := .sequence [.onPermanent .destroy, .creaturesWithoutFlyingCantBlock]
+    phrase := "destroy target artifact or land. Creatures without flying can't block this turn"
+  },
+  {
+    targeting := .of .creatureYouControl
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.sequence [
+      .onPermanent (.plusOne 1),
+      .onPermanent (.grantKeywords (Keyword.trample.merge Keyword.hexproof))])
+    phrase := "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
+  },
+  {
+    targeting := .of .creatureYouControl
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.sequence [
+      .onPermanent .untap,
+      .onPermanent (.pump 2 2),
+      .mayAttachEquipmentIfDwarf])
+    phrase := SpellResolution.toPhrase (.sequence [
+      .onPermanent .untap,
+      .onPermanent (.pump 2 2),
+      .mayAttachEquipmentIfDwarf]) EffectTargetKind.creatureYouControl.noun
+  },
+  (
+    let t := (SharedTrigger.casting .plusOneScry).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .plusOneScry)
+    }
+  ),
+  (
+    let t := (SharedTrigger.step .enchantedControllerDraws).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.step .enchantedControllerDraws)
+    }
+  ),
+  (
+    let t := (SharedTrigger.thisAttack .attacksAlonePlus2Indestructible).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.thisAttack .attacksAlonePlus2Indestructible)
+    }
+  ),
+  (
+    let t := (SharedTrigger.casting .plusOneThis).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .plusOneThis)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .nontokenHeroModal).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .nontokenHeroModal)
+    }
+  ),
+  (
+    let t := (SharedTrigger.resource .secondDrawDrain).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.resource .secondDrawDrain)
+    }
+  ),
+  (
+    let t := (SharedTrigger.death .hellcatReturn).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.death .hellcatReturn)
+    }
+  ),
+  {
+    targeting := .of .upToOneCreatureThenPlayer
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.sequence [.plusOneOnCreatureTargets, .targetPlayersGainLife 2])
+    phrase := SpellResolution.toPhrase (.sequence [.plusOneOnCreatureTargets, .targetPlayersGainLife 2]) EffectTargetKind.upToOneCreatureThenPlayer.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.sequence [.draw 2, .loseLife 2])
+    phrase := SpellResolution.toPhrase (.sequence [.draw 2, .loseLife 2]) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.sequence [.draw 1, .loseLife 1, .amassGoblins 2])
+    phrase := SpellResolution.toPhrase (.sequence [.draw 1, .loseLife 1, .amassGoblins 2]) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .sequence [.shuffleSource, .draw 3]
+    phrase := s!"This owner shuffles him into their library and draws {cardPhrase 3}"
+  },
+  {
+    resolution := .sequence
+      [.creaturesYouControlPump 2 0,
+      .spell (.eachOpponentLosesLife 2)]
+    phrase := s!"Creatures you control get {signedStat 2}/{signedStat 0} until end of turn. Each opponent loses {2} life"
+  },
+  {
+    resolution := .sequence [.onSource (.plusOne 2), .createTokens .robotVillain22 1]
+    phrase := s!"Put {plusOnePlusOneCountersPhrase 2} on this creature and {TokenKind.createPhrase .robotVillain22 1}"
+  },
+  {
+    resolution := .subtypesGainMenace #["Goblin", "Orc"]
+    phrase := Resolution.toPhrase (.subtypesGainMenace #["Goblin", "Orc"]) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .subtypesGainMenace #["Elf"]
+    phrase := Resolution.toPhrase (.subtypesGainMenace #["Elf"]) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .teamGain Keyword.menace
+    phrase := Resolution.toPhrase (.teamGain Keyword.menace) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.amassGoblinsOrFromGy 1 3)
+    phrase := SpellResolution.toPhrase (.amassGoblinsOrFromGy 1 3) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .exileTop
+    phrase := Resolution.toPhrase .exileTop EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature
+    maxTargets := 2
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.tapTargets)
+    phrase := SpellResolution.toPhrase .tapTargets EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of .artifactOrCreatureYouControl
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.onPermanent (.grantKeywords (Keyword.hexproof.merge Keyword.indestructible)))
+    phrase := SpellResolution.toPhrase (.onPermanent (.grantKeywords (Keyword.hexproof.merge Keyword.indestructible))) EffectTargetKind.artifactOrCreatureYouControl.noun
+  },
+  {
+    resolution := .creaturesYouControlPump 1 1
+    phrase := Resolution.toPhrase (.creaturesYouControlPump 1 1) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.scry 2)
+    phrase := SpellResolution.toPhrase (.scry 2) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .surveil 1
+    phrase := Resolution.toPhrase (.surveil 1) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .spell
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.counterUnlessPays 4)
+    phrase := SpellResolution.toPhrase (.counterUnlessPays 4) EffectTargetKind.spell.noun
+  },
+  {
+    targeting := .of .spell
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.counterExilePermanentMayCast)
+    phrase := SpellResolution.toPhrase .counterExilePermanentMayCast EffectTargetKind.spell.noun
+  },
+  {
+    targeting := .of .twoNonlandsSharingType
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.exchangeControl)
+    phrase := SpellResolution.toPhrase .exchangeControl EffectTargetKind.twoNonlandsSharingType.noun
+  },
+  {
+    resolution := .returnFromGraveyardToHand
+    phrase := Resolution.toPhrase .returnFromGraveyardToHand EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .pump
+    preferAsDefaultMode := true
+    resolution := Resolution.ofSpell (.onPermanent (.pumpAndExileIfDies (-5) (-5)))
+    phrase := SpellResolution.toPhrase (.onPermanent (.pumpAndExileIfDies (-5) (-5))) EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of .player
+    spellCastKind := .massPump
+    resolution := Resolution.ofSpell (.creaturesOfPlayerPump (-1) (-1))
+    phrase := SpellResolution.toPhrase (.creaturesOfPlayerPump (-1) (-1)) EffectTargetKind.player.noun
+  },
+  {
+    targeting := .of .player .selfPlayer
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.sequence [.targetPlayerDraw 2, .targetPlayerLosesLife 2])
+    phrase := SpellResolution.toPhrase (.sequence [.targetPlayerDraw 2, .targetPlayerLosesLife 2]) EffectTargetKind.player.noun
+  },
+  {
+    targeting := .of .creature .own
+    spellCastKind := .pump
+    resolution := .sequence
+      [.onPermanent (.pump 2 2),
+      .onPermanent (.grantKeywords Keyword.lifelink)]
+    phrase := s!"target creature gets {signedStat 2}/{signedStat 2} and gains lifelink until end of turn"
+  },
+  {
+    targeting := .of .creature .own
+    spellCastKind := .pump
+    resolution := .sequence
+      [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords (Keyword.reach.merge Keyword.firstStrike))]
+    phrase := s!"target creature gets {signedStat 3}/{signedStat 0} and gains {(Keyword.reach.merge Keyword.firstStrike).joinedAnd} until end of turn"
+  },
+  {
+    spellCastKind := .massPump
+    resolution := Resolution.ofSpell (.creaturesYouControlPump 2 1)
+    phrase := SpellResolution.toPhrase (.creaturesYouControlPump 2 1) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .artifactOrEnchantment
+    spellCastKind := .destroyArtifactOrLand
+    resolution := Resolution.ofSpell (.sequence [.onPermanent .destroy, .gainLife 2])
+    phrase := SpellResolution.toPhrase (.sequence [.onPermanent .destroy, .gainLife 2]) EffectTargetKind.artifactOrEnchantment.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.onPermanent .becomeArtifactIndestructible)
+    phrase := SpellResolution.toPhrase (.onPermanent .becomeArtifactIndestructible) EffectTargetKind.creature.noun
+  },
+  {
+    resolution := .addAnyColor
+    phrase := Resolution.toPhrase .addAnyColor EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creatureCardInYourGraveyard
+    allowsZeroTargets := true
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.sequence [.returnFromGyToHand, .amassGoblins 3])
+    phrase := SpellResolution.toPhrase (.sequence [.returnFromGyToHand, .amassGoblins 3]) EffectTargetKind.creatureCardInYourGraveyard.noun
+  },
+  {
+    targeting := .of .spell
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.counterThenRecruitIfMvAtMost 2)
+    phrase := SpellResolution.toPhrase (.counterThenRecruitIfMvAtMost 2) EffectTargetKind.spell.noun
+  },
+  {
+    targeting := .of .creatureYouControl
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.plusOneThenEachOtherIfFromGy)
+    phrase := SpellResolution.toPhrase .plusOneThenEachOtherIfFromGy EffectTargetKind.creatureYouControl.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.drawIfFromGy 1 2)
+    phrase := SpellResolution.toPhrase (.drawIfFromGy 1 2) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creatureYouControlThenOppCreature
+    spellCastKind := .fight
+    resolution := Resolution.ofSpell (.sequence [.plusOneOnFirstTarget 2, .fightAnnouncedCreatures])
+    phrase := SpellResolution.toPhrase (.sequence [.plusOneOnFirstTarget 2, .fightAnnouncedCreatures]) EffectTargetKind.creatureYouControlThenOppCreature.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.searchLegendaryCreatureToHand)
+    phrase := SpellResolution.toPhrase .searchLegendaryCreatureToHand EffectTargetKind.none.noun
+  },
+  {
+    resolution := .addMana #[.colored .black, .colored .red]
+    phrase := Resolution.toPhrase (.addMana #[.colored .black, .colored .red]) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.millThenPutInstantOrSorcery 4)
+    phrase := SpellResolution.toPhrase (.millThenPutInstantOrSorcery 4) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .twoCreaturesOrLandsYouControl
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.exileThenReturnYouControl)
+    phrase := SpellResolution.toPhrase .exileThenReturnYouControl EffectTargetKind.twoCreaturesOrLandsYouControl.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .creatureDamage
+    resolution := Resolution.ofSpell (.sequence [.exileIfDiesThisTurn, .onPermanent (.dealDamage 3)])
+    phrase := SpellResolution.toPhrase (.sequence [.exileIfDiesThisTurn, .onPermanent (.dealDamage 3)]) EffectTargetKind.creature.noun
+  },
+  {
+    resolution := .createTokens .dwarf 1
+    phrase := Resolution.toPhrase (.createTokens .dwarf 1) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.millThenPutLands 4 2)
+    phrase := SpellResolution.toPhrase (.millThenPutLands 4 2) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .creatureDamage
+    resolution := Resolution.ofSpell (.dealDamageToEachOppCreature 1)
+    phrase := SpellResolution.toPhrase (.dealDamageToEachOppCreature 1) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .creatureDamage
+    resolution := Resolution.ofSpell (.sequence [.dealDamageToEachNonDragon 3, .addFourManaDragonSpells])
+    phrase := SpellResolution.toPhrase (.sequence [.dealDamageToEachNonDragon 3, .addFourManaDragonSpells]) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.millThenPutAllInstantsOrSorceries 6)
+    phrase := SpellResolution.toPhrase (.millThenPutAllInstantsOrSorceries 6) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.exileTopPlayIfYouControlSubtype 2 "Wizard")
+    phrase := SpellResolution.toPhrase (.exileTopPlayIfYouControlSubtype 2 "Wizard") EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.ofSpell (.createTokensX .dwarf)
+    phrase := SpellResolution.toPhrase (.createTokensX .dwarf) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .spell
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.sequence [.returnTargetSpell, .playersCantCastIfGift])
+    phrase := SpellResolution.toPhrase (.sequence [.returnTargetSpell, .playersCantCastIfGift]) EffectTargetKind.spell.noun
+  },
+  {
+    targeting := .of .oppCreature
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 (.dealDamageToOppCreature 6))
+    phrase := s!"this Saga deals {6} damage to target creature an opponent controls"
+  },
+  {
+    targeting := .of .oppArtifact
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .destroyOppArtifact)
+    phrase := "destroy target artifact an opponent controls"
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 (.addMana (.colored .red)))
+    phrase := s!"add {(ManaType.colored .red)}"
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .searchBasicLandToHand)
+    phrase := searchLibraryToHandPhrase "a basic land card"
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .gainLandfallCreateElf)
+    phrase := "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 (.elvesGetVigilance 1))
+    phrase := s!"Elves you control get {signedStat 1}/+0 and gain vigilance until end of turn"
+  },
+  {
+    targeting := .of .opponent
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .opponentDiscardsNonland)
+    phrase := "target opponent reveals their hand. You choose a nonland card from it. That player discards that card"
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 (.amassGoblins 1))
+    phrase := s!"amass Goblins {1}"
+  },
+  {
+    targeting := .of .opponent
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 (.opponentLosesYouGain 1))
+    phrase := s!"target opponent loses {1} life and you gain {1} life"
+  },
+  {
+    targeting := .of .twoCreaturesOrLandsYouControl
+    resolution := .exileThenReturnNextEnd
+    phrase := Resolution.toPhrase .exileThenReturnNextEnd EffectTargetKind.twoCreaturesOrLandsYouControl.noun
+  },
+  {
+    resolution := .searchBasicBeholdSubtypeUntap "Elf"
+    phrase := Resolution.toPhrase (.searchBasicBeholdSubtypeUntap "Elf") EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .twoPlayers
+    resolution := .twoPlayersDraw
+    phrase := Resolution.toPhrase .twoPlayersDraw EffectTargetKind.twoPlayers.noun
+  },
+  {
+    targeting := .of .opponent
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.exileTopXOppPlayForLife)
+    phrase := SpellResolution.toPhrase .exileTopXOppPlayForLife EffectTargetKind.opponent.noun
+  },
+  {
+    resolution := .discardLegendarySameNameDraw
+    phrase := Resolution.toPhrase .discardLegendarySameNameDraw EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creatureYouControl
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .grantHexproofWhileRemains)
+    phrase := "target creature you control gains hexproof for as long as this Saga remains on the battlefield"
+  },
+  {
+    targeting := .of .creature
+    allowsZeroTargets := true
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .preventDamageWhileRemains)
+    phrase := "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield"
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 (.draw 1))
+    phrase := s!"draw {cardPhrase 1}"
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.riddlesInTheDark)
+    phrase := SpellResolution.toPhrase .riddlesInTheDark EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 (.searchBasicPlainsExileGainLife 2 2))
+    phrase := s!"search your library for up to {2} basic Plains cards, exile them, then shuffle. You gain {2} life"
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .returnLinkedExileToHand)
+    phrase := "put a card exiled with this Saga into its owner's hand"
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .grantAttackPumpPerPlainsThisTurn)
+    phrase := "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
+  },
+  {
+    targeting := .of .creatureOrLandYouControl
+    allowsZeroTargets := true
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .blinkUntilEndStep)
+    phrase := "exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step"
+  },
+  {
+    targeting := .of .playerOrCreature
+    abilityCastKind := .creatureDamage
+    resolution := .dealDamageToAny 4
+    phrase := Resolution.toPhrase (.dealDamageToAny 4) EffectTargetKind.playerOrCreature.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.supperForSpiders)
+    phrase := SpellResolution.toPhrase .supperForSpiders EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of (.filtered { noun := "target creature you own", types := #[.creature], ownedByYou := true })
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.eaglesAreComing)
+    phrase := SpellResolution.toPhrase .eaglesAreComing (EffectTargetKind.filtered { noun := "target creature you own", types := #[.creature], ownedByYou := true }).noun
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .treasureThenDragonIfFour)
+    phrase := "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .recruit)
+    phrase := "recruit"
+  },
+  {
+    targeting := .of (.creatureCardInYourGraveyardMvAtMost 3)
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 (.returnCreatureFromGyMvAtMost 3))
+    phrase := s!"return target creature card with mana value {3} or less from your graveyard to the battlefield"
+  },
+  {
+    targeting := .of .creature
+    allowsZeroTargets := true
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .plusOneUpToOne)
+    phrase := "put a +1/+1 counter on up to one target creature"
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.lookAtTopLandsGainLife 20 8)
+    phrase := SpellResolution.toPhrase (.lookAtTopLandsGainLife 20 8) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .sequence [.drawEqualToLastKnownPower, .discard 1]
+    phrase := "Draw cards equal to the sacrificed creature's power, then discard a card"
+  },
+  {
+    targeting := .of .player
+    resolution := .mill 3
+    phrase := Resolution.toPhrase (.mill 3) EffectTargetKind.player.noun
+  },
+  {
+    targeting := .of (.creatureSpellPTAtMost 2)
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.counter)
+    phrase := SpellResolution.toPhrase .counter (EffectTargetKind.creatureSpellPTAtMost 2).noun
+  },
+  {
+    resolution := .returnFromGraveyardTapped
+    phrase := Resolution.toPhrase .returnFromGraveyardTapped EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .massPump
+    resolution := Resolution.ofSpell (.allCreaturesPump (-4) (-4))
+    phrase := SpellResolution.toPhrase (.allCreaturesPump (-4) (-4)) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .player
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.exileGraveyardCreaturesGrantCast)
+    phrase := SpellResolution.toPhrase .exileGraveyardCreaturesGrantCast EffectTargetKind.player.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .destroyCreature
+    preferAsDefaultMode := true
+    resolution := Resolution.ofSpell (.sequence [.onPermanent .destroy, .controllerOfTargetLosesLife 2])
+    phrase := SpellResolution.toPhrase (.sequence [.onPermanent .destroy, .controllerOfTargetLosesLife 2]) EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of .spell
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.sequence [.returnTargetSpell, .draw 1])
+    phrase := SpellResolution.toPhrase (.sequence [.returnTargetSpell, .draw 1]) EffectTargetKind.spell.noun
+  },
+  {
+    resolution := .scry 2
+    phrase := Resolution.toPhrase (.scry 2) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .player .selfPlayer
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.targetPlayerDraw 2)
+    phrase := SpellResolution.toPhrase (.targetPlayerDraw 2) EffectTargetKind.player.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.drawEqualToughnessThenPutCreatures)
+    phrase := SpellResolution.toPhrase .drawEqualToughnessThenPutCreatures EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.addRedPerOppArtifacts)
+    phrase := SpellResolution.toPhrase .addRedPerOppArtifacts EffectTargetKind.none.noun
+  },
+  {
+    resolution := .createTokensX .treasure
+    phrase := Resolution.toPhrase (.createTokensX .treasure) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .createTokens .food 1
+    phrase := Resolution.toPhrase (.createTokens .food 1) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .anotherCreature
+    resolution := .arwenShare
+    phrase := Resolution.toPhrase .arwenShare EffectTargetKind.anotherCreature.noun
+  },
+  {
+    targeting := .of .artifact
+    allowsZeroTargets := true
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.gainControlOppArtifacts)
+    phrase := SpellResolution.toPhrase .gainControlOppArtifacts EffectTargetKind.artifact.noun
+  },
+  {
+    spellCastKind := .creatureDamage
+    resolution := Resolution.ofSpell (.damageOppCreaturesEqualOtherSpellsMv)
+    phrase := SpellResolution.toPhrase .damageOppCreaturesEqualOtherSpellsMv EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature
+    resolution := .grantCombatDamageCreateTreasure
+    phrase := Resolution.toPhrase .grantCombatDamageCreateTreasure EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.phaseOutKicker)
+    phrase := SpellResolution.toPhrase .phaseOutKicker EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of .creature
+    resolution := .putShadowCounter
+    phrase := Resolution.toPhrase .putShadowCounter EffectTargetKind.creature.noun
+  },
+  {
+    resolution := .damageEachOpponent 1
+    phrase := Resolution.toPhrase (.damageEachOpponent 1) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .chooseTwoDestroyRest
+    phrase := Resolution.toPhrase .chooseTwoDestroyRest EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature
+    resolution := .blackGateUnblockable
+    phrase := Resolution.toPhrase .blackGateUnblockable EffectTargetKind.creature.noun
+  },
+  {
+    resolution := .sequence [.onSource .burdenCounter, .drawEqualToBurdenCounters]
+    phrase := "Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring"
+  },
+  {
+    resolution := .teamGain Keyword.doubleStrike
+    phrase := Resolution.toPhrase (.teamGain Keyword.doubleStrike) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .sequence [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap]
+    phrase := "Witch-king of Angmar gains indestructible until end of turn. Tap him"
+  },
+  (
+    let t := (SharedTrigger.casting .plusOneEachOther).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .plusOneEachOther)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .hulk).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .hulk)
+    }
+  ),
+  {
+    resolution := .plusOneOnEachOtherSubtype "Hero" 1
+    phrase := Resolution.toPhrase (.plusOneOnEachOtherSubtype "Hero" 1) EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.ofSpell (.createTokens .hero32vigilance 2)
+    phrase := SpellResolution.toPhrase (.createTokens .hero32vigilance 2) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .sequence [.onSource (.plusOne 1), .onSource .indestructibleCounter]
+    phrase := "Put a +1/+1 counter and an indestructible counter on this"
+  },
+  {
+    targeting := .of .attackingOrBlockingCreature
+    spellCastKind := .creatureDamage
+    resolution := Resolution.ofSpell (.dealDamageTeamwork 2 4)
+    phrase := SpellResolution.toPhrase (.dealDamageTeamwork 2 4) EffectTargetKind.attackingOrBlockingCreature.noun
+  },
+  (
+    let t := (SharedTrigger.resource .plusOneOnHeroesCreateWall).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.resource .plusOneOnHeroesCreateWall)
+    }
+  ),
+  (
+    let t := (SharedTrigger.step .harnessedFlicker).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.step .harnessedFlicker)
+    }
+  ),
+  {
+    targeting := .of (.creatureToughnessAtLeast 4)
+    spellCastKind := .destroyCreature
+    resolution := Resolution.ofSpell (.exileTarget)
+    phrase := SpellResolution.toPhrase .exileTarget (EffectTargetKind.creatureToughnessAtLeast 4).noun
+  },
+  {
+    targeting := .of (.enchantmentMvAtLeast 4)
+    spellCastKind := .destroyArtifactOrLand
+    resolution := Resolution.ofSpell (.exileTarget)
+    phrase := SpellResolution.toPhrase .exileTarget (EffectTargetKind.enchantmentMvAtLeast 4).noun
+  },
+  (
+    let listed := orJoin (#["Hero", "Equipment", "Vehicle"]).toList
+    let art := indefinite ((#["Hero", "Equipment", "Vehicle"])[0]?.getD "")
+    {
+      resolution := .sequence [.onSource (.plusOne 2), .lookAtTopPutTypes 7 #["Hero", "Equipment", "Vehicle"]]
+      phrase := s!"Put two +1/+1 counters on this, then look at the top {7} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}"
+    }
+  ),
+  (
+    let t := (SharedTrigger.enter .returnGyPermanentThisTurn).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .returnGyPermanentThisTurn)
+    }
+  ),
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.mayPutHeroMvOrDraw 3)
+    phrase := SpellResolution.toPhrase (.mayPutHeroMvOrDraw 3) EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.plusOneOnEachYouControl)
+    phrase := SpellResolution.toPhrase .plusOneOnEachYouControl EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .playerThenCreature
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.sequence [
+      .targetPlayerInvestigates,
+      .onCreatureAmongTargets (.grantKeywords Keyword.flying),
+      .onCreatureAmongTargets .untap,
+      .onCreatureAmongTargets (.pump 1 0)])
+    phrase := SpellResolution.toPhrase (.sequence [
+      .targetPlayerInvestigates,
+      .onCreatureAmongTargets (.grantKeywords Keyword.flying),
+      .onCreatureAmongTargets .untap,
+      .onCreatureAmongTargets (.pump 1 0)]) EffectTargetKind.playerThenCreature.noun
+  },
+  {
+    targeting := .of .anotherCreatureYouControl
+    resolution := .sequence [.onPermanent (.pump 2 0), .onPermanent (.grantKeywords Keyword.hexproof)]
+    phrase := s!"Another target creature you control gets {signedStat 2}/{signedStat 0} and gains {(Keyword.hexproof).joinedAnd} until end of turn"
+  },
+  (
+    let t := (SharedTrigger.casting .tapCreatureOrLand).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .tapCreatureOrLand)
+    }
+  ),
+  {
+    targeting := .of .creature
+    resolution := .onPermanent .tap
+    phrase := Resolution.toPhrase (.onPermanent .tap) EffectTargetKind.creature.noun
+  },
+  (
+    let t := (SharedTrigger.enter .oppCreatesTheVoid).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .oppCreatesTheVoid)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .equippedAttacksAloneUntapScry).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .equippedAttacksAloneUntapScry)
+    }
+  ),
+  {
+    targeting := .of .creature
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.sequence [.onPermanent (.plusOne 1),
+      .onPermanent (.grantKeywords (Keyword.lifelink.merge Keyword.indestructible))])
+    phrase := SpellResolution.toPhrase (.sequence [.onPermanent (.plusOne 1),
+      .onPermanent (.grantKeywords (Keyword.lifelink.merge Keyword.indestructible))]) EffectTargetKind.creature.noun
+  },
+  (
+    let t := (SharedTrigger.enter .plusOnesOrReturnArtEnch).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .plusOnesOrReturnArtEnch)
+    }
+  ),
+  {
+    targeting := .of .player
+    resolution := Resolution.ofSpell (.targetPlayerCreatesTokens .leviathan65hexproof 1)
+    phrase := SpellResolution.toPhrase (.targetPlayerCreatesTokens .leviathan65hexproof 1) EffectTargetKind.player.noun
+  },
+  {
+    targeting := .of .nonland
+    maxTargets := 2
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.returnOneOrTwoNonlands)
+    phrase := SpellResolution.toPhrase .returnOneOrTwoNonlands EffectTargetKind.nonland.noun
+  },
+  (
+    let t := (SharedTrigger.watch .merfolkAttackDraw).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .merfolkAttackDraw)
+    }
+  ),
+  {
+    resolution := .drawX
+    phrase := Resolution.toPhrase .drawX EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of (.stackAbilityFromCreatureSource)
+    resolution := .copyControlledAbility true
+    phrase := Resolution.toPhrase (.copyControlledAbility true) EffectTargetKind.stackAbilityFromCreatureSource.noun
+  },
+  (
+    let t := (SharedTrigger.enter .createRedwing).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .createRedwing)
+    }
+  ),
+  {
+    resolution := .revealTopDrawIfArtifact
+    phrase := Resolution.toPhrase .revealTopDrawIfArtifact EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.watch .justiceBounce).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .justiceBounce)
+    }
+  ),
+  {
+    resolution := .sequence [.onSource (.plusOne 1), .extraTurn]
+    phrase := "Put a +1/+1 counter on this. Take an extra turn after this one. During that turn, power-up abilities can't be activated"
+  },
+  (
+    let t := (SharedTrigger.watch .youTargetDrawOnce).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .youTargetDrawOnce)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .tokensEnterMayDraw).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .tokensEnterMayDraw)
+    }
+  ),
+  (
+    let t := (SharedTrigger.casting .drawPowerEqualHand).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .drawPowerEqualHand)
+    }
+  ),
+  {
+    resolution := Resolution.ofSpell (.copyNontokenCreaturesYouControl)
+    phrase := SpellResolution.toPhrase .copyNontokenCreaturesYouControl EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.casting .merfolkFromBlue).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .merfolkFromBlue)
+    }
+  ),
+  {
+    resolution := .lookAtTopRevealArtifact 4
+    phrase := Resolution.toPhrase (.lookAtTopRevealArtifact 4) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .oppCreatureThenUpToOneCreatureYouControl
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.ownerPutsLibraryThenConnive)
+    phrase := SpellResolution.toPhrase .ownerPutsLibraryThenConnive EffectTargetKind.oppCreatureThenUpToOneCreatureYouControl.noun
+  },
+  {
+    targeting := .of .spell
+    spellCastKind := .counter
+    resolution := Resolution.ofSpell (.counterUnlessPaysTeamwork 2 4)
+    phrase := SpellResolution.toPhrase (.counterUnlessPaysTeamwork 2 4) EffectTargetKind.spell.noun
+  },
+  (
+    let t := (SharedTrigger.casting .exileFlicker).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .exileFlicker)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .combatDamageExileUntilNonland).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .combatDamageExileUntilNonland)
+    }
+  ),
+  {
+    targeting := .of .creature .own
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.onPermanent (.pump (-4) (-4)))
+    phrase := SpellResolution.toPhrase (.onPermanent (.pump (-4) (-4))) EffectTargetKind.creature.noun
+  },
+  {
+    targeting := .of (.filtered { noun := s!"target {("Villain")} card in your graveyard", zone := .yourGraveyard, controller := .you, subtypes := #["Villain"] })
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.returnGySubtypeToHand "Villain")
+    phrase := SpellResolution.toPhrase (.returnGySubtypeToHand "Villain") (EffectTargetKind.filtered { noun := s!"target {("Villain")} card in your graveyard", zone := .yourGraveyard, controller := .you, subtypes := #["Villain"] }).noun
+  },
+  {
+    targeting := .of (.filtered { noun := s!"target {("Hero")} card in your graveyard", zone := .yourGraveyard, controller := .you, subtypes := #["Hero"] })
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.returnGySubtypeToHand "Hero")
+    phrase := SpellResolution.toPhrase (.returnGySubtypeToHand "Hero") (EffectTargetKind.filtered { noun := s!"target {("Hero")} card in your graveyard", zone := .yourGraveyard, controller := .you, subtypes := #["Hero"] }).noun
+  },
+  (
+    let t := (SharedTrigger.watch .attacksAloneDrain).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .attacksAloneDrain)
+    }
+  ),
+  {
+    resolution := .connive
+    phrase := Resolution.toPhrase .connive EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.resource .discardExilePlay).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.resource .discardExilePlay)
+    }
+  ),
+  {
+    resolution := .eachOppDiscardThenPlusOne
+    phrase := Resolution.toPhrase .eachOppDiscardThenPlusOne EffectTargetKind.none.noun
+  },
+  {
+    resolution := .addTwoAnyColorEquipment
+    phrase := Resolution.toPhrase .addTwoAnyColorEquipment EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature
+    resolution := .onPermanent (.pump (-4) (-4))
+    phrase := Resolution.toPhrase (.onPermanent (.pump (-4) (-4))) EffectTargetKind.creature.noun
+  },
+  (
+    let t := (SharedTrigger.resource .secondDrawPlusOneTarget).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.resource .secondDrawPlusOneTarget)
+    }
+  ),
+  {
+    resolution := .createTokens .wall04defender 1
+    phrase := Resolution.toPhrase (.createTokens .wall04defender 1) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .player
+    resolution := .targetPlayerDraw 4
+    phrase := Resolution.toPhrase (.targetPlayerDraw 4) EffectTargetKind.player.noun
+  },
+  {
+    targeting := .of (.creatureCardInYourGraveyardMvAtMost 4)
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.returnGyCreatureMvAtMostOrAny 4)
+    phrase := SpellResolution.toPhrase (.returnGyCreatureMvAtMostOrAny 4) (EffectTargetKind.creatureCardInYourGraveyardMvAtMost 4).noun
+  },
+  {
+    targeting := .of .creatureCardInYourGraveyard
+    allowsZeroTargets := true
+    resolution := .sequence [.fra .returnFromGyToHand, .onSource (.plusOne 2)]
+    phrase := s!"Return up to one target creature card from your graveyard to your hand. Put {plusOnePlusOneCountersPhrase 2} on this creature"
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.onPermanent (.grantKeywords Keyword.deathtouch))
+    phrase := SpellResolution.toPhrase (.onPermanent (.grantKeywords Keyword.deathtouch)) EffectTargetKind.creature.noun
+  },
+  (
+    let t := (SharedTrigger.watch .villainPlusOneLifelink).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .villainPlusOneLifelink)
+    }
+  ),
+  {
+    spellCastKind := .creatureDamage
+    resolution := Resolution.ofSpell (.dealDamageToEachCreature 3)
+    phrase := SpellResolution.toPhrase (.dealDamageToEachCreature 3) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .artifactOrLand
+    spellCastKind := .destroyArtifactOrLand
+    resolution := Resolution.ofSpell (.sequence [.onPermanent .destroy, .ownerMaySearchBasic])
+    phrase := SpellResolution.toPhrase (.sequence [.onPermanent .destroy, .ownerMaySearchBasic]) EffectTargetKind.artifactOrLand.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.gainControlUntilEotOrNextIfVillain)
+    phrase := SpellResolution.toPhrase .gainControlUntilEotOrNextIfVillain EffectTargetKind.creature.noun
+  },
+  (
+    let t := (SharedTrigger.casting .copyIfArtifactOrLand).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .copyIfArtifactOrLand)
+    }
+  ),
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.exileHandDrawPlayUntilNext)
+    phrase := SpellResolution.toPhrase .exileHandDrawPlayUntilNext EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.sequence [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0])
+    phrase := SpellResolution.toPhrase (.sequence [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]) EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.watch .villainOrArtifactDamage).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .villainOrArtifactDamage)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enter (.dealDamageUpToOne 4)).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter (.dealDamageUpToOne 4))
+    }
+  ),
+  {
+    abilityCastKind := .creatureDamage
+    resolution := .dealDamageToEachCreature 2
+    phrase := Resolution.toPhrase (.dealDamageToEachCreature 2) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .creatureDamage
+    resolution := Resolution.ofSpell (.copyThisSpellXTimesThenDamage 1)
+    phrase := SpellResolution.toPhrase (.copyThisSpellXTimesThenDamage 1) EffectTargetKind.creature.noun
+  },
+  {
+    resolution := .sequence [.onSource (.plusOne 1), .onSource .doubleStrikeCounter]
+    phrase := "Put a +1/+1 counter and a double strike counter on this"
+  },
+  {
+    resolution := .createTokens .treasure 1
+    phrase := Resolution.toPhrase (.createTokens .treasure 1) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.sequence [
+      .onPermanent (.grantKeywords Keyword.doubleStrike),
+      .grantTrampleIfTeamwork])
+    phrase := SpellResolution.toPhrase (.sequence [
+      .onPermanent (.grantKeywords Keyword.doubleStrike),
+      .grantTrampleIfTeamwork]) EffectTargetKind.creature.noun
+  },
+  (
+    let t := (SharedTrigger.casting .damageEqualMv).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .damageEqualMv)
+    }
+  ),
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.maySacArtifactOrDiscardDraw 2)
+    phrase := SpellResolution.toPhrase (.maySacArtifactOrDiscardDraw 2) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of (.filtered { noun := "up to two target artifact, creature, enchantment, and/or land cards in your graveyard", zone := .yourGraveyard, types := #[.artifact, .creature, .enchantment, .land], controller := .you })
+    allowsZeroTargets := true
+    maxTargets := 2
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.returnUpToTwoGyModal)
+    phrase := SpellResolution.toPhrase .returnUpToTwoGyModal (EffectTargetKind.filtered {
+      noun := "up to two target artifact, creature, enchantment, and/or land cards in your graveyard"
+      zone := .yourGraveyard
+      types := #[.artifact, .creature, .enchantment, .land]
+      controller := .you }).noun
+  },
+  {
+    resolution := .addAnyColorEqualToSourcePower
+    phrase := Resolution.toPhrase .addAnyColorEqualToSourcePower EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.ofSpell (.revealTopPutCreatures 8)
+    phrase := SpellResolution.toPhrase (.revealTopPutCreatures 8) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creatureYouControlThenOppCreature
+    spellCastKind := .fight
+    resolution := Resolution.ofSpell (.mutualFight)
+    phrase := SpellResolution.toPhrase .mutualFight EffectTargetKind.creatureYouControlThenOppCreature.noun
+  },
+  {
+    targeting := .of .creature
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.onPermanent (.plusOne 1))
+    phrase := SpellResolution.toPhrase (.onPermanent (.plusOne 1)) EffectTargetKind.creature.noun
+  },
+  (
+    let joined := if ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste).vigilance && ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste).indestructible && ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste).haste then "vigilance, indestructible, and haste" else ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste).joinedAnd
+    {
+      resolution := .sequence [.onSource (.plusOne 1), .onSource (.grantKeywords ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste))]
+      phrase := s!"Put a +1/+1 counter on this. He gains {joined} until end of turn"
+    }
+  ),
+  (
+    let t := (SharedTrigger.resource .gainLifePlusOnes).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.resource .gainLifePlusOnes)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enter .createZabu).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .createZabu)
+    }
+  ),
+  (
+    let t := (SharedTrigger.resource .plusOneOnThisOnce).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.resource .plusOneOnThisOnce)
+    }
+  ),
+  {
+    resolution := .sequence [.onSource (.plusOne 1), .createTokens .hero32vigilance 1]
+    phrase := s!"Put {plusOnePlusOneCountersPhrase 1} on this creature and {TokenKind.createPhrase .hero32vigilance 1}"
+  },
+  {
+    targeting := .of .permanentOrPlayer
+    resolution := .proliferateEachKind
+    phrase := Resolution.toPhrase .proliferateEachKind EffectTargetKind.permanentOrPlayer.noun
+  },
+  {
+    targeting := .of .creatureYouControlThenOppCreature
+    spellCastKind := .fight
+    resolution := Resolution.ofSpell (.creatureYouControlDealsTwicePower)
+    phrase := SpellResolution.toPhrase .creatureYouControlDealsTwicePower EffectTargetKind.creatureYouControlThenOppCreature.noun
+  },
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.millThenPutPermanentGainLife 2 2)
+    phrase := SpellResolution.toPhrase (.millThenPutPermanentGainLife 2 2) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .upToOneCreatureThenPlayer
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.gainLifeSearchBasicPlusOne 2)
+    phrase := SpellResolution.toPhrase (.gainLifeSearchBasicPlusOne 2) EffectTargetKind.upToOneCreatureThenPlayer.noun
+  },
+  {
+    resolution := .millThenPutSubtypeOrEnchantment 4 "Hero"
+    phrase := Resolution.toPhrase (.millThenPutSubtypeOrEnchantment 4 "Hero") EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .artifactOrEnchantment
+    allowsZeroTargets := true
+    abilityCastKind := .destroyColorless
+    resolution := .sequence [.onPermanent .destroy, .onSource (.plusOne 1)]
+    phrase := "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this"
+  },
+  (
+    let t := (SharedTrigger.watch .heroesDamagePlusTwo).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .heroesDamagePlusTwo)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enterOrAttack .createSquirrel).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enterOrAttack .createSquirrel)
+    }
+  ),
+  {
+    targeting := .of .creatureYouControl
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.plusOneOnCreatureN 3)
+    phrase := SpellResolution.toPhrase (.plusOneOnCreatureN 3) EffectTargetKind.creatureYouControl.noun
+  },
+  {
+    targeting := .of .creatureYouControl
+    spellCastKind := .pump
+    resolution := Resolution.ofSpell (.sequence [.doublePowerAndToughness, .onPermanent (.grantKeywords Keyword.trample)])
+    phrase := SpellResolution.toPhrase (.sequence [.doublePowerAndToughness, .onPermanent (.grantKeywords Keyword.trample)]) EffectTargetKind.creatureYouControl.noun
+  },
+  {
+    targeting := .of .oppCreature
+    allowsZeroTargets := true
+    resolution := .sequence [.onSource (.plusOne 1), .fra .sourceFightsTarget]
+    phrase := "Put a +1/+1 counter on this. This fights up to one target creature an opponent controls"
+  },
+  (
+    let t := (SharedTrigger.thisAttack .mayPayPlusOne).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.thisAttack .mayPayPlusOne)
+    }
+  ),
+  (
+    let t := (SharedTrigger.resource .plusOneCreateInsectOnce).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.resource .plusOneCreateInsectOnce)
+    }
+  ),
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.mayDrawPerArtifactOppsDraw)
+    phrase := SpellResolution.toPhrase .mayDrawPerArtifactOppsDraw EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.ofSpell (.artifactSpellsCostLessThisTurn .artifact 1)
+    phrase := SpellResolution.toPhrase (.artifactSpellsCostLessThisTurn .artifact 1) EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.ofSpell (.supertypeSpellsCostLessThisTurn .legendary 1)
+    phrase := SpellResolution.toPhrase (.supertypeSpellsCostLessThisTurn .legendary 1) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .opponent
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 .dealXDamageToTargetOpponentGreatestArtifactMv)
+    phrase := "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control"
+  },
+  {
+    resolution := .createTokensEqualRemovedPlusOnes .insect11green
+    phrase := Resolution.toPhrase (.createTokensEqualRemovedPlusOnes .insect11green) EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.ofSpell (.createTokens .villain21menace 2)
+    phrase := SpellResolution.toPhrase (.createTokens .villain21menace 2) EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 (.dealDamageToEachNonSubtypeAndOpponents 2 "Villain"))
+    phrase := s!"This Saga deals {2} damage to each non-{("Villain")} creature and each opponent"
+  },
+  {
+    resolution := Resolution.ofSpell (.createTokensPerSubtype .treasure "Villain")
+    phrase := SpellResolution.toPhrase (.createTokensPerSubtype .treasure "Villain") EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.watch .attacksAloneFirstStrikeMenace).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .attacksAloneFirstStrikeMenace)
+    }
+  ),
+  {
+    targeting := .of .nonland
+    allowsZeroTargets := true
+    spellCastKind := .destroyArtifactOrLand
+    resolution := Resolution.ofSpell (.destroyUpToOneNonland)
+    phrase := SpellResolution.toPhrase .destroyUpToOneNonland EffectTargetKind.nonland.noun
+  },
+  {
+    spellCastKind := .burn
+    resolution := Resolution.ofSpell (.eachOpponentLosesLife 2)
+    phrase := SpellResolution.toPhrase (.eachOpponentLosesLife 2) EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.ofSpell (.createGalactus)
+    phrase := SpellResolution.toPhrase .createGalactus EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.thisAttack .ifArtifactEnteredDraw).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.thisAttack .ifArtifactEnteredDraw)
+    }
+  ),
+  (
+    let t := (SharedTrigger.watch .anyPlayerSecondDraw).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .anyPlayerSecondDraw)
+    }
+  ),
+  (
+    let t := (SharedTrigger.casting .villainToken).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .villainToken)
+    }
+  ),
+  (
+    let t := (SharedTrigger.thisAttack .blinkNontoken).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.thisAttack .blinkNontoken)
+    }
+  ),
+  {
+    targeting := .of (.stackAbilityFromArtifactSource)
+    resolution := .copyControlledAbility false
+    phrase := Resolution.toPhrase (.copyControlledAbility false) EffectTargetKind.stackAbilityFromArtifactSource.noun
+  },
+  (
+    let t := (SharedTrigger.death .deathtouchOppSac).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.death .deathtouchOppSac)
+    }
+  ),
+  (
+    let t := (SharedTrigger.casting .targetsGainFlying).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.casting .targetsGainFlying)
+    }
+  ),
+  {
+    spellCastKind := .massPump
+    resolution := Resolution.ofSpell (.sequence [.creaturesYouControlPump 1 1, .teamGain Keyword.vigilance])
+    phrase := SpellResolution.toPhrase (.sequence [.creaturesYouControlPump 1 1, .teamGain Keyword.vigilance]) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creatureYouControlThenOppCreature
+    allowsZeroTargets := true
+    spellCastKind := .fight
+    resolution := Resolution.ofSpell (.fightUpToOne)
+    phrase := SpellResolution.toPhrase .fightUpToOne EffectTargetKind.creatureYouControlThenOppCreature.noun
+  },
+  {
+    resolution := .sequence [.onSource (.plusOne 2), .chooseOddOrEvenDestroy]
+    phrase := "Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with mana value of the chosen quality"
+  },
+  (
+    let t := (SharedTrigger.enter .createSturdyShieldAttach).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enter .createSturdyShieldAttach)
+    }
+  ),
+  {
+    resolution := Resolution.ofSpell (.searchLibraryOrGyArtifactCreatureX)
+    phrase := SpellResolution.toPhrase .searchLibraryOrGyArtifactCreatureX EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.ofSpell (.worldsWithinWorlds)
+    phrase := SpellResolution.toPhrase .worldsWithinWorlds EffectTargetKind.none.noun
+  },
+  {
+    resolution := .addMana #[.colorless, .colorless, .colorless]
+    phrase := Resolution.toPhrase (.addMana #[.colorless, .colorless, .colorless]) EffectTargetKind.none.noun
+  },
+  (
+    let t := (SharedTrigger.watch .equippedAttacksTap).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.watch .equippedAttacksTap)
+    }
+  ),
+  (
+    let t := (SharedTrigger.enterOrAttack .copyKeywords).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.enterOrAttack .copyKeywords)
+    }
+  ),
+  {
+    resolution := .lookAtTopRevealSubtype 3 "Hero"
+    phrase := Resolution.toPhrase (.lookAtTopRevealSubtype 3 "Hero") EffectTargetKind.none.noun
+  },
+  {
+    resolution := .addFourAnyCombination
+    phrase := Resolution.toPhrase .addFourAnyCombination EffectTargetKind.none.noun
+  },
+  {
+    resolution := .addAnyColorSpendOnlyArtifactSpell
+    phrase := Resolution.toPhrase .addAnyColorSpendOnlyArtifactSpell EffectTargetKind.none.noun
+  },
+  {
+    resolution := .createTokens .doombot 1
+    phrase := Resolution.toPhrase (.createTokens .doombot 1) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of (.creatureYouControlSubtype "Villain")
+    resolution := .targetSubtypeConnives "Villain"
+    phrase := Resolution.toPhrase (.targetSubtypeConnives "Villain") (EffectTargetKind.creatureYouControlSubtype "Villain").noun
+  },
+  (
+    let t := (SharedTrigger.scry 2).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.scry 2)
+    }
+  ),
+  {
+    spellCastKind := .draw
+    resolution := Resolution.ofSpell (.sequence [.draw 1, .loseLife 0])
+    phrase := SpellResolution.toPhrase (.sequence [.draw 1, .loseLife 0]) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .becomeSubtypeWithLandsPT "Elf"
+    phrase := Resolution.toPhrase (.becomeSubtypeWithLandsPT "Elf") EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of (.creatureYouControl)
+    resolution := .onPermanent (.plusOne 2)
+    phrase := Resolution.toPhrase (.onPermanent (.plusOne 2)) EffectTargetKind.creatureYouControl.noun
+  },
+  (
+    let t := (SharedTrigger.draw 1).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.draw 1)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createTokens .treasure 1 true).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createTokens .treasure 1 true)
+    }
+  ),
+  (
+    let t := (SharedTrigger.dividedDamage 3 3).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.dividedDamage 3 3)
+    }
+  ),
+  (
+    let t := (SharedTrigger.opponentSacrificesCreature).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.opponentSacrificesCreature)
+    }
+  ),
+  (
+    let t := (SharedTrigger.attachTo .legendaryCreatureYouControl).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.attachTo .legendaryCreatureYouControl)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneOn .creatureYouControl).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneOn .creatureYouControl)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createTokens .wall 1).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createTokens .wall 1)
+    }
+  ),
+  (
+    let t := (SharedTrigger.connive).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.connive)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneOnSource).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneOnSource)
+    }
+  ),
+  (
+    let t := (SharedTrigger.drawAndLoseLife).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.drawAndLoseLife)
+    }
+  ),
+  (
+    let t := (SharedTrigger.gainLife 2).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.gainLife 2)
+    }
+  ),
+  (
+    let t := (SharedTrigger.pumpTarget .creature 4 4).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.pumpTarget .creature 4 4)
+    }
+  ),
+  (
+    let t := (SharedTrigger.exileUntilLeaves .oppTappedCreature).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.exileUntilLeaves .oppTappedCreature)
+    }
+  ),
+  (
+    let t := (SharedTrigger.youRecruit).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.youRecruit)
+    }
+  ),
+  (
+    let t := (SharedTrigger.damageEachOpponent 2).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.damageEachOpponent 2)
+    }
+  ),
+  (
+    let t := (SharedTrigger.exileTop).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.exileTop)
+    }
+  ),
+  (
+    let t := (SharedTrigger.mayDiscardDraw 2).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.mayDiscardDraw 2)
+    }
+  ),
+  (
+    let t := (SharedTrigger.eachOpponentDiscards).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.eachOpponentDiscards)
+    }
+  ),
+  (
+    let t := (SharedTrigger.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0)).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0))
+    }
+  ),
+  (
+    let t := (SharedTrigger.investigate).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.investigate)
+    }
+  ),
+  (
+    let t := (SharedTrigger.amassOrcs 1).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.amassOrcs 1)
+    }
+  ),
+  (
+    let t := (SharedTrigger.searchForest).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.searchForest)
+    }
+  ),
+  (
+    let t := (SharedTrigger.eachPlayerSacrificesCreature).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.eachPlayerSacrificesCreature)
+    }
+  ),
+  (
+    let t := (SharedTrigger.loot).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.loot)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneEachYouControl).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneEachYouControl)
+    }
+  ),
+  (
+    let t := (SharedTrigger.pumpByLookedAt).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.pumpByLookedAt)
+    }
+  ),
+  (
+    let t := (SharedTrigger.pumpAndUnblockable).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.pumpAndUnblockable)
+    }
+  ),
+  (
+    let t := (SharedTrigger.mayDiscardHandDraw 4).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.mayDiscardHandDraw 4)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneAndLifelink .creature).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneAndLifelink .creature)
+    }
+  ),
+  (
+    let t := (SharedTrigger.pumpGreatestPower).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.pumpGreatestPower)
+    }
+  ),
+  (
+    let t := (SharedTrigger.damageBlockers 1).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.damageBlockers 1)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createThenAttach .treasure).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createThenAttach .treasure)
+    }
+  ),
+  (
+    let t := (SharedTrigger.drawPlusOneSource).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.drawPlusOneSource)
+    }
+  ),
+  (
+    let t := (SharedTrigger.ringTempts).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.ringTempts)
+    }
+  ),
+  (
+    let t := (SharedTrigger.setOtherBasePT).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.setOtherBasePT)
+    }
+  ),
+  (
+    let t := (SharedTrigger.returnElfGainLife).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.returnElfGainLife)
+    }
+  ),
+  (
+    let t := (SharedTrigger.damageFromLastKnownPower).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.damageFromLastKnownPower)
+    }
+  ),
+  (
+    let t := (SharedTrigger.exileOppGyCardOppsLoseLife 2).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.exileOppGyCardOppsLoseLife 2)
+    }
+  ),
+  (
+    let t := (SharedTrigger.creaturesYouControlPumpAndFirstStrike 1).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.creaturesYouControlPumpAndFirstStrike 1)
+    }
+  ),
+  (
+    let t := (SharedTrigger.mayPayGenericDraw 1).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.mayPayGenericDraw 1)
+    }
+  ),
+  (
+    let t := (SharedTrigger.drawThenBottomIfNoLegendary).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.drawThenBottomIfNoLegendary)
+    }
+  ),
+  (
+    let t := (SharedTrigger.removeHopeDrawSac).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.removeHopeDrawSac)
+    }
+  ),
+  (
+    let t := (SharedTrigger.tapHumansDraw).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.tapHumansDraw)
+    }
+  ),
+  (
+    let t := (SharedTrigger.untapPlusOneIfSubtype "Bear").timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.untapPlusOneIfSubtype "Bear")
+    }
+  ),
+  (
+    let t := (SharedTrigger.destroyOppArtifactsEnchantmentsGainLife).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.destroyOppArtifactsEnchantmentsGainLife)
+    }
+  ),
+  (
+    let t := (SharedTrigger.damageEqualSubtypeToEachOpponent "Dwarf").timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.damageEqualSubtypeToEachOpponent "Dwarf")
+    }
+  ),
+  (
+    let t := (SharedTrigger.damageEqualTreasures).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.damageEqualTreasures)
+    }
+  ),
+  (
+    let t := (SharedTrigger.loseLifeCreateTreasure).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.loseLifeCreateTreasure)
+    }
+  ),
+  (
+    let t := (SharedTrigger.dealDamageDestroyIfSubtype 1 "Dragon").timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.dealDamageDestroyIfSubtype 1 "Dragon")
+    }
+  ),
+  (
+    let t := (SharedTrigger.attachEquipmentToCreature).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.attachEquipmentToCreature)
+    }
+  ),
+  (
+    let t := (SharedTrigger.defenderSacsLeastPower).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.defenderSacsLeastPower)
+    }
+  ),
+  (
+    let t := (SharedTrigger.returnOtherPlusOne).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.returnOtherPlusOne)
+    }
+  ),
+  (
+    let t := (SharedTrigger.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"]).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"])
+    }
+  ),
+  (
+    let t := (SharedTrigger.createTappedTreasuresEqualOppArtifacts).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createTappedTreasuresEqualOppArtifacts)
+    }
+  ),
+  (
+    let t := (SharedTrigger.putNonlandMvAtMostFromGy 3).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.putNonlandMvAtMostFromGy 3)
+    }
+  ),
+  (
+    let t := (SharedTrigger.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1))
+    }
+  ),
+  (
+    let t := (SharedTrigger.wolfPlusOneOrTreasure).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.wolfPlusOneOrTreasure)
+    }
+  ),
+  (
+    let t := (SharedTrigger.trampleCounterBecomeBear).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.trampleCounterBecomeBear)
+    }
+  ),
+  (
+    let t := (SharedTrigger.millThenSubtypeToHand 4 "Elf").timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.millThenSubtypeToHand 4 "Elf")
+    }
+  ),
+  (
+    let t := (SharedTrigger.exileOppNonlandEachUntilLeaves).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.exileOppNonlandEachUntilLeaves)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneEqualLastKnownMv).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneEqualLastKnownMv)
+    }
+  ),
+  (
+    let t := (SharedTrigger.mountainQuestDragon).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.mountainQuestDragon)
+    }
+  ),
+  (
+    let t := (SharedTrigger.treasuresPerChosenType).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.treasuresPerChosenType)
+    }
+  ),
+  (
+    let t := (SharedTrigger.revealUntilCreature).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.revealUntilCreature)
+    }
+  ),
+  (
+    let t := (SharedTrigger.attackSacPlusOneEqualPower).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.attackSacPlusOneEqualPower)
+    }
+  ),
+  (
+    let t := (SharedTrigger.lootLandEntersTapped).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.lootLandEntersTapped)
+    }
+  ),
+  (
+    let t := (SharedTrigger.millThatManyLost).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.millThatManyLost)
+    }
+  ),
+  (
+    let t := (SharedTrigger.drawPerFatGraveyard).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.drawPerFatGraveyard)
+    }
+  ),
+  (
+    let t := (SharedTrigger.maySacDrawTreasure).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.maySacDrawTreasure)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneEachIfCityBlessing).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneEachIfCityBlessing)
+    }
+  ),
+  (
+    let t := (SharedTrigger.castInstantSorceryFromHand).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.castInstantSorceryFromHand)
+    }
+  ),
+  (
+    let t := (SharedTrigger.castInstantSorceryMvAtMost).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.castInstantSorceryMvAtMost)
+    }
+  ),
+  (
+    let t := (SharedTrigger.millThenCopy).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.millThenCopy)
+    }
+  ),
+  (
+    let t := (SharedTrigger.pumpTargetBySourcePower).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.pumpTargetBySourcePower)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createAlienPerInvasion).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createAlienPerInvasion)
+    }
+  ),
+  (
+    let t := (SharedTrigger.mayPutArtifactAttachEquipment).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.mayPutArtifactAttachEquipment)
+    }
+  ),
+  (
+    let t := (SharedTrigger.cascade).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.cascade)
+    }
+  ),
+  (
+    let t := (SharedTrigger.bolgMaySacrifice).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.bolgMaySacrifice)
+    }
+  ),
+  (
+    let t := (SharedTrigger.surveil 2).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.surveil 2)
+    }
+  ),
+  (
+    let t := (SharedTrigger.targetOpponentLosesLife 1).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.targetOpponentLosesLife 1)
+    }
+  ),
+  (
+    let t := (SharedTrigger.amassGoblinsEqualPower).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.amassGoblinsEqualPower)
+    }
+  ),
+  (
+    let t := (SharedTrigger.recruit).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.recruit)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneOn .creature).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneOn .creature)
+    }
+  ),
+  (
+    let t := (SharedTrigger.attachTo .creatureYouControl).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.attachTo .creatureYouControl)
+    }
+  ),
+  (
+    let t := (SharedTrigger.conniveTarget .creatureYouControl).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.conniveTarget .creatureYouControl)
+    }
+  ),
+  (
+    let t := (SharedTrigger.exileUntilLeaves .oppNonland).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.exileUntilLeaves .oppNonland)
+    }
+  ),
+  (
+    let t := (SharedTrigger.exileUntilLeaves .defendingPlayerCreature).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.exileUntilLeaves .defendingPlayerCreature)
+    }
+  ),
+  (
+    let t := (SharedTrigger.sourceGets 1 1).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.sourceGets 1 1)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createTokens .treasure 1).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createTokens .treasure 1)
+    }
+  ),
+  (
+    let t := (SharedTrigger.searchBasicToHand).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.searchBasicToHand)
+    }
+  ),
+  (
+    let t := (SharedTrigger.exileTarget .anotherCreature).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.exileTarget .anotherCreature)
+    }
+  ),
+  (
+    let t := (SharedTrigger.returnCreatureFromGyToHand).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.returnCreatureFromGyToHand)
+    }
+  ),
+  (
+    let t := (SharedTrigger.honeEachEquipment).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.honeEachEquipment)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneEachOtherGainLife).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneEachOtherGainLife)
+    }
+  ),
+  (
+    let t := (SharedTrigger.pumpTargetPerPlains).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.pumpTargetPerPlains)
+    }
+  ),
+  (
+    let t := (SharedTrigger.drawThenDiscard 2).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.drawThenDiscard 2)
+    }
+  ),
+  (
+    let t := (SharedTrigger.pumpForEachOtherCreature).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.pumpForEachOtherCreature)
+    }
+  ),
+  (
+    let t := (SharedTrigger.grantFlying .attackingCreatureWithoutFlying).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.grantFlying .attackingCreatureWithoutFlying)
+    }
+  ),
+  (
+    let t := (SharedTrigger.returnLinkedExile).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.returnLinkedExile)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createAxe).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createAxe)
+    }
+  ),
+  (
+    let t := (SharedTrigger.tapOppOrUntapYours).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.tapOppOrUntapYours)
+    }
+  ),
+  (
+    let t := (SharedTrigger.gainControlOppUntilEot).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.gainControlOppUntilEot)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createAxeAttach).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createAxeAttach)
+    }
+  ),
+  (
+    let t := (SharedTrigger.payReturnFromGy).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.payReturnFromGy)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneVigilance 2).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneVigilance 2)
+    }
+  ),
+  (
+    let t := (SharedTrigger.mayDrawXDiscard2).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.mayDrawXDiscard2)
+    }
+  ),
+  (
+    let t := (SharedTrigger.belladonnaTokenReward).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.belladonnaTokenReward)
+    }
+  ),
+  (
+    let t := (SharedTrigger.bolgDealSacrificedPower).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.bolgDealSacrificedPower)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createSpiritsForEquipped).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createSpiritsForEquipped)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createTreasuresEqualDamagedPlayerArtifacts).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createTreasuresEqualDamagedPlayerArtifacts)
+    }
+  ),
+  (
+    let t := (SharedTrigger.deal1ThenAmassOrcs).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.deal1ThenAmassOrcs)
+    }
+  ),
+  (
+    let t := (SharedTrigger.allianceMode).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.allianceMode)
+    }
+  ),
+  (
+    let t := (SharedTrigger.destroyOtherAmassControllerPower).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.destroyOtherAmassControllerPower)
+    }
+  ),
+  (
+    let t := (SharedTrigger.gollumMode).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.gollumMode)
+    }
+  ),
+  (
+    let t := (SharedTrigger.discardHandDrawDamageIfStory).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.discardHandDrawDamageIfStory)
+    }
+  ),
+  (
+    let t := (SharedTrigger.castFromGyArtifactInstantSorcery).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.castFromGyArtifactInstantSorcery)
+    }
+  ),
+  (
+    let t := (SharedTrigger.equippedAttackersGainDoubleStrike).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.equippedAttackersGainDoubleStrike)
+    }
+  ),
+  (
+    let t := (SharedTrigger.tapEnchantedRemoveCounters).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.tapEnchantedRemoveCounters)
+    }
+  ),
+  (
+    let t := (SharedTrigger.beginCombatIfDrawnTwoPump).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.beginCombatIfDrawnTwoPump)
+    }
+  ),
+  (
+    let t := (SharedTrigger.honePerOppAttach).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.honePerOppAttach)
+    }
+  ),
+  (
+    let t := (SharedTrigger.damageTargetOpponent 2).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.damageTargetOpponent 2)
+    }
+  ),
+  (
+    let t := (SharedTrigger.copySelfNonlegendary).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.copySelfNonlegendary)
+    }
+  ),
+  (
+    let t := (SharedTrigger.attachEquipmentThenFight).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.attachEquipmentThenFight)
+    }
+  ),
+  (
+    let t := (SharedTrigger.returnAsArtifact).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.returnAsArtifact)
+    }
+  ),
+  (
+    let t := (SharedTrigger.exileLandsThenReturnTapped).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.exileLandsThenReturnTapped)
+    }
+  ),
+  (
+    let t := (SharedTrigger.grimaImpulse).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.grimaImpulse)
+    }
+  ),
+  (
+    let t := (SharedTrigger.palantir).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.palantir)
+    }
+  ),
+  (
+    let t := (SharedTrigger.treasuresEqualLastKnown).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.treasuresEqualLastKnown)
+    }
+  ),
+  (
+    let t := (SharedTrigger.protectionEverything).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.protectionEverything)
+    }
+  ),
+  (
+    let t := (SharedTrigger.loseLifePerBurden).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.loseLifePerBurden)
+    }
+  ),
+  (
+    let t := (SharedTrigger.revealSaga).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.revealSaga)
+    }
+  ),
+  (
+    let t := (SharedTrigger.sacDamagersRingTempts).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.sacDamagersRingTempts)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneOnSourceAndDraw).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneOnSourceAndDraw)
+    }
+  ),
+  (
+    let t := (SharedTrigger.lootAndPlan).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.lootAndPlan)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createVillainAndPlan).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createVillainAndPlan)
+    }
+  ),
+  (
+    let t := (SharedTrigger.drawLoseLifeAndPlan).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.drawLoseLifeAndPlan)
+    }
+  ),
+  (
+    let t := (SharedTrigger.treasureTappedAndPlan).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.treasureTappedAndPlan)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneOnTargetAndPlan).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneOnTargetAndPlan)
+    }
+  ),
+  (
+    let t := (SharedTrigger.planFinishDrawPlusOneEach).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.planFinishDrawPlusOneEach)
+    }
+  ),
+  (
+    let t := (SharedTrigger.planFinishReturnInstants).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.planFinishReturnInstants)
+    }
+  ),
+  (
+    let t := (SharedTrigger.planFinishControlOpponent).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.planFinishControlOpponent)
+    }
+  ),
+  (
+    let t := (SharedTrigger.planFinishExileTopCast).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.planFinishExileTopCast)
+    }
+  ),
+  (
+    let t := (SharedTrigger.planFinishCreateRobots 3).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.planFinishCreateRobots 3)
+    }
+  ),
+  (
+    let t := (SharedTrigger.planFinishDividedDamage 7).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.planFinishDividedDamage 7)
+    }
+  ),
+  (
+    let t := (SharedTrigger.planFinishIndestructibleOnTarget).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.planFinishIndestructibleOnTarget)
+    }
+  ),
+  (
+    let t := (SharedTrigger.exileOtherCopyEnchanted).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.exileOtherCopyEnchanted)
+    }
+  ),
+  (
+    let t := (SharedTrigger.exileUntilNextEndStep).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.exileUntilNextEndStep)
+    }
+  ),
+  (
+    let t := (SharedTrigger.tapOrUntapNonland).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.tapOrUntapNonland)
+    }
+  ),
+  (
+    let t := (SharedTrigger.createFoodOrTreasure).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.createFoodOrTreasure)
+    }
+  ),
+  (
+    let t := (SharedTrigger.villainIfGyElseMill).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.villainIfGyElseMill)
+    }
+  ),
+  (
+    let t := (SharedTrigger.drawMayPutLandTapped).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.drawMayPutLandTapped)
+    }
+  ),
+  (
+    let t := (SharedTrigger.drawGainLifeIfAnotherHero).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.drawGainLifeIfAnotherHero)
+    }
+  ),
+  (
+    let t := (SharedTrigger.plusOneOrTwoIfAnotherHero).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.plusOneOrTwoIfAnotherHero)
+    }
+  ),
+  (
+    let t := (SharedTrigger.maySacArtifactOrDiscardDraw).timing
+    {
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      resolution := Resolution.ofSharedTrigger (.maySacArtifactOrDiscardDraw)
+    }
+  ),
+  {
+    targeting := .of .creature .own
+    spellCastKind := .pump
+    resolution := .sequence
+      [.onPermanent (.pump 2 2), .onPermanent (.grantKeywords Keyword.flying)]
+    phrase := s!"target creature gets {signedStat 2}/{signedStat 2} and gains {(Keyword.flying).joinedAnd} until end of turn"
+  },
+  {
+    targeting := .of .creature
+    resolution := .sequence [.onPermanent (.plusOne 1), .gainLife 1]
+    phrase := Resolution.toPhrase (.sequence [.onPermanent (.plusOne 1), .gainLife 1]) EffectTargetKind.creature.noun
+    spellCastKind := .pump
+  },
+  {
+    targeting := .of .opponent
+    resolution := .onPermanent (.dealDamage 1)
+    phrase := s!"This deals {1} damage to target opponent"
+    spellCastKind := .burn
+  },
+  {
+    resolution := .millSelf 3
+    phrase := Resolution.toPhrase (.millSelf 3) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .mayDiscardDraw 1
+    phrase := Resolution.toPhrase (.mayDiscardDraw 1) EffectTargetKind.none.noun
+    spellCastKind := .draw
+  },
+  {
+    resolution := Resolution.ofSpell (.createTokens .heartwood 1)
+    phrase := SpellResolution.toPhrase (.createTokens .heartwood 1) EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.ofSpell (.createTokens .beast44trample 1)
+    phrase := SpellResolution.toPhrase (.createTokens .beast44trample 1) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .sequence [.createTokens .cadet 1, .surveil 1]
+    phrase := Resolution.toPhrase (.sequence [.createTokens .cadet 1, .surveil 1]) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .createTokensLifeGained .cadet
+    phrase := Resolution.toPhrase (.createTokensLifeGained .cadet) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .creature
+    resolution := .onPermanent (.setBasePT 0 0)
+    phrase := Resolution.toPhrase (.onPermanent (.setBasePT 0 0)) EffectTargetKind.creature.noun
+    spellCastKind := .creatureDamage
+  },
+  {
+    targeting := .of .opponent
+    resolution := .sequence [.oppSacrificesGreatestMv, .gainLife 2]
+    phrase := s!"Target opponent sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control. You gain {2} life"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of .creatureOrPlaneswalker
+    resolution := .damageThenEmpowerExcess 6
+    phrase := Resolution.toPhrase (.damageThenEmpowerExcess 6) EffectTargetKind.creatureOrPlaneswalker.noun
+    spellCastKind := .creatureDamage
+  },
+  {
+    resolution := .jaceLoyaltyAtInstantSpeed
+    phrase := Resolution.toPhrase .jaceLoyaltyAtInstantSpeed EffectTargetKind.none.noun
+  },
+  {
+    spellCastKind := .massPump
+    resolution := Resolution.ofSpell (.sequence [.creaturesYouControlPump 1 0, .teamGain Keyword.haste])
+    phrase := SpellResolution.toPhrase (.sequence [.creaturesYouControlPump 1 0, .teamGain Keyword.haste]) EffectTargetKind.none.noun
+  },
+  {
+    resolution := Resolution.ofSpell (.createTokens .pridemate 1)
+    phrase := SpellResolution.toPhrase (.createTokens .pridemate 1) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of .player
+    resolution := .copyEachCreatureOfTargetPlayer
+    phrase := Resolution.toPhrase .copyEachCreatureOfTargetPlayer EffectTargetKind.player.noun
+    spellCastKind := .extraLand
+  },
+  {
+    resolution := .copyNextInstantSorceryThisTurn
+    phrase := Resolution.toPhrase .copyNextInstantSorceryThisTurn EffectTargetKind.none.noun
+  },
+  {
+    resolution := .addMana #[.colored .red]
+    phrase := Resolution.toPhrase (.addMana #[.colored .red]) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .exileTopMayCastElseDamageOpponents 2
+    phrase := Resolution.toPhrase (.exileTopMayCastElseDamageOpponents 2) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .emblemCastSpellDamage 5
+    phrase := Resolution.toPhrase (.emblemCastSpellDamage 5) EffectTargetKind.none.noun
+  },
+  {
+    resolution := .addMana #[.colored .red, .colored .red]
+    phrase := Resolution.toPhrase (.addMana #[.colored .red, .colored .red]) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of (.creatureYouControlThenOppCreatureOrPlaneswalker)
+    resolution := .firstDealsStatDamageToSecond false
+    phrase := Resolution.toPhrase (.firstDealsStatDamageToSecond false) EffectTargetKind.creatureYouControlThenOppCreatureOrPlaneswalker.noun
+    spellCastKind := .fight
+  },
+  {
+    targeting := .of (.planeswalkerYouControlThenOppCreatureOrPlaneswalker)
+    resolution := .firstDealsStatDamageToSecond true
+    phrase := Resolution.toPhrase (.firstDealsStatDamageToSecond true) EffectTargetKind.planeswalkerYouControlThenOppCreatureOrPlaneswalker.noun
+    spellCastKind := .fight
+  },
+  {
+    targeting := .of (.filtered { noun := "target creature card with mana value 3 or less from your graveyard", zone := .yourGraveyard, types := #[.creature], mvAtMost := some 3 })
+    resolution := .fra (.returnFromGyToBattlefield 1)
+    phrase := "Return target creature card with mana value 3 or less from your graveyard to the battlefield with an additional +1/+1 counter on it"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .createTokens .cadet 3
+    phrase := "Create three 2/2 colorless Wizard Soldier creature tokens named Cadet"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra .destroyAllNotChosenType
+    phrase := "Choose a creature type. Destroy all creatures that aren't of the chosen type"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra .searchPlaneswalkerToTop
+    phrase := "Search your library for a planeswalker card, reveal it, then shuffle and put that card on top"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .fra (.plusOneOnEachTarget 1)
+    phrase := "Put a +1/+1 counter on each of one or two target creatures"
+    spellCastKind := .pump
+    maxTargets := 2
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .fra .destroyDrawIfNotAttacking
+    phrase := "Destroy target creature. If it wasn't attacking, its controller draws a card"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.filtered { TargetFilter.creatureOrPlaneswalker with
+      noun := "target creature or planeswalker that's green or blue"
+      colors := #[.green, .blue] })
+    resolution := .sequence [.fra .exile, .surveil 1]
+    phrase := "Exile target creature or planeswalker that's green or blue. Surveil 1"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra .returnAllNonlandPermanentsFromGy
+    phrase := "Return all nonland permanent cards from your graveyard to the battlefield"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered { TargetFilter.creature with
+      noun := "target creature with toughness 4 or greater", toughnessAtLeast := some 4 })
+    resolution := .sequence [.fra .destroy, .gainLife 1]
+    phrase := "Destroy target creature with toughness 4 or greater. You gain 1 life"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.draw 1, .gainLife 2]
+    phrase := s!"You draw {cardPhrase 1} and gain {2} life"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered { TargetFilter.creatureOrPlaneswalker with
+      noun := "target creature or planeswalker with mana value 3 or greater"
+      mvAtLeast := some 3 })
+    resolution := .sequence [.fra .destroy, .surveil 1]
+    phrase := "Destroy target creature or planeswalker with mana value 3 or greater. Surveil 1"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.filtered TargetFilter.spell)
+    resolution := .fra .counter
+    phrase := "Counter target spell"
+    spellCastKind := .counter
+  },
+  {
+    targeting := .of (.player)
+    resolution := .fra .drawMilledThisTurn
+    phrase := "Draw X cards, where X is the number of cards that were put into target player's graveyard from their library this turn"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered { noun := "target creature or legendary spell", zone := .stack, types := #[.creature], orLegendary := true })
+    resolution := .fra (.counterUnlessPays 3)
+    phrase := "Counter target creature or legendary spell unless its controller pays {3}"
+    spellCastKind := .counter
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .onPermanent (.pump (-5) 0)
+    phrase := s!"Target creature gets {signedStat (-5)}/{signedStat 0} until end of turn"
+    spellCastKind := .pump
+  },
+  {
+    targeting := .of (.filtered { noun := "target white or black spell", zone := .stack, colors := #[.white, .black] })
+    resolution := .fra .counter
+    phrase := "Counter target white or black spell"
+    spellCastKind := .counter
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.draw 2, .fra .sphinxsApproach]
+    phrase := "Draw two cards. Then you may exile this spell and four cards named Sphinx's Approach from your graveyard. If you do, search your library for a Sphinx creature card, put it onto the battlefield, then shuffle"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .fra .bounce
+    phrase := "Return target creature to its owner's hand"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.filtered { TargetFilter.creature with
+      noun := "target creature an opponent controls with mana value 3 or less"
+      controller := .opponent, mvAtMost := some 3 })
+    resolution := .sequence [.fra .bounce, .surveil 1]
+    phrase := "Return target creature an opponent controls with mana value 3 or less to its owner's hand. Surveil 1"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra (.eachPlayerMayWheel 7)
+    phrase := "Each player may discard their hand and draw seven cards"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.draw 2, .fra (.damageEachPlayer 2)]
+    phrase := "Draw two cards. This spell deals 2 damage to each player"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creatureOrPlaneswalker)
+    resolution := .sequence [.fra .exile, .fra (.damageEachOpponent 1), .gainLife 1]
+    phrase := "Exile target creature or planeswalker. This spell deals 1 damage to each opponent and you gain 1 life"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra .extrapolate
+    phrase := "You may reveal exactly two cards you own with different names from outside the game. An opponent chooses one of them. You put that card into your hand"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra .exileAllCreaturesEmpower
+    phrase := "Exile all creatures. Empower Jace X, where X is the number of creatures exiled this way"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.filtered { noun := "target creature or planeswalker card with mana value 6 or less from your graveyard", zone := .yourGraveyard, types := #[.creature, .planeswalker], mvAtMost := some 6 })
+    resolution := .fra (.returnFromGyToBattlefield 0)
+    phrase := "Return target creature or planeswalker card with mana value 6 or less from your graveyard to the battlefield"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra .drawGreatestPowerLoseLife
+    phrase := "Draw cards equal to the greatest power among creatures you control. You lose life equal to the number of cards drawn this way"
+    spellCastKind := .draw
+  },
+  {
+    spellCastKind := .massPump
+    resolution := Resolution.ofSpell (.allCreaturesPump (-3) (-3))
+    phrase := SpellResolution.toPhrase (.allCreaturesPump (-3) (-3)) EffectTargetKind.none.noun
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creatureOrPlaneswalker)
+    resolution := .fra .destroy
+    phrase := "Destroy target creature or planeswalker"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.opponent)
+    resolution := .fra (.revealHandDiscardNonland true)
+    phrase := "Target opponent reveals their hand. You choose a nonland permanent card from it. That player discards that card"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered { TargetFilter.creatureOrPlaneswalker with
+      noun := "target creature or planeswalker that's blue or red"
+      colors := #[.blue, .red] })
+    resolution := .sequence [.fra .destroy, .gainLife 1]
+    phrase := "Destroy target creature or planeswalker that's blue or red. You gain 1 life"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creatureOrPlaneswalker)
+    resolution := .sequence [.fra (.loseLife 2), .fra .destroy]
+    phrase := "You lose 2 life. Destroy target creature or planeswalker"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.fra (.loseLife 2), .empowerJace 6]
+    phrase := "You lose 2 life. Empower Jace 6"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.teamGain Keyword.firstStrike, .draw 1]
+    phrase := "Creatures you control gain first strike until end of turn.\nDraw a card"
+    spellCastKind := .pump
+  },
+  {
+    targeting := .of (.multi #[TargetFilter.oppCreatureOrPlaneswalker,
+      { TargetFilter.creatureYouControl with noun := "up to one target creature you control" }] #[1])
+    resolution := .sequence [.fra (.damageSourceAt 0 6), .fra (.plusOneAt 1 1)]
+    phrase := "This spell deals 6 damage to target creature or planeswalker an opponent controls. Put a +1/+1 counter on up to one target creature you control"
+    spellCastKind := .creatureDamage
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.createTokens .cadet 1, .fra .plusOneOnWizardTokensExceptRecent]
+    phrase := "Create a 2/2 colorless Wizard Soldier creature token named Cadet, then put a +1/+1 counter on each other Wizard token you control"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered { TargetFilter.creatureOrPlaneswalker with noun := "target black or green creature or planeswalker", colors := #[.black, .green] })
+    resolution := .fra (.damageExileIfDies 5)
+    phrase := "This spell deals 5 damage to target black or green creature or planeswalker. If that permanent would die this turn, exile it instead"
+    spellCastKind := .creatureDamage
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra (.damageEachOppCreatureAndPlaneswalker 1)
+    phrase := "This spell deals 1 damage to each creature and planeswalker your opponents control"
+    spellCastKind := .creatureDamage
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creatureOrPlaneswalker)
+    resolution := .onPermanent (.dealDamage 5)
+    phrase := s!"This spell deals {5} damage to target creature or planeswalker"
+    spellCastKind := .creatureDamage
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra .mountainsAddExtraRed
+    phrase := "Until end of turn, whenever you tap a Mountain for mana, add an additional {R}"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra .searchLandToGraveyard
+    phrase := "Search your library for a land card, put it into your graveyard, then shuffle"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.multi #[{ TargetFilter.oppCreatureOrPlaneswalker with
+      noun := "target creature or planeswalker an opponent controls that's red or white"
+      colors := #[.red, .white] }, TargetFilter.creatureYouControl] #[])
+    resolution := .sequence [.fra (.loseAbilitiesAt 0), .fra (.powerDamageFromTo 1 0)]
+    phrase := "Target creature or planeswalker an opponent controls that's red or white loses all abilities until end of turn. Target creature you control deals damage equal to its power to that permanent"
+    spellCastKind := .fight
+  },
+  {
+    targeting := .of (.filtered { noun := "target permanent card from your graveyard", zone := .yourGraveyard, permanentCard := true })
+    resolution := .sequence [.fra .returnFromGyToHand, .gainLife 4]
+    phrase := "Return target permanent card from your graveyard to your hand. You gain 4 life"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra (.millMayPutPermanentGainLife 4 1)
+    phrase := "Mill four cards. You may put a permanent card from among them into your hand. You gain 1 life"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .sequence [.onPermanent (.pump 2 2), .onPermanent (.grantKeywords Keyword.reach),
+      .onPermanent .untap]
+    phrase := "Target creature gets +2/+2 and gains reach until end of turn. Untap it"
+    spellCastKind := .pump
+  },
+  {
+    targeting := .of (.none)
+    resolution := .creaturesYouControlPump 2 0
+    phrase := s!"Creatures you control get {signedStat 2}/{signedStat 0} until end of turn"
+    spellCastKind := .pump
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .sequence [.onPermanent (.pump 2 0), .onPermanent (.grantKeywords Keyword.firstStrike),
+      .onPermanent (.plusOne 1)]
+    phrase := "Target creature gets +2/+0 and gains first strike until end of turn. Put a +1/+1 counter on it"
+    spellCastKind := .pump
+  },
+  {
+    targeting := .of (.filtered { noun := "target nonland permanent", nonland := true })
+    resolution := .fra .clashOfElements
+    phrase := "Choose target nonland permanent. Its owner may put it on top of their library. If they do, this spell deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra .entrustTheSpark
+    phrase := "You may sacrifice a planeswalker. If you do, search your library for a planeswalker card, put it onto the battlefield, then shuffle"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.draw 1, .empowerJace 2]
+    phrase := s!"Draw {cardPhrase 1}. Empower Jace {2}"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered { noun := "target spell or creature", zone := .spellOrCreature })
+    resolution := .fra .bounce
+    phrase := "Return target spell or creature to its owner's hand"
+    spellCastKind := .counter
+  },
+  {
+    targeting := .of (.filtered { TargetFilter.creature with noun := "target creature with flying", withFlying := true })
+    resolution := .onPermanent (.dealDamage 6)
+    phrase := s!"This spell deals {6} damage to target creature with flying"
+    spellCastKind := .destroyFlying
+  },
+  (
+    let noun := "target creature"
+    {
+      targeting := .of (.filtered { TargetFilter.creature with noun })
+      resolution := .sequence [.onPermanent (.plusOne 2), .onPermanent (.grantKeywords Keyword.trample)]
+      phrase := s!"Put {plusOnePlusOneCountersPhrase 2} on {noun}. It gains {(Keyword.trample).joinedAnd} until end of turn"
+      spellCastKind := .pump
+    }
+  ),
+  {
+    targeting := .of (.none)
+    resolution := .addMana (Array.replicate 3 .colorless)
+    phrase := s!"Add {String.join (List.replicate 3 "{C}")}"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.createTokens .cadet 2, .fra .plusOnePerThreeGraveyardOnRecentIfFromGy]
+    phrase := "Create two 2/2 colorless Wizard Soldier creature tokens named Cadet. If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .onPermanent (.grantKeywords (Keyword.firstStrike.merge Keyword.deathtouch))
+    phrase := s!"Target creature gains {("first strike and deathtouch")} until end of turn"
+    spellCastKind := .pump
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.createTokens .cadet 1, .fra .grantHasteToRecentTokens]
+    phrase := "Create a 2/2 colorless Wizard Soldier creature token named Cadet. It gains haste until end of turn"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.opponent)
+    resolution := .sequence [.fra (.damageAny 2), .fra (.revealHandDiscardNonland false)]
+    phrase := "This spell deals 2 damage to target opponent. That player reveals their hand. You choose a nonland card from it. They discard that card"
+    spellCastKind := .burn
+  },
+  {
+    targeting := .of (.filtered { noun := "target noncreature spell", zone := .stack, noncreature := true })
+    resolution := .fra (.counterUnlessPays 2)
+    phrase := "Counter target noncreature spell unless its controller pays {2}"
+    spellCastKind := .counter
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.millSelf 3, .draw 1]
+    phrase := s!"Mill {englishNumber 3} cards, then draw {cardPhrase 1}"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.none)
+    resolution := .fra .drawOneOrTwoIfNotFromHand
+    phrase := "Draw a card. If this spell wasn't cast from your hand, draw two cards instead"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.multi #[{ noun := "target nonland permanent", nonland := true },
+      { noun := "target player", zone := .player }] #[])
+    resolution := .sequence [.fra (.destroyAt 0), .fra (.plusOneOnCreaturesOfPlayerAt 1)]
+    phrase := "Destroy target nonland permanent. Put a +1/+1 counter on each creature target player controls"
+    spellCastKind := .destroyCreature
+  },
+  {
+    targeting := .of (.filtered { noun := "target permanent you control", controller := .you })
+    resolution := .onPermanent (.grantKeywords (Keyword.hexproof.merge Keyword.indestructible))
+    phrase := s!"Target permanent you control gains {(Keyword.hexproof.merge Keyword.indestructible).joinedAnd} until end of turn"
+    spellCastKind := .pump
+  },
+  {
+    targeting := .of (.none)
+    resolution := .sequence [.draw 1, .gainLife 3]
+    phrase := s!"You draw {cardPhrase 1} and gain {3} life"
+    spellCastKind := .draw
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creatureOrPlaneswalker)
+    resolution := .fra (.exileReturnBrieflyIfMvAtMost 3)
+    phrase := "Exile target creature or planeswalker. If that permanent's mana value was 3 or less, return it to the battlefield tapped under your control. Exile it at the beginning of the next end step"
+    spellCastKind := .destroyCreature
+  },
+  (
+    let noun := "up to one target creature"
+    {
+      targeting := .of (.filtered { TargetFilter.creature with noun })
+      resolution := .sequence [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords Keyword.vigilance)]
+      phrase := s!"Put {plusOnePlusOneCountersPhrase 1} on {noun}. It gains {(Keyword.vigilance).joinedAnd} until end of turn"
+      spellCastKind := .pump
+      allowsZeroTargets := true
+    }
+  ),
+  {
+    targeting := .of (.filtered { noun := "target legendary card from your graveyard", zone := .yourGraveyard, legendary := true })
+    resolution := .fra .returnFromGyToHand
+    phrase := "Return target legendary card from your graveyard to your hand"
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .sequence [.onPermanent (.plusOne 1),
+      .onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.indestructible))]
+    phrase := "Put a +1/+1 counter on target creature. It gains vigilance and indestructible until end of turn"
+    spellCastKind := .pump
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .onPermanent .tap
+    phrase := "Tap target creature"
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .onPermanent .untap
+    phrase := "Untap target creature"
+  },
+  {
+    targeting := .of (.filtered { noun := "target noncreature, nonland permanent", noncreature := true, nonland := true })
+    resolution := .fra .destroy
+    phrase := "Destroy target noncreature, nonland permanent"
+  },
+  {
+    targeting := .of (.none)
+    resolution := .gainLife 4
+    phrase := s!"You gain {4} life"
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creature)
+    resolution := .fra .minusPowerPerGraveyard
+    phrase := "Target creature gets -X/-0 until end of turn, where X is the number of cards in your graveyard"
+  },
+  {
+    targeting := .of (.none)
+    resolution := .surveil 2
+    phrase := s!"Surveil {2}"
+  },
+  {
+    targeting := .of (.filtered TargetFilter.creatureOrPlaneswalker)
+    resolution := .onPermanent (.dealDamage 4)
+    phrase := s!"This creature deals {4} damage to target creature or planeswalker"
+  },
+  {
+    targeting := .of (.none)
+    resolution := .createTokens .cadet 1
+    phrase := "Create a 2/2 colorless Wizard Soldier creature token named Cadet"
+  },
+  {
+    targeting := .of (.none)
+    resolution := .draw 1
+    phrase := "Draw a card"
+  },
   FraCandidates.ab (.createTokens .illusion11blue 1) "Create a 1/1 blue Illusion creature token",
   FraCandidates.ab (.fra .bounceEachTarget)
-    "For each opponent, return up to one target artifact or creature that player controls to its owner's hand"
-    (.filtered { noun := "up to one target artifact or creature that player controls",
-                 types := #[.artifact, .creature], controller := .eachOpponent })
-    (allowsZeroTargets := true),
+      "For each opponent, return up to one target artifact or creature that player controls to its owner's hand"
+      (.filtered { noun := "up to one target artifact or creature that player controls",
+                   types := #[.artifact, .creature], controller := .eachOpponent })
+      (allowsZeroTargets := true),
   FraCandidates.ab (.sequence [.draw 3, .fra .plusOnesEqualToHandOnEachCreature])
-    "Draw three cards. Then put X +1/+1 counters on each creature you control, where X is the number of cards in your hand",
+      "Draw three cards. Then put X +1/+1 counters on each creature you control, where X is the number of cards in your hand",
   FraCandidates.ab (.fra .surveilReturnNoncreatureNonland)
-    "Surveil 1. If you put a noncreature, nonland card into your graveyard this way, put that card into your hand",
+      "Surveil 1. If you put a noncreature, nonland card into your graveyard this way, put that card into your hand",
   FraCandidates.ab (.fra .addBlueNoncreatureOnly) "Add {U}. Spend this mana only to cast a noncreature spell",
   FraCandidates.ab (.fra .tapAndStunX) "Tap target artifact or creature. Put X stun counters on it"
-    (.filtered { noun := "target artifact or creature", types := #[.artifact, .creature] }),
+      (.filtered { noun := "target artifact or creature", types := #[.artifact, .creature] }),
   FraCandidates.ab (.fra .emblemDrawOnCast) "You get an emblem with \"Whenever you cast a spell, draw a card.\"",
   FraCandidates.ab (.fra .empowerJacePerIsland) "Empower Jace X, where X is the number of Islands you control",
   FraCandidates.ab (.fra .attackersGetMinusFiveUntilYourTurn)
-    "Until your next turn, whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn",
+      "Until your next turn, whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn",
   FraCandidates.ab (.fra .exileOpponentLibrariesButBottom) "Exile all but the bottom card of each opponent's library",
   FraCandidates.ab (.fra .minusFourMinusOneUntilYourTurn) "Up to one target creature gets -4/-1 until your next turn"
-    (.filtered { TargetFilter.creature with noun := "up to one target creature" }) (allowsZeroTargets := true),
+      (.filtered { TargetFilter.creature with noun := "up to one target creature" }) (allowsZeroTargets := true),
   FraCandidates.ab (.fra .eachPlayerSacrificesThenBeast)
-    "Each player sacrifices a creature of their choice. If you sacrificed a creature this way, create a 4/4 green Beast creature token with trample",
+      "Each player sacrifices a creature of their choice. If you sacrificed a creature this way, create a 4/4 green Beast creature token with trample",
   FraCandidates.ab (.fra .eachOpponentDiscardsTwoDrawPerShort)
-    "Each opponent discards two cards. For each opponent who didn't discard two nonland cards this way, you draw a card",
+      "Each opponent discards two cards. For each opponent who didn't discard two nonland cards this way, you draw a card",
   FraCandidates.ab (.sequence [.fra .discardHand, .fra .drawPerCreatureYouControl]) "Discard your hand, then draw a card for each creature you control",
   FraCandidates.ab (.fra (.damageEachCreatureExceptYourTokens 4)) "This deals 4 damage to each creature except for tokens you control",
   FraCandidates.ab (.fra .emblemCreaturesGetTwoTwo) "You get an emblem with \"Creatures you control get +2/+2.\"",
   FraCandidates.ab (.fra .untapTargets) "Untap up to two target lands"
-    (.filtered { noun := "up to two target lands", types := #[.land] }) (allowsZeroTargets := true) (maxTargets := 2),
+      (.filtered { noun := "up to two target lands", types := #[.land] }) (allowsZeroTargets := true) (maxTargets := 2),
   FraCandidates.ab (.fra .attackersGetTwoTwoTrampleUntilYourTurn)
-    "Until your next turn, whenever one or more creatures attack one of your opponents, those creatures get +2/+2 and gain trample until end of turn",
+      "Until your next turn, whenever one or more creatures attack one of your opponents, those creatures get +2/+2 and gain trample until end of turn",
   FraCandidates.ab (.sequence [.fra (.damageEachOpponent 1), .gainLife 1])
-    "This planeswalker deals 1 damage to each opponent and you gain 1 life",
+      "This planeswalker deals 1 damage to each opponent and you gain 1 life",
   FraCandidates.ab (.fra .plusOnePerLand) "Put a +1/+1 counter on target creature for each land you control"
-    (.filtered TargetFilter.creature),
+      (.filtered TargetFilter.creature),
   FraCandidates.ab (.fra .maySacrificeCreatureForBeast)
-    "You may sacrifice a creature. If you do, create a 4/4 green Beast creature token with trample",
+      "You may sacrifice a creature. If you do, create a 4/4 green Beast creature token with trample",
   FraCandidates.ab (.fra (.damageUpToOneAndPlayer 2))
-    "This planeswalker deals 2 damage to up to one target creature or planeswalker and 2 damage to target player"
-    (.multi #[{ TargetFilter.creatureOrPlaneswalker with noun := "up to one target creature or planeswalker" },
-      { noun := "target player", zone := .player }] #[0]),
-  FraCandidates.ab (.createTokens .leviathan88hexproof 1) "Create an 8/8 blue Leviathan creature token with hexproof",
+      "This planeswalker deals 2 damage to up to one target creature or planeswalker and 2 damage to target player"
+      (.multi #[{ TargetFilter.creatureOrPlaneswalker with noun := "up to one target creature or planeswalker" },
+        { noun := "target player", zone := .player }] #[0]),
+  FraCandidates.ab (.createTokens .leviathan88hexproof 1) "Create an 8/8 blue Leviathan creature token with hexproof"
 ]
 
 def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
