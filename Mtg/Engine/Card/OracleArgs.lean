@@ -238,7 +238,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .surveil n => return .surveil (← takeNat n)
   | .tapScryDraw a b => return .tapScryDraw (← takeNat a) (← takeNat b)
   | .counterUnlessPays n => return .counterUnlessPays (← takeNat n)
-  | .plusOneAndPlayerGainsLife n => return .plusOneAndPlayerGainsLife (← takeNat n)
+  | .targetPlayersGainLife n => return .targetPlayersGainLife (← takeNat n)
   | .plusOneOnFirstTarget n => return .plusOneOnFirstTarget (← takeNat n)
   | .creaturesYouControlPump p t => return .creaturesYouControlPump (← takeInt p) (← takeInt t)
   | .amassGoblins n => return .amassGoblins (← takeNat n)
@@ -418,7 +418,6 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .lookAtTopRevealSubtype n s => return .lookAtTopRevealSubtype (← takeNat n) (← takeStr s)
   | .millThenPutSubtypeOrEnchantment n s =>
     return .millThenPutSubtypeOrEnchantment (← takeNat n) (← takeStr s)
-  | .returnGyCreatureThenPlusOne n => return .returnGyCreatureThenPlusOne (← takeNat n)
   | .becomeTypes ts p t k =>
     return .becomeTypes (← takeStrs ts) (← takeInt p) (← takeInt t) k
   | .targetSubtypeConnives s => return .targetSubtypeConnives (← takeStr s)

@@ -470,20 +470,23 @@ def tokenPrinted (k : TokenKind) : CardDef :=
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     (n : Nat) (tapped := false) (attacking := false) : Game :=
   if (g.player controller).lost then
-    if n == 0 then g else g.logMsg "no token is created (CR 800.4b)"
+    if n == 0 then { g with recentTokenIds := #[] }
+    else { g with recentTokenIds := #[] }.logMsg "no token is created (CR 800.4b)"
   else
   Id.run do
     let mut g := g
+    let mut ids : Array ObjectId := #[]
     let dest := if attacking then some g.defendingPlayer else none
     for _ in [0:n] do
       let (g', obj) := g.createToken controller (tokenPrinted kind) (tapped := tapped)
       g := g'
+      ids := ids.push obj.id
       if attacking then
         g := g.setObject { (g.object! obj.id) with
           status := { (g.object! obj.id).status with
             attacking := true
             attackingWhom := dest } }
-    return g
+    return { g with recentTokenIds := ids }
 
 end Game
 end Mtg.Engine

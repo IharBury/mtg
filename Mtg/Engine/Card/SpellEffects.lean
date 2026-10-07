@@ -91,8 +91,13 @@ def destroyCreature : Effect :=
   destroyTarget .creature (spellKind := some .destroyCreature)
 
 def plusOnePlusOneTrampleHexproof : Effect :=
-  mkSpell (.of .creatureYouControl) (.onPermanent .plusOnePlusOneTrampleHexproof)
+  mkSpell (.of .creatureYouControl)
+    (.sequence [
+      .onPermanent (.plusOne 1),
+      .onPermanent (.grantKeywords (Keyword.trample.merge Keyword.hexproof))])
     (castKind := .pump)
+    (phraseOverride := some
+      "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn")
 
 def dealDamageToCreature (amount : Nat) : Effect :=
   mkSpell (.of .creature) (.onPermanent (.dealDamage amount))
@@ -188,7 +193,8 @@ def grantHexproofIndestructible : Effect :=
     (castKind := .pump)
 
 def plusOneUpToOneAndPlayerGainsLife (life : Nat) : Effect :=
-  mkSpell (.of .upToOneCreatureThenPlayer) (.plusOneAndPlayerGainsLife life)
+  mkSpell (.of .upToOneCreatureThenPlayer)
+    (.sequence [.plusOneOnCreatureTargets, .targetPlayersGainLife life])
     (castKind := .pump)
 
 def counterSpell : Effect :=
@@ -464,7 +470,11 @@ def destroyCreatureSurveil : Effect :=
 
 def investigatePumpFlyingUntap : Effect :=
   mkSpell (.of .playerThenCreature)
-    (.sequence [.targetPlayerInvestigates, .targetCreaturePumpFlyingUntap])
+    (.sequence [
+      .targetPlayerInvestigates,
+      .onCreatureAmongTargets (.grantKeywords Keyword.flying),
+      .onCreatureAmongTargets .untap,
+      .onCreatureAmongTargets (.pump 1 0)])
     (castKind := .pump)
 
 def plusOneLifelinkIndestructible : Effect :=
@@ -747,7 +757,10 @@ def dealDamageToAny (n : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def drawEqualSacrificedPowerThenDiscard : Effect :=
-  mkAbility ({}) (.drawEqualSacrificedPowerThenDiscard)
+  mkAbility ({})
+    (.sequence [.drawEqualToLastKnownPower, .discard 1])
+    (phraseOverride := some
+      "Draw cards equal to the sacrificed creature's power, then discard a card")
 
 def arwenShare : Effect :=
   mkAbility (.of .anotherCreature) (.arwenShare)
@@ -945,8 +958,11 @@ def returnFromGyFinalityAttach : Effect :=
   mkAbility ({}) (.returnFromGyFinalityAttach)
 
 def returnGyCreatureThenPlusOne (n : Nat) : Effect :=
-  mkAbility (.of .creatureCardInYourGraveyard) (.returnGyCreatureThenPlusOne n)
+  mkAbility (.of .creatureCardInYourGraveyard)
+    (.sequence [.fra .returnFromGyToHand, .onSource (.plusOne n)])
     (allowsZeroTargets := true)
+    (phraseOverride := some
+      s!"Return up to one target creature card from your graveyard to your hand. Put {plusOnePlusOneCountersPhrase n} on this creature")
 
 def revealTopDrawIfArtifact : Effect :=
   mkAbility ({}) (.revealTopDrawIfArtifact)

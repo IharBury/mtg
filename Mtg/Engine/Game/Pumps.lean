@@ -259,13 +259,6 @@ def amassOrcs (g : Game) (controller : PlayerId) (n : Nat) : Game :=
 def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
   g.amass controller "Zombie" n
 
-/-- +1/+1 counter plus trample and hexproof until end of turn. -/
-def grantPlusOnePlusOneTrampleHexproof (g : Game) (o : GameObject) : Game :=
-  let g := g.mapObjectStatus o (fun s =>
-    (s.addPlusOnePlusOne 1).grantUntilEot (Keyword.trample.merge Keyword.hexproof))
-  g.logMsg
-    s!"{o.name} gets a +1/+1 counter and gains trample and hexproof until end of turn"
-
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite). -/
 def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : Game :=
   let g := g.mapObjectStatus o (fun s =>

@@ -97,8 +97,6 @@ inductive FraNext where
   | proliferate (times : Nat)
   | mshReflexive (kind paid : Nat)
   | gainLife (n : Nat)
-  /-- Draw a card and create a Treasure. -/
-  | drawAndTreasure
   /-- Return the source from the graveyard to its owner's hand. -/
   | returnSourceToHand
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -118,7 +116,6 @@ def FraNext.toResolution : FraNext → FraResolution
   | .proliferate n => .proliferate n
   | .mshReflexive k paid => .queueMshReflexive k paid
   | .gainLife n => .gainLife n
-  | .drawAndTreasure => .drawAndCreateTreasure
   | .returnSourceToHand => .returnSourceToHand
 
 /-- Where cards found by a library search go (CR 701.19). -/

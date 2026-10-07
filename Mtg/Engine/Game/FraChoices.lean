@@ -428,7 +428,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         !(o.isCreature || o.printed.isArtifact) then
       throw s!"Can't sacrifice {o.name}"
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
-    return (g.applyFra p default .drawAndCreateTreasure #[] (some sourceId)).finishFraChoice
+    let drawn : Effect := {
+      resolution := .sequence [.draw 1, .createTokens .treasure 1]
+      phrase := "Draw a card and create a Treasure" }
+    return (g.applyUnifiedAbility p drawn #[] (some sourceId)).finishFraChoice
   | .maySacrificeAnotherForDrawTreasure _, .decline => return g.finishFraChoice
   | .maySacrificeAnotherForDrawTreasure _, _ => throw "Choose a creature or artifact to sacrifice, or decline"
   | .mayPaySymbolsThen symbols next sourceId, .accept =>

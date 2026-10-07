@@ -24,9 +24,10 @@ inductive FraResolution where
   | loseLife (n : Nat)
   /-- This deals `n` damage to each player. -/
   | damageEachPlayer (n : Nat)
-  /-- Deal `n` damage to the first target. Put a +1/+1 counter on the
-  second target, if any (Awaken the Inferno). -/
-  | damageThenPlusOneOnSecond (n : Nat)
+  /-- This deals `amount` damage to the permanent target at `index`. -/
+  | damageSourceAt (index amount : Nat)
+  /-- Put `n` +1/+1 counters on the permanent target at `index`. -/
+  | plusOneAt (index n : Nat)
   /-- Return the target card from your graveyard to the battlefield with
   `plusOnes` additional +1/+1 counters. -/
   | returnFromGyToBattlefield (plusOnes : Nat)
@@ -52,9 +53,10 @@ inductive FraResolution where
   (nonland permanent card if `permanentOnly`, else nonland card). They
   discard it. -/
   | revealHandDiscardNonland (permanentOnly : Bool)
-  /-- Deal `n` damage to the target opponent, then they reveal their hand and
-  discard a nonland card you choose (Stinging Vitriol). -/
-  | damageThenRevealDiscardNonland (n : Nat)
+  /-- Discard every card in your hand. -/
+  | discardHand
+  /-- Draw a card for each creature you control. -/
+  | drawPerCreatureYouControl
   /-- Reveal two cards from outside the game; an opponent chooses one to put
   into your hand (Extrapolate the Impossible). -/
   | extrapolate
@@ -62,31 +64,32 @@ inductive FraResolution where
   Sphinx's Approach from your graveyard to search for a Sphinx creature card
   and put it onto the battlefield. -/
   | sphinxsApproach
-  /-- Create a Cadet, then put a +1/+1 counter on each other Wizard token you
-  control (Command the Stage). -/
-  | cadetThenPlusOneOtherWizardTokens
+  /-- Put a +1/+1 counter on each Wizard token you control except tokens just created. -/
+  | plusOneOnWizardTokensExceptRecent
   /-- This deals `n` damage to each creature and planeswalker your opponents
   control. -/
   | damageEachOppCreatureAndPlaneswalker (n : Nat)
-  /-- The first target loses all abilities until end of turn; the second
-  deals damage equal to its power to it (Flourishing Grapple). -/
-  | loseAbilitiesThenFight
+  /-- The permanent target at `index` loses all abilities until end of turn. -/
+  | loseAbilitiesAt (index : Nat)
+  /-- The permanent at `fromIdx` deals damage equal to its power to the permanent at `toIdx`. -/
+  | powerDamageFromTo (fromIdx toIdx : Nat)
   /-- The owner of the target may put it on top of their library; if they do,
   this deals 2 damage to them. Otherwise they put it on the bottom. -/
   | clashOfElements
   /-- You may sacrifice a planeswalker. If you do, search for a planeswalker
   card and put it onto the battlefield (Entrust the Spark). -/
   | entrustTheSpark
-  /-- Create `n` Cadets. If cast from a graveyard, put a +1/+1 counter on each
-  for every three cards in your graveyard. -/
-  | cadetsPlusOnePerThreeIfFromGy (n : Nat)
-  /-- Create a Cadet. It gains haste until end of turn. -/
-  | cadetWithHaste
+  /-- If this spell was cast from a graveyard, put a +1/+1 counter on each token
+  just created for every three cards in your graveyard. -/
+  | plusOnePerThreeGraveyardOnRecentIfFromGy
+  /-- Tokens just created gain haste until end of turn. -/
+  | grantHasteToRecentTokens
   /-- Draw a card, or two if this spell wasn't cast from your hand. -/
   | drawOneOrTwoIfNotFromHand
-  /-- Destroy the first target. Put a +1/+1 counter on each creature the
-  second target (a player) controls. -/
-  | destroyThenPlusOneEachOfPlayer
+  /-- Destroy the permanent target at `index`. -/
+  | destroyAt (index : Nat)
+  /-- Put a +1/+1 counter on each creature the player target at `index` controls. -/
+  | plusOneOnCreaturesOfPlayerAt (index : Nat)
   /-- Exile the target. If its mana value was `n` or less, return it tapped
   under your control and exile it at the next end step. -/
   | exileReturnBrieflyIfMvAtMost (n : Nat)
@@ -137,9 +140,9 @@ inductive FraResolution where
   | mayPayThenDestroyPerOpponent (n : Nat)
   /-- This deals X damage to the target, where X is the source's X. -/
   | damageX
-  /-- Creatures you control gain trample and get +X/+0 until end of turn,
-  where X is the number of artifacts you control. -/
-  | trampleAndPowerPerArtifact
+  /-- Creatures you control get +X/+0 until end of turn, where X is the number
+  of artifacts you control. -/
+  | creaturesGetPowerPerArtifact
   /-- Search for a card, put it into your hand, shuffle, then discard a card
   at random. -/
   | searchCardThenDiscardRandom
@@ -267,8 +270,9 @@ inductive FraResolution where
   | copySourceSpellXTimes
   /-- You gain `n` life. -/
   | gainLife (n : Nat)
-  /-- Draw a card and create a Treasure (The Sackville-Bagginses). -/
-  | drawAndCreateTreasure
+  /-- Put X +1/+1 counters on each creature you control, where X is the number
+  of cards in your hand. -/
+  | plusOnesEqualToHandOnEachCreature
   /-- The source deals damage equal to its power to the target creature
   (Thorin, Mountain-king). -/
   | damageEqualSourcePower
@@ -294,9 +298,6 @@ inductive FraResolution where
   /-- Destroy the target artifact or enchantment. If it was a legendary
   enchantment, draw a card. -/
   | destroyDrawIfLegendaryEnchantment
-  /-- Put a +1/+1 counter on the source. It gains your choice of the keywords
-  coded in `options` (0 trample, 1 hexproof, 2 haste, 3 deathtouch). -/
-  | plusOneThenChooseKeyword (options : List Nat)
   /-- The source gains your choice of the keywords coded in `options` until
   end of turn. -/
   | chooseKeyword (options : List Nat)
@@ -319,9 +320,6 @@ inductive FraResolution where
   | plusOneOnEachWithPlusOne
   /-- Return each legal target to its owner's hand. -/
   | bounceEachTarget
-  /-- Draw three cards. Then put X +1/+1 counters on each creature you control,
-  where X is the number of cards in your hand. -/
-  | drawThreeThenCountersPerHand
   /-- Surveil 1. A noncreature, nonland card put into your graveyard this way
   goes to your hand. -/
   | surveilReturnNoncreatureNonland
@@ -345,8 +343,6 @@ inductive FraResolution where
   /-- Each opponent discards two cards; draw a card for each opponent who
   didn't discard two nonland cards. -/
   | eachOpponentDiscardsTwoDrawPerShort
-  /-- Discard your hand, then draw a card for each creature you control. -/
-  | discardHandDrawPerCreature
   /-- This deals `n` damage to each creature except tokens you control. -/
   | damageEachCreatureExceptYourTokens (n : Nat)
   /-- You get an emblem with “Creatures you control get +2/+2.” -/
@@ -412,8 +408,8 @@ def toPhrase (r : FraResolution) (noun : String) : String :=
     s!"Destroy {noun}. If it wasn't attacking, its controller draws a card"
   | .loseLife n => s!"You lose {n} life"
   | .damageEachPlayer n => s!"This deals {n} damage to each player"
-  | .damageThenPlusOneOnSecond n =>
-    s!"This deals {n} damage to {noun}. Put a +1/+1 counter on up to one target creature you control"
+  | .damageSourceAt _ n => s!"This deals {n} damage to {noun}"
+  | .plusOneAt _ n => s!"Put {plusOnePlusOneCountersPhrase n} on {noun}"
   | .returnFromGyToBattlefield n =>
     if n == 0 then s!"Return {noun} to the battlefield"
     else s!"Return {noun} to the battlefield with an additional +1/+1 counter on it"
@@ -435,30 +431,33 @@ def toPhrase (r : FraResolution) (noun : String) : String :=
   | .revealHandDiscardNonland permanentOnly =>
     let what := if permanentOnly then "nonland permanent card" else "nonland card"
     s!"{capitalizeAscii noun} reveals their hand. You choose a {what} from it. That player discards that card"
-  | .damageThenRevealDiscardNonland n =>
-    s!"This deals {n} damage to {noun}. That player reveals their hand. You choose a nonland card from it. They discard that card"
+  | .discardHand => "Discard your hand"
+  | .drawPerCreatureYouControl => "Draw a card for each creature you control"
   | .extrapolate =>
     "You may reveal exactly two cards you own with different names from outside the game. An opponent chooses one of them. You put that card into your hand"
   | .sphinxsApproach =>
-    "Draw two cards. Then you may exile this spell and four cards named Sphinx's Approach from your graveyard. If you do, search your library for a Sphinx creature card, put it onto the battlefield, then shuffle"
-  | .cadetThenPlusOneOtherWizardTokens =>
-    "Create a 2/2 colorless Wizard Soldier creature token named Cadet, then put a +1/+1 counter on each other Wizard token you control"
+    "You may exile this spell and four cards named Sphinx's Approach from your graveyard. If you do, search your library for a Sphinx creature card, put it onto the battlefield, then shuffle"
+  | .plusOneOnWizardTokensExceptRecent =>
+    "Put a +1/+1 counter on each other Wizard token you control"
   | .damageEachOppCreatureAndPlaneswalker n =>
     s!"This deals {n} damage to each creature and planeswalker your opponents control"
-  | .loseAbilitiesThenFight =>
-    s!"{capitalizeAscii noun} loses all abilities until end of turn. Target creature you control deals damage equal to its power to that permanent"
+  | .loseAbilitiesAt _ =>
+    s!"{capitalizeAscii noun} loses all abilities until end of turn"
+  | .powerDamageFromTo _ _ =>
+    "Target creature you control deals damage equal to its power to that permanent"
   | .clashOfElements =>
     "Choose target nonland permanent. Its owner may put it on top of their library. If they do, this deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom"
   | .entrustTheSpark =>
     "You may sacrifice a planeswalker. If you do, search your library for a planeswalker card, put it onto the battlefield, then shuffle"
-  | .cadetsPlusOnePerThreeIfFromGy n =>
-    s!"Create {englishNumber n} 2/2 colorless Wizard Soldier creature tokens named Cadet. If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard"
-  | .cadetWithHaste =>
-    "Create a 2/2 colorless Wizard Soldier creature token named Cadet. It gains haste until end of turn"
+  | .plusOnePerThreeGraveyardOnRecentIfFromGy =>
+    "If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard"
+  | .grantHasteToRecentTokens =>
+    "It gains haste until end of turn"
   | .drawOneOrTwoIfNotFromHand =>
     "Draw a card. If this spell wasn't cast from your hand, draw two cards instead"
-  | .destroyThenPlusOneEachOfPlayer =>
-    s!"Destroy {noun}. Put a +1/+1 counter on each creature target player controls"
+  | .destroyAt _ => s!"Destroy {noun}"
+  | .plusOneOnCreaturesOfPlayerAt _ =>
+    "Put a +1/+1 counter on each creature target player controls"
   | .exileReturnBrieflyIfMvAtMost n =>
     s!"Exile {noun}. If that permanent's mana value was {n} or less, return it to the battlefield tapped under your control. Exile it at the beginning of the next end step"
   | .eachPlayerMayWheel n =>

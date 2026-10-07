@@ -88,8 +88,10 @@ inductive SpellResolution where
   | mayAttachEquipmentIfDwarf
   /-- Exchange control of the two targeted permanents. -/
   | exchangeControl
-  /-- Put a +1/+1 counter on an optional creature target; a player gains life. -/
-  | plusOneAndPlayerGainsLife (life : Nat)
+  /-- Put a +1/+1 counter on each creature among the announced targets. -/
+  | plusOneOnCreatureTargets
+  /-- Each announced player target gains `n` life. -/
+  | targetPlayersGainLife (n : Nat)
   /-- Return the targeted spell to its owner's hand. -/
   | returnTargetSpell
   /-- Creatures you control get +P/+T until end of turn. -/
@@ -192,8 +194,8 @@ inductive SpellResolution where
   | surveil (n : Nat)
   /-- The targeted player investigates. -/
   | targetPlayerInvestigates
-  /-- The targeted creature gets +1/+0, gains flying, and untaps. -/
-  | targetCreaturePumpFlyingUntap
+  /-- Apply `action` to the creature among the announced targets. -/
+  | onCreatureAmongTargets (action : PermanentAction)
   /-- Deal `n` damage to each creature. -/
   | dealDamageToEachCreature (n : Nat)
   /-- The targeted permanent's owner may search for a basic land. -/
@@ -308,8 +310,10 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"if {noun} is a Dwarf, you may attach an Equipment you control to it"
   | .exchangeControl =>
     "exchange control of two target nonland permanents that share a card type"
-  | .plusOneAndPlayerGainsLife n =>
-    s!"put a +1/+1 counter on up to one target creature. Target player gains {n} life"
+  | .plusOneOnCreatureTargets =>
+    "put a +1/+1 counter on up to one target creature"
+  | .targetPlayersGainLife n =>
+    s!"Target player gains {n} life"
   | .creaturesYouControlPump p t =>
     s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .amassGoblins n =>
@@ -400,8 +404,8 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"{noun} creates {TokenKind.createdTokensPhrase kind n}"
   | .targetPlayerInvestigates =>
     "target player investigates"
-  | .targetCreaturePumpFlyingUntap =>
-    "target creature gets +1/+0 and gains flying until end of turn. Untap it"
+  | .onCreatureAmongTargets action =>
+    PermanentAction.toNotation action "target creature"
   | .dealDamageToEachCreature n =>
     s!"deals {n} damage to each creature"
   | .ownerMaySearchBasic =>
@@ -525,8 +529,16 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
       "target creature gains double strike until end of turn. If this spell was cast using teamwork, that creature also gains trample until end of turn"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
-  | [.targetPlayerInvestigates, .targetCreaturePumpFlyingUntap] =>
-    "target player investigates. Target creature gets +1/+0 and gains flying until end of turn. Untap it"
+  | [.targetPlayerInvestigates,
+     .onCreatureAmongTargets (.grantKeywords k),
+     .onCreatureAmongTargets .untap,
+     .onCreatureAmongTargets (.pump 1 0)] =>
+    if k == Keyword.flying then
+      "target player investigates. Target creature gets +1/+0 and gains flying until end of turn. Untap it"
+    else
+      String.intercalate ". " (rs.map (phraseOne · noun))
+  | [.plusOneOnCreatureTargets, .targetPlayersGainLife n] =>
+    s!"put a +1/+1 counter on up to one target creature. Target player gains {n} life"
   | [.onPermanent .destroy, .ownerMaySearchBasic] =>
     s!"destroy {noun}. Its controller may {searchBasicLandTappedPhrase "their"}"
   | [.draw 3, .discardTwoUnlessArtifact] =>

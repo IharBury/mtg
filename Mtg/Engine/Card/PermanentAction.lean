@@ -23,8 +23,6 @@ inductive PermanentAction where
   | destroy
   /-- Put `n` +1/+1 counters on the permanent (CR 122.1). -/
   | plusOne (n : Nat)
-  /-- A +1/+1 counter plus trample and hexproof until end of turn. -/
-  | plusOnePlusOneTrampleHexproof
   /-- Deal `amount` damage. -/
   | dealDamage (amount : Nat)
   /-- Damage plus lose-indestructible and exile-if-dies this turn. -/
@@ -70,8 +68,6 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
       s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
     | .destroy => s!"destroy {noun}"
     | .plusOne n => s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
-    | .plusOnePlusOneTrampleHexproof =>
-      s!"put a +1/+1 counter on {noun}. It gains trample and hexproof until end of turn"
     | .dealDamage n => damage n
     | .dealDamageLoseIndestructibleExile n =>
       s!"{damage n}. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"

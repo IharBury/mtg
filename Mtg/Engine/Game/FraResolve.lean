@@ -49,13 +49,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .loseLife n => g.loseLife controller n
   | .damageEachPlayer n =>
     g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n (source := src?)) g
-  | .damageThenPlusOneOnSecond n =>
-    let g :=
-      match g.legalPermanentAt? controller kind targets 0 sourceId with
-      | some o => g.dealDamageFrom srcName o n (source := src?)
-      | none => g.logMsg "The first target is no longer legal"
-    match g.legalPermanentAt? controller kind targets 1 sourceId with
-    | some o => g.addPlusOnePlusOneTo o 1
+  | .damageSourceAt index n =>
+    match g.legalPermanentAt? controller kind targets index sourceId with
+    | some o => g.dealDamageFrom srcName o n (source := src?)
+    | none => g.logMsg "The target is no longer legal"
+  | .plusOneAt index n =>
+    match g.legalPermanentAt? controller kind targets index sourceId with
+    | some o => g.addPlusOnePlusOneTo o n
     | none => g
   | .returnFromGyToBattlefield plusOnes =>
     g.withLegalKindTarget controller kind targets (fun g t =>
@@ -121,10 +121,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .revealHandDiscardNonland permanentOnly =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       g.beginRevealDiscard controller pid permanentOnly) sourceId illegal
-  | .damageThenRevealDiscardNonland n =>
-    g.withLegalKindPlayer controller kind targets (fun g pid =>
-      let g := g.dealDamageToPlayer pid n (source := src?)
-      g.beginRevealDiscard controller pid false) sourceId illegal
+  | .discardHand =>
+    (g.player controller).hand.foldl (fun g id => g.discardFromHand controller id) g
+  | .drawPerCreatureYouControl =>
+    g.draw controller (g.creaturesControlledBy controller).size
   | .extrapolate =>
     let g := g.materializeSideboard controller
     let names := (g.outsideCards controller).foldl (fun acc o =>
@@ -135,7 +135,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       g.beginFraChoice controller .extrapolateReveal
         s!"{(g.player controller).name} may reveal two cards with different names from outside the game"
   | .sphinxsApproach =>
-    let g := g.draw controller 2
     match g.resolvingSpell.bind g.findObject? with
     | some spell =>
       if spell.zone == .stack && !spell.isCopy &&
@@ -144,10 +143,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
           s!"{(g.player controller).name} may exile Sphinx's Approach and four cards named Sphinx's Approach"
       else g
     | none => g
-  | .cadetThenPlusOneOtherWizardTokens =>
-    let (g, cadet) := g.createOneKindToken controller .cadet
+  | .plusOneOnWizardTokensExceptRecent =>
     (g.permanentsOf controller).foldl (fun g o =>
-      if o.id != cadet.id && o.printed.isToken && g.hasSubtype o "Wizard" then
+      if !g.recentTokenIds.contains o.id && o.printed.isToken && g.hasSubtype o "Wizard" then
         g.addPlusOnePlusOneTo o 1
       else g) g
   | .damageEachOppCreatureAndPlaneswalker n =>
@@ -158,17 +156,21 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       match g.findObject? o.id with
       | some o => g.dealDamageFrom srcName o n (source := src?)
       | none => g) g
-  | .loseAbilitiesThenFight =>
-    match g.legalPermanentAt? controller kind targets 0 sourceId with
-    | none => g.logMsg "The first target is no longer legal. No damage is dealt"
+  | .loseAbilitiesAt index =>
+    match g.legalPermanentAt? controller kind targets index sourceId with
+    | none => g.logMsg "The target is no longer legal"
+    | some o =>
+      let g := g.mapObjectStatus o (fun s => { s with losesAbilitiesUntilEot := true })
+      g.logMsg s!"{o.name} loses all abilities until end of turn"
+  | .powerDamageFromTo fromIdx toIdx =>
+    match g.legalPermanentAt? controller kind targets toIdx sourceId with
+    | none => g.logMsg "The target is no longer legal. No damage is dealt"
     | some victim =>
-      let g := g.mapObjectStatus victim (fun s => { s with losesAbilitiesUntilEot := true })
-      let g := g.logMsg s!"{victim.name} loses all abilities until end of turn"
-      match g.legalPermanentAt? controller kind targets 1 sourceId with
+      match g.legalPermanentAt? controller kind targets fromIdx sourceId with
       | some striker =>
         g.dealDamageFrom striker.name (g.object! victim.id) (max (g.power striker) 0)
           (source := some striker)
-      | none => g.logMsg "The second target is no longer legal. No damage is dealt"
+      | none => g.logMsg "The target is no longer legal. No damage is dealt"
   | .clashOfElements =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.beginFraChoice o.owner (.topOrBottomDamage o.id 2)
@@ -178,38 +180,34 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       g.beginFraChoice controller .maySacrificePlaneswalker
         s!"{(g.player controller).name} may sacrifice a planeswalker"
     else g.logMsg s!"{(g.player controller).name} controls no planeswalker to sacrifice"
-  | .cadetsPlusOnePerThreeIfFromGy n =>
+  | .plusOnePerThreeGraveyardOnRecentIfFromGy =>
     let fromGy := (g.resolvingSpell.bind g.findObject?).any (·.castFromGraveyard)
     let counters := if fromGy then (g.player controller).graveyard.size / 3 else 0
-    Id.run do
-      let mut g := g
-      for _ in [0:n] do
-        let (g', tok) := g.createOneKindToken controller .cadet
-        g := g'
-        if counters > 0 then
-          match g.findObject? tok.id with
-          | some o => g := g.addPlusOnePlusOneTo o counters
-          | none => pure ()
-      return g
-  | .cadetWithHaste =>
-    let (g, tok) := g.createOneKindToken controller .cadet
-    match g.findObject? tok.id with
-    | some o => g.grantKeywordsUntilEot o Keyword.haste
-    | none => g
+    if counters == 0 then g
+    else
+      g.recentTokenIds.foldl (fun g id =>
+        match g.findObject? id with
+        | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o counters else g
+        | none => g) g
+  | .grantHasteToRecentTokens =>
+    g.recentTokenIds.foldl (fun g id =>
+      match g.findObject? id with
+      | some o => g.grantKeywordsUntilEot o Keyword.haste
+      | none => g) g
   | .drawOneOrTwoIfNotFromHand =>
     let fromHand := (g.resolvingSpell.bind g.findObject?).any (·.castFromHand)
     g.draw controller (if fromHand then 1 else 2)
-  | .destroyThenPlusOneEachOfPlayer =>
-    let g :=
-      match g.legalPermanentAt? controller kind targets 0 sourceId with
-      | some o => g.destroyPermanent o
-      | none => g.logMsg "The first target is no longer legal"
-    match targets[1]? with
-    | some (Target.player pid) =>
-      if g.targetLegalAt controller kind 1 (Target.player pid) sourceId then
+  | .destroyAt index =>
+    match g.legalPermanentAt? controller kind targets index sourceId with
+    | some o => g.destroyPermanent o
+    | none => g.logMsg "The target is no longer legal"
+  | .plusOneOnCreaturesOfPlayerAt index =>
+    match targets[index]? with
+    | some t@(Target.player pid) =>
+      if g.targetLegalAt controller kind index t sourceId then
         (g.creaturesControlledBy pid).foldl (fun g o => g.addPlusOnePlusOneTo o 1) g
-      else g.logMsg "The second target is no longer legal"
-    | _ => g
+      else g.logMsg "The target is no longer legal"
+    | _ => g.logMsg "The target is no longer legal"
   | .exileReturnBrieflyIfMvAtMost n =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       -- Ruling: the mana value is that of the permanent as it last existed
@@ -329,11 +327,18 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       | Target.player pid => g.dealDamageToPlayer pid x (source := src?)
       | Target.permanent id => g.dealDamageFrom srcName (g.object! id) x (source := src?)
       | Target.card _ => g) sourceId illegal
-  | .trampleAndPowerPerArtifact =>
+  | .creaturesGetPowerPerArtifact =>
     let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
     (g.creaturesControlledBy controller).foldl (fun g o =>
-      let g := g.pumpPermanent (g.object! o.id) n 0
-      g.grantKeywordsUntilEot (g.object! o.id) Keyword.trample) g
+      g.pumpPermanent (g.object! o.id) n 0) g
+  | .plusOnesEqualToHandOnEachCreature =>
+    let x := (g.player controller).hand.size
+    if x == 0 then g
+    else
+      ((g.creaturesControlledBy controller).map (·.id)).foldl (fun g id =>
+        match g.findObject? id with
+        | some o => g.addPlusOnePlusOneTo o x
+        | none => g) g
   | .searchCardThenDiscardRandom =>
     let g := g.resolveLibrarySearchToHand controller (fun _ => true) "card"
     let hand := (g.player controller).hand
@@ -681,7 +686,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .nextSpellCantBeCountered
   | .identityEcho
   | .destroyDrawIfLegendaryEnchantment
-  | .plusOneThenChooseKeyword _
   | .chooseKeyword _
   | .graveyardCardToLibraryBottom
   | .destroyAllCreatures
@@ -691,7 +695,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .pumpPerArtifact
   | .plusOneOnEachWithPlusOne
   | .bounceEachTarget
-  | .drawThreeThenCountersPerHand
   | .surveilReturnNoncreatureNonland
   | .addBlueNoncreatureOnly
   | .tapAndStunX
@@ -702,7 +705,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .minusFourMinusOneUntilYourTurn
   | .eachPlayerSacrificesThenBeast
   | .eachOpponentDiscardsTwoDrawPerShort
-  | .discardHandDrawPerCreature
   | .damageEachCreatureExceptYourTokens _
   | .emblemCreaturesGetTwoTwo
   | .untapTargets
@@ -724,7 +726,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .zemoBoastCopies
   | .copySourceSpellXTimes
   | .gainLife _
-  | .drawAndCreateTreasure
   | .damageEqualSourcePower
   | .returnSourceToHand
   | .sarumanExileCopyMayCast

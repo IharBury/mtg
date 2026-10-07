@@ -81,8 +81,8 @@ inductive Resolution where
   | discardLegendarySameNameDraw
   /-- Deal `n` to any target. -/
   | dealDamageToAny (n : Nat)
-  /-- Draw equal to sacrificed power, then discard. -/
-  | drawEqualSacrificedPowerThenDiscard
+  /-- Draw cards equal to the ability's recorded power (a sacrificed creature). -/
+  | drawEqualToLastKnownPower
   /-- Draw a card for each burden counter on the source. -/
   | drawEqualToBurdenCounters
   /-- Arwen share. -/
@@ -159,8 +159,6 @@ inductive Resolution where
   | chooseOddOrEvenDestroy
   /-- Return this from your graveyard with a finality counter. Then you may attach an Equipment. -/
   | returnFromGyFinalityAttach
-  /-- Return up to one target creature card from your graveyard to your hand. Put `n` +1/+1 counters on this. -/
-  | returnGyCreatureThenPlusOne (n : Nat)
   /-- Reveal the top card. If it's an artifact, draw a card. -/
   | revealTopDrawIfArtifact
   /-- Target artifact you control becomes a copy of a second until EOT, except it isn't legendary. -/
@@ -382,8 +380,8 @@ private def phraseWith (r : Resolution) (noun : String)
     "Draw two cards"
   | .dealDamageToAny n =>
     s!"This creature deals {n} damage to any target"
-  | .drawEqualSacrificedPowerThenDiscard =>
-    "Draw cards equal to the sacrificed creature's power, then discard a card"
+  | .drawEqualToLastKnownPower =>
+    "Draw cards equal to the sacrificed creature's power"
   | .arwenShare =>
     "Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen"
   | .grantCombatDamageCreateTreasure =>
@@ -463,8 +461,6 @@ private def phraseWith (r : Resolution) (noun : String)
     "Choose odd or even. Destroy each other creature with mana value of the chosen quality"
   | .returnFromGyFinalityAttach =>
     "Return this card from your graveyard to the battlefield with a finality counter on him. Then you may attach an Equipment you control to him"
-  | .returnGyCreatureThenPlusOne n =>
-    s!"Return up to one target creature card from your graveyard to your hand. Put {plusOnePlusOneCountersPhrase n} on this creature"
   | .revealTopDrawIfArtifact =>
     "Reveal the top card of your library. If it's an artifact card, draw a card"
   | .copyArtifactYouControlNotLegendary =>
@@ -636,7 +632,7 @@ partial def doesNothingAsSpell (r : Resolution) : Bool :=
   | .firstDealsStatDamageToSecond _ | .returnFromGyWithFinality
   | .copyNextInstantSorceryThisTurn | .proliferatePlaneswalkerTypesTimes
   | .copyEachCreatureOfTargetPlayer | .becomeCopyLegendRuleOff
-  | .teamGain _ | .jaceLoyaltyAtInstantSpeed => false
+  | .teamGain _ | .jaceLoyaltyAtInstantSpeed | .drawEqualToLastKnownPower => false
   | .trigger (.chapter _ _) => false
   | .searchBasicLand | .searchLandTypeToHand _ | .searchBasicLandToHand | .exileTop => false
   | .spell .unrecognized => true

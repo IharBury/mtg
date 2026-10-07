@@ -137,7 +137,6 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .pumpAndTrample pw tw => g.pumpAndGrantTrample o pw tw
   | .destroy => g.destroyPermanent o
   | .plusOne n => g.addPlusOnePlusOneTo o n
-  | .plusOnePlusOneTrampleHexproof => g.grantPlusOnePlusOneTrampleHexproof o
   | .dealDamage n => g.dealDamageToPermanent o n
   | .dealDamageLoseIndestructibleExile n =>
     g.dealDamageLoseIndestructibleExileTo o n

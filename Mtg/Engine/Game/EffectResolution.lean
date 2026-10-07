@@ -719,12 +719,16 @@ destroy-then-surveil does not surveil and pump-then-draw does not draw.
 def sequenceAllTargetsIllegal (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none) : Bool :=
   let kind := effect.targetKind
+  let slots := if kind.spec.slots.isEmpty then #[kind] else kind.spec.slots
+  -- A skipped “up to” slot is absent from `targets`, so a later target is not
+  -- at the same index as its slot. A target keeps the sequence when it is
+  -- legal for any slot of the effect.
   effect.requiresTarget &&
     !(effect.allowsZeroTargets && targets.isEmpty) &&
     (targets.isEmpty ||
-      (List.range targets.size).all (fun i =>
-        let slot := kind.slotKind (if kind.spec.slots.isEmpty then 0 else i)
-        !(g.legalTargetsForAtomicKind controller slot sourceId).contains targets[i]!))
+      targets.all fun t =>
+        slots.all fun slot =>
+          !(g.legalTargetsForAtomicKind controller slot sourceId).contains t)
 
 /-- Log why a sequence with a required target did not resolve. -/
 def logIllegalSequenceTargets (g : Game) (targets : Array Target) : Game :=
@@ -897,10 +901,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         g.logMsg "A target is no longer legal. The exchange doesn't happen."
     | _, _ =>
       g.logMsg "A target is no longer legal. The exchange doesn't happen."
-  | .plusOneAndPlayerGainsLife n =>
+  | .plusOneOnCreatureTargets =>
     Id.run do
       let creatureLegal := g.legalTargetsForAtomicKind controller .creature none
-      let playerLegal := g.legalTargetsForAtomicKind controller .player none
       let mut g := g
       for t in targets do
         match t with
@@ -911,13 +914,22 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             | none => g := g.logMsg "The target is no longer in play"
           else
             g := g.illegalAbilityTarget t
+        | Target.card _ =>
+          g := g.illegalAbilityTarget t
+        | Target.player _ => pure ()
+      return g
+  | .targetPlayersGainLife n =>
+    Id.run do
+      let playerLegal := g.legalTargetsForAtomicKind controller .player none
+      let mut g := g
+      for t in targets do
+        match t with
         | Target.player pid =>
           if playerLegal.contains t then
             g := g.gainLife pid n
           else
             g := g.illegalAbilityTarget t
-        | Target.card _ =>
-          g := g.illegalAbilityTarget t
+        | _ => pure ()
       return g
   | .creaturesYouControlPump pw tw =>
     g.pumpControlledCreatures controller pw tw
@@ -1260,7 +1272,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       if (g.player pid).lost then g.logMsg "The target is no longer legal"
       else (g.createToken pid clueToken).1
     | none => g.logMsg "The target is no longer legal"
-  | .targetCreaturePumpFlyingUntap =>
+  | .onCreatureAmongTargets action =>
     match targets.findSome? (fun t =>
         match t with
         | Target.permanent id => some id
@@ -1270,10 +1282,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match g.findObject? id with
       | some o =>
         if o.isOnBattlefield && o.isCreature then
-          let g := g.mapObjectStatus o (·.grantUntilEot Keyword.flying)
-          let o := g.object! o.id
-          let g := g.applyPermanentAction o .untap
-          g.applyPermanentAction (g.object! o.id) (.pump 1 0)
+          g.applyPermanentAction o action
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
   | .dealDamageToEachCreature n =>
@@ -1645,8 +1654,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.draw controller 2
   | .dealDamageToAny n =>
     g.applyEffect controller (Effect.dealDamage n) targets
-  | .drawEqualSacrificedPowerThenDiscard =>
-    g.drawThenBeginDiscard controller ((lastKnownPower.getD 0).toNat)
+  | .drawEqualToLastKnownPower =>
+    g.draw controller ((lastKnownPower.getD 0).toNat)
   | .arwenShare =>
     match sourceId, targets[0]? with
     | some sid, some (Target.permanent tid) => g.resolveArwenShare sid (some tid)
@@ -1821,8 +1830,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.millMayPutSubtypeOrEnchantment controller n subtype
   | .returnFromGyFinalityAttach =>
     g.returnFromGyFinalityAttach controller sourceId
-  | .returnGyCreatureThenPlusOne n =>
-    g.returnGyCreatureThenPlusOne controller sourceId targets n
   | .revealTopDrawIfArtifact =>
     g.revealTopDrawIfArtifact controller
   | .copyArtifactYouControlNotLegendary =>
