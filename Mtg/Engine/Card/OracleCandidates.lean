@@ -1,4 +1,5 @@
-import Mtg.Engine.Card.FraEffects
+import Mtg.Engine.Card.OracleActivate
+import Mtg.Engine.Card.SpellEffects
 
 /-!
 Modeled abilities the Oracle parser can recognize. Each entry is a shape.
