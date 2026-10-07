@@ -620,7 +620,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
     (.filtered { noun := "up to one target artifact or creature that player controls",
                  types := #[.artifact, .creature], controller := .eachOpponent })
     (allowsZeroTargets := true),
-  FraCandidates.ab (.fra .drawThreeThenCountersPerHand)
+  FraCandidates.ab (.sequence [.draw 3, .fra .plusOnesEqualToHandOnEachCreature])
     "Draw three cards. Then put X +1/+1 counters on each creature you control, where X is the number of cards in your hand",
   FraCandidates.ab (.fra .surveilReturnNoncreatureNonland)
     "Surveil 1. If you put a noncreature, nonland card into your graveyard this way, put that card into your hand",
@@ -638,7 +638,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
     "Each player sacrifices a creature of their choice. If you sacrificed a creature this way, create a 4/4 green Beast creature token with trample",
   FraCandidates.ab (.fra .eachOpponentDiscardsTwoDrawPerShort)
     "Each opponent discards two cards. For each opponent who didn't discard two nonland cards this way, you draw a card",
-  FraCandidates.ab (.fra .discardHandDrawPerCreature) "Discard your hand, then draw a card for each creature you control",
+  FraCandidates.ab (.sequence [.fra .discardHand, .fra .drawPerCreatureYouControl]) "Discard your hand, then draw a card for each creature you control",
   FraCandidates.ab (.fra (.damageEachCreatureExceptYourTokens 4)) "This deals 4 damage to each creature except for tokens you control",
   FraCandidates.ab (.fra .emblemCreaturesGetTwoTwo) "You get an emblem with \"Creatures you control get +2/+2.\"",
   FraCandidates.ab (.fra .untapTargets) "Untap up to two target lands"
@@ -1232,7 +1232,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.fra (.returnSourceFromGy true false 0)) (cond := .opponentDealtNoncombatDamageLastTurn),
   TriggeredAbility.fra .enter
     "When this creature enters, creatures you control gain trample and get +X/+0 until end of turn, where X is the number of artifacts you control."
-    (.fra .trampleAndPowerPerArtifact),
+    (.sequence [.fra .creaturesGetPowerPerArtifact, .teamGain Keyword.trample]),
   TriggeredAbility.fra .enter
     "When this creature enters, search your library for a card, put it into your hand, shuffle, then discard a card at random."
     (.fra .searchCardThenDiscardRandom),
@@ -1692,7 +1692,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     { sacrificeSource := true } (onlyAsSorcery := true),
   ActivatedAbility.fra
     "{1}, Sacrifice another artifact: Put a +1/+1 counter on this creature. It gains your choice of trample, hexproof, or haste until end of turn."
-    (FraCandidates.ab (.fra (.plusOneThenChooseKeyword [0, 1, 2])) "Put a +1/+1 counter on this creature")
+    (FraCandidates.ab (.sequence [.fra (.plusOneOnSource 1), .fra (.chooseKeyword [0, 1, 2])]) "Put a +1/+1 counter on this creature")
     { mana := ManaCost.ofGeneric 1, fra := .sacrificeAnotherArtifact },
   ActivatedAbility.fra "{4}{G}: Return this card from your graveyard to your hand."
     (FraCandidates.ab .returnFromGraveyardToHand "Return this card from your graveyard to your hand")

@@ -112,7 +112,8 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick 
       if o.isOnBattlefield then
         let records :=
           o.isCreature && (g.findObject? abilityId).any (fun ab =>
-            (ab.abilityEffect.map (·.resolution)) == some .drawEqualSacrificedPowerThenDiscard)
+            (ab.abilityEffect.map (·.resolution)) ==
+              some (.sequence [.drawEqualToLastKnownPower, .discard 1]))
         let pw := g.power o
         g := g.sacrificeToGraveyard o s!"{name} sacrifices {o.name}"
         if records then

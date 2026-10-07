@@ -10,7 +10,7 @@ emblems and effects those create. `applyFra` delegates them here.
 namespace Mtg.Engine
 namespace Game
 
-/-- Keyword coded by `code` in `FraResolution.plusOneThenChooseKeyword`. -/
+/-- Keyword coded by `code` in `FraResolution.chooseKeyword`. -/
 def fraKeywordOfCode : Nat → Keywords
   | 0 => Keyword.trample
   | 1 => Keyword.hexproof
@@ -159,10 +159,6 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
       let legendaryEnchantment := o.isLegendary && o.printed.isEnchantment
       let g := g.destroyPermanent o
       if legendaryEnchantment then g.draw controller 1 else g) sourceId illegal
-  | .plusOneThenChooseKeyword options =>
-    onSource (fun g o =>
-      let g := g.addPlusOnePlusOneTo o 1
-      g.beginChooseKeyword controller o.id options.toArray)
   | .chooseKeyword options =>
     onSource (fun g o => g.beginChooseKeyword controller o.id options.toArray)
   | .graveyardCardToLibraryBottom =>
@@ -215,15 +211,6 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
           | none => g
         else g.illegalAbilityTarget t
       | _ => g) g
-  | .drawThreeThenCountersPerHand =>
-    let g := g.draw controller 3
-    let x := (g.player controller).hand.size
-    if x == 0 then g
-    else
-      ((g.creaturesControlledBy controller).map (·.id)).foldl (fun g id =>
-        match g.findObject? id with
-        | some o => g.addPlusOnePlusOneTo o x
-        | none => g) g
   | .surveilReturnNoncreatureNonland =>
     let g := g.beginSurveil controller 1
     match g.pending with
@@ -275,9 +262,6 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
     g.continueSacrificeEach controller g.apnapOrder #[]
   | .eachOpponentDiscardsTwoDrawPerShort =>
     g.continueDiscardTwo controller (g.apnapOrder.filter (· != controller)) 0
-  | .discardHandDrawPerCreature =>
-    let g := (g.player controller).hand.foldl (fun g id => g.discardFromHand controller id) g
-    g.draw controller (g.creaturesControlledBy controller).size
   | .damageEachCreatureExceptYourTokens n =>
     let victims := g.battlefield.filter (fun o =>
       o.isCreature && !(o.printed.isToken && o.controlledBy controller))
@@ -399,9 +383,6 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
             s!"{(g.player controller).name} may choose new targets for the copies"
     | none => g
   | .gainLife n => g.gainLife controller n
-  | .drawAndCreateTreasure =>
-    let g := g.draw controller 1
-    g.createTreasureTokens controller 1
   | .damageEqualSourcePower =>
     let n :=
       match sourceId.bind g.findObject? with

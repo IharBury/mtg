@@ -646,8 +646,9 @@ def resolvedWargPump : Game := passBoth paidWargPump
 #guard resolvedWargPump.hasHexproof (namedPermanent resolvedWargPump "Grizzly Bears")
 #guard (resolvedWargPump.effectiveKeywords
   (namedPermanent resolvedWargPump "Grizzly Bears")).hexproof
+#guard resolvedWargPump.log.any (fun s => mentions s "gets a +1/+1 counter")
 #guard resolvedWargPump.log.any (fun s =>
-  mentions s "gets a +1/+1 counter and gains trample and hexproof")
+  mentions s "gains" && mentions s "trample" && mentions s "hexproof")
 
 /-- A 0/0 survives after receiving a +1/+1 counter. -/
 def zeroWithCounter : Game :=

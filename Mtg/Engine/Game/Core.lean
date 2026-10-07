@@ -94,6 +94,9 @@ structure Game where
   resolvingAbility : Option ObjectId := none
   /-- Where recently moved objects went (old id, new id), most recent last. -/
   movedTo : Array (ObjectId × ObjectId) := #[]
+  /-- Tokens created by the most recent `createKindTokens` call, so a following
+  sequence step can haste them or leave them out of a plus-one. -/
+  recentTokenIds : Array ObjectId := #[]
   /-- Creatures that died this turn, tokens included. -/
   creatureDeathsThisTurn : Nat := 0
   /-- Work left after the pending scry or surveil finishes (Eye of Jace):
