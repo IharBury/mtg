@@ -554,7 +554,6 @@ def ofSpellStep : SpellResolution → Resolution
   | .controllerOfTargetLosesLife n => .controllerOfTargetLosesLife n
   | .returnTargetSpell => .returnTargetSpell
   | .returnFromGyToHand => .fra .returnFromGyToHand
-  | .amassGoblins n => .amassGoblins n
   | .createTokens kind n => .createTokens kind n
   | .creaturesYouControlPump p t => .creaturesYouControlPump p t
   | .createTokensX kind => .createTokensX kind

@@ -33,6 +33,8 @@ inductive NatFmt where
   | counters
   | brace
   | english
+  /-- `twice`, or `N times`. -/
+  | times
   deriving BEq, Repr
 
 inductive IntFmt where
@@ -239,21 +241,51 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .tapScryDraw a b => return .tapScryDraw (← takeNat a) (← takeNat b)
   | .counterUnlessPays n => return .counterUnlessPays (← takeNat n)
   | .targetPlayersGainLife n => return .targetPlayersGainLife (← takeNat n)
+  | .plusOneOnCreatureTargets n => return .plusOneOnCreatureTargets (← takeNat n)
+  | .exileGraveyardCreaturesGrantCast ty =>
+    return .exileGraveyardCreaturesGrantCast (← takeCardType ty)
+  | .mayAttachEquipmentIfDwarf s => return .mayAttachEquipmentIfDwarf (← takeStr s)
+  | .plusOneThenEachOtherIfFromGy n => return .plusOneThenEachOtherIfFromGy (← takeNat n)
+  | .searchLegendaryCreatureToHand s ty =>
+    return .searchLegendaryCreatureToHand (← takeSupertype s) (← takeCardType ty)
+  | .addRedPerOppArtifacts ty => return .addRedPerOppArtifacts (← takeCardType ty)
+  | .addFourManaDragonSpells n s =>
+    return .addFourManaDragonSpells (← takeNat n) (← takeStr s)
+  | .riddlesInTheDark n => return .riddlesInTheDark (← takeNat n)
+  | .grantTrampleIfTeamwork kw => return .grantTrampleIfTeamwork (← takeStr kw)
+  | .ownerMaySearchBasic s ty =>
+    return .ownerMaySearchBasic (← takeSupertype s) (← takeCardType ty)
+  | .onCreatureAmongTargets a => return .onCreatureAmongTargets (← takeAction a)
+  | .becomeArtifactCreature44Flying p t kw =>
+    return .becomeArtifactCreature44Flying (← takeInt p) (← takeInt t) (← takeStr kw)
+  | .discardTwoUnlessArtifact n ty =>
+    return .discardTwoUnlessArtifact (← takeNat n) (← takeCardType ty)
+  | .plusOneOnEachYouControl n => return .plusOneOnEachYouControl (← takeNat n)
+  | .creatureYouControlDealsTwicePower k =>
+    return .creatureYouControlDealsTwicePower (← takeNat k)
+  | .mayDrawPerArtifactOppsDraw ty => return .mayDrawPerArtifactOppsDraw (← takeCardType ty)
+  | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
   | .plusOneOnFirstTarget n => return .plusOneOnFirstTarget (← takeNat n)
   | .creaturesYouControlPump p t => return .creaturesYouControlPump (← takeInt p) (← takeInt t)
-  | .amassGoblins n => return .amassGoblins (← takeNat n)
+  | .amassGoblins n subtype =>
+    return .amassGoblins (← takeNat n) (← takeStr subtype)
   | .counterThenRecruitIfMvAtMost n => return .counterThenRecruitIfMvAtMost (← takeNat n)
   | .drawIfFromGy a b => return .drawIfFromGy (← takeNat a) (← takeNat b)
-  | .amassGoblinsOrFromGy a b => return .amassGoblinsOrFromGy (← takeNat a) (← takeNat b)
+  | .amassGoblinsOrFromGy a b subtype =>
+    return .amassGoblinsOrFromGy (← takeNat a) (← takeNat b) (← takeStr subtype)
   | .dealDamageToEachOppCreature n => return .dealDamageToEachOppCreature (← takeNat n)
   | .targetPlayerDraw n => return .targetPlayerDraw (← takeNat n)
   | .targetPlayerLosesLife n => return .targetPlayerLosesLife (← takeNat n)
   | .controllerOfTargetLosesLife n => return .controllerOfTargetLosesLife (← takeNat n)
-  | .dealDamageToEachNonDragon n => return .dealDamageToEachNonDragon (← takeNat n)
-  | .millThenPutInstantOrSorcery n => return .millThenPutInstantOrSorcery (← takeNat n)
-  | .millThenPutLands a b => return .millThenPutLands (← takeNat a) (← takeNat b)
+  | .dealDamageToEachNonDragon n subtype =>
+    return .dealDamageToEachNonDragon (← takeNat n) (← takeStr subtype)
+  | .millThenPutInstantOrSorcery n a b =>
+    return .millThenPutInstantOrSorcery (← takeNat n) (← takeCardType a) (← takeCardType b)
+  | .millThenPutLands a b ty =>
+    return .millThenPutLands (← takeNat a) (← takeNat b) (← takeCardType ty)
   | .exileTopPlayUntilNext n => return .exileTopPlayUntilNext (← takeNat n)
-  | .millThenPutAllInstantsOrSorceries n => return .millThenPutAllInstantsOrSorceries (← takeNat n)
+  | .millThenPutAllInstantsOrSorceries n a b =>
+    return .millThenPutAllInstantsOrSorceries (← takeNat n) (← takeCardType a) (← takeCardType b)
   | .exileTopPlayIfYouControlSubtype n s =>
     return .exileTopPlayIfYouControlSubtype (← takeNat n) (← takeStr s)
   | .lookAtTopLandsGainLife a b => return .lookAtTopLandsGainLife (← takeNat a) (← takeNat b)
@@ -275,7 +307,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .millThenPutPermanentGainLife (← takeNat a) (← takeNat b)
   | .gainLifeSearchBasicPlusOne n => return .gainLifeSearchBasicPlusOne (← takeNat n)
   | .copyThisSpellXTimesThenDamage n => return .copyThisSpellXTimesThenDamage (← takeNat n)
-  | .mayPutHeroMvOrDraw n => return .mayPutHeroMvOrDraw (← takeNat n)
   | .maySacArtifactOrDiscardDraw n => return .maySacArtifactOrDiscardDraw (← takeNat n)
   | .artifactSpellsCostLessThisTurn ty n =>
     return .artifactSpellsCostLessThisTurn (← takeCardType ty) (← takeNat n)
@@ -758,6 +789,7 @@ def renderNat (fmt : NatFmt) (n : Nat) : String :=
   | .counters => plusOnePlusOneCountersPhrase n
   | .brace => s!"\{{n}}"
   | .english => englishNumber n
+  | .times => timesPhrase n
 
 def renderInt (fmt : IntFmt) (i : Int) : String :=
   match fmt with
@@ -924,7 +956,7 @@ def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List 
       let fresh := !used.contains i
       match args[i]! with
       | .nat n =>
-        for fmt in [NatFmt.cards, .counters, .brace, .english, .digits] do
+        for fmt in [NatFmt.cards, .counters, .brace, .english, .digits, .times] do
           hs := consider hs (natHit i fmt n toks fresh)
       | .int v =>
         for fmt in [IntFmt.signed, .digits] do
@@ -1009,7 +1041,9 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
     | [] => if toks.isEmpty then some (vals, seen) else none
     | .lit s :: ps =>
       match toks with
-      | t :: ts => if t == s then go ps ts vals seen else none
+      | t :: ts =>
+        let article (w : String) := w == "a" || w == "an"
+        if t == s || (article t && article s) then go ps ts vals seen else none
       | [] => none
     | .nat i fmt :: ps =>
       match fmt with
@@ -1067,6 +1101,20 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
             | none => none
           else none
         | [] => none
+      | .times =>
+        match toks with
+        | "twice" :: ts =>
+          match setSlot vals i (.nat 2) seen with
+          | some (vals, seen) => go ps ts vals seen
+          | none => none
+        | t :: "times" :: ts =>
+          match parseNatTok t with
+          | some k =>
+            match setSlot vals i (.nat k) seen with
+            | some (vals, seen) => go ps ts vals seen
+            | none => none
+          | none => none
+        | _ => none
       | .digits | .english =>
         match toks with
         | t :: ts =>
@@ -1235,6 +1283,7 @@ def patKey (pats : List (List Pat)) : String :=
       | .counters => "#k"
       | .brace => "#b"
       | .english => "#e"
+      | .times => "#x"
     | .int _ fmt =>
       match fmt with
       | .signed => "#+"
@@ -1271,7 +1320,7 @@ def allNeedles (args : Array SlotVal) : List Hit :=
     for i in [:args.size] do
       match args[i]! with
       | .nat n =>
-        for fmt in [NatFmt.cards, .counters, .brace, .english, .digits] do
+        for fmt in [NatFmt.cards, .counters, .brace, .english, .digits, .times] do
           let needle := renderNat fmt n
           hs := { width := needle.length, used := [i], pat := .nat i fmt, needle, repl := needle } :: hs
       | .int v =>
@@ -1428,6 +1477,60 @@ def setNat (e : Effect) (i n : Nat) : Effect :=
     (refillEffect e vals).resolution ==
       .spell (.artifactSpellsCostLessThisTurn .planeswalker 3)
   | none => false
+
+/-- Refill `proto` from `query` and keep the resolution. -/
+private def refilled (proto : Effect) (query : String) : Option Resolution :=
+  let args := collectEffect proto
+  match matchPats (patsOf (normalizeUnit "X" proto.phrase) args)
+      (tokenize (normalizeUnit "X" query)) args with
+  | some vals => some (refillEffect proto vals).resolution
+  | none => none
+
+#guard (Effect.amassGoblins 1).phrase == "amass Goblins 1"
+#guard (Effect.riddlesInTheDark).phrase ==
+  "look at the top four cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard"
+#guard (Effect.plusOneOnEachYouControl).phrase ==
+  "put a +1/+1 counter on each creature you control"
+#guard (Effect.creatureYouControlDealsTwicePower).phrase ==
+  "Target creature you control deals damage equal to twice its power to target creature an opponent controls."
+#guard (Effect.drawThreeDiscardUnlessArtifact).phrase ==
+  "draw three cards. Then discard two cards unless you discard an artifact card"
+
+#guard refilled (Effect.amassGoblins 1) "amass Zombies 4" ==
+  some (.spell (.amassGoblins 4 "Zombie"))
+
+#guard refilled (Effect.riddlesInTheDark) "look at the top six cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard" ==
+  some (.spell (.riddlesInTheDark 6))
+
+#guard refilled (Effect.plusOneOnEachYouControl) "put 3 +1/+1 counters on each creature you control" ==
+  some (.spell (.plusOneOnEachYouControl 3))
+
+#guard refilled (Effect.dealDamageToEachNonDragon 2) "deals 5 damage to each non-Elf creature" ==
+  some (.spell (.dealDamageToEachNonDragon 5 "Elf"))
+
+#guard refilled (Effect.searchLegendaryCreatureToHand)
+    "search your library for a basic land card, reveal it, put it into your hand, then shuffle" ==
+  some (.spell (.searchLegendaryCreatureToHand .basic .land))
+
+#guard refilled (Effect.creatureYouControlDealsTwicePower)
+    "Target creature you control deals damage equal to 3 times its power to target creature an opponent controls." ==
+  some (.spell (.creatureYouControlDealsTwicePower 3))
+
+#guard refilled (Effect.drawThreeDiscardUnlessArtifact)
+    "draw three cards. Then discard four cards unless you discard an enchantment card" ==
+  some (.sequence [.draw 3, .spell (.discardTwoUnlessArtifact 4 .enchantment)])
+
+#guard refilled (Effect.becomeArtifactCreature44Flying)
+    "until end of turn, target artifact or creature you control becomes an artifact creature with base power and toughness 2/3 and gains haste" ==
+  some (.spell (.becomeArtifactCreature44Flying 2 3 "Haste"))
+
+#guard refilled (Effect.mayDrawPerArtifactOppsDraw)
+    "You may draw a card for each creature you control. If you do, each opponent draws a card" ==
+  some (.spell (.mayDrawPerArtifactOppsDraw .creature))
+
+#guard refilled (Effect.addRedPerOppArtifacts)
+    "add {R} for each enchantment your opponents control" ==
+  some (.spell (.addRedPerOppArtifacts .enchantment))
 
 #guard CardType.all.all fun t =>
   let ab := StaticAbility.typeSpellsCostLess .artifact 1

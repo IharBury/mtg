@@ -193,6 +193,8 @@ structure Game where
   /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
   card finishes the requirement early. -/
   thirstDiscardsLeft : Nat := 0
+  /-- Discarding a card of this type finishes `thirstDiscardsLeft` early. -/
+  thirstDiscardType : CardType := .artifact
   /-- Remaining discards for a required multi-card discard such as “discard
   two cards”. Unlike `thirstDiscardsLeft`, an artifact does not end this
   early. -/

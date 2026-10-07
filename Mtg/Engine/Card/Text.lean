@@ -24,6 +24,13 @@ def englishNumber (n : Nat) : String :=
 #guard englishNumber 5 == "five"
 #guard englishNumber 12 == "12"
 
+/-- `twice` for two, otherwise `N times` (`twice its power`). -/
+def timesPhrase (n : Nat) : String :=
+  if n == 2 then "twice" else s!"{n} times"
+
+#guard timesPhrase 2 == "twice"
+#guard timesPhrase 3 == "3 times"
+
 /-- Oracle-style alternatives joined with `or`: `a`, `a or b`, `a, b, or c`. -/
 def orJoin (xs : List String) : String :=
   match xs with
