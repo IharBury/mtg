@@ -1037,7 +1037,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .millThenPutLands n max ty =>
     g.millThenChooseForHand controller n (fun o => o.printed.hasType ty) max false
   | .addFourManaDragonSpells n subtype =>
-    g.beginFraChoice controller (.addManaColors n (.subtypeSpell subtype))
+    g.beginFraChoice controller (.addManaColors n (.forSubtype subtype))
       s!"{(g.player controller).name} chooses the colors of {englishNumber n} mana that can be spent only on {subtype} spells"
   | .millThenPutAllInstantsOrSorceries n a b =>
     g.millThenPutFromGy controller n

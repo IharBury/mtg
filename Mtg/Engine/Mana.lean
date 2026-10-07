@@ -384,6 +384,10 @@ def FraManaUse.label : FraManaUse → String
   | .dragonSpell => "Dragon spells"
   | .subtypeSpell sub => s!"{sub} spells"
 
+/-- Spend restriction for spells of `subtype`. Dragon keeps its dedicated constructor. -/
+def FraManaUse.forSubtype (subtype : String) : FraManaUse :=
+  if subtype == "Dragon" then .dragonSpell else .subtypeSpell subtype
+
 /-- Unspent mana a player currently has (CR 106.4). Restricted mana (CR 106.10)
 is a subset of the colored totals. -/
 structure ManaPool where
