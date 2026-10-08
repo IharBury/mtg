@@ -1185,4 +1185,43 @@ The counters still land. The same check is `Effect.fight`. -/
     (namedPermanent alone "Grizzly Bears").status.damage == 0 &&
     (namedPermanent alone "Rumbling Baloth").status.damage == 0
 
+/-- From hand, only the targeted creature gets a counter. From a graveyard,
+each other creature you control gets one too, and the target is not counted twice.
+An opponent's creature is left alone. -/
+def momentBoard : Game :=
+  let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) hillGiant ⟨0⟩ ⟨0⟩
+  addPermanent g rumblingBaloth ⟨1⟩ ⟨1⟩
+
+def momentFromHand : Game :=
+  let bears := namedPermanent momentBoard "Grizzly Bears"
+  momentBoard.applyEffect ⟨0⟩ Effect.plusOneThenEachOtherIfFromGy
+    #[Target.permanent bears.id] (castFromGraveyard := false)
+
+def momentFromGraveyard : Game :=
+  let bears := namedPermanent momentBoard "Grizzly Bears"
+  momentBoard.applyEffect ⟨0⟩ Effect.plusOneThenEachOtherIfFromGy
+    #[Target.permanent bears.id] (castFromGraveyard := true)
+
+#guard
+  (namedPermanent momentFromHand "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (namedPermanent momentFromHand "Hill Giant").status.plusOnePlusOne == 0 &&
+    (namedPermanent momentFromHand "Rumbling Baloth").status.plusOnePlusOne == 0
+
+#guard
+  (namedPermanent momentFromGraveyard "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (namedPermanent momentFromGraveyard "Hill Giant").status.plusOnePlusOne == 1 &&
+    (namedPermanent momentFromGraveyard "Rumbling Baloth").status.plusOnePlusOne == 0 &&
+    (namedPermanent momentFromGraveyard "Grizzly Bears").status.gotPlusOneThisTurn &&
+    (namedPermanent momentFromGraveyard "Hill Giant").status.gotPlusOneThisTurn
+
+/- An illegal target resolves none of the sequence, including the graveyard follow-up. -/
+#guard
+  let g := momentBoard
+  let bears := namedPermanent g "Grizzly Bears"
+  let (g, moved) := g.move bears.id (.graveyard ⟨0⟩) none
+  let g := g.applyEffect ⟨0⟩ Effect.plusOneThenEachOtherIfFromGy
+    #[Target.permanent bears.id] (castFromGraveyard := true)
+  (namedPermanent g "Hill Giant").status.plusOnePlusOne == 0 &&
+    (g.object! moved).status.plusOnePlusOne == 0
+
 end Mtg.Engine.Tests

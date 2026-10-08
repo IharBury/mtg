@@ -955,6 +955,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           let mv := o.printed.manaValue + o.chosenX.getD 0
           if mv ≤ n then run g else g
       | _ => g.logMsg "The target is no longer legal"
+    | .castFromGraveyard =>
+      if castFromGraveyard then run g else g
   | .exchangeControl =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
@@ -1031,18 +1033,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         return g
   | .amassGoblins n subtype =>
     g.amass controller subtype n
-  | .plusOneThenEachOtherIfFromGy n =>
-    match targets[0]? with
-    | some (Target.permanent oid) =>
-      match g.findObject? oid with
-      | none => g.logMsg "The target is no longer legal"
-      | some o =>
-        let g := g.addPlusOnePlusOneTo o n
-        if !castFromGraveyard then g
-        else
-          g.forEachControlledCreature controller
-            (fun g c => g.addPlusOnePlusOneTo c n) (some oid)
-    | _ => g.logMsg "The target is no longer legal"
   | .drawIfFromGy n fromGy =>
     g.draw controller (if castFromGraveyard then fromGy else n)
   | .amassGoblinsOrFromGy n fromGy subtype =>
@@ -1395,8 +1385,16 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       | some src => g.logMsg s!"{src.name} has nothing to fight"
       | none => g.logMsg "The target is no longer legal"
     | _, _ => g.logMsg "The target is no longer legal"
-  | .plusOneOnEachYouControl n =>
-    g.forEachControlledCreature controller (fun g o => g.addPlusOnePlusOneTo o n)
+  | .plusOneOnEachYouControl n which =>
+    let exclude :=
+      match which with
+      | .each => none
+      | .eachOther =>
+        match targets[0]? with
+        | some (Target.permanent oid) => some oid
+        | _ => none
+    g.forEachControlledCreature controller
+      (fun g o => g.addPlusOnePlusOneTo o n) exclude
   | .plusOneOnCreatureN n =>
     g.withLegalKindPermanent controller .creatureYouControl targets
       (fun g o => g.addPlusOnePlusOneTo o n)

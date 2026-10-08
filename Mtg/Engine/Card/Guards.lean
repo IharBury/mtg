@@ -331,6 +331,21 @@ namespace CardDef
     .spell .mutualFight]
 #guard (Effect.plusOneThenFight 2).phrase ==
   "put 2 +1/+1 counters on target creature you control. Then it fights target creature an opponent controls"
+#guard Effect.plusOneThenEachOtherIfFromGy.spellResolution ==
+  .sequence [
+    .countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl,
+    .«if» (.plusOneOnEachYouControl 1 .eachOther) .castFromGraveyard]
+#guard Effect.plusOneThenEachOtherIfFromGy.resolution ==
+  .sequence [
+    .spell (.countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl),
+    .spell (.«if» (.plusOneOnEachYouControl 1 .eachOther) .castFromGraveyard)]
+#guard Effect.plusOneThenEachOtherIfFromGy.phrase ==
+  "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
+#guard SpellResolution.toPhrase
+    (.«if» (.plusOneOnEachYouControl 1 .eachOther) .castFromGraveyard) "target creature" ==
+  "if this spell was cast from a graveyard, put a +1/+1 counter on each other creature you control"
+#guard SpellResolution.toPhrase (.plusOneOnEachYouControl 1 .eachOther) "target creature" ==
+  "put a +1/+1 counter on each other creature you control"
 #guard SpellResolution.toPhrase (.gainLife 3) "target creature" == "you gain 3 life"
 #guard SpellResolution.toPhrase (.gainLife 2 .targetPlayers) "target player" ==
   "Target player gains 2 life"
