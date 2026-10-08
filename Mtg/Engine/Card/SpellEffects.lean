@@ -279,7 +279,8 @@ def drawLoseLifeThenAmass (n : Nat) : Effect :=
     (castKind := .draw)
 
 def returnCreatureFromGyThenAmass (n : Nat) : Effect :=
-  mkSpell (.of .creatureCardInYourGraveyard) (.sequence [.returnFromGyToHand, .amassGoblins n])
+  mkSpell (.of .creatureCardInYourGraveyard)
+    (.sequence [.returnTargetSpell .graveyard, .amassGoblins n])
     (castKind := .draw)
     (allowsZeroTargets := true)
 
