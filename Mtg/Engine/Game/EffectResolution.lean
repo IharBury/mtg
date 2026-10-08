@@ -1054,8 +1054,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .searchLegendaryCreatureToHand s ty =>
     g.resolveLibrarySearchToHand controller (fun c =>
       c.hasType ty && c.hasSupertype s) s!"{s.oracleWord} {ty.oracleWord} card"
-  | .dealDamageToEachOppCreature n =>
-    g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
+  | .dealDamageToEachCreature n which =>
+    match which with
+    | .each => g.dealDamageToEachCreatureMatching n
+    | .opponentsControl =>
+      g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
+    | .nonSubtype subtype => g.dealDamageToEachNonDragon n subtype
   | .exileIfDiesThisTurn =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true }))
@@ -1065,8 +1069,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .red) n })
     g.logMsg s!"{(g.player controller).name} adds {n} red mana"
-  | .dealDamageToEachNonDragon n subtype =>
-    g.dealDamageToEachNonDragon n subtype
   | .chooseTypeReturnOthers =>
     let types := g.battlefieldCreatureTypes
     if types.isEmpty then
@@ -1300,8 +1302,15 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.beginFraChoice controller
         (.revealPutCreatures top creatures g.resolvingTeamworkPaid)
         s!"{(g.player controller).name} may put creature cards from among them onto the battlefield"
-  | .createTokens kind n =>
-    g.createKindTokens controller kind n
+  | .createTokens kind n who =>
+    match who with
+    | .you => g.createKindTokens controller kind n
+    | .targetPlayer =>
+      let pid :=
+        match targets[0]? with
+        | some (Target.player p) => p
+        | _ => controller
+      g.createKindTokens pid kind n
   | .exileTarget =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       (g.move o.id .exile none).1)
@@ -1317,12 +1326,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             g.logMsg "The target is no longer legal"
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal") g
-  | .targetPlayerCreatesTokens kind n =>
-    let pid :=
-      match targets[0]? with
-      | some (Target.player p) => p
-      | _ => controller
-    g.createKindTokens pid kind n
   | .targetPlayerInvestigates =>
     match targets.findSome? (fun t =>
         match t with
@@ -1345,8 +1348,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           g.applyPermanentAction o action
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
-  | .dealDamageToEachCreature n =>
-    g.dealDamageToEachCreatureMatching n
   | .ownerMaySearchBasic s ty =>
     match targets[0]? with
     | some (Target.permanent id) =>
@@ -1482,10 +1483,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       |>.logMsg s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw {cards}"
   | .returnUpToTwoGyModal =>
     g.returnChosenGraveyardCards controller targets
-  | .artifactSpellsCostLessThisTurn ty n =>
-    g.grantTypeCostLessThisTurn controller ty n
-  | .supertypeSpellsCostLessThisTurn s n =>
-    g.grantSupertypeCostLessThisTurn controller s n
+  | .spellsCostLessThisTurn which n =>
+    match which with
+    | .cardType ty => g.grantTypeCostLessThisTurn controller ty n
+    | .supertype s => g.grantSupertypeCostLessThisTurn controller s n
   | _ =>
     -- Shared steps (`draw`, `loseLife`, `surveil`, …) resolve on `Resolution`
     -- before this match. A leftover spell shape does nothing here.

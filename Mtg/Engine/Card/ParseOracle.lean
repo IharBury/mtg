@@ -545,7 +545,7 @@ def effectLines (cardName : String) (e : Effect) : List String :=
   | .sequence [.returnTargetToHand .graveyard, .amassGoblins n subtype] =>
     ["Return up to one target creature card from your graveyard to your hand.",
       s!"Amass {pluralizeName subtype} {n}."]
-  | .sequence [.dealDamageToEachNonDragon n sub, .addFourManaDragonSpells m sub2] =>
+  | .sequence [.dealDamageToEachCreature n (.nonSubtype sub), .addFourManaDragonSpells m sub2] =>
     [s!"{cardName} deals {n} damage to each non-{sub} creature.",
       s!"Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells."]
   | .sequence [.onPermanent (.grantKeywords k), .draw 1 .you] =>

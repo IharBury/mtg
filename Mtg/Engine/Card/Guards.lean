@@ -51,6 +51,16 @@ namespace CardDef
 #guard (Effect.createTokensThenTeamPump .villain21menace 1 1 0).resolution ==
   Resolution.sequence
     [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
+#guard (Effect.createTokens .treasure 1).spellResolution == .createTokens .treasure 1
+#guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).spellResolution ==
+  .createTokens .leviathan65hexproof 1 .targetPlayer
+#guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).resolution ==
+  .spell (.createTokens .leviathan65hexproof 1 .targetPlayer)
+#guard SpellResolution.toPhrase (.createTokens .treasure 1 .you) "target player" ==
+  "create a Treasure token"
+#guard SpellResolution.toPhrase
+    (.createTokens .leviathan65hexproof 1 .targetPlayer) "target player" ==
+  "target player creates a 6/5 blue Leviathan creature token with hexproof"
 #guard (Effect.destroyArtifactOrEnchantmentGainLife 2).resolution ==
   Resolution.sequence [.onPermanent .destroy, .gainLife 2]
 #guard (Effect.tapScryDraw 1 1).resolution ==
@@ -470,6 +480,29 @@ namespace CardDef
   "mill 4 cards, then put up to two land cards from among them into your hand"
 #guard (Effect.millThenPutAllInstantsOrSorceries 6).phrase ==
   "mill 6 cards, then put all instant and sorcery cards from among them into your hand"
+#guard (Effect.artifactSpellsCostLessThisTurn 1).spellResolution ==
+  .spellsCostLessThisTurn (.cardType .artifact) 1
+#guard (Effect.supertypeSpellsCostLessThisTurn 2).spellResolution ==
+  .spellsCostLessThisTurn (.supertype .legendary) 2
+#guard SpellResolution.toPhrase
+    (.spellsCostLessThisTurn (.cardType .artifact) 1) "target player" ==
+  "Artifact spells you cast this turn cost {1} less to cast"
+#guard SpellResolution.toPhrase
+    (.spellsCostLessThisTurn (.supertype .legendary) 2) "target player" ==
+  "Legendary spells you cast this turn cost {2} less to cast"
+#guard (Effect.dealDamageToEachCreature 3).spellResolution == .dealDamageToEachCreature 3
+#guard (Effect.dealDamageToEachCreature 3).resolution == .dealDamageToEachCreature 3
+#guard (Effect.dealDamageToEachOppCreature 1).spellResolution ==
+  .dealDamageToEachCreature 1 .opponentsControl
+#guard (Effect.dealDamageToEachNonDragon 2).spellResolution ==
+  .dealDamageToEachCreature 2 (.nonSubtype "Dragon")
+#guard SpellResolution.toPhrase (.dealDamageToEachCreature 3 .each) "target creature" ==
+  "deals 3 damage to each creature"
+#guard SpellResolution.toPhrase (.dealDamageToEachCreature 1 .opponentsControl) "target creature" ==
+  "deals 1 damage to each creature your opponents control"
+#guard SpellResolution.toPhrase
+    (.dealDamageToEachCreature 2 (.nonSubtype "Elf")) "target creature" ==
+  "deals 2 damage to each non-Elf creature"
 #guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution == .fight
 #guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)

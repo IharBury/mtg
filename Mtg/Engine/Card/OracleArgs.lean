@@ -306,9 +306,12 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
   | .amassGoblins n subtype =>
     return .amassGoblins (← takeNat n) (← takeStr subtype)
-  | .dealDamageToEachOppCreature n => return .dealDamageToEachOppCreature (← takeNat n)
-  | .dealDamageToEachNonDragon n subtype =>
-    return .dealDamageToEachNonDragon (← takeNat n) (← takeStr subtype)
+  | .dealDamageToEachCreature n which =>
+    match which with
+    | .each => return .dealDamageToEachCreature (← takeNat n)
+    | .opponentsControl => return .dealDamageToEachCreature (← takeNat n) .opponentsControl
+    | .nonSubtype subtype =>
+      return .dealDamageToEachCreature (← takeNat n) (.nonSubtype (← takeStr subtype))
   | .millThenPut n which =>
     match which with
     | .oneOf a b =>
@@ -328,9 +331,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .exileCreatureMvAtMostOrAnyIfTeamwork (← takeNat a) (← takeNat b)
   | .returnGyCreatureMvAtMostOrAny n => return .returnGyCreatureMvAtMostOrAny (← takeNat n)
   | .revealTopPutCreatures n => return .revealTopPutCreatures (← takeNat n)
-  | .createTokens k n => return .createTokens k (← takeNat n)
-  | .targetPlayerCreatesTokens k n => return .targetPlayerCreatesTokens k (← takeNat n)
-  | .dealDamageToEachCreature n => return .dealDamageToEachCreature (← takeNat n)
+  | .createTokens k n who => return .createTokens k (← takeNat n) who
   | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeStr s)
   | .plusOneOnCreatureN n => return .plusOneOnCreatureN (← takeNat n)
   | .createTokensPerSubtype k s => return .createTokensPerSubtype k (← takeStr s)
@@ -339,10 +340,12 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .gainLifeSearchBasicPlusOne n => return .gainLifeSearchBasicPlusOne (← takeNat n)
   | .copyThisSpellXTimesThenDamage n => return .copyThisSpellXTimesThenDamage (← takeNat n)
   | .maySacArtifactOrDiscardDraw n => return .maySacArtifactOrDiscardDraw (← takeNat n)
-  | .artifactSpellsCostLessThisTurn ty n =>
-    return .artifactSpellsCostLessThisTurn (← takeCardType ty) (← takeNat n)
-  | .supertypeSpellsCostLessThisTurn s n =>
-    return .supertypeSpellsCostLessThisTurn (← takeSupertype s) (← takeNat n)
+  | .spellsCostLessThisTurn which n =>
+    match which with
+    | .cardType ty =>
+      return .spellsCostLessThisTurn (.cardType (← takeCardType ty)) (← takeNat n)
+    | .supertype s =>
+      return .spellsCostLessThisTurn (.supertype (← takeSupertype s)) (← takeNat n)
   | .sequence rs => return .sequence (← rs.mapM takeSpell)
   | r => return r
 
@@ -1600,7 +1603,7 @@ def setNat (e : Effect) (i n : Nat) : Effect :=
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
     (refillEffect e vals).resolution ==
-      .spell (.artifactSpellsCostLessThisTurn .planeswalker 3)
+      .spell (.spellsCostLessThisTurn (.cardType .planeswalker) 3)
   | none => false
 
 /-- Refill `proto` from `query` and keep the resolution. -/
@@ -1671,7 +1674,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .minusOneMinusOne).resolution
 
 #guard refilled (Effect.dealDamageToEachNonDragon 2) "deals 5 damage to each non-Elf creature" ==
-  some (.spell (.dealDamageToEachNonDragon 5 "Elf"))
+  some (.spell (.dealDamageToEachCreature 5 (.nonSubtype "Elf")))
 
 #guard refilled (Effect.searchLegendaryCreatureToHand)
     "search your library for a basic land card, reveal it, put it into your hand, then shuffle" ==
@@ -1722,7 +1725,8 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
-    (refillEffect e vals).resolution == .spell (.supertypeSpellsCostLessThisTurn s 3)
+    (refillEffect e vals).resolution ==
+      .spell (.spellsCostLessThisTurn (.supertype s) 3)
   | none => false
 
 #guard

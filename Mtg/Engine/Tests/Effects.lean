@@ -1356,6 +1356,53 @@ def millAllInstants : Game :=
     gy.any (fun id => (millAllInstants.object! id).name == "Mountain") &&
     !hand.any (fun id => (millAllInstants.object! id).name == "Mountain")
 
+/-- `.spellsCostLessThisTurn` records the named characteristic. A card-type
+discount does not also discount a supertype, and the reverse. -/
+def artifactsCostOneLess : Game :=
+  afterDraw.applyEffect ⟨0⟩ (Effect.artifactSpellsCostLessThisTurn 1) #[]
+
+#guard
+  (artifactsCostOneLess.player ⟨0⟩).typeSpellCostLessThisTurn == #[(.artifact, 1)] &&
+    (artifactsCostOneLess.player ⟨0⟩).supertypeSpellCostLessThisTurn.isEmpty &&
+    (artifactsCostOneLess.player ⟨1⟩).typeSpellCostLessThisTurn.isEmpty
+
+def legendariesCostTwoLess : Game :=
+  afterDraw.applyEffect ⟨0⟩ (Effect.supertypeSpellsCostLessThisTurn 2) #[]
+
+#guard
+  (legendariesCostTwoLess.player ⟨0⟩).supertypeSpellCostLessThisTurn ==
+      #[(.legendary, 2)] &&
+    (legendariesCostTwoLess.player ⟨0⟩).typeSpellCostLessThisTurn.isEmpty &&
+    (legendariesCostTwoLess.player ⟨1⟩).supertypeSpellCostLessThisTurn.isEmpty
+
+/-- `.dealDamageToEachCreature` damages the named set. The controller's Bear
+is spared when only opposing creatures are damaged, and the Goblin is spared
+when the damage skips that subtype. -/
+def bearAndGoblin : Game :=
+  addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) ragingGoblin ⟨1⟩ ⟨1⟩
+
+def oppCreaturesTakeTwo : Game :=
+  bearAndGoblin.applyEffect ⟨0⟩ (Effect.dealDamageToEachOppCreature 2) #[]
+
+#guard
+  (namedPermanent oppCreaturesTakeTwo "Grizzly Bears").status.damage == 0 &&
+    (namedPermanent oppCreaturesTakeTwo "Raging Goblin").status.damage == 2
+
+def eachCreatureTakesOne : Game :=
+  bearAndGoblin.applyEffect ⟨0⟩ (Effect.dealDamageToEachCreature 1) #[]
+
+#guard
+  (namedPermanent eachCreatureTakesOne "Grizzly Bears").status.damage == 1 &&
+    (namedPermanent eachCreatureTakesOne "Raging Goblin").status.damage == 1
+
+def nonGoblinsTakeThree : Game :=
+  bearAndGoblin.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .none) (.dealDamageToEachCreature 3 (.nonSubtype "Goblin"))) #[]
+
+#guard
+  (namedPermanent nonGoblinsTakeThree "Grizzly Bears").status.damage == 3 &&
+    (namedPermanent nonGoblinsTakeThree "Raging Goblin").status.damage == 0
+
 /-- `.draw` sends the cards to the named recipient. The controller's hand is
 untouched when the targeted player draws. -/
 def targetPlayerDrawsTwo : Game :=
@@ -1364,5 +1411,19 @@ def targetPlayerDrawsTwo : Game :=
 #guard
   (targetPlayerDrawsTwo.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
     (targetPlayerDrawsTwo.player ⟨1⟩).hand.size == (afterDraw.player ⟨1⟩).hand.size + 2
+
+/-- `.createTokens` gives the tokens to the named recipient. The controller
+gets none when the targeted player creates them. -/
+def targetPlayerCreatesLeviathan : Game :=
+  afterDraw.applyEffect ⟨0⟩
+    (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1)
+    #[Target.player ⟨1⟩]
+
+#guard
+  let leviathans :=
+    targetPlayerCreatesLeviathan.battlefield.filter (fun o => o.name == "Leviathan")
+  leviathans.size == 1 &&
+    (leviathans[0]!).controlledBy ⟨1⟩ &&
+    !(leviathans[0]!).controlledBy ⟨0⟩
 
 end Mtg.Engine.Tests
