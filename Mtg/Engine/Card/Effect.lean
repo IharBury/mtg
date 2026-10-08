@@ -1032,7 +1032,7 @@ def ofSpellStep : SpellResolution → Resolution
   | .returnTargetSpell => .returnTargetSpell
   | .returnFromGyToHand => .fra .returnFromGyToHand
   | .createTokens kind n => .createTokens kind n
-  | .creaturesYouControlPump p t => .creaturesYouControlPump p t
+  | .creaturesPump p t .youControl => .creaturesYouControlPump p t
   | .createTokensX kind => .createTokensX kind
   | .dealDamageToEachCreature n => .dealDamageToEachCreature n
   | .targetPlayerDraw n => .targetPlayerDraw n
@@ -1061,7 +1061,7 @@ def toSpellStep : Resolution → Option SpellResolution
   | .returnTargetSpell => some .returnTargetSpell
   | .amassGoblins n => some (.amassGoblins n)
   | .createTokens kind n false => some (.createTokens kind n)
-  | .creaturesYouControlPump p t => some (.creaturesYouControlPump p t)
+  | .creaturesYouControlPump p t => some (.creaturesPump p t)
   | .createTokensX kind => some (.createTokensX kind)
   | .dealDamageToEachCreature n => some (.dealDamageToEachCreature n)
   | .targetPlayerDraw n => some (.targetPlayerDraw n)

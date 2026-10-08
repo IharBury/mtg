@@ -249,8 +249,8 @@ def takeAction (a : PermanentAction) : ArgM PermanentAction := do
 def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   match r with
   | .onPermanent a => return .onPermanent (← takeAction a)
-  | .creaturesPump scope p t =>
-    return .creaturesPump scope (← takeInt p) (← takeInt t)
+  | .creaturesPump p t scope =>
+    return .creaturesPump (← takeInt p) (← takeInt t) scope
   | .draw n => return .draw (← takeNat n)
   | .discard n => return .discard (← takeNat n)
   | .loseLife n => return .loseLife (← takeNat n)
@@ -286,7 +286,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .mayDrawPerArtifactOppsDraw ty => return .mayDrawPerArtifactOppsDraw (← takeCardType ty)
   | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
   | .plusOneOnFirstTarget n => return .plusOneOnFirstTarget (← takeNat n)
-  | .creaturesYouControlPump p t => return .creaturesYouControlPump (← takeInt p) (← takeInt t)
   | .amassGoblins n subtype =>
     return .amassGoblins (← takeNat n) (← takeStr subtype)
   | .counterThenRecruitIfMvAtMost n => return .counterThenRecruitIfMvAtMost (← takeNat n)

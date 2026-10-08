@@ -47,6 +47,8 @@ inductive CreaturePumpScope where
   | all
   /-- Creatures the targeted player controls. -/
   | ofTargetPlayer
+  /-- Creatures the controller of the resolving spell controls. -/
+  | youControl
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Who gains the life from `SpellResolution.gainLife`. -/
@@ -72,8 +74,11 @@ inductive SpellResolution where
   /-- Affect a still-legal target. Damage can hit a player or a creature;
   other actions require a permanent. -/
   | onPermanent (action : PermanentAction)
-  /-- Creatures in `scope` get +P/+T until end of turn. -/
-  | creaturesPump (scope : CreaturePumpScope) (power toughness : Int)
+  /-- Creatures in `scope` get +P/+T until end of turn.
+  Creatures you control are `.creaturesPump p t` (`.youControl`).
+  Every creature is `.creaturesPump p t .all`. Creatures the targeted
+  player controls are `.creaturesPump p t .ofTargetPlayer`. -/
+  | creaturesPump (power toughness : Int) (scope : CreaturePumpScope := .youControl)
   /-- Exile cards of type `ty` from the targeted player's graveyard and grant
   permission to cast them, spending mana as though it were any type. -/
   | exileGraveyardCreaturesGrantCast (ty : CardType := .creature)
@@ -116,8 +121,6 @@ inductive SpellResolution where
   | countersOnCreatureTargets (kind : CounterKind := .plusOnePlusOne) (n : Nat := 1)
   /-- Return the targeted spell to its owner's hand. -/
   | returnTargetSpell
-  /-- Creatures you control get +P/+T until end of turn. -/
-  | creaturesYouControlPump (power toughness : Int)
   /-- Creatures you control gain these keywords until end of turn. -/
   | teamGain (k : Keywords)
   /-- Amass `subtype` `n`. -/
@@ -311,12 +314,12 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .returnTargetSpell => s!"return {noun} to its owner's hand"
   | .returnFromGyToHand => s!"return up to one {noun} to your hand"
   | .onPermanent action => PermanentAction.toNotation action noun
-  | .creaturesPump scope p t =>
-    match scope with
-    | .all =>
-      s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
-    | .ofTargetPlayer =>
-      s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
+  | .creaturesPump p t .youControl =>
+    s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
+  | .creaturesPump p t .all =>
+    s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
+  | .creaturesPump p t .ofTargetPlayer =>
+    s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
   | .exileGraveyardCreaturesGrantCast ty =>
     s!"exile all {ty.oracleWord} cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them"
   | .draw n => s!"draw {cardPhrase n}"
@@ -347,8 +350,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     "exchange control of two target nonland permanents that share a card type"
   | .countersOnCreatureTargets kind n =>
     s!"put {kind.countersPhrase n} on up to one target creature"
-  | .creaturesYouControlPump p t =>
-    s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .amassGoblins n subtype =>
     s!"amass {pluralizeName subtype} {n}"
   | .counterThenRecruitIfMvAtMost n =>
@@ -526,7 +527,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
   | [.draw 1, .loseLife 1, .amassGoblins n subtype] =>
     s!"you draw a card and lose 1 life. Amass {pluralizeName subtype} {n}"
-  | [.createTokens kind n, .creaturesYouControlPump p t] =>
+  | [.createTokens kind n, .creaturesPump p t .youControl] =>
     let tokens := capitalizeAscii (TokenKind.createPhrase kind n)
     s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
   | [.onPermanent .destroy, .gainLife n .you] =>
@@ -548,7 +549,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
       s!"{noun} gains vigilance until end of turn and can't be blocked this turn"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
-  | [.creaturesYouControlPump p t, .teamGain k] =>
+  | [.creaturesPump p t .youControl, .teamGain k] =>
     s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
   | [.onPermanent .untap, .onPermanent (.pump p t), .«if» (.may .attachEquipment) subtype] =>
     s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's {indefinite subtype} {subtype}, you may attach an Equipment you control to it"

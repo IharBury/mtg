@@ -130,7 +130,7 @@ def destroyTargetCreatureControllerLosesLife (life : Nat) : Effect :=
     (preferAsDefaultMode := true)
 
 def allCreaturesGet (power toughness : Int) : Effect :=
-  mkSpell (.of .none) (.creaturesPump .all power toughness)
+  mkSpell (.of .none) (.creaturesPump power toughness .all)
     (castKind := .massPump)
 
 def drawAndLoseLife (cards life : Nat) : Effect :=
@@ -143,7 +143,7 @@ def targetPlayerDrawLoseLife (cards life : Nat) : Effect :=
     (castKind := .draw)
 
 def creaturesTargetPlayerGet (power toughness : Int) : Effect :=
-  mkSpell (.of .player) (.creaturesPump .ofTargetPlayer power toughness)
+  mkSpell (.of .player) (.creaturesPump power toughness .ofTargetPlayer)
     (castKind := .massPump)
 
 def pumpAndLifelink (power toughness : Int) : Effect :=
@@ -247,7 +247,7 @@ def returnSpellDraw : Effect :=
     (castKind := .counter)
 
 def creaturesYouControlGet (power toughness : Int) : Effect :=
-  mkSpell (.of .none) (.creaturesYouControlPump power toughness)
+  mkSpell (.of .none) (.creaturesPump power toughness)
     (castKind := .massPump)
 
 def destroyArtifactOrEnchantmentGainLife (life : Nat) : Effect :=
@@ -565,7 +565,7 @@ def creatureYouControlDealsTwicePower : Effect :=
     (castKind := .fight)
 
 def createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int) : Effect :=
-  mkSpell (.of .none) (.sequence [.createTokens kind n, .creaturesYouControlPump power toughness])
+  mkSpell (.of .none) (.sequence [.createTokens kind n, .creaturesPump power toughness])
     (castKind := .pump)
 
 def createTokensPerSubtype (kind : TokenKind) (subtype : String) : Effect :=
@@ -573,7 +573,7 @@ def createTokensPerSubtype (kind : TokenKind) (subtype : String) : Effect :=
     (castKind := .extraLand)
 
 def creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords) : Effect :=
-  mkSpell (.of .none) (.sequence [.creaturesYouControlPump power toughness, .teamGain k])
+  mkSpell (.of .none) (.sequence [.creaturesPump power toughness, .teamGain k])
     (castKind := .massPump)
 
 def destroyUpToOneNonland : Effect :=
