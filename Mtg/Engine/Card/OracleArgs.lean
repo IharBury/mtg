@@ -254,14 +254,13 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .draw n => return .draw (← takeNat n)
   | .discard n => return .discard (← takeNat n)
   | .loseLife n => return .loseLife (← takeNat n)
-  | .gainLife n => return .gainLife (← takeNat n)
+  | .gainLife n who => return .gainLife (← takeNat n) who
   | .scry n => return .scry (← takeNat n)
   | .surveil n => return .surveil (← takeNat n)
   | .unlessPays r n => return .unlessPays (← takeSpell r) (← takeNat n)
   | .or rs => return .or (← rs.mapM takeSpell)
   | .may r => return .may (← takeSpell r)
   | .«if» r subtype => return .«if» (← takeSpell r) (← takeStr subtype)
-  | .targetPlayersGainLife n => return .targetPlayersGainLife (← takeNat n)
   | .countersOnCreatureTargets kind n =>
     return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n)
   | .exileGraveyardCreaturesGrantCast ty =>
