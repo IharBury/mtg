@@ -306,8 +306,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
   | .amassGoblins n subtype =>
     return .amassGoblins (← takeNat n) (← takeStr subtype)
-  | .amassGoblinsOrFromGy a b subtype =>
-    return .amassGoblinsOrFromGy (← takeNat a) (← takeNat b) (← takeStr subtype)
   | .dealDamageToEachOppCreature n => return .dealDamageToEachOppCreature (← takeNat n)
   | .targetPlayerDraw n => return .targetPlayerDraw (← takeNat n)
   | .targetPlayerLosesLife n => return .targetPlayerLosesLife (← takeNat n)
@@ -1753,6 +1751,26 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
       (tokenize (normalizeUnit "X"
         "Draw three cards. If this spell was cast from a graveyard, draw four cards instead.")) args with
   | some vals => refillEffect e vals == Effect.drawIfFromGy 3 4
+  | none => false
+
+#guard
+  let e := Effect.amassGoblinsOrFromGy 1 3
+  let args := collectEffect e
+  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+      (tokenize (normalizeUnit "X"
+        "Amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead.")) args with
+  | some vals => refillEffect e vals == Effect.amassGoblinsOrFromGy 1 3
+  | none => false
+
+#guard
+  let e := Effect.amassGoblinsOrFromGy 1 3
+  let args := collectEffect e
+  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+      (tokenize (normalizeUnit "X"
+        "Amass Zombies 2. If this spell was cast from a graveyard, amass Zombies 4 instead.")) args with
+  | some vals =>
+    (refillEffect e vals).resolution ==
+      .spell (.ifElse (.amassGoblins 4 "Zombie") (.amassGoblins 2 "Zombie") .castFromGraveyard)
   | none => false
 
 #guard

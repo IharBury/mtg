@@ -160,7 +160,9 @@ inductive SpellResolution where
   | «if» (r : SpellResolution) (cond : SpellIf)
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   Drawing two cards when cast from a graveyard, and one otherwise, is
-  `.ifElse (.draw 2) (.draw 1) .castFromGraveyard`. -/
+  `.ifElse (.draw 2) (.draw 1) .castFromGraveyard`.
+  Amassing Goblins 3 when cast from a graveyard, and Goblins 1 otherwise, is
+  `.ifElse (.amassGoblins 3) (.amassGoblins 1) .castFromGraveyard`. -/
   | ifElse (whenTrue whenFalse : SpellResolution) (cond : SpellIf)
   /-- Exchange control of the two targeted permanents. -/
   | exchangeControl
@@ -180,8 +182,6 @@ inductive SpellResolution where
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
   /-- Recruit. -/
   | recruit
-  /-- Amass `subtype` `n`, or `fromGy` if cast from a graveyard. -/
-  | amassGoblinsOrFromGy (n fromGy : Nat) (subtype : String := "Goblin")
   /-- Search the library for a card with this supertype and card type. -/
   | searchLegendaryCreatureToHand (s : Supertype := .legendary) (ty : CardType := .creature)
   /-- Deal `n` damage to each creature opponents control. -/
@@ -419,8 +419,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"put {kind.countersPhrase n} on target creature you control"
   | .amassGoblins n subtype =>
     s!"amass {pluralizeName subtype} {n}"
-  | .amassGoblinsOrFromGy n fromGy subtype =>
-    s!"amass {pluralizeName subtype} {n}. If this spell was cast from a graveyard, amass {pluralizeName subtype} {fromGy} instead"
   | .searchLegendaryCreatureToHand s ty =>
     searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
   | .dealDamageToEachOppCreature n =>
