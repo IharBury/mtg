@@ -270,6 +270,8 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p .chooseBottom
   | .mayAttachEquipment _ _, some p =>
     mustApply g p .decline
+  | .mayResolve _, some p =>
+    mustApply g p .decline
   | .tapHumans _, some p =>
     mustApply g p .decline
   | .payOrLetCounter _ _ _, some p =>

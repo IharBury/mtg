@@ -752,6 +752,27 @@ def resolveTapScryDraw (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.applyOnPermanent controller effect.targetKind targets .tap sourceId
     g.scryThenDraw controller scryN drawN
 
+/-- Ask `controller` whether to resolve `r`. Attaching Equipment is the
+existing choice of one Equipment or declining. Any other resolution is
+accept or decline. -/
+def beginMay (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (r : SpellResolution) : Game :=
+  match r with
+  | .attachEquipment =>
+    g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
+      { g.clearMay with pending := .mayAttachEquipment controller o.id }.logMsg
+        s!"{(g.player controller).name} may attach an Equipment to {o.name}")
+  | r =>
+    let phrase := SpellResolution.toPhrase r effect.targeting.kind.noun
+    let phrase := if phrase.startsWith "you " then (phrase.drop 4).toString else phrase
+    let inner := { effect with resolution := Resolution.ofSpell r }
+    { g with
+        pending := .mayResolve controller
+        mayEffect := some inner
+        mayController := controller
+        mayTargets := targets }.logMsg
+      s!"{(g.player controller).name} may {phrase}"
+
 /-- Ask a player to choose one resolution in `rs`. A library top-or-bottom
 pair is the owner's choice; any other list is the caster's. One alternative
 is applied by `applyUnified` before this is called. -/
@@ -906,10 +927,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         (giftPromised := giftPromised) (chosenX := chosenX)
     | rs =>
       g.beginSpellOr controller effect targets rs
-  | .mayAttachEquipment =>
-    g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      { g with pending := .mayAttachEquipment controller o.id }.logMsg
-        s!"{(g.player controller).name} may attach an Equipment to {o.name}")
+  | .attachEquipment =>
+    g.beginMay controller effect targets .attachEquipment
+  | .may r =>
+    g.beginMay controller effect targets r
   | .«if» r subtype =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       if g.hasSubtype o subtype then

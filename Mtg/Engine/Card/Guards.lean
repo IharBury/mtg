@@ -70,12 +70,16 @@ namespace CardDef
   .sequence [
     .onPermanent .untap,
     .onPermanent (.pump 2 2),
-    .«if» .mayAttachEquipment "Dwarf"]
+    .«if» (.may .attachEquipment) "Dwarf"]
 #guard (Effect.untapPumpMaybeAttach 2 2).phrase ==
   "untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it"
 #guard SpellResolution.toPhrase (.«if» (.draw 1) "Elf") "target creature" ==
   "if target creature is an Elf, draw a card"
-#guard SpellResolution.toPhrase (.«if» .mayAttachEquipment "Dwarf") "target creature" ==
+#guard SpellResolution.toPhrase (.may (.gainLife 3)) "target creature" ==
+  "you may gain 3 life"
+#guard SpellResolution.toPhrase (.may .attachEquipment) "target creature" ==
+  "you may attach an Equipment you control to it"
+#guard SpellResolution.toPhrase (.«if» (.may .attachEquipment) "Dwarf") "target creature" ==
   "if target creature is a Dwarf, you may attach an Equipment you control to it"
 #guard SpellResolution.toPhrase (.or [.draw 1, .gainLife 3]) "target creature" ==
   "draw a card or you gain 3 life"

@@ -941,6 +941,79 @@ def ifDwarfSkipsBear : Game :=
 
 #guard ifDwarfSkipsBear.power (namedPermanent ifDwarfSkipsBear "Grizzly Bears") == 2
 
+/-- `may` asks before resolving its resolution. Declining skips it. -/
+def mayGainLifeAsked : Game :=
+  afterDraw.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .none) (.may (.gainLife 3))) #[]
+
+#guard
+  match mayGainLifeAsked.pending with
+  | .mayResolve p =>
+    p == ⟨0⟩ && mayGainLifeAsked.mayEffect.isSome &&
+      mayGainLifeAsked.actor == some ⟨0⟩
+  | _ => false
+#guard
+  match Agent.choose mayGainLifeAsked ⟨0⟩ with
+  | some .accept => true
+  | _ => false
+#guard
+  let g := afterDraw.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .none) (.may (.loseLife 1))) #[]
+  match Agent.choose g ⟨0⟩ with
+  | some .decline => true
+  | _ => false
+
+def mayGainLifeDeclined : Game :=
+  mustApply mayGainLifeAsked ⟨0⟩ .decline
+
+#guard
+  (mayGainLifeDeclined.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
+    mayGainLifeDeclined.pending == .none &&
+    mayGainLifeDeclined.mayEffect.isNone
+
+def mayGainLifeAccepted : Game :=
+  mustApply mayGainLifeAsked ⟨0⟩ .accept
+
+#guard
+  (mayGainLifeAccepted.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + (3 : Int) &&
+    mayGainLifeAccepted.pending == .none &&
+    mayGainLifeAccepted.mayEffect.isNone
+
+#guard
+  match mayGainLifeAsked.apply ⟨1⟩ .accept with
+  | .error msg => mentions msg "Only Chandra may accept"
+  | .ok _ => false
+
+/-- `if` of `may` asks only when the target has the subtype. -/
+def mayIfDwarfAsked : Game :=
+  let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
+  let id := (namedPermanent g "Bofur, Reliable Guardian").id
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creatureYouControl)
+      (.«if» (.may (.gainLife 2)) "Dwarf"))
+    #[Target.permanent id]
+
+#guard
+  match mayIfDwarfAsked.pending with
+  | .mayResolve p => p == ⟨0⟩
+  | _ => false
+
+#guard
+  let accepted := mustApply mayIfDwarfAsked ⟨0⟩ .accept
+  (accepted.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + (2 : Int)
+
+def mayIfDwarfSkipsBear : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let id := (namedPermanent g "Grizzly Bears").id
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creatureYouControl)
+      (.«if» (.may (.gainLife 2)) "Dwarf"))
+    #[Target.permanent id]
+
+#guard
+  mayIfDwarfSkipsBear.pending == .none &&
+    (mayIfDwarfSkipsBear.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life
+
 /-- `or` applies whichever resolution is chosen. The first draws, the second
 gains life, and a later mode scries. -/
 def spellOrAsked : Game :=

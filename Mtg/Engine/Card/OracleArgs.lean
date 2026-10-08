@@ -240,6 +240,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .surveil n => return .surveil (← takeNat n)
   | .unlessPays r n => return .unlessPays (← takeSpell r) (← takeNat n)
   | .or rs => return .or (← rs.mapM takeSpell)
+  | .may r => return .may (← takeSpell r)
   | .«if» r subtype => return .«if» (← takeSpell r) (← takeStr subtype)
   | .targetPlayersGainLife n => return .targetPlayersGainLife (← takeNat n)
   | .plusOneOnCreatureTargets n => return .plusOneOnCreatureTargets (← takeNat n)

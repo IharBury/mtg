@@ -63,6 +63,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .accept =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p .accept
+    | .mayResolve _ => g.acceptMay p
     | _ => throw "Nothing to accept now"
   | .haveVillainConnive => g.haveVillainConnive p
   | .payGeneric =>
@@ -138,6 +139,7 @@ def actor (g : Game) : Option PlayerId :=
     | .mayPayGeneric p _ => who p
     | .chooseLibraryPlacement p _ => who p
     | .mayAttachEquipment p _ => who p
+    | .mayResolve p => who p
     | .tapHumans p => who p
     | .payOrLetCounter p _ _ => who p
     | .payWard p _ _ => who p

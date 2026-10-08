@@ -120,6 +120,11 @@ structure Game where
   /-- The payer left without paying (CR 800.4f). `flushUnlessPays` resolves
   `unlessPaysInstead`. -/
   unlessPaysDue : Bool := false
+  /-- Accepting `mayResolve` resolves this effect. The controller is
+  `mayController`; `mayTargets` are the targets announced for that effect. -/
+  mayEffect : Option Effect := none
+  mayController : PlayerId := ⟨0⟩
+  mayTargets : Array Target := #[]
   /-- Alternatives for a pending `SpellResolution.or`. `chooseTop` applies
   the first and `chooseBottom` the second. `chooseMode` applies that index.
   Library top and bottom are stored in that order when `spellOrLibrary`. -/
@@ -242,6 +247,10 @@ def logMsg (g : Game) (msg : String) : Game :=
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
 def clearUnlessPays (g : Game) : Game :=
   { g with unlessPaysInstead := none, unlessPaysDue := false, unlessPaysTargets := #[] }
+
+/-- Drop a stashed `SpellResolution.may` after the player accepts or declines. -/
+def clearMay (g : Game) : Game :=
+  { g with mayEffect := none, mayTargets := #[] }
 
 /-- Drop a stashed `SpellResolution.or` after the player has chosen. -/
 def clearSpellOr (g : Game) : Game :=

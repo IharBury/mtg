@@ -231,7 +231,7 @@ def untapPumpMaybeAttach (power toughness : Int) : Effect :=
     (.sequence [
       .onPermanent .untap,
       .onPermanent (.pump power toughness),
-      .«if» .mayAttachEquipment "Dwarf"])
+      .«if» (.may .attachEquipment) "Dwarf"])
     (castKind := .pump)
 
 def exchangeControlSharingType : Effect :=

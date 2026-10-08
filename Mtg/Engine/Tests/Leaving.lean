@@ -188,4 +188,26 @@ def unlessPaysLeftUnpaid : Game :=
   | none => false
 #guard unlessPaysLeftUnpaid.log.any (fun s => mentions s "CR 800.4f")
 
+/-- Leaving while `may` is pending skips the optional effect. -/
+def mayLeaveAsked : Game :=
+  threeStarted.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .none) (.may (.gainLife 3))) #[]
+
+#guard
+  match mayLeaveAsked.pending with
+  | .mayResolve p => p == ⟨0⟩ && mayLeaveAsked.mayEffect.isSome
+  | _ => false
+
+def mayLeft : Game :=
+  match mayLeaveAsked.pending with
+  | .mayResolve p => mustApply mayLeaveAsked p .concede
+  | _ => mayLeaveAsked
+
+#guard
+  (mayLeft.player ⟨0⟩).leftTheGame &&
+    (mayLeft.player ⟨0⟩).life == 20 &&
+    mayLeft.pending == .none &&
+    mayLeft.mayEffect.isNone &&
+    !mayLeft.over
+
 end Mtg.Engine.Tests
