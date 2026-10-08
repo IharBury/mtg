@@ -178,6 +178,17 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           | none => acc
         else acc) (#[] : Array WaitingTrigger))
     else #[]
+  let frcNontokenDies :=
+    if died && !old.printed.isToken then
+      match old.controller with
+      | some p =>
+        withCause (old.waitingTriggersFor p (.fra .nontokenCreatureYouControlDies) ++
+          g.battlefield.foldl (fun acc o =>
+            if o.id != old.id && o.controlledBy p then
+              acc ++ o.waitingTriggersFor p (.fra .nontokenCreatureYouControlDies)
+            else acc) (#[] : Array WaitingTrigger))
+      | none => #[]
+    else #[]
   let fraAnotherDies :=
     if died || pwDied then
       match old.controller with
@@ -272,7 +283,12 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       if old.zone == .battlefield then old.controller else old.lastController
     defaultController := if dest == .battlefield then controller else none
     zone := dest
-    status := {}
+    status :=
+      if old.zone == .stack && dest == .battlefield then
+        { faceDown := old.status.faceDown
+          time := old.status.time
+          notACreature := old.status.notACreature }
+      else {}
     timestamp := ts
     chosenX := old.chosenX
     lastKnownPower := lkiPower
@@ -396,7 +412,12 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                 w.source.id == o.id && w.event == .fra .playerDiscards) then acc
             else acc ++ o.waitingTriggersFor c (.fra .playerDiscards)
           | none => acc) (#[] : Array WaitingTrigger)
-        mine ++ anyPlayer
+        let discarded := fresh
+        let one :=
+          ((g.permanentsOf p).foldl (fun acc o =>
+            acc ++ o.waitingTriggersFor p (.fra .youDiscardOne)) (#[] : Array WaitingTrigger)).map
+            (fun wt => { wt with causeId := some newId, cause := some discarded })
+        mine ++ anyPlayer ++ one
       else #[]
     | _, _ => #[]
   let g := { g with
@@ -404,7 +425,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
         nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
         fraEnchantedDie ++ fraAnotherDies ++ fraCreatureLeaves ++ villainDies ++ nonlandReturned ++
-        discardTriggers
+        frcNontokenDies ++ discardTriggers
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then
@@ -509,6 +530,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
 /-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies
 replacements are applied by `move` (CR 614.1 / 614.6). -/
 def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
+  let reason :=
+    if o.exileInstantSorceryInstead && o.printed.isInstantOrSorcery then
+      s!"{o.name} is exiled"
+    else reason
   let g := g.logMsg reason
   (g.move o.id (.graveyard o.owner) none).1
 
@@ -561,7 +586,18 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     let (g, newId) := g.move id .battlefield (some controller)
     let o := g.object! newId
     let o := { o with
-      status := { o.status with tapped := tapped, summoningSick := summoningSick } }
+      status := { o.status with
+        tapped := tapped
+        summoningSick := summoningSick
+        chosenCardType :=
+          if o.printed.asEntersChooseCardType && o.status.chosenCardType.isNone then some "Creature"
+          else o.status.chosenCardType
+        windcragMardu :=
+          if o.printed.asEntersChooseMarduOrJeskai then true else o.status.windcragMardu } }
+    let g :=
+      if o.printed.asEntersChooseCardType then
+        g.logMsg s!"{o.name} chooses Creature"
+      else g
     let o :=
       match attachedTo with
       | some host => { o with attachedTo := some host }

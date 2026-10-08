@@ -135,6 +135,16 @@ structure Player where
   nextSpellCantBeCountered : Bool := false
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/
   teammate : Option PlayerId := none
+  /-- This player is the monarch (CR 722). -/
+  isMonarch : Bool := false
+  /-- This player's life total can't change until their next turn. -/
+  lifeCantChange : Bool := false
+  /-- Life lost this turn, including from damage (CR 119.3). -/
+  lifeLostThisTurn : Nat := 0
+  /-- Creatures this player controls can't attack Jace planeswalkers this turn. -/
+  cantAttackJaces : Bool := false
+  /-- Creature types of this player's commander, for Path of Ancestry. -/
+  commanderCreatureTypes : Array String := #[]
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/

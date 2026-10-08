@@ -157,20 +157,27 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
 /-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
 def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then g
+  else if (g.livingOpponents p).any (fun opp =>
+      (g.permanentsOf opp.id).any (·.printed.opponentsCantGainLife)) then
+    g.logMsg s!"{(g.player p).name} can't gain life"
   else
     let pl := g.player p
-    let g := g.setLife p (pl.life + (n : Int))
-      s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
-    let g := g.modifyPlayer p (fun pl =>
-      { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + n })
-    g.putControlledTriggers p .youGainLife (lastKnownPower := some (Int.ofNat n))
+    let before := pl.life
+    let g := g.setLife p (before + (n : Int))
+      s!"{pl.name} gains {n} life ({before + (n : Int)} life)"
+    let gained := ((g.player p).life - before).toNat
+    if gained == 0 then g
+    else
+      let g := g.modifyPlayer p (fun pl =>
+        { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + gained })
+      g.putControlledTriggers p .youGainLife (lastKnownPower := some (Int.ofNat gained))
 
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     (deathtouch := false) (source : Option GameObject := none) : Game :=
   match source with
   | some src =>
-    if g.sourceDamagePrevented src then
+    if g.frcProtectedFrom o src || g.sourceDamagePrevented src then
       g.logMsg s!"damage from {src.name} is prevented"
     else
       let n := g.replacedDamageAmount src n (recipient := o.controller)

@@ -229,6 +229,7 @@ def you (o : GameObject) : PlayerId :=
 
 /-- Whether this object is currently a creature (CR 205.1a / 302). -/
 def isCreature (o : GameObject) : Bool :=
+  !o.status.notACreature &&
   !o.status.onlyFoodArtifact && !o.status.returnedAsArtifact &&
     (o.printed.isCreature || o.status.additionalCreature ||
       o.status.additionalCreatureUntilEot || o.status.animatedConstruct55)

@@ -162,6 +162,17 @@ def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbilit
 def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
     Except String Game := do
   let some o := g.findObject? id | throw "no such object"
+  if o.status.faceDown then
+    match o.printed.morph with
+    | some cost =>
+      let pl := g.player p
+      match pl.manaPool.pay? cost with
+      | none => throw s!"{pl.name} cannot pay {cost}"
+      | some pool =>
+        return (g.setPlayer { pl with manaPool := pool }).setObject
+          { o with status := { o.status with faceDown := false } }
+          |>.logMsg s!"{pl.name} turns {o.name} face up"
+    | none => throw s!"{o.name} is face down"
   let abs := g.activatedAbilitiesOf o
   if abs.isEmpty then
     throw s!"{o.name} has no activated ability"

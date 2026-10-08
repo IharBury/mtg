@@ -49,6 +49,19 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool) :
     let g := g.logMsg s!"{(g.player p).name} puts {name}{phrase}"
     let entered := g.object! newId
     let g :=
+      match g.untapSearchedIfLands with
+      | some n =>
+        let landCount := (g.permanentsOf p).foldl (fun acc (o : GameObject) =>
+          if o.printed.isLand then acc + 1 else acc) 0
+        if tapped && entered.printed.isLand && landCount >= n then
+          let g := { g with untapSearchedIfLands := none }
+          g.setObject { (g.object! newId) with status :=
+            { (g.object! newId).status with tapped := false } }
+            |>.logMsg s!"{(g.object! newId).name} is untapped"
+        else g
+      | none => g
+    let entered := g.object! newId
+    let g :=
       if entered.printed.isLand then g.afterLandEnters entered
       else g.afterPermanentEnters entered
     (g, some newId)
@@ -131,6 +144,7 @@ def searchDone (g : Game) (p : PlayerId) (after : Option FraNext) : Game × Afte
 
 /-- Shuffle, then run the search's after-action. -/
 def shuffleSearch (g : Game) (p : PlayerId) (after : Option FraNext) : Game :=
+  let g := { g with untapSearchedIfLands := none }
   let (g, done) := g.searchDone p after
   g.shuffleThen p done
 

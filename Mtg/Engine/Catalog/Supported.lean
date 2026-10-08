@@ -3,6 +3,7 @@ import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Catalog.RealityFracture
+import Mtg.Engine.Catalog.RealityFractureCommander
 
 /-!
 # Supported catalog
@@ -24,5 +25,6 @@ open Catalog
     ++ Catalog.hobbitEternalCards
     ++ Catalog.mshCards
     ++ Catalog.realityFractureCards
+    ++ Catalog.realityFractureCommanderCards
 
 end Mtg.Engine

@@ -13,7 +13,11 @@ namespace Game
 
 /-- Whether `caster` may target `o` (CR 115.1, 702.11b). -/
 def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject) : Bool :=
-  !g.hasHexproof o || o.controlledBy caster
+  let srcBlocked :=
+    match (g.resolvingSpell.orElse (fun _ => g.proposedSpell.map (·.spellId))).bind g.findObject? with
+    | some src => g.frcProtectedFrom o src
+    | none => false
+  (!g.hasHexproof o || o.controlledBy caster) && !srcBlocked
 
 /-- Player targets `caster` may choose. A player with hexproof is not a
 legal target for an opponent (CR 702.11c). -/

@@ -64,8 +64,10 @@ def clearTurnActivations (g : Game) : Game :=
       pendingFreeRGCreature := none }
     -- Stingcaster Mage: flashback granted until end of turn ends.
     for o in g.objects do
-      if o.flashbackUntilEot then
-        g := g.setObject { o with flashbackUntilEot := false }
+      if o.flashbackUntilEot || o.status.freeCastFromGraveyard then
+        g := g.setObject { o with
+          flashbackUntilEot := false
+          status := { o.status with freeCastFromGraveyard := false } }
     for pl in g.players do
       if pl.lost then
         -- Keep last-known this-turn info until that turn would have begun
@@ -78,6 +80,7 @@ def clearTurnActivations (g : Game) : Game :=
           pl.scriedOrSurveilledThisTurn || pl.copyNextInstantSorceryThisTurn != 0 ||
           pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
           pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
+          pl.lifeLostThisTurn != 0 || pl.cantAttackJaces ||
           pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered ||
           pl.creaturesAttackedWithThisTurn != 0 || pl.equipActivationsThisTurn != 0 ||
           !pl.typeSpellCostLessThisTurn.isEmpty ||
@@ -108,6 +111,8 @@ def clearTurnActivations (g : Game) : Game :=
           cardsMilledThisTurn := 0
           mountainExtraRedThisTurn := 0
           nextSpellCantBeCountered := false
+          lifeLostThisTurn := 0
+          cantAttackJaces := false
           typeSpellCostLessThisTurn := #[]
           supertypeSpellCostLessThisTurn := #[] }
     for o in g.battlefield do
@@ -336,6 +341,9 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     g.receivePriority ap
   | .beginningOfCombat =>
     let ap := g.activePlayer
+    let g := g.livingPlayers.foldl (fun g pl =>
+      if pl.id == ap then g
+      else g.putFraEventTriggers pl.id .opponentBeginCombat) g
     let g := g.putControlledTriggers ap .yourBeginCombat
     let g := g.livingPlayers.foldl (fun g pl => g.putControlledTriggers pl.id .eachBeginCombat) g
     let g := (g.player ap).graveyard.foldl (fun g id =>
@@ -348,6 +356,33 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     let g :=
       Id.run do
         let mut g := g
+        for o in g.permanentsOf ap do
+          if o.printed.impending.isSome && o.status.time > 0 then
+            let left := o.status.time - 1
+            g := g.mapObjectStatus (g.object! o.id) (fun s =>
+              { s with time := left, notACreature := left != 0 && s.notACreature })
+            g := g.logMsg s!"{o.name} loses a time counter"
+        let sacrifices := g.delayedEndStepSacrifices
+        g := { g with delayedEndStepSacrifices := #[] }
+        for id in sacrifices do
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield then
+              g := g.sacrificeToGraveyard o s!"{o.name} is sacrificed"
+          | none => pure ()
+        let returns := g.delayedGraveReturns
+        g := { g with delayedGraveReturns := #[] }
+        for (id, who) in returns do
+          match g.findObject? id with
+          | some o =>
+            if o.zone == .graveyard o.owner && !(g.player who).lost then
+              let name := o.name
+              let (g', newId) := g.putOntoBattlefield id who (summoningSick := !o.printed.keywords.haste)
+              g := g'.logMsg s!"{name} returns to the battlefield"
+              g := g.afterPermanentEnters (g.object! newId)
+            else pure ()
+          | none => pure ()
+        g := g.applyDelayedSynthetic
         let ids := g.delayedEndStepReturns
         g := { g with delayedEndStepReturns := #[] }
         for id in ids do
@@ -414,9 +449,15 @@ def beginTurn (g : Game) : Game :=
   let p := g.activePlayer
   let g := g.restoreCopiesUntilNextTurn p
   let g :=
-    if (g.player p).protectionFromEverything then
-      g.setPlayer { (g.player p) with protectionFromEverything := false }
-        |>.logMsg s!"{(g.player p).name}'s protection from everything ends"
+    if (g.player p).protectionFromEverything || (g.player p).lifeCantChange then
+      let hadLife := (g.player p).lifeCantChange
+      let hadProt := (g.player p).protectionFromEverything
+      g.setPlayer { (g.player p) with
+          protectionFromEverything := false, lifeCantChange := false }
+        |>.logMsg
+          (if hadProt && hadLife then s!"{(g.player p).name}'s protection and life lock end"
+           else if hadProt then s!"{(g.player p).name}'s protection from everything ends"
+           else s!"{(g.player p).name}'s life total can change again")
     else g
   -- No player receives priority during untap (CR 502.4).
   (g.beginStep .untap).beginStep .upkeep

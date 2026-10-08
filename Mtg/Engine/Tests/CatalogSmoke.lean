@@ -32,6 +32,7 @@ def unmodeledSpellReport : String :=
   let names := supportedCatalogCards.map (·.name)
   mshCards.size == 286 &&
     realityFractureCards.size == 285 &&
+    realityFractureCommanderCards.size == 87 &&
     ["Brave Brawler", "Jennifer Walters", "The Sensational She-Hulk",
       "Stature, Size Shifter", "Academic Ascent", "Blossom-Blessed Angel",
       "Jace's Machinations"].all names.contains

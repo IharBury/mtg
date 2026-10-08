@@ -18,7 +18,10 @@ def decideGameIfFinished (g : Game) : Option Game :=
     some ({ g with result := some .draw } |>.logMsg "The game is a draw")
   else if living.size == 1 then
     let w := living[0]!
-    some ({ g with result := some (.won w.id) } |>.logMsg s!"{w.name} wins the game")
+    let blocked := (g.livingOpponents w.id).any (fun opp =>
+      (g.permanentsOf opp.id).any (·.printed.opponentsCantWin))
+    if blocked then none
+    else some ({ g with result := some (.won w.id) } |>.logMsg s!"{w.name} wins the game")
   else none
 
 /-- True when this stack object is a card (CR 800.4a). Activated and
@@ -220,8 +223,15 @@ def emptyManaPools (g : Game) : Game :=
     let mut g := g
     for pl in g.players do
       if !pl.manaPool.isEmpty then
-        g := g.logMsg s!"{pl.name} empties mana pool ({pl.manaPool})"
-        g := g.setPlayer { pl with manaPool := ManaPool.empty }
+        let colorless :=
+          (g.permanentsOf pl.id).any (·.printed.unspentManaBecomesColorless)
+        if colorless then
+          let n := pl.manaPool.total
+          g := g.setPlayer { pl with manaPool := { colorless := n } }
+          g := g.logMsg s!"{pl.name}'s unspent mana becomes colorless"
+        else
+          g := g.logMsg s!"{pl.name} empties mana pool ({pl.manaPool})"
+          g := g.setPlayer { pl with manaPool := ManaPool.empty }
     return g
 
 end Game

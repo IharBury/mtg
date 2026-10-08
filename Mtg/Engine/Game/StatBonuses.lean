@@ -325,7 +325,18 @@ def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
             | .fra .equippedMedicsKitesail => addStats acc (1, 0)
             | .fra .enchantedGetsOneAndDeathtouch => addStats acc (1, 0)
             | _ => acc) acc) (0, 0)
-      #[untilTurn, self, team, emblems, attached].foldl addStats (0, 0)
+      let flyingEmblem :=
+        if o.isCreature &&
+            (g.objects.filter (fun e => e.zone == .command && e.controlledBy p)).any
+              (·.printed.grantTeamPlusTwoFlying) then
+          (2, 2)
+        else (0, 0)
+      let unspent :=
+        if o.printed.powerPerUnspentMana then
+          let n : Int := Int.ofNat (g.player p).manaPool.total
+          (n, n)
+        else (0, 0)
+      #[untilTurn, self, team, emblems, attached, flyingEmblem, unspent].foldl addStats (0, 0)
 
 def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
   let n : Int := (o.status.plusOnePlusOne : Int) - (o.status.minusOneMinusOne : Int)

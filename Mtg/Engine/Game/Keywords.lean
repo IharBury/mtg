@@ -112,7 +112,19 @@ def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
     (card.entersTappedUnlessPlaneswalker &&
       !(g.permanentsOf p).any (·.printed.isPlaneswalker)) ||
     (card.entersTappedUnlessTwoOtherLands &&
-      ((g.permanentsOf p).filter (·.printed.isLand)).size < 2)
+      ((g.permanentsOf p).filter (·.printed.isLand)).size < 2) ||
+    (!card.entersTappedUnlessAnySubtype.isEmpty &&
+      !g.controlsAnySubtype p card.entersTappedUnlessAnySubtype) ||
+    (match card.entersTappedUnlessNBasics with
+     | some n =>
+       ((g.permanentsOf p).filter (fun o => isBasicLandCard o.printed)).size < n
+     | none => false) ||
+    (match card.entersTappedUnlessOppLands with
+     | some n =>
+       let nOpp := (g.livingOpponents p).foldl (fun acc pl =>
+         acc + ((g.permanentsOf pl.id).filter (·.printed.isLand)).size) 0
+       nOpp < n
+     | none => false)
 
 /-- Whether `blocker`'s static abilities currently allow it to be declared as
 a blocker (CR 509.1b). Checked only when declaring blockers. -/
@@ -149,6 +161,7 @@ def attachedLosesAbilities (g : Game) (o : GameObject) : Bool :=
 /-- Printed abilities still apply unless The Wondrous Wasp (or similar)
 is making the permanent lose them (MSH 145 / 190), or an Aura strips them. -/
 def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
+  !o.status.faceDown &&
   !g.attachedLosesAbilities o && !o.status.losesAbilitiesUntilEot &&
   !o.status.losesAbilitiesGrantedBy.any (fun id =>
     match g.findObject? id with
@@ -210,7 +223,26 @@ def currentKeywords (g : Game) (o : GameObject) : Keywords :=
           (g.leftoverGrantedKeywords o))
         (g.equippedDuringYourTurnKeywords o))
       o.status.keywordCounters.toKeywords
-  if o.status.shadow > 0 then { base with shadow := true } else base
+  let base := if o.status.shadow > 0 then { base with shadow := true } else base
+  let base :=
+    if o.status.firstStrikeOnYourTurn && o.controller == some g.activePlayer then
+      { base with firstStrike := true }
+    else base
+  let base :=
+    match o.controller with
+    | some p =>
+      let flying :=
+        o.isCreature &&
+          (g.objects.filter (fun e => e.zone == .command && e.controlledBy p)).any
+            (·.printed.grantTeamPlusTwoFlying)
+      let toxicLink :=
+        o.printed.toxic > 0 &&
+          (g.permanentsOf p).any (·.printed.corruptedToxicLifelink) &&
+          (g.livingOpponents p).any (fun opp => opp.poison >= 3)
+      let base := if flying then { base with flying := true } else base
+      if toxicLink then { base with lifelink := true } else base
+    | none => base
+  base
 
 /-- Haste from printed text, attachments, enduring story, counters, or
 “haste as long as you control another …”. Lost abilities are omitted. -/
@@ -409,6 +441,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   blocker.isOnBattlefield && blocker.isCreature &&
   blocker.controlledBy defender && !blocker.status.tapped &&
   blocker.status.blocking.isEmpty && !blocker.status.cantBlockUntilEot &&
+  !blocker.printed.cantBlock &&
   g.mayDeclareAsBlocker blocker &&
   !g.enchantedCantAttackOrBlock blocker &&
   (!g.creaturesWithoutFlyingCantBlock || g.hasFlying blocker) &&
@@ -516,9 +549,32 @@ def playerHasHexproof (g : Game) (p : PlayerId) : Bool :=
         | .youAndOtherSubtypeHaveHexproofIfShield _ => true
         | _ => false))
 
+/-- Protection from the source's colors or from its card type. -/
+def frcProtectedFrom (g : Game) (o src : GameObject) : Bool :=
+  let colorBlock := o.printed.protectionFromColors.any (src.printed.colors.contains ·)
+  let typeMatch (em : GameObject) :=
+    em.printed.protectionFromChosenCardType &&
+      match em.status.chosenCardType with
+      | some t => src.printed.types.any (fun ty => CardType.englishName ty == t)
+      | none => false
+  colorBlock || typeMatch o ||
+    match o.controller with
+    | some p => (g.permanentsOf p).any typeMatch
+    | none => false
+
 /-- Hexproof stops an opponent from targeting that player (CR 702.11c). -/
 def playerCanBeTargetedBy (g : Game) (caster target : PlayerId) : Bool :=
-  caster == target || !g.playerHasHexproof target
+  let typeBlock :=
+    match (g.resolvingSpell.orElse (fun _ => g.proposedSpell.map (·.spellId))).bind g.findObject? with
+    | none => false
+    | some src =>
+      (g.permanentsOf target).any (fun em =>
+        em.printed.protectionFromChosenCardType &&
+          match em.status.chosenCardType with
+          | some t => src.printed.types.any (fun ty => CardType.englishName ty == t)
+          | none => false)
+  (caster == target || !g.playerHasHexproof target) &&
+    !(g.player target).protectionFromEverything && !typeBlock
 
 /-- True when damage that would be dealt by `src` is prevented (Old Fat
 Spider chapter II). -/

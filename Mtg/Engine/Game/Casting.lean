@@ -557,6 +557,14 @@ def beginWardsForTargets (g : Game) (caster : PlayerId) (spellId : ObjectId)
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   let g := { g with castingFromTop := false }
   let g := g.logMsg s!"{(g.player p).name} casts {spell.name}"
+  let ancestry := g.ancestryLandsTapped
+  let g := { g with ancestryLandsTapped := #[] }
+  let g :=
+    if spell.printed.isCreature &&
+        ancestry.any (fun id => (g.findObject? id).any (·.printed.commanderIdentityScryCreature)) &&
+        spell.printed.subtypes.any ((g.player p).commanderCreatureTypes.contains) then
+      g.beginScry p 1
+    else g
   -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card
   -- is cast from exile, so it can help pay for that spell (ruling 729).
   let g := g.battlefield.foldl (fun g land =>

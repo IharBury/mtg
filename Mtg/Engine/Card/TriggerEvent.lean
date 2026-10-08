@@ -68,6 +68,20 @@ inductive FraEvent where
   | creatureYouControlLeaves
   /-- Whenever you proliferate (CR 701.34). -/
   | youProliferate
+  /-- Whenever you discard a card. The discarded card's id is last-known information. -/
+  | youDiscardOne
+  /-- Whenever this nontoken creature or another nontoken creature you control dies. -/
+  | nontokenCreatureYouControlDies
+  /-- At the beginning of combat on an opponent's turn. -/
+  | opponentBeginCombat
+  /-- Whenever you create one or more creature tokens. -/
+  | youCreateCreatureTokens
+  /-- Whenever a Zombie token you control with power 6 or greater attacks. -/
+  | zombieTokenAttacks
+  /-- Whenever one or more Sphinxes you control attack. The count is last-known power. -/
+  | sphinxesAttack
+  /-- When you cycle this card. X is last-known power. -/
+  | youCycle
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share

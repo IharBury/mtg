@@ -94,6 +94,8 @@ structure ManaAbilityDef where
   printed with a full cost. -/
   activatedIdx : Option Nat := none
   onceEachTurn : Bool := false
+  /-- Damage this ability deals to its controller as it resolves. -/
+  damageYou : Nat := 0
 deriving Inhabited
 
 /-- How `.fra u` and the older restricted pool fields read a restriction
@@ -101,6 +103,45 @@ spelled out on a card. -/
 def restrictionOfText (text : String) : ManaRestriction :=
   if text == "Dwarf, Equipment, and Saga spells" then .fra .dwarfEquipmentSagaSpell
   else .none
+
+private def uniqMana (ts : Array ManaType) : Array ManaType :=
+  ts.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
+
+/-- Mana a land can produce from its own printed abilities. “Could produce”
+abilities are not included, so two such lands do not look at each other. -/
+def intrinsicLandMana (g : Game) (o : GameObject) : Array ManaType :=
+  let c := o.printed
+  if !c.isLand && !c.grantLandsTapAnyColor then #[]
+  else
+    let p := o.controller.getD o.owner
+    let identity :=
+      if c.tapAddCommanderIdentity && (g.player p).hasCommander then
+        ((g.player p).commanderColorIdentity.toList.map ManaType.colored).toArray
+      else #[]
+    let pain :=
+      match c.tapAddOneOfDealsDamage with
+      | some (ts, _) => ts
+      | none => #[]
+    let filter :=
+      match c.filterMana with
+      | some (_, ts) => ts
+      | none => #[]
+    let any :=
+      if c.tapAddAnyColor || c.tapSacrificeAddAnyColor then anyColorMana else #[]
+    let lantern :=
+      if o.isOnBattlefield && c.isLand then
+        match o.controller with
+        | some q =>
+          if (g.permanentsOf q).any (·.printed.grantLandsTapAnyColor) then anyColorMana
+          else #[]
+        | none => #[]
+      else #[]
+    uniqMana (c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddTogether ++
+      pain ++ filter ++ identity ++ any ++ lantern ++ c.tapAddTwoAmong)
+
+/-- Mana any of `lands` could produce from intrinsic abilities. -/
+def landsCouldProduce (g : Game) (lands : Array GameObject) : Array ManaType :=
+  uniqMana (lands.foldl (fun acc o => acc ++ g.intrinsicLandMana o) #[])
 
 /-- Mana abilities from a card's printed `{T}: Add` lines, for `o`. -/
 def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbilityDef :=
@@ -147,6 +188,24 @@ def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbil
    | none => #[]) ++
   (if c.tapAddChosenColorPerDifferentPower then
     one (.oneOf anyColorMana ((g.creaturesControlledBy p).map (g.power ·)).toList.eraseDups.length)
+   else #[]) ++
+  (if c.tapAddTogether.isEmpty then #[] else #[{ output := .fixed c.tapAddTogether }]) ++
+  (match c.tapAddOneOfDealsDamage with
+   | some (ts, n) => #[{ output := .oneOf ts 1, damageYou := n }]
+   | none => #[]) ++
+  (match c.filterMana with
+   | some (cost, ts) =>
+     let types := ts.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
+     #[{ output := .combination types 2, cost, tap := true }]
+   | none => #[]) ++
+  (if c.tapAddOppCouldProduce then
+    let lands := g.livingOpponents p |>.foldl (fun acc pl =>
+      acc ++ (g.permanentsOf pl.id).filter (·.printed.isLand)) #[]
+    #[{ output := .colorAmong (g.landsCouldProduce lands) }]
+   else #[]) ++
+  (if c.tapAddYouCouldProduce then
+    let lands := (g.permanentsOf p).filter (fun land => land.printed.isLand && land.id != o.id)
+    #[{ output := .colorAmong (g.landsCouldProduce lands) }]
    else #[])
 
 /-- Mana abilities `o` has as printed activated abilities (CR 605.1a). Loyalty
@@ -204,7 +263,16 @@ def grantedManaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
     if o.isOnBattlefield && !o.status.colorlessGrantUntilCast.isEmpty then
       #[{ output := .fixed #[.colorless, .colorless] }]
     else #[]
-  granted ++ fra ++ emrakul
+  let lantern : Array ManaAbilityDef :=
+    if o.isOnBattlefield && o.printed.isLand then
+      match o.controller with
+      | some p =>
+        if (g.permanentsOf p).any (·.printed.grantLandsTapAnyColor) then
+          #[{ output := .oneOf anyColorMana 1 }]
+        else #[]
+      | none => #[]
+    else #[]
+  granted ++ fra ++ emrakul ++ lantern
 
 /-- Every mana ability `o` has (CR 605.1a). -/
 def manaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
@@ -340,6 +408,12 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     | none => pure ()
   | none => pure ()
   g := g.modifyPlayer p (fun pl => { pl with manaPool := addRestrictedMana pl.manaPool mana d.restriction })
+  if d.damageYou > 0 then
+    let before := (g.player p).life
+    g := g.setLife p (before - (d.damageYou : Int))
+      s!"{o.name} deals {d.damageYou} damage to {(g.player p).name}"
+    let lost := (before - (g.player p).life).toNat
+    g := g.afterLifeLost p lost
   -- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a).
   let extraRed :=
     if g.hasSubtype o "Mountain" && d.tap && !mana.isEmpty then
@@ -362,7 +436,11 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     else g.logMsg s!"{(g.player p).name} {verb} {o.name} for {produced}{d.restriction.note}"
   if d.tap then
     g := match g.proposedSpell with
-      | some prop => { g with proposedSpell := some { prop with tapped := prop.tapped.push id } }
+      | some prop =>
+        let g := { g with proposedSpell := some { prop with tapped := prop.tapped.push id } }
+        if o.printed.commanderIdentityScryCreature then
+          { g with ancestryLandsTapped := g.ancestryLandsTapped.push id }
+        else g
       | none => g
   if o.isCreature then
     g := g.putControlledTriggers p .youActivateCreatureAbility
