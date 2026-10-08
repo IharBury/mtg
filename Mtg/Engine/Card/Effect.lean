@@ -1019,7 +1019,8 @@ def toPhrase (r : Resolution) (noun : String) : String :=
 
 /-- One spell step as a shared resolution. `sequence` is handled by `ofSpell`. -/
 def ofSpellStep : SpellResolution → Resolution
-  | .draw n => .draw n
+  | .draw n .you => .draw n
+  | .draw n .targetPlayer => .targetPlayerDraw n
   | .scry n => .scry n
   | .onPermanent a => .onPermanent a
   | .discard n => .discard n
@@ -1036,7 +1037,6 @@ def ofSpellStep : SpellResolution → Resolution
   | .creaturesPump p t .youControl => .creaturesYouControlPump p t
   | .createTokensX kind => .createTokensX kind
   | .dealDamageToEachCreature n => .dealDamageToEachCreature n
-  | .targetPlayerDraw n => .targetPlayerDraw n
   | .sequence rs => .sequence (rs.map ofSpellStep)
   | r => .spell r
 
@@ -1066,7 +1066,7 @@ def toSpellStep : Resolution → Option SpellResolution
   | .creaturesYouControlPump p t => some (.creaturesPump p t)
   | .createTokensX kind => some (.createTokensX kind)
   | .dealDamageToEachCreature n => some (.dealDamageToEachCreature n)
-  | .targetPlayerDraw n => some (.targetPlayerDraw n)
+  | .targetPlayerDraw n => some (.draw n .targetPlayer)
   | .spell .unrecognized => none
   | .spell (.sequence _) => none
   | .spell r => some r

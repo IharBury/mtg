@@ -1321,6 +1321,15 @@ def controllerOfBearLosesTwo : Game :=
     (controllerOfBearLosesTwo.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 2 &&
     !controllerOfBearLosesTwo.battlefield.any (fun o => o.name == "Grizzly Bears")
 
+/-- `.draw` sends the cards to the named recipient. The controller's hand is
+untouched when the targeted player draws. -/
+def targetPlayerDrawsTwo : Game :=
+  afterDraw.applyEffect ⟨0⟩ (Effect.targetPlayerDraw 2) #[Target.player ⟨1⟩]
+
+#guard
+  (targetPlayerDrawsTwo.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
+    (targetPlayerDrawsTwo.player ⟨1⟩).hand.size == (afterDraw.player ⟨1⟩).hand.size + 2
+
 /-- `.createTokens` gives the tokens to the named recipient. The controller
 gets none when the targeted player creates them. -/
 def targetPlayerCreatesLeviathan : Game :=
