@@ -752,6 +752,43 @@ def resolveTapScryDraw (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.applyOnPermanent controller effect.targetKind targets .tap sourceId
     g.scryThenDraw controller scryN drawN
 
+/-- Ask a player to choose one resolution in `rs`. A library top-or-bottom
+pair is the owner's choice; any other list is the caster's. One alternative
+is applied by `applyUnified` before this is called. -/
+def beginSpellOr (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (rs : List SpellResolution) : Game :=
+  let asEffect (r : SpellResolution) : Effect :=
+    { effect with resolution := Resolution.ofSpell r }
+  let g := g.clearSpellOr
+  match rs with
+  | [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary]
+  | [.onPermanent .putOnBottomOfLibrary, .onPermanent .putOnTopOfLibrary] =>
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield then
+          { g with
+              pending := .chooseLibraryPlacement o.owner id
+              spellOr := #[
+                asEffect (.onPermanent .putOnTopOfLibrary),
+                asEffect (.onPermanent .putOnBottomOfLibrary)]
+              spellOrController := controller
+              spellOrTargets := targets
+              spellOrLibrary := true }.logMsg
+            s!"{(g.player o.owner).name} chooses top or bottom of their library for {o.name}"
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+    | _ => g.logMsg "The target is no longer legal"
+  | _ =>
+    { g with
+        pending := .chooseLibraryPlacement controller ⟨g.nextObjectId⟩
+        spellOr := (rs.map asEffect).toArray
+        spellOrController := controller
+        spellOrTargets := targets
+        spellOrLibrary := false }.logMsg
+      s!"{(g.player controller).name} chooses {SpellResolution.toPhrase (.or rs) effect.targeting.kind.noun}"
+
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
@@ -860,17 +897,15 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.counterStackSpell id (exilePermanent := true) (grantFreeCast := true)
         controller
     | _ => g.logMsg "The target is no longer legal"
-  | .putOnTopOrBottom =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield then
-          { g with pending := .chooseLibraryPlacement o.owner id }.logMsg
-            s!"{(g.player o.owner).name} chooses top or bottom of their library for {o.name}"
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
-    | _ => g.logMsg "The target is no longer legal"
+  | .or rs =>
+    match rs with
+    | [] => g.logMsg "The effect does nothing"
+    | [r] =>
+      g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
+        (castFromGraveyard := castFromGraveyard) (kicked := kicked)
+        (giftPromised := giftPromised) (chosenX := chosenX)
+    | rs =>
+      g.beginSpellOr controller effect targets rs
   | .mayAttachEquipmentIfDwarf subtype =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       if g.hasSubtype o subtype then

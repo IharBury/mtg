@@ -568,7 +568,9 @@ inductive Pending where
   | chooseTriggerToStack (player : PlayerId)
   /-- You may pay `{n}` generic mana; if you do, draw a card. -/
   | mayPayGeneric (player : PlayerId) (n : Nat)
-  /-- Choose top or bottom of library for this card. -/
+  /-- Choose one alternative of a `SpellResolution.or`. For a library
+  top-or-bottom choice, `id` is the permanent and top/bottom name the side.
+  Otherwise `chooseTop` is the first alternative and `chooseBottom` the second. -/
   | chooseLibraryPlacement (player : PlayerId) (id : ObjectId)
   /-- You may attach an Equipment you control to this creature. -/
   | mayAttachEquipment (player : PlayerId) (hostId : ObjectId)

@@ -52,6 +52,10 @@ inductive PermanentAction where
   | setBasePT (power toughness : Int)
   /-- Tap the permanent and put a stun counter on it (CR 122.1d). -/
   | tapAndStun
+  /-- The owner puts this permanent on top of their library. -/
+  | putOnTopOfLibrary
+  /-- The owner puts this permanent on the bottom of their library. -/
+  | putOnBottomOfLibrary
 deriving Repr, Inhabited, BEq
 
 namespace PermanentAction
@@ -90,6 +94,10 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
     | .setBasePT p t =>
       s!"{noun} has base power and toughness {p}/{t} until end of turn"
     | .tapAndStun => s!"tap {noun} and put a stun counter on it"
+    | .putOnTopOfLibrary =>
+      s!"{noun}'s owner puts it on top of their library"
+    | .putOnBottomOfLibrary =>
+      s!"{noun}'s owner puts it on the bottom of their library"
   if sentence then capitalizeAscii raw else raw
 
 end PermanentAction

@@ -62,6 +62,12 @@ namespace CardDef
 #guard (Effect.counterUnlessPays 4).spellResolution == .unlessPays .counter 4
 #guard (Effect.counterUnlessPays 4).phrase ==
   "counter target spell unless its controller pays {4}"
+#guard Effect.putOnTopOrBottom.spellResolution ==
+  .or [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary]
+#guard Effect.putOnTopOrBottom.phrase ==
+  "target creature's owner puts it on their choice of the top or bottom of their library"
+#guard SpellResolution.toPhrase (.or [.draw 1, .gainLife 3]) "target creature" ==
+  "draw a card or you gain 3 life"
 #guard Effect.destroyCreatureSurveil.resolution ==
   Resolution.sequence [.onPermanent .destroy, .surveil 1]
 #guard Effect.destroyCreatureSurveil.spellResolution ==

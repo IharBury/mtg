@@ -31,6 +31,8 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     | .fraChoice .. => g.answerFraChoice p (.mode idx)
     | .chooseFoodOrTreasure _ => g.chooseFoodOrTreasure p idx
     | .chooseTapOrUntap _ tid => g.chooseTapOrUntap p idx tid
+    | .chooseLibraryPlacement _ _ =>
+      if g.spellOr.isEmpty then g.announceMode p idx else g.chooseSpellOr p idx
     | _ => g.announceMode p idx
   | .chooseX n => g.announceX p n
   | .target t => g.announceTarget p t

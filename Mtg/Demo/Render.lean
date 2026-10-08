@@ -684,7 +684,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .mayPayGeneric p n =>
       s!" [may pay \{{n}} ({g.player p |>.name})]"
     | .chooseLibraryPlacement p _ =>
-      s!" [choose top or bottom ({g.player p |>.name})]"
+      if g.spellOrLibrary || g.spellOr.isEmpty then
+        s!" [choose top or bottom ({g.player p |>.name})]"
+      else
+        s!" [choose one ({g.player p |>.name})]"
     | .mayAttachEquipment p _ =>
       s!" [may attach Equipment ({g.player p |>.name})]"
     | .tapHumans p =>
