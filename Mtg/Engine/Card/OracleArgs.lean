@@ -265,8 +265,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     match cond with
     | .subtype s => return .«if» r (.subtype (← takeStr s))
     | .mvAtMost n => return .«if» r (.mvAtMost (← takeNat n))
-  | .countersOnCreatureTargets kind n =>
-    return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n)
+  | .countersOnCreatureTargets kind n which =>
+    return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n) which
   | .exileGraveyardCreaturesGrantCast ty =>
     return .exileGraveyardCreaturesGrantCast (← takeCardType ty)
   | .plusOneThenEachOtherIfFromGy n => return .plusOneThenEachOtherIfFromGy (← takeNat n)
@@ -289,7 +289,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .creatureYouControlDealsTwicePower (← takeNat k)
   | .mayDrawPerArtifactOppsDraw ty => return .mayDrawPerArtifactOppsDraw (← takeCardType ty)
   | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
-  | .plusOneOnFirstTarget n => return .plusOneOnFirstTarget (← takeNat n)
   | .amassGoblins n subtype =>
     return .amassGoblins (← takeNat n) (← takeStr subtype)
   | .drawIfFromGy a b => return .drawIfFromGy (← takeNat a) (← takeNat b)

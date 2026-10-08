@@ -1106,4 +1106,66 @@ def plusOneCreatureAndLife : Game :=
   (namedPermanent g "Grizzly Bears").status.minusOneMinusOne == 0 &&
     (g.player ⟨0⟩).lifeGainedThisTurn == 1
 
+/-- `.firstYouControl` puts counters only on the first creature you control.
+A later opposing creature is left alone. +1/+1 still uses the counter triggers. -/
+def countersOnFirstYouControl : Game :=
+  let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let baloth := namedPermanent g "Rumbling Baloth"
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creatureYouControlThenOppCreature)
+      (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl))
+    #[Target.permanent bears.id, Target.permanent baloth.id]
+
+#guard
+  (namedPermanent countersOnFirstYouControl "Grizzly Bears").status.plusOnePlusOne == 2 &&
+    (namedPermanent countersOnFirstYouControl "Grizzly Bears").status.gotPlusOneThisTurn &&
+    (namedPermanent countersOnFirstYouControl "Rumbling Baloth").status.plusOnePlusOne == 0
+
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let baloth := namedPermanent g "Rumbling Baloth"
+  let g := g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creatureYouControlThenOppCreature)
+      (.countersOnCreatureTargets .stun 2 .firstYouControl))
+    #[Target.permanent bears.id, Target.permanent baloth.id]
+  (namedPermanent g "Grizzly Bears").status.stun == 2 &&
+    (namedPermanent g "Rumbling Baloth").status.stun == 0
+
+/- A first target you do not control is illegal for `.firstYouControl`. -/
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creature)
+      (.countersOnCreatureTargets .stun 1 .firstYouControl))
+    #[Target.permanent bears.id]
+  (namedPermanent g "Grizzly Bears").status.stun == 0
+
+/-- Plus-one-then-fight puts the counters, then the two creatures fight.
+Counters still land when the opposing creature is already gone. -/
+def plusOneThenFightResolved : Game :=
+  let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let baloth := namedPermanent g "Rumbling Baloth"
+  g.applyEffect ⟨0⟩ (Effect.plusOneThenFight 2)
+    #[Target.permanent bears.id, Target.permanent baloth.id]
+
+#guard
+  (namedPermanent plusOneThenFightResolved "Grizzly Bears").status.plusOnePlusOne == 2 &&
+    (namedPermanent plusOneThenFightResolved "Grizzly Bears").status.damage == 4 &&
+    (namedPermanent plusOneThenFightResolved "Rumbling Baloth").status.damage == 4 &&
+    (namedPermanent plusOneThenFightResolved "Rumbling Baloth").status.plusOnePlusOne == 0
+
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let baloth := namedPermanent g "Rumbling Baloth"
+  let (g, _) := g.move baloth.id (.graveyard ⟨1⟩) none
+  let g := g.applyEffect ⟨0⟩ (Effect.plusOneThenFight 2)
+    #[Target.permanent bears.id, Target.permanent baloth.id]
+  (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 2 &&
+    (namedPermanent g "Grizzly Bears").status.damage == 0
+
 end Mtg.Engine.Tests

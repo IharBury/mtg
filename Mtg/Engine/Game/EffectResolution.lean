@@ -984,23 +984,35 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         g.logMsg "A target is no longer legal. The exchange doesn't happen."
     | _, _ =>
       g.logMsg "A target is no longer legal. The exchange doesn't happen."
-  | .countersOnCreatureTargets kind n =>
-    Id.run do
-      let creatureLegal := g.legalTargetsForAtomicKind controller .creature none
-      let mut g := g
-      for t in targets do
-        match t with
-        | Target.permanent oid =>
-          if creatureLegal.contains t then
-            match g.findObject? oid with
-            | some o => g := g.addCounters o kind n
-            | none => g := g.logMsg "The target is no longer in play"
-          else
+  | .countersOnCreatureTargets kind n which =>
+    match which with
+    | .firstYouControl =>
+      match targets[0]? with
+      | some (Target.permanent id) =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield && o.isCreature && o.controlledBy controller then
+            g.addCounters o kind n
+          else g.logMsg "The target is no longer legal"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer legal"
+    | .each =>
+      Id.run do
+        let creatureLegal := g.legalTargetsForAtomicKind controller .creature none
+        let mut g := g
+        for t in targets do
+          match t with
+          | Target.permanent oid =>
+            if creatureLegal.contains t then
+              match g.findObject? oid with
+              | some o => g := g.addCounters o kind n
+              | none => g := g.logMsg "The target is no longer in play"
+            else
+              g := g.illegalAbilityTarget t
+          | Target.card _ =>
             g := g.illegalAbilityTarget t
-        | Target.card _ =>
-          g := g.illegalAbilityTarget t
-        | Target.player _ => pure ()
-      return g
+          | Target.player _ => pure ()
+        return g
   | .gainLife n who =>
     match who with
     | .you => g.gainLife controller n
@@ -1019,16 +1031,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         return g
   | .amassGoblins n subtype =>
     g.amass controller subtype n
-  | .plusOneOnFirstTarget n =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield && o.isCreature && o.controlledBy controller then
-          g.addPlusOnePlusOneTo o n
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
-    | _ => g.logMsg "The target is no longer legal"
   | .fightAnnouncedCreatures =>
     let src? :=
       match targets[0]? with

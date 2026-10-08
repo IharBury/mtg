@@ -68,6 +68,17 @@ inductive SpellIf where
   | mvAtMost (n : Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Which announced creatures `SpellResolution.countersOnCreatureTargets`
+puts counters on. -/
+inductive CreatureCounterTargets where
+  /-- Each announced target that is still a legal creature. A player target
+  is left alone. -/
+  | each
+  /-- The first announced target, when it is a creature the controller of the
+  resolving spell controls. -/
+  | firstYouControl
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Which targeted card `SpellResolution.returnTargetToHand` returns to a hand. -/
 inductive ReturnedCard where
   /-- A spell on the stack, returned to its owner's hand. -/
@@ -135,9 +146,12 @@ inductive SpellResolution where
   | «if» (r : SpellResolution) (cond : SpellIf)
   /-- Exchange control of the two targeted permanents. -/
   | exchangeControl
-  /-- Put `n` counters of `kind` on each creature among the announced targets.
-  +1/+1 counters are `.countersOnCreatureTargets .plusOnePlusOne`. -/
+  /-- Put `n` counters of `kind` on creatures among the announced targets.
+  Each legal creature target is `.countersOnCreatureTargets` (`.each`).
+  The first targeted creature you control is
+  `.countersOnCreatureTargets .plusOnePlusOne n .firstYouControl`. -/
   | countersOnCreatureTargets (kind : CounterKind := .plusOnePlusOne) (n : Nat := 1)
+      (which : CreatureCounterTargets := .each)
   /-- Return the targeted `card` to a hand.
   A spell on the stack is `.returnTargetToHand` (`.spell`), to its owner's hand.
   A graveyard card is `.returnTargetToHand .graveyard`: up to one, to your hand. -/
@@ -148,8 +162,6 @@ inductive SpellResolution where
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
   /-- Recruit. -/
   | recruit
-  /-- Put `n` +1/+1 counters on the first targeted creature you control. -/
-  | plusOneOnFirstTarget (n : Nat)
   /-- The first targeted creature fights the second. -/
   | fightAnnouncedCreatures
   /-- `n` +1/+1 counters on the target; if from the graveyard, also each other. -/
@@ -373,12 +385,12 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
       if base.isEmpty then cond else s!"{cond}, {base}"
   | .exchangeControl =>
     "exchange control of two target nonland permanents that share a card type"
-  | .countersOnCreatureTargets kind n =>
+  | .countersOnCreatureTargets kind n .each =>
     s!"put {kind.countersPhrase n} on up to one target creature"
+  | .countersOnCreatureTargets kind n .firstYouControl =>
+    s!"put {kind.countersPhrase n} on target creature you control"
   | .amassGoblins n subtype =>
     s!"amass {pluralizeName subtype} {n}"
-  | .plusOneOnFirstTarget n =>
-    s!"put {plusOnePlusOneCountersPhrase n} on target creature you control"
   | .fightAnnouncedCreatures =>
     "it fights target creature an opponent controls"
   | .plusOneThenEachOtherIfFromGy n =>
@@ -578,8 +590,8 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
   | [.onPermanent .untap, .onPermanent (.pump p t), .«if» (.may .attachEquipment) (.subtype subtype)] =>
     s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's {indefinite subtype} {subtype}, you may attach an Equipment you control to it"
-  | [.plusOneOnFirstTarget n, .fightAnnouncedCreatures] =>
-    s!"put {plusOnePlusOneCountersPhrase n} on target creature you control. Then it fights target creature an opponent controls"
+  | [.countersOnCreatureTargets kind k .firstYouControl, .fightAnnouncedCreatures] =>
+    s!"put {kind.countersPhrase k} on target creature you control. Then it fights target creature an opponent controls"
   | [.dealDamageToEachNonDragon n sub, .addFourManaDragonSpells m sub2] =>
     s!"deals {n} damage to each non-{sub} creature. Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells"
   | [.returnTargetToHand .spell, .playersCantCastIfGift] =>
@@ -599,7 +611,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
       "target player investigates. Target creature gets +1/+0 and gains flying until end of turn. Untap it"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
-  | [.countersOnCreatureTargets kind k, .gainLife n .targetPlayers] =>
+  | [.countersOnCreatureTargets kind k .each, .gainLife n .targetPlayers] =>
     s!"put {kind.countersPhrase k} on up to one target creature. Target player gains {n} life"
   | [.onPermanent .destroy, .ownerMaySearchBasic s ty] =>
     s!"destroy {noun}. Its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
