@@ -969,7 +969,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         g.logMsg "A target is no longer legal. The exchange doesn't happen."
     | _, _ =>
       g.logMsg "A target is no longer legal. The exchange doesn't happen."
-  | .plusOneOnCreatureTargets n =>
+  | .countersOnCreatureTargets kind n =>
     Id.run do
       let creatureLegal := g.legalTargetsForAtomicKind controller .creature none
       let mut g := g
@@ -978,7 +978,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | Target.permanent oid =>
           if creatureLegal.contains t then
             match g.findObject? oid with
-            | some o => g := g.addPlusOnePlusOneTo o n
+            | some o => g := g.addCounters o kind n
             | none => g := g.logMsg "The target is no longer in play"
           else
             g := g.illegalAbilityTarget t

@@ -1,5 +1,6 @@
 import Mtg.Engine.Card.ActivatedAbility
 import Mtg.Engine.Card.ChapterEffects
+import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.OracleNorm
 import Mtg.Engine.Card.TriggeredAbility
 
@@ -25,6 +26,8 @@ inductive SlotVal where
   | sup (s : Supertype)
   /-- The whole target noun (`target creature`, `target artifact token`, …). -/
   | kind (k : EffectTargetKind)
+  /-- A counter kind (`+1/+1`, `stun`, `first strike`). -/
+  | ctr (k : CounterKind)
   deriving BEq, Repr, Inhabited
 
 inductive NatFmt where
@@ -63,6 +66,9 @@ inductive Pat where
   | sup (i : Nat)
   | kind (i : Nat)
   | pt (i j : Nat) (signed : Bool)
+  /-- `a`/`an`/`N` plus a counter name plus `counter(s)`. `ni` is the count
+  slot and `ki` is the `CounterKind` slot. -/
+  | counterPhrase (ni ki : Nat)
   deriving BEq, Repr
 
 inductive Mode where
@@ -125,6 +131,19 @@ def takeCardType (t : CardType) : ArgM CardType := do
       set { s with vals := rest }
       return v
     | _ => return t
+
+def takeCounter (k : CounterKind) : ArgM CounterKind := do
+  let s ← get
+  match s.mode with
+  | .collect =>
+    set { s with vals := .ctr k :: s.vals }
+    return k
+  | .fill =>
+    match s.vals with
+    | .ctr v :: rest =>
+      set { s with vals := rest }
+      return v
+    | _ => return k
 
 def takeSupertype (sup : Supertype) : ArgM Supertype := do
   let s ← get
@@ -243,7 +262,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .may r => return .may (← takeSpell r)
   | .«if» r subtype => return .«if» (← takeSpell r) (← takeStr subtype)
   | .targetPlayersGainLife n => return .targetPlayersGainLife (← takeNat n)
-  | .plusOneOnCreatureTargets n => return .plusOneOnCreatureTargets (← takeNat n)
+  | .countersOnCreatureTargets kind n =>
+    return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n)
   | .exileGraveyardCreaturesGrantCast ty =>
     return .exileGraveyardCreaturesGrantCast (← takeCardType ty)
   | .plusOneThenEachOtherIfFromGy n => return .plusOneThenEachOtherIfFromGy (← takeNat n)
@@ -677,6 +697,19 @@ def slotTarget (vals : Array SlotVal) (i : Nat) : EffectTargetKind :=
   | some (.kind k) => k
   | _ => .none
 
+def slotCounter (vals : Array SlotVal) (i : Nat) : CounterKind :=
+  match vals[i]? with
+  | some (.ctr k) => k
+  | _ => .plusOnePlusOne
+
+/-- True when slot `i` is the count immediately after a counter kind.
+`takeCounter` then `takeNat` lands in that order after `runCollect` reverses. -/
+def isCounterCount (args : Array SlotVal) (i : Nat) : Bool :=
+  i > 0 &&
+    match args[i - 1]? with
+    | some (.ctr _) => true
+    | _ => false
+
 def parseNatTok (t : String) : Option Nat :=
   if !t.isEmpty && t.all Char.isDigit then some t.toNat! else none
 
@@ -827,9 +860,13 @@ def bestHit (hits : List Hit) : Option Hit :=
     match best with
     | none => some h
     | some b =>
-      if h.width > b.width || (h.width == b.width && h.used.length < b.used.length) then
-        some h
-      else some b) none
+      -- The same text read as a counter phrase uses the count and the kind.
+      -- Prefer that over the count alone. Different texts still prefer fewer slots.
+      let better :=
+        h.width > b.width ||
+          (h.width == b.width && h.needle == b.needle && h.used.length > b.used.length) ||
+          (h.width == b.width && h.needle != b.needle && h.used.length < b.used.length)
+      if better then some h else some b) none
 
 def natHit (i : Nat) (fmt : NatFmt) (n : Nat) (toks : List String) (fresh : Bool) : Option Hit :=
   let needle := tokenize (lowerAscii (renderNat fmt n))
@@ -950,6 +987,18 @@ def ptHit (i j : Nat) (signed : Bool) (p t : Int) (toks : List String) (fresh : 
     else none
   | [] => none
 
+def counterPhraseHit (ni ki : Nat) (n : Nat) (k : CounterKind) (toks : List String)
+    (fresh : Bool) : Option Hit :=
+  let needle := tokenize (lowerAscii (k.countersPhrase n))
+  if needle.isEmpty || !prefixTokens needle toks then none
+  else some {
+    width := needle.length
+    used := if fresh then [ni, ki] else []
+    pat := .counterPhrase ni ki
+    needle := String.intercalate " " needle
+    repl := k.countersPhrase n
+  }
+
 def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List Hit :=
   Id.run do
     let mut hs : List Hit := []
@@ -958,7 +1007,18 @@ def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List 
       match args[i]! with
       | .nat n =>
         for fmt in [NatFmt.cards, .counters, .brace, .english, .digits, .times] do
-          hs := consider hs (natHit i fmt n toks fresh)
+          -- "up to one" normalizes to a bare `1`. Once the counter count is
+          -- taken, that `1` stays a literal instead of a second use of the count.
+          let skipReuse :=
+            !fresh && isCounterCount args i && (fmt == .digits || fmt == .english)
+          if !skipReuse then
+            hs := consider hs (natHit i fmt n toks fresh)
+        if isCounterCount args i then
+          match args[i - 1]! with
+          | .ctr k =>
+            let kindFresh := fresh && !used.contains (i - 1)
+            hs := consider hs (counterPhraseHit i (i - 1) n k toks kindFresh)
+          | _ => pure ()
       | .int v =>
         for fmt in [IntFmt.signed, .digits] do
           hs := consider hs (intHit i fmt v toks fresh)
@@ -989,6 +1049,7 @@ def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List 
         hs := consider hs (supHit i s toks fresh)
       | .kind k =>
         hs := consider hs (kindHit i k toks fresh)
+      | .ctr _ => pure ()
     return hs
 
 /-- Prefer a still-unused argument, then the longest printed form. -/
@@ -1229,6 +1290,16 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
         | some (vals, seen) => go ps (toks.drop n) vals seen
         | none => none
       | none => none
+    | .counterPhrase ni ki :: ps =>
+      match CounterKind.matchPhrase toks with
+      | some (n, k, w) =>
+        match setSlot vals ni (.nat n) seen with
+        | none => none
+        | some (vals, seen) =>
+          match setSlot vals ki (.ctr k) seen with
+          | some (vals, seen) => go ps (toks.drop w) vals seen
+          | none => none
+      | none => none
     | .pt i j signed :: ps =>
       match toks with
       | t :: ts =>
@@ -1301,6 +1372,7 @@ def patKey (pats : List (List Pat)) : String :=
     | .sup _ => "$sup"
     | .kind _ => "$k"
     | .pt _ _ signed => if signed then "+/+" else "#/#"
+    | .counterPhrase _ _ => "#ctr"
   String.intercalate "\n" (pats.map fun line => String.intercalate " " (line.map piece))
 
 def renderHit (h : Hit) (vals : Array SlotVal) : String :=
@@ -1312,6 +1384,7 @@ def renderHit (h : Hit) (vals : Array SlotVal) : String :=
   | .sup i => (slotSup vals i).englishName
   | .kind i => EffectTargetKind.noun (slotTarget vals i)
   | .pt i j signed => renderPt signed (slotInt vals i) (slotInt vals j)
+  | .counterPhrase ni ki => (slotCounter vals ki).countersPhrase (slotNat vals ni)
   | .lit s => s
 
 /-- Every way an argument can be spelled, independent of the surrounding line. -/
@@ -1322,8 +1395,21 @@ def allNeedles (args : Array SlotVal) : List Hit :=
       match args[i]! with
       | .nat n =>
         for fmt in [NatFmt.cards, .counters, .brace, .english, .digits, .times] do
-          let needle := renderNat fmt n
-          hs := { width := needle.length, used := [i], pat := .nat i fmt, needle, repl := needle } :: hs
+          -- A bare `1` is also "up to one". The counter phrase needle covers the count.
+          let skipDigit :=
+            isCounterCount args i && (fmt == .digits || fmt == .english)
+          if !skipDigit then
+            let needle := renderNat fmt n
+            hs := { width := needle.length, used := [i], pat := .nat i fmt, needle, repl := needle } :: hs
+        if isCounterCount args i then
+          match args[i - 1]! with
+          | .ctr k =>
+            let needle := k.countersPhrase n
+            hs := {
+              width := needle.length, used := [i, i - 1], pat := .counterPhrase i (i - 1),
+              needle, repl := needle
+            } :: hs
+          | _ => pure ()
       | .int v =>
         for fmt in [IntFmt.signed, .digits] do
           let needle := renderInt fmt v
@@ -1363,7 +1449,35 @@ def allNeedles (args : Array SlotVal) : List Hit :=
             width := needle.length, used := [i], pat := .kind i, needle,
             repl := EffectTargetKind.noun k
           } :: hs
+      | .ctr _ => pure ()
     return hs
+
+/-- Replace each counter phrase (`a stun counter`, `2 shield counters`) with `$ctr`
+so lines that differ only by kind and count share a lookup key. -/
+def abstractCounterLine (s : String) : Option String :=
+  let rec go (fuel : Nat) (ts : List String) : List String :=
+    match fuel with
+    | 0 => ts
+    | fuel + 1 =>
+      match CounterKind.matchPhrase ts with
+      | some (_, _, w) =>
+        let w := if w == 0 then 1 else w
+        "$ctr" :: go fuel (ts.drop w)
+      | none =>
+        match ts with
+        | [] => []
+        | t :: rest => t :: go fuel rest
+  let toks := tokenize s
+  let out := String.intercalate " " (go toks.length toks)
+  if out == String.intercalate " " toks then none else some out
+
+#guard abstractCounterLine "put a +1/+1 counter on up to 1 target creature" ==
+  some "put $ctr on up to 1 target creature"
+#guard abstractCounterLine "put a stun counter on up to 1 target creature" ==
+  some "put $ctr on up to 1 target creature"
+#guard abstractCounterLine "put a first strike counter on it" ==
+  some "put $ctr on it"
+#guard abstractCounterLine "draw a card" == none
 
 def charHit (args : Array SlotVal) (cs : List Char) (prev : Option Char) (used : List Nat) :
     Option Hit :=
@@ -1505,6 +1619,33 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
 
 #guard refilled (Effect.plusOneOnEachYouControl) "put 3 +1/+1 counters on each creature you control" ==
   some (.spell (.plusOneOnEachYouControl 3))
+
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
+  "put a +1/+1 counter on up to one target creature. Target player gains 2 life"
+
+#guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+    "Put a +1/+1 counter on up to one target creature. Target player gains 2 life." ==
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 2).resolution
+
+#guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+    "Put a stun counter on up to one target creature. Target player gains 4 life." ==
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 4 .stun).resolution
+
+#guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+    "Put two shield counters on up to one target creature. Target player gains 2 life." ==
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .shield 2).resolution
+
+#guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+    "Put an indestructible counter on up to one target creature. Target player gains 2 life." ==
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .indestructible).resolution
+
+#guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+    "Put a first strike counter on up to one target creature. Target player gains 1 life." ==
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 1 .firstStrike).resolution
+
+#guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+    "Put a -1/-1 counter on up to one target creature. Target player gains 2 life." ==
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .minusOneMinusOne).resolution
 
 #guard refilled (Effect.dealDamageToEachNonDragon 2) "deals 5 damage to each non-Elf creature" ==
   some (.spell (.dealDamageToEachNonDragon 5 "Elf"))

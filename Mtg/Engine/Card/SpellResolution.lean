@@ -1,3 +1,4 @@
+import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.Token
@@ -101,8 +102,9 @@ inductive SpellResolution where
   | «if» (r : SpellResolution) (subtype : String)
   /-- Exchange control of the two targeted permanents. -/
   | exchangeControl
-  /-- Put `n` +1/+1 counters on each creature among the announced targets. -/
-  | plusOneOnCreatureTargets (n : Nat := 1)
+  /-- Put `n` counters of `kind` on each creature among the announced targets.
+  +1/+1 counters are `.countersOnCreatureTargets .plusOnePlusOne`. -/
+  | countersOnCreatureTargets (kind : CounterKind := .plusOnePlusOne) (n : Nat := 1)
   /-- Each announced player target gains `n` life. -/
   | targetPlayersGainLife (n : Nat)
   /-- Return the targeted spell to its owner's hand. -/
@@ -335,8 +337,8 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     if base.isEmpty then cond else s!"{cond}, {base}"
   | .exchangeControl =>
     "exchange control of two target nonland permanents that share a card type"
-  | .plusOneOnCreatureTargets n =>
-    s!"put {plusOnePlusOneCountersPhrase n} on up to one target creature"
+  | .countersOnCreatureTargets kind n =>
+    s!"put {kind.countersPhrase n} on up to one target creature"
   | .targetPlayersGainLife n =>
     s!"Target player gains {n} life"
   | .creaturesYouControlPump p t =>
@@ -565,8 +567,8 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
       "target player investigates. Target creature gets +1/+0 and gains flying until end of turn. Untap it"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
-  | [.plusOneOnCreatureTargets k, .targetPlayersGainLife n] =>
-    s!"put {plusOnePlusOneCountersPhrase k} on up to one target creature. Target player gains {n} life"
+  | [.countersOnCreatureTargets kind k, .targetPlayersGainLife n] =>
+    s!"put {kind.countersPhrase k} on up to one target creature. Target player gains {n} life"
   | [.onPermanent .destroy, .ownerMaySearchBasic s ty] =>
     s!"destroy {noun}. Its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
   | [.draw 3, .discardTwoUnlessArtifact n ty] =>

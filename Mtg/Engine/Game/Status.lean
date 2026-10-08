@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.CardDef
+import Mtg.Engine.Card.Counter
 import Mtg.Engine.Deck
 import Mtg.Engine.Mana
 import Mtg.Engine.Rng
@@ -340,6 +341,42 @@ def addPump (s : Status) (p t : Int) : Status :=
 /-- Put `n` +1/+1 counters on this permanent (CR 122.1). -/
 def addPlusOnePlusOne (s : Status) (n : Nat := 1) : Status :=
   { s with plusOnePlusOne := s.plusOnePlusOne + n }
+
+/-- Put `n` counters of `kind` on this permanent (CR 122.1). -/
+def addCounters (s : Status) (kind : CounterKind) (n : Nat) : Status :=
+  let kw (f : KeywordCounters → KeywordCounters) : Status :=
+    { s with keywordCounters := f s.keywordCounters }
+  match kind with
+  | .plusOnePlusOne =>
+    { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 }
+  | .minusOneMinusOne => { s with minusOneMinusOne := s.minusOneMinusOne + n }
+  | .loyalty => { s with loyaltyCounters := s.loyaltyCounters + n }
+  | .hope => { s with hope := s.hope + n }
+  | .charge => { s with charge := s.charge + n }
+  | .stun => { s with stun := s.stun + n }
+  | .shield => { s with shield := s.shield + n }
+  | .finality => { s with finality := s.finality + n }
+  | .plan => { s with plan := s.plan + n }
+  | .burden => { s with burden := s.burden + n }
+  | .quest => { s with quest := s.quest + n }
+  | .invasion => { s with invasion := s.invasion + n }
+  | .influence => { s with influence := s.influence + n }
+  | .trample => { s with trampleCounters := s.trampleCounters + n }
+  | .indestructible => { s with indestructibleCounters := s.indestructibleCounters + n }
+  | .lifelink => { s with lifelinkCounters := s.lifelinkCounters + n }
+  | .hone => { s with hone := s.hone + n }
+  | .shadow => { s with shadow := s.shadow + n }
+  | .lore => { s with lore := s.lore + n }
+  | .story => { s with story := s.story + n }
+  | .time => { s with time := s.time + n }
+  | .haste => kw fun k => { k with haste := k.haste + n }
+  | .vigilance => kw fun k => { k with vigilance := k.vigilance + n }
+  | .flying => kw fun k => { k with flying := k.flying + n }
+  | .menace => kw fun k => { k with menace := k.menace + n }
+  | .reach => kw fun k => { k with reach := k.reach + n }
+  | .deathtouch => kw fun k => { k with deathtouch := k.deathtouch + n }
+  | .firstStrike => kw fun k => { k with firstStrike := k.firstStrike + n }
+  | .doubleStrike => kw fun k => { k with doubleStrike := k.doubleStrike + n }
 
 /-- Union printed-style keyword grants that last until end of turn. -/
 def grantUntilEot (s : Status) (k : Keywords) : Status :=
