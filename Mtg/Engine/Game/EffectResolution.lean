@@ -889,8 +889,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | _ => g.logMsg "The effect does nothing"
   | .onPermanent action =>
     g.applyOnPermanent controller effect.targetKind targets action
-  | .creaturesPump scope p t =>
+  | .creaturesPump p t scope =>
     match scope with
+    | .youControl =>
+      g.pumpControlledCreatures controller p t
     | .all =>
       g.foldBattlefield (fun o => o.isCreature) (fun g o => g.pumpPermanent o p t)
     | .ofTargetPlayer =>
@@ -1002,8 +1004,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
               g := g.illegalAbilityTarget t
           | _ => pure ()
         return g
-  | .creaturesYouControlPump pw tw =>
-    g.pumpControlledCreatures controller pw tw
   | .amassGoblins n subtype =>
     g.amass controller subtype n
   | .counterThenRecruitIfMvAtMost n =>

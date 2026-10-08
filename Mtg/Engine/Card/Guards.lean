@@ -108,7 +108,7 @@ namespace CardDef
 #guard (Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance).resolution ==
   Resolution.sequence [.creaturesYouControlPump 1 1, .teamGain Keyword.vigilance]
 #guard (Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance).spellResolution ==
-  .sequence [.creaturesYouControlPump 1 1, .teamGain Keyword.vigilance]
+  .sequence [.creaturesPump 1 1, .teamGain Keyword.vigilance]
 #guard Effect.sourceGainsIndestructibleTap.resolution ==
   Resolution.sequence
     [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap]
@@ -310,6 +310,12 @@ namespace CardDef
 #guard SpellResolution.toPhrase (.gainLife 3) "target creature" == "you gain 3 life"
 #guard SpellResolution.toPhrase (.gainLife 2 .targetPlayers) "target player" ==
   "Target player gains 2 life"
+#guard SpellResolution.toPhrase (.creaturesPump 1 1) "target creature" ==
+  "creatures you control get +1/+1 until end of turn"
+#guard SpellResolution.toPhrase (.creaturesPump (-4) (-4) .all) "" ==
+  "all creatures get -4/-4 until end of turn"
+#guard SpellResolution.toPhrase (.creaturesPump (-1) (-1) .ofTargetPlayer) "target player" ==
+  "creatures target player controls get -1/-1 until end of turn"
 #guard Effect.destroyArtifactOrLandNonflyersCantBlock.targetKind == .artifactOrLand
 #guard Effect.playAdditionalLandThisTurn.targetKind == .none
 #guard (Effect.destroyTargetCreatureControllerLosesLife 2).targetKind == .creature
