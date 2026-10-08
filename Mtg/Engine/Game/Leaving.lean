@@ -103,7 +103,20 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       else
         { g with pending := .declareBlockers, blockersQueue := rest }
     else g
-  | .payOrLetCounter q _ spellId | .payWard q spellId _ =>
+  | .payOrLetCounter q _ spellId =>
+    if q == p then
+      let g := { g with pending := .none }
+      let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
+      if g.unlessPaysInstead.isSome then
+        { g with unlessPaysDue := true }
+      else
+        match g.findObject? spellId with
+        | none => g
+        | some o =>
+          let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
+          g.logMsg s!"{o.name} is countered"
+    else g
+  | .payWard q spellId _ =>
     if q == p then
       let g := { g with pending := .none }
       let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"

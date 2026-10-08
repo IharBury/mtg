@@ -94,11 +94,14 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
 and put the resulting triggered abilities on the stack. -/
 def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
   let g ← g.applyAction p a
-  if g.pendingTokenEnters.isEmpty then return g
-  let g := g.flushTokenEnters
-  if g.pending == .none && !g.waitingTriggers.isEmpty && !g.over then
-    return g.receivePriority g.priority
-  return g
+  let g :=
+    if g.pendingTokenEnters.isEmpty then g
+    else
+      let g := g.flushTokenEnters
+      if g.pending == .none && !g.waitingTriggers.isEmpty && !g.over then
+        g.receivePriority g.priority
+      else g
+  return g.flushUnlessPays
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
   (g.player p).hand.filterMap (fun id => g.findObject? id)

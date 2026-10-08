@@ -690,7 +690,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .tapHumans p =>
       s!" [tap Humans ({g.player p |>.name})]"
     | .payOrLetCounter p n _ =>
-      s!" [pay \{{n}} or let the spell be countered ({g.player p |>.name})]"
+      if g.unlessPaysInstead.isSome then
+        s!" [pay \{{n}} or let the effect happen ({g.player p |>.name})]"
+      else
+        s!" [pay \{{n}} or let the spell be countered ({g.player p |>.name})]"
     | .payWard p _ cost =>
       let who := g.player p |>.name
       match cost with

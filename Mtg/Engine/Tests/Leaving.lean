@@ -160,4 +160,32 @@ def threeSkipLeftPlayerTurn : Game :=
 #guard threeSkipLeftPlayerTurn.log.any (fun s => mentions s "CR 800.4m")
 #guard threeSkipLeftPlayerTurn.log.any (fun s => mentions s "Liliana's turn")
 
+/-- Leaving without paying still resolves the inner `unlessPays` effect (CR 800.4f). -/
+def unlessPaysLeaveAsked : Game :=
+  let g := addPermanent threeStarted grayOgre ⟨0⟩ ⟨0⟩
+  let id := (namedPermanent g "Gray Ogre").id
+  g.applyEffect ⟨1⟩ (Effect.mkSpell (.of .creature)
+      (.unlessPays (.loseLife 5) 3)
+      (castKind := .burn))
+    #[Target.permanent id]
+
+#guard
+  match unlessPaysLeaveAsked.pending with
+  | .payOrLetCounter p 3 _ => p == ⟨0⟩ && unlessPaysLeaveAsked.unlessPaysInstead.isSome
+  | _ => false
+
+def unlessPaysLeftUnpaid : Game :=
+  match unlessPaysLeaveAsked.pending with
+  | .payOrLetCounter p _ _ => mustApply unlessPaysLeaveAsked p .concede
+  | _ => unlessPaysLeaveAsked
+
+#guard (unlessPaysLeftUnpaid.player ⟨1⟩).life == 15
+#guard (unlessPaysLeftUnpaid.player ⟨0⟩).leftTheGame
+#guard !unlessPaysLeftUnpaid.over
+#guard
+  match unlessPaysLeftUnpaid.actor with
+  | some p => !(unlessPaysLeftUnpaid.player p).leftTheGame
+  | none => false
+#guard unlessPaysLeftUnpaid.log.any (fun s => mentions s "CR 800.4f")
+
 end Mtg.Engine.Tests

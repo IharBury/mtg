@@ -111,6 +111,15 @@ structure Game where
   /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
   permanent (Proft, Consulting Detective). -/
   mayPayAlsoPlusOneOn : Option ObjectId := none
+  /-- Declining `payOrLetCounter` resolves this effect instead of countering.
+  The caster is `unlessPaysController`; `unlessPaysTargets` are the targets
+  announced for that effect. -/
+  unlessPaysInstead : Option Effect := none
+  unlessPaysController : PlayerId := ⟨0⟩
+  unlessPaysTargets : Array Target := #[]
+  /-- The payer left without paying (CR 800.4f). `flushUnlessPays` resolves
+  `unlessPaysInstead`. -/
+  unlessPaysDue : Bool := false
   /-- After the pending surveil, a card with mana value at most this put into
   the graveyard goes to its owner's hand (Enlightened Confidant). -/
   surveilReturnMvAtMost : Option Nat := none
@@ -219,6 +228,11 @@ namespace Game
 
 def logMsg (g : Game) (msg : String) : Game :=
   { g with log := g.log.push msg }
+
+/-- Drop a stashed `unlessPays` effect. Paying, or countering for real,
+clears it; leaving without paying sets `unlessPaysDue` instead. -/
+def clearUnlessPays (g : Game) : Game :=
+  { g with unlessPaysInstead := none, unlessPaysDue := false, unlessPaysTargets := #[] }
 
 def over (g : Game) : Bool := g.result.isSome
 

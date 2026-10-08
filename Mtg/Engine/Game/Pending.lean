@@ -574,7 +574,8 @@ inductive Pending where
   | mayAttachEquipment (player : PlayerId) (hostId : ObjectId)
   /-- Tap any number of Humans you control, then draw that many. -/
   | tapHumans (player : PlayerId)
-  /-- Pay `{n}` or let the targeted spell be countered. -/
+  /-- Pay `{n}` or let the targeted spell be countered. When the game's
+  `unlessPaysInstead` is set, declining resolves that effect instead. -/
   | payOrLetCounter (player : PlayerId) (n : Nat) (spellId : ObjectId)
   /-- Pay this ward cost or let the targeting spell or ability be countered
   (CR 702.21). -/

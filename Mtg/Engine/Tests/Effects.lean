@@ -826,4 +826,58 @@ def loreAfterFirstMain : Game :=
   loreAfterFirstMain.battlefield.any (fun o =>
     o.name == "Burn, Burn, Tree and Fern" && o.status.lore ≥ 2)
 
+/-- Counter-unless-pays is `unlessPays` of a counter. Declining still counters. -/
+def counterUnlessPaysOnBolt : Game :=
+  let g := addToHand afterDraw lightningBolt ⟨1⟩
+  let bolt := handCardNamed g ⟨1⟩ "Lightning Bolt"
+  let (g, spellId) := g.move bolt.id .stack (some ⟨1⟩)
+  g.applyEffect ⟨0⟩ (Effect.counterUnlessPays 4) #[Target.card spellId]
+
+#guard
+  match counterUnlessPaysOnBolt.pending with
+  | .payOrLetCounter p 4 _ =>
+    p == ⟨1⟩ && counterUnlessPaysOnBolt.unlessPaysInstead.isNone
+  | _ => false
+
+def counterUnlessPaysDeclined : Game :=
+  match counterUnlessPaysOnBolt.pending with
+  | .payOrLetCounter p _ _ => mustApply counterUnlessPaysOnBolt p .decline
+  | _ => counterUnlessPaysOnBolt
+
+#guard counterUnlessPaysDeclined.objects.any (fun o =>
+  o.name == "Lightning Bolt" && o.zone == .graveyard ⟨1⟩)
+
+/-- Any resolution can sit under `unlessPays`. Declining destroys; paying doesn't. -/
+def unlessPaysDestroyAsked : Game :=
+  let g := addPermanent afterDraw grayOgre ⟨1⟩ ⟨1⟩
+  let id := (namedPermanent g "Gray Ogre").id
+  g.applyEffect ⟨0⟩ (Effect.mkSpell (.of .creature)
+      (.unlessPays (.onPermanent .destroy) 2)
+      (castKind := .destroyCreature))
+    #[Target.permanent id]
+
+#guard
+  match unlessPaysDestroyAsked.pending with
+  | .payOrLetCounter p 2 _ =>
+    p == ⟨1⟩ && unlessPaysDestroyAsked.unlessPaysInstead.isSome
+  | _ => false
+
+def unlessPaysDestroyDeclined : Game :=
+  match unlessPaysDestroyAsked.pending with
+  | .payOrLetCounter p _ _ => mustApply unlessPaysDestroyAsked p .decline
+  | _ => unlessPaysDestroyAsked
+
+#guard unlessPaysDestroyDeclined.objects.any (fun o =>
+  o.name == "Gray Ogre" && o.zone == .graveyard ⟨1⟩)
+#guard unlessPaysDestroyDeclined.unlessPaysInstead.isNone
+
+def unlessPaysDestroyPaid : Game :=
+  let g := withRedMana unlessPaysDestroyAsked ⟨1⟩ 2
+  match g.pending with
+  | .payOrLetCounter p _ _ => mustApply g p .payGeneric
+  | _ => g
+
+#guard unlessPaysDestroyPaid.battlefield.any (fun o => o.name == "Gray Ogre")
+#guard (unlessPaysDestroyPaid.player ⟨1⟩).manaPool.isEmpty
+
 end Mtg.Engine.Tests

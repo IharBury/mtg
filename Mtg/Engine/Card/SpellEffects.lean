@@ -207,8 +207,9 @@ def counterSpell : Effect :=
   mkSpell (.of .spell) (.counter)
     (castKind := .counter)
 
+/-- Counter the targeted spell unless its controller pays `{n}`. -/
 def counterUnlessPays (n : Nat) : Effect :=
-  mkSpell (.of .spell) (.counterUnlessPays n)
+  mkSpell (.of .spell) (.unlessPays .counter n)
     (castKind := .counter)
 
 def counterCreatureSpellPTAtMost (n : Nat) : Effect :=
