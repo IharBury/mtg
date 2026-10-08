@@ -156,7 +156,7 @@ private def creatureOrWalker (c : CardDef) : Bool :=
 private def basicOf (kinds : Array String) (c : CardDef) : Bool :=
   isBasicLandCard c && kinds.any c.hasSubtype
 
-def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect)
+def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffect)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
   let pl := g.player controller
   match e with
