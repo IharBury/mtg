@@ -1,3 +1,4 @@
+import Mtg.Engine.Card.Counter
 import Mtg.Engine.Game.Damage
 
 /-!
@@ -197,6 +198,23 @@ def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
   let total := (g.object! o.id).status.burden
   let g := g.logMsg s!"{o.name} gets a burden counter ({total})"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
+
+/-- Put `n` counters of `kind` on `o`. +1/+1 counters go through
+`addPlusOnePlusOneTo` so their enters-with bonus and “you put a +1/+1
+counter” triggers still apply. Burden counters keep the total in the log. -/
+def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
+    (entersWith := false) (byPlayer : Option PlayerId := none) : Game :=
+  match kind with
+  | .plusOnePlusOne =>
+    g.addPlusOnePlusOneTo o n (entersWith := entersWith) (byPlayer := byPlayer)
+  | .burden => g.addBurdenCounter o n (byPlayer := byPlayer)
+  | kind =>
+    let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
+    if n == 0 then g
+    else
+      let g := g.mapObjectStatus o (fun s => s.addCounters kind n)
+      let g := g.logMsg s!"{o.name} gets {kind.countersPhrase n}"
+      g.queueGoblinOrcArmyCounterTriggers o
 
 /-- Put the amass counters and subtype on `armyId`. -/
 def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)

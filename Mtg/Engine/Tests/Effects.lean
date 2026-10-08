@@ -1056,4 +1056,54 @@ def spellOrScried : Game :=
 
 #guard uneasyPartings.spellEffect == some Effect.putOnTopOrBottom
 
+/-- `countersOnCreatureTargets` puts the requested kind on each creature target.
+A player target is left alone. +1/+1 still uses the counter triggers. -/
+def countersOnTargets (kind : CounterKind) (n : Nat) : Game :=
+  let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let baloth := namedPermanent g "Rumbling Baloth"
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creature) (.countersOnCreatureTargets kind n) (maxTargets := 2))
+    #[Target.permanent bears.id, Target.permanent baloth.id]
+
+#guard
+  let g := countersOnTargets .stun 2
+  (namedPermanent g "Grizzly Bears").status.stun == 2 &&
+    (namedPermanent g "Rumbling Baloth").status.stun == 2 &&
+    (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 0 &&
+    !(namedPermanent g "Grizzly Bears").status.gotPlusOneThisTurn
+
+#guard
+  let g := countersOnTargets .flying 1
+  (namedPermanent g "Grizzly Bears").status.keywordCounters.flying == 1 &&
+    (namedPermanent g "Rumbling Baloth").status.keywordCounters.flying == 1
+
+#guard
+  let g := countersOnTargets .firstStrike 1
+  (namedPermanent g "Grizzly Bears").status.keywordCounters.firstStrike == 1
+
+#guard
+  let g := countersOnTargets .shield 3
+  (namedPermanent g "Grizzly Bears").status.shield == 3 &&
+    (namedPermanent g "Rumbling Baloth").status.shield == 3
+
+def plusOneCreatureAndLife : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  g.applyEffect ⟨0⟩ (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+    #[Target.permanent bears.id, Target.player ⟨0⟩]
+
+#guard
+  (namedPermanent plusOneCreatureAndLife "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (namedPermanent plusOneCreatureAndLife "Grizzly Bears").status.gotPlusOneThisTurn &&
+    (plusOneCreatureAndLife.player ⟨0⟩).lifeGainedThisTurn == 2
+
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.applyEffect ⟨0⟩
+    (Effect.plusOneUpToOneAndPlayerGainsLife 1 .minusOneMinusOne)
+    #[Target.player ⟨0⟩]
+  (namedPermanent g "Grizzly Bears").status.minusOneMinusOne == 0 &&
+    (g.player ⟨0⟩).lifeGainedThisTurn == 1
+
 end Mtg.Engine.Tests

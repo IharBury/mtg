@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.ActivatedAbility
+import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.Effect
 
 /-!
@@ -198,9 +199,12 @@ def grantHexproofIndestructible : Effect :=
   mkSpell (.of .artifactOrCreatureYouControl) (.onPermanent (.grantKeywords (Keyword.hexproof.merge Keyword.indestructible)))
     (castKind := .pump)
 
-def plusOneUpToOneAndPlayerGainsLife (life : Nat) : Effect :=
+/-- Put `counters` of `kind` on up to one target creature, then the targeted
+player gains `life`. Defaults are one +1/+1 counter (Meager Meal). -/
+def plusOneUpToOneAndPlayerGainsLife (life : Nat)
+    (kind : CounterKind := .plusOnePlusOne) (counters : Nat := 1) : Effect :=
   mkSpell (.of .upToOneCreatureThenPlayer)
-    (.sequence [.plusOneOnCreatureTargets, .targetPlayersGainLife life])
+    (.sequence [.countersOnCreatureTargets kind counters, .targetPlayersGainLife life])
     (castKind := .pump)
 
 def counterSpell : Effect :=

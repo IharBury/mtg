@@ -1392,7 +1392,8 @@ def pushBucket (m : Std.HashMap String (Array Nat)) (key : String) (i : Nat) :
     let m := pushBucket m (headWord k) i
     let m := (lineKeys (wildcardHead k)).foldl (fun m sk => pushBucket m sk i) m
     let m := addOpt m (abstractCyclingLine k) i
-    addOpt m (abstractSubtypeLine k) i
+    let m := addOpt m (abstractSubtypeLine k) i
+    addOpt m (abstractCounterLine k) i
   for item in indexedAbilities.get do
     match item.light.head? with
     | some k => m := addKeys m k i
@@ -1416,8 +1417,10 @@ def lookupKeys (keys : List String) (lit norm struct : String) : List String :=
   let extra :=
     (base.filterMap abstractCyclingLine) ++
     (base.filterMap abstractSubtypeLine) ++
+    (base.filterMap abstractCounterLine) ++
     ((base.filterMap abstractCyclingLine).flatMap lineKeys) ++
-    ((base.filterMap abstractSubtypeLine).flatMap lineKeys)
+    ((base.filterMap abstractSubtypeLine).flatMap lineKeys) ++
+    ((base.filterMap abstractCounterLine).flatMap lineKeys)
   (base ++ base.flatMap lineKeys ++ base.map headWord ++ wild ++ extra).foldl
     (fun acc k => if k.isEmpty || acc.any (· == k) then acc else acc ++ [k]) []
 
@@ -2174,6 +2177,25 @@ is parsed and every effect is modelled. -/
   match parseOracleCard text with
   | .ok c => c
   | .error e => panic! s!"parseOracleCard: {e}\n---\n{text}"
+
+#guard
+  match parseOracleCard
+      "Snack\n{B}\nSorcery\nPut a stun counter on up to one target creature. Target player gains 2 life." with
+  | .ok c =>
+    match c.spellEffect with
+    | some e => e.resolution == (Effect.plusOneUpToOneAndPlayerGainsLife 2 .stun).resolution
+    | none => false
+  | .error _ => false
+
+#guard
+  match parseOracleCard
+      "Snack\n{B}\nSorcery\nPut two first strike counters on up to one target creature. Target player gains 3 life." with
+  | .ok c =>
+    match c.spellEffect with
+    | some e =>
+      e.resolution == (Effect.plusOneUpToOneAndPlayerGainsLife 3 .firstStrike 2).resolution
+    | none => false
+  | .error _ => false
 
 /-- Keyword line used when a card has no stored rules text. -/
 def renderKeywordLine (k : Keywords) : Option String :=

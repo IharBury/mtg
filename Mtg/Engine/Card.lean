@@ -1,5 +1,6 @@
 import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.Text
+import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.Token
 import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.PermanentAction
@@ -32,6 +33,7 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 
 - `Keywords`: keyword abilities (CR 702).
 - `Text`: shared Oracle-text phrase helpers.
+- `Counter`: counter kinds a permanent can carry (CR 122).
 - `Token`: token kinds (CR 111).
 - `Targeting`: targeting shapes and `HasTargeting` (CR 115.1).
 - `PermanentAction`: shared actions on permanents (CR 608.2b).
