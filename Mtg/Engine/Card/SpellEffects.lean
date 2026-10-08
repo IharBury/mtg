@@ -139,7 +139,7 @@ def drawAndLoseLife (cards life : Nat) : Effect :=
 
 def targetPlayerDrawLoseLife (cards life : Nat) : Effect :=
   mkSpell (.of .player .selfPlayer)
-    (.sequence [.targetPlayerDraw cards, .loseLife life .targetPlayer])
+    (.sequence [.draw cards .targetPlayer, .loseLife life .targetPlayer])
     (castKind := .draw)
 
 def creaturesTargetPlayerGet (power toughness : Int) : Effect :=
@@ -329,7 +329,7 @@ def destroyTargetArtifact : Effect :=
   destroyTarget .artifact (spellKind := some .destroyArtifactOrLand)
 
 def targetPlayerDraw (n : Nat) : Effect :=
-  mkSpell (.of .player .selfPlayer) (.targetPlayerDraw n)
+  mkSpell (.of .player .selfPlayer) (.draw n .targetPlayer)
     (castKind := .draw)
 
 def dealDamageToCreatureExileIfDies (n : Nat) : Effect :=
