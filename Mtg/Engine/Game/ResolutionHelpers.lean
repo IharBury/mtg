@@ -198,6 +198,9 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     g.logMsg s!"{o.name} has base power and toughness {pw}/{tw} until end of turn"
   | .putOnTopOfLibrary => g.putOnOwnerLibrary o true
   | .putOnBottomOfLibrary => g.putOnOwnerLibrary o false
+  | .exile => (g.move o.id .exile none).1
+  | .doublePowerAndToughness =>
+    g.pumpPermanent o (g.power o) (g.toughness o)
 
 def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (action : PermanentAction)
