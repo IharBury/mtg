@@ -59,6 +59,14 @@ inductive LifeGainer where
   | targetPlayers
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Who draws the cards from `SpellResolution.draw`. -/
+inductive CardDrawer where
+  /-- The controller of the resolving spell or ability. -/
+  | you
+  /-- The announced player target. -/
+  | targetPlayer
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Who loses the life from `SpellResolution.loseLife`. -/
 inductive LifeLoser where
   /-- The controller of the resolving spell or ability. -/
@@ -134,8 +142,9 @@ inductive SpellResolution where
   /-- Exile cards of type `ty` from the targeted player's graveyard and grant
   permission to cast them, spending mana as though it were any type. -/
   | exileGraveyardCreaturesGrantCast (ty : CardType := .creature)
-  /-- Draw `n` cards. -/
-  | draw (n : Nat)
+  /-- `who` draws `n` cards. The controller is `.draw n` (`.you`).
+  The announced player target is `.draw n .targetPlayer`. -/
+  | draw (n : Nat) (who : CardDrawer := .you)
   /-- Discard `n` cards. -/
   | discard (n : Nat)
   /-- `who` loses `n` life. Loss of life is not damage (CR 118.3a / 120.3).
@@ -202,8 +211,6 @@ inductive SpellResolution where
   | searchLegendaryCreatureToHand (s : Supertype := .legendary) (ty : CardType := .creature)
   /-- Deal `n` damage to each creature opponents control. -/
   | dealDamageToEachOppCreature (n : Nat)
-  /-- Target player draws `n` cards. -/
-  | targetPlayerDraw (n : Nat)
   /-- If the targeted creature would die this turn, exile it instead. -/
   | exileIfDiesThisTurn
   /-- Add {R} for each permanent of type `ty` opponents control. -/
@@ -390,7 +397,8 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
   | .exileGraveyardCreaturesGrantCast ty =>
     s!"exile all {ty.oracleWord} cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them"
-  | .draw n => s!"draw {cardPhrase n}"
+  | .draw n .you => s!"draw {cardPhrase n}"
+  | .draw n .targetPlayer => s!"{noun} draws {cardPhrase n}"
   | .scry n => s!"scry {n}"
   | .tapTargets => "tap one or two target creatures"
   | .counter => s!"counter {noun}"
@@ -434,8 +442,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
   | .dealDamageToEachOppCreature n =>
     s!"deals {n} damage to each creature your opponents control"
-  | .targetPlayerDraw n =>
-    s!"{noun} draws {cardPhrase n}"
   | .exileIfDiesThisTurn =>
     s!"if {noun} would die this turn, exile it instead"
   | .addRedPerOppArtifacts ty =>
@@ -579,21 +585,21 @@ def flatten : SpellResolution → List SpellResolution
 other sequences join each step. -/
 private def phraseSequence (rs : List SpellResolution) (noun : String) : String :=
   match rs with
-  | [.draw n, .discard 1] =>
+  | [.draw n .you, .discard 1] =>
     s!"draw {cardPhrase n}, then discard a card"
-  | [.draw cards, .loseLife life .you] =>
+  | [.draw cards .you, .loseLife life .you] =>
     s!"you draw {cardPhrase cards} and lose {life} life"
-  | [.targetPlayerDraw cards, .loseLife life .targetPlayer] =>
+  | [.draw cards .targetPlayer, .loseLife life .targetPlayer] =>
     s!"{noun} draws {cardPhrase cards} and loses {life} life"
   | [.onPermanent .destroy, .loseLife n .controllerOfTarget] =>
     s!"destroy {noun}. Its controller loses {n} life"
-  | [.returnTargetToHand .spell, .draw 1] =>
+  | [.returnTargetToHand .spell, .draw 1 .you] =>
     s!"return {noun} to its owner's hand. Draw a card"
   | [.counter, .«if» .recruit (.mvAtMost n)] =>
     s!"counter {noun}. If that spell's mana value was {n} or less, recruit"
   | [.returnTargetToHand .graveyard, .amassGoblins n subtype] =>
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
-  | [.draw 1, .loseLife 1 .you, .amassGoblins n subtype] =>
+  | [.draw 1 .you, .loseLife 1 .you, .amassGoblins n subtype] =>
     s!"you draw a card and lose 1 life. Amass {pluralizeName subtype} {n}"
   | [.createTokens kind n, .creaturesPump p t .youControl] =>
     let tokens := capitalizeAscii (TokenKind.createPhrase kind n)
@@ -602,9 +608,9 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"destroy {noun}. You gain {n} life"
   | [.onPermanent .destroy, .surveil 1] =>
     s!"destroy {noun}. Surveil 1"
-  | [.onPermanent .tap, .scry scryN, .draw drawN] =>
+  | [.onPermanent .tap, .scry scryN, .draw drawN .you] =>
     s!"tap {noun}. Scry {scryN}. Draw {cardPhrase drawN}"
-  | [.onPermanent (.pump p t), .draw 1] =>
+  | [.onPermanent (.pump p t), .draw 1 .you] =>
     let tStr := if t == 0 && p < 0 then "-0" else signedStat t
     s!"Target creature gets {signedStat p}/{tStr} until end of turn.\nDraw a card."
   | [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords k)] =>
@@ -612,7 +618,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
       "put a +1/+1 counter on target creature. It gains lifelink and indestructible until end of turn"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
-  | [.onPermanent (.grantKeywords k), .draw 1] =>
+  | [.onPermanent (.grantKeywords k), .draw 1 .you] =>
     if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
       s!"{noun} gains vigilance until end of turn and can't be blocked this turn"
     else
@@ -649,7 +655,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"put {kind.countersPhrase k} on up to one target creature. Target player gains {n} life"
   | [.onPermanent .destroy, .ownerMaySearchBasic s ty] =>
     s!"destroy {noun}. Its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
-  | [.draw 3, .discardTwoUnlessArtifact n ty] =>
+  | [.draw 3 .you, .discardTwoUnlessArtifact n ty] =>
     s!"draw three cards. Then discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
   | [.exileIfDiesThisTurn, .onPermanent (.dealDamage n)] =>
     s!"deals {n} damage to {noun}. If that creature would die this turn, exile it instead"

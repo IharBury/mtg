@@ -440,8 +440,14 @@ namespace CardDef
 #guard Effect.playAdditionalLandThisTurn.spellResolution == .extraLand
 #guard (Effect.drawAndLoseLife 2 2).spellResolution ==
   .sequence [.draw 2, .loseLife 2 .you]
+#guard (Effect.draw 2).spellResolution == .draw 2
+#guard (Effect.targetPlayerDraw 2).spellResolution == .draw 2 .targetPlayer
+#guard (Effect.targetPlayerDraw 2).resolution == .targetPlayerDraw 2
+#guard SpellResolution.toPhrase (.draw 2 .you) "target player" == "draw 2 cards"
+#guard SpellResolution.toPhrase (.draw 2 .targetPlayer) "target player" ==
+  "target player draws 2 cards"
 #guard (Effect.targetPlayerDrawLoseLife 2 2).spellResolution ==
-  .sequence [.targetPlayerDraw 2, .loseLife 2 .targetPlayer]
+  .sequence [.draw 2 .targetPlayer, .loseLife 2 .targetPlayer]
 #guard (Effect.destroyTargetCreatureControllerLosesLife 2).spellResolution ==
   .sequence [.onPermanent .destroy, .loseLife 2 .controllerOfTarget]
 #guard (Effect.eachOpponentLosesLife 2).spellResolution == .loseLife 2 .eachOpponent
