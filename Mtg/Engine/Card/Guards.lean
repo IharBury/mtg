@@ -316,6 +316,20 @@ namespace CardDef
   .sequence [.countersOnCreatureTargets, .gainLife 2 .targetPlayers]
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
   "put a +1/+1 counter on up to one target creature. Target player gains 2 life"
+#guard SpellResolution.toPhrase (.countersOnCreatureTargets .stun 2) "target creature" ==
+  "put 2 stun counters on up to one target creature"
+#guard SpellResolution.toPhrase
+    (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl) "target creature" ==
+  "put 2 +1/+1 counters on target creature you control"
+#guard (Effect.plusOneThenFight 2).spellResolution ==
+  .sequence [.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl,
+    .fightAnnouncedCreatures]
+#guard (Effect.plusOneThenFight 2).resolution ==
+  .sequence [
+    .spell (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl),
+    .spell .fightAnnouncedCreatures]
+#guard (Effect.plusOneThenFight 2).phrase ==
+  "put 2 +1/+1 counters on target creature you control. Then it fights target creature an opponent controls"
 #guard SpellResolution.toPhrase (.gainLife 3) "target creature" == "you gain 3 life"
 #guard SpellResolution.toPhrase (.gainLife 2 .targetPlayers) "target player" ==
   "Target player gains 2 life"
