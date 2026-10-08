@@ -540,7 +540,7 @@ def effectLines (cardName : String) (e : Effect) : List String :=
       if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
   | .sequence [.returnTargetToHand .spell, .draw 1] =>
     ["Return target spell to its owner's hand.", "Draw a card."]
-  | .sequence [.draw 1, .loseLife 1, .amassGoblins n subtype] =>
+  | .sequence [.draw 1, .loseLife 1 .you, .amassGoblins n subtype] =>
     ["You draw a card and lose 1 life.", s!"Amass {pluralizeName subtype} {n}."]
   | .sequence [.returnTargetToHand .graveyard, .amassGoblins n subtype] =>
     ["Return up to one target creature card from your graveyard to your hand.",

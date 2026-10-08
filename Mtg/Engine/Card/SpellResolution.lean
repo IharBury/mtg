@@ -59,6 +59,18 @@ inductive LifeGainer where
   | targetPlayers
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Who loses the life from `SpellResolution.loseLife`. -/
+inductive LifeLoser where
+  /-- The controller of the resolving spell or ability. -/
+  | you
+  /-- The announced player target. -/
+  | targetPlayer
+  /-- The controller of the targeted permanent. -/
+  | controllerOfTarget
+  /-- Each opponent of the controller. -/
+  | eachOpponent
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- When `SpellResolution.if` and `SpellResolution.ifElse` choose a branch. -/
 inductive SpellIf where
   /-- The targeted permanent has this subtype. -/
@@ -126,8 +138,12 @@ inductive SpellResolution where
   | draw (n : Nat)
   /-- Discard `n` cards. -/
   | discard (n : Nat)
-  /-- You lose `n` life. Loss of life is not damage (CR 118.3a / 120.3). -/
-  | loseLife (n : Nat)
+  /-- `who` loses `n` life. Loss of life is not damage (CR 118.3a / 120.3).
+  The controller is `.loseLife n` (`.you`).
+  The announced player target is `.loseLife n .targetPlayer`.
+  The targeted permanent's controller is `.loseLife n .controllerOfTarget`.
+  Each opponent is `.loseLife n .eachOpponent`. -/
+  | loseLife (n : Nat) (who : LifeLoser := .you)
   /-- `who` gains `n` life. The controller is `.gainLife n` (`.you`).
   Each announced player target is `.gainLife n .targetPlayers`. -/
   | gainLife (n : Nat) (who : LifeGainer := .you)
@@ -188,10 +204,6 @@ inductive SpellResolution where
   | dealDamageToEachOppCreature (n : Nat)
   /-- Target player draws `n` cards. -/
   | targetPlayerDraw (n : Nat)
-  /-- The targeted player loses `n` life. -/
-  | targetPlayerLosesLife (n : Nat)
-  /-- The targeted permanent's controller loses `n` life. -/
-  | controllerOfTargetLosesLife (n : Nat)
   /-- If the targeted creature would die this turn, exile it instead. -/
   | exileIfDiesThisTurn
   /-- Add {R} for each permanent of type `ty` opponents control. -/
@@ -276,8 +288,6 @@ inductive SpellResolution where
   | becomeArtifactCreature44Flying (p : Int := 4) (t : Int := 4) (kw : String := "flying")
   /-- Discard `n` cards unless a card of type `ty` is discarded. -/
   | discardTwoUnlessArtifact (n : Nat := 2) (ty : CardType := .artifact)
-  /-- Each opponent loses `n` life. -/
-  | eachOpponentLosesLife (n : Nat)
   /-- Fight up to one other creature. -/
   | fightUpToOne
   /-- `n` +1/+1 counters on creatures you control.
@@ -361,13 +371,14 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .unrecognized => "this effect does nothing"
   | .sequence _ => ""
   | .discard n => s!"discard {cardPhrase n}"
-  | .loseLife n => s!"lose {n} life"
+  | .loseLife n .you => s!"lose {n} life"
+  | .loseLife n .targetPlayer => s!"{noun} loses {n} life"
+  | .loseLife n .controllerOfTarget => s!"its controller loses {n} life"
+  | .loseLife n .eachOpponent => s!"each opponent loses {n} life"
   | .gainLife n .you => s!"you gain {n} life"
   | .gainLife n .targetPlayers => s!"Target player gains {n} life"
   | .surveil n => s!"surveil {n}"
   | .teamGain k => s!"creatures you control gain {k.joinedAnd} until end of turn"
-  | .targetPlayerLosesLife n => s!"{noun} loses {n} life"
-  | .controllerOfTargetLosesLife n => s!"its controller loses {n} life"
   | .returnTargetToHand .spell => s!"return {noun} to its owner's hand"
   | .returnTargetToHand .graveyard => s!"return up to one {noun} to your hand"
   | .onPermanent action => PermanentAction.toNotation action noun
@@ -507,8 +518,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"until end of turn, {noun} becomes an artifact creature with base power and toughness {p}/{t} and gains {kw}"
   | .discardTwoUnlessArtifact n ty =>
     s!"discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
-  | .eachOpponentLosesLife n =>
-    s!"each opponent loses {n} life"
   | .fightUpToOne =>
     "target creature you control fights up to one other target creature"
   | .plusOneOnEachYouControl n .each =>
@@ -572,11 +581,11 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
   match rs with
   | [.draw n, .discard 1] =>
     s!"draw {cardPhrase n}, then discard a card"
-  | [.draw cards, .loseLife life] =>
+  | [.draw cards, .loseLife life .you] =>
     s!"you draw {cardPhrase cards} and lose {life} life"
-  | [.targetPlayerDraw cards, .targetPlayerLosesLife life] =>
+  | [.targetPlayerDraw cards, .loseLife life .targetPlayer] =>
     s!"{noun} draws {cardPhrase cards} and loses {life} life"
-  | [.onPermanent .destroy, .controllerOfTargetLosesLife n] =>
+  | [.onPermanent .destroy, .loseLife n .controllerOfTarget] =>
     s!"destroy {noun}. Its controller loses {n} life"
   | [.returnTargetToHand .spell, .draw 1] =>
     s!"return {noun} to its owner's hand. Draw a card"
@@ -584,7 +593,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"counter {noun}. If that spell's mana value was {n} or less, recruit"
   | [.returnTargetToHand .graveyard, .amassGoblins n subtype] =>
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
-  | [.draw 1, .loseLife 1, .amassGoblins n subtype] =>
+  | [.draw 1, .loseLife 1 .you, .amassGoblins n subtype] =>
     s!"you draw a card and lose 1 life. Amass {pluralizeName subtype} {n}"
   | [.createTokens kind n, .creaturesPump p t .youControl] =>
     let tokens := capitalizeAscii (TokenKind.createPhrase kind n)

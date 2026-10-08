@@ -1291,4 +1291,34 @@ def momentFromGraveyard : Game :=
   (namedPermanent g "Hill Giant").status.plusOnePlusOne == 0 &&
     (g.object! moved).status.plusOnePlusOne == 0
 
+/-- `.loseLife` sends the loss to the named recipient. The controller is
+untouched when an opponent, a targeted player, or a permanent's controller
+loses the life. -/
+def opponentsLoseTwo : Game :=
+  afterDraw.applyEffect ⟨0⟩ (Effect.eachOpponentLosesLife 2) #[]
+
+#guard
+  (opponentsLoseTwo.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
+    (opponentsLoseTwo.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 2
+
+def targetPlayerLosesThree : Game :=
+  afterDraw.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .player) (.loseLife 3 .targetPlayer))
+    #[Target.player ⟨1⟩]
+
+#guard
+  (targetPlayerLosesThree.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
+    (targetPlayerLosesThree.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 3
+
+def controllerOfBearLosesTwo : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  g.applyEffect ⟨0⟩ (Effect.destroyTargetCreatureControllerLosesLife 2)
+    #[Target.permanent bears.id]
+
+#guard
+  (controllerOfBearLosesTwo.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
+    (controllerOfBearLosesTwo.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 2 &&
+    !controllerOfBearLosesTwo.battlefield.any (fun o => o.name == "Grizzly Bears")
+
 end Mtg.Engine.Tests
