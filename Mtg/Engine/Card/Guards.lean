@@ -158,6 +158,13 @@ namespace CardDef
   "Elves you control gain menace until end of turn"
 #guard (Effect.drawLoseLifeThenAmass 2).spellResolution ==
   .sequence [.draw 1, .loseLife 1, .amassGoblins 2]
+#guard (Effect.counterThenRecruitIfMvAtMost 2).spellResolution ==
+  .sequence [.counter, .recruitIfMvAtMost 2]
+#guard (Effect.counterThenRecruitIfMvAtMost 2).resolution ==
+  .sequence [.spell .counter, .spell (.recruitIfMvAtMost 2)]
+#guard (Effect.counterThenRecruitIfMvAtMost 2).phrase ==
+  "counter target spell. If that spell's mana value was 2 or less, recruit"
+#guard (Effect.counterThenRecruitIfMvAtMost 2).castKind == .counter
 #guard Resolution.flatten
     (.sequence [.sequence [.draw 1, .gainLife 1], .amassGoblins 2]) ==
   [.draw 1, .gainLife 1, .amassGoblins 2]
