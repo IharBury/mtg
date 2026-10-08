@@ -11,16 +11,6 @@ going on the stack.
 namespace Mtg.Engine
 namespace Game
 
-/-- Scry `scryN`, then draw `drawN`. An empty library draws immediately. -/
-def scryThenDraw (g : Game) (p : PlayerId) (scryN drawN : Nat) : Game :=
-  let g := { g with pendingDrawAfterScry := some (p, drawN) }
-  let g := g.beginScry p scryN
-  if g.pendingDrawAfterScry.isSome &&
-      (match g.pending with | .scry _ _ => false | _ => true) then
-    let g := { g with pendingDrawAfterScry := none }
-    g.draw p drawN
-  else g
-
 /-- The target opponent may have `controller` draw a card (Palantír). -/
 def offerPalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) : Game :=
   g.beginFraChoice opp (.palantirMayDraw controller sid)
@@ -201,20 +191,25 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   else
   match ab.effect.resolution with
   | .sequence rs =>
-    if g.sequenceAllTargetsIllegal controller ab.effect targets sourceId then
-      g.logIllegalSequenceTargets targets
-    else
     match rs.flatMap Resolution.flatten with
-    | [.shuffleSource, .draw n] =>
-      g.shuffleSourceIntoLibrary sourceId (.draw controller n)
+    | [.onPermanent .tap, .scry scryN, .draw drawN] =>
+      g.resolveTapScryDraw controller ab.effect targets scryN drawN sourceId
+        (fizzle := fun g => g.logIllegalSequenceTargets targets)
     | steps =>
-      steps.foldl (fun g r =>
-        let step : TriggeredAbility :=
-          match ab with
-          | .triggered w _ opts =>
-            .triggered w { ab.effect with resolution := r } opts
-        g.applyTriggeredAbility controller step sourceId targets dividedDamage
-          lastKnownPower lastKnownToughness sourceName) g
+      if g.sequenceAllTargetsIllegal controller ab.effect targets sourceId then
+        g.logIllegalSequenceTargets targets
+      else
+        match steps with
+        | [.shuffleSource, .draw n] =>
+          g.shuffleSourceIntoLibrary sourceId (.draw controller n)
+        | steps =>
+          steps.foldl (fun g r =>
+            let step : TriggeredAbility :=
+              match ab with
+              | .triggered w _ opts =>
+                .triggered w { ab.effect with resolution := r } opts
+            g.applyTriggeredAbility controller step sourceId targets dividedDamage
+              lastKnownPower lastKnownToughness sourceName) g
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary sourceId
   | .draw n => g.draw controller n

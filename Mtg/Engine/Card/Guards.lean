@@ -53,6 +53,12 @@ namespace CardDef
     [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
 #guard (Effect.destroyArtifactOrEnchantmentGainLife 2).resolution ==
   Resolution.sequence [.onPermanent .destroy, .gainLife 2]
+#guard (Effect.tapScryDraw 1 1).resolution ==
+  Resolution.sequence [.onPermanent .tap, .scry 1, .draw 1]
+#guard (Effect.tapScryDraw 1 1).spellResolution ==
+  .sequence [.onPermanent .tap, .scry 1, .draw 1]
+#guard (Effect.tapScryDraw 1 1).phrase ==
+  "tap target creature. Scry 1. Draw a card"
 #guard Effect.destroyCreatureSurveil.resolution ==
   Resolution.sequence [.onPermanent .destroy, .surveil 1]
 #guard Effect.destroyCreatureSurveil.spellResolution ==

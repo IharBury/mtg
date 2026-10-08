@@ -78,8 +78,6 @@ inductive SpellResolution where
   | gainLife (n : Nat)
   /-- Scry `n`. -/
   | scry (n : Nat)
-  /-- Tap the target, then scry and draw. -/
-  | tapScryDraw (scryN drawN : Nat)
   /-- Tap each targeted creature (one or two). -/
   | tapTargets
   /-- Counter the targeted spell. -/
@@ -304,8 +302,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"exile all {ty.oracleWord} cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them"
   | .draw n => s!"draw {cardPhrase n}"
   | .scry n => s!"scry {n}"
-  | .tapScryDraw scryN drawN =>
-    s!"tap {noun}. Scry {scryN}. Draw {cardPhrase drawN}"
   | .tapTargets => "tap one or two target creatures"
   | .counter => s!"counter {noun}"
   | .counterUnlessPays n =>
@@ -507,6 +503,8 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"destroy {noun}. You gain {n} life"
   | [.onPermanent .destroy, .surveil 1] =>
     s!"destroy {noun}. Surveil 1"
+  | [.onPermanent .tap, .scry scryN, .draw drawN] =>
+    s!"tap {noun}. Scry {scryN}. Draw {cardPhrase drawN}"
   | [.onPermanent (.pump p t), .draw 1] =>
     let tStr := if t == 0 && p < 0 then "-0" else signedStat t
     s!"Target creature gets {signedStat p}/{tStr} until end of turn.\nDraw a card."

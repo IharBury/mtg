@@ -181,8 +181,12 @@ def scry (n : Nat) : Effect :=
   mkSpell (.of .none) (.scry n)
     (castKind := .draw)
 
+/-- Tap the target, then scry `scryN` and draw `drawN` (Hithlain Knots).
+The draw waits until the scry finishes. An illegal target means none of
+the steps happen. -/
 def tapScryDraw (scryN drawN : Nat) : Effect :=
-  mkSpell (.of .creature) (.tapScryDraw scryN drawN)
+  mkSpell (.of .creature)
+    (.sequence [.onPermanent .tap, .scry scryN, .draw drawN])
     (castKind := .draw)
 
 def tapOneOrTwoCreatures : Effect :=
