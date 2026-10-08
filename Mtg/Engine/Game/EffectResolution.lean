@@ -739,6 +739,19 @@ def logIllegalSequenceTargets (g : Game) (targets : Array Target) : Game :=
   else
     targets.foldl (fun g t => g.illegalAbilityTarget t) g
 
+/-- Tap, then scry `scryN` and draw `drawN`. The draw waits until the scry
+finishes. An illegal required target runs `fizzle` and skips every step
+(Hithlain Knots, ruling 188). -/
+def resolveTapScryDraw (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (scryN drawN : Nat)
+    (sourceId : Option ObjectId := none)
+    (fizzle : Game → Game := fun g => g.logMsg "The spell doesn't resolve") : Game :=
+  if g.sequenceAllTargetsIllegal controller effect targets sourceId then
+    fizzle g
+  else
+    let g := g.applyOnPermanent controller effect.targetKind targets .tap sourceId
+    g.scryThenDraw controller scryN drawN
+
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
@@ -748,17 +761,21 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | none =>
   match effect.resolution with
   | .sequence rs =>
-    if g.sequenceAllTargetsIllegal controller effect targets then
-      g.logIllegalSequenceTargets targets
-    else
-      match rs.flatMap Resolution.flatten with
-      | [.shuffleSource, .draw n] =>
-        g.shuffleSourceIntoLibrary none (.draw controller n)
-      | steps =>
-        steps.foldl (fun g r =>
-          g.applyUnified controller { effect with resolution := r } targets
-            (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-            (giftPromised := giftPromised) (chosenX := chosenX)) g
+    match rs.flatMap Resolution.flatten with
+    | [.onPermanent .tap, .scry scryN, .draw drawN] =>
+      g.resolveTapScryDraw controller effect targets scryN drawN
+    | steps =>
+      if g.sequenceAllTargetsIllegal controller effect targets then
+        g.logIllegalSequenceTargets targets
+      else
+        match steps with
+        | [.shuffleSource, .draw n] =>
+          g.shuffleSourceIntoLibrary none (.draw controller n)
+        | steps =>
+          steps.foldl (fun g r =>
+            g.applyUnified controller { effect with resolution := r } targets
+              (castFromGraveyard := castFromGraveyard) (kicked := kicked)
+              (giftPromised := giftPromised) (chosenX := chosenX)) g
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary none
   | .gainLife n => g.gainLife controller n
@@ -828,22 +845,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.draw controller n
   | .scry n =>
     g.beginScry controller n
-  | .tapScryDraw scryN drawN =>
-    let legal := g.legalTargetsForKind controller effect.targetKind
-    match targets[0]? with
-    | some t =>
-      if legal.contains t then
-        let g := g.applyOnPermanent controller effect.targetKind targets .tap
-        let g := { g with pendingDrawAfterScry := some (controller, drawN) }
-        let g := g.beginScry controller scryN
-        if g.pendingDrawAfterScry.isSome &&
-            (match g.pending with | .scry _ _ => false | _ => true) then
-          let g := { g with pendingDrawAfterScry := none }
-          g.draw controller drawN
-        else g
-      else
-        g.logMsg "The spell doesn't resolve"
-    | none => g.logMsg "The spell doesn't resolve"
   | .tapTargets =>
     g.foldPermanentTargets targets (fun g o =>
       if o.isOnBattlefield && o.isCreature then g.applyPermanentAction o .tap else g)
@@ -1547,16 +1548,21 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | none =>
   match effect.resolution with
   | .sequence rs =>
-    if g.sequenceAllTargetsIllegal controller effect targets sourceId then
-      g.logIllegalSequenceTargets targets
-    else
-      match rs.flatMap Resolution.flatten with
-      | [.shuffleSource, .draw n] =>
-        g.shuffleSourceIntoLibrary sourceId (.draw controller n)
-      | steps =>
-        steps.foldl (fun g r =>
-          g.applyUnifiedAbility controller { effect with resolution := r } targets
-            sourceId lastKnownPower chosenX) g
+    match rs.flatMap Resolution.flatten with
+    | [.onPermanent .tap, .scry scryN, .draw drawN] =>
+      g.resolveTapScryDraw controller effect targets scryN drawN sourceId
+        (fizzle := fun g => g.logIllegalSequenceTargets targets)
+    | steps =>
+      if g.sequenceAllTargetsIllegal controller effect targets sourceId then
+        g.logIllegalSequenceTargets targets
+      else
+        match steps with
+        | [.shuffleSource, .draw n] =>
+          g.shuffleSourceIntoLibrary sourceId (.draw controller n)
+        | steps =>
+          steps.foldl (fun g r =>
+            g.applyUnifiedAbility controller { effect with resolution := r } targets
+              sourceId lastKnownPower chosenX) g
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary sourceId
   | .amassGoblins n => g.amassGoblins controller n

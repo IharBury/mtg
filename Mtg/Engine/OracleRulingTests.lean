@@ -2030,13 +2030,26 @@ def knotsAlreadyTapped : Game :=
   let g := g.setObject { bears with status := { bears.status with tapped := true } }
   g.applyEffect ⟨0⟩ (Effect.tapScryDraw 1 1) #[.permanent (namedPermanent g "Grizzly Bears").id]
 
+def knotsAfterScry : Except String Game :=
+  knotsAlreadyTapped.finishScry ⟨0⟩ (knotsAlreadyTapped.scryLookedIds ⟨0⟩ 1) #[]
+
 def knotsOk : Bool :=
-  knotsIllegal.log.any (fun s => mentions s "doesn't resolve") &&
+  hithlainKnots.spellEffect == some (Effect.tapScryDraw 1 1) &&
+    knotsIllegal.log.any (fun s => mentions s "doesn't resolve") &&
     (knotsIllegal.player ⟨0⟩).cardsDrawnThisTurn ==
+      (afterDraw.player ⟨0⟩).cardsDrawnThisTurn &&
+    (match knotsIllegal.pending with | .scry _ _ => false | _ => true) &&
+    (knotsAlreadyTapped.player ⟨0⟩).cardsDrawnThisTurn ==
       (afterDraw.player ⟨0⟩).cardsDrawnThisTurn &&
     (match knotsAlreadyTapped.pending with
      | .scry _ _ => true
      | _ => knotsAlreadyTapped.log.any (fun s => mentions s "scries")) &&
+    (match knotsAfterScry with
+     | .ok g =>
+       (g.player ⟨0⟩).cardsDrawnThisTurn ==
+         (afterDraw.player ⟨0⟩).cardsDrawnThisTurn + 1 &&
+         match g.pending with | .scry _ _ => false | _ => true
+     | .error _ => false) &&
     (ruling 188).comment.contains "spell doesn't resolve"
 
 #guard knotsOk

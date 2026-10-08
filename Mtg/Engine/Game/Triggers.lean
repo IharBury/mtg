@@ -884,5 +884,16 @@ def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   else
     { g with pending := .scry p count, surveilReturnMvAtMost := none }.logMsg s!"{pl.name} scries {n}"
 
+/-- Scry `scryN`, then draw `drawN`. An empty library draws immediately.
+The draw waits on `pendingDrawAfterScry` while the scry choice is open. -/
+def scryThenDraw (g : Game) (p : PlayerId) (scryN drawN : Nat) : Game :=
+  let g := { g with pendingDrawAfterScry := some (p, drawN) }
+  let g := g.beginScry p scryN
+  if g.pendingDrawAfterScry.isSome &&
+      (match g.pending with | .scry _ _ => false | _ => true) then
+    let g := { g with pendingDrawAfterScry := none }
+    g.draw p drawN
+  else g
+
 end Game
 end Mtg.Engine
