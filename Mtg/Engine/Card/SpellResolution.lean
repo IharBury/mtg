@@ -89,6 +89,14 @@ inductive EachCreatureDamage where
   | nonSubtype (subtype : String)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Who creates the tokens from `SpellResolution.createTokens`. -/
+inductive TokenCreator where
+  /-- The controller of the resolving spell or ability. -/
+  | you
+  /-- The announced player target. -/
+  | targetPlayer
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- When `SpellResolution.if` and `SpellResolution.ifElse` choose a branch. -/
 inductive SpellIf where
   /-- The targeted permanent has this subtype. -/
@@ -275,14 +283,13 @@ inductive SpellResolution where
   | returnGyCreatureMvAtMostOrAny (n : Nat)
   /-- Reveal the top `n` and put creatures onto the battlefield. -/
   | revealTopPutCreatures (n : Nat)
-  /-- Create `n` tokens of this kind. -/
-  | createTokens (kind : TokenKind) (n : Nat)
+  /-- `who` creates `n` tokens of `kind`. The controller is `.createTokens kind n` (`.you`).
+  The announced player target is `.createTokens kind n .targetPlayer`. -/
+  | createTokens (kind : TokenKind) (n : Nat) (who : TokenCreator := .you)
   /-- Exile the targeted creature. -/
   | exileTarget
   /-- Return one or two targeted nonlands to hand. -/
   | returnOneOrTwoNonlands
-  /-- Target player creates tokens. -/
-  | targetPlayerCreatesTokens (kind : TokenKind) (n : Nat)
   /-- Surveil `n` (CR 701.25). -/
   | surveil (n : Nat)
   /-- The targeted player investigates. -/
@@ -511,14 +518,14 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"choose target creature card in your graveyard with mana value {n} or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield"
   | .revealTopPutCreatures n =>
     s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
-  | .createTokens kind n =>
+  | .createTokens kind n .you =>
     TokenKind.createPhrase kind n
+  | .createTokens kind n .targetPlayer =>
+    s!"{noun} creates {TokenKind.createdTokensPhrase kind n}"
   | .exileTarget =>
     s!"exile {noun}"
   | .returnOneOrTwoNonlands =>
     "return one or two target nonland permanents to their owners' hands"
-  | .targetPlayerCreatesTokens kind n =>
-    s!"{noun} creates {TokenKind.createdTokensPhrase kind n}"
   | .targetPlayerInvestigates =>
     "target player investigates"
   | .onCreatureAmongTargets action =>
@@ -610,7 +617,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
   | [.draw 1 .you, .loseLife 1 .you, .amassGoblins n subtype] =>
     s!"you draw a card and lose 1 life. Amass {pluralizeName subtype} {n}"
-  | [.createTokens kind n, .creaturesPump p t .youControl] =>
+  | [.createTokens kind n .you, .creaturesPump p t .youControl] =>
     let tokens := capitalizeAscii (TokenKind.createPhrase kind n)
     s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
   | [.onPermanent .destroy, .gainLife n .you] =>

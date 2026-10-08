@@ -1300,8 +1300,15 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.beginFraChoice controller
         (.revealPutCreatures top creatures g.resolvingTeamworkPaid)
         s!"{(g.player controller).name} may put creature cards from among them onto the battlefield"
-  | .createTokens kind n =>
-    g.createKindTokens controller kind n
+  | .createTokens kind n who =>
+    match who with
+    | .you => g.createKindTokens controller kind n
+    | .targetPlayer =>
+      let pid :=
+        match targets[0]? with
+        | some (Target.player p) => p
+        | _ => controller
+      g.createKindTokens pid kind n
   | .exileTarget =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       (g.move o.id .exile none).1)
@@ -1317,12 +1324,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             g.logMsg "The target is no longer legal"
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal") g
-  | .targetPlayerCreatesTokens kind n =>
-    let pid :=
-      match targets[0]? with
-      | some (Target.player p) => p
-      | _ => controller
-    g.createKindTokens pid kind n
   | .targetPlayerInvestigates =>
     match targets.findSome? (fun t =>
         match t with

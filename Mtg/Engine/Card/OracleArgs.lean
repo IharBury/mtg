@@ -329,8 +329,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .exileCreatureMvAtMostOrAnyIfTeamwork (← takeNat a) (← takeNat b)
   | .returnGyCreatureMvAtMostOrAny n => return .returnGyCreatureMvAtMostOrAny (← takeNat n)
   | .revealTopPutCreatures n => return .revealTopPutCreatures (← takeNat n)
-  | .createTokens k n => return .createTokens k (← takeNat n)
-  | .targetPlayerCreatesTokens k n => return .targetPlayerCreatesTokens k (← takeNat n)
+  | .createTokens k n who => return .createTokens k (← takeNat n) who
   | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeStr s)
   | .plusOneOnCreatureN n => return .plusOneOnCreatureN (← takeNat n)
   | .createTokensPerSubtype k s => return .createTokensPerSubtype k (← takeStr s)

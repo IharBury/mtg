@@ -1358,4 +1358,18 @@ def targetPlayerDrawsTwo : Game :=
   (targetPlayerDrawsTwo.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
     (targetPlayerDrawsTwo.player ⟨1⟩).hand.size == (afterDraw.player ⟨1⟩).hand.size + 2
 
+/-- `.createTokens` gives the tokens to the named recipient. The controller
+gets none when the targeted player creates them. -/
+def targetPlayerCreatesLeviathan : Game :=
+  afterDraw.applyEffect ⟨0⟩
+    (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1)
+    #[Target.player ⟨1⟩]
+
+#guard
+  let leviathans :=
+    targetPlayerCreatesLeviathan.battlefield.filter (fun o => o.name == "Leviathan")
+  leviathans.size == 1 &&
+    (leviathans[0]!).controlledBy ⟨1⟩ &&
+    !(leviathans[0]!).controlledBy ⟨0⟩
+
 end Mtg.Engine.Tests
