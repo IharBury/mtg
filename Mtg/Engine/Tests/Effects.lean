@@ -1133,7 +1133,7 @@ def countersOnFirstYouControl : Game :=
   (namedPermanent g "Grizzly Bears").status.stun == 2 &&
     (namedPermanent g "Rumbling Baloth").status.stun == 0
 
-/-- A first target you do not control is illegal for `.firstYouControl`. -/
+/- A first target you do not control is illegal for `.firstYouControl`. -/
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
