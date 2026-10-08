@@ -66,6 +66,17 @@ namespace CardDef
   .or [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary]
 #guard Effect.putOnTopOrBottom.phrase ==
   "target creature's owner puts it on their choice of the top or bottom of their library"
+#guard (Effect.untapPumpMaybeAttach 2 2).spellResolution ==
+  .sequence [
+    .onPermanent .untap,
+    .onPermanent (.pump 2 2),
+    .«if» .mayAttachEquipment "Dwarf"]
+#guard (Effect.untapPumpMaybeAttach 2 2).phrase ==
+  "untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it"
+#guard SpellResolution.toPhrase (.«if» (.draw 1) "Elf") "target creature" ==
+  "if target creature is an Elf, draw a card"
+#guard SpellResolution.toPhrase (.«if» .mayAttachEquipment "Dwarf") "target creature" ==
+  "if target creature is a Dwarf, you may attach an Equipment you control to it"
 #guard SpellResolution.toPhrase (.or [.draw 1, .gainLife 3]) "target creature" ==
   "draw a card or you gain 3 life"
 #guard Effect.destroyCreatureSurveil.resolution ==

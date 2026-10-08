@@ -906,11 +906,18 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         (giftPromised := giftPromised) (chosenX := chosenX)
     | rs =>
       g.beginSpellOr controller effect targets rs
-  | .mayAttachEquipmentIfDwarf subtype =>
+  | .mayAttachEquipment =>
+    g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
+      { g with pending := .mayAttachEquipment controller o.id }.logMsg
+        s!"{(g.player controller).name} may attach an Equipment to {o.name}")
+  | .«if» r subtype =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       if g.hasSubtype o subtype then
-        { g with pending := .mayAttachEquipment controller o.id }.logMsg
-          s!"{(g.player controller).name} may attach an Equipment to {o.name}"
+        g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
+          (castFromGraveyard := castFromGraveyard)
+          (kicked := kicked)
+          (giftPromised := giftPromised)
+          (chosenX := chosenX)
       else g)
   | .exchangeControl =>
     match targets[0]?, targets[1]? with

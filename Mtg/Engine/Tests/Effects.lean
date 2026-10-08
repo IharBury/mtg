@@ -910,6 +910,37 @@ def ownerLibraryBottom : Game :=
   ((ownerLibraryBottom.player ⟨1⟩).library[0]?.map fun id =>
     (ownerLibraryBottom.object! id).name) == some "Grizzly Bears"
 
+/-- `if` resolves its resolution only when the target has the subtype. -/
+def ifDwarfPumped : Game :=
+  let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
+  let id := (namedPermanent g "Bofur, Reliable Guardian").id
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creatureYouControl)
+      (.«if» (.onPermanent (.pump 1 1)) "Dwarf"))
+    #[Target.permanent id]
+
+#guard ifDwarfPumped.power (namedPermanent ifDwarfPumped "Bofur, Reliable Guardian") == 2
+
+def ifScoutPumped : Game :=
+  let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
+  let id := (namedPermanent g "Bofur, Reliable Guardian").id
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creatureYouControl)
+      (.«if» (.onPermanent (.pump 3 0)) "Scout"))
+    #[Target.permanent id]
+
+#guard ifScoutPumped.power (namedPermanent ifScoutPumped "Bofur, Reliable Guardian") == 4
+
+def ifDwarfSkipsBear : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let id := (namedPermanent g "Grizzly Bears").id
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creatureYouControl)
+      (.«if» (.onPermanent (.pump 1 1)) "Dwarf"))
+    #[Target.permanent id]
+
+#guard ifDwarfSkipsBear.power (namedPermanent ifDwarfSkipsBear "Grizzly Bears") == 2
+
 /-- `or` applies whichever resolution is chosen. The first draws, the second
 gains life, and a later mode scries. -/
 def spellOrAsked : Game :=
