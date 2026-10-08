@@ -1033,10 +1033,10 @@ def ofSpellStep : SpellResolution → Resolution
   | .teamGain k => .teamGain k
   | .returnTargetToHand .spell => .returnTargetSpell
   | .returnTargetToHand .graveyard => .fra .returnFromGyToHand
-  | .createTokens kind n => .createTokens kind n
+  | .createTokens kind n .you => .createTokens kind n
   | .creaturesPump p t .youControl => .creaturesYouControlPump p t
   | .createTokensX kind => .createTokensX kind
-  | .dealDamageToEachCreature n => .dealDamageToEachCreature n
+  | .dealDamageToEachCreature n .each => .dealDamageToEachCreature n
   | .sequence rs => .sequence (rs.map ofSpellStep)
   | r => .spell r
 

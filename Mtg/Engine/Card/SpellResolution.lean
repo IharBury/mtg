@@ -87,6 +87,24 @@ inductive SpellCostLess where
   | supertype (s : Supertype)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Which creatures `SpellResolution.dealDamageToEachCreature` damages. -/
+inductive EachCreatureDamage where
+  /-- Every creature. -/
+  | each
+  /-- Each creature an opponent of the controller controls. -/
+  | opponentsControl
+  /-- Each creature that does not have this subtype. -/
+  | nonSubtype (subtype : String)
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Who creates the tokens from `SpellResolution.createTokens`. -/
+inductive TokenCreator where
+  /-- The controller of the resolving spell or ability. -/
+  | you
+  /-- The announced player target. -/
+  | targetPlayer
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- When `SpellResolution.if` and `SpellResolution.ifElse` choose a branch. -/
 inductive SpellIf where
   /-- The targeted permanent has this subtype. -/
@@ -217,14 +235,10 @@ inductive SpellResolution where
   | recruit
   /-- Search the library for a card with this supertype and card type. -/
   | searchLegendaryCreatureToHand (s : Supertype := .legendary) (ty : CardType := .creature)
-  /-- Deal `n` damage to each creature opponents control. -/
-  | dealDamageToEachOppCreature (n : Nat)
   /-- If the targeted creature would die this turn, exile it instead. -/
   | exileIfDiesThisTurn
   /-- Add {R} for each permanent of type `ty` opponents control. -/
   | addRedPerOppArtifacts (ty : CardType := .artifact)
-  /-- Deal `n` damage to each creature that is not `subtype`. -/
-  | dealDamageToEachNonDragon (n : Nat) (subtype : String := "Dragon")
   /-- Choose a creature type and bounce the rest. -/
   | chooseTypeReturnOthers
   /-- Draw equal to greatest toughness, then put creatures onto the battlefield. -/
@@ -277,22 +291,24 @@ inductive SpellResolution where
   | returnGyCreatureMvAtMostOrAny (n : Nat)
   /-- Reveal the top `n` and put creatures onto the battlefield. -/
   | revealTopPutCreatures (n : Nat)
-  /-- Create `n` tokens of this kind. -/
-  | createTokens (kind : TokenKind) (n : Nat)
+  /-- `who` creates `n` tokens of `kind`. The controller is `.createTokens kind n` (`.you`).
+  The announced player target is `.createTokens kind n .targetPlayer`. -/
+  | createTokens (kind : TokenKind) (n : Nat) (who : TokenCreator := .you)
   /-- Exile the targeted creature. -/
   | exileTarget
   /-- Return one or two targeted nonlands to hand. -/
   | returnOneOrTwoNonlands
-  /-- Target player creates tokens. -/
-  | targetPlayerCreatesTokens (kind : TokenKind) (n : Nat)
   /-- Surveil `n` (CR 701.25). -/
   | surveil (n : Nat)
   /-- The targeted player investigates. -/
   | targetPlayerInvestigates
   /-- Apply `action` to the creature among the announced targets. -/
   | onCreatureAmongTargets (action : PermanentAction)
-  /-- Deal `n` damage to each creature. -/
-  | dealDamageToEachCreature (n : Nat)
+  /-- Deal `n` damage to each creature in `which`.
+  Every creature is `.dealDamageToEachCreature n` (`.each`).
+  Creatures opponents control are `.dealDamageToEachCreature n .opponentsControl`.
+  Creatures that are not `subtype` are `.dealDamageToEachCreature n (.nonSubtype subtype)`. -/
+  | dealDamageToEachCreature (n : Nat) (which : EachCreatureDamage := .each)
   /-- The targeted permanent's owner may search for a `s` `ty` card. -/
   | ownerMaySearchBasic (s : Supertype := .basic) (ty : CardType := .land)
   /-- Double the targeted creature's power and toughness. -/
@@ -448,14 +464,16 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"amass {pluralizeName subtype} {n}"
   | .searchLegendaryCreatureToHand s ty =>
     searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
-  | .dealDamageToEachOppCreature n =>
+  | .dealDamageToEachCreature n .each =>
+    s!"deals {n} damage to each creature"
+  | .dealDamageToEachCreature n .opponentsControl =>
     s!"deals {n} damage to each creature your opponents control"
+  | .dealDamageToEachCreature n (.nonSubtype subtype) =>
+    s!"deals {n} damage to each non-{subtype} creature"
   | .exileIfDiesThisTurn =>
     s!"if {noun} would die this turn, exile it instead"
   | .addRedPerOppArtifacts ty =>
     s!"add {"{R}"} for each {ty.oracleWord} your opponents control"
-  | .dealDamageToEachNonDragon n subtype =>
-    s!"deals {n} damage to each non-{subtype} creature"
   | .chooseTypeReturnOthers =>
     "choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands"
   | .drawEqualToughnessThenPutCreatures =>
@@ -508,20 +526,18 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"choose target creature card in your graveyard with mana value {n} or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield"
   | .revealTopPutCreatures n =>
     s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
-  | .createTokens kind n =>
+  | .createTokens kind n .you =>
     TokenKind.createPhrase kind n
+  | .createTokens kind n .targetPlayer =>
+    s!"{noun} creates {TokenKind.createdTokensPhrase kind n}"
   | .exileTarget =>
     s!"exile {noun}"
   | .returnOneOrTwoNonlands =>
     "return one or two target nonland permanents to their owners' hands"
-  | .targetPlayerCreatesTokens kind n =>
-    s!"{noun} creates {TokenKind.createdTokensPhrase kind n}"
   | .targetPlayerInvestigates =>
     "target player investigates"
   | .onCreatureAmongTargets action =>
     PermanentAction.toNotation action "target creature"
-  | .dealDamageToEachCreature n =>
-    s!"deals {n} damage to each creature"
   | .ownerMaySearchBasic s ty =>
     s!"its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
   | .doublePowerAndToughness =>
@@ -609,7 +625,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
   | [.draw 1 .you, .loseLife 1 .you, .amassGoblins n subtype] =>
     s!"you draw a card and lose 1 life. Amass {pluralizeName subtype} {n}"
-  | [.createTokens kind n, .creaturesPump p t .youControl] =>
+  | [.createTokens kind n .you, .creaturesPump p t .youControl] =>
     let tokens := capitalizeAscii (TokenKind.createPhrase kind n)
     s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
   | [.onPermanent .destroy, .gainLife n .you] =>
@@ -640,7 +656,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
   | [.countersOnCreatureTargets kind k .firstYouControl,
      .«if» (.plusOneOnEachYouControl m .eachOther) .castFromGraveyard] =>
     s!"put {kind.countersPhrase k} on target creature you control. If this spell was cast from a graveyard, also put {plusOnePlusOneCountersPhrase m} on each other creature you control"
-  | [.dealDamageToEachNonDragon n sub, .addFourManaDragonSpells m sub2] =>
+  | [.dealDamageToEachCreature n (.nonSubtype sub), .addFourManaDragonSpells m sub2] =>
     s!"deals {n} damage to each non-{sub} creature. Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells"
   | [.returnTargetToHand .spell, .playersCantCastIfGift] =>
     "return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn"
