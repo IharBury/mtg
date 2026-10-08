@@ -1321,4 +1321,18 @@ def controllerOfBearLosesTwo : Game :=
     (controllerOfBearLosesTwo.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 2 &&
     !controllerOfBearLosesTwo.battlefield.any (fun o => o.name == "Grizzly Bears")
 
+/-- `.createTokens` gives the tokens to the named recipient. The controller
+gets none when the targeted player creates them. -/
+def targetPlayerCreatesLeviathan : Game :=
+  afterDraw.applyEffect ⟨0⟩
+    (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1)
+    #[Target.player ⟨1⟩]
+
+#guard
+  let leviathans :=
+    targetPlayerCreatesLeviathan.battlefield.filter (fun o => o.name == "Leviathan")
+  leviathans.size == 1 &&
+    (leviathans[0]!).controlledBy ⟨1⟩ &&
+    !(leviathans[0]!).controlledBy ⟨0⟩
+
 end Mtg.Engine.Tests
