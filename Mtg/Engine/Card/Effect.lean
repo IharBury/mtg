@@ -1029,8 +1029,8 @@ def ofSpellStep : SpellResolution → Resolution
   | .teamGain k => .teamGain k
   | .targetPlayerLosesLife n => .targetPlayerLoseLife n
   | .controllerOfTargetLosesLife n => .controllerOfTargetLosesLife n
-  | .returnTargetSpell => .returnTargetSpell
-  | .returnFromGyToHand => .fra .returnFromGyToHand
+  | .returnTargetToHand .spell => .returnTargetSpell
+  | .returnTargetToHand .graveyard => .fra .returnFromGyToHand
   | .createTokens kind n => .createTokens kind n
   | .creaturesPump p t .youControl => .creaturesYouControlPump p t
   | .createTokensX kind => .createTokensX kind
@@ -1052,13 +1052,13 @@ def toSpellStep : Resolution → Option SpellResolution
   | .onPermanent a => some (.onPermanent a)
   | .discard n => some (.discard n)
   | .fra (.loseLife n) => some (.loseLife n)
-  | .fra .returnFromGyToHand => some .returnFromGyToHand
+  | .fra .returnFromGyToHand => some (.returnTargetToHand .graveyard)
   | .gainLife n => some (.gainLife n)
   | .surveil n => some (.surveil n)
   | .teamGain k => some (.teamGain k)
   | .targetPlayerLoseLife n => some (.targetPlayerLosesLife n)
   | .controllerOfTargetLosesLife n => some (.controllerOfTargetLosesLife n)
-  | .returnTargetSpell => some .returnTargetSpell
+  | .returnTargetSpell => some .returnTargetToHand
   | .amassGoblins n => some (.amassGoblins n)
   | .createTokens kind n false => some (.createTokens kind n)
   | .creaturesYouControlPump p t => some (.creaturesPump p t)
