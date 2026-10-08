@@ -230,8 +230,8 @@ def takeAction (a : PermanentAction) : ArgM PermanentAction := do
 def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   match r with
   | .onPermanent a => return .onPermanent (← takeAction a)
-  | .allCreaturesPump p t => return .allCreaturesPump (← takeInt p) (← takeInt t)
-  | .creaturesOfPlayerPump p t => return .creaturesOfPlayerPump (← takeInt p) (← takeInt t)
+  | .creaturesPump scope p t =>
+    return .creaturesPump scope (← takeInt p) (← takeInt t)
   | .draw n => return .draw (← takeNat n)
   | .discard n => return .discard (← takeNat n)
   | .loseLife n => return .loseLife (← takeNat n)

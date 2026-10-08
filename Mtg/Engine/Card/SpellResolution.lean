@@ -40,6 +40,14 @@ inductive SpellCastKind where
   | counter
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Which creatures an until-end-of-turn pump affects. -/
+inductive CreaturePumpScope where
+  /-- Every creature. -/
+  | all
+  /-- Creatures the targeted player controls. -/
+  | ofTargetPlayer
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- How a spell resolves (CR 608). Grouped so `Game.applyEffect` matches a
 handful of shapes instead of every printed spell factory. Burn and
 creature-only damage both use `onPermanent (.dealDamage n)`; Game applies
@@ -55,10 +63,8 @@ inductive SpellResolution where
   /-- Affect a still-legal target. Damage can hit a player or a creature;
   other actions require a permanent. -/
   | onPermanent (action : PermanentAction)
-  /-- All creatures get +P/+T until end of turn. -/
-  | allCreaturesPump (power toughness : Int)
-  /-- Creatures the targeted player controls get +P/+T until end of turn. -/
-  | creaturesOfPlayerPump (power toughness : Int)
+  /-- Creatures in `scope` get +P/+T until end of turn. -/
+  | creaturesPump (scope : CreaturePumpScope) (power toughness : Int)
   /-- Exile cards of type `ty` from the targeted player's graveyard and grant
   permission to cast them, spending mana as though it were any type. -/
   | exileGraveyardCreaturesGrantCast (ty : CardType := .creature)
@@ -288,10 +294,12 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .returnTargetSpell => s!"return {noun} to its owner's hand"
   | .returnFromGyToHand => s!"return up to one {noun} to your hand"
   | .onPermanent action => PermanentAction.toNotation action noun
-  | .allCreaturesPump p t =>
-    s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
-  | .creaturesOfPlayerPump p t =>
-    s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
+  | .creaturesPump scope p t =>
+    match scope with
+    | .all =>
+      s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
+    | .ofTargetPlayer =>
+      s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
   | .exileGraveyardCreaturesGrantCast ty =>
     s!"exile all {ty.oracleWord} cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them"
   | .draw n => s!"draw {cardPhrase n}"
