@@ -253,7 +253,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .creaturesPump (← takeInt p) (← takeInt t) scope
   | .draw n => return .draw (← takeNat n)
   | .discard n => return .discard (← takeNat n)
-  | .loseLife n => return .loseLife (← takeNat n)
+  | .loseLife n who => return .loseLife (← takeNat n) who
   | .gainLife n who => return .gainLife (← takeNat n) who
   | .scry n => return .scry (← takeNat n)
   | .surveil n => return .surveil (← takeNat n)
@@ -308,8 +308,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .amassGoblins (← takeNat n) (← takeStr subtype)
   | .dealDamageToEachOppCreature n => return .dealDamageToEachOppCreature (← takeNat n)
   | .targetPlayerDraw n => return .targetPlayerDraw (← takeNat n)
-  | .targetPlayerLosesLife n => return .targetPlayerLosesLife (← takeNat n)
-  | .controllerOfTargetLosesLife n => return .controllerOfTargetLosesLife (← takeNat n)
   | .dealDamageToEachNonDragon n subtype =>
     return .dealDamageToEachNonDragon (← takeNat n) (← takeStr subtype)
   | .millThenPutInstantOrSorcery n a b =>
@@ -333,7 +331,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .targetPlayerCreatesTokens k n => return .targetPlayerCreatesTokens k (← takeNat n)
   | .dealDamageToEachCreature n => return .dealDamageToEachCreature (← takeNat n)
   | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeStr s)
-  | .eachOpponentLosesLife n => return .eachOpponentLosesLife (← takeNat n)
   | .plusOneOnCreatureN n => return .plusOneOnCreatureN (← takeNat n)
   | .createTokensPerSubtype k s => return .createTokensPerSubtype k (← takeStr s)
   | .millThenPutPermanentGainLife a b =>

@@ -144,7 +144,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match g.mayEffect with
       | some e =>
         match e.spellResolution with
-        | .loseLife _ | .discard _ => some .decline
+        | .loseLife _ _ | .discard _ => some .decline
         | _ => some .accept
       | none => some .decline
     | .tapHumans _ =>
@@ -375,7 +375,7 @@ where
         match o.printed.spellEffect with
         | some e =>
           match e.spellResolution with
-          | .sequence [.draw cards, .loseLife life] =>
+          | .sequence [.draw cards, .loseLife life .you] =>
             (g.player p).life > (life : Int) &&
               (g.player p).library.size >= cards
           | _ => true

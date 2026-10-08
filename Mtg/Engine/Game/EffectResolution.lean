@@ -1378,7 +1378,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .discardTwoUnlessArtifact n ty =>
     let g := { g with thirstDiscardsLeft := n, thirstDiscardType := ty }
     g.beginDiscardCards #[controller]
-  | .eachOpponentLosesLife n =>
+  | .loseLife n .eachOpponent =>
     g.forEachOpponent controller (fun g pid => g.loseLife pid n)
   | .fightUpToOne =>
     match targets[0]?, targets[1]? with

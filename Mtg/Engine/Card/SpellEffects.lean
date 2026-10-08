@@ -125,7 +125,7 @@ def destroyArtifactOrLandNonflyersCantBlock : Effect :=
     phrase := "destroy target artifact or land. Creatures without flying can't block this turn" }
 
 def destroyTargetCreatureControllerLosesLife (life : Nat) : Effect :=
-  mkSpell (.of .creature) (.sequence [.onPermanent .destroy, .controllerOfTargetLosesLife life])
+  mkSpell (.of .creature) (.sequence [.onPermanent .destroy, .loseLife life .controllerOfTarget])
     (castKind := .destroyCreature)
     (preferAsDefaultMode := true)
 
@@ -139,7 +139,7 @@ def drawAndLoseLife (cards life : Nat) : Effect :=
 
 def targetPlayerDrawLoseLife (cards life : Nat) : Effect :=
   mkSpell (.of .player .selfPlayer)
-    (.sequence [.targetPlayerDraw cards, .targetPlayerLosesLife life])
+    (.sequence [.targetPlayerDraw cards, .loseLife life .targetPlayer])
     (castKind := .draw)
 
 def creaturesTargetPlayerGet (power toughness : Int) : Effect :=
@@ -544,7 +544,7 @@ def drawThreeDiscardUnlessArtifact : Effect :=
     (castKind := .draw)
 
 def eachOpponentLosesLife (n : Nat) : Effect :=
-  mkSpell (.of .none) (.eachOpponentLosesLife n)
+  mkSpell (.of .none) (.loseLife n .eachOpponent)
     (castKind := .burn)
 
 def fight : Effect :=
@@ -756,7 +756,7 @@ def searchTwoBasicsSplit : Effect :=
 def creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat) : Effect :=
   { resolution := .sequence
       [.creaturesYouControlPump power toughness,
-       .spell (.eachOpponentLosesLife life)]
+       .spell (.loseLife life .eachOpponent)]
     phrase :=
       s!"Creatures you control get {signedStat power}/{signedStat toughness} until end of turn. Each opponent loses {life} life" }
 

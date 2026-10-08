@@ -149,7 +149,7 @@ namespace CardDef
   "Put a +1/+1 counter on this. He gains vigilance, indestructible, and haste until end of turn"
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).resolution ==
   Resolution.sequence
-    [.creaturesYouControlPump 1 0, .spell (.eachOpponentLosesLife 1)]
+    [.creaturesYouControlPump 1 0, .spell (.loseLife 1 .eachOpponent)]
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).phrase ==
   "Creatures you control get +1/+0 until end of turn. Each opponent loses 1 life"
 #guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).resolution ==
@@ -439,7 +439,19 @@ namespace CardDef
 #guard Effect.destroyCreature.spellResolution == .onPermanent .destroy
 #guard Effect.playAdditionalLandThisTurn.spellResolution == .extraLand
 #guard (Effect.drawAndLoseLife 2 2).spellResolution ==
-  .sequence [.draw 2, .loseLife 2]
+  .sequence [.draw 2, .loseLife 2 .you]
+#guard (Effect.targetPlayerDrawLoseLife 2 2).spellResolution ==
+  .sequence [.targetPlayerDraw 2, .loseLife 2 .targetPlayer]
+#guard (Effect.destroyTargetCreatureControllerLosesLife 2).spellResolution ==
+  .sequence [.onPermanent .destroy, .loseLife 2 .controllerOfTarget]
+#guard (Effect.eachOpponentLosesLife 2).spellResolution == .loseLife 2 .eachOpponent
+#guard SpellResolution.toPhrase (.loseLife 2 .you) "target player" == "lose 2 life"
+#guard SpellResolution.toPhrase (.loseLife 2 .targetPlayer) "target player" ==
+  "target player loses 2 life"
+#guard SpellResolution.toPhrase (.loseLife 2 .controllerOfTarget) "target creature" ==
+  "its controller loses 2 life"
+#guard SpellResolution.toPhrase (.loseLife 2 .eachOpponent) "target player" ==
+  "each opponent loses 2 life"
 #guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution == .fight
 #guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)
