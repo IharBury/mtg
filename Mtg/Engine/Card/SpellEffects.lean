@@ -311,8 +311,10 @@ def drawIfFromGy (n fromGy : Nat) : Effect :=
   mkSpell (.of .none) (.ifElse (.draw fromGy) (.draw n) .castFromGraveyard)
     (castKind := .draw)
 
+/-- Amass Goblins `n`, or `fromGy` if this spell was cast from a graveyard. -/
 def amassGoblinsOrFromGy (n fromGy : Nat) : Effect :=
-  mkSpell (.of .none) (.amassGoblinsOrFromGy n fromGy)
+  mkSpell (.of .none)
+    (.ifElse (.amassGoblins fromGy) (.amassGoblins n) .castFromGraveyard)
     (castKind := .pump)
 
 def searchLegendaryCreatureToHand : Effect :=

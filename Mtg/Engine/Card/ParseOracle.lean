@@ -2197,6 +2197,16 @@ is parsed and every effect is modelled. -/
     | none => false
   | .error _ => false
 
+#guard
+  match parseOracleCard
+      "Tidings of War\n{R}\nSorcery\nAmass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead. (To amass Goblins X, put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)" with
+  | .ok c =>
+    c.flashback == some (ManaCost.ofGenericAndColor 3 .red) &&
+      match c.spellEffect with
+      | some e => e == Effect.amassGoblinsOrFromGy 1 3
+      | none => false
+  | .error _ => false
+
 /-- Keyword line used when a card has no stored rules text. -/
 def renderKeywordLine (k : Keywords) : Option String :=
   let names := k.toList.map fun n =>

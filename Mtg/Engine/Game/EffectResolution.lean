@@ -1047,8 +1047,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         return g
   | .amassGoblins n subtype =>
     g.amass controller subtype n
-  | .amassGoblinsOrFromGy n fromGy subtype =>
-    g.amass controller subtype (if castFromGraveyard then fromGy else n)
   | .searchLegendaryCreatureToHand s ty =>
     g.resolveLibrarySearchToHand controller (fun c =>
       c.hasType ty && c.hasSupertype s) s!"{s.oracleWord} {ty.oracleWord} card"

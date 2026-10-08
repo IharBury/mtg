@@ -350,6 +350,12 @@ namespace CardDef
   .spell (.ifElse (.draw 2) (.draw 1) .castFromGraveyard)
 #guard (Effect.drawIfFromGy 1 2).phrase ==
   "draw a card. If this spell was cast from a graveyard, draw 2 cards instead"
+#guard (Effect.amassGoblinsOrFromGy 1 3).spellResolution ==
+  .ifElse (.amassGoblins 3) (.amassGoblins 1) .castFromGraveyard
+#guard (Effect.amassGoblinsOrFromGy 1 3).resolution ==
+  .spell (.ifElse (.amassGoblins 3) (.amassGoblins 1) .castFromGraveyard)
+#guard (Effect.amassGoblinsOrFromGy 1 3).phrase ==
+  "amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead"
 #guard SpellResolution.toPhrase
     (.ifElse (.gainLife 3) (.draw 1) (.subtype "Elf")) "target creature" ==
   "draw a card. If target creature is an Elf, you gain 3 life instead"
