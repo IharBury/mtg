@@ -814,11 +814,13 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | _ => g.logMsg "The effect does nothing"
   | .onPermanent action =>
     g.applyOnPermanent controller effect.targetKind targets action
-  | .allCreaturesPump p t =>
-    g.foldBattlefield (fun o => o.isCreature) (fun g o => g.pumpPermanent o p t)
-  | .creaturesOfPlayerPump pw tw =>
-    g.withLegalKindPlayer controller effect.targetKind targets
-      (fun g pid => g.pumpControlledCreatures pid pw tw)
+  | .creaturesPump scope p t =>
+    match scope with
+    | .all =>
+      g.foldBattlefield (fun o => o.isCreature) (fun g o => g.pumpPermanent o p t)
+    | .ofTargetPlayer =>
+      g.withLegalKindPlayer controller effect.targetKind targets
+        (fun g pid => g.pumpControlledCreatures pid p t)
   | .exileGraveyardCreaturesGrantCast ty =>
     g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.exileCreaturesFromGraveyard controller pid ty)

@@ -129,7 +129,7 @@ def destroyTargetCreatureControllerLosesLife (life : Nat) : Effect :=
     (preferAsDefaultMode := true)
 
 def allCreaturesGet (power toughness : Int) : Effect :=
-  mkSpell (.of .none) (.allCreaturesPump power toughness)
+  mkSpell (.of .none) (.creaturesPump .all power toughness)
     (castKind := .massPump)
 
 def drawAndLoseLife (cards life : Nat) : Effect :=
@@ -142,7 +142,7 @@ def targetPlayerDrawLoseLife (cards life : Nat) : Effect :=
     (castKind := .draw)
 
 def creaturesTargetPlayerGet (power toughness : Int) : Effect :=
-  mkSpell (.of .player) (.creaturesOfPlayerPump power toughness)
+  mkSpell (.of .player) (.creaturesPump .ofTargetPlayer power toughness)
     (castKind := .massPump)
 
 def pumpAndLifelink (power toughness : Int) : Effect :=
