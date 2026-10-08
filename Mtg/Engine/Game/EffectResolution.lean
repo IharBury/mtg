@@ -1481,10 +1481,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       |>.logMsg s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw {cards}"
   | .returnUpToTwoGyModal =>
     g.returnChosenGraveyardCards controller targets
-  | .artifactSpellsCostLessThisTurn ty n =>
-    g.grantTypeCostLessThisTurn controller ty n
-  | .supertypeSpellsCostLessThisTurn s n =>
-    g.grantSupertypeCostLessThisTurn controller s n
+  | .spellsCostLessThisTurn which n =>
+    match which with
+    | .cardType ty => g.grantTypeCostLessThisTurn controller ty n
+    | .supertype s => g.grantSupertypeCostLessThisTurn controller s n
   | _ =>
     -- Shared steps (`draw`, `loseLife`, `surveil`, …) resolve on `Resolution`
     -- before this match. A leftover spell shape does nothing here.
