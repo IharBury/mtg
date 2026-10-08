@@ -880,4 +880,76 @@ def unlessPaysDestroyPaid : Game :=
 #guard unlessPaysDestroyPaid.battlefield.any (fun o => o.name == "Gray Ogre")
 #guard (unlessPaysDestroyPaid.player ⟨1⟩).manaPool.isEmpty
 
+/-- Putting a creature on top or bottom is `or` of those two placements.
+The owner chooses, and that choice applies the selected resolution. -/
+def ownerLibraryChoice : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  g.applyEffect ⟨0⟩ Effect.putOnTopOrBottom #[Target.permanent bear.id]
+
+#guard
+  match ownerLibraryChoice.pending with
+  | .chooseLibraryPlacement p id =>
+    p == ⟨1⟩ && id == (namedPermanent ownerLibraryChoice "Grizzly Bears").id &&
+      ownerLibraryChoice.spellOrLibrary && ownerLibraryChoice.spellOr.size == 2
+  | _ => false
+
+def ownerLibraryTop : Game :=
+  mustApply ownerLibraryChoice ⟨1⟩ .chooseTop
+
+#guard
+  ownerLibraryTop.spellOr.isEmpty &&
+    ((ownerLibraryTop.player ⟨1⟩).library.back?.map fun id =>
+      (ownerLibraryTop.object! id).name) == some "Grizzly Bears" &&
+    !ownerLibraryTop.battlefield.any (fun o => o.name == "Grizzly Bears")
+
+def ownerLibraryBottom : Game :=
+  mustApply ownerLibraryChoice ⟨1⟩ .chooseBottom
+
+#guard
+  ((ownerLibraryBottom.player ⟨1⟩).library[0]?.map fun id =>
+    (ownerLibraryBottom.object! id).name) == some "Grizzly Bears"
+
+/-- `or` applies whichever resolution is chosen. The first draws, the second
+gains life, and a later mode scries. -/
+def spellOrAsked : Game :=
+  afterDraw.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .none) (.or [.draw 1, .gainLife 3, .scry 1])) #[]
+
+#guard
+  match spellOrAsked.pending with
+  | .chooseLibraryPlacement p _ =>
+    p == ⟨0⟩ && spellOrAsked.spellOr.size == 3 && !spellOrAsked.spellOrLibrary
+  | _ => false
+
+def spellOrDrew : Game :=
+  mustApply spellOrAsked ⟨0⟩ .chooseTop
+
+#guard
+  (spellOrDrew.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1 &&
+    (spellOrDrew.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
+    spellOrDrew.spellOr.isEmpty
+
+def spellOrGained : Game :=
+  mustApply spellOrAsked ⟨0⟩ .chooseBottom
+
+#guard
+  (spellOrGained.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + (3 : Int) &&
+    (spellOrGained.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size
+
+def spellOrScried : Game :=
+  mustApply spellOrAsked ⟨0⟩ (.chooseMode 2)
+
+#guard
+  match spellOrScried.pending with
+  | .scry p 1 => p == ⟨0⟩ && spellOrScried.spellOr.isEmpty
+  | _ => false
+
+#guard
+  let before := (afterDraw.player ⟨0⟩).hand.size
+  let g := afterDraw.applyEffect ⟨0⟩ (Effect.mkSpell (.of .none) (.or [.draw 1])) #[]
+  (g.player ⟨0⟩).hand.size == before + 1 && g.pending == .none && g.spellOr.isEmpty
+
+#guard uneasyPartings.spellEffect == some Effect.putOnTopOrBottom
+
 end Mtg.Engine.Tests

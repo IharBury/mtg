@@ -220,8 +220,10 @@ def counterExilePermanentMayCast : Effect :=
   mkSpell (.of .spell) (.counterExilePermanentMayCast)
     (castKind := .counter)
 
+/-- The owner puts the targeted creature on the top or bottom of their library. -/
 def putOnTopOrBottom : Effect :=
-  mkSpell (.of .creature) (.putOnTopOrBottom)
+  mkSpell (.of .creature)
+    (.or [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary])
     (castKind := .counter)
 
 def untapPumpMaybeAttach (power toughness : Int) : Effect :=

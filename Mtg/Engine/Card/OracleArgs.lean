@@ -239,6 +239,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .scry n => return .scry (← takeNat n)
   | .surveil n => return .surveil (← takeNat n)
   | .unlessPays r n => return .unlessPays (← takeSpell r) (← takeNat n)
+  | .or rs => return .or (← rs.mapM takeSpell)
   | .targetPlayersGainLife n => return .targetPlayersGainLife (← takeNat n)
   | .plusOneOnCreatureTargets n => return .plusOneOnCreatureTargets (← takeNat n)
   | .exileGraveyardCreaturesGrantCast ty =>

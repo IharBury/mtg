@@ -132,6 +132,18 @@ def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
           s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
     return g
 
+/-- Put `o` on the top (`top`) or bottom of its owner's library. -/
+def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
+  let side := if top then "top" else "bottom"
+  let name := o.name
+  let owner := o.owner
+  let (g, newId) := g.move o.id (.library owner) none
+  let pl := g.player owner
+  let without := stripId pl.library newId
+  let library := if top then without ++ #[newId] else #[newId] ++ without
+  (g.setPlayer { pl with library := library }).logMsg
+    s!"{(g.player owner).name} puts {name} on the {side} of their library"
+
 /-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
 def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .pump pw tw => g.pumpPermanent o pw tw
@@ -184,6 +196,9 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .setBasePT pw tw =>
     let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
     g.logMsg s!"{o.name} has base power and toughness {pw}/{tw} until end of turn"
+  | .putOnTopOfLibrary => g.putOnOwnerLibrary o true
+  | .putOnBottomOfLibrary => g.putOnOwnerLibrary o false
+
 def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (action : PermanentAction)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=

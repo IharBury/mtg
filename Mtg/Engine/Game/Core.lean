@@ -120,6 +120,15 @@ structure Game where
   /-- The payer left without paying (CR 800.4f). `flushUnlessPays` resolves
   `unlessPaysInstead`. -/
   unlessPaysDue : Bool := false
+  /-- Alternatives for a pending `SpellResolution.or`. `chooseTop` applies
+  the first and `chooseBottom` the second. `chooseMode` applies that index.
+  Library top and bottom are stored in that order when `spellOrLibrary`. -/
+  spellOr : Array Effect := #[]
+  spellOrController : PlayerId := ⟨0⟩
+  spellOrTargets : Array Target := #[]
+  /-- `chooseTop` and `chooseBottom` name the library side, not list order
+  written by the card. The stashed effects are still top then bottom. -/
+  spellOrLibrary : Bool := false
   /-- After the pending surveil, a card with mana value at most this put into
   the graveyard goes to its owner's hand (Enlightened Confidant). -/
   surveilReturnMvAtMost : Option Nat := none
@@ -233,6 +242,10 @@ def logMsg (g : Game) (msg : String) : Game :=
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
 def clearUnlessPays (g : Game) : Game :=
   { g with unlessPaysInstead := none, unlessPaysDue := false, unlessPaysTargets := #[] }
+
+/-- Drop a stashed `SpellResolution.or` after the player has chosen. -/
+def clearSpellOr (g : Game) : Game :=
+  { g with spellOr := #[], spellOrTargets := #[], spellOrLibrary := false }
 
 def over (g : Game) : Bool := g.result.isSome
 

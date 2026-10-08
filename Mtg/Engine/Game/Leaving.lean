@@ -167,7 +167,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .sacrificePermanent q _ | .discardForAdditionalCost q
   | .sacrificeCreature q | .scry q _ | .surveil q _
   | .mayDiscardDraw q _ | .mayAttachEquipment q _ | .tapHumans q
-  | .recruitDiscard q | .chooseRingBearer q | .chooseLibraryPlacement q _
+  | .recruitDiscard q | .chooseRingBearer q
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
   | .mayPutLandFromHand q | .chooseFoodOrTreasure q | .chooseTapOrUntap q _
   | .maySacArtifactOrDiscard q _ | .mayPutArtifactFromHand q _
@@ -175,6 +175,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .fraChoice q _
   | .mayCastExiledElseDamage q _ _ =>
     if q == p then { g with pending := .none } else g
+  | .chooseLibraryPlacement q _ =>
+    if q == p then { g with pending := .none }.clearSpellOr else g
   | .resolveRandom _ => g
 
 /-- `p` loses and leaves the game (CR 800.4 / 800.4a). Owned objects leave

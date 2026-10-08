@@ -87,8 +87,10 @@ inductive SpellResolution where
   | unlessPays (r : SpellResolution) (n : Nat)
   /-- Counter; exile a permanent spell and grant a free cast. -/
   | counterExilePermanentMayCast
-  /-- Owner puts the targeted creature on top or bottom of their library. -/
-  | putOnTopOrBottom
+  /-- The player chooses one of these resolutions.
+  Putting the target on the top or bottom of its owner's library is
+  `.or [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary]`. -/
+  | or (rs : List SpellResolution)
   /-- If the targeted creature has `subtype`, its controller may attach an Equipment. -/
   | mayAttachEquipmentIfDwarf (subtype : String := "Dwarf")
   /-- Exchange control of the two targeted permanents. -/
@@ -272,8 +274,8 @@ deriving Repr, Inhabited, BEq
 
 namespace SpellResolution
 
-/-- One step, not a sequence. Sequence phrasing stays outside this match so
-the constructor splitter is not recursive. -/
+/-- One step, not a sequence or a choice. Sequence and `or` phrasing stay
+outside this match so the constructor splitter is not recursive. -/
 private def phraseOne (r : SpellResolution) (noun : String) : String :=
   match r with
   | .fight =>
@@ -312,8 +314,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     else s!"{base} unless its controller pays \{{n}}"
   | .counterExilePermanentMayCast =>
     s!"counter {noun}. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled"
-  | .putOnTopOrBottom =>
-    s!"{noun}'s owner puts it on their choice of the top or bottom of their library"
+  | .or _ => ""
   | .mayAttachEquipmentIfDwarf subtype =>
     s!"if {noun} is {indefinite subtype} {subtype}, you may attach an Equipment you control to it"
   | .exchangeControl =>
@@ -477,7 +478,8 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .supertypeSpellsCostLessThisTurn s n =>
     s!"{s} spells you cast this turn cost \{{n}} less to cast"
 
-/-- Nested `sequence` constructors, left to right. -/
+/-- Nested `sequence` constructors, left to right. An `or` stays one step:
+flattening it would resolve every alternative. -/
 def flatten : SpellResolution → List SpellResolution
   | .sequence rs => rs.flatMap flatten
   | r => [r]
@@ -565,11 +567,23 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
   | _ =>
     String.intercalate ". " (rs.map (phraseOne · noun))
 
+/-- Printed wording of a choice. The library pair keeps its Oracle sentence;
+other choices join each alternative. -/
+private def phraseOr (rs : List SpellResolution) (noun : String) : String :=
+  match rs with
+  | [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary] =>
+    s!"{noun}'s owner puts it on their choice of the top or bottom of their library"
+  | [.onPermanent .putOnBottomOfLibrary, .onPermanent .putOnTopOfLibrary] =>
+    s!"{noun}'s owner puts it on their choice of the top or bottom of their library"
+  | _ =>
+    String.intercalate " or " ((rs.map (phraseOne · noun)).filter (· != ""))
+
 /-- Oracle-style reminder from targeting and resolution. `fight` here is the
 Quarrel wording; `Effect.fight` overrides the phrase for the actual fight spell. -/
 def toPhrase (r : SpellResolution) (noun : String) : String :=
   match r with
   | .sequence rs => phraseSequence (rs.flatMap flatten) noun
+  | .or rs => phraseOr rs noun
   | r => phraseOne r noun
 
 end SpellResolution

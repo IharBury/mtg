@@ -380,31 +380,45 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     return g.afterWardResolved
   | _ => throw "Not time to pay generic mana"
 
-/-- Put the pending card on top or bottom of its owner's library. -/
-def chooseLibrarySide (g : Game) (p : PlayerId) (top : Bool) : Except String Game := do
+/-- Apply alternative `idx` of a pending `SpellResolution.or`. -/
+def chooseSpellOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := do
   match g.pending with
   | .chooseLibraryPlacement q id =>
     if p != q then
-      throw s!"Only {(g.player q).name} may choose top or bottom"
-    let some o := g.findObject? id | throw "no such object"
-    if !o.isOnBattlefield then
-      throw s!"{o.name} is no longer on the battlefield"
-    let dest := if top then Zone.library o.owner else Zone.library o.owner
-    let side := if top then "top" else "bottom"
-    let name := o.name
-    let owner := o.owner
-    let (g, newId) := g.move id dest none
-    let pl := g.player owner
-    let without := stripId pl.library newId
-    let g :=
-      if top then
-        g.setPlayer { pl with library := without ++ #[newId] }
-      else
-        g.setPlayer { (g.player owner) with library := #[newId] ++ without }
-    let g := g.logMsg s!"{(g.player owner).name} puts {name} on the {side} of their library"
-    let g := { g with pending := .none }
+      let what := if g.spellOrLibrary then "top or bottom" else "an effect"
+      throw s!"Only {(g.player q).name} may choose {what}"
+    if idx >= g.spellOr.size then
+      throw "No such choice"
+    if g.spellOrLibrary then
+      let some o := g.findObject? id | throw "no such object"
+      if !o.isOnBattlefield then
+        throw s!"{o.name} is no longer on the battlefield"
+    let effect := g.spellOr[idx]!
+    let controller := g.spellOrController
+    let targets := g.spellOrTargets
+    let g := { g with pending := .none }.clearSpellOr
+    let g := g.applyUnified controller effect targets
+    if g.pending != .none || g.over then return g
     return g.receivePriority g.activePlayer
   | _ => throw "Not time to choose library placement"
+
+/-- Put the pending card on top or bottom of its owner's library.
+When `spellOr` is set, top is the first alternative and bottom the second. -/
+def chooseLibrarySide (g : Game) (p : PlayerId) (top : Bool) : Except String Game := do
+  if !g.spellOr.isEmpty then
+    g.chooseSpellOr p (if top then 0 else 1)
+  else
+    match g.pending with
+    | .chooseLibraryPlacement q id =>
+      if p != q then
+        throw s!"Only {(g.player q).name} may choose top or bottom"
+      let some o := g.findObject? id | throw "no such object"
+      if !o.isOnBattlefield then
+        throw s!"{o.name} is no longer on the battlefield"
+      let g := g.putOnOwnerLibrary o (top := top)
+      let g := { g with pending := .none }
+      return g.receivePriority g.activePlayer
+    | _ => throw "Not time to choose library placement"
 
 /-- Attach Equipment or tap Humans, depending on pending. -/
 def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
