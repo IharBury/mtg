@@ -665,11 +665,11 @@ def returnUpToTwoGyModal : Effect :=
     (castKind := .draw)
 
 def artifactSpellsCostLessThisTurn (n : Nat) : Effect :=
-  mkSpell (.of .none) (.artifactSpellsCostLessThisTurn .artifact n)
+  mkSpell (.of .none) (.spellsCostLessThisTurn (.cardType .artifact) n)
     (castKind := .extraLand)
 
 def supertypeSpellsCostLessThisTurn (n : Nat) : Effect :=
-  mkSpell (.of .none) (.supertypeSpellsCostLessThisTurn .legendary n)
+  mkSpell (.of .none) (.spellsCostLessThisTurn (.supertype .legendary) n)
     (castKind := .extraLand)
 
 def searchBasicLandTapped : Effect :=

@@ -71,6 +71,14 @@ inductive LifeLoser where
   | eachOpponent
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Which spells `SpellResolution.spellsCostLessThisTurn` makes cheaper. -/
+inductive SpellCostLess where
+  /-- Spells of this card type (CR 205.2a). -/
+  | cardType (ty : CardType)
+  /-- Spells of this supertype (CR 205.4a). -/
+  | supertype (s : Supertype)
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- When `SpellResolution.if` and `SpellResolution.ifElse` choose a branch. -/
 inductive SpellIf where
   /-- The targeted permanent has this subtype. -/
@@ -335,10 +343,10 @@ inductive SpellResolution where
   | maySacArtifactOrDiscardDraw (cards : Nat)
   /-- Return up to two modal graveyard cards. -/
   | returnUpToTwoGyModal
-  /-- Spells of this card type cost `{n}` less this turn (CR 205.2a). -/
-  | artifactSpellsCostLessThisTurn (ty : CardType) (n : Nat)
-  /-- Spells of this supertype cost `{n}` less this turn (CR 205.4a). -/
-  | supertypeSpellsCostLessThisTurn (s : Supertype) (n : Nat)
+  /-- Spells described by `which` cost `{n}` less this turn.
+  Card type `ty` is `.spellsCostLessThisTurn (.cardType ty) n`.
+  Supertype `s` is `.spellsCostLessThisTurn (.supertype s) n`. -/
+  | spellsCostLessThisTurn (which : SpellCostLess) (n : Nat)
   /-- Apply each resolution in order. -/
   | sequence (rs : List SpellResolution)
   /-- A resolution that is not a spell shape. It does not play an extra land. -/
@@ -564,9 +572,9 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"You may sacrifice an artifact or discard a card. If you do, draw {cardPhrase cards}."
   | .returnUpToTwoGyModal =>
     "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
-  | .artifactSpellsCostLessThisTurn ty n =>
+  | .spellsCostLessThisTurn (.cardType ty) n =>
     s!"{ty} spells you cast this turn cost \{{n}} less to cast"
-  | .supertypeSpellsCostLessThisTurn s n =>
+  | .spellsCostLessThisTurn (.supertype s) n =>
     s!"{s} spells you cast this turn cost \{{n}} less to cast"
 
 /-- Nested `sequence` constructors, left to right. An `or` stays one step:

@@ -1321,4 +1321,23 @@ def controllerOfBearLosesTwo : Game :=
     (controllerOfBearLosesTwo.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 2 &&
     !controllerOfBearLosesTwo.battlefield.any (fun o => o.name == "Grizzly Bears")
 
+/-- `.spellsCostLessThisTurn` records the named characteristic. A card-type
+discount does not also discount a supertype, and the reverse. -/
+def artifactsCostOneLess : Game :=
+  afterDraw.applyEffect ⟨0⟩ (Effect.artifactSpellsCostLessThisTurn 1) #[]
+
+#guard
+  (artifactsCostOneLess.player ⟨0⟩).typeSpellCostLessThisTurn == #[(.artifact, 1)] &&
+    (artifactsCostOneLess.player ⟨0⟩).supertypeSpellCostLessThisTurn.isEmpty &&
+    (artifactsCostOneLess.player ⟨1⟩).typeSpellCostLessThisTurn.isEmpty
+
+def legendariesCostTwoLess : Game :=
+  afterDraw.applyEffect ⟨0⟩ (Effect.supertypeSpellsCostLessThisTurn 2) #[]
+
+#guard
+  (legendariesCostTwoLess.player ⟨0⟩).supertypeSpellCostLessThisTurn ==
+      #[(.legendary, 2)] &&
+    (legendariesCostTwoLess.player ⟨0⟩).typeSpellCostLessThisTurn.isEmpty &&
+    (legendariesCostTwoLess.player ⟨1⟩).supertypeSpellCostLessThisTurn.isEmpty
+
 end Mtg.Engine.Tests

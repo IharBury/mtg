@@ -452,6 +452,16 @@ namespace CardDef
   "its controller loses 2 life"
 #guard SpellResolution.toPhrase (.loseLife 2 .eachOpponent) "target player" ==
   "each opponent loses 2 life"
+#guard (Effect.artifactSpellsCostLessThisTurn 1).spellResolution ==
+  .spellsCostLessThisTurn (.cardType .artifact) 1
+#guard (Effect.supertypeSpellsCostLessThisTurn 2).spellResolution ==
+  .spellsCostLessThisTurn (.supertype .legendary) 2
+#guard SpellResolution.toPhrase
+    (.spellsCostLessThisTurn (.cardType .artifact) 1) "target player" ==
+  "Artifact spells you cast this turn cost {1} less to cast"
+#guard SpellResolution.toPhrase
+    (.spellsCostLessThisTurn (.supertype .legendary) 2) "target player" ==
+  "Legendary spells you cast this turn cost {2} less to cast"
 #guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution == .fight
 #guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)

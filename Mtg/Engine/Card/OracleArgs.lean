@@ -338,10 +338,12 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .gainLifeSearchBasicPlusOne n => return .gainLifeSearchBasicPlusOne (← takeNat n)
   | .copyThisSpellXTimesThenDamage n => return .copyThisSpellXTimesThenDamage (← takeNat n)
   | .maySacArtifactOrDiscardDraw n => return .maySacArtifactOrDiscardDraw (← takeNat n)
-  | .artifactSpellsCostLessThisTurn ty n =>
-    return .artifactSpellsCostLessThisTurn (← takeCardType ty) (← takeNat n)
-  | .supertypeSpellsCostLessThisTurn s n =>
-    return .supertypeSpellsCostLessThisTurn (← takeSupertype s) (← takeNat n)
+  | .spellsCostLessThisTurn which n =>
+    match which with
+    | .cardType ty =>
+      return .spellsCostLessThisTurn (.cardType (← takeCardType ty)) (← takeNat n)
+    | .supertype s =>
+      return .spellsCostLessThisTurn (.supertype (← takeSupertype s)) (← takeNat n)
   | .sequence rs => return .sequence (← rs.mapM takeSpell)
   | r => return r
 
@@ -1599,7 +1601,7 @@ def setNat (e : Effect) (i n : Nat) : Effect :=
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
     (refillEffect e vals).resolution ==
-      .spell (.artifactSpellsCostLessThisTurn .planeswalker 3)
+      .spell (.spellsCostLessThisTurn (.cardType .planeswalker) 3)
   | none => false
 
 /-- Refill `proto` from `query` and keep the resolution. -/
@@ -1721,7 +1723,8 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
-    (refillEffect e vals).resolution == .spell (.supertypeSpellsCostLessThisTurn s 3)
+    (refillEffect e vals).resolution ==
+      .spell (.spellsCostLessThisTurn (.supertype s) 3)
   | none => false
 
 #guard
