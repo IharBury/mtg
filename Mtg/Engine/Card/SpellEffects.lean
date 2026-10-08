@@ -243,7 +243,7 @@ def exchangeControlSharingType : Effect :=
     (castKind := .counter)
 
 def returnSpellDraw : Effect :=
-  mkSpell (.of .spell) (.sequence [.returnTargetSpell, .draw 1])
+  mkSpell (.of .spell) (.sequence [.returnTargetToHand, .draw 1])
     (castKind := .counter)
 
 def creaturesYouControlGet (power toughness : Int) : Effect :=
@@ -280,7 +280,7 @@ def drawLoseLifeThenAmass (n : Nat) : Effect :=
 
 def returnCreatureFromGyThenAmass (n : Nat) : Effect :=
   mkSpell (.of .creatureCardInYourGraveyard)
-    (.sequence [.returnTargetSpell .graveyard, .amassGoblins n])
+    (.sequence [.returnTargetToHand .graveyard, .amassGoblins n])
     (castKind := .draw)
     (allowsZeroTargets := true)
 
@@ -377,7 +377,7 @@ def exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String) : Effect :=
     (castKind := .draw)
 
 def returnSpellCantCastIfGift : Effect :=
-  mkSpell (.of .spell) (.sequence [.returnTargetSpell, .playersCantCastIfGift])
+  mkSpell (.of .spell) (.sequence [.returnTargetToHand, .playersCantCastIfGift])
     (castKind := .counter)
 
 def exileTopXOppPlayForLife : Effect :=

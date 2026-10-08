@@ -538,11 +538,11 @@ def effectLines (cardName : String) (e : Effect) : List String :=
   | .sequence [.onPermanent .tap, .scry scryN, .draw drawN] =>
     [s!"Tap target creature. Scry {scryN}.",
       if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
-  | .sequence [.returnTargetSpell .spell, .draw 1] =>
+  | .sequence [.returnTargetToHand .spell, .draw 1] =>
     ["Return target spell to its owner's hand.", "Draw a card."]
   | .sequence [.draw 1, .loseLife 1, .amassGoblins n subtype] =>
     ["You draw a card and lose 1 life.", s!"Amass {pluralizeName subtype} {n}."]
-  | .sequence [.returnTargetSpell .graveyard, .amassGoblins n subtype] =>
+  | .sequence [.returnTargetToHand .graveyard, .amassGoblins n subtype] =>
     ["Return up to one target creature card from your graveyard to your hand.",
       s!"Amass {pluralizeName subtype} {n}."]
   | .sequence [.dealDamageToEachNonDragon n sub, .addFourManaDragonSpells m sub2] =>

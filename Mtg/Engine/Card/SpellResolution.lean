@@ -59,7 +59,7 @@ inductive LifeGainer where
   | targetPlayers
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- Which targeted card `SpellResolution.returnTargetSpell` returns to a hand. -/
+/-- Which targeted card `SpellResolution.returnTargetToHand` returns to a hand. -/
 inductive ReturnedCard where
   /-- A spell on the stack, returned to its owner's hand. -/
   | spell
@@ -128,9 +128,9 @@ inductive SpellResolution where
   +1/+1 counters are `.countersOnCreatureTargets .plusOnePlusOne`. -/
   | countersOnCreatureTargets (kind : CounterKind := .plusOnePlusOne) (n : Nat := 1)
   /-- Return the targeted `card` to a hand.
-  A spell on the stack is `.returnTargetSpell` (`.spell`), to its owner's hand.
-  A graveyard card is `.returnTargetSpell .graveyard`: up to one, to your hand. -/
-  | returnTargetSpell (card : ReturnedCard := .spell)
+  A spell on the stack is `.returnTargetToHand` (`.spell`), to its owner's hand.
+  A graveyard card is `.returnTargetToHand .graveyard`: up to one, to your hand. -/
+  | returnTargetToHand (card : ReturnedCard := .spell)
   /-- Creatures you control gain these keywords until end of turn. -/
   | teamGain (k : Keywords)
   /-- Amass `subtype` `n`. -/
@@ -319,8 +319,8 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .teamGain k => s!"creatures you control gain {k.joinedAnd} until end of turn"
   | .targetPlayerLosesLife n => s!"{noun} loses {n} life"
   | .controllerOfTargetLosesLife n => s!"its controller loses {n} life"
-  | .returnTargetSpell .spell => s!"return {noun} to its owner's hand"
-  | .returnTargetSpell .graveyard => s!"return up to one {noun} to your hand"
+  | .returnTargetToHand .spell => s!"return {noun} to its owner's hand"
+  | .returnTargetToHand .graveyard => s!"return up to one {noun} to your hand"
   | .onPermanent action => PermanentAction.toNotation action noun
   | .creaturesPump p t .youControl =>
     s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
@@ -529,9 +529,9 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"{noun} draws {cardPhrase cards} and loses {life} life"
   | [.onPermanent .destroy, .controllerOfTargetLosesLife n] =>
     s!"destroy {noun}. Its controller loses {n} life"
-  | [.returnTargetSpell .spell, .draw 1] =>
+  | [.returnTargetToHand .spell, .draw 1] =>
     s!"return {noun} to its owner's hand. Draw a card"
-  | [.returnTargetSpell .graveyard, .amassGoblins n subtype] =>
+  | [.returnTargetToHand .graveyard, .amassGoblins n subtype] =>
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
   | [.draw 1, .loseLife 1, .amassGoblins n subtype] =>
     s!"you draw a card and lose 1 life. Amass {pluralizeName subtype} {n}"
@@ -565,7 +565,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"put {plusOnePlusOneCountersPhrase n} on target creature you control. Then it fights target creature an opponent controls"
   | [.dealDamageToEachNonDragon n sub, .addFourManaDragonSpells m sub2] =>
     s!"deals {n} damage to each non-{sub} creature. Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells"
-  | [.returnTargetSpell .spell, .playersCantCastIfGift] =>
+  | [.returnTargetToHand .spell, .playersCantCastIfGift] =>
     "return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn"
   | [.onPermanent (.dealDamage n), .damageControllerIfTeamwork extra] =>
     s!"deals {n} damage to target creature. If this spell was cast using teamwork, it also deals {extra} damage to that creature's controller"

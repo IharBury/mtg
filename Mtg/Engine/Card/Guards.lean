@@ -310,25 +310,25 @@ namespace CardDef
 #guard SpellResolution.toPhrase (.gainLife 3) "target creature" == "you gain 3 life"
 #guard SpellResolution.toPhrase (.gainLife 2 .targetPlayers) "target player" ==
   "Target player gains 2 life"
-#guard SpellResolution.toPhrase .returnTargetSpell "target spell" ==
+#guard SpellResolution.toPhrase .returnTargetToHand "target spell" ==
   "return target spell to its owner's hand"
-#guard SpellResolution.toPhrase (.returnTargetSpell .graveyard)
+#guard SpellResolution.toPhrase (.returnTargetToHand .graveyard)
     "target creature card from your graveyard" ==
   "return up to one target creature card from your graveyard to your hand"
 #guard Effect.returnSpellDraw.spellResolution ==
-  .sequence [.returnTargetSpell, .draw 1]
+  .sequence [.returnTargetToHand, .draw 1]
 #guard Effect.returnSpellDraw.resolution ==
   Resolution.sequence [.returnTargetSpell, .draw 1]
 #guard Effect.returnSpellDraw.phrase ==
   "return target spell to its owner's hand. Draw a card"
 #guard (Effect.returnCreatureFromGyThenAmass 3).spellResolution ==
-  .sequence [.returnTargetSpell .graveyard, .amassGoblins 3]
+  .sequence [.returnTargetToHand .graveyard, .amassGoblins 3]
 #guard (Effect.returnCreatureFromGyThenAmass 3).resolution ==
   Resolution.sequence [.fra .returnFromGyToHand, .spell (.amassGoblins 3)]
 #guard (Effect.returnCreatureFromGyThenAmass 3).phrase ==
   "return up to one target creature card from your graveyard to your hand. Amass Goblins 3"
 #guard Effect.returnSpellCantCastIfGift.spellResolution ==
-  .sequence [.returnTargetSpell, .playersCantCastIfGift]
+  .sequence [.returnTargetToHand, .playersCantCastIfGift]
 #guard SpellResolution.toPhrase (.creaturesPump 1 1) "target creature" ==
   "creatures you control get +1/+1 until end of turn"
 #guard SpellResolution.toPhrase (.creaturesPump (-4) (-4) .all) "" ==
