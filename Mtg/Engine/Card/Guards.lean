@@ -303,6 +303,13 @@ namespace CardDef
   .upToOneCreatureThenPlayer
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetCount == 2
 #guard !(Effect.plusOneUpToOneAndPlayerGainsLife 2).allowsZeroTargets
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).spellResolution ==
+  .sequence [.countersOnCreatureTargets, .gainLife 2 .targetPlayers]
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
+  "put a +1/+1 counter on up to one target creature. Target player gains 2 life"
+#guard SpellResolution.toPhrase (.gainLife 3) "target creature" == "you gain 3 life"
+#guard SpellResolution.toPhrase (.gainLife 2 .targetPlayers) "target player" ==
+  "Target player gains 2 life"
 #guard Effect.destroyArtifactOrLandNonflyersCantBlock.targetKind == .artifactOrLand
 #guard Effect.playAdditionalLandThisTurn.targetKind == .none
 #guard (Effect.destroyTargetCreatureControllerLosesLife 2).targetKind == .creature

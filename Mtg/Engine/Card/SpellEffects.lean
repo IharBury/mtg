@@ -204,7 +204,7 @@ player gains `life`. Defaults are one +1/+1 counter (Meager Meal). -/
 def plusOneUpToOneAndPlayerGainsLife (life : Nat)
     (kind : CounterKind := .plusOnePlusOne) (counters : Nat := 1) : Effect :=
   mkSpell (.of .upToOneCreatureThenPlayer)
-    (.sequence [.countersOnCreatureTargets kind counters, .targetPlayersGainLife life])
+    (.sequence [.countersOnCreatureTargets kind counters, .gainLife life .targetPlayers])
     (castKind := .pump)
 
 def counterSpell : Effect :=

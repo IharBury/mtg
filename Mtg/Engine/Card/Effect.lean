@@ -1024,7 +1024,7 @@ def ofSpellStep : SpellResolution → Resolution
   | .onPermanent a => .onPermanent a
   | .discard n => .discard n
   | .loseLife n => .fra (.loseLife n)
-  | .gainLife n => .gainLife n
+  | .gainLife n .you => .gainLife n
   | .surveil n => .surveil n
   | .teamGain k => .teamGain k
   | .targetPlayerLosesLife n => .targetPlayerLoseLife n

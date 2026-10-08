@@ -49,6 +49,14 @@ inductive CreaturePumpScope where
   | ofTargetPlayer
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Who gains the life from `SpellResolution.gainLife`. -/
+inductive LifeGainer where
+  /-- The controller of the resolving spell or ability. -/
+  | you
+  /-- Each announced player target. -/
+  | targetPlayers
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- How a spell resolves (CR 608). Grouped so `Game.applyEffect` matches a
 handful of shapes instead of every printed spell factory. Burn and
 creature-only damage both use `onPermanent (.dealDamage n)`; Game applies
@@ -75,8 +83,9 @@ inductive SpellResolution where
   | discard (n : Nat)
   /-- You lose `n` life. Loss of life is not damage (CR 118.3a / 120.3). -/
   | loseLife (n : Nat)
-  /-- You gain `n` life. -/
-  | gainLife (n : Nat)
+  /-- `who` gains `n` life. The controller is `.gainLife n` (`.you`).
+  Each announced player target is `.gainLife n .targetPlayers`. -/
+  | gainLife (n : Nat) (who : LifeGainer := .you)
   /-- Scry `n`. -/
   | scry (n : Nat)
   /-- Tap each targeted creature (one or two). -/
@@ -105,8 +114,6 @@ inductive SpellResolution where
   /-- Put `n` counters of `kind` on each creature among the announced targets.
   +1/+1 counters are `.countersOnCreatureTargets .plusOnePlusOne`. -/
   | countersOnCreatureTargets (kind : CounterKind := .plusOnePlusOne) (n : Nat := 1)
-  /-- Each announced player target gains `n` life. -/
-  | targetPlayersGainLife (n : Nat)
   /-- Return the targeted spell to its owner's hand. -/
   | returnTargetSpell
   /-- Creatures you control get +P/+T until end of turn. -/
@@ -295,7 +302,8 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .sequence _ => ""
   | .discard n => s!"discard {cardPhrase n}"
   | .loseLife n => s!"lose {n} life"
-  | .gainLife n => s!"you gain {n} life"
+  | .gainLife n .you => s!"you gain {n} life"
+  | .gainLife n .targetPlayers => s!"Target player gains {n} life"
   | .surveil n => s!"surveil {n}"
   | .teamGain k => s!"creatures you control gain {k.joinedAnd} until end of turn"
   | .targetPlayerLosesLife n => s!"{noun} loses {n} life"
@@ -339,8 +347,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     "exchange control of two target nonland permanents that share a card type"
   | .countersOnCreatureTargets kind n =>
     s!"put {kind.countersPhrase n} on up to one target creature"
-  | .targetPlayersGainLife n =>
-    s!"Target player gains {n} life"
   | .creaturesYouControlPump p t =>
     s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .amassGoblins n subtype =>
@@ -523,7 +529,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
   | [.createTokens kind n, .creaturesYouControlPump p t] =>
     let tokens := capitalizeAscii (TokenKind.createPhrase kind n)
     s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
-  | [.onPermanent .destroy, .gainLife n] =>
+  | [.onPermanent .destroy, .gainLife n .you] =>
     s!"destroy {noun}. You gain {n} life"
   | [.onPermanent .destroy, .surveil 1] =>
     s!"destroy {noun}. Surveil 1"
@@ -567,7 +573,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
       "target player investigates. Target creature gets +1/+0 and gains flying until end of turn. Untap it"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
-  | [.countersOnCreatureTargets kind k, .targetPlayersGainLife n] =>
+  | [.countersOnCreatureTargets kind k, .gainLife n .targetPlayers] =>
     s!"put {kind.countersPhrase k} on up to one target creature. Target player gains {n} life"
   | [.onPermanent .destroy, .ownerMaySearchBasic s ty] =>
     s!"destroy {noun}. Its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"

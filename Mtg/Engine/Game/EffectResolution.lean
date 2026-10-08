@@ -986,19 +986,22 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           g := g.illegalAbilityTarget t
         | Target.player _ => pure ()
       return g
-  | .targetPlayersGainLife n =>
-    Id.run do
-      let playerLegal := g.legalTargetsForAtomicKind controller .player none
-      let mut g := g
-      for t in targets do
-        match t with
-        | Target.player pid =>
-          if playerLegal.contains t then
-            g := g.gainLife pid n
-          else
-            g := g.illegalAbilityTarget t
-        | _ => pure ()
-      return g
+  | .gainLife n who =>
+    match who with
+    | .you => g.gainLife controller n
+    | .targetPlayers =>
+      Id.run do
+        let playerLegal := g.legalTargetsForAtomicKind controller .player none
+        let mut g := g
+        for t in targets do
+          match t with
+          | Target.player pid =>
+            if playerLegal.contains t then
+              g := g.gainLife pid n
+            else
+              g := g.illegalAbilityTarget t
+          | _ => pure ()
+        return g
   | .creaturesYouControlPump pw tw =>
     g.pumpControlledCreatures controller pw tw
   | .amassGoblins n subtype =>
