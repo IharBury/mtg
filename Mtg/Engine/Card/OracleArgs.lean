@@ -265,11 +265,11 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     match cond with
     | .subtype s => return .«if» r (.subtype (← takeStr s))
     | .mvAtMost n => return .«if» r (.mvAtMost (← takeNat n))
+    | .castFromGraveyard => return .«if» r .castFromGraveyard
   | .countersOnCreatureTargets kind n which =>
     return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n) which
   | .exileGraveyardCreaturesGrantCast ty =>
     return .exileGraveyardCreaturesGrantCast (← takeCardType ty)
-  | .plusOneThenEachOtherIfFromGy n => return .plusOneThenEachOtherIfFromGy (← takeNat n)
   | .searchLegendaryCreatureToHand s ty =>
     return .searchLegendaryCreatureToHand (← takeSupertype s) (← takeCardType ty)
   | .addRedPerOppArtifacts ty => return .addRedPerOppArtifacts (← takeCardType ty)
@@ -284,7 +284,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .becomeArtifactCreature44Flying (← takeInt p) (← takeInt t) (← takeStr kw)
   | .discardTwoUnlessArtifact n ty =>
     return .discardTwoUnlessArtifact (← takeNat n) (← takeCardType ty)
-  | .plusOneOnEachYouControl n => return .plusOneOnEachYouControl (← takeNat n)
+  | .plusOneOnEachYouControl n which =>
+    return .plusOneOnEachYouControl (← takeNat n) which
   | .creatureYouControlDealsTwicePower k =>
     return .creatureYouControlDealsTwicePower (← takeNat k)
   | .mayDrawPerArtifactOppsDraw ty => return .mayDrawPerArtifactOppsDraw (← takeCardType ty)
@@ -1619,6 +1620,19 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
 
 #guard refilled (Effect.plusOneOnEachYouControl) "put 3 +1/+1 counters on each creature you control" ==
   some (.spell (.plusOneOnEachYouControl 3))
+
+#guard Effect.plusOneThenEachOtherIfFromGy.phrase ==
+  "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
+
+#guard refilled Effect.plusOneThenEachOtherIfFromGy
+    "Put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control." ==
+  some Effect.plusOneThenEachOtherIfFromGy.resolution
+
+#guard refilled Effect.plusOneThenEachOtherIfFromGy
+    "Put 2 +1/+1 counters on target creature you control. If this spell was cast from a graveyard, also put 3 +1/+1 counters on each other creature you control." ==
+  some (.sequence [
+    .spell (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl),
+    .spell (.«if» (.plusOneOnEachYouControl 3 .eachOther) .castFromGraveyard)])
 
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
   "put a +1/+1 counter on up to one target creature. Target player gains 2 life"

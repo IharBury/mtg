@@ -297,8 +297,13 @@ def plusOneThenFight (n : Nat) : Effect :=
       .mutualFight])
     (castKind := .fight)
 
+/-- Put a +1/+1 counter on the targeted creature you control. If this spell
+was cast from a graveyard, also put one on each other creature you control. -/
 def plusOneThenEachOtherIfFromGy : Effect :=
-  mkSpell (.of .creatureYouControl) (.plusOneThenEachOtherIfFromGy)
+  mkSpell (.of .creatureYouControl)
+    (.sequence [
+      .countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl,
+      .«if» (.plusOneOnEachYouControl 1 .eachOther) .castFromGraveyard])
     (castKind := .pump)
 
 def drawIfFromGy (n fromGy : Nat) : Effect :=

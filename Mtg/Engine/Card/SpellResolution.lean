@@ -66,6 +66,8 @@ inductive SpellIf where
   /-- The targeted spell's mana value was this much or less.
   That value includes `{X}` from when the spell was on the stack (CR 202.3e). -/
   | mvAtMost (n : Nat)
+  /-- The resolving spell was cast from a graveyard. -/
+  | castFromGraveyard
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Which announced creatures `SpellResolution.countersOnCreatureTargets`
@@ -77,6 +79,14 @@ inductive CreatureCounterTargets where
   /-- The first announced target, when it is a creature the controller of the
   resolving spell controls. -/
   | firstYouControl
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Which creatures you control `SpellResolution.plusOneOnEachYouControl` affects. -/
+inductive YouControlCounters where
+  /-- Each creature you control. -/
+  | each
+  /-- Each creature you control other than the first announced target. -/
+  | eachOther
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Which targeted card `SpellResolution.returnTargetToHand` returns to a hand. -/
@@ -144,7 +154,9 @@ inductive SpellResolution where
   /-- Resolve `r` when `cond` holds.
   Attaching Equipment to a Dwarf is `.«if» (.may .attachEquipment) (.subtype "Dwarf")`.
   Recruiting when the targeted spell's mana value was `n` or less is
-  `.«if» .recruit (.mvAtMost n)`. -/
+  `.«if» .recruit (.mvAtMost n)`.
+  Counters on each other creature, when cast from a graveyard, are
+  `.«if» (.plusOneOnEachYouControl n .eachOther) .castFromGraveyard`. -/
   | «if» (r : SpellResolution) (cond : SpellIf)
   /-- Exchange control of the two targeted permanents. -/
   | exchangeControl
@@ -164,8 +176,6 @@ inductive SpellResolution where
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
   /-- Recruit. -/
   | recruit
-  /-- `n` +1/+1 counters on the target; if from the graveyard, also each other. -/
-  | plusOneThenEachOtherIfFromGy (n : Nat := 1)
   /-- Draw `n`, or `fromGy` if cast from a graveyard. -/
   | drawIfFromGy (n fromGy : Nat)
   /-- Amass `subtype` `n`, or `fromGy` if cast from a graveyard. -/
@@ -268,8 +278,11 @@ inductive SpellResolution where
   | eachOpponentLosesLife (n : Nat)
   /-- Fight up to one other creature. -/
   | fightUpToOne
-  /-- `n` +1/+1 counters on each creature you control. -/
-  | plusOneOnEachYouControl (n : Nat := 1)
+  /-- `n` +1/+1 counters on creatures you control.
+  Each creature is `.plusOneOnEachYouControl` (`.each`).
+  Each creature other than the first announced target is
+  `.plusOneOnEachYouControl n .eachOther`. -/
+  | plusOneOnEachYouControl (n : Nat := 1) (which : YouControlCounters := .each)
   /-- `n` +1/+1 counters on a creature you control. -/
   | plusOneOnCreatureN (n : Nat)
   /-- Exile the top `n` cards. You may play them until your next turn. -/
@@ -383,6 +396,9 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     | .mvAtMost n =>
       let cond := s!"if that spell's mana value was {n} or less"
       if base.isEmpty then cond else s!"{cond}, {base}"
+    | .castFromGraveyard =>
+      let cond := "if this spell was cast from a graveyard"
+      if base.isEmpty then cond else s!"{cond}, {base}"
   | .exchangeControl =>
     "exchange control of two target nonland permanents that share a card type"
   | .countersOnCreatureTargets kind n .each =>
@@ -391,8 +407,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"put {kind.countersPhrase n} on target creature you control"
   | .amassGoblins n subtype =>
     s!"amass {pluralizeName subtype} {n}"
-  | .plusOneThenEachOtherIfFromGy n =>
-    s!"put {plusOnePlusOneCountersPhrase n} on target creature you control. If this spell was cast from a graveyard, also put {plusOnePlusOneCountersPhrase n} on each other creature you control"
   | .drawIfFromGy n fromGy =>
     s!"draw {cardPhrase n}. If this spell was cast from a graveyard, draw {cardPhrase fromGy} instead"
   | .amassGoblinsOrFromGy n fromGy subtype =>
@@ -489,8 +503,10 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"each opponent loses {n} life"
   | .fightUpToOne =>
     "target creature you control fights up to one other target creature"
-  | .plusOneOnEachYouControl n =>
+  | .plusOneOnEachYouControl n .each =>
     s!"put {plusOnePlusOneCountersPhrase n} on each creature you control"
+  | .plusOneOnEachYouControl n .eachOther =>
+    s!"put {plusOnePlusOneCountersPhrase n} on each other creature you control"
   | .plusOneOnCreatureN n =>
     s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
   | .exileTopPlayUntilNext _ =>
@@ -590,6 +606,9 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's {indefinite subtype} {subtype}, you may attach an Equipment you control to it"
   | [.countersOnCreatureTargets kind k .firstYouControl, .mutualFight] =>
     s!"put {kind.countersPhrase k} on target creature you control. Then it fights target creature an opponent controls"
+  | [.countersOnCreatureTargets kind k .firstYouControl,
+     .«if» (.plusOneOnEachYouControl m .eachOther) .castFromGraveyard] =>
+    s!"put {kind.countersPhrase k} on target creature you control. If this spell was cast from a graveyard, also put {plusOnePlusOneCountersPhrase m} on each other creature you control"
   | [.dealDamageToEachNonDragon n sub, .addFourManaDragonSpells m sub2] =>
     s!"deals {n} damage to each non-{sub} creature. Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells"
   | [.returnTargetToHand .spell, .playersCantCastIfGift] =>
