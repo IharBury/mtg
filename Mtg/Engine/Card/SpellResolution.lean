@@ -79,6 +79,16 @@ inductive LifeLoser where
   | eachOpponent
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Which creatures `SpellResolution.dealDamageToEachCreature` damages. -/
+inductive EachCreatureDamage where
+  /-- Every creature. -/
+  | each
+  /-- Each creature an opponent of the controller controls. -/
+  | opponentsControl
+  /-- Each creature that does not have this subtype. -/
+  | nonSubtype (subtype : String)
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Who creates the tokens from `SpellResolution.createTokens`. -/
 inductive TokenCreator where
   /-- The controller of the resolving spell or ability. -/
@@ -217,14 +227,10 @@ inductive SpellResolution where
   | recruit
   /-- Search the library for a card with this supertype and card type. -/
   | searchLegendaryCreatureToHand (s : Supertype := .legendary) (ty : CardType := .creature)
-  /-- Deal `n` damage to each creature opponents control. -/
-  | dealDamageToEachOppCreature (n : Nat)
   /-- If the targeted creature would die this turn, exile it instead. -/
   | exileIfDiesThisTurn
   /-- Add {R} for each permanent of type `ty` opponents control. -/
   | addRedPerOppArtifacts (ty : CardType := .artifact)
-  /-- Deal `n` damage to each creature that is not `subtype`. -/
-  | dealDamageToEachNonDragon (n : Nat) (subtype : String := "Dragon")
   /-- Choose a creature type and bounce the rest. -/
   | chooseTypeReturnOthers
   /-- Draw equal to greatest toughness, then put creatures onto the battlefield. -/
@@ -290,8 +296,11 @@ inductive SpellResolution where
   | targetPlayerInvestigates
   /-- Apply `action` to the creature among the announced targets. -/
   | onCreatureAmongTargets (action : PermanentAction)
-  /-- Deal `n` damage to each creature. -/
-  | dealDamageToEachCreature (n : Nat)
+  /-- Deal `n` damage to each creature in `which`.
+  Every creature is `.dealDamageToEachCreature n` (`.each`).
+  Creatures opponents control are `.dealDamageToEachCreature n .opponentsControl`.
+  Creatures that are not `subtype` are `.dealDamageToEachCreature n (.nonSubtype subtype)`. -/
+  | dealDamageToEachCreature (n : Nat) (which : EachCreatureDamage := .each)
   /-- The targeted permanent's owner may search for a `s` `ty` card. -/
   | ownerMaySearchBasic (s : Supertype := .basic) (ty : CardType := .land)
   /-- Double the targeted creature's power and toughness. -/
@@ -447,14 +456,16 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"amass {pluralizeName subtype} {n}"
   | .searchLegendaryCreatureToHand s ty =>
     searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
-  | .dealDamageToEachOppCreature n =>
+  | .dealDamageToEachCreature n .each =>
+    s!"deals {n} damage to each creature"
+  | .dealDamageToEachCreature n .opponentsControl =>
     s!"deals {n} damage to each creature your opponents control"
+  | .dealDamageToEachCreature n (.nonSubtype subtype) =>
+    s!"deals {n} damage to each non-{subtype} creature"
   | .exileIfDiesThisTurn =>
     s!"if {noun} would die this turn, exile it instead"
   | .addRedPerOppArtifacts ty =>
     s!"add {"{R}"} for each {ty.oracleWord} your opponents control"
-  | .dealDamageToEachNonDragon n subtype =>
-    s!"deals {n} damage to each non-{subtype} creature"
   | .chooseTypeReturnOthers =>
     "choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands"
   | .drawEqualToughnessThenPutCreatures =>
@@ -519,8 +530,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     "target player investigates"
   | .onCreatureAmongTargets action =>
     PermanentAction.toNotation action "target creature"
-  | .dealDamageToEachCreature n =>
-    s!"deals {n} damage to each creature"
   | .ownerMaySearchBasic s ty =>
     s!"its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
   | .doublePowerAndToughness =>
@@ -639,7 +648,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
   | [.countersOnCreatureTargets kind k .firstYouControl,
      .«if» (.plusOneOnEachYouControl m .eachOther) .castFromGraveyard] =>
     s!"put {kind.countersPhrase k} on target creature you control. If this spell was cast from a graveyard, also put {plusOnePlusOneCountersPhrase m} on each other creature you control"
-  | [.dealDamageToEachNonDragon n sub, .addFourManaDragonSpells m sub2] =>
+  | [.dealDamageToEachCreature n (.nonSubtype sub), .addFourManaDragonSpells m sub2] =>
     s!"deals {n} damage to each non-{sub} creature. Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells"
   | [.returnTargetToHand .spell, .playersCantCastIfGift] =>
     "return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn"

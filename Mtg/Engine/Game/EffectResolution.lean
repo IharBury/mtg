@@ -1054,8 +1054,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .searchLegendaryCreatureToHand s ty =>
     g.resolveLibrarySearchToHand controller (fun c =>
       c.hasType ty && c.hasSupertype s) s!"{s.oracleWord} {ty.oracleWord} card"
-  | .dealDamageToEachOppCreature n =>
-    g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
+  | .dealDamageToEachCreature n which =>
+    match which with
+    | .each => g.dealDamageToEachCreatureMatching n
+    | .opponentsControl =>
+      g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
+    | .nonSubtype subtype => g.dealDamageToEachNonDragon n subtype
   | .exileIfDiesThisTurn =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true }))
@@ -1065,8 +1069,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .red) n })
     g.logMsg s!"{(g.player controller).name} adds {n} red mana"
-  | .dealDamageToEachNonDragon n subtype =>
-    g.dealDamageToEachNonDragon n subtype
   | .chooseTypeReturnOthers =>
     let types := g.battlefieldCreatureTypes
     if types.isEmpty then
@@ -1344,8 +1346,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           g.applyPermanentAction o action
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
-  | .dealDamageToEachCreature n =>
-    g.dealDamageToEachCreatureMatching n
   | .ownerMaySearchBasic s ty =>
     match targets[0]? with
     | some (Target.permanent id) =>

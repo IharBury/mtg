@@ -1321,6 +1321,34 @@ def controllerOfBearLosesTwo : Game :=
     (controllerOfBearLosesTwo.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 2 &&
     !controllerOfBearLosesTwo.battlefield.any (fun o => o.name == "Grizzly Bears")
 
+/-- `.dealDamageToEachCreature` damages the named set. The controller's Bear
+is spared when only opposing creatures are damaged, and the Goblin is spared
+when the damage skips that subtype. -/
+def bearAndGoblin : Game :=
+  addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) ragingGoblin ⟨1⟩ ⟨1⟩
+
+def oppCreaturesTakeTwo : Game :=
+  bearAndGoblin.applyEffect ⟨0⟩ (Effect.dealDamageToEachOppCreature 2) #[]
+
+#guard
+  (namedPermanent oppCreaturesTakeTwo "Grizzly Bears").status.damage == 0 &&
+    (namedPermanent oppCreaturesTakeTwo "Raging Goblin").status.damage == 2
+
+def eachCreatureTakesOne : Game :=
+  bearAndGoblin.applyEffect ⟨0⟩ (Effect.dealDamageToEachCreature 1) #[]
+
+#guard
+  (namedPermanent eachCreatureTakesOne "Grizzly Bears").status.damage == 1 &&
+    (namedPermanent eachCreatureTakesOne "Raging Goblin").status.damage == 1
+
+def nonGoblinsTakeThree : Game :=
+  bearAndGoblin.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .none) (.dealDamageToEachCreature 3 (.nonSubtype "Goblin"))) #[]
+
+#guard
+  (namedPermanent nonGoblinsTakeThree "Grizzly Bears").status.damage == 3 &&
+    (namedPermanent nonGoblinsTakeThree "Raging Goblin").status.damage == 0
+
 /-- `.draw` sends the cards to the named recipient. The controller's hand is
 untouched when the targeted player draws. -/
 def targetPlayerDrawsTwo : Game :=

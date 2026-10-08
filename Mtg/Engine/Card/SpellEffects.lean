@@ -322,7 +322,7 @@ def searchLegendaryCreatureToHand : Effect :=
     (castKind := .draw)
 
 def dealDamageToEachOppCreature (n : Nat) : Effect :=
-  mkSpell (.of .none) (.dealDamageToEachOppCreature n)
+  mkSpell (.of .none) (.dealDamageToEachCreature n .opponentsControl)
     (castKind := .creatureDamage)
 
 def destroyTargetArtifact : Effect :=
@@ -345,7 +345,7 @@ def addRedPerOppArtifacts : Effect :=
     (castKind := .draw)
 
 def dealDamageToEachNonDragon (n : Nat) : Effect :=
-  mkSpell (.of .none) (.dealDamageToEachNonDragon n)
+  mkSpell (.of .none) (.dealDamageToEachCreature n (.nonSubtype "Dragon"))
     (castKind := .creatureDamage)
 
 def chooseTypeReturnOthers : Effect :=
@@ -369,7 +369,8 @@ def exileThenReturnYouControl : Effect :=
     (castKind := .counter)
 
 def dealDamageToEachNonDragonThenAddDragonMana (n : Nat) : Effect :=
-  mkSpell (.of .none) (.sequence [.dealDamageToEachNonDragon n, .addFourManaDragonSpells])
+  mkSpell (.of .none)
+    (.sequence [.dealDamageToEachCreature n (.nonSubtype "Dragon"), .addFourManaDragonSpells])
     (castKind := .creatureDamage)
 
 def millThenPutAllInstantsOrSorceries (n : Nat) : Effect :=
