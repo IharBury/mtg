@@ -574,6 +574,8 @@ inductive Pending where
   | chooseLibraryPlacement (player : PlayerId) (id : ObjectId)
   /-- You may attach an Equipment you control to this creature. -/
   | mayAttachEquipment (player : PlayerId) (hostId : ObjectId)
+  /-- You may resolve the effect stashed in `mayEffect`. -/
+  | mayResolve (player : PlayerId)
   /-- Tap any number of Humans you control, then draw that many. -/
   | tapHumans (player : PlayerId)
   /-- Pay `{n}` or let the targeted spell be countered. When the game's

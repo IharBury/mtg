@@ -690,6 +690,12 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         s!" [choose one ({g.player p |>.name})]"
     | .mayAttachEquipment p _ =>
       s!" [may attach Equipment ({g.player p |>.name})]"
+    | .mayResolve p =>
+      let detail :=
+        match g.mayEffect with
+        | some e => if e.phrase.isEmpty then "" else s!" {e.phrase}"
+        | none => ""
+      s!" [may{detail} ({g.player p |>.name}): accept or decline]"
     | .tapHumans p =>
       s!" [tap Humans ({g.player p |>.name})]"
     | .payOrLetCounter p n _ =>

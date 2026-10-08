@@ -175,6 +175,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .fraChoice q _
   | .mayCastExiledElseDamage q _ _ =>
     if q == p then { g with pending := .none } else g
+  | .mayResolve q =>
+    if q == p then { g with pending := .none }.clearMay else g
   | .chooseLibraryPlacement q _ =>
     if q == p then { g with pending := .none }.clearSpellOr else g
   | .resolveRandom _ => g

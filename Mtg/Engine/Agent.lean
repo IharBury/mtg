@@ -140,6 +140,13 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         o.printed.isEquipment && o.attachedTo != some hostId) with
       | some eq => some (.choosePermanents #[eq.id])
       | none => some .decline
+    | .mayResolve _ =>
+      match g.mayEffect with
+      | some e =>
+        match e.spellResolution with
+        | .loseLife _ | .discard _ => some .decline
+        | _ => some .accept
+      | none => some .decline
     | .tapHumans _ =>
       let humans :=
         (g.permanentsOf p).filter (fun o =>

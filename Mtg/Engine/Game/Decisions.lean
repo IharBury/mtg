@@ -380,6 +380,21 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     return g.afterWardResolved
   | _ => throw "Not time to pay generic mana"
 
+/-- Resolve the effect stashed by `SpellResolution.may`. -/
+def acceptMay (g : Game) (p : PlayerId) : Except String Game := do
+  match g.pending with
+  | .mayResolve q =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may accept"
+    let some effect := g.mayEffect | throw "Nothing to resolve"
+    let controller := g.mayController
+    let targets := g.mayTargets
+    let g := { g with pending := .none }.clearMay
+    let g := g.applyUnified controller effect targets
+    if g.pending != .none || g.over then return g
+    return g.receivePriority g.activePlayer
+  | _ => throw "Nothing to accept now"
+
 /-- Apply alternative `idx` of a pending `SpellResolution.or`. -/
 def chooseSpellOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := do
   match g.pending with
@@ -594,6 +609,12 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline to attach Equipment"
     let g := g.logMsg s!"{(g.player p).name} declines to attach Equipment"
     let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
+  | .mayResolve q =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline"
+    let g := g.logMsg s!"{(g.player p).name} declines"
+    let g := { g with pending := .none }.clearMay
     return g.receivePriority g.activePlayer
   | .tapHumans q =>
     if p != q then
