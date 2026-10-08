@@ -1035,7 +1035,7 @@ def ofSpellStep : SpellResolution → Resolution
   | .createTokens kind n => .createTokens kind n
   | .creaturesPump p t .youControl => .creaturesYouControlPump p t
   | .createTokensX kind => .createTokensX kind
-  | .dealDamageToEachCreature n => .dealDamageToEachCreature n
+  | .dealDamageToEachCreature n .each => .dealDamageToEachCreature n
   | .targetPlayerDraw n => .targetPlayerDraw n
   | .sequence rs => .sequence (rs.map ofSpellStep)
   | r => .spell r

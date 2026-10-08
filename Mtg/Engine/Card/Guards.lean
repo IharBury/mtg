@@ -452,6 +452,19 @@ namespace CardDef
   "its controller loses 2 life"
 #guard SpellResolution.toPhrase (.loseLife 2 .eachOpponent) "target player" ==
   "each opponent loses 2 life"
+#guard (Effect.dealDamageToEachCreature 3).spellResolution == .dealDamageToEachCreature 3
+#guard (Effect.dealDamageToEachCreature 3).resolution == .dealDamageToEachCreature 3
+#guard (Effect.dealDamageToEachOppCreature 1).spellResolution ==
+  .dealDamageToEachCreature 1 .opponentsControl
+#guard (Effect.dealDamageToEachNonDragon 2).spellResolution ==
+  .dealDamageToEachCreature 2 (.nonSubtype "Dragon")
+#guard SpellResolution.toPhrase (.dealDamageToEachCreature 3 .each) "target creature" ==
+  "deals 3 damage to each creature"
+#guard SpellResolution.toPhrase (.dealDamageToEachCreature 1 .opponentsControl) "target creature" ==
+  "deals 1 damage to each creature your opponents control"
+#guard SpellResolution.toPhrase
+    (.dealDamageToEachCreature 2 (.nonSubtype "Elf")) "target creature" ==
+  "deals 2 damage to each non-Elf creature"
 #guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution == .fight
 #guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)
