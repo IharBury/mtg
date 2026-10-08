@@ -1083,17 +1083,19 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         (g.findObject? id).any (·.printed.isCreature))
     g.offerCardChoice controller creatures creatures.size .creaturesToBattlefield
       s!"{(g.player controller).name} may put any number of creature cards from their hand onto the battlefield"
-  | .millThenPutInstantOrSorcery n a b =>
-    g.millThenChooseForHand controller n
-      (fun o => o.printed.hasType a || o.printed.hasType b) 1 true
-  | .millThenPutLands n max ty =>
-    g.millThenChooseForHand controller n (fun o => o.printed.hasType ty) max false
+  | .millThenPut n which =>
+    match which with
+    | .oneOf a b =>
+      g.millThenChooseForHand controller n
+        (fun o => o.printed.hasType a || o.printed.hasType b) 1 true
+    | .upTo max ty =>
+      g.millThenChooseForHand controller n (fun o => o.printed.hasType ty) max false
+    | .allOf a b =>
+      g.millThenPutFromGy controller n
+        (fun o => o.printed.hasType a || o.printed.hasType b)
   | .addFourManaDragonSpells n subtype =>
     g.beginFraChoice controller (.addManaColors n (.forSubtype subtype))
       s!"{(g.player controller).name} chooses the colors of {englishNumber n} mana that can be spent only on {subtype} spells"
-  | .millThenPutAllInstantsOrSorceries n a b =>
-    g.millThenPutFromGy controller n
-      (fun o => o.printed.hasType a || o.printed.hasType b)
   | .exileAttackersSearchBasics =>
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
       match tgt with
