@@ -468,6 +468,18 @@ namespace CardDef
   "its controller loses 2 life"
 #guard SpellResolution.toPhrase (.loseLife 2 .eachOpponent) "target player" ==
   "each opponent loses 2 life"
+#guard (Effect.millThenPutInstantOrSorcery 4).spellResolution ==
+  .millThenPut 4 (.oneOf .instant .sorcery)
+#guard (Effect.millThenPutLands 4 2).spellResolution ==
+  .millThenPut 4 (.upTo 2 .land)
+#guard (Effect.millThenPutAllInstantsOrSorceries 6).spellResolution ==
+  .millThenPut 6 (.allOf .instant .sorcery)
+#guard (Effect.millThenPutInstantOrSorcery 4).phrase ==
+  "mill 4 cards, then put an instant or sorcery card from among them into your hand"
+#guard (Effect.millThenPutLands 4 2).phrase ==
+  "mill 4 cards, then put up to two land cards from among them into your hand"
+#guard (Effect.millThenPutAllInstantsOrSorceries 6).phrase ==
+  "mill 6 cards, then put all instant and sorcery cards from among them into your hand"
 #guard (Effect.artifactSpellsCostLessThisTurn 1).spellResolution ==
   .spellsCostLessThisTurn (.cardType .artifact) 1
 #guard (Effect.supertypeSpellsCostLessThisTurn 2).spellResolution ==

@@ -312,13 +312,15 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     | .opponentsControl => return .dealDamageToEachCreature (← takeNat n) .opponentsControl
     | .nonSubtype subtype =>
       return .dealDamageToEachCreature (← takeNat n) (.nonSubtype (← takeStr subtype))
-  | .millThenPutInstantOrSorcery n a b =>
-    return .millThenPutInstantOrSorcery (← takeNat n) (← takeCardType a) (← takeCardType b)
-  | .millThenPutLands a b ty =>
-    return .millThenPutLands (← takeNat a) (← takeNat b) (← takeCardType ty)
+  | .millThenPut n which =>
+    match which with
+    | .oneOf a b =>
+      return .millThenPut (← takeNat n) (.oneOf (← takeCardType a) (← takeCardType b))
+    | .upTo max ty =>
+      return .millThenPut (← takeNat n) (.upTo (← takeNat max) (← takeCardType ty))
+    | .allOf a b =>
+      return .millThenPut (← takeNat n) (.allOf (← takeCardType a) (← takeCardType b))
   | .exileTopPlayUntilNext n => return .exileTopPlayUntilNext (← takeNat n)
-  | .millThenPutAllInstantsOrSorceries n a b =>
-    return .millThenPutAllInstantsOrSorceries (← takeNat n) (← takeCardType a) (← takeCardType b)
   | .exileTopPlayIfYouControlSubtype n s =>
     return .exileTopPlayIfYouControlSubtype (← takeNat n) (← takeStr s)
   | .lookAtTopLandsGainLife a b => return .lookAtTopLandsGainLife (← takeNat a) (← takeNat b)

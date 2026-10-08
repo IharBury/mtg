@@ -1321,6 +1321,41 @@ def controllerOfBearLosesTwo : Game :=
     (controllerOfBearLosesTwo.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 2 &&
     !controllerOfBearLosesTwo.battlefield.any (fun o => o.name == "Grizzly Bears")
 
+/-- `.millThenPut` puts the named slice of the milled cards into hand.
+`oneOf` asks for one instant or sorcery, `upTo` may take lands, and `allOf`
+moves every instant or sorcery without a choice. -/
+def millLibrary : Game :=
+  afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[], hand := #[] })
+
+def millOneInstantOrSorcery : Game :=
+  let g := addToLibraryTop (addToLibraryTop millLibrary mountain ⟨0⟩) lightningBolt ⟨0⟩
+  (addToLibraryTop g shock ⟨0⟩).applyEffect ⟨0⟩ (Effect.millThenPutInstantOrSorcery 3) #[]
+
+#guard
+  match millOneInstantOrSorcery.pending with
+  | .fraChoice ⟨0⟩ (.chooseCards ids 1 (.toHand true)) => ids.size == 2
+  | _ => false
+
+def millUpToTwoLands : Game :=
+  let g := addToLibraryTop (addToLibraryTop millLibrary shock ⟨0⟩) forest ⟨0⟩
+  (addToLibraryTop g mountain ⟨0⟩).applyEffect ⟨0⟩ (Effect.millThenPutLands 3 2) #[]
+
+#guard
+  match millUpToTwoLands.pending with
+  | .fraChoice ⟨0⟩ (.chooseCards ids 2 (.toHand false)) => ids.size == 2
+  | _ => false
+
+def millAllInstants : Game :=
+  (addToLibraryTop (addToLibraryTop millLibrary mountain ⟨0⟩) lightningBolt ⟨0⟩).applyEffect
+    ⟨0⟩ (Effect.millThenPutAllInstantsOrSorceries 2) #[]
+
+#guard
+  let hand := (millAllInstants.player ⟨0⟩).hand
+  let gy := (millAllInstants.player ⟨0⟩).graveyard
+  hand.any (fun id => (millAllInstants.object! id).name == "Lightning Bolt") &&
+    gy.any (fun id => (millAllInstants.object! id).name == "Mountain") &&
+    !hand.any (fun id => (millAllInstants.object! id).name == "Mountain")
+
 /-- `.spellsCostLessThisTurn` records the named characteristic. A card-type
 discount does not also discount a supertype, and the reverse. -/
 def artifactsCostOneLess : Game :=

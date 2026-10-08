@@ -79,6 +79,16 @@ inductive LifeLoser where
   | eachOpponent
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Which milled cards `SpellResolution.millThenPut` puts into hand. -/
+inductive MilledToHand where
+  /-- Up to one card of type `a` or `b`. A lone eligible card is taken. -/
+  | oneOf (a b : CardType)
+  /-- Up to `max` cards of type `ty`. The player may take fewer. -/
+  | upTo (max : Nat) (ty : CardType)
+  /-- Every milled card of type `a` or `b`. -/
+  | allOf (a b : CardType)
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Which spells `SpellResolution.spellsCostLessThisTurn` makes cheaper. -/
 inductive SpellCostLess where
   /-- Spells of this card type (CR 205.2a). -/
@@ -243,16 +253,15 @@ inductive SpellResolution where
   | chooseTypeReturnOthers
   /-- Draw equal to greatest toughness, then put creatures onto the battlefield. -/
   | drawEqualToughnessThenPutCreatures
-  /-- Mill `n`, then put a card of type `a` or `b` into hand. -/
-  | millThenPutInstantOrSorcery (n : Nat) (a : CardType := .instant) (b : CardType := .sorcery)
-  /-- Mill `n`, then put up to `max` cards of type `ty` into hand. -/
-  | millThenPutLands (n max : Nat) (ty : CardType := .land)
+  /-- Mill `n`, then put cards from among them into your hand as `which` says.
+  Up to one instant or sorcery is `.millThenPut n (.oneOf .instant .sorcery)`.
+  Up to `max` lands is `.millThenPut n (.upTo max .land)`.
+  Every instant or sorcery is `.millThenPut n (.allOf .instant .sorcery)`. -/
+  | millThenPut (n : Nat) (which : MilledToHand)
   /-- Exile targeted permanents you control, then return them. -/
   | exileThenReturnYouControl
   /-- Add `n` mana in any combination of colors, spendable only on `subtype` spells. -/
   | addFourManaDragonSpells (n : Nat := 4) (subtype : String := "Dragon")
-  /-- Mill `n`, then put all cards of type `a` or `b` into hand. -/
-  | millThenPutAllInstantsOrSorceries (n : Nat) (a : CardType := .instant) (b : CardType := .sorcery)
   /-- Exile attacking creatures; that player may search basics. -/
   | exileAttackersSearchBasics
   /-- Create X tokens of this kind. -/
@@ -478,16 +487,16 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     "choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands"
   | .drawEqualToughnessThenPutCreatures =>
     "draw cards equal to the greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield"
-  | .millThenPutInstantOrSorcery n a b =>
+  | .millThenPut n (.oneOf a b) =>
     s!"mill {n} cards, then put {indefinite a.oracleWord} {a.oracleWord} or {b.oracleWord} card from among them into your hand"
-  | .millThenPutLands n max ty =>
+  | .millThenPut n (.upTo max ty) =>
     s!"mill {n} cards, then put up to {englishNumber max} {ty.oracleWord} cards from among them into your hand"
+  | .millThenPut n (.allOf a b) =>
+    s!"mill {n} cards, then put all {a.oracleWord} and {b.oracleWord} cards from among them into your hand"
   | .exileThenReturnYouControl =>
     "exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control"
   | .addFourManaDragonSpells n subtype =>
     s!"add {englishNumber n} mana in any combination of colors. Spend this mana only to cast {subtype} spells"
-  | .millThenPutAllInstantsOrSorceries n a b =>
-    s!"mill {n} cards, then put all {a.oracleWord} and {b.oracleWord} cards from among them into your hand"
   | .exileAttackersSearchBasics =>
     s!"exile all attacking creatures {noun} controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle"
   | .createTokensX kind =>

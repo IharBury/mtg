@@ -357,11 +357,11 @@ def drawEqualToughnessThenPutCreatures : Effect :=
     (castKind := .draw)
 
 def millThenPutInstantOrSorcery (n : Nat) : Effect :=
-  mkSpell (.of .none) (.millThenPutInstantOrSorcery n)
+  mkSpell (.of .none) (.millThenPut n (.oneOf .instant .sorcery))
     (castKind := .draw)
 
 def millThenPutLands (n max : Nat) : Effect :=
-  mkSpell (.of .none) (.millThenPutLands n max)
+  mkSpell (.of .none) (.millThenPut n (.upTo max .land))
     (castKind := .draw)
 
 def exileThenReturnYouControl : Effect :=
@@ -374,7 +374,7 @@ def dealDamageToEachNonDragonThenAddDragonMana (n : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def millThenPutAllInstantsOrSorceries (n : Nat) : Effect :=
-  mkSpell (.of .none) (.millThenPutAllInstantsOrSorceries n)
+  mkSpell (.of .none) (.millThenPut n (.allOf .instant .sorcery))
     (castKind := .draw)
 
 def exileAttackersSearchBasics : Effect :=
