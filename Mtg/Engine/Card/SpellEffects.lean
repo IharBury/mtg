@@ -294,7 +294,7 @@ def counterThenRecruitIfMvAtMost (n : Nat) : Effect :=
 def plusOneThenFight (n : Nat) : Effect :=
   mkSpell (.of .creatureYouControlThenOppCreature)
     (.sequence [.countersOnCreatureTargets .plusOnePlusOne n .firstYouControl,
-      .fightAnnouncedCreatures])
+      .mutualFight])
     (castKind := .fight)
 
 def plusOneThenEachOtherIfFromGy : Effect :=

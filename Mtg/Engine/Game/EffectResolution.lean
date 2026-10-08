@@ -1031,26 +1031,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         return g
   | .amassGoblins n subtype =>
     g.amass controller subtype n
-  | .fightAnnouncedCreatures =>
-    let src? :=
-      match targets[0]? with
-      | some (Target.permanent id) => g.findObject? (g.followMoved id)
-      | _ => none
-    let dest? :=
-      match targets[1]? with
-      | some (Target.permanent id) => g.findObject? id
-      | _ => none
-    let srcLegal (o : GameObject) : Bool :=
-      o.isOnBattlefield && o.isCreature && o.controlledBy controller
-    let destLegal (o : GameObject) : Bool :=
-      o.isOnBattlefield && o.isCreature && !o.controlledBy controller
-    match src?, dest? with
-    | some src, some dest =>
-      if srcLegal src && destLegal dest then g.fightCreatures src dest
-      else if destLegal dest then g
-      else g.logMsg "The target is no longer legal"
-    | _, some _ => g.logMsg "The target is no longer legal"
-    | _, none => g
   | .plusOneThenEachOtherIfFromGy n =>
     match targets[0]? with
     | some (Target.permanent oid) =>
