@@ -417,6 +417,20 @@ def tidingsFromGraveyardAmass3 : Bool :=
 #guard tidingsFromHandAmass1
 #guard tidingsFromGraveyardAmass3
 
+/-- Plunder the Trollshaws draws one card, or two when cast from a graveyard. -/
+def plunderFromHandDraws1 : Bool :=
+  let g := started.applyEffect ⟨0⟩ (Effect.drawIfFromGy 1 2) #[]
+    (castFromGraveyard := false)
+  (g.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1
+
+def plunderFromGraveyardDraws2 : Bool :=
+  let g := started.applyEffect ⟨0⟩ (Effect.drawIfFromGy 1 2) #[]
+    (castFromGraveyard := true)
+  (g.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 2
+
+#guard plunderFromHandDraws1
+#guard plunderFromGraveyardDraws2
+
 /- The Sackville-Bagginses: sacrificing a token targets an opponent for 1 life. -/
 
 def sackvilleWithTreasure : Game :=
@@ -1013,6 +1027,59 @@ def mayIfDwarfSkipsBear : Game :=
 #guard
   mayIfDwarfSkipsBear.pending == .none &&
     (mayIfDwarfSkipsBear.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life
+
+/-- `ifElse` resolves the true branch when the condition holds, and the false
+branch otherwise. -/
+def ifElseDwarfGainsLife : Game :=
+  let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
+  let id := (namedPermanent g "Bofur, Reliable Guardian").id
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creatureYouControl)
+      (.ifElse (.gainLife 3) (.draw 1) (.subtype "Dwarf")))
+    #[Target.permanent id]
+
+#guard
+  (ifElseDwarfGainsLife.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + (3 : Int) &&
+    (ifElseDwarfGainsLife.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size
+
+def ifElseBearDraws : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let id := (namedPermanent g "Grizzly Bears").id
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .creatureYouControl)
+      (.ifElse (.gainLife 3) (.draw 1) (.subtype "Dwarf")))
+    #[Target.permanent id]
+
+#guard
+  (ifElseBearDraws.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
+    (ifElseBearDraws.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1
+
+/-- `ifElse` on mana value uses the targeted spell's mana value. -/
+def ifElseMvAtMostDraws : Game :=
+  let g := addToHand afterDraw lightningBolt ⟨1⟩
+  let bolt := handCardNamed g ⟨1⟩ "Lightning Bolt"
+  let (g, spellId) := g.move bolt.id .stack (some ⟨1⟩)
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .spell)
+      (.ifElse (.draw 1) (.gainLife 3) (.mvAtMost 1)))
+    #[Target.card spellId]
+
+#guard
+  (ifElseMvAtMostDraws.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1 &&
+    (ifElseMvAtMostDraws.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life
+
+def ifElseMvAboveGainsLife : Game :=
+  let g := addToHand afterDraw lightningBolt ⟨1⟩
+  let bolt := handCardNamed g ⟨1⟩ "Lightning Bolt"
+  let (g, spellId) := g.move bolt.id .stack (some ⟨1⟩)
+  g.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .spell)
+      (.ifElse (.draw 1) (.gainLife 3) (.mvAtMost 0)))
+    #[Target.card spellId]
+
+#guard
+  (ifElseMvAboveGainsLife.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
+    (ifElseMvAboveGainsLife.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + (3 : Int)
 
 /-- `or` applies whichever resolution is chosen. The first draws, the second
 gains life, and a later mode scries. -/

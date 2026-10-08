@@ -266,6 +266,20 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     | .subtype s => return .«if» r (.subtype (← takeStr s))
     | .mvAtMost n => return .«if» r (.mvAtMost (← takeNat n))
     | .castFromGraveyard => return .«if» r .castFromGraveyard
+  | .ifElse whenTrue whenFalse cond =>
+    -- Printed order is the otherwise branch, then the condition, then the
+    -- true branch.
+    let whenFalse ← takeSpell whenFalse
+    let cond ← match cond with
+      | .subtype s => do
+        let s ← takeStr s
+        pure (.subtype s)
+      | .mvAtMost n => do
+        let n ← takeNat n
+        pure (.mvAtMost n)
+      | .castFromGraveyard => pure .castFromGraveyard
+    let whenTrue ← takeSpell whenTrue
+    return .ifElse whenTrue whenFalse cond
   | .countersOnCreatureTargets kind n which =>
     return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n) which
   | .exileGraveyardCreaturesGrantCast ty =>
@@ -292,7 +306,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
   | .amassGoblins n subtype =>
     return .amassGoblins (← takeNat n) (← takeStr subtype)
-  | .drawIfFromGy a b => return .drawIfFromGy (← takeNat a) (← takeNat b)
   | .amassGoblinsOrFromGy a b subtype =>
     return .amassGoblinsOrFromGy (← takeNat a) (← takeNat b) (← takeStr subtype)
   | .dealDamageToEachOppCreature n => return .dealDamageToEachOppCreature (← takeNat n)
@@ -1722,6 +1735,24 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
       (tokenize (normalizeUnit "X" "draw 7 cards")) args with
   | some vals => refillEffect e vals == Effect.draw 7
+  | none => false
+
+#guard
+  let e := Effect.drawIfFromGy 1 2
+  let args := collectEffect e
+  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+      (tokenize (normalizeUnit "X"
+        "Draw a card. If this spell was cast from a graveyard, draw two cards instead.")) args with
+  | some vals => refillEffect e vals == Effect.drawIfFromGy 1 2
+  | none => false
+
+#guard
+  let e := Effect.drawIfFromGy 1 2
+  let args := collectEffect e
+  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+      (tokenize (normalizeUnit "X"
+        "Draw three cards. If this spell was cast from a graveyard, draw four cards instead.")) args with
+  | some vals => refillEffect e vals == Effect.drawIfFromGy 3 4
   | none => false
 
 #guard

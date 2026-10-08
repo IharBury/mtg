@@ -59,7 +59,7 @@ inductive LifeGainer where
   | targetPlayers
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- When `SpellResolution.if` runs its resolution. -/
+/-- When `SpellResolution.if` and `SpellResolution.ifElse` choose a branch. -/
 inductive SpellIf where
   /-- The targeted permanent has this subtype. -/
   | subtype (subtype : String)
@@ -158,6 +158,10 @@ inductive SpellResolution where
   Counters on each other creature, when cast from a graveyard, are
   `.«if» (.plusOneOnEachYouControl n .eachOther) .castFromGraveyard`. -/
   | «if» (r : SpellResolution) (cond : SpellIf)
+  /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
+  Drawing two cards when cast from a graveyard, and one otherwise, is
+  `.ifElse (.draw 2) (.draw 1) .castFromGraveyard`. -/
+  | ifElse (whenTrue whenFalse : SpellResolution) (cond : SpellIf)
   /-- Exchange control of the two targeted permanents. -/
   | exchangeControl
   /-- Put `n` counters of `kind` on creatures among the announced targets.
@@ -176,8 +180,6 @@ inductive SpellResolution where
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
   /-- Recruit. -/
   | recruit
-  /-- Draw `n`, or `fromGy` if cast from a graveyard. -/
-  | drawIfFromGy (n fromGy : Nat)
   /-- Amass `subtype` `n`, or `fromGy` if cast from a graveyard. -/
   | amassGoblinsOrFromGy (n fromGy : Nat) (subtype : String := "Goblin")
   /-- Search the library for a card with this supertype and card type. -/
@@ -336,6 +338,17 @@ deriving Repr, Inhabited, BEq
 
 namespace SpellResolution
 
+/-- The “if …” clause for `cond`, without a following resolution. -/
+private def ifClause (cond : SpellIf) (noun : String) : String :=
+  match cond with
+  | .subtype subtype => s!"if {noun} is {indefinite subtype} {subtype}"
+  | .mvAtMost n => s!"if that spell's mana value was {n} or less"
+  | .castFromGraveyard => "if this spell was cast from a graveyard"
+
+/-- Drop one trailing period so a following clause can continue the sentence. -/
+private def trimPeriod (s : String) : String :=
+  if s.endsWith "." then (s.dropEnd 1).toString else s
+
 /-- One step, not a sequence or a choice. Sequence and `or` phrasing stay
 outside this match so the constructor splitter is not recursive. -/
 private def phraseOne (r : SpellResolution) (noun : String) : String :=
@@ -387,18 +400,17 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     if base.isEmpty then "you may" else s!"you may {base}"
   | .recruit => "recruit"
   | .«if» r cond =>
-    let base := phraseOne r noun
-    let base := if base.endsWith "." then (base.dropEnd 1).toString else base
-    match cond with
-    | .subtype subtype =>
-      let cond := s!"if {noun} is {indefinite subtype} {subtype}"
-      if base.isEmpty then cond else s!"{cond}, {base}"
-    | .mvAtMost n =>
-      let cond := s!"if that spell's mana value was {n} or less"
-      if base.isEmpty then cond else s!"{cond}, {base}"
-    | .castFromGraveyard =>
-      let cond := "if this spell was cast from a graveyard"
-      if base.isEmpty then cond else s!"{cond}, {base}"
+    let base := trimPeriod (phraseOne r noun)
+    let cond := ifClause cond noun
+    if base.isEmpty then cond else s!"{cond}, {base}"
+  | .ifElse whenTrue whenFalse cond =>
+    let no := trimPeriod (phraseOne whenFalse noun)
+    let yes := trimPeriod (phraseOne whenTrue noun)
+    let cond := ifClause cond noun
+    if no.isEmpty then
+      if yes.isEmpty then cond else s!"{cond}, {yes}"
+    else if yes.isEmpty then no
+    else s!"{no}. {capitalizeAscii cond}, {yes} instead"
   | .exchangeControl =>
     "exchange control of two target nonland permanents that share a card type"
   | .countersOnCreatureTargets kind n .each =>
@@ -407,8 +419,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"put {kind.countersPhrase n} on target creature you control"
   | .amassGoblins n subtype =>
     s!"amass {pluralizeName subtype} {n}"
-  | .drawIfFromGy n fromGy =>
-    s!"draw {cardPhrase n}. If this spell was cast from a graveyard, draw {cardPhrase fromGy} instead"
   | .amassGoblinsOrFromGy n fromGy subtype =>
     s!"amass {pluralizeName subtype} {n}. If this spell was cast from a graveyard, amass {pluralizeName subtype} {fromGy} instead"
   | .searchLegendaryCreatureToHand s ty =>
