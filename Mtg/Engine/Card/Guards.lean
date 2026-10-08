@@ -321,13 +321,14 @@ namespace CardDef
 #guard SpellResolution.toPhrase
     (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl) "target creature" ==
   "put 2 +1/+1 counters on target creature you control"
+#guard Effect.fight.spellResolution == .mutualFight
 #guard (Effect.plusOneThenFight 2).spellResolution ==
   .sequence [.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl,
-    .fightAnnouncedCreatures]
+    .mutualFight]
 #guard (Effect.plusOneThenFight 2).resolution ==
   .sequence [
     .spell (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl),
-    .spell .fightAnnouncedCreatures]
+    .spell .mutualFight]
 #guard (Effect.plusOneThenFight 2).phrase ==
   "put 2 +1/+1 counters on target creature you control. Then it fights target creature an opponent controls"
 #guard SpellResolution.toPhrase (.gainLife 3) "target creature" == "you gain 3 life"

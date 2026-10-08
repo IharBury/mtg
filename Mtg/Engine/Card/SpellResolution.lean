@@ -96,8 +96,10 @@ inductive SpellResolution where
   | extraLand
   /-- A creature you control deals its power to an opposing creature. -/
   | fight
-  /-- The two creatures fight (CR 701.12): each deals damage equal to its
-  power to the other. -/
+  /-- The two announced creatures fight (CR 701.12): each deals damage equal
+  to its power to the other. A fight spell is `.mutualFight`. Counters and
+  then that fight are
+  `.sequence [.countersOnCreatureTargets .plusOnePlusOne n .firstYouControl, .mutualFight]`. -/
   | mutualFight
   /-- Affect a still-legal target. Damage can hit a player or a creature;
   other actions require a permanent. -/
@@ -162,8 +164,6 @@ inductive SpellResolution where
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
   /-- Recruit. -/
   | recruit
-  /-- The first targeted creature fights the second. -/
-  | fightAnnouncedCreatures
   /-- `n` +1/+1 counters on the target; if from the graveyard, also each other. -/
   | plusOneThenEachOtherIfFromGy (n : Nat := 1)
   /-- Draw `n`, or `fromGy` if cast from a graveyard. -/
@@ -391,8 +391,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"put {kind.countersPhrase n} on target creature you control"
   | .amassGoblins n subtype =>
     s!"amass {pluralizeName subtype} {n}"
-  | .fightAnnouncedCreatures =>
-    "it fights target creature an opponent controls"
   | .plusOneThenEachOtherIfFromGy n =>
     s!"put {plusOnePlusOneCountersPhrase n} on target creature you control. If this spell was cast from a graveyard, also put {plusOnePlusOneCountersPhrase n} on each other creature you control"
   | .drawIfFromGy n fromGy =>
@@ -590,7 +588,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
   | [.onPermanent .untap, .onPermanent (.pump p t), .«if» (.may .attachEquipment) (.subtype subtype)] =>
     s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's {indefinite subtype} {subtype}, you may attach an Equipment you control to it"
-  | [.countersOnCreatureTargets kind k .firstYouControl, .fightAnnouncedCreatures] =>
+  | [.countersOnCreatureTargets kind k .firstYouControl, .mutualFight] =>
     s!"put {kind.countersPhrase k} on target creature you control. Then it fights target creature an opponent controls"
   | [.dealDamageToEachNonDragon n sub, .addFourManaDragonSpells m sub2] =>
     s!"deals {n} damage to each non-{sub} creature. Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells"
@@ -640,8 +638,9 @@ private def phraseOr (rs : List SpellResolution) (noun : String) : String :=
   | _ =>
     String.intercalate " or " ((rs.map (phraseOne · noun)).filter (· != ""))
 
-/-- Oracle-style reminder from targeting and resolution. `fight` here is the
-Quarrel wording; `Effect.fight` overrides the phrase for the actual fight spell. -/
+/-- Oracle-style reminder from targeting and resolution. `.fight` is the
+one-sided Quarrel wording. `.mutualFight` is the two-creature fight, including
+the later step of a counter-then-fight sequence. -/
 def toPhrase (r : SpellResolution) (noun : String) : String :=
   match r with
   | .sequence rs => phraseSequence (rs.flatMap flatten) noun

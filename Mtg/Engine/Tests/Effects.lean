@@ -1168,4 +1168,21 @@ def plusOneThenFightResolved : Game :=
   (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 2 &&
     (namedPermanent g "Grizzly Bears").status.damage == 0
 
+/- Hexproof on the opposing creature makes that fight target illegal.
+The counters still land. The same check is `Effect.fight`. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let baloth := namedPermanent g "Rumbling Baloth"
+  let g := g.mapObjectStatus baloth (·.grantUntilEot Keyword.hexproof)
+  let fought := g.applyEffect ⟨0⟩ (Effect.plusOneThenFight 2)
+    #[Target.permanent bears.id, Target.permanent baloth.id]
+  let alone := g.applyEffect ⟨0⟩ Effect.fight
+    #[Target.permanent bears.id, Target.permanent baloth.id]
+  (namedPermanent fought "Grizzly Bears").status.plusOnePlusOne == 2 &&
+    (namedPermanent fought "Grizzly Bears").status.damage == 0 &&
+    (namedPermanent fought "Rumbling Baloth").status.damage == 0 &&
+    (namedPermanent alone "Grizzly Bears").status.damage == 0 &&
+    (namedPermanent alone "Rumbling Baloth").status.damage == 0
+
 end Mtg.Engine.Tests
