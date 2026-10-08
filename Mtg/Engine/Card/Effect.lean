@@ -1025,6 +1025,7 @@ def ofSpellStep : SpellResolution → Resolution
   | .discard n => .discard n
   | .loseLife n => .fra (.loseLife n)
   | .gainLife n .you => .gainLife n
+  | .recruit => .recruit
   | .surveil n => .surveil n
   | .teamGain k => .teamGain k
   | .targetPlayerLosesLife n => .targetPlayerLoseLife n
@@ -1054,6 +1055,7 @@ def toSpellStep : Resolution → Option SpellResolution
   | .fra (.loseLife n) => some (.loseLife n)
   | .fra .returnFromGyToHand => some (.returnTargetToHand .graveyard)
   | .gainLife n => some (.gainLife n)
+  | .recruit => some .recruit
   | .surveil n => some (.surveil n)
   | .teamGain k => some (.teamGain k)
   | .targetPlayerLoseLife n => some (.targetPlayerLosesLife n)

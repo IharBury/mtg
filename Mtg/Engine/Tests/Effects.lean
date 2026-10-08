@@ -916,7 +916,7 @@ def ifDwarfPumped : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.onPermanent (.pump 1 1)) "Dwarf"))
+      (.«if» (.onPermanent (.pump 1 1)) (.subtype "Dwarf")))
     #[Target.permanent id]
 
 #guard ifDwarfPumped.power (namedPermanent ifDwarfPumped "Bofur, Reliable Guardian") == 2
@@ -926,7 +926,7 @@ def ifScoutPumped : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.onPermanent (.pump 3 0)) "Scout"))
+      (.«if» (.onPermanent (.pump 3 0)) (.subtype "Scout")))
     #[Target.permanent id]
 
 #guard ifScoutPumped.power (namedPermanent ifScoutPumped "Bofur, Reliable Guardian") == 4
@@ -936,7 +936,7 @@ def ifDwarfSkipsBear : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.onPermanent (.pump 1 1)) "Dwarf"))
+      (.«if» (.onPermanent (.pump 1 1)) (.subtype "Dwarf")))
     #[Target.permanent id]
 
 #guard ifDwarfSkipsBear.power (namedPermanent ifDwarfSkipsBear "Grizzly Bears") == 2
@@ -990,7 +990,7 @@ def mayIfDwarfAsked : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.may (.gainLife 2)) "Dwarf"))
+      (.«if» (.may (.gainLife 2)) (.subtype "Dwarf")))
     #[Target.permanent id]
 
 #guard
@@ -1007,7 +1007,7 @@ def mayIfDwarfSkipsBear : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.may (.gainLife 2)) "Dwarf"))
+      (.«if» (.may (.gainLife 2)) (.subtype "Dwarf")))
     #[Target.permanent id]
 
 #guard

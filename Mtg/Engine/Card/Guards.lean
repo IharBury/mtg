@@ -70,17 +70,19 @@ namespace CardDef
   .sequence [
     .onPermanent .untap,
     .onPermanent (.pump 2 2),
-    .«if» (.may .attachEquipment) "Dwarf"]
+    .«if» (.may .attachEquipment) (.subtype "Dwarf")]
 #guard (Effect.untapPumpMaybeAttach 2 2).phrase ==
   "untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» (.draw 1) "Elf") "target creature" ==
+#guard SpellResolution.toPhrase (.«if» (.draw 1) (.subtype "Elf")) "target creature" ==
   "if target creature is an Elf, draw a card"
 #guard SpellResolution.toPhrase (.may (.gainLife 3)) "target creature" ==
   "you may gain 3 life"
 #guard SpellResolution.toPhrase (.may .attachEquipment) "target creature" ==
   "you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» (.may .attachEquipment) "Dwarf") "target creature" ==
+#guard SpellResolution.toPhrase (.«if» (.may .attachEquipment) (.subtype "Dwarf")) "target creature" ==
   "if target creature is a Dwarf, you may attach an Equipment you control to it"
+#guard SpellResolution.toPhrase (.«if» .recruit (.mvAtMost 2)) "target spell" ==
+  "if that spell's mana value was 2 or less, recruit"
 #guard SpellResolution.toPhrase (.or [.draw 1, .gainLife 3]) "target creature" ==
   "draw a card or you gain 3 life"
 #guard Effect.destroyCreatureSurveil.resolution ==
@@ -159,9 +161,9 @@ namespace CardDef
 #guard (Effect.drawLoseLifeThenAmass 2).spellResolution ==
   .sequence [.draw 1, .loseLife 1, .amassGoblins 2]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).spellResolution ==
-  .sequence [.counter, .recruitIfMvAtMost 2]
+  .sequence [.counter, .«if» .recruit (.mvAtMost 2)]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).resolution ==
-  .sequence [.spell .counter, .spell (.recruitIfMvAtMost 2)]
+  .sequence [.spell .counter, .spell (.«if» .recruit (.mvAtMost 2))]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).phrase ==
   "counter target spell. If that spell's mana value was 2 or less, recruit"
 #guard (Effect.counterThenRecruitIfMvAtMost 2).castKind == .counter

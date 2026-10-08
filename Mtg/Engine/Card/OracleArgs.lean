@@ -260,7 +260,11 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .unlessPays r n => return .unlessPays (← takeSpell r) (← takeNat n)
   | .or rs => return .or (← rs.mapM takeSpell)
   | .may r => return .may (← takeSpell r)
-  | .«if» r subtype => return .«if» (← takeSpell r) (← takeStr subtype)
+  | .«if» r cond =>
+    let r ← takeSpell r
+    match cond with
+    | .subtype s => return .«if» r (.subtype (← takeStr s))
+    | .mvAtMost n => return .«if» r (.mvAtMost (← takeNat n))
   | .countersOnCreatureTargets kind n =>
     return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n)
   | .exileGraveyardCreaturesGrantCast ty =>
@@ -288,7 +292,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .plusOneOnFirstTarget n => return .plusOneOnFirstTarget (← takeNat n)
   | .amassGoblins n subtype =>
     return .amassGoblins (← takeNat n) (← takeStr subtype)
-  | .recruitIfMvAtMost n => return .recruitIfMvAtMost (← takeNat n)
   | .drawIfFromGy a b => return .drawIfFromGy (← takeNat a) (← takeNat b)
   | .amassGoblinsOrFromGy a b subtype =>
     return .amassGoblinsOrFromGy (← takeNat a) (← takeNat b) (← takeStr subtype)

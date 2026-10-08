@@ -121,6 +121,9 @@ def normLineAgrees (cardName line : String) : Bool :=
       c.tapAddMana.isEmpty) == some true
 #guard (parseOracleCard "Shock\n{R}\nInstant\nShock deals 5 damage to any target.").toOption.bind
     (·.spellEffect) == some (Effect.dealDamage 5)
+#guard (parseOracleCard
+    "Quiet\n{U}\nInstant\nCounter target spell. If that spell's mana value was 4 or less, recruit.").toOption.bind
+    (·.spellEffect) == some (Effect.counterThenRecruitIfMvAtMost 4)
 #guard (parseOracleCard "Insight\n{U}\nSorcery\nDraw seven cards.").toOption.bind
     (·.spellEffect) == some (Effect.draw 7)
 #guard (parseOracleCard

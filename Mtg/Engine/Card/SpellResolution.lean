@@ -59,6 +59,15 @@ inductive LifeGainer where
   | targetPlayers
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- When `SpellResolution.if` runs its resolution. -/
+inductive SpellIf where
+  /-- The targeted permanent has this subtype. -/
+  | subtype (subtype : String)
+  /-- The targeted spell's mana value was this much or less.
+  That value includes `{X}` from when the spell was on the stack (CR 202.3e). -/
+  | mvAtMost (n : Nat)
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Which targeted card `SpellResolution.returnTargetToHand` returns to a hand. -/
 inductive ReturnedCard where
   /-- A spell on the stack, returned to its owner's hand. -/
@@ -119,9 +128,11 @@ inductive SpellResolution where
   | may (r : SpellResolution)
   /-- Attach an Equipment you control to the targeted creature. -/
   | attachEquipment
-  /-- Resolve `r` if the targeted permanent has `subtype`.
-  Attaching Equipment to a Dwarf is `.«if» (.may .attachEquipment) "Dwarf"`. -/
-  | «if» (r : SpellResolution) (subtype : String)
+  /-- Resolve `r` when `cond` holds.
+  Attaching Equipment to a Dwarf is `.«if» (.may .attachEquipment) (.subtype "Dwarf")`.
+  Recruiting when the targeted spell's mana value was `n` or less is
+  `.«if» .recruit (.mvAtMost n)`. -/
+  | «if» (r : SpellResolution) (cond : SpellIf)
   /-- Exchange control of the two targeted permanents. -/
   | exchangeControl
   /-- Put `n` counters of `kind` on each creature among the announced targets.
@@ -135,10 +146,8 @@ inductive SpellResolution where
   | teamGain (k : Keywords)
   /-- Amass `subtype` `n`. -/
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
-  /-- Recruit if the targeted spell's mana value was `n` or less.
-  That value includes `{X}` from when the spell was on the stack.
-  Countering, then recruiting, is `.sequence [.counter, .recruitIfMvAtMost n]`. -/
-  | recruitIfMvAtMost (n : Nat)
+  /-- Recruit. -/
+  | recruit
   /-- Put `n` +1/+1 counters on the first targeted creature you control. -/
   | plusOneOnFirstTarget (n : Nat)
   /-- The first targeted creature fights the second. -/
@@ -351,19 +360,23 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     let base := if base.endsWith "." then (base.dropEnd 1).toString else base
     let base := if base.startsWith "you " then (base.drop 4).toString else base
     if base.isEmpty then "you may" else s!"you may {base}"
-  | .«if» r subtype =>
+  | .recruit => "recruit"
+  | .«if» r cond =>
     let base := phraseOne r noun
     let base := if base.endsWith "." then (base.dropEnd 1).toString else base
-    let cond := s!"if {noun} is {indefinite subtype} {subtype}"
-    if base.isEmpty then cond else s!"{cond}, {base}"
+    match cond with
+    | .subtype subtype =>
+      let cond := s!"if {noun} is {indefinite subtype} {subtype}"
+      if base.isEmpty then cond else s!"{cond}, {base}"
+    | .mvAtMost n =>
+      let cond := s!"if that spell's mana value was {n} or less"
+      if base.isEmpty then cond else s!"{cond}, {base}"
   | .exchangeControl =>
     "exchange control of two target nonland permanents that share a card type"
   | .countersOnCreatureTargets kind n =>
     s!"put {kind.countersPhrase n} on up to one target creature"
   | .amassGoblins n subtype =>
     s!"amass {pluralizeName subtype} {n}"
-  | .recruitIfMvAtMost n =>
-    s!"if that spell's mana value was {n} or less, recruit"
   | .plusOneOnFirstTarget n =>
     s!"put {plusOnePlusOneCountersPhrase n} on target creature you control"
   | .fightAnnouncedCreatures =>
@@ -533,7 +546,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"destroy {noun}. Its controller loses {n} life"
   | [.returnTargetToHand .spell, .draw 1] =>
     s!"return {noun} to its owner's hand. Draw a card"
-  | [.counter, .recruitIfMvAtMost n] =>
+  | [.counter, .«if» .recruit (.mvAtMost n)] =>
     s!"counter {noun}. If that spell's mana value was {n} or less, recruit"
   | [.returnTargetToHand .graveyard, .amassGoblins n subtype] =>
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
@@ -563,7 +576,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.creaturesPump p t .youControl, .teamGain k] =>
     s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
-  | [.onPermanent .untap, .onPermanent (.pump p t), .«if» (.may .attachEquipment) subtype] =>
+  | [.onPermanent .untap, .onPermanent (.pump p t), .«if» (.may .attachEquipment) (.subtype subtype)] =>
     s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's {indefinite subtype} {subtype}, you may attach an Equipment you control to it"
   | [.plusOneOnFirstTarget n, .fightAnnouncedCreatures] =>
     s!"put {plusOnePlusOneCountersPhrase n} on target creature you control. Then it fights target creature an opponent controls"
