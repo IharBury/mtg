@@ -251,7 +251,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .onPermanent a => return .onPermanent (← takeAction a)
   | .creaturesPump p t scope =>
     return .creaturesPump (← takeInt p) (← takeInt t) scope
-  | .draw n => return .draw (← takeNat n)
+  | .draw n who => return .draw (← takeNat n) who
   | .discard n => return .discard (← takeNat n)
   | .loseLife n who => return .loseLife (← takeNat n) who
   | .gainLife n who => return .gainLife (← takeNat n) who
@@ -307,7 +307,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .amassGoblins n subtype =>
     return .amassGoblins (← takeNat n) (← takeStr subtype)
   | .dealDamageToEachOppCreature n => return .dealDamageToEachOppCreature (← takeNat n)
-  | .targetPlayerDraw n => return .targetPlayerDraw (← takeNat n)
   | .dealDamageToEachNonDragon n subtype =>
     return .dealDamageToEachNonDragon (← takeNat n) (← takeStr subtype)
   | .millThenPutInstantOrSorcery n a b =>

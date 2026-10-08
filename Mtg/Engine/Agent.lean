@@ -375,7 +375,7 @@ where
         match o.printed.spellEffect with
         | some e =>
           match e.spellResolution with
-          | .sequence [.draw cards, .loseLife life .you] =>
+          | .sequence [.draw cards .you, .loseLife life .you] =>
             (g.player p).life > (life : Int) &&
               (g.player p).library.size >= cards
           | _ => true
