@@ -91,8 +91,11 @@ inductive SpellResolution where
   Putting the target on the top or bottom of its owner's library is
   `.or [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary]`. -/
   | or (rs : List SpellResolution)
-  /-- If the targeted creature has `subtype`, its controller may attach an Equipment. -/
-  | mayAttachEquipmentIfDwarf (subtype : String := "Dwarf")
+  /-- You may attach an Equipment you control to the targeted creature. -/
+  | mayAttachEquipment
+  /-- Resolve `r` if the targeted permanent has `subtype`.
+  Attaching Equipment to a Dwarf is `.if .mayAttachEquipment "Dwarf"`. -/
+  | «if» (r : SpellResolution) (subtype : String)
   /-- Exchange control of the two targeted permanents. -/
   | exchangeControl
   /-- Put `n` +1/+1 counters on each creature among the announced targets. -/
@@ -315,8 +318,13 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .counterExilePermanentMayCast =>
     s!"counter {noun}. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled"
   | .or _ => ""
-  | .mayAttachEquipmentIfDwarf subtype =>
-    s!"if {noun} is {indefinite subtype} {subtype}, you may attach an Equipment you control to it"
+  | .mayAttachEquipment =>
+    "you may attach an Equipment you control to it"
+  | .«if» r subtype =>
+    let base := phraseOne r noun
+    let base := if base.endsWith "." then (base.dropEnd 1).toString else base
+    let cond := s!"if {noun} is {indefinite subtype} {subtype}"
+    if base.isEmpty then cond else s!"{cond}, {base}"
   | .exchangeControl =>
     "exchange control of two target nonland permanents that share a card type"
   | .plusOneOnCreatureTargets n =>
@@ -526,7 +534,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.creaturesYouControlPump p t, .teamGain k] =>
     s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
-  | [.onPermanent .untap, .onPermanent (.pump p t), .mayAttachEquipmentIfDwarf subtype] =>
+  | [.onPermanent .untap, .onPermanent (.pump p t), .«if» .mayAttachEquipment subtype] =>
     s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's {indefinite subtype} {subtype}, you may attach an Equipment you control to it"
   | [.plusOneOnFirstTarget n, .fightAnnouncedCreatures] =>
     s!"put {plusOnePlusOneCountersPhrase n} on target creature you control. Then it fights target creature an opponent controls"
