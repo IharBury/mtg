@@ -306,8 +306,9 @@ def plusOneThenEachOtherIfFromGy : Effect :=
       .«if» (.plusOneOnEachYouControl 1 .eachOther) .castFromGraveyard])
     (castKind := .pump)
 
+/-- Draw `n` cards, or `fromGy` cards if this spell was cast from a graveyard. -/
 def drawIfFromGy (n fromGy : Nat) : Effect :=
-  mkSpell (.of .none) (.drawIfFromGy n fromGy)
+  mkSpell (.of .none) (.ifElse (.draw fromGy) (.draw n) .castFromGraveyard)
     (castKind := .draw)
 
 def amassGoblinsOrFromGy (n fromGy : Nat) : Effect :=

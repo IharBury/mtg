@@ -344,6 +344,18 @@ namespace CardDef
 #guard SpellResolution.toPhrase
     (.«if» (.plusOneOnEachYouControl 1 .eachOther) .castFromGraveyard) "target creature" ==
   "if this spell was cast from a graveyard, put a +1/+1 counter on each other creature you control"
+#guard (Effect.drawIfFromGy 1 2).spellResolution ==
+  .ifElse (.draw 2) (.draw 1) .castFromGraveyard
+#guard (Effect.drawIfFromGy 1 2).resolution ==
+  .spell (.ifElse (.draw 2) (.draw 1) .castFromGraveyard)
+#guard (Effect.drawIfFromGy 1 2).phrase ==
+  "draw a card. If this spell was cast from a graveyard, draw 2 cards instead"
+#guard SpellResolution.toPhrase
+    (.ifElse (.gainLife 3) (.draw 1) (.subtype "Elf")) "target creature" ==
+  "draw a card. If target creature is an Elf, you gain 3 life instead"
+#guard SpellResolution.toPhrase
+    (.ifElse .recruit (.draw 1) (.mvAtMost 2)) "target spell" ==
+  "draw a card. If that spell's mana value was 2 or less, recruit instead"
 #guard SpellResolution.toPhrase (.plusOneOnEachYouControl 1 .eachOther) "target creature" ==
   "put a +1/+1 counter on each other creature you control"
 #guard SpellResolution.toPhrase (.gainLife 3) "target creature" == "you gain 3 life"
