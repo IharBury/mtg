@@ -2170,6 +2170,9 @@ that are also in the core catalog. -/
 #guard (woodlandWeavemaster.summary.splitOn "any one color").length > 1
 #guard quarrel.isInstant
 #guard quarrel.spellEffect == some (Effect.creatureYouControlDealsPowerToOppCreature)
+#guard soundTheTrumpets.isInstant
+#guard soundTheTrumpets.spellEffect == some (Effect.counterThenRecruitIfMvAtMost 2)
+#guard soundTheTrumpets.hasCastKind .counter
 #guard quarrel.requiresTarget
 #guard Effect.creatureYouControlDealsPowerToOppCreature.targetCount == 2
 #guard (quarrel.summary.splitOn "deals damage equal to its power").length > 1

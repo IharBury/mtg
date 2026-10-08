@@ -1006,17 +1006,16 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         return g
   | .amassGoblins n subtype =>
     g.amass controller subtype n
-  | .counterThenRecruitIfMvAtMost n =>
+  | .recruitIfMvAtMost n =>
     match targets[0]? with
     | some (Target.card id) =>
-      match g.findObject? id with
+      -- `{X}` remains after the spell leaves the stack. That announced
+      -- value is the mana value the spell had (CR 202.3e).
+      match g.findObject? (g.followMoved id) with
       | none => g.logMsg "The target is no longer legal"
       | some o =>
-        if o.zone != .stack then g.logMsg "The target is no longer legal"
-        else
-          let mv := g.objectManaValue o
-          let g := g.counterStackSpell id
-          if mv ≤ n then g.beginRecruit controller else g
+        let mv := o.printed.manaValue + o.chosenX.getD 0
+        if mv ≤ n then g.beginRecruit controller else g
     | _ => g.logMsg "The target is no longer legal"
   | .plusOneOnFirstTarget n =>
     match targets[0]? with

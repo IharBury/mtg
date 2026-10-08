@@ -284,8 +284,9 @@ def returnCreatureFromGyThenAmass (n : Nat) : Effect :=
     (castKind := .draw)
     (allowsZeroTargets := true)
 
+/-- Counter the targeted spell. If its mana value was `n` or less, recruit. -/
 def counterThenRecruitIfMvAtMost (n : Nat) : Effect :=
-  mkSpell (.of .spell) (.counterThenRecruitIfMvAtMost n)
+  mkSpell (.of .spell) (.sequence [.counter, .recruitIfMvAtMost n])
     (castKind := .counter)
 
 def plusOneThenFight (n : Nat) : Effect :=

@@ -288,7 +288,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .plusOneOnFirstTarget n => return .plusOneOnFirstTarget (← takeNat n)
   | .amassGoblins n subtype =>
     return .amassGoblins (← takeNat n) (← takeStr subtype)
-  | .counterThenRecruitIfMvAtMost n => return .counterThenRecruitIfMvAtMost (← takeNat n)
+  | .recruitIfMvAtMost n => return .recruitIfMvAtMost (← takeNat n)
   | .drawIfFromGy a b => return .drawIfFromGy (← takeNat a) (← takeNat b)
   | .amassGoblinsOrFromGy a b subtype =>
     return .amassGoblinsOrFromGy (← takeNat a) (← takeNat b) (← takeStr subtype)

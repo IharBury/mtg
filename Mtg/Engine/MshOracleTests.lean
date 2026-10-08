@@ -3850,11 +3850,13 @@ def trollNegotiationsPartialOk : Bool :=
 /-- Sound the Trumpets uses the spell's mana value on the stack, including X. -/
 def soundTheTrumpetsManaValueOk : Bool :=
   let (g, shockId) := afterDraw.allocObject shock ⟨1⟩ .stack (some ⟨1⟩)
+  let g := g.putStackEntry ⟨1⟩ shockId.id
   let gShock := g.applyEffect ⟨0⟩ (Effect.counterThenRecruitIfMvAtMost 2)
     #[Target.card shockId.id]
   (match gShock.pending with | .recruitDiscard ⟨0⟩ => true | _ => false) &&
     (let (gX, spell) := afterDraw.allocObject insideInformation ⟨1⟩ .stack (some ⟨1⟩)
      let gX := gX.setObject { spell with chosenX := some 3 }
+     let gX := gX.putStackEntry ⟨1⟩ spell.id
      let gX := gX.applyEffect ⟨0⟩ (Effect.counterThenRecruitIfMvAtMost 2)
        #[Target.card spell.id]
      gX.pending == .none &&

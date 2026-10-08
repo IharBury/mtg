@@ -135,8 +135,10 @@ inductive SpellResolution where
   | teamGain (k : Keywords)
   /-- Amass `subtype` `n`. -/
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
-  /-- Counter the targeted spell; recruit if its mana value was `n` or less. -/
-  | counterThenRecruitIfMvAtMost (n : Nat)
+  /-- Recruit if the targeted spell's mana value was `n` or less.
+  That value includes `{X}` from when the spell was on the stack.
+  Countering, then recruiting, is `.sequence [.counter, .recruitIfMvAtMost n]`. -/
+  | recruitIfMvAtMost (n : Nat)
   /-- Put `n` +1/+1 counters on the first targeted creature you control. -/
   | plusOneOnFirstTarget (n : Nat)
   /-- The first targeted creature fights the second. -/
@@ -360,8 +362,8 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"put {kind.countersPhrase n} on up to one target creature"
   | .amassGoblins n subtype =>
     s!"amass {pluralizeName subtype} {n}"
-  | .counterThenRecruitIfMvAtMost n =>
-    s!"counter {noun}. If that spell's mana value was {n} or less, recruit"
+  | .recruitIfMvAtMost n =>
+    s!"if that spell's mana value was {n} or less, recruit"
   | .plusOneOnFirstTarget n =>
     s!"put {plusOnePlusOneCountersPhrase n} on target creature you control"
   | .fightAnnouncedCreatures =>
@@ -531,6 +533,8 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"destroy {noun}. Its controller loses {n} life"
   | [.returnTargetToHand .spell, .draw 1] =>
     s!"return {noun} to its owner's hand. Draw a card"
+  | [.counter, .recruitIfMvAtMost n] =>
+    s!"counter {noun}. If that spell's mana value was {n} or less, recruit"
   | [.returnTargetToHand .graveyard, .amassGoblins n subtype] =>
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
   | [.draw 1, .loseLife 1, .amassGoblins n subtype] =>
