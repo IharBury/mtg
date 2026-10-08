@@ -924,8 +924,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileGraveyardCreaturesGrantCast ty =>
     g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.exileCreaturesFromGraveyard controller pid ty)
-  | .draw n =>
-    g.draw controller n
+  | .draw n who =>
+    match who with
+    | .you => g.draw controller n
+    | .targetPlayer =>
+      g.withLegalKindPlayer controller effect.targetKind targets
+        (fun g pid => g.draw pid n)
   | .scry n =>
     g.beginScry controller n
   | .tapTargets =>
@@ -1056,9 +1060,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | .opponentsControl =>
       g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
     | .nonSubtype subtype => g.dealDamageToEachNonDragon n subtype
-  | .targetPlayerDraw n =>
-    g.withLegalKindPlayer controller effect.targetKind targets
-      (fun g pid => g.draw pid n)
   | .exileIfDiesThisTurn =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true }))
