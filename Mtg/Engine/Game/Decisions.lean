@@ -368,7 +368,7 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"{(g.player p).name} cannot pay \{{n}}"
     let g ← g.payCost p (ManaCost.ofGeneric n)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
-    let g := { g with pending := .none }
+    let g := { g with pending := .none }.clearUnlessPays
     return g.receivePriority g.activePlayer
   | .payWard q _ (.genericMana n) | .payWard q _ (.discardOrPay n) =>
     if p != q then
@@ -558,8 +558,14 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay"
     let g := g.logMsg s!"{(g.player p).name} does not pay"
-    let g := { g with pending := .none }
-    let g := g.counterStackSpell spellId
+    let instead := g.unlessPaysInstead
+    let caster := g.unlessPaysController
+    let targets := g.unlessPaysTargets
+    let g := { g with pending := .none }.clearUnlessPays
+    let g :=
+      match instead with
+      | some effect => g.applyUnified caster effect targets
+      | none => g.counterStackSpell spellId
     return g.receivePriority g.activePlayer
   | .payWard _ _ (.sacrificePermanents _ (_ + 1)) =>
     throw s!"{(g.player p).name} already began sacrificing permanents for ward and must finish"

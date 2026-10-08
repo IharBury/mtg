@@ -82,8 +82,9 @@ inductive SpellResolution where
   | tapTargets
   /-- Counter the targeted spell. -/
   | counter
-  /-- Counter unless the controller pays `{n}`. -/
-  | counterUnlessPays (n : Nat)
+  /-- Resolve `r` unless its controller pays `{n}`.
+  Countering unless they pay is `.unlessPays .counter n`. -/
+  | unlessPays (r : SpellResolution) (n : Nat)
   /-- Counter; exile a permanent spell and grant a free cast. -/
   | counterExilePermanentMayCast
   /-- Owner puts the targeted creature on top or bottom of their library. -/
@@ -304,8 +305,11 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .scry n => s!"scry {n}"
   | .tapTargets => "tap one or two target creatures"
   | .counter => s!"counter {noun}"
-  | .counterUnlessPays n =>
-    s!"counter {noun} unless its controller pays \{{n}}"
+  | .unlessPays r n =>
+    let base := phraseOne r noun
+    let base := if base.endsWith "." then (base.dropEnd 1).toString else base
+    if base.isEmpty then s!"unless its controller pays \{{n}}"
+    else s!"{base} unless its controller pays \{{n}}"
   | .counterExilePermanentMayCast =>
     s!"counter {noun}. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled"
   | .putOnTopOrBottom =>

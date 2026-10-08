@@ -852,8 +852,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     match targets[0]? with
     | some (Target.card id) => g.counterStackSpell id
     | _ => g.logMsg "The target is no longer legal"
-  | .counterUnlessPays n =>
-    g.beginPayOrLetCounter targets n
+  | .unlessPays r n =>
+    g.beginUnlessPays controller effect targets r n
   | .counterExilePermanentMayCast =>
     match targets[0]? with
     | some (Target.card id) =>
@@ -1430,6 +1430,21 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     -- Shared steps (`draw`, `loseLife`, `surveil`, …) resolve on `Resolution`
     -- before this match. A leftover spell shape does nothing here.
     g.logMsg "The effect does nothing"
+
+/-- Resolve a stashed `unlessPays` effect after its payer left without paying
+(CR 800.4f). -/
+partial def flushUnlessPays (g : Game) : Game :=
+  if !g.unlessPaysDue || g.over then g
+  else
+    match g.unlessPaysInstead with
+    | none => { g with unlessPaysDue := false }
+    | some effect =>
+      let controller := g.unlessPaysController
+      let targets := g.unlessPaysTargets
+      let g := g.clearUnlessPays
+      let g := g.applyUnified controller effect targets
+      if g.pending != .none || g.over then g
+      else g.receivePriority g.activePlayer
 
 /-- Resolve a printed spell effect (CR 608). -/
 def applyEffect (g : Game) (controller : PlayerId) (effect : Effect)

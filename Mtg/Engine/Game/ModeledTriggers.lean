@@ -1078,10 +1078,49 @@ def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
     match g.findObject? id with
     | some o =>
       let ctrl := o.controller.getD o.owner
-      { g with pending := .payOrLetCounter ctrl n id }.logMsg
+      { g.clearUnlessPays with pending := .payOrLetCounter ctrl n id }.logMsg
         s!"{(g.player ctrl).name} may pay \{{n}} or {o.name} is countered"
     | none => g.logMsg "The target is no longer legal"
   | _ => g.logMsg "The target is no longer legal"
+
+/-- Ask the target's controller to pay `{n}`. If they do not, resolve `r`.
+Countering uses the existing “pay or let the spell be countered” choice. -/
+def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (r : SpellResolution) (n : Nat) : Game :=
+  match r with
+  | .counter => g.beginPayOrLetCounter targets n
+  | _ =>
+    let payer? : Option (PlayerId × ObjectId) :=
+      match targets[0]? with
+      | some (Target.card id) =>
+        match g.findObject? id with
+        | some o => some (o.controller.getD o.owner, id)
+        | none => none
+      | some (Target.permanent id) =>
+        match g.findObject? id with
+        | some o =>
+          let pid? :=
+            if o.zone == .battlefield then o.controller
+            else o.lastController.orElse (fun _ => o.controller)
+          -- The pending choice still stores an object id. Use one that has
+          -- not been allocated so the counter fallback cannot hit this permanent.
+          match pid? with
+          | some pid => some (pid, { raw := g.nextObjectId })
+          | none => none
+        | none => none
+      | some (Target.player pid) => some (pid, { raw := g.nextObjectId })
+      | _ => none
+    match payer? with
+    | none => g.logMsg "The target is no longer legal"
+    | some (payer, spellId) =>
+      let inner := { effect with resolution := Resolution.ofSpell r }
+      { g with
+          pending := .payOrLetCounter payer n spellId
+          unlessPaysInstead := some inner
+          unlessPaysController := controller
+          unlessPaysTargets := targets
+          unlessPaysDue := false }.logMsg
+        s!"{(g.player payer).name} may pay \{{n}} or {SpellResolution.toPhrase r effect.targeting.kind.noun}"
 
 /-- Exile `o`, then immediately return it to the battlefield under its
 owner's control. `clearExileFields` drops a play permission or linked exile

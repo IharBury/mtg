@@ -59,6 +59,9 @@ namespace CardDef
   .sequence [.onPermanent .tap, .scry 1, .draw 1]
 #guard (Effect.tapScryDraw 1 1).phrase ==
   "tap target creature. Scry 1. Draw a card"
+#guard (Effect.counterUnlessPays 4).spellResolution == .unlessPays .counter 4
+#guard (Effect.counterUnlessPays 4).phrase ==
+  "counter target spell unless its controller pays {4}"
 #guard Effect.destroyCreatureSurveil.resolution ==
   Resolution.sequence [.onPermanent .destroy, .surveil 1]
 #guard Effect.destroyCreatureSurveil.spellResolution ==
