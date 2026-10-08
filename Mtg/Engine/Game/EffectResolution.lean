@@ -933,15 +933,28 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.beginMay controller effect targets .attachEquipment
   | .may r =>
     g.beginMay controller effect targets r
-  | .«if» r subtype =>
-    g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      if g.hasSubtype o subtype then
-        g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
-          (castFromGraveyard := castFromGraveyard)
-          (kicked := kicked)
-          (giftPromised := giftPromised)
-          (chosenX := chosenX)
-      else g)
+  | .recruit =>
+    g.beginRecruit controller
+  | .«if» r cond =>
+    let run (g : Game) : Game :=
+      g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
+        (castFromGraveyard := castFromGraveyard) (kicked := kicked)
+        (giftPromised := giftPromised) (chosenX := chosenX)
+    match cond with
+    | .subtype subtype =>
+      g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
+        if g.hasSubtype o subtype then run g else g)
+    | .mvAtMost n =>
+      match targets[0]? with
+      | some (Target.card id) =>
+        -- `{X}` remains after the spell leaves the stack. That announced
+        -- value is the mana value the spell had (CR 202.3e).
+        match g.findObject? (g.followMoved id) with
+        | none => g.logMsg "The target is no longer legal"
+        | some o =>
+          let mv := o.printed.manaValue + o.chosenX.getD 0
+          if mv ≤ n then run g else g
+      | _ => g.logMsg "The target is no longer legal"
   | .exchangeControl =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
@@ -1006,17 +1019,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         return g
   | .amassGoblins n subtype =>
     g.amass controller subtype n
-  | .recruitIfMvAtMost n =>
-    match targets[0]? with
-    | some (Target.card id) =>
-      -- `{X}` remains after the spell leaves the stack. That announced
-      -- value is the mana value the spell had (CR 202.3e).
-      match g.findObject? (g.followMoved id) with
-      | none => g.logMsg "The target is no longer legal"
-      | some o =>
-        let mv := o.printed.manaValue + o.chosenX.getD 0
-        if mv ≤ n then g.beginRecruit controller else g
-    | _ => g.logMsg "The target is no longer legal"
   | .plusOneOnFirstTarget n =>
     match targets[0]? with
     | some (Target.permanent id) =>

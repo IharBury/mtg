@@ -235,7 +235,7 @@ def untapPumpMaybeAttach (power toughness : Int) : Effect :=
     (.sequence [
       .onPermanent .untap,
       .onPermanent (.pump power toughness),
-      .«if» (.may .attachEquipment) "Dwarf"])
+      .«if» (.may .attachEquipment) (.subtype "Dwarf")])
     (castKind := .pump)
 
 def exchangeControlSharingType : Effect :=
@@ -284,9 +284,11 @@ def returnCreatureFromGyThenAmass (n : Nat) : Effect :=
     (castKind := .draw)
     (allowsZeroTargets := true)
 
-/-- Counter the targeted spell. If its mana value was `n` or less, recruit. -/
+/-- Counter the targeted spell. If its mana value was `n` or less, recruit.
+The mana value includes `{X}` from when the spell was on the stack. -/
 def counterThenRecruitIfMvAtMost (n : Nat) : Effect :=
-  mkSpell (.of .spell) (.sequence [.counter, .recruitIfMvAtMost n])
+  mkSpell (.of .spell)
+    (.sequence [.counter, .«if» .recruit (.mvAtMost n)])
     (castKind := .counter)
 
 def plusOneThenFight (n : Nat) : Effect :=
