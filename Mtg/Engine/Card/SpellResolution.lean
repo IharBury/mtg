@@ -115,6 +115,44 @@ inductive TokenCreator where
   | targetPlayer
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- How many tokens `SpellResolution.createTokens` creates. -/
+inductive TokenQuantity where
+  /-- The `n` argument. -/
+  | fixed
+  /-- X, chosen as the spell was cast. -/
+  | chosenX
+  /-- One token for each permanent of this subtype the creator controls. -/
+  | perSubtype (subtype : String)
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Where the damage from `SpellResolution.dealDamageToEachCreature` comes from. -/
+inductive EachCreatureAmount where
+  /-- The `n` argument. -/
+  | fixed
+  /-- The total mana value of other spells the controller has cast this turn.
+  The resolving spell itself is not counted. -/
+  | otherSpellsManaValue
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- How `SpellResolution.mutualFight` uses the announced creatures. -/
+inductive MutualFight where
+  /-- Both announced creatures must still be legal. Each deals damage equal
+  to its power to the other. -/
+  | both
+  /-- The creature you control fights up to one other creature. No second
+  target means it has nothing to fight. -/
+  | upToOne
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- How `SpellResolution.searchLibrary` searches. -/
+inductive LibrarySearch where
+  /-- The controller searches their library and puts the card into their hand. -/
+  | youToHand
+  /-- The targeted permanent's owner may search and put the card onto the
+  battlefield tapped. -/
+  | ownerMayToBattlefield
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- When `SpellResolution.if` and `SpellResolution.ifElse` choose a branch. -/
 inductive SpellIf where
   /-- The targeted permanent has this subtype. -/
@@ -124,6 +162,10 @@ inductive SpellIf where
   | mvAtMost (n : Nat)
   /-- The resolving spell was cast from a graveyard. -/
   | castFromGraveyard
+  /-- The resolving spell was cast using teamwork. -/
+  | teamwork
+  /-- A gift was promised as the spell was cast. -/
+  | giftPromised
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Which announced creatures `SpellResolution.countersOnCreatureTargets`
@@ -160,13 +202,15 @@ that action to a player or a creature when the targeting shape allows it. -/
 inductive SpellResolution where
   /-- You may play an additional land this turn. -/
   | extraLand
-  /-- A creature you control deals its power to an opposing creature. -/
-  | fight
+  /-- A creature you control deals `k` times its power to an opposing creature.
+  One times its power is `.fight` (the default). Twice its power is `.fight 2`. -/
+  | fight (k : Nat := 1)
   /-- The two announced creatures fight (CR 701.12): each deals damage equal
-  to its power to the other. A fight spell is `.mutualFight`. Counters and
-  then that fight are
+  to its power to the other. Both creatures required is `.mutualFight` (`.both`).
+  Up to one other creature is `.mutualFight .upToOne`. Counters and then the
+  required fight are
   `.sequence [.countersOnCreatureTargets .plusOnePlusOne n .firstYouControl, .mutualFight]`. -/
-  | mutualFight
+  | mutualFight (how : MutualFight := .both)
   /-- Affect a still-legal target. Damage can hit a player or a creature;
   other actions require a permanent. -/
   | onPermanent (action : PermanentAction)
@@ -243,8 +287,12 @@ inductive SpellResolution where
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
   /-- Recruit. -/
   | recruit
-  /-- Search the library for a card with this supertype and card type. -/
-  | searchLegendaryCreatureToHand (s : Supertype := .legendary) (ty : CardType := .creature)
+  /-- Search a library for a `s` `ty` card, as `how` says.
+  The controller, into their hand, is `.searchLibrary` (`.youToHand`).
+  The targeted permanent's owner, who may put it onto the battlefield tapped,
+  is `.searchLibrary .basic .land .ownerMayToBattlefield`. -/
+  | searchLibrary (s : Supertype := .legendary) (ty : CardType := .creature)
+      (how : LibrarySearch := .youToHand)
   /-- If the targeted creature would die this turn, exile it instead. -/
   | exileIfDiesThisTurn
   /-- Add {R} for each permanent of type `ty` opponents control. -/
@@ -264,12 +312,11 @@ inductive SpellResolution where
   | addFourManaDragonSpells (n : Nat := 4) (subtype : String := "Dragon")
   /-- Exile attacking creatures; that player may search basics. -/
   | exileAttackersSearchBasics
-  /-- Create X tokens of this kind. -/
-  | createTokensX (kind : TokenKind)
   /-- Exile the top `n`; play them if you control this subtype. -/
   | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
-  /-- If a gift was promised, players can't cast spells this turn. -/
-  | playersCantCastIfGift
+  /-- Players can't cast spells this turn. A promised gift gates this with
+  `.«if» .playersCantCastThisTurn .giftPromised`. -/
+  | playersCantCastThisTurn
   /-- Exile the top X of the targeted opponent; play them for life. -/
   | exileTopXOppPlayForLife
   /-- Separate the top `n` cards into two piles (Riddles in the Dark). -/
@@ -282,29 +329,25 @@ inductive SpellResolution where
   | lookAtTopLandsGainLife (n life : Nat)
   /-- Gain control of targeted opposing artifacts. -/
   | gainControlOppArtifacts
-  /-- Damage opposing creatures equal to other spells cast this turn. -/
-  | damageOppCreaturesEqualOtherSpellsMv
   /-- Phase out the target, or each of a player's creatures if kicked. -/
   | phaseOutKicker
-  /-- Deal `n` to the target; `teamworkN` if the spell was cast using teamwork. -/
-  | dealDamageTeamwork (n teamworkN : Nat)
-  /-- If this spell was cast using teamwork, deal `n` damage to the target's controller. -/
-  | damageControllerIfTeamwork (n : Nat)
-  /-- If this spell was cast using teamwork, the target gains `kw` until end of turn. -/
-  | grantTrampleIfTeamwork (kw : String := "trample")
-  /-- Counter unless `n`; `teamworkN` if teamwork. -/
-  | counterUnlessPaysTeamwork (n teamworkN : Nat)
+  /-- Deal `n` damage to the targeted permanent's controller.
+  Teamwork gates this with `.«if» (.dealDamageToControllerOfTarget n) .teamwork`. -/
+  | dealDamageToControllerOfTarget (n : Nat)
   /-- Exile MV-limited creature, or any plus gain life if teamwork. -/
   | exileCreatureMvAtMostOrAnyIfTeamwork (n life : Nat)
   /-- Return a gy creature, MV-limited unless teamwork. -/
   | returnGyCreatureMvAtMostOrAny (n : Nat)
   /-- Reveal the top `n` and put creatures onto the battlefield. -/
   | revealTopPutCreatures (n : Nat)
-  /-- `who` creates `n` tokens of `kind`. The controller is `.createTokens kind n` (`.you`).
-  The announced player target is `.createTokens kind n .targetPlayer`. -/
+  /-- `who` creates tokens of `kind`. `n` is the count when `qty` is `.fixed`.
+  The controller creates `n` with `.createTokens kind n` (`.you` `.fixed`).
+  The announced player target is `.createTokens kind n .targetPlayer`.
+  X tokens are `.createTokens kind 0 (qty := .chosenX)`.
+  One for each of `subtype` you control is
+  `.createTokens kind 0 (qty := .perSubtype subtype)`. -/
   | createTokens (kind : TokenKind) (n : Nat) (who : TokenCreator := .you)
-  /-- Exile the targeted creature. -/
-  | exileTarget
+      (qty : TokenQuantity := .fixed)
   /-- Return one or two targeted nonlands to hand. -/
   | returnOneOrTwoNonlands
   /-- Surveil `n` (CR 701.25). -/
@@ -313,23 +356,21 @@ inductive SpellResolution where
   | targetPlayerInvestigates
   /-- Apply `action` to the creature among the announced targets. -/
   | onCreatureAmongTargets (action : PermanentAction)
-  /-- Deal `n` damage to each creature in `which`.
-  Every creature is `.dealDamageToEachCreature n` (`.each`).
-  Creatures opponents control are `.dealDamageToEachCreature n .opponentsControl`.
-  Creatures that are not `subtype` are `.dealDamageToEachCreature n (.nonSubtype subtype)`. -/
+  /-- Deal damage to each creature in `which`. `n` is the amount when `amount`
+  is `.fixed` (the default). Every creature is `.dealDamageToEachCreature n`
+  (`.each`). Creatures opponents control are
+  `.dealDamageToEachCreature n .opponentsControl`. Creatures that are not
+  `subtype` are `.dealDamageToEachCreature n (.nonSubtype subtype)`.
+  Damage equal to other spells' mana value, to creatures opponents control, is
+  `.dealDamageToEachCreature 0 .opponentsControl .otherSpellsManaValue`. -/
   | dealDamageToEachCreature (n : Nat) (which : EachCreatureDamage := .each)
-  /-- The targeted permanent's owner may search for a `s` `ty` card. -/
-  | ownerMaySearchBasic (s : Supertype := .basic) (ty : CardType := .land)
-  /-- Double the targeted creature's power and toughness. -/
-  | doublePowerAndToughness
+      (amount : EachCreatureAmount := .fixed)
   /-- Return a graveyard card of this subtype to hand. -/
   | returnGySubtypeToHand (subtype : String)
   /-- Become a P/T artifact creature and gain `kw`. -/
   | becomeArtifactCreature44Flying (p : Int := 4) (t : Int := 4) (kw : String := "flying")
   /-- Discard `n` cards unless a card of type `ty` is discarded. -/
   | discardTwoUnlessArtifact (n : Nat := 2) (ty : CardType := .artifact)
-  /-- Fight up to one other creature. -/
-  | fightUpToOne
   /-- `n` +1/+1 counters on creatures you control.
   Each creature is `.plusOneOnEachYouControl` (`.each`).
   Each creature other than the first announced target is
@@ -339,10 +380,6 @@ inductive SpellResolution where
   | plusOneOnCreatureN (n : Nat)
   /-- Exile the top `n` cards. You may play them until your next turn. -/
   | exileTopPlayUntilNext (n : Nat)
-  /-- Controlled creature deals `k` times its power (`twice` when `k` is 2). -/
-  | creatureYouControlDealsTwicePower (k : Nat := 2)
-  /-- Create a token per controlled subtype. -/
-  | createTokensPerSubtype (kind : TokenKind) (subtype : String)
   /-- Destroy up to one nonland. -/
   | destroyUpToOneNonland
   /-- Create Galactus. -/
@@ -394,6 +431,8 @@ private def ifClause (cond : SpellIf) (noun : String) : String :=
   | .subtype subtype => s!"if {noun} is {indefinite subtype} {subtype}"
   | .mvAtMost n => s!"if that spell's mana value was {n} or less"
   | .castFromGraveyard => "if this spell was cast from a graveyard"
+  | .teamwork => "if this spell was cast using teamwork"
+  | .giftPromised => "if the gift was promised"
 
 /-- Drop one trailing period so a following clause can continue the sentence. -/
 private def trimPeriod (s : String) : String :=
@@ -403,10 +442,14 @@ private def trimPeriod (s : String) : String :=
 outside this match so the constructor splitter is not recursive. -/
 private def phraseOne (r : SpellResolution) (noun : String) : String :=
   match r with
-  | .fight =>
+  | .fight 1 =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
-  | .mutualFight =>
+  | .fight k =>
+    s!"Target creature you control deals damage equal to {timesPhrase k} its power to target creature an opponent controls."
+  | .mutualFight .both =>
     "target creature you control fights target creature an opponent controls"
+  | .mutualFight .upToOne =>
+    "target creature you control fights up to one other target creature"
   | .extraLand => "you may play an additional land this turn"
   | .unrecognized => "this effect does nothing"
   | .sequence _ => ""
@@ -455,6 +498,10 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     let base := trimPeriod (phraseOne r noun)
     let cond := ifClause cond noun
     if base.isEmpty then cond else s!"{cond}, {base}"
+  | .ifElse (.onPermanent (.dealDamage teamworkN)) (.onPermanent (.dealDamage n)) .teamwork =>
+    s!"deals {n} damage to target attacking or blocking creature. If this spell was cast using teamwork, it deals {teamworkN} damage to that creature instead"
+  | .ifElse (.unlessPays .counter teamworkN) (.unlessPays .counter n) .teamwork =>
+    s!"counter target spell unless its controller pays \{{n}}. Counter that spell unless its controller pays \{{teamworkN}} instead if this spell was cast using teamwork"
   | .ifElse whenTrue whenFalse cond =>
     let no := trimPeriod (phraseOne whenFalse noun)
     let yes := trimPeriod (phraseOne whenTrue noun)
@@ -471,14 +518,22 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"put {kind.countersPhrase n} on target creature you control"
   | .amassGoblins n subtype =>
     s!"amass {pluralizeName subtype} {n}"
-  | .searchLegendaryCreatureToHand s ty =>
+  | .searchLibrary s ty .youToHand =>
     searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
-  | .dealDamageToEachCreature n .each =>
+  | .searchLibrary s ty .ownerMayToBattlefield =>
+    s!"its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
+  | .dealDamageToEachCreature _ .opponentsControl .otherSpellsManaValue =>
+    "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
+  | .dealDamageToEachCreature n .each .fixed =>
     s!"deals {n} damage to each creature"
-  | .dealDamageToEachCreature n .opponentsControl =>
+  | .dealDamageToEachCreature n .opponentsControl .fixed =>
     s!"deals {n} damage to each creature your opponents control"
-  | .dealDamageToEachCreature n (.nonSubtype subtype) =>
+  | .dealDamageToEachCreature n (.nonSubtype subtype) .fixed =>
     s!"deals {n} damage to each non-{subtype} creature"
+  | .dealDamageToEachCreature _ .each .otherSpellsManaValue =>
+    "deals damage to each creature equal to the total mana value of other spells you've cast this turn"
+  | .dealDamageToEachCreature _ (.nonSubtype subtype) .otherSpellsManaValue =>
+    s!"deals damage to each non-{subtype} creature equal to the total mana value of other spells you've cast this turn"
   | .exileIfDiesThisTurn =>
     s!"if {noun} would die this turn, exile it instead"
   | .addRedPerOppArtifacts ty =>
@@ -499,12 +554,10 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"add {englishNumber n} mana in any combination of colors. Spend this mana only to cast {subtype} spells"
   | .exileAttackersSearchBasics =>
     s!"exile all attacking creatures {noun} controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle"
-  | .createTokensX kind =>
-    s!"create X {kind.pluralNoun}"
   | .exileTopPlayIfYouControlSubtype n subtype =>
     s!"look at the top {n} cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a {subtype}"
-  | .playersCantCastIfGift =>
-    "if the gift was promised, players can't cast spells this turn"
+  | .playersCantCastThisTurn =>
+    "players can't cast spells this turn"
   | .exileTopXOppPlayForLife =>
     "exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost"
   | .riddlesInTheDark n =>
@@ -517,48 +570,36 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"look at the top {n} cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle. You gain {life} life"
   | .gainControlOppArtifacts =>
     "for each opponent, gain control of up to one target artifact that player controls"
-  | .damageOppCreaturesEqualOtherSpellsMv =>
-    "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
   | .phaseOutKicker =>
     "target creature phases out. If this spell was kicked, each creature target player controls phases out instead"
-  | .dealDamageTeamwork n teamworkN =>
-    s!"deals {n} damage to target attacking or blocking creature. If this spell was cast using teamwork, it deals {teamworkN} damage to that creature instead"
-  | .damageControllerIfTeamwork n =>
-    s!"if this spell was cast using teamwork, it also deals {n} damage to that creature's controller"
-  | .grantTrampleIfTeamwork kw =>
-    s!"if this spell was cast using teamwork, that creature also gains {kw} until end of turn"
-  | .counterUnlessPaysTeamwork n teamworkN =>
-    s!"counter target spell unless its controller pays \{{n}}. Counter that spell unless its controller pays \{{teamworkN}} instead if this spell was cast using teamwork"
+  | .dealDamageToControllerOfTarget n =>
+    s!"it also deals {n} damage to that creature's controller"
   | .exileCreatureMvAtMostOrAnyIfTeamwork n life =>
     s!"exile target creature with mana value {n} or less. If this spell was cast using teamwork, instead exile target creature and you gain {life} life"
   | .returnGyCreatureMvAtMostOrAny n =>
     s!"choose target creature card in your graveyard with mana value {n} or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield"
   | .revealTopPutCreatures n =>
     s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
-  | .createTokens kind n .you =>
+  | .createTokens kind _ _ .chosenX =>
+    s!"create X {kind.pluralNoun}"
+  | .createTokens kind _ _ (.perSubtype subtype) =>
+    s!"Create a {kind.oracleNoun} for each {subtype} you control"
+  | .createTokens kind n .you .fixed =>
     TokenKind.createPhrase kind n
-  | .createTokens kind n .targetPlayer =>
+  | .createTokens kind n .targetPlayer .fixed =>
     s!"{noun} creates {TokenKind.createdTokensPhrase kind n}"
-  | .exileTarget =>
-    s!"exile {noun}"
   | .returnOneOrTwoNonlands =>
     "return one or two target nonland permanents to their owners' hands"
   | .targetPlayerInvestigates =>
     "target player investigates"
   | .onCreatureAmongTargets action =>
     PermanentAction.toNotation action "target creature"
-  | .ownerMaySearchBasic s ty =>
-    s!"its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
-  | .doublePowerAndToughness =>
-    s!"double {noun}'s power and toughness until end of turn"
   | .returnGySubtypeToHand subtype =>
     s!"return target {subtype} card from your graveyard to your hand"
   | .becomeArtifactCreature44Flying p t kw =>
     s!"until end of turn, {noun} becomes an artifact creature with base power and toughness {p}/{t} and gains {kw}"
   | .discardTwoUnlessArtifact n ty =>
     s!"discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
-  | .fightUpToOne =>
-    "target creature you control fights up to one other target creature"
   | .plusOneOnEachYouControl n .each =>
     s!"put {plusOnePlusOneCountersPhrase n} on each creature you control"
   | .plusOneOnEachYouControl n .eachOther =>
@@ -567,10 +608,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
   | .exileTopPlayUntilNext _ =>
     s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
-  | .creatureYouControlDealsTwicePower k =>
-    s!"Target creature you control deals damage equal to {timesPhrase k} its power to target creature an opponent controls."
-  | .createTokensPerSubtype kind subtype =>
-    s!"Create a {kind.oracleNoun} for each {subtype} you control"
   | .destroyUpToOneNonland =>
     "Destroy up to one target nonland permanent"
   | .createGalactus =>
@@ -634,7 +671,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
   | [.draw 1 .you, .loseLife 1 .you, .amassGoblins n subtype] =>
     s!"you draw a card and lose 1 life. Amass {pluralizeName subtype} {n}"
-  | [.createTokens kind n .you, .creaturesPump p t .youControl] =>
+  | [.createTokens kind n .you .fixed, .creaturesPump p t .youControl] =>
     let tokens := capitalizeAscii (TokenKind.createPhrase kind n)
     s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
   | [.onPermanent .destroy, .gainLife n .you] =>
@@ -660,20 +697,20 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
   | [.onPermanent .untap, .onPermanent (.pump p t), .«if» (.may .attachEquipment) (.subtype subtype)] =>
     s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's {indefinite subtype} {subtype}, you may attach an Equipment you control to it"
-  | [.countersOnCreatureTargets kind k .firstYouControl, .mutualFight] =>
+  | [.countersOnCreatureTargets kind k .firstYouControl, .mutualFight .both] =>
     s!"put {kind.countersPhrase k} on target creature you control. Then it fights target creature an opponent controls"
   | [.countersOnCreatureTargets kind k .firstYouControl,
      .«if» (.plusOneOnEachYouControl m .eachOther) .castFromGraveyard] =>
     s!"put {kind.countersPhrase k} on target creature you control. If this spell was cast from a graveyard, also put {plusOnePlusOneCountersPhrase m} on each other creature you control"
-  | [.dealDamageToEachCreature n (.nonSubtype sub), .addFourManaDragonSpells m sub2] =>
+  | [.dealDamageToEachCreature n (.nonSubtype sub) .fixed, .addFourManaDragonSpells m sub2] =>
     s!"deals {n} damage to each non-{sub} creature. Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells"
-  | [.returnTargetToHand .spell, .playersCantCastIfGift] =>
+  | [.returnTargetToHand .spell, .«if» .playersCantCastThisTurn .giftPromised] =>
     "return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn"
-  | [.onPermanent (.dealDamage n), .damageControllerIfTeamwork extra] =>
+  | [.onPermanent (.dealDamage n), .«if» (.dealDamageToControllerOfTarget extra) .teamwork] =>
     s!"deals {n} damage to target creature. If this spell was cast using teamwork, it also deals {extra} damage to that creature's controller"
-  | [.onPermanent (.grantKeywords k), .grantTrampleIfTeamwork kw] =>
+  | [.onPermanent (.grantKeywords k), .«if» (.onPermanent (.grantKeywords kw)) .teamwork] =>
     if k == Keyword.doubleStrike then
-      s!"target creature gains double strike until end of turn. If this spell was cast using teamwork, that creature also gains {kw} until end of turn"
+      s!"target creature gains double strike until end of turn. If this spell was cast using teamwork, that creature also gains {kw.joinedAnd} until end of turn"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.targetPlayerInvestigates,
@@ -686,7 +723,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.countersOnCreatureTargets kind k .each, .gainLife n .targetPlayers] =>
     s!"put {kind.countersPhrase k} on up to one target creature. Target player gains {n} life"
-  | [.onPermanent .destroy, .ownerMaySearchBasic s ty] =>
+  | [.onPermanent .destroy, .searchLibrary s ty .ownerMayToBattlefield] =>
     s!"destroy {noun}. Its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
   | [.draw 3 .you, .discardTwoUnlessArtifact n ty] =>
     s!"draw three cards. Then discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
@@ -694,7 +731,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"deals {n} damage to {noun}. If that creature would die this turn, exile it instead"
   | [.onPermanent (.pump p t), .exileTopPlayUntilNext 1] =>
     s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. {playThatCardUntilNextTurnPhrase}."
-  | [.doublePowerAndToughness, .onPermanent (.grantKeywords k)] =>
+  | [.onPermanent .doublePowerAndToughness, .onPermanent (.grantKeywords k)] =>
     if k == Keyword.trample then
       "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
     else
@@ -714,8 +751,9 @@ private def phraseOr (rs : List SpellResolution) (noun : String) : String :=
     String.intercalate " or " ((rs.map (phraseOne · noun)).filter (· != ""))
 
 /-- Oracle-style reminder from targeting and resolution. `.fight` is the
-one-sided Quarrel wording. `.mutualFight` is the two-creature fight, including
-the later step of a counter-then-fight sequence. -/
+one-sided Quarrel wording, including a multiple of that power. `.mutualFight`
+is the two-creature fight, including the later step of a counter-then-fight
+sequence and a fight of up to one other creature. -/
 def toPhrase (r : SpellResolution) (noun : String) : String :=
   match r with
   | .sequence rs => phraseSequence (rs.flatMap flatten) noun

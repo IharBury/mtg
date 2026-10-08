@@ -56,6 +56,11 @@ inductive PermanentAction where
   | putOnTopOfLibrary
   /-- The owner puts this permanent on the bottom of their library. -/
   | putOnBottomOfLibrary
+  /-- Exile the permanent. -/
+  | exile
+  /-- Until end of turn, add this permanent's power and toughness to itself,
+  which doubles them. -/
+  | doublePowerAndToughness
 deriving Repr, Inhabited, BEq
 
 namespace PermanentAction
@@ -98,6 +103,9 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
       s!"{noun}'s owner puts it on top of their library"
     | .putOnBottomOfLibrary =>
       s!"{noun}'s owner puts it on the bottom of their library"
+    | .exile => s!"exile {noun}"
+    | .doublePowerAndToughness =>
+      s!"double {noun}'s power and toughness until end of turn"
   if sentence then capitalizeAscii raw else raw
 
 end PermanentAction

@@ -1033,10 +1033,10 @@ def ofSpellStep : SpellResolution → Resolution
   | .teamGain k => .teamGain k
   | .returnTargetToHand .spell => .returnTargetSpell
   | .returnTargetToHand .graveyard => .fra .returnFromGyToHand
-  | .createTokens kind n .you => .createTokens kind n
+  | .createTokens kind n .you .fixed => .createTokens kind n
   | .creaturesPump p t .youControl => .creaturesYouControlPump p t
-  | .createTokensX kind => .createTokensX kind
-  | .dealDamageToEachCreature n .each => .dealDamageToEachCreature n
+  | .createTokens kind _ .you .chosenX => .createTokensX kind
+  | .dealDamageToEachCreature n .each .fixed => .dealDamageToEachCreature n
   | .sequence rs => .sequence (rs.map ofSpellStep)
   | r => .spell r
 
@@ -1064,7 +1064,7 @@ def toSpellStep : Resolution → Option SpellResolution
   | .amassGoblins n => some (.amassGoblins n)
   | .createTokens kind n false => some (.createTokens kind n)
   | .creaturesYouControlPump p t => some (.creaturesPump p t)
-  | .createTokensX kind => some (.createTokensX kind)
+  | .createTokensX kind => some (.createTokens kind 0 (qty := .chosenX))
   | .dealDamageToEachCreature n => some (.dealDamageToEachCreature n)
   | .targetPlayerDraw n => some (.draw n .targetPlayer)
   | .spell .unrecognized => none

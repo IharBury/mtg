@@ -395,7 +395,7 @@ namespace CardDef
 #guard (Effect.returnCreatureFromGyThenAmass 3).phrase ==
   "return up to one target creature card from your graveyard to your hand. Amass Goblins 3"
 #guard Effect.returnSpellCantCastIfGift.spellResolution ==
-  .sequence [.returnTargetToHand, .playersCantCastIfGift]
+  .sequence [.returnTargetToHand, .«if» .playersCantCastThisTurn .giftPromised]
 #guard SpellResolution.toPhrase (.creaturesPump 1 1) "target creature" ==
   "creatures you control get +1/+1 until end of turn"
 #guard SpellResolution.toPhrase (.creaturesPump (-4) (-4) .all) "" ==
@@ -504,6 +504,35 @@ namespace CardDef
     (.dealDamageToEachCreature 2 (.nonSubtype "Elf")) "target creature" ==
   "deals 2 damage to each non-Elf creature"
 #guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution == .fight
+#guard Effect.creatureYouControlDealsTwicePower.spellResolution == .fight 2
+#guard Effect.fightUpToOne.spellResolution == .mutualFight .upToOne
+#guard (Effect.createTokensX .dwarf).spellResolution ==
+  .createTokens .dwarf 0 (qty := .chosenX)
+#guard (Effect.createTokensPerSubtype .treasure "Villain").spellResolution ==
+  .createTokens .treasure 0 (qty := .perSubtype "Villain")
+#guard Effect.damageOppCreaturesEqualOtherSpellsMv.spellResolution ==
+  .dealDamageToEachCreature 0 .opponentsControl .otherSpellsManaValue
+#guard (Effect.counterUnlessPaysTeamwork 2 4).spellResolution ==
+  .ifElse (.unlessPays .counter 4) (.unlessPays .counter 2) .teamwork
+#guard (Effect.dealDamageToAttackerOrBlocker 2 4).spellResolution ==
+  .ifElse (.onPermanent (.dealDamage 4)) (.onPermanent (.dealDamage 2)) .teamwork
+#guard Effect.doublePowerAndToughness.spellResolution == .onPermanent .doublePowerAndToughness
+#guard (Effect.exileCreatureToughnessAtLeast 4).spellResolution == .onPermanent .exile
+#guard Effect.searchLegendaryCreatureToHand.spellResolution == .searchLibrary
+#guard (Effect.destroyLandSearchBasic).spellResolution ==
+  .sequence [.onPermanent .destroy, .searchLibrary .basic .land .ownerMayToBattlefield]
+#guard SpellResolution.toPhrase (.fight 2) "target creature" ==
+  "Target creature you control deals damage equal to twice its power to target creature an opponent controls."
+#guard SpellResolution.toPhrase (.mutualFight .upToOne) "target creature" ==
+  "target creature you control fights up to one other target creature"
+#guard SpellResolution.toPhrase
+    (.dealDamageToEachCreature 0 .opponentsControl .otherSpellsManaValue) "target creature" ==
+  "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
+#guard SpellResolution.toPhrase (.createTokens .dwarf 0 (qty := .chosenX)) "" ==
+  "create X 2/2 red Dwarf creature tokens"
+#guard SpellResolution.toPhrase
+    (.createTokens .treasure 0 (qty := .perSubtype "Villain")) "" ==
+  "Create a Treasure token for each Villain you control"
 #guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)
 #guard Effect.destroyArtifactOrLandNonflyersCantBlock.resolution ==

@@ -260,12 +260,18 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .unlessPays r n => return .unlessPays (← takeSpell r) (← takeNat n)
   | .or rs => return .or (← rs.mapM takeSpell)
   | .may r => return .may (← takeSpell r)
+  | .«if» (.onPermanent (.grantKeywords kw)) .teamwork =>
+    let name ← takeStr kw.joinedAnd
+    let kw := (Keywords.ofName? name).getD kw
+    return .«if» (.onPermanent (.grantKeywords kw)) .teamwork
   | .«if» r cond =>
     let r ← takeSpell r
     match cond with
     | .subtype s => return .«if» r (.subtype (← takeStr s))
     | .mvAtMost n => return .«if» r (.mvAtMost (← takeNat n))
     | .castFromGraveyard => return .«if» r .castFromGraveyard
+    | .teamwork => return .«if» r .teamwork
+    | .giftPromised => return .«if» r .giftPromised
   | .ifElse whenTrue whenFalse cond =>
     -- Printed order is the otherwise branch, then the condition, then the
     -- true branch.
@@ -278,21 +284,20 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
         let n ← takeNat n
         pure (.mvAtMost n)
       | .castFromGraveyard => pure .castFromGraveyard
+      | .teamwork => pure .teamwork
+      | .giftPromised => pure .giftPromised
     let whenTrue ← takeSpell whenTrue
     return .ifElse whenTrue whenFalse cond
   | .countersOnCreatureTargets kind n which =>
     return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n) which
   | .exileGraveyardCreaturesGrantCast ty =>
     return .exileGraveyardCreaturesGrantCast (← takeCardType ty)
-  | .searchLegendaryCreatureToHand s ty =>
-    return .searchLegendaryCreatureToHand (← takeSupertype s) (← takeCardType ty)
+  | .searchLibrary s ty how =>
+    return .searchLibrary (← takeSupertype s) (← takeCardType ty) how
   | .addRedPerOppArtifacts ty => return .addRedPerOppArtifacts (← takeCardType ty)
   | .addFourManaDragonSpells n s =>
     return .addFourManaDragonSpells (← takeNat n) (← takeStr s)
   | .riddlesInTheDark n => return .riddlesInTheDark (← takeNat n)
-  | .grantTrampleIfTeamwork kw => return .grantTrampleIfTeamwork (← takeStr kw)
-  | .ownerMaySearchBasic s ty =>
-    return .ownerMaySearchBasic (← takeSupertype s) (← takeCardType ty)
   | .onCreatureAmongTargets a => return .onCreatureAmongTargets (← takeAction a)
   | .becomeArtifactCreature44Flying p t kw =>
     return .becomeArtifactCreature44Flying (← takeInt p) (← takeInt t) (← takeStr kw)
@@ -300,18 +305,26 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .discardTwoUnlessArtifact (← takeNat n) (← takeCardType ty)
   | .plusOneOnEachYouControl n which =>
     return .plusOneOnEachYouControl (← takeNat n) which
-  | .creatureYouControlDealsTwicePower k =>
-    return .creatureYouControlDealsTwicePower (← takeNat k)
+  | .fight k =>
+    if k == 1 then return .fight
+    else return .fight (← takeNat k)
+  | .dealDamageToControllerOfTarget n =>
+    return .dealDamageToControllerOfTarget (← takeNat n)
   | .mayDrawPerArtifactOppsDraw ty => return .mayDrawPerArtifactOppsDraw (← takeCardType ty)
   | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
   | .amassGoblins n subtype =>
     return .amassGoblins (← takeNat n) (← takeStr subtype)
-  | .dealDamageToEachCreature n which =>
-    match which with
-    | .each => return .dealDamageToEachCreature (← takeNat n)
-    | .opponentsControl => return .dealDamageToEachCreature (← takeNat n) .opponentsControl
-    | .nonSubtype subtype =>
-      return .dealDamageToEachCreature (← takeNat n) (.nonSubtype (← takeStr subtype))
+  | .dealDamageToEachCreature n which amount =>
+    match amount with
+    | .otherSpellsManaValue =>
+      return .dealDamageToEachCreature n which .otherSpellsManaValue
+    | .fixed =>
+      match which with
+      | .each => return .dealDamageToEachCreature (← takeNat n)
+      | .opponentsControl =>
+        return .dealDamageToEachCreature (← takeNat n) .opponentsControl
+      | .nonSubtype subtype =>
+        return .dealDamageToEachCreature (← takeNat n) (.nonSubtype (← takeStr subtype))
   | .millThenPut n which =>
     match which with
     | .oneOf a b =>
@@ -324,17 +337,17 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .exileTopPlayIfYouControlSubtype n s =>
     return .exileTopPlayIfYouControlSubtype (← takeNat n) (← takeStr s)
   | .lookAtTopLandsGainLife a b => return .lookAtTopLandsGainLife (← takeNat a) (← takeNat b)
-  | .dealDamageTeamwork a b => return .dealDamageTeamwork (← takeNat a) (← takeNat b)
-  | .damageControllerIfTeamwork n => return .damageControllerIfTeamwork (← takeNat n)
-  | .counterUnlessPaysTeamwork a b => return .counterUnlessPaysTeamwork (← takeNat a) (← takeNat b)
   | .exileCreatureMvAtMostOrAnyIfTeamwork a b =>
     return .exileCreatureMvAtMostOrAnyIfTeamwork (← takeNat a) (← takeNat b)
   | .returnGyCreatureMvAtMostOrAny n => return .returnGyCreatureMvAtMostOrAny (← takeNat n)
   | .revealTopPutCreatures n => return .revealTopPutCreatures (← takeNat n)
-  | .createTokens k n who => return .createTokens k (← takeNat n) who
+  | .createTokens k n who qty =>
+    match qty with
+    | .fixed => return .createTokens k (← takeNat n) who
+    | .chosenX => return .createTokens k n who .chosenX
+    | .perSubtype s => return .createTokens k n who (.perSubtype (← takeStr s))
   | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeStr s)
   | .plusOneOnCreatureN n => return .plusOneOnCreatureN (← takeNat n)
-  | .createTokensPerSubtype k s => return .createTokensPerSubtype k (← takeStr s)
   | .millThenPutPermanentGainLife a b =>
     return .millThenPutPermanentGainLife (← takeNat a) (← takeNat b)
   | .gainLifeSearchBasicPlusOne n => return .gainLifeSearchBasicPlusOne (← takeNat n)
@@ -1678,11 +1691,11 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
 
 #guard refilled (Effect.searchLegendaryCreatureToHand)
     "search your library for a basic land card, reveal it, put it into your hand, then shuffle" ==
-  some (.spell (.searchLegendaryCreatureToHand .basic .land))
+  some (.spell (.searchLibrary .basic .land))
 
 #guard refilled (Effect.creatureYouControlDealsTwicePower)
     "Target creature you control deals damage equal to 3 times its power to target creature an opponent controls." ==
-  some (.spell (.creatureYouControlDealsTwicePower 3))
+  some (.spell (.fight 3))
 
 #guard refilled (Effect.drawThreeDiscardUnlessArtifact)
     "draw three cards. Then discard four cards unless you discard an enchantment card" ==
