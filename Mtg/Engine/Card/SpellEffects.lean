@@ -487,7 +487,7 @@ def plusOneOnCreature : Effect :=
     (castKind := .pump)
 
 def targetPlayerCreatesTokens (kind : TokenKind) (n : Nat) : Effect :=
-  mkSpell (.of .player) (.targetPlayerCreatesTokens kind n)
+  mkSpell (.of .player) (.createTokens kind n .targetPlayer)
     (castKind := .extraLand)
 
 def destroyCreatureSurveil : Effect :=

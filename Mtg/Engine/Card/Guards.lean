@@ -51,6 +51,16 @@ namespace CardDef
 #guard (Effect.createTokensThenTeamPump .villain21menace 1 1 0).resolution ==
   Resolution.sequence
     [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
+#guard (Effect.createTokens .treasure 1).spellResolution == .createTokens .treasure 1
+#guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).spellResolution ==
+  .createTokens .leviathan65hexproof 1 .targetPlayer
+#guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).resolution ==
+  .spell (.createTokens .leviathan65hexproof 1 .targetPlayer)
+#guard SpellResolution.toPhrase (.createTokens .treasure 1 .you) "target player" ==
+  "create a Treasure token"
+#guard SpellResolution.toPhrase
+    (.createTokens .leviathan65hexproof 1 .targetPlayer) "target player" ==
+  "target player creates a 6/5 blue Leviathan creature token with hexproof"
 #guard (Effect.destroyArtifactOrEnchantmentGainLife 2).resolution ==
   Resolution.sequence [.onPermanent .destroy, .gainLife 2]
 #guard (Effect.tapScryDraw 1 1).resolution ==
