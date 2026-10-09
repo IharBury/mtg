@@ -334,7 +334,7 @@ def targetPlayerDraw (n : Nat) : Effect :=
 
 def dealDamageToCreatureExileIfDies (n : Nat) : Effect :=
   mkSpell (.of .creature)
-    (.sequence [.exileIfDiesThisTurn, .onPermanent (.dealDamage n)])
+    (.sequence [.replace .diesThisTurn .exile, .onPermanent (.dealDamage n)])
     (castKind := .creatureDamage)
 
 def destroyArtifactToken : Effect :=
