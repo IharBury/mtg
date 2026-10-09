@@ -2247,6 +2247,8 @@ that are also in the core catalog. -/
 #guard crudeBentBlade.activatedAbilities.size == 1
 #guard gollumTheAbandoned.staticAbilities == #[.cantBlockUnlessYouControl #[]]
 #guard gollumTheAbandoned.triggeredAbilities == #[.onEnterExileOppGyCardOppsLoseLife 2]
+#guard littleBear.triggeredAbilities == #[.onEnterUntapOtherPlusOneIfSubtype "Bear"]
+#guard gandalfGoblinsBane.triggeredAbilities == #[.onCastNoncreaturePumpAndDamageOpponents 1]
 #guard gollumTheAbandoned.activatedAbilities[0]!.activateFromGraveyard
 #guard gollumTheAbandoned.activatedAbilities[0]!.onlyAsSorcery
 #guard gollumTheAbandoned.activatedAbilities[0]!.effect == Effect.returnFromGraveyardToHand

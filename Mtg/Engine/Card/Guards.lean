@@ -768,8 +768,10 @@ namespace CardDef
   .triggered .enterOrAttack (Effect.ofTrigger .returnElfGainLife)
 #guard TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature ==
   .triggered .dies (Effect.ofTrigger .damageFromLastKnownPower)
+#guard TriggeredAbility.onCastNoncreaturePumpAndDamageOpponents 1 ==
+  .triggered .youCastNoncreature (Effect.seqPumpAndDamageOpponents 1)
 #guard TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2 ==
-  .triggered .enter (Effect.ofTrigger (.exileOppGyCardOppsLoseLife 2))
+  .triggered .enter (Effect.seqExileOppGyCardOppsLoseLife 2)
 #guard TriggeredAbility.onEnterCreaturesYouControlGetAndFirstStrike 1 ==
   .triggered .enter (Effect.seqCreaturesPumpAndFirstStrike 1)
 #guard TriggeredAbility.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1 ==
@@ -784,7 +786,7 @@ namespace CardDef
 #guard TriggeredAbility.onAttackTapHumansDraw ==
   .triggered .attack (Effect.ofTrigger .tapHumansDraw)
 #guard TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear" ==
-  .triggered .enter (Effect.ofTrigger (.untapPlusOneIfSubtype "Bear"))
+  .triggered .enter (Effect.seqUntapPlusOneIfSubtype "Bear")
 #guard TriggeredAbility.onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   .triggered .enter (Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife)
 #guard TriggeredAbility.onAttackDamageEqualSubtypeToEachOpponent "Dwarf" ==
@@ -792,7 +794,7 @@ namespace CardDef
 #guard TriggeredAbility.onAttackDamageEqualTreasures ==
   .triggered .attack (Effect.ofTrigger .damageEqualTreasures)
 #guard TriggeredAbility.onPlayerCastsSecondSpellLoseLifeCreateTreasure ==
-  .triggered .anyPlayerCastsSecondSpell (Effect.ofTrigger .loseLifeCreateTreasure)
+  .triggered .anyPlayerCastsSecondSpell Effect.seqLoseLifeCreateTreasure
 #guard TriggeredAbility.onEnterDealDamageDestroyIfSubtype 1 "Dragon" ==
   .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype 1 "Dragon"))
 #guard TriggeredAbility.onEnterAttachTargetEquipment ==
@@ -1043,6 +1045,17 @@ namespace CardDef
   "When this permanent enters, each opponent discards a card."
 #guard TriggeredAbility.toNotation (.onEnterExileOppGyCardOppsLoseLife 2) ==
   "When this permanent enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life."
+#guard TriggeredAbility.toNotation (.onCastNoncreaturePumpAndDamageOpponents 1) ==
+  "Whenever you cast a noncreature spell, this gets +1/+1 until end of turn and deals 1 damage to each opponent."
+#guard TriggeredAbility.toNotation (.onEnterUntapOtherPlusOneIfSubtype "Bear") ==
+  "When this permanent enters, untap another target creature you control. If that creature is a Bear, put a +1/+1 counter on it."
+#guard TriggeredAbility.toNotation .onPlayerCastsSecondSpellLoseLifeCreateTreasure ==
+  "Whenever a player casts their second spell each turn, you lose 1 life and create a Treasure token."
+#guard TriggeredAbility.requiresTarget (.onEnterUntapOtherPlusOneIfSubtype "Bear")
+#guard TriggeredAbility.targetKind (.onEnterUntapOtherPlusOneIfSubtype "Bear") ==
+  .anotherCreatureYouControl
+#guard !TriggeredAbility.requiresTarget (.onCastNoncreaturePumpAndDamageOpponents 1)
+#guard !TriggeredAbility.requiresTarget .onPlayerCastsSecondSpellLoseLifeCreateTreasure
 #guard TriggeredAbility.firesOn (.onDiesOppCreatureGets (-1) (-1)) .dying
 #guard TriggeredAbility.firesOn (.onOneOrMoreOtherCreaturesDieScry 1) .oneOrMoreOtherCreaturesDie
 #guard !TriggeredAbility.firesOn (.onOneOrMoreOtherCreaturesDieScry 1) .dying

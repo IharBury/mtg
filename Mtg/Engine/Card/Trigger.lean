@@ -86,9 +86,6 @@ inductive TriggerResolution where
   /-- An opponent discards `n` cards. Each opponent discards one is
   `.opponentDiscards`. The announced opponent is `.opponentDiscards n .target`. -/
   | opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each)
-  /-- Exile up to one targeted card from an opponent's graveyard, then each
-  opponent loses `life` life. -/
-  | exileOppGyCardOppsLoseLife (life : Nat)
   /-- Pump the source +1/+1 for each other creature you control. -/
   | pumpForEachOtherCreature
   /-- You may pay `{n}`. If you do, draw a card.
@@ -111,8 +108,6 @@ inductive TriggerResolution where
   | recruit (who : RecruitSubject := .recruit)
   /-- Exile the top card; you may play it until the end of your next turn. -/
   | exileTop
-  /-- Untap the target; if it has this subtype, put a +1/+1 counter on it. -/
-  | untapPlusOneIfSubtype (subtype : String)
   /-- Put a +1/+1 counter on permanents you control.
   Each creature is `.plusOneEachYouControl`.
   Each permanent of a subtype is `.plusOneEachYouControl (.subtype s)`.
@@ -140,8 +135,6 @@ inductive TriggerResolution where
   | damageEqualSubtypeToEachOpponent (subtype : String)
   /-- Deal damage equal to Treasures you control to the target. -/
   | damageEqualTreasures
-  /-- Lose 1 life and create a Treasure. -/
-  | loseLifeCreateTreasure
   /-- Deal `n` damage to the target; destroy it if it has this subtype. -/
   | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
   /-- Attach the first target (Equipment) to the second (creature). -/
@@ -161,8 +154,6 @@ inductive TriggerResolution where
   | returnOtherPlusOne
   /-- Look at the top `n` and reveal a listed type. -/
   | lookAtTopRevealTypes (n : Nat) (types : Array String)
-  /-- Pump the source +1/+1 and deal `n` to each opponent. -/
-  | pumpAndDamageOpponents (n : Nat)
   /-- Create tapped Treasures equal to opposing artifacts. -/
   | createTappedTreasuresEqualOppArtifacts
   /-- Gain control of the target until end of turn; untap; haste. -/
@@ -660,7 +651,6 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .honeEachEquipment => { resolution := .honeEachEquipment }
   | .plusOneEachOtherGainLife => { resolution := .plusOneEachOtherGainLife }
   | .becomePT p t => { resolution := .becomePT p t }
-  | .pumpAndDamageOpponents n => { resolution := .pumpAndDamageOpponents n }
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pumpTargetPerPlains }
   | .mayDiscardHandDraw n => { resolution := .mayDiscardHandDraw n }
@@ -688,25 +678,18 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .elfInYourGraveyard, resolution := .returnElfGainLife }
   | .damageFromLastKnownPower =>
     { targeting := .of .oppCreature, resolution := .damageFromLastKnownPower }
-  | .exileOppGyCardOppsLoseLife n =>
-    { targeting := .of .oppGraveyardCard, allowsZeroTargets := true,
-      resolution := .exileOppGyCardOppsLoseLife n }
   | .mayPayGenericDraw n plusOne =>
     { resolution := .mayPayGenericDraw n plusOne }
   | .drawThenBottomIfNoLegendary =>
     { resolution := .drawThenBottomIfNoLegendary }
   | .removeHopeDrawSac => { resolution := .removeHopeDrawSac }
   | .tapHumansDraw => { resolution := .tapHumansDraw }
-  | .untapPlusOneIfSubtype subtype =>
-    { targeting := .of .anotherCreatureYouControl,
-      resolution := .untapPlusOneIfSubtype subtype }
   | .destroyOppArtifactsEnchantmentsGainLife =>
     { resolution := .destroyOppArtifactsEnchantmentsGainLife }
   | .damageEqualSubtypeToEachOpponent subtype =>
     { resolution := .damageEqualSubtypeToEachOpponent subtype }
   | .damageEqualTreasures =>
     { targeting := .of .playerOrCreature, resolution := .damageEqualTreasures }
-  | .loseLifeCreateTreasure => { resolution := .loseLifeCreateTreasure }
   | .dealDamageDestroyIfSubtype n subtype =>
     { targeting := .of .playerOrCreature,
       resolution := .dealDamageDestroyIfSubtype n subtype }

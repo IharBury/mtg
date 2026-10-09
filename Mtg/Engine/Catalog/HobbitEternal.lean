@@ -1407,5 +1407,7 @@ that also appear in other sets. -/
 #guard theReaverCleaver.staticAbilities == #[.equippedGetsTrampleAndCombatTreasures 1 1]
 #guard mountDoom.activatedAbilities.size == 2
 #guard mountDoom.activatedAbilities[1]!.cost.sacrificeLegendaryArtifact
+#guard lothoCorruptShirriff.triggeredAbilities ==
+  #[.onPlayerCastsSecondSpellLoseLifeCreateTreasure]
 
 end Mtg.Engine.Catalog
