@@ -415,7 +415,10 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .attachTo k => return .attachTo (← takeKind k)
   | .onPermanent k a => return .onPermanent (← takeKind k) (← takeAction a)
   | .onSource a => return .onSource (← takeAction a)
-  | .mayDiscardDraw n => return .mayDiscardDraw (← takeNat n)
+  | .discard n => return .discard (← takeNat n)
+  | .mayTo (.discard _) (.draw n) =>
+    return .mayTo .discard (.draw (← takeNat n))
+  | .mayTo can thenDo => return .mayTo (← takeTrigger can) (← takeTrigger thenDo)
   | .opponentDiscards n who =>
     match who with
     | .each => return .opponentDiscards n who

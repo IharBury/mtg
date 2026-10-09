@@ -376,7 +376,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.ofTrigger (.recruit .you),
   Effect.ofTrigger (.damageEachOpponent 2),
   Effect.ofTrigger .exileTop,
-  Effect.ofTrigger (.mayDiscardDraw 2),
+  Effect.ofTrigger (.mayTo .discard (.draw 2)),
   Effect.ofTrigger .opponentDiscards,
   Effect.ofTrigger (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0)),
   Effect.ofTrigger .investigate,

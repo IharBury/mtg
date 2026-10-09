@@ -516,8 +516,11 @@ inductive SharedTrigger where
   | onSource (action : PermanentAction)
   /-- Exile the top card; you may play it until the end of your next turn. -/
   | exileTop
-  /-- You may discard a card. If you do, draw `n`. -/
-  | mayDiscardDraw (n : Nat)
+  /-- Discard `n` cards. One card is `.discard`. -/
+  | discard (n : Nat := 1)
+  /-- You may do `can`. If you do, `thenDo`.
+  You may discard a card. If you do, draw `n` is `.mayTo .discard (.draw n)`. -/
+  | mayTo (can thenDo : SharedTrigger)
   /-- An opponent discards `n` cards. Each opponent discards one is
   `.opponentDiscards`. The announced opponent discards `n` is
   `.opponentDiscards n .target`. -/
