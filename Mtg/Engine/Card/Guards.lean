@@ -719,7 +719,8 @@ namespace CardDef
   .triggered .youCastInstantOrSorcery (Effect.ofTrigger (.damageEachOpponent 2)) .noTarget
 #guard TriggeredAbility.onEnterExileTop == .triggered .enter (Effect.ofTrigger .exileTop)
 #guard TriggeredAbility.onEnterMayDiscardDraw 2 ==
-  .triggered .enter (Effect.ofTrigger (.mayDiscardDraw 2))
+  .triggered .enter (Effect.ofTrigger (.mayTo .discard (.draw 2)))
+#guard (TriggeredAbility.onEnterMayDiscardDraw 2).resolution == .mayDiscardDraw 2
 #guard TriggeredAbility.onEnterEachOpponentDiscards ==
   .triggered .enter (Effect.ofTrigger .opponentDiscards)
 #guard TriggeredAbility.onAttackOtherGets2AndTrample ==

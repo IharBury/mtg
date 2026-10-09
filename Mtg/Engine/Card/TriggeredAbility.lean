@@ -211,7 +211,7 @@ def onCastGreenOrForestEntersPlusOne : TriggeredAbility :=
 def onAttackOtherGets2AndTrample : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0)))
 def onEnterMayDiscardDraw (n : Nat) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.mayDiscardDraw n))
+  .triggered .enter (Effect.ofTrigger (.mayTo .discard (.draw n)))
 def onCastInstantOrSorceryDealDamageToEachOpponent (amount : Nat) : TriggeredAbility :=
   .triggered .youCastInstantOrSorcery (Effect.ofTrigger (.damageEachOpponent amount)) .noTarget
 def onEnterEachOpponentDiscards : TriggeredAbility :=
@@ -636,6 +636,15 @@ def interveningClause (t : TriggerTiming) : String :=
   | none, some n => s!", if you gained {n} or more life this turn"
   | none, none => ""
 
+/-- Short clause for one step of `SharedTrigger.mayTo`. -/
+private def mayStep : SharedTrigger → String
+  | .discard n => s!"discard {cardPhrase n}"
+  | .draw n => s!"draw {cardPhrase n}"
+  | .scry n => s!"scry {n}"
+  | .gainLife n => s!"gain {n} life"
+  | .mayTo can thenDo => s!"you may {mayStep can}. If you do, {mayStep thenDo}"
+  | _ => "do this"
+
 /-- Effect clause from resolution, targeting, and divided-damage parameters. -/
 def resolutionPhrase (t : TriggerTiming) : String :=
   let noun := t.targeting.kind.noun
@@ -684,8 +693,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "search your library for a Forest card, put that card onto the battlefield, then shuffle"
   | .searchLibrary .basicLandToHand =>
     searchLibraryToHandPhrase "a basic land card"
+  | .discard n => s!"discard {cardPhrase n}"
   | .mayDiscardDraw n =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
+  | .mayTo can thenDo => mayStep (.mayTo can thenDo)
   | .opponentSacrificesCreature =>
     s!"{noun} sacrifices a creature of their choice"
   | .dividedDamage =>

@@ -54,8 +54,15 @@ inductive TriggerResolution where
   A Forest onto the battlefield is `.searchLibrary`.
   A basic land into your hand is `.searchLibrary .basicLandToHand`. -/
   | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
-  /-- You may discard a card. If you do, draw `n`. -/
+  /-- Discard `n` cards. One card is `.discard`. -/
+  | discard (n : Nat := 1)
+  /-- You may discard a card. If you do, draw `n`.
+  This is how `SharedTrigger.mayTo .discard (.draw n)` resolves. -/
   | mayDiscardDraw (n : Nat)
+  /-- You may do `can`. If you do, `thenDo`.
+  `SharedTrigger.mayTo .discard (.draw n)` resolves as `.mayDiscardDraw`
+  instead of this. -/
+  | mayTo (can thenDo : SharedTrigger)
   /-- Target opponent sacrifices a creature of their choice. -/
   | opponentSacrificesCreature
   /-- Affect a still-legal permanent target. -/
@@ -618,7 +625,21 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .onSource action =>
     { resolution := .onSource action }
   | .exileTop => { resolution := .exileTop }
-  | .mayDiscardDraw n => { resolution := .mayDiscardDraw n }
+  | .discard n => { resolution := .discard n }
+  | .mayTo (.discard 1) (.draw n) => { resolution := .mayDiscardDraw n }
+  | .mayTo can thenDo =>
+    let left := timing can
+    let right := timing thenDo
+    { targeting :=
+        if left.targeting.kind == .none then right.targeting else left.targeting
+      allowsZeroTargets := left.allowsZeroTargets || right.allowsZeroTargets
+      maxTargets :=
+        if left.targeting.kind == .none then right.maxTargets else left.maxTargets
+      dividedDamage :=
+        match left.dividedDamage with
+        | some d => some d
+        | none => right.dividedDamage
+      resolution := .mayTo can thenDo }
   | .opponentDiscards n who =>
     match who with
     | .each => { resolution := .opponentDiscards n who }
