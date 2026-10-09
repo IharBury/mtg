@@ -427,14 +427,11 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .pumpCause p t => return .pumpCause (← takeInt p) (← takeInt t)
   | .exileTarget k => return .exileTarget (← takeKind k)
   | .becomePT p t => return .becomePT (← takeInt p) (← takeInt t)
-  | .pumpAndDamageOpponents n => return .pumpAndDamageOpponents (← takeNat n)
   | .mayDiscardHandDraw n => return .mayDiscardHandDraw (← takeNat n)
   | .damageBlockers n => return .damageBlockers (← takeNat n)
   | .gainLifeSearchBasicOnTop n => return .gainLifeSearchBasicOnTop (← takeNat n)
   | .targetOpponentLosesLife n => return .targetOpponentLosesLife (← takeNat n)
-  | .exileOppGyCardOppsLoseLife n => return .exileOppGyCardOppsLoseLife (← takeNat n)
   | .mayPayGenericDraw n plusOne => return .mayPayGenericDraw (← takeNat n) plusOne
-  | .untapPlusOneIfSubtype s => return .untapPlusOneIfSubtype (← takeStr s)
   | .damageEqualSubtypeToEachOpponent s =>
     return .damageEqualSubtypeToEachOpponent (← takeStr s)
   | .dealDamageDestroyIfSubtype n s =>
@@ -1588,6 +1585,19 @@ def refillTriggered (ab : TriggeredAbility) (vals : Array SlotVal) : TriggeredAb
   match ab, walked with
   | .triggered _ e _, .triggered w e' o =>
     .triggered w (finishEffect e e') o
+
+#guard
+  let ab := TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2
+  refillTriggered ab (collectTriggered ab) == ab
+#guard
+  let ab := TriggeredAbility.onCastNoncreaturePumpAndDamageOpponents 1
+  refillTriggered ab (collectTriggered ab) == ab
+#guard
+  let ab := TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear"
+  refillTriggered ab (collectTriggered ab) == ab
+#guard
+  let ab := TriggeredAbility.onPlayerCastsSecondSpellLoseLifeCreateTreasure
+  refillTriggered ab (collectTriggered ab) == ab
 
 def setNat (e : Effect) (i n : Nat) : Effect :=
   refillEffect e ((collectEffect e).set! i (.nat n))

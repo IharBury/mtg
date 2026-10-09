@@ -261,7 +261,7 @@ def onEnterOrAttackPlusOneEachOtherGainLife : TriggeredAbility :=
 def onLandYouControlEntersBecomePT (power toughness : Int) : TriggeredAbility :=
   .triggered .landYouControlEnters (Effect.ofTrigger (.becomePT power toughness))
 def onCastNoncreaturePumpAndDamageOpponents (n : Nat) : TriggeredAbility :=
-  .triggered .youCastNoncreature (Effect.ofTrigger (.pumpAndDamageOpponents n))
+  .triggered .youCastNoncreature (Effect.seqPumpAndDamageOpponents n)
 def onDrawSecondPlusOneLifelink : TriggeredAbility :=
   .triggered .youDrawSecond (Effect.seqPlusOneAndLifelink .creature)
 def onYouAttackPumpTargetPerPlains : TriggeredAbility :=
@@ -323,7 +323,7 @@ def onEnterOrAttackReturnElfGainLife : TriggeredAbility :=
 def onDiesDealDamageEqualToPowerToOppCreature : TriggeredAbility :=
   .triggered .dies (Effect.ofTrigger .damageFromLastKnownPower)
 def onEnterExileOppGyCardOppsLoseLife (life : Nat) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.exileOppGyCardOppsLoseLife life))
+  .triggered .enter (Effect.seqExileOppGyCardOppsLoseLife life)
 def onEnterCreaturesYouControlGetAndFirstStrike (power : Int) : TriggeredAbility :=
   .triggered .enter (Effect.seqCreaturesPumpAndFirstStrike power)
 def onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw (power : Int)
@@ -337,7 +337,7 @@ def onYourEndStepRemoveHopeDrawSac : TriggeredAbility :=
 def onAttackTapHumansDraw : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger .tapHumansDraw)
 def onEnterUntapOtherPlusOneIfSubtype (subtype : String) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.untapPlusOneIfSubtype subtype))
+  .triggered .enter (Effect.seqUntapPlusOneIfSubtype subtype)
 def onEnterDestroyOppArtifactsEnchantmentsGainLife : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife)
 def onAttackDamageEqualSubtypeToEachOpponent (subtype : String) : TriggeredAbility :=
@@ -345,7 +345,7 @@ def onAttackDamageEqualSubtypeToEachOpponent (subtype : String) : TriggeredAbili
 def onAttackDamageEqualTreasures : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger .damageEqualTreasures)
 def onPlayerCastsSecondSpellLoseLifeCreateTreasure : TriggeredAbility :=
-  .triggered .anyPlayerCastsSecondSpell (Effect.ofTrigger .loseLifeCreateTreasure)
+  .triggered .anyPlayerCastsSecondSpell Effect.seqLoseLifeCreateTreasure
 def onEnterDealDamageDestroyIfSubtype (n : Nat) (subtype : String) : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype n subtype))
 def onEnterAttachTargetEquipment : TriggeredAbility :=
@@ -721,8 +721,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     else s!"each opponent discards {cardPhrase n}"
   | .opponentDiscards n .target =>
     s!"{noun} discards {cardPhrase n}"
-  | .exileOppGyCardOppsLoseLife n =>
-    s!"exile up to one {noun}. Each opponent loses {n} life"
   | .pumpForEachOtherCreature =>
     "it gets +1/+1 until end of turn for each other creature you control"
   | .mayPayGenericDraw n false =>
@@ -751,8 +749,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you recruit"
   | .exileTop =>
     s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
-  | .untapPlusOneIfSubtype subtype =>
-    s!"untap {noun}. If that creature is a {subtype}, put a +1/+1 counter on it"
   | .plusOneEachYouControl .eachCreature =>
     "put a +1/+1 counter on each creature you control"
   | .plusOneEachYouControl (.subtype s) =>
@@ -781,8 +777,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
   | .damageEqualTreasures =>
     s!"it deals damage equal to the number of Treasures you control to {noun}"
-  | .loseLifeCreateTreasure =>
-    "you lose 1 life and create a Treasure token"
   | .dealDamageDestroyIfSubtype n subtype =>
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
   | .attachEquipmentToCreature =>
@@ -807,8 +801,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       | [a, b] => s!"a {a} or {b} card"
       | xs => s!"a {String.intercalate " or " xs} card"
     s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
-  | .pumpAndDamageOpponents n =>
-    s!"this gets +1/+1 until end of turn and deals {n} damage to each opponent"
   | .createTappedTreasuresEqualOppArtifacts =>
     "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
   | .gainControlOppUntilEot =>
@@ -1226,6 +1218,16 @@ def sequenceClause (e : Effect) : Option String :=
     else none
   | .sequence [.onSource (.plusOne 1), .draw 1] =>
     some "put a +1/+1 counter on this and draw a card"
+  | .sequence [.onSource (.pump p t), .fra (.damageEachOpponent n)] =>
+    some s!"this gets {signedStat p}/{signedStat t} until end of turn and deals {n} damage to each opponent"
+  | .sequence
+      [.onPermanent .untap,
+       .spell (.«if» (.onPermanent (.plusOne n)) (.subtype subtype))] =>
+    some s!"untap {noun}. If that creature is a {subtype}, put {plusOnePlusOneCountersPhrase n} on it"
+  | .sequence [.fra (.loseLife n), .createTokens .treasure 1 false] =>
+    some s!"you lose {n} life and create a Treasure token"
+  | .sequence [.fra .exileCardFromGraveyard, .spell (.loseLife n .eachOpponent)] =>
+    some s!"exile up to one {noun}. Each opponent loses {n} life"
   | _ => none
 
 def toNotation (ab : TriggeredAbility) : String :=

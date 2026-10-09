@@ -254,6 +254,28 @@ def seqCreaturesPumpAndFirstStrike (power : Int) : Effect :=
 def seqPlusOneOnSourceAndDraw : Effect :=
   { resolution := .sequence [.onSource (.plusOne 1), .draw 1] }
 
+/-- The source gets +1/+1 until end of turn and deals `n` damage to each opponent. -/
+def seqPumpAndDamageOpponents (n : Nat) : Effect :=
+  { resolution := .sequence [.onSource (.pump 1 1), .fra (.damageEachOpponent n)] }
+
+/-- Untap another creature you control. If it has `subtype`, put a +1/+1 counter on it. -/
+def seqUntapPlusOneIfSubtype (subtype : String) : Effect :=
+  { targeting := .of .anotherCreatureYouControl
+    resolution := .sequence
+      [.onPermanent .untap,
+       .spell (.«if» (.onPermanent (.plusOne 1)) (.subtype subtype))] }
+
+/-- You lose 1 life and create a Treasure token. -/
+def seqLoseLifeCreateTreasure : Effect :=
+  { resolution := .sequence [.fra (.loseLife 1), .createTokens .treasure 1] }
+
+/-- Exile up to one card from an opponent's graveyard. Each opponent loses `life`. -/
+def seqExileOppGyCardOppsLoseLife (life : Nat) : Effect :=
+  { targeting := .of .oppGraveyardCard
+    allowsZeroTargets := true
+    resolution := .sequence
+      [.fra .exileCardFromGraveyard, .spell (.loseLife life .eachOpponent)] }
+
 instance : Coe SharedTrigger Effect where
   coe := ofTrigger
 

@@ -552,8 +552,6 @@ inductive SharedTrigger where
   | plusOneEachOtherGainLife
   /-- Set the source's base P/T. -/
   | becomePT (power toughness : Int)
-  /-- Pump the source +1/+1 and deal `n` to each opponent. -/
-  | pumpAndDamageOpponents (n : Nat)
   /-- Pump a target creature you control +1/+1 per Plains. -/
   | pumpTargetPerPlains
   /-- You may discard your hand. If you do, draw `n`. -/
@@ -595,8 +593,6 @@ inductive SharedTrigger where
   | returnElfGainLife
   /-- Deal damage equal to last-known power to a target. -/
   | damageFromLastKnownPower
-  /-- Exile a card from an opponent's graveyard; each opponent loses `life`. -/
-  | exileOppGyCardOppsLoseLife (life : Nat)
   /-- You may pay `{n}`. If you do, draw a card.
   Also putting a +1/+1 counter on this creature is
   `.mayPayGenericDraw n (plusOneOnSource := true)`. -/
@@ -607,16 +603,12 @@ inductive SharedTrigger where
   | removeHopeDrawSac
   /-- Tap any number of Humans; draw that many cards. -/
   | tapHumansDraw
-  /-- Untap another creature; +1/+1 if it has this subtype. -/
-  | untapPlusOneIfSubtype (subtype : String)
   /-- Destroy opponents' artifacts and enchantments; gain life for each. -/
   | destroyOppArtifactsEnchantmentsGainLife
   /-- Damage each opponent equal to permanents of this subtype you control. -/
   | damageEqualSubtypeToEachOpponent (subtype : String)
   /-- Damage any target equal to Treasures you control. -/
   | damageEqualTreasures
-  /-- Lose 1 life and create a Treasure. -/
-  | loseLifeCreateTreasure
   /-- Deal `n` to any target; destroy it if it has this subtype. -/
   | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
   /-- Attach target Equipment to up to one target creature you control. -/

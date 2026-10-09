@@ -319,18 +319,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         match tgt with
         | Target.player pid => g.beginDiscardCards #[pid] n
         | _ => g) sourceId none
-  | .exileOppGyCardOppsLoseLife n =>
-    let g :=
-      match targets[0]? with
-      | some (Target.card oid) =>
-        match g.findObject? oid with
-        | some o =>
-          let name := o.name
-          let (g, _) := g.move oid .exile none
-          g.logMsg s!"{name} is exiled"
-        | none => g.logMsg "The target is no longer in the graveyard"
-      | _ => g
-    g.forEachOpponent controller (fun g pid => g.loseLife pid n)
   | .pumpForEachOtherCreature =>
     g.withTriggerSource sourceId fun g o =>
       let others :=
@@ -387,11 +375,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginRecruit controller
   | .exileTop =>
     g.resolveExileTopPlayUntilEndOfNextTurn controller
-  | .untapPlusOneIfSubtype subtype =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let g := g.applyPermanentAction o .untap
-      let o := g.object! o.id
-      if g.hasSubtype o subtype then g.addPlusOnePlusOneTo o 1 else g)
   | .plusOneEachYouControl which =>
     match which with
     | .eachCreature =>
@@ -450,9 +433,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .damageEqualTreasures =>
     let n := g.countSubtype controller "Treasure"
     g.applyEffect controller (Effect.dealDamage n) targets
-  | .loseLifeCreateTreasure =>
-    let g := g.loseLife controller 1
-    g.createTreasureTokens controller 1
   | .dealDamageDestroyIfSubtype n subtype =>
     g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
       match tgt with
@@ -531,10 +511,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => false)
     g.beginFraChoice controller (.mayRevealToHand ids eligible false)
       s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
-  | .pumpAndDamageOpponents n =>
-    let g := g.applyOnTriggerSource sourceId (.pump 1 1)
-    let src := sourceId.bind g.findObject?
-    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src))
   | .createTappedTreasuresEqualOppArtifacts =>
     let n := g.countOpponentArtifacts controller
     g.createTreasureTokens controller n (tapped := true)
