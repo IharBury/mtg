@@ -254,8 +254,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginScry controller n
   | .draw n =>
     g.draw controller n
-  | .searchForest =>
-    g.resolveSearchForest controller
+  | .searchLibrary how =>
+    match how with
+    | .forestToBattlefield => g.resolveSearchForest controller
+    | .basicLandToHand => g.resolveSearchBasicLandToHand controller
   | .mayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
   | .opponentSacrificesCreature =>
@@ -305,8 +307,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.gainLife controller n
   | .eachPlayerSacrificesCreature =>
     g.beginSacrificeCreatures (g.apnapOrder)
-  | .eachOpponentDiscards =>
-    g.beginDiscardCards (g.apnapOrder.filter (· != controller))
+  | .opponentDiscards n who =>
+    match who with
+    | .each => g.beginDiscardCards (g.apnapOrder.filter (· != controller)) n
+    | .target =>
+      g.withLegalKindTarget controller .opponent targets (fun g tgt =>
+        match tgt with
+        | Target.player pid => g.beginDiscardCards #[pid] n
+        | _ => g) sourceId none
   | .exileOppGyCardOppsLoseLife n =>
     let g :=
       match targets[0]? with
@@ -329,12 +337,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.battlefield.filter (fun c =>
           c.isCreature && c.controlledBy controller && c.id != o.id) |>.size
       g.pumpPermanent o others others
-  | .grantFlying =>
-    g.applyOnPermanent controller ab.targetKind targets
-      (.grantKeywords Keyword.flying) sourceId (some "The target is no longer legal")
-  | .mayPayGenericDraw n =>
-    { g with pending := .mayPayGeneric controller n }.logMsg
-      s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
+  | .mayPayGenericDraw n plusOne =>
+    let g :=
+      if plusOne then
+        { g with pending := .mayPayGeneric controller n, mayPayAlsoPlusOneOn := sourceId }
+      else
+        { g with pending := .mayPayGeneric controller n }
+    g.logMsg <|
+      if plusOne then
+        s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
+      else
+        s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
   | .drawThenBottomIfNoLegendary =>
     let g := g.draw controller 1
     if g.controlsLegendaryCreature controller then g
@@ -367,8 +380,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             g.gainLife controller 4
           else g
         | none => g
-  | .loot =>
-    g.drawThenBeginDiscard controller
   | .tapHumansDraw =>
     { g with pending := .tapHumans controller }.logMsg
       s!"{(g.player controller).name} may tap any number of untapped Humans they control"
@@ -376,9 +387,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.withTriggerSource sourceId fun g o =>
       let g := g.pumpPermanent o 1 0
       g.grantCantBeBlockedThisTurn (g.object! o.id)
-  | .recruit =>
-    g.beginRecruit controller
-  | .youRecruit =>
+  | .recruit _ =>
     g.beginRecruit controller
   | .exileTop =>
     g.resolveExileTopPlayUntilEndOfNextTurn controller
@@ -387,30 +396,40 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := g.applyPermanentAction o .untap
       let o := g.object! o.id
       if g.hasSubtype o subtype then g.addPlusOnePlusOneTo o 1 else g)
-  | .plusOneEachYouControl =>
-    g.forEachControlledCreature controller (fun g o => g.addPlusOnePlusOneTo o 1)
+  | .plusOneEachYouControl which =>
+    match which with
+    | .eachCreature =>
+      g.forEachControlledCreature controller (fun g o => g.addPlusOnePlusOneTo o 1)
+    | .subtype s =>
+      (g.permanentsOf controller).foldl (fun g o =>
+        if g.hasSubtype o s then g.addPlusOnePlusOneTo (g.object! o.id) 1 else g) g
+    | .citysBlessing =>
+      let n := if (g.player controller).citysBlessing then 2 else 1
+      (g.permanentsOf controller).foldl (fun acc o =>
+        if o.isCreature then acc.addPlusOnePlusOneTo o n else acc) g
   | .sourceGetsAndTeamTrample p =>
     let g := g.applyOnTriggerSource sourceId (.pump p 0)
     g.grantUntilEotToControlledCreatures controller Keyword.trample "trample"
   | .drawAndLoseLife =>
     g.drawThenLoseLife controller 1 1
-  | .amassGoblins n =>
-    g.amassGoblins controller n
+  | .amassGoblins n subtype amount attachSource =>
+    let n :=
+      match amount with
+      | .fixed => n
+      | .sourcePower => (lastKnownPower.getD 0).toNat
+    if attachSource then g.amass controller subtype n (attach := sourceId)
+    else g.amass controller subtype n
   | .createTokens kind n tapped =>
     g.createKindTokens controller kind n (tapped := tapped)
   | .createThenAttach kind =>
     let (g, tok) := g.createToken controller (tokenPrinted kind)
     g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src tok)
       "The Equipment is no longer in play"
-  | .amassThenAttach n =>
-    g.amass controller "Goblin" n (attach := sourceId)
   | .attachSourceToTarget =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g host =>
       g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src host)
         "The Equipment is no longer in play")
       sourceId (some "The target is no longer legal")
-  | .searchBasicToHand =>
-    g.resolveSearchBasicLandToHand controller
   | .gainLifeSearchBasicOnTop n =>
     let g := g.gainLife controller n
     g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
@@ -484,9 +503,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some (Target.permanent id) => some id
       | _ => none
     g.sacrificeLeastPowerCreature defn chosen
-  | .createAxe =>
-    let (g, _) := g.createToken controller axeToken
-    g.logMsg "An Axe token is created"
+  | .createAxe attach =>
+    let (g, tok) := g.createToken controller axeToken
+    if attach then
+      g.putReflexiveTrigger controller (some tok.id) {
+        targeting := .of .creatureYouControl
+        resolution := .attach
+        phrase := "Attach it to target creature you control" }
+    else
+      g.logMsg "An Axe token is created"
   | .tapOppOrUntapYours =>
     g.logMsg "No mode was chosen"
   | .becomePT p t =>
@@ -744,12 +769,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let n := (lastKnownPower.getD 0).toNat
     g.applyOnPermanent controller ab.targetKind targets (.plusOne n) sourceId
       (some "The target is no longer legal")
-  | .createAxeAttach =>
-    let (g, tok) := g.createToken controller axeToken
-    g.putReflexiveTrigger controller (some tok.id) {
-      targeting := .of .creatureYouControl
-      resolution := .attach
-      phrase := "Attach it to target creature you control" }
   | .equippedAttackersGainDoubleStrike =>
     Id.run do
       let mut g := g
@@ -867,9 +886,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       else
         g.beginFraChoice controller (.maySacrificeAnotherCreatureForPower sid)
           s!"{(g.player controller).name} may sacrifice another creature"
-  | .amassGoblinsEqualPower =>
-    let n := (lastKnownPower.getD 0).toNat
-    g.amassGoblins controller n
   | .payReturnFromGy =>
     match sourceId.bind g.findObject? with
     | none => g.logMsg "The ability's source is no longer in the graveyard"
@@ -986,10 +1002,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else
       g.beginFraChoice controller (.mayDrawThenDiscard n 2)
         s!"{(g.player controller).name} may draw {n} cards, then discard two"
-  | .plusOneEachIfCityBlessing =>
-    let n := if (g.player controller).citysBlessing then 2 else 1
-    (g.permanentsOf controller).foldl (fun acc o =>
-      if o.isCreature then acc.addPlusOnePlusOneTo o n else acc) g
   | .castInstantSorceryFromHand =>
     let wizards :=
       (g.permanentsOf controller).filter (fun o =>
@@ -1046,8 +1058,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           mvAtMost := some mv })
         resolution := .fra .sarumanExileCopyMayCast
         phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
-  | .amassOrcs n =>
-    g.amassOrcs controller n
   | .ringTempts =>
     g.temptWithTheRing controller
   | .mayDiscardHandDraw n =>
@@ -1105,12 +1115,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.withSourceOnBattlefield sourceId fun g o =>
       let g := g.addPlusOnePlusOneTo o 1
       g.draw controller 1
-  | .connive =>
-    g.applyConnive controller sourceId
-  | .targetConnive =>
-    match targets[0]? with
-    | some (Target.permanent id) => g.applyConnive controller (some id)
-    | _ => g.applyConnive controller sourceId
+  | .connive who =>
+    match who with
+    | .source => g.applyConnive controller sourceId
+    | .target _ =>
+      match targets[0]? with
+      | some (Target.permanent id) => g.applyConnive controller (some id)
+      | _ => g.applyConnive controller sourceId
   | .pumpCause p t =>
     match (g.battlefield.find? (fun o => o.status.attacking && o.controlledBy controller)) with
     | some o => g.pumpPermanent o p t
@@ -1266,12 +1277,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .maySacArtifactOrDiscardDraw =>
     { g with pending := .maySacArtifactOrDiscard controller 1 }.logMsg
       s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw a card"
-  | .targetOpponentDiscards n =>
-    g.withLegalKindTarget controller .opponent targets (fun g tgt =>
-      match tgt with
-      | Target.player pid =>
-        g.beginDiscardCards #[pid] n
-      | _ => g) sourceId none
   | .pumpTargetBySourcePower =>
     let x := g.sourcePowerAtResolution sourceId lastKnownPower
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
@@ -1508,7 +1513,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginSurveil controller n
   | .empowerJace n =>
     g.empowerJace controller n
-  | .prepareSourceIfNot =>
+  | .prepareSource .ifNotPrepared =>
     match sourceId.bind g.findObject? with
     | some o =>
       if !o.isOnBattlefield then g.logMsg s!"{o.name} is no longer on the battlefield"
@@ -1578,9 +1583,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => n
       else n
     g.addManaLogged controller (Array.replicate n (.colored .green))
-  | .mayPayPlusOneAndDraw n =>
-    { g with pending := .mayPayGeneric controller n, mayPayAlsoPlusOneOn := sourceId }.logMsg
-      s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
   | .loyaltyOnSource =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       let n := g.countersYouPut o 1 (putter := some controller)
@@ -1617,10 +1619,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else
       g.withSourceOnBattlefield sourceId (fun g o =>
         g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}")
-  | .plusOneOnEachSubtypeYouControl s =>
-    (g.permanentsOf controller).foldl (fun g o =>
-      if g.hasSubtype o s then g.addPlusOnePlusOneTo (g.object! o.id) 1 else g) g
-  | .prepareSourceIfThreeDied =>
+  | .prepareSource .ifThreeCreaturesDied =>
     if g.battlefieldCreaturesToGyThisTurn.size < 3 then
       g.logMsg "Fewer than three creatures died this turn"
     else

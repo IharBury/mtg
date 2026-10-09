@@ -419,6 +419,64 @@ inductive SharedTriggerWhen where
   | fra (e : FraEvent)
 deriving Repr, Inhabited, BEq
 
+/-- How many counters `SharedTrigger.amassGoblins` puts on the Army. -/
+inductive AmassAmount where
+  /-- The `n` argument. -/
+  | fixed
+  /-- This creature's power, as it last existed. -/
+  | sourcePower
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Who the printed `SharedTrigger.recruit` names. -/
+inductive RecruitSubject where
+  /-- “recruit”. -/
+  | recruit
+  /-- “you recruit”. -/
+  | you
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Who `SharedTrigger.connive` makes connive. -/
+inductive ConniveSubject where
+  /-- The trigger's source. -/
+  | source
+  /-- The announced target of this kind. -/
+  | target (kind : EffectTargetKind)
+deriving Repr, Inhabited, BEq
+
+/-- Who discards for `SharedTrigger.opponentDiscards`. -/
+inductive OpponentDiscard where
+  /-- Each opponent. -/
+  | each
+  /-- The announced opponent. -/
+  | target
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- What `SharedTrigger.searchLibrary` finds, and where that card goes. -/
+inductive TriggerLibrarySearch where
+  /-- A Forest card onto the battlefield. -/
+  | forestToBattlefield
+  /-- A basic land card into your hand. -/
+  | basicLandToHand
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Which permanents `SharedTrigger.plusOneEachYouControl` puts a counter on. -/
+inductive YouControlPlusOne where
+  /-- Each creature you control. -/
+  | eachCreature
+  /-- Each permanent of this subtype you control. -/
+  | subtype (subtype : String)
+  /-- Each creature you control, or two counters with the city's blessing. -/
+  | citysBlessing
+deriving Repr, Inhabited, BEq
+
+/-- When `SharedTrigger.prepareSource` makes this creature prepared. -/
+inductive PrepareWhen where
+  /-- If it isn't prepared yet. -/
+  | ifNotPrepared
+  /-- If three or more creatures died this turn. -/
+  | ifThreeCreaturesDied
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Shared resolution for reusable triggered abilities that only differ by
 when they fire. `TriggeredAbility.triggered` pairs this with `SharedTriggerWhen`. -/
 inductive SharedTrigger where
@@ -428,30 +486,24 @@ inductive SharedTrigger where
   | draw (n : Nat)
   /-- Create `n` tokens of this kind. `tapped` is Treasure-style “create a tapped …”. -/
   | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false)
-  /-- Amass Goblins `n`. -/
-  | amassGoblins (n : Nat)
-  /-- Recruit. -/
-  | recruit
-  /-- You recruit. -/
-  | youRecruit
+  /-- Amass `subtype` `n`. Goblins `n` is `.amassGoblins n`.
+  Orcs `n` is `.amassGoblins n "Orc"`.
+  Amass equal to this creature's power is `.amassGoblins 0 (amount := .sourcePower)`.
+  Amass, then attach this Equipment to the Army, is
+  `.amassGoblins n (attachSource := true)`. -/
+  | amassGoblins (n : Nat) (subtype : String := "Goblin")
+      (amount : AmassAmount := .fixed) (attachSource : Bool := false)
+  /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
+  | recruit (who : RecruitSubject := .recruit)
   /-- Deal `amount` damage divided as you choose among one to `maxTargets` targets. -/
   | dividedDamage (amount maxTargets : Nat)
-  /-- Put a +1/+1 counter on a target of this kind. -/
-  | plusOneOn (kind : EffectTargetKind)
-  /-- Put a +1/+1 counter on the source. -/
-  | plusOneOnSource
-  /-- The source gets +P/+T until end of turn. -/
-  | sourceGets (power toughness : Int)
-  /-- Target of this kind gets +P/+T until end of turn. -/
-  | pumpTarget (kind : EffectTargetKind) (power toughness : Int)
   /-- You gain `n` life. -/
   | gainLife (n : Nat)
   /-- Draw a card and lose 1 life. -/
   | drawAndLoseLife
-  /-- The source connives. -/
-  | connive
-  /-- A target of this kind connives. -/
-  | conniveTarget (kind : EffectTargetKind)
+  /-- Connive. The source is `.connive`. A target of `kind` is
+  `.connive (.target kind)`. -/
+  | connive (who : ConniveSubject := .source)
   /-- Exile a target of this kind until the source leaves. -/
   | exileUntilLeaves (kind : EffectTargetKind)
   /-- Deal `n` damage to each opponent (optionally after targeting one). -/
@@ -468,32 +520,31 @@ inductive SharedTrigger where
   | exileTop
   /-- You may discard a card. If you do, draw `n`. -/
   | mayDiscardDraw (n : Nat)
-  /-- Each opponent discards a card. -/
-  | eachOpponentDiscards
-  /-- Target opponent discards `n` cards. -/
-  | targetOpponentDiscards (n : Nat)
+  /-- An opponent discards `n` cards. Each opponent discards one is
+  `.opponentDiscards`. The announced opponent discards `n` is
+  `.opponentDiscards n .target`. -/
+  | opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each)
   /-- Target player mills `n` cards. -/
   | millPlayer (n : Nat)
-  /-- Amass Orcs `n`. -/
-  | amassOrcs (n : Nat)
   /-- Investigate (create a Clue). -/
   | investigate
   /-- The attacking creature that caused this trigger gets +P/+T. -/
   | pumpCause (power toughness : Int)
-  /-- Search the library for a Forest card. -/
-  | searchForest
-  /-- Search for a basic land and put it into hand. -/
-  | searchBasicToHand
+  /-- Search your library. A Forest onto the battlefield is `.searchLibrary`.
+  A basic land into your hand is `.searchLibrary .basicLandToHand`. -/
+  | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
   /-- Each player sacrifices a creature of their choice. -/
   | eachPlayerSacrificesCreature
   /-- Exile a target of this kind. -/
   | exileTarget (kind : EffectTargetKind)
   /-- Return a creature card from your graveyard to your hand. -/
   | returnCreatureFromGyToHand
-  /-- Draw a card, then discard a card. -/
-  | loot
-  /-- Put a +1/+1 counter on each creature you control. -/
-  | plusOneEachYouControl
+  /-- Put a +1/+1 counter on permanents you control.
+  Each creature is `.plusOneEachYouControl`.
+  Each permanent of a subtype is `.plusOneEachYouControl (.subtype s)`.
+  One counter, or two with the city's blessing, is
+  `.plusOneEachYouControl .citysBlessing`. -/
+  | plusOneEachYouControl (which : YouControlPlusOne := .eachCreature)
   /-- The source gets +P/+0 and creatures you control gain trample. -/
   | sourceGetsAndTeamTrample (power : Int)
   /-- Put a hone counter on each Equipment you control. -/
@@ -522,28 +573,21 @@ inductive SharedTrigger where
   | pumpForEachOtherCreature
   /-- Deal `n` damage to each creature blocking the source. -/
   | damageBlockers (n : Nat)
-  /-- Grant flying to a target of this kind. -/
-  | grantFlying (kind : EffectTargetKind)
   /-- Return cards exiled by the source. -/
   | returnLinkedExile
   /-- Create a token, then attach the source to it. -/
   | createThenAttach (kind : TokenKind)
-  /-- Amass Goblins `n`, then attach the source to the Army. -/
-  | amassThenAttach (n : Nat)
   /-- Gain `n` life, then search a basic land to the top. -/
   | gainLifeSearchBasicOnTop (n : Nat)
   /-- Add these mana types. -/
   | addMana (types : Array ManaType)
-  /-- Create an Axe Equipment token. -/
-  | createAxe
-  /-- Create an Axe and attach it to a creature you control. -/
-  | createAxeAttach
+  /-- Create an Axe Equipment token.
+  Attaching it to a creature you control is `.createAxe (attach := true)`. -/
+  | createAxe (attach : Bool := false)
   /-- Tap an opposing creature or untap yours. -/
   | tapOppOrUntapYours
   /-- Gain control of the target until end of turn; untap; haste. -/
   | gainControlOppUntilEot
-  /-- Amass Goblins X, where X is this creature's power. -/
-  | amassGoblinsEqualPower
   /-- Landfall from the graveyard: pay to return this to hand. -/
   | payReturnFromGy
   /-- Target opponent loses `n` life. -/
@@ -566,8 +610,10 @@ inductive SharedTrigger where
   | exileOppGyCardOppsLoseLife (life : Nat)
   /-- Creatures you control get +P/+0 and first strike. -/
   | creaturesYouControlPumpAndFirstStrike (power : Int)
-  /-- You may pay `{generic}`. If you do, draw a card. -/
-  | mayPayGenericDraw (generic : Nat)
+  /-- You may pay `{n}`. If you do, draw a card.
+  Also putting a +1/+1 counter on this creature is
+  `.mayPayGenericDraw n (plusOneOnSource := true)`. -/
+  | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
   /-- Draw, then bottom a card if you don't control a legendary creature. -/
   | drawThenBottomIfNoLegendary
   /-- Remove a hope counter to draw; sacrifice if none remain. -/
@@ -626,8 +672,6 @@ inductive SharedTrigger where
   | drawPerFatGraveyard
   /-- You may sacrifice another for a card and a Treasure. -/
   | maySacDrawTreasure
-  /-- +1/+1 each, or two with the city's blessing. -/
-  | plusOneEachIfCityBlessing
   /-- You may cast an instant or sorcery from hand. -/
   | castInstantSorceryFromHand
   /-- You may cast an instant or sorcery with mana value at most that damage. -/
@@ -742,14 +786,13 @@ inductive SharedTrigger where
   | surveil (n : Nat)
   /-- Empower Jace `n` (Reality Fracture). -/
   | empowerJace (n : Nat)
-  /-- If this creature isn't prepared, it becomes prepared. -/
-  | prepareSourceIfNot
-  /-- If three or more creatures died this turn, this creature becomes prepared. -/
-  | prepareSourceIfThreeDied
+  /-- This creature becomes prepared.
+  If it isn't prepared is `.prepareSource`.
+  If three or more creatures died this turn is
+  `.prepareSource .ifThreeCreaturesDied`. -/
+  | prepareSource (when : PrepareWhen := .ifNotPrepared)
   /-- If two or more loyalty counters were removed to activate the ability, draw a card. -/
   | drawIfRemovedTwoLoyalty
-  /-- Put a +1/+1 counter on each permanent of this subtype you control. -/
-  | plusOneOnEachSubtypeYouControl (subtype : String)
   /-- Put a loyalty counter on the source (Ajani Resolute). -/
   | loyaltyOnSource
   /-- Target permanent you control gains these keywords until end of turn; a
@@ -772,9 +815,6 @@ inductive SharedTrigger where
   | chargeCounterOnSource
   /-- Add {G} for each charge counter on the source. -/
   | addGreenPerChargeCounter
-  /-- You may pay `{n}`. If you do, put a +1/+1 counter on the source and
-  draw a card. -/
-  | mayPayPlusOneAndDraw (n : Nat)
   /-- Draw two cards; if your library is then empty, you win; the owner
   shuffles the source into their library (Fblthp, Impossibly Lost). -/
   | drawTwoWinIfEmptyShuffleSource
