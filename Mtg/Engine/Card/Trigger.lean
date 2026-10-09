@@ -82,8 +82,6 @@ inductive TriggerResolution where
   /-- Exile up to one targeted card from an opponent's graveyard, then each
   opponent loses `life` life. -/
   | exileOppGyCardOppsLoseLife (life : Nat)
-  /-- Creatures you control get +P/+0 and first strike until end of turn. -/
-  | creaturesYouControlPumpAndFirstStrike (power : Int)
   /-- Pump the source +1/+1 for each other creature you control. -/
   | pumpForEachOtherCreature
   /-- You may pay `{n}`. If you do, draw a card.
@@ -100,12 +98,8 @@ inductive TriggerResolution where
   | returnLinkedExile
   /-- Remove a hope counter, draw, then maybe sacrifice and gain life. -/
   | removeHopeDrawSac
-  /-- Draw `n` cards, then discard a card. One card is the loot wording. -/
-  | drawThenDiscardN (n : Nat)
   /-- Tap any number of Humans you control; draw that many cards. -/
   | tapHumansDraw
-  /-- Pump the source +1/+0 and grant can't be blocked this turn. -/
-  | pumpAndUnblockable
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
   /-- Exile the top card; you may play it until the end of your next turn. -/
@@ -118,10 +112,6 @@ inductive TriggerResolution where
   One counter, or two with the city's blessing, is
   `.plusOneEachYouControl .citysBlessing`. -/
   | plusOneEachYouControl (which : YouControlPlusOne := .eachCreature)
-  /-- Pump the source +P/+0 and grant trample to creatures you control. -/
-  | sourceGetsAndTeamTrample (power : Int)
-  /-- Draw a card and lose 1 life. -/
-  | drawAndLoseLife
   /-- Amass `subtype` `n`, as `amount` says. Attach the source when
   `attachSource` is true. -/
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
@@ -209,8 +199,6 @@ inductive TriggerResolution where
   | returnCreatureFromGyToHand
   /-- Discard your hand, draw that many, and maybe damage opponents. -/
   | discardHandDrawDamageIfStory
-  /-- +1/+1 and lifelink on the targeted creature. -/
-  | plusOneAndLifelink
   /-- +1/+1 on a Wolf you control, or create a Treasure. -/
   | wolfPlusOneOrTreasure
   /-- Trample counter, become a Bear, maybe draw two. -/
@@ -261,16 +249,12 @@ inductive TriggerResolution where
   | targetOpponentLosesLife (n : Nat)
   /-- Attach any number of Equipment, then the host fights. -/
   | attachEquipmentThenFight
-  /-- Two +1/+1 counters and vigilance. -/
-  | plusOneVigilance (n : Nat)
   /-- Return the source as an artifact. -/
   | returnAsArtifact
   /-- You may draw X (mana spent), then discard two. -/
   | mayDrawXDiscard2
   /-- You may cast an instant or sorcery from hand without paying. -/
   | castInstantSorceryFromHand
-  /-- Draw a card and put a +1/+1 counter on the source. -/
-  | drawPlusOneSource
   /-- Exile up to three lands you control, then return them tapped. -/
   | exileLandsThenReturnTapped
   /-- You may cast an instant or sorcery of MV at most last-known power. -/
@@ -301,8 +285,6 @@ inductive TriggerResolution where
   | pumpTargetPerPlains
   /-- Investigate (create a Clue). -/
   | investigate
-  /-- Put a +1/+1 counter on the source and draw a card. -/
-  | plusOneOnSourceAndDraw
   /-- Connive (CR 701.48). The source is `.connive`. A target is
   `.connive (.target kind)`. -/
   | connive (who : ConniveSubject := .source)
@@ -340,8 +322,6 @@ inductive TriggerResolution where
   | planFinishDividedDamage (amount : Nat)
   /-- Sacrifice this. Put an indestructible counter on target creature you control. -/
   | planFinishIndestructibleOnTarget
-  /-- Draw a card and lose 1 life. -/
-  | drawAndLoseLife1
   /-- Apply `action` to the creature this Aura enchants. -/
   | onEnchanted (action : PermanentAction)
   /-- Attach the source to the target, then apply `action` to that host. -/
@@ -621,7 +601,6 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .playerOrCreature,
       dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
   | .gainLife n => { resolution := .gainLife n }
-  | .drawAndLoseLife => { resolution := .drawAndLoseLife }
   | .connive who =>
     match who with
     | .source => { resolution := .connive who }
@@ -657,19 +636,14 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .creatureCardInYourGraveyard,
       resolution := .returnCreatureFromGyToHand }
   | .plusOneEachYouControl which => { resolution := .plusOneEachYouControl which }
-  | .sourceGetsAndTeamTrample p => { resolution := .sourceGetsAndTeamTrample p }
   | .honeEachEquipment => { resolution := .honeEachEquipment }
   | .plusOneEachOtherGainLife => { resolution := .plusOneEachOtherGainLife }
   | .becomePT p t => { resolution := .becomePT p t }
   | .pumpAndDamageOpponents n => { resolution := .pumpAndDamageOpponents n }
-  | .plusOneAndLifelink kind =>
-    { targeting := .of kind, resolution := .plusOneAndLifelink }
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pumpTargetPerPlains }
-  | .drawThenDiscard n => { resolution := .drawThenDiscardN n }
   | .mayDiscardHandDraw n => { resolution := .mayDiscardHandDraw n }
   | .pumpByLookedAt => { resolution := .pumpByLookedAt }
-  | .pumpAndUnblockable => { resolution := .pumpAndUnblockable }
   | .pumpGreatestPower => { resolution := .pumpGreatestPower }
   | .pumpForEachOtherCreature => { resolution := .pumpForEachOtherCreature }
   | .damageBlockers n => { resolution := .damageBlockers n }
@@ -684,10 +658,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .payReturnFromGy => { resolution := .payReturnFromGy }
   | .targetOpponentLosesLife n =>
     { targeting := .of .opponent, resolution := .targetOpponentLosesLife n }
-  | .plusOneVigilance n =>
-    { targeting := .of .creatureYouControl, resolution := .plusOneVigilance n }
   | .mayDrawXDiscard2 => { resolution := .mayDrawXDiscard2 }
-  | .drawPlusOneSource => { resolution := .drawPlusOneSource }
   | .ringTempts => { resolution := .ringTempts }
   | .setOtherBasePT =>
     { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
@@ -699,8 +670,6 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .exileOppGyCardOppsLoseLife n =>
     { targeting := .of .oppGraveyardCard, allowsZeroTargets := true,
       resolution := .exileOppGyCardOppsLoseLife n }
-  | .creaturesYouControlPumpAndFirstStrike p =>
-    { resolution := .creaturesYouControlPumpAndFirstStrike p }
   | .mayPayGenericDraw n plusOne =>
     { resolution := .mayPayGenericDraw n plusOne }
   | .drawThenBottomIfNoLegendary =>
@@ -825,7 +794,6 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .sacDamagersRingTempts => { resolution := .sacDamagersRingTempts }
   | .chapter _n e =>
     { resolution := .chapter e }
-  | .plusOneOnSourceAndDraw => { resolution := .plusOneOnSourceAndDraw }
   | .drawIfAttackedOrEnteredSubtype subtype =>
     { resolution := .drawIfAttackedOrEnteredSubtype subtype }
   | .othersOfSubtypeGetEqualSourceToughness subtype =>

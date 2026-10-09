@@ -138,13 +138,13 @@ def onAnotherArtifactEntersPlusOne : TriggeredAbility :=
 def onYourBeginCombatFerociousPlusOne : TriggeredAbility :=
   .triggered .yourBeginCombat (Effect.ofTrigger (.onSource (.plusOne 1))) .ferocious
 def onEquippedAttacksAloneDrawLoseLife : TriggeredAbility :=
-  .triggered .equippedAttacksAlone (Effect.ofTrigger .drawAndLoseLife)
+  .triggered .equippedAttacksAlone Effect.seqDrawAndLoseLife
 def onYouAttackFerociousDrawLoseLife : TriggeredAbility :=
-  .triggered .youAttack (Effect.ofTrigger .drawAndLoseLife) .ferocious
+  .triggered .youAttack Effect.seqDrawAndLoseLife .ferocious
 def onCastWithTreasureDrawLoseLife : TriggeredAbility :=
-  .triggered .youCastWithTreasure (Effect.ofTrigger .drawAndLoseLife)
+  .triggered .youCastWithTreasure Effect.seqDrawAndLoseLife
 def onYourEndStepDrawLoseLife : TriggeredAbility :=
-  .triggered .yourEndStep (Effect.ofTrigger .drawAndLoseLife)
+  .triggered .yourEndStep Effect.seqDrawAndLoseLife
 def onEnterConnive : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .connive)
 def onAttackConnive : TriggeredAbility :=
@@ -249,11 +249,11 @@ def onEnterMayExileAnotherCreature : TriggeredAbility :=
 def onEnterReturnCreatureFromGyToHand : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .returnCreatureFromGyToHand)
 def onCombatDamageToPlayerLoot : TriggeredAbility :=
-  .triggered .combatDamageToPlayer (Effect.ofTrigger (.drawThenDiscard 1))
+  .triggered .combatDamageToPlayer (Effect.seqDrawThenDiscard 1)
 def onAttackFerociousPlusOneEach : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger .plusOneEachYouControl) .ferocious
 def onAttackFerociousSourceGetsAndTeamTrample (power : Int) : TriggeredAbility :=
-  .triggered .attack (Effect.ofTrigger (.sourceGetsAndTeamTrample power)) .ferocious
+  .triggered .attack (Effect.seqSourceGetsAndTeamTrample power) .ferocious
 def onEnterOrAttackHoneEachEquipment : TriggeredAbility :=
   .triggered (.or .enter .attack) (Effect.ofTrigger .honeEachEquipment)
 def onEnterOrAttackPlusOneEachOtherGainLife : TriggeredAbility :=
@@ -263,18 +263,18 @@ def onLandYouControlEntersBecomePT (power toughness : Int) : TriggeredAbility :=
 def onCastNoncreaturePumpAndDamageOpponents (n : Nat) : TriggeredAbility :=
   .triggered .youCastNoncreature (Effect.ofTrigger (.pumpAndDamageOpponents n))
 def onDrawSecondPlusOneLifelink : TriggeredAbility :=
-  .triggered .youDrawSecond (Effect.ofTrigger (.plusOneAndLifelink .creature))
+  .triggered .youDrawSecond (Effect.seqPlusOneAndLifelink .creature)
 def onYouAttackPumpTargetPerPlains : TriggeredAbility :=
   .triggered .youAttack (Effect.ofTrigger .pumpTargetPerPlains)
 def onAnotherLegendarySubtypeEntersLoot (subtype : String) : TriggeredAbility :=
-  .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.drawThenDiscard 2))
+  .triggered .anotherCreatureYouControlEnters (Effect.seqDrawThenDiscard 2)
     { thisOrAnotherSubtype := some subtype, anotherLegendary := true }
 def onRingTemptsMayDiscardDraw (n : Nat) : TriggeredAbility :=
   .triggered .theRingTemptsYou (Effect.ofTrigger (.mayDiscardHandDraw n))
 def onScryPumpSelfForEachLookedAt : TriggeredAbility :=
   .triggered .youScry (Effect.ofTrigger .pumpByLookedAt)
 def onScryPumpAndUnblockableOnce : TriggeredAbility :=
-  .triggered .youScry (Effect.ofTrigger .pumpAndUnblockable) .once
+  .triggered .youScry Effect.seqPumpAndUnblockable .once
 def onAttackPumpByGreatestPower : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger .pumpGreatestPower)
 def onBecomesBlockedDeal1ToBlockers : TriggeredAbility :=
@@ -309,11 +309,11 @@ def onLandYouControlEntersPayReturnFromGy : TriggeredAbility :=
 def onYouSacrificeTokenOppLosesLife : TriggeredAbility :=
   .triggered .youSacrificeToken (Effect.ofTrigger (.targetOpponentLosesLife 1))
 def onLandYouControlEntersPlusOneVigilance : TriggeredAbility :=
-  .triggered .landYouControlEnters (Effect.ofTrigger (.plusOneVigilance 2))
+  .triggered .landYouControlEnters (Effect.seqPlusOneVigilance 2)
 def onCastNoncreatureMayDrawXDiscard2 : TriggeredAbility :=
   .triggered .youCastNoncreature (Effect.ofTrigger .mayDrawXDiscard2)
 def onLandYouControlEntersDrawPlusOneSource : TriggeredAbility :=
-  .triggered .landYouControlEnters (Effect.ofTrigger .drawPlusOneSource)
+  .triggered .landYouControlEnters Effect.seqDrawPlusOneSource
 def onArmyCombatDamageRingTempts : TriggeredAbility :=
   .triggered .armyYouControlCombatDamage (Effect.ofTrigger .ringTempts)
 def onAttackSetOtherBasePT : TriggeredAbility :=
@@ -325,7 +325,7 @@ def onDiesDealDamageEqualToPowerToOppCreature : TriggeredAbility :=
 def onEnterExileOppGyCardOppsLoseLife (life : Nat) : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.exileOppGyCardOppsLoseLife life))
 def onEnterCreaturesYouControlGetAndFirstStrike (power : Int) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.creaturesYouControlPumpAndFirstStrike power))
+  .triggered .enter (Effect.seqCreaturesPumpAndFirstStrike power)
 def onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw (power : Int)
     (generic : Nat) : TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.mayPayGenericDraw generic))
@@ -471,7 +471,7 @@ def sagaChapter (n : Nat) (e : Effect) : TriggeredAbility :=
       { e with resolution := Resolution.trigger (SharedTrigger.chapter n ch) }
   | none => .triggered .sagaChapter e
 def onTappedForTeamworkPlusOneAndDraw : TriggeredAbility :=
-  .triggered .tappedForTeamwork (Effect.ofTrigger .plusOneOnSourceAndDraw)
+  .triggered .tappedForTeamwork Effect.seqPlusOneOnSourceAndDraw
 def onEachEndStepDrawIfAttackedOrEnteredSubtype (subtype : String) : TriggeredAbility :=
   .triggered .eachEndStep (Effect.ofTrigger (.drawIfAttackedOrEnteredSubtype subtype))
 def onAttackOthersOfSubtypeGetEqualToughness (subtype : String) : TriggeredAbility :=
@@ -712,8 +712,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} discards {cardPhrase n}"
   | .exileOppGyCardOppsLoseLife n =>
     s!"exile up to one {noun}. Each opponent loses {n} life"
-  | .creaturesYouControlPumpAndFirstStrike p =>
-    s!"creatures you control get {signedStat p}/+0 and gain first strike until end of turn"
   | .pumpForEachOtherCreature =>
     "it gets +1/+1 until end of turn for each other creature you control"
   | .mayPayGenericDraw n false =>
@@ -736,16 +734,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .tapHumansDraw =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
-  | .pumpAndUnblockable =>
-    "this gets +1/+0 until end of turn and can't be blocked this turn"
   | .recruit .recruit =>
     "recruit"
   | .recruit .you =>
     "you recruit"
   | .exileTop =>
     s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
-  | .sourceGetsAndTeamTrample p =>
-    s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
   | .untapPlusOneIfSubtype subtype =>
     s!"untap {noun}. If that creature is a {subtype}, put a +1/+1 counter on it"
   | .plusOneEachYouControl .eachCreature =>
@@ -754,8 +748,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"put a +1/+1 counter on each {s} you control"
   | .plusOneEachYouControl .citysBlessing =>
     "put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead"
-  | .drawAndLoseLife =>
-    "you draw a card and lose 1 life"
   | .amassGoblins _ subtype .sourcePower _ =>
     s!"amass {pluralizeName subtype} X, where X is this creature's power"
   | .amassGoblins n subtype _ true =>
@@ -847,8 +839,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"return {noun} to your hand"
   | .discardHandDrawDamageIfStory =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
-  | .plusOneAndLifelink =>
-    s!"put a +1/+1 counter on {noun}. It gains lifelink until end of turn"
   | .wolfPlusOneOrTreasure =>
     "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
   | .trampleCounterBecomeBear =>
@@ -899,18 +889,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} loses {n} life"
   | .attachEquipmentThenFight =>
     "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
-  | .plusOneVigilance n =>
-    s!"put {plusOnePlusOneCountersPhrase n} on {noun}. It gains vigilance until end of turn"
-  | .drawThenDiscardN n =>
-    s!"draw {cardPhrase n}, then discard a card"
   | .returnAsArtifact =>
     "if they were a creature, return them to the battlefield. They're an artifact"
   | .mayDrawXDiscard2 =>
     "you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards"
   | .castInstantSorceryFromHand =>
     "you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control"
-  | .drawPlusOneSource =>
-    "draw a card and put a +1/+1 counter on this"
   | .exileLandsThenReturnTapped =>
     "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
   | .castInstantSorceryMvAtMost =>
@@ -939,8 +923,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .pumpTargetPerPlains =>
     "target creature you control gets +1/+1 until end of turn for each Plains you control"
   | .investigate => "investigate"
-  | .plusOneOnSourceAndDraw =>
-    "put a +1/+1 counter on this and draw a card"
   | .connive .source => "it connives"
   | .connive (.target _) => s!"{noun} connives"
   | .pumpCause p t =>
@@ -978,8 +960,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"sacrifice it. When you do, it deals {n} damage divided as you choose among one or two targets"
   | .planFinishIndestructibleOnTarget =>
     "sacrifice it. When you do, put an indestructible counter on target creature you control"
-  | .drawAndLoseLife1 =>
-    "you draw a card and lose 1 life"
   | .onEnchanted action =>
     PermanentAction.toNotation action "enchanted creature"
   | .attachThen action =>
@@ -1205,6 +1185,38 @@ whose effect clause is the shared `resolutionPhrase`. -/
 def leadInSentence (ab : TriggeredAbility) (lead : String) : String :=
   s!"{lead}, {resolutionPhrase ab.timing}."
 
+/-- Printed clause when the effect is a sequence of independent steps.
+Numbers and the target noun come from the effect, so Oracle refill stays
+in step with the printed line. -/
+def sequenceClause (e : Effect) : Option String :=
+  let noun := e.targetKind.noun
+  match e.resolution with
+  | .sequence [.draw 1, .fra (.loseLife 1)] =>
+    some "you draw a card and lose 1 life"
+  | .sequence [.draw n, .discard 1] =>
+    some s!"draw {cardPhrase n}, then discard a card"
+  | .sequence [.onSource (.pump p 0), .teamGain k] =>
+    if k == Keyword.trample then
+      some s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
+    else none
+  | .sequence [.onPermanent (.plusOne n), .onPermanent (.grantKeywords k)] =>
+    if k == Keyword.lifelink && n == 1 then
+      some s!"put a +1/+1 counter on {noun}. It gains lifelink until end of turn"
+    else if k == Keyword.vigilance then
+      some s!"put {plusOnePlusOneCountersPhrase n} on {noun}. It gains vigilance until end of turn"
+    else none
+  | .sequence [.onSource (.pump 1 0), .onSource .cantBeBlocked] =>
+    some "this gets +1/+0 until end of turn and can't be blocked this turn"
+  | .sequence [.draw 1, .onSource (.plusOne 1)] =>
+    some "draw a card and put a +1/+1 counter on this"
+  | .sequence [.creaturesYouControlPump p 0, .teamGain k] =>
+    if k == Keyword.firstStrike then
+      some s!"creatures you control get {signedStat p}/+0 and gain first strike until end of turn"
+    else none
+  | .sequence [.onSource (.plusOne 1), .draw 1] =>
+    some "put a +1/+1 counter on this and draw a card"
+  | _ => none
+
 def toNotation (ab : TriggeredAbility) : String :=
   match ab with
   | .triggered w e opts =>
@@ -1257,14 +1269,12 @@ def toNotation (ab : TriggeredAbility) : String :=
       leadInSentence ab "When The Notary Hobbits enter"
     | .enter, some .attachEquipmentThenFight, _ =>
       leadInSentence ab "When Thorin enters"
-    | .anotherCreatureYouControlEnters, some (.drawThenDiscard 2), { thisOrAnotherSubtype := some "Elf", .. } =>
+    | .anotherCreatureYouControlEnters, _, { thisOrAnotherSubtype := some "Elf", anotherLegendary := true, .. } =>
     "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
     | .dies, some .returnAsArtifact, _ =>
       leadInSentence ab "When Tom, Bert, and William die"
     | .anotherCreatureYouControlEnters, some (.onSource (.plusOne 2)), { thisOrAnotherSubtype := some "Wolf", .. } =>
     "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
-    | .landYouControlEnters, some .drawPlusOneSource, _ =>
-    "Landfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf."
     | .enter, some .exileLandsThenReturnTapped, _ =>
       leadInSentence ab "When Gandalf enters"
     | .combatDamageToPlayer, some .grimaImpulse, _ =>
@@ -1340,10 +1350,14 @@ def toNotation (ab : TriggeredAbility) : String :=
     let t := ab.timing
     if t.events.contains .equippedAttacksAlone then
       "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
+    else if t.events.contains .landYouControlEnters &&
+        ab.effect.resolution == .sequence [.draw 1, .onSource (.plusOne 1)] then
+      "Landfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf."
     else
       let once :=
         if t.onceEachTurn then " This ability triggers only once each turn." else ""
-      s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
+      let clause := (sequenceClause ab.effect).getD (resolutionPhrase t)
+      s!"{eventPrefix t}{interveningClause t}, {clause}.{once}"
 
 instance : ToString TriggeredAbility where
   toString := toNotation

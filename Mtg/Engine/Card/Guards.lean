@@ -704,7 +704,7 @@ namespace CardDef
 #guard TriggeredAbility.onDrawSecondPlusOne ==
   .triggered .youDrawSecond (Effect.ofTrigger (.onSource (.plusOne 1)))
 #guard TriggeredAbility.onYourEndStepDrawLoseLife ==
-  .triggered .yourEndStep (Effect.ofTrigger .drawAndLoseLife)
+  .triggered .yourEndStep Effect.seqDrawAndLoseLife
 #guard TriggeredAbility.onAttackFerociousGainLife 2 ==
   .triggered .attack (Effect.ofTrigger (.gainLife 2)) .ferocious
 #guard TriggeredAbility.onArtifactYouControlEntersDrawOnce ==
@@ -736,17 +736,17 @@ namespace CardDef
 #guard TriggeredAbility.onEnterEachPlayerSacrificesCreature ==
   .triggered .enter (Effect.ofTrigger .eachPlayerSacrificesCreature)
 #guard TriggeredAbility.onCombatDamageToPlayerLoot ==
-  .triggered .combatDamageToPlayer (Effect.ofTrigger (.drawThenDiscard 1))
+  .triggered .combatDamageToPlayer (Effect.seqDrawThenDiscard 1)
 #guard TriggeredAbility.onAttackFerociousPlusOneEach ==
   .triggered .attack (Effect.ofTrigger .plusOneEachYouControl) .ferocious
 #guard TriggeredAbility.onScryPumpSelfForEachLookedAt ==
   .triggered .youScry (Effect.ofTrigger .pumpByLookedAt)
 #guard TriggeredAbility.onScryPumpAndUnblockableOnce ==
-  .triggered .youScry (Effect.ofTrigger .pumpAndUnblockable) .once
+  .triggered .youScry Effect.seqPumpAndUnblockable .once
 #guard TriggeredAbility.onRingTemptsMayDiscardDraw 4 ==
   .triggered .theRingTemptsYou (Effect.ofTrigger (.mayDiscardHandDraw 4))
 #guard TriggeredAbility.onDrawSecondPlusOneLifelink ==
-  .triggered .youDrawSecond (Effect.ofTrigger (.plusOneAndLifelink .creature))
+  .triggered .youDrawSecond (Effect.seqPlusOneAndLifelink .creature)
 #guard TriggeredAbility.onceEachTurn .onScryPumpAndUnblockableOnce
 #guard TriggeredAbility.youControlCreatureWithPower? .onAttackFerociousPlusOneEach
   == some 4
@@ -758,7 +758,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterCreateThenAttach .treasure ==
   .triggered .enter (Effect.ofTrigger (.createThenAttach .treasure))
 #guard TriggeredAbility.onLandYouControlEntersDrawPlusOneSource ==
-  .triggered .landYouControlEnters (Effect.ofTrigger .drawPlusOneSource)
+  .triggered .landYouControlEnters Effect.seqDrawPlusOneSource
 #guard TriggeredAbility.onArmyCombatDamageRingTempts ==
   .triggered .armyYouControlCombatDamage (Effect.ofTrigger .ringTempts)
 #guard TriggeredAbility.onAttackSetOtherBasePT ==
@@ -770,7 +770,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2 ==
   .triggered .enter (Effect.ofTrigger (.exileOppGyCardOppsLoseLife 2))
 #guard TriggeredAbility.onEnterCreaturesYouControlGetAndFirstStrike 1 ==
-  .triggered .enter (Effect.ofTrigger (.creaturesYouControlPumpAndFirstStrike 1))
+  .triggered .enter (Effect.seqCreaturesPumpAndFirstStrike 1)
 #guard TriggeredAbility.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1 ==
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.mayPayGenericDraw 1))
     { anotherCreaturePowerAtMost := some 2 }
@@ -1296,7 +1296,8 @@ namespace CardDef
   .amassGoblins 1 "Goblin" .fixed true
 #guard TriggeredAbility.resolution .onOpponentCastsFirstNoncreatureRecruit == .recruit .you
 #guard TriggeredAbility.resolution .onEnterRecruit == .recruit
-#guard TriggeredAbility.resolution .onCombatDamageToPlayerLoot == .drawThenDiscardN 1
+#guard TriggeredAbility.onCombatDamageToPlayerLoot.effect.resolution ==
+  .sequence [.draw 1, .discard 1]
 #guard TriggeredAbility.resolution .onEnterEachOpponentDiscards == .opponentDiscards
 #guard TriggeredAbility.resolution (.onEnterTargetOpponentDiscards 2) ==
   .opponentDiscards 2 .target
@@ -1342,6 +1343,30 @@ namespace CardDef
   "Whenever an opponent casts their first noncreature spell each turn, you recruit."
 #guard TriggeredAbility.toNotation .onCombatDamageToPlayerLoot ==
   "Whenever this deals combat damage to a player, draw a card, then discard a card."
+#guard TriggeredAbility.toNotation .onYourEndStepDrawLoseLife ==
+  "At the beginning of your end step, you draw a card and lose 1 life."
+#guard TriggeredAbility.toNotation .onEquippedAttacksAloneDrawLoseLife ==
+  "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
+#guard TriggeredAbility.toNotation .onYouAttackFerociousDrawLoseLife ==
+  "Whenever you attack while you control a creature with power 4 or greater, you draw a card and lose 1 life."
+#guard TriggeredAbility.toNotation .onCastWithTreasureDrawLoseLife ==
+  "Whenever you cast a spell, if mana from a Treasure was spent to cast it, you draw a card and lose 1 life."
+#guard TriggeredAbility.toNotation (.onAttackFerociousSourceGetsAndTeamTrample 1) ==
+  "Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures you control gain trample."
+#guard TriggeredAbility.toNotation .onDrawSecondPlusOneLifelink ==
+  "Whenever you draw your second card each turn, put a +1/+1 counter on target creature. It gains lifelink until end of turn."
+#guard TriggeredAbility.toNotation (.onAnotherLegendarySubtypeEntersLoot "Elf") ==
+  "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
+#guard TriggeredAbility.toNotation .onScryPumpAndUnblockableOnce ==
+  "Whenever you scry, this gets +1/+0 until end of turn and can't be blocked this turn. This ability triggers only once each turn."
+#guard TriggeredAbility.toNotation .onLandYouControlEntersPlusOneVigilance ==
+  "Whenever a land you control enters, put 2 +1/+1 counters on target creature you control. It gains vigilance until end of turn."
+#guard TriggeredAbility.toNotation .onLandYouControlEntersDrawPlusOneSource ==
+  "Landfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf."
+#guard TriggeredAbility.toNotation (.onEnterCreaturesYouControlGetAndFirstStrike 1) ==
+  "When this permanent enters, creatures you control get +1/+0 and gain first strike until end of turn."
+#guard TriggeredAbility.toNotation .onTappedForTeamworkPlusOneAndDraw ==
+  "Whenever this becomes tapped to pay a teamwork cost, put a +1/+1 counter on this and draw a card."
 #guard TriggeredAbility.toNotation .onEnterSearchBasicToHand ==
   "When this permanent enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle."
 #guard TriggeredAbility.toNotation .onAttackWithTwoOrMoreGrantFlying ==
