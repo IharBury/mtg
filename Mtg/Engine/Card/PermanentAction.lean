@@ -25,12 +25,11 @@ inductive PermanentAction where
   | plusOne (n : Nat)
   /-- Deal `amount` damage. -/
   | dealDamage (amount : Nat)
-  /-- Damage plus lose-indestructible and exile-if-dies this turn. -/
-  | dealDamageLoseIndestructibleExile (amount : Nat)
+  /-- The permanent loses indestructible until end of turn.
+  Smite pairs this with damage and an exile-if-dies replacement. -/
+  | loseIndestructible
   /-- The permanent can't be blocked this turn. -/
   | cantBeBlocked
-  /-- Until-end-of-turn +P/+T. If the creature would die this turn, exile it instead. -/
-  | pumpAndExileIfDies (power toughness : Int)
   /-- Grant these keywords until end of turn. -/
   | grantKeywords (k : Keywords)
   /-- Put an indestructible counter on the permanent. -/
@@ -78,11 +77,9 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
     | .destroy => s!"destroy {noun}"
     | .plusOne n => s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
     | .dealDamage n => damage n
-    | .dealDamageLoseIndestructibleExile n =>
-      s!"{damage n}. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
+    | .loseIndestructible =>
+      s!"{noun} loses indestructible until end of turn"
     | .cantBeBlocked => s!"{noun} can't be blocked this turn"
-    | .pumpAndExileIfDies p t =>
-      s!"{noun} gets {signedStat p}/{signedStat t} until end of turn. If that creature would die this turn, exile it instead"
     | .grantKeywords k =>
       s!"{noun} gains {k.joinedAnd} until end of turn"
     | .indestructibleCounter =>

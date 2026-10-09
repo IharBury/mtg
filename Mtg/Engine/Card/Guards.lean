@@ -199,6 +199,11 @@ namespace CardDef
   "deals 5 damage to target creature"
 #guard (Effect.dealDamageLoseIndestructibleExile 3).phrase ==
   "deals 3 damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
+#guard (Effect.dealDamageLoseIndestructibleExile 3).spellResolution ==
+  .sequence [
+    .onPermanent (.dealDamage 3),
+    .onPermanent .loseIndestructible,
+    .replace .diesThisTurn .exile]
 #guard Effect.creatureYouControlDealsPowerToOppCreature.phrase ==
   "target creature you control deals damage equal to its power to target creature an opponent controls"
 #guard Effect.playAdditionalLandThisTurn.phrase ==
@@ -221,6 +226,8 @@ namespace CardDef
   "target creature gets +2/+2 and gains lifelink until end of turn"
 #guard (Effect.pumpAndExileIfDies (-5) (-5)).phrase ==
   "target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead"
+#guard (Effect.pumpAndExileIfDies (-5) (-5)).spellResolution ==
+  .sequence [.onPermanent (.pump (-5) (-5)), .replace .diesThisTurn .exile]
 #guard (Effect.exileGraveyardCreaturesGrantCast.phrase).startsWith
   "exile all creature cards"
 #guard EffectTargetKind.noun .playerOrCreature == "any target"

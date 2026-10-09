@@ -277,7 +277,8 @@ def amassOrcs (g : Game) (controller : PlayerId) (n : Nat) : Game :=
 def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
   g.amass controller "Zombie" n
 
-/-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite). -/
+/-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
+Spells apply those three steps in order. This sets the same flags at once. -/
 def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : Game :=
   let g := g.mapObjectStatus o (fun s =>
     let s := s.addDamage n

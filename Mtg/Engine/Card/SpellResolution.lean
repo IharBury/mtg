@@ -307,7 +307,10 @@ inductive SpellResolution where
       (how : LibrarySearch := .youToHand)
   /-- If `what` would happen, `instead` happens in its place.
   The targeted creature dying this turn, exiled instead, is
-  `.replace .diesThisTurn .exile`. -/
+  `.replace .diesThisTurn .exile`. A pump and that replacement are
+  `.sequence [.onPermanent (.pump p t), .replace .diesThisTurn .exile]`.
+  Damage, losing indestructible, and that replacement are
+  `.sequence [.onPermanent (.dealDamage n), .onPermanent .loseIndestructible, .replace .diesThisTurn .exile]`. -/
   | replace (what : ReplaceEvent) (instead : ReplaceInstead)
   /-- Add {R} for each permanent of type `ty` opponents control. -/
   | addRedPerOppArtifacts (ty : CardType := .artifact)
@@ -753,6 +756,10 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"draw three cards. Then discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
   | [.replace .diesThisTurn .exile, .onPermanent (.dealDamage n)] =>
     s!"deals {n} damage to {noun}. If that creature would die this turn, exile it instead"
+  | [.onPermanent (.pump p t), .replace .diesThisTurn .exile] =>
+    s!"{noun} gets {signedStat p}/{signedStat t} until end of turn. If that creature would die this turn, exile it instead"
+  | [.onPermanent (.dealDamage n), .onPermanent .loseIndestructible, .replace .diesThisTurn .exile] =>
+    s!"deals {n} damage to {noun}. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
   | [.onPermanent (.pump p t), .exileTopPlayUntilNext 1] =>
     s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. {playThatCardUntilNextTurnPhrase}."
   | [.onPermanent .doublePowerAndToughness, .onPermanent (.grantKeywords k)] =>

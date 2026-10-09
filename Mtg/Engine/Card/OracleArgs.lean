@@ -240,9 +240,6 @@ def takeAction (a : PermanentAction) : ArgM PermanentAction := do
   | .pumpAndTrample p t => return .pumpAndTrample (← takeInt p) (← takeInt t)
   | .plusOne n => return .plusOne (← takeNat n)
   | .dealDamage n => return .dealDamage (← takeNat n)
-  | .dealDamageLoseIndestructibleExile n =>
-    return .dealDamageLoseIndestructibleExile (← takeNat n)
-  | .pumpAndExileIfDies p t => return .pumpAndExileIfDies (← takeInt p) (← takeInt t)
   | .setBasePT p t => return .setBasePT (← takeInt p) (← takeInt t)
   | a => return a
 
