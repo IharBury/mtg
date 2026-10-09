@@ -382,6 +382,31 @@ def afterSmiteWurmCleanup : Game :=
 #guard !(namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.untilEotLosesIndestructible
 #guard !(namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.untilEotExileIfDies
 
+/- `.replace .diesThisTurn .exile`: lethal damage exiles the creature, and
+nonlethal damage leaves the replacement in place. -/
+
+def exileIfDiesOnBears : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ (Effect.dealDamageToCreatureExileIfDies 3)
+    #[Target.permanent (namedPermanent g "Grizzly Bears").id]
+  g.receivePriority ⟨0⟩
+
+#guard !(exileIfDiesOnBears.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard exileIfDiesOnBears.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .exile)
+#guard !(exileIfDiesOnBears.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .graveyard ⟨1⟩))
+#guard exileIfDiesOnBears.log.any (fun s => mentions s "is exiled instead of dying")
+
+def exileIfDiesOnWurm : Game :=
+  let g := addPermanent afterDraw crawWurm ⟨1⟩ ⟨1⟩
+  g.applyEffect ⟨0⟩ (Effect.dealDamageToCreatureExileIfDies 3)
+    #[Target.permanent (namedPermanent g "Craw Wurm").id]
+
+#guard exileIfDiesOnWurm.battlefield.any (fun o => o.name == "Craw Wurm")
+#guard (namedPermanent exileIfDiesOnWurm "Craw Wurm").status.damage == 3
+#guard (namedPermanent exileIfDiesOnWurm "Craw Wurm").status.untilEotExileIfDies
+
 /-- Printed indestructible ignores lethal damage (CR 702.12b / 704.5g). -/
 def indestructibleSurvivesDamage : Game :=
   let g := addPermanent afterDraw indestructibleBeast ⟨1⟩ ⟨1⟩

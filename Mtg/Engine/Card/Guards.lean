@@ -535,6 +535,12 @@ namespace CardDef
   "Create a Treasure token for each Villain you control"
 #guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)
+#guard (Effect.dealDamageToCreatureExileIfDies 3).spellResolution ==
+  .sequence [.replace .diesThisTurn .exile, .onPermanent (.dealDamage 3)]
+#guard (Effect.dealDamageToCreatureExileIfDies 3).phrase ==
+  "deals 3 damage to target creature. If that creature would die this turn, exile it instead"
+#guard SpellResolution.toPhrase (.replace .diesThisTurn .exile) "target creature" ==
+  "if target creature would die this turn, exile it instead"
 #guard Effect.destroyArtifactOrLandNonflyersCantBlock.resolution ==
   .sequence [.onPermanent .destroy, .creaturesWithoutFlyingCantBlock]
 #guard

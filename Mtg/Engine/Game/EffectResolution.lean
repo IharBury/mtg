@@ -1103,9 +1103,11 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | .otherSpellsManaValue, .opponentsControl =>
       g.logMsg s!"deals {n} damage to each opposing creature"
     | _, _ => g
-  | .exileIfDiesThisTurn =>
-    g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true }))
+  | .replace what instead =>
+    match what, instead with
+    | .diesThisTurn, .exile =>
+      g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
+        g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true }))
   | .addRedPerOppArtifacts ty =>
     let n := g.battlefield.filter (fun o =>
       o.printed.hasType ty && !o.controlledBy controller) |>.size

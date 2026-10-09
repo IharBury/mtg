@@ -195,6 +195,18 @@ inductive ReturnedCard where
   | graveyard
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- The event `SpellResolution.replace` replaces. -/
+inductive ReplaceEvent where
+  /-- The targeted permanent dying this turn. -/
+  | diesThisTurn
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- What `SpellResolution.replace` does instead of `ReplaceEvent`. -/
+inductive ReplaceInstead where
+  /-- Exile it. -/
+  | exile
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- How a spell resolves (CR 608). Grouped so `Game.applyEffect` matches a
 handful of shapes instead of every printed spell factory. Burn and
 creature-only damage both use `onPermanent (.dealDamage n)`; Game applies
@@ -293,8 +305,10 @@ inductive SpellResolution where
   is `.searchLibrary .basic .land .ownerMayToBattlefield`. -/
   | searchLibrary (s : Supertype := .legendary) (ty : CardType := .creature)
       (how : LibrarySearch := .youToHand)
-  /-- If the targeted creature would die this turn, exile it instead. -/
-  | exileIfDiesThisTurn
+  /-- If `what` would happen, `instead` happens in its place.
+  The targeted creature dying this turn, exiled instead, is
+  `.replace .diesThisTurn .exile`. -/
+  | replace (what : ReplaceEvent) (instead : ReplaceInstead)
   /-- Add {R} for each permanent of type `ty` opponents control. -/
   | addRedPerOppArtifacts (ty : CardType := .artifact)
   /-- Choose a creature type and bounce the rest. -/
@@ -434,6 +448,16 @@ private def ifClause (cond : SpellIf) (noun : String) : String :=
   | .teamwork => "if this spell was cast using teamwork"
   | .giftPromised => "if the gift was promised"
 
+/-- The “if … would …” clause for `what`, without the replacement. -/
+private def replaceWhatClause (what : ReplaceEvent) (noun : String) : String :=
+  match what with
+  | .diesThisTurn => s!"if {noun} would die this turn"
+
+/-- What happens instead of `what`. -/
+private def replaceInsteadClause (instead : ReplaceInstead) : String :=
+  match instead with
+  | .exile => "exile it instead"
+
 /-- Drop one trailing period so a following clause can continue the sentence. -/
 private def trimPeriod (s : String) : String :=
   if s.endsWith "." then (s.dropEnd 1).toString else s
@@ -534,8 +558,8 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     "deals damage to each creature equal to the total mana value of other spells you've cast this turn"
   | .dealDamageToEachCreature _ (.nonSubtype subtype) .otherSpellsManaValue =>
     s!"deals damage to each non-{subtype} creature equal to the total mana value of other spells you've cast this turn"
-  | .exileIfDiesThisTurn =>
-    s!"if {noun} would die this turn, exile it instead"
+  | .replace what instead =>
+    s!"{replaceWhatClause what noun}, {replaceInsteadClause instead}"
   | .addRedPerOppArtifacts ty =>
     s!"add {"{R}"} for each {ty.oracleWord} your opponents control"
   | .chooseTypeReturnOthers =>
@@ -727,7 +751,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"destroy {noun}. Its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
   | [.draw 3 .you, .discardTwoUnlessArtifact n ty] =>
     s!"draw three cards. Then discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
-  | [.exileIfDiesThisTurn, .onPermanent (.dealDamage n)] =>
+  | [.replace .diesThisTurn .exile, .onPermanent (.dealDamage n)] =>
     s!"deals {n} damage to {noun}. If that creature would die this turn, exile it instead"
   | [.onPermanent (.pump p t), .exileTopPlayUntilNext 1] =>
     s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. {playThatCardUntilNextTurnPhrase}."
