@@ -50,8 +50,10 @@ inductive TriggerResolution where
   | scry (n : Nat)
   /-- Draw `n` cards. -/
   | draw (n : Nat)
-  /-- Search the library for a Forest card. -/
-  | searchForest
+  /-- Search your library, as `how` says.
+  A Forest onto the battlefield is `.searchLibrary`.
+  A basic land into your hand is `.searchLibrary .basicLandToHand`. -/
+  | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
   /-- You may discard a card. If you do, draw `n`. -/
   | mayDiscardDraw (n : Nat)
   /-- Target opponent sacrifices a creature of their choice. -/
@@ -74,8 +76,9 @@ inductive TriggerResolution where
   | gainLife (n : Nat)
   /-- Each player sacrifices a creature of their choice. -/
   | eachPlayerSacrificesCreature
-  /-- Each opponent discards a card. -/
-  | eachOpponentDiscards
+  /-- An opponent discards `n` cards. Each opponent discards one is
+  `.opponentDiscards`. The announced opponent is `.opponentDiscards n .target`. -/
+  | opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each)
   /-- Exile up to one targeted card from an opponent's graveyard, then each
   opponent loses `life` life. -/
   | exileOppGyCardOppsLoseLife (life : Nat)
@@ -83,10 +86,10 @@ inductive TriggerResolution where
   | creaturesYouControlPumpAndFirstStrike (power : Int)
   /-- Pump the source +1/+1 for each other creature you control. -/
   | pumpForEachOtherCreature
-  /-- Grant flying until end of turn to the targeted creature. -/
-  | grantFlying
-  /-- You may pay `{generic}`. If you do, draw a card. -/
-  | mayPayGenericDraw (generic : Nat)
+  /-- You may pay `{n}`. If you do, draw a card.
+  Also putting a +1/+1 counter on the source is
+  `.mayPayGenericDraw n (plusOneOnSource := true)`. -/
+  | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
   /-- Draw a card, then put a card on the bottom if you control no legendary. -/
   | drawThenBottomIfNoLegendary
   /-- Exile the targeted permanent. Link it if the source is still in play. -/
@@ -97,38 +100,38 @@ inductive TriggerResolution where
   | returnLinkedExile
   /-- Remove a hope counter, draw, then maybe sacrifice and gain life. -/
   | removeHopeDrawSac
-  /-- Draw a card, then discard a card. -/
-  | loot
+  /-- Draw `n` cards, then discard a card. One card is the loot wording. -/
+  | drawThenDiscardN (n : Nat)
   /-- Tap any number of Humans you control; draw that many cards. -/
   | tapHumansDraw
   /-- Pump the source +1/+0 and grant can't be blocked this turn. -/
   | pumpAndUnblockable
-  /-- Recruit. -/
-  | recruit
-  /-- You recruit. -/
-  | youRecruit
+  /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
+  | recruit (who : RecruitSubject := .recruit)
   /-- Exile the top card; you may play it until the end of your next turn. -/
   | exileTop
   /-- Untap the target; if it has this subtype, put a +1/+1 counter on it. -/
   | untapPlusOneIfSubtype (subtype : String)
-  /-- Put a +1/+1 counter on each creature you control. -/
-  | plusOneEachYouControl
+  /-- Put a +1/+1 counter on permanents you control.
+  Each creature is `.plusOneEachYouControl`.
+  Each permanent of a subtype is `.plusOneEachYouControl (.subtype s)`.
+  One counter, or two with the city's blessing, is
+  `.plusOneEachYouControl .citysBlessing`. -/
+  | plusOneEachYouControl (which : YouControlPlusOne := .eachCreature)
   /-- Pump the source +P/+0 and grant trample to creatures you control. -/
   | sourceGetsAndTeamTrample (power : Int)
   /-- Draw a card and lose 1 life. -/
   | drawAndLoseLife
-  /-- Amass Goblins `n`. -/
-  | amassGoblins (n : Nat)
+  /-- Amass `subtype` `n`, as `amount` says. Attach the source when
+  `attachSource` is true. -/
+  | amassGoblins (n : Nat) (subtype : String := "Goblin")
+      (amount : AmassAmount := .fixed) (attachSource : Bool := false)
   /-- Create `n` tokens of this kind. -/
   | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool)
   /-- Create a token, then attach the source to it. -/
   | createThenAttach (kind : TokenKind)
-  /-- Amass Goblins `n`, then attach the source to the Army. -/
-  | amassThenAttach (n : Nat)
   /-- Attach the source to the targeted permanent. -/
   | attachSourceToTarget
-  /-- Search for a basic land and put it into hand. -/
-  | searchBasicToHand
   /-- Gain `n` life, then search a basic land to the top. -/
   | gainLifeSearchBasicOnTop (n : Nat)
   /-- +1/+1 on each other creature you control; gain that much life. -/
@@ -150,8 +153,9 @@ inductive TriggerResolution where
   | addMana (types : Array ManaType)
   /-- Defending player sacrifices a least-power creature. -/
   | defenderSacsLeastPower
-  /-- Create an Axe Equipment token. -/
-  | createAxe
+  /-- Create an Axe Equipment token.
+  Attaching it to a creature you control is `.createAxe (attach := true)`. -/
+  | createAxe (attach : Bool := false)
   /-- Tap an opposing creature or untap yours. -/
   | tapOppOrUntapYours
   /-- Set the source's base P/T. -/
@@ -219,8 +223,6 @@ inductive TriggerResolution where
   | exileOppNonlandEachUntilLeaves
   /-- +1/+1 counters equal to the last-known mana value. -/
   | plusOneEqualLastKnownMv
-  /-- Create an Axe and attach it to a creature you control. -/
-  | createAxeAttach
   /-- Equipped attacking creatures gain double strike. -/
   | equippedAttackersGainDoubleStrike
   /-- Tap the enchanted creature and remove its counters. -/
@@ -239,8 +241,6 @@ inductive TriggerResolution where
   | revealUntilCreature
   /-- You may sacrifice another creature for +1/+1s equal to its power. -/
   | attackSacPlusOneEqualPower
-  /-- Amass Goblins equal to last-known power. -/
-  | amassGoblinsEqualPower
   /-- You may pay to return this from the graveyard to your hand. -/
   | payReturnFromGy
   /-- Draw, discard; a discarded land enters tapped. -/
@@ -263,14 +263,10 @@ inductive TriggerResolution where
   | attachEquipmentThenFight
   /-- Two +1/+1 counters and vigilance. -/
   | plusOneVigilance (n : Nat)
-  /-- Draw two, then discard a card. -/
-  | drawThenDiscardN (n : Nat)
   /-- Return the source as an artifact. -/
   | returnAsArtifact
   /-- You may draw X (mana spent), then discard two. -/
   | mayDrawXDiscard2
-  /-- +1/+1 each, or two with the city's blessing. -/
-  | plusOneEachIfCityBlessing
   /-- You may cast an instant or sorcery from hand without paying. -/
   | castInstantSorceryFromHand
   /-- Draw a card and put a +1/+1 counter on the source. -/
@@ -285,8 +281,6 @@ inductive TriggerResolution where
   | palantir
   /-- Each opponent mills two; then maybe copy a card. -/
   | millThenCopy
-  /-- Amass Orcs `n`. -/
-  | amassOrcs (n : Nat)
   /-- The Ring tempts you. -/
   | ringTempts
   /-- You may discard your hand and draw `n`. -/
@@ -309,10 +303,9 @@ inductive TriggerResolution where
   | investigate
   /-- Put a +1/+1 counter on the source and draw a card. -/
   | plusOneOnSourceAndDraw
-  /-- The source connives (CR 701.48). -/
-  | connive
-  /-- The targeted creature connives. -/
-  | targetConnive
+  /-- Connive (CR 701.48). The source is `.connive`. A target is
+  `.connive (.target kind)`. -/
+  | connive (who : ConniveSubject := .source)
   /-- Pump the creature that caused the trigger. -/
   | pumpCause (power toughness : Int)
   /-- Other permanents you control of this subtype get +X/+X, X = source toughness. -/
@@ -371,8 +364,6 @@ inductive TriggerResolution where
   | plusOneOrTwoIfAnotherHero
   /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
   | maySacArtifactOrDiscardDraw
-  /-- Target opponent discards `n` cards. -/
-  | targetOpponentDiscards (n : Nat)
   /-- Another target creature gets +X/+0, X = source power. -/
   | pumpTargetBySourcePower
   /-- Create an Alien token, put +1/+1s for each invasion counter, then
@@ -419,14 +410,13 @@ inductive TriggerResolution where
   | surveil (n : Nat)
   /-- Empower Jace `n` (Reality Fracture). -/
   | empowerJace (n : Nat)
-  /-- If the source isn't prepared, it becomes prepared. -/
-  | prepareSourceIfNot
-  /-- If three or more creatures died this turn, the source becomes prepared. -/
-  | prepareSourceIfThreeDied
+  /-- The source becomes prepared.
+  If it isn't prepared is `.prepareSource`.
+  If three or more creatures died this turn is
+  `.prepareSource .ifThreeCreaturesDied`. -/
+  | prepareSource (when : PrepareWhen := .ifNotPrepared)
   /-- If two or more loyalty counters were removed to activate the ability, draw a card. -/
   | drawIfRemovedTwoLoyalty
-  /-- Put a +1/+1 counter on each permanent of this subtype you control. -/
-  | plusOneOnEachSubtypeYouControl (subtype : String)
   /-- Put a loyalty counter on the source. -/
   | loyaltyOnSource
   /-- Grant keywords, then a +1/+1 or loyalty counter by the target's type. -/
@@ -446,8 +436,6 @@ inductive TriggerResolution where
   | chargeCounterOnSource
   /-- Add {G} for each charge counter on the source. -/
   | addGreenPerChargeCounter
-  /-- You may pay `{n}`. If you do, a +1/+1 counter on the source and draw. -/
-  | mayPayPlusOneAndDraw (n : Nat)
   /-- Draw two; win if the library is empty; shuffle the source away. -/
   | drawTwoWinIfEmptyShuffleSource
   /-- +3/+3 if you control at least five Forests other than the cause. -/
@@ -626,23 +614,18 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .scry n => { resolution := .scry n }
   | .draw n => { resolution := .draw n }
   | .createTokens kind n tapped => { resolution := .createTokens kind n tapped }
-  | .amassGoblins n => { resolution := .amassGoblins n }
-  | .recruit => { resolution := .recruit }
-  | .youRecruit => { resolution := .youRecruit }
+  | .amassGoblins n subtype amount attachSource =>
+    { resolution := .amassGoblins n subtype amount attachSource }
+  | .recruit who => { resolution := .recruit who }
   | .dividedDamage amount maxTargets =>
     { targeting := .of .playerOrCreature,
       dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
-  | .plusOneOn kind =>
-    { targeting := .of kind, resolution := .onPermanent (.plusOne 1) }
-  | .plusOneOnSource => { resolution := .onSource (.plusOne 1) }
-  | .sourceGets p t => { resolution := .onSource (.pump p t) }
-  | .pumpTarget kind p t =>
-    { targeting := .of kind, resolution := .onPermanent (.pump p t) }
   | .gainLife n => { resolution := .gainLife n }
   | .drawAndLoseLife => { resolution := .drawAndLoseLife }
-  | .connive => { resolution := .connive }
-  | .conniveTarget kind =>
-    { targeting := .of kind, resolution := .targetConnive }
+  | .connive who =>
+    match who with
+    | .source => { resolution := .connive who }
+    | .target kind => { targeting := .of kind, resolution := .connive who }
   | .exileUntilLeaves kind =>
     { targeting := .of kind, resolution := .exileUntilLeaves }
   | .damageEachOpponent n =>
@@ -657,24 +640,23 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .onSource action }
   | .exileTop => { resolution := .exileTop }
   | .mayDiscardDraw n => { resolution := .mayDiscardDraw n }
-  | .eachOpponentDiscards => { resolution := .eachOpponentDiscards }
-  | .targetOpponentDiscards n =>
-    { targeting := .of .opponent, resolution := .targetOpponentDiscards n }
+  | .opponentDiscards n who =>
+    match who with
+    | .each => { resolution := .opponentDiscards n who }
+    | .target =>
+      { targeting := .of .opponent, resolution := .opponentDiscards n who }
   | .millPlayer n =>
     { targeting := .of .player, resolution := .millPlayer n }
-  | .amassOrcs n => { resolution := .amassOrcs n }
   | .investigate => { resolution := .investigate }
   | .pumpCause p t => { resolution := .pumpCause p t }
-  | .searchForest => { resolution := .searchForest }
-  | .searchBasicToHand => { resolution := .searchBasicToHand }
+  | .searchLibrary how => { resolution := .searchLibrary how }
   | .eachPlayerSacrificesCreature => { resolution := .eachPlayerSacrificesCreature }
   | .exileTarget kind =>
     { targeting := .of kind, resolution := .exileTarget }
   | .returnCreatureFromGyToHand =>
     { targeting := .of .creatureCardInYourGraveyard,
       resolution := .returnCreatureFromGyToHand }
-  | .loot => { resolution := .loot }
-  | .plusOneEachYouControl => { resolution := .plusOneEachYouControl }
+  | .plusOneEachYouControl which => { resolution := .plusOneEachYouControl which }
   | .sourceGetsAndTeamTrample p => { resolution := .sourceGetsAndTeamTrample p }
   | .honeEachEquipment => { resolution := .honeEachEquipment }
   | .plusOneEachOtherGainLife => { resolution := .plusOneEachOtherGainLife }
@@ -691,19 +673,14 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .pumpGreatestPower => { resolution := .pumpGreatestPower }
   | .pumpForEachOtherCreature => { resolution := .pumpForEachOtherCreature }
   | .damageBlockers n => { resolution := .damageBlockers n }
-  | .grantFlying kind =>
-    { targeting := .of kind, resolution := .grantFlying }
   | .returnLinkedExile => { resolution := .returnLinkedExile }
   | .createThenAttach kind => { resolution := .createThenAttach kind }
-  | .amassThenAttach n => { resolution := .amassThenAttach n }
   | .gainLifeSearchBasicOnTop n => { resolution := .gainLifeSearchBasicOnTop n }
   | .addMana types => { resolution := .addMana types }
-  | .createAxe => { resolution := .createAxe }
-  | .createAxeAttach => { resolution := .createAxeAttach }
+  | .createAxe attach => { resolution := .createAxe attach }
   | .tapOppOrUntapYours => { resolution := .tapOppOrUntapYours }
   | .gainControlOppUntilEot =>
     { targeting := .of .oppCreature, resolution := .gainControlOppUntilEot }
-  | .amassGoblinsEqualPower => { resolution := .amassGoblinsEqualPower }
   | .payReturnFromGy => { resolution := .payReturnFromGy }
   | .targetOpponentLosesLife n =>
     { targeting := .of .opponent, resolution := .targetOpponentLosesLife n }
@@ -724,8 +701,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .exileOppGyCardOppsLoseLife n }
   | .creaturesYouControlPumpAndFirstStrike p =>
     { resolution := .creaturesYouControlPumpAndFirstStrike p }
-  | .mayPayGenericDraw generic =>
-    { resolution := .mayPayGenericDraw generic }
+  | .mayPayGenericDraw n plusOne =>
+    { resolution := .mayPayGenericDraw n plusOne }
   | .drawThenBottomIfNoLegendary =>
     { resolution := .drawThenBottomIfNoLegendary }
   | .removeHopeDrawSac => { resolution := .removeHopeDrawSac }
@@ -784,7 +761,6 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .millThatManyLost => { resolution := .millThatManyLost }
   | .drawPerFatGraveyard => { resolution := .drawPerFatGraveyard }
   | .maySacDrawTreasure => { resolution := .maySacDrawTreasure }
-  | .plusOneEachIfCityBlessing => { resolution := .plusOneEachIfCityBlessing }
   | .castInstantSorceryFromHand => { resolution := .castInstantSorceryFromHand }
   | .castInstantSorceryMvAtMost => { resolution := .castInstantSorceryMvAtMost }
   | .millThenCopy => { resolution := .millThenCopy }
@@ -872,11 +848,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .planFinishIndestructibleOnTarget }
   | .surveil n => { resolution := .surveil n }
   | .empowerJace n => { resolution := .empowerJace n }
-  | .prepareSourceIfNot => { events := #[.yourUpkeep], resolution := .prepareSourceIfNot }
-  | .prepareSourceIfThreeDied =>
-    { events := #[.eachEndStep], resolution := .prepareSourceIfThreeDied }
+  | .prepareSource .ifNotPrepared =>
+    { events := #[.yourUpkeep], resolution := .prepareSource .ifNotPrepared }
+  | .prepareSource .ifThreeCreaturesDied =>
+    { events := #[.eachEndStep], resolution := .prepareSource .ifThreeCreaturesDied }
   | .drawIfRemovedTwoLoyalty => { resolution := .drawIfRemovedTwoLoyalty }
-  | .plusOneOnEachSubtypeYouControl s => { resolution := .plusOneOnEachSubtypeYouControl s }
   | .loyaltyOnSource => { resolution := .loyaltyOnSource }
   | .grantThenCounterByType k =>
     { targeting := .of .permanentYouControl, resolution := .grantThenCounterByType k }
@@ -894,7 +870,6 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .chargeCounterOnSource => { resolution := .chargeCounterOnSource }
   | .addGreenPerChargeCounter =>
     { events := #[.yourFirstMain], resolution := .addGreenPerChargeCounter }
-  | .mayPayPlusOneAndDraw n => { resolution := .mayPayPlusOneAndDraw n }
   | .drawTwoWinIfEmptyShuffleSource => { resolution := .drawTwoWinIfEmptyShuffleSource }
   | .surveilReturnIfGainedLife =>
     { events := #[.yourEndStep], resolution := .surveilReturnIfGainedLife }

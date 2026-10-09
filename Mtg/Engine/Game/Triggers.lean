@@ -139,11 +139,11 @@ def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
       g.hasSubtype o "Forest" && some o.id != cause.map (·.id))).size ≥ 5
   | .destroyOppPermanentIfSixLands =>
     ((g.permanentsOf controller).filter (·.printed.isLand)).size ≥ 6
-  | .prepareSourceIfNot =>
+  | .prepareSource .ifNotPrepared =>
     match source.bind (fun o => g.findObject? o.id) with
     | some o => !o.status.prepared
     | none => true
-  | .prepareSourceIfThreeDied => g.battlefieldCreaturesToGyThisTurn.size ≥ 3
+  | .prepareSource .ifThreeCreaturesDied => g.battlefieldCreaturesToGyThisTurn.size ≥ 3
   | .sacrificeSourceIfNoPlaneswalker =>
     !(g.permanentsOf controller).any (·.printed.isPlaneswalker)
   | .surveilReturnIfGainedLife => (g.player controller).lifeGainedThisTurn > 0

@@ -398,22 +398,29 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .scry n => return .scry (← takeNat n)
   | .draw n => return .draw (← takeNat n)
   | .createTokens k n tapped => return .createTokens k (← takeNat n) tapped
-  | .amassGoblins n => return .amassGoblins (← takeNat n)
+  | .amassGoblins n subtype amount attach =>
+    match amount with
+    | .sourcePower =>
+      return .amassGoblins n (← takeStr subtype) amount attach
+    | _ =>
+      return .amassGoblins (← takeNat n) (← takeStr subtype) amount attach
   | .dividedDamage a b => return .dividedDamage (← takeNat a) (← takeNat b)
-  | .plusOneOn k => return .plusOneOn (← takeKind k)
-  | .sourceGets p t => return .sourceGets (← takeInt p) (← takeInt t)
-  | .pumpTarget k p t => return .pumpTarget (← takeKind k) (← takeInt p) (← takeInt t)
   | .gainLife n => return .gainLife (← takeNat n)
-  | .conniveTarget k => return .conniveTarget (← takeKind k)
+  | .connive who =>
+    match who with
+    | .source => return .connive who
+    | .target k => return .connive (.target (← takeKind k))
   | .exileUntilLeaves k => return .exileUntilLeaves (← takeKind k)
   | .damageEachOpponent n => return .damageEachOpponent (← takeNat n)
   | .attachTo k => return .attachTo (← takeKind k)
   | .onPermanent k a => return .onPermanent (← takeKind k) (← takeAction a)
   | .onSource a => return .onSource (← takeAction a)
   | .mayDiscardDraw n => return .mayDiscardDraw (← takeNat n)
-  | .targetOpponentDiscards n => return .targetOpponentDiscards (← takeNat n)
+  | .opponentDiscards n who =>
+    match who with
+    | .each => return .opponentDiscards n who
+    | .target => return .opponentDiscards (← takeNat n) who
   | .millPlayer n => return .millPlayer (← takeNat n)
-  | .amassOrcs n => return .amassOrcs (← takeNat n)
   | .pumpCause p t => return .pumpCause (← takeInt p) (← takeInt t)
   | .exileTarget k => return .exileTarget (← takeKind k)
   | .sourceGetsAndTeamTrample p => return .sourceGetsAndTeamTrample (← takeInt p)
@@ -423,15 +430,13 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .drawThenDiscard n => return .drawThenDiscard (← takeNat n)
   | .mayDiscardHandDraw n => return .mayDiscardHandDraw (← takeNat n)
   | .damageBlockers n => return .damageBlockers (← takeNat n)
-  | .grantFlying k => return .grantFlying (← takeKind k)
-  | .amassThenAttach n => return .amassThenAttach (← takeNat n)
   | .gainLifeSearchBasicOnTop n => return .gainLifeSearchBasicOnTop (← takeNat n)
   | .targetOpponentLosesLife n => return .targetOpponentLosesLife (← takeNat n)
   | .plusOneVigilance n => return .plusOneVigilance (← takeNat n)
   | .exileOppGyCardOppsLoseLife n => return .exileOppGyCardOppsLoseLife (← takeNat n)
   | .creaturesYouControlPumpAndFirstStrike p =>
     return .creaturesYouControlPumpAndFirstStrike (← takeInt p)
-  | .mayPayGenericDraw n => return .mayPayGenericDraw (← takeNat n)
+  | .mayPayGenericDraw n plusOne => return .mayPayGenericDraw (← takeNat n) plusOne
   | .untapPlusOneIfSubtype s => return .untapPlusOneIfSubtype (← takeStr s)
   | .damageEqualSubtypeToEachOpponent s =>
     return .damageEqualSubtypeToEachOpponent (← takeStr s)
@@ -457,8 +462,10 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .surveil n => return .surveil (← takeNat n)
   | .empowerJace n => return .empowerJace (← takeNat n)
   | .creaturesYouControlGet p t => return .creaturesYouControlGet (← takeInt p) (← takeInt t)
-  | .mayPayPlusOneAndDraw n => return .mayPayPlusOneAndDraw (← takeNat n)
-  | .plusOneOnEachSubtypeYouControl s => return .plusOneOnEachSubtypeYouControl (← takeStr s)
+  | .plusOneEachYouControl which =>
+    match which with
+    | .eachCreature | .citysBlessing => return .plusOneEachYouControl which
+    | .subtype s => return .plusOneEachYouControl (.subtype (← takeStr s))
   | .onEnchanted a => return .onEnchanted (← takeAction a)
   | .attachThen a => return .attachThen (← takeAction a)
   | .enter e => return .enter (← takeEnter e)

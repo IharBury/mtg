@@ -697,12 +697,12 @@ namespace CardDef
 #guard TriggeredAbility.onEnterAttachToLegendary ==
   .triggered .enter (Effect.ofTrigger (.attachTo .legendaryCreatureYouControl))
 #guard TriggeredAbility.onCombatPlusOneOnCreatureYouControl ==
-  .triggered .yourBeginCombat (Effect.ofTrigger (.plusOneOn .creatureYouControl))
+  .triggered .yourBeginCombat (Effect.ofTrigger (.onPermanent .creatureYouControl (.plusOne 1)))
 #guard TriggeredAbility.onEnterOrAttackCreateWall ==
   .triggered .enterOrAttack (Effect.ofTrigger (.createTokens .wall 1))
 #guard TriggeredAbility.onEnterConnive == .triggered .enter (Effect.ofTrigger .connive)
 #guard TriggeredAbility.onDrawSecondPlusOne ==
-  .triggered .youDrawSecond (Effect.ofTrigger .plusOneOnSource)
+  .triggered .youDrawSecond (Effect.ofTrigger (.onSource (.plusOne 1)))
 #guard TriggeredAbility.onYourEndStepDrawLoseLife ==
   .triggered .yourEndStep (Effect.ofTrigger .drawAndLoseLife)
 #guard TriggeredAbility.onAttackFerociousGainLife 2 ==
@@ -710,18 +710,18 @@ namespace CardDef
 #guard TriggeredAbility.onArtifactYouControlEntersDrawOnce ==
   .triggered .artifactYouControlEnters (Effect.ofTrigger (.draw 1)) .once
 #guard TriggeredAbility.onCastColorPump .green 4 4 ==
-  .triggered (.youCastColor .green) (Effect.ofTrigger (.pumpTarget .creature 4 4))
+  .triggered (.youCastColor .green) (Effect.ofTrigger (.onPermanent .creature (.pump 4 4)))
 #guard TriggeredAbility.onEnterExileOppTappedUntilLeaves ==
   .triggered .enter (Effect.ofTrigger (.exileUntilLeaves .oppTappedCreature))
 #guard TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit ==
-  .triggered .opponentCastsFirstNoncreature (Effect.ofTrigger .youRecruit)
+  .triggered .opponentCastsFirstNoncreature (Effect.ofTrigger (.recruit .you))
 #guard TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent 2 ==
   .triggered .youCastInstantOrSorcery (Effect.ofTrigger (.damageEachOpponent 2)) .noTarget
 #guard TriggeredAbility.onEnterExileTop == .triggered .enter (Effect.ofTrigger .exileTop)
 #guard TriggeredAbility.onEnterMayDiscardDraw 2 ==
   .triggered .enter (Effect.ofTrigger (.mayDiscardDraw 2))
 #guard TriggeredAbility.onEnterEachOpponentDiscards ==
-  .triggered .enter (Effect.ofTrigger .eachOpponentDiscards)
+  .triggered .enter (Effect.ofTrigger .opponentDiscards)
 #guard TriggeredAbility.onAttackOtherGets2AndTrample ==
   .triggered .attack (Effect.ofTrigger (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0)))
 #guard TriggeredAbility.onEquipmentYouControlEntersDraw ==
@@ -729,14 +729,14 @@ namespace CardDef
 #guard TriggeredAbility.onCreatureYouControlAttacksAloneInvestigate ==
   .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger .investigate)
 #guard TriggeredAbility.onOpponentCastsAmassOrcs 1 ==
-  .triggered .opponentCastsSpell (Effect.ofTrigger (.amassOrcs 1))
+  .triggered .opponentCastsSpell (Effect.ofTrigger (.amassGoblins 1 "Orc"))
 #guard !TriggeredAbility.requiresTarget
   (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
-#guard TriggeredAbility.onEnterSearchForest == .triggered .enter (Effect.ofTrigger .searchForest)
+#guard TriggeredAbility.onEnterSearchForest == .triggered .enter (Effect.ofTrigger .searchLibrary)
 #guard TriggeredAbility.onEnterEachPlayerSacrificesCreature ==
   .triggered .enter (Effect.ofTrigger .eachPlayerSacrificesCreature)
 #guard TriggeredAbility.onCombatDamageToPlayerLoot ==
-  .triggered .combatDamageToPlayer (Effect.ofTrigger .loot)
+  .triggered .combatDamageToPlayer (Effect.ofTrigger (.drawThenDiscard 1))
 #guard TriggeredAbility.onAttackFerociousPlusOneEach ==
   .triggered .attack (Effect.ofTrigger .plusOneEachYouControl) .ferocious
 #guard TriggeredAbility.onScryPumpSelfForEachLookedAt ==
@@ -845,7 +845,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterMaySacDrawTreasure ==
   .triggered .enter (Effect.ofTrigger .maySacDrawTreasure)
 #guard TriggeredAbility.onEquippedAttacksPlusOneEachIfCityBlessing ==
-  .triggered .equippedAttacks (Effect.ofTrigger .plusOneEachIfCityBlessing)
+  .triggered .equippedAttacks (Effect.ofTrigger (.plusOneEachYouControl .citysBlessing))
 #guard TriggeredAbility.onYourBeginCombatCastInstantSorceryFromHand ==
   .triggered .yourBeginCombat (Effect.ofTrigger .castInstantSorceryFromHand)
 #guard TriggeredAbility.onEquippedCombatDamageCastInstantSorcery ==
@@ -873,7 +873,7 @@ namespace CardDef
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
   .triggered .youSacrificeToken (Effect.ofTrigger (.targetOpponentLosesLife 1))
 #guard TriggeredAbility.onDiesAmassGoblinsEqualPower ==
-  .triggered .dies (Effect.ofTrigger .amassGoblinsEqualPower)
+  .triggered .dies (Effect.ofTrigger (.amassGoblins 0 (amount := .sourcePower)))
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2)
   == some 4
 #guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
@@ -1008,7 +1008,8 @@ namespace CardDef
   "At the beginning of combat on your turn, create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment."
 #guard TriggeredAbility.toNotation .onCombatMayPutArtifactAttachEquipment ==
   "At the beginning of combat on your turn, you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature."
-#guard TriggeredAbility.resolution .onCombatTargetYouControlConnives == .targetConnive
+#guard TriggeredAbility.resolution .onCombatTargetYouControlConnives ==
+  .connive (.target .creatureYouControl)
 #guard TriggeredAbility.targetKind .onCombatAnotherGetsSourcePower ==
   .anotherCreatureYouControl
 #guard TriggeredAbility.firesOn .onCombatCreateAlienPerInvasion .yourBeginCombat
@@ -1286,7 +1287,65 @@ namespace CardDef
 #guard (TriggeredAbility.youControlCreatureWithPower? (.onAttackScry 1)).isNone
 #guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry 1
 #guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw 1
-#guard TriggeredAbility.resolution .onEnterSearchForest == .searchForest
+#guard TriggeredAbility.resolution .onEnterSearchForest == .searchLibrary
+#guard TriggeredAbility.resolution .onEnterSearchBasicToHand == .searchLibrary .basicLandToHand
+#guard TriggeredAbility.resolution (.onOpponentCastsAmassOrcs 1) == .amassGoblins 1 "Orc"
+#guard TriggeredAbility.resolution .onDiesAmassGoblinsEqualPower ==
+  .amassGoblins 0 "Goblin" .sourcePower
+#guard TriggeredAbility.resolution (.onEnterAmassThenAttach 1) ==
+  .amassGoblins 1 "Goblin" .fixed true
+#guard TriggeredAbility.resolution .onOpponentCastsFirstNoncreatureRecruit == .recruit .you
+#guard TriggeredAbility.resolution .onEnterRecruit == .recruit
+#guard TriggeredAbility.resolution .onCombatDamageToPlayerLoot == .drawThenDiscardN 1
+#guard TriggeredAbility.resolution .onEnterEachOpponentDiscards == .opponentDiscards
+#guard TriggeredAbility.resolution (.onEnterTargetOpponentDiscards 2) ==
+  .opponentDiscards 2 .target
+#guard TriggeredAbility.resolution .onAttackFerociousPlusOneEach == .plusOneEachYouControl
+#guard TriggeredAbility.resolution .onEnterCreateAxe == .createAxe
+#guard TriggeredAbility.resolution .onEnterCreateAxeAttach == .createAxe true
+#guard TriggeredAbility.resolution .onEquippedAttacksPlusOneEachIfCityBlessing ==
+  .plusOneEachYouControl .citysBlessing
+#guard TriggeredAbility.resolution
+    (.onStep (Effect.ofTrigger .prepareSource)) == .prepareSource
+#guard TriggeredAbility.resolution
+    (.onStep (Effect.ofTrigger (.prepareSource .ifThreeCreaturesDied))) ==
+  .prepareSource .ifThreeCreaturesDied
+#guard (TriggeredAbility.triggered .youScryOrSurveil
+    (Effect.ofTrigger (.mayPayGenericDraw 2 (plusOneOnSource := true)))).resolution ==
+  .mayPayGenericDraw 2 true
+#guard TriggeredAbility.toNotation .onEnterCreateAxe ==
+  "When this permanent enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}."
+#guard TriggeredAbility.toNotation .onEnterCreateAxeAttach ==
+  "When Dáin enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control."
+#guard TriggeredAbility.toNotation .onEquippedAttacksPlusOneEachIfCityBlessing ==
+  "Whenever equipped creature attacks, put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead."
+#guard TriggeredAbility.toNotation (.onStep (Effect.ofTrigger .prepareSource)) ==
+  "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared."
+#guard TriggeredAbility.toNotation
+    (.onStep (Effect.ofTrigger (.prepareSource .ifThreeCreaturesDied))) ==
+  "At the beginning of each end step, if three or more creatures died this turn, this creature becomes prepared."
+#guard TriggeredAbility.toNotation (TriggeredAbility.triggered .youScryOrSurveil
+    (Effect.ofTrigger (.mayPayGenericDraw 2 (plusOneOnSource := true)))) ==
+  "Whenever you scry or surveil, you may pay {2}. If you do, put a +1/+1 counter on this creature and draw a card."
+#guard TriggeredAbility.toNotation
+    (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) ==
+  "Whenever another creature you control with power 2 or less enters, you may pay {1}. If you do, draw a card."
+#guard TriggeredAbility.resolution .onAttackWithTwoOrMoreGrantFlying ==
+  .onPermanent (.grantKeywords Keyword.flying)
+#guard TriggeredAbility.toNotation (.onOpponentCastsAmassOrcs 1) ==
+  "Whenever an opponent casts a spell, amass Orcs 1."
+#guard TriggeredAbility.toNotation .onDiesAmassGoblinsEqualPower ==
+  "When this creature dies, amass Goblins X, where X is this creature's power."
+#guard TriggeredAbility.toNotation (.onEnterAmassThenAttach 1) ==
+  "When this permanent enters, amass Goblins 1, then attach this Equipment to the amassed Army."
+#guard TriggeredAbility.toNotation .onOpponentCastsFirstNoncreatureRecruit ==
+  "Whenever an opponent casts their first noncreature spell each turn, you recruit."
+#guard TriggeredAbility.toNotation .onCombatDamageToPlayerLoot ==
+  "Whenever this deals combat damage to a player, draw a card, then discard a card."
+#guard TriggeredAbility.toNotation .onEnterSearchBasicToHand ==
+  "When this permanent enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle."
+#guard TriggeredAbility.toNotation .onAttackWithTwoOrMoreGrantFlying ==
+  "Whenever two or more creatures you control attack a player, target attacking creature without flying gains flying until end of turn."
 #guard TriggeredAbility.resolution .onEnterTargetOpponentSacrificesCreature ==
   .opponentSacrificesCreature
 #guard TriggeredAbility.resolution (.onLandYouControlEntersGets 1 1) ==
