@@ -106,8 +106,14 @@ def dealDamageToCreature (amount : Nat) : Effect :=
   mkSpell (.of .creature) (.onPermanent (.dealDamage amount))
     (castKind := .creatureDamage)
 
+/-- Deal `amount` damage. The creature loses indestructible until end of turn.
+If it would die this turn, exile it instead. -/
 def dealDamageLoseIndestructibleExile (amount : Nat) : Effect :=
-  mkSpell (.of .creature) (.onPermanent (.dealDamageLoseIndestructibleExile amount))
+  mkSpell (.of .creature)
+    (.sequence [
+      .onPermanent (.dealDamage amount),
+      .onPermanent .loseIndestructible,
+      .replace .diesThisTurn .exile])
     (castKind := .creatureDamage)
 
 def creatureYouControlDealsPowerToOppCreature : Effect :=
@@ -155,8 +161,12 @@ def pumpAndLifelink (power toughness : Int) : Effect :=
     phrase :=
       s!"target creature gets {signedStat power}/{signedStat toughness} and gains lifelink until end of turn" }
 
+/-- Until-end-of-turn +P/+T. If the creature would die this turn, exile it instead. -/
 def pumpAndExileIfDies (power toughness : Int) : Effect :=
-  mkSpell (.of .creature) (.onPermanent (.pumpAndExileIfDies power toughness))
+  mkSpell (.of .creature)
+    (.sequence [
+      .onPermanent (.pump power toughness),
+      .replace .diesThisTurn .exile])
     (castKind := .pump)
     (preferAsDefaultMode := true)
 

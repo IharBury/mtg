@@ -340,7 +340,11 @@ def resolvedSmiteOnBears : Game := passBoth paidSmite
 #guard !(resolvedSmiteOnBears.objects.any (fun o =>
   o.name == "Grizzly Bears" && o.zone == .graveyard ⟨1⟩))
 #guard resolvedSmiteOnBears.log.any (fun s =>
-  mentions s "is dealt 3 damage, loses indestructible until end of turn")
+  mentions s "Smite the Deathless deals 3 damage to Grizzly Bears")
+#guard resolvedSmiteOnBears.log.any (fun s =>
+  mentions s "loses indestructible until end of turn")
+#guard resolvedSmiteOnBears.log.any (fun s =>
+  mentions s "If Grizzly Bears would die this turn, exile it instead")
 #guard resolvedSmiteOnBears.log.any (fun s => mentions s "dies from lethal damage")
 #guard resolvedSmiteOnBears.log.any (fun s => mentions s "is exiled instead of dying")
 #guard (resolvedSmiteOnBears.player ⟨0⟩).graveyard.any (fun id =>

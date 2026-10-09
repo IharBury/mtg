@@ -1107,7 +1107,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     match what, instead with
     | .diesThisTurn, .exile =>
       g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-        g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true }))
+        let g := g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true })
+        g.logMsg s!"If {o.name} would die this turn, exile it instead")
   | .addRedPerOppArtifacts ty =>
     let n := g.battlefield.filter (fun o =>
       o.printed.hasType ty && !o.controlledBy controller) |>.size

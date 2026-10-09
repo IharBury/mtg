@@ -151,14 +151,10 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .destroy => g.destroyPermanent o
   | .plusOne n => g.addPlusOnePlusOneTo o n
   | .dealDamage n => g.dealDamageToPermanent o n
-  | .dealDamageLoseIndestructibleExile n =>
-    g.dealDamageLoseIndestructibleExileTo o n
+  | .loseIndestructible =>
+    let g := g.mapObjectStatus o (fun s => { s with untilEotLosesIndestructible := true })
+    g.logMsg s!"{o.name} loses indestructible until end of turn"
   | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
-  | .pumpAndExileIfDies pw tw =>
-    let g := g.pumpPermanent o pw tw
-    let o := g.object! o.id
-    let g := g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true })
-    g.logMsg s!"If {o.name} would die this turn, exile it instead"
   | .grantKeywords k =>
     g.grantUntilEotLogged o k
   | .indestructibleCounter => g.addIndestructibleCounter o
