@@ -327,10 +327,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => g.logMsg "The target is no longer in the graveyard"
       | _ => g
     g.forEachOpponent controller (fun g pid => g.loseLife pid n)
-  | .creaturesYouControlPumpAndFirstStrike pw =>
-    g.forEachControlledCreature controller fun g o =>
-      let g := g.pumpPermanent o pw 0
-      g.grantUntilEotLogged (g.object! o.id) Keyword.firstStrike
   | .pumpForEachOtherCreature =>
     g.withTriggerSource sourceId fun g o =>
       let others :=
@@ -383,10 +379,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .tapHumansDraw =>
     { g with pending := .tapHumans controller }.logMsg
       s!"{(g.player controller).name} may tap any number of untapped Humans they control"
-  | .pumpAndUnblockable =>
-    g.withTriggerSource sourceId fun g o =>
-      let g := g.pumpPermanent o 1 0
-      g.grantCantBeBlockedThisTurn (g.object! o.id)
   | .recruit _ =>
     g.beginRecruit controller
   | .exileTop =>
@@ -407,11 +399,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let n := if (g.player controller).citysBlessing then 2 else 1
       (g.permanentsOf controller).foldl (fun acc o =>
         if o.isCreature then acc.addPlusOnePlusOneTo o n else acc) g
-  | .sourceGetsAndTeamTrample p =>
-    let g := g.applyOnTriggerSource sourceId (.pump p 0)
-    g.grantUntilEotToControlledCreatures controller Keyword.trample "trample"
-  | .drawAndLoseLife =>
-    g.drawThenLoseLife controller 1 1
   | .amassGoblins n subtype amount attachSource =>
     let n :=
       match amount with
@@ -703,10 +690,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .discardHandDrawDamageIfStory =>
     g.beginFraChoice controller (.mayDiscardHandBalin sourceId)
       s!"{(g.player controller).name} may discard their hand"
-  | .plusOneAndLifelink =>
-    match targets[0]? with
-    | some (Target.permanent oid) => g.applyBardBowman oid
-    | _ => g.logMsg "The target is no longer legal"
   | .wolfPlusOneOrTreasure =>
     match targets[0]? with
     | some (Target.permanent oid) =>
@@ -974,12 +957,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             g.beginFraChoice controller (.attachAnyEquipment host.id eligible)
               s!"{(g.player controller).name} chooses any number of Equipment to attach to {host.name}"
     | _ => g.logMsg "The target is no longer legal"
-  | .plusOneVigilance n =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let g := g.addPlusOnePlusOneTo o n
-      g.grantUntilEotLogged (g.object! o.id) Keyword.vigilance)
-  | .drawThenDiscardN n =>
-    g.drawThenBeginDiscard controller n
   | .returnAsArtifact =>
     match sourceId.bind g.findObject? with
     | none => g
@@ -1007,9 +984,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       (g.permanentsOf controller).filter (fun o =>
         o.isLegendary && g.hasSubtype o "Wizard") |>.size
     g.beginMayCastInstantSorceryFromHand controller (wizards * 2)
-  | .drawPlusOneSource =>
-    let g := g.draw controller 1
-    g.applyOnTriggerSource sourceId (.plusOne 1)
   | .exileLandsThenReturnTapped =>
     g.foldPermanentTargets targets (fun g o =>
       if o.controlledBy controller && o.printed.isLand then
@@ -1111,10 +1085,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .investigate =>
     let (g, _) := g.createToken controller clueToken
     g.logMsg s!"{(g.player controller).name} investigates"
-  | .plusOneOnSourceAndDraw =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.addPlusOnePlusOneTo o 1
-      g.draw controller 1
   | .connive who =>
     match who with
     | .source => g.applyConnive controller sourceId
@@ -1208,9 +1178,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.sacrificePlanThenQueueReflexive controller sourceId 10
   | .planFinishIndestructibleOnTarget =>
     g.sacrificePlanThenQueueReflexive controller sourceId 3
-  | .drawAndLoseLife1 =>
-    let g := g.draw controller 1
-    g.loseLife controller 1
   | .onEnchanted action =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match src.attachedTo.bind g.findObject? with

@@ -499,8 +499,6 @@ inductive SharedTrigger where
   | dividedDamage (amount maxTargets : Nat)
   /-- You gain `n` life. -/
   | gainLife (n : Nat)
-  /-- Draw a card and lose 1 life. -/
-  | drawAndLoseLife
   /-- Connive. The source is `.connive`. A target of `kind` is
   `.connive (.target kind)`. -/
   | connive (who : ConniveSubject := .source)
@@ -545,8 +543,6 @@ inductive SharedTrigger where
   One counter, or two with the city's blessing, is
   `.plusOneEachYouControl .citysBlessing`. -/
   | plusOneEachYouControl (which : YouControlPlusOne := .eachCreature)
-  /-- The source gets +P/+0 and creatures you control gain trample. -/
-  | sourceGetsAndTeamTrample (power : Int)
   /-- Put a hone counter on each Equipment you control. -/
   | honeEachEquipment
   /-- +1/+1 on each other creature you control; gain that much life. -/
@@ -555,18 +551,12 @@ inductive SharedTrigger where
   | becomePT (power toughness : Int)
   /-- Pump the source +1/+1 and deal `n` to each opponent. -/
   | pumpAndDamageOpponents (n : Nat)
-  /-- +1/+1 and lifelink on a target of this kind. -/
-  | plusOneAndLifelink (kind : EffectTargetKind)
   /-- Pump a target creature you control +1/+1 per Plains. -/
   | pumpTargetPerPlains
-  /-- Draw `n` cards, then discard a card. -/
-  | drawThenDiscard (n : Nat)
   /-- You may discard your hand. If you do, draw `n`. -/
   | mayDiscardHandDraw (n : Nat)
   /-- Pump the source +1/+1 per card looked at while scrying. -/
   | pumpByLookedAt
-  /-- Pump the source +1/+0 and grant can't be blocked this turn. -/
-  | pumpAndUnblockable
   /-- Pump the source by the greatest power among creatures you control. -/
   | pumpGreatestPower
   /-- Pump the source +1/+1 for each other creature you control. -/
@@ -592,12 +582,8 @@ inductive SharedTrigger where
   | payReturnFromGy
   /-- Target opponent loses `n` life. -/
   | targetOpponentLosesLife (n : Nat)
-  /-- Put `n` +1/+1 counters on a target and grant vigilance. -/
-  | plusOneVigilance (n : Nat)
   /-- You may draw X cards, then discard two. -/
   | mayDrawXDiscard2
-  /-- Draw a card and put a +1/+1 counter on the source. -/
-  | drawPlusOneSource
   /-- The Ring tempts you. -/
   | ringTempts
   /-- Set another creature's base P/T to this creature's. -/
@@ -608,8 +594,6 @@ inductive SharedTrigger where
   | damageFromLastKnownPower
   /-- Exile a card from an opponent's graveyard; each opponent loses `life`. -/
   | exileOppGyCardOppsLoseLife (life : Nat)
-  /-- Creatures you control get +P/+0 and first strike. -/
-  | creaturesYouControlPumpAndFirstStrike (power : Int)
   /-- You may pay `{n}`. If you do, draw a card.
   Also putting a +1/+1 counter on this creature is
   `.mayPayGenericDraw n (plusOneOnSource := true)`. -/
@@ -748,8 +732,6 @@ inductive SharedTrigger where
   | sacDamagersRingTempts
   /-- A Saga chapter. -/
   | chapter (n : Nat) (e : ChapterResolution)
-  /-- +1/+1 on this and draw. -/
-  | plusOneOnSourceAndDraw
   /-- Draw if you attacked with or a subtype entered. -/
   | drawIfAttackedOrEnteredSubtype (subtype : String)
   /-- Other permanents of this subtype get +X/+X equal to this toughness. -/

@@ -207,6 +207,53 @@ def resourcePlusOneOnThisOnce : Effect := ofTrigger (.resource .plusOneOnThisOnc
 
 def resourcePlusOneOnHeroesCreateWall : Effect := ofTrigger (.resource .plusOneOnHeroesCreateWall)
 
+/-!
+Triggers whose effect is a list of independent steps. `Resolution.sequence`
+already resolves them, so they are not `SharedTrigger` constructors.
+`TriggeredAbility.toNotation` prints the clause from the sequence shape.
+-/
+
+/-- Draw a card and lose 1 life. -/
+def seqDrawAndLoseLife : Effect :=
+  { resolution := .sequence [.draw 1, .fra (.loseLife 1)] }
+
+/-- Draw `n` cards, then discard a card. -/
+def seqDrawThenDiscard (n : Nat) : Effect :=
+  { resolution := .sequence [.draw n, .discard 1] }
+
+/-- The source gets +P/+0 and creatures you control gain trample. -/
+def seqSourceGetsAndTeamTrample (power : Int) : Effect :=
+  { resolution := .sequence [.onSource (.pump power 0), .teamGain Keyword.trample] }
+
+/-- Put a +1/+1 counter on a target of this kind. It gains lifelink until end of turn. -/
+def seqPlusOneAndLifelink (kind : EffectTargetKind) : Effect :=
+  { targeting := .of kind
+    resolution := .sequence
+      [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords Keyword.lifelink)] }
+
+/-- The source gets +1/+0 and can't be blocked this turn. -/
+def seqPumpAndUnblockable : Effect :=
+  { resolution := .sequence [.onSource (.pump 1 0), .onSource .cantBeBlocked] }
+
+/-- Put `n` +1/+1 counters on a creature you control. It gains vigilance until end of turn. -/
+def seqPlusOneVigilance (n : Nat) : Effect :=
+  { targeting := .of .creatureYouControl
+    resolution := .sequence
+      [.onPermanent (.plusOne n), .onPermanent (.grantKeywords Keyword.vigilance)] }
+
+/-- Draw a card and put a +1/+1 counter on the source. -/
+def seqDrawPlusOneSource : Effect :=
+  { resolution := .sequence [.draw 1, .onSource (.plusOne 1)] }
+
+/-- Creatures you control get +P/+0 and gain first strike until end of turn. -/
+def seqCreaturesPumpAndFirstStrike (power : Int) : Effect :=
+  { resolution := .sequence
+      [.creaturesYouControlPump power 0, .teamGain Keyword.firstStrike] }
+
+/-- Put a +1/+1 counter on the source and draw a card. -/
+def seqPlusOneOnSourceAndDraw : Effect :=
+  { resolution := .sequence [.onSource (.plusOne 1), .draw 1] }
+
 instance : Coe SharedTrigger Effect where
   coe := ofTrigger
 
