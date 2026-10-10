@@ -77,7 +77,9 @@ inductive TriggerResolution where
   | damageFromLastKnownPower
   /-- Apply each resolution in order. An illegal required target skips every
   step (CR 608.2b). Return a graveyard card, then gain life equal to its
-  power, is `.sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]`. -/
+  power, is `.sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]`.
+  Draw, then bottom a card if you control no legendary, is
+  `.sequence [.draw 1, .putOnBottomIfNoLegendary]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -102,8 +104,9 @@ inductive TriggerResolution where
   Also putting a +1/+1 counter on the source is
   `.mayPayGenericDraw n (plusOneOnSource := true)`. -/
   | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
-  /-- Draw a card, then put a card on the bottom if you control no legendary. -/
-  | drawThenBottomIfNoLegendary
+  /-- If you don't control a legendary creature, put a card from your hand
+  on the bottom of your library. -/
+  | putOnBottomIfNoLegendary
   /-- Exile the targeted permanent. Link it if the source is still in play. -/
   | exileTarget
   /-- Exile the targeted permanent until the source leaves the battlefield. -/
@@ -710,7 +713,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .mayPayGenericDraw n plusOne =>
     { resolution := .mayPayGenericDraw n plusOne }
   | .drawThenBottomIfNoLegendary =>
-    { resolution := .drawThenBottomIfNoLegendary }
+    { resolution := .sequence [.draw 1, .putOnBottomIfNoLegendary] }
   | .removeHopeDrawSac => { resolution := .removeHopeDrawSac }
   | .tapHumansDraw => { resolution := .tapHumansDraw }
   | .destroyOppArtifactsEnchantmentsGainLife =>

@@ -714,6 +714,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"it deals damage equal to its power to {noun}"
   | .sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower] =>
     s!"return {noun} to your hand. You gain life equal to that card's power"
+  | .sequence [.draw 1, .putOnBottomIfNoLegendary] =>
+    "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -735,8 +737,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "it gets +1/+1 until end of turn for each other creature you control"
   | .mayPayGenericDraw n false =>
     s!"you may pay \{{n}}. If you do, draw a card"
-  | .drawThenBottomIfNoLegendary =>
-    "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
+  | .putOnBottomIfNoLegendary =>
+    "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .exileTarget =>
     if t.allowsZeroTargets then s!"you may exile {noun}" else s!"exile {noun}"
   | .exileUntilLeaves =>

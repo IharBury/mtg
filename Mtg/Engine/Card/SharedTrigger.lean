@@ -604,7 +604,9 @@ inductive SharedTrigger where
   Also putting a +1/+1 counter on this creature is
   `.mayPayGenericDraw n (plusOneOnSource := true)`. -/
   | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
-  /-- Draw, then bottom a card if you don't control a legendary creature. -/
+  /-- Draw a card, then put a card from your hand on the bottom if you don't
+  control a legendary creature.
+  Resolves as `.sequence [.draw 1, .putOnBottomIfNoLegendary]`. -/
   | drawThenBottomIfNoLegendary
   /-- Remove a hope counter to draw; sacrifice if none remain. -/
   | removeHopeDrawSac

@@ -144,6 +144,28 @@ def sequenceDrawThenGain : Game :=
     (sequenceDrawThenGain.player ⟨0⟩).life ==
       (started.player ⟨0⟩).life + 3
 
+/-- Draw, then bottom a card when you control no legendary creature. -/
+def riderBottoms : Game :=
+  started.applyTriggeredAbility ⟨0⟩ .onEnterDrawThenBottomIfNoLegendary none
+
+#guard
+  (riderBottoms.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1 &&
+    riderBottoms.pending == .putOnBottom ⟨0⟩ 1 &&
+    riderBottoms.log.any (fun s => mentions s "on the bottom of their library")
+
+/-- A legendary creature you already control skips the bottom step. -/
+def riderKeepsWithLegend : Game :=
+  (addPermanent started
+      (legendaryCreature "Unyielding Legend" ManaCost.empty #[] 2 2) ⟨0⟩ ⟨0⟩).applyTriggeredAbility
+    ⟨0⟩ .onEnterDrawThenBottomIfNoLegendary none
+
+#guard
+  (riderKeepsWithLegend.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1 &&
+    riderKeepsWithLegend.pending == .none &&
+    !(riderKeepsWithLegend.log.any (fun s => mentions s "on the bottom of their library"))
+
+#guard errandRiderOfGondor.triggeredAbilities == #[.onEnterDrawThenBottomIfNoLegendary]
+
 /-- Spell and ability loot both apply as draw, then a discard choice. -/
 def spellDrawThenDiscardPending : Game :=
   afterDraw.applyEffect ⟨0⟩ (Effect.drawThenDiscard 2) #[]

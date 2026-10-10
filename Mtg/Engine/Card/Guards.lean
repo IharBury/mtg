@@ -788,6 +788,10 @@ namespace CardDef
   (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) == some 2
 #guard TriggeredAbility.onEnterDrawThenBottomIfNoLegendary ==
   .triggered .enter (Effect.ofTrigger .drawThenBottomIfNoLegendary)
+#guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
+  .sequence [.draw 1, .putOnBottomIfNoLegendary]
+#guard TriggeredAbility.toNotation .onEnterDrawThenBottomIfNoLegendary ==
+  "When this permanent enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library."
 #guard TriggeredAbility.onYourEndStepRemoveHopeDrawSac ==
   .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
 #guard TriggeredAbility.onAttackTapHumansDraw ==
