@@ -732,6 +732,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
   | .sequence [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype] =>
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
+  | .sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned] =>
+    s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -831,8 +833,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "choose one — tap target creature an opponent controls; untap target creature you control"
   | .becomePT p t =>
     s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
-  | .returnOtherPlusOne =>
-    "return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature"
+  | .plusOneOnSourceIfReturned =>
+    "if you do, put a +1/+1 counter on this creature"
   | .lookAtTopRevealTypes n types =>
     let joined :=
       match types.toList with

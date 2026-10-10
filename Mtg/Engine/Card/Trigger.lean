@@ -100,7 +100,10 @@ inductive TriggerResolution where
   `.sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]`.
   Deal `n` damage to the target, then destroy it if that damage marked a
   permanent of this subtype, is
-  `.sequence [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype]`. -/
+  `.sequence [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype]`.
+  Return another permanent to its owner's hand, then put a +1/+1 counter on
+  the source if one was actually returned, is
+  `.sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -197,8 +200,6 @@ inductive TriggerResolution where
   | tapOppOrUntapYours
   /-- Set the source's base P/T. -/
   | becomePT (power toughness : Int)
-  /-- Return another permanent you control; if you do, +1 on the source. -/
-  | returnOtherPlusOne
   /-- Look at the top `n` and reveal a listed type. -/
   | lookAtTopRevealTypes (n : Nat) (types : Array String)
   /-- Create tapped Treasures equal to opposing artifacts. -/
@@ -403,8 +404,11 @@ inductive TriggerResolution where
   | mayPutArtifactAttachEquipment
   /-- This fights the targeted creature. -/
   | fightUpToOne
-  /-- Return the targeted permanent to its owner's hand. -/
+  /-- Return the targeted permanent to its owner's hand.
+  Whether a permanent was actually returned is recorded for the next step. -/
   | returnToOwnerHand
+  /-- Put a +1/+1 counter on the source if an earlier step returned a permanent. -/
+  | plusOneOnSourceIfReturned
   /-- Create Zabu. -/
   | createZabu
   /-- Target opponent creates The Void. -/
@@ -775,7 +779,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .returnOtherPlusOne =>
     { targeting := .of (.filtered { noun := "up to one other target permanent you control"
                                     controller := .you, another := true })
-      allowsZeroTargets := true, resolution := .returnOtherPlusOne }
+      allowsZeroTargets := true
+      resolution := .sequence
+        [.returnToOwnerHand, .plusOneOnSourceIfReturned] }
   | .lookAtTopRevealTypes n types =>
     { resolution := .lookAtTopRevealTypes n types }
   | .createTappedTreasuresEqualOppArtifacts =>

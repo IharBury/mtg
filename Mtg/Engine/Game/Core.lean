@@ -139,6 +139,10 @@ structure Game where
   /-- The permanent marked by the current `dealDamageToTarget` step.
   `destroyIfSubtypeDealtDamage` destroys it when it has the subtype. -/
   permanentDealtDamageThisWay : Option ObjectId := none
+  /-- A permanent was returned to its owner's hand by the current
+  `returnToOwnerHand` step. `plusOneOnSourceIfReturned` puts a +1/+1 counter
+  on the source when this is set. -/
+  returnedPermanentThisWay : Bool := false
   /-- Later steps of a trigger `sequence`, waiting on the pending choice an
   earlier step opened. -/
   triggerSequenceRest : Option TriggerSequenceRest := none

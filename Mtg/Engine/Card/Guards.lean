@@ -844,6 +844,10 @@ namespace CardDef
   .triggered .attack (Effect.ofTrigger .defenderSacsLeastPower)
 #guard TriggeredAbility.onEnterReturnOtherPlusOne ==
   .triggered .enter (Effect.ofTrigger .returnOtherPlusOne)
+#guard TriggeredAbility.resolution .onEnterReturnOtherPlusOne ==
+  .sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned]
+#guard TriggeredAbility.toNotation .onEnterReturnOtherPlusOne ==
+  "When this permanent enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature."
 #guard TriggeredAbility.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"] ==
   .triggered .enter (Effect.ofTrigger (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"]))
 #guard TriggeredAbility.onEnterCreateTappedTreasuresEqualOppArtifacts ==

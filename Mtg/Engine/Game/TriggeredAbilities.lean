@@ -563,11 +563,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           s!"{(g.player controller).name} may have {o.name}'s base power and toughness become {p}/{t}"
       else g
     | none => g
-  | .returnOtherPlusOne =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let owner := o.owner
-      let (g, _) := g.move o.id (.hand owner) none
-      g.applyOnTriggerSource sourceId (.plusOne 1))
   | .lookAtTopRevealTypes n types =>
     let ids := g.scryLookedIds controller n
     let g := g.logLookAtTop controller n
@@ -1339,8 +1334,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | _, none => g
     | _, _ => g.logMsg "The source is no longer in play"
   | .returnToOwnerHand =>
+    let g := { g with returnedPermanentThisWay := false }
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
-      g.returnToHand o.id o.owner) sourceId none
+      let g := g.returnToHand o.id o.owner
+      { g with returnedPermanentThisWay := true }) sourceId none
+  | .plusOneOnSourceIfReturned =>
+    let returned := g.returnedPermanentThisWay
+    let g := { g with returnedPermanentThisWay := false }
+    if returned then g.applyOnTriggerSource sourceId (.plusOne 1) else g
   | .createZabu =>
     g.createNamedToken controller zabuToken
   | .oppCreatesTheVoid =>

@@ -770,6 +770,81 @@ def arrowNoTarget : Game :=
     arrowNoTarget.triggerSequenceRest.isNone &&
     arrowNoTarget.log.any (fun s => mentions s "The target is no longer legal")
 
+/-- Mirkwood Nurturer returns another permanent you control, then puts a
++1/+1 counter on itself only when that return happens. Choosing nothing,
+or an illegal permanent, returns nothing and adds no counter. The counter
+is also skipped when the source is no longer in play. -/
+def nurturerReturns : Game :=
+  let g := addPermanent started mirkwoodNurturer ⟨0⟩ ⟨0⟩
+  let g := addPermanent g (artifact "Nursery Relic" ManaCost.empty "") ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Mirkwood Nurturer"
+  let relic := namedPermanent g "Nursery Relic"
+  g.applyTriggeredAbility ⟨0⟩ .onEnterReturnOtherPlusOne (some src.id)
+    #[Target.permanent relic.id]
+
+def nurturerDeclines : Game :=
+  let g := addPermanent started mirkwoodNurturer ⟨0⟩ ⟨0⟩
+  let g := addPermanent g (artifact "Nursery Relic" ManaCost.empty "") ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Mirkwood Nurturer"
+  g.applyTriggeredAbility ⟨0⟩ .onEnterReturnOtherPlusOne (some src.id)
+
+def nurturerIllegal : Game :=
+  let g := addPermanent started mirkwoodNurturer ⟨0⟩ ⟨0⟩
+  let g := addPermanent g (artifact "Foe Relic" ManaCost.empty "") ⟨1⟩ ⟨1⟩
+  let src := namedPermanent g "Mirkwood Nurturer"
+  let relic := namedPermanent g "Foe Relic"
+  g.applyTriggeredAbility ⟨0⟩ .onEnterReturnOtherPlusOne (some src.id)
+    #[Target.permanent relic.id]
+
+def nurturerSourceGone : Game :=
+  let g := addPermanent started (artifact "Nursery Relic" ManaCost.empty "") ⟨0⟩ ⟨0⟩
+  let relic := namedPermanent g "Nursery Relic"
+  g.applyTriggeredAbility ⟨0⟩ .onEnterReturnOtherPlusOne none
+    #[Target.permanent relic.id]
+
+#guard
+  !nurturerReturns.battlefield.any (fun o => o.name == "Nursery Relic") &&
+    (nurturerReturns.player ⟨0⟩).hand.any (fun id =>
+      (nurturerReturns.object! id).name == "Nursery Relic") &&
+    (namedPermanent nurturerReturns "Mirkwood Nurturer").status.plusOnePlusOne == 1 &&
+    !nurturerReturns.returnedPermanentThisWay &&
+    nurturerReturns.pending == .none &&
+    nurturerReturns.triggerSequenceRest.isNone &&
+    nurturerReturns.log.any (fun s =>
+      mentions s "Nursery Relic is returned to Chandra's hand") &&
+    nurturerReturns.log.any (fun s =>
+      mentions s "Mirkwood Nurturer gets a +1/+1 counter")
+#guard
+  (namedPermanent nurturerDeclines "Nursery Relic").isOnBattlefield &&
+    (namedPermanent nurturerDeclines "Mirkwood Nurturer").status.plusOnePlusOne == 0 &&
+    !nurturerDeclines.returnedPermanentThisWay &&
+    nurturerDeclines.pending == .none &&
+    nurturerDeclines.triggerSequenceRest.isNone &&
+    !(nurturerDeclines.log.any (fun s => mentions s "is returned")) &&
+    !(nurturerDeclines.log.any (fun s => mentions s "gets a +1/+1 counter")) &&
+    !(nurturerDeclines.log.any (fun s => mentions s "The target is no longer legal"))
+#guard
+  (namedPermanent nurturerIllegal "Foe Relic").isOnBattlefield &&
+    (namedPermanent nurturerIllegal "Mirkwood Nurturer").status.plusOnePlusOne == 0 &&
+    !nurturerIllegal.returnedPermanentThisWay &&
+    nurturerIllegal.pending == .none &&
+    nurturerIllegal.triggerSequenceRest.isNone &&
+    nurturerIllegal.log.any (fun s => mentions s "The target is no longer legal") &&
+    !(nurturerIllegal.log.any (fun s => mentions s "is returned")) &&
+    !(nurturerIllegal.log.any (fun s => mentions s "gets a +1/+1 counter"))
+#guard
+  !nurturerSourceGone.battlefield.any (fun o => o.name == "Nursery Relic") &&
+    (nurturerSourceGone.player ⟨0⟩).hand.any (fun id =>
+      (nurturerSourceGone.object! id).name == "Nursery Relic") &&
+    !nurturerSourceGone.returnedPermanentThisWay &&
+    nurturerSourceGone.pending == .none &&
+    nurturerSourceGone.triggerSequenceRest.isNone &&
+    nurturerSourceGone.log.any (fun s =>
+      mentions s "Nursery Relic is returned to Chandra's hand") &&
+    nurturerSourceGone.log.any (fun s =>
+      mentions s "The triggered ability's source is no longer in play") &&
+    !(nurturerSourceGone.log.any (fun s => mentions s "gets a +1/+1 counter"))
+
 /-- Bag End Banquet creates three Foods. -/
 def banquetFoods : Game :=
   (addPermanent started bagEndBanquet ⟨0⟩ ⟨0⟩).applyTriggeredAbility
