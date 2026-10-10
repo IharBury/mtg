@@ -865,6 +865,12 @@ namespace CardDef
 #guard (SharedTriggerWhen.or .enter .attack).events == #[.entering, .attacking]
 #guard TriggeredAbility.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1) ==
   .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)))
+#guard TriggeredAbility.resolution
+    (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
+  .sequence [.othersOfSubtypesGet #["Goblin", "Orc"] 2 2, .opponentsCreaturesGet (-1) (-1)]
+#guard TriggeredAbility.toNotation
+    (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
+  "At the beginning of each combat, other Goblins and Orcs you control get +2/+2 until end of turn. Creatures your opponents control get -1/-1 until end of turn."
 #guard TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure ==
   .triggered .combatDamageToPlayer (Effect.ofTrigger .wolfPlusOneOrTreasure)
 #guard TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear ==

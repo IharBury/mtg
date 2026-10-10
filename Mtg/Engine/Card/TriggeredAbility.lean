@@ -734,6 +734,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
   | .sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned] =>
     s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
+  | .sequence [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT] =>
+    let who :=
+      if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
+      else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
+    s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -845,11 +850,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
   | .gainControlOppUntilEot =>
     s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
-  | .othersGetAndOppsGet subtypes p t oppP oppT =>
+  | .othersOfSubtypesGet subtypes p t =>
     let who :=
       if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
       else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
-    s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
+    s!"{who} get {signedStat p}/{signedStat t} until end of turn"
+  | .opponentsCreaturesGet p t =>
+    s!"creatures your opponents control get {signedStat p}/{signedStat t} until end of turn"
   | .putNonlandMvAtMostFromGy mv =>
     s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
   | .honeEachEquipment =>

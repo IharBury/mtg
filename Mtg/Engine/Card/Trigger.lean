@@ -103,7 +103,10 @@ inductive TriggerResolution where
   `.sequence [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
   the source if one was actually returned, is
-  `.sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned]`. -/
+  `.sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned]`.
+  Other creatures you control of these subtypes get +P/+T, and creatures
+  your opponents control get +oppP/+oppT, is
+  `.sequence [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -206,8 +209,11 @@ inductive TriggerResolution where
   | createTappedTreasuresEqualOppArtifacts
   /-- Gain control of the target until end of turn; untap; haste. -/
   | gainControlOppUntilEot
-  /-- Other matching creatures get +P/+T; opposing creatures get +oppP/+oppT. -/
-  | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
+  /-- Other creatures you control of these subtypes get +P/+T until end of turn.
+  The source is not included. -/
+  | othersOfSubtypesGet (subtypes : Array String) (power toughness : Int)
+  /-- Creatures your opponents control get +P/+T until end of turn. -/
+  | opponentsCreaturesGet (power toughness : Int)
   /-- Put a nonland permanent card with mana value at most `mv` from a
   graveyard onto the battlefield. -/
   | putNonlandMvAtMostFromGy (mv : Nat)
@@ -792,7 +798,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
           zone := .anyGraveyard, permanentCard := true, nonland := true, mvAtMost := some mv })
       allowsZeroTargets := true, resolution := .putNonlandMvAtMostFromGy mv }
   | .othersGetAndOppsGet subtypes p t oppP oppT =>
-    { resolution := .othersGetAndOppsGet subtypes p t oppP oppT }
+    { resolution := .sequence
+        [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT] }
   | .wolfPlusOneOrTreasure => { resolution := .wolfPlusOneOrTreasure }
   | .trampleCounterBecomeBear =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
