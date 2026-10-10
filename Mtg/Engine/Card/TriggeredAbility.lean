@@ -728,6 +728,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
   | .sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay] =>
     "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
+  | .sequence [.plusOneEachOther, .gainLifeForEachOtherCreature] =>
+    "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -799,8 +801,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "attach this Equipment to it"
   | .attachSourceToTarget =>
     s!"attach it to {noun}"
-  | .plusOneEachOtherGainLife =>
-    "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
+  | .plusOneEachOther =>
+    "put a +1/+1 counter on each other creature you control"
+  | .gainLifeForEachOtherCreature =>
+    "you gain 1 life for each other creature you control"
   | .damageEqualSubtypeToEachOpponent subtype =>
     s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
   | .damageEqualTreasures =>

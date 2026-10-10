@@ -556,7 +556,8 @@ inductive SharedTrigger where
   | plusOneEachYouControl (which : YouControlPlusOne := .eachCreature)
   /-- Put a hone counter on each Equipment you control. -/
   | honeEachEquipment
-  /-- +1/+1 on each other creature you control; gain that much life. -/
+  /-- +1/+1 on each other creature you control, then gain 1 life for each.
+  Resolves as `.sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]`. -/
   | plusOneEachOtherGainLife
   /-- Set the source's base P/T. -/
   | becomePT (power toughness : Int)

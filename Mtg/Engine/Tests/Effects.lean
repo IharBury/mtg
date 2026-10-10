@@ -617,6 +617,49 @@ def oriNothing : Game :=
     oriNothing.pending == .none &&
     oriNothing.triggerSequenceRest.isNone
 
+/-- Aragorn and Arwen puts a +1/+1 counter on each other creature you control,
+then gains 1 life for each of those creatures. The source, your noncreatures,
+and opposing creatures are left out. -/
+def wedShares : Game :=
+  let g := addPermanent started aragornAndArwenWed ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g (artifact "My Sword" ManaCost.empty "") ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  g.applyTriggeredAbility ⟨0⟩ .onEnterOrAttackPlusOneEachOtherGainLife
+    (some (namedPermanent g "Aragorn and Arwen, Wed").id)
+
+#guard
+  (namedPermanent wedShares "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (namedPermanent wedShares "Llanowar Elves").status.plusOnePlusOne == 1 &&
+    (namedPermanent wedShares "Aragorn and Arwen, Wed").status.plusOnePlusOne == 0 &&
+    (namedPermanent wedShares "Gray Ogre").status.plusOnePlusOne == 0 &&
+    (wedShares.player ⟨0⟩).life == (started.player ⟨0⟩).life + 2 &&
+    wedShares.pending == .none &&
+    wedShares.triggerSequenceRest.isNone &&
+    wedShares.log.any (fun s => mentions s "Grizzly Bears gets") &&
+    wedShares.log.any (fun s => mentions s "Llanowar Elves gets") &&
+    wedShares.log.any (fun s => mentions s "gains 2 life")
+
+/-- No other creature you control means no counters and no life. -/
+def wedAlone : Game :=
+  let g := addPermanent started aragornAndArwenWed ⟨0⟩ ⟨0⟩
+  let g := addPermanent g (artifact "My Sword" ManaCost.empty "") ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  g.applyTriggeredAbility ⟨0⟩ .onEnterOrAttackPlusOneEachOtherGainLife
+    (some (namedPermanent g "Aragorn and Arwen, Wed").id)
+
+#guard
+  (namedPermanent wedAlone "Aragorn and Arwen, Wed").status.plusOnePlusOne == 0 &&
+    (namedPermanent wedAlone "Gray Ogre").status.plusOnePlusOne == 0 &&
+    (wedAlone.player ⟨0⟩).life == (started.player ⟨0⟩).life &&
+    wedAlone.pending == .none &&
+    wedAlone.triggerSequenceRest.isNone &&
+    !(wedAlone.log.any (fun s => mentions s "gets")) &&
+    !(wedAlone.log.any (fun s => mentions s "gains"))
+
+#guard aragornAndArwenWed.triggeredAbilities == #[.onEnterOrAttackPlusOneEachOtherGainLife]
+
 /-- Bag End Banquet creates three Foods. -/
 def banquetFoods : Game :=
   (addPermanent started bagEndBanquet ⟨0⟩ ⟨0⟩).applyTriggeredAbility

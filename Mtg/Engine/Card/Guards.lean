@@ -820,6 +820,12 @@ namespace CardDef
   .sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]
 #guard TriggeredAbility.toNotation .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   "When this permanent enters, destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way."
+#guard TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife ==
+  .triggered (.or .enter .attack) (Effect.ofTrigger .plusOneEachOtherGainLife)
+#guard TriggeredAbility.resolution .onEnterOrAttackPlusOneEachOtherGainLife ==
+  .sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]
+#guard TriggeredAbility.toNotation .onEnterOrAttackPlusOneEachOtherGainLife ==
+  "Whenever this creature enters or attacks, put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control."
 #guard TriggeredAbility.onAttackDamageEqualSubtypeToEachOpponent "Dwarf" ==
   .triggered .attack (Effect.ofTrigger (.damageEqualSubtypeToEachOpponent "Dwarf"))
 #guard TriggeredAbility.onAttackDamageEqualTreasures ==

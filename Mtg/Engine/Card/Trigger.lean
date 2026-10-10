@@ -94,7 +94,10 @@ inductive TriggerResolution where
   `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`.
   Destroy opponents' artifacts and enchantments, then gain 1 life for each
   one actually destroyed, is
-  `.sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]`. -/
+  `.sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]`.
+  Put a +1/+1 counter on each other creature you control, then gain 1 life
+  for each other creature you control, is
+  `.sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -161,8 +164,10 @@ inductive TriggerResolution where
   | attachSourceToCreated
   /-- Attach the source to the targeted permanent. -/
   | attachSourceToTarget
-  /-- +1/+1 on each other creature you control; gain that much life. -/
-  | plusOneEachOtherGainLife
+  /-- Put a +1/+1 counter on each other creature you control. -/
+  | plusOneEachOther
+  /-- Gain 1 life for each other creature you control. -/
+  | gainLifeForEachOtherCreature
   /-- Deal damage equal to the count of this subtype you control to each
   opponent. -/
   | damageEqualSubtypeToEachOpponent (subtype : String)
@@ -699,7 +704,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .returnCreatureFromGyToHand }
   | .plusOneEachYouControl which => { resolution := .plusOneEachYouControl which }
   | .honeEachEquipment => { resolution := .honeEachEquipment }
-  | .plusOneEachOtherGainLife => { resolution := .plusOneEachOtherGainLife }
+  | .plusOneEachOtherGainLife =>
+    { resolution := .sequence
+        [.plusOneEachOther, .gainLifeForEachOtherCreature] }
   | .becomePT p t => { resolution := .becomePT p t }
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pumpTargetPerPlains }
