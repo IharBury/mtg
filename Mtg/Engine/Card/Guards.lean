@@ -816,6 +816,10 @@ namespace CardDef
   .triggered .enter (Effect.seqUntapPlusOneIfSubtype "Bear")
 #guard TriggeredAbility.onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   .triggered .enter (Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife)
+#guard TriggeredAbility.resolution .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
+  .sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]
+#guard TriggeredAbility.toNotation .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
+  "When this permanent enters, destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way."
 #guard TriggeredAbility.onAttackDamageEqualSubtypeToEachOpponent "Dwarf" ==
   .triggered .attack (Effect.ofTrigger (.damageEqualSubtypeToEachOpponent "Dwarf"))
 #guard TriggeredAbility.onAttackDamageEqualTreasures ==

@@ -726,6 +726,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
   | .sequence [.gainLife n, .searchLibrary .basicLandOnTop] =>
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
+  | .sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay] =>
+    "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -769,6 +771,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may tap any number of untapped Humans you control"
   | .drawForEachTappedHuman =>
     "draw a card for each Human tapped this way"
+  | .destroyOppArtifactsEnchantments =>
+    "destroy all artifacts and enchantments your opponents control"
+  | .gainLifeForEachDestroyedThisWay =>
+    "you gain 1 life for each permanent destroyed this way"
   | .recruit .recruit =>
     "recruit"
   | .recruit .you =>
@@ -795,8 +801,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"attach it to {noun}"
   | .plusOneEachOtherGainLife =>
     "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
-  | .destroyOppArtifactsEnchantmentsGainLife =>
-    "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
   | .damageEqualSubtypeToEachOpponent subtype =>
     s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
   | .damageEqualTreasures =>

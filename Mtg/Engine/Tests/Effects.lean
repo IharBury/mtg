@@ -565,6 +565,58 @@ def thrushFinds : Game :=
     (thrushFinds.player ⟨0⟩).library.back? == some ((thrushOffers.player ⟨0⟩).library.back!) &&
     thrushFinds.log.any (fun s => mentions s "on top of their library")
 
+/-- Ori destroys each opposing artifact and enchantment, then gains 1 life
+for each one that actually leaves. Yours stay. Indestructible permanents
+and shield counters are not destroyed and do not count. -/
+def oriClears : Game :=
+  let g := addPermanent started oriPlateStacker ⟨0⟩ ⟨0⟩
+  let g := addPermanent g (artifact "Opp Sword" ManaCost.empty "") ⟨1⟩ ⟨1⟩
+  let g := addPermanent g (enchantment "Opp Aura" ManaCost.empty "") ⟨1⟩ ⟨1⟩
+  let g := addPermanent g (artifact "My Sword" ManaCost.empty "") ⟨0⟩ ⟨0⟩
+  let g := addPermanent g
+    (artifact "Hardy Relic" ManaCost.empty "" (keywords := Keyword.indestructible)) ⟨1⟩ ⟨1⟩
+  let g := addPermanent g (artifact "Shielded Relic" ManaCost.empty "") ⟨1⟩ ⟨1⟩
+  let shielded := namedPermanent g "Shielded Relic"
+  let g := g.setObject { shielded with status := { shielded.status with shield := 1 } }
+  let g := addPermanent g (artifactCreature "Opp Construct" ManaCost.empty #[] 1 1) ⟨1⟩ ⟨1⟩
+  g.applyTriggeredAbility ⟨0⟩ .onEnterDestroyOppArtifactsEnchantmentsGainLife
+    (some (namedPermanent g "Ori, Plate Stacker").id)
+
+#guard
+  let left (name : String) : Bool :=
+    oriClears.battlefield.any (fun o => o.name == name)
+  let buried (name : String) : Bool :=
+    oriClears.objects.any (fun o =>
+      o.name == name &&
+        match o.zone with
+        | .graveyard _ => true
+        | _ => false)
+  !left "Opp Sword" && buried "Opp Sword" &&
+    !left "Opp Aura" && buried "Opp Aura" &&
+    !left "Opp Construct" && buried "Opp Construct" &&
+    left "My Sword" && left "Hardy Relic" && left "Shielded Relic" &&
+    (namedPermanent oriClears "Shielded Relic").status.shield == 0 &&
+    (oriClears.player ⟨0⟩).life == (started.player ⟨0⟩).life + 3 &&
+    oriClears.permanentsDestroyedThisWay == 0 &&
+    oriClears.pending == .none &&
+    oriClears.triggerSequenceRest.isNone &&
+    oriClears.log.any (fun s => mentions s "is indestructible and isn't destroyed") &&
+    oriClears.log.any (fun s => mentions s "shield counter is removed")
+
+/-- Nothing opposing to destroy gains no life. -/
+def oriNothing : Game :=
+  let g := addPermanent started oriPlateStacker ⟨0⟩ ⟨0⟩
+  let g := addPermanent g (artifact "My Sword" ManaCost.empty "") ⟨0⟩ ⟨0⟩
+  g.applyTriggeredAbility ⟨0⟩ .onEnterDestroyOppArtifactsEnchantmentsGainLife
+    (some (namedPermanent g "Ori, Plate Stacker").id)
+
+#guard
+  (oriNothing.player ⟨0⟩).life == (started.player ⟨0⟩).life &&
+    oriNothing.battlefield.any (fun o => o.name == "My Sword") &&
+    oriNothing.permanentsDestroyedThisWay == 0 &&
+    oriNothing.pending == .none &&
+    oriNothing.triggerSequenceRest.isNone
+
 /-- Bag End Banquet creates three Foods. -/
 def banquetFoods : Game :=
   (addPermanent started bagEndBanquet ⟨0⟩ ⟨0⟩).applyTriggeredAbility

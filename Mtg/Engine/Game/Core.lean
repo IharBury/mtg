@@ -130,6 +130,9 @@ structure Game where
   /-- Humans chosen for the current “tap any number of Humans” step.
   `drawForEachTappedHuman` draws this many cards. -/
   humansTappedThisWay : Nat := 0
+  /-- Permanents destroyed by the current “destroy artifacts and enchantments”
+  step. `gainLifeForEachDestroyedThisWay` gains this much life. -/
+  permanentsDestroyedThisWay : Nat := 0
   /-- Later steps of a trigger `sequence`, waiting on the pending choice an
   earlier step opened. -/
   triggerSequenceRest : Option TriggerSequenceRest := none

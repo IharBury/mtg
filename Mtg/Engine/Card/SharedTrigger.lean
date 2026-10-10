@@ -622,7 +622,9 @@ inductive SharedTrigger where
   Human tapped this way.
   Resolves as `.sequence [.tapAnyHumans, .drawForEachTappedHuman]`. -/
   | tapHumansDraw
-  /-- Destroy opponents' artifacts and enchantments; gain life for each. -/
+  /-- Destroy opponents' artifacts and enchantments; gain life for each.
+  Resolves as
+  `.sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]`. -/
   | destroyOppArtifactsEnchantmentsGainLife
   /-- Damage each opponent equal to permanents of this subtype you control. -/
   | damageEqualSubtypeToEachOpponent (subtype : String)
