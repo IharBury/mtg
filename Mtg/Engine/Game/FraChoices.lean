@@ -22,12 +22,16 @@ inductive FraAnswer where
   | name (name : String)
 deriving Repr, BEq
 
-/-- Clear the choice and let the game continue. -/
+/-- Clear the choice and let the game continue. A trigger sequence that paused
+on this choice runs its remaining steps first. -/
 def finishFraChoice (g : Game) : Game :=
   if g.pending != .none then g
   else
-    let g := g.promptTriggerTargetsIfNeeded
-    if g.pending == .none then g.receivePriority g.activePlayer else g
+    let g := g.resumeTriggerSequence
+    if g.pending != .none then g
+    else
+      let g := g.promptTriggerTargetsIfNeeded
+      if g.pending == .none then g.receivePriority g.activePlayer else g
 
 /-- Combine the chosen modes of a modal triggered ability into one effect.
 At most one chosen mode targets. -/
@@ -455,14 +459,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           g := g.attachSourceTo eq (g.object! hostId)
           attached := attached + 1
       | none => pure ()
-    if attached == 0 || !host.isOnBattlefield then
-      return g.finishFraChoice
-    let host := g.object! hostId
-    let effect : Effect :=
-      { targeting := .of .creature, allowsZeroTargets := true
-        resolution := .fra .damageEqualSourcePower
-        phrase := s!"{host.name} deals damage equal to its power to up to one target creature" }
-    return (g.putReflexiveTrigger p (some hostId) effect).finishFraChoice
+    if attached > 0 && host.isOnBattlefield then
+      g := { g with equipmentAttachedHost := some hostId }
+    return g.finishFraChoice
   | .attachAnyEquipment .., .decline => return g.finishFraChoice
   | .attachAnyEquipment .., _ => throw "Choose Equipment to attach, or decline"
   | .sacrificeLeastPower ids, .objects #[id] =>
@@ -695,18 +694,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return g.finishFraChoice
   | .mayCastCopy _, _ => throw "Cast the copy (accept), or decline"
   | .mayDiscardHandBalin sourceId, .accept =>
-    let n := (g.player p).hand.size
-    let g := g.mayDiscardHandDrawThatMany p true
+    let ids := (g.player p).hand
+    let n := ids.size
     let g :=
-      if !g.hasEnduringStory p || n == 0 then g
-      else
-        match sourceId.bind g.findObject? with
-        | some src =>
-          if src.isOnBattlefield then
-            g.forEachOpponent p (fun g pid =>
-              g.dealDamageToPlayer pid (n : Int) (source := some src))
-          else g
-        | none => g
+      ids.foldl (fun acc id =>
+        match acc.findObject? id with
+        | none => acc
+        | some o =>
+          let (acc, _) := acc.move id (.graveyard o.owner) none
+          acc) g
+    let g := g.logMsg s!"{(g.player p).name} discards {n} card(s)"
+    let g := { g with handDiscardedThisWay := some n, notedSourceThisWay := sourceId }
     return g.finishFraChoice
   | .mayDiscardHandBalin _, .decline =>
     return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice

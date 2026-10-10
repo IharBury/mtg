@@ -146,6 +146,54 @@ structure Game where
   /-- Ordinal recorded by the current `noteResolveThisTurn` step.
   `ifNthResolve` reads it and a finished sequence clears it. -/
   nthResolveThisWay : Option Nat := none
+  /-- The current sequence step asked the rest of the sequence not to run
+  (the source had already left, or no mana was spent). -/
+  skipTriggerSequenceRest : Bool := false
+  /-- Excess damage noted by `dealLastKnownPowerNoteExcess` for the following
+  amass step. -/
+  excessDamageThisWay : Nat := 0
+  /-- `destroyNotedForAmass` destroyed its target. The controller, amount, and
+  whether you controlled it feed the following amass and draw steps. -/
+  destroyedForAmassThisWay : Bool := false
+  amassControllerThisWay : Option PlayerId := none
+  amassAmountThisWay : Nat := 0
+  amassYouControlledThisWay : Bool := false
+  /-- Cards milled by the current `millNote` step. -/
+  milledIdsThisWay : Array ObjectId := #[]
+  /-- `opponentsMillNote` milled at least one card. -/
+  opponentsMilledThisWay : Bool := false
+  /-- Palantír finished putting an influence counter; the following step offers
+  the opponent's draw choice. Controller, opponent, and the Palantír. -/
+  palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId) := none
+  /-- `grimaExileUntil` stored the impulse. The following step offers the cast. -/
+  grimaImpulseReady : Bool := false
+  grimaImpulseVictim : Option PlayerId := none
+  grimaImpulseFound : Option ObjectId := none
+  grimaImpulseOthers : Array ObjectId := #[]
+  /-- `sacrificePlanForReflexive` sacrificed the Plan. -/
+  planWasSacrificed : Bool := false
+  /-- Lands exiled by `exileLandsNote`, to return tapped. -/
+  exiledIdsThisWay : Array ObjectId := #[]
+  /-- Creature exiled by `exileOtherUntilLeavesNote`, copied by the next step.
+  The object is the one from before it moved. -/
+  notedCopyObject : Option GameObject := none
+  notedHostId : Option ObjectId := none
+  /-- Cards discarded by accepting Balin's hand discard. `none` means declined. -/
+  handDiscardedThisWay : Option Nat := none
+  /-- Source of the Balin ability, for the damage step after the discard. -/
+  notedSourceThisWay : Option ObjectId := none
+  /-- Creature that received Equipment from `offerAttachAnyEquipment`. -/
+  equipmentAttachedHost : Option ObjectId := none
+  /-- A count captured before a later step could change it (invasion counters,
+  cards discarded). -/
+  notedCountThisWay : Nat := 0
+  /-- Token created for the following attach or counter step. -/
+  createdTokenThisWay : Option ObjectId := none
+  /-- Card exiled by `exileGyCardNote`. -/
+  playExiledThisWay : Option ObjectId := none
+  /-- The following `surveil` returns a card with mana value at most the life
+  gained this turn (ruling 750). -/
+  armSurveilReturn : Bool := false
   /-- Later steps of a trigger `sequence`, waiting on the pending choice an
   earlier step opened. -/
   triggerSequenceRest : Option TriggerSequenceRest := none
