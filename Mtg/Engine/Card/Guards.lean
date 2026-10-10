@@ -721,6 +721,11 @@ namespace CardDef
 #guard TriggeredAbility.onEnterMayDiscardDraw 2 ==
   .triggered .enter (Effect.ofTrigger (.mayTo .discard (.draw 2)))
 #guard (TriggeredAbility.onEnterMayDiscardDraw 2).resolution == .mayDiscardDraw 2
+#guard TriggeredAbility.onCastNoncreatureMayDrawXDiscard2 ==
+  .triggered .youCastNoncreature (Effect.ofTrigger (.may (.drawXDiscard 2)))
+#guard (TriggeredAbility.onCastNoncreatureMayDrawXDiscard2).resolution == .mayDrawXDiscard2
+#guard TriggeredAbility.toNotation .onCastNoncreatureMayDrawXDiscard2 ==
+  "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
 #guard TriggeredAbility.onEnterEachOpponentDiscards ==
   .triggered .enter (Effect.ofTrigger .opponentDiscards)
 #guard TriggeredAbility.onAttackOtherGets2AndTrample ==

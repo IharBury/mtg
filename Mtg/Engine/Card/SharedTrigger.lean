@@ -521,6 +521,10 @@ inductive SharedTrigger where
   /-- You may do `can`. If you do, `thenDo`.
   You may discard a card. If you do, draw `n` is `.mayTo .discard (.draw n)`. -/
   | mayTo (can thenDo : SharedTrigger)
+  /-- You may do `action`. Declining skips it.
+  You may draw X cards, where X is the mana spent to cast that spell, then
+  discard two, is `.may (.drawXDiscard 2)`. -/
+  | may (action : SharedTrigger)
   /-- An opponent discards `n` cards. Each opponent discards one is
   `.opponentDiscards`. The announced opponent discards `n` is
   `.opponentDiscards n .target`. -/
@@ -583,8 +587,10 @@ inductive SharedTrigger where
   | payReturnFromGy
   /-- Target opponent loses `n` life. -/
   | targetOpponentLosesLife (n : Nat)
-  /-- You may draw X cards, then discard two. -/
-  | mayDrawXDiscard2
+  /-- Draw X cards, where X is the mana spent to cast the triggering spell,
+  then discard `n`. Two cards is `.drawXDiscard 2`. Making that optional is
+  `.may (.drawXDiscard 2)`. -/
+  | drawXDiscard (n : Nat)
   /-- The Ring tempts you. -/
   | ringTempts
   /-- Set another creature's base P/T to this creature's. -/

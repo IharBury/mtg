@@ -262,7 +262,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginDiscardCards #[controller] n
   | .mayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
-  | .mayTo _ _ =>
+  | .mayTo _ _ | .may _ =>
     g.logMsg s!"{(g.player controller).name}'s optional action doesn't resolve"
   | .opponentSacrificesCreature =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
@@ -952,8 +952,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         -- via onlyFoodArtifact-style flag is too strong; grant artifact type.
         let g := g.mapObjectStatus o (fun s => { s with returnedAsArtifact := true })
         g.logMsg s!"{o.name} returns as an artifact"
+  | .drawXDiscard k =>
+    -- X is the mana spent to cast the triggering spell.
+    let n := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+    if n == 0 then g.logMsg "No mana was spent to cast that spell"
+    else g.drawThenBeginDiscard controller n (discardRounds := k)
   | .mayDrawXDiscard2 =>
     -- X is the mana spent to cast the triggering spell.
+    -- `SharedTrigger.may (.drawXDiscard 2)` resolves as this choice.
     let n := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
     if n == 0 then g.logMsg "No mana was spent to cast that spell"
     else
