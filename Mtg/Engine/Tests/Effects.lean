@@ -177,6 +177,9 @@ def dawnLastHope : Game :=
   (dawnLastHope.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1 &&
     (dawnLastHope.player ⟨0⟩).life == (started.player ⟨0⟩).life + 4 &&
     !(dawnLastHope.battlefield.any (fun o => o.name == "Dawn of a New Age")) &&
+    dawnLastHope.removedHopeThisWay == false &&
+    dawnLastHope.pending == .none &&
+    dawnLastHope.triggerSequenceRest.isNone &&
     dawnLastHope.log.any (fun s => mentions s "loses a hope counter") &&
     dawnLastHope.log.any (fun s => mentions s "is sacrificed")
 
@@ -191,6 +194,9 @@ def dawnKeepsHope : Game :=
   (dawnKeepsHope.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1 &&
     (dawnKeepsHope.player ⟨0⟩).life == (started.player ⟨0⟩).life &&
     (namedPermanent dawnKeepsHope "Dawn of a New Age").status.hope == 1 &&
+    dawnKeepsHope.removedHopeThisWay == false &&
+    dawnKeepsHope.pending == .none &&
+    dawnKeepsHope.triggerSequenceRest.isNone &&
     !(dawnKeepsHope.log.any (fun s => mentions s "is sacrificed"))
 
 /-- No hope counter to remove: no draw. The sacrifice step still sees none
@@ -204,6 +210,9 @@ def dawnNoHope : Game :=
   (dawnNoHope.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size &&
     (dawnNoHope.player ⟨0⟩).life == (started.player ⟨0⟩).life + 4 &&
     !(dawnNoHope.battlefield.any (fun o => o.name == "Dawn of a New Age")) &&
+    dawnNoHope.removedHopeThisWay == false &&
+    dawnNoHope.pending == .none &&
+    dawnNoHope.triggerSequenceRest.isNone &&
     !(dawnNoHope.log.any (fun s => mentions s "loses a hope counter")) &&
     dawnNoHope.log.any (fun s => mentions s "is sacrificed")
 

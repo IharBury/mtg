@@ -399,13 +399,18 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match sourceId.bind g.findObject? with
     | some src => g.returnLinkedExile src
     | none => g
-  | .removeHopeCounterDraw =>
+  | .removeHopeCounter =>
+    let g := { g with removedHopeThisWay := false }
     g.withTriggerSource sourceId fun g src =>
       if src.status.hope == 0 then g
       else
         let g := g.setObject { src with status := { src.status with hope := src.status.hope - 1 } }
         let g := g.logMsg s!"{src.name} loses a hope counter"
-        g.draw controller 1
+        { g with removedHopeThisWay := true }
+  | .drawIfRemovedHope =>
+    let removed := g.removedHopeThisWay
+    let g := { g with removedHopeThisWay := false }
+    if removed then g.draw controller 1 else g
   | .sacrificeGainLifeIfNoHope =>
     match sourceId.bind g.findObject? with
     | some src =>

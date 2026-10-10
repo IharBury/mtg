@@ -81,9 +81,9 @@ inductive TriggerResolution where
   power, is `.sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]`.
   Draw, then bottom a card if you control no legendary, is
   `.sequence [.draw 1, .putOnBottomIfNoLegendary]`.
-  Remove a hope counter and draw if you do, then sacrifice and gain life
-  if none remain, is
-  `.sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope]`.
+  Remove a hope counter, draw if one was removed, then sacrifice and gain
+  life if none remain, is
+  `.sequence [.removeHopeCounter, .drawIfRemovedHope, .sacrificeGainLifeIfNoHope]`.
   A step that asks a player to choose pauses the later steps until that
   choice finishes; they are still part of this resolution. Tap any number
   of Humans, then draw that many, is
@@ -131,8 +131,10 @@ inductive TriggerResolution where
   | exileUntilLeaves
   /-- Return cards exiled by the source. -/
   | returnLinkedExile
-  /-- Remove a hope counter from the source. If you do, draw a card. -/
-  | removeHopeCounterDraw
+  /-- Remove a hope counter from the source. -/
+  | removeHopeCounter
+  /-- Draw a card if an earlier step removed a hope counter. -/
+  | drawIfRemovedHope
   /-- If the source has no hope counters, sacrifice it and you gain 4 life. -/
   | sacrificeGainLifeIfNoHope
   /-- You may tap any number of untapped Humans you control. -/
@@ -744,7 +746,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .drawThenBottomIfNoLegendary =>
     { resolution := .sequence [.draw 1, .putOnBottomIfNoLegendary] }
   | .removeHopeDrawSac =>
-    { resolution := .sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope] }
+    { resolution := .sequence
+        [.removeHopeCounter, .drawIfRemovedHope, .sacrificeGainLifeIfNoHope] }
   | .tapHumansDraw =>
     { resolution := .sequence [.tapAnyHumans, .drawForEachTappedHuman] }
   | .destroyOppArtifactsEnchantmentsGainLife =>

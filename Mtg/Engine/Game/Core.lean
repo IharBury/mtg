@@ -133,6 +133,9 @@ structure Game where
   /-- Permanents destroyed by the current “destroy artifacts and enchantments”
   step. `gainLifeForEachDestroyedThisWay` gains this much life. -/
   permanentsDestroyedThisWay : Nat := 0
+  /-- A hope counter was removed by the current `removeHopeCounter` step.
+  `drawIfRemovedHope` draws a card when this is set. -/
+  removedHopeThisWay : Bool := false
   /-- Later steps of a trigger `sequence`, waiting on the pending choice an
   earlier step opened. -/
   triggerSequenceRest : Option TriggerSequenceRest := none
