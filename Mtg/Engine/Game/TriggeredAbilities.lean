@@ -442,10 +442,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else g.amass controller subtype n
   | .createTokens kind n tapped =>
     g.createKindTokens controller kind n (tapped := tapped)
-  | .createThenAttach kind =>
-    let (g, tok) := g.createToken controller (tokenPrinted kind)
-    g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src tok)
-      "The Equipment is no longer in play"
+  | .attachSourceToCreated =>
+    match (g.recentTokenIds.back?).bind g.findObject? with
+    | some tok =>
+      g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src tok)
+        "The Equipment is no longer in play"
+    | none => g
   | .attachSourceToTarget =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g host =>
       g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src host)

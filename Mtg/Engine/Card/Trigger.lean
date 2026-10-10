@@ -86,7 +86,9 @@ inductive TriggerResolution where
   A step that asks a player to choose pauses the later steps until that
   choice finishes; they are still part of this resolution. Tap any number
   of Humans, then draw that many, is
-  `.sequence [.tapAnyHumans, .drawForEachTappedHuman]`. -/
+  `.sequence [.tapAnyHumans, .drawForEachTappedHuman]`.
+  Create one token, then attach the source to it, is
+  `.sequence [.createTokens kind 1 false, .attachSourceToCreated]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -144,8 +146,8 @@ inductive TriggerResolution where
       (amount : AmassAmount := .fixed) (attachSource : Bool := false)
   /-- Create `n` tokens of this kind. -/
   | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool)
-  /-- Create a token, then attach the source to it. -/
-  | createThenAttach (kind : TokenKind)
+  /-- Attach the source to the token created by the previous step. -/
+  | attachSourceToCreated
   /-- Attach the source to the targeted permanent. -/
   | attachSourceToTarget
   /-- Gain `n` life, then search a basic land to the top. -/
@@ -700,7 +702,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .pumpForEachOtherCreature => { resolution := .pumpForEachOtherCreature }
   | .damageBlockers n => { resolution := .damageBlockers n }
   | .returnLinkedExile => { resolution := .returnLinkedExile }
-  | .createThenAttach kind => { resolution := .createThenAttach kind }
+  | .createThenAttach kind =>
+    { resolution := .sequence [.createTokens kind 1 false, .attachSourceToCreated] }
   | .gainLifeSearchBasicOnTop n => { resolution := .gainLifeSearchBasicOnTop n }
   | .addMana types => { resolution := .addMana types }
   | .createAxe attach => { resolution := .createAxe attach }

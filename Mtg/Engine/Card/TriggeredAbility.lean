@@ -720,6 +720,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .sequence [.tapAnyHumans, .drawForEachTappedHuman] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
+  | .sequence [.createTokens kind 1 false, .attachSourceToCreated] =>
+    s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -783,8 +785,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"amass {pluralizeName subtype} {n}"
   | .createTokens kind n tapped =>
     TokenKind.createPhrase kind n (tapped := tapped)
-  | .createThenAttach kind =>
-    s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
+  | .attachSourceToCreated =>
+    "attach this Equipment to it"
   | .attachSourceToTarget =>
     s!"attach it to {noun}"
   | .gainLifeSearchBasicOnTop n =>

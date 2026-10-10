@@ -570,7 +570,8 @@ inductive SharedTrigger where
   | damageBlockers (n : Nat)
   /-- Return cards exiled by the source. -/
   | returnLinkedExile
-  /-- Create a token, then attach the source to it. -/
+  /-- Create one token, then attach the source to it.
+  Resolves as `.sequence [.createTokens kind 1 false, .attachSourceToCreated]`. -/
   | createThenAttach (kind : TokenKind)
   /-- Gain `n` life, then search a basic land to the top. -/
   | gainLifeSearchBasicOnTop (n : Nat)
