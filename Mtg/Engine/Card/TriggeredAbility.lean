@@ -718,6 +718,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope] =>
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
+  | .sequence [.tapAnyHumans, .drawForEachTappedHuman] =>
+    "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -757,8 +759,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "remove a hope counter from this. If you do, draw a card"
   | .sacrificeGainLifeIfNoHope =>
     "if this has no hope counters on it, sacrifice it and you gain 4 life"
-  | .tapHumansDraw =>
-    "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
+  | .tapAnyHumans =>
+    "you may tap any number of untapped Humans you control"
+  | .drawForEachTappedHuman =>
+    "draw a card for each Human tapped this way"
   | .recruit .recruit =>
     "recruit"
   | .recruit .you =>

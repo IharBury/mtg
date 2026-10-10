@@ -82,7 +82,11 @@ inductive TriggerResolution where
   `.sequence [.draw 1, .putOnBottomIfNoLegendary]`.
   Remove a hope counter and draw if you do, then sacrifice and gain life
   if none remain, is
-  `.sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope]`. -/
+  `.sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope]`.
+  A step that asks a player to choose pauses the later steps until that
+  choice finishes; they are still part of this resolution. Tap any number
+  of Humans, then draw that many, is
+  `.sequence [.tapAnyHumans, .drawForEachTappedHuman]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -120,8 +124,10 @@ inductive TriggerResolution where
   | removeHopeCounterDraw
   /-- If the source has no hope counters, sacrifice it and you gain 4 life. -/
   | sacrificeGainLifeIfNoHope
-  /-- Tap any number of Humans you control; draw that many cards. -/
-  | tapHumansDraw
+  /-- You may tap any number of untapped Humans you control. -/
+  | tapAnyHumans
+  /-- Draw a card for each Human tapped by an earlier step. -/
+  | drawForEachTappedHuman
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
   /-- Exile the top card; you may play it until the end of your next turn. -/
@@ -721,7 +727,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence [.draw 1, .putOnBottomIfNoLegendary] }
   | .removeHopeDrawSac =>
     { resolution := .sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope] }
-  | .tapHumansDraw => { resolution := .tapHumansDraw }
+  | .tapHumansDraw =>
+    { resolution := .sequence [.tapAnyHumans, .drawForEachTappedHuman] }
   | .destroyOppArtifactsEnchantmentsGainLife =>
     { resolution := .destroyOppArtifactsEnchantmentsGainLife }
   | .damageEqualSubtypeToEachOpponent subtype =>

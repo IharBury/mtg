@@ -576,7 +576,8 @@ inductive Pending where
   | mayAttachEquipment (player : PlayerId) (hostId : ObjectId)
   /-- You may resolve the effect stashed in `mayEffect`. -/
   | mayResolve (player : PlayerId)
-  /-- Tap any number of Humans you control, then draw that many. -/
+  /-- Tap any number of untapped Humans you control. A later sequence step
+  draws a card for each Human tapped. -/
   | tapHumans (player : PlayerId)
   /-- Pay `{n}` or let the targeted spell be countered. When the game's
   `unlessPaysInstead` is set, declining resolves that effect instead. -/

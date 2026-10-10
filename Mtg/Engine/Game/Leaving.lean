@@ -166,7 +166,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     if q == p then { g with pending := .none, proposedSpell := none } else g
   | .sacrificePermanent q _ | .discardForAdditionalCost q
   | .sacrificeCreature q | .scry q _ | .surveil q _
-  | .mayDiscardDraw q _ | .mayAttachEquipment q _ | .tapHumans q
+  | .mayDiscardDraw q _ | .mayAttachEquipment q _
   | .recruitDiscard q | .chooseRingBearer q
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
   | .mayPutLandFromHand q | .chooseFoodOrTreasure q | .chooseTapOrUntap q _
@@ -175,6 +175,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .fraChoice q _
   | .mayCastExiledElseDamage q _ _ =>
     if q == p then { g with pending := .none } else g
+  | .tapHumans q =>
+    if q == p then
+      { g with pending := .none, triggerSequenceRest := none, humansTappedThisWay := 0 }
+    else g
   | .mayResolve q =>
     if q == p then { g with pending := .none }.clearMay else g
   | .chooseLibraryPlacement q _ =>

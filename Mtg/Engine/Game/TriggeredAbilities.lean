@@ -287,18 +287,45 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.dealDamageFrom sourceName o n (source := sourceId.bind g.findObject?)
   | .sequence rs =>
     -- One legality check for the whole sequence (CR 608.2b). Power is read
-    -- before any step moves the card, then each step runs in order.
+    -- before any step moves the card, then each step runs in order. A step
+    -- that opens a pending choice pauses the rest until that choice finishes.
     if g.sequenceAllTargetsIllegal controller ab.effect targets sourceId then
       g.logIllegalSequenceTargets targets
     else
       let cardPower :=
-        match targets[0]? with
-        | some (Target.card oid) | some (Target.permanent oid) =>
-          (g.findObject? oid).map fun o => (g.power o).toNat
-        | _ => none
-      (rs.flatMap TriggeredAbility.TriggerResolution.flatten).foldl (fun g step =>
-        g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-          lastKnownPower lastKnownToughness sourceName (some step) cardPower) g
+        match sequencedCardPower with
+        | some n => some n
+        | none =>
+          match targets[0]? with
+          | some (Target.card oid) | some (Target.permanent oid) =>
+            (g.findObject? oid).map fun o => (g.power o).toNat
+          | _ => none
+      let steps := rs.flatMap TriggeredAbility.TriggerResolution.flatten
+      let (g, rest, _) :=
+        steps.foldl
+          (fun (acc : Game × List TriggeredAbility.TriggerResolution × Bool) step =>
+            let (g, waiting, paused) := acc
+            if paused then
+              (g, waiting ++ [step], true)
+            else
+              let g :=
+                g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+                  lastKnownPower lastKnownToughness sourceName (some step) cardPower
+              (g, waiting, g.pending != .none))
+          (g, [], false)
+      if rest.isEmpty then g
+      else
+        { g with triggerSequenceRest := some {
+            controller
+            ability := ab
+            sourceId
+            targets
+            dividedDamage
+            lastKnownPower
+            lastKnownToughness
+            sourceName
+            cardPower
+            steps := rest } }
   | .gainLifeEqualToTargetPower =>
     match sequencedCardPower with
     | some n => g.gainLife controller n
@@ -384,9 +411,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.gainLife controller 4
       else g
     | none => g
-  | .tapHumansDraw =>
-    { g with pending := .tapHumans controller }.logMsg
+  | .tapAnyHumans =>
+    { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
       s!"{(g.player controller).name} may tap any number of untapped Humans they control"
+  | .drawForEachTappedHuman =>
+    let n := g.humansTappedThisWay
+    let g := { g with humansTappedThisWay := 0 }
+    if n == 0 then g else g.draw controller n
   | .recruit _ =>
     g.beginRecruit controller
   | .exileTop =>
@@ -1616,6 +1647,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | r =>
     g.applyUnifiedAbility controller { ab.effect with resolution := r }
       targets sourceId lastKnownPower
+
+/-- Finish trigger-sequence steps that waited on a pending choice.
+Those steps are still part of the resolution that opened the choice. -/
+def resumeTriggerSequence (g : Game) : Game :=
+  match g.triggerSequenceRest with
+  | none => g
+  | some c =>
+    let g := { g with triggerSequenceRest := none }
+    g.applyTriggeredAbility c.controller c.ability c.sourceId c.targets
+      c.dividedDamage c.lastKnownPower c.lastKnownToughness c.sourceName
+      (some (.sequence c.steps)) c.cardPower
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
