@@ -421,6 +421,22 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let n := g.humansTappedThisWay
     let g := { g with humansTappedThisWay := 0 }
     if n == 0 then g else g.draw controller n
+  | .destroyOppArtifactsEnchantments =>
+    Id.run do
+      let mut g := g
+      let mut n : Nat := 0
+      for o in g.battlefield do
+        if o.isOnBattlefield && !o.controlledBy controller &&
+            (o.types.contains .artifact || o.types.contains .enchantment) then
+          g := g.destroyPermanent o
+          -- Only permanents actually destroyed count (indestructible ones stay).
+          if !(g.findObject? o.id).any (·.isOnBattlefield) then
+            n := n + 1
+      return { g with permanentsDestroyedThisWay := n }
+  | .gainLifeForEachDestroyedThisWay =>
+    let n := g.permanentsDestroyedThisWay
+    let g := { g with permanentsDestroyedThisWay := 0 }
+    if n == 0 then g else g.gainLife controller n
   | .recruit _ =>
     g.beginRecruit controller
   | .exileTop =>
@@ -462,18 +478,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         o.isCreature && o.controlledBy controller && some o.id != sourceId)
     let g := others.foldl (fun acc o => acc.addPlusOnePlusOneTo o 1) g
     if others.isEmpty then g else g.gainLife controller others.size
-  | .destroyOppArtifactsEnchantmentsGainLife =>
-    Id.run do
-      let mut g := g
-      let mut n : Nat := 0
-      for o in g.battlefield do
-        if o.isOnBattlefield && !o.controlledBy controller &&
-            (o.types.contains .artifact || o.types.contains .enchantment) then
-          g := g.destroyPermanent o
-          -- Only permanents actually destroyed count (indestructible ones stay).
-          if !(g.findObject? o.id).any (·.isOnBattlefield) then
-            n := n + 1
-      return if n == 0 then g else g.gainLife controller n
   | .damageEqualSubtypeToEachOpponent subtype =>
     let n := g.countSubtype controller subtype
     let src := sourceId.bind g.findObject?

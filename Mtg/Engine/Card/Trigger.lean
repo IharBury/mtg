@@ -91,7 +91,10 @@ inductive TriggerResolution where
   Create one token, then attach the source to it, is
   `.sequence [.createTokens kind 1 false, .attachSourceToCreated]`.
   Gain life, then you may search a basic land onto the top, is
-  `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`. -/
+  `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`.
+  Destroy opponents' artifacts and enchantments, then gain 1 life for each
+  one actually destroyed, is
+  `.sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -133,6 +136,11 @@ inductive TriggerResolution where
   | tapAnyHumans
   /-- Draw a card for each Human tapped by an earlier step. -/
   | drawForEachTappedHuman
+  /-- Destroy all artifacts and enchantments opponents control.
+  Only permanents that actually leave are counted for the next step. -/
+  | destroyOppArtifactsEnchantments
+  /-- Gain 1 life for each permanent destroyed by an earlier step. -/
+  | gainLifeForEachDestroyedThisWay
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
   /-- Exile the top card; you may play it until the end of your next turn. -/
@@ -155,8 +163,6 @@ inductive TriggerResolution where
   | attachSourceToTarget
   /-- +1/+1 on each other creature you control; gain that much life. -/
   | plusOneEachOtherGainLife
-  /-- Destroy opponents' artifacts and enchantments; gain 1 per destroyed. -/
-  | destroyOppArtifactsEnchantmentsGainLife
   /-- Deal damage equal to the count of this subtype you control to each
   opponent. -/
   | damageEqualSubtypeToEachOpponent (subtype : String)
@@ -735,7 +741,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .tapHumansDraw =>
     { resolution := .sequence [.tapAnyHumans, .drawForEachTappedHuman] }
   | .destroyOppArtifactsEnchantmentsGainLife =>
-    { resolution := .destroyOppArtifactsEnchantmentsGainLife }
+    { resolution := .sequence
+        [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay] }
   | .damageEqualSubtypeToEachOpponent subtype =>
     { resolution := .damageEqualSubtypeToEachOpponent subtype }
   | .damageEqualTreasures =>
