@@ -763,6 +763,10 @@ namespace CardDef
   .triggered .becomesBlocked (Effect.ofTrigger (.damageBlockers 1))
 #guard TriggeredAbility.onEnterCreateThenAttach .treasure ==
   .triggered .enter (Effect.ofTrigger (.createThenAttach .treasure))
+#guard TriggeredAbility.resolution (.onEnterCreateThenAttach .dwarf) ==
+  .sequence [.createTokens .dwarf 1 false, .attachSourceToCreated]
+#guard TriggeredAbility.toNotation (.onEnterCreateThenAttach .dwarf) ==
+  "When this permanent enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it."
 #guard TriggeredAbility.onLandYouControlEntersDrawPlusOneSource ==
   .triggered .landYouControlEnters Effect.seqDrawPlusOneSource
 #guard TriggeredAbility.onArmyCombatDamageRingTempts ==

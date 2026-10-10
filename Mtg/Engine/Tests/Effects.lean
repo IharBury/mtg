@@ -516,7 +516,9 @@ def shortswordEntered : Game :=
 #guard
   let dwarf := namedPermanent shortswordEntered "Dwarf"
   let sword := namedPermanent shortswordEntered "Dwarven Shortsword"
-  dwarf.printed.isToken && sword.attachedTo == some dwarf.id
+  dwarf.printed.isToken && sword.attachedTo == some dwarf.id &&
+    shortswordEntered.pending == .none &&
+    shortswordEntered.triggerSequenceRest.isNone
 
 /-- Bag End Banquet creates three Foods. -/
 def banquetFoods : Game :=
