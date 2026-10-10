@@ -584,16 +584,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := g.giveControlUntilEot o controller
       let g := g.applyPermanentAction (g.object! o.id) .untap
       g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.haste))
-  | .othersGetAndOppsGet subtypes p t oppP oppT =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && o.controlledBy controller &&
-            subtypes.any (fun s => g.hasSubtype o s) && some o.id != sourceId then
-          g := g.pumpPermanent o p t
-        else if o.isCreature && !o.controlledBy controller then
-          g := g.pumpPermanent o oppP oppT
-      return g
+  | .othersOfSubtypesGet subtypes p t =>
+    g.foldBattlefield (fun o =>
+        o.isCreature && o.controlledBy controller && some o.id != sourceId &&
+          subtypes.any (fun s => g.hasSubtype o s))
+      (fun g o => g.pumpPermanent o p t)
+  | .opponentsCreaturesGet p t =>
+    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller)
+      (fun g o => g.pumpPermanent o p t)
   | .putNonlandMvAtMostFromGy _ =>
     g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
       match t with

@@ -650,7 +650,9 @@ inductive SharedTrigger where
   | createTappedTreasuresEqualOppArtifacts
   /-- Put a nonland with mana value `mv` or less from a graveyard onto the battlefield. -/
   | putNonlandMvAtMostFromGy (mv : Nat)
-  /-- Other matching creatures get +P/+T; opposing creatures get +oppP/+oppT. -/
+  /-- Other matching creatures get +P/+T; opposing creatures get +oppP/+oppT.
+  Resolves as
+  `.sequence [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT]`. -/
   | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
   /-- +1/+1 on a Wolf or create a Treasure. -/
   | wolfPlusOneOrTreasure

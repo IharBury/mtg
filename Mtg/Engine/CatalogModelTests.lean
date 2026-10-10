@@ -92,11 +92,19 @@ creature you control. -/
 /-! ## Combat, upkeep, and tapping -/
 
 /- Bolg, Erebor's Reckoning: at the beginning of each combat, other Goblins and
-Orcs you control get +2/+2 and opponents' creatures shrink by one. -/
+Orcs you control get +2/+2 and opponents' creatures shrink by one. Bolg
+himself and a non-Goblin you control are unchanged. An opposing Goblin
+shrinks rather than growing. -/
 #guard
   let g := addPermanent (addPermanent withBears bolgEreborsReckoning me me) bolgsCompany me me
+  let g := addPermanent (addPermanent g hillGiant me me) frontPorchSentries opp opp
   let g := settle (passBoth (skipTo g .beginningOfCombat 80))
-  power g "Bolg's Company" == 4 && power g "Grizzly Bears" == 1
+  power g "Bolg's Company" == 4 && toughness g "Bolg's Company" == 4 &&
+    power g "Grizzly Bears" == 1 && toughness g "Grizzly Bears" == 1 &&
+    power g "Bolg, Erebor's Reckoning" == 6 &&
+    toughness g "Bolg, Erebor's Reckoning" == 6 &&
+    power g "Hill Giant" == 3 && toughness g "Hill Giant" == 3 &&
+    power g "Front Porch Sentries" == 1 && toughness g "Front Porch Sentries" == 1
 
 /- Rewrite History: tapping creatures loots and adds a plan counter. -/
 #guard
