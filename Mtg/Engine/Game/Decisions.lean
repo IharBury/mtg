@@ -56,7 +56,9 @@ def finishLibraryLook (g : Game) : Game :=
     match g.palantirAfterScry with
     | some (controller, opp, sid) =>
       ({ g with palantirAfterScry := none }).offerPalantirChoice controller opp sid
-    | none => g.receivePriority g.activePlayer
+    | none =>
+      let g := g.resumeTriggerSequence
+      if g.pending != .none then g else g.receivePriority g.activePlayer
 
 /-- Log putting `top` back on top, unless they stay in the looked-at order. -/
 def logPutOnTop (g : Game) (p : PlayerId) (looked top : Array ObjectId) : Game :=

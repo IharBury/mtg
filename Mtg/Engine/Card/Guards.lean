@@ -1310,13 +1310,13 @@ namespace CardDef
   "When this permanent enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\"."
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterOppCreatesTheVoid) == .opponent
 #guard TriggeredAbility.resolution (.onEnter Effect.enterCreateSturdyShieldAttach) ==
-  .createSturdyShieldAttach
+  .sequence [.createSturdyShieldToken, .attachCreatedToSource]
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
   .permanentCardInYourGraveyard
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
-  .tapCantUntapWhileControl
+  .sequence [.onPermanent .tap, .cantUntapWhileSource]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==
   .maySacAnotherThenDestroyOppNonland
 #guard TriggeredAbility.resolution (.onEnterExileTop) == .exileTop
@@ -1485,6 +1485,56 @@ end CardDef
     .ifNthResolve 1 (.gainLife 1),
     .ifNthResolve 2 (.draw 1),
     .ifNthResolve 3 (.plusOneEachYouControl)]
+#guard TriggeredAbility.resolution .onBolgDealSacrificedPower ==
+  .sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess]
+#guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
+  .sequence [.createTokens .spirit 2 true, .recentTokensAttackingIfEquippedLegendary]
+#guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
+  .sequence [.dealDamageToTarget 1, .amassGoblins 1 "Orc"]
+#guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
+  .sequence [.untapAttackingCreatures, .additionalCombatPhase]
+#guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
+  .sequence [.destroyNotedForAmass, .amassNotedController, .drawIfYouControlledDestroyed]
+#guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
+  .sequence [.mayDiscardHandForStory, .drawDiscardedHandCount, .damageEachOpponentIfStoryNoted]
+#guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
+  .sequence [.trampleCounterAndBear, .drawTwoIfThreeBears]
+#guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
+  .sequence [.millNote 4, .returnMilledSubtype "Elf"]
+#guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
+  .sequence [.tapEnchanted, .removeCountersFromEnchanted]
+#guard TriggeredAbility.resolution .onYourEndStepPalantir ==
+  .sequence [.palantirInfluenceScry, .palantirOfferDraw]
+#guard TriggeredAbility.resolution .onCombatDamageToYouSacRingTempts ==
+  .sequence [.sacDamagingCreatures, .ringTempts]
+#guard TriggeredAbility.resolution (.onCreatureYouControlEntersScryAndPlan 2) ==
+  .sequence [.planCounterOnSource, .scry 2]
+#guard TriggeredAbility.resolution .onLandYouControlEntersPlusOneAndPlan ==
+  .sequence [.planCounterOnSource, .plusOneOnTargetByYou]
+#guard TriggeredAbility.resolution .onFourthPlanDrawPlusOneEach ==
+  .sequence [.sacrificePlan, .draw 1, .plusOneEachYouControl]
+#guard TriggeredAbility.resolution .onFourthPlanReturnInstants ==
+  .sequence [.sacrificePlanForReflexive, .queueReflexiveIfSacrificed 11]
+#guard TriggeredAbility.resolution .onFourthPlanDividedDamage ==
+  .sequence [.sacrificePlanForReflexive, .queuePlanDividedDamage 7]
+#guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
+  .sequence [.draw 1, .mayPutLandFromHandTapped]
+#guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
+  .sequence [.draw 1, .gainLifeIfAnotherHero 2]
+#guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
+  .sequence [.createAlienToken, .plusOneOnAlienNoted, .invasionCounterOnSource]
+#guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
+  .sequence [.draw 2, .winIfLibraryEmpty, .shuffleSourceUnlessWon]
+#guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
+  .sequence [.armSurveilReturnLifeGained, .surveil 1]
+#guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
+  .sequence [.onPermanent (.grantKeywords Keyword.hexproof), .counterByPermanentType]
+#guard (SharedTrigger.timing (.drawXDiscard 2)).resolution ==
+  .sequence [.drawEqualToManaSpent, .discardIfManaSpent 2]
+#guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
+  .sequence [.createSturdyShieldToken, .attachCreatedToSource]
+#guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
+  .sequence [.tapTargetIfPresent, .loseAbilitiesWhileSourceRemains]
 #guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==
   "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."
 #guard TriggeredAbility.toNotation .onActivateCreatureAbilityDrawOnce ==

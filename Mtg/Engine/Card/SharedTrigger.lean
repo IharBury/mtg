@@ -595,7 +595,9 @@ inductive SharedTrigger where
   /-- Target opponent loses `n` life. -/
   | targetOpponentLosesLife (n : Nat)
   /-- Draw X cards, where X is the mana spent to cast the triggering spell,
-  then discard `n`. Two cards is `.drawXDiscard 2`. Making that optional is
+  then discard `n`. Resolves as
+  `.sequence [.drawEqualToManaSpent, .discardIfManaSpent n]`.
+  Two cards is `.drawXDiscard 2`. Making that optional is
   `.may (.drawXDiscard 2)`. -/
   | drawXDiscard (n : Nat)
   /-- The Ring tempts you. -/
@@ -656,7 +658,8 @@ inductive SharedTrigger where
   | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
   /-- +1/+1 on a Wolf or create a Treasure. -/
   | wolfPlusOneOrTreasure
-  /-- Trample counter, become a Bear, maybe draw. -/
+  /-- Trample counter, become a Bear, maybe draw. Resolves as
+  `.sequence [.trampleCounterAndBear, .drawTwoIfThreeBears]`. -/
   | trampleCounterBecomeBear
   /-- Mill `n`, then put matching subtype cards into hand. -/
   | millThenSubtypeToHand (n : Nat) (subtype : String)
@@ -684,7 +687,8 @@ inductive SharedTrigger where
   | castInstantSorceryFromHand
   /-- You may cast an instant or sorcery with mana value at most that damage. -/
   | castInstantSorceryMvAtMost
-  /-- Mill, then maybe copy a milled spell. -/
+  /-- Mill, then maybe copy a milled spell. Resolves as
+  `.sequence [.opponentsMillNote 2, .reflexiveCopyIfMilled]`. -/
   | millThenCopy
   /-- Another creature gets +X/+0 equal to this creature's power. -/
   | pumpTargetBySourcePower
@@ -701,31 +705,38 @@ inductive SharedTrigger where
   | belladonnaTokenReward
   /-- Bolg may-sacrifice. -/
   | bolgMaySacrifice
-  /-- Bolg reflexive damage. -/
+  /-- Bolg reflexive damage. Resolves as
+  `.sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess]`. -/
   | bolgDealSacrificedPower
-  /-- Create Spirits for equipped creature. -/
+  /-- Create Spirits for the equipped creature. Resolves as
+  `.sequence [.createTokens .spirit 2 true, .recentTokensAttackingIfEquippedLegendary]`. -/
   | createSpiritsForEquipped
   /-- Treasures equal to the damaged player's artifacts. -/
   | createTreasuresEqualDamagedPlayerArtifacts
-  /-- Deal 1 then amass Orcs 1. -/
+  /-- Deal 1 then amass Orcs 1. Resolves as
+  `.sequence [.dealDamageToTarget 1, .amassGoblins 1 "Orc"]`. -/
   | deal1ThenAmassOrcs
-  /-- Untap attackers and take an extra combat. `n` is Oracle total power. -/
+  /-- Untap attackers and take an extra combat. `n` is Oracle total power.
+  Resolves as `.sequence [.untapAttackingCreatures, .additionalCombatPhase]`. -/
   | untapAttackersExtraCombat (n : Int)
   /-- Delayed Eagles Bird Soldiers. -/
   | eaglesCreateBirds
   /-- Alliance modes. -/
   | allianceMode
-  /-- Destroy another; its controller amasses equal to its power. -/
+  /-- Destroy another; its controller amasses equal to its power. Resolves as
+  `.sequence [.destroyNotedForAmass, .amassNotedController, .drawIfYouControlledDestroyed]`. -/
   | destroyOtherAmassControllerPower
   /-- Gollum parity modes. -/
   | gollumMode
-  /-- Discard hand, draw that many; damage if enduring story. -/
+  /-- Discard hand, draw that many; damage if enduring story. Resolves as
+  `.sequence [.mayDiscardHandForStory, .drawDiscardedHandCount, .damageEachOpponentIfStoryNoted]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
   /-- Equipped attackers gain double strike. -/
   | equippedAttackersGainDoubleStrike
-  /-- Tap enchanted creature and remove counters. -/
+  /-- Tap enchanted creature and remove counters. Resolves as
+  `.sequence [.tapEnchanted, .removeCountersFromEnchanted]`. -/
   | tapEnchantedRemoveCounters
   /-- Reveal the top `n` and put a random creature in. -/
   | revealTopPutRandomCreature (n : Nat)
@@ -743,9 +754,10 @@ inductive SharedTrigger where
   | returnAsArtifact
   /-- Exile lands, then return them tapped. -/
   | exileLandsThenReturnTapped
-  /-- Gríma impulse. -/
+  /-- Gríma impulse. Resolves as `.sequence [.grimaExileUntil, .grimaMayCast]`. -/
   | grimaImpulse
-  /-- Palantír end-step. -/
+  /-- Palantír end-step. Resolves as
+  `.sequence [.palantirInfluenceScry, .palantirOfferDraw]`. -/
   | palantir
   /-- Create Treasures equal to last-known noncombat damage. -/
   | treasuresEqualLastKnown
@@ -755,7 +767,8 @@ inductive SharedTrigger where
   | loseLifePerBurden
   /-- Reveal until a Saga. -/
   | revealSaga
-  /-- Opponents sac damagers; the Ring tempts you. -/
+  /-- Opponents sac damagers; the Ring tempts you. Resolves as
+  `.sequence [.sacDamagingCreatures, .ringTempts]`. -/
   | sacDamagersRingTempts
   /-- A Saga chapter. -/
   | chapter (n : Nat) (e : ChapterResolution)
@@ -763,9 +776,11 @@ inductive SharedTrigger where
   | drawIfAttackedOrEnteredSubtype (subtype : String)
   /-- Other permanents of this subtype get +X/+X equal to this toughness. -/
   | othersOfSubtypeGetEqualSourceToughness (subtype : String)
-  /-- Scry `n` and put a plan counter. -/
+  /-- Scry `n` and put a plan counter. Resolves as
+  `.sequence [.planCounterOnSource, .scry n]`. -/
   | scryAndPlan (n : Nat)
-  /-- Loot and put a plan counter. -/
+  /-- Loot and put a plan counter. Resolves as
+  `.sequence [.planCounterOnSource, .draw 1, .discard 1]`. -/
   | lootAndPlan
   /-- Create a Villain and a plan counter. -/
   | createVillainAndPlan
@@ -825,17 +840,20 @@ inductive SharedTrigger where
   /-- Add {G} for each charge counter on the source. -/
   | addGreenPerChargeCounter
   /-- Draw two cards; if your library is then empty, you win; the owner
-  shuffles the source into their library (Fblthp, Impossibly Lost). -/
+  shuffles the source into their library (Fblthp, Impossibly Lost). Resolves as
+  `.sequence [.draw 2, .winIfLibraryEmpty, .shuffleSourceUnlessWon]`. -/
   | drawTwoWinIfEmptyShuffleSource
   /-- If you control at least five other Forests, target creature you
   control gets +3/+3 until end of turn (Roiling Canopy). -/
   | pumpIfFiveOtherForests
   /-- If you gained life this turn, surveil 1; a card with mana value at most
-  the life gained put into the graveyard this way goes to your hand. -/
+  the life gained put into the graveyard this way goes to your hand. Resolves as
+  `.sequence [.armSurveilReturnLifeGained, .surveil 1]`. -/
   | surveilReturnIfGainedLife
   /-- Apply `action` to the enchanted creature. -/
   | onEnchanted (action : PermanentAction)
-  /-- Attach to target, then apply `followup`. -/
+  /-- Attach to target, then apply `followup`. Resolves as
+  `.sequence [.attachSourceToTarget, .onTargetWhileSource followup]`. -/
   | attachThen (followup : PermanentAction)
   /-- Exile another creature; enchanted becomes a copy. -/
   | exileOtherCopyEnchanted
