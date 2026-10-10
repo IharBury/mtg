@@ -730,6 +730,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
   | .sequence [.plusOneEachOther, .gainLifeForEachOtherCreature] =>
     "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
+  | .sequence [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype] =>
+    s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -811,8 +813,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
   | .damageEqualTreasures =>
     s!"it deals damage equal to the number of Treasures you control to {noun}"
-  | .dealDamageDestroyIfSubtype n subtype =>
-    s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
+  | .dealDamageToTarget n =>
+    s!"it deals {n} damage to {noun}"
+  | .destroyIfSubtypeDealtDamage subtype =>
+    s!"if a {subtype} is dealt damage this way, destroy it"
   | .attachEquipmentToCreature =>
     "attach target Equipment you control to up to one target creature you control"
   | .addMana types =>

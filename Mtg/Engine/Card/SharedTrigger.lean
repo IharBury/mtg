@@ -632,7 +632,9 @@ inductive SharedTrigger where
   | damageEqualSubtypeToEachOpponent (subtype : String)
   /-- Damage any target equal to Treasures you control. -/
   | damageEqualTreasures
-  /-- Deal `n` to any target; destroy it if it has this subtype. -/
+  /-- Deal `n` to any target; destroy it if it has this subtype and was dealt
+  damage this way.
+  Resolves as `.sequence [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype]`. -/
   | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
   /-- Attach target Equipment to up to one target creature you control. -/
   | attachEquipmentToCreature

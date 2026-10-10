@@ -97,7 +97,10 @@ inductive TriggerResolution where
   `.sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]`.
   Put a +1/+1 counter on each other creature you control, then gain 1 life
   for each other creature you control, is
-  `.sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]`. -/
+  `.sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]`.
+  Deal `n` damage to the target, then destroy it if that damage marked a
+  permanent of this subtype, is
+  `.sequence [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -175,8 +178,12 @@ inductive TriggerResolution where
   | damageEqualSubtypeToEachOpponent (subtype : String)
   /-- Deal damage equal to Treasures you control to the target. -/
   | damageEqualTreasures
-  /-- Deal `n` damage to the target; destroy it if it has this subtype. -/
-  | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
+  /-- Deal `n` damage to the target. A permanent actually marked by that
+  damage is remembered for the next step. -/
+  | dealDamageToTarget (n : Nat)
+  /-- Destroy the permanent an earlier step dealt damage to, if it has this
+  subtype. -/
+  | destroyIfSubtypeDealtDamage (subtype : String)
   /-- Attach the first target (Equipment) to the second (creature). -/
   | attachEquipmentToCreature
   /-- Add these mana types. -/
@@ -759,7 +766,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .playerOrCreature, resolution := .damageEqualTreasures }
   | .dealDamageDestroyIfSubtype n subtype =>
     { targeting := .of .playerOrCreature,
-      resolution := .dealDamageDestroyIfSubtype n subtype }
+      resolution := .sequence
+        [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype] }
   | .attachEquipmentToCreature =>
     { targeting := .of .equipmentYouControlThenCreatureYouControl,
       allowsZeroTargets := true, resolution := .attachEquipmentToCreature }
