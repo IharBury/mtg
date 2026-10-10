@@ -352,8 +352,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
       else
         s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
-  | .drawThenBottomIfNoLegendary =>
-    let g := g.draw controller 1
+  | .putOnBottomIfNoLegendary =>
     if g.controlsLegendaryCreature controller then g
     else if (g.player controller).hand.isEmpty then g
     else
