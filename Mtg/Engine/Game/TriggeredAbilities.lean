@@ -316,6 +316,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
                   lastKnownPower lastKnownToughness sourceName (some step) cardPower
               (g, waiting, g.pending != .none))
           (g, [], false)
+      -- The ordinal belongs to this resolution. A paused sequence still
+      -- needs it for the `ifNthResolve` steps that have not run.
+      let usesNth := steps.any fun
+        | .noteResolveThisTurn _ | .ifNthResolve _ _ => true
+        | _ => false
+      let g :=
+        if rest.isEmpty && usesNth then { g with nthResolveThisWay := none } else g
       if rest.isEmpty then g
       else
         { g with triggerSequenceRest := some {
@@ -619,21 +626,23 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => 0
       | none => 0
     g.resolveCascade controller maxMv
-  | .belladonnaTokenReward =>
+  | .noteResolveThisTurn limit =>
     let n := (g.player controller).belladonnaResolvesThisTurn + 1
     let g := g.modifyPlayer controller (fun pl =>
       { pl with belladonnaResolvesThisTurn := n })
-    if n == 1 then
-      g.gainLife controller 1
-    else if n == 2 then
-      g.draw controller 1
-    else if n == 3 then
-      g.forEachControlledCreature controller (fun g o => g.addPlusOnePlusOneTo o 1)
-        |>.logMsg
-          s!"{(g.player controller).name} puts a +1/+1 counter on each creature they control"
-    else
-      g.logMsg
-        s!"Belladonna Took's ability has no effect (resolved {n} times this turn)"
+    let g := { g with nthResolveThisWay := some n }
+    if n > limit then
+      let name :=
+        match sourceId.bind g.findObject? with
+        | some o => o.name
+        | none => sourceName
+      g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
+    else g
+  | .ifNthResolve n thenDo =>
+    if g.nthResolveThisWay == some n then
+      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
+    else g
   | .bolgMaySacrifice =>
     match sourceId with
     | some sid =>

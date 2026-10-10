@@ -739,6 +739,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
       else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
     s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
+  | .sequence
+      [.noteResolveThisTurn 3,
+       .ifNthResolve 1 (.gainLife 1),
+       .ifNthResolve 2 (.draw 1),
+       .ifNthResolve 3 (.plusOneEachYouControl .eachCreature)] =>
+    "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -863,8 +869,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a hone counter on each Equipment you control"
   | .cascade =>
     "exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost"
-  | .belladonnaTokenReward =>
-    "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
+  | .noteResolveThisTurn _ =>
+    "count another resolution of this ability this turn"
+  | .ifNthResolve n _ =>
+    s!"if this is time {n} this ability has resolved this turn"
   | .bolgMaySacrifice =>
     "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
   | .bolgDealSacrificedPower =>

@@ -1479,6 +1479,12 @@ end CardDef
   c.name == "Till and Tend" && c.isSorcery && !c.requiresTarget &&
     c.hasSubtype "Adventure"
 
+#guard TriggeredAbility.resolution .onTokenYouControlEntersBelladonna ==
+  .sequence [
+    .noteResolveThisTurn 3,
+    .ifNthResolve 1 (.gainLife 1),
+    .ifNthResolve 2 (.draw 1),
+    .ifNthResolve 3 (.plusOneEachYouControl)]
 #guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==
   "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."
 #guard TriggeredAbility.toNotation .onActivateCreatureAbilityDrawOnce ==
