@@ -209,6 +209,64 @@ def dawnNoHope : Game :=
 
 #guard dawnOfANewAge.triggeredAbilities == #[.onYourEndStepRemoveHopeDrawSac]
 
+/-- Tapping Humans is a choice. The draw waits until that choice finishes. -/
+def garrisonAsks : Game :=
+  let g := addPermanent started minasTirithGarrison ⟨0⟩ ⟨0⟩
+  g.applyTriggeredAbility ⟨0⟩ .onAttackTapHumansDraw
+    (some (namedPermanent g "Minas Tirith Garrison").id)
+
+#guard
+  garrisonAsks.pending == .tapHumans ⟨0⟩ &&
+    (garrisonAsks.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size &&
+    !(namedPermanent garrisonAsks "Minas Tirith Garrison").status.tapped &&
+    garrisonAsks.triggerSequenceRest.isSome
+
+/-- The Garrison may tap itself, then draw one card, before anyone gets priority. -/
+def garrisonTapsItself : Game :=
+  mustApply garrisonAsks ⟨0⟩
+    (.choosePermanents #[(namedPermanent garrisonAsks "Minas Tirith Garrison").id])
+
+#guard
+  (namedPermanent garrisonTapsItself "Minas Tirith Garrison").status.tapped &&
+    (garrisonTapsItself.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1 &&
+    garrisonTapsItself.pending == .none &&
+    garrisonTapsItself.triggerSequenceRest.isNone &&
+    garrisonTapsItself.humansTappedThisWay == 0
+
+/-- Declining taps nothing and draws nothing. -/
+def garrisonDeclines : Game :=
+  mustApply garrisonAsks ⟨0⟩ .decline
+
+#guard
+  !(namedPermanent garrisonDeclines "Minas Tirith Garrison").status.tapped &&
+    (garrisonDeclines.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size &&
+    garrisonDeclines.pending == .none &&
+    garrisonDeclines.log.any (fun s => mentions s "taps no Humans")
+
+/-- Each tapped Human draws one card. A non-Human cannot be chosen. -/
+def garrisonTwoHumans : Game :=
+  let folk := creature "Townsfolk" (ManaCost.ofGeneric 1) #["Human"] 1 1
+  let g := addPermanent garrisonAsks folk ⟨0⟩ ⟨0⟩
+  mustApply g ⟨0⟩ (.choosePermanents #[
+    (namedPermanent g "Minas Tirith Garrison").id,
+    (namedPermanent g "Townsfolk").id])
+
+#guard
+  (namedPermanent garrisonTwoHumans "Minas Tirith Garrison").status.tapped &&
+    (namedPermanent garrisonTwoHumans "Townsfolk").status.tapped &&
+    (garrisonTwoHumans.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 2 &&
+    garrisonTwoHumans.pending == .none
+
+def garrisonRejectsBear : Bool :=
+  let g := addPermanent garrisonAsks grizzlyBears ⟨0⟩ ⟨0⟩
+  match g.choosePermanents ⟨0⟩ #[(namedPermanent g "Grizzly Bears").id] with
+  | .error e => mentions e "not an untapped Human"
+  | .ok _ => false
+
+#guard garrisonRejectsBear
+
+#guard minasTirithGarrison.triggeredAbilities == #[.onAttackTapHumansDraw]
+
 /-- Spell and ability loot both apply as draw, then a discard choice. -/
 def spellDrawThenDiscardPending : Game :=
   afterDraw.applyEffect ⟨0⟩ (Effect.drawThenDiscard 2) #[]

@@ -800,6 +800,10 @@ namespace CardDef
   "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
 #guard TriggeredAbility.onAttackTapHumansDraw ==
   .triggered .attack (Effect.ofTrigger .tapHumansDraw)
+#guard TriggeredAbility.resolution .onAttackTapHumansDraw ==
+  .sequence [.tapAnyHumans, .drawForEachTappedHuman]
+#guard TriggeredAbility.toNotation .onAttackTapHumansDraw ==
+  "Whenever this creature attacks, you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way."
 #guard TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear" ==
   .triggered .enter (Effect.seqUntapPlusOneIfSubtype "Bear")
 #guard TriggeredAbility.onEnterDestroyOppArtifactsEnchantmentsGainLife ==

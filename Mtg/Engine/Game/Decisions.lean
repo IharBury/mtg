@@ -469,8 +469,9 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         throw s!"{o.name} is not an untapped Human you control"
       g := g.applyPermanentAction o .tap
       n := n + 1
-    g := { g with pending := .none }
-    g := if n == 0 then g else g.draw p n
+    g := { g with pending := .none, humansTappedThisWay := n }
+    g := g.resumeTriggerSequence
+    if g.pending != .none then return g
     return g.receivePriority g.activePlayer
   | .chooseTeamworkCreatures _ _ =>
     g.payTeamworkCreatures p ids
@@ -620,7 +621,9 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     if p != q then
       throw s!"Only {(g.player q).name} may decline to tap Humans"
     let g := g.logMsg s!"{(g.player p).name} taps no Humans"
-    let g := { g with pending := .none }
+    let g := { g with pending := .none, humansTappedThisWay := 0 }
+    let g := g.resumeTriggerSequence
+    if g.pending != .none then return g
     return g.receivePriority g.activePlayer
   | .maySacrificeAnotherBolg q _ =>
     if p != q then

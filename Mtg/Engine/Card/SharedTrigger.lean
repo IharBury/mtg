@@ -612,7 +612,9 @@ inductive SharedTrigger where
   no hope counters, sacrifice it and you gain 4 life.
   Resolves as `.sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope]`. -/
   | removeHopeDrawSac
-  /-- Tap any number of Humans; draw that many cards. -/
+  /-- Tap any number of untapped Humans you control. Draw a card for each
+  Human tapped this way.
+  Resolves as `.sequence [.tapAnyHumans, .drawForEachTappedHuman]`. -/
   | tapHumansDraw
   /-- Destroy opponents' artifacts and enchantments; gain life for each. -/
   | destroyOppArtifactsEnchantmentsGainLife

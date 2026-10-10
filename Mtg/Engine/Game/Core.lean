@@ -11,6 +11,22 @@ effects, and who controls, sees, or decides for whom
 
 namespace Mtg.Engine
 
+/-- Later steps of a trigger `sequence`, waiting until the pending choice
+opened by an earlier step finishes. They run before any player receives
+priority, so they stay part of that resolution. -/
+structure TriggerSequenceRest where
+  controller : PlayerId
+  ability : TriggeredAbility
+  sourceId : Option ObjectId := none
+  targets : Array Target := #[]
+  dividedDamage : Array Nat := #[]
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  steps : List TriggeredAbility.TriggerResolution := []
+deriving Repr, Inhabited
+
 structure Game where
   players : Array Player
   objects : Array GameObject
@@ -111,6 +127,12 @@ structure Game where
   /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
   permanent (Proft, Consulting Detective). -/
   mayPayAlsoPlusOneOn : Option ObjectId := none
+  /-- Humans chosen for the current “tap any number of Humans” step.
+  `drawForEachTappedHuman` draws this many cards. -/
+  humansTappedThisWay : Nat := 0
+  /-- Later steps of a trigger `sequence`, waiting on the pending choice an
+  earlier step opened. -/
+  triggerSequenceRest : Option TriggerSequenceRest := none
   /-- Declining `payOrLetCounter` resolves this effect instead of countering.
   The caster is `unlessPaysController`; `unlessPaysTargets` are the targets
   announced for that effect. -/

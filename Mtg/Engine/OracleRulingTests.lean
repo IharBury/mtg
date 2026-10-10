@@ -2453,7 +2453,8 @@ def beeDiesWithOthersOk : Bool :=
 /-- Ruling 141: an untapped Minas Tirith Garrison may tap itself. -/
 def garrisonTapsSelf : Except String Game :=
   let g := addPermanent afterDraw minasTirithGarrison ⟨0⟩ ⟨0⟩
-  let g := { g with pending := .tapHumans ⟨0⟩ }
+  let g := g.applyTriggeredAbility ⟨0⟩ .onAttackTapHumansDraw
+    (some (namedPermanent g "Minas Tirith Garrison").id)
   g.choosePermanents ⟨0⟩ #[(namedPermanent g "Minas Tirith Garrison").id]
 
 def garrisonTapsSelfOk : Bool :=
