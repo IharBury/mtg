@@ -718,7 +718,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"return {noun} to your hand. You gain life equal to that card's power"
   | .sequence [.draw 1, .putOnBottomIfNoLegendary] =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
-  | .sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope] =>
+  | .sequence [.removeHopeCounter, .drawIfRemovedHope, .sacrificeGainLifeIfNoHope] =>
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .sequence [.tapAnyHumans, .drawForEachTappedHuman] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
@@ -765,8 +765,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"exile {noun} until this leaves the battlefield"
   | .returnLinkedExile =>
     "return the exiled card to the battlefield under its owner's control"
-  | .removeHopeCounterDraw =>
-    "remove a hope counter from this. If you do, draw a card"
+  | .removeHopeCounter =>
+    "remove a hope counter from this"
+  | .drawIfRemovedHope =>
+    "if a hope counter was removed this way, draw a card"
   | .sacrificeGainLifeIfNoHope =>
     "if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .tapAnyHumans =>
