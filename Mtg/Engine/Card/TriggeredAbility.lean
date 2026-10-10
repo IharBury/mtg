@@ -697,6 +697,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "search your library for a Forest card, put that card onto the battlefield, then shuffle"
   | .searchLibrary .basicLandToHand =>
     searchLibraryToHandPhrase "a basic land card"
+  | .searchLibrary .basicLandOnTop =>
+    "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
   | .discard n => s!"discard {cardPhrase n}"
   | .mayDiscardDraw n =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
@@ -722,6 +724,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
   | .sequence [.createTokens kind 1 false, .attachSourceToCreated] =>
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
+  | .sequence [.gainLife n, .searchLibrary .basicLandOnTop] =>
+    s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -789,8 +793,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "attach this Equipment to it"
   | .attachSourceToTarget =>
     s!"attach it to {noun}"
-  | .gainLifeSearchBasicOnTop n =>
-    s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
   | .plusOneEachOtherGainLife =>
     "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
   | .destroyOppArtifactsEnchantmentsGainLife =>

@@ -52,7 +52,8 @@ inductive TriggerResolution where
   | draw (n : Nat)
   /-- Search your library, as `how` says.
   A Forest onto the battlefield is `.searchLibrary`.
-  A basic land into your hand is `.searchLibrary .basicLandToHand`. -/
+  A basic land into your hand is `.searchLibrary .basicLandToHand`.
+  You may put a basic land on top is `.searchLibrary .basicLandOnTop`. -/
   | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
   /-- Discard `n` cards. One card is `.discard`. -/
   | discard (n : Nat := 1)
@@ -88,7 +89,9 @@ inductive TriggerResolution where
   of Humans, then draw that many, is
   `.sequence [.tapAnyHumans, .drawForEachTappedHuman]`.
   Create one token, then attach the source to it, is
-  `.sequence [.createTokens kind 1 false, .attachSourceToCreated]`. -/
+  `.sequence [.createTokens kind 1 false, .attachSourceToCreated]`.
+  Gain life, then you may search a basic land onto the top, is
+  `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -150,8 +153,6 @@ inductive TriggerResolution where
   | attachSourceToCreated
   /-- Attach the source to the targeted permanent. -/
   | attachSourceToTarget
-  /-- Gain `n` life, then search a basic land to the top. -/
-  | gainLifeSearchBasicOnTop (n : Nat)
   /-- +1/+1 on each other creature you control; gain that much life. -/
   | plusOneEachOtherGainLife
   /-- Destroy opponents' artifacts and enchantments; gain 1 per destroyed. -/
@@ -704,7 +705,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .returnLinkedExile => { resolution := .returnLinkedExile }
   | .createThenAttach kind =>
     { resolution := .sequence [.createTokens kind 1 false, .attachSourceToCreated] }
-  | .gainLifeSearchBasicOnTop n => { resolution := .gainLifeSearchBasicOnTop n }
+  | .gainLifeSearchBasicOnTop n =>
+    { resolution := .sequence [.gainLife n, .searchLibrary .basicLandOnTop] }
   | .addMana types => { resolution := .addMana types }
   | .createAxe attach => { resolution := .createAxe attach }
   | .tapOppOrUntapYours => { resolution := .tapOppOrUntapYours }

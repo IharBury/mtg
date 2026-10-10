@@ -767,6 +767,10 @@ namespace CardDef
   .sequence [.createTokens .dwarf 1 false, .attachSourceToCreated]
 #guard TriggeredAbility.toNotation (.onEnterCreateThenAttach .dwarf) ==
   "When this permanent enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it."
+#guard TriggeredAbility.resolution (.onEnterGainLifeSearchBasicOnTop 2) ==
+  .sequence [.gainLife 2, .searchLibrary .basicLandOnTop]
+#guard TriggeredAbility.toNotation (.onEnterGainLifeSearchBasicOnTop 2) ==
+  "When this permanent enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top."
 #guard TriggeredAbility.onLandYouControlEntersDrawPlusOneSource ==
   .triggered .landYouControlEnters Effect.seqDrawPlusOneSource
 #guard TriggeredAbility.onArmyCombatDamageRingTempts ==

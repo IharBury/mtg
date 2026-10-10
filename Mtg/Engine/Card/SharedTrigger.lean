@@ -457,6 +457,9 @@ inductive TriggerLibrarySearch where
   | forestToBattlefield
   /-- A basic land card into your hand. -/
   | basicLandToHand
+  /-- You may search for a basic land card, reveal it, shuffle, and put it
+  on top. Declining does not shuffle. -/
+  | basicLandOnTop
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Which permanents `SharedTrigger.plusOneEachYouControl` puts a counter on. -/
@@ -536,7 +539,8 @@ inductive SharedTrigger where
   /-- The attacking creature that caused this trigger gets +P/+T. -/
   | pumpCause (power toughness : Int)
   /-- Search your library. A Forest onto the battlefield is `.searchLibrary`.
-  A basic land into your hand is `.searchLibrary .basicLandToHand`. -/
+  A basic land into your hand is `.searchLibrary .basicLandToHand`.
+  You may put a basic land on top is `.searchLibrary .basicLandOnTop`. -/
   | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
   /-- Each player sacrifices a creature of their choice. -/
   | eachPlayerSacrificesCreature
@@ -573,7 +577,8 @@ inductive SharedTrigger where
   /-- Create one token, then attach the source to it.
   Resolves as `.sequence [.createTokens kind 1 false, .attachSourceToCreated]`. -/
   | createThenAttach (kind : TokenKind)
-  /-- Gain `n` life, then search a basic land to the top. -/
+  /-- Gain `n` life, then you may search a basic land to the top.
+  Resolves as `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`. -/
   | gainLifeSearchBasicOnTop (n : Nat)
   /-- Add these mana types. -/
   | addMana (types : Array ManaType)

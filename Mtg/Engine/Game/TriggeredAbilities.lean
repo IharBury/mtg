@@ -260,6 +260,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match how with
     | .forestToBattlefield => g.resolveSearchForest controller
     | .basicLandToHand => g.resolveSearchBasicLandToHand controller
+    | .basicLandOnTop =>
+      g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
+        (optional := true)
   | .discard n =>
     g.beginDiscardCards #[controller] n
   | .mayDiscardDraw n =>
@@ -453,10 +456,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src host)
         "The Equipment is no longer in play")
       sourceId (some "The target is no longer legal")
-  | .gainLifeSearchBasicOnTop n =>
-    let g := g.gainLife controller n
-    g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
-      (optional := true)
   | .plusOneEachOtherGainLife =>
     let others :=
       g.battlefield.filter (fun o =>
