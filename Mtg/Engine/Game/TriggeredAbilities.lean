@@ -472,12 +472,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src host)
         "The Equipment is no longer in play")
       sourceId (some "The target is no longer legal")
-  | .plusOneEachOtherGainLife =>
-    let others :=
-      g.battlefield.filter (fun o =>
-        o.isCreature && o.controlledBy controller && some o.id != sourceId)
-    let g := others.foldl (fun acc o => acc.addPlusOnePlusOneTo o 1) g
-    if others.isEmpty then g else g.gainLife controller others.size
+  | .plusOneEachOther =>
+    (g.creaturesControlledBy controller).foldl (fun acc o =>
+      if some o.id != sourceId then acc.addPlusOnePlusOneTo o 1 else acc) g
+  | .gainLifeForEachOtherCreature =>
+    let n :=
+      ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
+    if n == 0 then g else g.gainLife controller n
   | .damageEqualSubtypeToEachOpponent subtype =>
     let n := g.countSubtype controller subtype
     let src := sourceId.bind g.findObject?
