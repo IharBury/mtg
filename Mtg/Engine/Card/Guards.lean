@@ -794,6 +794,10 @@ namespace CardDef
   "When this permanent enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library."
 #guard TriggeredAbility.onYourEndStepRemoveHopeDrawSac ==
   .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
+#guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
+  .sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope]
+#guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
+  "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
 #guard TriggeredAbility.onAttackTapHumansDraw ==
   .triggered .attack (Effect.ofTrigger .tapHumansDraw)
 #guard TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear" ==
