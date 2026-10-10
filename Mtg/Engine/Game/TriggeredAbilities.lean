@@ -185,8 +185,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none)
-    (sourceName : String := "This creature") : Game :=
-  if !g.interveningStillHolds controller ab then
+    (sourceName : String := "This creature")
+    (resolutionOverride : Option TriggeredAbility.TriggerResolution := none)
+    (sequencedCardPower : Option Nat := none) : Game :=
+  if resolutionOverride.isNone && !g.interveningStillHolds controller ab then
     g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
   else
   match ab.effect.resolution with
@@ -229,7 +231,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .spell r =>
     g.applyUnified controller { ab.effect with resolution := .spell r } targets
   | .trigger _ => (
-  match ab.resolution with
+  match resolutionOverride.getD ab.resolution with
   | .pumpGreatestPower =>
     g.applyOnTriggerSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
   | .setOtherBasePT =>
@@ -283,17 +285,31 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let n := (lastKnownPower.getD 0).toNat
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
       g.dealDamageFrom sourceName o n (source := sourceId.bind g.findObject?)
-  | .returnElfGainLife =>
-    g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
-      match t with
-      | Target.card oid =>
-        match g.findObject? oid with
-        | none => g.logMsg "The target is no longer in the graveyard"
-        | some o =>
-          let n := (g.power o).toNat
-          let g := g.returnToHand oid controller
-          g.gainLife controller n
-      | _ => g.logMsg "The target is no longer legal"
+  | .sequence rs =>
+    -- One legality check for the whole sequence (CR 608.2b). Power is read
+    -- before any step moves the card, then each step runs in order.
+    if g.sequenceAllTargetsIllegal controller ab.effect targets sourceId then
+      g.logIllegalSequenceTargets targets
+    else
+      let cardPower :=
+        match targets[0]? with
+        | some (Target.card oid) | some (Target.permanent oid) =>
+          (g.findObject? oid).map fun o => (g.power o).toNat
+        | _ => none
+      (rs.flatMap TriggeredAbility.TriggerResolution.flatten).foldl (fun g step =>
+        g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+          lastKnownPower lastKnownToughness sourceName (some step) cardPower) g
+  | .gainLifeEqualToTargetPower =>
+    match sequencedCardPower with
+    | some n => g.gainLife controller n
+    | none =>
+      g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
+        match t with
+        | Target.card oid | Target.permanent oid =>
+          match g.findObject? oid with
+          | some o => g.gainLife controller (g.power o).toNat
+          | none => g.logMsg "The target is no longer in the graveyard"
+        | _ => g.logMsg "The target is no longer legal"
   | .damageEachOpponent n =>
     let src := sourceId.bind g.findObject?
     if ab.opts.untargeted then

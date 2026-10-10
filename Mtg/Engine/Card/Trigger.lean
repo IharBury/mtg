@@ -75,8 +75,14 @@ inductive TriggerResolution where
   | dividedDamage
   /-- Deal last-known power as damage to the announced creature. -/
   | damageFromLastKnownPower
-  /-- Return an Elf card from the graveyard and gain life equal to its power. -/
-  | returnElfGainLife
+  /-- Apply each resolution in order. An illegal required target skips every
+  step (CR 608.2b). Return a graveyard card, then gain life equal to its
+  power, is `.sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]`. -/
+  | sequence (rs : List TriggerResolution)
+  /-- Gain life equal to the targeted card's power. Inside `sequence`, the
+  amount is that power when the sequence starts, before an earlier step
+  moves the card. -/
+  | gainLifeEqualToTargetPower
   /-- Deal `amount` damage to each opponent. -/
   | damageEachOpponent (amount : Nat)
   /-- Pump the source +1/+1 per card looked at while scrying. -/
@@ -446,6 +452,15 @@ inductive TriggerResolution where
   | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
 
+namespace TriggerResolution
+
+/-- Nested `sequence` constructors, left to right. -/
+def flatten : TriggerResolution → List TriggerResolution
+  | .sequence rs => rs.flatMap flatten
+  | r => [r]
+
+end TriggerResolution
+
 /-- When a triggered ability fires, how it targets, optional divided-damage
 parameters, and how it resolves (CR 603 / 601.2d / 608). Adding a constructor
 only requires updating `timing` instead of parallel match trees. -/
@@ -687,7 +702,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
       resolution := .setOtherBasePT }
   | .returnElfGainLife =>
-    { targeting := .of .elfInYourGraveyard, resolution := .returnElfGainLife }
+    { targeting := .of .elfInYourGraveyard
+      resolution := .sequence
+        [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower] }
   | .damageFromLastKnownPower =>
     { targeting := .of .oppCreature, resolution := .damageFromLastKnownPower }
   | .mayPayGenericDraw n plusOne =>
