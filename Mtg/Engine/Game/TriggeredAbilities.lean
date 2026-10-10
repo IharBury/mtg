@@ -491,23 +491,35 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .damageEqualTreasures =>
     let n := g.countSubtype controller "Treasure"
     g.applyEffect controller (Effect.dealDamage n) targets
-  | .dealDamageDestroyIfSubtype n subtype =>
+  | .dealDamageToTarget n =>
+    let g := { g with permanentDealtDamageThisWay := none }
     g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
       match tgt with
-      | Target.player _pid => g.applyEffect controller (Effect.dealDamage n) #[tgt]
+      | Target.player _ =>
+        g.applyEffect controller (Effect.dealDamage n) #[tgt]
       | Target.permanent oid =>
         match g.findObject? oid with
         | none => g.logMsg "The target is no longer legal"
         | some o =>
           let before := o.status.damage
           let g := g.applyEffect controller (Effect.dealDamage n) #[tgt]
-          -- “If a Dragon is dealt damage this way, destroy it.”
-          match g.findObject? oid with
-          | some o =>
-            if g.hasSubtype o subtype && o.status.damage > before then g.destroyPermanent o
-            else g
-          | none => g
+          let marked :=
+            match g.findObject? oid with
+            | some o => o.isOnBattlefield && o.status.damage > before
+            | none => false
+          if marked then { g with permanentDealtDamageThisWay := some oid } else g
       | _ => g.logMsg "The target is no longer legal")
+  | .destroyIfSubtypeDealtDamage subtype =>
+    match g.permanentDealtDamageThisWay with
+    | none => g
+    | some oid =>
+      let g := { g with permanentDealtDamageThisWay := none }
+      match g.findObject? oid with
+      | some o =>
+        -- “If a Dragon is dealt damage this way, destroy it.”
+        if o.isOnBattlefield && g.hasSubtype o subtype then g.destroyPermanent o
+        else g
+      | none => g
   | .attachEquipmentToCreature =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent eqId), some (Target.permanent hostId) =>

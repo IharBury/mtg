@@ -834,6 +834,10 @@ namespace CardDef
   .triggered .anyPlayerCastsSecondSpell Effect.seqLoseLifeCreateTreasure
 #guard TriggeredAbility.onEnterDealDamageDestroyIfSubtype 1 "Dragon" ==
   .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype 1 "Dragon"))
+#guard TriggeredAbility.resolution (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
+  .sequence [.dealDamageToTarget 1, .destroyIfSubtypeDealtDamage "Dragon"]
+#guard TriggeredAbility.toNotation (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
+  "When this permanent enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it."
 #guard TriggeredAbility.onEnterAttachTargetEquipment ==
   .triggered .enter (Effect.ofTrigger .attachEquipmentToCreature)
 #guard TriggeredAbility.onAttackDefenderSacsLeastPower ==

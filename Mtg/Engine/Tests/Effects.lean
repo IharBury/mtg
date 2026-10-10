@@ -669,6 +669,107 @@ def wedAlone : Game :=
 
 #guard aragornAndArwenWed.triggeredAbilities == #[.onEnterOrAttackPlusOneEachOtherGainLife]
 
+/-- The Black Arrow deals 1, then destroys the permanent only when that
+damage marked a Dragon. A shield stops the damage, so the Dragon stays.
+Another creature and a player are damaged and left in play. -/
+def arrowWyrm : Game :=
+  let g := addPermanent started theBlackArrow ⟨0⟩ ⟨0⟩
+  let g := addPermanent g (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) ⟨1⟩ ⟨1⟩
+  let arrow := namedPermanent g "The Black Arrow"
+  let wyrm := namedPermanent g "Wyrm"
+  g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDamageDestroyIfSubtype 1 "Dragon")
+    (some arrow.id) #[Target.permanent wyrm.id]
+
+def arrowGiant : Game :=
+  let g := addPermanent started theBlackArrow ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let arrow := namedPermanent g "The Black Arrow"
+  let giant := namedPermanent g "Hill Giant"
+  g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDamageDestroyIfSubtype 1 "Dragon")
+    (some arrow.id) #[Target.permanent giant.id]
+
+def arrowShielded : Game :=
+  let g := addPermanent started theBlackArrow ⟨0⟩ ⟨0⟩
+  let g := addPermanent g (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) ⟨1⟩ ⟨1⟩
+  let wyrm := namedPermanent g "Wyrm"
+  let g := g.setObject { wyrm with status := { wyrm.status with shield := 1 } }
+  let arrow := namedPermanent g "The Black Arrow"
+  let wyrm := namedPermanent g "Wyrm"
+  g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDamageDestroyIfSubtype 1 "Dragon")
+    (some arrow.id) #[Target.permanent wyrm.id]
+
+def arrowAdamant : Game :=
+  let g := addPermanent started theBlackArrow ⟨0⟩ ⟨0⟩
+  let g := addPermanent g
+    (creature "Adamant Wyrm" ManaCost.empty #["Dragon"] 4 4
+      (keywords := Keyword.indestructible)) ⟨1⟩ ⟨1⟩
+  let arrow := namedPermanent g "The Black Arrow"
+  let wyrm := namedPermanent g "Adamant Wyrm"
+  g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDamageDestroyIfSubtype 1 "Dragon")
+    (some arrow.id) #[Target.permanent wyrm.id]
+
+def arrowPlayer : Game :=
+  let g := addPermanent started theBlackArrow ⟨0⟩ ⟨0⟩
+  let arrow := namedPermanent g "The Black Arrow"
+  g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDamageDestroyIfSubtype 1 "Dragon")
+    (some arrow.id) #[Target.player ⟨1⟩]
+
+def arrowNoTarget : Game :=
+  let g := addPermanent started theBlackArrow ⟨0⟩ ⟨0⟩
+  let g := addPermanent g (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) ⟨1⟩ ⟨1⟩
+  let arrow := namedPermanent g "The Black Arrow"
+  g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDamageDestroyIfSubtype 1 "Dragon")
+    (some arrow.id)
+
+#guard
+  let buried :=
+    arrowWyrm.objects.any (fun o =>
+      o.name == "Wyrm" &&
+        match o.zone with
+        | .graveyard _ => true
+        | _ => false)
+  !arrowWyrm.battlefield.any (fun o => o.name == "Wyrm") && buried &&
+    arrowWyrm.permanentDealtDamageThisWay.isNone &&
+    arrowWyrm.pending == .none &&
+    arrowWyrm.triggerSequenceRest.isNone &&
+    arrowWyrm.log.any (fun s => mentions s "Wyrm is destroyed")
+#guard
+  (namedPermanent arrowGiant "Hill Giant").isOnBattlefield &&
+    (namedPermanent arrowGiant "Hill Giant").status.damage == 1 &&
+    arrowGiant.permanentDealtDamageThisWay.isNone &&
+    arrowGiant.pending == .none &&
+    arrowGiant.triggerSequenceRest.isNone &&
+    !(arrowGiant.log.any (fun s => mentions s "is destroyed"))
+#guard
+  (namedPermanent arrowShielded "Wyrm").isOnBattlefield &&
+    (namedPermanent arrowShielded "Wyrm").status.damage == 0 &&
+    (namedPermanent arrowShielded "Wyrm").status.shield == 0 &&
+    arrowShielded.permanentDealtDamageThisWay.isNone &&
+    arrowShielded.pending == .none &&
+    arrowShielded.triggerSequenceRest.isNone &&
+    arrowShielded.log.any (fun s => mentions s "shield counter is removed") &&
+    !(arrowShielded.log.any (fun s => mentions s "is destroyed"))
+#guard
+  (namedPermanent arrowAdamant "Adamant Wyrm").isOnBattlefield &&
+    (namedPermanent arrowAdamant "Adamant Wyrm").status.damage == 1 &&
+    arrowAdamant.permanentDealtDamageThisWay.isNone &&
+    arrowAdamant.pending == .none &&
+    arrowAdamant.triggerSequenceRest.isNone &&
+    arrowAdamant.log.any (fun s => mentions s "is indestructible and isn't destroyed")
+#guard
+  (arrowPlayer.player ⟨1⟩).life == (started.player ⟨1⟩).life - 1 &&
+    arrowPlayer.permanentDealtDamageThisWay.isNone &&
+    arrowPlayer.pending == .none &&
+    arrowPlayer.triggerSequenceRest.isNone &&
+    !(arrowPlayer.log.any (fun s => mentions s "is destroyed"))
+#guard
+  (namedPermanent arrowNoTarget "Wyrm").isOnBattlefield &&
+    (namedPermanent arrowNoTarget "Wyrm").status.damage == 0 &&
+    arrowNoTarget.permanentDealtDamageThisWay.isNone &&
+    arrowNoTarget.pending == .none &&
+    arrowNoTarget.triggerSequenceRest.isNone &&
+    arrowNoTarget.log.any (fun s => mentions s "The target is no longer legal")
+
 /-- Bag End Banquet creates three Foods. -/
 def banquetFoods : Game :=
   (addPermanent started bagEndBanquet ⟨0⟩ ⟨0⟩).applyTriggeredAbility

@@ -136,6 +136,9 @@ structure Game where
   /-- A hope counter was removed by the current `removeHopeCounter` step.
   `drawIfRemovedHope` draws a card when this is set. -/
   removedHopeThisWay : Bool := false
+  /-- The permanent marked by the current `dealDamageToTarget` step.
+  `destroyIfSubtypeDealtDamage` destroys it when it has the subtype. -/
+  permanentDealtDamageThisWay : Option ObjectId := none
   /-- Later steps of a trigger `sequence`, waiting on the pending choice an
   earlier step opened. -/
   triggerSequenceRest : Option TriggerSequenceRest := none
