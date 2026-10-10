@@ -369,20 +369,21 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match sourceId.bind g.findObject? with
     | some src => g.returnLinkedExile src
     | none => g
-  | .removeHopeDrawSac =>
+  | .removeHopeCounterDraw =>
     g.withTriggerSource sourceId fun g src =>
       if src.status.hope == 0 then g
       else
         let g := g.setObject { src with status := { src.status with hope := src.status.hope - 1 } }
         let g := g.logMsg s!"{src.name} loses a hope counter"
-        let g := g.draw controller 1
-        match g.findObject? src.id with
-        | some src =>
-          if src.status.hope == 0 then
-            let g := g.sacrificeToGraveyard src s!"{src.name} is sacrificed"
-            g.gainLife controller 4
-          else g
-        | none => g
+        g.draw controller 1
+  | .sacrificeGainLifeIfNoHope =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.isOnBattlefield && src.status.hope == 0 then
+        let g := g.sacrificeToGraveyard src s!"{src.name} is sacrificed"
+        g.gainLife controller 4
+      else g
+    | none => g
   | .tapHumansDraw =>
     { g with pending := .tapHumans controller }.logMsg
       s!"{(g.player controller).name} may tap any number of untapped Humans they control"

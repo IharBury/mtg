@@ -166,6 +166,49 @@ def riderKeepsWithLegend : Game :=
 
 #guard errandRiderOfGondor.triggeredAbilities == #[.onEnterDrawThenBottomIfNoLegendary]
 
+/-- The last hope counter draws, then Dawn is sacrificed and you gain 4 life. -/
+def dawnLastHope : Game :=
+  let g := addPermanent started dawnOfANewAge ⟨0⟩ ⟨0⟩
+  let dawn := namedPermanent g "Dawn of a New Age"
+  let g := g.setObject { dawn with status := { dawn.status with hope := 1 } }
+  g.applyTriggeredAbility ⟨0⟩ .onYourEndStepRemoveHopeDrawSac (some dawn.id)
+
+#guard
+  (dawnLastHope.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1 &&
+    (dawnLastHope.player ⟨0⟩).life == (started.player ⟨0⟩).life + 4 &&
+    !(dawnLastHope.battlefield.any (fun o => o.name == "Dawn of a New Age")) &&
+    dawnLastHope.log.any (fun s => mentions s "loses a hope counter") &&
+    dawnLastHope.log.any (fun s => mentions s "is sacrificed")
+
+/-- Hope counters still on Dawn: draw, and it stays. -/
+def dawnKeepsHope : Game :=
+  let g := addPermanent started dawnOfANewAge ⟨0⟩ ⟨0⟩
+  let dawn := namedPermanent g "Dawn of a New Age"
+  let g := g.setObject { dawn with status := { dawn.status with hope := 2 } }
+  g.applyTriggeredAbility ⟨0⟩ .onYourEndStepRemoveHopeDrawSac (some dawn.id)
+
+#guard
+  (dawnKeepsHope.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1 &&
+    (dawnKeepsHope.player ⟨0⟩).life == (started.player ⟨0⟩).life &&
+    (namedPermanent dawnKeepsHope "Dawn of a New Age").status.hope == 1 &&
+    !(dawnKeepsHope.log.any (fun s => mentions s "is sacrificed"))
+
+/-- No hope counter to remove: no draw. The sacrifice step still sees none
+and gains 4 life. -/
+def dawnNoHope : Game :=
+  let g := addPermanent started dawnOfANewAge ⟨0⟩ ⟨0⟩
+  let dawn := namedPermanent g "Dawn of a New Age"
+  g.applyTriggeredAbility ⟨0⟩ .onYourEndStepRemoveHopeDrawSac (some dawn.id)
+
+#guard
+  (dawnNoHope.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size &&
+    (dawnNoHope.player ⟨0⟩).life == (started.player ⟨0⟩).life + 4 &&
+    !(dawnNoHope.battlefield.any (fun o => o.name == "Dawn of a New Age")) &&
+    !(dawnNoHope.log.any (fun s => mentions s "loses a hope counter")) &&
+    dawnNoHope.log.any (fun s => mentions s "is sacrificed")
+
+#guard dawnOfANewAge.triggeredAbilities == #[.onYourEndStepRemoveHopeDrawSac]
+
 /-- Spell and ability loot both apply as draw, then a discard choice. -/
 def spellDrawThenDiscardPending : Game :=
   afterDraw.applyEffect ⟨0⟩ (Effect.drawThenDiscard 2) #[]

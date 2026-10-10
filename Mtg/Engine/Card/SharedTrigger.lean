@@ -608,7 +608,9 @@ inductive SharedTrigger where
   control a legendary creature.
   Resolves as `.sequence [.draw 1, .putOnBottomIfNoLegendary]`. -/
   | drawThenBottomIfNoLegendary
-  /-- Remove a hope counter to draw; sacrifice if none remain. -/
+  /-- Remove a hope counter from this. If you do, draw a card. Then if it has
+  no hope counters, sacrifice it and you gain 4 life.
+  Resolves as `.sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope]`. -/
   | removeHopeDrawSac
   /-- Tap any number of Humans; draw that many cards. -/
   | tapHumansDraw

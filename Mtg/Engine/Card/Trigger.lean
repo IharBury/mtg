@@ -79,7 +79,10 @@ inductive TriggerResolution where
   step (CR 608.2b). Return a graveyard card, then gain life equal to its
   power, is `.sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]`.
   Draw, then bottom a card if you control no legendary, is
-  `.sequence [.draw 1, .putOnBottomIfNoLegendary]`. -/
+  `.sequence [.draw 1, .putOnBottomIfNoLegendary]`.
+  Remove a hope counter and draw if you do, then sacrifice and gain life
+  if none remain, is
+  `.sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -113,8 +116,10 @@ inductive TriggerResolution where
   | exileUntilLeaves
   /-- Return cards exiled by the source. -/
   | returnLinkedExile
-  /-- Remove a hope counter, draw, then maybe sacrifice and gain life. -/
-  | removeHopeDrawSac
+  /-- Remove a hope counter from the source. If you do, draw a card. -/
+  | removeHopeCounterDraw
+  /-- If the source has no hope counters, sacrifice it and you gain 4 life. -/
+  | sacrificeGainLifeIfNoHope
   /-- Tap any number of Humans you control; draw that many cards. -/
   | tapHumansDraw
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
@@ -714,7 +719,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .mayPayGenericDraw n plusOne }
   | .drawThenBottomIfNoLegendary =>
     { resolution := .sequence [.draw 1, .putOnBottomIfNoLegendary] }
-  | .removeHopeDrawSac => { resolution := .removeHopeDrawSac }
+  | .removeHopeDrawSac =>
+    { resolution := .sequence [.removeHopeCounterDraw, .sacrificeGainLifeIfNoHope] }
   | .tapHumansDraw => { resolution := .tapHumansDraw }
   | .destroyOppArtifactsEnchantmentsGainLife =>
     { resolution := .destroyOppArtifactsEnchantmentsGainLife }
