@@ -311,7 +311,7 @@ def onYouSacrificeTokenOppLosesLife : TriggeredAbility :=
 def onLandYouControlEntersPlusOneVigilance : TriggeredAbility :=
   .triggered .landYouControlEnters (Effect.seqPlusOneVigilance 2)
 def onCastNoncreatureMayDrawXDiscard2 : TriggeredAbility :=
-  .triggered .youCastNoncreature (Effect.ofTrigger .mayDrawXDiscard2)
+  .triggered .youCastNoncreature (Effect.ofTrigger (.may (.drawXDiscard 2)))
 def onLandYouControlEntersDrawPlusOneSource : TriggeredAbility :=
   .triggered .landYouControlEnters Effect.seqDrawPlusOneSource
 def onArmyCombatDamageRingTempts : TriggeredAbility :=
@@ -642,7 +642,11 @@ private def mayStep : SharedTrigger → String
   | .draw n => s!"draw {cardPhrase n}"
   | .scry n => s!"scry {n}"
   | .gainLife n => s!"gain {n} life"
+  | .drawXDiscard n =>
+    let disc := if n == 2 then "two cards" else cardPhrase n
+    s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
   | .mayTo can thenDo => s!"you may {mayStep can}. If you do, {mayStep thenDo}"
+  | .may action => s!"you may {mayStep action}"
   | _ => "do this"
 
 /-- Effect clause from resolution, targeting, and divided-damage parameters. -/
@@ -697,6 +701,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .mayDiscardDraw n =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
   | .mayTo can thenDo => mayStep (.mayTo can thenDo)
+  | .may action => mayStep (.may action)
+  | .drawXDiscard n => mayStep (.drawXDiscard n)
   | .opponentSacrificesCreature =>
     s!"{noun} sacrifices a creature of their choice"
   | .dividedDamage =>

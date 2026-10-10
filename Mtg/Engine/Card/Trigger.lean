@@ -63,6 +63,10 @@ inductive TriggerResolution where
   `SharedTrigger.mayTo .discard (.draw n)` resolves as `.mayDiscardDraw`
   instead of this. -/
   | mayTo (can thenDo : SharedTrigger)
+  /-- You may do `action`. Declining skips it.
+  `SharedTrigger.may (.drawXDiscard 2)` resolves as `.mayDrawXDiscard2`
+  instead of this. -/
+  | may (action : SharedTrigger)
   /-- Target opponent sacrifices a creature of their choice. -/
   | opponentSacrificesCreature
   /-- Affect a still-legal permanent target. -/
@@ -249,7 +253,11 @@ inductive TriggerResolution where
   | attachEquipmentThenFight
   /-- Return the source as an artifact. -/
   | returnAsArtifact
-  /-- You may draw X (mana spent), then discard two. -/
+  /-- Draw X cards, where X is the mana spent to cast the triggering spell,
+  then discard `n`. -/
+  | drawXDiscard (n : Nat)
+  /-- You may draw X (mana spent), then discard two.
+  This is how `SharedTrigger.may (.drawXDiscard 2)` resolves. -/
   | mayDrawXDiscard2
   /-- You may cast an instant or sorcery from hand without paying. -/
   | castInstantSorceryFromHand
@@ -631,6 +639,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         | some d => some d
         | none => right.dividedDamage
       resolution := .mayTo can thenDo }
+  | .may (.drawXDiscard 2) => { resolution := .mayDrawXDiscard2 }
+  | .may action =>
+    let inner := timing action
+    { inner with resolution := .may action }
   | .opponentDiscards n who =>
     match who with
     | .each => { resolution := .opponentDiscards n who }
@@ -669,7 +681,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .payReturnFromGy => { resolution := .payReturnFromGy }
   | .targetOpponentLosesLife n =>
     { targeting := .of .opponent, resolution := .targetOpponentLosesLife n }
-  | .mayDrawXDiscard2 => { resolution := .mayDrawXDiscard2 }
+  | .drawXDiscard n => { resolution := .drawXDiscard n }
   | .ringTempts => { resolution := .ringTempts }
   | .setOtherBasePT =>
     { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,

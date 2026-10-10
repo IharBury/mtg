@@ -455,7 +455,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.ofTrigger .gainControlOppUntilEot,
   Effect.ofTrigger (.createAxe (attach := true)),
   Effect.ofTrigger .payReturnFromGy,
-  Effect.ofTrigger .mayDrawXDiscard2,
+  Effect.ofTrigger (.may (.drawXDiscard 2)),
   Effect.ofTrigger .belladonnaTokenReward,
   Effect.ofTrigger .bolgDealSacrificedPower,
   Effect.ofTrigger .createSpiritsForEquipped,
