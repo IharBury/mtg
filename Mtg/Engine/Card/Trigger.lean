@@ -106,7 +106,11 @@ inductive TriggerResolution where
   `.sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned]`.
   Other creatures you control of these subtypes get +P/+T, and creatures
   your opponents control get +oppP/+oppT, is
-  `.sequence [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT]`. -/
+  `.sequence [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT]`.
+  Gain 1 life, draw, or put a +1/+1 counter on each creature you control
+  when this is the first, second, or third resolve this turn (Belladonna
+  Took), is
+  `.sequence [.noteResolveThisTurn 3, .ifNthResolve 1 (.gainLife 1), .ifNthResolve 2 (.draw 1), .ifNthResolve 3 (.plusOneEachYouControl)]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -221,9 +225,12 @@ inductive TriggerResolution where
   | honeEachEquipment
   /-- Cascade: exile until a cheaper nonland, then you may cast it. -/
   | cascade
-  /-- First resolve: gain 1 life. Second: draw. Third: +1/+1 each creature.
-  Later resolves this turn do nothing (Belladonna Took). -/
-  | belladonnaTokenReward
+  /-- Record another resolution of this ability this turn. Later
+  `ifNthResolve` steps in this sequence see the ordinal. An ordinal above
+  `limit` logs that the ability has no effect. -/
+  | noteResolveThisTurn (limit : Nat)
+  /-- Do `thenDo` when `noteResolveThisTurn` recorded ordinal `n`. -/
+  | ifNthResolve (n : Nat) (thenDo : TriggerResolution)
   /-- You may sacrifice another creature you control (Bolg). -/
   | bolgMaySacrifice
   /-- Deal last-known sacrificed power to the target; amass Goblins equal to
@@ -831,7 +838,12 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .createAlienPerInvasion => { resolution := .createAlienPerInvasion }
   | .mayPutArtifactAttachEquipment => { resolution := .mayPutArtifactAttachEquipment }
   | .cascade => { resolution := .cascade }
-  | .belladonnaTokenReward => { resolution := .belladonnaTokenReward }
+  | .belladonnaTokenReward =>
+    { resolution := .sequence [
+        .noteResolveThisTurn 3,
+        .ifNthResolve 1 (.gainLife 1),
+        .ifNthResolve 2 (.draw 1),
+        .ifNthResolve 3 (.plusOneEachYouControl)] }
   | .bolgMaySacrifice => { resolution := .bolgMaySacrifice }
   | .bolgDealSacrificedPower =>
     { targeting := .of .anotherCreature, resolution := .bolgDealSacrificedPower }

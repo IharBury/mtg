@@ -694,7 +694,10 @@ inductive SharedTrigger where
   | mayPutArtifactAttachEquipment
   /-- Cascade. -/
   | cascade
-  /-- Belladonna token-enter reward. -/
+  /-- First resolve this turn: gain 1 life. Second: draw a card. Third:
+  +1/+1 on each creature you control. Later resolves do nothing
+  (Belladonna Took). Resolves as
+  `.sequence [.noteResolveThisTurn 3, .ifNthResolve 1 (.gainLife 1), .ifNthResolve 2 (.draw 1), .ifNthResolve 3 (.plusOneEachYouControl)]`. -/
   | belladonnaTokenReward
   /-- Bolg may-sacrifice. -/
   | bolgMaySacrifice

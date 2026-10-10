@@ -143,6 +143,9 @@ structure Game where
   `returnToOwnerHand` step. `plusOneOnSourceIfReturned` puts a +1/+1 counter
   on the source when this is set. -/
   returnedPermanentThisWay : Bool := false
+  /-- Ordinal recorded by the current `noteResolveThisTurn` step.
+  `ifNthResolve` reads it and a finished sequence clears it. -/
+  nthResolveThisWay : Option Nat := none
   /-- Later steps of a trigger `sequence`, waiting on the pending choice an
   earlier step opened. -/
   triggerSequenceRest : Option TriggerSequenceRest := none

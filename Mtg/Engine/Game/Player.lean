@@ -71,7 +71,8 @@ structure Player where
   /-- Combined color identity of this player's commander(s). Empty when they
   have no commander or the commander is colorless (CR 903.4). -/
   commanderColorIdentity : ColorSet := {}
-  /-- Times Belladonna Took's token-enters ability has resolved this turn. -/
+  /-- Times `noteResolveThisTurn` has counted for this player this turn
+  (Belladonna Took). -/
   belladonnaResolvesThisTurn : Nat := 0
   /-- Protection from everything until this player's next turn
   (e.g. The One Ring). -/
