@@ -1654,12 +1654,21 @@ value 3 or less from any graveyard under its owner's control. -/
   let g := mustApply g me .decline
   (namedPermanent g "Mirkwood Meditator").status.setBasePT.isNone
 
-/- Mirkwood Nurturer may return any other permanent you control. -/
+/- Mirkwood Nurturer may return any other permanent you control. Choosing
+nothing returns nothing and adds no counter. -/
 #guard
   let g := addPermanent (addPermanent afterDraw mirkwoodNurturer me me) murmuringVolume me me
   let g := fireTrigger g "Mirkwood Nurturer"
   let g := passBoth (mustApply g me (tgt g "Murmuring Volume"))
   inHand g me "Murmuring Volume" && counters g "Mirkwood Nurturer" == 1
+#guard
+  let g := addPermanent (addPermanent afterDraw mirkwoodNurturer me me) murmuringVolume me me
+  let g := fireTrigger g "Mirkwood Nurturer"
+  let n := g.log.size
+  let g := passBoth (mustApply g me .decline)
+  onBattlefield g "Murmuring Volume" && counters g "Mirkwood Nurturer" == 0 &&
+    !(g.log.extract n g.log.size).any (fun s => mentions s "is returned") &&
+    !(g.log.extract n g.log.size).any (fun s => mentions s "The target is no longer legal")
 
 /- Boughside Wanderers: the player chooses a permanent card among the top
 four; the rest go to the bottom. -/

@@ -640,7 +640,9 @@ inductive SharedTrigger where
   | attachEquipmentToCreature
   /-- Defending player sacrifices a least-power creature. -/
   | defenderSacsLeastPower
-  /-- Return another permanent; put a +1/+1 counter on this. -/
+  /-- Return up to one other permanent you control to its owner's hand.
+  If you do, put a +1/+1 counter on this creature.
+  Resolves as `.sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned]`. -/
   | returnOtherPlusOne
   /-- Look at the top `n` cards; you may reveal one of these types. -/
   | lookAtTopRevealTypes (n : Nat) (types : Array String)
