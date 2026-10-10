@@ -520,6 +520,51 @@ def shortswordEntered : Game :=
     shortswordEntered.pending == .none &&
     shortswordEntered.triggerSequenceRest.isNone
 
+/-- Old Thrush gains 2 life, then you may search a basic land to the top.
+The search is the last step, so declining it ends the resolution. -/
+def thrushOffers : Game :=
+  let g := addPermanent (addToLibraryTop started forest ⟨0⟩) oldThrush ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Old Thrush"
+  g.applyTriggeredAbility ⟨0⟩ src.printed.triggeredAbilities[0]! (some src.id)
+
+#guard
+  match oldThrush.triggeredAbilities[0]? with
+  | some ab =>
+    ab.resolution == .sequence [.gainLife 2, .searchLibrary .basicLandOnTop]
+  | none => false
+
+#guard
+  (thrushOffers.player ⟨0⟩).life == (started.player ⟨0⟩).life + 2 &&
+    thrushOffers.triggerSequenceRest.isNone &&
+    match thrushOffers.pending with
+    | .fraChoice _ (.maySearchLibrary _ 1 .topAfterShuffle _ "a basic land card") => true
+    | _ => false
+
+/-- Declining Old Thrush's search does not shuffle. -/
+def thrushDeclines : Game :=
+  mustApply thrushOffers ⟨0⟩ .decline
+
+#guard
+  let n := thrushOffers.log.size
+  thrushDeclines.pending == .none &&
+    thrushDeclines.triggerSequenceRest.isNone &&
+    (thrushDeclines.player ⟨0⟩).library.back?.any (fun id =>
+      (thrushDeclines.object! id).name == "Forest") &&
+    !(thrushDeclines.log.extract n thrushDeclines.log.size).any
+      (fun s => mentions s "shuffles") &&
+    thrushDeclines.log.any (fun s => mentions s "doesn't search")
+
+/-- Accepting puts the chosen basic land on top. -/
+def thrushFinds : Game :=
+  let fid := (thrushOffers.player ⟨0⟩).library.back!
+  mustApply (mustApply thrushOffers ⟨0⟩ .accept) ⟨0⟩ (.choosePermanents #[fid])
+
+#guard
+  thrushFinds.pending == .none &&
+    thrushFinds.triggerSequenceRest.isNone &&
+    (thrushFinds.player ⟨0⟩).library.back? == some ((thrushOffers.player ⟨0⟩).library.back!) &&
+    thrushFinds.log.any (fun s => mentions s "on top of their library")
+
 /-- Bag End Banquet creates three Foods. -/
 def banquetFoods : Game :=
   (addPermanent started bagEndBanquet ⟨0⟩ ⟨0⟩).applyTriggeredAbility
