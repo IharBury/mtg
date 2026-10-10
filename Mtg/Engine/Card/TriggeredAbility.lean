@@ -712,8 +712,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | none => "it deals damage divided as you choose"
   | .damageFromLastKnownPower =>
     s!"it deals damage equal to its power to {noun}"
-  | .returnElfGainLife =>
+  | .sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower] =>
     s!"return {noun} to your hand. You gain life equal to that card's power"
+  | .sequence _ =>
+    "resolve each step"
+  | .gainLifeEqualToTargetPower =>
+    "you gain life equal to that card's power"
   | .damageEachOpponent n =>
     s!"this creature deals {n} damage to each opponent"
   | .pumpByLookedAt =>

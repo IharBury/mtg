@@ -595,7 +595,8 @@ inductive SharedTrigger where
   | ringTempts
   /-- Set another creature's base P/T to this creature's. -/
   | setOtherBasePT
-  /-- Return a target Elf from the graveyard; gain life equal to its power. -/
+  /-- Return a target Elf from the graveyard, then gain life equal to its power.
+  Resolves as `.sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]`. -/
   | returnElfGainLife
   /-- Deal damage equal to last-known power to a target. -/
   | damageFromLastKnownPower

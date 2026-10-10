@@ -771,6 +771,8 @@ namespace CardDef
   .triggered .attack (Effect.ofTrigger .setOtherBasePT)
 #guard TriggeredAbility.onEnterOrAttackReturnElfGainLife ==
   .triggered .enterOrAttack (Effect.ofTrigger .returnElfGainLife)
+#guard TriggeredAbility.resolution .onEnterOrAttackReturnElfGainLife ==
+  .sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]
 #guard TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature ==
   .triggered .dies (Effect.ofTrigger .damageFromLastKnownPower)
 #guard TriggeredAbility.onCastNoncreaturePumpAndDamageOpponents 1 ==
