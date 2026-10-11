@@ -24,6 +24,7 @@ import Mtg.Engine.Tests.CatalogSmoke
 import Mtg.Engine.Tests.RealityFracture
 import Mtg.Engine.Tests.RealityFractureCommander
 import Mtg.Engine.Tests.ParseOracle
+import Mtg.Engine.Tests.MayCast
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -56,4 +57,5 @@ keep working.
 - `Marvel`: MSH connive, teamwork, Power-up, and wards
 - `CatalogSmoke`: the supported catalog names the MSH cards those tests use
 - `ParseOracle`: printed-card parsing, Oracle normalization, and argument reading
+- `MayCast`: casting from a graveyard, from hand, and from an impulse
 -/
