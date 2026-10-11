@@ -1,0 +1,39 @@
+2 Heartwood Crafter
+1 No Admittance
+1 Samut, Hazoret's Champion
+1 Compel Brutality
+1 Something Worth Saving
+1 Sureshot Sower
+1 Konstrari Improviser
+1 Fulminous Forte
+1 Wrath of the Bloodmane
+1 Inspired Tethermage
+1 Woodwork Prodigy
+1 Heartstring Puller
+1 Violent Echoes
+2 Jiang Yanggu, Never Alone
+1 Fblthp, Knows the Way
+2 Jiang Yanggu, Alone
+1 Edgar, Moonlit Sovereign
+1 Kiora of Fire and Ashes
+1 Vinelasher Adept
+1 Emrakul, the Exigent Doom
+7 Mountain
+8 Forest
+1 Konstrari Annex
+1 Rockfall Vale
+
+Sideboard
+
+1 Hallway Heckler
+3 Tether Technician
+1 Flourishing Grapple
+2 Budding Insurgent
+1 Restore with Empathy
+1 Wrecking Gecko
+1 Vinelasher Adept
+1 Stingerquill Annex
+1 Mabel, Valley Hero
+1 Vigorbloom Annex
+1 Tam's Resistance
+1 Hexhaven Dueling Arena

@@ -1,0 +1,704 @@
+--name NicolaiBolas --deck examples/decks/NicolaiBolas_FRA_Draft.txt --name Tomb1 --deck examples/decks/Tomb1_FRA_Draft.txt --multiplayer --norandom --decides Tomb1
+first Tomb1
+shuffle 1 3 8 9 11 15 22 29 33 34 35 36    10 20 37 18 19 28 27 14 2 26 25 21 7 32 16 38 17 13 24 12 31 6 5 4 0 30 39 23
+shuffle 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64    65 66 67    68 69 70 71 72 73 74 75 76 77 78 79
+keep
+keep
+pass
+pass
+play 87
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 82
+cast 83
+tap #96 G
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 88
+cast 89
+tap #94 W
+tap #101 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 80
+cast 99
+tap #96 G
+tap #106 R
+tap #98 C
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 90
+cast 104
+tap #94 W
+tap #101 B
+tap #110 W
+pay
+pass
+pass
+surveil
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 81
+cast 105
+tap #96 G
+tap #106 R
+tap #108 R
+tap #114 R
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 91
+cast 92
+tap #94 W
+tap #101 B
+tap #110 W
+tap #120 W
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack 103 122
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 113
+pass
+pass
+pass
+pass
+attack 116 118
+pass
+pass
+block 112 116
+pass
+pass
+pass
+pass
+pass
+pass
+cast 86
+tap 96 106
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 93
+cast 100
+tap 94 101
+pay
+pass
+pass
+cast 109
+tap #110 W
+tap #120 W
+tap #130 B
+pay
+pass
+pass
+target 128
+pass
+cast 84
+mode 1
+target 128
+target 122
+tap 124
+tap 108 G
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack 103
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 123
+target 132
+tap 96 106 124 108
+pay
+pass
+pass
+activate 143 2
+pass
+pass
+play 95
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 119
+tap 94 101
+pay
+pass
+pass
+pass
+pass
+discard 148
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 85
+tap #114 G
+tap #149 G
+pay
+pass
+pass
+choose 159
+pass
+pass
+pass
+pass
+pass
+pass
+cast 161
+tap #96 G
+tap #106 R
+tap #108 G
+tap #114 R
+tap #124 R
+tap #149 G
+pay
+pass
+pass
+target 98
+pass
+cast 129
+target 98
+tap 110 130
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 150
+tap 94 101 110
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 141
+tap 108 96 106 124 149
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack 118
+pass
+pass
+choose 162
+pass
+activate 169
+target #118
+tap #120 W
+tap #130 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 171
+target 176
+tap 94 101 130
+pay
+pass
+pass
+cast 172
+target 164
+tap #110 W
+tap #120 W
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 189
+tap 96 149 106 124
+pay
+pass
+pass
+pass
+pass
+play 174
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 183
+pass
+pass
+pass
+pass
+attack 103
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+cast 198
+tap 94 110 101 130
+pay
+pass
+pass
+target 152
+pass
+pass
+pass
+pass
+block 152 193 202 195
+pass
+pass
+pass
+pass
+pass
+pass
+play 191
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 210
+tap 96 149 106 124 196
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 214
+tap 96 149 106 124 196
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+choose 200
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 209
+cast 211
+tap 94 110 101
+pay
+pass
+pass
+pass
+pass
+choose 223
+sacrifice 213
+pass
+pass
+pass
+pass
+pass
+pass
+attack 228
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+choose 219
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 179
+target Tomb1
+tap 106 124
+pay
+pass
+pass
