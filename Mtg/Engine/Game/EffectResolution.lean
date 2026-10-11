@@ -1074,7 +1074,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
               g := g.illegalAbilityTarget t
           | _ => pure ()
         return g
-  | .amassGoblins n subtype =>
+  | .amass n subtype =>
     g.amass controller subtype n
   | .searchLibrary s ty how =>
     let pred := fun c => c.hasType ty && c.hasSupertype s
@@ -1615,7 +1615,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
               sourceId lastKnownPower chosenX) g
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary sourceId
-  | .amassGoblins n => g.amassGoblins controller n
+  | .amass n => g.amassGoblins controller n
   | .discard n =>
     g.beginDiscardCards #[controller] n
   | .spell r =>
@@ -1946,7 +1946,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           | some o => acc.exileUntilSourceLeaves sourceId o
           | none => acc
         | _ => acc) g
-  | .sequence _ | .shuffleSource | .amassGoblins _ | .discard _ | .spell _ | .trigger _ =>
+  | .sequence _ | .shuffleSource | .amass _ | .discard _ | .spell _ | .trigger _ =>
     g
   | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
   | .createTokensLifeGained _ | .oppSacrificesGreatestMv

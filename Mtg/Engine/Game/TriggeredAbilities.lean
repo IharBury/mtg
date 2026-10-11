@@ -946,6 +946,40 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => g
   | _, _ => g
 
+/-- Resolve `TriggerResolution.amass`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyAmass (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (lastKnownPower : Option Int) (n : Nat) (subtype : String)
+    (amount : AmassAmount) (attachSource : Bool)
+    (who : TriggeredAbility.AmassWho) : Game :=
+  match amount, who with
+  | .fixed, .you =>
+    if attachSource then g.amass controller subtype n (attach := sourceId)
+    else g.amass controller subtype n
+  | .sourcePower, .you =>
+    let n := (lastKnownPower.getD 0).toNat
+    if attachSource then g.amass controller subtype n (attach := sourceId)
+    else g.amass controller subtype n
+  | .notedExcess, .you =>
+    let excess := g.excessDamageThisWay
+    let g := { g with excessDamageThisWay := 0 }
+    if excess > 0 then
+      let g :=
+        if attachSource then g.amass controller subtype excess (attach := sourceId)
+        else g.amass controller subtype excess
+      g.logMsg s!"excess damage {excess} — amass {subtype}s {excess}"
+    else g
+  | .notedPower, .notedController =>
+    if g.destroyedForAmassThisWay then
+      match g.amassControllerThisWay with
+      | some pid =>
+        if attachSource then
+          g.amass pid subtype g.amassAmountThisWay (attach := sourceId)
+        else g.amass pid subtype g.amassAmountThisWay
+      | none => g
+    else g
+  | _, _ => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -987,7 +1021,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .onSource a => g.applyOnTriggerSource sourceId a
   | .gainLife n => g.gainLife controller n
   | .recruit => g.beginRecruit controller
-  | .amassGoblins n => g.amassGoblins controller n
+  | .amass n => g.amassGoblins controller n
   | .createTokens kind n tapped =>
     g.createKindTokens controller kind n (tapped := tapped)
   | .addMana types =>
@@ -1198,13 +1232,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginRecruit controller
   | .putCounters what who =>
     g.applyPutCounters controller ab sourceId targets lastKnownPower what who
-  | .amassGoblins n subtype amount attachSource =>
-    let n :=
-      match amount with
-      | .fixed => n
-      | .sourcePower => (lastKnownPower.getD 0).toNat
-    if attachSource then g.amass controller subtype n (attach := sourceId)
-    else g.amass controller subtype n
+  | .amass n subtype amount attachSource who =>
+    g.applyAmass controller sourceId lastKnownPower n subtype amount attachSource who
   | .createTokens kind n tapped token who qty note =>
     g.applyCreateTokens controller sourceId targets lastKnownPower
       kind n tapped token who qty note
@@ -1332,13 +1361,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           (triggerOrLog (g.player controller).name rs)
   | .may (.sacrifice .you .another _) =>
     g.applySacrifice controller ab sourceId targets .you .another .none
-  | .amassGoblinsNotedExcess =>
-    let excess := g.excessDamageThisWay
-    let g := { g with excessDamageThisWay := 0 }
-    if excess > 0 then
-      g.amassGoblins controller excess |>.logMsg
-        s!"excess damage {excess} — amass Goblins {excess}"
-    else g
   | .markRecentTokensAttacking =>
     let dest := some g.defendingPlayer
     let g :=
@@ -1391,12 +1413,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | _ =>
       clear.logMsg
         "No target was chosen. Its controller is undefined and no player amasses Goblins."
-  | .amassNotedController =>
-    if g.destroyedForAmassThisWay then
-      match g.amassControllerThisWay with
-      | some pid => g.amassGoblins pid g.amassAmountThisWay
-      | none => g
-    else g
   | .returnCreatureFromGyToHand =>
     g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
       match t with

@@ -89,17 +89,17 @@ def onCastColorCreateTokens (c : Color) (kind : TokenKind) (n : Nat) :
 def onEnterOrAttackCreateWall : TriggeredAbility :=
   .triggered (.or .enter .attack) (Effect.ofTrigger (.createTokens .wall 1))
 def onEnterAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.amassGoblins n))
+  .triggered .enter (Effect.ofTrigger (.amass n))
 def onDiesAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .dies (Effect.ofTrigger (.amassGoblins n))
+  .triggered .dies (Effect.ofTrigger (.amass n))
 def onYouAttackAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .youAttack (Effect.ofTrigger (.amassGoblins n))
+  .triggered .youAttack (Effect.ofTrigger (.amass n))
 def onCastNoncreatureAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .youCastNoncreature (Effect.ofTrigger (.amassGoblins n))
+  .triggered .youCastNoncreature (Effect.ofTrigger (.amass n))
 def onEnterOrAttackAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered (.or .enter .attack) (Effect.ofTrigger (.amassGoblins n))
+  .triggered (.or .enter .attack) (Effect.ofTrigger (.amass n))
 def onCreatureCardLeavesYourGyAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .creatureCardLeavesYourGy (Effect.ofTrigger (.amassGoblins n))
+  .triggered .creatureCardLeavesYourGy (Effect.ofTrigger (.amass n))
 def onEnterRecruit : TriggeredAbility := .triggered .enter (Effect.ofTrigger .recruit)
 def onDiesRecruit : TriggeredAbility := .triggered .dies (Effect.ofTrigger .recruit)
 def onEnterOrAttackRecruit : TriggeredAbility :=
@@ -229,7 +229,7 @@ def onAnotherSubtypeEntersPlusOneOnSource (subtype : String) (n : Nat) :
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.onSource (.plusOne n)))
     { thisOrAnotherSubtype := some subtype }
 def onOpponentCastsAmassOrcs (n : Nat) : TriggeredAbility :=
-  .triggered .opponentCastsSpell (Effect.ofTrigger (.amassGoblins n "Orc"))
+  .triggered .opponentCastsSpell (Effect.ofTrigger (.amass n "Orc"))
 def onCreatureYouControlAttacksAloneInvestigate : TriggeredAbility :=
   .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger .investigate)
 def onCreatureYouControlAttacksAlonePump (power toughness : Int) : TriggeredAbility :=
@@ -289,7 +289,7 @@ def onLeaveReturnExiled : TriggeredAbility :=
 def onEnterCreateThenAttach (kind : TokenKind) : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.createThenAttach kind))
 def onEnterAmassThenAttach (n : Nat) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.amassGoblins n (attachSource := true)))
+  .triggered .enter (Effect.ofTrigger (.amass n (attachSource := true)))
 def onEnterGainLifeSearchBasicOnTop (n : Nat) : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.gainLifeSearchBasicOnTop n))
 def onYourFirstMainAddMana (types : Array ManaType) : TriggeredAbility :=
@@ -303,7 +303,7 @@ def onEnterGainControlOppUntilEot : TriggeredAbility :=
 def onEnterCreateAxeAttach : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.createAxe (attach := true)))
 def onDiesAmassGoblinsEqualPower : TriggeredAbility :=
-  .triggered .dies (Effect.ofTrigger (.amassGoblins 0 (amount := .sourcePower)))
+  .triggered .dies (Effect.ofTrigger (.amass 0 (amount := .sourcePower)))
 def onLandYouControlEntersPayReturnFromGy : TriggeredAbility :=
   .triggered .landYouControlEnters (Effect.ofTrigger .payReturnFromGy)
 def onYouSacrificeTokenOppLosesLife : TriggeredAbility :=
@@ -831,15 +831,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
        .«if» (.nthResolve 2) (.draw 1),
        .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)] =>
     "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
-  | .sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess] =>
+  | .sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amass _ _ .notedExcess _ _] =>
     s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
   | .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] =>
     "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
-  | .sequence [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc" .fixed false] =>
+  | .sequence [.dealDamage 1 .target .fixed .markedPermanent, .amass 1 "Orc" .fixed false _] =>
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
   | .sequence [.untapAttackingCreatures, .additionalCombatPhase] =>
     "untap all attacking creatures. After this phase, there is an additional combat phase"
-  | .sequence [.destroyNotedForAmass, .amassNotedController, .«if» .youControlledDestroyed (.draw 1)] =>
+  | .sequence [.destroyNotedForAmass, .amass _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw 1)] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .sequence [.may .discardHand, .drawDiscardedHandCount, .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
@@ -1002,11 +1002,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "recruit"
   | .recruit .you =>
     "you recruit"
-  | .amassGoblins _ subtype .sourcePower _ =>
+  | .amass _ subtype .sourcePower _ _ =>
     s!"amass {pluralizeName subtype} X, where X is this creature's power"
-  | .amassGoblins n subtype _ true =>
+  | .amass _ subtype .notedExcess _ _ =>
+    s!"amass {pluralizeName subtype} X, where X is the excess damage"
+  | .amass _ subtype .notedPower _ .notedController =>
+    s!"its controller amasses {pluralizeName subtype} X, where X is that creature's power"
+  | .amass n subtype _ true _ =>
     s!"amass {pluralizeName subtype} {n}, then attach this Equipment to the amassed Army"
-  | .amassGoblins n subtype _ _ =>
+  | .amass n subtype _ _ _ =>
     s!"amass {pluralizeName subtype} {n}"
   | .createTokens kind n tapped token who qty note =>
     match token, who, qty, note with
@@ -1185,8 +1189,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
   | .revealDiscardFromHand =>
     s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
-  | .amassGoblinsNotedExcess =>
-    "amass Goblins X, where X is the excess damage"
   | .markRecentTokensAttacking =>
     "those tokens enter tapped and attacking"
   | .«if» .equippedLegendaryYouControl .markRecentTokensAttacking =>
@@ -1197,8 +1199,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "after this phase, there is an additional combat phase"
   | .destroyNotedForAmass =>
     s!"destroy {noun}"
-  | .amassNotedController =>
-    "its controller amasses Goblins X, where X is that creature's power"
   | .«if» .youControlledDestroyed (.draw 1) =>
     "if you controlled that creature, draw a card"
   | .discardHand =>

@@ -36,7 +36,7 @@ inductive ChapterResolution where
   /-- Target opponent reveals their hand; you choose a nonland; they discard it. -/
   | opponentDiscardsNonland
   /-- Amass Goblins `n`. -/
-  | amassGoblins (n : Nat)
+  | amass (n : Nat)
   /-- Target opponent loses `n` life and you gain `n` life. -/
   | opponentLosesYouGain (n : Nat)
   /-- Target creature you control gains hexproof while this Saga remains. -/

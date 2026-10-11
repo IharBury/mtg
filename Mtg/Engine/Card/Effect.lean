@@ -509,7 +509,7 @@ inductive Resolution where
   /-- Recruit. -/
   | recruit
   /-- Amass Goblins `n`. -/
-  | amassGoblins (n : Nat)
+  | amass (n : Nat)
   /-- Create `n` tokens of this kind. -/
   | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false)
   /-- Add these mana types. -/
@@ -807,7 +807,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"You gain {n} life"
   | .recruit =>
     "Recruit"
-  | .amassGoblins n =>
+  | .amass n =>
     s!"Amass Goblins {n}"
   | .createTokens kind n tapped =>
     capitalizeAscii (TokenKind.createPhrase kind n (tapped := tapped))
@@ -1061,7 +1061,7 @@ def toSpellStep : Resolution → Option SpellResolution
   | .targetPlayerLoseLife n => some (.loseLife n .targetPlayer)
   | .controllerOfTargetLosesLife n => some (.loseLife n .controllerOfTarget)
   | .returnTargetSpell => some .returnTargetToHand
-  | .amassGoblins n => some (.amassGoblins n)
+  | .amass n => some (.amass n)
   | .createTokens kind n false => some (.createTokens kind n)
   | .creaturesYouControlPump p t => some (.creaturesPump p t)
   | .createTokensX kind => some (.createTokens kind 0 (qty := .chosenX))
