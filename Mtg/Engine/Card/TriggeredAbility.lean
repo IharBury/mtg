@@ -858,7 +858,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
   | .sequence [.onPermanent .destroy, .targetControllerCreatesTreasure] =>
     s!"destroy {noun}. They create a Treasure token"
-  | .sequence [.may .putArtifactFromHand, .attachPutArtifactIfEquipment] =>
+  | .sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
   | .sequence _ =>
     "resolve each step"
@@ -1099,7 +1099,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
   | .putArtifactFromHand =>
     "put an artifact card from your hand onto the battlefield"
-  | .attachPutArtifactIfEquipment =>
+  | .attachPutArtifact =>
+    "attach it to this creature"
+  | .«if» .putArtifactIsEquipment .attachPutArtifact =>
     "if it's an Equipment, attach it to this creature"
   | .fightUpToOne =>
     "this fights up to one other target creature"

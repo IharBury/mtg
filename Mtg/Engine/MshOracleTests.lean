@@ -2269,7 +2269,7 @@ def ironManCombatPutEquipmentOk : Bool :=
     let g := mustApply g ⟨0⟩ (.cast bow.id)
     let bow := namedPermanent g "Hawkeye's Bow"
     hostId == iron.id &&
-      rest.steps == [.attachPutArtifactIfEquipment] &&
+      rest.steps == [.«if» .putArtifactIsEquipment .attachPutArtifact] &&
       bow.isOnBattlefield &&
       bow.attachedTo == some iron.id &&
       g.pending == .none &&

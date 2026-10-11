@@ -102,6 +102,8 @@ inductive TriggerIf where
   | targetIsAnotherSubtype (subtype : String)
   /-- You have scried or surveilled this turn. -/
   | scriedOrSurveilledThisTurn
+  /-- The artifact an earlier step put from hand is Equipment. -/
+  | putArtifactIsEquipment
 deriving Repr, Inhabited, BEq
 
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
@@ -215,7 +217,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure]`.
   You may put an artifact from your hand onto the battlefield, then attach
   it to the source if it is Equipment, is
-  `.sequence [.may .putArtifactFromHand, .attachPutArtifactIfEquipment]`. -/
+  `.sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -336,7 +338,9 @@ You may put a land card from your hand onto the battlefield tapped is
   Drawing when an earlier step removed a hope counter is
   `.«if» .removedHope (.draw 1)`.
   Doing `thenDo` on the nth resolution this turn is
-  `.«if» (.nthResolve n) thenDo`. -/
+  `.«if» (.nthResolve n) thenDo`.
+  Attaching the artifact put from hand when it is Equipment is
+  `.«if» .putArtifactIsEquipment .attachPutArtifact`. -/
   | «if» (cond : TriggerIf) (thenDo : TriggerResolution)
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
@@ -453,9 +457,8 @@ You may put a land card from your hand onto the battlefield tapped is
   next step. An empty hand skips the choice.
   Optional as `.may .putArtifactFromHand`. -/
   | putArtifactFromHand
-  /-- Attach the artifact put by the previous step to that creature if it
-  is Equipment. -/
-  | attachPutArtifactIfEquipment
+  /-- Attach the artifact an earlier step put from hand to that creature. -/
+  | attachPutArtifact
   /-- This fights the targeted creature. -/
   | fightUpToOne
   /-- Return the targeted permanent to its owner's hand.
@@ -997,7 +1000,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.createAlienToken, .plusOneOnAlienNoted, .invasionCounterOnSource] }
   | .mayPutArtifactAttachEquipment =>
     { resolution := .sequence
-        [.may .putArtifactFromHand, .attachPutArtifactIfEquipment] }
+        [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact] }
   | .cascade => { resolution := .cascade }
   | .belladonnaTokenReward =>
     { resolution := .sequence [

@@ -921,7 +921,7 @@ namespace CardDef
 #guard TriggeredAbility.onCombatMayPutArtifactAttachEquipment ==
   .triggered .yourBeginCombat (Effect.ofTrigger .mayPutArtifactAttachEquipment)
 #guard TriggeredAbility.resolution .onCombatMayPutArtifactAttachEquipment ==
-  .sequence [.may .putArtifactFromHand, .attachPutArtifactIfEquipment]
+  .sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact]
 #guard TriggeredAbility.onCastCascade == .triggered .cascade (Effect.ofTrigger .cascade)
 #guard TriggeredAbility.onEnterBolgMaySacrifice ==
   .triggered .enter (Effect.ofTrigger .bolgMaySacrifice)
