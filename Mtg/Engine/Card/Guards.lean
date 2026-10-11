@@ -835,7 +835,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife ==
   .triggered (.or .enter .attack) (Effect.ofTrigger .plusOneEachOtherGainLife)
 #guard TriggeredAbility.resolution .onEnterOrAttackPlusOneEachOtherGainLife ==
-  .sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]
+  .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature]
 #guard TriggeredAbility.toNotation .onEnterOrAttackPlusOneEachOtherGainLife ==
   "Whenever this creature enters or attacks, put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control."
 #guard TriggeredAbility.onAttackDamageEqualSubtypeToEachOpponent "Dwarf" ==
@@ -1407,11 +1407,12 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onEnterEachOpponentDiscards == .opponentDiscards
 #guard TriggeredAbility.resolution (.onEnterTargetOpponentDiscards 2) ==
   .opponentDiscards 2 .target
-#guard TriggeredAbility.resolution .onAttackFerociousPlusOneEach == .plusOneEachYouControl
+#guard TriggeredAbility.resolution .onAttackFerociousPlusOneEach ==
+  .putCounters (.ofKind .plusOnePlusOne) .youControl
 #guard TriggeredAbility.resolution .onEnterCreateAxe == .createAxe
 #guard TriggeredAbility.resolution .onEnterCreateAxeAttach == .createAxe true
 #guard TriggeredAbility.resolution .onEquippedAttacksPlusOneEachIfCityBlessing ==
-  .plusOneEachYouControl .citysBlessing
+  .putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing)
 #guard TriggeredAbility.resolution
     (.onStep (Effect.ofTrigger .prepareSource)) == .prepareSource
 #guard TriggeredAbility.resolution
@@ -1525,7 +1526,7 @@ end CardDef
     .noteResolveThisTurn 3,
     .«if» (.nthResolve 1) (.gainLife 1),
     .«if» (.nthResolve 2) (.draw 1),
-    .«if» (.nthResolve 3) (.plusOneEachYouControl)]
+    .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]
 #guard TriggeredAbility.resolution .onBolgDealSacrificedPower ==
   .sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
@@ -1540,7 +1541,8 @@ end CardDef
   .sequence [.may .discardHand, .drawDiscardedHandCount,
     .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
-  .sequence [.trampleCounterOnTarget, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)]
+  .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear,
+    .«if» (.bearsAtLeast 3) (.draw 2)]
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
   .sequence [.draw 1, .discard 1, .discardedLandEntersTapped]
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
@@ -1548,15 +1550,16 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tapEnchanted, .removeCountersFromEnchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
-  .sequence [.influenceCounterOnSource, .scry 2, .may .opponentHasYouDraw]
+  .sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw]
 #guard TriggeredAbility.resolution .onCombatDamageToYouSacRingTempts ==
   .sequence [.sacDamagingCreatures, .ringTempts]
 #guard TriggeredAbility.resolution (.onCreatureYouControlEntersScryAndPlan 2) ==
-  .sequence [.planCounterOnSource, .scry 2]
+  .sequence [.putCounters (.ofKind .plan) .source, .scry 2]
 #guard TriggeredAbility.resolution .onLandYouControlEntersPlusOneAndPlan ==
-  .sequence [.planCounterOnSource, .plusOneOnTargetByYou]
+  .sequence [.putCounters (.ofKind .plan) .source,
+    .putCounters (.ofKind .plusOnePlusOne) (.permanent true)]
 #guard TriggeredAbility.resolution .onFourthPlanDrawPlusOneEach ==
-  .sequence [.sacrificePlan, .draw 1, .plusOneEachYouControl]
+  .sequence [.sacrificePlan, .draw 1, .putCounters (.ofKind .plusOnePlusOne) .youControl]
 #guard TriggeredAbility.resolution .onFourthPlanReturnInstants ==
   .sequence [.sacrificePlanForReflexive, .queueReflexiveIfSacrificed 11]
 #guard TriggeredAbility.resolution .onFourthPlanDividedDamage ==
@@ -1566,7 +1569,8 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
   .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
-  .sequence [.createAlienToken, .plusOneOnAlienNoted, .invasionCounterOnSource]
+  .sequence [.createAlienToken, .putCounters .plusOneNoted .createdToken,
+    .putCounters (.ofKind .invasion) .source]
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
   .sequence [.draw 2, .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
@@ -1574,7 +1578,7 @@ end CardDef
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
   .sequence [.onPermanent (.grantKeywords Keyword.hexproof),
     .«if» .targetIsCreature (.onPermanent (.plusOne 1)),
-    .«if» .targetIsPlaneswalker .loyaltyOnTarget]
+    .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]
 #guard (SharedTrigger.timing .beginCombatIfDrawnTwoPump).resolution ==
   .«if» (.drewAtLeast 2) (.sequence [
     .onPermanent (.pump 3 0),
