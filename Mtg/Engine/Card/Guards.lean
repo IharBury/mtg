@@ -1354,7 +1354,8 @@ namespace CardDef
   "When this permanent enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\"."
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterOppCreatesTheVoid) == .opponent
 #guard TriggeredAbility.resolution (.onEnter Effect.enterCreateSturdyShieldAttach) ==
-  .sequence [.createSturdyShieldToken, .attachCreatedToSource]
+  .sequence [.createTokens .treasure 1 false .sturdyShield (note := .remember),
+    .attachCreatedToSource]
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
@@ -1412,8 +1413,10 @@ namespace CardDef
   .opponentDiscards 2 .target
 #guard TriggeredAbility.resolution .onAttackFerociousPlusOneEach ==
   .putCounters (.ofKind .plusOnePlusOne) .youControl
-#guard TriggeredAbility.resolution .onEnterCreateAxe == .createAxe
-#guard TriggeredAbility.resolution .onEnterCreateAxeAttach == .createAxe true
+#guard TriggeredAbility.resolution .onEnterCreateAxe ==
+  .createTokens .treasure 1 false .axe
+#guard TriggeredAbility.resolution .onEnterCreateAxeAttach ==
+  .createTokens .treasure 1 false .axe (note := .attachReflexive)
 #guard TriggeredAbility.resolution .onEquippedAttacksPlusOneEachIfCityBlessing ==
   .putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing)
 #guard TriggeredAbility.resolution
@@ -1572,7 +1575,8 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
   .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
-  .sequence [.createAlienToken, .putCounters .plusOneNoted .createdToken,
+  .sequence [.createTokens .treasure 1 false .alien (note := .invasion),
+    .putCounters .plusOneNoted .createdToken,
     .putCounters (.ofKind .invasion) .source]
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
   .sequence [.draw 2, .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]
@@ -1589,7 +1593,7 @@ end CardDef
 #guard (SharedTrigger.timing .destroyOppPermanentIfSixLands).resolution ==
   .«if» (.landsAtLeast 6) (.sequence [
     .onPermanent .destroy,
-    .targetControllerCreatesTreasure])
+    .createTokens .treasure 1 false (who := .targetController)])
 #guard TriggeredAbility.toNotation
     (.triggered .enter (Effect.ofTrigger .destroyOppPermanentIfSixLands)) ==
   "When this permanent enters, if you control six or more lands, destroy target permanent an opponent controls. They create a Treasure token."
@@ -1598,7 +1602,8 @@ end CardDef
 #guard (SharedTrigger.timing (.drawXDiscard 2)).resolution ==
   .sequence [.drawEqualToManaSpent, .discardIfManaSpent 2]
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
-  .sequence [.createSturdyShieldToken, .attachCreatedToSource]
+  .sequence [.createTokens .treasure 1 false .sturdyShield (note := .remember),
+    .attachCreatedToSource]
 #guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
   .sequence [.tapTargetIfPresent, .loseAbilitiesWhileSourceRemains]
 #guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==

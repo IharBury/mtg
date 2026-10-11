@@ -710,9 +710,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .plusOneSacrificedPower, _ =>
       "put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
     | _, _ => "put counters"
-  | .targetControllerCreatesTreasure =>
-    "they create a Treasure token"
-  | .«if» (.landsAtLeast 6) (.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure]) =>
+  | .«if» (.landsAtLeast 6) (.sequence [.onPermanent .destroy,
+      .createTokens .treasure 1 false .kind .targetController]) =>
     s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
   | .ifElse .scriedOrSurveilledThisTurn
       (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1)) =>
@@ -896,10 +895,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw a card, then you may put a land card from your hand onto the battlefield tapped"
   | .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)] =>
     "draw a card. If you control another Hero, you gain 2 life"
-  | .sequence [.createAlienToken, .putCounters .plusOneNoted .createdToken,
+  | .sequence [.createTokens .treasure 1 false .alien .you .fixed .invasion,
+      .putCounters .plusOneNoted .createdToken,
       .putCounters (.ofKind .invasion) .source] =>
     "create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment"
-  | .sequence [.createSturdyShieldToken, .attachCreatedToSource] =>
+  | .sequence [.createTokens .treasure 1 false .sturdyShield .you .fixed .remember,
+      .attachCreatedToSource] =>
     "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
   | .sequence [.exileGyCardNote, .grantPlayNotedUntilNextTurn] =>
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
@@ -917,7 +918,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
   | .sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords k)] =>
     s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
-  | .sequence [.onPermanent .destroy, .targetControllerCreatesTreasure] =>
+  | .sequence [.onPermanent .destroy,
+      .createTokens .treasure 1 false .kind .targetController] =>
     s!"destroy {noun}. They create a Treasure token"
   | .sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
@@ -986,8 +988,37 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"amass {pluralizeName subtype} {n}, then attach this Equipment to the amassed Army"
   | .amassGoblins n subtype _ _ =>
     s!"amass {pluralizeName subtype} {n}"
-  | .createTokens kind n tapped =>
-    TokenKind.createPhrase kind n (tapped := tapped)
+  | .createTokens kind n tapped token who qty note =>
+    match token, who, qty, note with
+    | .axe, _, _, .attachReflexive =>
+      "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
+    | .axe, _, _, _ =>
+      "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
+    | .kind, .you, .oppArtifacts, _ =>
+      "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
+    | .kind, .you, .damagedPlayerArtifacts, _ =>
+      "you create a Treasure token for each artifact that player controls"
+    | .kind, .you, .lastKnown, _ =>
+      if kind == .birdSoldier then
+        "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
+      else
+        "create that many Treasure tokens"
+    | .kind, .you, .chosenCreatureType, _ =>
+      "choose a creature type. Create a Treasure token for each creature you control of that type"
+    | .zabu, _, _, _ =>
+      "create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
+    | .theVoid, _, _, _ =>
+      s!"{noun} creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
+    | .redwing, _, _, _ =>
+      "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
+    | .alien, _, _, _ =>
+      "create a 1/1 red Alien creature token with haste"
+    | .sturdyShield, _, _, _ =>
+      "create a colorless Equipment artifact token named Sturdy Shield"
+    | .kind, .targetController, _, _ =>
+      "they create a Treasure token"
+    | _, _, _, _ =>
+      TokenKind.createPhrase kind n (tapped := tapped)
   | .attachSourceToCreated =>
     "attach this Equipment to it"
   | .attachSourceToTarget =>
@@ -1004,10 +1035,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"add {manaSymbolsText types}"
   | .defenderSacsLeastPower =>
     "defending player sacrifices a creature with the least power among creatures they control"
-  | .createAxe false =>
-    "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
-  | .createAxe true =>
-    "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
   | .or [.onPermanent .tap, .onPermanent .untap] =>
     if t.targeting.kind == .nonland then
       "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
@@ -1023,8 +1050,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       | [a, b] => s!"a {a} or {b} card"
       | xs => s!"a {String.intercalate " or " xs} card"
     s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
-  | .createTappedTreasuresEqualOppArtifacts =>
-    "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
   | .gainControlOppUntilEot =>
     s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
   | .putNonlandMvAtMostFromGy mv =>
@@ -1039,10 +1064,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"if this is time {n} this ability has resolved this turn"
   | .sacrificeAnother =>
     "sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-  | .createTreasuresEqualDamagedPlayerArtifacts =>
-    "you create a Treasure token for each artifact that player controls"
-  | .eaglesCreateBirds =>
-    "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
   | .allianceMode =>
     "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
   | .gollumMode =>
@@ -1064,8 +1085,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .millPlayer n =>
     s!"{noun} mills {n} cards"
   | .mill n => s!"mill {n} cards"
-  | .treasuresPerChosenType =>
-    "choose a creature type. Create a Treasure token for each creature you control of that type"
   | .revealUntilCreature =>
     s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
   | .mayThen (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source) =>
@@ -1093,8 +1112,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "the Ring tempts you"
   | .mayThen .discardHand (.draw n) =>
     s!"you may discard your hand. If you do, draw {cardPhrase n}"
-  | .treasuresEqualLastKnown =>
-    "create that many Treasure tokens"
   | .protectionEverything =>
     "if you cast it, you gain protection from everything until your next turn"
   | .loseLifePerBurden =>
@@ -1132,10 +1149,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "this fights up to one other target creature"
   | .returnToOwnerHand =>
     s!"return up to one {noun} to its owner's hand"
-  | .createZabu =>
-    "create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
-  | .oppCreatesTheVoid =>
-    s!"{noun} creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
   | .returnGyPermanentThisTurn =>
     s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
   | .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) =>
@@ -1152,8 +1165,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
   | .revealDiscardFromHand =>
     s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
-  | .createRedwing =>
-    "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
   | .amassGoblinsNotedExcess =>
     "amass Goblins X, where X is the excess damage"
   | .markRecentTokensAttacking =>
@@ -1240,10 +1251,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a land card from your hand onto the battlefield tapped"
   | .«if» .anotherHero (.gainLife n) =>
     s!"if you control another Hero, you gain {n} life"
-  | .createAlienToken =>
-    "create a 1/1 red Alien creature token with haste"
-  | .createSturdyShieldToken =>
-    "create a colorless Equipment artifact token named Sturdy Shield"
   | .attachCreatedToSource =>
     "attach it to this creature"
   | .exileGyCardNote =>
