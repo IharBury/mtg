@@ -12,32 +12,44 @@ named tokens, extort, reflexive triggers (CR 603.12), and copy effects
 namespace Mtg.Engine
 namespace Game
 
-/-- Palantír of Orthanc: an illegal target means no influence, scry, draw,
-or mill. -/
-def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : Game :=
+/-- Put Palantír's influence counter when `target` is still a legal opponent.
+`none` means the ability does nothing further: no scry, draw, or mill.
+`some increased` means the counter was put, and `increased` is whether the
+influence total went up. -/
+def putPalantirInfluence (g : Game) (sourceId : ObjectId) (target : Option PlayerId) :
+    Game × Option Bool :=
+  let refuse :=
+    (g.logMsg
+      "The target is no longer legal. No influence counter, scry, draw, or mill.",
+     none)
   match target with
-  | none =>
-    g.logMsg
-      "The target is no longer legal. No influence counter, scry, draw, or mill."
+  | none => refuse
   | some pid =>
-    if (g.player pid).lost then
-      g.logMsg
-        "The target is no longer legal. No influence counter, scry, draw, or mill."
+    if (g.player pid).lost then refuse
     else
       match g.findObject? sourceId with
-      | none =>
-        g.logMsg
-          "The target is no longer legal. No influence counter, scry, draw, or mill."
+      | none => refuse
       | some src =>
-        if !src.isOnBattlefield || pid == src.you then
-          g.logMsg
-            "The target is no longer legal. No influence counter, scry, draw, or mill."
+        if !src.isOnBattlefield || pid == src.you then refuse
         else
+          let before := src.status.influence
           let n := g.countersYouPut src 1 (putter := src.controller)
           let g := g.setObject { src with status :=
             { src.status with influence := src.status.influence + n } }
           let g := g.logMsg s!"{src.name} gets an influence counter"
-          g.beginScry src.you 2
+          let after := ((g.findObject? sourceId).map (·.status.influence)).getD before
+          (g, some (after > before))
+
+/-- Palantír of Orthanc: an illegal target means no influence, scry, draw,
+or mill. -/
+def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : Game :=
+  let (g, ok) := g.putPalantirInfluence sourceId target
+  match ok with
+  | none => g
+  | some _ =>
+    match g.findObject? sourceId with
+    | some src => g.beginScry src.you 2
+    | none => g
 
 /-- Copy a spell on the stack, with its modes, targets, X, and paid optional
 costs (CR 707.10). The copy is not cast. -/

@@ -95,9 +95,10 @@ structure Game where
   isNight : Bool := false
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
-  /-- The card discarded for this loot enters tapped if it is a land
-  (Silvan Reveler). -/
-  lootLandEntersTapped : Bool := false
+  /-- Card discarded while a later sequence step may put a land discarded
+  this way onto the battlefield tapped (Silvan Reveler). The player who
+  discarded it, and the card. -/
+  discardedCardThisWay : Option (PlayerId × ObjectId) := none
   /-- After Palantír of Orthanc finishes scrying, this opponent may have
   the controller draw. Stores controller, opponent, and the Palantír. -/
   palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none

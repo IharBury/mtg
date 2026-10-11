@@ -750,7 +750,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .sequence [.mayDiscardHandForStory, .drawDiscardedHandCount, .damageEachOpponentIfStoryNoted] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
-  | .sequence [.trampleCounterAndBear, .drawTwoIfThreeBears] =>
+  | .sequence [.trampleCounterOnTarget, .becomeBear, .drawTwoIfThreeBears] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
   | .sequence [.millNote n, .returnMilledSubtype subtype] =>
     s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
@@ -758,7 +758,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "tap enchanted creature and remove all counters from it"
   | .sequence [.questCounterOnSource, .sacrificeSearchDragonIfSix] =>
     "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
-  | .sequence [.draw 1, .discardLandEntersTapped] =>
+  | .sequence [.draw 1, .discard 1, .discardedLandEntersTapped] =>
     "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
   | .sequence [.honeCountersPerOpponent, .attachToCreatureTarget] =>
     "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
@@ -771,7 +771,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
   | .sequence [.grimaExileUntil, .grimaMayCast] =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
-  | .sequence [.palantirInfluenceScry, .palantirOfferDraw] =>
+  | .sequence [.influenceCounterOnSource, .scry 2, .palantirOfferDraw] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
   | .sequence [.opponentsMillNote 2, .reflexiveCopyIfMilled] =>
     "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
@@ -823,7 +823,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
   | .sequence [.tapTargetIfPresent, .loseAbilitiesWhileSourceRemains] =>
     "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"
-  | .sequence [.onPermanent (.grantKeywords k), .counterByPermanentType] =>
+  | .sequence [.onPermanent (.grantKeywords k), .plusOneIfCreature, .loyaltyIfPlaneswalker] =>
     s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
   | .sequence [.draw 2, .winIfLibraryEmpty, .shuffleSourceUnlessWon] =>
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
@@ -1104,8 +1104,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw X cards, where X is the number of cards discarded this way"
   | .damageEachOpponentIfStoryNoted =>
     "if you have an enduring story, this deals X damage to each opponent"
-  | .trampleCounterAndBear =>
-    s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types"
+  | .trampleCounterOnTarget =>
+    s!"put a trample counter on up to one {noun}"
+  | .becomeBear =>
+    "it becomes a Bear in addition to its other types"
   | .drawTwoIfThreeBears =>
     "if you control three or more Bears, draw two cards"
   | .millNote n => s!"mill {n} cards"
@@ -1116,8 +1118,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .questCounterOnSource => "put a quest counter on this enchantment"
   | .sacrificeSearchDragonIfSix =>
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
-  | .discardLandEntersTapped =>
-    "discard a card. If you discard a land card this way, it enters tapped"
+  | .discardedLandEntersTapped =>
+    "if you discard a land card this way, put it onto the battlefield tapped"
   | .honeCountersPerOpponent =>
     "put a hone counter on this for each creature target opponent controls"
   | .attachToCreatureTarget =>
@@ -1138,8 +1140,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "that player exiles cards from the top of their library until they exile an instant or sorcery card"
   | .grimaMayCast =>
     "you may cast that card without paying its mana cost"
-  | .palantirInfluenceScry =>
-    "put an influence counter on this and scry 2"
+  | .influenceCounterOnSource =>
+    "put an influence counter on this"
   | .palantirOfferDraw =>
     "target opponent may have you draw a card"
   | .opponentsMillNote n =>
@@ -1191,8 +1193,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "tap up to one target creature"
   | .loseAbilitiesWhileSourceRemains =>
     "it loses all abilities for as long as this remains on the battlefield"
-  | .counterByPermanentType =>
-    "put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
+  | .plusOneIfCreature =>
+    "put a +1/+1 counter on it if it's a creature"
+  | .loyaltyIfPlaneswalker =>
+    "put a loyalty counter on it if it's a planeswalker"
   | .winIfLibraryEmpty =>
     "if your library has no cards in it, you win the game"
   | .shuffleSourceUnlessWon =>

@@ -659,7 +659,7 @@ inductive SharedTrigger where
   /-- +1/+1 on a Wolf or create a Treasure. -/
   | wolfPlusOneOrTreasure
   /-- Trample counter, become a Bear, maybe draw. Resolves as
-  `.sequence [.trampleCounterAndBear, .drawTwoIfThreeBears]`. -/
+  `.sequence [.trampleCounterOnTarget, .becomeBear, .drawTwoIfThreeBears]`. -/
   | trampleCounterBecomeBear
   /-- Mill `n`, then put matching subtype cards into hand. -/
   | millThenSubtypeToHand (n : Nat) (subtype : String)
@@ -675,7 +675,8 @@ inductive SharedTrigger where
   | revealUntilCreature
   /-- You may sacrifice another creature for +1/+1s equal to its power. -/
   | attackSacPlusOneEqualPower
-  /-- Loot; a discarded land enters tapped. -/
+  /-- Loot; a discarded land enters tapped. Resolves as
+  `.sequence [.draw 1, .discard 1, .discardedLandEntersTapped]`. -/
   | lootLandEntersTapped
   /-- That player mills that many cards. -/
   | millThatManyLost
@@ -757,7 +758,7 @@ inductive SharedTrigger where
   /-- Gríma impulse. Resolves as `.sequence [.grimaExileUntil, .grimaMayCast]`. -/
   | grimaImpulse
   /-- Palantír end-step. Resolves as
-  `.sequence [.palantirInfluenceScry, .palantirOfferDraw]`. -/
+  `.sequence [.influenceCounterOnSource, .scry 2, .palantirOfferDraw]`. -/
   | palantir
   /-- Create Treasures equal to last-known noncombat damage. -/
   | treasuresEqualLastKnown
@@ -820,7 +821,9 @@ inductive SharedTrigger where
   /-- Put a loyalty counter on the source (Ajani Resolute). -/
   | loyaltyOnSource
   /-- Target permanent you control gains these keywords until end of turn; a
-  +1/+1 counter if it's a creature, a loyalty counter if it's a planeswalker. -/
+  +1/+1 counter if it's a creature, a loyalty counter if it's a planeswalker.
+  Resolves as
+  `.sequence [.onPermanent (.grantKeywords k), .plusOneIfCreature, .loyaltyIfPlaneswalker]`. -/
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. -/

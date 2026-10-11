@@ -258,13 +258,21 @@ def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
     else g
   return (g, card)
 
+/-- Run trigger-sequence steps that waited on this discard, then give
+priority when nothing else is pending. -/
+def resumeSequenceThenPriority (g : Game) : Game :=
+  let g := g.resumeTriggerSequence
+  if g.pending != .none then g else g.receivePriority g.activePlayer
+
 /-- Continue a discard chain. When no one is left to discard, put the waiting
-+1/+1 counter (Ninja of the Hand). -/
++1/+1 counter (Ninja of the Hand) and finish a paused trigger sequence. -/
 def continueAfterDiscard (g : Game) (players : Array PlayerId) : Except String Game := do
+  let waiting := g.triggerSequenceRest.isSome || g.plusOneAfterDiscards.isSome
   let g := g.beginDiscardCards players
-  if g.pending == .none && g.plusOneAfterDiscards.isSome then
-    return (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
-  return g
+  if g.pending != .none || !waiting then return g
+  let g :=
+    if g.plusOneAfterDiscards.isSome then g.finishPlusOneAfterDiscards else g
+  return g.resumeSequenceThenPriority
 
 /-- Discard `id` from hand; if this finishes a pending “may discard, then draw”,
 draw that many cards (CR 701.9). -/
@@ -282,23 +290,18 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     let (g, card) ← g.discardPendingCard p q id
     let g := g.finishConniveDiscard card
     let g : Game :=
-      if !g.lootLandEntersTapped || !card.printed.isLand then
-        { g with lootLandEntersTapped := false }
-      else
-        let landed := g.followMoved card.id
-        let g : Game := { g with lootLandEntersTapped := false }
-        match g.findObject? landed with
-        | none => g
-        | some o =>
-          let entered := g.putOntoBattlefield o.id q (tapped := true) (summoningSick := false)
-          let g : Game := entered.1.logMsg s!"{o.name} enters the battlefield tapped"
-          g.afterLandEnters (g.object! entered.2)
+      match g.triggerSequenceRest with
+      | some rest =>
+        if rest.steps.any (· == .discardedLandEntersTapped) then
+          { g with discardedCardThisWay := some (q, g.followMoved card.id) }
+        else g
+      | none => g
     if g.thirstDiscardsLeft > 0 then
       let left :=
         if card.printed.hasType g.thirstDiscardType then 0 else g.thirstDiscardsLeft - 1
       let g := { g with thirstDiscardsLeft := left }
       if left == 0 then
-        return { g with pending := .none }.receivePriority g.activePlayer
+        return ({ g with pending := .none }).resumeSequenceThenPriority
       else
         return g.beginDiscardCards #[p]
     if g.pendingDiscardsLeft > 0 then
