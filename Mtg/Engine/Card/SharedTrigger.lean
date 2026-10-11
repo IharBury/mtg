@@ -832,7 +832,8 @@ inductive SharedTrigger where
   `.«if» (.landsAtLeast 6) (.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure])`. -/
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
-  +1/+1 counter instead if you've scried or surveilled this turn. -/
+  +1/+1 counter instead if you've scried or surveilled this turn. Resolves as
+  `.ifElse .scriedOrSurveilledThisTurn (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1))`. -/
   | pumpOrCounterIfScried
   /-- If you don't control a planeswalker, sacrifice the source. -/
   | sacrificeSourceIfNoPlaneswalker
@@ -869,13 +870,15 @@ inductive SharedTrigger where
   | tapOrUntapNonland
   /-- Create a Food or a Treasure. -/
   | createFoodOrTreasure
-  /-- Villain if two creature cards in gy; otherwise mill two. -/
+  /-- Villain if two creature cards in gy; otherwise mill two. Resolves as
+  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`. -/
   | villainIfGyElseMill
   /-- Draw, then you may put a land from hand tapped. -/
   | drawMayPutLandTapped
   /-- Draw; if you control another Hero, gain 2 life. -/
   | drawGainLifeIfAnotherHero
-  /-- +1/+1, or two if that creature is another Hero. -/
+  /-- +1/+1, or two if that creature is another Hero. Resolves as
+  `.ifElse (.targetIsAnotherSubtype "Hero") (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1))`. -/
   | plusOneOrTwoIfAnotherHero
   /-- You may sac an artifact or discard; if you do, draw. -/
   | maySacArtifactOrDiscardDraw

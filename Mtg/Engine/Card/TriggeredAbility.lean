@@ -671,7 +671,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "they create a Treasure token"
   | .«if» (.landsAtLeast 6) (.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure]) =>
     s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
-  | .pumpOrCounterIfScried =>
+  | .ifElse .scriedOrSurveilledThisTurn
+      (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1)) =>
     s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
   | .«if» .noPlaneswalker (.sacrificeSource .controllerSacrifices) =>
     "if you don't control a planeswalker, sacrifice this creature"
@@ -1006,6 +1007,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
   | .millPlayer n =>
     s!"{noun} mills {n} cards"
+  | .mill n => s!"mill {n} cards"
   | .treasuresPerChosenType =>
     "choose a creature type. Create a Treasure token for each creature you control of that type"
   | .revealUntilCreature =>
@@ -1067,9 +1069,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
   | .createFoodOrTreasure =>
     "create a Food token or a Treasure token"
-  | .villainIfGyElseMill =>
+  | .ifElse (.creatureCardsInGraveyardAtLeast 2)
+      (.createTokens .villain21menace 1 true) (.mill 2) =>
     "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
-  | .plusOneOrTwoIfAnotherHero =>
+  | .ifElse (.targetIsAnotherSubtype "Hero")
+      (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1)) =>
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
   | .maySacArtifactOrDiscardDraw =>
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
@@ -1385,6 +1389,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .resource .plusOneOnHeroesCreateWall =>
     "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
   | .«if» _ _ =>
+    "if that is true"
+  | .ifElse _ _ _ =>
     "if that is true"
 
 /-- True when this trigger fires only once each turn. -/

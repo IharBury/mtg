@@ -963,6 +963,55 @@ def wakandanRoyalGuardHeroOk : Bool :=
 
 #guard wakandanRoyalGuardHeroOk
 
+/-- Wakandan Royal Guard: one +1/+1 on a creature that is not another Hero. -/
+def wakandanRoyalGuardBearOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g wakandanRoyalGuard ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let guard := namedPermanent g "Wakandan Royal Guard"
+  let before := (g.object! bears.id).status.plusOnePlusOne
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterPlusOneOrTwoIfAnotherHero
+    (some guard.id) #[Target.permanent bears.id]
+  (g.object! bears.id).status.plusOnePlusOne == before + 1
+
+#guard wakandanRoyalGuardBearOk
+
+/-- Wakandan Royal Guard: one +1/+1 on itself, a Hero that is not another. -/
+def wakandanRoyalGuardSelfOk : Bool :=
+  let g := addPermanent afterDraw wakandanRoyalGuard ⟨0⟩ ⟨0⟩
+  let guard := namedPermanent g "Wakandan Royal Guard"
+  let before := guard.status.plusOnePlusOne
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterPlusOneOrTwoIfAnotherHero
+    (some guard.id) #[Target.permanent guard.id]
+  (g.object! guard.id).status.plusOnePlusOne == before + 1
+
+#guard wakandanRoyalGuardSelfOk
+
+/-- HYDRA Troopers: mill two when fewer than two creature cards are in the graveyard. -/
+def hydraTroopersMillOk : Bool :=
+  let g := addPermanent afterDraw hYDRATroopers ⟨0⟩ ⟨0⟩
+  let troopers := namedPermanent g "HYDRA Troopers"
+  let lib0 := (g.player ⟨0⟩).library.size
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterVillainIfGyElseMill (some troopers.id)
+  (g.player ⟨0⟩).library.size == lib0 - 2 &&
+    !(g.battlefield.any (fun o => o.printed.isToken && o.hasSubtype "Villain"))
+
+#guard hydraTroopersMillOk
+
+/-- HYDRA Troopers: a tapped 2/1 Villain when two creature cards are in the graveyard. -/
+def hydraTroopersVillainOk : Bool :=
+  let g := addToGraveyard (addToGraveyard afterDraw grizzlyBears ⟨0⟩) grayOgre ⟨0⟩
+  let g := addPermanent g hYDRATroopers ⟨0⟩ ⟨0⟩
+  let troopers := namedPermanent g "HYDRA Troopers"
+  let lib0 := (g.player ⟨0⟩).library.size
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterVillainIfGyElseMill (some troopers.id)
+  (g.player ⟨0⟩).library.size == lib0 &&
+    (g.battlefield.any (fun o =>
+      o.printed.isToken && o.hasSubtype "Villain" && o.status.tapped &&
+        g.power o == 2 && g.toughness o == 1))
+
+#guard hydraTroopersVillainOk
+
 /-- K'un-Lun Warrior: discard, then draw. -/
 def kunLunDiscardDrawOk : Bool :=
   let g := addPermanent afterDraw kUnLunWarrior ⟨0⟩ ⟨0⟩

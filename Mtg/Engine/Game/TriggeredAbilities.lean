@@ -326,6 +326,23 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match o? with
     | some o => (g, o.printed.isPlaneswalker)
     | none => (g, false)
+  | .creatureCardsInGraveyardAtLeast n =>
+    let gy := ((g.player controller).graveyard.filter (fun id =>
+      (g.object! id).printed.isCreature)).size
+    (g, gy ≥ n)
+  | .targetIsAnotherSubtype subtype =>
+    let legal := g.legalTargetsForKind controller ab.targetKind sourceId
+    let holds :=
+      match targets[0]? with
+      | some (Target.permanent oid) =>
+        legal.contains (Target.permanent oid) &&
+          match g.findObject? oid with
+          | some o => g.hasSubtype o subtype && some o.id != sourceId
+          | none => false
+      | _ => false
+    (g, holds)
+  | .scriedOrSurveilledThisTurn =>
+    (g, (g.player controller).scriedOrSurveilledThisTurn)
 
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
@@ -799,6 +816,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
     else g
+  | .ifElse cond whenTrue whenFalse =>
+    let (g, holds) :=
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+    let branch := if holds then whenTrue else whenFalse
+    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName (some branch) sequencedCardPower
   | .bolgMaySacrifice =>
     match sourceId with
     | some sid =>
@@ -1081,6 +1104,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
   | .millPlayer n =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n)
+  | .mill n =>
+    g.mill controller n
   | .treasuresPerChosenType =>
     let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
       o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
@@ -1534,21 +1559,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .createFoodOrTreasure =>
     { g with pending := .chooseFoodOrTreasure controller }.logMsg
       s!"{(g.player controller).name} creates a Food token or a Treasure token"
-  | .villainIfGyElseMill =>
-    let gy := (g.player controller).graveyard.filter (fun id =>
-      (g.object! id).printed.isCreature) |>.size
-    if gy >= 2 then
-      g.createKindTokens controller .villain21menace 1 (tapped := true)
-    else
-      g.mill controller 2
   | .mayPutLandFromHandTapped =>
     { g with pending := .mayPutLandFromHand controller }.logMsg
       s!"{(g.player controller).name} may put a land card from their hand onto the battlefield tapped"
-  | .plusOneOrTwoIfAnotherHero =>
-    g.withLegalKindPermanent controller .creature targets (fun g o =>
-      let n :=
-        if g.hasSubtype o "Hero" && some o.id != sourceId then 2 else 1
-      g.addPlusOnePlusOneTo o n) sourceId (some "The target is no longer legal")
   | .maySacArtifactOrDiscardDraw =>
     { g with pending := .maySacArtifactOrDiscard controller 1 }.logMsg
       s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw a card"
@@ -1880,10 +1893,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + n })
       let g := g.queueLoyaltyPutTriggers controller
       g.logMsg s!"A loyalty counter is put on {o.name}")
-  | .pumpOrCounterIfScried =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      if (g.player controller).scriedOrSurveilledThisTurn then g.addPlusOnePlusOneTo o 1
-      else g.pumpPermanent o 1 1)
   | .prepareSource .ifThreeCreaturesDied =>
     if g.battlefieldCreaturesToGyThisTurn.size < 3 then
       g.logMsg "Fewer than three creatures died this turn"

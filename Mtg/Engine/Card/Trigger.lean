@@ -45,7 +45,7 @@ inductive SacrificeSourceHow where
   | movedAsSacrificed
 deriving Repr, Inhabited, BEq
 
-/-- When `TriggerResolution.if` resolves its action. -/
+/-- When `TriggerResolution.if` and `TriggerResolution.ifElse` choose a branch. -/
 inductive TriggerIf where
   /-- You don't control a legendary creature. -/
   | noLegendaryCreature
@@ -96,6 +96,12 @@ inductive TriggerIf where
   | targetIsCreature
   /-- The target is a planeswalker. -/
   | targetIsPlaneswalker
+  /-- Your graveyard has at least `n` creature cards. -/
+  | creatureCardsInGraveyardAtLeast (n : Nat)
+  /-- The targeted permanent has this subtype and is not the source. -/
+  | targetIsAnotherSubtype (subtype : String)
+  /-- You have scried or surveilled this turn. -/
+  | scriedOrSurveilledThisTurn
 deriving Repr, Inhabited, BEq
 
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
@@ -317,6 +323,16 @@ inductive TriggerResolution where
   Doing `thenDo` on the nth resolution this turn is
   `.«if» (.nthResolve n) thenDo`. -/
   | «if» (cond : TriggerIf) (thenDo : TriggerResolution)
+  /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
+  A tapped Villain when your graveyard has two creature cards, and milling
+  two otherwise, is
+  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`.
+  Two +1/+1 counters when the target is another Hero, and one otherwise, is
+  `.ifElse (.targetIsAnotherSubtype "Hero") (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1))`.
+  A +1/+1 counter when you have scried or surveilled, and +1/+1 until end of
+  turn otherwise, is
+  `.ifElse .scriedOrSurveilledThisTurn (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1))`. -/
+  | ifElse (cond : TriggerIf) (whenTrue whenFalse : TriggerResolution)
   /-- You may sacrifice another creature you control (Bolg). -/
   | bolgMaySacrifice
   /-- Create a Treasure for each artifact the damaged player controls. -/
@@ -343,6 +359,8 @@ inductive TriggerResolution where
   | revealTopPutRandomCreature (n : Nat)
   /-- Target player mills `n`. -/
   | millPlayer (n : Nat)
+  /-- The controller mills `n`. -/
+  | mill (n : Nat)
   /-- Treasures equal to permanents of a chosen type. -/
   | treasuresPerChosenType
   /-- Reveal until a creature; put it onto the battlefield or into hand. -/
@@ -405,10 +423,6 @@ inductive TriggerResolution where
   | tapOrUntapNonland
   /-- Create a Food token or a Treasure token. -/
   | createFoodOrTreasure
-  /-- Tapped 2/1 menace Villain if ≥2 creature cards in GY; otherwise mill 2. -/
-  | villainIfGyElseMill
-  /-- +1/+1 on the target; two if that creature is another Hero. -/
-  | plusOneOrTwoIfAnotherHero
   /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
   | maySacArtifactOrDiscardDraw
   /-- Another target creature gets +X/+0, X = source power. -/
@@ -458,8 +472,6 @@ inductive TriggerResolution where
   After `.onPermanent .destroy`, the permanent may already have left; its
   controller is the one it had on the battlefield. -/
   | targetControllerCreatesTreasure
-  /-- +1/+1 until end of turn, or a +1/+1 counter if you scried or surveilled. -/
-  | pumpOrCounterIfScried
   /-- Creatures you control get +P/+T until end of turn. -/
   | creaturesYouControlGet (power toughness : Int)
   /-- Put the source's last-known counters on the target. -/
@@ -1093,7 +1105,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .targetControllerCreatesTreasure]) }
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
-      resolution := .pumpOrCounterIfScried }
+      resolution := .ifElse .scriedOrSurveilledThisTurn
+        (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1)) }
   | .sacrificeSourceIfNoPlaneswalker =>
     { events := #[.eachEndStep],
       resolution := .«if» .noPlaneswalker (.sacrificeSource .controllerSacrifices) }
@@ -1126,13 +1139,17 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .tapOrUntapNonland =>
     { targeting := .of .nonland, resolution := .tapOrUntapNonland }
   | .createFoodOrTreasure => { resolution := .createFoodOrTreasure }
-  | .villainIfGyElseMill => { resolution := .villainIfGyElseMill }
+  | .villainIfGyElseMill =>
+    { resolution := .ifElse (.creatureCardsInGraveyardAtLeast 2)
+        (.createTokens .villain21menace 1 true) (.mill 2) }
   | .drawMayPutLandTapped =>
     { resolution := .sequence [.draw 1, .mayPutLandFromHandTapped] }
   | .drawGainLifeIfAnotherHero =>
     { resolution := .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)] }
   | .plusOneOrTwoIfAnotherHero =>
-    { targeting := .of .creature, resolution := .plusOneOrTwoIfAnotherHero }
+    { targeting := .of .creature,
+      resolution := .ifElse (.targetIsAnotherSubtype "Hero")
+        (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1)) }
   | .maySacArtifactOrDiscardDraw => { resolution := .maySacArtifactOrDiscardDraw }
   | .enter (.destroy kind) =>
     { events := #[.entering], targeting := .of kind, resolution := .onPermanent .destroy }
