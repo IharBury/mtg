@@ -216,6 +216,20 @@ structure Game where
   /-- Later steps of a trigger `sequence`, waiting on the pending choice an
   earlier step opened. -/
   triggerSequenceRest : Option TriggerSequenceRest := none
+  /-- Flattened steps of the `mayThen` conditional waiting in
+  `triggerSequenceRest`. Declining the optional action drops this many. -/
+  mayThenDrop : Nat := 0
+  /-- After an optional `mayThen` action cannot be performed, the sequence
+  fold skips this many following steps. -/
+  mayThenSkip : Nat := 0
+  /-- Conditional of the `mayThen` currently offered. The optional action
+  reads it for its log and which choice to open. -/
+  mayThenConditional : Option TriggeredAbility.TriggerResolution := none
+  /-- Power of the creature sacrificed for `plusOneEqualSacrificedPower`. -/
+  sacrificedPowerThisWay : Option Nat := none
+  /-- An artifact-or-discard cost accepted a `mayThen`. The action handler
+  resumes the conditional. -/
+  mayThenResume : Bool := false
   /-- Alternatives for a pending `TriggerResolution.or`. `chooseMode` applies
   that index. -/
   triggerOr : Option TriggerOrRest := none

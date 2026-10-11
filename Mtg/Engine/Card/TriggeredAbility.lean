@@ -684,8 +684,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .addGreenPerChargeCounter => "add {G} for each charge counter on this enchantment"
   | .«if» (.otherForestsAtLeast 5) (.onPermanent (.pump 3 3)) =>
     s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
-  | .mayPayGenericDraw n true =>
-    s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
+  | .mayThen (.pay symbols) (.sequence [.onSource (.plusOne 1), .draw 1]) =>
+    match symbols.toList with
+    | [.generic n] =>
+      s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
+    | _ =>
+      "you may pay. If you do, put a +1/+1 counter on this creature and draw a card"
   | .damageBlockers n =>
     s!"it deals {n} damage to each creature blocking it"
   | .scry n => s!"scry {n}"
@@ -697,7 +701,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .searchLibrary .basicLandOnTop =>
     "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
   | .discard n => s!"discard {cardPhrase n}"
-  | .mayDiscardDraw n =>
+  | .mayThen (.discard 1) (.draw n) =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
   | .mayTo can thenDo => mayStep (.mayTo can thenDo)
   | .may action =>
@@ -879,8 +883,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} discards {cardPhrase n}"
   | .pumpForEachOtherCreature =>
     "it gets +1/+1 until end of turn for each other creature you control"
-  | .mayPayGenericDraw n false =>
-    s!"you may pay \{{n}}. If you do, draw a card"
+  | .mayThen (.pay symbols) (.draw 1) =>
+    match symbols.toList with
+    | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
+    | _ => "you may pay. If you do, draw a card"
   | .putFromHandOnBottom =>
     "put a card from your hand on the bottom of your library"
   | .«if» .noLegendaryCreature .putFromHandOnBottom =>
@@ -1034,10 +1040,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "choose a creature type. Create a Treasure token for each creature you control of that type"
   | .revealUntilCreature =>
     s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
-  | .attackSacPlusOneEqualPower =>
+  | .mayThen (.objectCost .anotherCreature) .plusOneEqualSacrificedPower =>
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
-  | .payReturnFromGy =>
-    "you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand"
+  | .mayThen (.pay symbols) .returnSourceToHand =>
+    s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
   | .damageTargetOpponent n =>
     s!"this deals {n} damage to {noun}"
   | .millThatManyLost =>
@@ -1046,7 +1052,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw a card for each graveyard with seven or more cards in it"
   | .copySelfNonlegendary =>
     "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
-  | .maySacDrawTreasure =>
+  | .mayThen (.objectCost .anotherCreatureOrArtifact)
+      (.sequence [.draw 1, .createTokens .treasure 1 false]) =>
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
   | .targetOpponentLosesLife n =>
     s!"{noun} loses {n} life"
@@ -1058,7 +1065,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost"
   | .ringTempts =>
     "the Ring tempts you"
-  | .mayDiscardHandDraw n =>
+  | .mayThen .discardHand (.draw n) =>
     s!"you may discard your hand. If you do, draw {cardPhrase n}"
   | .treasuresEqualLastKnown =>
     "create that many Treasure tokens"
@@ -1093,7 +1100,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .ifElse (.targetIsAnotherSubtype "Hero")
       (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1)) =>
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
-  | .maySacArtifactOrDiscardDraw =>
+  | .mayThen (.objectCost .artifactOrDiscard) (.draw 1) =>
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
   | .pumpTargetBySourcePower =>
     s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
@@ -1113,9 +1120,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
   | .returnGyPermanentThisTurn =>
     s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
-  | .maySacAnotherThenDestroyOppNonland =>
+  | .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) =>
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
-  | .maySacOrDiscardNonlandThenDamage =>
+  | .mayThen (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) =>
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
   | .revealHandExileUntilLeaves =>
     "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
@@ -1123,7 +1130,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
   | .chooseUpToXModes =>
     "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
-  | .mayTapThenGrantIndestructible =>
+  | .mayThen (.onSource .tap) (.queueReflexive (.modeled 0)) =>
     "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
   | .revealDiscardFromHand =>
     s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
@@ -1410,6 +1417,18 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
   | .resource .plusOneOnHeroesCreateWall =>
     "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
+  | .mayThen _ _ =>
+    "you may do it. If you do, do that"
+  | .pay symbols =>
+    s!"pay {String.join (symbols.toList.map ManaSymbol.toNotation)}"
+  | .objectCost _ =>
+    "pay that cost"
+  | .plusOneEqualSacrificedPower =>
+    "put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
+  | .returnSourceToHand =>
+    "return this card from your graveyard to your hand"
+  | .queueReflexive _ =>
+    "when you do, that ability triggers"
   | .«if» _ _ =>
     "if that is true"
   | .ifElse _ _ _ =>

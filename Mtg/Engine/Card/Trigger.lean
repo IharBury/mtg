@@ -106,6 +106,30 @@ inductive TriggerIf where
   | putArtifactIsEquipment
 deriving Repr, Inhabited, BEq
 
+/-- Objects chosen for `TriggerResolution.objectCost`, the optional action of
+`TriggerResolution.mayThen`. -/
+inductive TriggerObjectCost where
+  /-- Sacrifice another creature. Its power is noted for
+  `plusOneEqualSacrificedPower`. -/
+  | anotherCreature
+  /-- Sacrifice another creature or artifact. -/
+  | anotherCreatureOrArtifact
+  /-- Sacrifice an artifact, or discard a card. -/
+  | artifactOrDiscard
+  /-- Sacrifice an artifact, or discard a nonland card. -/
+  | artifactOrDiscardNonland
+deriving Repr, Inhabited, BEq
+
+/-- A reflexive triggered ability queued by `TriggerResolution.queueReflexive`
+after the optional action of `mayThen` (“When you do”). -/
+inductive TriggerReflexive where
+  /-- An MSH modeled reflexive. `0` grants indestructible. `7` destroys an
+  opposing nonland. -/
+  | modeled (kind : Nat)
+  /-- “This deals `n` damage to any target.” -/
+  | damageAny (n : Nat)
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, +1/+1 on the source, and divided damage each cover
@@ -127,14 +151,49 @@ inductive TriggerResolution where
   A basic land into your hand is `.searchLibrary .basicLandToHand`.
   You may put a basic land on top is `.searchLibrary .basicLandOnTop`. -/
   | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
-  /-- Discard `n` cards. One card is `.discard`. -/
+  /-- Discard `n` cards. One card is `.discard`.
+  Inside `mayThen`, one card is optional: declining skips the conditional. -/
   | discard (n : Nat := 1)
-  /-- You may discard a card. If you do, draw `n`.
-  This is how `SharedTrigger.mayTo .discard (.draw n)` resolves. -/
-  | mayDiscardDraw (n : Nat)
+  /-- You may resolve `optional`. If you do, resolve `conditional`.
+  Declining, or being unable to perform `optional`, skips `conditional`.
+  You may discard a card to draw `n` is `.mayThen (.discard 1) (.draw n)`.
+  That is how `SharedTrigger.mayTo .discard (.draw n)` resolves.
+  You may pay `{n}` to draw is `.mayThen (.pay #[.generic n]) (.draw 1)`.
+  Paying `{n}` to put a +1/+1 counter on the source and draw is
+  `.mayThen (.pay #[.generic n]) (.sequence [.onSource (.plusOne 1), .draw 1])`.
+  You may sacrifice another creature for +1/+1 counters equal to its power is
+  `.mayThen (.objectCost .anotherCreature) .plusOneEqualSacrificedPower`.
+  You may pay `{1}{G}{U}` to return this from the graveyard is
+  `.mayThen (.pay #[.generic 1, .colored .green, .colored .blue]) .returnSourceToHand`.
+  You may sacrifice another creature or artifact to draw and create a Treasure is
+  `.mayThen (.objectCost .anotherCreatureOrArtifact) (.sequence [.draw 1, .createTokens .treasure 1 false])`.
+  You may discard your hand to draw `n` is `.mayThen .discardHand (.draw n)`.
+  You may sacrifice an artifact or discard a card to draw is
+  `.mayThen (.objectCost .artifactOrDiscard) (.draw 1)`.
+  You may sacrifice another creature to destroy an opposing nonland is
+  `.mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7))`.
+  You may sacrifice an artifact or discard a nonland to deal 2 damage is
+  `.mayThen (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2))`.
+  You may tap this to grant indestructible is
+  `.mayThen (.onSource .tap) (.queueReflexive (.modeled 0))`. -/
+  | mayThen (optional conditional : TriggerResolution)
+  /-- Pay `symbols`. Inside `mayThen`, declining skips the conditional.
+  `{n}` is `.pay #[.generic n]`. `{1}{G}{U}` is
+  `.pay #[.generic 1, .colored .green, .colored .blue]`. -/
+  | pay (symbols : Array ManaSymbol)
+  /-- Choose objects for `how`. Inside `mayThen`, declining skips the conditional.
+  Sacrificing another creature notes its power. -/
+  | objectCost (how : TriggerObjectCost)
+  /-- Put +1/+1 counters on the source equal to the power noted by sacrificing
+  another creature. -/
+  | plusOneEqualSacrificedPower
+  /-- Return the source from its owner's graveyard to their hand. -/
+  | returnSourceToHand
+  /-- Put reflexive ability `followup` on the stack (“When you do”). -/
+  | queueReflexive (followup : TriggerReflexive)
   /-- You may do `can`. If you do, `thenDo`.
-  `SharedTrigger.mayTo .discard (.draw n)` resolves as `.mayDiscardDraw`
-  instead of this. -/
+  `SharedTrigger.mayTo .discard (.draw n)` resolves as
+  `.mayThen (.discard 1) (.draw n)` instead of this. -/
   | mayTo (can thenDo : SharedTrigger)
 /-- The controller may resolve `action`. Declining skips it.
 A choice that already includes decline is that choice, so the player
@@ -238,10 +297,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each)
   /-- Pump the source +1/+1 for each other creature you control. -/
   | pumpForEachOtherCreature
-  /-- You may pay `{n}`. If you do, draw a card.
-  Also putting a +1/+1 counter on the source is
-  `.mayPayGenericDraw n (plusOneOnSource := true)`. -/
-  | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
   /-- Put a card from your hand on the bottom of your library.
   An empty hand skips the choice. -/
   | putFromHandOnBottom
@@ -397,10 +452,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | treasuresPerChosenType
   /-- Reveal until a creature; put it onto the battlefield or into hand. -/
   | revealUntilCreature
-  /-- You may sacrifice another creature for +1/+1s equal to its power. -/
-  | attackSacPlusOneEqualPower
-  /-- You may pay to return this from the graveyard to your hand. -/
-  | payReturnFromGy
   /-- Deal 2 to target opponent. -/
   | damageTargetOpponent (n : Nat)
   /-- Each player who lost life mills that much. -/
@@ -409,8 +460,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | drawPerFatGraveyard
   /-- Create two nonlegendary token copies of the source. -/
   | copySelfNonlegendary
-  /-- You may sacrifice another for a card and a Treasure. -/
-  | maySacDrawTreasure
   /-- Target opponent loses 1 life. -/
   | targetOpponentLosesLife (n : Nat)
   /-- Return the source as an artifact. -/
@@ -421,8 +470,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | castInstantSorceryMvAtMost
   /-- The Ring tempts you. -/
   | ringTempts
-  /-- You may discard your hand and draw `n`. -/
-  | mayDiscardHandDraw (n : Nat)
   /-- Create Treasures equal to last-known damage. -/
   | treasuresEqualLastKnown
   /-- You gain protection from everything until your next turn. -/
@@ -448,8 +495,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | onEnchanted (action : PermanentAction)
   /-- Exile the targeted creature; return it at the next end step. -/
   | exileUntilNextEndStep
-  /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
-  | maySacArtifactOrDiscardDraw
   /-- Another target creature gets +X/+0, X = source power. -/
   | pumpTargetBySourcePower
   /-- Put an artifact card from your hand onto the battlefield.
@@ -470,16 +515,10 @@ You may put a land card from your hand onto the battlefield tapped is
   | oppCreatesTheVoid
   /-- Return the targeted GY permanent card to your hand. -/
   | returnGyPermanentThisTurn
-  /-- You may sacrifice another creature. When you do, destroy an opposing nonland. -/
-  | maySacAnotherThenDestroyOppNonland
-  /-- You may sac an artifact or discard a nonland. When you do, 2 damage. -/
-  | maySacOrDiscardNonlandThenDamage
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
   | revealHandExileUntilLeaves
   /-- Resolve chosen “up to X” modes in printed order. -/
   | chooseUpToXModes
-  /-- You may tap this. When you do, grant indestructible to another creature. -/
-  | mayTapThenGrantIndestructible
   /-- Target player reveals cards from hand; you choose one to discard. -/
   | revealDiscardFromHand
   /-- Create Redwing. -/
@@ -847,7 +886,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .onSource action }
   | .exileTop => { resolution := .exileTop }
   | .discard n => { resolution := .discard n }
-  | .mayTo (.discard 1) (.draw n) => { resolution := .mayDiscardDraw n }
+  | .mayTo (.discard 1) (.draw n) =>
+    { resolution := .mayThen (.discard 1) (.draw n) }
   | .mayTo can thenDo =>
     let left := timing can
     let right := timing thenDo
@@ -888,7 +928,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .becomePT p t => { resolution := .becomePT p t }
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pumpTargetPerPlains }
-  | .mayDiscardHandDraw n => { resolution := .mayDiscardHandDraw n }
+  | .mayDiscardHandDraw n =>
+    { resolution := .mayThen .discardHand (.draw n) }
   | .pumpByLookedAt => { resolution := .pumpByLookedAt }
   | .pumpGreatestPower => { resolution := .pumpGreatestPower }
   | .pumpForEachOtherCreature => { resolution := .pumpForEachOtherCreature }
@@ -904,7 +945,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .or [.onPermanent .tap, .onPermanent .untap] }
   | .gainControlOppUntilEot =>
     { targeting := .of .oppCreature, resolution := .gainControlOppUntilEot }
-  | .payReturnFromGy => { resolution := .payReturnFromGy }
+  | .payReturnFromGy =>
+    { resolution := .mayThen
+        (.pay #[.generic 1, .colored .green, .colored .blue]) .returnSourceToHand }
   | .targetOpponentLosesLife n =>
     { targeting := .of .opponent, resolution := .targetOpponentLosesLife n }
   | .drawXDiscard n =>
@@ -920,7 +963,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .damageFromLastKnownPower =>
     { targeting := .of .oppCreature, resolution := .damageFromLastKnownPower }
   | .mayPayGenericDraw n plusOne =>
-    { resolution := .mayPayGenericDraw n plusOne }
+    { resolution :=
+        if plusOne then
+          .mayThen (.pay #[.generic n]) (.sequence [.onSource (.plusOne 1), .draw 1])
+        else
+          .mayThen (.pay #[.generic n]) (.draw 1) }
   | .drawThenBottomIfNoLegendary =>
     { resolution := .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom] }
   | .removeHopeDrawSac =>
@@ -982,12 +1029,15 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence [.questCounterOnSource, .«if» (.questAtLeast 6) (.sequence [.sacrificeSource .movedAsSacrificed, .searchDragonFromHandOrLibrary])] }
   | .treasuresPerChosenType => { resolution := .treasuresPerChosenType }
   | .revealUntilCreature => { resolution := .revealUntilCreature }
-  | .attackSacPlusOneEqualPower => { resolution := .attackSacPlusOneEqualPower }
+  | .attackSacPlusOneEqualPower =>
+    { resolution := .mayThen (.objectCost .anotherCreature) .plusOneEqualSacrificedPower }
   | .lootLandEntersTapped =>
     { resolution := .sequence [.draw 1, .discard 1, .discardedLandEntersTapped] }
   | .millThatManyLost => { resolution := .millThatManyLost }
   | .drawPerFatGraveyard => { resolution := .drawPerFatGraveyard }
-  | .maySacDrawTreasure => { resolution := .maySacDrawTreasure }
+  | .maySacDrawTreasure =>
+    { resolution := .mayThen (.objectCost .anotherCreatureOrArtifact)
+        (.sequence [.draw 1, .createTokens .treasure 1 false]) }
   | .castInstantSorceryFromHand => { resolution := .castInstantSorceryFromHand }
   | .castInstantSorceryMvAtMost => { resolution := .castInstantSorceryMvAtMost }
   | .millThenCopy =>
@@ -1192,7 +1242,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .creature,
       resolution := .ifElse (.targetIsAnotherSubtype "Hero")
         (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1)) }
-  | .maySacArtifactOrDiscardDraw => { resolution := .maySacArtifactOrDiscardDraw }
+  | .maySacArtifactOrDiscardDraw =>
+    { resolution := .mayThen (.objectCost .artifactOrDiscard) (.draw 1) }
   | .enter (.destroy kind) =>
     { events := #[.entering], targeting := .of kind, resolution := .onPermanent .destroy }
   | .enter (.dealDamageUpToOne n) =>
@@ -1221,9 +1272,12 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering], targeting := .of .oppCreature,
       resolution := .sequence [.onPermanent .tap, .cantUntapWhileSource] }
   | .enter .maySacAnotherThenDestroyOppNonland =>
-    { events := #[.entering], resolution := .maySacAnotherThenDestroyOppNonland }
+    { events := #[.entering],
+      resolution := .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) }
   | .enter .maySacOrDiscardNonlandThenDamage =>
-    { events := #[.entering], resolution := .maySacOrDiscardNonlandThenDamage }
+    { events := #[.entering],
+      resolution := .mayThen (.objectCost .artifactOrDiscardNonland)
+        (.queueReflexive (.damageAny 2)) }
   | .enter .revealHandExileUntilLeaves =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
       resolution := .revealHandExileUntilLeaves }
@@ -1235,7 +1289,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
       resolution := .chooseUpToXModes }
   | .enter .mayTapThenGrantIndestructible =>
-    { events := #[.entering], resolution := .mayTapThenGrantIndestructible }
+    { events := #[.entering],
+      resolution := .mayThen (.onSource .tap) (.queueReflexive (.modeled 0)) }
   | .enter .tapLoseAbilitiesWhileSource =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence

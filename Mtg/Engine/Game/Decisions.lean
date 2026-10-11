@@ -264,6 +264,34 @@ def resumeSequenceThenPriority (g : Game) : Game :=
   let g := g.resumeTriggerSequence
   if g.pending != .none then g else g.receivePriority g.activePlayer
 
+/-- The optional action of `mayThen` was performed. Run its conditional. -/
+def acceptMayThen (g : Game) : Game :=
+  let g := { g with
+    pending := .none
+    mayThenDrop := 0
+    mayThenConditional := none
+    mayThenResume := false }
+  g.resumeSequenceThenPriority
+
+/-- The optional action of `mayThen` was declined. Skip its conditional and
+continue any later sequence steps. -/
+def declineMayThen (g : Game) : Game :=
+  let n := g.mayThenDrop
+  let g := { g with
+    pending := .none
+    mayThenDrop := 0
+    mayThenConditional := none
+    sacrificedPowerThisWay := none
+    mayThenResume := false }
+  let g :=
+    match g.triggerSequenceRest with
+    | none => g
+    | some rest =>
+      let steps := rest.steps.drop n
+      if steps.isEmpty then { g with triggerSequenceRest := none }
+      else { g with triggerSequenceRest := some { rest with steps } }
+  g.resumeSequenceThenPriority
+
 /-- Continue a discard chain. When no one is left to discard, put the waiting
 +1/+1 counter (Ninja of the Hand) and finish a paused trigger sequence. -/
 def continueAfterDiscard (g : Game) (players : Array PlayerId) : Except String Game := do
@@ -280,9 +308,12 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
   match g.pending with
   | .mayDiscardDraw q n =>
     let (g, _) ← g.discardPendingCard p q id
-    let g := g.draw p n
-    let g := { g with pending := .none }
-    return g.receivePriority g.activePlayer
+    if g.mayThenDrop > 0 then
+      return g.acceptMayThen
+    else
+      let g := g.draw p n
+      let g := { g with pending := .none }
+      return g.receivePriority g.activePlayer
   | .maySacArtifactOrDiscard q n =>
     let (g, _) ← g.discardPendingCard p q id
     return g.finishSacArtifactOrDiscardDraw p n
@@ -358,14 +389,17 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"{(g.player p).name} cannot pay \{{n}}"
     let g ← g.payCost p (ManaCost.ofGeneric n)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
-    let g := { g with pending := .none }
-    let g :=
-      match g.mayPayAlsoPlusOneOn.bind g.findObject? with
-      | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
-      | none => g
-    let g := { g with mayPayAlsoPlusOneOn := none }
-    let g := g.draw p 1
-    return g.receivePriority g.activePlayer
+    if g.mayThenDrop > 0 then
+      return { g with mayPayAlsoPlusOneOn := none }.acceptMayThen
+    else
+      let g := { g with pending := .none }
+      let g :=
+        match g.mayPayAlsoPlusOneOn.bind g.findObject? with
+        | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
+        | none => g
+      let g := { g with mayPayAlsoPlusOneOn := none }
+      let g := g.draw p 1
+      return g.receivePriority g.activePlayer
   | .payOrLetCounter q n _spellId =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay \{{n}}"
@@ -540,8 +574,11 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     if p != q then
       throw s!"Only {(g.player q).name} may decline to discard"
     let g := g.logMsg s!"{(g.player p).name} declines to discard a card"
-    let g := { g with pending := .none }
-    return g.receivePriority g.activePlayer
+    if g.mayThenDrop > 0 then
+      return g.declineMayThen
+    else
+      let g := { g with pending := .none }
+      return g.receivePriority g.activePlayer
   | .chooseTargets caster =>
     if caster != p then
       throw s!"Only {(g.player caster).name} may choose targets (CR 601.2c)"
@@ -587,8 +624,11 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay"
     let g := g.logMsg s!"{(g.player p).name} declines to pay"
-    let g := { g with pending := .none }
-    return g.receivePriority g.activePlayer
+    if g.mayThenDrop > 0 then
+      return g.declineMayThen
+    else
+      let g := { g with pending := .none }
+      return g.receivePriority g.activePlayer
   | .payOrLetCounter q _ spellId =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay"
@@ -653,8 +693,11 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline"
     let g := g.logMsg
       s!"{(g.player p).name} declines to sacrifice an artifact or discard a card"
-    let g := { g with pending := .none }
-    return g.receivePriority g.activePlayer
+    if g.mayThenDrop > 0 then
+      return g.declineMayThen
+    else
+      let g := { g with pending := .none }
+      return g.receivePriority g.activePlayer
   | .mayPutArtifactFromHand q _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to put an artifact onto the battlefield"

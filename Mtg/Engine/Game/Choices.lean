@@ -144,27 +144,9 @@ def drawPerSevenCardGraveyard (g : Game) (p : PlayerId) : Game :=
   else
     g.draw p n
 
-/-- Discard the hand (zero cards is legal) and draw that many. The choice is
-made during resolution; nothing happens between discard and draw. -/
-def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Game :=
-  if !doDiscard then
-    g.logMsg s!"{(g.player p).name} does not discard their hand"
-  else
-    let ids := (g.player p).hand
-    let n := ids.size
-    let g :=
-      ids.foldl (fun acc id =>
-        match acc.findObject? id with
-        | none => acc
-        | some o =>
-          let (acc, _) := acc.move id (.graveyard o.owner) none
-          acc) g
-    let g := g.logMsg s!"{(g.player p).name} discards {n} card(s)"
-    if n == 0 then g else g.draw p n
-
-/-- Discard the hand, then draw `n` cards. An empty hand is a legal discard
-(Sauron, the Dark Lord). -/
-def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
+/-- Discard every card in `p`'s hand. Zero cards is a legal discard and is
+logged (Sauron, the Dark Lord). -/
+def discardEntireHand (g : Game) (p : PlayerId) : Game :=
   let ids := (g.player p).hand
   let discarded := ids.size
   let g :=
@@ -174,7 +156,22 @@ def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
       | some o =>
         let (acc, _) := acc.move id (.graveyard o.owner) none
         acc) g
-  let g := g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
+  g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
+
+/-- Discard the hand (zero cards is legal) and draw that many. The choice is
+made during resolution; nothing happens between discard and draw. -/
+def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Game :=
+  if !doDiscard then
+    g.logMsg s!"{(g.player p).name} does not discard their hand"
+  else
+    let n := (g.player p).hand.size
+    let g := g.discardEntireHand p
+    if n == 0 then g else g.draw p n
+
+/-- Discard the hand, then draw `n` cards. An empty hand is a legal discard
+(Sauron, the Dark Lord). -/
+def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  let g := g.discardEntireHand p
   if n == 0 then g else g.draw p n
 
 /-- Players currently tied for most life. -/

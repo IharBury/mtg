@@ -44,7 +44,9 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .divideDamage as => g.announceDividedDamage p as
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
-  | .sacrifice id => g.sacrificeForActivation p id
+  | .sacrifice id => do
+    let g ← g.sacrificeForActivation p id
+    return if g.mayThenResume then g.acceptMayThen else g
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
   | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
   | .declareBlockers as => g.declareBlockers p as
@@ -56,7 +58,9 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .putOnBottom ids => g.putCardsOnBottom p ids
   | .scry top bottom => g.finishScry p top bottom
   | .surveil top graveyard => g.finishSurveil p top graveyard
-  | .discard id => g.discardForDraw p id
+  | .discard id => do
+    let g ← g.discardForDraw p id
+    return if g.mayThenResume then g.acceptMayThen else g
   | .decline =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p .decline

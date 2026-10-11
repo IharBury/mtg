@@ -178,10 +178,14 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
     return g.receivePriority g.activePlayer
   | _ => throw "Not time to have a Villain connive"
 
-/-- After paying K'un-Lun's optional cost, draw a card. -/
+/-- After paying K'un-Lun's optional cost, draw a card. Inside `mayThen` the
+conditional does the draw, so this only records that the cost was paid. -/
 def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  let g := { g with pending := .none }
-  g.draw p n |>.receivePriority g.activePlayer
+  if g.mayThenDrop > 0 then
+    { g with pending := .none, mayThenResume := true }
+  else
+    let g := { g with pending := .none }
+    g.draw p n |>.receivePriority g.activePlayer
 
 /-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.17). -/
 def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
