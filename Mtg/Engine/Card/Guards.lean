@@ -1281,13 +1281,25 @@ namespace CardDef
   "When this creature enters, create a Food token or a Treasure token."
 #guard TriggeredAbility.toNotation .onEnterVillainIfGyElseMill ==
   "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
+#guard TriggeredAbility.resolution .onEnterVillainIfGyElseMill ==
+  .ifElse (.creatureCardsInGraveyardAtLeast 2)
+    (.createTokens .villain21menace 1 true) (.mill 2)
 #guard TriggeredAbility.toNotation .onEnterDrawMayPutLandTapped ==
   "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
 #guard TriggeredAbility.toNotation .onEnterDrawGainLifeIfAnotherHero ==
   "When this creature enters, draw a card. If you control another Hero, you gain 2 life."
 #guard TriggeredAbility.toNotation .onEnterPlusOneOrTwoIfAnotherHero ==
   "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
+#guard TriggeredAbility.resolution .onEnterPlusOneOrTwoIfAnotherHero ==
+  .ifElse (.targetIsAnotherSubtype "Hero")
+    (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1))
 #guard TriggeredAbility.targetKind .onEnterPlusOneOrTwoIfAnotherHero == .creature
+#guard TriggeredAbility.toNotation
+    (.triggered .yourBeginCombat (Effect.ofTrigger .pumpOrCounterIfScried)) ==
+  "At the beginning of combat on your turn, another target creature you control gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead."
+#guard (SharedTrigger.timing .pumpOrCounterIfScried).resolution ==
+  .ifElse .scriedOrSurveilledThisTurn
+    (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1))
 #guard TriggeredAbility.toNotation .onEnterMaySacArtifactOrDiscardDraw ==
   "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
 #guard TriggeredAbility.toNotation .onEnterExileOppTappedUntilLeaves ==
