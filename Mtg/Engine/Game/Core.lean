@@ -226,7 +226,8 @@ structure Game where
   /-- Conditional of the `mayThen` currently offered. The optional action
   reads it for its log and which choice to open. -/
   mayThenConditional : Option TriggeredAbility.TriggerResolution := none
-  /-- Power of the creature sacrificed for `plusOneEqualSacrificedPower`. -/
+  /-- Power of the creature sacrificed for
+  `putCounters .plusOneSacrificedPower`. -/
   sacrificedPowerThisWay : Option Nat := none
   /-- An artifact-or-discard cost accepted a `mayThen`. The action handler
   resumes the conditional. -/

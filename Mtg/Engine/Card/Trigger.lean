@@ -1,3 +1,4 @@
+import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.Effect
 import Mtg.Engine.Card.TriggerEvent
 
@@ -110,7 +111,7 @@ deriving Repr, Inhabited, BEq
 `TriggerResolution.mayThen`. -/
 inductive TriggerObjectCost where
   /-- Sacrifice another creature. Its power is noted for
-  `plusOneEqualSacrificedPower`. -/
+  `TriggerResolution.putCounters .plusOneSacrificedPower`. -/
   | anotherCreature
   /-- Sacrifice another creature or artifact. -/
   | anotherCreatureOrArtifact
@@ -167,11 +168,45 @@ inductive TriggerDamageNote where
   | excess
 deriving Repr, Inhabited, BEq
 
+/-- Who `TriggerResolution.putCounters` puts counters on. -/
+inductive TriggerCounterWho where
+  /-- Permanents you control.
+  Each creature is `.youControl`.
+  Each permanent of a subtype is `.youControl (.subtype s)`.
+  One counter, or two with the city's blessing, is `.youControl .citysBlessing`. -/
+  | youControl (which : YouControlPlusOne := .eachCreature)
+  /-- Each other creature you control. -/
+  | eachOther
+  /-- The announced permanent. `byYou` means the controller puts the counters,
+  and an illegal target logs that you won't put counters. -/
+  | permanent (byYou : Bool := false)
+  /-- The ability's source. -/
+  | source
+  /-- The token an earlier step created. -/
+  | createdToken
+deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.putCounters` puts. `ofKind` uses its `n`. -/
+inductive TriggerCounterWhat where
+  /-- `n` counters of this kind. One is `.ofKind kind`. -/
+  | ofKind (kind : CounterKind) (n : Nat := 1)
+  /-- +1/+1 counters equal to the source's last-known mana value. -/
+  | plusOneLastKnownMv
+  /-- +1/+1 counters equal to the power noted by sacrificing another creature. -/
+  | plusOneSacrificedPower
+  /-- Hone counters, one for each creature the targeted opponent controls. -/
+  | honePerOpponent
+  /-- +1/+1 counters equal to the count an earlier step noted. -/
+  | plusOneNoted
+  /-- Each kind of counter the source last had, in the same numbers. -/
+  | sourceCounters
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
-constructor: scry, +1/+1 on the source, and divided damage each cover
-multiple printed abilities. Permanent-target counters and pumps, and source
-pumps, share `PermanentAction` with spells and activated abilities. -/
+constructor: scry, +1/+1 on the source, divided damage, and putting counters
+each cover multiple printed abilities. Permanent-target counters and pumps,
+and source pumps, share `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
   /-- Pump the source by the greatest power among creatures you control. -/
   | pumpGreatestPower
@@ -217,7 +252,7 @@ inductive TriggerResolution where
   Paying `{n}` to put a +1/+1 counter on the source and draw is
   `.mayThen (.pay #[.generic n]) (.sequence [.onSource (.plusOne 1), .draw 1])`.
   You may sacrifice another creature for +1/+1 counters equal to its power is
-  `.mayThen (.objectCost .anotherCreature) .plusOneEqualSacrificedPower`.
+  `.mayThen (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source)`.
   You may pay `{1}{G}{U}` to return this from the graveyard is
   `.mayThen (.pay #[.generic 1, .colored .green, .colored .blue]) .returnSourceToHand`.
   You may sacrifice another creature or artifact to draw and create a Treasure is
@@ -239,9 +274,37 @@ inductive TriggerResolution where
   /-- Choose objects for `how`. Inside `mayThen`, declining skips the conditional.
   Sacrificing another creature notes its power. -/
   | objectCost (how : TriggerObjectCost)
-  /-- Put +1/+1 counters on the source equal to the power noted by sacrificing
-  another creature. -/
-  | plusOneEqualSacrificedPower
+  /-- Put counters.
+  Each creature you control is `.putCounters (.ofKind .plusOnePlusOne) .youControl`.
+  Each permanent of a subtype is
+  `.putCounters (.ofKind .plusOnePlusOne) (.youControl (.subtype s))`.
+  One counter, or two with the city's blessing, is
+  `.putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing)`.
+  Each other creature you control is
+  `.putCounters (.ofKind .plusOnePlusOne) .eachOther`.
+  +1/+1 counters equal to the last-known mana value, on the target, is
+  `.putCounters .plusOneLastKnownMv .permanent`.
+  A loyalty counter on the source is `.putCounters (.ofKind .loyalty) .source`.
+  The source's last-known counters on the target are
+  `.putCounters .sourceCounters .permanent`.
+  A charge counter on the source is `.putCounters (.ofKind .charge) .source`.
+  A quest counter on the source is `.putCounters (.ofKind .quest) .source`.
+  Hone counters for each creature the opponent controls are
+  `.putCounters .honePerOpponent .source`.
+  A plan counter on the source is `.putCounters (.ofKind .plan) .source`.
+  Later steps do not run if the source has left.
+  A +1/+1 counter you put on the target is
+  `.putCounters (.ofKind .plusOnePlusOne) (.permanent true)`.
+  The noted number of +1/+1 counters on the created token is
+  `.putCounters .plusOneNoted .createdToken`.
+  An invasion counter on the source is `.putCounters (.ofKind .invasion) .source`.
+  A trample counter on the target is `.putCounters (.ofKind .trample) .permanent`.
+  An influence counter on the source, when the opponent is still legal, is
+  `.putCounters (.ofKind .influence) .source`. An illegal target skips later steps.
+  A loyalty counter on the target is `.putCounters (.ofKind .loyalty) .permanent`.
+  +1/+1 counters equal to the sacrificed creature's power are
+  `.putCounters .plusOneSacrificedPower .source`. -/
+  | putCounters (what : TriggerCounterWhat) (who : TriggerCounterWho)
   /-- Return the source from its owner's graveyard to their hand. -/
   | returnSourceToHand
   /-- Put reflexive ability `followup` on the stack (“When you do”). -/
@@ -290,7 +353,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]`.
   Put a +1/+1 counter on each other creature you control, then gain 1 life
   for each other creature you control, is
-  `.sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]`.
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature]`.
   Deal `n` damage to the target, then destroy it if that damage marked a
   permanent of this subtype, is
   `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage]`.
@@ -303,22 +366,22 @@ You may put a land card from your hand onto the battlefield tapped is
   Gain 1 life, draw, or put a +1/+1 counter on each creature you control
   when this is the first, second, or third resolve this turn (Belladonna
   Took), is
-  `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.plusOneEachYouControl)]`.
+  `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`.
   Deal the sacrificed creature's power, then amass Goblins for the excess
   (Bolg), is
   `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess]`.
   Put a plan counter, then scry, is
-  `.sequence [.planCounterOnSource, .scry n]`.
+  `.sequence [.putCounters (.ofKind .plan) .source, .scry n]`.
   Put a trample counter on the target, then make it a Bear, is
-  `.sequence [.trampleCounterOnTarget, .becomeBear]`.
+  `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear]`.
   Draw, discard, and a land discarded this way enters tapped, is
   `.sequence [.draw 1, .discard 1, .discardedLandEntersTapped]`.
   Put an influence counter, scry 2, then offer the opponent's choice
   (Palantír of Orthanc), is
-  `.sequence [.influenceCounterOnSource, .scry 2, .may .opponentHasYouDraw]`.
+  `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw]`.
   Grant keywords, then a +1/+1 counter if the target is a creature and a
   loyalty counter if it is a planeswalker, is
-  `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker .loyaltyOnTarget]`.
+  `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]`.
   The target gets +3/+0 and gains first strike until end of turn, is
   `.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords Keyword.firstStrike)]`.
   Destroy the target, then its controller creates a Treasure, is
@@ -371,12 +434,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | recruit (who : RecruitSubject := .recruit)
   /-- Exile the top card; you may play it until the end of your next turn. -/
   | exileTop
-  /-- Put a +1/+1 counter on permanents you control.
-  Each creature is `.plusOneEachYouControl`.
-  Each permanent of a subtype is `.plusOneEachYouControl (.subtype s)`.
-  One counter, or two with the city's blessing, is
-  `.plusOneEachYouControl .citysBlessing`. -/
-  | plusOneEachYouControl (which : YouControlPlusOne := .eachCreature)
   /-- Amass `subtype` `n`, as `amount` says. Attach the source when
   `attachSource` is true. -/
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
@@ -387,8 +444,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | attachSourceToCreated
   /-- Attach the source to the targeted permanent. -/
   | attachSourceToTarget
-  /-- Put a +1/+1 counter on each other creature you control. -/
-  | plusOneEachOther
   /-- Gain 1 life for each other creature you control. -/
   | gainLifeForEachOtherCreature
   /-- Destroy the permanent an earlier step dealt damage to. -/
@@ -477,8 +532,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | castFromGyArtifactInstantSorcery
   /-- Exile up to one opposing nonland per opponent until this leaves. -/
   | exileOppNonlandEachUntilLeaves
-  /-- +1/+1 counters equal to the last-known mana value. -/
-  | plusOneEqualLastKnownMv
   /-- Equipped attacking creatures gain double strike. -/
   | equippedAttackersGainDoubleStrike
   /-- Reveal the top `n`; put a random creature onto the battlefield. -/
@@ -569,18 +622,12 @@ You may put a land card from your hand onto the battlefield tapped is
   If three or more creatures died this turn is
   `.prepareSource .ifThreeCreaturesDied`. -/
   | prepareSource (when : PrepareWhen := .ifNotPrepared)
-  /-- Put a loyalty counter on the source. -/
-  | loyaltyOnSource
   /-- The target's controller creates a Treasure token.
   After `.onPermanent .destroy`, the permanent may already have left; its
   controller is the one it had on the battlefield. -/
   | targetControllerCreatesTreasure
   /-- Creatures you control get +P/+T until end of turn. -/
   | creaturesYouControlGet (power toughness : Int)
-  /-- Put the source's last-known counters on the target. -/
-  | putSourceCountersOnTarget
-  /-- Put a charge counter on the source. -/
-  | chargeCounterOnSource
   /-- Add {G} for each charge counter on the source. -/
   | addGreenPerChargeCounter
   /-- Amass Goblins equal to the excess noted by the previous step. -/
@@ -602,8 +649,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | discardHand
   /-- Draw cards equal to the hand discarded by the previous step. -/
   | drawDiscardedHandCount
-  /-- Put a trample counter on the target. -/
-  | trampleCounterOnTarget
   /-- The target becomes a Bear in addition to its other types. -/
   | becomeBear
   /-- Mill `n` and remember the cards milled. -/
@@ -614,14 +659,10 @@ You may put a land card from your hand onto the battlefield tapped is
   | tapEnchanted
   /-- Remove all counters from the creature enchanted by the source. -/
   | removeCountersFromEnchanted
-  /-- Put a quest counter on the source. -/
-  | questCounterOnSource
   /-- Search your hand and/or library for a Dragon and put it onto the battlefield. -/
   | searchDragonFromHandOrLibrary
   /-- Put the land discarded by the previous step onto the battlefield tapped. -/
   | discardedLandEntersTapped
-  /-- Put hone counters on the source equal to the opponent's creatures. -/
-  | honeCountersPerOpponent
   /-- Attach the source to the creature target. -/
   | attachToCreatureTarget
   /-- You may attach any number of Equipment you control to the target. -/
@@ -642,9 +683,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | grimaExileUntil
   /-- You may cast the instant or sorcery exiled by the previous step. -/
   | grimaMayCast
-  /-- Put an influence counter on the source when the target is still legal.
-  An illegal target skips the later scry and the opponent's choice. -/
-  | influenceCounterOnSource
   /-- The targeted opponent may have you draw a card.
   Declining mills X cards, where X is the influence counters on the source,
   and that player loses life equal to their mana value.
@@ -657,14 +695,10 @@ You may put a land card from your hand onto the battlefield tapped is
   | reflexiveCopyMilled
   /-- Each opponent sacrifices a creature that dealt combat damage to you. -/
   | sacDamagingCreatures
-  /-- Put a plan counter on the source. Later steps do not run if it left. -/
-  | planCounterOnSource
   /-- Each opponent loses `n` life. -/
   | eachOpponentLosesLife (n : Nat)
   /-- You lose `n` life. -/
   | loseLife (n : Nat)
-  /-- Put a +1/+1 counter on the target. You put that counter. -/
-  | plusOneOnTargetByYou
   /-- Sacrifice the Plan if it is still on the battlefield. -/
   | sacrificePlan
   /-- Sacrifice the Plan. Note whether the sacrifice happened. -/
@@ -683,14 +717,8 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Put a land card from your hand onto the battlefield tapped.
   Optional as `.may .putLandFromHandTapped`. -/
   | putLandFromHandTapped
-  /-- Put a loyalty counter on the target. -/
-  | loyaltyOnTarget
   /-- Create an Alien token and remember how many invasion counters to put. -/
   | createAlienToken
-  /-- Put the noted number of +1/+1 counters on the Alien token. -/
-  | plusOneOnAlienNoted
-  /-- Put an invasion counter on the source. -/
-  | invasionCounterOnSource
   /-- Create a Sturdy Shield token. -/
   | createSturdyShieldToken
   /-- Attach the token created by the previous step to the source. -/
@@ -951,11 +979,12 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .returnCreatureFromGyToHand =>
     { targeting := .of .creatureCardInYourGraveyard,
       resolution := .returnCreatureFromGyToHand }
-  | .plusOneEachYouControl which => { resolution := .plusOneEachYouControl which }
+  | .plusOneEachYouControl which =>
+    { resolution := .putCounters (.ofKind .plusOnePlusOne) (.youControl which) }
   | .honeEachEquipment => { resolution := .honeEachEquipment }
   | .plusOneEachOtherGainLife =>
     { resolution := .sequence
-        [.plusOneEachOther, .gainLifeForEachOtherCreature] }
+        [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature] }
   | .becomePT p t => { resolution := .becomePT p t }
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pumpTargetPerPlains }
@@ -1048,7 +1077,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .trampleCounterBecomeBear =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .sequence
-        [.trampleCounterOnTarget, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)] }
+        [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)] }
   | .millThenSubtypeToHand n subtype =>
     { resolution := .sequence [.millNote n, .returnMilledSubtype subtype] }
   | .exileOppNonlandEachUntilLeaves =>
@@ -1058,13 +1087,15 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       allowsZeroTargets := true
       resolution := .exileOppNonlandEachUntilLeaves }
   | .plusOneEqualLastKnownMv =>
-    { targeting := .of .creatureYouControl, resolution := .plusOneEqualLastKnownMv }
+    { targeting := .of .creatureYouControl,
+      resolution := .putCounters .plusOneLastKnownMv .permanent }
   | .mountainQuestDragon =>
-    { resolution := .sequence [.questCounterOnSource, .«if» (.questAtLeast 6) (.sequence [.sacrificeSource .movedAsSacrificed, .searchDragonFromHandOrLibrary])] }
+    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» (.questAtLeast 6) (.sequence [.sacrificeSource .movedAsSacrificed, .searchDragonFromHandOrLibrary])] }
   | .treasuresPerChosenType => { resolution := .treasuresPerChosenType }
   | .revealUntilCreature => { resolution := .revealUntilCreature }
   | .attackSacPlusOneEqualPower =>
-    { resolution := .mayThen (.objectCost .anotherCreature) .plusOneEqualSacrificedPower }
+    { resolution := .mayThen (.objectCost .anotherCreature)
+        (.putCounters .plusOneSacrificedPower .source) }
   | .lootLandEntersTapped =>
     { resolution := .sequence [.draw 1, .discard 1, .discardedLandEntersTapped] }
   | .millThatManyLost => { resolution := .millThatManyLost }
@@ -1081,7 +1112,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .pumpTargetBySourcePower }
   | .createAlienPerInvasion =>
     { resolution := .sequence
-        [.createAlienToken, .plusOneOnAlienNoted, .invasionCounterOnSource] }
+        [.createAlienToken, .putCounters .plusOneNoted .createdToken,
+         .putCounters (.ofKind .invasion) .source] }
   | .mayPutArtifactAttachEquipment =>
     { resolution := .sequence
         [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact] }
@@ -1091,7 +1123,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .noteResolveThisTurn 3,
         .«if» (.nthResolve 1) (.gainLife 1),
         .«if» (.nthResolve 2) (.draw 1),
-        .«if» (.nthResolve 3) (.plusOneEachYouControl)] }
+        .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)] }
   | .bolgMaySacrifice => { resolution := .may .sacrificeAnother }
   | .bolgDealSacrificedPower =>
     { targeting := .of .anotherCreature,
@@ -1137,7 +1169,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         { noun := "target opponent", zone := .player, controller := .opponent },
         { noun := "target creature you control", controller := .you, types := #[.creature] }
       ] #[1])
-      resolution := .sequence [.honeCountersPerOpponent, .attachToCreatureTarget] }
+      resolution := .sequence
+        [.putCounters .honePerOpponent .source, .attachToCreatureTarget] }
   | .damageTargetOpponent n =>
     { targeting := .of .opponent, resolution := .dealDamage n .targetOpponent }
   | .copySelfNonlegendary => { resolution := .copySelfNonlegendary }
@@ -1156,7 +1189,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .palantir =>
     { targeting := .of .opponent,
       resolution := .sequence
-        [.influenceCounterOnSource, .scry 2, .may .opponentHasYouDraw] }
+        [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw] }
   | .treasuresEqualLastKnown => { resolution := .treasuresEqualLastKnown }
   | .protectionEverything => { resolution := .protectionEverything }
   | .loseLifePerBurden => { resolution := .loseLifePerBurden }
@@ -1170,26 +1203,30 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .othersOfSubtypeGetEqualSourceToughness subtype =>
     { resolution := .othersOfSubtypeGetEqualSourceToughness subtype }
   | .scryAndPlan n =>
-    { resolution := .sequence [.planCounterOnSource, .scry n] }
+    { resolution := .sequence [.putCounters (.ofKind .plan) .source, .scry n] }
   | .lootAndPlan =>
-    { resolution := .sequence [.planCounterOnSource, .draw 1, .discard 1] }
+    { resolution := .sequence
+        [.putCounters (.ofKind .plan) .source, .draw 1, .discard 1] }
   | .createVillainAndPlan =>
     { resolution := .sequence
-        [.planCounterOnSource, .createTokens .villain21menace 1 false] }
+        [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace 1 false] }
   | .drainAndPlan n =>
     { resolution := .sequence
-        [.planCounterOnSource, .eachOpponentLosesLife n, .gainLife n] }
+        [.putCounters (.ofKind .plan) .source, .eachOpponentLosesLife n, .gainLife n] }
   | .drawLoseLifeAndPlan =>
-    { resolution := .sequence [.planCounterOnSource, .draw 1, .loseLife 1] }
+    { resolution := .sequence
+        [.putCounters (.ofKind .plan) .source, .draw 1, .loseLife 1] }
   | .treasureTappedAndPlan =>
     { resolution := .sequence
-        [.planCounterOnSource, .createTokens .treasure 1 true] }
+        [.putCounters (.ofKind .plan) .source, .createTokens .treasure 1 true] }
   | .plusOneOnTargetAndPlan =>
     { targeting := .of .creatureYouControl,
-      resolution := .sequence [.planCounterOnSource, .plusOneOnTargetByYou] }
+      resolution := .sequence
+        [.putCounters (.ofKind .plan) .source,
+         .putCounters (.ofKind .plusOnePlusOne) (.permanent true)] }
   | .planFinishDrawPlusOneEach =>
     { resolution := .sequence
-        [.sacrificePlan, .draw 1, .plusOneEachYouControl] }
+        [.sacrificePlan, .draw 1, .putCounters (.ofKind .plusOnePlusOne) .youControl] }
   | .planFinishReturnInstants =>
     { resolution := .sequence
         [.sacrificePlanForReflexive, .queueReflexiveIfSacrificed 11] }
@@ -1216,13 +1253,14 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.eachEndStep], resolution := .prepareSource .ifThreeCreaturesDied }
   | .drawIfRemovedTwoLoyalty =>
     { resolution := .«if» (.removedLoyaltyAtLeast 2) (.draw 1) }
-  | .loyaltyOnSource => { resolution := .loyaltyOnSource }
+  | .loyaltyOnSource =>
+    { resolution := .putCounters (.ofKind .loyalty) .source }
   | .grantThenCounterByType k =>
     { targeting := .of .permanentYouControl,
       resolution := .sequence
         [.onPermanent (.grantKeywords k),
          .«if» .targetIsCreature (.onPermanent (.plusOne 1)),
-         .«if» .targetIsPlaneswalker .loyaltyOnTarget] }
+         .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)] }
   | .destroyOppPermanentIfSixLands =>
     { targeting := .of .oppPermanent,
       resolution := .«if» (.landsAtLeast 6) (.sequence [
@@ -1238,8 +1276,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .creaturesYouControlGet p t => { resolution := .creaturesYouControlGet p t }
   | .putSourceCountersOnTarget =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
-      resolution := .putSourceCountersOnTarget }
-  | .chargeCounterOnSource => { resolution := .chargeCounterOnSource }
+      resolution := .putCounters .sourceCounters .permanent }
+  | .chargeCounterOnSource =>
+    { resolution := .putCounters (.ofKind .charge) .source }
   | .addGreenPerChargeCounter =>
     { events := #[.yourFirstMain], resolution := .addGreenPerChargeCounter }
   | .drawTwoWinIfEmptyShuffleSource =>

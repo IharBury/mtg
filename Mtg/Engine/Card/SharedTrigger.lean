@@ -560,7 +560,7 @@ inductive SharedTrigger where
   /-- Put a hone counter on each Equipment you control. -/
   | honeEachEquipment
   /-- +1/+1 on each other creature you control, then gain 1 life for each.
-  Resolves as `.sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]`. -/
+  Resolves as `.sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature]`. -/
   | plusOneEachOtherGainLife
   /-- Set the source's base P/T. -/
   | becomePT (power toughness : Int)
@@ -664,7 +664,7 @@ inductive SharedTrigger where
   Resolves as `.or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false]`. -/
   | wolfPlusOneOrTreasure
   /-- Trample counter, become a Bear, maybe draw. Resolves as
-  `.sequence [.trampleCounterOnTarget, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)]`. -/
+  `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)]`. -/
   | trampleCounterBecomeBear
   /-- Mill `n`, then put matching subtype cards into hand. -/
   | millThenSubtypeToHand (n : Nat) (subtype : String)
@@ -708,7 +708,7 @@ inductive SharedTrigger where
   /-- First resolve this turn: gain 1 life. Second: draw a card. Third:
   +1/+1 on each creature you control. Later resolves do nothing
   (Belladonna Took). Resolves as
-  `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.plusOneEachYouControl)]`. -/
+  `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`. -/
   | belladonnaTokenReward
   /-- Bolg may-sacrifice. Resolves as `.may .sacrificeAnother`. -/
   | bolgMaySacrifice
@@ -766,7 +766,7 @@ inductive SharedTrigger where
   /-- Gríma impulse. Resolves as `.sequence [.grimaExileUntil, .grimaMayCast]`. -/
   | grimaImpulse
   /-- Palantír end-step. Resolves as
-  `.sequence [.influenceCounterOnSource, .scry 2, .may .opponentHasYouDraw]`. -/
+  `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw]`. -/
   | palantir
   /-- Create Treasures equal to last-known noncombat damage. -/
   | treasuresEqualLastKnown
@@ -786,10 +786,10 @@ inductive SharedTrigger where
   /-- Other permanents of this subtype get +X/+X equal to this toughness. -/
   | othersOfSubtypeGetEqualSourceToughness (subtype : String)
   /-- Scry `n` and put a plan counter. Resolves as
-  `.sequence [.planCounterOnSource, .scry n]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .scry n]`. -/
   | scryAndPlan (n : Nat)
   /-- Loot and put a plan counter. Resolves as
-  `.sequence [.planCounterOnSource, .draw 1, .discard 1]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .draw 1, .discard 1]`. -/
   | lootAndPlan
   /-- Create a Villain and a plan counter. -/
   | createVillainAndPlan
@@ -831,7 +831,7 @@ inductive SharedTrigger where
   /-- Target permanent you control gains these keywords until end of turn; a
   +1/+1 counter if it's a creature, a loyalty counter if it's a planeswalker.
   Resolves as
-  `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker .loyaltyOnTarget]`. -/
+  `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]`. -/
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. Resolves as
