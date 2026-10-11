@@ -378,6 +378,64 @@ steps still in this sequence. -/
 def failMayThen (g : Game) : Game :=
   { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
 
+/-- Resolve `TriggerResolution.pump`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (lastKnownPower lastKnownToughness : Option Int) (power toughness : Int)
+    (who : TriggeredAbility.TriggerPumpWho)
+    (amount : TriggeredAbility.TriggerPumpAmount) : Game :=
+  match who, amount with
+  | .source, .greatestPower =>
+    g.applyOnTriggerSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
+  | .source, .perLookedAt =>
+    let n := (lastKnownPower.getD 0).toNat
+    g.applyOnTriggerSource sourceId (.pump (n : Int) (n : Int))
+  | .source, .perOtherCreature =>
+    g.withTriggerSource sourceId fun g o =>
+      let others :=
+        g.battlefield.filter (fun c =>
+          c.isCreature && c.controlledBy controller && c.id != o.id) |>.size
+      g.pumpPermanent o others others
+  | .target, .perPlains =>
+    let n := g.countSubtype controller "Plains"
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.pumpPermanent o n n)
+      "No target was chosen"
+  | .cause, .fixed =>
+    match (g.battlefield.find? (fun o => o.status.attacking && o.controlledBy controller)) with
+    | some o => g.pumpPermanent o power toughness
+    | none => g
+  | .othersOfSubtype subtype, .equalSourceToughness =>
+    let (x, srcId?) :=
+      match sourceId.bind g.findObject? with
+      | some src =>
+        if src.isOnBattlefield then (g.toughness src, some src.id)
+        else (lastKnownToughness.getD (g.toughness src), some src.id)
+      | none => (lastKnownToughness.getD (0 : Int), none)
+    g.foldBattlefield (fun o =>
+        o.controlledBy controller &&
+          (match srcId? with
+           | some sid => o.id != sid
+           | none => true) &&
+          g.hasSubtype o subtype)
+      (fun g o => g.pumpPermanent o x x)
+  | .target, .equalSourcePower =>
+    let x := g.sourcePowerAtResolution sourceId lastKnownPower
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.pumpPermanent o x 0) "The target is no longer legal"
+  | .creaturesYouControl, .fixed =>
+    g.pumpControlledCreatures controller power toughness
+  | .othersOfSubtypes subtypes, .fixed =>
+    g.foldBattlefield (fun o =>
+        o.isCreature && o.controlledBy controller && some o.id != sourceId &&
+          subtypes.any (fun s => g.hasSubtype o s))
+      (fun g o => g.pumpPermanent o power toughness)
+  | .opponentsCreatures, .fixed =>
+    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller)
+      (fun g o => g.pumpPermanent o power toughness)
+  | _, _ => g
+
 /-- Resolve `TriggerResolution.dealDamage`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -663,8 +721,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyUnified controller { ab.effect with resolution := .spell r } targets
   | .trigger _ => (
   match resolutionOverride.getD ab.resolution with
-  | .pumpGreatestPower =>
-    g.applyOnTriggerSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
+  | .pump power toughness who amount =>
+    g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness
+      power toughness who amount
   | .setOtherBasePT =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let (pw, tw) := g.sourcePTAtResolution sourceId lastKnownPower lastKnownToughness
@@ -795,9 +854,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           | some o => g.gainLife controller (g.power o).toNat
           | none => g.logMsg "The target is no longer in the graveyard"
         | _ => g.logMsg "The target is no longer legal"
-  | .pumpByLookedAt =>
-    let n := (lastKnownPower.getD 0).toNat
-    g.applyOnTriggerSource sourceId (.pump (n : Int) (n : Int))
   | .onSource action =>
     if g.mayThenDrop > 0 && action == .tap then
       match sourceId.bind g.findObject? with
@@ -823,12 +879,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         match tgt with
         | Target.player pid => g.beginDiscardCards #[pid] n
         | _ => g) sourceId none
-  | .pumpForEachOtherCreature =>
-    g.withTriggerSource sourceId fun g o =>
-      let others :=
-        g.battlefield.filter (fun c =>
-          c.isCreature && c.controlledBy controller && c.id != o.id) |>.size
-      g.pumpPermanent o others others
   | .putFromHandOnBottom =>
     if (g.player controller).hand.isEmpty then g
     else
@@ -989,14 +1039,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := g.giveControlUntilEot o controller
       let g := g.applyPermanentAction (g.object! o.id) .untap
       g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.haste))
-  | .othersOfSubtypesGet subtypes p t =>
-    g.foldBattlefield (fun o =>
-        o.isCreature && o.controlledBy controller && some o.id != sourceId &&
-          subtypes.any (fun s => g.hasSubtype o s))
-      (fun g o => g.pumpPermanent o p t)
-  | .opponentsCreaturesGet p t =>
-    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller)
-      (fun g o => g.pumpPermanent o p t)
   | .putNonlandMvAtMostFromGy _ =>
     g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
       match t with
@@ -1562,11 +1604,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginSacDamagers controller ((g.livingOpponents controller).map (·.id))
   | .chapter _ =>
     g.applyChapterEffect controller ab.effect sourceId targets
-  | .pumpTargetPerPlains =>
-    let n := g.countSubtype controller "Plains"
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.pumpPermanent o n n)
-      "No target was chosen"
   | .investigate =>
     let (g, _) := g.createToken controller clueToken
     g.logMsg s!"{(g.player controller).name} investigates"
@@ -1577,24 +1614,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match targets[0]? with
       | some (Target.permanent id) => g.applyConnive controller (some id)
       | _ => g.applyConnive controller sourceId
-  | .pumpCause p t =>
-    match (g.battlefield.find? (fun o => o.status.attacking && o.controlledBy controller)) with
-    | some o => g.pumpPermanent o p t
-    | none => g
-  | .othersOfSubtypeGetEqualSourceToughness subtype =>
-    let (x, srcId?) :=
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if src.isOnBattlefield then (g.toughness src, some src.id)
-        else (lastKnownToughness.getD (g.toughness src), some src.id)
-      | none => (lastKnownToughness.getD (0 : Int), none)
-    g.foldBattlefield (fun o =>
-        o.controlledBy controller &&
-          (match srcId? with
-           | some sid => o.id != sid
-           | none => true) &&
-          g.hasSubtype o subtype)
-      (fun g o => g.pumpPermanent o x x)
   | .targetControllerCreatesTreasure =>
     -- Destroy may already have moved the permanent. The controller who
     -- creates the Treasure is the one it had on the battlefield.
@@ -1673,10 +1692,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .putLandFromHandTapped | .may .putLandFromHandTapped =>
     { g with pending := .mayPutLandFromHand controller }.logMsg
       s!"{(g.player controller).name} may put a land card from their hand onto the battlefield tapped"
-  | .pumpTargetBySourcePower =>
-    let x := g.sourcePowerAtResolution sourceId lastKnownPower
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.pumpPermanent o x 0) "The target is no longer legal"
   | .createAlienToken =>
     let n :=
       match sourceId.bind g.findObject? with
@@ -1910,8 +1925,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
       else g.becomePrepared o
     | none => g.logMsg "The source is no longer on the battlefield"
-  | .creaturesYouControlGet pw tw =>
-    g.pumpControlledCreatures controller pw tw
   | .armSurveilReturnLifeGained =>
     -- Ruling 750: the following surveil reads life gained as this ability resolves.
     { g with armSurveilReturn := true }

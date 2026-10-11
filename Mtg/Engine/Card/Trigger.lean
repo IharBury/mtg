@@ -202,14 +202,73 @@ inductive TriggerCounterWhat where
   | sourceCounters
 deriving Repr, Inhabited, BEq
 
+/-- Who `TriggerResolution.pump` gives +P/+T until end of turn. -/
+inductive TriggerPumpWho where
+  /-- The ability's source. -/
+  | source
+  /-- The announced permanent. -/
+  | target
+  /-- The creature that caused the trigger. -/
+  | cause
+  /-- Each creature the controller controls. -/
+  | creaturesYouControl
+  /-- Each other creature the controller controls of these subtypes.
+  The source is not included. -/
+  | othersOfSubtypes (subtypes : Array String)
+  /-- Each other permanent the controller controls of this subtype.
+  The source is not included. -/
+  | othersOfSubtype (subtype : String)
+  /-- Each creature an opponent controls. -/
+  | opponentsCreatures
+deriving Repr, Inhabited, BEq
+
+/-- Where `TriggerResolution.pump` reads the bonus. `power` and `toughness`
+are used when this is `.fixed`. -/
+inductive TriggerPumpAmount where
+  /-- +X/+0, where X is the greatest power among creatures the controller controls. -/
+  | greatestPower
+  /-- +1/+1 for each card looked at while scrying. -/
+  | perLookedAt
+  /-- +1/+1 for each other creature the controller controls. -/
+  | perOtherCreature
+  /-- +1/+1 for each Plains the controller controls. -/
+  | perPlains
+  /-- The `power` and `toughness` arguments. -/
+  | fixed
+  /-- +X/+X, where X is the source's toughness. -/
+  | equalSourceToughness
+  /-- +X/+0, where X is the source's power. -/
+  | equalSourcePower
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
-constructor: scry, +1/+1 on the source, divided damage, and putting counters
-each cover multiple printed abilities. Permanent-target counters and pumps,
-and source pumps, share `PermanentAction` with spells and activated abilities. -/
+constructor: scry, +1/+1 on the source, divided damage, putting counters,
+and until-end-of-turn pumps each cover multiple printed abilities.
+Permanent-target counters and pumps, and source pumps, share
+`PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
-  /-- Pump the source by the greatest power among creatures you control. -/
-  | pumpGreatestPower
+  /-- Until end of turn, permanents of `who` get the bonus from `amount`.
+  `power` and `toughness` are that bonus when `amount` is `.fixed`.
+  The source by the greatest power among creatures you control is
+  `.pump 0 0 .source .greatestPower`.
+  The source +1/+1 per card looked at while scrying is
+  `.pump 0 0 .source .perLookedAt`.
+  The source +1/+1 for each other creature you control is
+  `.pump 0 0 .source .perOtherCreature`.
+  A target creature you control +1/+1 per Plains is
+  `.pump 0 0 .target .perPlains`.
+  The creature that caused this +P/+T is `.pump p t .cause`.
+  Other permanents of a subtype +X/+X, X = this toughness, is
+  `.pump 0 0 (.othersOfSubtype subtype) .equalSourceToughness`.
+  Another target creature +X/+0, X = this power, is
+  `.pump 0 0 .target .equalSourcePower`.
+  Creatures you control +P/+T is `.pump p t .creaturesYouControl`.
+  Other creatures of these subtypes +P/+T is
+  `.pump p t (.othersOfSubtypes subtypes)`.
+  Creatures opponents control +P/+T is `.pump p t .opponentsCreatures`. -/
+  | pump (power toughness : Int) (who : TriggerPumpWho)
+      (amount : TriggerPumpAmount := .fixed)
   /-- Set another creature's base P/T to this creature's. -/
   | setOtherBasePT
   /-- Deal damage. `n` is the amount when `amount` is `.fixed`.
@@ -362,7 +421,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))]`.
   Other creatures you control of these subtypes get +P/+T, and creatures
   your opponents control get +oppP/+oppT, is
-  `.sequence [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT]`.
+  `.sequence [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures]`.
   Gain 1 life, draw, or put a +1/+1 counter on each creature you control
   when this is the first, second, or third resolve this turn (Belladonna
   Took), is
@@ -394,8 +453,6 @@ You may put a land card from your hand onto the battlefield tapped is
   amount is that power when the sequence starts, before an earlier step
   moves the card. -/
   | gainLifeEqualToTargetPower
-  /-- Pump the source +1/+1 per card looked at while scrying. -/
-  | pumpByLookedAt
   /-- Affect the trigger's source if it is still on the battlefield. -/
   | onSource (action : PermanentAction)
   /-- You gain `n` life (CR 118.2). -/
@@ -405,8 +462,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- An opponent discards `n` cards. Each opponent discards one is
   `.opponentDiscards`. The announced opponent is `.opponentDiscards n .target`. -/
   | opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each)
-  /-- Pump the source +1/+1 for each other creature you control. -/
-  | pumpForEachOtherCreature
   /-- Put a card from your hand on the bottom of your library.
   An empty hand skips the choice. -/
   | putFromHandOnBottom
@@ -465,11 +520,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | createTappedTreasuresEqualOppArtifacts
   /-- Gain control of the target until end of turn; untap; haste. -/
   | gainControlOppUntilEot
-  /-- Other creatures you control of these subtypes get +P/+T until end of turn.
-  The source is not included. -/
-  | othersOfSubtypesGet (subtypes : Array String) (power toughness : Int)
-  /-- Creatures your opponents control get +P/+T until end of turn. -/
-  | opponentsCreaturesGet (power toughness : Int)
   /-- Put a nonland permanent card with mana value at most `mv` from a
   graveyard onto the battlefield. -/
   | putNonlandMvAtMostFromGy (mv : Nat)
@@ -570,23 +620,15 @@ You may put a land card from your hand onto the battlefield tapped is
   | revealSaga
   /-- Resolve a printed Saga chapter. -/
   | chapter (effect : ChapterResolution)
-  /-- Target creature you control gets +1/+1 per Plains you control. -/
-  | pumpTargetPerPlains
   /-- Investigate (create a Clue). -/
   | investigate
   /-- Connive (CR 701.48). The source is `.connive`. A target is
   `.connive (.target kind)`. -/
   | connive (who : ConniveSubject := .source)
-  /-- Pump the creature that caused the trigger. -/
-  | pumpCause (power toughness : Int)
-  /-- Other permanents you control of this subtype get +X/+X, X = source toughness. -/
-  | othersOfSubtypeGetEqualSourceToughness (subtype : String)
   /-- Apply `action` to the creature this Aura enchants. -/
   | onEnchanted (action : PermanentAction)
   /-- Exile the targeted creature; return it at the next end step. -/
   | exileUntilNextEndStep
-  /-- Another target creature gets +X/+0, X = source power. -/
-  | pumpTargetBySourcePower
   /-- Put an artifact card from your hand onto the battlefield.
   The permanent, and the creature it may attach to, are remembered for the
   next step. An empty hand skips the choice.
@@ -626,8 +668,6 @@ You may put a land card from your hand onto the battlefield tapped is
   After `.onPermanent .destroy`, the permanent may already have left; its
   controller is the one it had on the battlefield. -/
   | targetControllerCreatesTreasure
-  /-- Creatures you control get +P/+T until end of turn. -/
-  | creaturesYouControlGet (power toughness : Int)
   /-- Add {G} for each charge counter on the source. -/
   | addGreenPerChargeCounter
   /-- Amass Goblins equal to the excess noted by the previous step. -/
@@ -783,7 +823,7 @@ structure TriggerTiming where
   damage as the controller chooses (CR 601.2d). -/
   dividedDamage : Option (Nat × Nat) := none
   /-- What happens when this ability resolves. -/
-  resolution : TriggerResolution := .pumpGreatestPower
+  resolution : TriggerResolution := .pump 0 0 .source .greatestPower
   /-- Intervening “while you control a creature with power ≥ n” (e.g. Ferocious).
   Checked when the trigger event occurs (CR 603.2 / 603.4); not rechecked on
   resolution. -/
@@ -971,7 +1011,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .millPlayer n =>
     { targeting := .of .player, resolution := .millPlayer n }
   | .investigate => { resolution := .investigate }
-  | .pumpCause p t => { resolution := .pumpCause p t }
+  | .pumpCause p t => { resolution := .pump p t .cause }
   | .searchLibrary how => { resolution := .searchLibrary how }
   | .eachPlayerSacrificesCreature => { resolution := .eachPlayerSacrificesCreature }
   | .exileTarget kind =>
@@ -987,12 +1027,12 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature] }
   | .becomePT p t => { resolution := .becomePT p t }
   | .pumpTargetPerPlains =>
-    { targeting := .of .creatureYouControl, resolution := .pumpTargetPerPlains }
+    { targeting := .of .creatureYouControl, resolution := .pump 0 0 .target .perPlains }
   | .mayDiscardHandDraw n =>
     { resolution := .mayThen .discardHand (.draw n) }
-  | .pumpByLookedAt => { resolution := .pumpByLookedAt }
-  | .pumpGreatestPower => { resolution := .pumpGreatestPower }
-  | .pumpForEachOtherCreature => { resolution := .pumpForEachOtherCreature }
+  | .pumpByLookedAt => { resolution := .pump 0 0 .source .perLookedAt }
+  | .pumpGreatestPower => { resolution := .pump 0 0 .source .greatestPower }
+  | .pumpForEachOtherCreature => { resolution := .pump 0 0 .source .perOtherCreature }
   | .damageBlockers n => { resolution := .dealDamage n .blockers }
   | .returnLinkedExile => { resolution := .returnLinkedExile }
   | .createThenAttach kind =>
@@ -1070,7 +1110,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       allowsZeroTargets := true, resolution := .putNonlandMvAtMostFromGy mv }
   | .othersGetAndOppsGet subtypes p t oppP oppT =>
     { resolution := .sequence
-        [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT] }
+        [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures] }
   | .wolfPlusOneOrTreasure =>
     { resolution := .or
         [.onPermanent (.plusOne 1), .createTokens .treasure 1 false] }
@@ -1109,7 +1149,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence [.opponentsMillNote 2, .«if» .opponentsMilled .reflexiveCopyMilled] }
   | .pumpTargetBySourcePower =>
     { targeting := .of .anotherCreatureYouControl,
-      resolution := .pumpTargetBySourcePower }
+      resolution := .pump 0 0 .target .equalSourcePower }
   | .createAlienPerInvasion =>
     { resolution := .sequence
         [.createAlienToken, .putCounters .plusOneNoted .createdToken,
@@ -1201,7 +1241,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .drawIfAttackedOrEnteredSubtype subtype =>
     { resolution := .«if» (.attackedOrEntered subtype) (.draw 1) }
   | .othersOfSubtypeGetEqualSourceToughness subtype =>
-    { resolution := .othersOfSubtypeGetEqualSourceToughness subtype }
+    { resolution := .pump 0 0 (.othersOfSubtype subtype) .equalSourceToughness }
   | .scryAndPlan n =>
     { resolution := .sequence [.putCounters (.ofKind .plan) .source, .scry n] }
   | .lootAndPlan =>
@@ -1273,7 +1313,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .sacrificeSourceIfNoPlaneswalker =>
     { events := #[.eachEndStep],
       resolution := .«if» .noPlaneswalker (.sacrificeSource .controllerSacrifices) }
-  | .creaturesYouControlGet p t => { resolution := .creaturesYouControlGet p t }
+  | .creaturesYouControlGet p t => { resolution := .pump p t .creaturesYouControl }
   | .putSourceCountersOnTarget =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .putCounters .sourceCounters .permanent }

@@ -640,8 +640,33 @@ def interveningClause (t : TriggerTiming) : String :=
 def resolutionPhrase (t : TriggerTiming) : String :=
   let noun := t.targeting.kind.noun
   match t.resolution with
-  | .pumpGreatestPower =>
-    "it gets +X/+0 until end of turn, where X is the greatest power among creatures you control"
+  | .pump power toughness who amount =>
+    match who, amount with
+    | .source, .greatestPower =>
+      "it gets +X/+0 until end of turn, where X is the greatest power among creatures you control"
+    | .source, .perLookedAt =>
+      "this creature gets +1/+1 until end of turn for each card looked at while scrying this way"
+    | .source, .perOtherCreature =>
+      "it gets +1/+1 until end of turn for each other creature you control"
+    | .target, .perPlains =>
+      "target creature you control gets +1/+1 until end of turn for each Plains you control"
+    | .cause, .fixed =>
+      s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
+    | .othersOfSubtype subtype, .equalSourceToughness =>
+      s!"each other {StaticAbility.pluralSubtype subtype} you control get +X/+X until end of turn, where X is this toughness"
+    | .target, .equalSourcePower =>
+      s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
+    | .creaturesYouControl, .fixed =>
+      s!"creatures you control get {signedStat power}/{signedStat toughness} until end of turn"
+    | .othersOfSubtypes subtypes, .fixed =>
+      let recipients :=
+        if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
+        else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
+      s!"{recipients} get {signedStat power}/{signedStat toughness} until end of turn"
+    | .opponentsCreatures, .fixed =>
+      s!"creatures your opponents control get {signedStat power}/{signedStat toughness} until end of turn"
+    | _, _ =>
+      "those permanents get +P/+T until end of turn"
   | .setOtherBasePT =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
   | .onPermanent action => PermanentAction.toNotation action noun
@@ -694,8 +719,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
   | .«if» .noPlaneswalker (.sacrificeSource .controllerSacrifices) =>
     "if you don't control a planeswalker, sacrifice this creature"
-  | .creaturesYouControlGet p t =>
-    s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .addGreenPerChargeCounter => "add {G} for each charge counter on this enchantment"
   | .«if» (.otherForestsAtLeast 5) (.onPermanent (.pump 3 3)) =>
     s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
@@ -784,7 +807,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
   | .sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))] =>
     s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
-  | .sequence [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT] =>
+  | .sequence [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures] =>
     let who :=
       if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
       else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
@@ -902,8 +925,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
     "you gain life equal to that card's power"
-  | .pumpByLookedAt =>
-    "this creature gets +1/+1 until end of turn for each card looked at while scrying this way"
   | .onSource action => PermanentAction.toNotation action "this creature"
   | .gainLife n => s!"you gain {n} life"
   | .eachPlayerSacrificesCreature =>
@@ -913,8 +934,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     else s!"each opponent discards {cardPhrase n}"
   | .opponentDiscards n .target =>
     s!"{noun} discards {cardPhrase n}"
-  | .pumpForEachOtherCreature =>
-    "it gets +1/+1 until end of turn for each other creature you control"
   | .mayThen (.pay symbols) (.draw 1) =>
     match symbols.toList with
     | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
@@ -1008,13 +1027,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
   | .gainControlOppUntilEot =>
     s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
-  | .othersOfSubtypesGet subtypes p t =>
-    let who :=
-      if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
-      else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
-    s!"{who} get {signedStat p}/{signedStat t} until end of turn"
-  | .opponentsCreaturesGet p t =>
-    s!"creatures your opponents control get {signedStat p}/{signedStat t} until end of turn"
   | .putNonlandMvAtMostFromGy mv =>
     s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
   | .honeEachEquipment =>
@@ -1090,15 +1102,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .revealSaga =>
     "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
   | .chapter e => (Effect.ofChapter e).phrase
-  | .pumpTargetPerPlains =>
-    "target creature you control gets +1/+1 until end of turn for each Plains you control"
   | .investigate => "investigate"
   | .connive .source => "it connives"
   | .connive (.target _) => s!"{noun} connives"
-  | .pumpCause p t =>
-    s!"that creature gets {signedStat p}/{signedStat t} until end of turn"
-  | .othersOfSubtypeGetEqualSourceToughness subtype =>
-    s!"each other {StaticAbility.pluralSubtype subtype} you control get +X/+X until end of turn, where X is this toughness"
   | .«if» (.attackedOrEntered subtype) (.draw 1) =>
     let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
     s!"if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card"
@@ -1116,8 +1122,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
   | .mayThen (.objectCost .artifactOrDiscard) (.draw 1) =>
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
-  | .pumpTargetBySourcePower =>
-    s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
   | .putArtifactFromHand =>
     "put an artifact card from your hand onto the battlefield"
   | .attachPutArtifact =>

@@ -658,7 +658,7 @@ inductive SharedTrigger where
   | putNonlandMvAtMostFromGy (mv : Nat)
   /-- Other matching creatures get +P/+T; opposing creatures get +oppP/+oppT.
   Resolves as
-  `.sequence [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT]`. -/
+  `.sequence [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures]`. -/
   | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
   /-- +1/+1 on a Wolf or create a Treasure.
   Resolves as `.or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false]`. -/
