@@ -848,7 +848,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.drawEqualToManaSpent, .discardIfManaSpent n] =>
     let disc := if n == 2 then "two cards" else cardPhrase n
     s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
-  | .sequence [.exileLandsNote, .returnNotedLandsTapped] =>
+  | .sequence [.exile .landsYouControl .forLater .lands, .returnNotedLandsTapped] =>
     "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
   | .sequence [.grimaExileUntil, .grimaMayCast] =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
@@ -889,7 +889,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "sacrifice it. When you do, put an indestructible counter on target creature you control"
   | .sequence [.attachSourceToTarget, .onTargetWhileSource action] =>
     s!"attach it to {noun}. {PermanentAction.toNotation action "that creature" (sentence := true)}"
-  | .sequence [.exileOtherUntilLeavesNote, .enchantedCopiesNoted] =>
+  | .sequence [.exile .target .untilSourceLeaves .copyAndHost, .enchantedCopiesNoted] =>
     "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .sequence [.draw 1, .may .putLandFromHandTapped] =>
     "draw a card, then you may put a land card from your hand onto the battlefield tapped"
@@ -902,7 +902,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.createTokens .treasure 1 false .sturdyShield .you .fixed .remember,
       .attachCreatedToSource] =>
     "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
-  | .sequence [.exileGyCardNote, .grantPlayNotedUntilNextTurn] =>
+  | .sequence [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] =>
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
   | .sequence [.onPermanent .tap, .cantUntapWhileSource] =>
     s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
@@ -944,16 +944,32 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a card from your hand on the bottom of your library"
   | .«if» .noLegendaryCreature .putFromHandOnBottom =>
     "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
-  | .exileTarget =>
-    if t.allowsZeroTargets then s!"you may exile {noun}" else s!"exile {noun}"
-  | .exileUntilLeaves =>
-    if t.allowsZeroTargets then
-      if t.targeting.kind == .defendingPlayerCreature then
-        s!"you may exile {noun} until this leaves the battlefield"
+  | .exile what how note =>
+    match what, how, note with
+    | .target, .leaveTrigger, .none =>
+      if t.allowsZeroTargets then s!"you may exile {noun}" else s!"exile {noun}"
+    | .target, .untilSourceLeaves, .copyAndHost =>
+      "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield"
+    | .target, .untilSourceLeaves, .none =>
+      if t.allowsZeroTargets then
+        if t.targeting.kind == .defendingPlayerCreature then
+          s!"you may exile {noun} until this leaves the battlefield"
+        else
+          s!"you may exile {noun}"
       else
-        s!"you may exile {noun}"
-    else
-      s!"exile {noun} until this leaves the battlefield"
+        s!"exile {noun} until this leaves the battlefield"
+    | .top, .playUntilNextTurn, .none =>
+      s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
+    | .eachTarget, .untilSourceLeaves, .none =>
+      "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
+    | .target, .nextEndStep, .none =>
+      s!"exile up to one {noun}. Return that card to the battlefield under its owner's control at the beginning of the next end step"
+    | .landsYouControl, .forLater, .lands =>
+      "exile up to three target lands you control"
+    | .graveyardCard, .forLater, .playCard =>
+      s!"exile {noun}"
+    | _, _, _ =>
+      "exile it"
   | .returnLinkedExile =>
     "return the exiled card to the battlefield under its owner's control"
   | .removeHopeCounter =>
@@ -980,8 +996,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "recruit"
   | .recruit .you =>
     "you recruit"
-  | .exileTop =>
-    s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
   | .amassGoblins _ subtype .sourcePower _ =>
     s!"amass {pluralizeName subtype} X, where X is this creature's power"
   | .amassGoblins n subtype _ true =>
@@ -1074,8 +1088,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
   | .castFromGyArtifactInstantSorcery =>
     "you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead"
-  | .exileOppNonlandEachUntilLeaves =>
-    "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
   | .equippedAttackersGainDoubleStrike =>
     "each equipped attacking creature gains double strike until end of turn"
   | .revealTopPutRandomCreature n =>
@@ -1127,8 +1139,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card"
   | .onEnchanted action =>
     PermanentAction.toNotation action "enchanted creature"
-  | .exileUntilNextEndStep =>
-    s!"exile up to one {noun}. Return that card to the battlefield under its owner's control at the beginning of the next end step"
   | .or [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
     "create a Food token or a Treasure token"
   | .ifElse (.creatureCardsInGraveyardAtLeast 2)
@@ -1214,8 +1224,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw X cards, where X is the amount of mana spent to cast that spell"
   | .discardIfManaSpent n =>
     s!"discard {cardPhrase n}"
-  | .exileLandsNote =>
-    "exile up to three target lands you control"
   | .returnNotedLandsTapped =>
     "return those lands to the battlefield tapped"
   | .grimaExileUntil =>
@@ -1243,8 +1251,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"when you do, it deals {n} damage divided as you choose among one or two targets"
   | .onTargetWhileSource action =>
     PermanentAction.toNotation action "that creature" (sentence := true)
-  | .exileOtherUntilLeavesNote =>
-    "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield"
   | .enchantedCopiesNoted =>
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .putLandFromHandTapped =>
@@ -1253,8 +1259,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"if you control another Hero, you gain {n} life"
   | .attachCreatedToSource =>
     "attach it to this creature"
-  | .exileGyCardNote =>
-    s!"exile {noun}"
   | .grantPlayNotedUntilNextTurn =>
     playThatCardUntilNextTurnPhrase
   | .cantUntapWhileSource =>

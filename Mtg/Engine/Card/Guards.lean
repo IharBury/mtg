@@ -1336,7 +1336,8 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onEnterExileOppTappedUntilLeaves ==
   "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
 #guard TriggeredAbility.targetKind .onEnterExileOppTappedUntilLeaves == .oppTappedCreature
-#guard TriggeredAbility.resolution .onEnterExileOppTappedUntilLeaves == .exileUntilLeaves
+#guard TriggeredAbility.resolution .onEnterExileOppTappedUntilLeaves ==
+  .exile .target .untilSourceLeaves
 #guard TriggeredAbility.toNotation (.onEnterTargetOpponentDiscards 2) ==
   "When this enchantment enters, target opponent discards two cards."
 #guard TriggeredAbility.targetKind (.onEnterTargetOpponentDiscards 2) == .opponent
@@ -1364,7 +1365,7 @@ namespace CardDef
   .sequence [.onPermanent .tap, .cantUntapWhileSource]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==
   .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7))
-#guard TriggeredAbility.resolution (.onEnterExileTop) == .exileTop
+#guard TriggeredAbility.resolution (.onEnterExileTop) == .exile .top .playUntilNextTurn
 #guard StaticAbility.toNotation .noMaximumHandSize ==
   "You have no maximum hand size."
 #guard StaticAbility.toNotation (.maximumHandSize 10) ==

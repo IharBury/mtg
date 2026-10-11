@@ -279,6 +279,47 @@ inductive TriggerTokenNote where
   | invasion
 deriving Repr, Inhabited, BEq
 
+/-- What `TriggerResolution.exile` exiles. -/
+inductive TriggerExileWhat where
+  /-- The announced permanent. -/
+  | target
+  /-- Each announced permanent. -/
+  | eachTarget
+  /-- The top card of the controller's library. -/
+  | top
+  /-- Each announced land the controller still controls. -/
+  | landsYouControl
+  /-- The announced graveyard card. -/
+  | graveyardCard
+deriving Repr, Inhabited, BEq
+
+/-- How long `TriggerResolution.exile` lasts. -/
+inductive TriggerExileHow where
+  /-- Link the card for a leave-the-battlefield trigger. It does not return
+  when the source leaves. -/
+  | leaveTrigger
+  /-- Until the source leaves the battlefield. The source must still be there. -/
+  | untilSourceLeaves
+  /-- Return it at the beginning of the next end step. -/
+  | nextEndStep
+  /-- You may play it until the end of your next turn. -/
+  | playUntilNextTurn
+  /-- Move it to exile. `note` tells the next step which cards moved. -/
+  | forLater
+deriving Repr, Inhabited, BEq
+
+/-- What a later step of `TriggerResolution.exile` can read. -/
+inductive TriggerExileNote where
+  /-- Nothing beyond the exile itself. -/
+  | none
+  /-- The lands, to return tapped. -/
+  | lands
+  /-- The creature, and the permanent the source enchants, for a copy. -/
+  | copyAndHost
+  /-- The graveyard card, so it can be played. -/
+  | playCard
+deriving Repr, Inhabited, BEq
+
 /-- Where `TriggerResolution.pump` reads the bonus. `power` and `toughness`
 are used when this is `.fixed`. -/
 inductive TriggerPumpAmount where
@@ -301,8 +342,8 @@ deriving Repr, Inhabited, BEq
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, +1/+1 on the source, divided damage, putting counters,
-until-end-of-turn pumps, and creating tokens each cover multiple printed
-abilities.
+until-end-of-turn pumps, creating tokens, and exile each cover multiple
+printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -523,10 +564,26 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Put a card from your hand on the bottom of your library.
   An empty hand skips the choice. -/
   | putFromHandOnBottom
-  /-- Exile the targeted permanent. Link it if the source is still in play. -/
-  | exileTarget
-  /-- Exile the targeted permanent until the source leaves the battlefield. -/
-  | exileUntilLeaves
+  /-- Exile cards. `what` says which cards, `how` says for how long, and
+  `note` says what a later step can read.
+  The targeted permanent, linked for a leave trigger, is
+  `.exile .target .leaveTrigger`.
+  The targeted permanent until the source leaves is
+  `.exile .target .untilSourceLeaves`.
+  The top card, playable until the end of your next turn, is
+  `.exile .top .playUntilNextTurn`.
+  Each announced permanent until the source leaves is
+  `.exile .eachTarget .untilSourceLeaves`.
+  The targeted permanent until the next end step is
+  `.exile .target .nextEndStep`.
+  Targeted lands, remembered so they return tapped, are
+  `.exile .landsYouControl .forLater .lands`.
+  Another creature until the source leaves, remembered for a copy, is
+  `.exile .target .untilSourceLeaves .copyAndHost`.
+  A graveyard card, remembered so it can be played, is
+  `.exile .graveyardCard .forLater .playCard`. -/
+  | exile (what : TriggerExileWhat) (how : TriggerExileHow)
+      (note : TriggerExileNote := .none)
   /-- Return cards exiled by the source. -/
   | returnLinkedExile
   /-- Remove a hope counter from the source. -/
@@ -545,8 +602,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | gainLifeForEachDestroyedThisWay
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
-  /-- Exile the top card; you may play it until the end of your next turn. -/
-  | exileTop
   /-- Amass `subtype` `n`, as `amount` says. Attach the source when
   `attachSource` is true. -/
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
@@ -656,8 +711,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | returnCreatureFromGyToHand
   /-- You may cast an artifact, instant, or sorcery from your graveyard. -/
   | castFromGyArtifactInstantSorcery
-  /-- Exile up to one opposing nonland per opponent until this leaves. -/
-  | exileOppNonlandEachUntilLeaves
   /-- Equipped attacking creatures gain double strike. -/
   | equippedAttackersGainDoubleStrike
   /-- Reveal the top `n`; put a random creature onto the battlefield. -/
@@ -699,8 +752,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | connive (who : ConniveSubject := .source)
   /-- Apply `action` to the creature this Aura enchants. -/
   | onEnchanted (action : PermanentAction)
-  /-- Exile the targeted creature; return it at the next end step. -/
-  | exileUntilNextEndStep
   /-- Put an artifact card from your hand onto the battlefield.
   The permanent, and the creature it may attach to, are remembered for the
   next step. An empty hand skips the choice.
@@ -776,8 +827,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | drawEqualToManaSpent
   /-- Discard `n` cards when mana was spent to cast the triggering spell. -/
   | discardIfManaSpent (n : Nat)
-  /-- Exile the targeted lands and remember them. -/
-  | exileLandsNote
   /-- Return the lands exiled this way to the battlefield tapped. -/
   | returnNotedLandsTapped
   /-- Exile cards from the top of the damaged player's library until an
@@ -812,8 +861,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Apply `action` to the target while the source is still on the battlefield.
   A source that already left is silent. -/
   | onTargetWhileSource (action : PermanentAction)
-  /-- Exile the targeted creature until the source leaves, and remember it. -/
-  | exileOtherUntilLeavesNote
   /-- The enchanted creature becomes a copy of the creature exiled this way. -/
   | enchantedCopiesNoted
   /-- Put a land card from your hand onto the battlefield tapped.
@@ -821,8 +868,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | putLandFromHandTapped
   /-- Attach the token created by the previous step to the source. -/
   | attachCreatedToSource
-  /-- Exile the targeted graveyard card. -/
-  | exileGyCardNote
   /-- You may play the exiled card until the end of your next turn. -/
   | grantPlayNotedUntilNextTurn
   /-- The tapped creature can't untap while you control the source. -/
@@ -1032,7 +1077,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     | .source => { resolution := .connive who }
     | .target kind => { targeting := .of kind, resolution := .connive who }
   | .exileUntilLeaves kind =>
-    { targeting := .of kind, resolution := .exileUntilLeaves }
+    { targeting := .of kind, resolution := .exile .target .untilSourceLeaves }
   | .damageEachOpponent n =>
     { targeting := .of .opponent, resolution := .dealDamage n .eachOpponent }
   | .attachTo kind =>
@@ -1043,7 +1088,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of kind, resolution := .onPermanent action }
   | .onSource action =>
     { resolution := .onSource action }
-  | .exileTop => { resolution := .exileTop }
+  | .exileTop => { resolution := .exile .top .playUntilNextTurn }
   | .discard n => { resolution := .discard n }
   | .mayTo can thenDo =>
     let left := timing can
@@ -1073,7 +1118,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .searchLibrary how => { resolution := .searchLibrary how }
   | .eachPlayerSacrificesCreature => { resolution := .eachPlayerSacrificesCreature }
   | .exileTarget kind =>
-    { targeting := .of kind, resolution := .exileTarget }
+    { targeting := .of kind, resolution := .exile .target .leaveTrigger }
   | .returnCreatureFromGyToHand =>
     { targeting := .of .creatureCardInYourGraveyard,
       resolution := .returnCreatureFromGyToHand }
@@ -1186,7 +1231,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         { noun := "for each opponent, up to one target nonland permanent that player controls"
           nonland := true, controller := .eachOpponent })
       allowsZeroTargets := true
-      resolution := .exileOppNonlandEachUntilLeaves }
+      resolution := .exile .eachTarget .untilSourceLeaves }
   | .plusOneEqualLastKnownMv =>
     { targeting := .of .creatureYouControl,
       resolution := .putCounters .plusOneLastKnownMv .permanent }
@@ -1288,7 +1333,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         noun := "up to three target lands you control"
         types := #[.land], controller := .you })
       allowsZeroTargets := true, maxTargets := 3
-      resolution := .sequence [.exileLandsNote, .returnNotedLandsTapped] }
+      resolution := .sequence
+        [.exile .landsYouControl .forLater .lands, .returnNotedLandsTapped] }
   | .grimaImpulse =>
     { resolution := .sequence [.grimaExileUntil, .grimaMayCast] }
   | .palantir =>
@@ -1402,10 +1448,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence [.attachSourceToTarget, .onTargetWhileSource followup] }
   | .exileOtherCopyEnchanted =>
     { targeting := .of .creature, allowsZeroTargets := true,
-      resolution := .sequence [.exileOtherUntilLeavesNote, .enchantedCopiesNoted] }
+      resolution := .sequence
+        [.exile .target .untilSourceLeaves .copyAndHost, .enchantedCopiesNoted] }
   | .exileUntilNextEndStep =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
-      resolution := .exileUntilNextEndStep }
+      resolution := .exile .target .nextEndStep }
   | .tapOrUntapNonland =>
     { targeting := .of .nonland,
       resolution := .or [.onPermanent .tap, .onPermanent .untap] }
@@ -1448,7 +1495,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .attachCreatedToSource] }
   | .enter .exileGyPlayUntilNextTurn =>
     { events := #[.entering], targeting := .of .equipmentInstantOrSorceryInYourGraveyard,
-      resolution := .sequence [.exileGyCardNote, .grantPlayNotedUntilNextTurn] }
+      resolution := .sequence
+        [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] }
   | .enter .returnGyPermanentThisTurn =>
     { events := #[.entering], targeting := .of .permanentCardInYourGraveyard,
       resolution := .returnGyPermanentThisTurn }
