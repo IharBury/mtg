@@ -847,7 +847,8 @@ namespace CardDef
 #guard TriggeredAbility.onEnterDealDamageDestroyIfSubtype 1 "Dragon" ==
   .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype 1 "Dragon"))
 #guard TriggeredAbility.resolution (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
-  .sequence [.dealDamageToTarget 1, .«if» (.dealtDamageToSubtype "Dragon") .destroyPermanentDealtDamage]
+  .sequence [.dealDamage 1 .target .fixed .markedPermanent,
+    .«if» (.dealtDamageToSubtype "Dragon") .destroyPermanentDealtDamage]
 #guard TriggeredAbility.toNotation (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
   "When this permanent enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it."
 #guard TriggeredAbility.onEnterAttachTargetEquipment ==
@@ -1488,9 +1489,9 @@ namespace CardDef
 #guard TriggeredAbility.resolution (.onEnterOrAttackDealDividedDamage 3 3) ==
   .dividedDamage
 #guard TriggeredAbility.resolution .onDiesDealDamageEqualToPowerToOppCreature ==
-  .damageFromLastKnownPower
+  .dealDamage 0 .permanent .lastKnownPower
 #guard TriggeredAbility.resolution (.onCastInstantOrSorceryDealDamageToEachOpponent 2) ==
-  .damageEachOpponent 2
+  .dealDamage 2 .eachOpponent
 #guard
   let instant : CardDef := { name := "Silent Bolt", types := #[.instant] }
   let sorcery : CardDef := { name := "Silent Flame", types := #[.sorcery] }
@@ -1526,17 +1527,18 @@ end CardDef
     .«if» (.nthResolve 2) (.draw 1),
     .«if» (.nthResolve 3) (.plusOneEachYouControl)]
 #guard TriggeredAbility.resolution .onBolgDealSacrificedPower ==
-  .sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess]
+  .sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
   .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
-  .sequence [.dealDamageToTarget 1, .amassGoblins 1 "Orc"]
+  .sequence [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc"]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
   .sequence [.untapAttackingCreatures, .additionalCombatPhase]
 #guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
   .sequence [.destroyNotedForAmass, .amassNotedController, .«if» .youControlledDestroyed (.draw 1)]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
-  .sequence [.may .discardHand, .drawDiscardedHandCount, .«if» .enduringStoryNoted .damageEachOpponentDiscardedHand]
+  .sequence [.may .discardHand, .drawDiscardedHandCount,
+    .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
   .sequence [.trampleCounterOnTarget, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)]
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==

@@ -152,8 +152,9 @@ structure Game where
   /-- A hope counter was removed by the current `removeHopeCounter` step.
   `«if» .removedHope` draws a card when this is set. -/
   removedHopeThisWay : Bool := false
-  /-- The permanent marked by the current `dealDamageToTarget` step.
-  `«if» (.dealtDamageToSubtype _)` destroys it when it has the subtype. -/
+  /-- The permanent marked by the current `dealDamage` step when it notes
+  `.markedPermanent`. `«if» (.dealtDamageToSubtype _)` destroys it when it
+  has the subtype. -/
   permanentDealtDamageThisWay : Option ObjectId := none
   /-- A permanent was returned to its owner's hand by the current
   `returnToOwnerHand` step. `«if» .returnedPermanent` puts a +1/+1 counter
@@ -165,7 +166,7 @@ structure Game where
   /-- The current sequence step asked the rest of the sequence not to run
   (the source had already left, or no mana was spent). -/
   skipTriggerSequenceRest : Bool := false
-  /-- Excess damage noted by `dealLastKnownPowerNoteExcess` for the following
+  /-- Excess damage noted by `dealDamage` with `.excess` for the following
   amass step. -/
   excessDamageThisWay : Nat := 0
   /-- `destroyNotedForAmass` destroyed its target. The controller, amount, and
