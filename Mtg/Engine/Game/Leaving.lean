@@ -170,7 +170,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .recruitDiscard q | .chooseRingBearer q
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
   | .mayPutLandFromHand q
-  | .maySacArtifactOrDiscard q _ | .mayPutArtifactFromHand q _
+  | .maySacArtifactOrDiscard q _
   | .mayHaveVillainConnive q _ _ | .declareMulligan q | .chooseProliferate q _
   | .fraChoice q _
   | .mayCastExiledElseDamage q _ _ =>
@@ -180,6 +180,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .tapHumans q =>
     if q == p then
       { g with pending := .none, triggerSequenceRest := none, humansTappedThisWay := 0 }
+    else g
+  | .mayPutArtifactFromHand q _ =>
+    if q == p then
+      { g with pending := .none, triggerSequenceRest := none, putArtifactThisWay := none }
     else g
   | .mayResolve q =>
     if q == p then { g with pending := .none }.clearMay else g

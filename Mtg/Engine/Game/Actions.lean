@@ -19,7 +19,9 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     match g.pending with
     | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
     | .mayPutLandFromHand _ => g.putLandFromHandTapped p id
-    | .mayPutArtifactFromHand .. => g.choosePutArtifactFromHand p id
+    | .mayPutArtifactFromHand .. => do
+      let g ← g.choosePutArtifactFromHand p id
+      return g.resumeSequenceThenPriority
     | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
     | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
     | .fraChoice _ (.mayCastFromGraveyard _) => g.answerFraChoice p (.objects #[id])

@@ -205,6 +205,9 @@ structure Game where
   notedCountThisWay : Nat := 0
   /-- Token created for the following attach or counter step. -/
   createdTokenThisWay : Option ObjectId := none
+  /-- Artifact put from hand by `putArtifactFromHand`, and the creature
+  `attachPutArtifactIfEquipment` attaches it to. -/
+  putArtifactThisWay : Option (ObjectId × ObjectId) := none
   /-- Card exiled by `exileGyCardNote`. -/
   playExiledThisWay : Option ObjectId := none
   /-- The following `surveil` returns a card with mana value at most the life
