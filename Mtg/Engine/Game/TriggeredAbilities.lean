@@ -343,6 +343,15 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (g, holds)
   | .scriedOrSurveilledThisTurn =>
     (g, (g.player controller).scriedOrSurveilledThisTurn)
+  | .putArtifactIsEquipment =>
+    match g.putArtifactThisWay with
+    | none => (g, false)
+    | some (id, _) =>
+      match g.findObject? id with
+      | some o =>
+        if o.printed.isEquipment then (g, true)
+        else ({ g with putArtifactThisWay := none }, false)
+      | none => ({ g with putArtifactThisWay := none }, false)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -1632,7 +1641,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else
       { g with pending := .mayPutArtifactFromHand controller (sourceId.getD ⟨0⟩) }.logMsg
         s!"{(g.player controller).name} may put an artifact card from their hand onto the battlefield"
-  | .attachPutArtifactIfEquipment =>
+  | .attachPutArtifact =>
     match g.putArtifactThisWay with
     | none => g
     | some (id, hostId) =>
@@ -1640,13 +1649,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match g.findObject? id with
       | none => g
       | some o =>
-        if !o.printed.isEquipment then g
-        else
-          match g.findObject? hostId with
-          | some host =>
-            if host.isOnBattlefield then g.attachSourceTo o host
-            else g.logMsg s!"{host.name} is no longer on the battlefield"
-          | none => g.logMsg "The source is no longer in play"
+        match g.findObject? hostId with
+        | some host =>
+          if host.isOnBattlefield then g.attachSourceTo o host
+          else g.logMsg s!"{host.name} is no longer on the battlefield"
+        | none => g.logMsg "The source is no longer in play"
   | .fightUpToOne =>
     match sourceId.bind g.findObject?, targets[0]? with
     | some src, some (Target.permanent id) =>

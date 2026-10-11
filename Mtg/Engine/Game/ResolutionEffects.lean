@@ -242,7 +242,8 @@ def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option ObjectId) :
   | _ => throw "Not time to choose a spell from among looked-at cards"
 
 /-- Put an artifact from hand onto the battlefield.
-`attachPutArtifactIfEquipment` attaches it when it is Equipment. -/
+`.«if» .putArtifactIsEquipment .attachPutArtifact` attaches it when it is
+Equipment. -/
 def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     Except String Game := do
   match g.pending with

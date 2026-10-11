@@ -700,7 +700,7 @@ inductive SharedTrigger where
   /-- Create an Alien and grow it from invasion counters. -/
   | createAlienPerInvasion
   /-- You may put an artifact from hand; attach if Equipment. Resolves as
-  `.sequence [.may .putArtifactFromHand, .attachPutArtifactIfEquipment]`. -/
+  `.sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact]`. -/
   | mayPutArtifactAttachEquipment
   /-- Cascade. -/
   | cascade

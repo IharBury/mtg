@@ -206,7 +206,7 @@ structure Game where
   /-- Token created for the following attach or counter step. -/
   createdTokenThisWay : Option ObjectId := none
   /-- Artifact put from hand by `putArtifactFromHand`, and the creature
-  `attachPutArtifactIfEquipment` attaches it to. -/
+  `attachPutArtifact` attaches it to when it is Equipment. -/
   putArtifactThisWay : Option (ObjectId × ObjectId) := none
   /-- Card exiled by `exileGyCardNote`. -/
   playExiledThisWay : Option ObjectId := none
