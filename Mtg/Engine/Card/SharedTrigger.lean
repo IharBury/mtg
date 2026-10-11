@@ -640,7 +640,7 @@ inductive SharedTrigger where
   | damageEqualTreasures
   /-- Deal `n` to any target; destroy it if it has this subtype and was dealt
   damage this way.
-  Resolves as `.sequence [.dealDamageToTarget n, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage]`. -/
+  Resolves as `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage]`. -/
   | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
   /-- Attach target Equipment to up to one target creature you control. -/
   | attachEquipmentToCreature
@@ -713,7 +713,7 @@ inductive SharedTrigger where
   /-- Bolg may-sacrifice. Resolves as `.may .sacrificeAnother`. -/
   | bolgMaySacrifice
   /-- Bolg reflexive damage. Resolves as
-  `.sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess]`. -/
+  `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess]`. -/
   | bolgDealSacrificedPower
   /-- Create Spirits for the equipped creature. Resolves as
   `.sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]`. -/
@@ -721,7 +721,7 @@ inductive SharedTrigger where
   /-- Treasures equal to the damaged player's artifacts. -/
   | createTreasuresEqualDamagedPlayerArtifacts
   /-- Deal 1 then amass Orcs 1. Resolves as
-  `.sequence [.dealDamageToTarget 1, .amassGoblins 1 "Orc"]`. -/
+  `.sequence [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc"]`. -/
   | deal1ThenAmassOrcs
   /-- Untap attackers and take an extra combat. `n` is Oracle total power.
   Resolves as `.sequence [.untapAttackingCreatures, .additionalCombatPhase]`. -/
@@ -736,7 +736,7 @@ inductive SharedTrigger where
   /-- Gollum parity modes. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
-  `.sequence [.may .discardHand, .drawDiscardedHandCount, .«if» .enduringStoryNoted .damageEachOpponentDiscardedHand]`. -/
+  `.sequence [.may .discardHand, .drawDiscardedHandCount, .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery

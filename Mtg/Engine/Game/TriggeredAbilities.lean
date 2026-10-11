@@ -378,6 +378,93 @@ steps still in this sequence. -/
 def failMayThen (g : Game) : Game :=
   { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
 
+/-- Resolve `TriggerResolution.dealDamage`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (lastKnownPower : Option Int) (sourceName : String) (n : Nat)
+    (who : TriggeredAbility.TriggerDamageWho)
+    (amount : TriggeredAbility.TriggerDamageAmount)
+    (note : TriggeredAbility.TriggerDamageNote) : Game :=
+  match who, amount, note with
+  | .blockers, .fixed, _ =>
+    g.withTriggerSource sourceId fun g o =>
+      let blockers := g.blockersOf o.id
+      if blockers.isEmpty then
+        g.logMsg s!"there are no creatures blocking {o.name}"
+      else
+        Id.run do
+          let mut g := g
+          for b in blockers do
+            g := g.dealDamageFrom o.name (g.object! b.id) n (source := some o)
+          return g
+  | .permanent, .lastKnownPower, .excess =>
+    let amt := lastKnownPower.getD 0
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      let remain := g.toughness o - o.status.damage
+      let raw := amt - remain
+      let excess : Nat := if raw > 0 then raw.toNat else 0
+      let g := { g with excessDamageThisWay := excess }
+      g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?))
+      "The target is no longer legal"
+  | .permanent, .lastKnownPower, _ =>
+    let amt := (lastKnownPower.getD 0).toNat
+    g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
+      g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?)
+  | .eachOpponent, .fixed, _ =>
+    let src := sourceId.bind g.findObject?
+    if ab.opts.untargeted then
+      g.forEachOpponent controller (fun g pid =>
+        g.dealDamageToPlayer pid n (source := src))
+    else
+      g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
+        g.dealDamageToPlayer pid n (source := src))
+  | .eachOpponent, .subtypeCount subtype, _ =>
+    let amt := g.countSubtype controller subtype
+    let src := sourceId.bind g.findObject?
+    g.forEachOpponent controller (fun g pid =>
+      g.dealDamageToPlayer pid amt (source := src))
+  | .eachOpponent, .discardedHand, _ =>
+    match g.handDiscardedThisWay with
+    | none => { g with notedSourceThisWay := none }
+    | some discarded =>
+      let srcId := g.notedSourceThisWay
+      let g := { g with handDiscardedThisWay := none, notedSourceThisWay := none }
+      if !g.hasEnduringStory controller || discarded == 0 then g
+      else
+        match srcId.bind g.findObject? with
+        | some src =>
+          if src.isOnBattlefield then
+            g.forEachOpponent controller (fun g pid =>
+              g.dealDamageToPlayer pid (discarded : Int) (source := some src))
+          else g
+        | none => g
+  | .target, .subtypeCount subtype, _ =>
+    let amt := g.countSubtype controller subtype
+    g.applyEffect controller (Effect.dealDamage amt) targets
+  | .target, .fixed, .markedPermanent =>
+    let g := { g with permanentDealtDamageThisWay := none }
+    g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
+      match tgt with
+      | Target.player _ =>
+        g.applyEffect controller (Effect.dealDamage n) #[tgt]
+      | Target.permanent oid =>
+        match g.findObject? oid with
+        | none => g.logMsg "The target is no longer legal"
+        | some o =>
+          let before := o.status.damage
+          let g := g.applyEffect controller (Effect.dealDamage n) #[tgt]
+          let marked :=
+            match g.findObject? oid with
+            | some o => o.isOnBattlefield && o.status.damage > before
+            | none => false
+          if marked then { g with permanentDealtDamageThisWay := some oid } else g
+      | _ => g.logMsg "The target is no longer legal")
+  | .targetOpponent, .fixed, _ =>
+    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
+      g.dealDamageToPlayer pid n)
+  | _, _, _ => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -438,17 +525,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.logMsg
         s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
       "No target was chosen"
-  | .damageBlockers n =>
-    g.withTriggerSource sourceId fun g o =>
-      let blockers := g.blockersOf o.id
-      if blockers.isEmpty then
-        g.logMsg s!"there are no creatures blocking {o.name}"
-      else
-        Id.run do
-          let mut g := g
-          for b in blockers do
-            g := g.dealDamageFrom o.name (g.object! b.id) n (source := some o)
-          return g
+  | .dealDamage n who amount note =>
+    g.applyTriggerDamage controller ab sourceId targets lastKnownPower sourceName
+      n who amount note
   | .scry n =>
     g.beginScry controller n
   | .draw n =>
@@ -486,10 +565,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         if n > 0 then
           g := g.applyEffect controller (Effect.dealDamage n) #[t]
       return g
-  | .damageFromLastKnownPower =>
-    let n := (lastKnownPower.getD 0).toNat
-    g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
-      g.dealDamageFrom sourceName o n (source := sourceId.bind g.findObject?)
   | .sequence rs =>
     -- One legality check for the whole sequence (CR 608.2b). Power is read
     -- before any step moves the card, then each step runs in order. A step
@@ -573,14 +648,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           | some o => g.gainLife controller (g.power o).toNat
           | none => g.logMsg "The target is no longer in the graveyard"
         | _ => g.logMsg "The target is no longer legal"
-  | .damageEachOpponent n =>
-    let src := sourceId.bind g.findObject?
-    if ab.opts.untargeted then
-      g.forEachOpponent controller (fun g pid =>
-        g.dealDamageToPlayer pid n (source := src))
-    else
-      g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-        g.dealDamageToPlayer pid n (source := src))
   | .pumpByLookedAt =>
     let n := (lastKnownPower.getD 0).toNat
     g.applyOnTriggerSource sourceId (.pump (n : Int) (n : Int))
@@ -717,31 +784,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let n :=
       ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
     if n == 0 then g else g.gainLife controller n
-  | .damageEqualSubtypeToEachOpponent subtype =>
-    let n := g.countSubtype controller subtype
-    let src := sourceId.bind g.findObject?
-    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src))
-  | .damageEqualTreasures =>
-    let n := g.countSubtype controller "Treasure"
-    g.applyEffect controller (Effect.dealDamage n) targets
-  | .dealDamageToTarget n =>
-    let g := { g with permanentDealtDamageThisWay := none }
-    g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
-      match tgt with
-      | Target.player _ =>
-        g.applyEffect controller (Effect.dealDamage n) #[tgt]
-      | Target.permanent oid =>
-        match g.findObject? oid with
-        | none => g.logMsg "The target is no longer legal"
-        | some o =>
-          let before := o.status.damage
-          let g := g.applyEffect controller (Effect.dealDamage n) #[tgt]
-          let marked :=
-            match g.findObject? oid with
-            | some o => o.isOnBattlefield && o.status.damage > before
-            | none => false
-          if marked then { g with permanentDealtDamageThisWay := some oid } else g
-      | _ => g.logMsg "The target is no longer legal")
   | .destroyPermanentDealtDamage =>
     match g.permanentDealtDamageThisWay with
     | none => g
@@ -906,15 +948,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       { g with pending := .maySacrificeAnotherBolg controller sid }.logMsg
         s!"{(g.player controller).name} may sacrifice another creature (Bolg reflexive trigger)"
     | none => g.logMsg "Bolg is no longer in play"
-  | .dealLastKnownPowerNoteExcess =>
-    let amt := lastKnownPower.getD 0
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let remain := g.toughness o - o.status.damage
-      let raw := amt - remain
-      let excess : Nat := if raw > 0 then raw.toNat else 0
-      let g := { g with excessDamageThisWay := excess }
-      g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?))
-      "The target is no longer legal"
   | .amassGoblinsNotedExcess =>
     let excess := g.excessDamageThisWay
     let g := { g with excessDamageThisWay := 0 }
@@ -989,21 +1022,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some pid => g.amassGoblins pid g.amassAmountThisWay
       | none => g
     else g
-  | .damageEachOpponentDiscardedHand =>
-    match g.handDiscardedThisWay with
-    | none => { g with notedSourceThisWay := none }
-    | some n =>
-      let srcId := g.notedSourceThisWay
-      let g := { g with handDiscardedThisWay := none, notedSourceThisWay := none }
-      if !g.hasEnduringStory controller || n == 0 then g
-      else
-        match srcId.bind g.findObject? with
-        | some src =>
-          if src.isOnBattlefield then
-            g.forEachOpponent controller (fun g pid =>
-              g.dealDamageToPlayer pid (n : Int) (source := some src))
-          else g
-        | none => g
   | .returnCreatureFromGyToHand =>
     g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
       match t with
@@ -1259,9 +1277,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         if host.isCreature then g.attachSourceTo src host else g
       | _, _ => g
     | _, _ => g
-  | .damageTargetOpponent n =>
-    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.dealDamageToPlayer pid n)
   | .millThatManyLost =>
     match lastKnownPower, lastKnownToughness with
     | some n, some idx => g.mill ⟨idx.toNat⟩ n.toNat

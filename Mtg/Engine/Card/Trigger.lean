@@ -130,6 +130,43 @@ inductive TriggerReflexive where
   | damageAny (n : Nat)
 deriving Repr, Inhabited, BEq
 
+/-- Who `TriggerResolution.dealDamage` damages. -/
+inductive TriggerDamageWho where
+  /-- Each creature blocking the source. -/
+  | blockers
+  /-- The announced permanent. -/
+  | permanent
+  /-- Each opponent, or the announced opponent when the ability targets. -/
+  | eachOpponent
+  /-- The announced target, a player or a permanent. -/
+  | target
+  /-- The announced opponent. -/
+  | targetOpponent
+deriving Repr, Inhabited, BEq
+
+/-- Where `TriggerResolution.dealDamage` reads the amount. The `n` argument
+is used when this is `.fixed`. -/
+inductive TriggerDamageAmount where
+  /-- The `n` argument. -/
+  | fixed
+  /-- The source's last-known power. -/
+  | lastKnownPower
+  /-- How many permanents of this subtype the controller controls. -/
+  | subtypeCount (subtype : String)
+  /-- How many cards an earlier step discarded from the controller's hand. -/
+  | discardedHand
+deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.dealDamage` records for a later step. -/
+inductive TriggerDamageNote where
+  /-- The damage only. -/
+  | none
+  /-- The permanent that was actually marked, for a later destroy. -/
+  | markedPermanent
+  /-- Excess over the permanent's remaining toughness, for a later amass. -/
+  | excess
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, +1/+1 on the source, and divided damage each cover
@@ -140,8 +177,26 @@ inductive TriggerResolution where
   | pumpGreatestPower
   /-- Set another creature's base P/T to this creature's. -/
   | setOtherBasePT
-  /-- Deal `amount` damage to each creature blocking the source. -/
-  | damageBlockers (amount : Nat)
+  /-- Deal damage. `n` is the amount when `amount` is `.fixed`.
+  Each creature blocking the source is `.dealDamage n .blockers`.
+  Last-known power to the announced creature is
+  `.dealDamage 0 .permanent .lastKnownPower`.
+  `n` damage to each opponent is `.dealDamage n .eachOpponent`.
+  When that ability targets, only the announced opponent is dealt damage.
+  Damage equal to permanents of `subtype` you control, to each opponent, is
+  `.dealDamage 0 .eachOpponent (.subtypeCount subtype)`.
+  Damage equal to Treasures you control, to the target, is
+  `.dealDamage 0 .target (.subtypeCount "Treasure")`.
+  `n` damage to the target, remembering a marked permanent, is
+  `.dealDamage n .target .fixed .markedPermanent`.
+  Last-known power, noting excess damage, is
+  `.dealDamage 0 .permanent .lastKnownPower .excess`.
+  Damage to each opponent equal to the hand discarded by an earlier step is
+  `.dealDamage 0 .eachOpponent .discardedHand`.
+  `n` damage to the announced opponent is `.dealDamage n .targetOpponent`. -/
+  | dealDamage (n : Nat) (who : TriggerDamageWho)
+      (amount : TriggerDamageAmount := .fixed)
+      (note : TriggerDamageNote := .none)
   /-- Scry `n`. -/
   | scry (n : Nat)
   /-- Draw `n` cards. -/
@@ -214,8 +269,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | onPermanent (action : PermanentAction)
   /-- Deal previously divided damage to the announced targets. -/
   | dividedDamage
-  /-- Deal last-known power as damage to the announced creature. -/
-  | damageFromLastKnownPower
   /-- Apply each resolution in order. An illegal required target skips every
   step (CR 608.2b). Return a graveyard card, then gain life equal to its
   power, is `.sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]`.
@@ -240,7 +293,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]`.
   Deal `n` damage to the target, then destroy it if that damage marked a
   permanent of this subtype, is
-  `.sequence [.dealDamageToTarget n, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage]`.
+  `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
   the source if one was actually returned, is
   `.sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))]`.
@@ -253,7 +306,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.plusOneEachYouControl)]`.
   Deal the sacrificed creature's power, then amass Goblins for the excess
   (Bolg), is
-  `.sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess]`.
+  `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess]`.
   Put a plan counter, then scry, is
   `.sequence [.planCounterOnSource, .scry n]`.
   Put a trample counter on the target, then make it a Bear, is
@@ -278,8 +331,6 @@ You may put a land card from your hand onto the battlefield tapped is
   amount is that power when the sequence starts, before an earlier step
   moves the card. -/
   | gainLifeEqualToTargetPower
-  /-- Deal `amount` damage to each opponent. -/
-  | damageEachOpponent (amount : Nat)
   /-- Pump the source +1/+1 per card looked at while scrying. -/
   | pumpByLookedAt
   /-- Affect the trigger's source if it is still on the battlefield. -/
@@ -340,14 +391,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | plusOneEachOther
   /-- Gain 1 life for each other creature you control. -/
   | gainLifeForEachOtherCreature
-  /-- Deal damage equal to the count of this subtype you control to each
-  opponent. -/
-  | damageEqualSubtypeToEachOpponent (subtype : String)
-  /-- Deal damage equal to Treasures you control to the target. -/
-  | damageEqualTreasures
-  /-- Deal `n` damage to the target. A permanent actually marked by that
-  damage is remembered for the next step. -/
-  | dealDamageToTarget (n : Nat)
   /-- Destroy the permanent an earlier step dealt damage to. -/
   | destroyPermanentDealtDamage
   /-- Attach the first target (Equipment) to the second (creature). -/
@@ -448,8 +491,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | treasuresPerChosenType
   /-- Reveal until a creature; put it onto the battlefield or into hand. -/
   | revealUntilCreature
-  /-- Deal 2 to target opponent. -/
-  | damageTargetOpponent (n : Nat)
   /-- Each player who lost life mills that much. -/
   | millThatManyLost
   /-- Draw per graveyard with seven or more cards. -/
@@ -542,8 +583,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | chargeCounterOnSource
   /-- Add {G} for each charge counter on the source. -/
   | addGreenPerChargeCounter
-  /-- Deal the sacrificed creature's last-known power and note excess damage. -/
-  | dealLastKnownPowerNoteExcess
   /-- Amass Goblins equal to the excess noted by the previous step. -/
   | amassGoblinsNotedExcess
   /-- Mark tokens from the previous step attacking. -/
@@ -563,8 +602,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | discardHand
   /-- Draw cards equal to the hand discarded by the previous step. -/
   | drawDiscardedHandCount
-  /-- Deal damage to each opponent equal to the hand discarded by an earlier step. -/
-  | damageEachOpponentDiscardedHand
   /-- Put a trample counter on the target. -/
   | trampleCounterOnTarget
   /-- The target becomes a Bear in addition to its other types. -/
@@ -871,7 +908,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .exileUntilLeaves kind =>
     { targeting := .of kind, resolution := .exileUntilLeaves }
   | .damageEachOpponent n =>
-    { targeting := .of .opponent, resolution := .damageEachOpponent n }
+    { targeting := .of .opponent, resolution := .dealDamage n .eachOpponent }
   | .attachTo kind =>
     { targeting := .of kind, resolution := .attachSourceToTarget }
   | .opponentSacrificesCreature =>
@@ -927,7 +964,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .pumpByLookedAt => { resolution := .pumpByLookedAt }
   | .pumpGreatestPower => { resolution := .pumpGreatestPower }
   | .pumpForEachOtherCreature => { resolution := .pumpForEachOtherCreature }
-  | .damageBlockers n => { resolution := .damageBlockers n }
+  | .damageBlockers n => { resolution := .dealDamage n .blockers }
   | .returnLinkedExile => { resolution := .returnLinkedExile }
   | .createThenAttach kind =>
     { resolution := .sequence [.createTokens kind 1 false, .attachSourceToCreated] }
@@ -955,7 +992,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence
         [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower] }
   | .damageFromLastKnownPower =>
-    { targeting := .of .oppCreature, resolution := .damageFromLastKnownPower }
+    { targeting := .of .oppCreature,
+      resolution := .dealDamage 0 .permanent .lastKnownPower }
   | .mayPayGenericDraw n plusOne =>
     { resolution :=
         if plusOne then
@@ -973,13 +1011,15 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay] }
   | .damageEqualSubtypeToEachOpponent subtype =>
-    { resolution := .damageEqualSubtypeToEachOpponent subtype }
+    { resolution := .dealDamage 0 .eachOpponent (.subtypeCount subtype) }
   | .damageEqualTreasures =>
-    { targeting := .of .playerOrCreature, resolution := .damageEqualTreasures }
+    { targeting := .of .playerOrCreature,
+      resolution := .dealDamage 0 .target (.subtypeCount "Treasure") }
   | .dealDamageDestroyIfSubtype n subtype =>
     { targeting := .of .playerOrCreature,
       resolution := .sequence
-        [.dealDamageToTarget n, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage] }
+        [.dealDamage n .target .fixed .markedPermanent,
+         .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage] }
   | .attachEquipmentToCreature =>
     { targeting := .of .equipmentYouControlThenCreatureYouControl,
       allowsZeroTargets := true, resolution := .attachEquipmentToCreature }
@@ -1055,7 +1095,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .bolgMaySacrifice => { resolution := .may .sacrificeAnother }
   | .bolgDealSacrificedPower =>
     { targeting := .of .anotherCreature,
-      resolution := .sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess] }
+      resolution := .sequence
+        [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess] }
   | .createSpiritsForEquipped =>
     { resolution := .sequence
         [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] }
@@ -1063,7 +1104,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .createTreasuresEqualDamagedPlayerArtifacts }
   | .deal1ThenAmassOrcs =>
     { targeting := .of .playerOrCreature,
-      resolution := .sequence [.dealDamageToTarget 1, .amassGoblins 1 "Orc"] }
+      resolution := .sequence
+        [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc"] }
   | .untapAttackersExtraCombat _n =>
     { resolution := .sequence [.untapAttackingCreatures, .additionalCombatPhase] }
   | .eaglesCreateBirds => { resolution := .eaglesCreateBirds }
@@ -1076,7 +1118,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .discardHandDrawDamageIfStory =>
     { resolution := .sequence
         [.may .discardHand, .drawDiscardedHandCount,
-         .«if» .enduringStoryNoted .damageEachOpponentDiscardedHand] }
+         .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] }
   | .castFromGyArtifactInstantSorcery =>
     { resolution := .castFromGyArtifactInstantSorcery }
   | .equippedAttackersGainDoubleStrike =>
@@ -1097,7 +1139,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       ] #[1])
       resolution := .sequence [.honeCountersPerOpponent, .attachToCreatureTarget] }
   | .damageTargetOpponent n =>
-    { targeting := .of .opponent, resolution := .damageTargetOpponent n }
+    { targeting := .of .opponent, resolution := .dealDamage n .targetOpponent }
   | .copySelfNonlegendary => { resolution := .copySelfNonlegendary }
   | .attachEquipmentThenFight =>
     { targeting := .of .creatureYouControl,

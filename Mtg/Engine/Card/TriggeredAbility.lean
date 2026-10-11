@@ -677,8 +677,28 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
     | _ =>
       "you may pay. If you do, put a +1/+1 counter on this creature and draw a card"
-  | .damageBlockers n =>
-    s!"it deals {n} damage to each creature blocking it"
+  | .dealDamage n who amount note =>
+    match who, amount, note with
+    | .blockers, _, _ =>
+      s!"it deals {n} damage to each creature blocking it"
+    | .permanent, .lastKnownPower, .excess =>
+      s!"Bolg deals damage equal to the sacrificed creature's power to {noun}"
+    | .permanent, .lastKnownPower, _ =>
+      s!"it deals damage equal to its power to {noun}"
+    | .eachOpponent, .subtypeCount subtype, _ =>
+      s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
+    | .eachOpponent, .discardedHand, _ =>
+      "this deals X damage to each opponent"
+    | .eachOpponent, _, _ =>
+      s!"this creature deals {n} damage to each opponent"
+    | .target, .subtypeCount subtype, _ =>
+      s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to {noun}"
+    | .target, _, _ =>
+      s!"it deals {n} damage to {noun}"
+    | .targetOpponent, _, _ =>
+      s!"this deals {n} damage to {noun}"
+    | .permanent, _, _ =>
+      s!"it deals {n} damage to {noun}"
   | .scry n => s!"scry {n}"
   | .draw n => s!"draw {cardPhrase n}"
   | .searchLibrary .forestToBattlefield =>
@@ -715,8 +735,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | some (amount, maxTargets) =>
       s!"it deals {amount} damage divided as you choose among {dividedAmong maxTargets}"
     | none => "it deals damage divided as you choose"
-  | .damageFromLastKnownPower =>
-    s!"it deals damage equal to its power to {noun}"
   | .sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower] =>
     s!"return {noun} to your hand. You gain life equal to that card's power"
   | .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom] =>
@@ -734,7 +752,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
   | .sequence [.plusOneEachOther, .gainLifeForEachOtherCreature] =>
     "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
-  | .sequence [.dealDamageToTarget n, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage] =>
+  | .sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage] =>
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
   | .sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))] =>
     s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
@@ -749,17 +767,17 @@ def resolutionPhrase (t : TriggerTiming) : String :=
        .«if» (.nthResolve 2) (.draw 1),
        .«if» (.nthResolve 3) (.plusOneEachYouControl .eachCreature)] =>
     "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
-  | .sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess] =>
+  | .sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess] =>
     s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
   | .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] =>
     "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
-  | .sequence [.dealDamageToTarget 1, .amassGoblins 1 "Orc" .fixed false] =>
+  | .sequence [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc" .fixed false] =>
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
   | .sequence [.untapAttackingCreatures, .additionalCombatPhase] =>
     "untap all attacking creatures. After this phase, there is an additional combat phase"
   | .sequence [.destroyNotedForAmass, .amassNotedController, .«if» .youControlledDestroyed (.draw 1)] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
-  | .sequence [.may .discardHand, .drawDiscardedHandCount, .«if» .enduringStoryNoted .damageEachOpponentDiscardedHand] =>
+  | .sequence [.may .discardHand, .drawDiscardedHandCount, .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
   | .sequence [.trampleCounterOnTarget, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
@@ -854,8 +872,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
     "you gain life equal to that card's power"
-  | .damageEachOpponent n =>
-    s!"this creature deals {n} damage to each opponent"
   | .pumpByLookedAt =>
     "this creature gets +1/+1 until end of turn for each card looked at while scrying this way"
   | .onSource action => PermanentAction.toNotation action "this creature"
@@ -937,12 +953,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a +1/+1 counter on each other creature you control"
   | .gainLifeForEachOtherCreature =>
     "you gain 1 life for each other creature you control"
-  | .damageEqualSubtypeToEachOpponent subtype =>
-    s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
-  | .damageEqualTreasures =>
-    s!"it deals damage equal to the number of Treasures you control to {noun}"
-  | .dealDamageToTarget n =>
-    s!"it deals {n} damage to {noun}"
   | .destroyPermanentDealtDamage =>
     "destroy the permanent dealt damage this way"
   | .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage =>
@@ -1030,8 +1040,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
   | .mayThen (.pay symbols) .returnSourceToHand =>
     s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
-  | .damageTargetOpponent n =>
-    s!"this deals {n} damage to {noun}"
   | .millThatManyLost =>
     "that player mills that many cards"
   | .drawPerFatGraveyard =>
@@ -1122,8 +1130,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
   | .createRedwing =>
     "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
-  | .dealLastKnownPowerNoteExcess =>
-    s!"Bolg deals damage equal to the sacrificed creature's power to {noun}"
   | .amassGoblinsNotedExcess =>
     "amass Goblins X, where X is the excess damage"
   | .markRecentTokensAttacking =>
@@ -1144,9 +1150,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "discard your hand"
   | .drawDiscardedHandCount =>
     "draw X cards, where X is the number of cards discarded this way"
-  | .damageEachOpponentDiscardedHand =>
-    "this deals X damage to each opponent"
-  | .«if» .enduringStoryNoted .damageEachOpponentDiscardedHand =>
+  | .«if» .enduringStoryNoted (.dealDamage _ .eachOpponent .discardedHand) =>
     "if you have an enduring story, this deals X damage to each opponent"
   | .trampleCounterOnTarget =>
     s!"put a trample counter on up to one {noun}"
