@@ -42,7 +42,7 @@ def ofChapter : ChapterResolution → Effect
   | e@(.opponentDiscardsNonland) =>
     mkChapter e (.of .opponent)
       (phrase := "target opponent reveals their hand. You choose a nonland card from it. That player discards that card")
-  | e@(.amassGoblins n) =>
+  | e@(.amass n) =>
     mkChapter e (phrase := s!"amass Goblins {n}")
   | e@(.opponentLosesYouGain n) =>
     mkChapter e (.of .opponent)
@@ -117,7 +117,7 @@ def chapterOpponentDiscardsNonland : Effect :=
   ofChapter .opponentDiscardsNonland
 
 def chapterAmassGoblins (n : Nat) : Effect :=
-  ofChapter (.amassGoblins n)
+  ofChapter (.amass n)
 
 def chapterOpponentLosesYouGain (n : Nat) : Effect :=
   ofChapter (.opponentLosesYouGain n)

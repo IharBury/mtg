@@ -52,7 +52,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     g.withLegalKindPlayer controller .opponent targets
       (fun g pid => g.discardNonlandFrom controller pid)
       sourceId (some "The target is no longer legal")
-  | .amassGoblins n =>
+  | .amass n =>
     g.amassGoblins controller n
   | .opponentLosesYouGain n =>
     g.withLegalKindPlayer controller .opponent targets

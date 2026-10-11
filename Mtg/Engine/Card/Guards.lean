@@ -47,7 +47,7 @@ namespace CardDef
 #guard Resolution.toPhrase (.createTokens .treasure 1 (tapped := true)) "" ==
   "Create a tapped Treasure token"
 #guard (Effect.drawLoseLifeThenAmass 2).resolution ==
-  Resolution.sequence [.draw 1, .fra (.loseLife 1), .spell (.amassGoblins 2)]
+  Resolution.sequence [.draw 1, .fra (.loseLife 1), .spell (.amass 2)]
 #guard (Effect.createTokensThenTeamPump .villain21menace 1 1 0).resolution ==
   Resolution.sequence
     [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
@@ -169,7 +169,7 @@ namespace CardDef
 #guard (Effect.subtypesGainMenace #["Elf"]).phrase ==
   "Elves you control gain menace until end of turn"
 #guard (Effect.drawLoseLifeThenAmass 2).spellResolution ==
-  .sequence [.draw 1, .loseLife 1, .amassGoblins 2]
+  .sequence [.draw 1, .loseLife 1, .amass 2]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).spellResolution ==
   .sequence [.counter, .«if» .recruit (.mvAtMost 2)]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).resolution ==
@@ -178,8 +178,8 @@ namespace CardDef
   "counter target spell. If that spell's mana value was 2 or less, recruit"
 #guard (Effect.counterThenRecruitIfMvAtMost 2).castKind == .counter
 #guard Resolution.flatten
-    (.sequence [.sequence [.draw 1, .gainLife 1], .amassGoblins 2]) ==
-  [.draw 1, .gainLife 1, .amassGoblins 2]
+    (.sequence [.sequence [.draw 1, .gainLife 1], .amass 2]) ==
+  [.draw 1, .gainLife 1, .amass 2]
 #guard (Effect.ofTrigger (.scry 2)).resolution == Resolution.trigger (.scry 2)
 #guard (Effect.chapterRecruit).asChapter? == some .recruit
 #guard (Effect.chapterDraw 2).asChapter? == some (.draw 2)
@@ -368,9 +368,9 @@ namespace CardDef
 #guard (Effect.drawIfFromGy 1 2).phrase ==
   "draw a card. If this spell was cast from a graveyard, draw 2 cards instead"
 #guard (Effect.amassGoblinsOrFromGy 1 3).spellResolution ==
-  .ifElse (.amassGoblins 3) (.amassGoblins 1) .castFromGraveyard
+  .ifElse (.amass 3) (.amass 1) .castFromGraveyard
 #guard (Effect.amassGoblinsOrFromGy 1 3).resolution ==
-  .spell (.ifElse (.amassGoblins 3) (.amassGoblins 1) .castFromGraveyard)
+  .spell (.ifElse (.amass 3) (.amass 1) .castFromGraveyard)
 #guard (Effect.amassGoblinsOrFromGy 1 3).phrase ==
   "amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead"
 #guard SpellResolution.toPhrase
@@ -396,9 +396,9 @@ namespace CardDef
 #guard Effect.returnSpellDraw.phrase ==
   "return target spell to its owner's hand. Draw a card"
 #guard (Effect.returnCreatureFromGyThenAmass 3).spellResolution ==
-  .sequence [.returnTargetToHand .graveyard, .amassGoblins 3]
+  .sequence [.returnTargetToHand .graveyard, .amass 3]
 #guard (Effect.returnCreatureFromGyThenAmass 3).resolution ==
-  Resolution.sequence [.fra .returnFromGyToHand, .spell (.amassGoblins 3)]
+  Resolution.sequence [.fra .returnFromGyToHand, .spell (.amass 3)]
 #guard (Effect.returnCreatureFromGyThenAmass 3).phrase ==
   "return up to one target creature card from your graveyard to your hand. Amass Goblins 3"
 #guard Effect.returnSpellCantCastIfGift.spellResolution ==
@@ -746,7 +746,7 @@ namespace CardDef
 #guard TriggeredAbility.onCreatureYouControlAttacksAloneInvestigate ==
   .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger .investigate)
 #guard TriggeredAbility.onOpponentCastsAmassOrcs 1 ==
-  .triggered .opponentCastsSpell (Effect.ofTrigger (.amassGoblins 1 "Orc"))
+  .triggered .opponentCastsSpell (Effect.ofTrigger (.amass 1 "Orc"))
 #guard !TriggeredAbility.requiresTarget
   (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
 #guard TriggeredAbility.onEnterSearchForest == .triggered .enter (Effect.ofTrigger .searchLibrary)
@@ -948,7 +948,7 @@ namespace CardDef
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
   .triggered .youSacrificeToken (Effect.ofTrigger (.targetOpponentLosesLife 1))
 #guard TriggeredAbility.onDiesAmassGoblinsEqualPower ==
-  .triggered .dies (Effect.ofTrigger (.amassGoblins 0 (amount := .sourcePower)))
+  .triggered .dies (Effect.ofTrigger (.amass 0 (amount := .sourcePower)))
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2)
   == some 4
 #guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
@@ -1400,11 +1400,11 @@ namespace CardDef
 #guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw 1
 #guard TriggeredAbility.resolution .onEnterSearchForest == .searchLibrary
 #guard TriggeredAbility.resolution .onEnterSearchBasicToHand == .searchLibrary .basicLandToHand
-#guard TriggeredAbility.resolution (.onOpponentCastsAmassOrcs 1) == .amassGoblins 1 "Orc"
+#guard TriggeredAbility.resolution (.onOpponentCastsAmassOrcs 1) == .amass 1 "Orc"
 #guard TriggeredAbility.resolution .onDiesAmassGoblinsEqualPower ==
-  .amassGoblins 0 "Goblin" .sourcePower
+  .amass 0 "Goblin" .sourcePower
 #guard TriggeredAbility.resolution (.onEnterAmassThenAttach 1) ==
-  .amassGoblins 1 "Goblin" .fixed true
+  .amass 1 "Goblin" .fixed true
 #guard TriggeredAbility.resolution .onOpponentCastsFirstNoncreatureRecruit == .recruit .you
 #guard TriggeredAbility.resolution .onEnterRecruit == .recruit
 #guard TriggeredAbility.onCombatDamageToPlayerLoot.effect.resolution ==
@@ -1536,16 +1536,16 @@ end CardDef
     .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]
 #guard TriggeredAbility.resolution .onBolgDealSacrificedPower ==
   .sequence [.dealDamage 0 .permanent .lastKnownPower .excess,
-    .amassGoblins 0 (amount := .notedExcess)]
+    .amass 0 (amount := .notedExcess)]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
   .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
-  .sequence [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc"]
+  .sequence [.dealDamage 1 .target .fixed .markedPermanent, .amass 1 "Orc"]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
   .sequence [.untapAttackingCreatures, .additionalCombatPhase]
 #guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
   .sequence [.destroyNotedForAmass,
-    .amassGoblins 0 (amount := .notedPower) (who := .notedController),
+    .amass 0 (amount := .notedPower) (who := .notedController),
     .«if» .youControlledDestroyed (.draw 1)]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
   .sequence [.may .discardHand, .drawDiscardedHandCount,

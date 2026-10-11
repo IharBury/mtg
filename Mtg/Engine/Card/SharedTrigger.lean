@@ -420,7 +420,7 @@ inductive SharedTriggerWhen where
   | fra (e : FraEvent)
 deriving Repr, Inhabited, BEq
 
-/-- How many counters `amassGoblins` puts on the Army. `.fixed` uses `n`. -/
+/-- How many counters `amass` puts on the Army. `.fixed` uses `n`. -/
 inductive AmassAmount where
   /-- The `n` argument. -/
   | fixed
@@ -495,12 +495,12 @@ inductive SharedTrigger where
   | draw (n : Nat)
   /-- Create `n` tokens of this kind. `tapped` is Treasure-style “create a tapped …”. -/
   | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false)
-  /-- Amass `subtype` `n`. Goblins `n` is `.amassGoblins n`.
-  Orcs `n` is `.amassGoblins n "Orc"`.
-  Amass equal to this creature's power is `.amassGoblins 0 (amount := .sourcePower)`.
+  /-- Amass `subtype` `n`. Goblins `n` is `.amass n`.
+  Orcs `n` is `.amass n "Orc"`.
+  Amass equal to this creature's power is `.amass 0 (amount := .sourcePower)`.
   Amass, then attach this Equipment to the Army, is
-  `.amassGoblins n (attachSource := true)`. -/
-  | amassGoblins (n : Nat) (subtype : String := "Goblin")
+  `.amass n (attachSource := true)`. -/
+  | amass (n : Nat) (subtype : String := "Goblin")
       (amount : AmassAmount := .fixed) (attachSource : Bool := false)
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
@@ -718,7 +718,7 @@ inductive SharedTrigger where
   /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .you .another)`. -/
   | bolgMaySacrifice
   /-- Bolg reflexive damage. Resolves as
-  `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblins 0 (amount := .notedExcess)]`. -/
+  `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amass 0 (amount := .notedExcess)]`. -/
   | bolgDealSacrificedPower
   /-- Create Spirits for the equipped creature. Resolves as
   `.sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]`. -/
@@ -726,7 +726,7 @@ inductive SharedTrigger where
   /-- Treasures equal to the damaged player's artifacts. -/
   | createTreasuresEqualDamagedPlayerArtifacts
   /-- Deal 1 then amass Orcs 1. Resolves as
-  `.sequence [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc"]`. -/
+  `.sequence [.dealDamage 1 .target .fixed .markedPermanent, .amass 1 "Orc"]`. -/
   | deal1ThenAmassOrcs
   /-- Untap attackers and take an extra combat. `n` is Oracle total power.
   Resolves as `.sequence [.untapAttackingCreatures, .additionalCombatPhase]`. -/
@@ -736,7 +736,7 @@ inductive SharedTrigger where
   /-- Alliance modes. -/
   | allianceMode
   /-- Destroy another; its controller amasses equal to its power. Resolves as
-  `.sequence [.destroyNotedForAmass, .amassGoblins 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw 1)]`. -/
+  `.sequence [.destroyNotedForAmass, .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw 1)]`. -/
   | destroyOtherAmassControllerPower
   /-- Gollum parity modes. -/
   | gollumMode

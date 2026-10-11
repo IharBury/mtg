@@ -409,7 +409,7 @@ inductive TriggerPumpAmount where
   | equalSourcePower
 deriving Repr, Inhabited, BEq
 
-/-- Who `TriggerResolution.amassGoblins` amasses for. -/
+/-- Who `TriggerResolution.amass` amasses for. -/
 inductive AmassWho where
   /-- The ability's controller. -/
   | you
@@ -625,7 +625,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`.
   Deal the sacrificed creature's power, then amass Goblins for the excess
   (Bolg), is
-  `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblins 0 (amount := .notedExcess)]`.
+  `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amass 0 (amount := .notedExcess)]`.
   Put a plan counter, then scry, is
   `.sequence [.putCounters (.ofKind .plan) .source, .scry n]`.
   Put a trample counter on the target, then make it a Bear, is
@@ -698,15 +698,15 @@ You may put a land card from your hand onto the battlefield tapped is
   | recruit (who : RecruitSubject := .recruit)
   /-- Amass `subtype` for `who`, as `amount` says. `n` is the count when
   `amount` is `.fixed`. Attach the source when `attachSource` is true.
-  Goblins `n` is `.amassGoblins n`.
-  Orcs `n` is `.amassGoblins n "Orc"`.
-  Equal to this creature's power is `.amassGoblins 0 (amount := .sourcePower)`.
-  Then attach this Equipment is `.amassGoblins n (attachSource := true)`.
+  Goblins `n` is `.amass n`.
+  Orcs `n` is `.amass n "Orc"`.
+  Equal to this creature's power is `.amass 0 (amount := .sourcePower)`.
+  Then attach this Equipment is `.amass n (attachSource := true)`.
   Equal to the excess an earlier step noted is
-  `.amassGoblins 0 (amount := .notedExcess)`.
+  `.amass 0 (amount := .notedExcess)`.
   The noted controller amasses that creature's power is
-  `.amassGoblins 0 (amount := .notedPower) (who := .notedController)`. -/
-  | amassGoblins (n : Nat) (subtype : String := "Goblin")
+  `.amass 0 (amount := .notedPower) (who := .notedController)`. -/
+  | amass (n : Nat) (subtype : String := "Goblin")
       (amount : AmassAmount := .fixed) (attachSource : Bool := false)
       (who : AmassWho := .you)
   /-- Create tokens. `n` of `kind` is `.createTokens kind n tapped`.
@@ -1152,8 +1152,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .scry n => { resolution := .scry n }
   | .draw n => { resolution := .draw n }
   | .createTokens kind n tapped => { resolution := .createTokens kind n tapped }
-  | .amassGoblins n subtype amount attachSource =>
-    { resolution := .amassGoblins n subtype amount attachSource }
+  | .amass n subtype amount attachSource =>
+    { resolution := .amass n subtype amount attachSource }
   | .recruit who => { resolution := .recruit who }
   | .dividedDamage amount maxTargets =>
     { targeting := .of .playerOrCreature,
@@ -1367,7 +1367,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .anotherCreature,
       resolution := .sequence
         [.dealDamage 0 .permanent .lastKnownPower .excess,
-         .amassGoblins 0 (amount := .notedExcess)] }
+         .amass 0 (amount := .notedExcess)] }
   | .createSpiritsForEquipped =>
     { resolution := .sequence
         [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] }
@@ -1377,7 +1377,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .deal1ThenAmassOrcs =>
     { targeting := .of .playerOrCreature,
       resolution := .sequence
-        [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc"] }
+        [.dealDamage 1 .target .fixed .markedPermanent, .amass 1 "Orc"] }
   | .untapAttackersExtraCombat _n =>
     { resolution := .sequence [.untapAttackingCreatures, .additionalCombatPhase] }
   | .eaglesCreateBirds =>
@@ -1387,7 +1387,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .anotherCreature, allowsZeroTargets := true,
       resolution := .sequence
         [.destroyNotedForAmass,
-         .amassGoblins 0 (amount := .notedPower) (who := .notedController),
+         .amass 0 (amount := .notedPower) (who := .notedController),
          .«if» .youControlledDestroyed (.draw 1)] }
   | .gollumMode => { resolution := .gollumMode }
   | .discardHandDrawDamageIfStory =>

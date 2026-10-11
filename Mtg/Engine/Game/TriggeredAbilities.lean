@@ -946,7 +946,7 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => g
   | _, _ => g
 
-/-- Resolve `TriggerResolution.amassGoblins`. Each printed combination keeps
+/-- Resolve `TriggerResolution.amass`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyAmass (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int) (n : Nat) (subtype : String)
@@ -1021,7 +1021,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .onSource a => g.applyOnTriggerSource sourceId a
   | .gainLife n => g.gainLife controller n
   | .recruit => g.beginRecruit controller
-  | .amassGoblins n => g.amassGoblins controller n
+  | .amass n => g.amassGoblins controller n
   | .createTokens kind n tapped =>
     g.createKindTokens controller kind n (tapped := tapped)
   | .addMana types =>
@@ -1232,7 +1232,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginRecruit controller
   | .putCounters what who =>
     g.applyPutCounters controller ab sourceId targets lastKnownPower what who
-  | .amassGoblins n subtype amount attachSource who =>
+  | .amass n subtype amount attachSource who =>
     g.applyAmass controller sourceId lastKnownPower n subtype amount attachSource who
   | .createTokens kind n tapped token who qty note =>
     g.applyCreateTokens controller sourceId targets lastKnownPower

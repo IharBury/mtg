@@ -281,16 +281,16 @@ def pumpAndGrantKeywords (power toughness : Int) (k : Keywords) : Effect :=
       s!"target creature gets {signedStat power}/{signedStat toughness} and gains {k.joinedAnd} until end of turn" }
 
 def amassGoblins (n : Nat) : Effect :=
-  mkSpell (.of .none) (.amassGoblins n)
+  mkSpell (.of .none) (.amass n)
     (castKind := .pump)
 
 def drawLoseLifeThenAmass (n : Nat) : Effect :=
-  mkSpell (.of .none) (.sequence [.draw 1, .loseLife 1, .amassGoblins n])
+  mkSpell (.of .none) (.sequence [.draw 1, .loseLife 1, .amass n])
     (castKind := .draw)
 
 def returnCreatureFromGyThenAmass (n : Nat) : Effect :=
   mkSpell (.of .creatureCardInYourGraveyard)
-    (.sequence [.returnTargetToHand .graveyard, .amassGoblins n])
+    (.sequence [.returnTargetToHand .graveyard, .amass n])
     (castKind := .draw)
     (allowsZeroTargets := true)
 
@@ -324,7 +324,7 @@ def drawIfFromGy (n fromGy : Nat) : Effect :=
 /-- Amass Goblins `n`, or `fromGy` if this spell was cast from a graveyard. -/
 def amassGoblinsOrFromGy (n fromGy : Nat) : Effect :=
   mkSpell (.of .none)
-    (.ifElse (.amassGoblins fromGy) (.amassGoblins n) .castFromGraveyard)
+    (.ifElse (.amass fromGy) (.amass n) .castFromGraveyard)
     (castKind := .pump)
 
 def searchLegendaryCreatureToHand : Effect :=

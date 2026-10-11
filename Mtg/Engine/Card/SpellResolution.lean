@@ -279,7 +279,7 @@ inductive SpellResolution where
   Drawing two cards when cast from a graveyard, and one otherwise, is
   `.ifElse (.draw 2) (.draw 1) .castFromGraveyard`.
   Amassing Goblins 3 when cast from a graveyard, and Goblins 1 otherwise, is
-  `.ifElse (.amassGoblins 3) (.amassGoblins 1) .castFromGraveyard`. -/
+  `.ifElse (.amass 3) (.amass 1) .castFromGraveyard`. -/
   | ifElse (whenTrue whenFalse : SpellResolution) (cond : SpellIf)
   /-- Exchange control of the two targeted permanents. -/
   | exchangeControl
@@ -296,7 +296,7 @@ inductive SpellResolution where
   /-- Creatures you control gain these keywords until end of turn. -/
   | teamGain (k : Keywords)
   /-- Amass `subtype` `n`. -/
-  | amassGoblins (n : Nat) (subtype : String := "Goblin")
+  | amass (n : Nat) (subtype : String := "Goblin")
   /-- Recruit. -/
   | recruit
   /-- Search a library for a `s` `ty` card, as `how` says.
@@ -543,7 +543,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"put {kind.countersPhrase n} on up to one target creature"
   | .countersOnCreatureTargets kind n .firstYouControl =>
     s!"put {kind.countersPhrase n} on target creature you control"
-  | .amassGoblins n subtype =>
+  | .amass n subtype =>
     s!"amass {pluralizeName subtype} {n}"
   | .searchLibrary s ty .youToHand =>
     searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
@@ -694,9 +694,9 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"return {noun} to its owner's hand. Draw a card"
   | [.counter, .«if» .recruit (.mvAtMost n)] =>
     s!"counter {noun}. If that spell's mana value was {n} or less, recruit"
-  | [.returnTargetToHand .graveyard, .amassGoblins n subtype] =>
+  | [.returnTargetToHand .graveyard, .amass n subtype] =>
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
-  | [.draw 1 .you, .loseLife 1 .you, .amassGoblins n subtype] =>
+  | [.draw 1 .you, .loseLife 1 .you, .amass n subtype] =>
     s!"you draw a card and lose 1 life. Amass {pluralizeName subtype} {n}"
   | [.createTokens kind n .you .fixed, .creaturesPump p t .youControl] =>
     let tokens := capitalizeAscii (TokenKind.createPhrase kind n)

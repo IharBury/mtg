@@ -309,8 +309,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .dealDamageToControllerOfTarget (← takeNat n)
   | .mayDrawPerArtifactOppsDraw ty => return .mayDrawPerArtifactOppsDraw (← takeCardType ty)
   | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
-  | .amassGoblins n subtype =>
-    return .amassGoblins (← takeNat n) (← takeStr subtype)
+  | .amass n subtype =>
+    return .amass (← takeNat n) (← takeStr subtype)
   | .dealDamageToEachCreature n which amount =>
     match amount with
     | .otherSpellsManaValue =>
@@ -363,7 +363,7 @@ def takeChapter (c : ChapterResolution) : ArgM ChapterResolution := do
   match c with
   | .dealDamageToOppCreature n => return .dealDamageToOppCreature (← takeNat n)
   | .elvesGetVigilance p => return .elvesGetVigilance (← takeInt p)
-  | .amassGoblins n => return .amassGoblins (← takeNat n)
+  | .amass n => return .amass (← takeNat n)
   | .opponentLosesYouGain n => return .opponentLosesYouGain (← takeNat n)
   | .draw n => return .draw (← takeNat n)
   | .searchBasicPlainsExileGainLife a b =>
@@ -398,12 +398,12 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .scry n => return .scry (← takeNat n)
   | .draw n => return .draw (← takeNat n)
   | .createTokens k n tapped => return .createTokens k (← takeNat n) tapped
-  | .amassGoblins n subtype amount attach =>
+  | .amass n subtype amount attach =>
     match amount with
     | .fixed =>
-      return .amassGoblins (← takeNat n) (← takeStr subtype) amount attach
+      return .amass (← takeNat n) (← takeStr subtype) amount attach
     | .sourcePower | .notedExcess | .notedPower =>
-      return .amassGoblins n (← takeStr subtype) amount attach
+      return .amass n (← takeStr subtype) amount attach
   | .dividedDamage a b => return .dividedDamage (← takeNat a) (← takeNat b)
   | .gainLife n => return .gainLife (← takeNat n)
   | .connive who =>
@@ -474,7 +474,7 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .onPermanent a => return .onPermanent (← takeAction a)
   | .onSource a => return .onSource (← takeAction a)
   | .gainLife n => return .gainLife (← takeNat n)
-  | .amassGoblins n => return .amassGoblins (← takeNat n)
+  | .amass n => return .amass (← takeNat n)
   | .createTokens k n tapped => return .createTokens k (← takeNat n) tapped
   | .discard n => return .discard (← takeNat n)
   | .searchLandTypeToHand s => return .searchLandTypeToHand (← takeStr s)
@@ -1651,7 +1651,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   "draw three cards. Then discard two cards unless you discard an artifact card"
 
 #guard refilled (Effect.amassGoblins 1) "amass Zombies 4" ==
-  some (.spell (.amassGoblins 4 "Zombie"))
+  some (.spell (.amass 4 "Zombie"))
 
 #guard refilled (Effect.riddlesInTheDark) "look at the top six cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard" ==
   some (.spell (.riddlesInTheDark 6))
@@ -1798,7 +1798,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
         "Amass Zombies 2. If this spell was cast from a graveyard, amass Zombies 4 instead.")) args with
   | some vals =>
     (refillEffect e vals).resolution ==
-      .spell (.ifElse (.amassGoblins 4 "Zombie") (.amassGoblins 2 "Zombie") .castFromGraveyard)
+      .spell (.ifElse (.amass 4 "Zombie") (.amass 2 "Zombie") .castFromGraveyard)
   | none => false
 
 #guard
