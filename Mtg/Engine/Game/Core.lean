@@ -189,9 +189,9 @@ structure Game where
   grimaImpulseOthers : Array ObjectId := #[]
   /-- `sacrificePlanForReflexive` sacrificed the Plan. -/
   planWasSacrificed : Bool := false
-  /-- Lands exiled by `exileLandsNote`, to return tapped. -/
+  /-- Lands exiled by `exile .landsYouControl .forLater .lands`, to return tapped. -/
   exiledIdsThisWay : Array ObjectId := #[]
-  /-- Creature exiled by `exileOtherUntilLeavesNote`, copied by the next step.
+  /-- Creature exiled by `exile .target .untilSourceLeaves .copyAndHost`, copied by the next step.
   The object is the one from before it moved. -/
   notedCopyObject : Option GameObject := none
   notedHostId : Option ObjectId := none
@@ -209,7 +209,7 @@ structure Game where
   /-- Artifact put from hand by `putArtifactFromHand`, and the creature
   `attachPutArtifact` attaches it to when it is Equipment. -/
   putArtifactThisWay : Option (ObjectId × ObjectId) := none
-  /-- Card exiled by `exileGyCardNote`. -/
+  /-- Card exiled by `exile .graveyardCard .forLater .playCard`. -/
   playExiledThisWay : Option ObjectId := none
   /-- The following `surveil` returns a card with mana value at most the life
   gained this turn (ruling 750). -/

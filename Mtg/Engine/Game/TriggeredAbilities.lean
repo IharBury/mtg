@@ -745,6 +745,67 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
   | _, _, _, _ =>
     g.createKindTokens controller kind n (tapped := tapped)
 
+/-- Resolve `TriggerResolution.exile`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (what : TriggeredAbility.TriggerExileWhat)
+    (how : TriggeredAbility.TriggerExileHow)
+    (note : TriggeredAbility.TriggerExileNote) : Game :=
+  match what, how, note with
+  | .target, .leaveTrigger, .none =>
+    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+      g.exileForLeaveTrigger sourceId o) sourceId (some "The target is no longer legal")
+  | .target, .untilSourceLeaves, .copyAndHost =>
+    let g := { g with notedCopyObject := none, notedHostId := none }
+    g.withSourceStillOnBattlefield sourceId fun g src =>
+      match targets[0]? with
+      | some (Target.permanent id) =>
+        match g.findObject? id with
+        | some tgt =>
+          let hostId := src.attachedTo
+          let g := g.exileUntilSourceLeaves sourceId tgt
+          { g with notedCopyObject := some tgt, notedHostId := hostId }
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g
+  | .target, .untilSourceLeaves, .none =>
+    g.withSourceStillOnBattlefield sourceId fun g _ =>
+      g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+        g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
+  | .top, .playUntilNextTurn, .none =>
+    g.resolveExileTopPlayUntilEndOfNextTurn controller
+  | .eachTarget, .untilSourceLeaves, .none =>
+    g.withSourceStillOnBattlefield sourceId fun g _ =>
+      targets.foldl (fun acc t =>
+        match t with
+        | Target.permanent oid =>
+          match acc.findObject? oid with
+          | some o => acc.exileUntilSourceLeaves sourceId o
+          | none => acc
+        | _ => acc) g
+  | .landsYouControl, .forLater, .lands =>
+    let g := { g with exiledIdsThisWay := #[] }
+    g.foldPermanentTargets targets (fun g o =>
+      if o.controlledBy controller && o.printed.isLand then
+        let (g, newId) := g.move o.id .exile none
+        { g with exiledIdsThisWay := g.exiledIdsThisWay.push newId }
+      else g)
+  | .target, .nextEndStep, .none =>
+    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+      g.exileUntilNextEndStep o) sourceId none
+  | .graveyardCard, .forLater, .playCard =>
+    let g := { g with playExiledThisWay := none }
+    g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
+      match tgt with
+      | Target.card id | Target.permanent id =>
+        match g.findObject? id with
+        | some o =>
+          let (g, newId) := g.move o.id .exile none
+          { g with playExiledThisWay := some newId }
+        | none => g.logMsg "The target is no longer in the graveyard"
+      | _ => g) sourceId (some "The target is no longer legal")
+  | _, _, _ => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -959,13 +1020,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else
       { g with pending := .putOnBottom controller 1 }.logMsg
         s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
-  | .exileTarget =>
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
-      g.exileForLeaveTrigger sourceId o) sourceId (some "The target is no longer legal")
-  | .exileUntilLeaves =>
-    g.withSourceStillOnBattlefield sourceId fun g _ =>
-      g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
-        g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
+  | .exile what how note =>
+    g.applyExile controller ab sourceId targets what how note
   | .returnLinkedExile =>
     match sourceId.bind g.findObject? with
     | some src => g.returnLinkedExile src
@@ -1016,8 +1072,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     if n == 0 then g else g.gainLife controller n
   | .recruit _ =>
     g.beginRecruit controller
-  | .exileTop =>
-    g.resolveExileTopPlayUntilEndOfNextTurn controller
   | .putCounters what who =>
     g.applyPutCounters controller ab sourceId targets lastKnownPower what who
   | .amassGoblins n subtype amount attachSource =>
@@ -1321,15 +1375,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           acc.logMsg s!"{name} is put into {(acc.player controller).name}'s hand"
         else acc
       | none => acc) g
-  | .exileOppNonlandEachUntilLeaves =>
-    g.withSourceStillOnBattlefield sourceId fun g _ =>
-      targets.foldl (fun acc t =>
-        match t with
-        | Target.permanent oid =>
-          match acc.findObject? oid with
-          | some o => acc.exileUntilSourceLeaves sourceId o
-          | none => acc
-        | _ => acc) g
   | .equippedAttackersGainDoubleStrike =>
     Id.run do
       let mut g := g
@@ -1544,13 +1589,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       (g.permanentsOf controller).filter (fun o =>
         o.isLegendary && g.hasSubtype o "Wizard") |>.size
     g.beginMayCastInstantSorceryFromHand controller (wizards * 2)
-  | .exileLandsNote =>
-    let g := { g with exiledIdsThisWay := #[] }
-    g.foldPermanentTargets targets (fun g o =>
-      if o.controlledBy controller && o.printed.isLand then
-        let (g, newId) := g.move o.id .exile none
-        { g with exiledIdsThisWay := g.exiledIdsThisWay.push newId }
-      else g)
   | .returnNotedLandsTapped =>
     let ids := g.exiledIdsThisWay
     let g := { g with exiledIdsThisWay := #[] }
@@ -1697,18 +1735,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           g.applyPermanentAction (g.object! host.id) action)
           sourceId (some "The target is no longer legal")
     | none => g
-  | .exileOtherUntilLeavesNote =>
-    let g := { g with notedCopyObject := none, notedHostId := none }
-    g.withSourceStillOnBattlefield sourceId fun g src =>
-      match targets[0]? with
-      | some (Target.permanent id) =>
-        match g.findObject? id with
-        | some tgt =>
-          let hostId := src.attachedTo
-          let g := g.exileUntilSourceLeaves sourceId tgt
-          { g with notedCopyObject := some tgt, notedHostId := hostId }
-        | none => g.logMsg "The target is no longer legal"
-      | _ => g
   | .enchantedCopiesNoted =>
     let copied := g.notedCopyObject
     let hostId := g.notedHostId
@@ -1719,9 +1745,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some host => g.becomeCopyOf host tgt (untilSourceLeaves := sourceId)
       | none => g
     | _, _ => g
-  | .exileUntilNextEndStep =>
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
-      g.exileUntilNextEndStep o) sourceId none
   | .putLandFromHandTapped | .may .putLandFromHandTapped =>
     { g with pending := .mayPutLandFromHand controller }.logMsg
       s!"{(g.player controller).name} may put a land card from their hand onto the battlefield tapped"
@@ -1774,17 +1797,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match sourceId.bind g.findObject? with
       | some src => g.attachSourceTo tok src
       | none => g
-  | .exileGyCardNote =>
-    let g := { g with playExiledThisWay := none }
-    g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
-      match tgt with
-      | Target.card id | Target.permanent id =>
-        match g.findObject? id with
-        | some o =>
-          let (g, newId) := g.move o.id .exile none
-          { g with playExiledThisWay := some newId }
-        | none => g.logMsg "The target is no longer in the graveyard"
-      | _ => g) sourceId (some "The target is no longer legal")
   | .grantPlayNotedUntilNextTurn =>
     match g.playExiledThisWay with
     | none => g
