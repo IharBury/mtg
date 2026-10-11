@@ -1862,6 +1862,46 @@ def targetPlayerDrawsTwo : Game :=
   (targetPlayerDrawsTwo.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
     (targetPlayerDrawsTwo.player ⟨1⟩).hand.size == (afterDraw.player ⟨1⟩).hand.size + 2
 
+/-- A token put into a graveyard ceases to exist, and that graveyard keeps
+neither the token nor its id (CR 111.7 / 704.5d). A card already there stays. -/
+def tokenInGraveyardCeases : Game :=
+  let g := addToGraveyard afterDraw lightningBolt ⟨0⟩
+  let (g, tok) := g.createToken ⟨0⟩ Game.humanSoldierToken
+  let (g, _) := g.move tok.id (.graveyard ⟨0⟩) none
+  g.checkSBA
+
+#guard
+  let before :=
+    let g := addToGraveyard afterDraw lightningBolt ⟨0⟩
+    let (g, tok) := g.createToken ⟨0⟩ Game.humanSoldierToken
+    g.move tok.id (.graveyard ⟨0⟩) none
+  let (_, movedId) := before
+  let g := before.1
+  (g.findObject? movedId).any (·.printed.isToken) &&
+    (g.player ⟨0⟩).graveyard.contains movedId &&
+    (g.player ⟨0⟩).graveyard.size == 2
+#guard
+  let g := tokenInGraveyardCeases
+  let gy := (g.player ⟨0⟩).graveyard
+  gy.size == 1 &&
+    (g.object! gy[0]!).name == "Lightning Bolt" &&
+    !gy.any (fun id => (g.findObject? id).isNone) &&
+    !g.objects.any (·.printed.isToken) &&
+    g.log.any (fun s => mentions s "ceases to exist")
+
+/-- A token returned to hand ceases there, and the hand keeps no leftover id
+(CR 704.5d). -/
+def tokenInHandCeases : Game :=
+  let (g, tok) := afterDraw.createToken ⟨0⟩ Game.humanSoldierToken
+  let (g, _) := g.move tok.id (.hand ⟨0⟩) none
+  g.checkSBA
+
+#guard
+  let g := tokenInHandCeases
+  (g.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
+    (g.player ⟨0⟩).hand.all (fun id => (g.findObject? id).isSome) &&
+    !g.objects.any (·.printed.isToken)
+
 /-- `.createTokens` gives the tokens to the named recipient. The controller
 gets none when the targeted player creates them. -/
 def targetPlayerCreatesLeviathan : Game :=
