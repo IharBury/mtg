@@ -134,6 +134,18 @@ def mountainLine (g : Game) : String :=
   let land := namedGraveyardCard g ⟨0⟩ "Mountain"
   let line := zoneLine g (.graveyard ⟨0⟩) land.id
   mentions line "Basic Land — Mountain" && !mentions line "{0}"
+-- A token that has ceased to exist leaves no graveyard line, including no
+-- leftover id rendered as "(missing)" (CR 111.7 / 704.5d).
+#guard
+  let g := tokenInGraveyardCeases
+  let block := zoneBlock g (.graveyard ⟨0⟩)
+  let player := playerBlock g (g.player ⟨0⟩)
+  mentions block "Lightning Bolt" &&
+    !mentions block "Human Soldier" &&
+    !mentions block "(missing)" &&
+    !mentions player "(missing)" &&
+    !mentions (snapshot g) "(missing)" &&
+    (g.player ⟨0⟩).graveyard.size == 1
 #guard
   let g := insertObject started grizzlyBears ⟨0⟩ .exile
   match g.objects.find? (fun o => o.zone == .exile && o.name == "Grizzly Bears") with
