@@ -806,6 +806,65 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | _ => g) sourceId (some "The target is no longer legal")
   | _, _, _ => g
 
+/-- Resolve `TriggerResolution.sacrifice`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (who : TriggeredAbility.TriggerSacrificeWho)
+    (what : TriggeredAbility.TriggerSacrificeWhat)
+    (note : TriggeredAbility.TriggerSacrificeNote) : Game :=
+  match who, what, note with
+  | .targetOpponent, .chosenCreature, .none =>
+    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
+      g.beginSacrificeCreature pid)
+  | .eachPlayer, .chosenCreature, .none =>
+    g.beginSacrificeCreatures (g.apnapOrder)
+  | .defender, .leastPower, .none =>
+    let defn :=
+      match sourceId.bind g.findObject? with
+      | some src => src.status.attackingWhom.getD (g.opponent controller)
+      | none => g.opponent controller
+    let chosen :=
+      match targets[0]? with
+      | some (Target.permanent id) => some id
+      | _ => none
+    g.sacrificeLeastPowerCreature defn chosen
+  | .eachOpponent, .combatDamager, .none =>
+    g.beginSacDamagers controller ((g.livingOpponents controller).map (·.id))
+  | .you, .source how, .none =>
+    match how with
+    | .isSacrificed =>
+      g.withSourceOnBattlefield sourceId (fun g src =>
+        g.sacrificeToGraveyard src s!"{src.name} is sacrificed")
+    | .controllerSacrifices =>
+      g.withSourceOnBattlefield sourceId (fun g o =>
+        g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}")
+    | .movedAsSacrificed =>
+      g.withTriggerSource sourceId fun g src =>
+        let name := src.name
+        let (g, _) := g.move src.id (.graveyard src.owner) none
+        g.logMsg s!"{name} is sacrificed"
+  | .you, .plan, .none =>
+    g.sacrificePlanIfOnBattlefield sourceId
+  | .you, .plan, .forReflexive =>
+    let stillThere :=
+      match sourceId.bind g.findObject? with
+      | some o => o.isOnBattlefield
+      | none => false
+    let g := g.sacrificePlanIfOnBattlefield sourceId
+      (gone := fun name =>
+        s!"{name} is no longer on the battlefield. The reflexive ability doesn't trigger.")
+      (missing :=
+        "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger.")
+    { g with planWasSacrificed := stillThere }
+  | .you, .another, _ =>
+    match sourceId with
+    | some sid =>
+      { g with pending := .maySacrificeAnotherBolg controller sid }.logMsg
+        s!"{(g.player controller).name} may sacrifice another creature (Bolg reflexive trigger)"
+    | none => g.logMsg "Bolg is no longer in play"
+  | _, _, _ => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -892,9 +951,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else
       let g := { g with discardedCardThisWay := none }
       g.beginDiscardCards #[controller] n
-  | .opponentSacrificesCreature =>
-    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.beginSacrificeCreature pid)
+  | .sacrifice who what note =>
+    g.applySacrifice controller ab sourceId targets who what note
   | .onPermanent action =>
     g.applyOnPermanent controller ab.targetKind targets action sourceId
       (some "The target is no longer legal")
@@ -1005,8 +1063,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.applyOnTriggerSource sourceId action
   | .gainLife n =>
     g.gainLife controller n
-  | .eachPlayerSacrificesCreature =>
-    g.beginSacrificeCreatures (g.apnapOrder)
   | .opponentDiscards n who =>
     match who with
     | .each => g.beginDiscardCards (g.apnapOrder.filter (· != controller)) n
@@ -1034,19 +1090,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let g := g.setObject { src with status := { src.status with hope := src.status.hope - 1 } }
         let g := g.logMsg s!"{src.name} loses a hope counter"
         { g with removedHopeThisWay := true }
-  | .sacrificeSource how =>
-    match how with
-    | .isSacrificed =>
-      g.withSourceOnBattlefield sourceId (fun g src =>
-        g.sacrificeToGraveyard src s!"{src.name} is sacrificed")
-    | .controllerSacrifices =>
-      g.withSourceOnBattlefield sourceId (fun g o =>
-        g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}")
-    | .movedAsSacrificed =>
-      g.withTriggerSource sourceId fun g src =>
-        let name := src.name
-        let (g, _) := g.move src.id (.graveyard src.owner) none
-        g.logMsg s!"{name} is sacrificed"
   | .tapHumans | .may .tapHumans =>
     { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
       s!"{(g.player controller).name} may tap any number of untapped Humans they control"
@@ -1121,16 +1164,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | _, _ => g.logMsg "The target is no longer legal"
   | .addMana types =>
     g.addManaLogged controller types
-  | .defenderSacsLeastPower =>
-    let defn :=
-      match sourceId.bind g.findObject? with
-      | some src => src.status.attackingWhom.getD (g.opponent controller)
-      | none => g.opponent controller
-    let chosen :=
-      match targets[0]? with
-      | some (Target.permanent id) => some id
-      | _ => none
-    g.sacrificeLeastPowerCreature defn chosen
   | .becomePT p t =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -1237,12 +1270,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               cardPower := sequencedCardPower
               alternatives := rs.toArray } }.logMsg
           (triggerOrLog (g.player controller).name rs)
-  | .sacrificeAnother | .may .sacrificeAnother =>
-    match sourceId with
-    | some sid =>
-      { g with pending := .maySacrificeAnotherBolg controller sid }.logMsg
-        s!"{(g.player controller).name} may sacrifice another creature (Bolg reflexive trigger)"
-    | none => g.logMsg "Bolg is no longer in play"
+  | .may (.sacrifice .you .another _) =>
+    g.applySacrifice controller ab sourceId targets .you .another .none
   | .amassGoblinsNotedExcess =>
     let excess := g.excessDamageThisWay
     let g := { g with excessDamageThisWay := 0 }
@@ -1682,8 +1711,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g := g'.logMsg s!"{name} enters the battlefield"
         g := g.afterPermanentEnters (g.object! newId)
         return g.putRestOnBottomRandom controller rest
-  | .sacDamagingCreatures =>
-    g.beginSacDamagers controller ((g.livingOpponents controller).map (·.id))
   | .chapter _ =>
     g.applyChapterEffect controller ab.effect sourceId targets
   | .investigate =>
@@ -1700,19 +1727,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.forEachOpponent controller (fun g pid => g.loseLife pid n)
   | .loseLife n =>
     g.loseLife controller n
-  | .sacrificePlan =>
-    g.sacrificePlanIfOnBattlefield sourceId
-  | .sacrificePlanForReflexive =>
-    let stillThere :=
-      match sourceId.bind g.findObject? with
-      | some o => o.isOnBattlefield
-      | none => false
-    let g := g.sacrificePlanIfOnBattlefield sourceId
-      (gone := fun name =>
-        s!"{name} is no longer on the battlefield. The reflexive ability doesn't trigger.")
-      (missing :=
-        "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger.")
-    { g with planWasSacrificed := stillThere }
   | .queueReflexiveIfSacrificed kind =>
     let yes := g.planWasSacrificed
     let g := { g with planWasSacrificed := false }

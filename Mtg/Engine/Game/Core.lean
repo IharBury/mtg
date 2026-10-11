@@ -187,7 +187,7 @@ structure Game where
   grimaImpulseVictim : Option PlayerId := none
   grimaImpulseFound : Option ObjectId := none
   grimaImpulseOthers : Array ObjectId := #[]
-  /-- `sacrificePlanForReflexive` sacrificed the Plan. -/
+  /-- `sacrifice .you .plan .forReflexive` sacrificed the Plan. -/
   planWasSacrificed : Bool := false
   /-- Lands exiled by `exile .landsYouControl .forLater .lands`, to return tapped. -/
   exiledIdsThisWay : Array ObjectId := #[]

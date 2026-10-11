@@ -815,7 +815,7 @@ namespace CardDef
   .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
   .sequence [.removeHopeCounter, .«if» .removedHope (.draw 1),
-    .«if» .noHopeOnSource (.sequence [.sacrificeSource .isSacrificed, .gainLife 4])]
+    .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]
 #guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
   "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
 #guard TriggeredAbility.onAttackTapHumansDraw ==
@@ -1486,7 +1486,7 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onAttackWithTwoOrMoreGrantFlying ==
   "Whenever two or more creatures you control attack a player, target attacking creature without flying gains flying until end of turn."
 #guard TriggeredAbility.resolution .onEnterTargetOpponentSacrificesCreature ==
-  .opponentSacrificesCreature
+  .sacrifice .targetOpponent .chosenCreature
 #guard TriggeredAbility.resolution (.onLandYouControlEntersGets 1 1) ==
   .onSource (.pump 1 1)
 #guard TriggeredAbility.resolution .onLandYouControlEntersPlusOnePlusOne ==
@@ -1559,18 +1559,18 @@ end CardDef
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
   .sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw]
 #guard TriggeredAbility.resolution .onCombatDamageToYouSacRingTempts ==
-  .sequence [.sacDamagingCreatures, .ringTempts]
+  .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts]
 #guard TriggeredAbility.resolution (.onCreatureYouControlEntersScryAndPlan 2) ==
   .sequence [.putCounters (.ofKind .plan) .source, .scry 2]
 #guard TriggeredAbility.resolution .onLandYouControlEntersPlusOneAndPlan ==
   .sequence [.putCounters (.ofKind .plan) .source,
     .putCounters (.ofKind .plusOnePlusOne) (.permanent true)]
 #guard TriggeredAbility.resolution .onFourthPlanDrawPlusOneEach ==
-  .sequence [.sacrificePlan, .draw 1, .putCounters (.ofKind .plusOnePlusOne) .youControl]
+  .sequence [.sacrifice .you .plan, .draw 1, .putCounters (.ofKind .plusOnePlusOne) .youControl]
 #guard TriggeredAbility.resolution .onFourthPlanReturnInstants ==
-  .sequence [.sacrificePlanForReflexive, .queueReflexiveIfSacrificed 11]
+  .sequence [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 11]
 #guard TriggeredAbility.resolution .onFourthPlanDividedDamage ==
-  .sequence [.sacrificePlanForReflexive, .queuePlanDividedDamage 7]
+  .sequence [.sacrifice .you .plan .forReflexive, .queuePlanDividedDamage 7]
 #guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
   .sequence [.draw 1, .may .putLandFromHandTapped]
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==

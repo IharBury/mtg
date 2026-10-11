@@ -624,7 +624,7 @@ inductive SharedTrigger where
   /-- Remove a hope counter from this. If you do, draw a card. Then if it has
   no hope counters, sacrifice it and you gain 4 life.
   Resolves as
-  `.sequence [.removeHopeCounter, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrificeSource .isSacrificed, .gainLife 4])]`. -/
+  `.sequence [.removeHopeCounter, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]`. -/
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
@@ -710,7 +710,7 @@ inductive SharedTrigger where
   (Belladonna Took). Resolves as
   `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`. -/
   | belladonnaTokenReward
-  /-- Bolg may-sacrifice. Resolves as `.may .sacrificeAnother`. -/
+  /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .you .another)`. -/
   | bolgMaySacrifice
   /-- Bolg reflexive damage. Resolves as
   `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess]`. -/
@@ -777,7 +777,7 @@ inductive SharedTrigger where
   /-- Reveal until a Saga. -/
   | revealSaga
   /-- Opponents sac damagers; the Ring tempts you. Resolves as
-  `.sequence [.sacDamagingCreatures, .ringTempts]`. -/
+  `.sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts]`. -/
   | sacDamagersRingTempts
   /-- A Saga chapter. -/
   | chapter (n : Nat) (e : ChapterResolution)
