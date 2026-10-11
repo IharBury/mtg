@@ -716,7 +716,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .ifElse .scriedOrSurveilledThisTurn
       (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1)) =>
     s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
-  | .«if» .noPlaneswalker (.sacrificeSource .controllerSacrifices) =>
+  | .«if» .noPlaneswalker (.sacrifice .you (.source .controllerSacrifices)) =>
     "if you don't control a planeswalker, sacrifice this creature"
   | .addGreenPerChargeCounter => "add {G} for each charge counter on this enchantment"
   | .«if» (.otherForestsAtLeast 5) (.onPermanent (.pump 3 3)) =>
@@ -764,7 +764,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match action with
     | .tapHumans =>
       "you may tap any number of untapped Humans you control"
-    | .sacrificeAnother =>
+    | .sacrifice .you .another _ =>
       "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
     | .putArtifactFromHand =>
       "you may put an artifact card from your hand onto the battlefield"
@@ -778,8 +778,22 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       let disc := if n == 2 then "two cards" else cardPhrase n
       s!"you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard {disc}"
     | _ => "you may do it"
-  | .opponentSacrificesCreature =>
-    s!"{noun} sacrifices a creature of their choice"
+  | .sacrifice who what _ =>
+    match who, what with
+    | .targetOpponent, .chosenCreature =>
+      s!"{noun} sacrifices a creature of their choice"
+    | .eachPlayer, .chosenCreature =>
+      "each player sacrifices a creature of their choice"
+    | .defender, .leastPower =>
+      "defending player sacrifices a creature with the least power among creatures they control"
+    | .eachOpponent, .combatDamager =>
+      "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn"
+    | .you, .source .controllerSacrifices =>
+      "sacrifice this creature"
+    | .you, .another =>
+      "sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
+    | _, _ =>
+      "sacrifice it"
   | .dividedDamage =>
     match t.dividedDamage with
     | some (amount, maxTargets) =>
@@ -790,7 +804,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom] =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .sequence [.removeHopeCounter, .«if» .removedHope (.draw 1),
-      .«if» .noHopeOnSource (.sequence [.sacrificeSource .isSacrificed, .gainLife 4])] =>
+      .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] =>
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .sequence [.may .tapHumans, .drawForEachTappedHuman] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
@@ -837,7 +851,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "tap enchanted creature and remove all counters from it"
   | .sequence [.putCounters (.ofKind .quest) .source,
       .«if» (.questAtLeast 6)
-        (.sequence [.sacrificeSource .movedAsSacrificed, .searchDragonFromHandOrLibrary])] =>
+        (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary])] =>
     "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
   | .sequence [.draw 1, .discard 1, .discardedLandEntersTapped] =>
     "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
@@ -856,7 +870,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
   | .sequence [.opponentsMillNote 2, .«if» .opponentsMilled .reflexiveCopyMilled] =>
     "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
-  | .sequence [.sacDamagingCreatures, .ringTempts] =>
+  | .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts] =>
     "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you"
   | .sequence [.putCounters (.ofKind .plan) .source, .scry n] =>
     s!"scry {n} and put a plan counter on this enchantment"
@@ -873,19 +887,19 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.putCounters (.ofKind .plan) .source,
       .putCounters (.ofKind .plusOnePlusOne) (.permanent true)] =>
     "put a +1/+1 counter on target creature you control and a plan counter on this enchantment"
-  | .sequence [.sacrificePlan, .draw 1, .putCounters (.ofKind .plusOnePlusOne) .youControl] =>
+  | .sequence [.sacrifice .you .plan, .draw 1, .putCounters (.ofKind .plusOnePlusOne) .youControl] =>
     "sacrifice it, draw a card, and put a +1/+1 counter on each creature you control"
-  | .sequence [.sacrificePlanForReflexive, .queueReflexiveIfSacrificed 11] =>
+  | .sequence [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 11] =>
     "sacrifice it. When you do, return up to two target instant and/or sorcery cards from your graveyard to your hand"
-  | .sequence [.sacrificePlanForReflexive, .queueReflexiveIfSacrificed 4] =>
+  | .sequence [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 4] =>
     "sacrifice it. When you do, you control target opponent during their next turn"
-  | .sequence [.sacrificePlanForReflexive, .queueReflexiveIfSacrificed 5] =>
+  | .sequence [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 5] =>
     "sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs"
-  | .sequence [.sacrificePlan, .createTokens .robotVillain22 n false] =>
+  | .sequence [.sacrifice .you .plan, .createTokens .robotVillain22 n false] =>
     s!"sacrifice it and create {englishNumber n} 2/2 colorless Robot Villain artifact creature tokens"
-  | .sequence [.sacrificePlanForReflexive, .queuePlanDividedDamage n] =>
+  | .sequence [.sacrifice .you .plan .forReflexive, .queuePlanDividedDamage n] =>
     s!"sacrifice it. When you do, it deals {n} damage divided as you choose among one or two targets"
-  | .sequence [.sacrificePlanForReflexive, .queueReflexiveIfSacrificed 3] =>
+  | .sequence [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 3] =>
     "sacrifice it. When you do, put an indestructible counter on target creature you control"
   | .sequence [.attachSourceToTarget, .onTargetWhileSource action] =>
     s!"attach it to {noun}. {PermanentAction.toNotation action "that creature" (sentence := true)}"
@@ -929,8 +943,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you gain life equal to that card's power"
   | .onSource action => PermanentAction.toNotation action "this creature"
   | .gainLife n => s!"you gain {n} life"
-  | .eachPlayerSacrificesCreature =>
-    "each player sacrifices a creature of their choice"
   | .opponentDiscards n .each =>
     if n == 1 then "each opponent discards a card"
     else s!"each opponent discards {cardPhrase n}"
@@ -974,15 +986,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "return the exiled card to the battlefield under its owner's control"
   | .removeHopeCounter =>
     "remove a hope counter from this"
-  | .sacrificeSource .isSacrificed =>
-    "sacrifice it"
-  | .sacrificeSource .controllerSacrifices =>
-    "sacrifice this creature"
-  | .sacrificeSource .movedAsSacrificed =>
-    "sacrifice it"
   | .«if» .removedHope (.draw 1) =>
     "if a hope counter was removed this way, draw a card"
-  | .«if» .noHopeOnSource (.sequence [.sacrificeSource .isSacrificed, .gainLife 4]) =>
+  | .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4]) =>
     "if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .tapHumans =>
     "tap any number of untapped Humans you control"
@@ -1047,8 +1053,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "attach target Equipment you control to up to one target creature you control"
   | .addMana types =>
     s!"add {manaSymbolsText types}"
-  | .defenderSacsLeastPower =>
-    "defending player sacrifices a creature with the least power among creatures they control"
   | .or [.onPermanent .tap, .onPermanent .untap] =>
     if t.targeting.kind == .nonland then
       "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
@@ -1076,8 +1080,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "count another resolution of this ability this turn"
   | .«if» (.nthResolve n) _ =>
     s!"if this is time {n} this ability has resolved this turn"
-  | .sacrificeAnother =>
-    "sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
   | .allianceMode =>
     "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
   | .gollumMode =>
@@ -1208,7 +1210,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .removeCountersFromEnchanted => "remove all counters from enchanted creature"
   | .searchDragonFromHandOrLibrary =>
     "search your hand and/or library for a Dragon card and put it onto the battlefield"
-  | .«if» (.questAtLeast 6) (.sequence [.sacrificeSource .movedAsSacrificed, .searchDragonFromHandOrLibrary]) =>
+  | .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary]) =>
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
   | .discardedLandEntersTapped =>
     "if you discard a land card this way, put it onto the battlefield tapped"
@@ -1238,13 +1240,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "exile and copy a card"
   | .«if» .opponentsMilled .reflexiveCopyMilled =>
     "when one or more cards are milled this way, exile and copy a card"
-  | .sacDamagingCreatures =>
-    "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn"
   | .eachOpponentLosesLife n =>
     s!"each opponent loses {n} life"
   | .loseLife n => s!"you lose {n} life"
-  | .sacrificePlan => "sacrifice it"
-  | .sacrificePlanForReflexive => "sacrifice it"
   | .queueReflexiveIfSacrificed _ =>
     "when you do, the reflexive ability triggers"
   | .queuePlanDividedDamage n =>
