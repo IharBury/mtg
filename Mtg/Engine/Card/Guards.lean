@@ -797,13 +797,14 @@ namespace CardDef
 #guard TriggeredAbility.onEnterDrawThenBottomIfNoLegendary ==
   .triggered .enter (Effect.ofTrigger .drawThenBottomIfNoLegendary)
 #guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
-  .sequence [.draw 1, .putOnBottomIfNoLegendary]
+  .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom]
 #guard TriggeredAbility.toNotation .onEnterDrawThenBottomIfNoLegendary ==
   "When this permanent enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library."
 #guard TriggeredAbility.onYourEndStepRemoveHopeDrawSac ==
   .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
-  .sequence [.removeHopeCounter, .drawIfRemovedHope, .sacrificeGainLifeIfNoHope]
+  .sequence [.removeHopeCounter, .«if» .removedHope (.draw 1),
+    .«if» .noHopeOnSource (.sequence [.sacrificeSource .isSacrificed, .gainLife 4])]
 #guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
   "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
 #guard TriggeredAbility.onAttackTapHumansDraw ==
@@ -835,7 +836,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterDealDamageDestroyIfSubtype 1 "Dragon" ==
   .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype 1 "Dragon"))
 #guard TriggeredAbility.resolution (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
-  .sequence [.dealDamageToTarget 1, .destroyIfSubtypeDealtDamage "Dragon"]
+  .sequence [.dealDamageToTarget 1, .«if» (.dealtDamageToSubtype "Dragon") .destroyPermanentDealtDamage]
 #guard TriggeredAbility.toNotation (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
   "When this permanent enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it."
 #guard TriggeredAbility.onEnterAttachTargetEquipment ==
@@ -845,7 +846,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterReturnOtherPlusOne ==
   .triggered .enter (Effect.ofTrigger .returnOtherPlusOne)
 #guard TriggeredAbility.resolution .onEnterReturnOtherPlusOne ==
-  .sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned]
+  .sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))]
 #guard TriggeredAbility.toNotation .onEnterReturnOtherPlusOne ==
   "When this permanent enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature."
 #guard TriggeredAbility.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"] ==
@@ -1482,23 +1483,23 @@ end CardDef
 #guard TriggeredAbility.resolution .onTokenYouControlEntersBelladonna ==
   .sequence [
     .noteResolveThisTurn 3,
-    .ifNthResolve 1 (.gainLife 1),
-    .ifNthResolve 2 (.draw 1),
-    .ifNthResolve 3 (.plusOneEachYouControl)]
+    .«if» (.nthResolve 1) (.gainLife 1),
+    .«if» (.nthResolve 2) (.draw 1),
+    .«if» (.nthResolve 3) (.plusOneEachYouControl)]
 #guard TriggeredAbility.resolution .onBolgDealSacrificedPower ==
   .sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
-  .sequence [.createTokens .spirit 2 true, .recentTokensAttackingIfEquippedLegendary]
+  .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
   .sequence [.dealDamageToTarget 1, .amassGoblins 1 "Orc"]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
   .sequence [.untapAttackingCreatures, .additionalCombatPhase]
 #guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
-  .sequence [.destroyNotedForAmass, .amassNotedController, .drawIfYouControlledDestroyed]
+  .sequence [.destroyNotedForAmass, .amassNotedController, .«if» .youControlledDestroyed (.draw 1)]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
-  .sequence [.mayDiscardHandForStory, .drawDiscardedHandCount, .damageEachOpponentIfStoryNoted]
+  .sequence [.mayDiscardHandForStory, .drawDiscardedHandCount, .«if» .enduringStoryNoted .damageEachOpponentDiscardedHand]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
-  .sequence [.trampleCounterOnTarget, .becomeBear, .drawTwoIfThreeBears]
+  .sequence [.trampleCounterOnTarget, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)]
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
   .sequence [.draw 1, .discard 1, .discardedLandEntersTapped]
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
@@ -1522,16 +1523,17 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
   .sequence [.draw 1, .mayPutLandFromHandTapped]
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
-  .sequence [.draw 1, .gainLifeIfAnotherHero 2]
+  .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
   .sequence [.createAlienToken, .plusOneOnAlienNoted, .invasionCounterOnSource]
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
-  .sequence [.draw 2, .winIfLibraryEmpty, .shuffleSourceUnlessWon]
+  .sequence [.draw 2, .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
   .sequence [.armSurveilReturnLifeGained, .surveil 1]
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
-  .sequence [.onPermanent (.grantKeywords Keyword.hexproof), .plusOneIfCreature,
-    .loyaltyIfPlaneswalker]
+  .sequence [.onPermanent (.grantKeywords Keyword.hexproof),
+    .«if» .targetIsCreature (.onPermanent (.plusOne 1)),
+    .«if» .targetIsPlaneswalker .loyaltyOnTarget]
 #guard (SharedTrigger.timing (.drawXDiscard 2)).resolution ==
   .sequence [.drawEqualToManaSpent, .discardIfManaSpent 2]
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==

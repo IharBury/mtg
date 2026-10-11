@@ -34,6 +34,70 @@ def dividedAmong (maxTargets : Nat) : String :=
 `EffectTargetKind` constructors. -/
 abbrev TriggerTargetKind := EffectTargetKind
 
+/-- How `TriggerResolution.sacrificeSource` moves the source to the graveyard. -/
+inductive SacrificeSourceHow where
+  /-- Sacrifice it: “{name} is sacrificed”. -/
+  | isSacrificed
+  /-- Sacrifice it: “{player} sacrifices {name}”. -/
+  | controllerSacrifices
+  /-- Move it to the graveyard and log that it is sacrificed, without the
+  token-sacrifice trigger `isSacrificed` uses. -/
+  | movedAsSacrificed
+deriving Repr, Inhabited, BEq
+
+/-- When `TriggerResolution.if` resolves its action. -/
+inductive TriggerIf where
+  /-- You don't control a legendary creature. -/
+  | noLegendaryCreature
+  /-- An earlier step removed a hope counter. -/
+  | removedHope
+  /-- The source is on the battlefield and has no hope counters. -/
+  | noHopeOnSource
+  /-- You have drawn at least `n` cards this turn. -/
+  | drewAtLeast (n : Nat)
+  /-- An earlier step dealt damage to a permanent of this subtype. -/
+  | dealtDamageToSubtype (subtype : String)
+  /-- You attacked with this subtype, or one entered under your control this turn. -/
+  | attackedOrEntered (subtype : String)
+  /-- At least `n` loyalty counters were removed to activate the ability.
+  That count is the ability's last-known power. -/
+  | removedLoyaltyAtLeast (n : Nat)
+  /-- You control at least `n` lands. -/
+  | landsAtLeast (n : Nat)
+  /-- You don't control a planeswalker. -/
+  | noPlaneswalker
+  /-- You control at least `n` Forests other than the one that caused this. -/
+  | otherForestsAtLeast (n : Nat)
+  /-- An earlier step returned a permanent to its owner's hand. -/
+  | returnedPermanent
+  /-- `noteResolveThisTurn` recorded ordinal `n`. -/
+  | nthResolve (n : Nat)
+  /-- You controlled the creature an earlier step destroyed. -/
+  | youControlledDestroyed
+  /-- You have an enduring story, and an earlier step discarded your hand. -/
+  | enduringStoryNoted
+  /-- You control at least `n` Bears. -/
+  | bearsAtLeast (n : Nat)
+  /-- The source has at least `n` quest counters. -/
+  | questAtLeast (n : Nat)
+  /-- An earlier step attached Equipment to a creature that is still in play. -/
+  | equipmentAttached
+  /-- An earlier step milled a card from an opponent. -/
+  | opponentsMilled
+  /-- You control a Hero other than the source. -/
+  | anotherHero
+  /-- Your library has no cards. -/
+  | libraryEmpty
+  /-- Your library still has a card. -/
+  | libraryNotEmpty
+  /-- This Equipment is attached to a legendary creature you control. -/
+  | equippedLegendaryYouControl
+  /-- The target is a creature. -/
+  | targetIsCreature
+  /-- The target is a planeswalker. -/
+  | targetIsPlaneswalker
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, +1/+1 on the source, and divided damage each cover
@@ -80,10 +144,10 @@ inductive TriggerResolution where
   step (CR 608.2b). Return a graveyard card, then gain life equal to its
   power, is `.sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]`.
   Draw, then bottom a card if you control no legendary, is
-  `.sequence [.draw 1, .putOnBottomIfNoLegendary]`.
+  `.sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom]`.
   Remove a hope counter, draw if one was removed, then sacrifice and gain
   life if none remain, is
-  `.sequence [.removeHopeCounter, .drawIfRemovedHope, .sacrificeGainLifeIfNoHope]`.
+  `.sequence [.removeHopeCounter, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrificeSource .isSacrificed, .gainLife 4])]`.
   A step that asks a player to choose pauses the later steps until that
   choice finishes; they are still part of this resolution. Tap any number
   of Humans, then draw that many, is
@@ -100,17 +164,17 @@ inductive TriggerResolution where
   `.sequence [.plusOneEachOther, .gainLifeForEachOtherCreature]`.
   Deal `n` damage to the target, then destroy it if that damage marked a
   permanent of this subtype, is
-  `.sequence [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype]`.
+  `.sequence [.dealDamageToTarget n, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
   the source if one was actually returned, is
-  `.sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned]`.
+  `.sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))]`.
   Other creatures you control of these subtypes get +P/+T, and creatures
   your opponents control get +oppP/+oppT, is
   `.sequence [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT]`.
   Gain 1 life, draw, or put a +1/+1 counter on each creature you control
   when this is the first, second, or third resolve this turn (Belladonna
   Took), is
-  `.sequence [.noteResolveThisTurn 3, .ifNthResolve 1 (.gainLife 1), .ifNthResolve 2 (.draw 1), .ifNthResolve 3 (.plusOneEachYouControl)]`.
+  `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.plusOneEachYouControl)]`.
   Deal the sacrificed creature's power, then amass Goblins for the excess
   (Bolg), is
   `.sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess]`.
@@ -125,7 +189,7 @@ inductive TriggerResolution where
   `.sequence [.influenceCounterOnSource, .scry 2, .palantirOfferDraw]`.
   Grant keywords, then a +1/+1 counter if the target is a creature and a
   loyalty counter if it is a planeswalker, is
-  `.sequence [.onPermanent (.grantKeywords k), .plusOneIfCreature, .loyaltyIfPlaneswalker]`. -/
+  `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker .loyaltyOnTarget]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -150,9 +214,9 @@ inductive TriggerResolution where
   Also putting a +1/+1 counter on the source is
   `.mayPayGenericDraw n (plusOneOnSource := true)`. -/
   | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
-  /-- If you don't control a legendary creature, put a card from your hand
-  on the bottom of your library. -/
-  | putOnBottomIfNoLegendary
+  /-- Put a card from your hand on the bottom of your library.
+  An empty hand skips the choice. -/
+  | putFromHandOnBottom
   /-- Exile the targeted permanent. Link it if the source is still in play. -/
   | exileTarget
   /-- Exile the targeted permanent until the source leaves the battlefield. -/
@@ -161,10 +225,8 @@ inductive TriggerResolution where
   | returnLinkedExile
   /-- Remove a hope counter from the source. -/
   | removeHopeCounter
-  /-- Draw a card if an earlier step removed a hope counter. -/
-  | drawIfRemovedHope
-  /-- If the source has no hope counters, sacrifice it and you gain 4 life. -/
-  | sacrificeGainLifeIfNoHope
+  /-- Sacrifice the source, as `how` says. -/
+  | sacrificeSource (how : SacrificeSourceHow := .isSacrificed)
   /-- You may tap any number of untapped Humans you control. -/
   | tapAnyHumans
   /-- Draw a card for each Human tapped by an earlier step. -/
@@ -206,9 +268,8 @@ inductive TriggerResolution where
   /-- Deal `n` damage to the target. A permanent actually marked by that
   damage is remembered for the next step. -/
   | dealDamageToTarget (n : Nat)
-  /-- Destroy the permanent an earlier step dealt damage to, if it has this
-  subtype. -/
-  | destroyIfSubtypeDealtDamage (subtype : String)
+  /-- Destroy the permanent an earlier step dealt damage to. -/
+  | destroyPermanentDealtDamage
   /-- Attach the first target (Equipment) to the second (creature). -/
   | attachEquipmentToCreature
   /-- Add these mana types. -/
@@ -241,11 +302,17 @@ inductive TriggerResolution where
   /-- Cascade: exile until a cheaper nonland, then you may cast it. -/
   | cascade
   /-- Record another resolution of this ability this turn. Later
-  `ifNthResolve` steps in this sequence see the ordinal. An ordinal above
-  `limit` logs that the ability has no effect. -/
+  `«if» (.nthResolve n)` steps in this sequence see the ordinal. An ordinal
+  above `limit` logs that the ability has no effect. -/
   | noteResolveThisTurn (limit : Nat)
-  /-- Do `thenDo` when `noteResolveThisTurn` recorded ordinal `n`. -/
-  | ifNthResolve (n : Nat) (thenDo : TriggerResolution)
+  /-- Resolve `thenDo` when `cond` holds.
+  Putting a card on the bottom when you control no legendary creature is
+  `.«if» .noLegendaryCreature .putFromHandOnBottom`.
+  Drawing when an earlier step removed a hope counter is
+  `.«if» .removedHope (.draw 1)`.
+  Doing `thenDo` on the nth resolution this turn is
+  `.«if» (.nthResolve n) thenDo`. -/
+  | «if» (cond : TriggerIf) (thenDo : TriggerResolution)
   /-- You may sacrifice another creature you control (Bolg). -/
   | bolgMaySacrifice
   /-- Create a Treasure for each artifact the damaged player controls. -/
@@ -270,8 +337,8 @@ inductive TriggerResolution where
   | equippedAttackersGainDoubleStrike
   /-- Reveal the top `n`; put a random creature onto the battlefield. -/
   | revealTopPutRandomCreature (n : Nat)
-  /-- If you drew two or more, pump and first strike. -/
-  | beginCombatIfDrawnTwoPump
+  /-- The target gets +3/+0 and gains first strike until end of turn. -/
+  | pumpAndFirstStrike
   /-- Target player mills `n`. -/
   | millPlayer (n : Nat)
   /-- Treasures equal to permanents of a chosen type. -/
@@ -328,8 +395,6 @@ inductive TriggerResolution where
   | pumpCause (power toughness : Int)
   /-- Other permanents you control of this subtype get +X/+X, X = source toughness. -/
   | othersOfSubtypeGetEqualSourceToughness (subtype : String)
-  /-- Draw a card if you attacked with this subtype or one entered this turn. -/
-  | drawIfAttackedOrEnteredSubtype (subtype : String)
   /-- Apply `action` to the creature this Aura enchants. -/
   | onEnchanted (action : PermanentAction)
   /-- Exile the targeted creature; return it at the next end step. -/
@@ -354,8 +419,6 @@ inductive TriggerResolution where
   /-- Return the targeted permanent to its owner's hand.
   Whether a permanent was actually returned is recorded for the next step. -/
   | returnToOwnerHand
-  /-- Put a +1/+1 counter on the source if an earlier step returned a permanent. -/
-  | plusOneOnSourceIfReturned
   /-- Create Zabu. -/
   | createZabu
   /-- Target opponent creates The Void. -/
@@ -387,17 +450,12 @@ inductive TriggerResolution where
   If three or more creatures died this turn is
   `.prepareSource .ifThreeCreaturesDied`. -/
   | prepareSource (when : PrepareWhen := .ifNotPrepared)
-  /-- If two or more loyalty counters were removed to activate the ability, draw a card. -/
-  | drawIfRemovedTwoLoyalty
   /-- Put a loyalty counter on the source. -/
   | loyaltyOnSource
-  /-- If you control six or more lands, destroy the target; its controller
-  creates a Treasure. -/
-  | destroyOppPermanentIfSixLands
+  /-- Destroy the target. Its controller creates a Treasure token. -/
+  | destroyTargetControllerCreatesTreasure
   /-- +1/+1 until end of turn, or a +1/+1 counter if you scried or surveilled. -/
   | pumpOrCounterIfScried
-  /-- If you don't control a planeswalker, sacrifice the source. -/
-  | sacrificeSourceIfNoPlaneswalker
   /-- Creatures you control get +P/+T until end of turn. -/
   | creaturesYouControlGet (power toughness : Int)
   /-- Put the source's last-known counters on the target. -/
@@ -406,15 +464,12 @@ inductive TriggerResolution where
   | chargeCounterOnSource
   /-- Add {G} for each charge counter on the source. -/
   | addGreenPerChargeCounter
-  /-- +3/+3 if you control at least five Forests other than the cause. -/
-  | pumpIfFiveOtherForests
   /-- Deal the sacrificed creature's last-known power and note excess damage. -/
   | dealLastKnownPowerNoteExcess
   /-- Amass Goblins equal to the excess noted by the previous step. -/
   | amassGoblinsNotedExcess
-  /-- Mark tokens from the previous step attacking when the equipped creature
-  is legendary and you control it. -/
-  | recentTokensAttackingIfEquippedLegendary
+  /-- Mark tokens from the previous step attacking. -/
+  | markRecentTokensAttacking
   /-- Untap each attacking creature. -/
   | untapAttackingCreatures
   /-- There is an additional combat phase after this one. -/
@@ -424,20 +479,16 @@ inductive TriggerResolution where
   | destroyNotedForAmass
   /-- Amass Goblins for the controller noted by the previous step. -/
   | amassNotedController
-  /-- Draw a card if you controlled the creature destroyed this way. -/
-  | drawIfYouControlledDestroyed
   /-- You may discard your hand. The following steps draw and maybe deal damage. -/
   | mayDiscardHandForStory
   /-- Draw cards equal to the hand discarded by the previous step. -/
   | drawDiscardedHandCount
-  /-- If you have an enduring story, deal damage equal to the discarded hand. -/
-  | damageEachOpponentIfStoryNoted
+  /-- Deal damage to each opponent equal to the hand discarded by an earlier step. -/
+  | damageEachOpponentDiscardedHand
   /-- Put a trample counter on the target. -/
   | trampleCounterOnTarget
   /-- The target becomes a Bear in addition to its other types. -/
   | becomeBear
-  /-- Draw two cards if you control three or more Bears. -/
-  | drawTwoIfThreeBears
   /-- Mill `n` and remember the cards milled. -/
   | millNote (n : Nat)
   /-- Put milled cards of this subtype into your hand. -/
@@ -448,8 +499,8 @@ inductive TriggerResolution where
   | removeCountersFromEnchanted
   /-- Put a quest counter on the source. -/
   | questCounterOnSource
-  /-- At six quest counters, sacrifice the source and search for a Dragon. -/
-  | sacrificeSearchDragonIfSix
+  /-- Search your hand and/or library for a Dragon and put it onto the battlefield. -/
+  | searchDragonFromHandOrLibrary
   /-- Put the land discarded by the previous step onto the battlefield tapped. -/
   | discardedLandEntersTapped
   /-- Put hone counters on the source equal to the opponent's creatures. -/
@@ -458,8 +509,9 @@ inductive TriggerResolution where
   | attachToCreatureTarget
   /-- You may attach any number of Equipment you control to the target. -/
   | offerAttachAnyEquipment
-  /-- The host fights if Equipment was attached this way. -/
-  | fightIfEquipmentAttached
+  /-- The creature that received Equipment deals damage equal to its power
+  to up to one target creature. -/
+  | reflexiveFightHost
   /-- Draw X cards, where X is the mana spent to cast the triggering spell. -/
   | drawEqualToManaSpent
   /-- Discard `n` cards when mana was spent to cast the triggering spell. -/
@@ -480,8 +532,8 @@ inductive TriggerResolution where
   | palantirOfferDraw
   /-- Each opponent mills `n`. The next step sees whether any card was milled. -/
   | opponentsMillNote (n : Nat)
-  /-- Queue the reflexive copy if the previous step milled a card. -/
-  | reflexiveCopyIfMilled
+  /-- Queue the reflexive exile-and-copy of a milled spell. -/
+  | reflexiveCopyMilled
   /-- Each opponent sacrifices a creature that dealt combat damage to you. -/
   | sacDamagingCreatures
   /-- Put a plan counter on the source. Later steps do not run if it left. -/
@@ -509,8 +561,8 @@ inductive TriggerResolution where
   | enchantedCopiesNoted
   /-- You may put a land card from your hand onto the battlefield tapped. -/
   | mayPutLandFromHandTapped
-  /-- Gain `n` life if you control another Hero. -/
-  | gainLifeIfAnotherHero (n : Nat)
+  /-- Put a loyalty counter on the target. -/
+  | loyaltyOnTarget
   /-- Create an Alien token and remember how many invasion counters to put. -/
   | createAlienToken
   /-- Put the noted number of +1/+1 counters on the Alien token. -/
@@ -531,14 +583,10 @@ inductive TriggerResolution where
   | tapTargetIfPresent
   /-- The tapped creature loses all abilities while the source remains. -/
   | loseAbilitiesWhileSourceRemains
-  /-- Put a +1/+1 counter on the target if it is a creature. -/
-  | plusOneIfCreature
-  /-- Put a loyalty counter on the target if it is a planeswalker. -/
-  | loyaltyIfPlaneswalker
-  /-- You win the game if your library is empty. -/
-  | winIfLibraryEmpty
-  /-- Shuffle the source into its owner's library unless the library is empty. -/
-  | shuffleSourceUnlessWon
+  /-- You win the game. -/
+  | winTheGame
+  /-- Shuffle the source into its owner's library. -/
+  | shuffleSource
   /-- The following surveil returns a card with mana value at most the life
   you gained this turn. -/
   | armSurveilReturnLifeGained
@@ -823,10 +871,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .mayPayGenericDraw n plusOne =>
     { resolution := .mayPayGenericDraw n plusOne }
   | .drawThenBottomIfNoLegendary =>
-    { resolution := .sequence [.draw 1, .putOnBottomIfNoLegendary] }
+    { resolution := .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom] }
   | .removeHopeDrawSac =>
     { resolution := .sequence
-        [.removeHopeCounter, .drawIfRemovedHope, .sacrificeGainLifeIfNoHope] }
+        [.removeHopeCounter, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrificeSource .isSacrificed, .gainLife 4])] }
   | .tapHumansDraw =>
     { resolution := .sequence [.tapAnyHumans, .drawForEachTappedHuman] }
   | .destroyOppArtifactsEnchantmentsGainLife =>
@@ -839,7 +887,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .dealDamageDestroyIfSubtype n subtype =>
     { targeting := .of .playerOrCreature,
       resolution := .sequence
-        [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype] }
+        [.dealDamageToTarget n, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage] }
   | .attachEquipmentToCreature =>
     { targeting := .of .equipmentYouControlThenCreatureYouControl,
       allowsZeroTargets := true, resolution := .attachEquipmentToCreature }
@@ -849,7 +897,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
                                     controller := .you, another := true })
       allowsZeroTargets := true
       resolution := .sequence
-        [.returnToOwnerHand, .plusOneOnSourceIfReturned] }
+        [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))] }
   | .lookAtTopRevealTypes n types =>
     { resolution := .lookAtTopRevealTypes n types }
   | .createTappedTreasuresEqualOppArtifacts =>
@@ -866,7 +914,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .trampleCounterBecomeBear =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .sequence
-        [.trampleCounterOnTarget, .becomeBear, .drawTwoIfThreeBears] }
+        [.trampleCounterOnTarget, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)] }
   | .millThenSubtypeToHand n subtype =>
     { resolution := .sequence [.millNote n, .returnMilledSubtype subtype] }
   | .exileOppNonlandEachUntilLeaves =>
@@ -878,7 +926,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .plusOneEqualLastKnownMv =>
     { targeting := .of .creatureYouControl, resolution := .plusOneEqualLastKnownMv }
   | .mountainQuestDragon =>
-    { resolution := .sequence [.questCounterOnSource, .sacrificeSearchDragonIfSix] }
+    { resolution := .sequence [.questCounterOnSource, .«if» (.questAtLeast 6) (.sequence [.sacrificeSource .movedAsSacrificed, .searchDragonFromHandOrLibrary])] }
   | .treasuresPerChosenType => { resolution := .treasuresPerChosenType }
   | .revealUntilCreature => { resolution := .revealUntilCreature }
   | .attackSacPlusOneEqualPower => { resolution := .attackSacPlusOneEqualPower }
@@ -890,7 +938,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .castInstantSorceryFromHand => { resolution := .castInstantSorceryFromHand }
   | .castInstantSorceryMvAtMost => { resolution := .castInstantSorceryMvAtMost }
   | .millThenCopy =>
-    { resolution := .sequence [.opponentsMillNote 2, .reflexiveCopyIfMilled] }
+    { resolution := .sequence [.opponentsMillNote 2, .«if» .opponentsMilled .reflexiveCopyMilled] }
   | .pumpTargetBySourcePower =>
     { targeting := .of .anotherCreatureYouControl,
       resolution := .pumpTargetBySourcePower }
@@ -902,16 +950,16 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .belladonnaTokenReward =>
     { resolution := .sequence [
         .noteResolveThisTurn 3,
-        .ifNthResolve 1 (.gainLife 1),
-        .ifNthResolve 2 (.draw 1),
-        .ifNthResolve 3 (.plusOneEachYouControl)] }
+        .«if» (.nthResolve 1) (.gainLife 1),
+        .«if» (.nthResolve 2) (.draw 1),
+        .«if» (.nthResolve 3) (.plusOneEachYouControl)] }
   | .bolgMaySacrifice => { resolution := .bolgMaySacrifice }
   | .bolgDealSacrificedPower =>
     { targeting := .of .anotherCreature,
       resolution := .sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess] }
   | .createSpiritsForEquipped =>
     { resolution := .sequence
-        [.createTokens .spirit 2 true, .recentTokensAttackingIfEquippedLegendary] }
+        [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] }
   | .createTreasuresEqualDamagedPlayerArtifacts =>
     { resolution := .createTreasuresEqualDamagedPlayerArtifacts }
   | .deal1ThenAmassOrcs =>
@@ -924,12 +972,12 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .destroyOtherAmassControllerPower =>
     { targeting := .of .anotherCreature, allowsZeroTargets := true,
       resolution := .sequence
-        [.destroyNotedForAmass, .amassNotedController, .drawIfYouControlledDestroyed] }
+        [.destroyNotedForAmass, .amassNotedController, .«if» .youControlledDestroyed (.draw 1)] }
   | .gollumMode => { resolution := .gollumMode }
   | .discardHandDrawDamageIfStory =>
     { resolution := .sequence
         [.mayDiscardHandForStory, .drawDiscardedHandCount,
-         .damageEachOpponentIfStoryNoted] }
+         .«if» .enduringStoryNoted .damageEachOpponentDiscardedHand] }
   | .castFromGyArtifactInstantSorcery =>
     { resolution := .castFromGyArtifactInstantSorcery }
   | .equippedAttackersGainDoubleStrike =>
@@ -940,7 +988,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .revealTopPutRandomCreature n }
   | .beginCombatIfDrawnTwoPump =>
     { targeting := .of .anotherCreatureYouControl,
-      resolution := .beginCombatIfDrawnTwoPump }
+      resolution := .«if» (.drewAtLeast 2) .pumpAndFirstStrike }
   | .honePerOppAttach =>
     { targeting := .of (.multi #[
         { noun := "target opponent", zone := .player, controller := .opponent },
@@ -952,7 +1000,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .copySelfNonlegendary => { resolution := .copySelfNonlegendary }
   | .attachEquipmentThenFight =>
     { targeting := .of .creatureYouControl,
-      resolution := .sequence [.offerAttachAnyEquipment, .fightIfEquipmentAttached] }
+      resolution := .sequence [.offerAttachAnyEquipment, .«if» .equipmentAttached .reflexiveFightHost] }
   | .returnAsArtifact => { resolution := .returnAsArtifact }
   | .exileLandsThenReturnTapped =>
     { targeting := .of (.filtered {
@@ -975,7 +1023,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .chapter _n e =>
     { resolution := .chapter e }
   | .drawIfAttackedOrEnteredSubtype subtype =>
-    { resolution := .drawIfAttackedOrEnteredSubtype subtype }
+    { resolution := .«if» (.attackedOrEntered subtype) (.draw 1) }
   | .othersOfSubtypeGetEqualSourceToughness subtype =>
     { resolution := .othersOfSubtypeGetEqualSourceToughness subtype }
   | .scryAndPlan n =>
@@ -1023,19 +1071,24 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.yourUpkeep], resolution := .prepareSource .ifNotPrepared }
   | .prepareSource .ifThreeCreaturesDied =>
     { events := #[.eachEndStep], resolution := .prepareSource .ifThreeCreaturesDied }
-  | .drawIfRemovedTwoLoyalty => { resolution := .drawIfRemovedTwoLoyalty }
+  | .drawIfRemovedTwoLoyalty =>
+    { resolution := .«if» (.removedLoyaltyAtLeast 2) (.draw 1) }
   | .loyaltyOnSource => { resolution := .loyaltyOnSource }
   | .grantThenCounterByType k =>
     { targeting := .of .permanentYouControl,
       resolution := .sequence
-        [.onPermanent (.grantKeywords k), .plusOneIfCreature, .loyaltyIfPlaneswalker] }
+        [.onPermanent (.grantKeywords k),
+         .«if» .targetIsCreature (.onPermanent (.plusOne 1)),
+         .«if» .targetIsPlaneswalker .loyaltyOnTarget] }
   | .destroyOppPermanentIfSixLands =>
-    { targeting := .of .oppPermanent, resolution := .destroyOppPermanentIfSixLands }
+    { targeting := .of .oppPermanent,
+      resolution := .«if» (.landsAtLeast 6) .destroyTargetControllerCreatesTreasure }
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .pumpOrCounterIfScried }
   | .sacrificeSourceIfNoPlaneswalker =>
-    { events := #[.eachEndStep], resolution := .sacrificeSourceIfNoPlaneswalker }
+    { events := #[.eachEndStep],
+      resolution := .«if» .noPlaneswalker (.sacrificeSource .controllerSacrifices) }
   | .creaturesYouControlGet p t => { resolution := .creaturesYouControlGet p t }
   | .putSourceCountersOnTarget =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
@@ -1045,12 +1098,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.yourFirstMain], resolution := .addGreenPerChargeCounter }
   | .drawTwoWinIfEmptyShuffleSource =>
     { resolution := .sequence
-        [.draw 2, .winIfLibraryEmpty, .shuffleSourceUnlessWon] }
+        [.draw 2, .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource] }
   | .surveilReturnIfGainedLife =>
     { events := #[.yourEndStep],
       resolution := .sequence [.armSurveilReturnLifeGained, .surveil 1] }
   | .pumpIfFiveOtherForests =>
-    { targeting := .of .creatureYouControl, resolution := .pumpIfFiveOtherForests }
+    { targeting := .of .creatureYouControl,
+      resolution := .«if» (.otherForestsAtLeast 5) (.onPermanent (.pump 3 3)) }
   | .onEnchanted action => { resolution := .onEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl,
@@ -1068,7 +1122,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .drawMayPutLandTapped =>
     { resolution := .sequence [.draw 1, .mayPutLandFromHandTapped] }
   | .drawGainLifeIfAnotherHero =>
-    { resolution := .sequence [.draw 1, .gainLifeIfAnotherHero 2] }
+    { resolution := .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)] }
   | .plusOneOrTwoIfAnotherHero =>
     { targeting := .of .creature, resolution := .plusOneOrTwoIfAnotherHero }
   | .maySacArtifactOrDiscardDraw => { resolution := .maySacArtifactOrDiscardDraw }
