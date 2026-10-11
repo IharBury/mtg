@@ -670,6 +670,81 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => g
   | _, _ => g
 
+/-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyCreateTokens (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (lastKnownPower : Option Int) (kind : TokenKind) (n : Nat) (tapped : Bool)
+    (token : TriggeredAbility.TriggerToken)
+    (who : TriggeredAbility.TriggerTokenWho)
+    (qty : TriggeredAbility.TriggerTokenQty)
+    (note : TriggeredAbility.TriggerTokenNote) : Game :=
+  match token, who, qty, note with
+  | .axe, _, _, .attachReflexive =>
+    let (g, tok) := g.createToken controller axeToken
+    g.putReflexiveTrigger controller (some tok.id) {
+      targeting := .of .creatureYouControl
+      resolution := .attach
+      phrase := "Attach it to target creature you control" }
+  | .axe, _, _, _ =>
+    let (g, _) := g.createToken controller axeToken
+    g.logMsg "An Axe token is created"
+  | .kind, .you, .oppArtifacts, _ =>
+    let n := g.countOpponentArtifacts controller
+    g.createTreasureTokens controller n (tapped := true)
+  | .kind, .you, .damagedPlayerArtifacts, _ =>
+    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    let n := g.countArtifactsControlledBy pid
+    g.createTreasureTokens controller n |>.logMsg
+      s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
+  | .kind, .you, .lastKnown, _ =>
+    if kind == .birdSoldier then
+      let n := lastKnownPower.getD 0
+      g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
+        s!"{(g.player controller).name} creates {n} Bird Soldier token(s)"
+    else
+      let n := (lastKnownPower.getD 0).toNat
+      g.createTreasureTokens controller n
+  | .kind, .you, .chosenCreatureType, _ =>
+    let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
+      o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
+    if types.isEmpty then
+      g.logMsg s!"{(g.player controller).name} controls no creatures, so no Treasures are created"
+    else
+      g.beginFraChoice controller (.chooseCreatureType types)
+        s!"{(g.player controller).name} chooses a creature type"
+  | .zabu, _, _, _ =>
+    g.createNamedToken controller zabuToken
+  | .theVoid, _, _, _ =>
+    match targets[0]? with
+    | some (Target.player pid) => g.createNamedToken pid theVoidToken
+    | _ => g.createNamedToken controller theVoidToken
+  | .redwing, _, _, _ =>
+    g.createNamedToken controller redwingToken
+  | .alien, _, _, _ =>
+    let n :=
+      match sourceId.bind g.findObject? with
+      | some src => src.status.invasion
+      | none => 0
+    let (g, tok) := g.createToken controller alien11redHasteToken
+    { g with notedCountThisWay := n, createdTokenThisWay := some tok.id }
+  | .sturdyShield, _, _, _ =>
+    let (g, shield) := g.createToken controller sturdyShieldToken
+    { g with createdTokenThisWay := some shield.id }
+  | .kind, .targetController, _, _ =>
+    -- Destroy may already have moved the permanent. The controller who
+    -- creates the Treasure is the one it had on the battlefield.
+    match targets[0]? with
+    | some (Target.permanent oid) =>
+      match g.findObject? (g.followMoved oid) with
+      | some o =>
+        let pid := (o.controller.orElse (fun _ => o.lastController)).getD o.owner
+        g.createTreasureTokens pid 1
+      | none => g
+    | _ => g
+  | _, _, _, _ =>
+    g.createKindTokens controller kind n (tapped := tapped)
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -952,8 +1027,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | .sourcePower => (lastKnownPower.getD 0).toNat
     if attachSource then g.amass controller subtype n (attach := sourceId)
     else g.amass controller subtype n
-  | .createTokens kind n tapped =>
-    g.createKindTokens controller kind n (tapped := tapped)
+  | .createTokens kind n tapped token who qty note =>
+    g.applyCreateTokens controller sourceId targets lastKnownPower
+      kind n tapped token who qty note
   | .attachSourceToCreated =>
     match (g.recentTokenIds.back?).bind g.findObject? with
     | some tok =>
@@ -1001,15 +1077,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some (Target.permanent id) => some id
       | _ => none
     g.sacrificeLeastPowerCreature defn chosen
-  | .createAxe attach =>
-    let (g, tok) := g.createToken controller axeToken
-    if attach then
-      g.putReflexiveTrigger controller (some tok.id) {
-        targeting := .of .creatureYouControl
-        resolution := .attach
-        phrase := "Attach it to target creature you control" }
-    else
-      g.logMsg "An Axe token is created"
   | .becomePT p t =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -1031,9 +1098,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => false)
     g.beginFraChoice controller (.mayRevealToHand ids eligible false)
       s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
-  | .createTappedTreasuresEqualOppArtifacts =>
-    let n := g.countOpponentArtifacts controller
-    g.createTreasureTokens controller n (tapped := true)
   | .gainControlOppUntilEot =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let g := g.giveControlUntilEot o controller
@@ -1143,11 +1207,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => g) g
     g.logMsg
       s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
-  | .createTreasuresEqualDamagedPlayerArtifacts =>
-    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
-    let n := g.countArtifactsControlledBy pid
-    g.createTreasureTokens controller n |>.logMsg
-      s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
   | .untapAttackingCreatures =>
     Id.run do
       let mut g := g
@@ -1158,10 +1217,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .additionalCombatPhase =>
     { g with additionalCombatPhases := g.additionalCombatPhases + 1 }.logMsg
       "Attacking creatures untap. After this phase, there is an additional combat phase"
-  | .eaglesCreateBirds =>
-    let n := lastKnownPower.getD 0
-    g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
-      s!"{(g.player controller).name} creates {n} Bird Soldier token(s)"
   | .allianceMode =>
     g.offerAllianceMode sourceId
   | .gollumMode =>
@@ -1356,14 +1411,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n)
   | .mill n =>
     g.mill controller n
-  | .treasuresPerChosenType =>
-    let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
-      o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
-    if types.isEmpty then
-      g.logMsg s!"{(g.player controller).name} controls no creatures, so no Treasures are created"
-    else
-      g.beginFraChoice controller (.chooseCreatureType types)
-        s!"{(g.player controller).name} chooses a creature type"
   | .revealUntilCreature =>
     Id.run do
       let mut g := g
@@ -1564,9 +1611,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
-  | .treasuresEqualLastKnown =>
-    let n := (lastKnownPower.getD 0).toNat
-    g.createTreasureTokens controller n
   | .protectionEverything =>
     if !(sourceId.bind g.findObject?).any (·.wasCast) then
       g.logMsg "It wasn't cast. The ability does nothing."
@@ -1614,17 +1658,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match targets[0]? with
       | some (Target.permanent id) => g.applyConnive controller (some id)
       | _ => g.applyConnive controller sourceId
-  | .targetControllerCreatesTreasure =>
-    -- Destroy may already have moved the permanent. The controller who
-    -- creates the Treasure is the one it had on the battlefield.
-    match targets[0]? with
-    | some (Target.permanent oid) =>
-      match g.findObject? (g.followMoved oid) with
-      | some o =>
-        let pid := (o.controller.orElse (fun _ => o.lastController)).getD o.owner
-        g.createTreasureTokens pid 1
-      | none => g
-    | _ => g
   | .eachOpponentLosesLife n =>
     g.forEachOpponent controller (fun g pid => g.loseLife pid n)
   | .loseLife n =>
@@ -1692,13 +1725,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .putLandFromHandTapped | .may .putLandFromHandTapped =>
     { g with pending := .mayPutLandFromHand controller }.logMsg
       s!"{(g.player controller).name} may put a land card from their hand onto the battlefield tapped"
-  | .createAlienToken =>
-    let n :=
-      match sourceId.bind g.findObject? with
-      | some src => src.status.invasion
-      | none => 0
-    let (g, tok) := g.createToken controller alien11redHasteToken
-    { g with notedCountThisWay := n, createdTokenThisWay := some tok.id }
   | .putArtifactFromHand | .may .putArtifactFromHand =>
     let g := { g with putArtifactThisWay := none }
     let arts :=
@@ -1740,15 +1766,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
       let g := g.returnToHand o.id o.owner
       { g with returnedPermanentThisWay := true }) sourceId none
-  | .createZabu =>
-    g.createNamedToken controller zabuToken
-  | .oppCreatesTheVoid =>
-    match targets[0]? with
-    | some (Target.player pid) => g.createNamedToken pid theVoidToken
-    | _ => g.createNamedToken controller theVoidToken
-  | .createSturdyShieldToken =>
-    let (g, shield) := g.createToken controller sturdyShieldToken
-    { g with createdTokenThisWay := some shield.id }
   | .attachCreatedToSource =>
     match g.createdTokenThisWay.bind g.findObject? with
     | none => { g with createdTokenThisWay := none }
@@ -1904,8 +1921,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.logMsg
         s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})"
     | _ => g
-  | .createRedwing =>
-    g.createNamedToken controller redwingToken
   | .surveil n =>
     let armed := g.armSurveilReturn
     let life := (g.player controller).lifeGainedThisTurn

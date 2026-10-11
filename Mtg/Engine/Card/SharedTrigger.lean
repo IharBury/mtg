@@ -835,7 +835,7 @@ inductive SharedTrigger where
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. Resolves as
-  `.«if» (.landsAtLeast 6) (.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure])`. -/
+  `.«if» (.landsAtLeast 6) (.sequence [.onPermanent .destroy, .createTokens .treasure 1 false (who := .targetController)])`. -/
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
   +1/+1 counter instead if you've scried or surveilled this turn. Resolves as

@@ -222,6 +222,63 @@ inductive TriggerPumpWho where
   | opponentsCreatures
 deriving Repr, Inhabited, BEq
 
+/-- Which token `TriggerResolution.createTokens` creates.
+`.kind` uses the `kind` argument. -/
+inductive TriggerToken where
+  /-- The `kind` argument. -/
+  | kind
+  /-- A colorless Equipment artifact token named Axe. -/
+  | axe
+  /-- Zabu, a legendary 2/2 green Cat. -/
+  | zabu
+  /-- The Void, a legendary 5/5 black Horror Villain. -/
+  | theVoid
+  /-- Redwing, a legendary 1/1 blue Bird Scout. -/
+  | redwing
+  /-- A 1/1 red Alien creature token with haste. -/
+  | alien
+  /-- A colorless Equipment artifact token named Sturdy Shield. -/
+  | sturdyShield
+deriving Repr, Inhabited, BEq
+
+/-- Who `TriggerResolution.createTokens` creates the tokens for. -/
+inductive TriggerTokenWho where
+  /-- The controller of the ability. -/
+  | you
+  /-- The announced opponent. With no player target, the controller creates it. -/
+  | targetOpponent
+  /-- The controller the targeted permanent had on the battlefield.
+  Destroy may already have moved it. -/
+  | targetController
+deriving Repr, Inhabited, BEq
+
+/-- How many tokens `TriggerResolution.createTokens` creates.
+`.fixed` uses `n`. -/
+inductive TriggerTokenQty where
+  /-- The `n` argument. -/
+  | fixed
+  /-- One for each artifact opponents control. -/
+  | oppArtifacts
+  /-- One for each artifact the damaged player controls. -/
+  | damagedPlayerArtifacts
+  /-- The last-known count. Bird Soldiers use `kind`; other counts are Treasures. -/
+  | lastKnown
+  /-- One for each creature the controller controls of a chosen type. -/
+  | chosenCreatureType
+deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
+inductive TriggerTokenNote where
+  /-- The tokens only. -/
+  | none
+  /-- Queue “attach it to target creature you control.” -/
+  | attachReflexive
+  /-- Remember the token so a later step can attach it to the source. -/
+  | remember
+  /-- Remember the token and how many invasion counters the source had. -/
+  | invasion
+deriving Repr, Inhabited, BEq
+
 /-- Where `TriggerResolution.pump` reads the bonus. `power` and `toughness`
 are used when this is `.fixed`. -/
 inductive TriggerPumpAmount where
@@ -244,7 +301,8 @@ deriving Repr, Inhabited, BEq
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, +1/+1 on the source, divided damage, putting counters,
-and until-end-of-turn pumps each cover multiple printed abilities.
+until-end-of-turn pumps, and creating tokens each cover multiple printed
+abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -444,7 +502,7 @@ You may put a land card from your hand onto the battlefield tapped is
   The target gets +3/+0 and gains first strike until end of turn, is
   `.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords Keyword.firstStrike)]`.
   Destroy the target, then its controller creates a Treasure, is
-  `.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure]`.
+  `.sequence [.onPermanent .destroy, .createTokens .treasure 1 false (who := .targetController)]`.
   You may put an artifact from your hand onto the battlefield, then attach
   it to the source if it is Equipment, is
   `.sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact]`. -/
@@ -493,8 +551,35 @@ You may put a land card from your hand onto the battlefield tapped is
   `attachSource` is true. -/
   | amassGoblins (n : Nat) (subtype : String := "Goblin")
       (amount : AmassAmount := .fixed) (attachSource : Bool := false)
-  /-- Create `n` tokens of this kind. -/
+  /-- Create tokens. `n` of `kind` is `.createTokens kind n tapped`.
+  `kind` and `n` are that token and that count when `token` is `.kind` and
+  `qty` is `.fixed`. A last-known count of Bird Soldiers also reads `kind`.
+  An Axe is `.createTokens .treasure 1 false .axe`.
+  Attaching that Axe is
+  `.createTokens .treasure 1 false .axe (note := .attachReflexive)`.
+  Tapped Treasures equal to opposing artifacts are
+  `.createTokens .treasure 0 true (qty := .oppArtifacts)`.
+  A Treasure for each artifact the damaged player controls is
+  `.createTokens .treasure 0 false (qty := .damagedPlayerArtifacts)`.
+  Bird Soldiers equal to the last-known count are
+  `.createTokens .birdSoldier 0 false (qty := .lastKnown)`.
+  Treasures equal to that count are
+  `.createTokens .treasure 0 false (qty := .lastKnown)`.
+  Treasures for each creature of a chosen type are
+  `.createTokens .treasure 0 false (qty := .chosenCreatureType)`.
+  Zabu is `.createTokens .treasure 1 false .zabu`.
+  The announced opponent creates The Void with
+  `.createTokens .treasure 1 false .theVoid .targetOpponent`.
+  Redwing is `.createTokens .treasure 1 false .redwing`.
+  An Alien, remembering invasion counters, is
+  `.createTokens .treasure 1 false .alien (note := .invasion)`.
+  A Sturdy Shield, remembered for a later attach, is
+  `.createTokens .treasure 1 false .sturdyShield (note := .remember)`.
+  The target's controller creates a Treasure with
+  `.createTokens .treasure 1 false (who := .targetController)`. -/
   | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool)
+      (token : TriggerToken := .kind) (who : TriggerTokenWho := .you)
+      (qty : TriggerTokenQty := .fixed) (note : TriggerTokenNote := .none)
   /-- Attach the source to the token created by the previous step. -/
   | attachSourceToCreated
   /-- Attach the source to the targeted permanent. -/
@@ -509,15 +594,10 @@ You may put a land card from your hand onto the battlefield tapped is
   | addMana (types : Array ManaType)
   /-- Defending player sacrifices a least-power creature. -/
   | defenderSacsLeastPower
-  /-- Create an Axe Equipment token.
-  Attaching it to a creature you control is `.createAxe (attach := true)`. -/
-  | createAxe (attach : Bool := false)
   /-- Set the source's base P/T. -/
   | becomePT (power toughness : Int)
   /-- Look at the top `n` and reveal a listed type. -/
   | lookAtTopRevealTypes (n : Nat) (types : Array String)
-  /-- Create tapped Treasures equal to opposing artifacts. -/
-  | createTappedTreasuresEqualOppArtifacts
   /-- Gain control of the target until end of turn; untap; haste. -/
   | gainControlOppUntilEot
   /-- Put a nonland permanent card with mana value at most `mv` from a
@@ -568,10 +648,6 @@ You may put a land card from your hand onto the battlefield tapped is
   trigger deals that creature's power as damage.
   Optional as `.may .sacrificeAnother`. -/
   | sacrificeAnother
-  /-- Create a Treasure for each artifact the damaged player controls. -/
-  | createTreasuresEqualDamagedPlayerArtifacts
-  /-- Create Bird Soldier tokens equal to last-known count. -/
-  | eaglesCreateBirds
   /-- Apply an unused Alliance mode, or do nothing if all were chosen. -/
   | allianceMode
   /-- Apply an unused Gollum mode, or do nothing if all were chosen. -/
@@ -590,8 +666,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | millPlayer (n : Nat)
   /-- The controller mills `n`. -/
   | mill (n : Nat)
-  /-- Treasures equal to permanents of a chosen type. -/
-  | treasuresPerChosenType
   /-- Reveal until a creature; put it onto the battlefield or into hand. -/
   | revealUntilCreature
   /-- Each player who lost life mills that much. -/
@@ -610,8 +684,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | castInstantSorceryMvAtMost
   /-- The Ring tempts you. -/
   | ringTempts
-  /-- Create Treasures equal to last-known damage. -/
-  | treasuresEqualLastKnown
   /-- You gain protection from everything until your next turn. -/
   | protectionEverything
   /-- Lose 1 life per burden counter. -/
@@ -641,10 +713,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Return the targeted permanent to its owner's hand.
   Whether a permanent was actually returned is recorded for the next step. -/
   | returnToOwnerHand
-  /-- Create Zabu. -/
-  | createZabu
-  /-- Target opponent creates The Void. -/
-  | oppCreatesTheVoid
   /-- Return the targeted GY permanent card to your hand. -/
   | returnGyPermanentThisTurn
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
@@ -653,8 +721,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | chooseUpToXModes
   /-- Target player reveals cards from hand; you choose one to discard. -/
   | revealDiscardFromHand
-  /-- Create Redwing. -/
-  | createRedwing
   /-- Surveil `n` (CR 701.25). -/
   | surveil (n : Nat)
   /-- Empower Jace `n` (Reality Fracture). -/
@@ -664,10 +730,6 @@ You may put a land card from your hand onto the battlefield tapped is
   If three or more creatures died this turn is
   `.prepareSource .ifThreeCreaturesDied`. -/
   | prepareSource (when : PrepareWhen := .ifNotPrepared)
-  /-- The target's controller creates a Treasure token.
-  After `.onPermanent .destroy`, the permanent may already have left; its
-  controller is the one it had on the battlefield. -/
-  | targetControllerCreatesTreasure
   /-- Add {G} for each charge counter on the source. -/
   | addGreenPerChargeCounter
   /-- Amass Goblins equal to the excess noted by the previous step. -/
@@ -757,10 +819,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Put a land card from your hand onto the battlefield tapped.
   Optional as `.may .putLandFromHandTapped`. -/
   | putLandFromHandTapped
-  /-- Create an Alien token and remember how many invasion counters to put. -/
-  | createAlienToken
-  /-- Create a Sturdy Shield token. -/
-  | createSturdyShieldToken
   /-- Attach the token created by the previous step to the source. -/
   | attachCreatedToSource
   /-- Exile the targeted graveyard card. -/
@@ -1040,7 +1098,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .gainLifeSearchBasicOnTop n =>
     { resolution := .sequence [.gainLife n, .searchLibrary .basicLandOnTop] }
   | .addMana types => { resolution := .addMana types }
-  | .createAxe attach => { resolution := .createAxe attach }
+  | .createAxe attach =>
+    { resolution :=
+        .createTokens .treasure 1 false .axe
+          (note := if attach then .attachReflexive else .none) }
   | .tapOppOrUntapYours =>
     { resolution := .or [.onPermanent .tap, .onPermanent .untap] }
   | .gainControlOppUntilEot =>
@@ -1102,7 +1163,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .lookAtTopRevealTypes n types =>
     { resolution := .lookAtTopRevealTypes n types }
   | .createTappedTreasuresEqualOppArtifacts =>
-    { resolution := .createTappedTreasuresEqualOppArtifacts }
+    { resolution := .createTokens .treasure 0 true (qty := .oppArtifacts) }
   | .putNonlandMvAtMostFromGy mv =>
     { targeting := .of (.filtered
         { noun := s!"up to one target nonland permanent card with mana value {mv} or less from a graveyard"
@@ -1131,7 +1192,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .putCounters .plusOneLastKnownMv .permanent }
   | .mountainQuestDragon =>
     { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» (.questAtLeast 6) (.sequence [.sacrificeSource .movedAsSacrificed, .searchDragonFromHandOrLibrary])] }
-  | .treasuresPerChosenType => { resolution := .treasuresPerChosenType }
+  | .treasuresPerChosenType =>
+    { resolution := .createTokens .treasure 0 false (qty := .chosenCreatureType) }
   | .revealUntilCreature => { resolution := .revealUntilCreature }
   | .attackSacPlusOneEqualPower =>
     { resolution := .mayThen (.objectCost .anotherCreature)
@@ -1152,7 +1214,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .pump 0 0 .target .equalSourcePower }
   | .createAlienPerInvasion =>
     { resolution := .sequence
-        [.createAlienToken, .putCounters .plusOneNoted .createdToken,
+        [.createTokens .treasure 1 false .alien (note := .invasion),
+         .putCounters .plusOneNoted .createdToken,
          .putCounters (.ofKind .invasion) .source] }
   | .mayPutArtifactAttachEquipment =>
     { resolution := .sequence
@@ -1173,14 +1236,16 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] }
   | .createTreasuresEqualDamagedPlayerArtifacts =>
-    { resolution := .createTreasuresEqualDamagedPlayerArtifacts }
+    { resolution :=
+        .createTokens .treasure 0 false (qty := .damagedPlayerArtifacts) }
   | .deal1ThenAmassOrcs =>
     { targeting := .of .playerOrCreature,
       resolution := .sequence
         [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc"] }
   | .untapAttackersExtraCombat _n =>
     { resolution := .sequence [.untapAttackingCreatures, .additionalCombatPhase] }
-  | .eaglesCreateBirds => { resolution := .eaglesCreateBirds }
+  | .eaglesCreateBirds =>
+    { resolution := .createTokens .birdSoldier 0 false (qty := .lastKnown) }
   | .allianceMode => { resolution := .allianceMode }
   | .destroyOtherAmassControllerPower =>
     { targeting := .of .anotherCreature, allowsZeroTargets := true,
@@ -1230,7 +1295,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .opponent,
       resolution := .sequence
         [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw] }
-  | .treasuresEqualLastKnown => { resolution := .treasuresEqualLastKnown }
+  | .treasuresEqualLastKnown =>
+    { resolution := .createTokens .treasure 0 false (qty := .lastKnown) }
   | .protectionEverything => { resolution := .protectionEverything }
   | .loseLifePerBurden => { resolution := .loseLifePerBurden }
   | .revealSaga => { resolution := .revealSaga }
@@ -1305,7 +1371,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .oppPermanent,
       resolution := .«if» (.landsAtLeast 6) (.sequence [
         .onPermanent .destroy,
-        .targetControllerCreatesTreasure]) }
+        .createTokens .treasure 1 false (who := .targetController)]) }
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .ifElse .scriedOrSurveilledThisTurn
@@ -1371,12 +1437,15 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering], targeting := .of .nonlandNontoken, allowsZeroTargets := true,
       resolution := .returnToOwnerHand }
   | .enter .createZabu =>
-    { events := #[.entering], resolution := .createZabu }
+    { events := #[.entering], resolution := .createTokens .treasure 1 false .zabu }
   | .enter .oppCreatesTheVoid =>
-    { events := #[.entering], targeting := .of .opponent, resolution := .oppCreatesTheVoid }
+    { events := #[.entering], targeting := .of .opponent,
+      resolution := .createTokens .treasure 1 false .theVoid .targetOpponent }
   | .enter .createSturdyShieldAttach =>
     { events := #[.entering],
-      resolution := .sequence [.createSturdyShieldToken, .attachCreatedToSource] }
+      resolution := .sequence
+        [.createTokens .treasure 1 false .sturdyShield (note := .remember),
+         .attachCreatedToSource] }
   | .enter .exileGyPlayUntilNextTurn =>
     { events := #[.entering], targeting := .of .equipmentInstantOrSorceryInYourGraveyard,
       resolution := .sequence [.exileGyCardNote, .grantPlayNotedUntilNextTurn] }
@@ -1413,7 +1482,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .enter .revealDiscardFromHand =>
     { events := #[.entering], targeting := .of .player, resolution := .revealDiscardFromHand }
   | .enter .createRedwing =>
-    { events := #[.entering], resolution := .createRedwing }
+    { events := #[.entering], resolution := .createTokens .treasure 1 false .redwing }
   | .step .enchantedControllerDraws =>
     { events := #[.enchantedControllerUpkeep], resolution := .step .enchantedControllerDraws }
   | .step .drawToTen =>
