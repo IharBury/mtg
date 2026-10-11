@@ -523,7 +523,8 @@ inductive SharedTrigger where
   /-- Discard `n` cards. One card is `.discard`. -/
   | discard (n : Nat := 1)
   /-- You may do `can`. If you do, `thenDo`.
-  You may discard a card. If you do, draw `n` is `.mayTo .discard (.draw n)`. -/
+  You may discard a card. If you do, draw `n` is `.mayTo .discard (.draw n)`.
+  Resolves as `TriggerResolution.mayThen` of each step's resolution. -/
   | mayTo (can thenDo : SharedTrigger)
   /-- You may do `action`. Declining skips it.
   Resolves as `TriggerResolution.may` of `action`'s resolution.

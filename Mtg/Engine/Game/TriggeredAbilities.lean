@@ -471,8 +471,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else
       let g := { g with discardedCardThisWay := none }
       g.beginDiscardCards #[controller] n
-  | .mayTo _ _ =>
-    g.logMsg s!"{(g.player controller).name}'s optional action doesn't resolve"
   | .opponentSacrificesCreature =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.beginSacrificeCreature pid)

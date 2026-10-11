@@ -157,7 +157,7 @@ inductive TriggerResolution where
   /-- You may resolve `optional`. If you do, resolve `conditional`.
   Declining, or being unable to perform `optional`, skips `conditional`.
   You may discard a card to draw `n` is `.mayThen (.discard 1) (.draw n)`.
-  That is how `SharedTrigger.mayTo .discard (.draw n)` resolves.
+  `SharedTrigger.mayTo a b` resolves as `.mayThen` of each step's resolution.
   You may pay `{n}` to draw is `.mayThen (.pay #[.generic n]) (.draw 1)`.
   Paying `{n}` to put a +1/+1 counter on the source and draw is
   `.mayThen (.pay #[.generic n]) (.sequence [.onSource (.plusOne 1), .draw 1])`.
@@ -191,10 +191,6 @@ inductive TriggerResolution where
   | returnSourceToHand
   /-- Put reflexive ability `followup` on the stack (“When you do”). -/
   | queueReflexive (followup : TriggerReflexive)
-  /-- You may do `can`. If you do, `thenDo`.
-  `SharedTrigger.mayTo .discard (.draw n)` resolves as
-  `.mayThen (.discard 1) (.draw n)` instead of this. -/
-  | mayTo (can thenDo : SharedTrigger)
 /-- The controller may resolve `action`. Declining skips it.
 A choice that already includes decline is that choice, so the player
 is not asked twice. You may draw X cards, where X is the mana spent to
@@ -886,8 +882,6 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .onSource action }
   | .exileTop => { resolution := .exileTop }
   | .discard n => { resolution := .discard n }
-  | .mayTo (.discard 1) (.draw n) =>
-    { resolution := .mayThen (.discard 1) (.draw n) }
   | .mayTo can thenDo =>
     let left := timing can
     let right := timing thenDo
@@ -900,7 +894,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         match left.dividedDamage with
         | some d => some d
         | none => right.dividedDamage
-      resolution := .mayTo can thenDo }
+      resolution := .mayThen left.resolution right.resolution }
   | .may action =>
     let inner := timing action
     { inner with resolution := .may inner.resolution }

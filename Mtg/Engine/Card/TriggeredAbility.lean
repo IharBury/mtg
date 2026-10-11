@@ -636,19 +636,6 @@ def interveningClause (t : TriggerTiming) : String :=
   | none, some n => s!", if you gained {n} or more life this turn"
   | none, none => ""
 
-/-- Short clause for one step of `SharedTrigger.mayTo`. -/
-private def mayStep : SharedTrigger → String
-  | .discard n => s!"discard {cardPhrase n}"
-  | .draw n => s!"draw {cardPhrase n}"
-  | .scry n => s!"scry {n}"
-  | .gainLife n => s!"gain {n} life"
-  | .drawXDiscard n =>
-    let disc := if n == 2 then "two cards" else cardPhrase n
-    s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
-  | .mayTo can thenDo => s!"you may {mayStep can}. If you do, {mayStep thenDo}"
-  | .may action => s!"you may {mayStep action}"
-  | _ => "do this"
-
 /-- Effect clause from resolution, targeting, and divided-damage parameters. -/
 def resolutionPhrase (t : TriggerTiming) : String :=
   let noun := t.targeting.kind.noun
@@ -703,7 +690,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .discard n => s!"discard {cardPhrase n}"
   | .mayThen (.discard 1) (.draw n) =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
-  | .mayTo can thenDo => mayStep (.mayTo can thenDo)
   | .may action =>
     match action with
     | .tapHumans =>

@@ -722,6 +722,15 @@ namespace CardDef
   .triggered .enter (Effect.ofTrigger (.mayTo .discard (.draw 2)))
 #guard (TriggeredAbility.onEnterMayDiscardDraw 2).resolution ==
   .mayThen (.discard 1) (.draw 2)
+#guard (TriggeredAbility.triggered .enter
+    (Effect.ofTrigger (.mayTo (.scry 1) (.gainLife 2)))).resolution ==
+  .mayThen (.scry 1) (.gainLife 2)
+#guard (TriggeredAbility.triggered .enter
+    (Effect.ofTrigger (.mayTo (.onPermanent .creature .tap) (.draw 1)))).targetKind ==
+  .creature
+#guard (TriggeredAbility.triggered .enter
+    (Effect.ofTrigger (.mayTo (.discard 1) (.millPlayer 3)))).targetKind ==
+  .player
 #guard TriggeredAbility.onCastNoncreatureMayDrawXDiscard2 ==
   .triggered .youCastNoncreature (Effect.ofTrigger (.may (.drawXDiscard 2)))
 #guard (TriggeredAbility.onCastNoncreatureMayDrawXDiscard2).resolution ==
