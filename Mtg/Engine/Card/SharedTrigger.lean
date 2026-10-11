@@ -420,12 +420,17 @@ inductive SharedTriggerWhen where
   | fra (e : FraEvent)
 deriving Repr, Inhabited, BEq
 
-/-- How many counters `SharedTrigger.amassGoblins` puts on the Army. -/
+/-- How many counters `amassGoblins` puts on the Army. `.fixed` uses `n`. -/
 inductive AmassAmount where
   /-- The `n` argument. -/
   | fixed
   /-- This creature's power, as it last existed. -/
   | sourcePower
+  /-- Excess damage an earlier step recorded. Zero excess amasses nothing. -/
+  | notedExcess
+  /-- The power an earlier step recorded when it destroyed a creature.
+  No destruction amasses nothing. -/
+  | notedPower
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Who the printed `SharedTrigger.recruit` names. -/
@@ -713,7 +718,7 @@ inductive SharedTrigger where
   /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .you .another)`. -/
   | bolgMaySacrifice
   /-- Bolg reflexive damage. Resolves as
-  `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess]`. -/
+  `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblins 0 (amount := .notedExcess)]`. -/
   | bolgDealSacrificedPower
   /-- Create Spirits for the equipped creature. Resolves as
   `.sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]`. -/
@@ -731,7 +736,7 @@ inductive SharedTrigger where
   /-- Alliance modes. -/
   | allianceMode
   /-- Destroy another; its controller amasses equal to its power. Resolves as
-  `.sequence [.destroyNotedForAmass, .amassNotedController, .«if» .youControlledDestroyed (.draw 1)]`. -/
+  `.sequence [.destroyNotedForAmass, .amassGoblins 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw 1)]`. -/
   | destroyOtherAmassControllerPower
   /-- Gollum parity modes. -/
   | gollumMode

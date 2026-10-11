@@ -831,15 +831,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
        .«if» (.nthResolve 2) (.draw 1),
        .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)] =>
     "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
-  | .sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess] =>
+  | .sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblins _ _ .notedExcess _ _] =>
     s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
   | .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] =>
     "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
-  | .sequence [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc" .fixed false] =>
+  | .sequence [.dealDamage 1 .target .fixed .markedPermanent, .amassGoblins 1 "Orc" .fixed false _] =>
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
   | .sequence [.untapAttackingCreatures, .additionalCombatPhase] =>
     "untap all attacking creatures. After this phase, there is an additional combat phase"
-  | .sequence [.destroyNotedForAmass, .amassNotedController, .«if» .youControlledDestroyed (.draw 1)] =>
+  | .sequence [.destroyNotedForAmass, .amassGoblins _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw 1)] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .sequence [.may .discardHand, .drawDiscardedHandCount, .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
@@ -1002,11 +1002,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "recruit"
   | .recruit .you =>
     "you recruit"
-  | .amassGoblins _ subtype .sourcePower _ =>
+  | .amassGoblins _ subtype .sourcePower _ _ =>
     s!"amass {pluralizeName subtype} X, where X is this creature's power"
-  | .amassGoblins n subtype _ true =>
+  | .amassGoblins _ subtype .notedExcess _ _ =>
+    s!"amass {pluralizeName subtype} X, where X is the excess damage"
+  | .amassGoblins _ subtype .notedPower _ .notedController =>
+    s!"its controller amasses {pluralizeName subtype} X, where X is that creature's power"
+  | .amassGoblins n subtype _ true _ =>
     s!"amass {pluralizeName subtype} {n}, then attach this Equipment to the amassed Army"
-  | .amassGoblins n subtype _ _ =>
+  | .amassGoblins n subtype _ _ _ =>
     s!"amass {pluralizeName subtype} {n}"
   | .createTokens kind n tapped token who qty note =>
     match token, who, qty, note with
@@ -1185,8 +1189,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
   | .revealDiscardFromHand =>
     s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
-  | .amassGoblinsNotedExcess =>
-    "amass Goblins X, where X is the excess damage"
   | .markRecentTokensAttacking =>
     "those tokens enter tapped and attacking"
   | .«if» .equippedLegendaryYouControl .markRecentTokensAttacking =>
@@ -1197,8 +1199,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "after this phase, there is an additional combat phase"
   | .destroyNotedForAmass =>
     s!"destroy {noun}"
-  | .amassNotedController =>
-    "its controller amasses Goblins X, where X is that creature's power"
   | .«if» .youControlledDestroyed (.draw 1) =>
     "if you controlled that creature, draw a card"
   | .discardHand =>

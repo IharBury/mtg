@@ -400,10 +400,10 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .createTokens k n tapped => return .createTokens k (← takeNat n) tapped
   | .amassGoblins n subtype amount attach =>
     match amount with
-    | .sourcePower =>
-      return .amassGoblins n (← takeStr subtype) amount attach
-    | _ =>
+    | .fixed =>
       return .amassGoblins (← takeNat n) (← takeStr subtype) amount attach
+    | .sourcePower | .notedExcess | .notedPower =>
+      return .amassGoblins n (← takeStr subtype) amount attach
   | .dividedDamage a b => return .dividedDamage (← takeNat a) (← takeNat b)
   | .gainLife n => return .gainLife (← takeNat n)
   | .connive who =>

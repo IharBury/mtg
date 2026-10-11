@@ -1535,7 +1535,8 @@ end CardDef
     .«if» (.nthResolve 2) (.draw 1),
     .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]
 #guard TriggeredAbility.resolution .onBolgDealSacrificedPower ==
-  .sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amassGoblinsNotedExcess]
+  .sequence [.dealDamage 0 .permanent .lastKnownPower .excess,
+    .amassGoblins 0 (amount := .notedExcess)]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
   .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
@@ -1543,7 +1544,9 @@ end CardDef
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
   .sequence [.untapAttackingCreatures, .additionalCombatPhase]
 #guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
-  .sequence [.destroyNotedForAmass, .amassNotedController, .«if» .youControlledDestroyed (.draw 1)]
+  .sequence [.destroyNotedForAmass,
+    .amassGoblins 0 (amount := .notedPower) (who := .notedController),
+    .«if» .youControlledDestroyed (.draw 1)]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
   .sequence [.may .discardHand, .drawDiscardedHandCount,
     .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]
