@@ -526,6 +526,7 @@ inductive SharedTrigger where
   You may discard a card. If you do, draw `n` is `.mayTo .discard (.draw n)`. -/
   | mayTo (can thenDo : SharedTrigger)
   /-- You may do `action`. Declining skips it.
+  Resolves as `TriggerResolution.may` of `action`'s resolution.
   You may draw X cards, where X is the mana spent to cast that spell, then
   discard two, is `.may (.drawXDiscard 2)`. -/
   | may (action : SharedTrigger)
@@ -626,7 +627,7 @@ inductive SharedTrigger where
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
-  Resolves as `.sequence [.tapAnyHumans, .drawForEachTappedHuman]`. -/
+  Resolves as `.sequence [.may .tapHumans, .drawForEachTappedHuman]`. -/
   | tapHumansDraw
   /-- Destroy opponents' artifacts and enchantments; gain life for each.
   Resolves as
@@ -698,7 +699,8 @@ inductive SharedTrigger where
   | pumpTargetBySourcePower
   /-- Create an Alien and grow it from invasion counters. -/
   | createAlienPerInvasion
-  /-- You may put an artifact from hand; attach if Equipment. -/
+  /-- You may put an artifact from hand; attach if Equipment.
+  Resolves as `.may .putArtifactAttachEquipment`. -/
   | mayPutArtifactAttachEquipment
   /-- Cascade. -/
   | cascade
@@ -707,7 +709,7 @@ inductive SharedTrigger where
   (Belladonna Took). Resolves as
   `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.plusOneEachYouControl)]`. -/
   | belladonnaTokenReward
-  /-- Bolg may-sacrifice. -/
+  /-- Bolg may-sacrifice. Resolves as `.may .sacrificeAnother`. -/
   | bolgMaySacrifice
   /-- Bolg reflexive damage. Resolves as
   `.sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess]`. -/
@@ -733,7 +735,7 @@ inductive SharedTrigger where
   /-- Gollum parity modes. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
-  `.sequence [.mayDiscardHandForStory, .drawDiscardedHandCount, .«if» .enduringStoryNoted .damageEachOpponentDiscardedHand]`. -/
+  `.sequence [.may .discardHand, .drawDiscardedHandCount, .«if» .enduringStoryNoted .damageEachOpponentDiscardedHand]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
@@ -763,7 +765,7 @@ inductive SharedTrigger where
   /-- Gríma impulse. Resolves as `.sequence [.grimaExileUntil, .grimaMayCast]`. -/
   | grimaImpulse
   /-- Palantír end-step. Resolves as
-  `.sequence [.influenceCounterOnSource, .scry 2, .palantirOfferDraw]`. -/
+  `.sequence [.influenceCounterOnSource, .scry 2, .may .opponentHasYouDraw]`. -/
   | palantir
   /-- Create Treasures equal to last-known noncombat damage. -/
   | treasuresEqualLastKnown
@@ -878,7 +880,8 @@ inductive SharedTrigger where
   /-- Villain if two creature cards in gy; otherwise mill two. Resolves as
   `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`. -/
   | villainIfGyElseMill
-  /-- Draw, then you may put a land from hand tapped. -/
+  /-- Draw, then you may put a land from hand tapped.
+  Resolves as `.sequence [.draw 1, .may .putLandFromHandTapped]`. -/
   | drawMayPutLandTapped
   /-- Draw; if you control another Hero, gain 2 life. -/
   | drawGainLifeIfAnotherHero

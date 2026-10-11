@@ -451,7 +451,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginDiscardCards #[controller] n
   | .mayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
-  | .mayTo _ _ | .may _ =>
+  | .mayTo _ _ =>
     g.logMsg s!"{(g.player controller).name}'s optional action doesn't resolve"
   | .opponentSacrificesCreature =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
@@ -620,7 +620,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let name := src.name
         let (g, _) := g.move src.id (.graveyard src.owner) none
         g.logMsg s!"{name} is sacrificed"
-  | .tapAnyHumans =>
+  | .tapHumans | .may .tapHumans =>
     { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
       s!"{(g.player controller).name} may tap any number of untapped Humans they control"
   | .drawForEachTappedHuman =>
@@ -868,7 +868,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               cardPower := sequencedCardPower
               alternatives := rs.toArray } }.logMsg
           (triggerOrLog (g.player controller).name rs)
-  | .bolgMaySacrifice =>
+  | .sacrificeAnother | .may .sacrificeAnother =>
     match sourceId with
     | some sid =>
       { g with pending := .maySacrificeAnotherBolg controller sid }.logMsg
@@ -983,7 +983,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           let (g, _) := g.move oid (.hand controller) none
           g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
       | _ => g.logMsg "The target is no longer legal"
-  | .mayDiscardHandForStory =>
+  | .discardHand | .may .discardHand =>
     { g with handDiscardedThisWay := none, notedSourceThisWay := sourceId }
       |>.beginFraChoice controller (.mayDiscardHandBalin sourceId)
         s!"{(g.player controller).name} may discard their hand"
@@ -1320,14 +1320,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else g.draw controller n
   | .discardIfManaSpent k =>
     g.beginDiscardCards #[controller] k
-  | .mayDrawXDiscard2 =>
+  | .may (.sequence [.drawEqualToManaSpent, .discardIfManaSpent n]) =>
     -- X is the mana spent to cast the triggering spell.
-    -- `SharedTrigger.may (.drawXDiscard 2)` resolves as this choice.
-    let n := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
-    if n == 0 then g.logMsg "No mana was spent to cast that spell"
+    let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+    if spent == 0 then g.logMsg "No mana was spent to cast that spell"
     else
-      g.beginFraChoice controller (.mayDrawThenDiscard n 2)
-        s!"{(g.player controller).name} may draw {n} cards, then discard two"
+      let disc := if n == 2 then "two" else toString n
+      g.beginFraChoice controller (.mayDrawThenDiscard spent n)
+        s!"{(g.player controller).name} may draw {spent} cards, then discard {disc}"
   | .castInstantSorceryFromHand =>
     let wizards :=
       (g.permanentsOf controller).filter (fun o =>
@@ -1403,7 +1403,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             { g with palantirChoiceReady := some (controller, opp, sid) }
           else g
         | none => g
-  | .palantirOfferDraw =>
+  | .opponentHasYouDraw | .may .opponentHasYouDraw =>
     match g.palantirChoiceReady with
     | none => g
     | some (c, opp, sid) =>
@@ -1587,7 +1587,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .exileUntilNextEndStep =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
       g.exileUntilNextEndStep o) sourceId none
-  | .mayPutLandFromHandTapped =>
+  | .putLandFromHandTapped | .may .putLandFromHandTapped =>
     { g with pending := .mayPutLandFromHand controller }.logMsg
       s!"{(g.player controller).name} may put a land card from their hand onto the battlefield tapped"
   | .maySacArtifactOrDiscardDraw =>
@@ -1620,7 +1620,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.mapObjectStatus src (fun s => { s with invasion := s.invasion + n })
         |>.logMsg s!"{src.name} gets an invasion counter")
       "The source is no longer in play"
-  | .mayPutArtifactAttachEquipment =>
+  | .putArtifactAttachEquipment | .may .putArtifactAttachEquipment =>
     let arts :=
       (g.player controller).hand.filterMap (fun id =>
         match g.findObject? id with
@@ -1929,7 +1929,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .casting e =>
     g.applyModeledTrigger controller (.onCasting (Effect.ofTrigger (.casting e))) sourceId targets sourceName lastKnownPower
   | .resource e =>
-    g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower)
+    g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower
+  | .may _ =>
+    g.logMsg s!"{(g.player controller).name}'s optional action doesn't resolve")
   | r =>
     g.applyUnifiedAbility controller { ab.effect with resolution := r }
       targets sourceId lastKnownPower
