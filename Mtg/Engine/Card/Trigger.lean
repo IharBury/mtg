@@ -360,6 +360,36 @@ inductive TriggerSacrificeNote where
   | forReflexive
 deriving Repr, Inhabited, BEq
 
+/-- What `TriggerResolution.attach` attaches. -/
+inductive TriggerAttachWhat where
+  /-- The source. -/
+  | source
+  /-- The first announced permanent. -/
+  | target
+  /-- Any number of Equipment the controller chooses. -/
+  | anyYouControl
+  /-- The token an earlier step remembered. -/
+  | created
+  /-- The artifact an earlier step put from hand. -/
+  | putArtifact
+deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.attach` attaches that object to. -/
+inductive TriggerAttachTo where
+  /-- The token the previous step created. -/
+  | created
+  /-- The announced permanent. -/
+  | target
+  /-- Up to one announced creature. A missing creature is reported. -/
+  | optionalCreature
+  /-- The announced creature. When two targets were announced, the later one. -/
+  | creatureTarget
+  /-- The source. -/
+  | source
+  /-- The creature remembered with the artifact put from hand. -/
+  | notedHost
+deriving Repr, Inhabited, BEq
+
 /-- Where `TriggerResolution.pump` reads the bonus. `power` and `toughness`
 are used when this is `.fixed`. -/
 inductive TriggerPumpAmount where
@@ -382,8 +412,8 @@ deriving Repr, Inhabited, BEq
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, +1/+1 on the source, divided damage, putting counters,
-until-end-of-turn pumps, creating tokens, exile, and sacrifice each cover
-multiple printed abilities.
+until-end-of-turn pumps, creating tokens, exile, sacrifice, and attach
+each cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -562,7 +592,7 @@ You may put a land card from your hand onto the battlefield tapped is
   of Humans, then draw that many, is
   `.sequence [.may .tapHumans, .drawForEachTappedHuman]`.
   Create one token, then attach the source to it, is
-  `.sequence [.createTokens kind 1 false, .attachSourceToCreated]`.
+  `.sequence [.createTokens kind 1 false, .attach .source .created]`.
   Gain life, then you may search a basic land onto the top, is
   `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`.
   Destroy opponents' artifacts and enchantments, then gain 1 life for each
@@ -605,7 +635,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.onPermanent .destroy, .createTokens .treasure 1 false (who := .targetController)]`.
   You may put an artifact from your hand onto the battlefield, then attach
   it to the source if it is Equipment, is
-  `.sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact]`. -/
+  `.sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -690,16 +720,24 @@ You may put a land card from your hand onto the battlefield tapped is
   | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool)
       (token : TriggerToken := .kind) (who : TriggerTokenWho := .you)
       (qty : TriggerTokenQty := .fixed) (note : TriggerTokenNote := .none)
-  /-- Attach the source to the token created by the previous step. -/
-  | attachSourceToCreated
-  /-- Attach the source to the targeted permanent. -/
-  | attachSourceToTarget
+  /-- Attach `what` to `host`.
+  The source to the token created by the previous step is
+  `.attach .source .created`.
+  The source to the targeted permanent is `.attach .source .target`.
+  Target Equipment to up to one target creature you control is
+  `.attach .target .optionalCreature`.
+  The source to the creature target is `.attach .source .creatureTarget`.
+  Any number of Equipment you control to the target creature is
+  `.attach .anyYouControl .target`.
+  The token an earlier step remembered, attached to the source, is
+  `.attach .created .source`.
+  The artifact put from hand, attached to the remembered creature, is
+  `.attach .putArtifact .notedHost`. -/
+  | attach (what : TriggerAttachWhat) (host : TriggerAttachTo)
   /-- Gain 1 life for each other creature you control. -/
   | gainLifeForEachOtherCreature
   /-- Destroy the permanent an earlier step dealt damage to. -/
   | destroyPermanentDealtDamage
-  /-- Attach the first target (Equipment) to the second (creature). -/
-  | attachEquipmentToCreature
   /-- Add these mana types. -/
   | addMana (types : Array ManaType)
   /-- Set the source's base P/T. -/
@@ -727,7 +765,7 @@ You may put a land card from your hand onto the battlefield tapped is
   Doing `thenDo` on the nth resolution this turn is
   `.«if» (.nthResolve n) thenDo`.
   Attaching the artifact put from hand when it is Equipment is
-  `.«if» .putArtifactIsEquipment .attachPutArtifact`. -/
+  `.«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)`. -/
   | «if» (cond : TriggerIf) (thenDo : TriggerResolution)
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
@@ -806,8 +844,6 @@ You may put a land card from your hand onto the battlefield tapped is
   next step. An empty hand skips the choice.
   Optional as `.may .putArtifactFromHand`. -/
   | putArtifactFromHand
-  /-- Attach the artifact an earlier step put from hand to that creature. -/
-  | attachPutArtifact
   /-- This fights the targeted creature. -/
   | fightUpToOne
   /-- Return the targeted permanent to its owner's hand.
@@ -865,10 +901,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | searchDragonFromHandOrLibrary
   /-- Put the land discarded by the previous step onto the battlefield tapped. -/
   | discardedLandEntersTapped
-  /-- Attach the source to the creature target. -/
-  | attachToCreatureTarget
-  /-- You may attach any number of Equipment you control to the target. -/
-  | offerAttachAnyEquipment
   /-- The creature that received Equipment deals damage equal to its power
   to up to one target creature. -/
   | reflexiveFightHost
@@ -909,8 +941,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Put a land card from your hand onto the battlefield tapped.
   Optional as `.may .putLandFromHandTapped`. -/
   | putLandFromHandTapped
-  /-- Attach the token created by the previous step to the source. -/
-  | attachCreatedToSource
   /-- You may play the exiled card until the end of your next turn. -/
   | grantPlayNotedUntilNextTurn
   /-- The tapped creature can't untap while you control the source. -/
@@ -1124,7 +1154,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .damageEachOpponent n =>
     { targeting := .of .opponent, resolution := .dealDamage n .eachOpponent }
   | .attachTo kind =>
-    { targeting := .of kind, resolution := .attachSourceToTarget }
+    { targeting := .of kind, resolution := .attach .source .target }
   | .opponentSacrificesCreature =>
     { targeting := .of .opponent,
       resolution := .sacrifice .targetOpponent .chosenCreature }
@@ -1184,7 +1214,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .damageBlockers n => { resolution := .dealDamage n .blockers }
   | .returnLinkedExile => { resolution := .returnLinkedExile }
   | .createThenAttach kind =>
-    { resolution := .sequence [.createTokens kind 1 false, .attachSourceToCreated] }
+    { resolution := .sequence [.createTokens kind 1 false, .attach .source .created] }
   | .gainLifeSearchBasicOnTop n =>
     { resolution := .sequence [.gainLife n, .searchLibrary .basicLandOnTop] }
   | .addMana types => { resolution := .addMana types }
@@ -1242,7 +1272,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage] }
   | .attachEquipmentToCreature =>
     { targeting := .of .equipmentYouControlThenCreatureYouControl,
-      allowsZeroTargets := true, resolution := .attachEquipmentToCreature }
+      allowsZeroTargets := true, resolution := .attach .target .optionalCreature }
   | .defenderSacsLeastPower =>
     { resolution := .sacrifice .defender .leastPower }
   | .returnOtherPlusOne =>
@@ -1310,7 +1340,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .putCounters (.ofKind .invasion) .source] }
   | .mayPutArtifactAttachEquipment =>
     { resolution := .sequence
-        [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact] }
+        [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)] }
   | .cascade => { resolution := .cascade }
   | .belladonnaTokenReward =>
     { resolution := .sequence [
@@ -1366,13 +1396,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         { noun := "target creature you control", controller := .you, types := #[.creature] }
       ] #[1])
       resolution := .sequence
-        [.putCounters .honePerOpponent .source, .attachToCreatureTarget] }
+        [.putCounters .honePerOpponent .source, .attach .source .creatureTarget] }
   | .damageTargetOpponent n =>
     { targeting := .of .opponent, resolution := .dealDamage n .targetOpponent }
   | .copySelfNonlegendary => { resolution := .copySelfNonlegendary }
   | .attachEquipmentThenFight =>
     { targeting := .of .creatureYouControl,
-      resolution := .sequence [.offerAttachAnyEquipment, .«if» .equipmentAttached .reflexiveFightHost] }
+      resolution := .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached .reflexiveFightHost] }
   | .returnAsArtifact => { resolution := .returnAsArtifact }
   | .exileLandsThenReturnTapped =>
     { targeting := .of (.filtered {
@@ -1491,7 +1521,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .onEnchanted action => { resolution := .onEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl,
-      resolution := .sequence [.attachSourceToTarget, .onTargetWhileSource followup] }
+      resolution := .sequence [.attach .source .target, .onTargetWhileSource followup] }
   | .exileOtherCopyEnchanted =>
     { targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
@@ -1538,7 +1568,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering],
       resolution := .sequence
         [.createTokens .treasure 1 false .sturdyShield (note := .remember),
-         .attachCreatedToSource] }
+         .attach .created .source] }
   | .enter .exileGyPlayUntilNextTurn =>
     { events := #[.entering], targeting := .of .equipmentInstantOrSorceryInYourGraveyard,
       resolution := .sequence

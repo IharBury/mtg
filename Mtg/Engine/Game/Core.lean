@@ -199,7 +199,7 @@ structure Game where
   handDiscardedThisWay : Option Nat := none
   /-- Source of the Balin ability, for the damage step after the discard. -/
   notedSourceThisWay : Option ObjectId := none
-  /-- Creature that received Equipment from `offerAttachAnyEquipment`. -/
+  /-- Creature that received Equipment from `attach .anyYouControl .target`. -/
   equipmentAttachedHost : Option ObjectId := none
   /-- A count captured before a later step could change it (invasion counters,
   cards discarded). -/
@@ -207,7 +207,7 @@ structure Game where
   /-- Token created for the following attach or counter step. -/
   createdTokenThisWay : Option ObjectId := none
   /-- Artifact put from hand by `putArtifactFromHand`, and the creature
-  `attachPutArtifact` attaches it to when it is Equipment. -/
+  `attach .putArtifact .notedHost` attaches it to when it is Equipment. -/
   putArtifactThisWay : Option (ObjectId × ObjectId) := none
   /-- Card exiled by `exile .graveyardCard .forLater .playCard`. -/
   playExiledThisWay : Option ObjectId := none
