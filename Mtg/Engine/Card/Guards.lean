@@ -1534,6 +1534,19 @@ end CardDef
   .sequence [.onPermanent (.grantKeywords Keyword.hexproof),
     .«if» .targetIsCreature (.onPermanent (.plusOne 1)),
     .«if» .targetIsPlaneswalker .loyaltyOnTarget]
+#guard (SharedTrigger.timing .beginCombatIfDrawnTwoPump).resolution ==
+  .«if» (.drewAtLeast 2) (.sequence [
+    .onPermanent (.pump 3 0),
+    .onPermanent (.grantKeywords Keyword.firstStrike)])
+#guard (SharedTrigger.timing .destroyOppPermanentIfSixLands).resolution ==
+  .«if» (.landsAtLeast 6) (.sequence [
+    .onPermanent .destroy,
+    .targetControllerCreatesTreasure])
+#guard TriggeredAbility.toNotation
+    (.triggered .enter (Effect.ofTrigger .destroyOppPermanentIfSixLands)) ==
+  "When this permanent enters, if you control six or more lands, destroy target permanent an opponent controls. They create a Treasure token."
+#guard TriggeredAbility.toNotation .onYourBeginCombatIfDrawnTwoPumpFirstStrike ==
+  "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
 #guard (SharedTrigger.timing (.drawXDiscard 2)).resolution ==
   .sequence [.drawEqualToManaSpent, .discardIfManaSpent 2]
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==

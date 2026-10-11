@@ -189,7 +189,11 @@ inductive TriggerResolution where
   `.sequence [.influenceCounterOnSource, .scry 2, .palantirOfferDraw]`.
   Grant keywords, then a +1/+1 counter if the target is a creature and a
   loyalty counter if it is a planeswalker, is
-  `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker .loyaltyOnTarget]`. -/
+  `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker .loyaltyOnTarget]`.
+  The target gets +3/+0 and gains first strike until end of turn, is
+  `.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords Keyword.firstStrike)]`.
+  Destroy the target, then its controller creates a Treasure, is
+  `.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -337,8 +341,6 @@ inductive TriggerResolution where
   | equippedAttackersGainDoubleStrike
   /-- Reveal the top `n`; put a random creature onto the battlefield. -/
   | revealTopPutRandomCreature (n : Nat)
-  /-- The target gets +3/+0 and gains first strike until end of turn. -/
-  | pumpAndFirstStrike
   /-- Target player mills `n`. -/
   | millPlayer (n : Nat)
   /-- Treasures equal to permanents of a chosen type. -/
@@ -452,8 +454,10 @@ inductive TriggerResolution where
   | prepareSource (when : PrepareWhen := .ifNotPrepared)
   /-- Put a loyalty counter on the source. -/
   | loyaltyOnSource
-  /-- Destroy the target. Its controller creates a Treasure token. -/
-  | destroyTargetControllerCreatesTreasure
+  /-- The target's controller creates a Treasure token.
+  After `.onPermanent .destroy`, the permanent may already have left; its
+  controller is the one it had on the battlefield. -/
+  | targetControllerCreatesTreasure
   /-- +1/+1 until end of turn, or a +1/+1 counter if you scried or surveilled. -/
   | pumpOrCounterIfScried
   /-- Creatures you control get +P/+T until end of turn. -/
@@ -988,7 +992,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .revealTopPutRandomCreature n }
   | .beginCombatIfDrawnTwoPump =>
     { targeting := .of .anotherCreatureYouControl,
-      resolution := .«if» (.drewAtLeast 2) .pumpAndFirstStrike }
+      resolution := .«if» (.drewAtLeast 2) (.sequence [
+        .onPermanent (.pump 3 0),
+        .onPermanent (.grantKeywords Keyword.firstStrike)]) }
   | .honePerOppAttach =>
     { targeting := .of (.multi #[
         { noun := "target opponent", zone := .player, controller := .opponent },
@@ -1082,7 +1088,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .«if» .targetIsPlaneswalker .loyaltyOnTarget] }
   | .destroyOppPermanentIfSixLands =>
     { targeting := .of .oppPermanent,
-      resolution := .«if» (.landsAtLeast 6) .destroyTargetControllerCreatesTreasure }
+      resolution := .«if» (.landsAtLeast 6) (.sequence [
+        .onPermanent .destroy,
+        .targetControllerCreatesTreasure]) }
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .pumpOrCounterIfScried }

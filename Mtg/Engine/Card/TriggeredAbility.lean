@@ -667,9 +667,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .«if» (.removedLoyaltyAtLeast 2) (.draw 1) =>
     "if you removed two or more loyalty counters to activate it, draw a card"
   | .loyaltyOnSource => "put a loyalty counter on this"
-  | .destroyTargetControllerCreatesTreasure =>
-    s!"destroy {noun}. They create a Treasure token"
-  | .«if» (.landsAtLeast 6) .destroyTargetControllerCreatesTreasure =>
+  | .targetControllerCreatesTreasure =>
+    "they create a Treasure token"
+  | .«if» (.landsAtLeast 6) (.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure]) =>
     s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
   | .pumpOrCounterIfScried =>
     s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
@@ -836,6 +836,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
   | .sequence [.armSurveilReturnLifeGained, .surveil 1] =>
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
+  | .sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords k)] =>
+    s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
+  | .sequence [.onPermanent .destroy, .targetControllerCreatesTreasure] =>
+    s!"destroy {noun}. They create a Treasure token"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -998,10 +1002,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "each equipped attacking creature gains double strike until end of turn"
   | .revealTopPutRandomCreature n =>
     s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
-  | .pumpAndFirstStrike =>
-    s!"{noun} gets +3/+0 and gains first strike until end of turn"
-  | .«if» (.drewAtLeast 2) .pumpAndFirstStrike =>
-    s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains first strike until end of turn"
+  | .«if» (.drewAtLeast 2) (.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords k)]) =>
+    s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
   | .millPlayer n =>
     s!"{noun} mills {n} cards"
   | .treasuresPerChosenType =>

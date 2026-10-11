@@ -847,6 +847,15 @@ def onlyLib (g : Game) (cards : Array CardDef) : Game :=
   let g := g.modifyPlayer me (fun pl => { pl with cardsDrawnThisTurn := 0 })
   let g := g.putControlledTriggers me .yourBeginCombat
   !g.waitingTriggers.any (·.source.name == "Lake-town Toymaker")
+/- After two draws, another creature gets +3/+0 and first strike. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw lakeTownToymaker me me) grizzlyBears me me
+  let g := g.modifyPlayer me (fun pl => { pl with cardsDrawnThisTurn := 2 })
+  let g := settle (passBoth (skipTo g .beginningOfCombat 80))
+  power g "Grizzly Bears" == 5 &&
+    g.hasFirstStrike (namedPermanent g "Grizzly Bears") &&
+    power g "Lake-town Toymaker" == 3 &&
+    !g.hasFirstStrike (namedPermanent g "Lake-town Toymaker")
 
 /- Uncover the Moon-Letters: you may draw X, X being the mana spent on the
 spell, then discard two. -/

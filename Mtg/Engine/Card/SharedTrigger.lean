@@ -741,7 +741,9 @@ inductive SharedTrigger where
   | tapEnchantedRemoveCounters
   /-- Reveal the top `n` and put a random creature in. -/
   | revealTopPutRandomCreature (n : Nat)
-  /-- If you drew two or more, pump and first strike. -/
+  /-- If you drew two or more, another creature you control gets +3/+0 and
+  gains first strike. Resolves as
+  `.«if» (.drewAtLeast 2) (.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords Keyword.firstStrike)])`. -/
   | beginCombatIfDrawnTwoPump
   /-- Hone per opposing creatures and attach. -/
   | honePerOppAttach
@@ -826,7 +828,8 @@ inductive SharedTrigger where
   `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker .loyaltyOnTarget]`. -/
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
-  controls; its controller creates a Treasure. -/
+  controls; its controller creates a Treasure. Resolves as
+  `.«if» (.landsAtLeast 6) (.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure])`. -/
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
   +1/+1 counter instead if you've scried or surveilled this turn. -/
