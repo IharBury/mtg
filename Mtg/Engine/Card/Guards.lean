@@ -720,7 +720,8 @@ namespace CardDef
 #guard TriggeredAbility.onEnterExileTop == .triggered .enter (Effect.ofTrigger .exileTop)
 #guard TriggeredAbility.onEnterMayDiscardDraw 2 ==
   .triggered .enter (Effect.ofTrigger (.mayTo .discard (.draw 2)))
-#guard (TriggeredAbility.onEnterMayDiscardDraw 2).resolution == .mayDiscardDraw 2
+#guard (TriggeredAbility.onEnterMayDiscardDraw 2).resolution ==
+  .mayThen (.discard 1) (.draw 2)
 #guard TriggeredAbility.onCastNoncreatureMayDrawXDiscard2 ==
   .triggered .youCastNoncreature (Effect.ofTrigger (.may (.drawXDiscard 2)))
 #guard (TriggeredAbility.onCastNoncreatureMayDrawXDiscard2).resolution ==
@@ -1348,7 +1349,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
   .sequence [.onPermanent .tap, .cantUntapWhileSource]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==
-  .maySacAnotherThenDestroyOppNonland
+  .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7))
 #guard TriggeredAbility.resolution (.onEnterExileTop) == .exileTop
 #guard StaticAbility.toNotation .noMaximumHandSize ==
   "You have no maximum hand size."
@@ -1408,7 +1409,7 @@ namespace CardDef
   .prepareSource .ifThreeCreaturesDied
 #guard (TriggeredAbility.triggered .youScryOrSurveil
     (Effect.ofTrigger (.mayPayGenericDraw 2 (plusOneOnSource := true)))).resolution ==
-  .mayPayGenericDraw 2 true
+  .mayThen (.pay #[.generic 2]) (.sequence [.onSource (.plusOne 1), .draw 1])
 #guard TriggeredAbility.toNotation .onEnterCreateAxe ==
   "When this permanent enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}."
 #guard TriggeredAbility.toNotation .onEnterCreateAxeAttach ==

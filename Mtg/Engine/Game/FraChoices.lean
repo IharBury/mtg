@@ -419,12 +419,16 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw s!"Can't sacrifice {o.name}"
     let pw := (g.power o).toNat
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
-    let g :=
-      match g.findObject? sourceId with
-      | some src => if src.isOnBattlefield then g.addPlusOnePlusOneTo src pw else g
-      | none => g
-    return g.finishFraChoice
-  | .maySacrificeAnotherCreatureForPower _, .decline => return g.finishFraChoice
+    if g.mayThenDrop > 0 then
+      return { g with sacrificedPowerThisWay := some pw }.acceptMayThen
+    else
+      let g :=
+        match g.findObject? sourceId with
+        | some src => if src.isOnBattlefield then g.addPlusOnePlusOneTo src pw else g
+        | none => g
+      return g.finishFraChoice
+  | .maySacrificeAnotherCreatureForPower _, .decline =>
+    if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .maySacrificeAnotherCreatureForPower _, _ => throw "Choose a creature to sacrifice, or decline"
   | .maySacrificeAnotherForDrawTreasure sourceId, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
@@ -432,19 +436,27 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         !(o.isCreature || o.printed.isArtifact) then
       throw s!"Can't sacrifice {o.name}"
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
-    let drawn : Effect := {
-      resolution := .sequence [.draw 1, .createTokens .treasure 1]
-      phrase := "Draw a card and create a Treasure" }
-    return (g.applyUnifiedAbility p drawn #[] (some sourceId)).finishFraChoice
-  | .maySacrificeAnotherForDrawTreasure _, .decline => return g.finishFraChoice
+    if g.mayThenDrop > 0 then
+      return g.acceptMayThen
+    else
+      let drawn : Effect := {
+        resolution := .sequence [.draw 1, .createTokens .treasure 1]
+        phrase := "Draw a card and create a Treasure" }
+      return (g.applyUnifiedAbility p drawn #[] (some sourceId)).finishFraChoice
+  | .maySacrificeAnotherForDrawTreasure _, .decline =>
+    if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .maySacrificeAnotherForDrawTreasure _, _ => throw "Choose a creature or artifact to sacrifice, or decline"
   | .mayPaySymbolsThen symbols next sourceId, .accept =>
     let cost : ManaCost := { symbols := symbols }
     if !(g.player p).manaPool.canPay cost then
       throw s!"{(g.player p).name} cannot pay that cost; add mana first"
     let g ← g.payCost p cost
-    return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
-  | .mayPaySymbolsThen .., .decline => return g.finishFraChoice
+    if g.mayThenDrop > 0 then
+      return g.acceptMayThen
+    else
+      return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+  | .mayPaySymbolsThen .., .decline =>
+    if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .mayPaySymbolsThen .., _ => throw "Pay (accept), or decline"
   | .attachAnyEquipment hostId eligible, .objects ids =>
     if !ids.all (eligible.contains ·) || ids.toList.eraseDups.length != ids.size then
@@ -470,8 +482,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .sacrificeLeastPower _, _ => throw "Choose a creature tied for the least power"
   | .mayPayPickThen pick next sourceId, .objects ids =>
     let g ← g.payCostPick p sourceId sourceId pick ids
-    return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
-  | .mayPayPickThen .., .decline => return g.finishFraChoice
+    if g.mayThenDrop > 0 then
+      return g.acceptMayThen
+    else
+      return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+  | .mayPayPickThen .., .decline =>
+    if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .mayPayPickThen pick .., _ => throw s!"Choose what to {pick.phrase}, or decline"
   | .addManaColors left use, .mode idx =>
     let some c := Color.all[idx]? | throw "Choose white, blue, black, red, or green (0-4)"
@@ -592,10 +608,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | some o =>
       if o.isOnBattlefield && !o.status.tapped then
         let g := g.becomeTapped o
-        return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+        if g.mayThenDrop > 0 then
+          return g.acceptMayThen
+        else
+          return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
       else throw s!"{o.name} can't be tapped"
     | none => throw "The source is gone"
-  | .mayTapSourceThen .., .decline => return g.finishFraChoice
+  | .mayTapSourceThen .., .decline =>
+    if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .mayTapSourceThen .., _ => throw "Answer accept or decline"
   | .hawkeyeModes left chosen sourceId, .mode idx =>
     if idx > 2 then throw "Choose Net (0), Explosive (1), or Boomerang (2)"
@@ -710,9 +730,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice
   | .mayDiscardHandBalin _, _ => throw "Discard your hand (accept), or decline"
   | .mayDiscardHandDrawFixed n, .accept =>
-    return (g.discardHandThenDraw p n).finishFraChoice
+    if g.mayThenDrop > 0 then
+      return (g.discardEntireHand p).acceptMayThen
+    else
+      return (g.discardHandThenDraw p n).finishFraChoice
   | .mayDiscardHandDrawFixed _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice
+    let g := g.logMsg s!"{(g.player p).name} does not discard their hand"
+    if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .mayDiscardHandDrawFixed _, _ => throw "Discard your hand (accept), or decline"
   | .sacrificeDamager ids rest controller, .objects #[id] =>
     if !ids.contains id then throw "Choose a creature that dealt combat damage"

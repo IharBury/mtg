@@ -373,6 +373,11 @@ def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String
   | _ =>
     "choose one"
 
+/-- The optional action of `mayThen` cannot be performed. Skip the conditional
+steps still in this sequence. -/
+def failMayThen (g : Game) : Game :=
+  { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -456,10 +461,16 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
         (optional := true)
   | .discard n =>
-    let g := { g with discardedCardThisWay := none }
-    g.beginDiscardCards #[controller] n
-  | .mayDiscardDraw n =>
-    g.beginMayDiscardDraw controller n
+    if g.mayThenDrop > 0 && n == 1 then
+      let drawN :=
+        match g.mayThenConditional with
+        | some (.draw k) => k
+        | _ => 1
+      let g := g.beginMayDiscardDraw controller drawN
+      if g.pending == .none then g.failMayThen else g
+    else
+      let g := { g with discardedCardThisWay := none }
+      g.beginDiscardCards #[controller] n
   | .mayTo _ _ =>
     g.logMsg s!"{(g.player controller).name}'s optional action doesn't resolve"
   | .opponentSacrificesCreature =>
@@ -505,6 +516,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               (g, [], true, true)
             else if paused then
               (g, waiting ++ [step], true, false)
+            else if g.mayThenSkip > 0 then
+              ({ g with mayThenSkip := g.mayThenSkip - 1 }, waiting, false, false)
             else
               let pendingBefore := g.pending
               let g :=
@@ -524,9 +537,21 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | .noteResolveThisTurn _ => true
         | .«if» (.nthResolve _) _ => true
         | _ => false
+      -- A nested `mayThen` stores its conditional here. Later steps of this
+      -- sequence follow that conditional.
+      let already :=
+        match g.triggerSequenceRest with
+        | some stored => stored.steps
+        | none => []
+      let combined := already ++ rest
+      let g := { g with triggerSequenceRest := none, mayThenSkip := 0 }
       let g :=
-        if rest.isEmpty && usesNth then { g with nthResolveThisWay := none } else g
-      if rest.isEmpty then g
+        if combined.isEmpty && usesNth then { g with nthResolveThisWay := none } else g
+      let g :=
+        if combined.isEmpty && g.pending == .none then
+          { g with mayThenDrop := 0, mayThenConditional := none }
+        else g
+      if combined.isEmpty then g
       else
         { g with triggerSequenceRest := some {
             controller
@@ -538,7 +563,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             lastKnownToughness
             sourceName
             cardPower
-            steps := rest } }
+            steps := combined } }
   | .gainLifeEqualToTargetPower =>
     match sequencedCardPower with
     | some n => g.gainLife controller n
@@ -562,7 +587,18 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let n := (lastKnownPower.getD 0).toNat
     g.applyOnTriggerSource sourceId (.pump (n : Int) (n : Int))
   | .onSource action =>
-    g.applyOnTriggerSource sourceId action
+    if g.mayThenDrop > 0 && action == .tap then
+      match sourceId.bind g.findObject? with
+      | some src =>
+        if src.isOnBattlefield && !src.status.tapped then
+          g.beginFraChoice controller (.mayTapSourceThen (.mshReflexive 0 0) src.id)
+            s!"{(g.player controller).name} may tap {src.name}"
+        else
+          (g.logMsg s!"{src.name} can't be tapped this way. The reflexive ability doesn't trigger.").failMayThen
+      | none =>
+        (g.logMsg "The source is no longer on the battlefield. The reflexive ability doesn't trigger.").failMayThen
+    else
+      g.applyOnTriggerSource sourceId action
   | .gainLife n =>
     g.gainLife controller n
   | .eachPlayerSacrificesCreature =>
@@ -581,17 +617,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.battlefield.filter (fun c =>
           c.isCreature && c.controlledBy controller && c.id != o.id) |>.size
       g.pumpPermanent o others others
-  | .mayPayGenericDraw n plusOne =>
-    let g :=
-      if plusOne then
-        { g with pending := .mayPayGeneric controller n, mayPayAlsoPlusOneOn := sourceId }
-      else
-        { g with pending := .mayPayGeneric controller n }
-    g.logMsg <|
-      if plusOne then
-        s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
-      else
-        s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
   | .putFromHandOnBottom =>
     if (g.player controller).hand.isEmpty then g
     else
@@ -993,9 +1018,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
       | _ => g.logMsg "The target is no longer legal"
   | .discardHand | .may .discardHand =>
-    { g with handDiscardedThisWay := none, notedSourceThisWay := sourceId }
-      |>.beginFraChoice controller (.mayDiscardHandBalin sourceId)
-        s!"{(g.player controller).name} may discard their hand"
+    if g.mayThenDrop > 0 then
+      let n :=
+        match g.mayThenConditional with
+        | some (.draw k) => k
+        | _ => 0
+      g.beginFraChoice controller (.mayDiscardHandDrawFixed n)
+        s!"{(g.player controller).name} may discard their hand. If they do, they draw {n} cards"
+    else
+      { g with handDiscardedThisWay := none, notedSourceThisWay := sourceId }
+        |>.beginFraChoice controller (.mayDiscardHandBalin sourceId)
+          s!"{(g.player controller).name} may discard their hand"
   | .drawDiscardedHandCount =>
     match g.handDiscardedThisWay with
     | some n => if n == 0 then g else g.draw controller n
@@ -1195,25 +1228,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         if o.printed.manaValue <= lands then
           g := g.afterPermanentEnters (g.object! newId)
         return g.putRestOnBottomRandom controller rest
-  | .attackSacPlusOneEqualPower =>
-    match sourceId with
-    | none => g.logMsg "No other creature to sacrifice"
-    | some sid =>
-      let others := (g.creaturesControlledBy controller).filter (·.id != sid)
-      if others.isEmpty then g.logMsg "No other creature to sacrifice"
-      else
-        g.beginFraChoice controller (.maySacrificeAnotherCreatureForPower sid)
-          s!"{(g.player controller).name} may sacrifice another creature"
-  | .payReturnFromGy =>
-    match sourceId.bind g.findObject? with
-    | none => g.logMsg "The ability's source is no longer in the graveyard"
-    | some src =>
-      if src.zone != .graveyard src.owner then
-        g.logMsg s!"{src.name} is no longer in the graveyard"
-      else
-        let symbols := #[ManaSymbol.generic 1, ManaSymbol.colored .green, ManaSymbol.colored .blue]
-        g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
-          s!"{(g.player controller).name} may pay \{1}\{G}\{U} to return {src.name} to their hand"
   | .discardedLandEntersTapped =>
     match g.discardedCardThisWay with
     | none => g
@@ -1268,16 +1282,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let (g, _) := g.createToken controller face
         let (g, _) := g.createToken controller face
         g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
-  | .maySacDrawTreasure =>
-    match sourceId with
-    | none => g.logMsg "Nothing to sacrifice"
-    | some sid =>
-      let any := (g.permanentsOf controller).any (fun o =>
-        o.id != sid && (o.isCreature || o.printed.isArtifact))
-      if !any then g.logMsg "Nothing to sacrifice"
-      else
-        g.beginFraChoice controller (.maySacrificeAnotherForDrawTreasure sid)
-          s!"{(g.player controller).name} may sacrifice another creature or artifact"
   | .targetOpponentLosesLife n =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.loseLife pid n)
@@ -1430,9 +1434,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
-  | .mayDiscardHandDraw n =>
-    g.beginFraChoice controller (.mayDiscardHandDrawFixed n)
-      s!"{(g.player controller).name} may discard their hand. If they do, they draw {n} cards"
   | .treasuresEqualLastKnown =>
     let n := (lastKnownPower.getD 0).toNat
     g.createTreasureTokens controller n
@@ -1599,9 +1600,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .putLandFromHandTapped | .may .putLandFromHandTapped =>
     { g with pending := .mayPutLandFromHand controller }.logMsg
       s!"{(g.player controller).name} may put a land card from their hand onto the battlefield tapped"
-  | .maySacArtifactOrDiscardDraw =>
-    { g with pending := .maySacArtifactOrDiscard controller 1 }.logMsg
-      s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw a card"
   | .pumpTargetBySourcePower =>
     let x := g.sourcePowerAtResolution sourceId lastKnownPower
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
@@ -1724,25 +1722,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.mapObjectStatus o (fun s =>
         { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid }))
       sourceId (some "The target is no longer legal")
-  | .maySacAnotherThenDestroyOppNonland =>
-    match sourceId with
-    | some sid =>
-      let pick := CostPick.sacrificeAnotherSubtype "Creature"
-      if (g.costPickCandidates controller sid pick).isEmpty then
-        g.logMsg "There is no other creature to sacrifice. The reflexive ability doesn't trigger."
-      else
-        g.beginFraChoice controller (.mayPayPickThen pick (.mshReflexive 7 0) sid)
-          s!"{(g.player controller).name} may sacrifice another creature"
-    | none => g
-  | .maySacOrDiscardNonlandThenDamage =>
-    match sourceId with
-    | some sid =>
-      if (g.costPickCandidates controller sid .sacrificeArtifactOrDiscardNonland).isEmpty then g
-      else
-        g.beginFraChoice controller
-          (.mayPayPickThen .sacrificeArtifactOrDiscardNonland (.reflexiveDamageAnyTarget 2) sid)
-          s!"{(g.player controller).name} may sacrifice an artifact or discard a nonland card"
-    | none => g
   | .revealHandExileUntilLeaves =>
     let opp? :=
       match targets[0]? with
@@ -1810,16 +1789,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           | _ =>
             g := g.logMsg "The token was already destroyed and can't be sacrificed"
       return g
-  | .mayTapThenGrantIndestructible =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if src.isOnBattlefield && !src.status.tapped then
-        g.beginFraChoice controller (.mayTapSourceThen (.mshReflexive 0 0) src.id)
-          s!"{(g.player controller).name} may tap {src.name}"
-      else
-        g.logMsg s!"{src.name} can't be tapped this way. The reflexive ability doesn't trigger."
-    | none =>
-      g.logMsg "The source is no longer on the battlefield. The reflexive ability doesn't trigger."
   | .tapTargetIfPresent =>
     match targets[0]? with
     | some (Target.permanent id) =>
@@ -1953,6 +1922,104 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyModeledTrigger controller (.onCasting (Effect.ofTrigger (.casting e))) sourceId targets sourceName lastKnownPower
   | .resource e =>
     g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower
+  | .mayThen optional conditional =>
+    let cond := TriggeredAbility.TriggerResolution.flatten conditional
+    let g := { g with mayThenDrop := cond.length, mayThenConditional := some conditional }
+    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName
+      (some (.sequence (optional :: cond))) sequencedCardPower
+  | .pay symbols =>
+    match symbols.toList with
+    | [.generic n] =>
+      let plusOne :=
+        match g.mayThenConditional with
+        | some (.sequence [.onSource (.plusOne 1), .draw 1]) => true
+        | _ => false
+      let g := { g with pending := .mayPayGeneric controller n }
+      g.logMsg <|
+        if plusOne then
+          s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
+        else
+          s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
+    | _ =>
+      match sourceId.bind g.findObject? with
+      | none =>
+        (g.logMsg "The ability's source is no longer in the graveyard").failMayThen
+      | some src =>
+        if src.zone != .graveyard src.owner then
+          (g.logMsg s!"{src.name} is no longer in the graveyard").failMayThen
+        else
+          let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
+          g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
+            s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
+  | .objectCost how =>
+    match how with
+    | .anotherCreature =>
+      let reflexive :=
+        match g.mayThenConditional with
+        | some (.queueReflexive _) => true
+        | _ => false
+      match sourceId with
+      | some sid =>
+        if reflexive then
+          let pick := CostPick.sacrificeAnotherSubtype "Creature"
+          if (g.costPickCandidates controller sid pick).isEmpty then
+            (g.logMsg "There is no other creature to sacrifice. The reflexive ability doesn't trigger.").failMayThen
+          else
+            g.beginFraChoice controller (.mayPayPickThen pick (.mshReflexive 7 0) sid)
+              s!"{(g.player controller).name} may sacrifice another creature"
+        else
+          let others := (g.creaturesControlledBy controller).filter (·.id != sid)
+          if others.isEmpty then
+            (g.logMsg "No other creature to sacrifice").failMayThen
+          else
+            g.beginFraChoice controller (.maySacrificeAnotherCreatureForPower sid)
+              s!"{(g.player controller).name} may sacrifice another creature"
+      | none =>
+        if reflexive then g.failMayThen
+        else (g.logMsg "No other creature to sacrifice").failMayThen
+    | .anotherCreatureOrArtifact =>
+      match sourceId with
+      | none => (g.logMsg "Nothing to sacrifice").failMayThen
+      | some sid =>
+        let any := (g.permanentsOf controller).any (fun o =>
+          o.id != sid && (o.isCreature || o.printed.isArtifact))
+        if !any then (g.logMsg "Nothing to sacrifice").failMayThen
+        else
+          g.beginFraChoice controller (.maySacrificeAnotherForDrawTreasure sid)
+            s!"{(g.player controller).name} may sacrifice another creature or artifact"
+    | .artifactOrDiscard =>
+      { g with pending := .maySacArtifactOrDiscard controller 1 }.logMsg
+        s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw a card"
+    | .artifactOrDiscardNonland =>
+      match sourceId with
+      | some sid =>
+        if (g.costPickCandidates controller sid .sacrificeArtifactOrDiscardNonland).isEmpty then
+          g.failMayThen
+        else
+          g.beginFraChoice controller
+            (.mayPayPickThen .sacrificeArtifactOrDiscardNonland (.reflexiveDamageAnyTarget 2) sid)
+            s!"{(g.player controller).name} may sacrifice an artifact or discard a nonland card"
+      | none => g.failMayThen
+  | .plusOneEqualSacrificedPower =>
+    let n := g.sacrificedPowerThisWay.getD 0
+    let g := { g with sacrificedPowerThisWay := none }
+    match sourceId.bind g.findObject? with
+    | some src => if src.isOnBattlefield then g.addPlusOnePlusOneTo src n else g
+    | none => g
+  | .returnSourceToHand =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
+      else g.logMsg s!"{o.name} is no longer in the graveyard"
+    | none => g.logMsg "The ability's source is no longer in the graveyard"
+  | .queueReflexive followup =>
+    match followup with
+    | .modeled kind => g.queueModeledReflexive controller sourceId kind 0
+    | .damageAny n =>
+      g.putReflexiveTrigger controller sourceId
+        { targeting := .of .playerOrCreature, resolution := .fra (.damageAny n)
+          phrase := s!"This deals {n} damage to any target" }
   | .may _ =>
     g.logMsg s!"{(g.player controller).name}'s optional action doesn't resolve")
   | r =>
