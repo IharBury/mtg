@@ -323,7 +323,7 @@ def randomChoiceLines (g : Game) (ids : Array ObjectId) : String :=
   String.intercalate "\n"
     (ids.toList.map (fun id =>
       match g.findObject? id with
-      | some o => s!"  {o.id} {o.name}"
+      | some o => s!"  {o.id} {o.nameWithToken}"
       | none => s!"  {id}"))
 
 /-- Prompt for a pending random event (`--norandom`). -/
@@ -621,7 +621,7 @@ def parseAttackDest (g : Game) (p : PlayerId) (token : String) : Except String A
     | some pw =>
       if pw.isOnBattlefield && pw.printed.isPlaneswalker then
         .ok (pw.controller.getD pw.owner, some id)
-      else .error s!"{pw.name} is not a planeswalker on the battlefield"
+      else .error s!"{pw.nameWithToken} is not a planeswalker on the battlefield"
     | none => .error attackUsage
   | none => (parseAttackDefender g p token).map (·, none)
 
@@ -891,11 +891,11 @@ def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Ga
       match chosen with
       | some m =>
         if !(g.manaAbilitiesOf o).contains m then
-          throw s!"{o.name} cannot produce {m}"
+          throw s!"{o.nameWithToken} cannot produce {m}"
         jobs := jobs.push (id, m)
       | none =>
         match defaultTapMana g p o with
-        | none => throw s!"{o.name} has no mana ability"
+        | none => throw s!"{o.nameWithToken} has no mana ability"
         | some m => jobs := jobs.push (id, m)
   let mut g := g
   for (id, m) in jobs do

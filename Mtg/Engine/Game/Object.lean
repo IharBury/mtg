@@ -165,6 +165,23 @@ namespace GameObject
 
 def name (o : GameObject) : String := o.printed.name
 
+/-- Name for the console and logs. A token is marked so it is not mistaken
+for a card of the same name (CR 111). -/
+def nameWithToken (o : GameObject) : String :=
+  if o.printed.isToken then s!"{o.name} (token)" else o.name
+
+#guard
+  let tok : GameObject :=
+    { id := ⟨0⟩, printed := { name := "Wolf", types := #[], isToken := true },
+      owner := ⟨0⟩, zone := .battlefield }
+  tok.nameWithToken == "Wolf (token)"
+
+#guard
+  let card : GameObject :=
+    { id := ⟨1⟩, printed := { name := "Grizzly Bears", types := #[] },
+      owner := ⟨0⟩, zone := .battlefield }
+  card.nameWithToken == "Grizzly Bears"
+
 /-- Current card types, including a lasting “becomes a creature” effect. -/
 def types (o : GameObject) : Array CardType :=
   if o.status.onlyFoodArtifact then #[.artifact]

@@ -460,11 +460,11 @@ def manaAbilityIndexFor (g : Game) (o : GameObject) (mana : ManaType) (plainOnly
 def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Except String Game := do
   let some o := g.findObject? id | throw "no such object"
   if o.printed.tapAddOneOfIfEnteredOrBasic.contains mana && !g.canUseEnteredOrBasicAdd o then
-    throw s!"{o.name}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
+    throw s!"{o.nameWithToken}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
   let some i := g.manaAbilityIndexFor o mana false
-    | throw s!"{o.name} cannot produce {mana}"
-  let some d := (g.manaAbilityDefs o)[i]? | throw s!"{o.name} cannot produce {mana}"
-  let some added := d.output.withType mana | throw s!"{o.name} cannot produce {mana}"
+    | throw s!"{o.nameWithToken} cannot produce {mana}"
+  let some d := (g.manaAbilityDefs o)[i]? | throw s!"{o.nameWithToken} cannot produce {mana}"
+  let some added := d.output.withType mana | throw s!"{o.nameWithToken} cannot produce {mana}"
   g.activateManaAbility p id i added
 
 /-- Mana `o` adds when tapped for `mana` with a plain `{T}` ability. -/

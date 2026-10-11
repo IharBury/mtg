@@ -100,6 +100,41 @@ def mountainLine (g : Game) : String :=
   s!"{(lastPermanent withMountain).id} Mountain {(lastPermanent withMountain).typeLine} (\{T}: Add \{R}.) (owned by Chandra, controlled by Chandra)"
 #guard mentions (mountainLine withMountain) "Land"
 #guard mentions (mountainLine withMountain) "{T}: Add {R}"
+-- Tokens are marked so a token copy is not mistaken for the card it copies.
+#guard
+  let g := doriTreasure
+  let treasure := namedPermanent g "Treasure"
+  let line := objectLine g treasure
+  treasure.printed.isToken &&
+    treasure.nameWithToken == "Treasure (token)" &&
+    line.startsWith s!"{treasure.id} Treasure (token) " &&
+    mentions line "Artifact — Treasure" &&
+    objectRef g treasure.id == s!"{treasure.id} Treasure (token)" &&
+    zoneLine g .battlefield treasure.id == line &&
+    mentions (printedCardLine treasure) "Treasure (token)" &&
+    mentions (battlefieldBlock g) "Treasure (token)" &&
+    mentions (snapshot g) "Treasure (token)" &&
+    g.log.any (fun s => mentions s "creates Treasure (token)") &&
+    !mentions (mountainLine withMountain) "(token)"
+#guard
+  let host := namedPermanent bearsBlockOgre "Grizzly Bears"
+  let (g, tok) := bearsBlockOgre.createToken ⟨1⟩ host.printed
+  let face := printedCardLine tok
+  tok.printed.isToken &&
+    tok.name == "Grizzly Bears" &&
+    tok.nameWithToken == "Grizzly Bears (token)" &&
+    mentions (objectLine g tok) "Grizzly Bears (token)" &&
+    mentions (objectLine g tok) host.typeLine &&
+    !mentions (objectLine bearsBlockOgre host) "(token)" &&
+    face.startsWith s!"{tok.id} Grizzly Bears (token) " &&
+    mentions face "{1}{G}" &&
+    mentions face "Creature — Bear" &&
+    mentions face "2/2" &&
+    !mentions (printedCardLine host) "(token)" &&
+    mentions (waitingTriggerLine {
+      controller := ⟨1⟩, source := tok,
+      ability := .onEnterCreateTokens .treasure 1 }) "Grizzly Bears (token)" &&
+    g.log.any (fun s => mentions s "creates Grizzly Bears (token)")
 -- Hands print the card summary; lands have no mana cost, so not `{0}`.
 #guard
   match (started.handObjects ⟨0⟩).find? (·.printed.isLand) with
