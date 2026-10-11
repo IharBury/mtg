@@ -1063,12 +1063,63 @@ its graveyard ability asks to pay {1}{G}{U}. -/
   let g := mustApply g me (.discard fid)
   onBattlefield g "Forest" && (namedPermanent g "Forest").status.tapped
 #guard
+  let g := addPermanent afterDraw silvanReveler me me
+  let g := g.modifyPlayer me (fun pl => { pl with hand := #[] })
+  let g := onlyLib g #[lightningBolt]
+  let g := g.applyTriggeredAbility me .onEnterLootLandEntersTapped
+    (some (idOf g "Silvan Reveler"))
+  let bolt := (g.player me).hand.back!
+  let g := mustApply g me (.discard bolt)
+  !onBattlefield g "Lightning Bolt" && inGraveyard g me "Lightning Bolt"
+#guard
   let g := addToGraveyard afterDraw silvanReveler me
   let id := (graveyardObj g me "Silvan Reveler").id
   let g := withMana (withMana g me .green 2) me .blue 1
   let g := g.applyTriggeredAbility me .onLandYouControlEntersPayReturnFromGy (some id)
   let g := mustApply g me .accept
   inHand g me "Silvan Reveler"
+
+/- Beorn the Fierce puts a trample counter on the chosen creature and makes
+it a Bear. Three Bears, counting that one, draw two cards. Choosing nothing
+with fewer than three Bears draws nothing. -/
+#guard
+  let g := addPermanent afterDraw beornTheFierce me me
+  let g := addPermanent (addPermanent g grizzlyBears me me) llanowarElves me me
+  let before := handSize g me
+  let g := g.applyTriggeredAbility me .onYourBeginCombatTrampleCounterBecomeBear
+    (some (idOf g "Beorn the Fierce")) #[.permanent (idOf g "Llanowar Elves")]
+  let elf := namedPermanent g "Llanowar Elves"
+  g.hasSubtype elf "Bear" && elf.status.trampleCounters == 1 &&
+    handSize g me == before + 2
+#guard
+  let g := addPermanent afterDraw beornTheFierce me me
+  let before := handSize g me
+  let g := g.applyTriggeredAbility me .onYourBeginCombatTrampleCounterBecomeBear
+    (some (idOf g "Beorn the Fierce"))
+  handSize g me == before &&
+    (namedPermanent g "Beorn the Fierce").status.trampleCounters == 0
+
+/- Teyo grants hexproof, then a +1/+1 counter on a creature or a loyalty
+counter on a planeswalker. -/
+#guard
+  let g := addPermanent (addPermanent afterDraw teyoLightshieldExpert me me) grizzlyBears me me
+  let ab : TriggeredAbility :=
+    .triggered .enter (Effect.ofTrigger (.grantThenCounterByType Keyword.hexproof))
+  let g := g.applyTriggeredAbility me ab (some (idOf g "Teyo, Lightshield Expert"))
+    #[.permanent (idOf g "Grizzly Bears")]
+  let bears := namedPermanent g "Grizzly Bears"
+  g.hasHexproof bears && counters g "Grizzly Bears" == 1 &&
+    bears.status.loyaltyCounters == 0
+#guard
+  let g := addPermanent (addPermanent afterDraw teyoLightshieldExpert me me) ajaniResolute me me
+  let before := loyaltyOf g "Ajani Resolute"
+  let ab : TriggeredAbility :=
+    .triggered .enter (Effect.ofTrigger (.grantThenCounterByType Keyword.hexproof))
+  let g := g.applyTriggeredAbility me ab (some (idOf g "Teyo, Lightshield Expert"))
+    #[.permanent (idOf g "Ajani Resolute")]
+  let ajani := namedPermanent g "Ajani Resolute"
+  g.hasHexproof ajani && counters g "Ajani Resolute" == 0 &&
+    loyaltyOf g "Ajani Resolute" == before + 1
 
 /- Sting's enters ability counts a target opponent's creatures and attaches
 to a creature you choose. -/

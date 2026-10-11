@@ -116,9 +116,16 @@ inductive TriggerResolution where
   `.sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess]`.
   Put a plan counter, then scry, is
   `.sequence [.planCounterOnSource, .scry n]`.
-  Put an influence counter and scry 2, then offer the opponent's choice
+  Put a trample counter on the target, then make it a Bear, is
+  `.sequence [.trampleCounterOnTarget, .becomeBear]`.
+  Draw, discard, and a land discarded this way enters tapped, is
+  `.sequence [.draw 1, .discard 1, .discardedLandEntersTapped]`.
+  Put an influence counter, scry 2, then offer the opponent's choice
   (Palantír of Orthanc), is
-  `.sequence [.palantirInfluenceScry, .palantirOfferDraw]`. -/
+  `.sequence [.influenceCounterOnSource, .scry 2, .palantirOfferDraw]`.
+  Grant keywords, then a +1/+1 counter if the target is a creature and a
+  loyalty counter if it is a planeswalker, is
+  `.sequence [.onPermanent (.grantKeywords k), .plusOneIfCreature, .loyaltyIfPlaneswalker]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -425,8 +432,10 @@ inductive TriggerResolution where
   | drawDiscardedHandCount
   /-- If you have an enduring story, deal damage equal to the discarded hand. -/
   | damageEachOpponentIfStoryNoted
-  /-- Put a trample counter on the target and make it a Bear. -/
-  | trampleCounterAndBear
+  /-- Put a trample counter on the target. -/
+  | trampleCounterOnTarget
+  /-- The target becomes a Bear in addition to its other types. -/
+  | becomeBear
   /-- Draw two cards if you control three or more Bears. -/
   | drawTwoIfThreeBears
   /-- Mill `n` and remember the cards milled. -/
@@ -441,8 +450,8 @@ inductive TriggerResolution where
   | questCounterOnSource
   /-- At six quest counters, sacrifice the source and search for a Dragon. -/
   | sacrificeSearchDragonIfSix
-  /-- Discard a card. A land discarded this way enters tapped. -/
-  | discardLandEntersTapped
+  /-- Put the land discarded by the previous step onto the battlefield tapped. -/
+  | discardedLandEntersTapped
   /-- Put hone counters on the source equal to the opponent's creatures. -/
   | honeCountersPerOpponent
   /-- Attach the source to the creature target. -/
@@ -464,8 +473,9 @@ inductive TriggerResolution where
   | grimaExileUntil
   /-- You may cast the instant or sorcery exiled by the previous step. -/
   | grimaMayCast
-  /-- Put an influence counter on the source and scry 2. -/
-  | palantirInfluenceScry
+  /-- Put an influence counter on the source when the target is still legal.
+  An illegal target skips the later scry and the opponent's choice. -/
+  | influenceCounterOnSource
   /-- The targeted opponent may have you draw a card. -/
   | palantirOfferDraw
   /-- Each opponent mills `n`. The next step sees whether any card was milled. -/
@@ -521,9 +531,10 @@ inductive TriggerResolution where
   | tapTargetIfPresent
   /-- The tapped creature loses all abilities while the source remains. -/
   | loseAbilitiesWhileSourceRemains
-  /-- Put a +1/+1 counter if the target is a creature, and a loyalty counter
-  if it is a planeswalker. -/
-  | counterByPermanentType
+  /-- Put a +1/+1 counter on the target if it is a creature. -/
+  | plusOneIfCreature
+  /-- Put a loyalty counter on the target if it is a planeswalker. -/
+  | loyaltyIfPlaneswalker
   /-- You win the game if your library is empty. -/
   | winIfLibraryEmpty
   /-- Shuffle the source into its owner's library unless the library is empty. -/
@@ -854,7 +865,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .wolfPlusOneOrTreasure => { resolution := .wolfPlusOneOrTreasure }
   | .trampleCounterBecomeBear =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
-      resolution := .sequence [.trampleCounterAndBear, .drawTwoIfThreeBears] }
+      resolution := .sequence
+        [.trampleCounterOnTarget, .becomeBear, .drawTwoIfThreeBears] }
   | .millThenSubtypeToHand n subtype =>
     { resolution := .sequence [.millNote n, .returnMilledSubtype subtype] }
   | .exileOppNonlandEachUntilLeaves =>
@@ -871,7 +883,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .revealUntilCreature => { resolution := .revealUntilCreature }
   | .attackSacPlusOneEqualPower => { resolution := .attackSacPlusOneEqualPower }
   | .lootLandEntersTapped =>
-    { resolution := .sequence [.draw 1, .discardLandEntersTapped] }
+    { resolution := .sequence [.draw 1, .discard 1, .discardedLandEntersTapped] }
   | .millThatManyLost => { resolution := .millThatManyLost }
   | .drawPerFatGraveyard => { resolution := .drawPerFatGraveyard }
   | .maySacDrawTreasure => { resolution := .maySacDrawTreasure }
@@ -952,7 +964,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence [.grimaExileUntil, .grimaMayCast] }
   | .palantir =>
     { targeting := .of .opponent,
-      resolution := .sequence [.palantirInfluenceScry, .palantirOfferDraw] }
+      resolution := .sequence
+        [.influenceCounterOnSource, .scry 2, .palantirOfferDraw] }
   | .treasuresEqualLastKnown => { resolution := .treasuresEqualLastKnown }
   | .protectionEverything => { resolution := .protectionEverything }
   | .loseLifePerBurden => { resolution := .loseLifePerBurden }
@@ -1015,7 +1028,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .grantThenCounterByType k =>
     { targeting := .of .permanentYouControl,
       resolution := .sequence
-        [.onPermanent (.grantKeywords k), .counterByPermanentType] }
+        [.onPermanent (.grantKeywords k), .plusOneIfCreature, .loyaltyIfPlaneswalker] }
   | .destroyOppPermanentIfSixLands =>
     { targeting := .of .oppPermanent, resolution := .destroyOppPermanentIfSixLands }
   | .pumpOrCounterIfScried =>

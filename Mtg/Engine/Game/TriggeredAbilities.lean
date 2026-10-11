@@ -265,6 +265,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
         (optional := true)
   | .discard n =>
+    let g := { g with discardedCardThisWay := none }
     g.beginDiscardCards #[controller] n
   | .mayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
@@ -808,20 +809,27 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         else g.createTreasureTokens controller 1
       | none => g.createTreasureTokens controller 1
     | _ => g.createTreasureTokens controller 1
-  | .trampleCounterAndBear =>
+  | .trampleCounterOnTarget =>
     match targets[0]? with
     | some (Target.permanent oid) =>
       match g.findObject? oid with
       | some o =>
-        let extra :=
-          if g.hasSubtype o "Bear" then o.status.additionalSubtypes
-          else o.status.additionalSubtypes.push "Bear"
         let n := g.countersYouPut o 1 (putter := some controller)
         let g := g.setObject { o with status :=
-          { o.status with
-            trampleCounters := o.status.trampleCounters + n
-            additionalSubtypes := extra } }
-        g.logMsg s!"{o.name} gets a trample counter and becomes a Bear"
+          { o.status with trampleCounters := o.status.trampleCounters + n } }
+        if n == 0 then g else g.logMsg s!"{o.name} gets a trample counter"
+      | none => g
+    | _ => g
+  | .becomeBear =>
+    match targets[0]? with
+    | some (Target.permanent oid) =>
+      match g.findObject? oid with
+      | some o =>
+        if g.hasSubtype o "Bear" then g
+        else
+          let g := g.setObject { o with status :=
+            { o.status with additionalSubtypes := o.status.additionalSubtypes.push "Bear" } }
+          g.logMsg s!"{o.name} becomes a Bear in addition to its other types"
       | none => g
     | _ => g
   | .drawTwoIfThreeBears =>
@@ -999,12 +1007,19 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let symbols := #[ManaSymbol.generic 1, ManaSymbol.colored .green, ManaSymbol.colored .blue]
         g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
           s!"{(g.player controller).name} may pay \{1}\{G}\{U} to return {src.name} to their hand"
-  | .discardLandEntersTapped =>
-    let g := { g with lootLandEntersTapped := true }
-    let g := g.beginDiscardCards #[controller]
-    match g.pending with
-    | .chooseDiscardCard .. => g
-    | _ => { g with lootLandEntersTapped := false }
+  | .discardedLandEntersTapped =>
+    match g.discardedCardThisWay with
+    | none => g
+    | some (pid, id) =>
+      let g := { g with discardedCardThisWay := none }
+      match g.findObject? id with
+      | some o =>
+        if o.printed.isLand && o.zone == .graveyard o.owner then
+          let entered := g.putOntoBattlefield o.id pid (tapped := true) (summoningSick := false)
+          let g := entered.1.logMsg s!"{o.name} enters the battlefield tapped"
+          g.afterLandEnters (g.object! entered.2)
+        else g
+      | none => g
   | .honeCountersPerOpponent =>
     let opp :=
       match targets[0]? with
@@ -1178,23 +1193,24 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let name := (g.object! cardId).name
         g.beginFraChoice controller (.mayCastGrima cardId others victim)
           s!"{(g.player controller).name} may cast {name} without paying its mana cost"
-  | .palantirInfluenceScry =>
+  | .influenceCounterOnSource =>
     let g := { g with palantirChoiceReady := none }
     let tgt :=
       match targets[0]? with
       | some (Target.player pid) => some pid
       | _ => none
     match sourceId with
-    | none => g.logMsg "The source is no longer in play"
+    | none =>
+      { g with skipTriggerSequenceRest := true }.logMsg
+        "The source is no longer in play"
     | some sid =>
-      let before := ((g.findObject? sid).map (·.status.influence)).getD 0
-      let g := g.applyPalantir sid tgt
-      match tgt with
-      | none => g
-      | some opp =>
-        match g.findObject? sid with
-        | some src =>
-          if src.status.influence > before then
+      let (g, ok) := g.putPalantirInfluence sid tgt
+      match ok with
+      | none => { g with skipTriggerSequenceRest := true }
+      | some increased =>
+        match tgt with
+        | some opp =>
+          if increased then
             { g with palantirChoiceReady := some (controller, opp, sid) }
           else g
         | none => g
@@ -1777,10 +1793,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + n })
       let g := g.queueLoyaltyPutTriggers controller
       g.logMsg s!"A loyalty counter is put on {o.name}")
-  | .counterByPermanentType =>
+  | .plusOneIfCreature =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let g := if o.isCreature then g.addPlusOnePlusOneTo o 1 else g
-      let o := g.object! o.id
+      if o.isCreature then g.addPlusOnePlusOneTo o 1 else g)
+  | .loyaltyIfPlaneswalker =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       if o.printed.isPlaneswalker then
         let n := g.countersYouPut o 1 (putter := some controller)
         let g := g.mapObjectStatus o (fun s => { s with loyaltyCounters := s.loyaltyCounters + n })

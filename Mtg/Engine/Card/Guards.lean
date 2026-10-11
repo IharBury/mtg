@@ -1498,13 +1498,15 @@ end CardDef
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
   .sequence [.mayDiscardHandForStory, .drawDiscardedHandCount, .damageEachOpponentIfStoryNoted]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
-  .sequence [.trampleCounterAndBear, .drawTwoIfThreeBears]
+  .sequence [.trampleCounterOnTarget, .becomeBear, .drawTwoIfThreeBears]
+#guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
+  .sequence [.draw 1, .discard 1, .discardedLandEntersTapped]
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
   .sequence [.millNote 4, .returnMilledSubtype "Elf"]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tapEnchanted, .removeCountersFromEnchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
-  .sequence [.palantirInfluenceScry, .palantirOfferDraw]
+  .sequence [.influenceCounterOnSource, .scry 2, .palantirOfferDraw]
 #guard TriggeredAbility.resolution .onCombatDamageToYouSacRingTempts ==
   .sequence [.sacDamagingCreatures, .ringTempts]
 #guard TriggeredAbility.resolution (.onCreatureYouControlEntersScryAndPlan 2) ==
@@ -1528,7 +1530,8 @@ end CardDef
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
   .sequence [.armSurveilReturnLifeGained, .surveil 1]
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
-  .sequence [.onPermanent (.grantKeywords Keyword.hexproof), .counterByPermanentType]
+  .sequence [.onPermanent (.grantKeywords Keyword.hexproof), .plusOneIfCreature,
+    .loyaltyIfPlaneswalker]
 #guard (SharedTrigger.timing (.drawXDiscard 2)).resolution ==
   .sequence [.drawEqualToManaSpent, .discardIfManaSpent 2]
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
