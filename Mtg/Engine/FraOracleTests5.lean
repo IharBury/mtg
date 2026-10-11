@@ -199,6 +199,21 @@ def vraskaEnters (lands : Nat) : Game :=
   let g := resolveStack (vraskaEnters 6) 20
   !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
     g.battlefield.any (fun o => o.name == "Treasure" && o.controlledBy ⟨1⟩)
+/- Indestructible stays, and its controller still creates a Treasure. -/
+#guard
+  let g := vraskaEnters 6
+  let g := g.grantUntilEotLogged (namedPermanent g "Grizzly Bears") Keyword.indestructible
+  let g := resolveStack g 20
+  g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    g.battlefield.any (fun o => o.name == "Treasure" && o.controlledBy ⟨1⟩)
+/- Destroying a token still has that token's controller create a Treasure. -/
+#guard
+  let g := withLands (afterDraw.createTreasureTokens ⟨1⟩ 1) 6
+  let before := (g.permanentsOf ⟨1⟩).filter (fun o => o.name == "Treasure") |>.size
+  let g := resolveStack ((enterPermanent g vraskaTheCuttingGlare ⟨0⟩).receivePriority ⟨0⟩) 20
+  before == 1 &&
+    ((g.permanentsOf ⟨1⟩).filter (fun o => o.name == "Treasure")).size == 1 &&
+    g.log.any (fun s => mentions s "is destroyed")
 /- If a land leaves before it resolves, it does nothing. -/
 #guard
   let g := vraskaEnters 6

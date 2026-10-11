@@ -957,11 +957,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           g.logMsg s!"{o.name} becomes a Bear in addition to its other types"
       | none => g
     | _ => g
-  | .pumpAndFirstStrike =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let g := g.pumpPermanent o 3 0
-      g.grantUntilEotLogged (g.object! o.id) Keyword.firstStrike)
-      "The target is no longer legal"
   | .castFromGyArtifactInstantSorcery =>
     let eligible := (g.player controller).graveyard.filter (fun id =>
       (g.findObject? id).any (fun o => o.printed.isArtifact || o.printed.isInstantOrSorcery))
@@ -1440,11 +1435,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
            | none => true) &&
           g.hasSubtype o subtype)
       (fun g o => g.pumpPermanent o x x)
-  | .destroyTargetControllerCreatesTreasure =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let owner := o.controller.getD o.owner
-      let g := g.destroyPermanent o
-      g.createTreasureTokens owner 1)
+  | .targetControllerCreatesTreasure =>
+    -- Destroy may already have moved the permanent. The controller who
+    -- creates the Treasure is the one it had on the battlefield.
+    match targets[0]? with
+    | some (Target.permanent oid) =>
+      match g.findObject? (g.followMoved oid) with
+      | some o =>
+        let pid := (o.controller.orElse (fun _ => o.lastController)).getD o.owner
+        g.createTreasureTokens pid 1
+      | none => g
+    | _ => g
   | .planCounterOnSource =>
     match sourceId.bind g.findObject? with
     | some o =>
