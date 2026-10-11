@@ -880,7 +880,7 @@ namespace CardDef
   .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)))
 #guard TriggeredAbility.resolution
     (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
-  .sequence [.othersOfSubtypesGet #["Goblin", "Orc"] 2 2, .opponentsCreaturesGet (-1) (-1)]
+  .sequence [.pump 2 2 (.othersOfSubtypes #["Goblin", "Orc"]), .pump (-1) (-1) .opponentsCreatures]
 #guard TriggeredAbility.toNotation
     (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
   "At the beginning of each combat, other Goblins and Orcs you control get +2/+2 until end of turn. Creatures your opponents control get -1/-1 until end of turn."
@@ -1270,7 +1270,10 @@ namespace CardDef
 #guard !TriggeredAbility.requiresTarget .onScryPumpSelfForEachLookedAt
 #guard (TriggeredAbility.dividedDamage? (.onAttackWithElvesScry 1)).isNone
 #guard (TriggeredAbility.dividedDamage? .onScryPumpSelfForEachLookedAt).isNone
-#guard TriggeredAbility.resolution .onAttackPumpByGreatestPower == .pumpGreatestPower
+#guard TriggeredAbility.resolution .onAttackPumpByGreatestPower ==
+  .pump 0 0 .source .greatestPower
+#guard (default : TriggeredAbility.TriggerResolution) ==
+  .pump 0 0 .source .greatestPower
 #guard TriggeredAbility.resolution .onAttackSetOtherBasePT == .setOtherBasePT
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
   .onPermanent (.pumpAndTrample 2 0)
