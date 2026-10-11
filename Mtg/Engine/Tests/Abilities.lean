@@ -938,6 +938,20 @@ def antManArmyTreasureOk : Bool :=
 
 #guard antManArmyTreasureOk
 
+/-- White Widow: choose +1/+1 counters on the targeted creature. -/
+def whiteWidowPlusOneOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g whiteWidowFreeAgent ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let widow := namedPermanent g "White Widow, Free Agent"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterPlusOnesOrReturnArtEnch)
+    (some widow.id) #[Target.permanent bears.id]
+  let g := mustApply g ⟨0⟩ (.chooseMode 0)
+  (g.object! bears.id).status.plusOnePlusOne == 1 &&
+    g.triggerOr.isNone && g.pending == .none
+
+#guard whiteWidowPlusOneOk
+
 /-- Hero in Training: draw, and gain 2 if another Hero is present. -/
 def heroInTrainingLifeOk : Bool :=
   let g := addPermanent afterDraw captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩

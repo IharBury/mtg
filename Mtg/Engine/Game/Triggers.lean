@@ -28,6 +28,13 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
         phrase := "Put a +1/+1 counter on target Wolf you control" },
       { resolution := .createTokens .treasure 1
         phrase := "Create a Treasure token" }]
+  | .enter .plusOnesOrReturnArtEnch =>
+    #[{ targeting := .of .creature, allowsZeroTargets := true, maxTargets := 2,
+        resolution := .fra (.plusOneOnEachTarget 1),
+        phrase := "Put a +1/+1 counter on each of up to two target creatures" },
+      { targeting := .of .artEnchCardInYourGraveyard,
+        resolution := .fra .returnFromGyToHand,
+        phrase := "Return target artifact or enchantment card from your graveyard to your hand" }]
   | .watch .nontokenHeroModal =>
     #[{ resolution := .createTokens .soldier11white 1
         phrase := "Create a 1/1 white Soldier creature token" },

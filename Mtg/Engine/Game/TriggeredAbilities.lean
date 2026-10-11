@@ -344,6 +344,26 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .scriedOrSurveilledThisTurn =>
     (g, (g.player controller).scriedOrSurveilledThisTurn)
 
+/-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
+def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
+  match rs with
+  | [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
+    s!"{name} creates a Food token or a Treasure token"
+  | [.onPermanent .tap, .onPermanent .untap] =>
+    s!"{name} chooses tap or untap"
+  | _ =>
+    s!"{name} chooses one"
+
+/-- Pending-header text for a `TriggerResolution.or` choice. -/
+def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String :=
+  match rs with
+  | [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
+    "create a Food token or a Treasure token"
+  | [.onPermanent .tap, .onPermanent .untap] =>
+    "choose tap or untap"
+  | _ =>
+    "choose one"
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -731,8 +751,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         phrase := "Attach it to target creature you control" }
     else
       g.logMsg "An Axe token is created"
-  | .tapOppOrUntapYours =>
-    g.logMsg "No mode was chosen"
   | .becomePT p t =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -822,6 +840,34 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let branch := if holds then whenTrue else whenFalse
     g.applyTriggeredAbility controller ab sourceId targets dividedDamage
       lastKnownPower lastKnownToughness sourceName (some branch) sequencedCardPower
+  | .or rs =>
+    match rs with
+    | [] => g
+    | [r] =>
+      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
+    | rs =>
+      let hasPermanent :=
+        match targets[0]? with
+        | some (Target.permanent _) => true
+        | _ => false
+      if ab.targetKind == .nonland && !hasPermanent then
+        g.logMsg "The target is no longer legal"
+      else
+        { g with
+            pending := .chooseTriggerOr controller
+            triggerOr := some {
+              controller
+              ability := ab
+              sourceId
+              targets
+              dividedDamage
+              lastKnownPower
+              lastKnownToughness
+              sourceName
+              cardPower := sequencedCardPower
+              alternatives := rs.toArray } }.logMsg
+          (triggerOrLog (g.player controller).name rs)
   | .bolgMaySacrifice =>
     match sourceId with
     | some sid =>
@@ -948,15 +994,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .searchDragonFromHandOrLibrary =>
     g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
       .battlefieldFromHandOrLibrary (alsoHand := true)
-  | .wolfPlusOneOrTreasure =>
-    match targets[0]? with
-    | some (Target.permanent oid) =>
-      match g.findObject? oid with
-      | some o =>
-        if g.hasSubtype o "Wolf" then g.addPlusOnePlusOneTo o 1
-        else g.createTreasureTokens controller 1
-      | none => g.createTreasureTokens controller 1
-    | _ => g.createTreasureTokens controller 1
   | .trampleCounterOnTarget =>
     match targets[0]? with
     | some (Target.permanent oid) =>
@@ -1550,15 +1587,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .exileUntilNextEndStep =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
       g.exileUntilNextEndStep o) sourceId none
-  | .tapOrUntapNonland =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      { g with pending := .chooseTapOrUntap controller id }.logMsg
-        s!"{(g.player controller).name} chooses tap or untap"
-    | _ => g.logMsg "The target is no longer legal"
-  | .createFoodOrTreasure =>
-    { g with pending := .chooseFoodOrTreasure controller }.logMsg
-      s!"{(g.player controller).name} creates a Food token or a Treasure token"
   | .mayPutLandFromHandTapped =>
     { g with pending := .mayPutLandFromHand controller }.logMsg
       s!"{(g.player controller).name} may put a land card from their hand onto the battlefield tapped"
@@ -1723,22 +1751,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           | none => g
         | _ => g)
         "Cloak and Dagger have left the battlefield. Nothing is exiled."
-  | .plusOnesOrReturnArtEnch =>
-    match targets[0]? with
-    | some (Target.card id) =>
-      g.returnToHand id controller
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        let g := g.addPlusOnePlusOneTo o 1
-        match targets[1]? with
-        | some (Target.permanent id2) =>
-          match g.findObject? id2 with
-          | some o2 => g.addPlusOnePlusOneTo o2 1
-          | none => g
-        | _ => g
-      | none => g.logMsg "The target is no longer legal"
-    | _ => g
   | .chooseUpToXModes =>
     let modes :=
       match sourceId.bind g.findObject? with
@@ -1932,6 +1944,24 @@ def resumeTriggerSequence (g : Game) : Game :=
     g.applyTriggeredAbility c.controller c.ability c.sourceId c.targets
       c.dividedDamage c.lastKnownPower c.lastKnownToughness c.sourceName
       (some (.sequence c.steps)) c.cardPower
+
+/-- Apply alternative `idx` of a pending `TriggerResolution.or`. -/
+def chooseTriggerOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := do
+  match g.pending, g.triggerOr with
+  | .chooseTriggerOr q, some rest =>
+    if p != q then throw s!"Only {(g.player q).name} may choose"
+    match rest.alternatives[idx]? with
+    | none => throw "No such choice"
+    | some r =>
+      let g := { g with pending := .none, triggerOr := none }
+      let g := g.applyTriggeredAbility rest.controller rest.ability rest.sourceId
+        rest.targets rest.dividedDamage rest.lastKnownPower rest.lastKnownToughness
+        rest.sourceName (some r) rest.cardPower
+      if g.pending != .none || g.over then return g
+      let g := g.resumeTriggerSequence
+      if g.pending != .none || g.over then return g
+      return g.receivePriority g.activePlayer
+  | _, _ => throw "Not time to choose"
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/

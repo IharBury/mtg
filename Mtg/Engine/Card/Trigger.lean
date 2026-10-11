@@ -289,8 +289,6 @@ inductive TriggerResolution where
   /-- Create an Axe Equipment token.
   Attaching it to a creature you control is `.createAxe (attach := true)`. -/
   | createAxe (attach : Bool := false)
-  /-- Tap an opposing creature or untap yours. -/
-  | tapOppOrUntapYours
   /-- Set the source's base P/T. -/
   | becomePT (power toughness : Int)
   /-- Look at the top `n` and reveal a listed type. -/
@@ -333,6 +331,19 @@ inductive TriggerResolution where
   turn otherwise, is
   `.ifElse .scriedOrSurveilledThisTurn (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1))`. -/
   | ifElse (cond : TriggerIf) (whenTrue whenFalse : TriggerResolution)
+  /-- The controller chooses one of these resolutions.
+  Tap an opposing creature or untap one you control is
+  `.or [.onPermanent .tap, .onPermanent .untap]`.
+  A +1/+1 counter on a Wolf you control, or a Treasure token, is
+  `.or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false]`.
+  Tap or untap the targeted nonland is
+  `.or [.onPermanent .tap, .onPermanent .untap]`.
+  A Food token or a Treasure token is
+  `.or [.createTokens .food 1 false, .createTokens .treasure 1 false]`.
+  +1/+1 counters on the creature targets, or returning an artifact or
+  enchantment card from the graveyard, is
+  `.or [.onPermanent (.plusOne 1), .returnCreatureFromGyToHand]`. -/
+  | or (rs : List TriggerResolution)
   /-- You may sacrifice another creature you control (Bolg). -/
   | bolgMaySacrifice
   /-- Create a Treasure for each artifact the damaged player controls. -/
@@ -345,8 +356,6 @@ inductive TriggerResolution where
   | gollumMode
   /-- Return a creature card from your graveyard to your hand. -/
   | returnCreatureFromGyToHand
-  /-- +1/+1 on a Wolf you control, or create a Treasure. -/
-  | wolfPlusOneOrTreasure
   /-- You may cast an artifact, instant, or sorcery from your graveyard. -/
   | castFromGyArtifactInstantSorcery
   /-- Exile up to one opposing nonland per opponent until this leaves. -/
@@ -419,10 +428,6 @@ inductive TriggerResolution where
   | onEnchanted (action : PermanentAction)
   /-- Exile the targeted creature; return it at the next end step. -/
   | exileUntilNextEndStep
-  /-- Choose tap or untap for the targeted nonland. -/
-  | tapOrUntapNonland
-  /-- Create a Food token or a Treasure token. -/
-  | createFoodOrTreasure
   /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
   | maySacArtifactOrDiscardDraw
   /-- Another target creature gets +X/+0, X = source power. -/
@@ -447,8 +452,6 @@ inductive TriggerResolution where
   | maySacOrDiscardNonlandThenDamage
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
   | revealHandExileUntilLeaves
-  /-- +1/+1 on creature targets, or return an artifact/enchantment from GY. -/
-  | plusOnesOrReturnArtEnch
   /-- Resolve chosen “up to X” modes in printed order. -/
   | chooseUpToXModes
   /-- You may tap this. When you do, grant indestructible to another creature. -/
@@ -626,7 +629,8 @@ deriving Repr, Inhabited, BEq
 
 namespace TriggerResolution
 
-/-- Nested `sequence` constructors, left to right. -/
+/-- Nested `sequence` constructors, left to right. An `or` stays one step:
+flattening it would resolve every alternative. -/
 def flatten : TriggerResolution → List TriggerResolution
   | .sequence rs => rs.flatMap flatten
   | r => [r]
@@ -866,7 +870,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence [.gainLife n, .searchLibrary .basicLandOnTop] }
   | .addMana types => { resolution := .addMana types }
   | .createAxe attach => { resolution := .createAxe attach }
-  | .tapOppOrUntapYours => { resolution := .tapOppOrUntapYours }
+  | .tapOppOrUntapYours =>
+    { resolution := .or [.onPermanent .tap, .onPermanent .untap] }
   | .gainControlOppUntilEot =>
     { targeting := .of .oppCreature, resolution := .gainControlOppUntilEot }
   | .payReturnFromGy => { resolution := .payReturnFromGy }
@@ -926,7 +931,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .othersGetAndOppsGet subtypes p t oppP oppT =>
     { resolution := .sequence
         [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT] }
-  | .wolfPlusOneOrTreasure => { resolution := .wolfPlusOneOrTreasure }
+  | .wolfPlusOneOrTreasure =>
+    { resolution := .or
+        [.onPermanent (.plusOne 1), .createTokens .treasure 1 false] }
   | .trampleCounterBecomeBear =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .sequence
@@ -1137,8 +1144,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .exileUntilNextEndStep }
   | .tapOrUntapNonland =>
-    { targeting := .of .nonland, resolution := .tapOrUntapNonland }
-  | .createFoodOrTreasure => { resolution := .createFoodOrTreasure }
+    { targeting := .of .nonland,
+      resolution := .or [.onPermanent .tap, .onPermanent .untap] }
+  | .createFoodOrTreasure =>
+    { resolution := .or
+        [.createTokens .food 1 false, .createTokens .treasure 1 false] }
   | .villainIfGyElseMill =>
     { resolution := .ifElse (.creatureCardsInGraveyardAtLeast 2)
         (.createTokens .villain21menace 1 true) (.mill 2) }
@@ -1187,7 +1197,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .revealHandExileUntilLeaves }
   | .enter .plusOnesOrReturnArtEnch =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
-      resolution := .plusOnesOrReturnArtEnch }
+      resolution := .or
+        [.onPermanent (.plusOne 1), .returnCreatureFromGyToHand] }
   | .enter .chooseUpToXModes =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
       resolution := .chooseUpToXModes }

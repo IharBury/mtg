@@ -27,6 +27,21 @@ structure TriggerSequenceRest where
   steps : List TriggeredAbility.TriggerResolution := []
 deriving Repr, Inhabited
 
+/-- A pending `TriggerResolution.or`. The controller chooses one alternative,
+then that step resolves with this ability context. -/
+structure TriggerOrRest where
+  controller : PlayerId
+  ability : TriggeredAbility
+  sourceId : Option ObjectId := none
+  targets : Array Target := #[]
+  dividedDamage : Array Nat := #[]
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  alternatives : Array TriggeredAbility.TriggerResolution := #[]
+deriving Repr, Inhabited
+
 structure Game where
   players : Array Player
   objects : Array GameObject
@@ -198,6 +213,9 @@ structure Game where
   /-- Later steps of a trigger `sequence`, waiting on the pending choice an
   earlier step opened. -/
   triggerSequenceRest : Option TriggerSequenceRest := none
+  /-- Alternatives for a pending `TriggerResolution.or`. `chooseMode` applies
+  that index. -/
+  triggerOr : Option TriggerOrRest := none
   /-- Declining `payOrLetCounter` resolves this effect instead of countering.
   The caster is `unlessPaysController`; `unlessPaysTargets` are the targets
   announced for that effect. -/

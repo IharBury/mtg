@@ -29,8 +29,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .chooseMode idx =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p (.mode idx)
-    | .chooseFoodOrTreasure _ => g.chooseFoodOrTreasure p idx
-    | .chooseTapOrUntap _ tid => g.chooseTapOrUntap p idx tid
+    | .chooseTriggerOr _ => g.chooseTriggerOr p idx
     | .chooseLibraryPlacement _ _ =>
       if g.spellOr.isEmpty then g.announceMode p idx else g.chooseSpellOr p idx
     | _ => g.announceMode p idx
@@ -152,8 +151,7 @@ def actor (g : Game) : Option PlayerId :=
     | .maySacrificeAnotherBolg p _ => who p
     | .mayCastFromLooked p _ _ => who p
     | .mayPutLandFromHand p => who p
-    | .chooseFoodOrTreasure p => who p
-    | .chooseTapOrUntap p _ => who p
+    | .chooseTriggerOr p => who p
     | .maySacArtifactOrDiscard p _ => who p
     | .mayPutArtifactFromHand p _ => who p
     | .mayHaveVillainConnive p _ _ => who p
