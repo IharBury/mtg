@@ -281,9 +281,13 @@ def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbo
     | some k => if k < 0 then (-k).toNat else 0
     | none => 0
   g.foldControlledPermanents p none fun g o =>
-    g.enqueueWaitingTriggers
+    let waiting :=
       ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>
-        wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2))
+        wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2)).map (fun wt =>
+        if wt.ability.shared == .drawIfRemovedTwoLoyalty then
+          { wt with lastKnownPower := some (Int.ofNat removed) }
+        else wt)
+    g.enqueueWaitingTriggers waiting
 
 /-- Announce the value of `{X}` for a proposed spell or ability
 (CR 107.3a / 601.2b). Substitutes `{X}` into the locked-in cost and

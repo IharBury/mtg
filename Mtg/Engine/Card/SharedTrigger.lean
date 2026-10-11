@@ -615,12 +615,12 @@ inductive SharedTrigger where
   | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
   /-- Draw a card, then put a card from your hand on the bottom if you don't
   control a legendary creature.
-  Resolves as `.sequence [.draw 1, .putOnBottomIfNoLegendary]`. -/
+  Resolves as `.sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom]`. -/
   | drawThenBottomIfNoLegendary
   /-- Remove a hope counter from this. If you do, draw a card. Then if it has
   no hope counters, sacrifice it and you gain 4 life.
   Resolves as
-  `.sequence [.removeHopeCounter, .drawIfRemovedHope, .sacrificeGainLifeIfNoHope]`. -/
+  `.sequence [.removeHopeCounter, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrificeSource .isSacrificed, .gainLife 4])]`. -/
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
@@ -636,7 +636,7 @@ inductive SharedTrigger where
   | damageEqualTreasures
   /-- Deal `n` to any target; destroy it if it has this subtype and was dealt
   damage this way.
-  Resolves as `.sequence [.dealDamageToTarget n, .destroyIfSubtypeDealtDamage subtype]`. -/
+  Resolves as `.sequence [.dealDamageToTarget n, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage]`. -/
   | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
   /-- Attach target Equipment to up to one target creature you control. -/
   | attachEquipmentToCreature
@@ -644,7 +644,7 @@ inductive SharedTrigger where
   | defenderSacsLeastPower
   /-- Return up to one other permanent you control to its owner's hand.
   If you do, put a +1/+1 counter on this creature.
-  Resolves as `.sequence [.returnToOwnerHand, .plusOneOnSourceIfReturned]`. -/
+  Resolves as `.sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))]`. -/
   | returnOtherPlusOne
   /-- Look at the top `n` cards; you may reveal one of these types. -/
   | lookAtTopRevealTypes (n : Nat) (types : Array String)
@@ -659,7 +659,7 @@ inductive SharedTrigger where
   /-- +1/+1 on a Wolf or create a Treasure. -/
   | wolfPlusOneOrTreasure
   /-- Trample counter, become a Bear, maybe draw. Resolves as
-  `.sequence [.trampleCounterOnTarget, .becomeBear, .drawTwoIfThreeBears]`. -/
+  `.sequence [.trampleCounterOnTarget, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)]`. -/
   | trampleCounterBecomeBear
   /-- Mill `n`, then put matching subtype cards into hand. -/
   | millThenSubtypeToHand (n : Nat) (subtype : String)
@@ -689,7 +689,7 @@ inductive SharedTrigger where
   /-- You may cast an instant or sorcery with mana value at most that damage. -/
   | castInstantSorceryMvAtMost
   /-- Mill, then maybe copy a milled spell. Resolves as
-  `.sequence [.opponentsMillNote 2, .reflexiveCopyIfMilled]`. -/
+  `.sequence [.opponentsMillNote 2, .«if» .opponentsMilled .reflexiveCopyMilled]`. -/
   | millThenCopy
   /-- Another creature gets +X/+0 equal to this creature's power. -/
   | pumpTargetBySourcePower
@@ -702,7 +702,7 @@ inductive SharedTrigger where
   /-- First resolve this turn: gain 1 life. Second: draw a card. Third:
   +1/+1 on each creature you control. Later resolves do nothing
   (Belladonna Took). Resolves as
-  `.sequence [.noteResolveThisTurn 3, .ifNthResolve 1 (.gainLife 1), .ifNthResolve 2 (.draw 1), .ifNthResolve 3 (.plusOneEachYouControl)]`. -/
+  `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.plusOneEachYouControl)]`. -/
   | belladonnaTokenReward
   /-- Bolg may-sacrifice. -/
   | bolgMaySacrifice
@@ -710,7 +710,7 @@ inductive SharedTrigger where
   `.sequence [.dealLastKnownPowerNoteExcess, .amassGoblinsNotedExcess]`. -/
   | bolgDealSacrificedPower
   /-- Create Spirits for the equipped creature. Resolves as
-  `.sequence [.createTokens .spirit 2 true, .recentTokensAttackingIfEquippedLegendary]`. -/
+  `.sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]`. -/
   | createSpiritsForEquipped
   /-- Treasures equal to the damaged player's artifacts. -/
   | createTreasuresEqualDamagedPlayerArtifacts
@@ -725,12 +725,12 @@ inductive SharedTrigger where
   /-- Alliance modes. -/
   | allianceMode
   /-- Destroy another; its controller amasses equal to its power. Resolves as
-  `.sequence [.destroyNotedForAmass, .amassNotedController, .drawIfYouControlledDestroyed]`. -/
+  `.sequence [.destroyNotedForAmass, .amassNotedController, .«if» .youControlledDestroyed (.draw 1)]`. -/
   | destroyOtherAmassControllerPower
   /-- Gollum parity modes. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
-  `.sequence [.mayDiscardHandForStory, .drawDiscardedHandCount, .damageEachOpponentIfStoryNoted]`. -/
+  `.sequence [.mayDiscardHandForStory, .drawDiscardedHandCount, .«if» .enduringStoryNoted .damageEachOpponentDiscardedHand]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
@@ -823,7 +823,7 @@ inductive SharedTrigger where
   /-- Target permanent you control gains these keywords until end of turn; a
   +1/+1 counter if it's a creature, a loyalty counter if it's a planeswalker.
   Resolves as
-  `.sequence [.onPermanent (.grantKeywords k), .plusOneIfCreature, .loyaltyIfPlaneswalker]`. -/
+  `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker .loyaltyOnTarget]`. -/
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. -/
@@ -844,7 +844,7 @@ inductive SharedTrigger where
   | addGreenPerChargeCounter
   /-- Draw two cards; if your library is then empty, you win; the owner
   shuffles the source into their library (Fblthp, Impossibly Lost). Resolves as
-  `.sequence [.draw 2, .winIfLibraryEmpty, .shuffleSourceUnlessWon]`. -/
+  `.sequence [.draw 2, .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]`. -/
   | drawTwoWinIfEmptyShuffleSource
   /-- If you control at least five other Forests, target creature you
   control gets +3/+3 until end of turn (Roiling Canopy). -/

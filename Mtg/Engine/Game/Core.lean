@@ -135,17 +135,17 @@ structure Game where
   step. `gainLifeForEachDestroyedThisWay` gains this much life. -/
   permanentsDestroyedThisWay : Nat := 0
   /-- A hope counter was removed by the current `removeHopeCounter` step.
-  `drawIfRemovedHope` draws a card when this is set. -/
+  `«if» .removedHope` draws a card when this is set. -/
   removedHopeThisWay : Bool := false
   /-- The permanent marked by the current `dealDamageToTarget` step.
-  `destroyIfSubtypeDealtDamage` destroys it when it has the subtype. -/
+  `«if» (.dealtDamageToSubtype _)` destroys it when it has the subtype. -/
   permanentDealtDamageThisWay : Option ObjectId := none
   /-- A permanent was returned to its owner's hand by the current
-  `returnToOwnerHand` step. `plusOneOnSourceIfReturned` puts a +1/+1 counter
+  `returnToOwnerHand` step. `«if» .returnedPermanent` puts a +1/+1 counter
   on the source when this is set. -/
   returnedPermanentThisWay : Bool := false
   /-- Ordinal recorded by the current `noteResolveThisTurn` step.
-  `ifNthResolve` reads it and a finished sequence clears it. -/
+  `«if» (.nthResolve _)` reads it and a finished sequence clears it. -/
   nthResolveThisWay : Option Nat := none
   /-- The current sequence step asked the rest of the sequence not to run
   (the source had already left, or no mana was spent). -/
