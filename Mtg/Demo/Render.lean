@@ -36,10 +36,11 @@ def controlClause (g : Game) (o : GameObject) (group : Option (Option PlayerId) 
   | [] => ""
   | ps => s!" ({String.intercalate ", " ps})"
 
-/-- Identity of an object for cross-references (blocker, Aura host, ability source). -/
+/-- Identity of an object for cross-references (blocker, Aura host, ability source).
+A token's name includes `(token)`. -/
 def objectRef (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
-  | some o => s!"{o.id} {o.name}"
+  | some o => s!"{o.id} {o.nameWithToken}"
   | none => toString id
 
 /-- Source of an activated or triggered ability on the stack (CR 113.7). -/
@@ -145,7 +146,7 @@ def stackObjectLine (g : Game) (e : StackEntry) (withId : Bool := true) : String
   | none => if withId then s!"{e.objectId} (missing)" else "(missing)"
   | some o =>
     let id := if withId then s!"{o.id} " else ""
-    s!"{id}{o.name}{stackCreatureStats g o}{stackFaceExtras o}{targetClause g e}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
+    s!"{id}{o.nameWithToken}{stackCreatureStats g o}{stackFaceExtras o}{targetClause g e}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
 
 /-- Like `faceExtras`, but includes keywords granted by other permanents. -/
 def objectFaceExtras (g : Game) (o : GameObject) : String :=
@@ -197,10 +198,10 @@ def exileUntilLeavesClause (g : Game) (o : GameObject) : String :=
   | some src => s!" *exiled until {objectRef g src.id} leaves the battlefield*"
   | none => ""
 
-/-- Battlefield line for one permanent: id, name, current type line (CR 205.1a),
-P/T when it is a creature, then keywords, control, status (including who an
-attacker is attacking, CR 508.1), and cards it has exiled until it leaves
-(CR 610.3). -/
+/-- Battlefield line for one permanent: id, name (a token is marked `(token)`),
+current type line (CR 205.1a), P/T when it is a creature, then keywords,
+control, status (including who an attacker is attacking, CR 508.1), and cards
+it has exiled until it leaves (CR 610.3). -/
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
@@ -239,13 +240,25 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     if o.status.untilEotExileIfDies then " *exile if dies*" else ""
   let counters :=
     if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
-  s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{withoutPayingManaClause g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{linked}{dmg}{exileIfDies}"
+  s!"{o.id} {o.nameWithToken}{types}{pt}{counters}{objectFaceExtras g o}{withoutPayingManaClause g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{linked}{dmg}{exileIfDies}"
+
+/-- Printed Oracle face. `CardDef.summary` starts with the name; a token
+uses `nameWithToken` in that position. -/
+def printedFace (o : GameObject) : String :=
+  let summary := o.printed.summary
+  if o.printed.isToken && summary.startsWith o.name then
+    o.nameWithToken ++ summary.drop o.name.length
+  else if o.printed.isToken then
+    s!"{o.nameWithToken} {summary}"
+  else
+    summary
 
 /-- Printed face of a card in hand, graveyard, or exile: object id plus Oracle
 summary (mana cost, type line, P/T, keywords and abilities). Lands omit a
-mana cost rather than printing `{0}` (CR 202.1b / 118.6). -/
+mana cost rather than printing `{0}` (CR 202.1b / 118.6). A token's name
+includes `(token)`. -/
 def printedCardLine (o : GameObject) : String :=
-  s!"{o.id} {o.printed.summary}"
+  s!"{o.id} {printedFace o}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
@@ -591,7 +604,7 @@ def legendRuleBlock (g : Game) : Option String :=
 /-- One waiting triggered ability: source id (for `stack`), name, and text. -/
 def waitingTriggerLine (wt : WaitingTrigger) : String :=
   let text := textForStackedAbility wt.source.printed (TriggeredAbility.toNotation wt.ability)
-  s!"{wt.source.id} {wt.source.name} {text}"
+  s!"{wt.source.id} {wt.source.nameWithToken} {text}"
 
 /-- Snapshot section listing waiting triggered abilities a player must put
 on the stack in an order they choose (CR 603.3b). -/
@@ -754,7 +767,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .mayCastExiledElseDamage p cardId n =>
       let name :=
         match g.findObject? cardId with
-        | some o => o.name
+        | some o => o.nameWithToken
         | none => "the exiled card"
       s!" [may cast {name}, or {n} damage to each opponent ({g.player p |>.name})]"
     | .chooseProliferate p n =>
@@ -766,7 +779,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .mayWheel n _ => s!"may discard your hand and draw {n}"
         | .maySacrificePlaneswalker => "may sacrifice a planeswalker"
         | .topOrBottomDamage id _ =>
-          let name := ((g.findObject? id).map (fun (o : GameObject) => o.name)).getD "the card"
+          let name := ((g.findObject? id).map (fun (o : GameObject) => o.nameWithToken)).getD "the card"
           s!"put {name} on top (and be dealt damage) or on the bottom"
         | .sphinxsApproach _ => "may exile five cards named Sphinx's Approach"
         | .extrapolateReveal => "may reveal two cards from outside the game"
@@ -923,7 +936,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .mayHaveVillainConnive p _ villainId =>
       let who :=
         match g.findObject? villainId with
-        | some o => o.name
+        | some o => o.nameWithToken
         | none => "the Villain"
       s!" [may have {who} connive ({g.player p |>.name})]"
     | .resolveRandom req =>
@@ -1097,9 +1110,9 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
     | .stack =>
       match g.stack.find? (fun e => e.objectId == o.id) with
       | some e => stackObjectLine g e true
-      | none => s!"{o.id} {o.name}{stackCreatureStats g o}{stackFaceExtras o}{sourceClause g o}"
+      | none => s!"{o.id} {o.nameWithToken}{stackCreatureStats g o}{stackFaceExtras o}{sourceClause g o}"
     | .exile => exileLine g o
-    | _ => s!"{o.id} {o.name}{faceExtras o.printed}"
+    | _ => s!"{o.id} {o.nameWithToken}{faceExtras o.printed}"
 
 /-- Current contents of `z`. Hidden zones show only their size (CR 400.2),
 except that a scrying player (or omniscient view) sees the looked-at library

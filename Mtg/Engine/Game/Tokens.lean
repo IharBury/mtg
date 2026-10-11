@@ -64,7 +64,7 @@ def applyHopeEnterCounters (g : Game) (o : GameObject) (asOf : Nat) : Game :=
   if n == 0 then g
   else
     let o := { o with status := o.status.addPlusOnePlusOne n }
-    (g.setObject o).logMsg s!"{o.name} enters with {n} additional +1/+1 counter(s)"
+    (g.setObject o).logMsg s!"{o.nameWithToken} enters with {n} additional +1/+1 counter(s)"
 
 /-- Create one token without replacement effects (CR 111.2 / 608.2c). Callers
 that must let enters-the-battlefield triggers see the token (amass, recruit)
@@ -81,7 +81,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let asOf := g.timestamp
     let (g, obj) := g.allocObject printed controller .battlefield (some controller)
       (status := { tapped := tapped, summoningSick := sick })
-    let g := g.logMsg s!"{(g.player controller).name} creates {obj.name}"
+    let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
     let g := { g with pendingTokenEnters := g.pendingTokenEnters.push obj.id }
     let g := g.applyHopeEnterCounters (g.object! obj.id) asOf
     -- Storied is not a trigger; an artifact token can be the third permanent.
