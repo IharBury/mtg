@@ -579,7 +579,7 @@ inductive SharedTrigger where
   /-- Return cards exiled by the source. -/
   | returnLinkedExile
   /-- Create one token, then attach the source to it.
-  Resolves as `.sequence [.createTokens kind 1 false, .attachSourceToCreated]`. -/
+  Resolves as `.sequence [.createTokens kind 1 false, .attach .source .created]`. -/
   | createThenAttach (kind : TokenKind)
   /-- Gain `n` life, then you may search a basic land to the top.
   Resolves as `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`. -/
@@ -701,7 +701,7 @@ inductive SharedTrigger where
   /-- Create an Alien and grow it from invasion counters. -/
   | createAlienPerInvasion
   /-- You may put an artifact from hand; attach if Equipment. Resolves as
-  `.sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact]`. -/
+  `.sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
   | mayPutArtifactAttachEquipment
   /-- Cascade. -/
   | cascade
@@ -866,7 +866,7 @@ inductive SharedTrigger where
   /-- Apply `action` to the enchanted creature. -/
   | onEnchanted (action : PermanentAction)
   /-- Attach to target, then apply `followup`. Resolves as
-  `.sequence [.attachSourceToTarget, .onTargetWhileSource followup]`. -/
+  `.sequence [.attach .source .target, .onTargetWhileSource followup]`. -/
   | attachThen (followup : PermanentAction)
   /-- Exile another creature; enchanted becomes a copy. -/
   | exileOtherCopyEnchanted

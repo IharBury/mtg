@@ -808,7 +808,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .sequence [.may .tapHumans, .drawForEachTappedHuman] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
-  | .sequence [.createTokens kind 1 false, .attachSourceToCreated] =>
+  | .sequence [.createTokens kind 1 false, .attach .source .created] =>
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
   | .sequence [.gainLife n, .searchLibrary .basicLandOnTop] =>
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
@@ -855,9 +855,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
   | .sequence [.draw 1, .discard 1, .discardedLandEntersTapped] =>
     "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
-  | .sequence [.putCounters .honePerOpponent .source, .attachToCreatureTarget] =>
+  | .sequence [.putCounters .honePerOpponent .source, .attach .source .creatureTarget] =>
     "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
-  | .sequence [.offerAttachAnyEquipment, .«if» .equipmentAttached .reflexiveFightHost] =>
+  | .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached .reflexiveFightHost] =>
     "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
   | .sequence [.drawEqualToManaSpent, .discardIfManaSpent n] =>
     let disc := if n == 2 then "two cards" else cardPhrase n
@@ -901,7 +901,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"sacrifice it. When you do, it deals {n} damage divided as you choose among one or two targets"
   | .sequence [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 3] =>
     "sacrifice it. When you do, put an indestructible counter on target creature you control"
-  | .sequence [.attachSourceToTarget, .onTargetWhileSource action] =>
+  | .sequence [.attach .source .target, .onTargetWhileSource action] =>
     s!"attach it to {noun}. {PermanentAction.toNotation action "that creature" (sentence := true)}"
   | .sequence [.exile .target .untilSourceLeaves .copyAndHost, .enchantedCopiesNoted] =>
     "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
@@ -914,7 +914,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       .putCounters (.ofKind .invasion) .source] =>
     "create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment"
   | .sequence [.createTokens .treasure 1 false .sturdyShield .you .fixed .remember,
-      .attachCreatedToSource] =>
+      .attach .created .source] =>
     "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
   | .sequence [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] =>
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
@@ -935,7 +935,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.onPermanent .destroy,
       .createTokens .treasure 1 false .kind .targetController] =>
     s!"destroy {noun}. They create a Treasure token"
-  | .sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment .attachPutArtifact] =>
+  | .sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
   | .sequence _ =>
     "resolve each step"
@@ -1039,18 +1039,28 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "they create a Treasure token"
     | _, _, _, _ =>
       TokenKind.createPhrase kind n (tapped := tapped)
-  | .attachSourceToCreated =>
-    "attach this Equipment to it"
-  | .attachSourceToTarget =>
-    s!"attach it to {noun}"
+  | .attach what host =>
+    match what, host with
+    | .source, .created =>
+      "attach this Equipment to it"
+    | .source, .target =>
+      s!"attach it to {noun}"
+    | .target, .optionalCreature =>
+      "attach target Equipment you control to up to one target creature you control"
+    | .source, .creatureTarget =>
+      "attach this to up to one target creature you control"
+    | .anyYouControl, .target =>
+      "attach any number of Equipment you control to target creature you control"
+    | .created, .source | .putArtifact, .notedHost =>
+      "attach it to this creature"
+    | _, _ =>
+      "attach it"
   | .gainLifeForEachOtherCreature =>
     "you gain 1 life for each other creature you control"
   | .destroyPermanentDealtDamage =>
     "destroy the permanent dealt damage this way"
   | .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage =>
     s!"if a {subtype} is dealt damage this way, destroy it"
-  | .attachEquipmentToCreature =>
-    "attach target Equipment you control to up to one target creature you control"
   | .addMana types =>
     s!"add {manaSymbolsText types}"
   | .or [.onPermanent .tap, .onPermanent .untap] =>
@@ -1153,9 +1163,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
   | .putArtifactFromHand =>
     "put an artifact card from your hand onto the battlefield"
-  | .attachPutArtifact =>
-    "attach it to this creature"
-  | .«if» .putArtifactIsEquipment .attachPutArtifact =>
+  | .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost) =>
     "if it's an Equipment, attach it to this creature"
   | .fightUpToOne =>
     "this fights up to one other target creature"
@@ -1214,10 +1222,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
   | .discardedLandEntersTapped =>
     "if you discard a land card this way, put it onto the battlefield tapped"
-  | .attachToCreatureTarget =>
-    "attach this to up to one target creature you control"
-  | .offerAttachAnyEquipment =>
-    "attach any number of Equipment you control to target creature you control"
   | .reflexiveFightHost =>
     "that creature deals damage equal to its power to up to one target creature"
   | .«if» .equipmentAttached .reflexiveFightHost =>
@@ -1255,8 +1259,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a land card from your hand onto the battlefield tapped"
   | .«if» .anotherHero (.gainLife n) =>
     s!"if you control another Hero, you gain {n} life"
-  | .attachCreatedToSource =>
-    "attach it to this creature"
   | .grantPlayNotedUntilNextTurn =>
     playThatCardUntilNextTurnPhrase
   | .cantUntapWhileSource =>

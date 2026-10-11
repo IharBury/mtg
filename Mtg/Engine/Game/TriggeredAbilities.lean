@@ -865,6 +865,87 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => g.logMsg "Bolg is no longer in play"
   | _, _, _ => g
 
+/-- Resolve `TriggerResolution.attach`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (what : TriggeredAbility.TriggerAttachWhat)
+    (host : TriggeredAbility.TriggerAttachTo) : Game :=
+  match what, host with
+  | .source, .created =>
+    match (g.recentTokenIds.back?).bind g.findObject? with
+    | some tok =>
+      g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src tok)
+        "The Equipment is no longer in play"
+    | none => g
+  | .source, .target =>
+    g.withLegalKindPermanent controller ab.targetKind targets (fun g host =>
+      g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src host)
+        "The Equipment is no longer in play")
+      sourceId (some "The target is no longer legal")
+  | .target, .optionalCreature =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent eqId), some (Target.permanent hostId) =>
+      match g.findObject? eqId, g.findObject? hostId with
+      | some eq, some host =>
+        if eq.isOnBattlefield && host.isOnBattlefield then
+          g.attachSourceTo eq host
+        else g.logMsg "The target is no longer legal"
+      | _, _ => g.logMsg "The target is no longer legal"
+    | some (Target.permanent _), none =>
+      g.logMsg "No creature was chosen"
+    | _, _ => g.logMsg "The target is no longer legal"
+  | .source, .creatureTarget =>
+    match targets[1]?, targets[0]? with
+    | some (Target.permanent hid), _
+    | none, some (Target.permanent hid) =>
+      match g.findObject? hid, sourceId.bind g.findObject? with
+      | some host, some src =>
+        if host.isCreature then g.attachSourceTo src host else g
+      | _, _ => g
+    | _, _ => g
+  | .anyYouControl, .target =>
+    let g := { g with equipmentAttachedHost := none }
+    match targets[0]? with
+    | some (Target.permanent hid) =>
+      match g.findObject? hid with
+      | none => g.logMsg "The target is no longer legal"
+      | some host =>
+        if !host.isOnBattlefield || !host.isCreature then
+          g.logMsg "The target is no longer legal"
+        else
+          let eligible :=
+            ((g.permanentsOf controller).filter (fun o =>
+              o.printed.isEquipment && o.attachedTo != some host.id)).map (·.id)
+          if eligible.isEmpty then
+            g.logMsg "No Equipment was attached this way"
+          else
+            g.beginFraChoice controller (.attachAnyEquipment host.id eligible)
+              s!"{(g.player controller).name} chooses any number of Equipment to attach to {host.name}"
+    | _ => g.logMsg "The target is no longer legal"
+  | .putArtifact, .notedHost =>
+    match g.putArtifactThisWay with
+    | none => g
+    | some (id, hostId) =>
+      let g := { g with putArtifactThisWay := none }
+      match g.findObject? id with
+      | none => g
+      | some o =>
+        match g.findObject? hostId with
+        | some host =>
+          if host.isOnBattlefield then g.attachSourceTo o host
+          else g.logMsg s!"{host.name} is no longer on the battlefield"
+        | none => g.logMsg "The source is no longer in play"
+  | .created, .source =>
+    match g.createdTokenThisWay.bind g.findObject? with
+    | none => { g with createdTokenThisWay := none }
+    | some tok =>
+      let g := { g with createdTokenThisWay := none }
+      match sourceId.bind g.findObject? with
+      | some src => g.attachSourceTo tok src
+      | none => g
+  | _, _ => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -1127,17 +1208,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .createTokens kind n tapped token who qty note =>
     g.applyCreateTokens controller sourceId targets lastKnownPower
       kind n tapped token who qty note
-  | .attachSourceToCreated =>
-    match (g.recentTokenIds.back?).bind g.findObject? with
-    | some tok =>
-      g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src tok)
-        "The Equipment is no longer in play"
-    | none => g
-  | .attachSourceToTarget =>
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g host =>
-      g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src host)
-        "The Equipment is no longer in play")
-      sourceId (some "The target is no longer legal")
+  | .attach what host =>
+    g.applyAttach controller ab sourceId targets what host
   | .gainLifeForEachOtherCreature =>
     let n :=
       ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
@@ -1150,18 +1222,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match g.findObject? oid with
       | some o => if o.isOnBattlefield then g.destroyPermanent o else g
       | none => g
-  | .attachEquipmentToCreature =>
-    match targets[0]?, targets[1]? with
-    | some (Target.permanent eqId), some (Target.permanent hostId) =>
-      match g.findObject? eqId, g.findObject? hostId with
-      | some eq, some host =>
-        if eq.isOnBattlefield && host.isOnBattlefield then
-          g.attachSourceTo eq host
-        else g.logMsg "The target is no longer legal"
-      | _, _ => g.logMsg "The target is no longer legal"
-    | some (Target.permanent _), none =>
-      g.logMsg "No creature was chosen"
-    | _, _ => g.logMsg "The target is no longer legal"
   | .addMana types =>
     g.addManaLogged controller types
   | .becomePT p t =>
@@ -1533,15 +1593,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           g.afterLandEnters (g.object! entered.2)
         else g
       | none => g
-  | .attachToCreatureTarget =>
-    match targets[1]?, targets[0]? with
-    | some (Target.permanent hid), _
-    | none, some (Target.permanent hid) =>
-      match g.findObject? hid, sourceId.bind g.findObject? with
-      | some host, some src =>
-        if host.isCreature then g.attachSourceTo src host else g
-      | _, _ => g
-    | _, _ => g
   | .millThatManyLost =>
     match lastKnownPower, lastKnownToughness with
     | some n, some idx => g.mill ⟨idx.toNat⟩ n.toNat
@@ -1563,25 +1614,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .targetOpponentLosesLife n =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.loseLife pid n)
-  | .offerAttachAnyEquipment =>
-    let g := { g with equipmentAttachedHost := none }
-    match targets[0]? with
-    | some (Target.permanent hid) =>
-      match g.findObject? hid with
-      | none => g.logMsg "The target is no longer legal"
-      | some host =>
-        if !host.isOnBattlefield || !host.isCreature then
-          g.logMsg "The target is no longer legal"
-        else
-          let eligible :=
-            ((g.permanentsOf controller).filter (fun o =>
-              o.printed.isEquipment && o.attachedTo != some host.id)).map (·.id)
-          if eligible.isEmpty then
-            g.logMsg "No Equipment was attached this way"
-          else
-            g.beginFraChoice controller (.attachAnyEquipment host.id eligible)
-              s!"{(g.player controller).name} chooses any number of Equipment to attach to {host.name}"
-    | _ => g.logMsg "The target is no longer legal"
   | .returnAsArtifact =>
     match sourceId.bind g.findObject? with
     | none => g
@@ -1774,19 +1806,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else
       { g with pending := .mayPutArtifactFromHand controller (sourceId.getD ⟨0⟩) }.logMsg
         s!"{(g.player controller).name} may put an artifact card from their hand onto the battlefield"
-  | .attachPutArtifact =>
-    match g.putArtifactThisWay with
-    | none => g
-    | some (id, hostId) =>
-      let g := { g with putArtifactThisWay := none }
-      match g.findObject? id with
-      | none => g
-      | some o =>
-        match g.findObject? hostId with
-        | some host =>
-          if host.isOnBattlefield then g.attachSourceTo o host
-          else g.logMsg s!"{host.name} is no longer on the battlefield"
-        | none => g.logMsg "The source is no longer in play"
   | .fightUpToOne =>
     match sourceId.bind g.findObject?, targets[0]? with
     | some src, some (Target.permanent id) =>
@@ -1803,14 +1822,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
       let g := g.returnToHand o.id o.owner
       { g with returnedPermanentThisWay := true }) sourceId none
-  | .attachCreatedToSource =>
-    match g.createdTokenThisWay.bind g.findObject? with
-    | none => { g with createdTokenThisWay := none }
-    | some tok =>
-      let g := { g with createdTokenThisWay := none }
-      match sourceId.bind g.findObject? with
-      | some src => g.attachSourceTo tok src
-      | none => g
   | .grantPlayNotedUntilNextTurn =>
     match g.playExiledThisWay with
     | none => g
