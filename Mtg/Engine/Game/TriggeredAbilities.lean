@@ -946,6 +946,50 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => g
   | _, _ => g
 
+/-- Resolve `TriggerResolution.mayCast`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int)
+    (origin : TriggeredAbility.TriggerCastFrom)
+    (maxMv : TriggeredAbility.TriggerCastMv)
+    (cost : TriggeredAbility.TriggerCastCost)
+    (note : TriggeredAbility.TriggerCastNote) : Game :=
+  match origin, maxMv, cost, note with
+  | .graveyard, .unlimited, .pay, .exileInstead =>
+    let eligible := (g.player controller).graveyard.filter (fun id =>
+      (g.findObject? id).any (fun o => o.printed.isArtifact || o.printed.isInstantOrSorcery))
+    if eligible.isEmpty then
+      g.logMsg s!"{(g.player controller).name} has no artifact, instant, or sorcery in the graveyard"
+    else
+      { g with pending := .fraChoice controller (.mayCastFromGraveyard eligible) }.logMsg
+        s!"{(g.player controller).name} may cast an artifact, instant, or sorcery spell from their graveyard"
+  | .hand, .twiceLegendaryWizards, .withoutPaying, .none =>
+    let wizards :=
+      (g.permanentsOf controller).filter (fun o =>
+        o.isLegendary && g.hasSubtype o "Wizard") |>.size
+    g.beginMayCastInstantSorceryFromHand controller (wizards * 2)
+  | .hand, .lastKnown, .withoutPaying, .none =>
+    g.beginMayCastInstantSorceryFromHand controller (lastKnownPower.getD 0).toNat
+  | .impulse, .unlimited, .withoutPaying, .none =>
+    if !g.grimaImpulseReady then g
+    else
+      let victim := g.grimaImpulseVictim.getD (g.opponent controller)
+      let found := g.grimaImpulseFound
+      let others := g.grimaImpulseOthers
+      let g := { g with
+        grimaImpulseReady := false
+        grimaImpulseVictim := none
+        grimaImpulseFound := none
+        grimaImpulseOthers := #[] }
+      match found with
+      | none =>
+        g.requestOrderInto others (.library victim)
+          s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
+      | some cardId =>
+        let name := (g.object! cardId).name
+        g.beginFraChoice controller (.mayCastGrima cardId others victim)
+          s!"{(g.player controller).name} may cast {name} without paying its mana cost"
+  | _, _, _, _ => g
+
 /-- Resolve `TriggerResolution.amass`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyAmass (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
@@ -1455,14 +1499,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           g.logMsg s!"{o.name} becomes a Bear in addition to its other types"
       | none => g
     | _ => g
-  | .castFromGyArtifactInstantSorcery =>
-    let eligible := (g.player controller).graveyard.filter (fun id =>
-      (g.findObject? id).any (fun o => o.printed.isArtifact || o.printed.isInstantOrSorcery))
-    if eligible.isEmpty then
-      g.logMsg s!"{(g.player controller).name} has no artifact, instant, or sorcery in the graveyard"
-    else
-      { g with pending := .fraChoice controller (.mayCastFromGraveyard eligible) }.logMsg
-        s!"{(g.player controller).name} may cast an artifact, instant, or sorcery spell from their graveyard"
+  | .mayCast origin maxMv cost note =>
+    g.applyMayCast controller lastKnownPower origin maxMv cost note
   | .millNote n =>
     let before := (g.player controller).graveyard
     let g := g.mill controller n
@@ -1661,11 +1699,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let disc := if n == 2 then "two" else toString n
       g.beginFraChoice controller (.mayDrawThenDiscard spent n)
         s!"{(g.player controller).name} may draw {spent} cards, then discard {disc}"
-  | .castInstantSorceryFromHand =>
-    let wizards :=
-      (g.permanentsOf controller).filter (fun o =>
-        o.isLegendary && g.hasSubtype o "Wizard") |>.size
-    g.beginMayCastInstantSorceryFromHand controller (wizards * 2)
   | .returnNotedLandsTapped =>
     let ids := g.exiledIdsThisWay
     let g := { g with exiledIdsThisWay := #[] }
@@ -1679,8 +1712,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let g := g.setObject { ret with status := { ret.status with tapped := true } }
         let g := g.logMsg s!"{name} is exiled, then returned tapped"
         g.afterLandEnters (g.object! retId)) g
-  | .castInstantSorceryMvAtMost =>
-    g.beginMayCastInstantSorceryFromHand controller (lastKnownPower.getD 0).toNat
   | .grimaExileUntil =>
     let victim := g.lastCombatDamagePlayer.getD (g.opponent controller)
     let (g, found, others) := g.exileUntilInstantOrSorcery victim
@@ -1689,25 +1720,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       grimaImpulseVictim := some victim
       grimaImpulseFound := found
       grimaImpulseOthers := others }
-  | .grimaMayCast =>
-    if !g.grimaImpulseReady then g
-    else
-      let victim := g.grimaImpulseVictim.getD (g.opponent controller)
-      let found := g.grimaImpulseFound
-      let others := g.grimaImpulseOthers
-      let g := { g with
-        grimaImpulseReady := false
-        grimaImpulseVictim := none
-        grimaImpulseFound := none
-        grimaImpulseOthers := #[] }
-      match found with
-      | none =>
-        g.requestOrderInto others (.library victim)
-          s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
-      | some cardId =>
-        let name := (g.object! cardId).name
-        g.beginFraChoice controller (.mayCastGrima cardId others victim)
-          s!"{(g.player controller).name} may cast {name} without paying its mana cost"
   | .opponentHasYouDraw | .may .opponentHasYouDraw =>
     match g.palantirChoiceReady with
     | none => g
