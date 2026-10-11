@@ -216,9 +216,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         | none => none) with
       | some id => some (.cast id)
       | none => some .decline
-    | .chooseFoodOrTreasure _ =>
-      some (.chooseMode 0)
-    | .chooseTapOrUntap _ _ =>
+    | .chooseTriggerOr _ =>
       some (.chooseMode 0)
     | .maySacArtifactOrDiscard _ _ =>
       match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with

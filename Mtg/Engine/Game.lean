@@ -288,9 +288,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p .decline
   | .mayPutLandFromHand _, some p =>
     mustApply g p .decline
-  | .chooseFoodOrTreasure _, some p =>
-    mustApply g p (.chooseMode 0)
-  | .chooseTapOrUntap _ _, some p =>
+  | .chooseTriggerOr _, some p =>
     mustApply g p (.chooseMode 0)
   | .maySacArtifactOrDiscard _ _, some p =>
     mustApply g p .decline

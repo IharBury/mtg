@@ -605,10 +605,8 @@ inductive Pending where
   | mayCastFromLooked (player : PlayerId) (ids : Array ObjectId) (maxMv : Int)
   /-- You may put a land from hand onto the battlefield tapped. -/
   | mayPutLandFromHand (player : PlayerId)
-  /-- Create a Food token or a Treasure token. -/
-  | chooseFoodOrTreasure (player : PlayerId)
-  /-- Choose tap or untap for this nonland permanent. -/
-  | chooseTapOrUntap (player : PlayerId) (targetId : ObjectId)
+  /-- The controller chooses one alternative of a `TriggerResolution.or`. -/
+  | chooseTriggerOr (player : PlayerId)
   /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
   | maySacArtifactOrDiscard (player : PlayerId) (draw : Nat)
   /-- You may put an artifact card from your hand onto the battlefield.

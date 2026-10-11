@@ -42,7 +42,8 @@ inductive EnterLeftover where
   | maySacOrDiscardNonlandThenDamage
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
   | revealHandExileUntilLeaves
-  /-- +1/+1 on up to two creatures, or return an artifact/enchantment from GY. -/
+  /-- +1/+1 on up to two creatures, or return an artifact/enchantment from GY.
+  Resolves as `.or [.onPermanent (.plusOne 1), .returnCreatureFromGyToHand]`. -/
   | plusOnesOrReturnArtEnch
   /-- Choose up to X modes. -/
   | chooseUpToXModes
@@ -586,7 +587,8 @@ inductive SharedTrigger where
   /-- Create an Axe Equipment token.
   Attaching it to a creature you control is `.createAxe (attach := true)`. -/
   | createAxe (attach : Bool := false)
-  /-- Tap an opposing creature or untap yours. -/
+  /-- Tap an opposing creature or untap yours.
+  Resolves as `.or [.onPermanent .tap, .onPermanent .untap]`. -/
   | tapOppOrUntapYours
   /-- Gain control of the target until end of turn; untap; haste. -/
   | gainControlOppUntilEot
@@ -656,7 +658,8 @@ inductive SharedTrigger where
   Resolves as
   `.sequence [.othersOfSubtypesGet subtypes p t, .opponentsCreaturesGet oppP oppT]`. -/
   | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
-  /-- +1/+1 on a Wolf or create a Treasure. -/
+  /-- +1/+1 on a Wolf or create a Treasure.
+  Resolves as `.or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false]`. -/
   | wolfPlusOneOrTreasure
   /-- Trample counter, become a Bear, maybe draw. Resolves as
   `.sequence [.trampleCounterOnTarget, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)]`. -/
@@ -866,9 +869,11 @@ inductive SharedTrigger where
   | exileOtherCopyEnchanted
   /-- Exile a creature you control until the next end step. -/
   | exileUntilNextEndStep
-  /-- Tap or untap target nonland. -/
+  /-- Tap or untap target nonland.
+  Resolves as `.or [.onPermanent .tap, .onPermanent .untap]`. -/
   | tapOrUntapNonland
-  /-- Create a Food or a Treasure. -/
+  /-- Create a Food or a Treasure.
+  Resolves as `.or [.createTokens .food 1 false, .createTokens .treasure 1 false]`. -/
   | createFoodOrTreasure
   /-- Villain if two creature cards in gy; otherwise mill two. Resolves as
   `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`. -/

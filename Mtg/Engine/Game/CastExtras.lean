@@ -354,40 +354,5 @@ def putLandFromHandTapped (g : Game) (p : PlayerId) (id : ObjectId) :
     return g.afterLandEnters (g.object! newId) |>.receivePriority g.activePlayer
   | _ => throw "Not time to put a land from hand onto the battlefield"
 
-/-- Create a Food (0) or Treasure (1) token. -/
-def chooseFoodOrTreasure (g : Game) (p : PlayerId) (idx : Nat) :
-    Except String Game := do
-  match g.pending with
-  | .chooseFoodOrTreasure q =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may choose Food or Treasure"
-    if idx > 1 then
-      throw "Choose Food or Treasure"
-    let g := { g with pending := .none }
-    let kind := if idx == 0 then TokenKind.food else TokenKind.treasure
-    return g.createKindTokens p kind 1 |>.receivePriority g.activePlayer
-  | _ => throw "Not time to choose Food or Treasure"
-
-/-- Tap (0) or untap (1) the pending nonland. -/
-def chooseTapOrUntap (g : Game) (p : PlayerId) (idx : Nat) (targetId : ObjectId) :
-    Except String Game := do
-  match g.pending with
-  | .chooseTapOrUntap q tid =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may choose tap or untap"
-    if tid != targetId then
-      throw "That is not the targeted permanent"
-    if idx > 1 then
-      throw "Choose tap or untap"
-    let some o := g.findObject? tid | throw "The target is no longer legal"
-    if !o.isOnBattlefield || o.printed.isLand then
-      throw "The target is no longer legal"
-    let g := { g with pending := .none }
-    let g :=
-      if idx == 0 then g.applyPermanentAction o .tap
-      else g.applyPermanentAction o .untap
-    return g.receivePriority g.activePlayer
-  | _ => throw "Not time to choose tap or untap"
-
 end Game
 end Mtg.Engine

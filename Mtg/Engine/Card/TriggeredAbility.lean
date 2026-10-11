@@ -946,8 +946,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
   | .createAxe true =>
     "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
-  | .tapOppOrUntapYours =>
-    "choose one — tap target creature an opponent controls; untap target creature you control"
+  | .or [.onPermanent .tap, .onPermanent .untap] =>
+    if t.targeting.kind == .nonland then
+      "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
+    else
+      "choose one — tap target creature an opponent controls; untap target creature you control"
   | .becomePT p t =>
     s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
   | .«if» .returnedPermanent (.onSource (.plusOne 1)) =>
@@ -991,7 +994,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
   | .returnCreatureFromGyToHand =>
     s!"return {noun} to your hand"
-  | .wolfPlusOneOrTreasure =>
+  | .or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false] =>
     "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
   | .castFromGyArtifactInstantSorcery =>
     "you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead"
@@ -1065,9 +1068,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     PermanentAction.toNotation action "enchanted creature"
   | .exileUntilNextEndStep =>
     s!"exile up to one {noun}. Return that card to the battlefield under its owner's control at the beginning of the next end step"
-  | .tapOrUntapNonland =>
-    "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
-  | .createFoodOrTreasure =>
+  | .or [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
     "create a Food token or a Treasure token"
   | .ifElse (.creatureCardsInGraveyardAtLeast 2)
       (.createTokens .villain21menace 1 true) (.mill 2) =>
@@ -1097,7 +1098,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
   | .revealHandExileUntilLeaves =>
     "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
-  | .plusOnesOrReturnArtEnch =>
+  | .or [.onPermanent (.plusOne 1), .returnCreatureFromGyToHand] =>
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
   | .chooseUpToXModes =>
     "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
@@ -1392,6 +1393,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if that is true"
   | .ifElse _ _ _ =>
     "if that is true"
+  | .or _ =>
+    "choose one"
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=

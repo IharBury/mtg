@@ -874,6 +874,12 @@ namespace CardDef
   "At the beginning of each combat, other Goblins and Orcs you control get +2/+2 until end of turn. Creatures your opponents control get -1/-1 until end of turn."
 #guard TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure ==
   .triggered .combatDamageToPlayer (Effect.ofTrigger .wolfPlusOneOrTreasure)
+#guard TriggeredAbility.resolution .onCombatDamageWolfPlusOneOrTreasure ==
+  .or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false]
+#guard (SharedTrigger.timing .tapOppOrUntapYours).resolution ==
+  .or [.onPermanent .tap, .onPermanent .untap]
+#guard TriggeredAbility.resolution .onLandYouControlEntersTapOrUntap ==
+  .or [.onPermanent .tap, .onPermanent .untap]
 #guard TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear ==
   .triggered .yourBeginCombat (Effect.ofTrigger .trampleCounterBecomeBear)
 #guard TriggeredAbility.onEnterMillThenSubtypeToHand 4 "Elf" ==
@@ -1277,8 +1283,16 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onEnterTapOrUntapNonland ==
   "When this creature enters, choose one — • Tap target nonland permanent. • Untap target nonland permanent."
 #guard TriggeredAbility.targetKind .onEnterTapOrUntapNonland == .nonland
+#guard TriggeredAbility.resolution .onEnterTapOrUntapNonland ==
+  .or [.onPermanent .tap, .onPermanent .untap]
 #guard TriggeredAbility.toNotation .onEnterCreateFoodOrTreasure ==
   "When this creature enters, create a Food token or a Treasure token."
+#guard TriggeredAbility.resolution .onEnterCreateFoodOrTreasure ==
+  .or [.createTokens .food 1 false, .createTokens .treasure 1 false]
+#guard TriggeredAbility.resolution (.onEnter Effect.enterPlusOnesOrReturnArtEnch) ==
+  .or [.onPermanent (.plusOne 1), .returnCreatureFromGyToHand]
+#guard TriggeredAbility.toNotation (.onEnter Effect.enterPlusOnesOrReturnArtEnch) ==
+  "When this permanent enters, choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand."
 #guard TriggeredAbility.toNotation .onEnterVillainIfGyElseMill ==
   "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
 #guard TriggeredAbility.resolution .onEnterVillainIfGyElseMill ==
