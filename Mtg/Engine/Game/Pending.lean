@@ -610,7 +610,7 @@ inductive Pending where
   /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
   | maySacArtifactOrDiscard (player : PlayerId) (draw : Nat)
   /-- You may put an artifact card from your hand onto the battlefield.
-  If it is Equipment, attach it to `hostId`. -/
+  `hostId` is the creature the following step attaches it to if it is Equipment. -/
   | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)
   /-- You may have this entering Villain connive (Baron Strucker; MSH 422). -/
   | mayHaveVillainConnive (player : PlayerId) (sourceId : ObjectId) (villainId : ObjectId)

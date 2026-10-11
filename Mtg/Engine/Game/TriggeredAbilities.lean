@@ -1620,7 +1620,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.mapObjectStatus src (fun s => { s with invasion := s.invasion + n })
         |>.logMsg s!"{src.name} gets an invasion counter")
       "The source is no longer in play"
-  | .putArtifactAttachEquipment | .may .putArtifactAttachEquipment =>
+  | .putArtifactFromHand | .may .putArtifactFromHand =>
+    let g := { g with putArtifactThisWay := none }
     let arts :=
       (g.player controller).hand.filterMap (fun id =>
         match g.findObject? id with
@@ -1631,6 +1632,21 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     else
       { g with pending := .mayPutArtifactFromHand controller (sourceId.getD ⟨0⟩) }.logMsg
         s!"{(g.player controller).name} may put an artifact card from their hand onto the battlefield"
+  | .attachPutArtifactIfEquipment =>
+    match g.putArtifactThisWay with
+    | none => g
+    | some (id, hostId) =>
+      let g := { g with putArtifactThisWay := none }
+      match g.findObject? id with
+      | none => g
+      | some o =>
+        if !o.printed.isEquipment then g
+        else
+          match g.findObject? hostId with
+          | some host =>
+            if host.isOnBattlefield then g.attachSourceTo o host
+            else g.logMsg s!"{host.name} is no longer on the battlefield"
+          | none => g.logMsg "The source is no longer in play"
   | .fightUpToOne =>
     match sourceId.bind g.findObject?, targets[0]? with
     | some src, some (Target.permanent id) =>

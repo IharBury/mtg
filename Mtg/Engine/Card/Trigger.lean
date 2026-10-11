@@ -141,8 +141,8 @@ cast the triggering spell, then discard two, is
 `.may (.sequence [.drawEqualToManaSpent, .discardIfManaSpent 2])`.
 You may tap any number of untapped Humans is `.may .tapHumans`.
 You may sacrifice another creature is `.may .sacrificeAnother`.
-You may put an artifact from your hand onto the battlefield and attach
-it if it is Equipment is `.may .putArtifactAttachEquipment`.
+You may put an artifact from your hand onto the battlefield is
+`.may .putArtifactFromHand`.
 You may discard your hand is `.may .discardHand`.
 The targeted opponent may have you draw a card is
 `.may .opponentHasYouDraw`. Declining that offer mills and that player
@@ -212,7 +212,10 @@ You may put a land card from your hand onto the battlefield tapped is
   The target gets +3/+0 and gains first strike until end of turn, is
   `.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords Keyword.firstStrike)]`.
   Destroy the target, then its controller creates a Treasure, is
-  `.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure]`. -/
+  `.sequence [.onPermanent .destroy, .targetControllerCreatesTreasure]`.
+  You may put an artifact from your hand onto the battlefield, then attach
+  it to the source if it is Equipment, is
+  `.sequence [.may .putArtifactFromHand, .attachPutArtifactIfEquipment]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -445,9 +448,14 @@ You may put a land card from your hand onto the battlefield tapped is
   | maySacArtifactOrDiscardDraw
   /-- Another target creature gets +X/+0, X = source power. -/
   | pumpTargetBySourcePower
-  /-- Put an artifact from your hand onto the battlefield; attach it if it
-  is Equipment. Optional as `.may .putArtifactAttachEquipment`. -/
-  | putArtifactAttachEquipment
+  /-- Put an artifact card from your hand onto the battlefield.
+  The permanent, and the creature it may attach to, are remembered for the
+  next step. An empty hand skips the choice.
+  Optional as `.may .putArtifactFromHand`. -/
+  | putArtifactFromHand
+  /-- Attach the artifact put by the previous step to that creature if it
+  is Equipment. -/
+  | attachPutArtifactIfEquipment
   /-- This fights the targeted creature. -/
   | fightUpToOne
   /-- Return the targeted permanent to its owner's hand.
@@ -988,7 +996,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.createAlienToken, .plusOneOnAlienNoted, .invasionCounterOnSource] }
   | .mayPutArtifactAttachEquipment =>
-    { resolution := .may .putArtifactAttachEquipment }
+    { resolution := .sequence
+        [.may .putArtifactFromHand, .attachPutArtifactIfEquipment] }
   | .cascade => { resolution := .cascade }
   | .belladonnaTokenReward =>
     { resolution := .sequence [

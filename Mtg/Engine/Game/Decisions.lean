@@ -660,8 +660,8 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline to put an artifact onto the battlefield"
     let g := g.logMsg
       s!"{(g.player p).name} declines to put an artifact onto the battlefield"
-    let g := { g with pending := .none }
-    return g.receivePriority g.activePlayer
+    let g := { g with pending := .none, putArtifactThisWay := none }
+    return g.resumeSequenceThenPriority
   | .mayHaveVillainConnive q _ _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to have the Villain connive"

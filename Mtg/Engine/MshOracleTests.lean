@@ -2263,15 +2263,19 @@ def ironManCombatPutEquipmentOk : Bool :=
   let iron := namedPermanent g "The Invincible Iron Man"
   let g := g.applyTriggeredAbility ⟨0⟩ .onCombatMayPutArtifactAttachEquipment
     (some iron.id)
-  match g.pending with
-  | .mayPutArtifactFromHand ⟨0⟩ hostId =>
+  match g.pending, g.triggerSequenceRest with
+  | .mayPutArtifactFromHand ⟨0⟩ hostId, some rest =>
     let bow := handCardNamed g ⟨0⟩ "Hawkeye's Bow"
     let g := mustApply g ⟨0⟩ (.cast bow.id)
     let bow := namedPermanent g "Hawkeye's Bow"
     hostId == iron.id &&
+      rest.steps == [.attachPutArtifactIfEquipment] &&
       bow.isOnBattlefield &&
-      bow.attachedTo == some iron.id
-  | _ => false
+      bow.attachedTo == some iron.id &&
+      g.pending == .none &&
+      g.triggerSequenceRest.isNone &&
+      g.putArtifactThisWay.isNone
+  | _, _ => false
 
 #guard ironManCombatPutEquipmentOk
 
@@ -2285,6 +2289,8 @@ def ironManCombatDeclinePutOk : Bool :=
   let g := mustApply g ⟨0⟩ .decline
   (handCardNamed g ⟨0⟩ "Hawkeye's Bow").zone == .hand ⟨0⟩ &&
     g.pending == .none &&
+    g.triggerSequenceRest.isNone &&
+    g.putArtifactThisWay.isNone &&
     g.log.any (fun s => mentions s "declines to put an artifact")
 
 #guard ironManCombatDeclinePutOk
@@ -2299,7 +2305,9 @@ def ironManCombatPutNonEquipmentOk : Bool :=
   let stone := handCardNamed g ⟨0⟩ "The Mind Stone"
   let g := mustApply g ⟨0⟩ (.cast stone.id)
   let stone := namedPermanent g "The Mind Stone"
-  stone.isOnBattlefield && stone.attachedTo.isNone
+  stone.isOnBattlefield && stone.attachedTo.isNone &&
+    g.triggerSequenceRest.isNone &&
+    g.putArtifactThisWay.isNone
 
 #guard ironManCombatPutNonEquipmentOk
 

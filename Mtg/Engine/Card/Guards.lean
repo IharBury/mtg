@@ -920,6 +920,8 @@ namespace CardDef
   .triggered .yourBeginCombat (Effect.ofTrigger .createAlienPerInvasion)
 #guard TriggeredAbility.onCombatMayPutArtifactAttachEquipment ==
   .triggered .yourBeginCombat (Effect.ofTrigger .mayPutArtifactAttachEquipment)
+#guard TriggeredAbility.resolution .onCombatMayPutArtifactAttachEquipment ==
+  .sequence [.may .putArtifactFromHand, .attachPutArtifactIfEquipment]
 #guard TriggeredAbility.onCastCascade == .triggered .cascade (Effect.ofTrigger .cascade)
 #guard TriggeredAbility.onEnterBolgMaySacrifice ==
   .triggered .enter (Effect.ofTrigger .bolgMaySacrifice)

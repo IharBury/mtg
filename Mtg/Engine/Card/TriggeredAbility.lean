@@ -706,8 +706,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may tap any number of untapped Humans you control"
     | .sacrificeAnother =>
       "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-    | .putArtifactAttachEquipment =>
-      "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
+    | .putArtifactFromHand =>
+      "you may put an artifact card from your hand onto the battlefield"
     | .discardHand =>
       "you may discard your hand"
     | .opponentHasYouDraw =>
@@ -858,6 +858,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
   | .sequence [.onPermanent .destroy, .targetControllerCreatesTreasure] =>
     s!"destroy {noun}. They create a Treasure token"
+  | .sequence [.may .putArtifactFromHand, .attachPutArtifactIfEquipment] =>
+    "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
   | .sequence _ =>
     "resolve each step"
   | .gainLifeEqualToTargetPower =>
@@ -1095,8 +1097,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
   | .pumpTargetBySourcePower =>
     s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
-  | .putArtifactAttachEquipment =>
-    "put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
+  | .putArtifactFromHand =>
+    "put an artifact card from your hand onto the battlefield"
+  | .attachPutArtifactIfEquipment =>
+    "if it's an Equipment, attach it to this creature"
   | .fightUpToOne =>
     "this fights up to one other target creature"
   | .returnToOwnerHand =>

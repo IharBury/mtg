@@ -241,7 +241,8 @@ def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option ObjectId) :
         return g.finishMayCastFromLooked p (ids.filter (· != id))
   | _ => throw "Not time to choose a spell from among looked-at cards"
 
-/-- Put an artifact from hand onto the battlefield, attaching Equipment to `hostId`. -/
+/-- Put an artifact from hand onto the battlefield.
+`attachPutArtifactIfEquipment` attaches it when it is Equipment. -/
 def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     Except String Game := do
   match g.pending with
@@ -257,17 +258,7 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     let (g, newId) := g.putOntoBattlefield cardId p
     let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield"
     let g := g.afterPermanentEnters (g.object! newId)
-    let o := g.object! newId
-    let g :=
-      if o.printed.isEquipment then
-        match g.findObject? hostId with
-        | some host =>
-          if host.isOnBattlefield then g.attachSourceTo o host
-          else g.logMsg s!"{host.name} is no longer on the battlefield"
-        | none => g.logMsg "The source is no longer in play"
-      else g
-    let g := { g with pending := .none }
-    return g.receivePriority g.activePlayer
+    return { g with pending := .none, putArtifactThisWay := some (newId, hostId) }
   | _ => throw "Not time to put an artifact from your hand"
 
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
