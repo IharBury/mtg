@@ -750,7 +750,20 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .permanent, _, _ =>
       s!"it deals {n} damage to {noun}"
   | .scry n => s!"scry {n}"
-  | .draw n => s!"draw {cardPhrase n}"
+  | .draw n who amount =>
+    match who, amount with
+    | .opponentHasYou, _ =>
+      "target opponent may have you draw a card"
+    | .you, .forEachTappedHuman =>
+      "draw a card for each Human tapped this way"
+    | .you, .perFatGraveyard =>
+      "draw a card for each graveyard with seven or more cards in it"
+    | .you, .discardedHandCount =>
+      "draw X cards, where X is the number of cards discarded this way"
+    | .you, .equalToManaSpent =>
+      "draw X cards, where X is the amount of mana spent to cast that spell"
+    | .you, .fixed =>
+      s!"draw {cardPhrase n}"
   | .searchLibrary .forestToBattlefield =>
     "search your library for a Forest card, put that card onto the battlefield, then shuffle"
   | .searchLibrary .basicLandToHand =>
@@ -770,11 +783,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may put an artifact card from your hand onto the battlefield"
     | .discardHand =>
       "you may discard your hand"
-    | .opponentHasYouDraw =>
+    | .draw _ .opponentHasYou _ =>
       "target opponent may have you draw a card"
     | .putLandFromHandTapped =>
       "you may put a land card from your hand onto the battlefield tapped"
-    | .sequence [.drawEqualToManaSpent, .discardIfManaSpent n] =>
+    | .sequence [.draw _ _ .equalToManaSpent, .discardIfManaSpent n] =>
       let disc := if n == 2 then "two cards" else cardPhrase n
       s!"you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard {disc}"
     | _ => "you may do it"
@@ -806,7 +819,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.removeHopeCounter, .«if» .removedHope (.draw 1),
       .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] =>
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
-  | .sequence [.may .tapHumans, .drawForEachTappedHuman] =>
+  | .sequence [.may .tapHumans, .draw _ _ .forEachTappedHuman] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
   | .sequence [.createTokens kind 1 false, .attach .source .created] =>
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
@@ -841,7 +854,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "untap all attacking creatures. After this phase, there is an additional combat phase"
   | .sequence [.destroyNotedForAmass, .amass _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw 1)] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
-  | .sequence [.may .discardHand, .drawDiscardedHandCount, .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] =>
+  | .sequence [.may .discardHand, .draw _ _ .discardedHandCount, .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
   | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
@@ -859,14 +872,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
   | .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached .reflexiveFightHost] =>
     "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
-  | .sequence [.drawEqualToManaSpent, .discardIfManaSpent n] =>
+  | .sequence [.draw _ _ .equalToManaSpent, .discardIfManaSpent n] =>
     let disc := if n == 2 then "two cards" else cardPhrase n
     s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
   | .sequence [.exile .landsYouControl .forLater .lands, .returnNotedLandsTapped] =>
     "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
   | .sequence [.grimaExileUntil, .mayCast .impulse .unlimited .withoutPaying .none] =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
-  | .sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw] =>
+  | .sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw _ .opponentHasYou _)] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
   | .sequence [.opponentsMillNote 2, .«if» .opponentsMilled .reflexiveCopyMilled] =>
     "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
@@ -992,8 +1005,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .tapHumans =>
     "tap any number of untapped Humans you control"
-  | .drawForEachTappedHuman =>
-    "draw a card for each Human tapped this way"
   | .destroyOppArtifactsEnchantments =>
     "destroy all artifacts and enchantments your opponents control"
   | .gainLifeForEachDestroyedThisWay =>
@@ -1131,8 +1142,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
   | .millThatManyLost =>
     "that player mills that many cards"
-  | .drawPerFatGraveyard =>
-    "draw a card for each graveyard with seven or more cards in it"
   | .copySelfNonlegendary =>
     "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
   | .mayThen (.objectCost .anotherCreatureOrArtifact)
@@ -1209,8 +1218,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if you controlled that creature, draw a card"
   | .discardHand =>
     "discard your hand"
-  | .drawDiscardedHandCount =>
-    "draw X cards, where X is the number of cards discarded this way"
   | .«if» .enduringStoryNoted (.dealDamage _ .eachOpponent .discardedHand) =>
     "if you have an enduring story, this deals X damage to each opponent"
   | .becomeBear =>
@@ -1232,16 +1239,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "that creature deals damage equal to its power to up to one target creature"
   | .«if» .equipmentAttached .reflexiveFightHost =>
     "that creature deals damage equal to its power to up to one target creature"
-  | .drawEqualToManaSpent =>
-    "draw X cards, where X is the amount of mana spent to cast that spell"
   | .discardIfManaSpent n =>
     s!"discard {cardPhrase n}"
   | .returnNotedLandsTapped =>
     "return those lands to the battlefield tapped"
   | .grimaExileUntil =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card"
-  | .opponentHasYouDraw =>
-    "target opponent may have you draw a card"
   | .opponentsMillNote n =>
     s!"each opponent mills {n} cards"
   | .reflexiveCopyMilled =>

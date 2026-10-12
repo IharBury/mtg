@@ -605,7 +605,7 @@ inductive SharedTrigger where
   | targetOpponentLosesLife (n : Nat)
   /-- Draw X cards, where X is the mana spent to cast the triggering spell,
   then discard `n`. Resolves as
-  `.sequence [.drawEqualToManaSpent, .discardIfManaSpent n]`.
+  `.sequence [.draw 0 (amount := .equalToManaSpent), .discardIfManaSpent n]`.
   Two cards is `.drawXDiscard 2`. Making that optional is
   `.may (.drawXDiscard 2)`. -/
   | drawXDiscard (n : Nat)
@@ -633,7 +633,7 @@ inductive SharedTrigger where
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
-  Resolves as `.sequence [.may .tapHumans, .drawForEachTappedHuman]`. -/
+  Resolves as `.sequence [.may .tapHumans, .draw 0 (amount := .forEachTappedHuman)]`. -/
   | tapHumansDraw
   /-- Destroy opponents' artifacts and enchantments; gain life for each.
   Resolves as
@@ -741,7 +741,7 @@ inductive SharedTrigger where
   /-- Gollum parity modes. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
-  `.sequence [.may .discardHand, .drawDiscardedHandCount, .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]`. -/
+  `.sequence [.may .discardHand, .draw 0 (amount := .discardedHandCount), .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
@@ -772,7 +772,7 @@ inductive SharedTrigger where
   `.sequence [.grimaExileUntil, .mayCast .impulse .unlimited .withoutPaying]`. -/
   | grimaImpulse
   /-- Palantír end-step. Resolves as
-  `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw]`. -/
+  `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw 1 (who := .opponentHasYou))]`. -/
   | palantir
   /-- Create Treasures equal to last-known noncombat damage. -/
   | treasuresEqualLastKnown

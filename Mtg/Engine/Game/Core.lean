@@ -144,7 +144,7 @@ structure Game where
   permanent (Proft, Consulting Detective). -/
   mayPayAlsoPlusOneOn : Option ObjectId := none
   /-- Humans chosen for the current “tap any number of Humans” step.
-  `drawForEachTappedHuman` draws this many cards. -/
+  `.draw (amount := .forEachTappedHuman)` draws this many cards. -/
   humansTappedThisWay : Nat := 0
   /-- Permanents destroyed by the current “destroy artifacts and enchantments”
   step. `gainLifeForEachDestroyedThisWay` gains this much life. -/
