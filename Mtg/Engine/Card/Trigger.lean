@@ -456,11 +456,38 @@ inductive TriggerCastNote where
   | exileInstead
 deriving Repr, Inhabited, BEq
 
+/-- Who `TriggerResolution.draw` draws for. -/
+inductive TriggerDrawWho where
+  /-- The controller of the ability. -/
+  | you
+  /-- The targeted opponent may have the controller draw a card.
+  Declining mills X cards, where X is the influence counters on the source,
+  and that player loses life equal to the total mana value of those cards.
+  An earlier step must have recorded the offer. -/
+  | opponentHasYou
+deriving Repr, Inhabited, BEq
+
+/-- Where `TriggerResolution.draw` reads how many cards. The `n` argument
+is used when this is `.fixed`. -/
+inductive TriggerDrawAmount where
+  /-- The `n` argument. -/
+  | fixed
+  /-- One card for each Human tapped by an earlier step. -/
+  | forEachTappedHuman
+  /-- One card for each graveyard with seven or more cards. -/
+  | perFatGraveyard
+  /-- As many cards as an earlier step discarded from the controller's hand. -/
+  | discardedHandCount
+  /-- X cards, where X is the mana spent to cast the triggering spell.
+  Spending none skips the later steps of the sequence. -/
+  | equalToManaSpent
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
-constructor: scry, +1/+1 on the source, divided damage, putting counters,
-until-end-of-turn pumps, creating tokens, exile, sacrifice, attach,
-amass, and casting a spell each cover multiple printed abilities.
+constructor: scry, drawing, +1/+1 on the source, divided damage, putting
+counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
+attach, amass, and casting a spell each cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -509,8 +536,23 @@ inductive TriggerResolution where
       (note : TriggerDamageNote := .none)
   /-- Scry `n`. -/
   | scry (n : Nat)
-  /-- Draw `n` cards. -/
-  | draw (n : Nat)
+  /-- `who` draws cards, as `amount` says. `n` is the count when `amount`
+  is `.fixed`.
+  The controller draws `n` is `.draw n`.
+  A card for each Human tapped by an earlier step is
+  `.draw 0 (amount := .forEachTappedHuman)`.
+  A card for each graveyard with seven or more cards is
+  `.draw 0 (amount := .perFatGraveyard)`.
+  Cards equal to the hand an earlier step discarded are
+  `.draw 0 (amount := .discardedHandCount)`.
+  X cards, where X is the mana spent to cast the triggering spell, are
+  `.draw 0 (amount := .equalToManaSpent)`. Spending none skips later steps.
+  The targeted opponent may have you draw a card is
+  `.draw 1 (who := .opponentHasYou)`.
+  Optional as `.may (.draw 1 (who := .opponentHasYou))`. Declining that
+  offer mills and that player loses life; it does not skip. -/
+  | draw (n : Nat) (who : TriggerDrawWho := .you)
+      (amount : TriggerDrawAmount := .fixed)
   /-- Search your library, as `how` says.
   A Forest onto the battlefield is `.searchLibrary`.
   A basic land into your hand is `.searchLibrary .basicLandToHand`.
@@ -588,15 +630,15 @@ inductive TriggerResolution where
 A choice that already includes decline is that choice, so the player
 is not asked twice. You may draw X cards, where X is the mana spent to
 cast the triggering spell, then discard two, is
-`.may (.sequence [.drawEqualToManaSpent, .discardIfManaSpent 2])`.
+`.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discardIfManaSpent 2])`.
 You may tap any number of untapped Humans is `.may .tapHumans`.
 You may sacrifice another creature is `.may (.sacrifice .you .another)`.
 You may put an artifact from your hand onto the battlefield is
 `.may .putArtifactFromHand`.
 You may discard your hand is `.may .discardHand`.
 The targeted opponent may have you draw a card is
-`.may .opponentHasYouDraw`. Declining that offer mills and that player
-loses life; it does not skip.
+`.may (.draw 1 (who := .opponentHasYou))`. Declining that offer mills and
+that player loses life; it does not skip.
 You may put a land card from your hand onto the battlefield tapped is
 `.may .putLandFromHandTapped`.
 `SharedTrigger.may a` resolves as `.may` of `a`'s resolution. -/
@@ -637,7 +679,7 @@ You may put a land card from your hand onto the battlefield tapped is
   A step that asks a player to choose pauses the later steps until that
   choice finishes; they are still part of this resolution. Tap any number
   of Humans, then draw that many, is
-  `.sequence [.may .tapHumans, .drawForEachTappedHuman]`.
+  `.sequence [.may .tapHumans, .draw 0 (amount := .forEachTappedHuman)]`.
   Create one token, then attach the source to it, is
   `.sequence [.createTokens kind 1 false, .attach .source .created]`.
   Gain life, then you may search a basic land onto the top, is
@@ -672,7 +714,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.draw 1, .discard 1, .discardedLandEntersTapped]`.
   Put an influence counter, scry 2, then offer the opponent's choice
   (Palantír of Orthanc), is
-  `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw]`.
+  `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw 1 (who := .opponentHasYou))]`.
   Grant keywords, then a +1/+1 counter if the target is a creature and a
   loyalty counter if it is a planeswalker, is
   `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]`.
@@ -725,8 +767,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Tap any number of untapped Humans you control.
   Choosing none taps nothing. Optional as `.may .tapHumans`. -/
   | tapHumans
-  /-- Draw a card for each Human tapped by an earlier step. -/
-  | drawForEachTappedHuman
   /-- Destroy all artifacts and enchantments opponents control.
   Only permanents that actually leave are counted for the next step. -/
   | destroyOppArtifactsEnchantments
@@ -879,8 +919,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | revealUntilCreature
   /-- Each player who lost life mills that much. -/
   | millThatManyLost
-  /-- Draw per graveyard with seven or more cards. -/
-  | drawPerFatGraveyard
   /-- Create two nonlegendary token copies of the source. -/
   | copySelfNonlegendary
   /-- Target opponent loses 1 life. -/
@@ -946,8 +984,6 @@ You may put a land card from your hand onto the battlefield tapped is
   Optional as `.may .discardHand`. Declining leaves the note empty so the
   following draw and damage steps do nothing. -/
   | discardHand
-  /-- Draw cards equal to the hand discarded by the previous step. -/
-  | drawDiscardedHandCount
   /-- The target becomes a Bear in addition to its other types. -/
   | becomeBear
   /-- Mill `n` and remember the cards milled. -/
@@ -965,8 +1001,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- The creature that received Equipment deals damage equal to its power
   to up to one target creature. -/
   | reflexiveFightHost
-  /-- Draw X cards, where X is the mana spent to cast the triggering spell. -/
-  | drawEqualToManaSpent
   /-- Discard `n` cards when mana was spent to cast the triggering spell. -/
   | discardIfManaSpent (n : Nat)
   /-- Return the lands exiled this way to the battlefield tapped. -/
@@ -974,12 +1008,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Exile cards from the top of the damaged player's library until an
   instant or sorcery. The following `.mayCast .impulse` offers the cast. -/
   | grimaExileUntil
-  /-- The targeted opponent may have you draw a card.
-  Declining mills X cards, where X is the influence counters on the source,
-  and that player loses life equal to their mana value.
-  Optional as `.may .opponentHasYouDraw`. An earlier step must have recorded
-  the offer. -/
-  | opponentHasYouDraw
   /-- Each opponent mills `n`. The next step sees whether any card was milled. -/
   | opponentsMillNote (n : Nat)
   /-- Queue the reflexive exile-and-copy of a milled spell. -/
@@ -1291,7 +1319,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .targetOpponentLosesLife n =>
     { targeting := .of .opponent, resolution := .targetOpponentLosesLife n }
   | .drawXDiscard n =>
-    { resolution := .sequence [.drawEqualToManaSpent, .discardIfManaSpent n] }
+    { resolution := .sequence
+        [.draw 0 (amount := .equalToManaSpent), .discardIfManaSpent n] }
   | .ringTempts => { resolution := .ringTempts }
   | .setOtherBasePT =>
     { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
@@ -1315,7 +1344,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.removeHopeCounter, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] }
   | .tapHumansDraw =>
-    { resolution := .sequence [.may .tapHumans, .drawForEachTappedHuman] }
+    { resolution := .sequence
+        [.may .tapHumans, .draw 0 (amount := .forEachTappedHuman)] }
   | .destroyOppArtifactsEnchantmentsGainLife =>
     { resolution := .sequence
         [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay] }
@@ -1381,7 +1411,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .lootLandEntersTapped =>
     { resolution := .sequence [.draw 1, .discard 1, .discardedLandEntersTapped] }
   | .millThatManyLost => { resolution := .millThatManyLost }
-  | .drawPerFatGraveyard => { resolution := .drawPerFatGraveyard }
+  | .drawPerFatGraveyard =>
+    { resolution := .draw 0 (amount := .perFatGraveyard) }
   | .maySacDrawTreasure =>
     { resolution := .mayThen (.objectCost .anotherCreatureOrArtifact)
         (.sequence [.draw 1, .createTokens .treasure 1 false]) }
@@ -1439,7 +1470,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .gollumMode => { resolution := .gollumMode }
   | .discardHandDrawDamageIfStory =>
     { resolution := .sequence
-        [.may .discardHand, .drawDiscardedHandCount,
+        [.may .discardHand, .draw 0 (amount := .discardedHandCount),
          .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] }
   | .castFromGyArtifactInstantSorcery =>
     { resolution := .mayCast .graveyard .unlimited .pay .exileInstead }
@@ -1481,7 +1512,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .palantir =>
     { targeting := .of .opponent,
       resolution := .sequence
-        [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw] }
+        [.putCounters (.ofKind .influence) .source, .scry 2,
+         .may (.draw 1 (who := .opponentHasYou))] }
   | .treasuresEqualLastKnown =>
     { resolution := .createTokens .treasure 0 false (qty := .lastKnown) }
   | .protectionEverything => { resolution := .protectionEverything }

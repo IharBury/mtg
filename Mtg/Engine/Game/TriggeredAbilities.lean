@@ -1024,6 +1024,37 @@ def applyAmass (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     else g
   | _, _ => g
 
+/-- Resolve `TriggerResolution.draw`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyTriggerDraw (g : Game) (controller : PlayerId) (n : Nat)
+    (who : TriggeredAbility.TriggerDrawWho)
+    (amount : TriggeredAbility.TriggerDrawAmount) : Game :=
+  match who, amount with
+  | .opponentHasYou, _ =>
+    match g.palantirChoiceReady with
+    | none => g
+    | some (c, opp, sid) =>
+      ({ g with palantirChoiceReady := none }).offerPalantirChoice c opp sid
+  | .you, .fixed =>
+    g.draw controller n
+  | .you, .forEachTappedHuman =>
+    let n := g.humansTappedThisWay
+    let g := { g with humansTappedThisWay := 0 }
+    if n == 0 then g else g.draw controller n
+  | .you, .perFatGraveyard =>
+    g.drawPerSevenCardGraveyard controller
+  | .you, .discardedHandCount =>
+    match g.handDiscardedThisWay with
+    | some n => if n == 0 then g else g.draw controller n
+    | none => g
+  | .you, .equalToManaSpent =>
+    let spent :=
+      ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+    if spent == 0 then
+      { g with skipTriggerSequenceRest := true }.logMsg
+        "No mana was spent to cast that spell"
+    else g.draw controller spent
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -1090,8 +1121,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       n who amount note
   | .scry n =>
     g.beginScry controller n
-  | .draw n =>
-    g.draw controller n
+  | .draw n who amount =>
+    g.applyTriggerDraw controller n who amount
   | .searchLibrary how =>
     match how with
     | .forestToBattlefield => g.resolveSearchForest controller
@@ -1252,10 +1283,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .tapHumans | .may .tapHumans =>
     { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
       s!"{(g.player controller).name} may tap any number of untapped Humans they control"
-  | .drawForEachTappedHuman =>
-    let n := g.humansTappedThisWay
-    let g := { g with humansTappedThisWay := 0 }
-    if n == 0 then g else g.draw controller n
   | .destroyOppArtifactsEnchantments =>
     Id.run do
       let mut g := g
@@ -1480,10 +1507,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       { g with handDiscardedThisWay := none, notedSourceThisWay := sourceId }
         |>.beginFraChoice controller (.mayDiscardHandBalin sourceId)
           s!"{(g.player controller).name} may discard their hand"
-  | .drawDiscardedHandCount =>
-    match g.handDiscardedThisWay with
-    | some n => if n == 0 then g else g.draw controller n
-    | none => g
   | .searchDragonFromHandOrLibrary =>
     g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
       .battlefieldFromHandOrLibrary (alsoHand := true)
@@ -1651,8 +1674,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match lastKnownPower, lastKnownToughness with
     | some n, some idx => g.mill ⟨idx.toNat⟩ n.toNat
     | _, _ => g
-  | .drawPerFatGraveyard =>
-    g.drawPerSevenCardGraveyard controller
   | .copySelfNonlegendary =>
     match sourceId.bind g.findObject? with
     | none => g
@@ -1683,15 +1704,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         -- via onlyFoodArtifact-style flag is too strong; grant artifact type.
         let g := g.mapObjectStatus o (fun s => { s with returnedAsArtifact := true })
         g.logMsg s!"{o.name} returns as an artifact"
-  | .drawEqualToManaSpent =>
-    let n := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
-    if n == 0 then
-      { g with skipTriggerSequenceRest := true }.logMsg
-        "No mana was spent to cast that spell"
-    else g.draw controller n
   | .discardIfManaSpent k =>
     g.beginDiscardCards #[controller] k
-  | .may (.sequence [.drawEqualToManaSpent, .discardIfManaSpent n]) =>
+  | .may (.draw _ .opponentHasYou _) =>
+    g.applyTriggerDraw controller 1 .opponentHasYou .fixed
+  | .may (.sequence [.draw _ _ .equalToManaSpent, .discardIfManaSpent n]) =>
     -- X is the mana spent to cast the triggering spell.
     let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
     if spent == 0 then g.logMsg "No mana was spent to cast that spell"
@@ -1720,11 +1737,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       grimaImpulseVictim := some victim
       grimaImpulseFound := found
       grimaImpulseOthers := others }
-  | .opponentHasYouDraw | .may .opponentHasYouDraw =>
-    match g.palantirChoiceReady with
-    | none => g
-    | some (c, opp, sid) =>
-      ({ g with palantirChoiceReady := none }).offerPalantirChoice c opp sid
   | .opponentsMillNote n =>
     let opps := (g.livingOpponents controller).map (·.id)
     let (g, milled) := g.millThenReflexive opps n

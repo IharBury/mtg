@@ -25,6 +25,7 @@ import Mtg.Engine.Tests.RealityFracture
 import Mtg.Engine.Tests.RealityFractureCommander
 import Mtg.Engine.Tests.ParseOracle
 import Mtg.Engine.Tests.MayCast
+import Mtg.Engine.Tests.Draw
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -58,4 +59,5 @@ keep working.
 - `CatalogSmoke`: the supported catalog names the MSH cards those tests use
 - `ParseOracle`: printed-card parsing, Oracle normalization, and argument reading
 - `MayCast`: casting from a graveyard, from hand, and from an impulse
+- `Draw`: fixed draws, counted draws, mana spent, and the opponent's draw offer
 -/

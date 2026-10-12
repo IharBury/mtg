@@ -734,7 +734,7 @@ namespace CardDef
 #guard TriggeredAbility.onCastNoncreatureMayDrawXDiscard2 ==
   .triggered .youCastNoncreature (Effect.ofTrigger (.may (.drawXDiscard 2)))
 #guard (TriggeredAbility.onCastNoncreatureMayDrawXDiscard2).resolution ==
-  .may (.sequence [.drawEqualToManaSpent, .discardIfManaSpent 2])
+  .may (.sequence [.draw 0 (amount := .equalToManaSpent), .discardIfManaSpent 2])
 #guard TriggeredAbility.toNotation .onCastNoncreatureMayDrawXDiscard2 ==
   "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
 #guard TriggeredAbility.onEnterEachOpponentDiscards ==
@@ -821,7 +821,7 @@ namespace CardDef
 #guard TriggeredAbility.onAttackTapHumansDraw ==
   .triggered .attack (Effect.ofTrigger .tapHumansDraw)
 #guard TriggeredAbility.resolution .onAttackTapHumansDraw ==
-  .sequence [.may .tapHumans, .drawForEachTappedHuman]
+  .sequence [.may .tapHumans, .draw 0 (amount := .forEachTappedHuman)]
 #guard TriggeredAbility.toNotation .onAttackTapHumansDraw ==
   "Whenever this creature attacks, you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way."
 #guard TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear" ==
@@ -1548,7 +1548,7 @@ end CardDef
     .amass 0 (amount := .notedPower) (who := .notedController),
     .«if» .youControlledDestroyed (.draw 1)]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
-  .sequence [.may .discardHand, .drawDiscardedHandCount,
+  .sequence [.may .discardHand, .draw 0 (amount := .discardedHandCount),
     .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
   .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear,
@@ -1560,7 +1560,8 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tapEnchanted, .removeCountersFromEnchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
-  .sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw]
+  .sequence [.putCounters (.ofKind .influence) .source, .scry 2,
+    .may (.draw 1 (who := .opponentHasYou))]
 #guard TriggeredAbility.resolution .onCombatDamageToYouSacRingTempts ==
   .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts]
 #guard TriggeredAbility.resolution (.onCreatureYouControlEntersScryAndPlan 2) ==
@@ -1604,7 +1605,9 @@ end CardDef
 #guard TriggeredAbility.toNotation .onYourBeginCombatIfDrawnTwoPumpFirstStrike ==
   "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
 #guard (SharedTrigger.timing (.drawXDiscard 2)).resolution ==
-  .sequence [.drawEqualToManaSpent, .discardIfManaSpent 2]
+  .sequence [.draw 0 (amount := .equalToManaSpent), .discardIfManaSpent 2]
+#guard TriggeredAbility.resolution .onDiesDrawPerFatGraveyard ==
+  .draw 0 (amount := .perFatGraveyard)
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
   .sequence [.createTokens .treasure 1 false .sturdyShield (note := .remember),
     .attach .created .source]
