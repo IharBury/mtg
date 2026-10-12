@@ -768,7 +768,8 @@ inductive SharedTrigger where
   | returnAsArtifact
   /-- Exile lands, then return them tapped. -/
   | exileLandsThenReturnTapped
-  /-- Gríma impulse. Resolves as `.sequence [.grimaExileUntil, .grimaMayCast]`. -/
+  /-- Gríma impulse. Resolves as
+  `.sequence [.grimaExileUntil, .mayCast .impulse .unlimited .withoutPaying]`. -/
   | grimaImpulse
   /-- Palantír end-step. Resolves as
   `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw]`. -/

@@ -418,11 +418,49 @@ inductive AmassWho where
   | notedController
 deriving Repr, Inhabited, BEq
 
+/-- Where `TriggerResolution.mayCast` finds the spell. -/
+inductive TriggerCastFrom where
+  /-- An artifact, instant, or sorcery card in your graveyard. -/
+  | graveyard
+  /-- An instant or sorcery card in your hand. -/
+  | hand
+  /-- The instant or sorcery `grimaExileUntil` stored. -/
+  | impulse
+deriving Repr, Inhabited, BEq
+
+/-- The mana-value limit of `TriggerResolution.mayCast`.
+`.unlimited` is no limit. -/
+inductive TriggerCastMv where
+  /-- No mana-value limit. -/
+  | unlimited
+  /-- At most twice the number of legendary Wizards you control. -/
+  | twiceLegendaryWizards
+  /-- At most the last-known power. Combat damage uses that amount. -/
+  | lastKnown
+deriving Repr, Inhabited, BEq
+
+/-- Whether `TriggerResolution.mayCast` pays the mana cost. -/
+inductive TriggerCastCost where
+  /-- Pay its mana cost. -/
+  | pay
+  /-- Without paying its mana cost. -/
+  | withoutPaying
+deriving Repr, Inhabited, BEq
+
+/-- What happens to an instant or sorcery `TriggerResolution.mayCast` casts. -/
+inductive TriggerCastNote where
+  /-- The cast only. -/
+  | none
+  /-- An instant or sorcery cast this way is exiled instead of being put
+  into your graveyard. -/
+  | exileInstead
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, +1/+1 on the source, divided damage, putting counters,
 until-end-of-turn pumps, creating tokens, exile, sacrifice, attach,
-and amass each cover multiple printed abilities.
+amass, and casting a spell each cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -814,8 +852,21 @@ You may put a land card from your hand onto the battlefield tapped is
   | gollumMode
   /-- Return a creature card from your graveyard to your hand. -/
   | returnCreatureFromGyToHand
-  /-- You may cast an artifact, instant, or sorcery from your graveyard. -/
-  | castFromGyArtifactInstantSorcery
+  /-- You may cast a spell. `origin` says where the card is, `maxMv` limits
+  its mana value, `cost` says whether that cost is paid, and `note` says
+  what happens to an instant or sorcery cast this way.
+  An artifact, instant, or sorcery from your graveyard, with instants and
+  sorceries exiled instead, is
+  `.mayCast .graveyard .unlimited .pay .exileInstead`.
+  An instant or sorcery from your hand with mana value at most twice the
+  legendary Wizards you control, without paying, is
+  `.mayCast .hand .twiceLegendaryWizards .withoutPaying`.
+  An instant or sorcery from your hand with mana value at most that damage,
+  without paying, is `.mayCast .hand .lastKnown .withoutPaying`.
+  The instant or sorcery exiled by the previous step, without paying, is
+  `.mayCast .impulse .unlimited .withoutPaying`. -/
+  | mayCast (origin : TriggerCastFrom) (maxMv : TriggerCastMv)
+      (cost : TriggerCastCost) (note : TriggerCastNote := .none)
   /-- Equipped attacking creatures gain double strike. -/
   | equippedAttackersGainDoubleStrike
   /-- Reveal the top `n`; put a random creature onto the battlefield. -/
@@ -836,10 +887,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | targetOpponentLosesLife (n : Nat)
   /-- Return the source as an artifact. -/
   | returnAsArtifact
-  /-- You may cast an instant or sorcery from hand without paying. -/
-  | castInstantSorceryFromHand
-  /-- You may cast an instant or sorcery of MV at most last-known power. -/
-  | castInstantSorceryMvAtMost
   /-- The Ring tempts you. -/
   | ringTempts
   /-- You gain protection from everything until your next turn. -/
@@ -925,10 +972,8 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Return the lands exiled this way to the battlefield tapped. -/
   | returnNotedLandsTapped
   /-- Exile cards from the top of the damaged player's library until an
-  instant or sorcery. -/
+  instant or sorcery. The following `.mayCast .impulse` offers the cast. -/
   | grimaExileUntil
-  /-- You may cast the instant or sorcery exiled by the previous step. -/
-  | grimaMayCast
   /-- The targeted opponent may have you draw a card.
   Declining mills X cards, where X is the influence counters on the source,
   and that player loses life equal to their mana value.
@@ -1340,8 +1385,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .maySacDrawTreasure =>
     { resolution := .mayThen (.objectCost .anotherCreatureOrArtifact)
         (.sequence [.draw 1, .createTokens .treasure 1 false]) }
-  | .castInstantSorceryFromHand => { resolution := .castInstantSorceryFromHand }
-  | .castInstantSorceryMvAtMost => { resolution := .castInstantSorceryMvAtMost }
+  | .castInstantSorceryFromHand =>
+    { resolution := .mayCast .hand .twiceLegendaryWizards .withoutPaying }
+  | .castInstantSorceryMvAtMost =>
+    { resolution := .mayCast .hand .lastKnown .withoutPaying }
   | .millThenCopy =>
     { resolution := .sequence [.opponentsMillNote 2, .«if» .opponentsMilled .reflexiveCopyMilled] }
   | .pumpTargetBySourcePower =>
@@ -1395,7 +1442,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.may .discardHand, .drawDiscardedHandCount,
          .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] }
   | .castFromGyArtifactInstantSorcery =>
-    { resolution := .castFromGyArtifactInstantSorcery }
+    { resolution := .mayCast .graveyard .unlimited .pay .exileInstead }
   | .equippedAttackersGainDoubleStrike =>
     { resolution := .equippedAttackersGainDoubleStrike }
   | .tapEnchantedRemoveCounters =>
@@ -1429,7 +1476,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence
         [.exile .landsYouControl .forLater .lands, .returnNotedLandsTapped] }
   | .grimaImpulse =>
-    { resolution := .sequence [.grimaExileUntil, .grimaMayCast] }
+    { resolution := .sequence
+        [.grimaExileUntil, .mayCast .impulse .unlimited .withoutPaying] }
   | .palantir =>
     { targeting := .of .opponent,
       resolution := .sequence

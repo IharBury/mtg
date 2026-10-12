@@ -864,7 +864,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
   | .sequence [.exile .landsYouControl .forLater .lands, .returnNotedLandsTapped] =>
     "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
-  | .sequence [.grimaExileUntil, .grimaMayCast] =>
+  | .sequence [.grimaExileUntil, .mayCast .impulse .unlimited .withoutPaying .none] =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
   | .sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may .opponentHasYouDraw] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
@@ -1102,8 +1102,18 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"return {noun} to your hand"
   | .or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false] =>
     "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
-  | .castFromGyArtifactInstantSorcery =>
-    "you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead"
+  | .mayCast origin maxMv cost note =>
+    match origin, maxMv, cost, note with
+    | .graveyard, .unlimited, .pay, .exileInstead =>
+      "you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead"
+    | .hand, .twiceLegendaryWizards, .withoutPaying, .none =>
+      "you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control"
+    | .hand, .lastKnown, .withoutPaying, .none =>
+      "you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost"
+    | .impulse, .unlimited, .withoutPaying, .none =>
+      "you may cast that card without paying its mana cost"
+    | _, _, _, _ =>
+      "you may cast a spell"
   | .equippedAttackersGainDoubleStrike =>
     "each equipped attacking creature gains double strike until end of turn"
   | .revealTopPutRandomCreature n =>
@@ -1132,10 +1142,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} loses {n} life"
   | .returnAsArtifact =>
     "if they were a creature, return them to the battlefield. They're an artifact"
-  | .castInstantSorceryFromHand =>
-    "you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control"
-  | .castInstantSorceryMvAtMost =>
-    "you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost"
   | .ringTempts =>
     "the Ring tempts you"
   | .mayThen .discardHand (.draw n) =>
@@ -1234,8 +1240,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "return those lands to the battlefield tapped"
   | .grimaExileUntil =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card"
-  | .grimaMayCast =>
-    "you may cast that card without paying its mana cost"
   | .opponentHasYouDraw =>
     "target opponent may have you draw a card"
   | .opponentsMillNote n =>

@@ -1614,6 +1614,22 @@ end CardDef
   "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."
 #guard TriggeredAbility.toNotation .onActivateCreatureAbilityDrawOnce ==
   "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn."
+#guard TriggeredAbility.resolution .onYourBeginCombatCastInstantSorceryFromHand ==
+  .mayCast .hand .twiceLegendaryWizards .withoutPaying
+#guard TriggeredAbility.resolution .onEquippedCombatDamageCastInstantSorcery ==
+  .mayCast .hand .lastKnown .withoutPaying
+#guard TriggeredAbility.resolution .onAttackCastFromGyArtifactInstantSorcery ==
+  .mayCast .graveyard .unlimited .pay .exileInstead
+#guard TriggeredAbility.resolution .onCombatDamageImpulseInstantSorcery ==
+  .sequence [.grimaExileUntil, .mayCast .impulse .unlimited .withoutPaying]
+#guard TriggeredAbility.toNotation .onYourBeginCombatCastInstantSorceryFromHand ==
+  "At the beginning of combat on your turn, you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control."
+#guard TriggeredAbility.toNotation .onEquippedCombatDamageCastInstantSorcery ==
+  "Whenever equipped creature deals combat damage to a player, you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost."
+#guard TriggeredAbility.toNotation .onAttackCastFromGyArtifactInstantSorcery ==
+  "Whenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead."
+#guard TriggeredAbility.toNotation .onCombatDamageImpulseInstantSorcery ==
+  "Whenever Gríma deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
 #guard TriggeredAbility.firesOn .onTokenYouControlEntersBelladonna .tokenYouControlEnters
 #guard TriggeredAbility.firesOn .onActivateCreatureAbilityDrawOnce .youActivateCreatureAbility
 #guard TriggeredAbility.onceEachTurn .onActivateCreatureAbilityDrawOnce
