@@ -595,10 +595,39 @@ inductive TriggerDestroyNote where
   | forAmass
 deriving Repr, Inhabited, BEq
 
+/-- Who `TriggerResolution.discard` asks to discard. -/
+inductive TriggerDiscardWho where
+  /-- The controller. -/
+  | you
+  /-- Each opponent. -/
+  | each
+  /-- The announced opponent. -/
+  | target
+deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.discard` discards. The `n` argument is the
+count when this is `.cards`. -/
+inductive TriggerDiscardWhat where
+  /-- `n` cards. -/
+  | cards
+  /-- The controller's hand. The number discarded is noted for a later step.
+  Declining leaves the note empty. -/
+  | hand
+deriving Repr, Inhabited, BEq
+
+/-- When `TriggerResolution.discard` discards those cards. -/
+inductive TriggerDiscardWhen where
+  /-- As this step resolves. -/
+  | now
+  /-- When mana was spent to cast the triggering spell. An earlier step
+  that saw none skips this one. -/
+  | ifManaSpent
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
-constructor: scry, drawing, +1/+1 on the source, divided damage, putting
-counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
+constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
+putting counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
 attach, amass, casting a spell, returning cards to hand, putting onto
 the battlefield, adding mana, choosing modes, and destroying each cover
 multiple printed abilities.
@@ -672,9 +701,20 @@ inductive TriggerResolution where
   A basic land into your hand is `.searchLibrary .basicLandToHand`.
   You may put a basic land on top is `.searchLibrary .basicLandOnTop`. -/
   | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
-  /-- Discard `n` cards. One card is `.discard`.
-  Inside `mayThen`, one card is optional: declining skips the conditional. -/
-  | discard (n : Nat := 1)
+  /-- Discard cards. `n` is the count when `what` is `.cards`.
+  One card from the controller is `.discard`.
+  Inside `mayThen`, one card is optional: declining skips the conditional.
+  Each opponent discards one is `.discard (who := .each)`.
+  The announced opponent discards `n` is `.discard n (who := .target)`.
+  The controller's hand, noting how many cards were discarded, is
+  `.discard (what := .hand)`.
+  Optional as `.may (.discard (what := .hand))`. Declining leaves the note
+  empty so the following draw and damage steps do nothing.
+  `n` cards when mana was spent to cast the triggering spell is
+  `.discard n (when := .ifManaSpent)`. -/
+  | discard (n : Nat := 1) (who : TriggerDiscardWho := .you)
+      (what : TriggerDiscardWhat := .cards)
+      (when : TriggerDiscardWhen := .now)
   /-- You may resolve `optional`. If you do, resolve `conditional`.
   Declining, or being unable to perform `optional`, skips `conditional`.
   You may discard a card to draw `n` is `.mayThen (.discard 1) (.draw n)`.
@@ -688,7 +728,7 @@ inductive TriggerResolution where
   `.mayThen (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner)`.
   You may sacrifice another creature or artifact to draw and create a Treasure is
   `.mayThen (.objectCost .anotherCreatureOrArtifact) (.sequence [.draw 1, .createTokens .treasure 1 false])`.
-  You may discard your hand to draw `n` is `.mayThen .discardHand (.draw n)`.
+  You may discard your hand to draw `n` is `.mayThen (.discard (what := .hand)) (.draw n)`.
   You may sacrifice an artifact or discard a card to draw is
   `.mayThen (.objectCost .artifactOrDiscard) (.draw 1)`.
   You may sacrifice another creature to destroy an opposing nonland is
@@ -755,12 +795,12 @@ inductive TriggerResolution where
 A choice that already includes decline is that choice, so the player
 is not asked twice. You may draw X cards, where X is the mana spent to
 cast the triggering spell, then discard two, is
-`.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discardIfManaSpent 2])`.
+`.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)])`.
 You may tap any number of untapped Humans is `.may .tapHumans`.
 You may sacrifice another creature is `.may (.sacrifice .you .another)`.
 You may put an artifact from your hand onto the battlefield is
 `.may (.put .artifactFromHand (note := .forAttach))`.
-You may discard your hand is `.may .discardHand`.
+You may discard your hand is `.may (.discard (what := .hand))`.
 The targeted opponent may have you draw a card is
 `.may (.draw 1 (who := .opponentHasYou))`. Declining that offer mills and
 that player loses life; it does not skip.
@@ -861,9 +901,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | onSource (action : PermanentAction)
   /-- You gain `n` life (CR 118.2). -/
   | gainLife (n : Nat)
-  /-- An opponent discards `n` cards. Each opponent discards one is
-  `.opponentDiscards`. The announced opponent is `.opponentDiscards n .target`. -/
-  | opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each)
   /-- Put a card from your hand on the bottom of your library.
   An empty hand skips the choice. -/
   | putFromHandOnBottom
@@ -1110,10 +1147,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | untapAttackingCreatures
   /-- There is an additional combat phase after this one. -/
   | additionalCombatPhase
-  /-- Discard your hand and note how many cards were discarded.
-  Optional as `.may .discardHand`. Declining leaves the note empty so the
-  following draw and damage steps do nothing. -/
-  | discardHand
   /-- The target becomes a Bear in addition to its other types. -/
   | becomeBear
   /-- Mill `n` and remember the cards milled. -/
@@ -1127,8 +1160,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- The creature that received Equipment deals damage equal to its power
   to up to one target creature. -/
   | reflexiveFightHost
-  /-- Discard `n` cards when mana was spent to cast the triggering spell. -/
-  | discardIfManaSpent (n : Nat)
   /-- Exile cards from the top of the damaged player's library until an
   instant or sorcery. The following `.mayCast .impulse` offers the cast. -/
   | grimaExileUntil
@@ -1413,9 +1444,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { inner with resolution := .may inner.resolution }
   | .opponentDiscards n who =>
     match who with
-    | .each => { resolution := .opponentDiscards n who }
+    | .each => { resolution := .discard n (who := .each) }
     | .target =>
-      { targeting := .of .opponent, resolution := .opponentDiscards n who }
+      { targeting := .of .opponent, resolution := .discard n (who := .target) }
   | .millPlayer n =>
     { targeting := .of .player, resolution := .millPlayer n }
   | .investigate => { resolution := .investigate }
@@ -1438,7 +1469,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pump 0 0 .target .perPlains }
   | .mayDiscardHandDraw n =>
-    { resolution := .mayThen .discardHand (.draw n) }
+    { resolution := .mayThen (.discard (what := .hand)) (.draw n) }
   | .pumpByLookedAt => { resolution := .pump 0 0 .source .perLookedAt }
   | .pumpGreatestPower => { resolution := .pump 0 0 .source .greatestPower }
   | .pumpForEachOtherCreature => { resolution := .pump 0 0 .source .perOtherCreature }
@@ -1464,7 +1495,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .opponent, resolution := .targetOpponentLosesLife n }
   | .drawXDiscard n =>
     { resolution := .sequence
-        [.draw 0 (amount := .equalToManaSpent), .discardIfManaSpent n] }
+        [.draw 0 (amount := .equalToManaSpent), .discard n (when := .ifManaSpent)] }
   | .ringTempts => { resolution := .ringTempts }
   | .setOtherBasePT =>
     { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
@@ -1621,7 +1652,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .oneUnused }
   | .discardHandDrawDamageIfStory =>
     { resolution := .sequence
-        [.may .discardHand, .draw 0 (amount := .discardedHandCount),
+        [.may (.discard (what := .hand)), .draw 0 (amount := .discardedHandCount),
          .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] }
   | .castFromGyArtifactInstantSorcery =>
     { resolution := .mayCast .graveyard .unlimited .pay .exileInstead }

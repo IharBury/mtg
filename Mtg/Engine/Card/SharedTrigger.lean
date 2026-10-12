@@ -606,7 +606,7 @@ inductive SharedTrigger where
   | targetOpponentLosesLife (n : Nat)
   /-- Draw X cards, where X is the mana spent to cast the triggering spell,
   then discard `n`. Resolves as
-  `.sequence [.draw 0 (amount := .equalToManaSpent), .discardIfManaSpent n]`.
+  `.sequence [.draw 0 (amount := .equalToManaSpent), .discard n (when := .ifManaSpent)]`.
   Two cards is `.drawXDiscard 2`. Making that optional is
   `.may (.drawXDiscard 2)`. -/
   | drawXDiscard (n : Nat)
@@ -744,7 +744,7 @@ inductive SharedTrigger where
   `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
-  `.sequence [.may .discardHand, .draw 0 (amount := .discardedHandCount), .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]`. -/
+  `.sequence [.may (.discard (what := .hand)), .draw 0 (amount := .discardedHandCount), .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
