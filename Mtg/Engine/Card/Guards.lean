@@ -932,7 +932,8 @@ namespace CardDef
 #guard TriggeredAbility.onCombatMayPutArtifactAttachEquipment ==
   .triggered .yourBeginCombat (Effect.ofTrigger .mayPutArtifactAttachEquipment)
 #guard TriggeredAbility.resolution .onCombatMayPutArtifactAttachEquipment ==
-  .sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]
+  .sequence [.may (.put .artifactFromHand (note := .forAttach)),
+    .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]
 #guard TriggeredAbility.onCastCascade == .triggered .cascade (Effect.ofTrigger .cascade)
 #guard TriggeredAbility.onEnterBolgMaySacrifice ==
   .triggered .enter (Effect.ofTrigger .bolgMaySacrifice)
@@ -1554,7 +1555,7 @@ end CardDef
   .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear,
     .«if» (.bearsAtLeast 3) (.draw 2)]
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
-  .sequence [.draw 1, .discard 1, .discardedLandEntersTapped]
+  .sequence [.draw 1, .discard 1, .put .discardedLand (how := .tapped)]
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
   .sequence [.millNote 4, .returnToHand (.milledSubtype "Elf")]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
@@ -1576,7 +1577,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onFourthPlanDividedDamage ==
   .sequence [.sacrifice .you .plan .forReflexive, .queuePlanDividedDamage 7]
 #guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
-  .sequence [.draw 1, .may .putLandFromHandTapped]
+  .sequence [.draw 1, .may (.put .landFromHand (how := .tapped))]
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
   .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==

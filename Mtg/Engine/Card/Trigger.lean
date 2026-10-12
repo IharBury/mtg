@@ -513,13 +513,50 @@ inductive TriggerReturnNote where
   | returnedPermanent
 deriving Repr, Inhabited, BEq
 
+/-- Which cards `TriggerResolution.put` puts onto the battlefield. -/
+inductive TriggerPutWhat where
+  /-- Each card the source exiled. -/
+  | linkedExile
+  /-- The announced nonland permanent card. Its mana value is at most `mv`. -/
+  | nonlandMvAtMost (mv : Nat)
+  /-- The source, from its owner's graveyard. -/
+  | source
+  /-- Lands an earlier step exiled. -/
+  | notedLands
+  /-- The card an earlier step discarded, when it is a land. -/
+  | discardedLand
+  /-- A land card from the controller's hand. -/
+  | landFromHand
+  /-- An artifact card from the controller's hand. -/
+  | artifactFromHand
+deriving Repr, Inhabited, BEq
+
+/-- How `TriggerResolution.put` puts those cards onto the battlefield. -/
+inductive TriggerPutHow where
+  /-- Untapped, as printed. -/
+  | asPrinted
+  /-- Tapped. -/
+  | tapped
+  /-- As an artifact. It is not a creature. -/
+  | asArtifact
+deriving Repr, Inhabited, BEq
+
+/-- What a later step of `TriggerResolution.put` can read. -/
+inductive TriggerPutNote where
+  /-- Nothing beyond putting the cards. -/
+  | none
+  /-- The artifact put from hand, and the creature it may attach to. -/
+  | forAttach
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, +1/+1 on the source, divided damage, putting
 counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
-attach, amass, casting a spell, and returning cards to hand each cover
-multiple printed abilities. Permanent-target counters and pumps, and
-source pumps, share `PermanentAction` with spells and activated abilities. -/
+attach, amass, casting a spell, returning cards to hand, and putting
+onto the battlefield each cover multiple printed abilities.
+Permanent-target counters and pumps, and source pumps, share
+`PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
   /-- Until end of turn, permanents of `who` get the bonus from `amount`.
   `power` and `toughness` are that bonus when `amount` is `.fixed`.
@@ -675,13 +712,13 @@ cast the triggering spell, then discard two, is
 You may tap any number of untapped Humans is `.may .tapHumans`.
 You may sacrifice another creature is `.may (.sacrifice .you .another)`.
 You may put an artifact from your hand onto the battlefield is
-`.may .putArtifactFromHand`.
+`.may (.put .artifactFromHand (note := .forAttach))`.
 You may discard your hand is `.may .discardHand`.
 The targeted opponent may have you draw a card is
 `.may (.draw 1 (who := .opponentHasYou))`. Declining that offer mills and
 that player loses life; it does not skip.
 You may put a land card from your hand onto the battlefield tapped is
-`.may .putLandFromHandTapped`.
+`.may (.put .landFromHand (how := .tapped))`.
 `SharedTrigger.may a` resolves as `.may` of `a`'s resolution. -/
 | may (action : TriggerResolution)
   /-- Sacrifice a permanent. `who` says who sacrifices, `what` says which
@@ -752,7 +789,7 @@ You may put a land card from your hand onto the battlefield tapped is
   Put a trample counter on the target, then make it a Bear, is
   `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear]`.
   Draw, discard, and a land discarded this way enters tapped, is
-  `.sequence [.draw 1, .discard 1, .discardedLandEntersTapped]`.
+  `.sequence [.draw 1, .discard 1, .put .discardedLand (how := .tapped)]`.
   Put an influence counter, scry 2, then offer the opponent's choice
   (Palantír of Orthanc), is
   `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw 1 (who := .opponentHasYou))]`.
@@ -765,7 +802,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.onPermanent .destroy, .createTokens .treasure 1 false (who := .targetController)]`.
   You may put an artifact from your hand onto the battlefield, then attach
   it to the source if it is Equipment, is
-  `.sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
+  `.sequence [.may (.put .artifactFromHand (note := .forAttach)), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
   | sequence (rs : List TriggerResolution)
   /-- Gain life equal to the targeted card's power. Inside `sequence`, the
   amount is that power when the sequence starts, before an earlier step
@@ -801,8 +838,25 @@ You may put a land card from your hand onto the battlefield tapped is
   `.exile .graveyardCard .forLater .playCard`. -/
   | exile (what : TriggerExileWhat) (how : TriggerExileHow)
       (note : TriggerExileNote := .none)
-  /-- Return cards exiled by the source. -/
-  | returnLinkedExile
+  /-- Put cards onto the battlefield. `what` says which cards, `how` says
+  how they enter, and `note` says what a later step can read.
+  Cards the source exiled are `.put .linkedExile`.
+  A nonland permanent card with mana value at most `mv` from a graveyard is
+  `.put (.nonlandMvAtMost mv)`.
+  The source, returned as an artifact, is `.put .source (how := .asArtifact)`.
+  Lands an earlier step exiled, returned tapped, are
+  `.put .notedLands (how := .tapped)`.
+  The land an earlier step discarded, entering tapped, is
+  `.put .discardedLand (how := .tapped)`.
+  A land card from your hand, entering tapped, is
+  `.put .landFromHand (how := .tapped)`.
+  Optional as `.may (.put .landFromHand (how := .tapped))`.
+  An artifact card from your hand, remembered for a later attach, is
+  `.put .artifactFromHand (note := .forAttach)`.
+  Optional as `.may (.put .artifactFromHand (note := .forAttach))`.
+  An empty hand skips that choice. -/
+  | put (what : TriggerPutWhat) (how : TriggerPutHow := .asPrinted)
+      (note : TriggerPutNote := .none)
   /-- Remove a hope counter from the source. -/
   | removeHopeCounter
   /-- Tap any number of untapped Humans you control.
@@ -883,9 +937,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | lookAtTopRevealTypes (n : Nat) (types : Array String)
   /-- Gain control of the target until end of turn; untap; haste. -/
   | gainControlOppUntilEot
-  /-- Put a nonland permanent card with mana value at most `mv` from a
-  graveyard onto the battlefield. -/
-  | putNonlandMvAtMostFromGy (mv : Nat)
   /-- Put a hone counter on each Equipment you control. -/
   | honeEachEquipment
   /-- Cascade: exile until a cheaper nonland, then you may cast it. -/
@@ -962,8 +1013,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | copySelfNonlegendary
   /-- Target opponent loses 1 life. -/
   | targetOpponentLosesLife (n : Nat)
-  /-- Return the source as an artifact. -/
-  | returnAsArtifact
   /-- The Ring tempts you. -/
   | ringTempts
   /-- You gain protection from everything until your next turn. -/
@@ -981,11 +1030,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | connive (who : ConniveSubject := .source)
   /-- Apply `action` to the creature this Aura enchants. -/
   | onEnchanted (action : PermanentAction)
-  /-- Put an artifact card from your hand onto the battlefield.
-  The permanent, and the creature it may attach to, are remembered for the
-  next step. An empty hand skips the choice.
-  Optional as `.may .putArtifactFromHand`. -/
-  | putArtifactFromHand
   /-- This fights the targeted creature. -/
   | fightUpToOne
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
@@ -1028,15 +1072,11 @@ You may put a land card from your hand onto the battlefield tapped is
   | removeCountersFromEnchanted
   /-- Search your hand and/or library for a Dragon and put it onto the battlefield. -/
   | searchDragonFromHandOrLibrary
-  /-- Put the land discarded by the previous step onto the battlefield tapped. -/
-  | discardedLandEntersTapped
   /-- The creature that received Equipment deals damage equal to its power
   to up to one target creature. -/
   | reflexiveFightHost
   /-- Discard `n` cards when mana was spent to cast the triggering spell. -/
   | discardIfManaSpent (n : Nat)
-  /-- Return the lands exiled this way to the battlefield tapped. -/
-  | returnNotedLandsTapped
   /-- Exile cards from the top of the damaged player's library until an
   instant or sorcery. The following `.mayCast .impulse` offers the cast. -/
   | grimaExileUntil
@@ -1057,9 +1097,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | onTargetWhileSource (action : PermanentAction)
   /-- The enchanted creature becomes a copy of the creature exiled this way. -/
   | enchantedCopiesNoted
-  /-- Put a land card from your hand onto the battlefield tapped.
-  Optional as `.may .putLandFromHandTapped`. -/
-  | putLandFromHandTapped
   /-- You may play the exiled card until the end of your next turn. -/
   | grantPlayNotedUntilNextTurn
   /-- The tapped creature can't untap while you control the source. -/
@@ -1331,7 +1368,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .pumpGreatestPower => { resolution := .pump 0 0 .source .greatestPower }
   | .pumpForEachOtherCreature => { resolution := .pump 0 0 .source .perOtherCreature }
   | .damageBlockers n => { resolution := .dealDamage n .blockers }
-  | .returnLinkedExile => { resolution := .returnLinkedExile }
+  | .returnLinkedExile => { resolution := .put .linkedExile }
   | .createThenAttach kind =>
     { resolution := .sequence [.createTokens kind 1 false, .attach .source .created] }
   | .gainLifeSearchBasicOnTop n =>
@@ -1410,7 +1447,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of (.filtered
         { noun := s!"up to one target nonland permanent card with mana value {mv} or less from a graveyard"
           zone := .anyGraveyard, permanentCard := true, nonland := true, mvAtMost := some mv })
-      allowsZeroTargets := true, resolution := .putNonlandMvAtMostFromGy mv }
+      allowsZeroTargets := true, resolution := .put (.nonlandMvAtMost mv) }
   | .othersGetAndOppsGet subtypes p t oppP oppT =>
     { resolution := .sequence
         [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures] }
@@ -1441,7 +1478,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .mayThen (.objectCost .anotherCreature)
         (.putCounters .plusOneSacrificedPower .source) }
   | .lootLandEntersTapped =>
-    { resolution := .sequence [.draw 1, .discard 1, .discardedLandEntersTapped] }
+    { resolution := .sequence
+        [.draw 1, .discard 1, .put .discardedLand (how := .tapped)] }
   | .millThatManyLost => { resolution := .millThatManyLost }
   | .drawPerFatGraveyard =>
     { resolution := .draw 0 (amount := .perFatGraveyard) }
@@ -1464,7 +1502,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .putCounters (.ofKind .invasion) .source] }
   | .mayPutArtifactAttachEquipment =>
     { resolution := .sequence
-        [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)] }
+        [.may (.put .artifactFromHand (note := .forAttach)),
+         .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)] }
   | .cascade => { resolution := .cascade }
   | .belladonnaTokenReward =>
     { resolution := .sequence [
@@ -1530,14 +1569,15 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .attachEquipmentThenFight =>
     { targeting := .of .creatureYouControl,
       resolution := .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached .reflexiveFightHost] }
-  | .returnAsArtifact => { resolution := .returnAsArtifact }
+  | .returnAsArtifact => { resolution := .put .source (how := .asArtifact) }
   | .exileLandsThenReturnTapped =>
     { targeting := .of (.filtered {
         noun := "up to three target lands you control"
         types := #[.land], controller := .you })
       allowsZeroTargets := true, maxTargets := 3
       resolution := .sequence
-        [.exile .landsYouControl .forLater .lands, .returnNotedLandsTapped] }
+        [.exile .landsYouControl .forLater .lands,
+         .put .notedLands (how := .tapped)] }
   | .grimaImpulse =>
     { resolution := .sequence
         [.grimaExileUntil, .mayCast .impulse .unlimited .withoutPaying] }
@@ -1668,7 +1708,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .ifElse (.creatureCardsInGraveyardAtLeast 2)
         (.createTokens .villain21menace 1 true) (.mill 2) }
   | .drawMayPutLandTapped =>
-    { resolution := .sequence [.draw 1, .may .putLandFromHandTapped] }
+    { resolution := .sequence
+        [.draw 1, .may (.put .landFromHand (how := .tapped))] }
   | .drawGainLifeIfAnotherHero =>
     { resolution := .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)] }
   | .plusOneOrTwoIfAnotherHero =>
