@@ -1055,6 +1055,87 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (n : Nat)
         "No mana was spent to cast that spell"
     else g.draw controller spent
 
+/-- Resolve `TriggerResolution.put`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (what : TriggeredAbility.TriggerPutWhat)
+    (how : TriggeredAbility.TriggerPutHow)
+    (note : TriggeredAbility.TriggerPutNote) : Game :=
+  match what, how, note with
+  | .linkedExile, _, _ =>
+    match sourceId.bind g.findObject? with
+    | some src => g.returnLinkedExile src
+    | none => g
+  | .nonlandMvAtMost _, _, _ =>
+    g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
+      match t with
+      | Target.card id =>
+        match g.findObject? id with
+        | some card =>
+          let (g, newId) := g.putOntoBattlefield id card.owner
+          let g := g.logMsg s!"{card.name} is put onto the battlefield under its owner's control"
+          g.afterPermanentEnters (g.object! newId)
+        | none => g
+      | _ => g) "No card was chosen"
+  | .source, .asArtifact, _ =>
+    match sourceId.bind g.findObject? with
+    | none => g
+    | some src =>
+      if src.zone != .graveyard src.owner then g
+      else
+        let (g, newId) := g.putOntoBattlefield src.id controller
+        let o := g.object! newId
+        let g := g.setObject { o with status :=
+          { o.status with additionalCreature := false, onlyFoodArtifact := false } }
+        let o := g.object! newId
+        -- Force artifact-only by using additionalArtifact and clearing creature
+        -- via onlyFoodArtifact-style flag is too strong; grant artifact type.
+        let g := g.mapObjectStatus o (fun s => { s with returnedAsArtifact := true })
+        g.logMsg s!"{o.name} returns as an artifact"
+  | .notedLands, .tapped, _ =>
+    let ids := g.exiledIdsThisWay
+    let g := { g with exiledIdsThisWay := #[] }
+    ids.foldl (fun g id =>
+      match g.findObject? id with
+      | none => g
+      | some o =>
+        let name := o.name
+        let (g, retId) := g.move id .battlefield (some o.owner)
+        let ret := g.object! retId
+        let g := g.setObject { ret with status := { ret.status with tapped := true } }
+        let g := g.logMsg s!"{name} is exiled, then returned tapped"
+        g.afterLandEnters (g.object! retId)) g
+  | .discardedLand, .tapped, _ =>
+    match g.discardedCardThisWay with
+    | none => g
+    | some (pid, id) =>
+      let g := { g with discardedCardThisWay := none }
+      match g.findObject? id with
+      | some o =>
+        if o.printed.isLand && o.zone == .graveyard o.owner then
+          let entered := g.putOntoBattlefield o.id pid (tapped := true) (summoningSick := false)
+          let g := entered.1.logMsg s!"{o.name} enters the battlefield tapped"
+          g.afterLandEnters (g.object! entered.2)
+        else g
+      | none => g
+  | .landFromHand, .tapped, _ =>
+    { g with pending := .mayPutLandFromHand controller }.logMsg
+      s!"{(g.player controller).name} may put a land card from their hand onto the battlefield tapped"
+  | .artifactFromHand, _, .forAttach =>
+    let g := { g with putArtifactThisWay := none }
+    let arts :=
+      (g.player controller).hand.filterMap (fun id =>
+        match g.findObject? id with
+        | some o => if o.printed.isArtifact then some o else none
+        | none => none)
+    if arts.isEmpty then
+      g.logMsg "There is no artifact card in your hand"
+    else
+      { g with pending := .mayPutArtifactFromHand controller (sourceId.getD ⟨0⟩) }.logMsg
+        s!"{(g.player controller).name} may put an artifact card from their hand onto the battlefield"
+  | _, _, _ => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -1268,10 +1349,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
   | .exile what how note =>
     g.applyExile controller ab sourceId targets what how note
-  | .returnLinkedExile =>
-    match sourceId.bind g.findObject? with
-    | some src => g.returnLinkedExile src
-    | none => g
+  | .put what how note | .may (.put what how note) =>
+    g.applyPut controller ab sourceId targets what how note
   | .removeHopeCounter =>
     let g := { g with removedHopeThisWay := false }
     g.withTriggerSource sourceId fun g src =>
@@ -1350,17 +1429,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := g.giveControlUntilEot o controller
       let g := g.applyPermanentAction (g.object! o.id) .untap
       g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.haste))
-  | .putNonlandMvAtMostFromGy _ =>
-    g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
-      match t with
-      | Target.card id =>
-        match g.findObject? id with
-        | some card =>
-          let (g, newId) := g.putOntoBattlefield id card.owner
-          let g := g.logMsg s!"{card.name} is put onto the battlefield under its owner's control"
-          g.afterPermanentEnters (g.object! newId)
-        | none => g
-      | _ => g) "No card was chosen"
   | .honeEachEquipment =>
     let eqs :=
       g.battlefield.filter (fun o => o.controlledBy controller && o.printed.isEquipment)
@@ -1657,19 +1725,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         if o.printed.manaValue <= lands then
           g := g.afterPermanentEnters (g.object! newId)
         return g.putRestOnBottomRandom controller rest
-  | .discardedLandEntersTapped =>
-    match g.discardedCardThisWay with
-    | none => g
-    | some (pid, id) =>
-      let g := { g with discardedCardThisWay := none }
-      match g.findObject? id with
-      | some o =>
-        if o.printed.isLand && o.zone == .graveyard o.owner then
-          let entered := g.putOntoBattlefield o.id pid (tapped := true) (summoningSick := false)
-          let g := entered.1.logMsg s!"{o.name} enters the battlefield tapped"
-          g.afterLandEnters (g.object! entered.2)
-        else g
-      | none => g
   | .millThatManyLost =>
     match lastKnownPower, lastKnownToughness with
     | some n, some idx => g.mill ⟨idx.toNat⟩ n.toNat
@@ -1689,21 +1744,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .targetOpponentLosesLife n =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.loseLife pid n)
-  | .returnAsArtifact =>
-    match sourceId.bind g.findObject? with
-    | none => g
-    | some src =>
-      if src.zone != .graveyard src.owner then g
-      else
-        let (g, newId) := g.putOntoBattlefield src.id controller
-        let o := g.object! newId
-        let g := g.setObject { o with status :=
-          { o.status with additionalCreature := false, onlyFoodArtifact := false } }
-        let o := g.object! newId
-        -- Force artifact-only by using additionalArtifact and clearing creature
-        -- via onlyFoodArtifact-style flag is too strong; grant artifact type.
-        let g := g.mapObjectStatus o (fun s => { s with returnedAsArtifact := true })
-        g.logMsg s!"{o.name} returns as an artifact"
   | .discardIfManaSpent k =>
     g.beginDiscardCards #[controller] k
   | .may (.draw _ .opponentHasYou _) =>
@@ -1716,19 +1756,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let disc := if n == 2 then "two" else toString n
       g.beginFraChoice controller (.mayDrawThenDiscard spent n)
         s!"{(g.player controller).name} may draw {spent} cards, then discard {disc}"
-  | .returnNotedLandsTapped =>
-    let ids := g.exiledIdsThisWay
-    let g := { g with exiledIdsThisWay := #[] }
-    ids.foldl (fun g id =>
-      match g.findObject? id with
-      | none => g
-      | some o =>
-        let name := o.name
-        let (g, retId) := g.move id .battlefield (some o.owner)
-        let ret := g.object! retId
-        let g := g.setObject { ret with status := { ret.status with tapped := true } }
-        let g := g.logMsg s!"{name} is exiled, then returned tapped"
-        g.afterLandEnters (g.object! retId)) g
   | .grimaExileUntil =>
     let victim := g.lastCombatDamagePlayer.getD (g.opponent controller)
     let (g, found, others) := g.exileUntilInstantOrSorcery victim
@@ -1831,21 +1858,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some host => g.becomeCopyOf host tgt (untilSourceLeaves := sourceId)
       | none => g
     | _, _ => g
-  | .putLandFromHandTapped | .may .putLandFromHandTapped =>
-    { g with pending := .mayPutLandFromHand controller }.logMsg
-      s!"{(g.player controller).name} may put a land card from their hand onto the battlefield tapped"
-  | .putArtifactFromHand | .may .putArtifactFromHand =>
-    let g := { g with putArtifactThisWay := none }
-    let arts :=
-      (g.player controller).hand.filterMap (fun id =>
-        match g.findObject? id with
-        | some o => if o.printed.isArtifact then some o else none
-        | none => none)
-    if arts.isEmpty then
-      g.logMsg "There is no artifact card in your hand"
-    else
-      { g with pending := .mayPutArtifactFromHand controller (sourceId.getD ⟨0⟩) }.logMsg
-        s!"{(g.player controller).name} may put an artifact card from their hand onto the battlefield"
   | .fightUpToOne =>
     match sourceId.bind g.findObject?, targets[0]? with
     | some src, some (Target.permanent id) =>

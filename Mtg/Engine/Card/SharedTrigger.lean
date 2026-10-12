@@ -686,7 +686,7 @@ inductive SharedTrigger where
   /-- You may sacrifice another creature for +1/+1s equal to its power. -/
   | attackSacPlusOneEqualPower
   /-- Loot; a discarded land enters tapped. Resolves as
-  `.sequence [.draw 1, .discard 1, .discardedLandEntersTapped]`. -/
+  `.sequence [.draw 1, .discard 1, .put .discardedLand (how := .tapped)]`. -/
   | lootLandEntersTapped
   /-- That player mills that many cards. -/
   | millThatManyLost
@@ -706,7 +706,7 @@ inductive SharedTrigger where
   /-- Create an Alien and grow it from invasion counters. -/
   | createAlienPerInvasion
   /-- You may put an artifact from hand; attach if Equipment. Resolves as
-  `.sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
+  `.sequence [.may (.put .artifactFromHand (note := .forAttach)), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
   | mayPutArtifactAttachEquipment
   /-- Cascade. -/
   | cascade
@@ -888,7 +888,7 @@ inductive SharedTrigger where
   `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`. -/
   | villainIfGyElseMill
   /-- Draw, then you may put a land from hand tapped.
-  Resolves as `.sequence [.draw 1, .may .putLandFromHandTapped]`. -/
+  Resolves as `.sequence [.draw 1, .may (.put .landFromHand (how := .tapped))]`. -/
   | drawMayPutLandTapped
   /-- Draw; if you control another Hero, gain 2 life. -/
   | drawGainLifeIfAnotherHero

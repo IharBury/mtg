@@ -323,7 +323,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     let g : Game :=
       match g.triggerSequenceRest with
       | some rest =>
-        if rest.steps.any (· == .discardedLandEntersTapped) then
+        if rest.steps.any (· == .put .discardedLand (how := .tapped)) then
           { g with discardedCardThisWay := some (q, g.followMoved card.id) }
         else g
       | none => g

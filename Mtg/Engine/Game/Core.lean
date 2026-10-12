@@ -110,9 +110,9 @@ structure Game where
   isNight : Bool := false
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
-  /-- Card discarded while a later sequence step may put a land discarded
-  this way onto the battlefield tapped (Silvan Reveler). The player who
-  discarded it, and the card. -/
+  /-- Card discarded while a later `.put .discardedLand (how := .tapped)`
+  may put that land onto the battlefield tapped (Silvan Reveler). The
+  player who discarded it, and the card. -/
   discardedCardThisWay : Option (PlayerId × ObjectId) := none
   /-- After Palantír of Orthanc finishes scrying, this opponent may have
   the controller draw. Stores controller, opponent, and the Palantír. -/
@@ -190,7 +190,8 @@ structure Game where
   grimaImpulseOthers : Array ObjectId := #[]
   /-- `sacrifice .you .plan .forReflexive` sacrificed the Plan. -/
   planWasSacrificed : Bool := false
-  /-- Lands exiled by `exile .landsYouControl .forLater .lands`, to return tapped. -/
+  /-- Lands exiled by `exile .landsYouControl .forLater .lands`.
+  `.put .notedLands (how := .tapped)` returns them. -/
   exiledIdsThisWay : Array ObjectId := #[]
   /-- Creature exiled by `exile .target .untilSourceLeaves .copyAndHost`, copied by the next step.
   The object is the one from before it moved. -/
@@ -207,8 +208,9 @@ structure Game where
   notedCountThisWay : Nat := 0
   /-- Token created for the following attach or counter step. -/
   createdTokenThisWay : Option ObjectId := none
-  /-- Artifact put from hand by `putArtifactFromHand`, and the creature
-  `attach .putArtifact .notedHost` attaches it to when it is Equipment. -/
+  /-- Artifact put from hand by `.put .artifactFromHand (note := .forAttach)`,
+  and the creature `attach .putArtifact .notedHost` attaches it to when it
+  is Equipment. -/
   putArtifactThisWay : Option (ObjectId × ObjectId) := none
   /-- Card exiled by `exile .graveyardCard .forLater .playCard`. -/
   playExiledThisWay : Option ObjectId := none

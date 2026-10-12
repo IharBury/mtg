@@ -779,13 +779,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may tap any number of untapped Humans you control"
     | .sacrifice .you .another _ =>
       "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-    | .putArtifactFromHand =>
+    | .put .artifactFromHand _ .forAttach =>
       "you may put an artifact card from your hand onto the battlefield"
     | .discardHand =>
       "you may discard your hand"
     | .draw _ .opponentHasYou _ =>
       "target opponent may have you draw a card"
-    | .putLandFromHandTapped =>
+    | .put .landFromHand .tapped _ =>
       "you may put a land card from your hand onto the battlefield tapped"
     | .sequence [.draw _ _ .equalToManaSpent, .discardIfManaSpent n] =>
       let disc := if n == 2 then "two cards" else cardPhrase n
@@ -866,7 +866,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       .«if» (.questAtLeast 6)
         (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary])] =>
     "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
-  | .sequence [.draw 1, .discard 1, .discardedLandEntersTapped] =>
+  | .sequence [.draw 1, .discard 1, .put .discardedLand .tapped _] =>
     "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
   | .sequence [.putCounters .honePerOpponent .source, .attach .source .creatureTarget] =>
     "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
@@ -875,7 +875,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.draw _ _ .equalToManaSpent, .discardIfManaSpent n] =>
     let disc := if n == 2 then "two cards" else cardPhrase n
     s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
-  | .sequence [.exile .landsYouControl .forLater .lands, .returnNotedLandsTapped] =>
+  | .sequence [.exile .landsYouControl .forLater .lands, .put .notedLands .tapped _] =>
     "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
   | .sequence [.grimaExileUntil, .mayCast .impulse .unlimited .withoutPaying .none] =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
@@ -918,7 +918,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"attach it to {noun}. {PermanentAction.toNotation action "that creature" (sentence := true)}"
   | .sequence [.exile .target .untilSourceLeaves .copyAndHost, .enchantedCopiesNoted] =>
     "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
-  | .sequence [.draw 1, .may .putLandFromHandTapped] =>
+  | .sequence [.draw 1, .may (.put .landFromHand .tapped _)] =>
     "draw a card, then you may put a land card from your hand onto the battlefield tapped"
   | .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)] =>
     "draw a card. If you control another Hero, you gain 2 life"
@@ -948,7 +948,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.onPermanent .destroy,
       .createTokens .treasure 1 false .kind .targetController] =>
     s!"destroy {noun}. They create a Treasure token"
-  | .sequence [.may .putArtifactFromHand, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)] =>
+  | .sequence [.may (.put .artifactFromHand _ .forAttach), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
   | .sequence _ =>
     "resolve each step"
@@ -995,8 +995,24 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"exile {noun}"
     | _, _, _ =>
       "exile it"
-  | .returnLinkedExile =>
-    "return the exiled card to the battlefield under its owner's control"
+  | .put what how note =>
+    match what, how, note with
+    | .linkedExile, _, _ =>
+      "return the exiled card to the battlefield under its owner's control"
+    | .nonlandMvAtMost mv, _, _ =>
+      s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
+    | .source, .asArtifact, _ =>
+      "if they were a creature, return them to the battlefield. They're an artifact"
+    | .notedLands, .tapped, _ =>
+      "return those lands to the battlefield tapped"
+    | .discardedLand, .tapped, _ =>
+      "if you discard a land card this way, put it onto the battlefield tapped"
+    | .landFromHand, .tapped, _ =>
+      "put a land card from your hand onto the battlefield tapped"
+    | .artifactFromHand, _, .forAttach =>
+      "put an artifact card from your hand onto the battlefield"
+    | _, _, _ =>
+      "put it onto the battlefield"
   | .removeHopeCounter =>
     "remove a hope counter from this"
   | .«if» .removedHope (.draw 1) =>
@@ -1095,8 +1111,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
   | .gainControlOppUntilEot =>
     s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
-  | .putNonlandMvAtMostFromGy mv =>
-    s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
   | .honeEachEquipment =>
     "put a hone counter on each Equipment you control"
   | .cascade =>
@@ -1149,8 +1163,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
   | .targetOpponentLosesLife n =>
     s!"{noun} loses {n} life"
-  | .returnAsArtifact =>
-    "if they were a creature, return them to the battlefield. They're an artifact"
   | .ringTempts =>
     "the Ring tempts you"
   | .mayThen .discardHand (.draw n) =>
@@ -1180,8 +1192,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
   | .mayThen (.objectCost .artifactOrDiscard) (.draw 1) =>
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
-  | .putArtifactFromHand =>
-    "put an artifact card from your hand onto the battlefield"
   | .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost) =>
     "if it's an Equipment, attach it to this creature"
   | .fightUpToOne =>
@@ -1233,16 +1243,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "search your hand and/or library for a Dragon card and put it onto the battlefield"
   | .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary]) =>
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
-  | .discardedLandEntersTapped =>
-    "if you discard a land card this way, put it onto the battlefield tapped"
   | .reflexiveFightHost =>
     "that creature deals damage equal to its power to up to one target creature"
   | .«if» .equipmentAttached .reflexiveFightHost =>
     "that creature deals damage equal to its power to up to one target creature"
   | .discardIfManaSpent n =>
     s!"discard {cardPhrase n}"
-  | .returnNotedLandsTapped =>
-    "return those lands to the battlefield tapped"
   | .grimaExileUntil =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card"
   | .opponentsMillNote n =>
@@ -1262,8 +1268,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     PermanentAction.toNotation action "that creature" (sentence := true)
   | .enchantedCopiesNoted =>
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
-  | .putLandFromHandTapped =>
-    "put a land card from your hand onto the battlefield tapped"
   | .«if» .anotherHero (.gainLife n) =>
     s!"if you control another Hero, you gain {n} life"
   | .grantPlayNotedUntilNextTurn =>
