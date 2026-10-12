@@ -638,7 +638,7 @@ inductive SharedTrigger where
   | tapHumansDraw
   /-- Destroy opponents' artifacts and enchantments; gain life for each.
   Resolves as
-  `.sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]`. -/
+  `.sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), .gainLifeForEachDestroyedThisWay]`. -/
   | destroyOppArtifactsEnchantmentsGainLife
   /-- Damage each opponent equal to permanents of this subtype you control. -/
   | damageEqualSubtypeToEachOpponent (subtype : String)
@@ -646,7 +646,7 @@ inductive SharedTrigger where
   | damageEqualTreasures
   /-- Deal `n` to any target; destroy it if it has this subtype and was dealt
   damage this way.
-  Resolves as `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage]`. -/
+  Resolves as `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`. -/
   | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
   /-- Attach target Equipment to up to one target creature you control. -/
   | attachEquipmentToCreature
@@ -738,7 +738,7 @@ inductive SharedTrigger where
   `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`. -/
   | allianceMode
   /-- Destroy another; its controller amasses equal to its power. Resolves as
-  `.sequence [.destroyNotedForAmass, .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw 1)]`. -/
+  `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw 1)]`. -/
   | destroyOtherAmassControllerPower
   /-- Gollum parity modes. Resolves as
   `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/

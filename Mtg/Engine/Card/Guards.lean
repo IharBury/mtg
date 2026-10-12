@@ -829,7 +829,8 @@ namespace CardDef
 #guard TriggeredAbility.onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   .triggered .enter (Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife)
 #guard TriggeredAbility.resolution .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
-  .sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]
+  .sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
+    .gainLifeForEachDestroyedThisWay]
 #guard TriggeredAbility.toNotation .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   "When this permanent enters, destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way."
 #guard TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife ==
@@ -848,7 +849,7 @@ namespace CardDef
   .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype 1 "Dragon"))
 #guard TriggeredAbility.resolution (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
   .sequence [.dealDamage 1 .target .fixed .markedPermanent,
-    .«if» (.dealtDamageToSubtype "Dragon") .destroyPermanentDealtDamage]
+    .«if» (.dealtDamageToSubtype "Dragon") (.destroy .permanentDealtDamage)]
 #guard TriggeredAbility.toNotation (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
   "When this permanent enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it."
 #guard TriggeredAbility.onEnterAttachTargetEquipment ==
@@ -1545,7 +1546,7 @@ end CardDef
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
   .sequence [.untapAttackingCreatures, .additionalCombatPhase]
 #guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
-  .sequence [.destroyNotedForAmass,
+  .sequence [.destroy .target (note := .forAmass),
     .amass 0 (amount := .notedPower) (who := .notedController),
     .«if» .youControlledDestroyed (.draw 1)]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==

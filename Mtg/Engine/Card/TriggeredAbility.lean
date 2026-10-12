@@ -824,11 +824,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
   | .sequence [.gainLife n, .searchLibrary .basicLandOnTop] =>
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
-  | .sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay] =>
+  | .sequence [.destroy .oppArtifactsEnchantments .countDestroyed, .gainLifeForEachDestroyedThisWay] =>
     "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
   | .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature] =>
     "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
-  | .sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage] =>
+  | .sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none)] =>
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
   | .sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))] =>
     s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
@@ -851,7 +851,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
   | .sequence [.untapAttackingCreatures, .additionalCombatPhase] =>
     "untap all attacking creatures. After this phase, there is an additional combat phase"
-  | .sequence [.destroyNotedForAmass, .amass _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw 1)] =>
+  | .sequence [.destroy .target .forAmass, .amass _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw 1)] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .sequence [.may .discardHand, .draw _ _ .discardedHandCount, .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
@@ -1020,8 +1020,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .tapHumans =>
     "tap any number of untapped Humans you control"
-  | .destroyOppArtifactsEnchantments =>
+  | .destroy .oppArtifactsEnchantments .countDestroyed =>
     "destroy all artifacts and enchantments your opponents control"
+  | .destroy .permanentDealtDamage .none =>
+    "destroy the permanent dealt damage this way"
+  | .destroy .target .forAmass =>
+    s!"destroy {noun}"
+  | .destroy _ _ =>
+    "destroy it"
   | .gainLifeForEachDestroyedThisWay =>
     "you gain 1 life for each permanent destroyed this way"
   | .recruit .recruit =>
@@ -1087,9 +1093,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "attach it"
   | .gainLifeForEachOtherCreature =>
     "you gain 1 life for each other creature you control"
-  | .destroyPermanentDealtDamage =>
-    "destroy the permanent dealt damage this way"
-  | .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage =>
+  | .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none) =>
     s!"if a {subtype} is dealt damage this way, destroy it"
   | .addMana types amount =>
     match amount with
@@ -1235,8 +1239,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "untap all attacking creatures"
   | .additionalCombatPhase =>
     "after this phase, there is an additional combat phase"
-  | .destroyNotedForAmass =>
-    s!"destroy {noun}"
   | .«if» .youControlledDestroyed (.draw 1) =>
     "if you controlled that creature, draw a card"
   | .discardHand =>
