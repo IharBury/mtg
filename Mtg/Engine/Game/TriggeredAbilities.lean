@@ -1073,6 +1073,61 @@ def applyAmass (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     else g
   | _, _ => g
 
+/-- Resolve `TriggerResolution.destroy`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyDestroy (g : Game) (controller : PlayerId) (targets : Array Target)
+    (lastKnownPower : Option Int) (what : TriggeredAbility.TriggerDestroyWhat)
+    (note : TriggeredAbility.TriggerDestroyNote) : Game :=
+  match what, note with
+  | .oppArtifactsEnchantments, .countDestroyed =>
+    Id.run do
+      let mut g := g
+      let mut n : Nat := 0
+      for o in g.battlefield do
+        if o.isOnBattlefield && !o.controlledBy controller &&
+            (o.types.contains .artifact || o.types.contains .enchantment) then
+          g := g.destroyPermanent o
+          -- Only permanents actually destroyed count (indestructible ones stay).
+          if !(g.findObject? o.id).any (·.isOnBattlefield) then
+            n := n + 1
+      return { g with permanentsDestroyedThisWay := n }
+  | .permanentDealtDamage, .none =>
+    match g.permanentDealtDamageThisWay with
+    | none => g
+    | some oid =>
+      let g := { g with permanentDealtDamageThisWay := none }
+      match g.findObject? oid with
+      | some o => if o.isOnBattlefield then g.destroyPermanent o else g
+      | none => g
+  | .target, .forAmass =>
+    let clear := { g with
+      destroyedForAmassThisWay := false
+      amassControllerThisWay := none
+      amassAmountThisWay := 0
+      amassYouControlledThisWay := false }
+    match targets[0]? with
+    | none =>
+      clear.logMsg
+        "No target was chosen. Its controller is undefined and no player amasses Goblins."
+    | some (Target.permanent oid) =>
+      match g.findObject? oid with
+      | none => clear.logMsg "The target is no longer legal"
+      | some o =>
+        if !o.isOnBattlefield then clear.logMsg "The target is no longer legal"
+        else
+          let pw := lastKnownPower.getD (g.power o)
+          let n := if pw > 0 then pw.toNat else 0
+          let g := g.destroyPermanent o
+          { g with
+            destroyedForAmassThisWay := true
+            amassControllerThisWay := o.controller
+            amassAmountThisWay := n
+            amassYouControlledThisWay := o.controller == some controller }
+    | _ =>
+      clear.logMsg
+        "No target was chosen. Its controller is undefined and no player amasses Goblins."
+  | _, _ => g
+
 /-- Resolve `TriggerResolution.addMana`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
@@ -1483,18 +1538,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .tapHumans | .may .tapHumans =>
     { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
       s!"{(g.player controller).name} may tap any number of untapped Humans they control"
-  | .destroyOppArtifactsEnchantments =>
-    Id.run do
-      let mut g := g
-      let mut n : Nat := 0
-      for o in g.battlefield do
-        if o.isOnBattlefield && !o.controlledBy controller &&
-            (o.types.contains .artifact || o.types.contains .enchantment) then
-          g := g.destroyPermanent o
-          -- Only permanents actually destroyed count (indestructible ones stay).
-          if !(g.findObject? o.id).any (·.isOnBattlefield) then
-            n := n + 1
-      return { g with permanentsDestroyedThisWay := n }
+  | .destroy what note =>
+    g.applyDestroy controller targets lastKnownPower what note
   | .gainLifeForEachDestroyedThisWay =>
     let n := g.permanentsDestroyedThisWay
     let g := { g with permanentsDestroyedThisWay := 0 }
@@ -1514,14 +1559,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let n :=
       ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
     if n == 0 then g else g.gainLife controller n
-  | .destroyPermanentDealtDamage =>
-    match g.permanentDealtDamageThisWay with
-    | none => g
-    | some oid =>
-      let g := { g with permanentDealtDamageThisWay := none }
-      match g.findObject? oid with
-      | some o => if o.isOnBattlefield then g.destroyPermanent o else g
-      | none => g
   | .addMana types amount =>
     g.applyAddMana controller sourceId types amount
   | .becomePT p t =>
@@ -1660,33 +1697,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | .oneUnusedThisTurn | .oneUnused =>
       g.offerChooseModes controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName sequencedCardPower modes how
-  | .destroyNotedForAmass =>
-    let clear := { g with
-      destroyedForAmassThisWay := false
-      amassControllerThisWay := none
-      amassAmountThisWay := 0
-      amassYouControlledThisWay := false }
-    match targets[0]? with
-    | none =>
-      clear.logMsg
-        "No target was chosen. Its controller is undefined and no player amasses Goblins."
-    | some (Target.permanent oid) =>
-      match g.findObject? oid with
-      | none => clear.logMsg "The target is no longer legal"
-      | some o =>
-        if !o.isOnBattlefield then clear.logMsg "The target is no longer legal"
-        else
-          let pw := lastKnownPower.getD (g.power o)
-          let n := if pw > 0 then pw.toNat else 0
-          let g := g.destroyPermanent o
-          { g with
-            destroyedForAmassThisWay := true
-            amassControllerThisWay := o.controller
-            amassAmountThisWay := n
-            amassYouControlledThisWay := o.controller == some controller }
-    | _ =>
-      clear.logMsg
-        "No target was chosen. Its controller is undefined and no player amasses Goblins."
   | .returnToHand what whose note =>
     g.applyReturnToHand controller ab sourceId targets what whose note
   | .discardHand | .may .discardHand =>

@@ -162,8 +162,8 @@ structure Game where
   /-- Humans chosen for the current “tap any number of Humans” step.
   `.draw (amount := .forEachTappedHuman)` draws this many cards. -/
   humansTappedThisWay : Nat := 0
-  /-- Permanents destroyed by the current “destroy artifacts and enchantments”
-  step. `gainLifeForEachDestroyedThisWay` gains this much life. -/
+  /-- Permanents destroyed by `.destroy .oppArtifactsEnchantments (note := .countDestroyed)`.
+  `gainLifeForEachDestroyedThisWay` gains this much life. -/
   permanentsDestroyedThisWay : Nat := 0
   /-- A hope counter was removed by the current `removeHopeCounter` step.
   `«if» .removedHope` draws a card when this is set. -/
@@ -185,8 +185,8 @@ structure Game where
   /-- Excess damage noted by `dealDamage` with `.excess` for the following
   amass step. -/
   excessDamageThisWay : Nat := 0
-  /-- `destroyNotedForAmass` destroyed its target. The controller, amount, and
-  whether you controlled it feed the following amass and draw steps. -/
+  /-- `.destroy .target (note := .forAmass)` chose a legal target. The controller,
+  amount, and whether you controlled it feed the following amass and draw steps. -/
   destroyedForAmassThisWay : Bool := false
   amassControllerThisWay : Option PlayerId := none
   amassAmountThisWay : Nat := 0

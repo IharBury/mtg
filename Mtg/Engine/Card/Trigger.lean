@@ -573,13 +573,35 @@ inductive TriggerModeHow where
   | alreadyChosen
 deriving Repr, Inhabited, BEq
 
+/-- Which permanents `TriggerResolution.destroy` destroys. -/
+inductive TriggerDestroyWhat where
+  /-- All artifacts and enchantments opponents control. -/
+  | oppArtifactsEnchantments
+  /-- The announced creature, if any. Choosing none destroys nothing. -/
+  | target
+  /-- The permanent an earlier step dealt damage to. -/
+  | permanentDealtDamage
+deriving Repr, Inhabited, BEq
+
+/-- What a later step of `TriggerResolution.destroy` can read. -/
+inductive TriggerDestroyNote where
+  /-- Nothing beyond the destruction. -/
+  | none
+  /-- How many permanents were actually destroyed. Indestructible
+  permanents and shield counters do not count. -/
+  | countDestroyed
+  /-- The announced creature's controller and power. No legal target
+  leaves the note empty, so no player amasses. -/
+  | forAmass
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, +1/+1 on the source, divided damage, putting
 counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
 attach, amass, casting a spell, returning cards to hand, putting onto
-the battlefield, adding mana, and choosing modes each cover multiple
-printed abilities.
+the battlefield, adding mana, choosing modes, and destroying each cover
+multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -789,13 +811,15 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`.
   Destroy opponents' artifacts and enchantments, then gain 1 life for each
   one actually destroyed, is
-  `.sequence [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay]`.
+  `.sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), .gainLifeForEachDestroyedThisWay]`.
   Put a +1/+1 counter on each other creature you control, then gain 1 life
   for each other creature you control, is
   `.sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature]`.
   Deal `n` damage to the target, then destroy it if that damage marked a
   permanent of this subtype, is
-  `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage]`.
+  `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`.
+  Destroy the announced creature, then its controller amasses that power, is
+  `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw 1)]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
   the source if one was actually returned, is
   `.sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))]`.
@@ -887,9 +911,16 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Tap any number of untapped Humans you control.
   Choosing none taps nothing. Optional as `.may .tapHumans`. -/
   | tapHumans
-  /-- Destroy all artifacts and enchantments opponents control.
-  Only permanents that actually leave are counted for the next step. -/
-  | destroyOppArtifactsEnchantments
+  /-- Destroy permanents. `what` says which, and `note` says what a later
+  step can read.
+  Opponents' artifacts and enchantments, counted for the next step, are
+  `.destroy .oppArtifactsEnchantments (note := .countDestroyed)`.
+  Only permanents that actually leave are counted.
+  The permanent an earlier step dealt damage to is
+  `.destroy .permanentDealtDamage`.
+  The announced creature, noting its controller and power, is
+  `.destroy .target (note := .forAmass)`. No target means no player amasses. -/
+  | destroy (what : TriggerDestroyWhat) (note : TriggerDestroyNote := .none)
   /-- Gain 1 life for each permanent destroyed by an earlier step. -/
   | gainLifeForEachDestroyedThisWay
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
@@ -952,8 +983,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | attach (what : TriggerAttachWhat) (host : TriggerAttachTo)
   /-- Gain 1 life for each other creature you control. -/
   | gainLifeForEachOtherCreature
-  /-- Destroy the permanent an earlier step dealt damage to. -/
-  | destroyPermanentDealtDamage
   /-- Add mana. `types` is the printed mana when `amount` is `.fixed`.
   Adding those types is `.addMana types`.
   {G} for each charge counter on the source is
@@ -1081,9 +1110,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | untapAttackingCreatures
   /-- There is an additional combat phase after this one. -/
   | additionalCombatPhase
-  /-- Destroy the targeted creature, if any, and note its controller and power.
-  No target means no player amasses. -/
-  | destroyNotedForAmass
   /-- Discard your hand and note how many cards were discarded.
   Optional as `.may .discardHand`. Declining leaves the note empty so the
   following draw and damage steps do nothing. -/
@@ -1466,7 +1492,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.may .tapHumans, .draw 0 (amount := .forEachTappedHuman)] }
   | .destroyOppArtifactsEnchantmentsGainLife =>
     { resolution := .sequence
-        [.destroyOppArtifactsEnchantments, .gainLifeForEachDestroyedThisWay] }
+        [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
+         .gainLifeForEachDestroyedThisWay] }
   | .damageEqualSubtypeToEachOpponent subtype =>
     { resolution := .dealDamage 0 .eachOpponent (.subtypeCount subtype) }
   | .damageEqualTreasures =>
@@ -1476,7 +1503,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .playerOrCreature,
       resolution := .sequence
         [.dealDamage n .target .fixed .markedPermanent,
-         .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage] }
+         .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)] }
   | .attachEquipmentToCreature =>
     { targeting := .of .equipmentYouControlThenCreatureYouControl,
       allowsZeroTargets := true, resolution := .attach .target .optionalCreature }
@@ -1586,7 +1613,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .destroyOtherAmassControllerPower =>
     { targeting := .of .anotherCreature, allowsZeroTargets := true,
       resolution := .sequence
-        [.destroyNotedForAmass,
+        [.destroy .target (note := .forAmass),
          .amass 0 (amount := .notedPower) (who := .notedController),
          .«if» .youControlledDestroyed (.draw 1)] }
   | .gollumMode =>
