@@ -43,7 +43,7 @@ inductive EnterLeftover where
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
   | revealHandExileUntilLeaves
   /-- +1/+1 on up to two creatures, or return an artifact/enchantment from GY.
-  Resolves as `.or [.onPermanent (.plusOne 1), .returnCreatureFromGyToHand]`. -/
+  Resolves as `.or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard]`. -/
   | plusOnesOrReturnArtEnch
   /-- Choose up to X modes. -/
   | chooseUpToXModes
@@ -614,7 +614,7 @@ inductive SharedTrigger where
   /-- Set another creature's base P/T to this creature's. -/
   | setOtherBasePT
   /-- Return a target Elf from the graveyard, then gain life equal to its power.
-  Resolves as `.sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]`. -/
+  Resolves as `.sequence [.returnToHand .graveyardCard, .gainLifeEqualToTargetPower]`. -/
   | returnElfGainLife
   /-- Deal damage equal to last-known power to a target. -/
   | damageFromLastKnownPower
@@ -653,7 +653,7 @@ inductive SharedTrigger where
   | defenderSacsLeastPower
   /-- Return up to one other permanent you control to its owner's hand.
   If you do, put a +1/+1 counter on this creature.
-  Resolves as `.sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))]`. -/
+  Resolves as `.sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))]`. -/
   | returnOtherPlusOne
   /-- Look at the top `n` cards; you may reveal one of these types. -/
   | lookAtTopRevealTypes (n : Nat) (types : Array String)

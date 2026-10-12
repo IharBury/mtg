@@ -791,7 +791,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterOrAttackReturnElfGainLife ==
   .triggered .enterOrAttack (Effect.ofTrigger .returnElfGainLife)
 #guard TriggeredAbility.resolution .onEnterOrAttackReturnElfGainLife ==
-  .sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]
+  .sequence [.returnToHand .graveyardCard, .gainLifeEqualToTargetPower]
 #guard TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature ==
   .triggered .dies (Effect.ofTrigger .damageFromLastKnownPower)
 #guard TriggeredAbility.onCastNoncreaturePumpAndDamageOpponents 1 ==
@@ -858,7 +858,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterReturnOtherPlusOne ==
   .triggered .enter (Effect.ofTrigger .returnOtherPlusOne)
 #guard TriggeredAbility.resolution .onEnterReturnOtherPlusOne ==
-  .sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))]
+  .sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))]
 #guard TriggeredAbility.toNotation .onEnterReturnOtherPlusOne ==
   "When this permanent enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature."
 #guard TriggeredAbility.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"] ==
@@ -1308,7 +1308,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onEnterCreateFoodOrTreasure ==
   .or [.createTokens .food 1 false, .createTokens .treasure 1 false]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterPlusOnesOrReturnArtEnch) ==
-  .or [.onPermanent (.plusOne 1), .returnCreatureFromGyToHand]
+  .or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard]
 #guard TriggeredAbility.toNotation (.onEnter Effect.enterPlusOnesOrReturnArtEnch) ==
   "When this permanent enters, choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand."
 #guard TriggeredAbility.toNotation .onEnterVillainIfGyElseMill ==
@@ -1557,7 +1557,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
   .sequence [.draw 1, .discard 1, .put .discardedLand (how := .tapped)]
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
-  .sequence [.millNote 4, .returnMilledSubtype "Elf"]
+  .sequence [.millNote 4, .returnToHand (.milledSubtype "Elf")]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tapEnchanted, .removeCountersFromEnchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==

@@ -157,8 +157,8 @@ structure Game where
   has the subtype. -/
   permanentDealtDamageThisWay : Option ObjectId := none
   /-- A permanent was returned to its owner's hand by the current
-  `returnToOwnerHand` step. `«if» .returnedPermanent` puts a +1/+1 counter
-  on the source when this is set. -/
+  `returnToHand` step when it notes `.returnedPermanent`.
+  `«if» .returnedPermanent` puts a +1/+1 counter on the source when this is set. -/
   returnedPermanentThisWay : Bool := false
   /-- Ordinal recorded by the current `noteResolveThisTurn` step.
   `«if» (.nthResolve _)` reads it and a finished sequence clears it. -/

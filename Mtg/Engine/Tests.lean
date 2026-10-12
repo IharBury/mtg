@@ -26,6 +26,7 @@ import Mtg.Engine.Tests.RealityFractureCommander
 import Mtg.Engine.Tests.ParseOracle
 import Mtg.Engine.Tests.MayCast
 import Mtg.Engine.Tests.Draw
+import Mtg.Engine.Tests.ReturnToHand
 import Mtg.Engine.Tests.Put
 
 /-!
@@ -61,6 +62,7 @@ keep working.
 - `ParseOracle`: printed-card parsing, Oracle normalization, and argument reading
 - `MayCast`: casting from a graveyard, from hand, and from an impulse
 - `Draw`: fixed draws, counted draws, mana spent, and the opponent's draw offer
+- `ReturnToHand`: graveyard cards, permanents, milled subtypes, and the source
 - `Put`: putting linked exile, graveyard cards, noted lands, discarded
   lands, and cards from hand onto the battlefield
 -/

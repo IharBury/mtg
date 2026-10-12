@@ -483,6 +483,36 @@ inductive TriggerDrawAmount where
   | equalToManaSpent
 deriving Repr, Inhabited, BEq
 
+/-- Which cards `TriggerResolution.returnToHand` returns. -/
+inductive TriggerReturnWhat where
+  /-- The announced graveyard card. A card that has left is reported. -/
+  | graveyardCard
+  /-- The announced permanent. -/
+  | permanent
+  /-- The announced graveyard card, or that card as a permanent target. -/
+  | graveyardPermanent
+  /-- Cards an earlier step milled that have this subtype. -/
+  | milledSubtype (subtype : String)
+  /-- The source, if it is still in its owner's graveyard. -/
+  | source
+deriving Repr, Inhabited, BEq
+
+/-- Whose hand `TriggerResolution.returnToHand` returns those cards to. -/
+inductive TriggerReturnWhose where
+  /-- The controller of the ability. -/
+  | you
+  /-- The card's owner. -/
+  | owner
+deriving Repr, Inhabited, BEq
+
+/-- What a later step of `TriggerResolution.returnToHand` can read. -/
+inductive TriggerReturnNote where
+  /-- Nothing beyond the return itself. -/
+  | none
+  /-- Whether a permanent was actually returned. -/
+  | returnedPermanent
+deriving Repr, Inhabited, BEq
+
 /-- Which cards `TriggerResolution.put` puts onto the battlefield. -/
 inductive TriggerPutWhat where
   /-- Each card the source exiled. -/
@@ -523,8 +553,8 @@ deriving Repr, Inhabited, BEq
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, +1/+1 on the source, divided damage, putting
 counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
-attach, amass, casting a spell, and putting onto the battlefield each
-cover multiple printed abilities.
+attach, amass, casting a spell, returning cards to hand, and putting
+onto the battlefield each cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -608,7 +638,7 @@ inductive TriggerResolution where
   You may sacrifice another creature for +1/+1 counters equal to its power is
   `.mayThen (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source)`.
   You may pay `{1}{G}{U}` to return this from the graveyard is
-  `.mayThen (.pay #[.generic 1, .colored .green, .colored .blue]) .returnSourceToHand`.
+  `.mayThen (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner)`.
   You may sacrifice another creature or artifact to draw and create a Treasure is
   `.mayThen (.objectCost .anotherCreatureOrArtifact) (.sequence [.draw 1, .createTokens .treasure 1 false])`.
   You may discard your hand to draw `n` is `.mayThen .discardHand (.draw n)`.
@@ -659,8 +689,19 @@ inductive TriggerResolution where
   +1/+1 counters equal to the sacrificed creature's power are
   `.putCounters .plusOneSacrificedPower .source`. -/
   | putCounters (what : TriggerCounterWhat) (who : TriggerCounterWho)
-  /-- Return the source from its owner's graveyard to their hand. -/
-  | returnSourceToHand
+  /-- Return cards to a hand. `what` says which cards, `whose` says whose
+  hand, and `note` says what a later step can read.
+  A creature card from your graveyard to your hand is
+  `.returnToHand .graveyardCard`.
+  The targeted permanent to its owner's hand, noting the return, is
+  `.returnToHand .permanent .owner .returnedPermanent`.
+  A graveyard permanent card to your hand is
+  `.returnToHand .graveyardPermanent`.
+  Milled cards of a subtype are `.returnToHand (.milledSubtype subtype)`.
+  The source from its owner's graveyard to their hand is
+  `.returnToHand .source .owner`. -/
+  | returnToHand (what : TriggerReturnWhat) (whose : TriggerReturnWhose := .you)
+      (note : TriggerReturnNote := .none)
   /-- Put reflexive ability `followup` on the stack (“When you do”). -/
   | queueReflexive (followup : TriggerReflexive)
 /-- The controller may resolve `action`. Declining skips it.
@@ -707,7 +748,7 @@ You may put a land card from your hand onto the battlefield tapped is
   | dividedDamage
   /-- Apply each resolution in order. An illegal required target skips every
   step (CR 608.2b). Return a graveyard card, then gain life equal to its
-  power, is `.sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower]`.
+  power, is `.sequence [.returnToHand .graveyardCard, .gainLifeEqualToTargetPower]`.
   Draw, then bottom a card if you control no legendary, is
   `.sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom]`.
   Remove a hope counter, draw if one was removed, then sacrifice and gain
@@ -732,7 +773,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
   the source if one was actually returned, is
-  `.sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))]`.
+  `.sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))]`.
   Other creatures you control of these subtypes get +P/+T, and creatures
   your opponents control get +oppP/+oppT, is
   `.sequence [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures]`.
@@ -935,14 +976,12 @@ You may put a land card from your hand onto the battlefield tapped is
   `.or [.createTokens .food 1 false, .createTokens .treasure 1 false]`.
   +1/+1 counters on the creature targets, or returning an artifact or
   enchantment card from the graveyard, is
-  `.or [.onPermanent (.plusOne 1), .returnCreatureFromGyToHand]`. -/
+  `.or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard]`. -/
   | or (rs : List TriggerResolution)
   /-- Apply an unused Alliance mode, or do nothing if all were chosen. -/
   | allianceMode
   /-- Apply an unused Gollum mode, or do nothing if all were chosen. -/
   | gollumMode
-  /-- Return a creature card from your graveyard to your hand. -/
-  | returnCreatureFromGyToHand
   /-- You may cast a spell. `origin` says where the card is, `maxMv` limits
   its mana value, `cost` says whether that cost is paid, and `note` says
   what happens to an instant or sorcery cast this way.
@@ -993,11 +1032,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | onEnchanted (action : PermanentAction)
   /-- This fights the targeted creature. -/
   | fightUpToOne
-  /-- Return the targeted permanent to its owner's hand.
-  Whether a permanent was actually returned is recorded for the next step. -/
-  | returnToOwnerHand
-  /-- Return the targeted GY permanent card to your hand. -/
-  | returnGyPermanentThisTurn
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
   | revealHandExileUntilLeaves
   /-- Resolve chosen “up to X” modes in printed order. -/
@@ -1032,8 +1066,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | becomeBear
   /-- Mill `n` and remember the cards milled. -/
   | millNote (n : Nat)
-  /-- Put milled cards of this subtype into your hand. -/
-  | returnMilledSubtype (subtype : String)
   /-- Tap the creature enchanted by the source. -/
   | tapEnchanted
   /-- Remove all counters from the creature enchanted by the source. -/
@@ -1320,7 +1352,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of kind, resolution := .exile .target .leaveTrigger }
   | .returnCreatureFromGyToHand =>
     { targeting := .of .creatureCardInYourGraveyard,
-      resolution := .returnCreatureFromGyToHand }
+      resolution := .returnToHand .graveyardCard }
   | .plusOneEachYouControl which =>
     { resolution := .putCounters (.ofKind .plusOnePlusOne) (.youControl which) }
   | .honeEachEquipment => { resolution := .honeEachEquipment }
@@ -1352,7 +1384,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .oppCreature, resolution := .gainControlOppUntilEot }
   | .payReturnFromGy =>
     { resolution := .mayThen
-        (.pay #[.generic 1, .colored .green, .colored .blue]) .returnSourceToHand }
+        (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner) }
   | .targetOpponentLosesLife n =>
     { targeting := .of .opponent, resolution := .targetOpponentLosesLife n }
   | .drawXDiscard n =>
@@ -1365,7 +1397,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .returnElfGainLife =>
     { targeting := .of .elfInYourGraveyard
       resolution := .sequence
-        [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower] }
+        [.returnToHand .graveyardCard, .gainLifeEqualToTargetPower] }
   | .damageFromLastKnownPower =>
     { targeting := .of .oppCreature,
       resolution := .dealDamage 0 .permanent .lastKnownPower }
@@ -1406,7 +1438,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
                                     controller := .you, another := true })
       allowsZeroTargets := true
       resolution := .sequence
-        [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))] }
+        [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))] }
   | .lookAtTopRevealTypes n types =>
     { resolution := .lookAtTopRevealTypes n types }
   | .createTappedTreasuresEqualOppArtifacts =>
@@ -1427,7 +1459,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence
         [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)] }
   | .millThenSubtypeToHand n subtype =>
-    { resolution := .sequence [.millNote n, .returnMilledSubtype subtype] }
+    { resolution := .sequence [.millNote n, .returnToHand (.milledSubtype subtype)] }
   | .exileOppNonlandEachUntilLeaves =>
     { targeting := .of (.filtered
         { noun := "for each opponent, up to one target nonland permanent that player controls"
@@ -1696,7 +1728,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .fightUpToOne }
   | .enter .returnNonlandNontoken =>
     { events := #[.entering], targeting := .of .nonlandNontoken, allowsZeroTargets := true,
-      resolution := .returnToOwnerHand }
+      resolution := .returnToHand .permanent .owner .returnedPermanent }
   | .enter .createZabu =>
     { events := #[.entering], resolution := .createTokens .treasure 1 false .zabu }
   | .enter .oppCreatesTheVoid =>
@@ -1713,7 +1745,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] }
   | .enter .returnGyPermanentThisTurn =>
     { events := #[.entering], targeting := .of .permanentCardInYourGraveyard,
-      resolution := .returnGyPermanentThisTurn }
+      resolution := .returnToHand .graveyardPermanent }
   | .enter .tapOppCantUntapWhileControl =>
     { events := #[.entering], targeting := .of .oppCreature,
       resolution := .sequence [.onPermanent .tap, .cantUntapWhileSource] }
@@ -1730,7 +1762,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .enter .plusOnesOrReturnArtEnch =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .or
-        [.onPermanent (.plusOne 1), .returnCreatureFromGyToHand] }
+        [.onPermanent (.plusOne 1), .returnToHand .graveyardCard] }
   | .enter .chooseUpToXModes =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
       resolution := .chooseUpToXModes }

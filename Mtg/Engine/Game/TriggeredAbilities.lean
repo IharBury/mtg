@@ -1055,6 +1055,56 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (n : Nat)
         "No mana was spent to cast that spell"
     else g.draw controller spent
 
+/-- Resolve `TriggerResolution.returnToHand`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (what : TriggeredAbility.TriggerReturnWhat)
+    (whose : TriggeredAbility.TriggerReturnWhose)
+    (note : TriggeredAbility.TriggerReturnNote) : Game :=
+  match what, whose, note with
+  | .graveyardCard, .you, .none =>
+    g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
+      match t with
+      | Target.card oid =>
+        match g.findObject? oid with
+        | none => g.logMsg "The target is no longer in the graveyard"
+        | some o =>
+          let name := o.name
+          let (g, _) := g.move oid (.hand controller) none
+          g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
+      | _ => g.logMsg "The target is no longer legal"
+  | .permanent, .owner, .returnedPermanent =>
+    let g := { g with returnedPermanentThisWay := false }
+    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+      let g := g.returnToHand o.id o.owner
+      { g with returnedPermanentThisWay := true }) sourceId none
+  | .graveyardPermanent, .you, .none =>
+    g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
+      match tgt with
+      | Target.card id | Target.permanent id =>
+        g.returnToHand id controller
+      | _ => g) sourceId (some "The target is no longer legal")
+  | .milledSubtype subtype, .you, .none =>
+    let ids := g.milledIdsThisWay
+    let g := { g with milledIdsThisWay := #[] }
+    ids.foldl (fun acc id =>
+      match acc.findObject? id with
+      | some o =>
+        if o.printed.hasSubtype subtype then
+          let name := o.name
+          let (acc, _) := acc.move id (.hand controller) none
+          acc.logMsg s!"{name} is put into {(acc.player controller).name}'s hand"
+        else acc
+      | none => acc) g
+  | .source, .owner, .none =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
+      else g.logMsg s!"{o.name} is no longer in the graveyard"
+    | none => g.logMsg "The ability's source is no longer in the graveyard"
+  | _, _, _ => g
+
 /-- Resolve `TriggerResolution.put`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -1552,17 +1602,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | _ =>
       clear.logMsg
         "No target was chosen. Its controller is undefined and no player amasses Goblins."
-  | .returnCreatureFromGyToHand =>
-    g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
-      match t with
-      | Target.card oid =>
-        match g.findObject? oid with
-        | none => g.logMsg "The target is no longer in the graveyard"
-        | some o =>
-          let name := o.name
-          let (g, _) := g.move oid (.hand controller) none
-          g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
-      | _ => g.logMsg "The target is no longer legal"
+  | .returnToHand what whose note =>
+    g.applyReturnToHand controller ab sourceId targets what whose note
   | .discardHand | .may .discardHand =>
     if g.mayThenDrop > 0 then
       let n :=
@@ -1597,18 +1638,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let g := g.mill controller n
     let after := (g.player controller).graveyard
     { g with milledIdsThisWay := after.filter (fun id => !before.contains id) }
-  | .returnMilledSubtype subtype =>
-    let ids := g.milledIdsThisWay
-    let g := { g with milledIdsThisWay := #[] }
-    ids.foldl (fun acc id =>
-      match acc.findObject? id with
-      | some o =>
-        if o.printed.hasSubtype subtype then
-          let name := o.name
-          let (acc, _) := acc.move id (.hand controller) none
-          acc.logMsg s!"{name} is put into {(acc.player controller).name}'s hand"
-        else acc
-      | none => acc) g
   | .equippedAttackersGainDoubleStrike =>
     Id.run do
       let mut g := g
@@ -1869,11 +1898,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g.logMsg "The target is no longer legal"
     | _, none => g
     | _, _ => g.logMsg "The source is no longer in play"
-  | .returnToOwnerHand =>
-    let g := { g with returnedPermanentThisWay := false }
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
-      let g := g.returnToHand o.id o.owner
-      { g with returnedPermanentThisWay := true }) sourceId none
   | .grantPlayNotedUntilNextTurn =>
     match g.playExiledThisWay with
     | none => g
@@ -1887,12 +1911,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.logMsg
           s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
       | none => g
-  | .returnGyPermanentThisTurn =>
-    g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
-      match tgt with
-      | Target.card id | Target.permanent id =>
-        g.returnToHand id controller
-      | _ => g) sourceId (some "The target is no longer legal")
   | .cantUntapWhileSource =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
       let o := g.object! o.id
@@ -2149,12 +2167,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             (.mayPayPickThen .sacrificeArtifactOrDiscardNonland (.reflexiveDamageAnyTarget 2) sid)
             s!"{(g.player controller).name} may sacrifice an artifact or discard a nonland card"
       | none => g.failMayThen
-  | .returnSourceToHand =>
-    match sourceId.bind g.findObject? with
-    | some o =>
-      if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
-      else g.logMsg s!"{o.name} is no longer in the graveyard"
-    | none => g.logMsg "The ability's source is no longer in the graveyard"
   | .queueReflexive followup =>
     match followup with
     | .modeled kind => g.queueModeledReflexive controller sourceId kind 0

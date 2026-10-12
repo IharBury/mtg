@@ -812,7 +812,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | some (amount, maxTargets) =>
       s!"it deals {amount} damage divided as you choose among {dividedAmong maxTargets}"
     | none => "it deals damage divided as you choose"
-  | .sequence [.returnCreatureFromGyToHand, .gainLifeEqualToTargetPower] =>
+  | .sequence [.returnToHand .graveyardCard, .gainLifeEqualToTargetPower] =>
     s!"return {noun} to your hand. You gain life equal to that card's power"
   | .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom] =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
@@ -831,7 +831,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
   | .sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage] =>
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
-  | .sequence [.returnToOwnerHand, .«if» .returnedPermanent (.onSource (.plusOne 1))] =>
+  | .sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))] =>
     s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
   | .sequence [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures] =>
     let who :=
@@ -858,7 +858,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
   | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
-  | .sequence [.millNote n, .returnMilledSubtype subtype] =>
+  | .sequence [.millNote n, .returnToHand (.milledSubtype subtype)] =>
     s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
   | .sequence [.tapEnchanted, .removeCountersFromEnchanted] =>
     "tap enchanted creature and remove all counters from it"
@@ -1123,8 +1123,20 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
   | .gollumMode =>
     "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
-  | .returnCreatureFromGyToHand =>
-    s!"return {noun} to your hand"
+  | .returnToHand what whose note =>
+    match what, whose, note with
+    | .graveyardCard, .you, .none =>
+      s!"return {noun} to your hand"
+    | .permanent, .owner, .returnedPermanent =>
+      s!"return up to one {noun} to its owner's hand"
+    | .graveyardPermanent, .you, .none =>
+      s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
+    | .milledSubtype subtype, .you, .none =>
+      s!"put all {subtype} cards milled this way into your hand"
+    | .source, .owner, .none =>
+      "return this card from your graveyard to your hand"
+    | _, _, _ =>
+      "return it to a hand"
   | .or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false] =>
     "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
   | .mayCast origin maxMv cost note =>
@@ -1152,7 +1164,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
   | .mayThen (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source) =>
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
-  | .mayThen (.pay symbols) .returnSourceToHand =>
+  | .mayThen (.pay symbols) (.returnToHand .source .owner) =>
     s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
   | .millThatManyLost =>
     "that player mills that many cards"
@@ -1196,17 +1208,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if it's an Equipment, attach it to this creature"
   | .fightUpToOne =>
     "this fights up to one other target creature"
-  | .returnToOwnerHand =>
-    s!"return up to one {noun} to its owner's hand"
-  | .returnGyPermanentThisTurn =>
-    s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
   | .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) =>
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
   | .mayThen (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) =>
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
   | .revealHandExileUntilLeaves =>
     "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
-  | .or [.onPermanent (.plusOne 1), .returnCreatureFromGyToHand] =>
+  | .or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard] =>
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
   | .chooseUpToXModes =>
     "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
@@ -1235,8 +1243,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .«if» (.bearsAtLeast 3) (.draw 2) =>
     "if you control three or more Bears, draw two cards"
   | .millNote n => s!"mill {n} cards"
-  | .returnMilledSubtype subtype =>
-    s!"put all {subtype} cards milled this way into your hand"
   | .tapEnchanted => "tap enchanted creature"
   | .removeCountersFromEnchanted => "remove all counters from enchanted creature"
   | .searchDragonFromHandOrLibrary =>
@@ -1442,8 +1448,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"pay {String.join (symbols.toList.map ManaSymbol.toNotation)}"
   | .objectCost _ =>
     "pay that cost"
-  | .returnSourceToHand =>
-    "return this card from your graveyard to your hand"
   | .queueReflexive _ =>
     "when you do, that ability triggers"
   | .«if» _ _ =>
