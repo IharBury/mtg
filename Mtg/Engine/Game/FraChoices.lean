@@ -292,11 +292,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .castCopiesFree .., _ => throw "Cast a copy, or decline"
   | .allianceMode sourceId available, .mode idx =>
     if !available.contains idx then throw "That Alliance mode has already been chosen this turn"
-    return (g.applyAllianceMode sourceId idx).finishFraChoice
+    return (g.answerChooseMode sourceId idx
+      (fun g => g.applyAllianceMode sourceId idx)).finishFraChoice
   | .allianceMode .., _ => throw "Choose an Alliance mode"
   | .gollumMode sourceId available, .mode idx =>
     if !available.contains idx then throw "That mode has already been chosen"
-    return (g.applyGollumMode sourceId idx).finishFraChoice
+    return (g.answerChooseMode sourceId idx
+      (fun g => g.applyGollumMode sourceId idx)).finishFraChoice
   | .gollumMode .., _ => throw "Choose a mode"
   | .triggerModes objId remaining chosen, .mode idx =>
     let some obj := g.findObject? objId | return g.finishFraChoice

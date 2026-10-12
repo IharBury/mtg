@@ -129,85 +129,86 @@ def applyGollumMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
         g.draw c 1
       | _, _ => g
 
-/-- Ask `sourceId`'s controller for an Alliance mode that hasn't been chosen. -/
-def offerAllianceMode (g : Game) (sourceId : Option ObjectId) : Game :=
-  match sourceId.bind g.findObject? with
-  | none => g.logMsg "The ability is removed from the stack with no effect"
-  | some src =>
-    let available := g.unusedAllianceModes src
-    match src.controller with
-    | none => g.logMsg "The ability is removed from the stack with no effect"
-    | some p =>
-      if available.isEmpty then
-        g.logMsg
-          "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
-      else
-        { g with pending := .fraChoice p (.allianceMode src.id available) }.logMsg
-          s!"{(g.player p).name} chooses an Alliance mode that hasn't been chosen this turn"
-
-/-- Ask `sourceId`'s controller for a Gollum mode that hasn't been chosen. -/
-def offerGollumMode (g : Game) (sourceId : Option ObjectId) : Game :=
-  match sourceId.bind g.findObject? with
-  | none => g.logMsg "The ability is removed from the stack with no effect"
-  | some src =>
-    let available := g.unusedGollumModes src
-    match src.controller with
-    | none => g.logMsg "The ability is removed from the stack with no effect"
-    | some p =>
-      if available.isEmpty then
-        g.logMsg
-          "all three modes have been chosen. The ability is removed from the stack with no effect"
-      else
-        { g with pending := .fraChoice p (.gollumMode src.id available) }.logMsg
-          s!"{(g.player p).name} chooses a mode that hasn't been chosen"
-
-/-- Resolve `TriggerResolution.chooseModes`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
-def applyChooseModes (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (targets : Array Target) (what : TriggeredAbility.TriggerModeWhat)
+/-- Ask for one mode in `modes` that `how` has not already recorded on the
+source. `oneUnusedThisTurn` is an Alliance choice. `oneUnused` is a Gollum
+choice. The chosen resolution runs later from `chooseModesRest`. -/
+def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (dividedDamage : Array Nat) (lastKnownPower : Option Int)
+    (lastKnownToughness : Option Int) (sourceName : String)
+    (cardPower : Option Nat) (modes : List TriggeredAbility.TriggerResolution)
     (how : TriggeredAbility.TriggerModeHow) : Game :=
-  match what, how with
-  | .alliance, .oneUnusedThisTurn =>
-    g.offerAllianceMode sourceId
-  | .gollum, .oneUnused =>
-    g.offerGollumMode sourceId
-  | .upToX, .alreadyChosen =>
-    let modes :=
-      match sourceId.bind g.findObject? with
-      | some o => o.status.chosenModes
-      | none => #[]
-    Id.run do
-      let mut g := g
-      for m in modes do
-        if m == 0 then
-          g := g.drawThenBeginDiscard controller
-        else if m == 1 then
-          g := g.forEachOpponent controller (fun g pid => g.loseLife pid 2)
-        else if m == 2 then
-          match targets[0]? with
-          | some (Target.permanent id) =>
-            match g.findObject? id with
-            | some o =>
-              if o.isOnBattlefield && o.printed.isToken then
-                g := g.destroyPermanent o
-            | none => pure ()
-          | _ => pure ()
-        else if m == 3 then
-          match targets[1]? with
-          | some (Target.permanent id) =>
-            match g.findObject? id with
-            | some o =>
-              if o.isOnBattlefield then
-                g := (g.move id (.graveyard o.owner) none).1
-                  |>.logMsg s!"{o.name} is sacrificed"
-              else
-                g := g.logMsg "The token was already destroyed and can't be sacrificed"
-            | none =>
-              g := g.logMsg "The token was already destroyed and can't be sacrificed"
-          | _ =>
-            g := g.logMsg "The token was already destroyed and can't be sacrificed"
-      return g
-  | _, _ => g
+  match sourceId.bind g.findObject? with
+  | none => g.logMsg "The ability is removed from the stack with no effect"
+  | some src =>
+    let memory :=
+      match how with
+      | .oneUnusedThisTurn => src.status.allianceModesChosen
+      | .oneUnused | .alreadyChosen => src.status.chosenModes
+    let available := unusedModes memory (List.range modes.length).toArray
+    match src.controller with
+    | none => g.logMsg "The ability is removed from the stack with no effect"
+    | some p =>
+      if available.isEmpty then
+        match how with
+        | .oneUnusedThisTurn =>
+          g.logMsg
+            "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
+        | .oneUnused | .alreadyChosen =>
+          g.logMsg
+            "all three modes have been chosen. The ability is removed from the stack with no effect"
+      else
+        let rest : ChooseModesRest := {
+          controller, ability := ab, sourceId, targets, dividedDamage,
+          lastKnownPower, lastKnownToughness, sourceName, cardPower, modes, how }
+        match how with
+        | .oneUnusedThisTurn =>
+          { g with
+              pending := .fraChoice p (.allianceMode src.id available)
+              chooseModesRest := some rest }.logMsg
+            s!"{(g.player p).name} chooses an Alliance mode that hasn't been chosen this turn"
+        | .oneUnused =>
+          { g with
+              pending := .fraChoice p (.gollumMode src.id available)
+              chooseModesRest := some rest }.logMsg
+            s!"{(g.player p).name} chooses a mode that hasn't been chosen"
+        | .alreadyChosen => g
+
+/-- Destroy `targets[0]` when it is a token still on the battlefield. -/
+def destroyChosenToken (g : Game) (targets : Array Target) : Game :=
+  match targets[0]? with
+  | some (Target.permanent id) =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield && o.printed.isToken then g.destroyPermanent o else g
+    | none => g
+  | _ => g
+
+/-- Sacrifice `targets[1]`, or log that the token is already gone. -/
+def sacrificeChosenOrGone (g : Game) (targets : Array Target) : Game :=
+  match targets[1]? with
+  | some (Target.permanent id) =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        (g.move id (.graveyard o.owner) none).1.logMsg s!"{o.name} is sacrificed"
+      else
+        g.logMsg "The token was already destroyed and can't be sacrificed"
+    | none =>
+      g.logMsg "The token was already destroyed and can't be sacrificed"
+  | _ =>
+    g.logMsg "The token was already destroyed and can't be sacrificed"
+
+/-- Apply one entry of `TriggerResolution.chooseModes`. Destroying the
+announced token and sacrificing the announced creature stay on those
+targets. Every other resolution runs through `generic`. -/
+def applyChooseModeStep (g : Game) (targets : Array Target)
+    (r : TriggeredAbility.TriggerResolution)
+    (generic : Game → TriggeredAbility.TriggerResolution → Game) : Game :=
+  match r with
+  | .onPermanent .destroy => g.destroyChosenToken targets
+  | .sacrifice .eachPlayer .chosenCreature _ => g.sacrificeChosenOrGone targets
+  | other => generic g other
 
 /-- One of `ids`, chosen with the game's RNG. An empty list yields none. -/
 def chooseRandomId (g : Game) (ids : Array ObjectId) : Game × Option ObjectId :=
@@ -1641,8 +1642,24 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .additionalCombatPhase =>
     { g with additionalCombatPhases := g.additionalCombatPhases + 1 }.logMsg
       "Attacking creatures untap. After this phase, there is an additional combat phase"
-  | .chooseModes what how =>
-    g.applyChooseModes controller sourceId targets what how
+  | .chooseModes modes how =>
+    match how with
+    | .alreadyChosen =>
+      let chosen :=
+        match sourceId.bind g.findObject? with
+        | some o => o.status.chosenModes
+        | none => #[]
+      chosen.foldl (init := g) fun g idx =>
+        match modes[idx]? with
+        | none => g
+        | some r =>
+          g.applyChooseModeStep targets r (fun g r =>
+            g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+              lastKnownPower lastKnownToughness sourceName (some r)
+              sequencedCardPower)
+    | .oneUnusedThisTurn | .oneUnused =>
+      g.offerChooseModes controller ab sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName sequencedCardPower modes how
   | .destroyNotedForAmass =>
     let clear := { g with
       destroyedForAmassThisWay := false
@@ -2209,6 +2226,43 @@ def resumeTriggerSequence (g : Game) : Game :=
     g.applyTriggeredAbility c.controller c.ability c.sourceId c.targets
       c.dividedDamage c.lastKnownPower c.lastKnownToughness c.sourceName
       (some (.sequence c.steps)) c.cardPower
+
+/-- Record that `sourceId` has used mode `idx`, as `how` says. -/
+def rememberChosenMode (g : Game) (sourceId : ObjectId)
+    (how : TriggeredAbility.TriggerModeHow) (mode : Nat) : Game :=
+  match how, g.findObject? sourceId with
+  | .alreadyChosen, _ => g
+  | _, none => g.logMsg "The ability is removed from the stack with no effect"
+  | .oneUnusedThisTurn, some src =>
+    g.setObject { src with status :=
+      { src.status with allianceModesChosen := src.status.allianceModesChosen.push mode } }
+  | .oneUnused, some src =>
+    g.setObject { src with status :=
+      { src.status with chosenModes := src.status.chosenModes.push mode } }
+
+/-- Apply one stored `chooseModes` resolution with the ability context from
+the offer. -/
+def applyListedMode (g : Game) (rest : ChooseModesRest)
+    (r : TriggeredAbility.TriggerResolution) : Game :=
+  g.applyChooseModeStep rest.targets r fun g r =>
+    g.applyTriggeredAbility rest.controller rest.ability rest.sourceId rest.targets
+      rest.dividedDamage rest.lastKnownPower rest.lastKnownToughness rest.sourceName
+      (some r) rest.cardPower
+
+/-- Apply mode `idx` from `chooseModesRest` when the offer stored one.
+Otherwise `fallback` is the direct Alliance or Gollum resolution. -/
+def answerChooseMode (g : Game) (sourceId : ObjectId) (idx : Nat)
+    (fallback : Game → Game) : Game :=
+  match g.chooseModesRest with
+  | none => fallback g
+  | some rest =>
+    let g := { g with chooseModesRest := none }
+    let g := g.rememberChosenMode sourceId rest.how idx
+    if (g.findObject? sourceId).isNone then g
+    else
+      match rest.modes[idx]? with
+      | none => g
+      | some r => g.applyListedMode rest r
 
 /-- Apply alternative `idx` of a pending `TriggerResolution.or`. -/
 def chooseTriggerOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := do

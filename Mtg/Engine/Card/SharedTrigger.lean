@@ -46,7 +46,7 @@ inductive EnterLeftover where
   Resolves as `.or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard]`. -/
   | plusOnesOrReturnArtEnch
   /-- Choose up to X modes. Resolves as
-  `.chooseModes .upToX .alreadyChosen`. -/
+  `.chooseModes TriggerResolution.upToXModes .alreadyChosen`. -/
   | chooseUpToXModes
   /-- You may tap this. When you do, grant indestructible. -/
   | mayTapThenGrantIndestructible
@@ -734,12 +734,14 @@ inductive SharedTrigger where
   | untapAttackersExtraCombat (n : Int)
   /-- Delayed Eagles Bird Soldiers. -/
   | eaglesCreateBirds
-  /-- Alliance modes. Resolves as `.chooseModes .alliance .oneUnusedThisTurn`. -/
+  /-- Alliance modes. Resolves as
+  `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`. -/
   | allianceMode
   /-- Destroy another; its controller amasses equal to its power. Resolves as
   `.sequence [.destroyNotedForAmass, .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw 1)]`. -/
   | destroyOtherAmassControllerPower
-  /-- Gollum parity modes. Resolves as `.chooseModes .gollum .oneUnused`. -/
+  /-- Gollum parity modes. Resolves as
+  `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
   `.sequence [.may .discardHand, .draw 0 (amount := .discardedHandCount), .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]`. -/
