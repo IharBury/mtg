@@ -1024,6 +1024,28 @@ def applyAmass (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     else g
   | _, _ => g
 
+/-- Resolve `TriggerResolution.addMana`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (types : Array ManaType) (amount : TriggeredAbility.TriggerManaAmount) : Game :=
+  match amount with
+  | .fixed =>
+    g.addManaLogged controller types
+  | .perChargeCounter =>
+    -- Ruling 792: if the source left, use its last-known charge counters.
+    let n :=
+      match sourceId.bind g.findObject? with
+      | some o => if o.isOnBattlefield then o.status.charge else 0
+      | none => 0
+    let n :=
+      if n == 0 then
+        match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
+        | some (_, last) => last.charge
+        | none => n
+      else n
+    let types := types.foldl (fun acc t => acc ++ Array.replicate n t) #[]
+    g.addManaLogged controller types
+
 /-- Resolve `TriggerResolution.draw`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyTriggerDraw (g : Game) (controller : PlayerId) (n : Nat)
@@ -1451,8 +1473,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match g.findObject? oid with
       | some o => if o.isOnBattlefield then g.destroyPermanent o else g
       | none => g
-  | .addMana types =>
-    g.addManaLogged controller types
+  | .addMana types amount =>
+    g.applyAddMana controller sourceId types amount
   | .becomePT p t =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -2050,19 +2072,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .armSurveilReturnLifeGained =>
     -- Ruling 750: the following surveil reads life gained as this ability resolves.
     { g with armSurveilReturn := true }
-  | .addGreenPerChargeCounter =>
-    -- Ruling 792: if the source left, use its last-known charge counters.
-    let n :=
-      match sourceId.bind g.findObject? with
-      | some o => if o.isOnBattlefield then o.status.charge else 0
-      | none => 0
-    let n :=
-      if n == 0 then
-        match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
-        | some (_, last) => last.charge
-        | none => n
-      else n
-    g.addManaLogged controller (Array.replicate n (.colored .green))
   | .prepareSource .ifThreeCreaturesDied =>
     if g.battlefieldCreaturesToGyThisTurn.size < 3 then
       g.logMsg "Fewer than three creatures died this turn"
