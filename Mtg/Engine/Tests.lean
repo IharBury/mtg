@@ -31,6 +31,7 @@ import Mtg.Engine.Tests.Put
 import Mtg.Engine.Tests.AddMana
 import Mtg.Engine.Tests.Destroy
 import Mtg.Engine.Tests.Discard
+import Mtg.Engine.Tests.TriggerFight
 import Mtg.Engine.Tests.Modes
 
 /-!
@@ -74,5 +75,7 @@ keep working.
   damage, and the announced creature noted for amass
 - `Discard`: the controller's cards or hand, each opponent, the announced
   opponent, and a discard after mana was spent
+- `TriggerFight`: the source fighting up to one creature, and the
+  Equipment host dealing damage equal to its power
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/

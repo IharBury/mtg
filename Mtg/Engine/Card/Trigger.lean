@@ -624,13 +624,31 @@ inductive TriggerDiscardWhen where
   | ifManaSpent
 deriving Repr, Inhabited, BEq
 
+/-- Who `TriggerResolution.fight` uses. -/
+inductive TriggerFightWho where
+  /-- The source. -/
+  | source
+  /-- The creature an earlier step attached Equipment to. -/
+  | equipmentHost
+deriving Repr, Inhabited, BEq
+
+/-- How `TriggerResolution.fight` uses that creature. -/
+inductive TriggerFightHow where
+  /-- It fights the announced creature. Each deals damage equal to its
+  power to the other. Choosing none fights nothing. -/
+  | mutual
+  /-- It deals damage equal to its power. The target is chosen when a
+  reflexive ability is put on the stack. -/
+  | reflexive
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
 putting counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
 attach, amass, casting a spell, returning cards to hand, putting onto
-the battlefield, adding mana, choosing modes, and destroying each cover
-multiple printed abilities.
+the battlefield, adding mana, choosing modes, destroying, and fighting each
+cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -1126,8 +1144,16 @@ You may put a land card from your hand onto the battlefield tapped is
   | connive (who : ConniveSubject := .source)
   /-- Apply `action` to the creature this Aura enchants. -/
   | onEnchanted (action : PermanentAction)
-  /-- This fights the targeted creature. -/
-  | fightUpToOne
+  /-- A creature fights, or deals damage equal to its power. `who` says
+  which creature, and `how` says which.
+  The source fights up to one other target creature with `.fight`.
+  Choosing none fights nothing. A missing source or an illegal target
+  fights nothing.
+  The creature that received Equipment deals damage equal to its power
+  to up to one target creature with `.fight .equipmentHost .reflexive`.
+  That target is chosen when the reflexive ability is put on the stack.
+  Nothing is queued when no creature received Equipment. -/
+  | fight (who : TriggerFightWho := .source) (how : TriggerFightHow := .mutual)
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
   | revealHandExileUntilLeaves
   /-- Target player reveals cards from hand; you choose one to discard. -/
@@ -1157,9 +1183,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | removeCountersFromEnchanted
   /-- Search your hand and/or library for a Dragon and put it onto the battlefield. -/
   | searchDragonFromHandOrLibrary
-  /-- The creature that received Equipment deals damage equal to its power
-  to up to one target creature. -/
-  | reflexiveFightHost
   /-- Exile cards from the top of the damaged player's library until an
   instant or sorcery. The following `.mayCast .impulse` offers the cast. -/
   | grimaExileUntil
@@ -1679,7 +1702,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .copySelfNonlegendary => { resolution := .copySelfNonlegendary }
   | .attachEquipmentThenFight =>
     { targeting := .of .creatureYouControl,
-      resolution := .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached .reflexiveFightHost] }
+      resolution := .sequence [.attach .anyYouControl .target,
+        .«if» .equipmentAttached (.fight .equipmentHost .reflexive)] }
   | .returnAsArtifact => { resolution := .put .source (how := .asArtifact) }
   | .exileLandsThenReturnTapped =>
     { targeting := .of (.filtered {
@@ -1837,7 +1861,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .onPermanent (.dealDamage n) }
   | .enter .fightUpToOne =>
     { events := #[.entering], targeting := .of .anotherCreature, allowsZeroTargets := true,
-      resolution := .fightUpToOne }
+      resolution := .fight }
   | .enter .returnNonlandNontoken =>
     { events := #[.entering], targeting := .of .nonlandNontoken, allowsZeroTargets := true,
       resolution := .returnToHand .permanent .owner .returnedPermanent }

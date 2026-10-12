@@ -881,7 +881,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
   | .sequence [.putCounters .honePerOpponent .source, .attach .source .creatureTarget] =>
     "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
-  | .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached .reflexiveFightHost] =>
+  | .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached (.fight .equipmentHost .reflexive)] =>
     "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
   | .sequence [.draw _ _ .equalToManaSpent, .discard n (when := .ifManaSpent)] =>
     let disc := if n == 2 then "two cards" else cardPhrase n
@@ -1224,8 +1224,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
   | .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost) =>
     "if it's an Equipment, attach it to this creature"
-  | .fightUpToOne =>
-    "this fights up to one other target creature"
+  | .fight who how =>
+    match who, how with
+    | .source, .mutual =>
+      "this fights up to one other target creature"
+    | .equipmentHost, .reflexive =>
+      "that creature deals damage equal to its power to up to one target creature"
+    | _, _ =>
+      "fight"
   | .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) =>
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
   | .mayThen (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) =>
@@ -1261,9 +1267,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "search your hand and/or library for a Dragon card and put it onto the battlefield"
   | .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary]) =>
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
-  | .reflexiveFightHost =>
-    "that creature deals damage equal to its power to up to one target creature"
-  | .«if» .equipmentAttached .reflexiveFightHost =>
+  | .«if» .equipmentAttached (.fight .equipmentHost .reflexive) =>
     "that creature deals damage equal to its power to up to one target creature"
   | .grimaExileUntil =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card"

@@ -20,7 +20,7 @@ inductive EnterLeftover where
   | destroy (kind : EffectTargetKind)
   /-- Deal `n` damage to up to one target creature. -/
   | dealDamageUpToOne (n : Nat)
-  /-- This fights up to one other target creature. -/
+  /-- This fights up to one other target creature. Resolves as `.fight`. -/
   | fightUpToOne
   /-- Return up to one nonland nontoken to its owner's hand. -/
   | returnNonlandNontoken
@@ -765,7 +765,9 @@ inductive SharedTrigger where
   | damageTargetOpponent (n : Nat)
   /-- If not a token, create nonlegendary copies. -/
   | copySelfNonlegendary
-  /-- Attach Equipment, then the host fights. -/
+  /-- Attach Equipment, then the host deals damage equal to its power.
+  Resolves as
+  `.sequence [.attach .anyYouControl .target, .«if» .equipmentAttached (.fight .equipmentHost .reflexive)]`. -/
   | attachEquipmentThenFight
   /-- Return as an artifact. -/
   | returnAsArtifact
