@@ -158,23 +158,20 @@ counter each leave the permanent in play. -/
     (.destroy .permanentDealtDamage (note := .forAmass))
   onBoard g "Wyrm" && g.permanentDealtDamageThisWay == some id
 
-/- Damage, then destroy only when that damage marked a Dragon. -/
+/- Damage, then destroy only when that damage marked a Dragon.
+The ability's target kind is what makes the permanent a legal target. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
   let id := pid g0 "Wyrm"
-  let g := step g0
-    (.sequence [.dealDamage 1 .target .fixed .markedPermanent,
-      .«if» (.dealtDamageToSubtype "Dragon") markedDestroy])
-    (targets := #[Target.permanent id])
+  let g := g0.applyTriggeredAbility caster
+    (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") none #[Target.permanent id]
   !onBoard g "Wyrm" && buried g "Wyrm" && g.permanentDealtDamageThisWay.isNone
 
 #guard
   let g0 := addPermanent afterDraw (creature "Hill" ManaCost.empty #["Giant"] 3 3) opp opp
   let id := pid g0 "Hill"
-  let g := step g0
-    (.sequence [.dealDamage 1 .target .fixed .markedPermanent,
-      .«if» (.dealtDamageToSubtype "Dragon") markedDestroy])
-    (targets := #[Target.permanent id])
+  let g := g0.applyTriggeredAbility caster
+    (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") none #[Target.permanent id]
   onBoard g "Hill" && (obj g "Hill").status.damage == 1 &&
     g.permanentDealtDamageThisWay.isNone && !(logContains g "is destroyed")
 
@@ -280,7 +277,7 @@ controller still amasses when the creature is indestructible. -/
 
 #guard TriggeredAbility.resolutionPhrase
     (SharedTrigger.timing .destroyOtherAmassControllerPower) ==
-  "destroy another target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
+  "destroy another target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
 
 #guard TriggeredAbility.resolutionPhrase { resolution := .destroy .target } ==
   "destroy it"
