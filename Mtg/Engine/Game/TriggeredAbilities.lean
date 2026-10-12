@@ -1354,6 +1354,40 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         s!"{(g.player controller).name} may put an artifact card from their hand onto the battlefield"
   | _, _, _ => g
 
+/-- Resolve `TriggerResolution.fight`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (targets : Array Target) (who : TriggeredAbility.TriggerFightWho)
+    (how : TriggeredAbility.TriggerFightHow) : Game :=
+  match who, how with
+  | .source, .mutual =>
+    match sourceId.bind g.findObject?, targets[0]? with
+    | some src, some (Target.permanent id) =>
+      match g.findObject? id with
+      | some dest =>
+        if src.isOnBattlefield && dest.isOnBattlefield then
+          g.fightCreatures src dest
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+    | _, none => g
+    | _, _ => g.logMsg "The source is no longer in play"
+  | .equipmentHost, .reflexive =>
+    match g.equipmentAttachedHost with
+    | none => g
+    | some hostId =>
+      let g := { g with equipmentAttachedHost := none }
+      match g.findObject? hostId with
+      | some host =>
+        if !host.isOnBattlefield then g
+        else
+          let effect : Effect :=
+            { targeting := .of .creature, allowsZeroTargets := true
+              resolution := .fra .damageEqualSourcePower
+              phrase := s!"{host.name} deals damage equal to its power to up to one target creature" }
+          g.putReflexiveTrigger controller (some hostId) effect
+      | none => g
+  | _, _ => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -1796,21 +1830,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match chosen with
       | some id => g.resolveRandomCreatureReveal controller ids id
       | none => g.putRestOnBottomRandom controller ids
-  | .reflexiveFightHost =>
-    match g.equipmentAttachedHost with
-    | none => g
-    | some hostId =>
-      let g := { g with equipmentAttachedHost := none }
-      match g.findObject? hostId with
-      | some host =>
-        if !host.isOnBattlefield then g
-        else
-          let effect : Effect :=
-            { targeting := .of .creature, allowsZeroTargets := true
-              resolution := .fra .damageEqualSourcePower
-              phrase := s!"{host.name} deals damage equal to its power to up to one target creature" }
-          g.putReflexiveTrigger controller (some hostId) effect
-      | none => g
+  | .fight who how =>
+    g.applyFight controller sourceId targets who how
   | .reflexiveCopyMilled =>
     let mv :=
       match g.fraCause? with
@@ -1995,17 +2016,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some host => g.becomeCopyOf host tgt (untilSourceLeaves := sourceId)
       | none => g
     | _, _ => g
-  | .fightUpToOne =>
-    match sourceId.bind g.findObject?, targets[0]? with
-    | some src, some (Target.permanent id) =>
-      match g.findObject? id with
-      | some dest =>
-        if src.isOnBattlefield && dest.isOnBattlefield then
-          g.fightCreatures src dest
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
-    | _, none => g
-    | _, _ => g.logMsg "The source is no longer in play"
   | .grantPlayNotedUntilNextTurn =>
     match g.playExiledThisWay with
     | none => g
