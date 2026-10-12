@@ -1121,10 +1121,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "count another resolution of this ability this turn"
   | .«if» (.nthResolve n) _ =>
     s!"if this is time {n} this ability has resolved this turn"
-  | .allianceMode =>
-    "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
-  | .gollumMode =>
-    "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
+  | .chooseModes modes how =>
+    if modes == TriggerResolution.allianceModes && how == .oneUnusedThisTurn then
+      "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
+    else if modes == TriggerResolution.gollumModes && how == .oneUnused then
+      "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
+    else if modes == TriggerResolution.upToXModes && how == .alreadyChosen then
+      "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
+    else
+      "choose a mode"
   | .returnToHand what whose note =>
     match what, whose, note with
     | .graveyardCard, .you, .none =>
@@ -1218,8 +1223,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
   | .or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard] =>
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
-  | .chooseUpToXModes =>
-    "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
   | .mayThen (.onSource .tap) (.queueReflexive (.modeled 0)) =>
     "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
   | .revealDiscardFromHand =>

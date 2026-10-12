@@ -29,6 +29,7 @@ import Mtg.Engine.Tests.Draw
 import Mtg.Engine.Tests.ReturnToHand
 import Mtg.Engine.Tests.Put
 import Mtg.Engine.Tests.AddMana
+import Mtg.Engine.Tests.Modes
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -67,4 +68,5 @@ keep working.
 - `Put`: putting linked exile, graveyard cards, noted lands, discarded
   lands, and cards from hand onto the battlefield
 - `AddMana`: printed mana, and {G} for each charge counter on the source
+- `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/

@@ -559,12 +559,27 @@ inductive TriggerManaAmount where
   | perChargeCounter
 deriving Repr, Inhabited, BEq
 
+/-- How `TriggerResolution.chooseModes` chooses those modes. -/
+inductive TriggerModeHow where
+  /-- The controller chooses one mode that has not been chosen this turn.
+  The source remembers it until the turn ends. If every mode was already
+  chosen, the ability is removed with no effect. -/
+  | oneUnusedThisTurn
+  /-- The controller chooses one mode that has not been chosen.
+  The source remembers it for its lifetime. If every mode was already
+  chosen, the ability is removed with no effect. -/
+  | oneUnused
+  /-- Modes already chosen resolve in printed order. -/
+  | alreadyChosen
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, +1/+1 on the source, divided damage, putting
 counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
 attach, amass, casting a spell, returning cards to hand, putting onto
-the battlefield, and adding mana each cover multiple printed abilities.
+the battlefield, adding mana, and choosing modes each cover multiple
+printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -991,10 +1006,12 @@ You may put a land card from your hand onto the battlefield tapped is
   enchantment card from the graveyard, is
   `.or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard]`. -/
   | or (rs : List TriggerResolution)
-  /-- Apply an unused Alliance mode, or do nothing if all were chosen. -/
-  | allianceMode
-  /-- Apply an unused Gollum mode, or do nothing if all were chosen. -/
-  | gollumMode
+  /-- Resolve these modes, as `how` says.
+  Alliance is `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`.
+  Gollum is `.chooseModes TriggerResolution.gollumModes .oneUnused`.
+  Chosen up to X, in printed order, is
+  `.chooseModes TriggerResolution.upToXModes .alreadyChosen`. -/
+  | chooseModes (modes : List TriggerResolution) (how : TriggerModeHow)
   /-- You may cast a spell. `origin` says where the card is, `maxMv` limits
   its mana value, `cost` says whether that cost is paid, and `note` says
   what happens to an instant or sorcery cast this way.
@@ -1047,8 +1064,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | fightUpToOne
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
   | revealHandExileUntilLeaves
-  /-- Resolve chosen “up to X” modes in printed order. -/
-  | chooseUpToXModes
   /-- Target player reveals cards from hand; you choose one to discard. -/
   | revealDiscardFromHand
   /-- Surveil `n` (CR 701.25). -/
@@ -1148,6 +1163,29 @@ flattening it would resolve every alternative. -/
 def flatten : TriggerResolution → List TriggerResolution
   | .sequence rs => rs.flatMap flatten
   | r => [r]
+
+/-- Add {G}{G}{G}. Put a +1/+1 counter on each creature you control.
+Scry 2, then draw a card. -/
+def allianceModes : List TriggerResolution :=
+  [.addMana #[.colored .green, .colored .green, .colored .green],
+   .putCounters (.ofKind .plusOnePlusOne) .youControl,
+   .sequence [.scry 2, .draw 1]]
+
+/-- Put a +1/+1 counter on the source. Each opponent loses 2 life and you
+gain 2 life. Draw a card. -/
+def gollumModes : List TriggerResolution :=
+  [.onSource (.plusOne 1),
+   .sequence [.eachOpponentLosesLife 2, .gainLife 2],
+   .draw 1]
+
+/-- Draw a card, then discard a card. Each opponent loses 2 life.
+Destroy the announced token. Each player sacrifices the announced creature,
+which is already gone when an earlier mode destroyed it. -/
+def upToXModes : List TriggerResolution :=
+  [.sequence [.draw 1, .discard 1],
+   .eachOpponentLosesLife 2,
+   .onPermanent .destroy,
+   .sacrifice .eachPlayer .chosenCreature]
 
 end TriggerResolution
 
@@ -1542,14 +1580,18 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence [.untapAttackingCreatures, .additionalCombatPhase] }
   | .eaglesCreateBirds =>
     { resolution := .createTokens .birdSoldier 0 false (qty := .lastKnown) }
-  | .allianceMode => { resolution := .allianceMode }
+  | .allianceMode =>
+    { resolution := .chooseModes TriggeredAbility.TriggerResolution.allianceModes
+        .oneUnusedThisTurn }
   | .destroyOtherAmassControllerPower =>
     { targeting := .of .anotherCreature, allowsZeroTargets := true,
       resolution := .sequence
         [.destroyNotedForAmass,
          .amass 0 (amount := .notedPower) (who := .notedController),
          .«if» .youControlledDestroyed (.draw 1)] }
-  | .gollumMode => { resolution := .gollumMode }
+  | .gollumMode =>
+    { resolution := .chooseModes TriggeredAbility.TriggerResolution.gollumModes
+        .oneUnused }
   | .discardHandDrawDamageIfStory =>
     { resolution := .sequence
         [.may .discardHand, .draw 0 (amount := .discardedHandCount),
@@ -1777,7 +1819,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.onPermanent (.plusOne 1), .returnToHand .graveyardCard] }
   | .enter .chooseUpToXModes =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
-      resolution := .chooseUpToXModes }
+      resolution := .chooseModes TriggeredAbility.TriggerResolution.upToXModes
+        .alreadyChosen }
   | .enter .mayTapThenGrantIndestructible =>
     { events := #[.entering],
       resolution := .mayThen (.onSource .tap) (.queueReflexive (.modeled 0)) }

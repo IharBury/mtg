@@ -42,6 +42,22 @@ structure TriggerOrRest where
   alternatives : Array TriggeredAbility.TriggerResolution := #[]
 deriving Repr, Inhabited
 
+/-- A pending `TriggerResolution.chooseModes` that asks for one unused mode.
+The chosen index resolves with this ability context. -/
+structure ChooseModesRest where
+  controller : PlayerId
+  ability : TriggeredAbility
+  sourceId : Option ObjectId := none
+  targets : Array Target := #[]
+  dividedDamage : Array Nat := #[]
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  modes : List TriggeredAbility.TriggerResolution := []
+  how : TriggeredAbility.TriggerModeHow := .oneUnused
+deriving Repr, Inhabited
+
 structure Game where
   players : Array Player
   objects : Array GameObject
@@ -238,6 +254,9 @@ structure Game where
   /-- Alternatives for a pending `TriggerResolution.or`. `chooseMode` applies
   that index. -/
   triggerOr : Option TriggerOrRest := none
+  /-- Context for a pending Alliance or Gollum mode choice. `chooseMode`
+  applies that index of `modes`. -/
+  chooseModesRest : Option ChooseModesRest := none
   /-- Declining `payOrLetCounter` resolves this effect instead of countering.
   The caster is `unlessPaysController`; `unlessPaysTargets` are the targets
   announced for that effect. -/
