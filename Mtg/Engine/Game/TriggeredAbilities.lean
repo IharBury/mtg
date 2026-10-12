@@ -161,6 +161,54 @@ def offerGollumMode (g : Game) (sourceId : Option ObjectId) : Game :=
         { g with pending := .fraChoice p (.gollumMode src.id available) }.logMsg
           s!"{(g.player p).name} chooses a mode that hasn't been chosen"
 
+/-- Resolve `TriggerResolution.chooseModes`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyChooseModes (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (targets : Array Target) (what : TriggeredAbility.TriggerModeWhat)
+    (how : TriggeredAbility.TriggerModeHow) : Game :=
+  match what, how with
+  | .alliance, .oneUnusedThisTurn =>
+    g.offerAllianceMode sourceId
+  | .gollum, .oneUnused =>
+    g.offerGollumMode sourceId
+  | .upToX, .alreadyChosen =>
+    let modes :=
+      match sourceId.bind g.findObject? with
+      | some o => o.status.chosenModes
+      | none => #[]
+    Id.run do
+      let mut g := g
+      for m in modes do
+        if m == 0 then
+          g := g.drawThenBeginDiscard controller
+        else if m == 1 then
+          g := g.forEachOpponent controller (fun g pid => g.loseLife pid 2)
+        else if m == 2 then
+          match targets[0]? with
+          | some (Target.permanent id) =>
+            match g.findObject? id with
+            | some o =>
+              if o.isOnBattlefield && o.printed.isToken then
+                g := g.destroyPermanent o
+            | none => pure ()
+          | _ => pure ()
+        else if m == 3 then
+          match targets[1]? with
+          | some (Target.permanent id) =>
+            match g.findObject? id with
+            | some o =>
+              if o.isOnBattlefield then
+                g := (g.move id (.graveyard o.owner) none).1
+                  |>.logMsg s!"{o.name} is sacrificed"
+              else
+                g := g.logMsg "The token was already destroyed and can't be sacrificed"
+            | none =>
+              g := g.logMsg "The token was already destroyed and can't be sacrificed"
+          | _ =>
+            g := g.logMsg "The token was already destroyed and can't be sacrificed"
+      return g
+  | _, _ => g
+
 /-- One of `ids`, chosen with the game's RNG. An empty list yields none. -/
 def chooseRandomId (g : Game) (ids : Array ObjectId) : Game × Option ObjectId :=
   if ids.size ≤ 1 then (g, ids[0]?)
@@ -1593,10 +1641,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .additionalCombatPhase =>
     { g with additionalCombatPhases := g.additionalCombatPhases + 1 }.logMsg
       "Attacking creatures untap. After this phase, there is an additional combat phase"
-  | .allianceMode =>
-    g.offerAllianceMode sourceId
-  | .gollumMode =>
-    g.offerGollumMode sourceId
+  | .chooseModes what how =>
+    g.applyChooseModes controller sourceId targets what how
   | .destroyNotedForAmass =>
     let clear := { g with
       destroyedForAmassThisWay := false
@@ -1971,42 +2017,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           | none => g
         | _ => g)
         "Cloak and Dagger have left the battlefield. Nothing is exiled."
-  | .chooseUpToXModes =>
-    let modes :=
-      match sourceId.bind g.findObject? with
-      | some o => o.status.chosenModes
-      | none => #[]
-    Id.run do
-      let mut g := g
-      for m in modes do
-        if m == 0 then
-          g := g.drawThenBeginDiscard controller
-        else if m == 1 then
-          g := g.forEachOpponent controller (fun g pid => g.loseLife pid 2)
-        else if m == 2 then
-          match targets[0]? with
-          | some (Target.permanent id) =>
-            match g.findObject? id with
-            | some o =>
-              if o.isOnBattlefield && o.printed.isToken then
-                g := g.destroyPermanent o
-            | none => pure ()
-          | _ => pure ()
-        else if m == 3 then
-          match targets[1]? with
-          | some (Target.permanent id) =>
-            match g.findObject? id with
-            | some o =>
-              if o.isOnBattlefield then
-                g := (g.move id (.graveyard o.owner) none).1
-                  |>.logMsg s!"{o.name} is sacrificed"
-              else
-                g := g.logMsg "The token was already destroyed and can't be sacrificed"
-            | none =>
-              g := g.logMsg "The token was already destroyed and can't be sacrificed"
-          | _ =>
-            g := g.logMsg "The token was already destroyed and can't be sacrificed"
-      return g
   | .tapTargetIfPresent =>
     match targets[0]? with
     | some (Target.permanent id) =>
