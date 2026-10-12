@@ -1169,8 +1169,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may cast that card without paying its mana cost"
     | _, _, _, _ =>
       "you may cast a spell"
-  | .equippedAttackersGainDoubleStrike =>
-    "each equipped attacking creature gains double strike until end of turn"
+  | .grant what who =>
+    match what, who with
+    | .doubleStrike, .equippedAttackers =>
+      "each equipped attacking creature gains double strike until end of turn"
+    | .protectionEverything, .youIfCast =>
+      "if you cast it, you gain protection from everything until your next turn"
+    | _, _ =>
+      "grant"
   | .revealTopPutRandomCreature n =>
     s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
   | .«if» (.drewAtLeast 2) (.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords k)]) =>
@@ -1197,8 +1203,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "the Ring tempts you"
   | .mayThen (.discard (what := .hand)) (.draw n) =>
     s!"you may discard your hand. If you do, draw {cardPhrase n}"
-  | .protectionEverything =>
-    "if you cast it, you gain protection from everything until your next turn"
   | .loseLifePerBurden =>
     "you lose 1 life for each burden counter on this"
   | .revealSaga =>

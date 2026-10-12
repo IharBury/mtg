@@ -642,13 +642,29 @@ inductive TriggerFightHow where
   | reflexive
 deriving Repr, Inhabited, BEq
 
+/-- What `TriggerResolution.grant` grants. -/
+inductive TriggerGrantWhat where
+  /-- Double strike until end of turn. -/
+  | doubleStrike
+  /-- Protection from everything until that player's next turn. -/
+  | protectionEverything
+deriving Repr, Inhabited, BEq
+
+/-- Who `TriggerResolution.grant` grants that to. -/
+inductive TriggerGrantWho where
+  /-- Each equipped attacking creature. -/
+  | equippedAttackers
+  /-- The controller, when the source was cast. -/
+  | youIfCast
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
 putting counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
 attach, amass, casting a spell, returning cards to hand, putting onto
-the battlefield, adding mana, choosing modes, destroying, and fighting each
-cover multiple printed abilities.
+the battlefield, adding mana, choosing modes, destroying, fighting, and
+granting each cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -1111,8 +1127,14 @@ You may put a land card from your hand onto the battlefield tapped is
   `.mayCast .impulse .unlimited .withoutPaying`. -/
   | mayCast (origin : TriggerCastFrom) (maxMv : TriggerCastMv)
       (cost : TriggerCastCost) (note : TriggerCastNote := .none)
-  /-- Equipped attacking creatures gain double strike. -/
-  | equippedAttackersGainDoubleStrike
+  /-- Grant an ability. `what` says which, and `who` says to whom.
+  Each equipped attacking creature gains double strike until end of turn
+  with `.grant .doubleStrike .equippedAttackers`.
+  If the source was cast, the controller gains protection from everything
+  until their next turn with `.grant .protectionEverything .youIfCast`.
+  A source that was not cast does nothing.
+  Any other combination does nothing. -/
+  | grant (what : TriggerGrantWhat) (who : TriggerGrantWho)
   /-- Reveal the top `n`; put a random creature onto the battlefield. -/
   | revealTopPutRandomCreature (n : Nat)
   /-- Target player mills `n`. -/
@@ -1129,8 +1151,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | targetOpponentLosesLife (n : Nat)
   /-- The Ring tempts you. -/
   | ringTempts
-  /-- You gain protection from everything until your next turn. -/
-  | protectionEverything
   /-- Lose 1 life per burden counter. -/
   | loseLifePerBurden
   /-- Reveal until a Saga and put it onto the battlefield. -/
@@ -1680,7 +1700,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .castFromGyArtifactInstantSorcery =>
     { resolution := .mayCast .graveyard .unlimited .pay .exileInstead }
   | .equippedAttackersGainDoubleStrike =>
-    { resolution := .equippedAttackersGainDoubleStrike }
+    { resolution := .grant .doubleStrike .equippedAttackers }
   | .tapEnchantedRemoveCounters =>
     { resolution := .sequence [.tapEnchanted, .removeCountersFromEnchanted] }
   | .revealTopPutRandomCreature n =>
@@ -1723,7 +1743,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .may (.draw 1 (who := .opponentHasYou))] }
   | .treasuresEqualLastKnown =>
     { resolution := .createTokens .treasure 0 false (qty := .lastKnown) }
-  | .protectionEverything => { resolution := .protectionEverything }
+  | .protectionEverything =>
+    { resolution := .grant .protectionEverything .youIfCast }
   | .loseLifePerBurden => { resolution := .loseLifePerBurden }
   | .revealSaga => { resolution := .revealSaga }
   | .sacDamagersRingTempts =>
