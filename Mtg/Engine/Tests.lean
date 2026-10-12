@@ -28,6 +28,7 @@ import Mtg.Engine.Tests.MayCast
 import Mtg.Engine.Tests.Draw
 import Mtg.Engine.Tests.ReturnToHand
 import Mtg.Engine.Tests.Put
+import Mtg.Engine.Tests.AddMana
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -65,4 +66,5 @@ keep working.
 - `ReturnToHand`: graveyard cards, permanents, milled subtypes, and the source
 - `Put`: putting linked exile, graveyard cards, noted lands, discarded
   lands, and cards from hand onto the battlefield
+- `AddMana`: printed mana, and {G} for each charge counter on the source
 -/

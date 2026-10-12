@@ -718,7 +718,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
   | .«if» .noPlaneswalker (.sacrifice .you (.source .controllerSacrifices)) =>
     "if you don't control a planeswalker, sacrifice this creature"
-  | .addGreenPerChargeCounter => "add {G} for each charge counter on this enchantment"
   | .«if» (.otherForestsAtLeast 5) (.onPermanent (.pump 3 3)) =>
     s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
   | .mayThen (.pay symbols) (.sequence [.onSource (.plusOne 1), .draw 1]) =>
@@ -1092,8 +1091,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "destroy the permanent dealt damage this way"
   | .«if» (.dealtDamageToSubtype subtype) .destroyPermanentDealtDamage =>
     s!"if a {subtype} is dealt damage this way, destroy it"
-  | .addMana types =>
-    s!"add {manaSymbolsText types}"
+  | .addMana types amount =>
+    match amount with
+    | .perChargeCounter =>
+      s!"add {manaSymbolsText types} for each charge counter on this enchantment"
+    | .fixed => s!"add {manaSymbolsText types}"
   | .or [.onPermanent .tap, .onPermanent .untap] =>
     if t.targeting.kind == .nonland then
       "choose one — • Tap target nonland permanent. • Untap target nonland permanent"

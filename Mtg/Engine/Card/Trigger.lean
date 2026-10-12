@@ -549,12 +549,22 @@ inductive TriggerPutNote where
   | forAttach
 deriving Repr, Inhabited, BEq
 
+/-- How `TriggerResolution.addMana` chooses the mana it adds. `types` is
+the printed mana when this is `.fixed`. -/
+inductive TriggerManaAmount where
+  /-- The printed mana types, once. -/
+  | fixed
+  /-- The printed mana types, once for each charge counter on the source.
+  A source that has left uses its last-known charge counters. -/
+  | perChargeCounter
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, +1/+1 on the source, divided damage, putting
 counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
-attach, amass, casting a spell, returning cards to hand, and putting
-onto the battlefield each cover multiple printed abilities.
+attach, amass, casting a spell, returning cards to hand, putting onto
+the battlefield, and adding mana each cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -929,8 +939,11 @@ You may put a land card from your hand onto the battlefield tapped is
   | gainLifeForEachOtherCreature
   /-- Destroy the permanent an earlier step dealt damage to. -/
   | destroyPermanentDealtDamage
-  /-- Add these mana types. -/
-  | addMana (types : Array ManaType)
+  /-- Add mana. `types` is the printed mana when `amount` is `.fixed`.
+  Adding those types is `.addMana types`.
+  {G} for each charge counter on the source is
+  `.addMana #[.colored .green] (amount := .perChargeCounter)`. -/
+  | addMana (types : Array ManaType) (amount : TriggerManaAmount := .fixed)
   /-- Set the source's base P/T. -/
   | becomePT (power toughness : Int)
   /-- Look at the top `n` and reveal a listed type. -/
@@ -1047,8 +1060,6 @@ You may put a land card from your hand onto the battlefield tapped is
   If three or more creatures died this turn is
   `.prepareSource .ifThreeCreaturesDied`. -/
   | prepareSource (when : PrepareWhen := .ifNotPrepared)
-  /-- Add {G} for each charge counter on the source. -/
-  | addGreenPerChargeCounter
   /-- Mark tokens from the previous step attacking. -/
   | markRecentTokensAttacking
   /-- Untap each attacking creature. -/
@@ -1677,7 +1688,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .chargeCounterOnSource =>
     { resolution := .putCounters (.ofKind .charge) .source }
   | .addGreenPerChargeCounter =>
-    { events := #[.yourFirstMain], resolution := .addGreenPerChargeCounter }
+    { events := #[.yourFirstMain],
+      resolution := .addMana #[.colored .green] (amount := .perChargeCounter) }
   | .drawTwoWinIfEmptyShuffleSource =>
     { resolution := .sequence
         [.draw 2, .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource] }

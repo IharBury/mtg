@@ -856,7 +856,8 @@ inductive SharedTrigger where
   | putSourceCountersOnTarget
   /-- Put a charge counter on the source. -/
   | chargeCounterOnSource
-  /-- Add {G} for each charge counter on the source. -/
+  /-- Add {G} for each charge counter on the source.
+  Resolves as `.addMana #[.colored .green] (amount := .perChargeCounter)`. -/
   | addGreenPerChargeCounter
   /-- Draw two cards; if your library is then empty, you win; the owner
   shuffles the source into their library (Fblthp, Impossibly Lost). Resolves as
