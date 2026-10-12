@@ -1354,6 +1354,31 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         s!"{(g.player controller).name} may put an artifact card from their hand onto the battlefield"
   | _, _, _ => g
 
+/-- Resolve `TriggerResolution.grant`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyGrant (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (what : TriggeredAbility.TriggerGrantWhat)
+    (who : TriggeredAbility.TriggerGrantWho) : Game :=
+  match what, who with
+  | .doubleStrike, .equippedAttackers =>
+    Id.run do
+      let mut g := g
+      for o in g.battlefield do
+        if o.status.attacking && o.attachedTo.isSome ||
+            (o.status.attacking &&
+              g.battlefield.any (fun eq => eq.attachedTo == some o.id)) then
+          if o.isCreature && o.status.attacking &&
+              g.battlefield.any (fun eq => eq.attachedTo == some o.id) then
+            g := g.grantUntilEotLogged o Keyword.doubleStrike
+      return g
+  | .protectionEverything, .youIfCast =>
+    if !(sourceId.bind g.findObject?).any (·.wasCast) then
+      g.logMsg "It wasn't cast. The ability does nothing."
+    else
+      g.modifyPlayer controller (fun pl => { pl with protectionFromEverything := true })
+        |>.logMsg s!"{(g.player controller).name} gains protection from everything"
+  | _, _ => g
+
 /-- Resolve `TriggerResolution.fight`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
@@ -1782,17 +1807,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let g := g.mill controller n
     let after := (g.player controller).graveyard
     { g with milledIdsThisWay := after.filter (fun id => !before.contains id) }
-  | .equippedAttackersGainDoubleStrike =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.status.attacking && o.attachedTo.isSome ||
-            (o.status.attacking &&
-              g.battlefield.any (fun eq => eq.attachedTo == some o.id)) then
-          if o.isCreature && o.status.attacking &&
-              g.battlefield.any (fun eq => eq.attachedTo == some o.id) then
-            g := g.grantUntilEotLogged o Keyword.doubleStrike
-      return g
+  | .grant what who =>
+    g.applyGrant controller sourceId what who
   | .tapEnchanted =>
     match sourceId.bind g.findObject? with
     | none => g
@@ -1935,12 +1951,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
-  | .protectionEverything =>
-    if !(sourceId.bind g.findObject?).any (·.wasCast) then
-      g.logMsg "It wasn't cast. The ability does nothing."
-    else
-      g.modifyPlayer controller (fun pl => { pl with protectionFromEverything := true })
-        |>.logMsg s!"{(g.player controller).name} gains protection from everything"
   | .loseLifePerBurden =>
     match sourceId.bind g.findObject? with
     | none => g

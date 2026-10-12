@@ -32,6 +32,7 @@ import Mtg.Engine.Tests.AddMana
 import Mtg.Engine.Tests.Destroy
 import Mtg.Engine.Tests.Discard
 import Mtg.Engine.Tests.TriggerFight
+import Mtg.Engine.Tests.Grant
 import Mtg.Engine.Tests.Modes
 
 /-!
@@ -77,5 +78,7 @@ keep working.
   opponent, and a discard after mana was spent
 - `TriggerFight`: the source fighting up to one creature, and the
   Equipment host dealing damage equal to its power
+- `Grant`: double strike for equipped attackers, and protection from
+  everything when the source was cast
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/

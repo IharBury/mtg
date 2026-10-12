@@ -748,7 +748,8 @@ inductive SharedTrigger where
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
-  /-- Equipped attackers gain double strike. -/
+  /-- Equipped attackers gain double strike. Resolves as
+  `.grant .doubleStrike .equippedAttackers`. -/
   | equippedAttackersGainDoubleStrike
   /-- Tap enchanted creature and remove counters. Resolves as
   `.sequence [.tapEnchanted, .removeCountersFromEnchanted]`. -/
@@ -781,7 +782,8 @@ inductive SharedTrigger where
   | palantir
   /-- Create Treasures equal to last-known noncombat damage. -/
   | treasuresEqualLastKnown
-  /-- If you cast it, protection from everything. -/
+  /-- If you cast it, protection from everything. Resolves as
+  `.grant .protectionEverything .youIfCast`. -/
   | protectionEverything
   /-- Lose 1 life per burden counter. -/
   | loseLifePerBurden
