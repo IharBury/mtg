@@ -1253,9 +1253,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
   | .revealFromHand count thenDo =>
     match count, thenDo with
-    | .hand, .exileUntilLeaves =>
+    | .hand, .exile .target .untilSourceLeaves .none =>
       "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
-    | .onePlusCreatureCards, .discardChosen =>
+    | .onePlusCreatureCards, .discard 1 .target .cards .now =>
       s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
     | _, _ =>
       "reveal cards from their hand"

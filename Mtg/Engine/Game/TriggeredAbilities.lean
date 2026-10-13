@@ -1521,9 +1521,9 @@ keeps the behavior of the constructor it replaced. -/
 def applyRevealFromHand (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
     (count : TriggeredAbility.TriggerRevealCount)
-    (thenDo : TriggeredAbility.TriggerRevealThen) : Game :=
+    (thenDo : TriggeredAbility.TriggerResolution) : Game :=
   match count, thenDo with
-  | .hand, .exileUntilLeaves =>
+  | .hand, .exile .target .untilSourceLeaves .none =>
     let opp? :=
       match targets[0]? with
       | some (Target.player pid) => some pid
@@ -1554,7 +1554,7 @@ def applyRevealFromHand (g : Game) (controller : PlayerId)
           | none => g
         | _ => g)
         "Cloak and Dagger have left the battlefield. Nothing is exiled."
-  | .onePlusCreatureCards, .discardChosen =>
+  | .onePlusCreatureCards, .discard 1 .target .cards .now =>
     match targets[0]? with
     | some (Target.player pid) =>
       let n :=

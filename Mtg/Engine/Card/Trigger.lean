@@ -752,16 +752,6 @@ inductive TriggerRevealCount where
   | onePlusCreatureCards
 deriving Repr, Inhabited, BEq
 
-/-- What `TriggerResolution.revealFromHand` does with the cards it showed. -/
-inductive TriggerRevealThen where
-  /-- You may exile a nonland card from that hand, or the chosen creature,
-  until the source leaves the battlefield. A source that has already left
-  still reveals the hand; nothing is exiled. -/
-  | exileUntilLeaves
-  /-- You choose one of the shown cards. That player discards it. -/
-  | discardChosen
-deriving Repr, Inhabited, BEq
-
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
@@ -1294,17 +1284,17 @@ You may put a land card from your hand onto the battlefield tapped is
   Nothing is queued when no creature received Equipment. -/
   | fight (who : TriggerFightWho := .source) (how : TriggerFightHow := .mutual)
   /-- A player reveals cards from their hand (CR 701.16), as `count` says,
-  then `thenDo`.
+  then resolves `thenDo`.
   The opponent reveals their hand. You may exile a nonland card from it, or
   the chosen creature, until the source leaves, with
-  `.revealFromHand .hand .exileUntilLeaves`.
+  `.revealFromHand .hand (.exile .target .untilSourceLeaves)`.
   A source that has already left still reveals; nothing is exiled.
   The announced player reveals one card plus one for each creature card in
   your graveyard. You choose one of them and that player discards it, with
-  `.revealFromHand .onePlusCreatureCards .discardChosen`.
+  `.revealFromHand .onePlusCreatureCards (.discard 1 (who := .target))`.
   A smaller hand is revealed in full.
   Any other combination does nothing. -/
-  | revealFromHand (count : TriggerRevealCount) (thenDo : TriggerRevealThen)
+  | revealFromHand (count : TriggerRevealCount) (thenDo : TriggerResolution)
   /-- Surveil `n` (CR 701.25). -/
   | surveil (n : Nat)
   /-- Empower Jace `n` (Reality Fracture). -/
@@ -2049,7 +2039,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.queueReflexive (.damageAny 2)) }
   | .enter .revealHandExileUntilLeaves =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
-      resolution := .revealFromHand .hand .exileUntilLeaves }
+      resolution := .revealFromHand .hand (.exile .target .untilSourceLeaves) }
   | .enter .plusOnesOrReturnArtEnch =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .or
@@ -2067,7 +2057,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.tapTargetIfPresent, .loseAbilitiesWhileSourceRemains] }
   | .enter .revealDiscardFromHand =>
     { events := #[.entering], targeting := .of .player,
-      resolution := .revealFromHand .onePlusCreatureCards .discardChosen }
+      resolution := .revealFromHand .onePlusCreatureCards
+        (.discard 1 (who := .target)) }
   | .enter .createRedwing =>
     { events := #[.entering], resolution := .createTokens .treasure 1 false .redwing }
   | .step .enchantedControllerDraws =>
