@@ -727,14 +727,30 @@ inductive TriggerMillNote where
   | opponentsMilled
 deriving Repr, Inhabited, BEq
 
+/-- What `TriggerResolution.removeCounters` removes. -/
+inductive TriggerRemoveWhat where
+  /-- One hope counter. A later `«if» .removedHope` sees whether one was removed. -/
+  | hope
+  /-- Every counter on that permanent. -/
+  | all
+deriving Repr, Inhabited, BEq
+
+/-- Who `TriggerResolution.removeCounters` removes counters from. -/
+inductive TriggerRemoveWho where
+  /-- The ability's source. -/
+  | source
+  /-- The creature the source enchants. -/
+  | enchanted
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
-putting counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
-attach, amass, casting a spell, returning cards to hand, putting onto
-the battlefield, adding mana, choosing modes, destroying, fighting,
-granting, gaining life, losing life, and milling each cover multiple
-printed abilities.
+putting counters, removing counters, until-end-of-turn pumps, creating tokens,
+exile, sacrifice, attach, amass, casting a spell, returning cards to hand,
+putting onto the battlefield, adding mana, choosing modes, destroying,
+fighting, granting, gaining life, losing life, and milling each cover
+multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -944,7 +960,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom]`.
   Remove a hope counter, draw if one was removed, then sacrifice and gain
   life if none remain, is
-  `.sequence [.removeHopeCounter, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]`.
+  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]`.
   A step that asks a player to choose pauses the later steps until that
   choice finishes; they are still part of this resolution. Tap any number
   of Humans, then draw that many, is
@@ -1053,8 +1069,14 @@ You may put a land card from your hand onto the battlefield tapped is
   An empty hand skips that choice. -/
   | put (what : TriggerPutWhat) (how : TriggerPutHow := .asPrinted)
       (note : TriggerPutNote := .none)
-  /-- Remove a hope counter from the source. -/
-  | removeHopeCounter
+  /-- Remove counters. `what` says which, and `who` says from whom.
+  A hope counter from the source is `.removeCounters .hope .source`.
+  Removing none leaves the later draw skipped. A missing source, or a
+  source that has left the battlefield, removes nothing.
+  All counters from the enchanted creature are
+  `.removeCounters .all .enchanted`. Nothing enchanted removes nothing.
+  Any other combination removes nothing. -/
+  | removeCounters (what : TriggerRemoveWhat) (who : TriggerRemoveWho)
   /-- Tap any number of untapped Humans you control.
   Choosing none taps nothing. Optional as `.may .tapHumans`. -/
   | tapHumans
@@ -1275,8 +1297,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | becomeBear
   /-- Tap the creature enchanted by the source. -/
   | tapEnchanted
-  /-- Remove all counters from the creature enchanted by the source. -/
-  | removeCountersFromEnchanted
   /-- Search your hand and/or library for a Dragon and put it onto the battlefield. -/
   | searchDragonFromHandOrLibrary
   /-- Exile cards from the top of the damaged player's library until an
@@ -1643,7 +1663,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom] }
   | .removeHopeDrawSac =>
     { resolution := .sequence
-        [.removeHopeCounter, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] }
+        [.removeCounters .hope .source, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] }
   | .tapHumansDraw =>
     { resolution := .sequence
         [.may .tapHumans, .draw 0 (amount := .forEachTappedHuman)] }
@@ -1789,7 +1809,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .equippedAttackersGainDoubleStrike =>
     { resolution := .grant .doubleStrike .equippedAttackers }
   | .tapEnchantedRemoveCounters =>
-    { resolution := .sequence [.tapEnchanted, .removeCountersFromEnchanted] }
+    { resolution := .sequence [.tapEnchanted, .removeCounters .all .enchanted] }
   | .revealTopPutRandomCreature n =>
     { resolution := .revealTopPutRandomCreature n }
   | .beginCombatIfDrawnTwoPump =>

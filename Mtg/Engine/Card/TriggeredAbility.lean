@@ -827,7 +827,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"return {noun} to your hand. You gain life equal to that card's power"
   | .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom] =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
-  | .sequence [.removeHopeCounter, .«if» .removedHope (.draw 1),
+  | .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw 1),
       .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] =>
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .sequence [.may .tapHumans, .draw _ _ .forEachTappedHuman] =>
@@ -871,7 +871,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
   | .sequence [.mill n .you .fixed .milledCards, .returnToHand (.milledSubtype subtype)] =>
     s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
-  | .sequence [.tapEnchanted, .removeCountersFromEnchanted] =>
+  | .sequence [.tapEnchanted, .removeCounters .all .enchanted] =>
     "tap enchanted creature and remove all counters from it"
   | .sequence [.putCounters (.ofKind .quest) .source,
       .«if» (.questAtLeast 6)
@@ -1025,8 +1025,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "put an artifact card from your hand onto the battlefield"
     | _, _, _ =>
       "put it onto the battlefield"
-  | .removeHopeCounter =>
-    "remove a hope counter from this"
+  | .removeCounters what who =>
+    match what, who with
+    | .hope, .source =>
+      "remove a hope counter from this"
+    | .all, .enchanted =>
+      "remove all counters from enchanted creature"
+    | _, _ =>
+      "remove counters"
   | .«if» .removedHope (.draw 1) =>
     "if a hope counter was removed this way, draw a card"
   | .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4]) =>
@@ -1270,7 +1276,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .«if» (.bearsAtLeast 3) (.draw 2) =>
     "if you control three or more Bears, draw two cards"
   | .tapEnchanted => "tap enchanted creature"
-  | .removeCountersFromEnchanted => "remove all counters from enchanted creature"
   | .searchDragonFromHandOrLibrary =>
     "search your hand and/or library for a Dragon card and put it onto the battlefield"
   | .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary]) =>
