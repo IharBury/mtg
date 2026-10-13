@@ -859,7 +859,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterReturnOtherPlusOne ==
   .triggered .enter (Effect.ofTrigger .returnOtherPlusOne)
 #guard TriggeredAbility.resolution .onEnterReturnOtherPlusOne ==
-  .sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))]
+  .sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]
 #guard TriggeredAbility.toNotation .onEnterReturnOtherPlusOne ==
   "When this permanent enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature."
 #guard TriggeredAbility.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"] ==
@@ -1287,7 +1287,7 @@ namespace CardDef
   "When this Aura enters, enchanted creature gains first strike until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterEnchanted .tap) ==
   "When this Aura enters, tap enchanted creature."
-#guard TriggeredAbility.resolution (.onEnterEnchanted .tap) == .onEnchanted .tap
+#guard TriggeredAbility.resolution (.onEnterEnchanted .tap) == .tap .enchantedWhileSource
 #guard TriggeredAbility.toNotation (.onEnterAttachThen (.grantKeywords Keyword.indestructible)) ==
   "When this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterAttachThen .untap) ==
@@ -1433,7 +1433,7 @@ namespace CardDef
   .prepareSource .ifThreeCreaturesDied
 #guard (TriggeredAbility.triggered .youScryOrSurveil
     (Effect.ofTrigger (.mayPayGenericDraw 2 (plusOneOnSource := true)))).resolution ==
-  .mayThen (.pay #[.generic 2]) (.sequence [.onSource (.plusOne 1), .draw 1])
+  .mayThen (.pay #[.generic 2]) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1])
 #guard TriggeredAbility.toNotation .onEnterCreateAxe ==
   "When this permanent enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}."
 #guard TriggeredAbility.toNotation .onEnterCreateAxeAttach ==
@@ -1494,11 +1494,11 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onEnterTargetOpponentSacrificesCreature ==
   .sacrifice .targetOpponent .chosenCreature
 #guard TriggeredAbility.resolution (.onLandYouControlEntersGets 1 1) ==
-  .onSource (.pump 1 1)
+  .pump 1 1 .source
 #guard TriggeredAbility.resolution .onLandYouControlEntersPlusOnePlusOne ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard TriggeredAbility.resolution .onAnotherElfYouControlEntersGets1 ==
-  .onSource (.pump 1 1)
+  .pump 1 1 .source
 #guard TriggeredAbility.resolution (.onEnterDealDividedDamage 3 3) == .dividedDamage
 #guard TriggeredAbility.resolution (.onEnterOrAttackDealDividedDamage 3 3) ==
   .dividedDamage

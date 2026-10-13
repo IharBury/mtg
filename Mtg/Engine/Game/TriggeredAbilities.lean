@@ -206,7 +206,7 @@ def applyChooseModeStep (g : Game) (targets : Array Target)
     (r : TriggeredAbility.TriggerResolution)
     (generic : Game → TriggeredAbility.TriggerResolution → Game) : Game :=
   match r with
-  | .destroy _ .chosenToken => g.destroyChosenToken targets
+  | .destroy .target .chosenToken => g.destroyChosenToken targets
   | .sacrifice .eachPlayer .chosenCreature _ => g.sacrificeChosenOrGone targets
   | other => generic g other
 
@@ -408,7 +408,7 @@ def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) 
   match rs with
   | [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
     s!"{name} creates a Food token or a Treasure token"
-  | [.tap .target, .untap] =>
+  | [.tap .target, .untap .target] =>
     s!"{name} chooses tap or untap"
   | _ =>
     s!"{name} chooses one"
@@ -418,7 +418,7 @@ def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String
   match rs with
   | [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
     "create a Food token or a Treasure token"
-  | [.tap .target, .untap] =>
+  | [.tap .target, .untap .target] =>
     "choose tap or untap"
   | _ =>
     "choose one"
@@ -427,6 +427,66 @@ def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String
 steps still in this sequence. -/
 def failMayThen (g : Game) : Game :=
   { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
+
+/-- Apply `f` to the permanent `who` names.
+`.target` is the announced permanent, and an illegal target is reported.
+`.source` requires the source still on the battlefield.
+`.enchanted` is the creature the source enchants; nothing enchanted is silent.
+`.targetWhileSource` is silent when the source has already left. -/
+def withAffected (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (who : TriggeredAbility.TriggerAffected)
+    (f : Game → GameObject → Game) : Game :=
+  match who with
+  | .target =>
+    g.withLegalTriggerPermanent controller ab sourceId targets f
+      "The target is no longer legal"
+  | .source =>
+    g.withTriggerSource sourceId f
+  | .enchanted =>
+    g.withSourceOnBattlefield sourceId (fun g src =>
+      match src.attachedTo.bind g.findObject? with
+      | some host => f g host
+      | none => g) "The Aura is no longer in play"
+  | .targetWhileSource =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if !src.isOnBattlefield then g
+      else
+        g.withLegalKindPermanent controller ab.targetKind targets
+          (fun g host => f g (g.object! host.id))
+          sourceId (some "The target is no longer legal")
+    | none => g
+
+/-- Put `n` counters of `kind` on the permanent `who` names.
+`+1/+1`, and a single indestructible, double strike, or burden counter, go
+through `applyPermanentAction`. Other counts use the same bodies as the
+announced-permanent arms. -/
+def applyAffectedCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (kind : CounterKind) (n : Nat) (who : TriggeredAbility.TriggerAffected) : Game :=
+  g.withAffected controller ab sourceId targets who fun g o =>
+    match kind with
+    | .plusOnePlusOne => g.applyPermanentAction o (.plusOne n)
+    | .indestructible =>
+      if n == 1 then g.applyPermanentAction o .indestructibleCounter
+      else g.addIndestructibleCounter o n
+    | .doubleStrike =>
+      if n == 1 then g.applyPermanentAction o .doubleStrikeCounter
+      else
+        let g := g.mapObjectStatus o (fun s => { s with keywordCounters :=
+          { s.keywordCounters with doubleStrike := s.keywordCounters.doubleStrike + n } })
+        g.logMsg s!"{o.name} gets {n} double strike counters"
+    | .burden =>
+      if n == 1 then g.applyPermanentAction o .burdenCounter
+      else g.addBurdenCounter o n
+    | .stun =>
+      let k := g.countersYouPut o n
+      let g := g.mapObjectStatus o (fun s => { s with stun := s.stun + k })
+      let phrase :=
+        if n == 1 then "A stun counter is put" else s!"{k} stun counters are put"
+      g.logMsg s!"{phrase} on {o.name}"
+    | _ => g
 
 /-- Resolve `TriggerResolution.pump`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -492,6 +552,24 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.pumpPermanent o (g.power o) (g.toughness o))
       "The target is no longer legal"
+  | .source, .fixed =>
+    g.withAffected controller ab sourceId targets .source fun g o =>
+      g.applyPermanentAction o (.pump power toughness)
+  | .source, .double =>
+    g.withAffected controller ab sourceId targets .source fun g o =>
+      g.applyPermanentAction o .doublePowerAndToughness
+  | .enchanted, .fixed =>
+    g.withAffected controller ab sourceId targets .enchanted fun g o =>
+      g.applyPermanentAction o (.pump power toughness)
+  | .enchanted, .double =>
+    g.withAffected controller ab sourceId targets .enchanted fun g o =>
+      g.applyPermanentAction o .doublePowerAndToughness
+  | .targetWhileSource, .fixed =>
+    g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
+      g.applyPermanentAction o (.pump power toughness)
+  | .targetWhileSource, .double =>
+    g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
+      g.applyPermanentAction o .doublePowerAndToughness
   | _, _ => g
 
 /-- Resolve `TriggerResolution.dealDamage`. Each printed combination keeps
@@ -582,6 +660,15 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
   | .target, .fixed, .none =>
     g.applyDamageToKindTarget controller ab.targetKind targets n sourceId
       (some "The target is no longer legal")
+  | .source, .fixed, _ =>
+    g.withAffected controller ab sourceId targets .source fun g o =>
+      g.applyPermanentAction o (.dealDamage n)
+  | .enchanted, .fixed, _ =>
+    g.withAffected controller ab sourceId targets .enchanted fun g o =>
+      g.applyPermanentAction o (.dealDamage n)
+  | .targetWhileSource, .fixed, _ =>
+    g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
+      g.applyPermanentAction o (.dealDamage n)
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.putCounters`. Each printed combination keeps
@@ -757,6 +844,12 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         if n == 1 then "A stun counter is put" else s!"{k} stun counters are put"
       g.logMsg s!"{phrase} on {o.name}")
       "The target is no longer legal"
+  | .ofKind kind n, .source =>
+    g.applyAffectedCounters controller ab sourceId targets kind n .source
+  | .ofKind kind n, .enchanted =>
+    g.applyAffectedCounters controller ab sourceId targets kind n .enchanted
+  | .ofKind kind n, .targetWhileSource =>
+    g.applyAffectedCounters controller ab sourceId targets kind n .targetWhileSource
   | _, _ => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
@@ -896,6 +989,15 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .target, .forLater, .none =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
       (g.move o.id .exile none).1) sourceId (some "The target is no longer legal")
+  | .source, .forLater, .none =>
+    g.withAffected controller ab sourceId targets .source fun g o =>
+      g.applyPermanentAction o .exile
+  | .enchanted, .forLater, .none =>
+    g.withAffected controller ab sourceId targets .enchanted fun g o =>
+      g.applyPermanentAction o .exile
+  | .targetWhileSource, .forLater, .none =>
+    g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
+      g.applyPermanentAction o .exile
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.sacrifice`. Each printed combination keeps
@@ -1217,6 +1319,15 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       g.destroyPermanent o) sourceId (some "The target is no longer legal")
   | .target, .chosenToken =>
     g.destroyChosenToken targets
+  | .source, _ =>
+    g.withAffected controller ab sourceId targets .source fun g o =>
+      g.applyPermanentAction o .destroy
+  | .enchanted, _ =>
+    g.withAffected controller ab sourceId targets .enchanted fun g o =>
+      g.applyPermanentAction o .destroy
+  | .targetWhileSource, _ =>
+    g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
+      g.applyPermanentAction o .destroy
   | _, _ => g
 
 /-- Resolve `TriggerResolution.addMana`. Each printed combination keeps
@@ -1431,6 +1542,15 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.grantUntilEotLogged o k)
       "The target is no longer legal"
+  | .keywords k, .source =>
+    g.withAffected controller ab sourceId targets .source fun g o =>
+      g.applyPermanentAction o (.grantKeywords k)
+  | .keywords k, .enchanted =>
+    g.withAffected controller ab sourceId targets .enchanted fun g o =>
+      g.applyPermanentAction o (.grantKeywords k)
+  | .keywords k, .targetWhileSource =>
+    g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
+      g.applyPermanentAction o (.grantKeywords k)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.fight`. Each printed combination keeps
@@ -1522,6 +1642,26 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .target =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
       g.applyPermanentAction o .tap) sourceId (some "The target is no longer legal")
+  | .source =>
+    if g.mayThenDrop > 0 then
+      match sourceId.bind g.findObject? with
+      | some src =>
+        if src.isOnBattlefield && !src.status.tapped then
+          g.beginFraChoice controller (.mayTapSourceThen (.mshReflexive 0 0) src.id)
+            s!"{(g.player controller).name} may tap {src.name}"
+        else
+          (g.logMsg s!"{src.name} can't be tapped this way. The reflexive ability doesn't trigger.").failMayThen
+      | none =>
+        (g.logMsg "The source is no longer on the battlefield. The reflexive ability doesn't trigger.").failMayThen
+    else
+      g.withAffected controller ab sourceId targets .source fun g o =>
+        g.applyPermanentAction o .tap
+  | .enchantedWhileSource =>
+    g.withAffected controller ab sourceId targets .enchanted fun g o =>
+      g.applyPermanentAction o .tap
+  | .targetWhileSource =>
+    g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
+      g.applyPermanentAction o .tap
 
 /-- Resolve `TriggerResolution.removeCounters`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -1840,35 +1980,28 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyDiscard controller sourceId targets n who what when
   | .sacrifice who what note =>
     g.applySacrifice controller ab sourceId targets who what note
-  | .loseIndestructible =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.applyPermanentAction o .loseIndestructible)
-      "The target is no longer legal"
-  | .cantBeBlocked =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.applyPermanentAction o .cantBeBlocked)
-      "The target is no longer legal"
-  | .becomeArtifact =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+  | .loseIndestructible who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o .loseIndestructible
+  | .cantBeBlocked who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o .cantBeBlocked
+  | .becomeArtifact who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
       let g := g.mapObjectStatus o (fun s => { s with additionalArtifactUntilEot := true })
-      g.logMsg s!"{o.name} becomes an artifact until end of turn")
-      "The target is no longer legal"
-  | .becomePrepared =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.applyPermanentAction o .becomePrepared)
-      "The target is no longer legal"
-  | .setBasePT power toughness =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.applyPermanentAction o (.setBasePT power toughness))
-      "The target is no longer legal"
-  | .putOnTopOfLibrary =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.applyPermanentAction o .putOnTopOfLibrary)
-      "The target is no longer legal"
-  | .putOnBottomOfLibrary =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.applyPermanentAction o .putOnBottomOfLibrary)
-      "The target is no longer legal"
+      g.logMsg s!"{o.name} becomes an artifact until end of turn"
+  | .becomePrepared who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o .becomePrepared
+  | .setBasePT power toughness who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o (.setBasePT power toughness)
+  | .putOnTopOfLibrary who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o .putOnTopOfLibrary
+  | .putOnBottomOfLibrary who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o .putOnBottomOfLibrary
   | .dividedDamage =>
     Id.run do
       let mut g := g
@@ -1952,19 +2085,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             steps := combined } }
   | .gainLife n amount =>
     g.applyGainLife controller ab sourceId targets n amount sequencedCardPower
-  | .onSource action =>
-    if g.mayThenDrop > 0 && action == .tap then
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if src.isOnBattlefield && !src.status.tapped then
-          g.beginFraChoice controller (.mayTapSourceThen (.mshReflexive 0 0) src.id)
-            s!"{(g.player controller).name} may tap {src.name}"
-        else
-          (g.logMsg s!"{src.name} can't be tapped this way. The reflexive ability doesn't trigger.").failMayThen
-      | none =>
-        (g.logMsg "The source is no longer on the battlefield. The reflexive ability doesn't trigger.").failMayThen
-    else
-      g.applyOnTriggerSource sourceId action
   | .putFromHandOnBottom =>
     if (g.player controller).hand.isEmpty then g
     else
@@ -1978,9 +2098,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyRemoveCounters sourceId what who
   | .tap who | .may (.tap who) =>
     g.applyTap controller ab sourceId targets who
-  | .untap =>
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
-      g.applyPermanentAction o .untap) sourceId (some "The target is no longer legal")
+  | .untap who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o .untap
   | .destroy what note =>
     g.applyDestroy controller ab sourceId targets lastKnownPower what note
   | .recruit _ =>
@@ -2226,20 +2346,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let yes := g.planWasSacrificed
     let g := { g with planWasSacrificed := false }
     if yes then g.queueModeledReflexive controller sourceId 10 else g
-  | .onEnchanted action =>
-    g.withSourceOnBattlefield sourceId (fun g src =>
-      match src.attachedTo.bind g.findObject? with
-      | some host => g.applyPermanentAction host action
-      | none => g) "The Aura is no longer in play"
-  | .onTargetWhileSource action =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if !src.isOnBattlefield then g
-      else
-        g.withLegalKindPermanent controller ab.targetKind targets (fun g host =>
-          g.applyPermanentAction (g.object! host.id) action)
-          sourceId (some "The target is no longer legal")
-    | none => g
   | .enchantedCopiesNoted =>
     let copied := g.notedCopyObject
     let hostId := g.notedHostId
@@ -2350,7 +2456,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | [.generic n] =>
       let plusOne :=
         match g.mayThenConditional with
-        | some (.sequence [.onSource (.plusOne 1), .draw 1]) => true
+        | some (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw 1]) => true
         | _ => false
       let g := { g with pending := .mayPayGeneric controller n }
       g.logMsg <|

@@ -142,6 +142,14 @@ inductive TriggerDamageWho where
   | blockers
   /-- The announced permanent. -/
   | permanent
+  /-- The ability's source, if it is still on the battlefield. -/
+  | source
+  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
+  Nothing enchanted does nothing. -/
+  | enchanted
+  /-- The announced permanent, while the source is still on the battlefield.
+  A source that already left is silent. -/
+  | targetWhileSource
   /-- Each opponent, or the announced opponent when the ability targets. -/
   | eachOpponent
   /-- The announced target, a player or a permanent. -/
@@ -173,6 +181,21 @@ inductive TriggerDamageNote where
   | excess
 deriving Repr, Inhabited, BEq
 
+/-- Which permanent an effect uses when several recipients share one constructor.
+`.target` is the announced permanent. -/
+inductive TriggerAffected where
+  /-- The announced permanent, while it is still a legal target. -/
+  | target
+  /-- The ability's source, if it is still on the battlefield. -/
+  | source
+  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
+  Nothing enchanted does nothing. -/
+  | enchanted
+  /-- The announced permanent, while the source is still on the battlefield.
+  A source that already left is silent. -/
+  | targetWhileSource
+deriving Repr, Inhabited, BEq
+
 /-- Who `TriggerResolution.putCounters` puts counters on. -/
 inductive TriggerCounterWho where
   /-- Permanents you control.
@@ -185,10 +208,16 @@ inductive TriggerCounterWho where
   /-- The announced permanent. `byYou` means the controller puts the counters,
   and an illegal target logs that you won't put counters. -/
   | permanent (byYou : Bool := false)
-  /-- The ability's source. -/
+  /-- The ability's source, if it is still on the battlefield. -/
   | source
   /-- The token an earlier step created. -/
   | createdToken
+  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
+  Nothing enchanted does nothing. -/
+  | enchanted
+  /-- The announced permanent, while the source is still on the battlefield.
+  A source that already left is silent. -/
+  | targetWhileSource
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.putCounters` puts. `ofKind` uses its `n`. -/
@@ -209,10 +238,17 @@ deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn. -/
 inductive TriggerPumpWho where
-  /-- The ability's source. -/
+  /-- The ability's source, if it is still on the battlefield.
+  +P/+T from the arguments is `.pump p t .source`. -/
   | source
   /-- The announced permanent. -/
   | target
+  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
+  Nothing enchanted does nothing. -/
+  | enchanted
+  /-- The announced permanent, while the source is still on the battlefield.
+  A source that already left is silent. -/
+  | targetWhileSource
   /-- The creature that caused the trigger. -/
   | cause
   /-- Each creature the controller controls. -/
@@ -296,6 +332,14 @@ inductive TriggerExileWhat where
   | landsYouControl
   /-- The announced graveyard card. -/
   | graveyardCard
+  /-- The ability's source, if it is still on the battlefield. -/
+  | source
+  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
+  Nothing enchanted does nothing. -/
+  | enchanted
+  /-- The announced permanent, while the source is still on the battlefield.
+  A source that already left is silent. -/
+  | targetWhileSource
 deriving Repr, Inhabited, BEq
 
 /-- How long `TriggerResolution.exile` lasts. -/
@@ -615,6 +659,14 @@ inductive TriggerDestroyWhat where
   | target
   /-- The permanent an earlier step dealt damage to. -/
   | permanentDealtDamage
+  /-- The ability's source, if it is still on the battlefield. -/
+  | source
+  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
+  Nothing enchanted does nothing. -/
+  | enchanted
+  /-- The announced permanent, while the source is still on the battlefield.
+  A source that already left is silent. -/
+  | targetWhileSource
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.destroy` can read. -/
@@ -697,6 +749,14 @@ inductive TriggerGrantWho where
   | youIfCast
   /-- The announced permanent. -/
   | target
+  /-- The ability's source, if it is still on the battlefield. -/
+  | source
+  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
+  Nothing enchanted does nothing. -/
+  | enchanted
+  /-- The announced permanent, while the source is still on the battlefield.
+  A source that already left is silent. -/
+  | targetWhileSource
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.gainLife` reads how much life. The `n` argument
@@ -797,6 +857,15 @@ inductive TriggerTapWho where
   /-- The announced permanent, while it is still a legal target.
   An illegal target is reported. -/
   | target
+  /-- The ability's source, if it is still on the battlefield.
+  Inside `mayThen`, tapping is optional. -/
+  | source
+  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
+  Nothing enchanted does nothing. A missing Aura is reported. -/
+  | enchantedWhileSource
+  /-- The announced permanent, while the source is still on the battlefield.
+  A source that already left is silent. -/
+  | targetWhileSource
 deriving Repr, Inhabited, BEq
 
 /-- How far `TriggerResolution.revealLibrary` looks from the top of a library. -/
@@ -844,9 +913,13 @@ A permanent target uses its own constructor: `pump`, `putCounters`,
 `setBasePT`, `putOnTopOfLibrary`, and `putOnBottomOfLibrary`. +P/+T and
 trample is a sequence of `pump` and `grant`. Becoming an artifact and
 gaining indestructible is a sequence of `becomeArtifact` and `grant`.
-Tap and a stun counter is a sequence of `tap` and `putCounters`. Source
-pumps, enchanted creatures, and a follow-up while the source remains share
-`PermanentAction` with spells and activated abilities. -/
+Tap and a stun counter is a sequence of `tap` and `putCounters`. The source,
+the enchanted creature, and a follow-up while the source remains use those
+same constructors. `ofSource`, `ofEnchanted`, and `ofTargetWhileSource` map
+a `PermanentAction` onto them. +P/+T on the source is `.pump p t .source`.
+Tapping the creature this Aura enchants is `.tap .enchantedWhileSource`.
+Granting keywords to the target while the source remains is
+`.grant (.keywords k) .targetWhileSource`. -/
 inductive TriggerResolution where
   /-- Until end of turn, permanents of `who` get the bonus from `amount`.
   `power` and `toughness` are that bonus when `amount` is `.fixed`.
@@ -946,7 +1019,7 @@ inductive TriggerResolution where
   `SharedTrigger.mayTo a b` resolves as `.mayThen` of each step's resolution.
   You may pay `{n}` to draw is `.mayThen (.pay #[.generic n]) (.draw 1)`.
   Paying `{n}` to put a +1/+1 counter on the source and draw is
-  `.mayThen (.pay #[.generic n]) (.sequence [.onSource (.plusOne 1), .draw 1])`.
+  `.mayThen (.pay #[.generic n]) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1])`.
   You may sacrifice another creature for +1/+1 counters equal to its power is
   `.mayThen (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source)`.
   You may pay `{1}{G}{U}` to return this from the graveyard is
@@ -961,7 +1034,7 @@ inductive TriggerResolution where
   You may sacrifice an artifact or discard a nonland to deal 2 damage is
   `.mayThen (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2))`.
   You may tap this to grant indestructible is
-  `.mayThen (.onSource .tap) (.queueReflexive (.modeled 0))`. -/
+  `.mayThen (.tap .source) (.queueReflexive (.modeled 0))`. -/
   | mayThen (optional conditional : TriggerResolution)
   /-- Pay `symbols`. Inside `mayThen`, declining skips the conditional.
   `{n}` is `.pay #[.generic n]`. `{1}{G}{U}` is
@@ -1065,24 +1138,29 @@ You may put a land card from your hand onto the battlefield tapped is
   You may sacrifice another creature with `.may (.sacrifice .you .another)`. -/
   | sacrifice (who : TriggerSacrificeWho) (what : TriggerSacrificeWhat)
       (note : TriggerSacrificeNote := .none)
-  /-- The announced permanent loses indestructible until end of turn. -/
-  | loseIndestructible
-  /-- The announced permanent can't be blocked this turn. -/
-  | cantBeBlocked
-  /-- Until end of turn, the announced permanent becomes an artifact in
-  addition to its other types. Gaining indestructible as well is
-  `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`. -/
-  | becomeArtifact
-  /-- The announced permanent becomes prepared. A creature that is already
-  prepared, or has no prepare spell, does not. -/
-  | becomePrepared
-  /-- Until end of turn, the announced permanent's base power and toughness
-  become `power`/`toughness`. -/
-  | setBasePT (power toughness : Int)
-  /-- The owner puts the announced permanent on top of their library. -/
-  | putOnTopOfLibrary
-  /-- The owner puts the announced permanent on the bottom of their library. -/
-  | putOnBottomOfLibrary
+  /-- `who` loses indestructible until end of turn.
+  The announced permanent is `.loseIndestructible`. -/
+  | loseIndestructible (who : TriggerAffected := .target)
+  /-- `who` can't be blocked this turn.
+  The announced permanent is `.cantBeBlocked`. -/
+  | cantBeBlocked (who : TriggerAffected := .target)
+  /-- Until end of turn, `who` becomes an artifact in addition to its other
+  types. Gaining indestructible as well is
+  `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`.
+  The announced permanent is `.becomeArtifact`. -/
+  | becomeArtifact (who : TriggerAffected := .target)
+  /-- `who` becomes prepared. A creature that is already prepared, or has no
+  prepare spell, does not. The announced permanent is `.becomePrepared`. -/
+  | becomePrepared (who : TriggerAffected := .target)
+  /-- Until end of turn, `who`'s base power and toughness become
+  `power`/`toughness`. The announced permanent is `.setBasePT p t`. -/
+  | setBasePT (power toughness : Int) (who : TriggerAffected := .target)
+  /-- The owner puts `who` on top of their library.
+  The announced permanent is `.putOnTopOfLibrary`. -/
+  | putOnTopOfLibrary (who : TriggerAffected := .target)
+  /-- The owner puts `who` on the bottom of their library.
+  The announced permanent is `.putOnBottomOfLibrary`. -/
+  | putOnBottomOfLibrary (who : TriggerAffected := .target)
   /-- Deal previously divided damage to the announced targets. -/
   | dividedDamage
   /-- Apply each resolution in order. An illegal required target skips every
@@ -1114,7 +1192,7 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw 1)]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
   the source if one was actually returned, is
-  `.sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))]`.
+  `.sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`.
   Other creatures you control of these subtypes get +P/+T, and creatures
   your opponents control get +oppP/+oppT, is
   `.sequence [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures]`.
@@ -1151,8 +1229,6 @@ You may put a land card from your hand onto the battlefield tapped is
   it to the source if it is Equipment, is
   `.sequence [.may (.put .artifactFromHand (note := .forAttach)), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
   | sequence (rs : List TriggerResolution)
-  /-- Affect the trigger's source if it is still on the battlefield. -/
-  | onSource (action : PermanentAction)
   /-- You gain life (CR 118.2), as `amount` says. `n` is the amount when
   `amount` is `.fixed`.
   You gain `n` life is `.gainLife n`.
@@ -1237,10 +1313,10 @@ You may put a land card from your hand onto the battlefield tapped is
   `.tap .target`. An illegal target is reported.
   Wrapping one in `may` is that tap. -/
   | tap (who : TriggerTapWho)
-  /-- Untap the announced permanent while it is still a legal target.
-  An illegal target is reported. A stun counter is removed instead of
-  untapping (CR 122.1d). Tap or untap is `.or [.tap .target, .untap]`. -/
-  | untap
+  /-- Untap `who`. The announced permanent, while it is still a legal target,
+  is `.untap`. An illegal target is reported. A stun counter is removed
+  instead of untapping (CR 122.1d). Tap or untap is `.or [.tap .target, .untap]`. -/
+  | untap (who : TriggerAffected := .target)
   /-- Destroy permanents. `what` says which, and `note` says what a later
   step can read.
   Opponents' artifacts and enchantments, counted for the next step, are
@@ -1448,8 +1524,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Connive (CR 701.48). The source is `.connive`. A target is
   `.connive (.target kind)`. -/
   | connive (who : ConniveSubject := .source)
-  /-- Apply `action` to the creature this Aura enchants. -/
-  | onEnchanted (action : PermanentAction)
   /-- A creature fights, or deals damage equal to its power. `who` says
   which creature, and `how` says which.
   The source fights up to one other target creature with `.fight`.
@@ -1507,9 +1581,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | queueReflexiveIfSacrificed (kind : Nat)
   /-- Queue the divided-damage reflexive. `amount` is the printed number. -/
   | queuePlanDividedDamage (amount : Nat)
-  /-- Apply `action` to the target while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | onTargetWhileSource (action : PermanentAction)
   /-- The enchanted creature becomes a copy of the creature exiled this way. -/
   | enchantedCopiesNoted
   /-- You may play the exiled card until the end of your next turn. -/
@@ -1561,7 +1632,7 @@ def allianceModes : List TriggerResolution :=
 /-- Put a +1/+1 counter on the source. Each opponent loses 2 life and you
 gain 2 life. Draw a card. -/
 def gollumModes : List TriggerResolution :=
-  [.onSource (.plusOne 1),
+  [.putCounters (.ofKind .plusOnePlusOne) .source,
    .sequence [.loseLife 2 (who := .eachOpponent), .gainLife 2],
    .draw 1]
 
@@ -1600,6 +1671,82 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .putOnBottomOfLibrary => .putOnBottomOfLibrary
   | .exile => .exile .target .forLater
   | .doublePowerAndToughness => .pump 0 0 .target .double
+
+/-- What `action` does to `who`. `target` is the announced permanent. -/
+def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
+  | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) (counterWho who)
+  | .pump p t => .pump p t (pumpWho who)
+  | .pumpAndTrample p t =>
+    .sequence [.pump p t (pumpWho who), .grant (.keywords Keyword.trample) (grantWho who)]
+  | .destroy => .destroy (destroyWhat who)
+  | .dealDamage n => .dealDamage n (damageWho who)
+  | .grantKeywords k => .grant (.keywords k) (grantWho who)
+  | .tap => .tap (tapWho who)
+  | .untap => .untap who
+  | .loseIndestructible => .loseIndestructible who
+  | .cantBeBlocked => .cantBeBlocked who
+  | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
+  | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
+  | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
+  | .becomeArtifactIndestructible =>
+    .sequence [.becomeArtifact who, .grant (.keywords Keyword.indestructible) (grantWho who)]
+  | .becomePrepared => .becomePrepared who
+  | .setBasePT p t => .setBasePT p t who
+  | .tapAndStun =>
+    .sequence [.tap (tapWho who), .putCounters (.ofKind .stun) (counterWho who)]
+  | .putOnTopOfLibrary => .putOnTopOfLibrary who
+  | .putOnBottomOfLibrary => .putOnBottomOfLibrary who
+  | .exile => .exile (exileWhat who) .forLater
+  | .doublePowerAndToughness => .pump 0 0 (pumpWho who) .double
+where
+  counterWho : TriggerAffected → TriggerCounterWho
+    | .target => .permanent
+    | .source => .source
+    | .enchanted => .enchanted
+    | .targetWhileSource => .targetWhileSource
+  pumpWho : TriggerAffected → TriggerPumpWho
+    | .target => .target
+    | .source => .source
+    | .enchanted => .enchanted
+    | .targetWhileSource => .targetWhileSource
+  grantWho : TriggerAffected → TriggerGrantWho
+    | .target => .target
+    | .source => .source
+    | .enchanted => .enchanted
+    | .targetWhileSource => .targetWhileSource
+  tapWho : TriggerAffected → TriggerTapWho
+    | .target => .target
+    | .source => .source
+    | .enchanted => .enchantedWhileSource
+    | .targetWhileSource => .targetWhileSource
+  destroyWhat : TriggerAffected → TriggerDestroyWhat
+    | .target => .target
+    | .source => .source
+    | .enchanted => .enchanted
+    | .targetWhileSource => .targetWhileSource
+  damageWho : TriggerAffected → TriggerDamageWho
+    | .target => .target
+    | .source => .source
+    | .enchanted => .enchanted
+    | .targetWhileSource => .targetWhileSource
+  exileWhat : TriggerAffected → TriggerExileWhat
+    | .target => .target
+    | .source => .source
+    | .enchanted => .enchanted
+    | .targetWhileSource => .targetWhileSource
+
+/-- What `action` does to the source if it is still on the battlefield. -/
+def ofSource : PermanentAction → TriggerResolution :=
+  ofAffected .source
+
+/-- What `action` does to the creature this Aura enchants. -/
+def ofEnchanted : PermanentAction → TriggerResolution :=
+  ofAffected .enchanted
+
+/-- What `action` does to the target while the source is still on the battlefield.
+A source that already left is silent. -/
+def ofTargetWhileSource : PermanentAction → TriggerResolution :=
+  ofAffected .targetWhileSource
 
 end TriggerResolution
 
@@ -1781,7 +1928,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of kind
       resolution := TriggeredAbility.TriggerResolution.ofPermanent action }
   | .onSource action =>
-    { resolution := .onSource action }
+    { resolution := TriggeredAbility.TriggerResolution.ofSource action }
   | .exileTop => { resolution := .exile .top .playUntilNextTurn }
   | .discard n => { resolution := .discard n }
   | .mayTo can thenDo =>
@@ -1871,7 +2018,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .mayPayGenericDraw n plusOne =>
     { resolution :=
         if plusOne then
-          .mayThen (.pay #[.generic n]) (.sequence [.onSource (.plusOne 1), .draw 1])
+          .mayThen (.pay #[.generic n])
+            (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1])
         else
           .mayThen (.pay #[.generic n]) (.draw 1) }
   | .drawThenBottomIfNoLegendary =>
@@ -1906,7 +2054,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
                                     controller := .you, another := true })
       allowsZeroTargets := true
       resolution := .sequence
-        [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))] }
+        [.returnToHand .permanent .owner .returnedPermanent,
+         .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)] }
   | .lookAtTopRevealTypes n types =>
     { resolution := .lookAtTopRevealTypes n types }
   | .createTappedTreasuresEqualOppArtifacts =>
@@ -2171,10 +2320,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .pumpIfFiveOtherForests =>
     { targeting := .of .creatureYouControl,
       resolution := .«if» (.otherForestsAtLeast 5) (.pump 3 3 .target) }
-  | .onEnchanted action => { resolution := .onEnchanted action }
+  | .onEnchanted action =>
+    { resolution := TriggeredAbility.TriggerResolution.ofEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl,
-      resolution := .sequence [.attach .source .target, .onTargetWhileSource followup] }
+      resolution := .sequence
+        ([.attach .source .target] ++
+          (TriggeredAbility.TriggerResolution.ofTargetWhileSource followup).flatten) }
   | .exileOtherCopyEnchanted =>
     { targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
@@ -2255,7 +2407,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .alreadyChosen }
   | .enter .mayTapThenGrantIndestructible =>
     { events := #[.entering],
-      resolution := .mayThen (.onSource .tap) (.queueReflexive (.modeled 0)) }
+      resolution := .mayThen (.tap .source) (.queueReflexive (.modeled 0)) }
   | .enter .tapLoseAbilitiesWhileSource =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
@@ -2491,5 +2643,17 @@ end SharedTrigger
   .pump 0 0 .target .double
 #guard TriggeredAbility.TriggerResolution.ofPermanent (.pumpAndTrample 2 0) ==
   .sequence [.pump 2 0 .target, .grant (.keywords Keyword.trample) .target]
+#guard TriggeredAbility.TriggerResolution.ofSource (.plusOne 1) ==
+  .putCounters (.ofKind .plusOnePlusOne) .source
+#guard TriggeredAbility.TriggerResolution.ofSource (.pump 1 1) == .pump 1 1 .source
+#guard TriggeredAbility.TriggerResolution.ofSource .tap == .tap .source
+#guard TriggeredAbility.TriggerResolution.ofEnchanted .tap == .tap .enchantedWhileSource
+#guard TriggeredAbility.TriggerResolution.ofEnchanted (.grantKeywords Keyword.firstStrike) ==
+  .grant (.keywords Keyword.firstStrike) .enchanted
+#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .untap ==
+  .untap .targetWhileSource
+#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource
+    (.grantKeywords Keyword.indestructible) ==
+  .grant (.keywords Keyword.indestructible) .targetWhileSource
 
 end Mtg.Engine
