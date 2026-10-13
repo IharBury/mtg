@@ -779,7 +779,7 @@ namespace CardDef
 #guard TriggeredAbility.toNotation (.onEnterCreateThenAttach .dwarf) ==
   "When this permanent enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it."
 #guard TriggeredAbility.resolution (.onEnterGainLifeSearchBasicOnTop 2) ==
-  .sequence [.gainLife 2, .searchLibrary .basicLandOnTop]
+  .sequence [.gainLife 2, .searchLibrary (.put .basicLandOnTop)]
 #guard TriggeredAbility.toNotation (.onEnterGainLifeSearchBasicOnTop 2) ==
   "When this permanent enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top."
 #guard TriggeredAbility.onLandYouControlEntersDrawPlusOneSource ==
@@ -1400,8 +1400,10 @@ namespace CardDef
 #guard (TriggeredAbility.youControlCreatureWithPower? (.onAttackScry 1)).isNone
 #guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry 1
 #guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw 1
-#guard TriggeredAbility.resolution .onEnterSearchForest == .searchLibrary
-#guard TriggeredAbility.resolution .onEnterSearchBasicToHand == .searchLibrary .basicLandToHand
+#guard TriggeredAbility.resolution .onEnterSearchForest ==
+  .searchLibrary (.put .forest)
+#guard TriggeredAbility.resolution .onEnterSearchBasicToHand ==
+  .searchLibrary (.returnToHand .basicLand)
 #guard TriggeredAbility.resolution (.onOpponentCastsAmassOrcs 1) == .amass 1 "Orc"
 #guard TriggeredAbility.resolution .onDiesAmassGoblinsEqualPower ==
   .amass 0 "Goblin" .sourcePower

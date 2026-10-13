@@ -441,7 +441,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.ofTrigger (.exileUntilLeaves .defendingPlayerCreature),
   Effect.ofTrigger (.onSource (.pump 1 1)),
   Effect.ofTrigger (.createTokens .treasure 1),
-  Effect.ofTrigger (.searchLibrary .basicLandToHand),
+  Effect.ofTrigger .searchBasicLandToHand,
   Effect.ofTrigger (.exileTarget .anotherCreature),
   Effect.ofTrigger .returnCreatureFromGyToHand,
   Effect.ofTrigger .honeEachEquipment,

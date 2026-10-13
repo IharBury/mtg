@@ -1670,6 +1670,21 @@ def applyRevealFromHand (g : Game) (controller : PlayerId)
     | _ => g
   | _, _ => g
 
+/-- Resolve `TriggerResolution.searchLibrary`. Each printed follow-up keeps
+the behavior of the constructor it replaced. Any other resolution does nothing. -/
+def applySearchLibrary (g : Game) (controller : PlayerId)
+    (thenDo : TriggeredAbility.TriggerResolution) : Game :=
+  match thenDo with
+  | .put .forest .asPrinted .none => g.resolveSearchForest controller
+  | .returnToHand .basicLand .you .none => g.resolveSearchBasicLandToHand controller
+  | .put .basicLandOnTop .asPrinted .none =>
+    g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
+      (optional := true)
+  | .put .dragon .asPrinted .none =>
+    g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
+      .battlefieldFromHandOrLibrary (alsoHand := true)
+  | _ => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -1738,13 +1753,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginScry controller n
   | .draw n who amount =>
     g.applyTriggerDraw controller n who amount
-  | .searchLibrary how =>
-    match how with
-    | .forestToBattlefield => g.resolveSearchForest controller
-    | .basicLandToHand => g.resolveSearchBasicLandToHand controller
-    | .basicLandOnTop =>
-      g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
-        (optional := true)
+  | .searchLibrary thenDo =>
+    g.applySearchLibrary controller thenDo
   | .discard n who what when =>
     g.applyDiscard controller sourceId targets n who what when
   | .sacrifice who what note =>
@@ -2017,9 +2027,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyReturnToHand controller ab sourceId targets what whose note
   | .may (.discard n (what := .hand)) =>
     g.applyDiscard controller sourceId targets n .you .hand .now
-  | .searchDragonFromHandOrLibrary =>
-    g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
-      .battlefieldFromHandOrLibrary (alsoHand := true)
   | .becomeBear =>
     match targets[0]? with
     | some (Target.permanent oid) =>

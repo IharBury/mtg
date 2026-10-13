@@ -241,7 +241,7 @@ def onEquipmentYouControlEntersDraw : TriggeredAbility :=
 def onEnterSearchForest : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .searchLibrary)
 def onEnterSearchBasicToHand : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.searchLibrary .basicLandToHand))
+  .triggered .enter (Effect.ofTrigger .searchBasicLandToHand)
 def onEnterEachPlayerSacrificesCreature : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .eachPlayerSacrificesCreature)
 def onEnterMayExileAnotherCreature : TriggeredAbility :=
@@ -763,12 +763,16 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "draw X cards, where X is the amount of mana spent to cast that spell"
     | .you, .fixed =>
       s!"draw {cardPhrase n}"
-  | .searchLibrary .forestToBattlefield =>
+  | .searchLibrary (.put .forest .asPrinted .none) =>
     "search your library for a Forest card, put that card onto the battlefield, then shuffle"
-  | .searchLibrary .basicLandToHand =>
+  | .searchLibrary (.returnToHand .basicLand .you .none) =>
     searchLibraryToHandPhrase "a basic land card"
-  | .searchLibrary .basicLandOnTop =>
+  | .searchLibrary (.put .basicLandOnTop .asPrinted .none) =>
     "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
+  | .searchLibrary (.put .dragon .asPrinted .none) =>
+    "search your hand and/or library for a Dragon card and put it onto the battlefield"
+  | .searchLibrary _ =>
+    "search your library"
   | .discard n who what when =>
     match who, what, when with
     | .you, .cards, .now | .you, .cards, .ifManaSpent =>
@@ -834,7 +838,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
   | .sequence [.createTokens kind 1 false, .attach .source .created] =>
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
-  | .sequence [.gainLife n, .searchLibrary .basicLandOnTop] =>
+  | .sequence [.gainLife n, .searchLibrary (.put .basicLandOnTop .asPrinted .none)] =>
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
   | .sequence [.destroy .oppArtifactsEnchantments .countDestroyed, .gainLife _ .forEachDestroyedThisWay] =>
     "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
@@ -875,7 +879,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "tap enchanted creature and remove all counters from it"
   | .sequence [.putCounters (.ofKind .quest) .source,
       .«if» (.questAtLeast 6)
-        (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary])] =>
+        (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchLibrary (.put .dragon .asPrinted .none)])] =>
     "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
   | .sequence [.draw 1, .discard 1, .put .discardedLand .tapped _] =>
     "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
@@ -1030,6 +1034,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "put a random creature card from among them onto the battlefield"
     | .revealed, _, _ =>
       "put that card onto the battlefield"
+    | .forest, _, _ =>
+      "put that card onto the battlefield"
+    | .basicLandOnTop, _, _ =>
+      "put that card on top of your library"
+    | .dragon, _, _ =>
+      "put it onto the battlefield"
     | _, _, _ =>
       "put it onto the battlefield"
   | .removeCounters what who =>
@@ -1170,6 +1180,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "return this card from your graveyard to your hand"
     | .revealed, .you, .none =>
       "put it into your hand"
+    | .basicLand, .you, .none =>
+      "put it into your hand"
     | _, _, _ =>
       "return it to a hand"
   | .or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false] =>
@@ -1298,9 +1310,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .«if» (.bearsAtLeast 3) (.draw 2) =>
     "if you control three or more Bears, draw two cards"
   | .tapEnchanted => "tap enchanted creature"
-  | .searchDragonFromHandOrLibrary =>
-    "search your hand and/or library for a Dragon card and put it onto the battlefield"
-  | .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary]) =>
+  | .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchLibrary (.put .dragon .asPrinted .none)]) =>
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
   | .«if» .equipmentAttached (.fight .equipmentHost .reflexive) =>
     "that creature deals damage equal to its power to up to one target creature"
