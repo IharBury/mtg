@@ -165,7 +165,7 @@ structure Game where
   /-- Permanents destroyed by `.destroy .oppArtifactsEnchantments (note := .countDestroyed)`.
   `.gainLife 0 (amount := .forEachDestroyedThisWay)` gains this much life. -/
   permanentsDestroyedThisWay : Nat := 0
-  /-- A hope counter was removed by the current `removeHopeCounter` step.
+  /-- A hope counter was removed by the current `removeCounters .hope .source` step.
   `«if» .removedHope` draws a card when this is set. -/
   removedHopeThisWay : Bool := false
   /-- The permanent marked by the current `dealDamage` step when it notes

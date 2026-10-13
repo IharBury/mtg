@@ -36,6 +36,7 @@ import Mtg.Engine.Tests.Grant
 import Mtg.Engine.Tests.GainLife
 import Mtg.Engine.Tests.LoseLife
 import Mtg.Engine.Tests.Mill
+import Mtg.Engine.Tests.RemoveCounters
 import Mtg.Engine.Tests.Modes
 
 /-!
@@ -89,5 +90,7 @@ keep working.
   or each opponent, and one life per burden counter on the source
 - `Mill`: the controller, the announced player, the player who lost life,
   remembered cards, and each opponent
+- `RemoveCounters`: a hope counter from the source, and every counter
+  from the enchanted creature
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/

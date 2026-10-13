@@ -631,7 +631,7 @@ inductive SharedTrigger where
   /-- Remove a hope counter from this. If you do, draw a card. Then if it has
   no hope counters, sacrifice it and you gain 4 life.
   Resolves as
-  `.sequence [.removeHopeCounter, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]`. -/
+  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]`. -/
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
@@ -755,7 +755,7 @@ inductive SharedTrigger where
   `.grant .doubleStrike .equippedAttackers`. -/
   | equippedAttackersGainDoubleStrike
   /-- Tap enchanted creature and remove counters. Resolves as
-  `.sequence [.tapEnchanted, .removeCountersFromEnchanted]`. -/
+  `.sequence [.tapEnchanted, .removeCounters .all .enchanted]`. -/
   | tapEnchantedRemoveCounters
   /-- Reveal the top `n` and put a random creature in. -/
   | revealTopPutRandomCreature (n : Nat)

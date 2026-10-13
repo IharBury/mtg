@@ -814,7 +814,7 @@ namespace CardDef
 #guard TriggeredAbility.onYourEndStepRemoveHopeDrawSac ==
   .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
-  .sequence [.removeHopeCounter, .«if» .removedHope (.draw 1),
+  .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw 1),
     .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]
 #guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
   "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
@@ -1561,7 +1561,7 @@ end CardDef
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
   .sequence [.mill 4 (note := .milledCards), .returnToHand (.milledSubtype "Elf")]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
-  .sequence [.tapEnchanted, .removeCountersFromEnchanted]
+  .sequence [.tapEnchanted, .removeCounters .all .enchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
   .sequence [.putCounters (.ofKind .influence) .source, .scry 2,
     .may (.draw 1 (who := .opponentHasYou))]

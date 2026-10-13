@@ -1441,6 +1441,32 @@ def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     { g with opponentsMilledThisWay := milled }
   | _, _, _ => g
 
+/-- Resolve `TriggerResolution.removeCounters`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyRemoveCounters (g : Game) (sourceId : Option ObjectId)
+    (what : TriggeredAbility.TriggerRemoveWhat)
+    (who : TriggeredAbility.TriggerRemoveWho) : Game :=
+  match what, who with
+  | .hope, .source =>
+    let g := { g with removedHopeThisWay := false }
+    g.withTriggerSource sourceId fun g src =>
+      if src.status.hope == 0 then g
+      else
+        let g := g.setObject { src with status := { src.status with hope := src.status.hope - 1 } }
+        let g := g.logMsg s!"{src.name} loses a hope counter"
+        { g with removedHopeThisWay := true }
+  | .all, .enchanted =>
+    match sourceId.bind g.findObject? with
+    | none => g
+    | some src =>
+      match src.attachedTo.bind g.findObject? with
+      | none => g
+      | some host =>
+        let host := g.object! host.id
+        let g := g.setObject { host with status := host.status.withoutCounters }
+        g.logMsg s!"counters are removed from {host.name}"
+  | _, _ => g
+
 /-- Resolve `TriggerResolution.loseLife`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -1677,14 +1703,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyExile controller ab sourceId targets what how note
   | .put what how note | .may (.put what how note) =>
     g.applyPut controller ab sourceId targets what how note
-  | .removeHopeCounter =>
-    let g := { g with removedHopeThisWay := false }
-    g.withTriggerSource sourceId fun g src =>
-      if src.status.hope == 0 then g
-      else
-        let g := g.setObject { src with status := { src.status with hope := src.status.hope - 1 } }
-        let g := g.logMsg s!"{src.name} loses a hope counter"
-        { g with removedHopeThisWay := true }
+  | .removeCounters what who =>
+    g.applyRemoveCounters sourceId what who
   | .tapHumans | .may .tapHumans =>
     { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
       s!"{(g.player controller).name} may tap any number of untapped Humans they control"
@@ -1872,16 +1892,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match src.attachedTo.bind g.findObject? with
       | none => g.logMsg "Nothing is enchanted"
       | some host => g.applyPermanentAction host .tap
-  | .removeCountersFromEnchanted =>
-    match sourceId.bind g.findObject? with
-    | none => g
-    | some src =>
-      match src.attachedTo.bind g.findObject? with
-      | none => g
-      | some host =>
-        let host := g.object! host.id
-        let g := g.setObject { host with status := host.status.withoutCounters }
-        g.logMsg s!"counters are removed from {host.name}"
   | .revealTopPutRandomCreature n =>
     let ids := g.scryLookedIds controller n
     let g := ids.foldl (fun g id =>
