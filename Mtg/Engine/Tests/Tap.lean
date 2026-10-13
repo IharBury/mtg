@@ -58,7 +58,7 @@ def enchantedRemove : TriggeredAbility.TriggerResolution :=
   .sequence [.tap .enchanted, .removeCounters .all .enchanted]
 
 def targetLose : TriggeredAbility.TriggerResolution :=
-  .sequence [.tap .targetIfPresent, .loseAbilitiesWhileSourceRemains]
+  .sequence [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent]
 
 def village : Game :=
   let g := addPermanent afterDraw folk caster caster

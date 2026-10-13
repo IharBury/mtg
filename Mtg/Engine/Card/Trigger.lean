@@ -196,6 +196,32 @@ inductive TriggerAffected where
   | targetWhileSource
 deriving Repr, Inhabited, BEq
 
+/-- What `TriggerResolution.lose` removes. -/
+inductive TriggerLoseWhat where
+  /-- Indestructible, until end of turn. -/
+  | indestructible
+  /-- All abilities, for as long as the source remains on the battlefield. -/
+  | allAbilities
+deriving Repr, Inhabited, BEq
+
+/-- Who `TriggerResolution.lose` removes that from. -/
+inductive TriggerLoseWho where
+  /-- The announced permanent, while it is still a legal target.
+  An illegal target is reported. -/
+  | target
+  /-- The ability's source, if it is still on the battlefield. -/
+  | source
+  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
+  Nothing enchanted does nothing. -/
+  | enchanted
+  /-- The announced permanent, while the source is still on the battlefield.
+  A source that already left is silent. -/
+  | targetWhileSource
+  /-- The announced permanent, while it is still on the battlefield.
+  A missing target loses nothing. -/
+  | targetIfPresent
+deriving Repr, Inhabited, BEq
+
 /-- Who `TriggerResolution.putCounters` puts counters on. -/
 inductive TriggerCounterWho where
   /-- Permanents you control.
@@ -905,12 +931,14 @@ putting counters, removing counters, until-end-of-turn pumps, creating tokens,
 exile, sacrifice, attach, amass, casting a spell, returning cards to hand,
 putting onto the battlefield, adding mana, choosing modes, destroying,
 fighting, granting, gaining life, losing life, milling, revealing from
-a hand, revealing from a library, searching a library, tapping, and
-untapping each cover multiple printed abilities.
+a hand, revealing from a library, searching a library, tapping,
+untapping, and losing each cover multiple printed abilities.
 A permanent target uses its own constructor: `pump`, `putCounters`,
-`destroy`, `dealDamage`, `grant`, `tap`, `untap`, `exile`,
-`loseIndestructible`, `cantBeBlocked`, `becomeArtifact`, `becomePrepared`,
-`setBasePT`, `putOnTopOfLibrary`, and `putOnBottomOfLibrary`. +P/+T and
+`destroy`, `dealDamage`, `grant`, `tap`, `untap`, `exile`, `lose`,
+`cantBeBlocked`, `becomeArtifact`, `becomePrepared`, `setBasePT`,
+`putOnTopOfLibrary`, and `putOnBottomOfLibrary`. Losing indestructible
+until end of turn, and losing all abilities while the source remains,
+are `lose`. What is lost, and who loses it, are arguments. +P/+T and
 trample is a sequence of `pump` and `grant`. Becoming an artifact and
 gaining indestructible is a sequence of `becomeArtifact` and `grant`.
 Tap and a stun counter is a sequence of `tap` and `putCounters`. The source,
@@ -1138,9 +1166,18 @@ You may put a land card from your hand onto the battlefield tapped is
   You may sacrifice another creature with `.may (.sacrifice .you .another)`. -/
   | sacrifice (who : TriggerSacrificeWho) (what : TriggerSacrificeWhat)
       (note : TriggerSacrificeNote := .none)
-  /-- `who` loses indestructible until end of turn.
-  The announced permanent is `.loseIndestructible`. -/
-  | loseIndestructible (who : TriggerAffected := .target)
+  /-- A permanent loses `what`, as `who` says.
+  The announced permanent loses indestructible until end of turn is
+  `.lose .indestructible`.
+  The source is `.lose .indestructible .source`.
+  The enchanted creature is `.lose .indestructible .enchanted`.
+  The target, while the source remains, is
+  `.lose .indestructible .targetWhileSource`.
+  The announced permanent loses all abilities while the source remains is
+  `.lose .allAbilities .targetIfPresent`. A missing target loses nothing.
+  A source that has left leaves that permanent able.
+  Any other combination loses nothing. -/
+  | lose (what : TriggerLoseWhat) (who : TriggerLoseWho := .target)
   /-- `who` can't be blocked this turn.
   The announced permanent is `.cantBeBlocked`. -/
   | cantBeBlocked (who : TriggerAffected := .target)
@@ -1587,8 +1624,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | grantPlayNotedUntilNextTurn
   /-- The tapped creature can't untap while you control the source. -/
   | cantUntapWhileSource
-  /-- The tapped creature loses all abilities while the source remains. -/
-  | loseAbilitiesWhileSourceRemains
   /-- You win the game. -/
   | winTheGame
   /-- Shuffle the source into its owner's library. -/
@@ -1656,7 +1691,7 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .grantKeywords k => .grant (.keywords k) .target
   | .tap => .tap .target
   | .untap => .untap
-  | .loseIndestructible => .loseIndestructible
+  | .loseIndestructible => .lose .indestructible
   | .cantBeBlocked => .cantBeBlocked
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) .permanent
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) .permanent
@@ -1683,7 +1718,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .grantKeywords k => .grant (.keywords k) (grantWho who)
   | .tap => .tap (tapWho who)
   | .untap => .untap who
-  | .loseIndestructible => .loseIndestructible who
+  | .loseIndestructible => .lose .indestructible (loseWho who)
   | .cantBeBlocked => .cantBeBlocked who
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
@@ -1730,6 +1765,11 @@ where
     | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
   exileWhat : TriggerAffected → TriggerExileWhat
+    | .target => .target
+    | .source => .source
+    | .enchanted => .enchanted
+    | .targetWhileSource => .targetWhileSource
+  loseWho : TriggerAffected → TriggerLoseWho
     | .target => .target
     | .source => .source
     | .enchanted => .enchanted
@@ -2411,7 +2451,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .enter .tapLoseAbilitiesWhileSource =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
-        [.tap .targetIfPresent, .loseAbilitiesWhileSourceRemains] }
+        [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent] }
   | .enter .revealDiscardFromHand =>
     { events := #[.entering], targeting := .of .player,
       resolution := .revealFromHand .onePlusCreatureCards
@@ -2621,7 +2661,13 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.death .hellcatReturn)).resolution ==
   TriggeredAbility.TriggerResolution.death .hellcatReturn
 #guard TriggeredAbility.TriggerResolution.ofPermanent .loseIndestructible ==
-  .loseIndestructible
+  .lose .indestructible
+#guard TriggeredAbility.TriggerResolution.ofSource .loseIndestructible ==
+  .lose .indestructible .source
+#guard TriggeredAbility.TriggerResolution.ofEnchanted .loseIndestructible ==
+  .lose .indestructible .enchanted
+#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .loseIndestructible ==
+  .lose .indestructible .targetWhileSource
 #guard TriggeredAbility.TriggerResolution.ofPermanent .cantBeBlocked == .cantBeBlocked
 #guard TriggeredAbility.TriggerResolution.ofPermanent .indestructibleCounter ==
   .putCounters (.ofKind .indestructible) .permanent

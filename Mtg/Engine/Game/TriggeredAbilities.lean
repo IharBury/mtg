@@ -1906,6 +1906,48 @@ def applySearchLibrary (g : Game) (controller : PlayerId)
       .battlefieldFromHandOrLibrary (alsoHand := true)
   | _ => g
 
+/-- Resolve `TriggerResolution.lose`. Each printed combination keeps
+the behavior of the constructor it replaced. Any other combination
+loses nothing. -/
+def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (what : TriggeredAbility.TriggerLoseWhat)
+    (who : TriggeredAbility.TriggerLoseWho) : Game :=
+  match what, who with
+  | .indestructible, .target =>
+    loseIndestructible .target
+  | .indestructible, .source =>
+    loseIndestructible .source
+  | .indestructible, .enchanted =>
+    loseIndestructible .enchanted
+  | .indestructible, .targetWhileSource =>
+    loseIndestructible .targetWhileSource
+  | .allAbilities, .targetIfPresent =>
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some tgt =>
+        if !tgt.isOnBattlefield then g
+        else
+          match sourceId.bind g.findObject? with
+          | some src =>
+            if src.isOnBattlefield then
+              let tgt := g.object! id
+              g.mapObjectStatus tgt (fun s =>
+                { s with losesAbilitiesGrantedBy :=
+                  s.losesAbilitiesGrantedBy.push src.id })
+            else
+              g.logMsg s!"The source has left. {tgt.name} is tapped but keeps its abilities."
+          | none =>
+            g.logMsg s!"The source has left. {tgt.name} is tapped but keeps its abilities."
+      | none => g
+    | _ => g
+  | _, _ => g
+where
+  loseIndestructible (affected : TriggeredAbility.TriggerAffected) : Game :=
+    g.withAffected controller ab sourceId targets affected fun g o =>
+      g.applyPermanentAction o .loseIndestructible
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -1980,9 +2022,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyDiscard controller sourceId targets n who what when
   | .sacrifice who what note =>
     g.applySacrifice controller ab sourceId targets who what note
-  | .loseIndestructible who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .loseIndestructible
+  | .lose what who =>
+    g.applyLose controller ab sourceId targets what who
   | .cantBeBlocked who =>
     g.withAffected controller ab sourceId targets who fun g o =>
       g.applyPermanentAction o .cantBeBlocked
@@ -2378,26 +2419,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       sourceId (some "The target is no longer legal")
   | .revealFromHand count thenDo =>
     g.applyRevealFromHand controller sourceId targets count thenDo
-  | .loseAbilitiesWhileSourceRemains =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some tgt =>
-        if !tgt.isOnBattlefield then g
-        else
-          match sourceId.bind g.findObject? with
-          | some src =>
-            if src.isOnBattlefield then
-              let tgt := g.object! id
-              g.mapObjectStatus tgt (fun s =>
-                { s with losesAbilitiesGrantedBy :=
-                  s.losesAbilitiesGrantedBy.push src.id })
-            else
-              g.logMsg s!"The source has left. {tgt.name} is tapped but keeps its abilities."
-          | none =>
-            g.logMsg s!"The source has left. {tgt.name} is tapped but keeps its abilities."
-      | none => g
-    | _ => g
   | .surveil n =>
     let armed := g.armSurveilReturn
     let life := (g.player controller).lifeGainedThisTurn

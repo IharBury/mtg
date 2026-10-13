@@ -1618,7 +1618,7 @@ end CardDef
   .sequence [.createTokens .treasure 1 false .sturdyShield (note := .remember),
     .attach .created .source]
 #guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
-  .sequence [.tap .targetIfPresent, .loseAbilitiesWhileSourceRemains]
+  .sequence [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent]
 #guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==
   "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."
 #guard TriggeredAbility.toNotation .onActivateCreatureAbilityDrawOnce ==

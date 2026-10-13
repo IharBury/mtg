@@ -676,7 +676,7 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
     some s!"that creature gains {k.joinedAnd} until end of turn"
   | .tap .targetWhileSource => some "tap that creature"
   | .untap .targetWhileSource => some "untap that creature"
-  | .loseIndestructible .targetWhileSource =>
+  | .lose .indestructible .targetWhileSource =>
     some "that creature loses indestructible until end of turn"
   | .cantBeBlocked .targetWhileSource =>
     some "that creature can't be blocked this turn"
@@ -744,8 +744,18 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "those permanents get +P/+T until end of turn"
   | .setOtherBasePT =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
-  | .loseIndestructible who =>
-    s!"{affectedNoun who noun} loses indestructible until end of turn"
+  | .lose .indestructible .target =>
+    s!"{noun} loses indestructible until end of turn"
+  | .lose .indestructible .source =>
+    "this creature loses indestructible until end of turn"
+  | .lose .indestructible .enchanted =>
+    "enchanted creature loses indestructible until end of turn"
+  | .lose .indestructible .targetWhileSource =>
+    "that creature loses indestructible until end of turn"
+  | .lose .allAbilities .targetIfPresent =>
+    "it loses all abilities for as long as this remains on the battlefield"
+  | .lose _ _ =>
+    "lose"
   | .cantBeBlocked who =>
     s!"{affectedNoun who noun} can't be blocked this turn"
   | .becomeArtifact who =>
@@ -1065,7 +1075,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
   | .sequence [.tap .target, .cantUntapWhileSource] =>
     s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
-  | .sequence [.tap .targetIfPresent, .loseAbilitiesWhileSourceRemains] =>
+  | .sequence [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent] =>
     "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"
   | .sequence [.grant (.keywords k) .target,
       .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent),
@@ -1495,8 +1505,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"tap {noun}"
   | .untap who =>
     s!"untap {affectedNoun who noun}"
-  | .loseAbilitiesWhileSourceRemains =>
-    "it loses all abilities for as long as this remains on the battlefield"
   | .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on it if it's a creature"
   | .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent) =>
