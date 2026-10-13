@@ -623,6 +623,9 @@ inductive TriggerDestroyNote where
   /-- The announced creature's controller and power. No legal target
   leaves the note empty, so no player amasses. -/
   | forAmass
+  /-- The announced token. A permanent that is not a token stays.
+  The ability's own target may be a player; the token is `targets[0]`. -/
+  | chosenToken
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.discard` asks to discard. -/
@@ -678,6 +681,8 @@ inductive TriggerGrantWhat where
   | doubleStrike
   /-- Protection from everything until that player's next turn. -/
   | protectionEverything
+  /-- These keywords until end of turn. -/
+  | keywords (k : Keywords)
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.grant` grants that to. -/
@@ -686,6 +691,8 @@ inductive TriggerGrantWho where
   | equippedAttackers
   /-- The controller, when the source was cast. -/
   | youIfCast
+  /-- The announced permanent. -/
+  | target
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.gainLife` reads how much life. The `n` argument
@@ -783,6 +790,9 @@ inductive TriggerTapWho where
   /-- The announced permanent, while it is still on the battlefield.
   A missing target taps nothing. -/
   | targetIfPresent
+  /-- The announced permanent, while it is still a legal target.
+  An illegal target is reported. -/
+  | target
 deriving Repr, Inhabited, BEq
 
 /-- How far `TriggerResolution.revealLibrary` looks from the top of a library. -/
@@ -806,6 +816,57 @@ inductive TriggerLibraryWho where
   | damagedPlayer
 deriving Repr, Inhabited, BEq
 
+/-- A permanent-target action with no printed trigger constructor of its own.
+`TriggerResolution.ofPermanent` sends the rest of `PermanentAction` here. -/
+inductive TriggerTargetExtra where
+  /-- The permanent loses indestructible until end of turn. -/
+  | loseIndestructible
+  /-- The permanent can't be blocked this turn. -/
+  | cantBeBlocked
+  /-- Put an indestructible counter on the permanent. -/
+  | indestructibleCounter
+  /-- Put a double strike counter on the permanent. -/
+  | doubleStrikeCounter
+  /-- Put a burden counter on the permanent. -/
+  | burdenCounter
+  /-- Until end of turn, this becomes an artifact and gains indestructible. -/
+  | becomeArtifactIndestructible
+  /-- The permanent becomes prepared. -/
+  | becomePrepared
+  /-- Until end of turn, base power and toughness become P/T. -/
+  | setBasePT (power toughness : Int)
+  /-- Tap the permanent and put a stun counter on it. -/
+  | tapAndStun
+  /-- The owner puts this permanent on top of their library. -/
+  | putOnTopOfLibrary
+  /-- The owner puts this permanent on the bottom of their library. -/
+  | putOnBottomOfLibrary
+  /-- Exile the permanent. -/
+  | exile
+  /-- Double the permanent's power and toughness until end of turn. -/
+  | doublePowerAndToughness
+deriving Repr, Inhabited, BEq
+
+namespace TriggerTargetExtra
+
+/-- The shared permanent action this extra step performs. -/
+def toAction : TriggerTargetExtra → PermanentAction
+  | .loseIndestructible => .loseIndestructible
+  | .cantBeBlocked => .cantBeBlocked
+  | .indestructibleCounter => .indestructibleCounter
+  | .doubleStrikeCounter => .doubleStrikeCounter
+  | .burdenCounter => .burdenCounter
+  | .becomeArtifactIndestructible => .becomeArtifactIndestructible
+  | .becomePrepared => .becomePrepared
+  | .setBasePT p t => .setBasePT p t
+  | .tapAndStun => .tapAndStun
+  | .putOnTopOfLibrary => .putOnTopOfLibrary
+  | .putOnBottomOfLibrary => .putOnBottomOfLibrary
+  | .exile => .exile
+  | .doublePowerAndToughness => .doublePowerAndToughness
+
+end TriggerTargetExtra
+
 /-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
 inductive TriggerRevealCount where
   /-- The whole hand. -/
@@ -822,10 +883,12 @@ putting counters, removing counters, until-end-of-turn pumps, creating tokens,
 exile, sacrifice, attach, amass, casting a spell, returning cards to hand,
 putting onto the battlefield, adding mana, choosing modes, destroying,
 fighting, granting, gaining life, losing life, milling, revealing from
-a hand, revealing from a library, searching a library, and tapping each
-cover multiple printed abilities.
-Permanent-target counters and pumps, and source pumps, share
-`PermanentAction` with spells and activated abilities. -/
+a hand, revealing from a library, searching a library, tapping, and
+untapping each cover multiple printed abilities.
+A permanent target uses `pump`, `putCounters`, `destroy`, `dealDamage`,
+`grant`, `tap`, `untap`, and `pumpAndTrample`. Source pumps, enchanted
+creatures, and a follow-up while the source remains share `PermanentAction`
+with spells and activated abilities. -/
 inductive TriggerResolution where
   /-- Until end of turn, permanents of `who` get the bonus from `amount`.
   `power` and `toughness` are that bonus when `amount` is `.fixed`.
@@ -845,9 +908,13 @@ inductive TriggerResolution where
   Creatures you control +P/+T is `.pump p t .creaturesYouControl`.
   Other creatures of these subtypes +P/+T is
   `.pump p t (.othersOfSubtypes subtypes)`.
-  Creatures opponents control +P/+T is `.pump p t .opponentsCreatures`. -/
+  Creatures opponents control +P/+T is `.pump p t .opponentsCreatures`.
+  The announced permanent gets +P/+T is `.pump p t .target`. -/
   | pump (power toughness : Int) (who : TriggerPumpWho)
       (amount : TriggerPumpAmount := .fixed)
+  /-- The announced permanent gets +P/+T and gains trample until end of turn.
+  Another creature you control is `.pumpAndTrample 2 0`. -/
+  | pumpAndTrample (power toughness : Int)
   /-- Set another creature's base P/T to this creature's. -/
   | setOtherBasePT
   /-- Deal damage. `n` is the amount when `amount` is `.fixed`.
@@ -866,7 +933,8 @@ inductive TriggerResolution where
   `.dealDamage 0 .permanent .lastKnownPower .excess`.
   Damage to each opponent equal to the hand discarded by an earlier step is
   `.dealDamage 0 .eachOpponent .discardedHand`.
-  `n` damage to the announced opponent is `.dealDamage n .targetOpponent`. -/
+  `n` damage to the announced opponent is `.dealDamage n .targetOpponent`.
+  `n` damage to the announced target is `.dealDamage n .target`. -/
   | dealDamage (n : Nat) (who : TriggerDamageWho)
       (amount : TriggerDamageAmount := .fixed)
       (note : TriggerDamageNote := .none)
@@ -973,7 +1041,9 @@ inductive TriggerResolution where
   `.putCounters (.ofKind .influence) .source`. An illegal target skips later steps.
   A loyalty counter on the target is `.putCounters (.ofKind .loyalty) .permanent`.
   +1/+1 counters equal to the sacrificed creature's power are
-  `.putCounters .plusOneSacrificedPower .source`. -/
+  `.putCounters .plusOneSacrificedPower .source`.
+  `n` +1/+1 counters on the announced permanent are
+  `.putCounters (.ofKind .plusOnePlusOne n) .permanent`. -/
   | putCounters (what : TriggerCounterWhat) (who : TriggerCounterWho)
   /-- Return cards to a hand. `what` says which cards, `whose` says whose
   hand, and `note` says what a later step can read.
@@ -1032,8 +1102,9 @@ You may put a land card from your hand onto the battlefield tapped is
   You may sacrifice another creature with `.may (.sacrifice .you .another)`. -/
   | sacrifice (who : TriggerSacrificeWho) (what : TriggerSacrificeWhat)
       (note : TriggerSacrificeNote := .none)
-  /-- Affect a still-legal permanent target. -/
-  | onPermanent (action : PermanentAction)
+  /-- Affect a still-legal permanent target with an action that has no
+  printed trigger constructor. `ofPermanent` is the only builder. -/
+  | extra (how : TriggerTargetExtra)
   /-- Deal previously divided damage to the announced targets. -/
   | dividedDamage
   /-- Apply each resolution in order. An illegal required target skips every
@@ -1087,11 +1158,11 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw 1 (who := .opponentHasYou))]`.
   Grant keywords, then a +1/+1 counter if the target is a creature and a
   loyalty counter if it is a planeswalker, is
-  `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]`.
+  `.sequence [.grant (.keywords k) .target, .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]`.
   The target gets +3/+0 and gains first strike until end of turn, is
-  `.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords Keyword.firstStrike)]`.
+  `.sequence [.pump 3 0 .target, .grant (.keywords Keyword.firstStrike) .target]`.
   Destroy the target, then its controller creates a Treasure, is
-  `.sequence [.onPermanent .destroy, .createTokens .treasure 1 false (who := .targetController)]`.
+  `.sequence [.destroy .target, .createTokens .treasure 1 false (who := .targetController)]`.
   You may put an artifact from your hand onto the battlefield, then attach
   it to the source if it is Equipment, is
   `.sequence [.may (.put .artifactFromHand (note := .forAttach)), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
@@ -1177,8 +1248,14 @@ You may put a land card from your hand onto the battlefield tapped is
   Nothing enchanted taps nothing. A missing source taps nothing.
   The announced permanent, if it is still on the battlefield, is
   `.tap .targetIfPresent`. A missing target taps nothing.
+  The announced permanent, while it is still a legal target, is
+  `.tap .target`. An illegal target is reported.
   Wrapping one in `may` is that tap. -/
   | tap (who : TriggerTapWho)
+  /-- Untap the announced permanent while it is still a legal target.
+  An illegal target is reported. A stun counter is removed instead of
+  untapping (CR 122.1d). Tap or untap is `.or [.tap .target, .untap]`. -/
+  | untap
   /-- Destroy permanents. `what` says which, and `note` says what a later
   step can read.
   Opponents' artifacts and enchantments, counted for the next step, are
@@ -1187,7 +1264,10 @@ You may put a land card from your hand onto the battlefield tapped is
   The permanent an earlier step dealt damage to is
   `.destroy .permanentDealtDamage`.
   The announced creature, noting its controller and power, is
-  `.destroy .target (note := .forAmass)`. No target means no player amasses. -/
+  `.destroy .target (note := .forAmass)`. No target means no player amasses.
+  The announced permanent is `.destroy .target`.
+  The announced token, when this ability's target is a player, is
+  `.destroy .target (note := .chosenToken)`. -/
   | destroy (what : TriggerDestroyWhat) (note : TriggerDestroyNote := .none)
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
@@ -1281,10 +1361,10 @@ You may put a land card from your hand onto the battlefield tapped is
   two otherwise, is
   `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`.
   Two +1/+1 counters when the target is another Hero, and one otherwise, is
-  `.ifElse (.targetIsAnotherSubtype "Hero") (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1))`.
+  `.ifElse (.targetIsAnotherSubtype "Hero") (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
   A +1/+1 counter when you have scried or surveilled, and +1/+1 until end of
   turn otherwise, is
-  `.ifElse .scriedOrSurveilledThisTurn (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1))`.
+  `.ifElse .scriedOrSurveilledThisTurn (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump 1 1 .target)`.
   The revealed creature enters when its mana value is at most the lands
   you control, and goes to your hand otherwise, with
   `.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)`.
@@ -1292,16 +1372,16 @@ You may put a land card from your hand onto the battlefield tapped is
   | ifElse (cond : TriggerIf) (whenTrue whenFalse : TriggerResolution)
   /-- The controller chooses one of these resolutions.
   Tap an opposing creature or untap one you control is
-  `.or [.onPermanent .tap, .onPermanent .untap]`.
+  `.or [.tap .target, .untap]`.
   A +1/+1 counter on a Wolf you control, or a Treasure token, is
-  `.or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false]`.
+  `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false]`.
   Tap or untap the targeted nonland is
-  `.or [.onPermanent .tap, .onPermanent .untap]`.
+  `.or [.tap .target, .untap]`.
   A Food token or a Treasure token is
   `.or [.createTokens .food 1 false, .createTokens .treasure 1 false]`.
   +1/+1 counters on the creature targets, or returning an artifact or
   enchantment card from the graveyard, is
-  `.or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard]`. -/
+  `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard]`. -/
   | or (rs : List TriggerResolution)
   /-- Resolve these modes, as `how` says.
   Alliance is `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`.
@@ -1330,6 +1410,8 @@ You may put a land card from your hand onto the battlefield tapped is
   If the source was cast, the controller gains protection from everything
   until their next turn with `.grant .protectionEverything .youIfCast`.
   A source that was not cast does nothing.
+  The announced permanent gains these keywords until end of turn with
+  `.grant (.keywords k) .target`.
   Any other combination does nothing. -/
   | grant (what : TriggerGrantWhat) (who : TriggerGrantWho)
   /-- Look at cards from the top of a library, as `how` and `who` say, then
@@ -1504,8 +1586,34 @@ which is already gone when an earlier mode destroyed it. -/
 def upToXModes : List TriggerResolution :=
   [.sequence [.draw 1, .discard 1],
    .loseLife 2 (who := .eachOpponent),
-   .onPermanent .destroy,
+   .destroy .target (note := .chosenToken),
    .sacrifice .eachPlayer .chosenCreature]
+
+/-- What `action` does to the announced permanent.
+Printed actions use `putCounters`, `pump`, `pumpAndTrample`, `destroy`,
+`dealDamage`, `grant`, `tap`, and `untap`. The rest use `extra`. -/
+def ofPermanent : PermanentAction → TriggerResolution
+  | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) .permanent
+  | .pump p t => .pump p t .target
+  | .pumpAndTrample p t => .pumpAndTrample p t
+  | .destroy => .destroy .target
+  | .dealDamage n => .dealDamage n .target
+  | .grantKeywords k => .grant (.keywords k) .target
+  | .tap => .tap .target
+  | .untap => .untap
+  | .loseIndestructible => .extra .loseIndestructible
+  | .cantBeBlocked => .extra .cantBeBlocked
+  | .indestructibleCounter => .extra .indestructibleCounter
+  | .doubleStrikeCounter => .extra .doubleStrikeCounter
+  | .burdenCounter => .extra .burdenCounter
+  | .becomeArtifactIndestructible => .extra .becomeArtifactIndestructible
+  | .becomePrepared => .extra .becomePrepared
+  | .setBasePT p t => .extra (.setBasePT p t)
+  | .tapAndStun => .extra .tapAndStun
+  | .putOnTopOfLibrary => .extra .putOnTopOfLibrary
+  | .putOnBottomOfLibrary => .extra .putOnBottomOfLibrary
+  | .exile => .extra .exile
+  | .doublePowerAndToughness => .extra .doublePowerAndToughness
 
 end TriggerResolution
 
@@ -1684,7 +1792,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .opponent,
       resolution := .sacrifice .targetOpponent .chosenCreature }
   | .onPermanent kind action =>
-    { targeting := .of kind, resolution := .onPermanent action }
+    { targeting := .of kind
+      resolution := TriggeredAbility.TriggerResolution.ofPermanent action }
   | .onSource action =>
     { resolution := .onSource action }
   | .exileTop => { resolution := .exile .top .playUntilNextTurn }
@@ -1751,7 +1860,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .createTokens .treasure 1 false .axe
           (note := if attach then .attachReflexive else .none) }
   | .tapOppOrUntapYours =>
-    { resolution := .or [.onPermanent .tap, .onPermanent .untap] }
+    { resolution := .or [.tap .target, .untap] }
   | .gainControlOppUntilEot =>
     { targeting := .of .oppCreature, resolution := .gainControlOppUntilEot }
   | .payReturnFromGy =>
@@ -1826,7 +1935,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures] }
   | .wolfPlusOneOrTreasure =>
     { resolution := .or
-        [.onPermanent (.plusOne 1), .createTokens .treasure 1 false] }
+        [.putCounters (.ofKind .plusOnePlusOne) .permanent,
+         .createTokens .treasure 1 false] }
   | .trampleCounterBecomeBear =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .sequence
@@ -1937,8 +2047,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .beginCombatIfDrawnTwoPump =>
     { targeting := .of .anotherCreatureYouControl,
       resolution := .«if» (.drewAtLeast 2) (.sequence [
-        .onPermanent (.pump 3 0),
-        .onPermanent (.grantKeywords Keyword.firstStrike)]) }
+        .pump 3 0 .target,
+        .grant (.keywords Keyword.firstStrike) .target]) }
   | .honePerOppAttach =>
     { targeting := .of (.multi #[
         { noun := "target opponent", zone := .player, controller := .opponent },
@@ -2042,18 +2152,18 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .grantThenCounterByType k =>
     { targeting := .of .permanentYouControl,
       resolution := .sequence
-        [.onPermanent (.grantKeywords k),
-         .«if» .targetIsCreature (.onPermanent (.plusOne 1)),
+        [.grant (.keywords k) .target,
+         .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent),
          .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)] }
   | .destroyOppPermanentIfSixLands =>
     { targeting := .of .oppPermanent,
       resolution := .«if» (.landsAtLeast 6) (.sequence [
-        .onPermanent .destroy,
+        .destroy .target,
         .createTokens .treasure 1 false (who := .targetController)]) }
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .ifElse .scriedOrSurveilledThisTurn
-        (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1)) }
+        (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump 1 1 .target) }
   | .sacrificeSourceIfNoPlaneswalker =>
     { events := #[.eachEndStep],
       resolution := .«if» .noPlaneswalker (.sacrifice .you (.source .controllerSacrifices)) }
@@ -2074,7 +2184,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence [.armSurveilReturnLifeGained, .surveil 1] }
   | .pumpIfFiveOtherForests =>
     { targeting := .of .creatureYouControl,
-      resolution := .«if» (.otherForestsAtLeast 5) (.onPermanent (.pump 3 3)) }
+      resolution := .«if» (.otherForestsAtLeast 5) (.pump 3 3 .target) }
   | .onEnchanted action => { resolution := .onEnchanted action }
   | .attachThen followup =>
     { targeting := .of .creatureYouControl,
@@ -2088,7 +2198,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .exile .target .nextEndStep }
   | .tapOrUntapNonland =>
     { targeting := .of .nonland,
-      resolution := .or [.onPermanent .tap, .onPermanent .untap] }
+      resolution := .or [.tap .target, .untap] }
   | .createFoodOrTreasure =>
     { resolution := .or
         [.createTokens .food 1 false, .createTokens .treasure 1 false] }
@@ -2103,14 +2213,15 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .plusOneOrTwoIfAnotherHero =>
     { targeting := .of .creature,
       resolution := .ifElse (.targetIsAnotherSubtype "Hero")
-        (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1)) }
+        (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
+        (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
   | .maySacArtifactOrDiscardDraw =>
     { resolution := .mayThen (.objectCost .artifactOrDiscard) (.draw 1) }
   | .enter (.destroy kind) =>
-    { events := #[.entering], targeting := .of kind, resolution := .onPermanent .destroy }
+    { events := #[.entering], targeting := .of kind, resolution := .destroy .target }
   | .enter (.dealDamageUpToOne n) =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
-      resolution := .onPermanent (.dealDamage n) }
+      resolution := .dealDamage n .target }
   | .enter .fightUpToOne =>
     { events := #[.entering], targeting := .of .anotherCreature, allowsZeroTargets := true,
       resolution := .fight }
@@ -2136,7 +2247,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .returnToHand .graveyardPermanent }
   | .enter .tapOppCantUntapWhileControl =>
     { events := #[.entering], targeting := .of .oppCreature,
-      resolution := .sequence [.onPermanent .tap, .cantUntapWhileSource] }
+      resolution := .sequence [.tap .target, .cantUntapWhileSource] }
   | .enter .maySacAnotherThenDestroyOppNonland =>
     { events := #[.entering],
       resolution := .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) }
@@ -2150,7 +2261,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .enter .plusOnesOrReturnArtEnch =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .or
-        [.onPermanent (.plusOne 1), .returnToHand .graveyardCard] }
+        [.putCounters (.ofKind .plusOnePlusOne) .permanent,
+         .returnToHand .graveyardCard] }
   | .enter .chooseUpToXModes =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
       resolution := .chooseModes TriggeredAbility.TriggerResolution.upToXModes

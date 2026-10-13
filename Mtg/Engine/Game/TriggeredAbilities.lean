@@ -206,7 +206,7 @@ def applyChooseModeStep (g : Game) (targets : Array Target)
     (r : TriggeredAbility.TriggerResolution)
     (generic : Game → TriggeredAbility.TriggerResolution → Game) : Game :=
   match r with
-  | .onPermanent .destroy => g.destroyChosenToken targets
+  | .destroy _ .chosenToken => g.destroyChosenToken targets
   | .sacrifice .eachPlayer .chosenCreature _ => g.sacrificeChosenOrGone targets
   | other => generic g other
 
@@ -408,7 +408,7 @@ def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) 
   match rs with
   | [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
     s!"{name} creates a Food token or a Treasure token"
-  | [.onPermanent .tap, .onPermanent .untap] =>
+  | [.tap .target, .untap] =>
     s!"{name} chooses tap or untap"
   | _ =>
     s!"{name} chooses one"
@@ -418,7 +418,7 @@ def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String
   match rs with
   | [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
     "create a Food token or a Treasure token"
-  | [.onPermanent .tap, .onPermanent .untap] =>
+  | [.tap .target, .untap] =>
     "choose tap or untap"
   | _ =>
     "choose one"
@@ -484,6 +484,10 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .opponentsCreatures, .fixed =>
     g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller)
       (fun g o => g.pumpPermanent o power toughness)
+  | .target, .fixed =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.pumpPermanent o power toughness)
+      "The target is no longer legal"
   | _, _ => g
 
 /-- Resolve `TriggerResolution.dealDamage`. Each printed combination keeps
@@ -571,6 +575,9 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
   | .targetOpponent, .fixed, _ =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.dealDamageToPlayer pid n)
+  | .target, .fixed, .none =>
+    g.applyDamageToKindTarget controller ab.targetKind targets n sourceId
+      (some "The target is no longer legal")
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.putCounters`. Each printed combination keeps
@@ -718,6 +725,10 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match sourceId.bind g.findObject? with
     | some src => if src.isOnBattlefield then g.addPlusOnePlusOneTo src n else g
     | none => g
+  | .ofKind .plusOnePlusOne n, .permanent false =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.addPlusOnePlusOneTo o n)
+      "The target is no longer legal"
   | _, _ => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
@@ -1118,7 +1129,8 @@ def applyDiscard (g : Game) (controller : PlayerId)
 
 /-- Resolve `TriggerResolution.destroy`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
-def applyDestroy (g : Game) (controller : PlayerId) (targets : Array Target)
+def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
     (lastKnownPower : Option Int) (what : TriggeredAbility.TriggerDestroyWhat)
     (note : TriggeredAbility.TriggerDestroyNote) : Game :=
   match what, note with
@@ -1169,6 +1181,11 @@ def applyDestroy (g : Game) (controller : PlayerId) (targets : Array Target)
     | _ =>
       clear.logMsg
         "No target was chosen. Its controller is undefined and no player amasses Goblins."
+  | .target, .none =>
+    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+      g.destroyPermanent o) sourceId (some "The target is no longer legal")
+  | .target, .chosenToken =>
+    g.destroyChosenToken targets
   | _, _ => g
 
 /-- Resolve `TriggerResolution.addMana`. Each printed combination keeps
@@ -1357,7 +1374,8 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 
 /-- Resolve `TriggerResolution.grant`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
-def applyGrant (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
     (what : TriggeredAbility.TriggerGrantWhat)
     (who : TriggeredAbility.TriggerGrantWho) : Game :=
   match what, who with
@@ -1378,6 +1396,10 @@ def applyGrant (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     else
       g.modifyPlayer controller (fun pl => { pl with protectionFromEverything := true })
         |>.logMsg s!"{(g.player controller).name} gains protection from everything"
+  | .keywords k, .target =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.grantUntilEotLogged o k)
+      "The target is no longer legal"
   | _, _ => g
 
 /-- Resolve `TriggerResolution.fight`. Each printed combination keeps
@@ -1444,8 +1466,9 @@ def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 
 /-- Resolve `TriggerResolution.tap`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
-def applyTap (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (targets : Array Target) (who : TriggeredAbility.TriggerTapWho) : Game :=
+def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (who : TriggeredAbility.TriggerTapWho) : Game :=
   match who with
   | .humans =>
     { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
@@ -1465,6 +1488,9 @@ def applyTap (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
         if tgt.isOnBattlefield then g.applyPermanentAction tgt .tap else g
       | none => g
     | _ => g
+  | .target =>
+    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+      g.applyPermanentAction o .tap) sourceId (some "The target is no longer legal")
 
 /-- Resolve `TriggerResolution.removeCounters`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -1783,8 +1809,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyDiscard controller sourceId targets n who what when
   | .sacrifice who what note =>
     g.applySacrifice controller ab sourceId targets who what note
-  | .onPermanent action =>
-    g.applyOnPermanent controller ab.targetKind targets action sourceId
+  | .pumpAndTrample power toughness =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.pumpAndGrantTrample o power toughness)
+      "The target is no longer legal"
+  | .extra how =>
+    g.applyOnPermanent controller ab.targetKind targets how.toAction sourceId
       (some "The target is no longer legal")
   | .dividedDamage =>
     Id.run do
@@ -1894,9 +1924,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .removeCounters what who =>
     g.applyRemoveCounters sourceId what who
   | .tap who | .may (.tap who) =>
-    g.applyTap controller sourceId targets who
+    g.applyTap controller ab sourceId targets who
+  | .untap =>
+    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+      g.applyPermanentAction o .untap) sourceId (some "The target is no longer legal")
   | .destroy what note =>
-    g.applyDestroy controller targets lastKnownPower what note
+    g.applyDestroy controller ab sourceId targets lastKnownPower what note
   | .recruit _ =>
     g.beginRecruit controller
   | .putCounters what who =>
@@ -2068,7 +2101,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyMill controller ab sourceId targets lastKnownPower lastKnownToughness
       n who amount note
   | .grant what who =>
-    g.applyGrant controller sourceId what who
+    g.applyGrant controller ab sourceId targets what who
   | .revealLibrary how thenDo who =>
     g.applyRevealLibrary controller how thenDo who
   | .fight who how =>

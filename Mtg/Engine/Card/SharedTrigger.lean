@@ -43,7 +43,7 @@ inductive EnterLeftover where
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
   | revealHandExileUntilLeaves
   /-- +1/+1 on up to two creatures, or return an artifact/enchantment from GY.
-  Resolves as `.or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard]`. -/
+  Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard]`. -/
   | plusOnesOrReturnArtEnch
   /-- Choose up to X modes. Resolves as
   `.chooseModes TriggerResolution.upToXModes .alreadyChosen`. -/
@@ -587,7 +587,7 @@ inductive SharedTrigger where
   Attaching it to a creature you control is `.createAxe (attach := true)`. -/
   | createAxe (attach : Bool := false)
   /-- Tap an opposing creature or untap yours.
-  Resolves as `.or [.onPermanent .tap, .onPermanent .untap]`. -/
+  Resolves as `.or [.tap .target, .untap]`. -/
   | tapOppOrUntapYours
   /-- Gain control of the target until end of turn; untap; haste. -/
   | gainControlOppUntilEot
@@ -659,7 +659,7 @@ inductive SharedTrigger where
   `.sequence [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures]`. -/
   | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
   /-- +1/+1 on a Wolf or create a Treasure.
-  Resolves as `.or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false]`. -/
+  Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false]`. -/
   | wolfPlusOneOrTreasure
   /-- Trample counter, become a Bear, maybe draw. Resolves as
   `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)]`. -/
@@ -752,7 +752,7 @@ inductive SharedTrigger where
   | revealTopPutRandomCreature (n : Nat)
   /-- If you drew two or more, another creature you control gets +3/+0 and
   gains first strike. Resolves as
-  `.«if» (.drewAtLeast 2) (.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords Keyword.firstStrike)])`. -/
+  `.«if» (.drewAtLeast 2) (.sequence [.pump 3 0 .target, .grant (.keywords Keyword.firstStrike) .target])`. -/
   | beginCombatIfDrawnTwoPump
   /-- Hone per opposing creatures and attach. -/
   | honePerOppAttach
@@ -841,15 +841,15 @@ inductive SharedTrigger where
   /-- Target permanent you control gains these keywords until end of turn; a
   +1/+1 counter if it's a creature, a loyalty counter if it's a planeswalker.
   Resolves as
-  `.sequence [.onPermanent (.grantKeywords k), .«if» .targetIsCreature (.onPermanent (.plusOne 1)), .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]`. -/
+  `.sequence [.grant (.keywords k) .target, .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]`. -/
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. Resolves as
-  `.«if» (.landsAtLeast 6) (.sequence [.onPermanent .destroy, .createTokens .treasure 1 false (who := .targetController)])`. -/
+  `.«if» (.landsAtLeast 6) (.sequence [.destroy .target, .createTokens .treasure 1 false (who := .targetController)])`. -/
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
   +1/+1 counter instead if you've scried or surveilled this turn. Resolves as
-  `.ifElse .scriedOrSurveilledThisTurn (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1))`. -/
+  `.ifElse .scriedOrSurveilledThisTurn (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump 1 1 .target)`. -/
   | pumpOrCounterIfScried
   /-- If you don't control a planeswalker, sacrifice the source. -/
   | sacrificeSourceIfNoPlaneswalker
@@ -884,7 +884,7 @@ inductive SharedTrigger where
   /-- Exile a creature you control until the next end step. -/
   | exileUntilNextEndStep
   /-- Tap or untap target nonland.
-  Resolves as `.or [.onPermanent .tap, .onPermanent .untap]`. -/
+  Resolves as `.or [.tap .target, .untap]`. -/
   | tapOrUntapNonland
   /-- Create a Food or a Treasure.
   Resolves as `.or [.createTokens .food 1 false, .createTokens .treasure 1 false]`. -/
@@ -898,7 +898,7 @@ inductive SharedTrigger where
   /-- Draw; if you control another Hero, gain 2 life. -/
   | drawGainLifeIfAnotherHero
   /-- +1/+1, or two if that creature is another Hero. Resolves as
-  `.ifElse (.targetIsAnotherSubtype "Hero") (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1))`. -/
+  `.ifElse (.targetIsAnotherSubtype "Hero") (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`. -/
   | plusOneOrTwoIfAnotherHero
   /-- You may sac an artifact or discard; if you do, draw. -/
   | maySacArtifactOrDiscardDraw
