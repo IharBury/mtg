@@ -683,7 +683,7 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   | .becomeArtifact .targetWhileSource =>
     some "until end of turn, that creature becomes an artifact in addition to its other types"
   | .becomePrepared .targetWhileSource => some "that creature becomes prepared"
-  | .setBasePT p t .targetWhileSource =>
+  | .setBasePT p t .targetWhileSource .fixed =>
     some s!"that creature has base power and toughness {p}/{t} until end of turn"
   | .putOnLibrary .top (.permanent .targetWhileSource) =>
     some "that creature's owner puts it on top of their library"
@@ -742,7 +742,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "double that creature's power and toughness until end of turn"
     | _, _ =>
       "those permanents get +P/+T until end of turn"
-  | .setOtherBasePT =>
+  | .setBasePT _ _ .target .equalSource =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
   | .lose .indestructible .target =>
     s!"{noun} loses indestructible until end of turn"
@@ -762,8 +762,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"until end of turn, {affectedNoun who noun} becomes an artifact in addition to its other types"
   | .becomePrepared who =>
     s!"{affectedNoun who noun} becomes prepared"
-  | .setBasePT p t who =>
+  | .setBasePT p t who .fixed =>
     s!"{affectedNoun who noun} has base power and toughness {p}/{t} until end of turn"
+  | .setBasePT _ _ _ _ =>
+    "set base power and toughness"
   | .putOnLibrary .top (.permanent who) =>
     s!"{affectedNoun who noun}'s owner puts it on top of their library"
   | .putOnLibrary .bottom (.permanent who) =>

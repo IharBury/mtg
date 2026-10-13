@@ -43,6 +43,7 @@ import Mtg.Engine.Tests.SearchLibrary
 import Mtg.Engine.Tests.Tap
 import Mtg.Engine.Tests.Lose
 import Mtg.Engine.Tests.PutOnLibrary
+import Mtg.Engine.Tests.SetBasePT
 import Mtg.Engine.Tests.Modes
 
 /-!
@@ -110,5 +111,7 @@ keep working.
   source remains
 - `PutOnLibrary`: the announced permanent on top or on the bottom of its
   owner's library, and a card from hand on the bottom
+- `SetBasePT`: a fixed base power and toughness, and another creature's
+  base power and toughness equal to this creature's
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/

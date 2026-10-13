@@ -605,7 +605,8 @@ inductive SharedTrigger where
   | drawXDiscard (n : Nat)
   /-- The Ring tempts you. -/
   | ringTempts
-  /-- Set another creature's base P/T to this creature's. -/
+  /-- Set another creature's base P/T to this creature's.
+  Resolves as `.setBasePT 0 0 (amount := .equalSource)`. -/
   | setOtherBasePT
   /-- Return a target Elf from the graveyard, then gain life equal to its power.
   Resolves as `.sequence [.returnToHand .graveyardCard, .gainLife 0 (amount := .equalToTargetPower)]`. -/
