@@ -1413,6 +1413,26 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       | none => g
   | _, _ => g
 
+/-- Resolve `TriggerResolution.loseLife`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target) (n : Nat)
+    (who : TriggeredAbility.TriggerLifeLossWho)
+    (amount : TriggeredAbility.TriggerLifeLossAmount) : Game :=
+  match who, amount with
+  | .you, .fixed =>
+    g.loseLife controller n
+  | .targetOpponent, .fixed =>
+    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
+      g.loseLife pid n)
+  | .eachOpponent, .fixed =>
+    g.forEachOpponent controller (fun g pid => g.loseLife pid n)
+  | .you, .perBurden =>
+    match sourceId.bind g.findObject? with
+    | none => g
+    | some src => g.loseLife controller src.status.burden
+  | _, _ => g
+
 /-- Resolve `TriggerResolution.gainLife`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -1927,9 +1947,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let (g, _) := g.createToken controller face
         let (g, _) := g.createToken controller face
         g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
-  | .targetOpponentLosesLife n =>
-    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.loseLife pid n)
+  | .loseLife n who amount =>
+    g.applyLoseLife controller ab sourceId targets n who amount
   | .may (.draw _ .opponentHasYou _) =>
     g.applyTriggerDraw controller 1 .opponentHasYou .fixed
   | .may (.sequence [.draw _ _ .equalToManaSpent, .discard n (when := .ifManaSpent)]) =>
@@ -1961,10 +1980,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
-  | .loseLifePerBurden =>
-    match sourceId.bind g.findObject? with
-    | none => g
-    | some src => g.loseLife controller src.status.burden
   | .revealSaga =>
     Id.run do
       let mut g := g
@@ -2000,10 +2015,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match targets[0]? with
       | some (Target.permanent id) => g.applyConnive controller (some id)
       | _ => g.applyConnive controller sourceId
-  | .eachOpponentLosesLife n =>
-    g.forEachOpponent controller (fun g pid => g.loseLife pid n)
-  | .loseLife n =>
-    g.loseLife controller n
   | .queueReflexiveIfSacrificed kind =>
     let yes := g.planWasSacrificed
     let g := { g with planWasSacrificed := false }

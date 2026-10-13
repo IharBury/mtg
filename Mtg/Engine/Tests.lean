@@ -34,6 +34,7 @@ import Mtg.Engine.Tests.Discard
 import Mtg.Engine.Tests.TriggerFight
 import Mtg.Engine.Tests.Grant
 import Mtg.Engine.Tests.GainLife
+import Mtg.Engine.Tests.LoseLife
 import Mtg.Engine.Tests.Modes
 
 /-!
@@ -83,5 +84,7 @@ keep working.
   everything when the source was cast
 - `GainLife`: a fixed amount, the targeted card's power, one life per
   permanent destroyed, and one life per other creature
+- `LoseLife`: a fixed amount for the controller, the announced opponent,
+  or each opponent, and one life per burden counter on the source
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/
