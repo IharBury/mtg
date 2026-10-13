@@ -1516,6 +1516,61 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
     if k == 0 then g else g.gainLife controller k
 
+/-- Resolve `TriggerResolution.revealFromHand`. Each printed combination
+keeps the behavior of the constructor it replaced. -/
+def applyRevealFromHand (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (count : TriggeredAbility.TriggerRevealCount)
+    (thenDo : TriggeredAbility.TriggerResolution) : Game :=
+  match count, thenDo with
+  | .hand, .exile .target .untilSourceLeaves .none =>
+    let opp? :=
+      match targets[0]? with
+      | some (Target.player pid) => some pid
+      | _ =>
+        match (g.livingOpponents controller)[0]? with
+        | some pl => some pl.id
+        | none => none
+    match opp? with
+    | none => g
+    | some opp =>
+      let g := g.revealHand opp
+      g.withSourceStillOnBattlefield sourceId (fun g _ =>
+        match targets[1]? with
+        | some (Target.permanent id) =>
+          match g.findObject? id with
+          | some o =>
+            if o.controlledBy opp then
+              g.exileUntilSourceLeaves sourceId o
+            else
+              g.logMsg "The creature is an illegal target. The ability may still resolve."
+          | none => g
+        | some (Target.card id) =>
+          match g.findObject? id with
+          | some o =>
+            if o.zone == .hand opp && !o.printed.isLand then
+              g.exileUntilSourceLeaves sourceId o
+            else g
+          | none => g
+        | _ => g)
+        "Cloak and Dagger have left the battlefield. Nothing is exiled."
+  | .onePlusCreatureCards, .discard 1 .target .cards .now =>
+    match targets[0]? with
+    | some (Target.player pid) =>
+      let n :=
+        1 + ((g.player controller).graveyard.filter (fun id =>
+          match g.findObject? id with
+          | some o => o.printed.isCreature
+          | none => false)).size
+      let hand :=
+        (g.player pid).hand.filterMap (fun id => g.findObject? id)
+      let shown := if hand.size ≤ n then hand else hand.take n
+      let g := g.revealHand pid
+      g.logMsg
+        s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})"
+    | _ => g
+  | _, _ => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -2091,37 +2146,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.mapObjectStatus o (fun s =>
         { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid }))
       sourceId (some "The target is no longer legal")
-  | .revealHandExileUntilLeaves =>
-    let opp? :=
-      match targets[0]? with
-      | some (Target.player pid) => some pid
-      | _ =>
-        match (g.livingOpponents controller)[0]? with
-        | some pl => some pl.id
-        | none => none
-    match opp? with
-    | none => g
-    | some opp =>
-      let g := g.revealHand opp
-      g.withSourceStillOnBattlefield sourceId (fun g _ =>
-        match targets[1]? with
-        | some (Target.permanent id) =>
-          match g.findObject? id with
-          | some o =>
-            if o.controlledBy opp then
-              g.exileUntilSourceLeaves sourceId o
-            else
-              g.logMsg "The creature is an illegal target. The ability may still resolve."
-          | none => g
-        | some (Target.card id) =>
-          match g.findObject? id with
-          | some o =>
-            if o.zone == .hand opp && !o.printed.isLand then
-              g.exileUntilSourceLeaves sourceId o
-            else g
-          | none => g
-        | _ => g)
-        "Cloak and Dagger have left the battlefield. Nothing is exiled."
+  | .revealFromHand count thenDo =>
+    g.applyRevealFromHand controller sourceId targets count thenDo
   | .tapTargetIfPresent =>
     match targets[0]? with
     | some (Target.permanent id) =>
@@ -2149,21 +2175,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           | none =>
             g.logMsg s!"The source has left. {tgt.name} is tapped but keeps its abilities."
       | none => g
-    | _ => g
-  | .revealDiscardFromHand =>
-    match targets[0]? with
-    | some (Target.player pid) =>
-      let n :=
-        1 + ((g.player controller).graveyard.filter (fun id =>
-          match g.findObject? id with
-          | some o => o.printed.isCreature
-          | none => false)).size
-      let hand :=
-        (g.player pid).hand.filterMap (fun id => g.findObject? id)
-      let shown := if hand.size ≤ n then hand else hand.take n
-      let g := g.revealHand pid
-      g.logMsg
-        s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})"
     | _ => g
   | .surveil n =>
     let armed := g.armSurveilReturn
