@@ -1969,6 +1969,27 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
   | .top, .cardFromHand => g
 
+/-- Resolve `TriggerResolution.setBasePT`. Each printed combination keeps
+the behavior of the constructor it replaced. Any other combination sets
+nothing. -/
+def applySetBasePT (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (lastKnownPower lastKnownToughness : Option Int)
+    (power toughness : Int) (who : TriggeredAbility.TriggerAffected)
+    (amount : TriggeredAbility.TriggerBasePTAmount) : Game :=
+  match amount, who with
+  | .fixed, _ =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o (.setBasePT power toughness)
+  | .equalSource, .target =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      let (pw, tw) := g.sourcePTAtResolution sourceId lastKnownPower lastKnownToughness
+      let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
+      g.logMsg
+        s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
+      "No target was chosen"
+  | .equalSource, _ => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -2023,13 +2044,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .pump power toughness who amount =>
     g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness
       power toughness who amount
-  | .setOtherBasePT =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let (pw, tw) := g.sourcePTAtResolution sourceId lastKnownPower lastKnownToughness
-      let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
-      g.logMsg
-        s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
-      "No target was chosen"
   | .dealDamage n who amount note =>
     g.applyTriggerDamage controller ab sourceId targets lastKnownPower sourceName
       n who amount note
@@ -2055,9 +2069,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .becomePrepared who =>
     g.withAffected controller ab sourceId targets who fun g o =>
       g.applyPermanentAction o .becomePrepared
-  | .setBasePT power toughness who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o (.setBasePT power toughness)
+  | .setBasePT power toughness who amount =>
+    g.applySetBasePT controller ab sourceId targets lastKnownPower lastKnownToughness
+      power toughness who amount
   | .putOnLibrary place what =>
     g.applyPutOnLibrary controller ab sourceId targets place what
   | .dividedDamage =>

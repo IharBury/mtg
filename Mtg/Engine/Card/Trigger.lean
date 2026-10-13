@@ -941,6 +941,16 @@ inductive TriggerLibraryWhat where
   | cardFromHand
 deriving Repr, Inhabited, BEq
 
+/-- Where `TriggerResolution.setBasePT` reads the new base power and toughness.
+`power` and `toughness` are those values when this is `.fixed`. -/
+inductive TriggerBasePTAmount where
+  /-- The `power` and `toughness` arguments. -/
+  | fixed
+  /-- This creature's power and toughness as the ability resolves.
+  A source that has left uses its last-known power and toughness. -/
+  | equalSource
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
@@ -956,9 +966,12 @@ A permanent target uses its own constructor: `pump`, `putCounters`,
 `cantBeBlocked`, `becomeArtifact`, `becomePrepared`, `setBasePT`,
 and `putOnLibrary`. Losing indestructible until end of turn, and losing
 all abilities while the source remains, are `lose`. What is lost, and who
-loses it, are arguments. Putting the announced permanent on top or on the
-bottom of its owner's library, and putting a card from your hand on the
-bottom, are `putOnLibrary`. Where the card goes, and which card, are
+loses it, are arguments. Setting a permanent's base power and toughness
+to fixed values, and setting another creature's base power and toughness
+equal to this creature's, are `setBasePT`. What the new base is, and who
+receives it, are arguments. Putting the announced permanent on top or on
+the bottom of its owner's library, and putting a card from your hand on
+the bottom, are `putOnLibrary`. Where the card goes, and which card, are
 arguments. +P/+T and trample is a sequence of `pump` and `grant`. Becoming
 an artifact and gaining indestructible is a sequence of `becomeArtifact`
 and `grant`. Tap and a stun counter is a sequence of `tap` and
@@ -994,8 +1007,6 @@ inductive TriggerResolution where
   `.sequence [.pump p t .target, .grant (.keywords Keyword.trample) .target]`. -/
   | pump (power toughness : Int) (who : TriggerPumpWho)
       (amount : TriggerPumpAmount := .fixed)
-  /-- Set another creature's base P/T to this creature's. -/
-  | setOtherBasePT
   /-- Deal damage. `n` is the amount when `amount` is `.fixed`.
   Each creature blocking the source is `.dealDamage n .blockers`.
   Last-known power to the announced creature is
@@ -1209,9 +1220,21 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- `who` becomes prepared. A creature that is already prepared, or has no
   prepare spell, does not. The announced permanent is `.becomePrepared`. -/
   | becomePrepared (who : TriggerAffected := .target)
-  /-- Until end of turn, `who`'s base power and toughness become
-  `power`/`toughness`. The announced permanent is `.setBasePT p t`. -/
+  /-- Until end of turn, `who`'s base power and toughness become the values
+  `amount` names. `power` and `toughness` are those values when `amount`
+  is `.fixed`.
+  The announced permanent becoming `p`/`t` is `.setBasePT p t`.
+  The source is `.setBasePT p t .source`.
+  The enchanted creature is `.setBasePT p t .enchanted`.
+  The target, while the source remains, is
+  `.setBasePT p t .targetWhileSource`.
+  Another target creature becoming equal to this creature's power and
+  toughness is `.setBasePT 0 0 (amount := .equalSource)`. A source that has
+  left uses its last-known power and toughness. No target logs that none
+  was chosen.
+  Any other combination sets nothing. -/
   | setBasePT (power toughness : Int) (who : TriggerAffected := .target)
+      (amount : TriggerBasePTAmount := .fixed)
   /-- Put a card onto a library. `place` says top or bottom, and `what`
   says which card.
   The announced permanent on top of its owner's library is `.putOnLibrary .top`.
@@ -2070,7 +2093,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .ringTempts => { resolution := .ringTempts }
   | .setOtherBasePT =>
     { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
-      resolution := .setOtherBasePT }
+      resolution := .setBasePT 0 0 (amount := .equalSource) }
   | .returnElfGainLife =>
     { targeting := .of .elfInYourGraveyard
       resolution := .sequence

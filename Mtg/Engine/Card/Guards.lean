@@ -1276,7 +1276,8 @@ namespace CardDef
   .pump 0 0 .source .greatestPower
 #guard (default : TriggeredAbility.TriggerResolution) ==
   .pump 0 0 .source .greatestPower
-#guard TriggeredAbility.resolution .onAttackSetOtherBasePT == .setOtherBasePT
+#guard TriggeredAbility.resolution .onAttackSetOtherBasePT ==
+  .setBasePT 0 0 (amount := .equalSource)
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
   .sequence [.pump 2 0 .target, .grant (.keywords Keyword.trample) .target]
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry 2
