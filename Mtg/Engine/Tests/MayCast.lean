@@ -5,7 +5,7 @@ import Mtg.Engine.Fixture
 
 Graveyard casts, hand casts limited by legendary Wizards, hand casts limited
 by last-known damage, and the impulse cast after
-`revealLibrary .untilInstantOrSorcery .exileForImpulse .damagedPlayer`.
+`revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`.
 -/
 
 namespace Mtg.Engine.MayCastTests

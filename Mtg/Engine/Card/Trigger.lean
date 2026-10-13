@@ -106,6 +106,10 @@ inductive TriggerIf where
   | scriedOrSurveilledThisTurn
   /-- The artifact an earlier step put from hand is Equipment. -/
   | putArtifactIsEquipment
+  /-- The card `revealLibrary .untilCreature` revealed has mana value at
+  most the lands the controller controls. Outside that resolution, the
+  condition does not hold. -/
+  | revealedManaValueAtMostLands
 deriving Repr, Inhabited, BEq
 
 /-- Objects chosen for `TriggerResolution.objectCost`, the optional action of
@@ -319,6 +323,9 @@ inductive TriggerExileNote where
   | copyAndHost
   /-- The graveyard card, so it can be played. -/
   | playCard
+  /-- The instant or sorcery, so `.mayCast .impulse` can offer it.
+  Outside `revealLibrary .untilInstantOrSorcery`, this note does nothing. -/
+  | impulse
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.sacrifice` asks to sacrifice. -/
@@ -425,7 +432,7 @@ inductive TriggerCastFrom where
   /-- An instant or sorcery card in your hand. -/
   | hand
   /-- The instant or sorcery an earlier
-  `revealLibrary .untilInstantOrSorcery .exileForImpulse .damagedPlayer`
+  `revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`
   stored. -/
   | impulse
 deriving Repr, Inhabited, BEq
@@ -497,6 +504,9 @@ inductive TriggerReturnWhat where
   | milledSubtype (subtype : String)
   /-- The source, if it is still in its owner's graveyard. -/
   | source
+  /-- The card `revealLibrary .untilCreature` revealed, on the hand branch.
+  Outside that resolution, `.returnToHand .revealed` does nothing. -/
+  | revealed
 deriving Repr, Inhabited, BEq
 
 /-- Whose hand `TriggerResolution.returnToHand` returns those cards to. -/
@@ -531,6 +541,12 @@ inductive TriggerPutWhat where
   | landFromHand
   /-- An artifact card from the controller's hand. -/
   | artifactFromHand
+  /-- A random creature from the cards `revealLibrary (.top n)` revealed.
+  Outside that resolution, `.put .randomCreature` does nothing. -/
+  | randomCreature
+  /-- The card `revealLibrary` revealed. Outside `.untilSaga` and the
+  battlefield branch of `.untilCreature`, `.put .revealed` does nothing. -/
+  | revealed
 deriving Repr, Inhabited, BEq
 
 /-- How `TriggerResolution.put` puts those cards onto the battlefield. -/
@@ -766,26 +782,6 @@ inductive TriggerLibraryWho where
   | damagedPlayer
 deriving Repr, Inhabited, BEq
 
-/-- What `TriggerResolution.revealLibrary` does with the cards it found. -/
-inductive TriggerLibraryThen where
-  /-- Put a random creature card from among them onto the battlefield.
-  The other revealed cards go on the bottom of that library in a random
-  order. No creature puts every revealed card on the bottom. With
-  `norandom` and more than one creature, that choice waits. -/
-  | randomCreature
-  /-- Put that card onto the battlefield when its mana value is at most
-  the number of lands the controller controls. Otherwise put it into the
-  controller's hand. The other revealed cards go on the bottom of that
-  library in a random order. -/
-  | battlefieldOrHand
-  /-- Put that card onto the battlefield. The other revealed cards go on
-  the bottom of that library in a random order. -/
-  | battlefield
-  /-- Exile the cards face up. The instant or sorcery is remembered for
-  `.mayCast .impulse`. -/
-  | exileForImpulse
-deriving Repr, Inhabited, BEq
-
 /-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
 inductive TriggerRevealCount where
   /-- The whole hand. -/
@@ -958,7 +954,9 @@ inductive TriggerResolution where
   `.returnToHand .graveyardPermanent`.
   Milled cards of a subtype are `.returnToHand (.milledSubtype subtype)`.
   The source from its owner's graveyard to their hand is
-  `.returnToHand .source .owner`. -/
+  `.returnToHand .source .owner`.
+  The card revealed until a creature, when it does not enter, is
+  `.returnToHand .revealed`. Outside that resolution, it does nothing. -/
   | returnToHand (what : TriggerReturnWhat) (whose : TriggerReturnWhose := .you)
       (note : TriggerReturnNote := .none)
   /-- Put reflexive ability `followup` on the stack (“When you do”). -/
@@ -1099,7 +1097,11 @@ You may put a land card from your hand onto the battlefield tapped is
   Another creature until the source leaves, remembered for a copy, is
   `.exile .target .untilSourceLeaves .copyAndHost`.
   A graveyard card, remembered so it can be played, is
-  `.exile .graveyardCard .forLater .playCard`. -/
+  `.exile .graveyardCard .forLater .playCard`.
+  Cards from the damaged player's library until an instant or sorcery,
+  remembered for `.mayCast .impulse`, are
+  `.exile .top .forLater .impulse` inside `revealLibrary`. Outside that
+  resolution, the exile does nothing. -/
   | exile (what : TriggerExileWhat) (how : TriggerExileHow)
       (note : TriggerExileNote := .none)
   /-- Put cards onto the battlefield. `what` says which cards, `how` says
@@ -1118,7 +1120,10 @@ You may put a land card from your hand onto the battlefield tapped is
   An artifact card from your hand, remembered for a later attach, is
   `.put .artifactFromHand (note := .forAttach)`.
   Optional as `.may (.put .artifactFromHand (note := .forAttach))`.
-  An empty hand skips that choice. -/
+  An empty hand skips that choice.
+  A random creature from the cards revealed off the top is
+  `.put .randomCreature`. The card revealed until a Saga, or the cheap
+  creature, is `.put .revealed`. Outside those resolutions, both do nothing. -/
   | put (what : TriggerPutWhat) (how : TriggerPutHow := .asPrinted)
       (note : TriggerPutNote := .none)
   /-- Remove counters. `what` says which, and `who` says from whom.
@@ -1237,7 +1242,11 @@ You may put a land card from your hand onto the battlefield tapped is
   `.ifElse (.targetIsAnotherSubtype "Hero") (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1))`.
   A +1/+1 counter when you have scried or surveilled, and +1/+1 until end of
   turn otherwise, is
-  `.ifElse .scriedOrSurveilledThisTurn (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1))`. -/
+  `.ifElse .scriedOrSurveilledThisTurn (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1))`.
+  The revealed creature enters when its mana value is at most the lands
+  you control, and goes to your hand otherwise, with
+  `.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)`.
+  Outside `revealLibrary .untilCreature`, that condition does not hold. -/
   | ifElse (cond : TriggerIf) (whenTrue whenFalse : TriggerResolution)
   /-- The controller chooses one of these resolutions.
   Tap an opposing creature or untap one you control is
@@ -1282,25 +1291,26 @@ You may put a land card from your hand onto the battlefield tapped is
   Any other combination does nothing. -/
   | grant (what : TriggerGrantWhat) (who : TriggerGrantWho)
   /-- Look at cards from the top of a library, as `how` and `who` say, then
-  do `thenDo`.
+  resolve `thenDo` for the cards that were found.
   The top `n` cards of your library, a random creature from among them
   onto the battlefield, and the rest on the bottom in a random order, is
-  `.revealLibrary (.top n) .randomCreature`. Looking at zero cards, or no
-  creature among them, logs that no creature was revealed. With `norandom`
-  and more than one creature, that choice waits.
+  `.revealLibrary (.top n) (.put .randomCreature)`. Looking at zero cards,
+  or no creature among them, logs that no creature was revealed. With
+  `norandom` and more than one creature, that choice waits.
   Cards from the top of your library until a creature, onto the battlefield
   when its mana value is at most the lands you control and into your hand
-  otherwise, is `.revealLibrary .untilCreature .battlefieldOrHand`.
+  otherwise, is
+  `.revealLibrary .untilCreature (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed))`.
   Cards from the top of your library until a Saga, onto the battlefield, is
-  `.revealLibrary .untilSaga .battlefield`.
+  `.revealLibrary .untilSaga (.put .revealed)`.
   An empty library for those two cases changes nothing.
   Cards from the top of the damaged player's library until an instant or
   sorcery, exiled face up for `.mayCast .impulse`, is
-  `.revealLibrary .untilInstantOrSorcery .exileForImpulse .damagedPlayer`.
+  `.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`.
   A missing damaged player is the controller's opponent. An empty library
   still remembers the impulse, with nothing exiled.
   Any other combination does nothing. -/
-  | revealLibrary (how : TriggerLibraryHow) (thenDo : TriggerLibraryThen)
+  | revealLibrary (how : TriggerLibraryHow) (thenDo : TriggerResolution)
       (who : TriggerLibraryWho := .you)
   /-- Mill cards (CR 701.13). `n` is how many when `amount` is `.fixed`.
   `who` says who mills, and `note` says what a later step can read.
@@ -1800,7 +1810,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .treasuresPerChosenType =>
     { resolution := .createTokens .treasure 0 false (qty := .chosenCreatureType) }
   | .revealUntilCreature =>
-    { resolution := .revealLibrary .untilCreature .battlefieldOrHand }
+    { resolution := .revealLibrary .untilCreature
+        (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)) }
   | .attackSacPlusOneEqualPower =>
     { resolution := .mayThen (.objectCost .anotherCreature)
         (.putCounters .plusOneSacrificedPower .source) }
@@ -1884,7 +1895,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .tapEnchantedRemoveCounters =>
     { resolution := .sequence [.tapEnchanted, .removeCounters .all .enchanted] }
   | .revealTopPutRandomCreature n =>
-    { resolution := .revealLibrary (.top n) .randomCreature }
+    { resolution := .revealLibrary (.top n) (.put .randomCreature) }
   | .beginCombatIfDrawnTwoPump =>
     { targeting := .of .anotherCreatureYouControl,
       resolution := .«if» (.drewAtLeast 2) (.sequence [
@@ -1915,7 +1926,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .put .notedLands (how := .tapped)] }
   | .grimaImpulse =>
     { resolution := .sequence
-        [.revealLibrary .untilInstantOrSorcery .exileForImpulse .damagedPlayer,
+        [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer,
          .mayCast .impulse .unlimited .withoutPaying] }
   | .palantir =>
     { targeting := .of .opponent,
@@ -1928,7 +1939,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .grant .protectionEverything .youIfCast }
   | .loseLifePerBurden => { resolution := .loseLife 0 (amount := .perBurden) }
   | .revealSaga =>
-    { resolution := .revealLibrary .untilSaga .battlefield }
+    { resolution := .revealLibrary .untilSaga (.put .revealed) }
   | .sacDamagersRingTempts =>
     { resolution := .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts] }
   | .chapter _n e =>

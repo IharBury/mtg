@@ -198,7 +198,7 @@ structure Game where
   /-- Palantír finished putting an influence counter; the following step offers
   the opponent's draw choice. Controller, opponent, and the Palantír. -/
   palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId) := none
-  /-- `revealLibrary .untilInstantOrSorcery .exileForImpulse .damagedPlayer`
+  /-- `revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`
   stored the impulse. The following `.mayCast .impulse` offers the cast. -/
   grimaImpulseReady : Bool := false
   grimaImpulseVictim : Option PlayerId := none

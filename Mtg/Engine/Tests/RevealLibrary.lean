@@ -6,8 +6,8 @@ import Mtg.Engine.Fixture
 The top cards of your library and a random creature from among them, cards
 until a creature, and cards until a Saga are reveals. Cards from the damaged
 player's library until an instant or sorcery are exiled for an impulse cast.
-How far the ability looks, what it does with the cards, and whose library
-it uses are arguments.
+How far the ability looks and whose library it uses are arguments. What
+happens to the cards is a `TriggerResolution`.
 -/
 
 namespace Mtg.Engine.RevealLibraryTests
@@ -104,16 +104,17 @@ def ordered (g : Game) (ids : Array ObjectId := #[]) : Game :=
   | .error e => panic! e
 
 def randomCreature (n : Nat) : TriggeredAbility.TriggerResolution :=
-  .revealLibrary (.top n) .randomCreature
+  .revealLibrary (.top n) (.put .randomCreature)
 
 def untilCreature : TriggeredAbility.TriggerResolution :=
-  .revealLibrary .untilCreature .battlefieldOrHand
+  .revealLibrary .untilCreature
+    (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed))
 
 def untilSaga : TriggeredAbility.TriggerResolution :=
-  .revealLibrary .untilSaga .battlefield
+  .revealLibrary .untilSaga (.put .revealed)
 
 def exileImpulse : TriggeredAbility.TriggerResolution :=
-  .revealLibrary .untilInstantOrSorcery .exileForImpulse .damagedPlayer
+  .revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer
 
 /- The only revealed creature enters. Cards under the window stay above the
 card that goes on the bottom. The opponent's library stays put. -/
@@ -351,33 +352,49 @@ An empty library is remembered with nothing exiled. -/
     lastCombatDamagePlayer := some opp
     grimaImpulseReady := false }
   let crossed := [
-    .revealLibrary (.top 3) .battlefield,
-    .revealLibrary (.top 3) .battlefieldOrHand,
-    .revealLibrary (.top 3) .exileForImpulse,
-    .revealLibrary (.top 3) .randomCreature .damagedPlayer,
-    .revealLibrary .untilCreature .randomCreature,
-    .revealLibrary .untilCreature .battlefield,
-    .revealLibrary .untilSaga .battlefieldOrHand,
-    .revealLibrary .untilSaga .battlefield .damagedPlayer,
-    .revealLibrary .untilInstantOrSorcery .exileForImpulse,
-    .revealLibrary .untilInstantOrSorcery .battlefield .damagedPlayer]
+    .revealLibrary (.top 3) (.put .revealed),
+    .revealLibrary (.top 3) (.returnToHand .revealed),
+    .revealLibrary (.top 3) (.exile .top .forLater .impulse),
+    .revealLibrary (.top 3) (.put .randomCreature) .damagedPlayer,
+    .revealLibrary .untilCreature (.put .randomCreature),
+    .revealLibrary .untilCreature (.put .revealed),
+    .revealLibrary .untilSaga (.returnToHand .revealed),
+    .revealLibrary .untilSaga (.put .revealed) .damagedPlayer,
+    .revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse),
+    .revealLibrary .untilInstantOrSorcery (.put .revealed) .damagedPlayer]
   crossed.all fun r =>
     let g := step g0 r
     libNames g caster == libNames g0 caster &&
       libNames g opp == libNames g0 opp &&
       !g.grimaImpulseReady && g.log.size == g0.log.size
 
+/- The follow-up resolutions do nothing on their own. `revealLibrary` is
+what gives them the revealed cards. -/
+#guard
+  let g0 := onlyLibrary afterDraw caster [plot, bear, tale]
+  let alone := [
+    .put .randomCreature,
+    .put .revealed,
+    .returnToHand .revealed,
+    .exile .top .forLater .impulse,
+    .ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)]
+  alone.all fun r =>
+    let g := step g0 r
+    libNames g caster == libNames g0 caster && !onBattlefield g "Reveal Bear" &&
+      !onBattlefield g "Reveal Tale" && !g.grimaImpulseReady &&
+      g.log.size == g0.log.size
+
 /- Printed phrases and resolutions stay with the combination that produces them. -/
 #guard TriggeredAbility.resolution (.onDiesRevealTopPutRandomCreature 4) ==
-  .revealLibrary (.top 4) .randomCreature
+  .revealLibrary (.top 4) (.put .randomCreature)
 #guard TriggeredAbility.resolution .onNontokenYouControlDiesRevealCreature ==
-  .revealLibrary .untilCreature .battlefieldOrHand
+  untilCreature
 #guard TriggeredAbility.resolution .onFinalSagaChapterRevealSaga ==
-  .revealLibrary .untilSaga .battlefield
+  untilSaga
 #guard TriggeredAbility.resolution .onCombatDamageImpulseInstantSorcery ==
   .sequence [exileImpulse, .mayCast .impulse .unlimited .withoutPaying]
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .revealLibrary (.top 4) .randomCreature } ==
+    { resolution := .revealLibrary (.top 4) (.put .randomCreature) } ==
   s!"reveal the top 4 cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
 #guard TriggeredAbility.resolutionPhrase { resolution := untilCreature } ==
   s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
@@ -386,7 +403,7 @@ An empty library is remembered with nothing exiled. -/
 #guard TriggeredAbility.resolutionPhrase { resolution := exileImpulse } ==
   "that player exiles cards from the top of their library until they exile an instant or sorcery card"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .revealLibrary (.top 2) .battlefield } ==
+    { resolution := .revealLibrary (.top 2) (.put .revealed) } ==
   "reveal cards from a library"
 #guard TriggeredAbility.toNotation (.onDiesRevealTopPutRandomCreature 4) ==
   s!"When this artifact is put into a graveyard from the battlefield, reveal the top 4 cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}."

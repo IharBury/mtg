@@ -1627,7 +1627,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onAttackCastFromGyArtifactInstantSorcery ==
   .mayCast .graveyard .unlimited .pay .exileInstead
 #guard TriggeredAbility.resolution .onCombatDamageImpulseInstantSorcery ==
-  .sequence [.revealLibrary .untilInstantOrSorcery .exileForImpulse .damagedPlayer,
+  .sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer,
     .mayCast .impulse .unlimited .withoutPaying]
 #guard TriggeredAbility.toNotation .onYourBeginCombatCastInstantSorceryFromHand ==
   "At the beginning of combat on your turn, you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control."

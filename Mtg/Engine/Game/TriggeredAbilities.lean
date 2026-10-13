@@ -401,6 +401,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         if o.printed.isEquipment then (g, true)
         else ({ g with putArtifactThisWay := none }, false)
       | none => ({ g with putArtifactThisWay := none }, false)
+  | .revealedManaValueAtMostLands => (g, false)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -1520,10 +1521,10 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 keeps the behavior of the constructor it replaced. -/
 partial def applyRevealLibrary (g : Game) (controller : PlayerId)
     (how : TriggeredAbility.TriggerLibraryHow)
-    (thenDo : TriggeredAbility.TriggerLibraryThen)
+    (thenDo : TriggeredAbility.TriggerResolution)
     (who : TriggeredAbility.TriggerLibraryWho) : Game :=
   match how, thenDo, who with
-  | .top n, .randomCreature, .you =>
+  | .top n, .put .randomCreature .asPrinted .none, .you =>
     let ids := g.scryLookedIds controller n
     let g := ids.foldl (fun g id =>
       match g.findObject? id with
@@ -1543,7 +1544,10 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
       match chosen with
       | some id => g.resolveRandomCreatureReveal controller ids id
       | none => g.putRestOnBottomRandom controller ids
-  | .untilCreature, .battlefieldOrHand, .you =>
+  | .untilCreature,
+    .ifElse .revealedManaValueAtMostLands
+      (.put .revealed .asPrinted .none) (.returnToHand .revealed .you .none),
+    .you =>
     Id.run do
       let mut g := g
       let mut found : Option ObjectId := none
@@ -1578,7 +1582,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
         if o.printed.manaValue <= lands then
           g := g.afterPermanentEnters (g.object! newId)
         return g.putRestOnBottomRandom controller rest
-  | .untilSaga, .battlefield, .you =>
+  | .untilSaga, .put .revealed .asPrinted .none, .you =>
     Id.run do
       let mut g := g
       let mut found : Option ObjectId := none
@@ -1601,7 +1605,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
         g := g'.logMsg s!"{name} enters the battlefield"
         g := g.afterPermanentEnters (g.object! newId)
         return g.putRestOnBottomRandom controller rest
-  | .untilInstantOrSorcery, .exileForImpulse, .damagedPlayer =>
+  | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer =>
     let victim := g.lastCombatDamagePlayer.getD (g.opponent controller)
     let (g, found, others) := g.exileUntilInstantOrSorcery victim
     { g with

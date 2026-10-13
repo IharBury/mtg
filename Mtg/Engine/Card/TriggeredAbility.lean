@@ -888,7 +888,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
   | .sequence [.exile .landsYouControl .forLater .lands, .put .notedLands .tapped _] =>
     "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
-  | .sequence [.revealLibrary .untilInstantOrSorcery .exileForImpulse .damagedPlayer,
+  | .sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer,
       .mayCast .impulse .unlimited .withoutPaying .none] =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
   | .sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw _ .opponentHasYou _)] =>
@@ -1006,6 +1006,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "exile up to three target lands you control"
     | .graveyardCard, .forLater, .playCard =>
       s!"exile {noun}"
+    | .top, .forLater, .impulse =>
+      "exile cards from the top of their library until they exile an instant or sorcery card"
     | _, _, _ =>
       "exile it"
   | .put what how note =>
@@ -1024,6 +1026,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "put a land card from your hand onto the battlefield tapped"
     | .artifactFromHand, _, .forAttach =>
       "put an artifact card from your hand onto the battlefield"
+    | .randomCreature, _, _ =>
+      "put a random creature card from among them onto the battlefield"
+    | .revealed, _, _ =>
+      "put that card onto the battlefield"
     | _, _, _ =>
       "put it onto the battlefield"
   | .removeCounters what who =>
@@ -1162,6 +1168,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"put all {subtype} cards milled this way into your hand"
     | .source, .owner, .none =>
       "return this card from your graveyard to your hand"
+    | .revealed, .you, .none =>
+      "put it into your hand"
     | _, _, _ =>
       "return it to a hand"
   | .or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false] =>
@@ -1188,13 +1196,16 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "grant"
   | .revealLibrary how thenDo who =>
     match how, thenDo, who with
-    | .top n, .randomCreature, .you =>
+    | .top n, .put .randomCreature .asPrinted .none, .you =>
       s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
-    | .untilCreature, .battlefieldOrHand, .you =>
+    | .untilCreature,
+      .ifElse .revealedManaValueAtMostLands
+        (.put .revealed .asPrinted .none) (.returnToHand .revealed .you .none),
+      .you =>
       s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
-    | .untilSaga, .battlefield, .you =>
+    | .untilSaga, .put .revealed .asPrinted .none, .you =>
       "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
-    | .untilInstantOrSorcery, .exileForImpulse, .damagedPlayer =>
+    | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer =>
       "that player exiles cards from the top of their library until they exile an instant or sorcery card"
     | _, _, _ =>
       "reveal cards from a library"
