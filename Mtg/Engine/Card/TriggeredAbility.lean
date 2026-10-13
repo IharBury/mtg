@@ -685,9 +685,9 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   | .becomePrepared .targetWhileSource => some "that creature becomes prepared"
   | .setBasePT p t .targetWhileSource =>
     some s!"that creature has base power and toughness {p}/{t} until end of turn"
-  | .putOnTopOfLibrary .targetWhileSource =>
+  | .putOnLibrary .top (.permanent .targetWhileSource) =>
     some "that creature's owner puts it on top of their library"
-  | .putOnBottomOfLibrary .targetWhileSource =>
+  | .putOnLibrary .bottom (.permanent .targetWhileSource) =>
     some "that creature's owner puts it on the bottom of their library"
   | .destroy .targetWhileSource _ => some "destroy that creature"
   | .dealDamage n .targetWhileSource .fixed .none =>
@@ -764,10 +764,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{affectedNoun who noun} becomes prepared"
   | .setBasePT p t who =>
     s!"{affectedNoun who noun} has base power and toughness {p}/{t} until end of turn"
-  | .putOnTopOfLibrary who =>
+  | .putOnLibrary .top (.permanent who) =>
     s!"{affectedNoun who noun}'s owner puts it on top of their library"
-  | .putOnBottomOfLibrary who =>
+  | .putOnLibrary .bottom (.permanent who) =>
     s!"{affectedNoun who noun}'s owner puts it on the bottom of their library"
+  | .putOnLibrary .bottom .cardFromHand =>
+    "put a card from your hand on the bottom of your library"
+  | .putOnLibrary _ _ =>
+    "put on library"
   | .surveil n => s!"surveil {n}"
   | .empowerJace n => s!"empower Jace {n}"
   | .prepareSource .ifNotPrepared =>
@@ -953,7 +957,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | none => "it deals damage divided as you choose"
   | .sequence [.returnToHand .graveyardCard, .gainLife _ .equalToTargetPower] =>
     s!"return {noun} to your hand. You gain life equal to that card's power"
-  | .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom] =>
+  | .sequence [.draw 1, .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)] =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw 1),
       .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] =>
@@ -1119,9 +1123,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match symbols.toList with
     | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
     | _ => "you may pay. If you do, draw a card"
-  | .putFromHandOnBottom =>
-    "put a card from your hand on the bottom of your library"
-  | .«if» .noLegendaryCreature .putFromHandOnBottom =>
+  | .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand) =>
     "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .exile what how note =>
     match what, how, note with

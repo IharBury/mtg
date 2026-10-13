@@ -1948,6 +1948,27 @@ where
     g.withAffected controller ab sourceId targets affected fun g o =>
       g.applyPermanentAction o .loseIndestructible
 
+/-- Resolve `TriggerResolution.putOnLibrary`. Each printed combination keeps
+the behavior of the constructor it replaced. A card from hand on top
+puts nothing. -/
+def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (place : TriggeredAbility.TriggerLibraryPlace)
+    (what : TriggeredAbility.TriggerLibraryWhat) : Game :=
+  match place, what with
+  | .top, .permanent who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o .putOnTopOfLibrary
+  | .bottom, .permanent who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o .putOnBottomOfLibrary
+  | .bottom, .cardFromHand =>
+    if (g.player controller).hand.isEmpty then g
+    else
+      { g with pending := .putOnBottom controller 1 }.logMsg
+        s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
+  | .top, .cardFromHand => g
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -2037,12 +2058,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .setBasePT power toughness who =>
     g.withAffected controller ab sourceId targets who fun g o =>
       g.applyPermanentAction o (.setBasePT power toughness)
-  | .putOnTopOfLibrary who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .putOnTopOfLibrary
-  | .putOnBottomOfLibrary who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .putOnBottomOfLibrary
+  | .putOnLibrary place what =>
+    g.applyPutOnLibrary controller ab sourceId targets place what
   | .dividedDamage =>
     Id.run do
       let mut g := g
@@ -2126,11 +2143,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             steps := combined } }
   | .gainLife n amount =>
     g.applyGainLife controller ab sourceId targets n amount sequencedCardPower
-  | .putFromHandOnBottom =>
-    if (g.player controller).hand.isEmpty then g
-    else
-      { g with pending := .putOnBottom controller 1 }.logMsg
-        s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
   | .exile what how note =>
     g.applyExile controller ab sourceId targets what how note
   | .put what how note | .may (.put what how note) =>
