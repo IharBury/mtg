@@ -1069,7 +1069,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .destroy .permanentDealtDamage .none =>
     "destroy the permanent dealt damage this way"
   | .destroy .target .forAmass | .destroy .target .none | .destroy .target .chosenToken =>
-    s!"destroy {noun}"
+    if noun.isEmpty then "destroy it" else s!"destroy {noun}"
   | .destroy _ _ =>
     "destroy it"
   | .recruit .recruit =>
