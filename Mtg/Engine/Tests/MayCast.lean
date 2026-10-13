@@ -4,7 +4,8 @@ import Mtg.Engine.Fixture
 # `TriggerResolution.mayCast`
 
 Graveyard casts, hand casts limited by legendary Wizards, hand casts limited
-by last-known damage, and the impulse cast after `grimaExileUntil`.
+by last-known damage, and the impulse cast after
+`revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`.
 -/
 
 namespace Mtg.Engine.MayCastTests

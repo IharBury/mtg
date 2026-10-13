@@ -38,6 +38,7 @@ import Mtg.Engine.Tests.LoseLife
 import Mtg.Engine.Tests.Mill
 import Mtg.Engine.Tests.RemoveCounters
 import Mtg.Engine.Tests.RevealFromHand
+import Mtg.Engine.Tests.RevealLibrary
 import Mtg.Engine.Tests.Modes
 
 /-!
@@ -95,5 +96,7 @@ keep working.
   from the enchanted creature
 - `RevealFromHand`: the opponent's hand with an exile until the source
   leaves, and a counted reveal from the announced player's hand
+- `RevealLibrary`: the top cards and a random creature, revealing until a
+  creature, revealing until a Saga, and exiling until an instant or sorcery
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/
