@@ -84,7 +84,7 @@ inductive TriggerIf where
   | questAtLeast (n : Nat)
   /-- An earlier step attached Equipment to a creature that is still in play. -/
   | equipmentAttached
-  /-- An earlier step milled a card from an opponent. -/
+  /-- `.mill` noted `.opponentsMilled`: an opponent milled a card. -/
   | opponentsMilled
   /-- You control a Hero other than the source. -/
   | anotherHero
@@ -694,13 +694,47 @@ inductive TriggerLifeLossAmount where
   | perBurden
 deriving Repr, Inhabited, BEq
 
+/-- Who `TriggerResolution.mill` mills. -/
+inductive TriggerMillWho where
+  /-- The controller. -/
+  | you
+  /-- The announced player. An illegal target mills nothing. -/
+  | target
+  /-- The player who lost life. That player's seat is the trigger's
+  last-known toughness. A missing seat mills nothing. -/
+  | thatPlayer
+  /-- Each opponent of the controller. -/
+  | eachOpponent
+deriving Repr, Inhabited, BEq
+
+/-- Where `TriggerResolution.mill` reads how many cards. The `n` argument
+is the count when this is `.fixed`. -/
+inductive TriggerMillAmount where
+  /-- `n` cards. -/
+  | fixed
+  /-- The life that player lost. The amount is the trigger's last-known
+  power. A missing amount mills nothing. -/
+  | thatManyLost
+deriving Repr, Inhabited, BEq
+
+/-- What a later step of `TriggerResolution.mill` can read. -/
+inductive TriggerMillNote where
+  /-- Nothing beyond the mill. -/
+  | none
+  /-- The cards the controller milled. -/
+  | milledCards
+  /-- Whether an opponent milled a card. -/
+  | opponentsMilled
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
 putting counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
 attach, amass, casting a spell, returning cards to hand, putting onto
 the battlefield, adding mana, choosing modes, destroying, fighting,
-granting, gaining life, and losing life each cover multiple printed abilities.
+granting, gaining life, losing life, and milling each cover multiple
+printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -1175,14 +1209,24 @@ You may put a land card from your hand onto the battlefield tapped is
   | grant (what : TriggerGrantWhat) (who : TriggerGrantWho)
   /-- Reveal the top `n`; put a random creature onto the battlefield. -/
   | revealTopPutRandomCreature (n : Nat)
-  /-- Target player mills `n`. -/
-  | millPlayer (n : Nat)
-  /-- The controller mills `n`. -/
-  | mill (n : Nat)
+  /-- Mill cards (CR 701.13). `n` is how many when `amount` is `.fixed`.
+  `who` says who mills, and `note` says what a later step can read.
+  Milling zero cards changes nothing. A library that runs out logs that
+  it is empty and mills nothing further.
+  The controller mills `n` with `.mill n`.
+  The announced player mills `n` with `.mill n .target`.
+  The player who lost life mills that many with
+  `.mill 0 .thatPlayer .thatManyLost`.
+  The controller mills `n` and remembers those cards with
+  `.mill n (note := .milledCards)`.
+  Each opponent mills `n`, and a later step sees whether any card was
+  milled, with `.mill n .eachOpponent (note := .opponentsMilled)`.
+  Any other combination mills nothing. -/
+  | mill (n : Nat) (who : TriggerMillWho := .you)
+      (amount : TriggerMillAmount := .fixed)
+      (note : TriggerMillNote := .none)
   /-- Reveal until a creature; put it onto the battlefield or into hand. -/
   | revealUntilCreature
-  /-- Each player who lost life mills that much. -/
-  | millThatManyLost
   /-- Create two nonlegendary token copies of the source. -/
   | copySelfNonlegendary
   /-- The Ring tempts you. -/
@@ -1229,8 +1273,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | additionalCombatPhase
   /-- The target becomes a Bear in addition to its other types. -/
   | becomeBear
-  /-- Mill `n` and remember the cards milled. -/
-  | millNote (n : Nat)
   /-- Tap the creature enchanted by the source. -/
   | tapEnchanted
   /-- Remove all counters from the creature enchanted by the source. -/
@@ -1240,8 +1282,6 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Exile cards from the top of the damaged player's library until an
   instant or sorcery. The following `.mayCast .impulse` offers the cast. -/
   | grimaExileUntil
-  /-- Each opponent mills `n`. The next step sees whether any card was milled. -/
-  | opponentsMillNote (n : Nat)
   /-- Queue the reflexive exile-and-copy of a milled spell. -/
   | reflexiveCopyMilled
   /-- A player loses life (CR 118.3a), as `who` and `amount` say. `n` is
@@ -1533,7 +1573,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     | .target =>
       { targeting := .of .opponent, resolution := .discard n (who := .target) }
   | .millPlayer n =>
-    { targeting := .of .player, resolution := .millPlayer n }
+    { targeting := .of .player, resolution := .mill n .target }
   | .investigate => { resolution := .investigate }
   | .pumpCause p t => { resolution := .pump p t .cause }
   | .searchLibrary how => { resolution := .searchLibrary how }
@@ -1652,7 +1692,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence
         [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)] }
   | .millThenSubtypeToHand n subtype =>
-    { resolution := .sequence [.millNote n, .returnToHand (.milledSubtype subtype)] }
+    { resolution := .sequence
+        [.mill n (note := .milledCards), .returnToHand (.milledSubtype subtype)] }
   | .exileOppNonlandEachUntilLeaves =>
     { targeting := .of (.filtered
         { noun := "for each opponent, up to one target nonland permanent that player controls"
@@ -1673,7 +1714,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .lootLandEntersTapped =>
     { resolution := .sequence
         [.draw 1, .discard 1, .put .discardedLand (how := .tapped)] }
-  | .millThatManyLost => { resolution := .millThatManyLost }
+  | .millThatManyLost =>
+    { resolution := .mill 0 .thatPlayer .thatManyLost }
   | .drawPerFatGraveyard =>
     { resolution := .draw 0 (amount := .perFatGraveyard) }
   | .maySacDrawTreasure =>
@@ -1684,7 +1726,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .castInstantSorceryMvAtMost =>
     { resolution := .mayCast .hand .lastKnown .withoutPaying }
   | .millThenCopy =>
-    { resolution := .sequence [.opponentsMillNote 2, .«if» .opponentsMilled .reflexiveCopyMilled] }
+    { resolution := .sequence
+        [.mill 2 .eachOpponent (note := .opponentsMilled),
+         .«if» .opponentsMilled .reflexiveCopyMilled] }
   | .pumpTargetBySourcePower =>
     { targeting := .of .anotherCreatureYouControl,
       resolution := .pump 0 0 .target .equalSourcePower }

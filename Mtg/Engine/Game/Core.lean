@@ -191,9 +191,9 @@ structure Game where
   amassControllerThisWay : Option PlayerId := none
   amassAmountThisWay : Nat := 0
   amassYouControlledThisWay : Bool := false
-  /-- Cards milled by the current `millNote` step. -/
+  /-- Cards milled by `.mill` when it notes `.milledCards`. -/
   milledIdsThisWay : Array ObjectId := #[]
-  /-- `opponentsMillNote` milled at least one card. -/
+  /-- `.mill` noted `.opponentsMilled`: an opponent milled at least one card. -/
   opponentsMilledThisWay : Bool := false
   /-- Palantír finished putting an influence counter; the following step offers
   the opponent's draw choice. Controller, opponent, and the Palantír. -/

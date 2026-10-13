@@ -541,7 +541,7 @@ inductive SharedTrigger where
   `.opponentDiscards`. The announced opponent discards `n` is
   `.opponentDiscards n .target`. -/
   | opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each)
-  /-- Target player mills `n` cards. -/
+  /-- Target player mills `n` cards. Resolves as `.mill n .target`. -/
   | millPlayer (n : Nat)
   /-- Investigate (create a Clue). -/
   | investigate
@@ -673,7 +673,8 @@ inductive SharedTrigger where
   /-- Trample counter, become a Bear, maybe draw. Resolves as
   `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)]`. -/
   | trampleCounterBecomeBear
-  /-- Mill `n`, then put matching subtype cards into hand. -/
+  /-- Mill `n`, then put matching subtype cards into hand. Resolves as
+  `.sequence [.mill n (note := .milledCards), .returnToHand (.milledSubtype subtype)]`. -/
   | millThenSubtypeToHand (n : Nat) (subtype : String)
   /-- Exile up to one opposing nonland per opponent until this leaves. -/
   | exileOppNonlandEachUntilLeaves
@@ -690,7 +691,8 @@ inductive SharedTrigger where
   /-- Loot; a discarded land enters tapped. Resolves as
   `.sequence [.draw 1, .discard 1, .put .discardedLand (how := .tapped)]`. -/
   | lootLandEntersTapped
-  /-- That player mills that many cards. -/
+  /-- That player mills that many cards. Resolves as
+  `.mill 0 .thatPlayer .thatManyLost`. -/
   | millThatManyLost
   /-- Draw a card for each fat graveyard. -/
   | drawPerFatGraveyard
@@ -701,7 +703,7 @@ inductive SharedTrigger where
   /-- You may cast an instant or sorcery with mana value at most that damage. -/
   | castInstantSorceryMvAtMost
   /-- Mill, then maybe copy a milled spell. Resolves as
-  `.sequence [.opponentsMillNote 2, .«if» .opponentsMilled .reflexiveCopyMilled]`. -/
+  `.sequence [.mill 2 .eachOpponent (note := .opponentsMilled), .«if» .opponentsMilled .reflexiveCopyMilled]`. -/
   | millThenCopy
   /-- Another creature gets +X/+0 equal to this creature's power. -/
   | pumpTargetBySourcePower

@@ -869,7 +869,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
   | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
-  | .sequence [.millNote n, .returnToHand (.milledSubtype subtype)] =>
+  | .sequence [.mill n .you .fixed .milledCards, .returnToHand (.milledSubtype subtype)] =>
     s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
   | .sequence [.tapEnchanted, .removeCountersFromEnchanted] =>
     "tap enchanted creature and remove all counters from it"
@@ -892,7 +892,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
   | .sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw _ .opponentHasYou _)] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
-  | .sequence [.opponentsMillNote 2, .«if» .opponentsMilled .reflexiveCopyMilled] =>
+  | .sequence [.mill 2 .eachOpponent .fixed .opponentsMilled, .«if» .opponentsMilled .reflexiveCopyMilled] =>
     "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
   | .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts] =>
     "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you"
@@ -1183,17 +1183,24 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
   | .«if» (.drewAtLeast 2) (.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords k)]) =>
     s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
-  | .millPlayer n =>
-    s!"{noun} mills {n} cards"
-  | .mill n => s!"mill {n} cards"
+  | .mill n who amount note =>
+    match who, amount, note with
+    | .you, .fixed, .none | .you, .fixed, .milledCards =>
+      s!"mill {n} cards"
+    | .target, .fixed, .none =>
+      s!"{noun} mills {n} cards"
+    | .thatPlayer, .thatManyLost, .none =>
+      "that player mills that many cards"
+    | .eachOpponent, .fixed, .opponentsMilled =>
+      s!"each opponent mills {n} cards"
+    | _, _, _ =>
+      "mill"
   | .revealUntilCreature =>
     s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
   | .mayThen (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source) =>
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
   | .mayThen (.pay symbols) (.returnToHand .source .owner) =>
     s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
-  | .millThatManyLost =>
-    "that player mills that many cards"
   | .copySelfNonlegendary =>
     "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
   | .mayThen (.objectCost .anotherCreatureOrArtifact)
@@ -1217,7 +1224,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .or [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
     "create a Food token or a Treasure token"
   | .ifElse (.creatureCardsInGraveyardAtLeast 2)
-      (.createTokens .villain21menace 1 true) (.mill 2) =>
+      (.createTokens .villain21menace 1 true) (.mill 2 .you .fixed .none) =>
     "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
   | .ifElse (.targetIsAnotherSubtype "Hero")
       (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1)) =>
@@ -1262,7 +1269,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "it becomes a Bear in addition to its other types"
   | .«if» (.bearsAtLeast 3) (.draw 2) =>
     "if you control three or more Bears, draw two cards"
-  | .millNote n => s!"mill {n} cards"
   | .tapEnchanted => "tap enchanted creature"
   | .removeCountersFromEnchanted => "remove all counters from enchanted creature"
   | .searchDragonFromHandOrLibrary =>
@@ -1273,8 +1279,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "that creature deals damage equal to its power to up to one target creature"
   | .grimaExileUntil =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card"
-  | .opponentsMillNote n =>
-    s!"each opponent mills {n} cards"
   | .reflexiveCopyMilled =>
     "exile and copy a card"
   | .«if» .opponentsMilled .reflexiveCopyMilled =>
