@@ -458,21 +458,6 @@ inductive OpponentDiscard where
   | target
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- What `TriggerResolution.searchLibrary` finds, and where that card goes. -/
-inductive TriggerLibrarySearch where
-  /-- A Forest card onto the battlefield. -/
-  | forestToBattlefield
-  /-- A basic land card into your hand. -/
-  | basicLandToHand
-  /-- You may search for a basic land card, reveal it, shuffle, and put it
-  on top. Declining does not shuffle. -/
-  | basicLandOnTop
-  /-- A Dragon card from your hand and/or library onto the battlefield.
-  A card from the library shuffles. A card from the hand does not.
-  Choosing not to find does not shuffle. -/
-  | dragonFromHandOrLibrary
-deriving Repr, Inhabited, BEq, DecidableEq
-
 /-- Which permanents `SharedTrigger.plusOneEachYouControl` puts a counter on. -/
 inductive YouControlPlusOne where
   /-- Each creature you control. -/
@@ -551,12 +536,12 @@ inductive SharedTrigger where
   | investigate
   /-- The attacking creature that caused this trigger gets +P/+T. -/
   | pumpCause (power toughness : Int)
-  /-- Search your library. A Forest onto the battlefield is `.searchLibrary`.
-  A basic land into your hand is `.searchLibrary .basicLandToHand`.
-  You may put a basic land on top is `.searchLibrary .basicLandOnTop`.
-  A Dragon from your hand and/or library onto the battlefield is
-  `.searchLibrary .dragonFromHandOrLibrary`. -/
-  | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
+  /-- Search your library for a Forest card and put it onto the battlefield.
+  Resolves as `.searchLibrary (.put .forest)`. -/
+  | searchLibrary
+  /-- Search your library for a basic land card and put it into your hand.
+  Resolves as `.searchLibrary (.returnToHand .basicLand)`. -/
+  | searchBasicLandToHand
   /-- Each player sacrifices a creature of their choice. -/
   | eachPlayerSacrificesCreature
   /-- Exile a target of this kind. -/
@@ -594,7 +579,7 @@ inductive SharedTrigger where
   Resolves as `.sequence [.createTokens kind 1 false, .attach .source .created]`. -/
   | createThenAttach (kind : TokenKind)
   /-- Gain `n` life, then you may search a basic land to the top.
-  Resolves as `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`. -/
+  Resolves as `.sequence [.gainLife n, .searchLibrary (.put .basicLandOnTop)]`. -/
   | gainLifeSearchBasicOnTop (n : Nat)
   /-- Add these mana types. -/
   | addMana (types : Array ManaType)

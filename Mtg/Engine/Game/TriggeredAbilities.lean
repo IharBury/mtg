@@ -1670,18 +1670,20 @@ def applyRevealFromHand (g : Game) (controller : PlayerId)
     | _ => g
   | _, _ => g
 
-/-- Resolve `TriggerResolution.searchLibrary`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
-def applySearchLibrary (g : Game) (controller : PlayerId) (how : TriggerLibrarySearch) : Game :=
-  match how with
-  | .forestToBattlefield => g.resolveSearchForest controller
-  | .basicLandToHand => g.resolveSearchBasicLandToHand controller
-  | .basicLandOnTop =>
+/-- Resolve `TriggerResolution.searchLibrary`. Each printed follow-up keeps
+the behavior of the constructor it replaced. Any other resolution does nothing. -/
+def applySearchLibrary (g : Game) (controller : PlayerId)
+    (thenDo : TriggeredAbility.TriggerResolution) : Game :=
+  match thenDo with
+  | .put .forest .asPrinted .none => g.resolveSearchForest controller
+  | .returnToHand .basicLand .you .none => g.resolveSearchBasicLandToHand controller
+  | .put .basicLandOnTop .asPrinted .none =>
     g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
       (optional := true)
-  | .dragonFromHandOrLibrary =>
+  | .put .dragon .asPrinted .none =>
     g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
       .battlefieldFromHandOrLibrary (alsoHand := true)
+  | _ => g
 
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
@@ -1751,8 +1753,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginScry controller n
   | .draw n who amount =>
     g.applyTriggerDraw controller n who amount
-  | .searchLibrary how =>
-    g.applySearchLibrary controller how
+  | .searchLibrary thenDo =>
+    g.applySearchLibrary controller thenDo
   | .discard n who what when =>
     g.applyDiscard controller sourceId targets n who what when
   | .sacrifice who what note =>

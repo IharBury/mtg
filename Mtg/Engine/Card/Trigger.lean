@@ -507,6 +507,9 @@ inductive TriggerReturnWhat where
   /-- The card `revealLibrary .untilCreature` revealed, on the hand branch.
   Outside that resolution, `.returnToHand .revealed` does nothing. -/
   | revealed
+  /-- A basic land card `searchLibrary` found. Outside that resolution,
+  `.returnToHand .basicLand` does nothing. -/
+  | basicLand
 deriving Repr, Inhabited, BEq
 
 /-- Whose hand `TriggerResolution.returnToHand` returns those cards to. -/
@@ -547,6 +550,15 @@ inductive TriggerPutWhat where
   /-- The card `revealLibrary` revealed. Outside `.untilSaga` and the
   battlefield branch of `.untilCreature`, `.put .revealed` does nothing. -/
   | revealed
+  /-- A Forest card `searchLibrary` found. Outside that resolution,
+  `.put .forest` does nothing. -/
+  | forest
+  /-- A basic land card `searchLibrary` found, put on top of the library.
+  Outside that resolution, `.put .basicLandOnTop` does nothing. -/
+  | basicLandOnTop
+  /-- A Dragon card `searchLibrary` found in the hand and/or library.
+  Outside that resolution, `.put .dragon` does nothing. -/
+  | dragon
 deriving Repr, Inhabited, BEq
 
 /-- How `TriggerResolution.put` puts those cards onto the battlefield. -/
@@ -865,14 +877,17 @@ inductive TriggerResolution where
   offer mills and that player loses life; it does not skip. -/
   | draw (n : Nat) (who : TriggerDrawWho := .you)
       (amount : TriggerDrawAmount := .fixed)
-  /-- Search your library, as `how` says.
-  A Forest onto the battlefield is `.searchLibrary`.
-  A basic land into your hand is `.searchLibrary .basicLandToHand`.
-  You may put a basic land on top is `.searchLibrary .basicLandOnTop`.
+  /-- Search a library, then resolve `thenDo` for the card that was found.
+  A Forest onto the battlefield is `.searchLibrary (.put .forest)`.
+  A basic land into your hand is `.searchLibrary (.returnToHand .basicLand)`.
+  You may put a basic land on top is `.searchLibrary (.put .basicLandOnTop)`.
+  Declining that search does not shuffle.
   A Dragon from your hand and/or library onto the battlefield is
-  `.searchLibrary .dragonFromHandOrLibrary`. A card from the library
-  shuffles. A card from the hand does not. Choosing not to find does not. -/
-  | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
+  `.searchLibrary (.put .dragon)`. A card from the library shuffles.
+  A card from the hand does not. Choosing not to find does not.
+  An empty hand and library still shuffles: nothing was eligible to choose.
+  Any other resolution does nothing. `thenDo` does nothing on its own. -/
+  | searchLibrary (thenDo : TriggerResolution)
   /-- Discard cards. `n` is the count when `what` is `.cards`.
   One card from the controller is `.discard`.
   Inside `mayThen`, one card is optional: declining skips the conditional.
@@ -960,7 +975,9 @@ inductive TriggerResolution where
   The source from its owner's graveyard to their hand is
   `.returnToHand .source .owner`.
   The card revealed until a creature, when it does not enter, is
-  `.returnToHand .revealed`. Outside that resolution, it does nothing. -/
+  `.returnToHand .revealed`. Outside that resolution, it does nothing.
+  A basic land found by searching is `.returnToHand .basicLand`.
+  Outside `searchLibrary`, it does nothing. -/
   | returnToHand (what : TriggerReturnWhat) (whose : TriggerReturnWhose := .you)
       (note : TriggerReturnNote := .none)
   /-- Put reflexive ability `followup` on the stack (“When you do”). -/
@@ -1022,7 +1039,7 @@ You may put a land card from your hand onto the battlefield tapped is
   Create one token, then attach the source to it, is
   `.sequence [.createTokens kind 1 false, .attach .source .created]`.
   Gain life, then you may search a basic land onto the top, is
-  `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`.
+  `.sequence [.gainLife n, .searchLibrary (.put .basicLandOnTop)]`.
   Destroy opponents' artifacts and enchantments, then gain 1 life for each
   one actually destroyed, is
   `.sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), .gainLife 0 (amount := .forEachDestroyedThisWay)]`.
@@ -1127,7 +1144,10 @@ You may put a land card from your hand onto the battlefield tapped is
   An empty hand skips that choice.
   A random creature from the cards revealed off the top is
   `.put .randomCreature`. The card revealed until a Saga, or the cheap
-  creature, is `.put .revealed`. Outside those resolutions, both do nothing. -/
+  creature, is `.put .revealed`. Outside those resolutions, both do nothing.
+  A Forest found by searching is `.put .forest`. A basic land put on top
+  after that search is `.put .basicLandOnTop`. A Dragon found in the hand
+  and/or library is `.put .dragon`. Outside `searchLibrary`, those do nothing. -/
   | put (what : TriggerPutWhat) (how : TriggerPutHow := .asPrinted)
       (note : TriggerPutNote := .none)
   /-- Remove counters. `what` says which, and `who` says from whom.
@@ -1680,7 +1700,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .player, resolution := .mill n .target }
   | .investigate => { resolution := .investigate }
   | .pumpCause p t => { resolution := .pump p t .cause }
-  | .searchLibrary how => { resolution := .searchLibrary how }
+  | .searchLibrary => { resolution := .searchLibrary (.put .forest) }
+  | .searchBasicLandToHand =>
+    { resolution := .searchLibrary (.returnToHand .basicLand) }
   | .eachPlayerSacrificesCreature =>
     { resolution := .sacrifice .eachPlayer .chosenCreature }
   | .exileTarget kind =>
@@ -1708,7 +1730,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .createThenAttach kind =>
     { resolution := .sequence [.createTokens kind 1 false, .attach .source .created] }
   | .gainLifeSearchBasicOnTop n =>
-    { resolution := .sequence [.gainLife n, .searchLibrary .basicLandOnTop] }
+    { resolution := .sequence [.gainLife n, .searchLibrary (.put .basicLandOnTop)] }
   | .addMana types => { resolution := .addMana types }
   | .createAxe attach =>
     { resolution :=
@@ -1808,7 +1830,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .creatureYouControl,
       resolution := .putCounters .plusOneLastKnownMv .permanent }
   | .mountainQuestDragon =>
-    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchLibrary .dragonFromHandOrLibrary])] }
+    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchLibrary (.put .dragon)])] }
   | .treasuresPerChosenType =>
     { resolution := .createTokens .treasure 0 false (qty := .chosenCreatureType) }
   | .revealUntilCreature =>
