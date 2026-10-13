@@ -33,6 +33,7 @@ import Mtg.Engine.Tests.Destroy
 import Mtg.Engine.Tests.Discard
 import Mtg.Engine.Tests.TriggerFight
 import Mtg.Engine.Tests.Grant
+import Mtg.Engine.Tests.GainLife
 import Mtg.Engine.Tests.Modes
 
 /-!
@@ -80,5 +81,7 @@ keep working.
   Equipment host dealing damage equal to its power
 - `Grant`: double strike for equipped attackers, and protection from
   everything when the source was cast
+- `GainLife`: a fixed amount, the targeted card's power, one life per
+  permanent destroyed, and one life per other creature
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/

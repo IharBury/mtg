@@ -791,7 +791,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterOrAttackReturnElfGainLife ==
   .triggered .enterOrAttack (Effect.ofTrigger .returnElfGainLife)
 #guard TriggeredAbility.resolution .onEnterOrAttackReturnElfGainLife ==
-  .sequence [.returnToHand .graveyardCard, .gainLifeEqualToTargetPower]
+  .sequence [.returnToHand .graveyardCard, .gainLife 0 (amount := .equalToTargetPower)]
 #guard TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature ==
   .triggered .dies (Effect.ofTrigger .damageFromLastKnownPower)
 #guard TriggeredAbility.onCastNoncreaturePumpAndDamageOpponents 1 ==
@@ -830,13 +830,13 @@ namespace CardDef
   .triggered .enter (Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife)
 #guard TriggeredAbility.resolution .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   .sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
-    .gainLifeForEachDestroyedThisWay]
+    .gainLife 0 (amount := .forEachDestroyedThisWay)]
 #guard TriggeredAbility.toNotation .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   "When this permanent enters, destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way."
 #guard TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife ==
   .triggered (.or .enter .attack) (Effect.ofTrigger .plusOneEachOtherGainLife)
 #guard TriggeredAbility.resolution .onEnterOrAttackPlusOneEachOtherGainLife ==
-  .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature]
+  .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife 0 (amount := .forEachOtherCreature)]
 #guard TriggeredAbility.toNotation .onEnterOrAttackPlusOneEachOtherGainLife ==
   "Whenever this creature enters or attacks, put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control."
 #guard TriggeredAbility.onAttackDamageEqualSubtypeToEachOpponent "Dwarf" ==

@@ -1413,6 +1413,35 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       | none => g
   | _, _ => g
 
+/-- Resolve `TriggerResolution.gainLife`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target) (n : Nat)
+    (amount : TriggeredAbility.TriggerLifeAmount)
+    (sequencedCardPower : Option Nat) : Game :=
+  match amount with
+  | .fixed =>
+    g.gainLife controller n
+  | .equalToTargetPower =>
+    match sequencedCardPower with
+    | some k => g.gainLife controller k
+    | none =>
+      g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
+        match t with
+        | Target.card oid | Target.permanent oid =>
+          match g.findObject? oid with
+          | some o => g.gainLife controller (g.power o).toNat
+          | none => g.logMsg "The target is no longer in the graveyard"
+        | _ => g.logMsg "The target is no longer legal"
+  | .forEachDestroyedThisWay =>
+    let k := g.permanentsDestroyedThisWay
+    let g := { g with permanentsDestroyedThisWay := 0 }
+    if k == 0 then g else g.gainLife controller k
+  | .forEachOtherCreature =>
+    let k :=
+      ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
+    if k == 0 then g else g.gainLife controller k
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -1576,17 +1605,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             sourceName
             cardPower
             steps := combined } }
-  | .gainLifeEqualToTargetPower =>
-    match sequencedCardPower with
-    | some n => g.gainLife controller n
-    | none =>
-      g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
-        match t with
-        | Target.card oid | Target.permanent oid =>
-          match g.findObject? oid with
-          | some o => g.gainLife controller (g.power o).toNat
-          | none => g.logMsg "The target is no longer in the graveyard"
-        | _ => g.logMsg "The target is no longer legal"
+  | .gainLife n amount =>
+    g.applyGainLife controller ab sourceId targets n amount sequencedCardPower
   | .onSource action =>
     if g.mayThenDrop > 0 && action == .tap then
       match sourceId.bind g.findObject? with
@@ -1600,8 +1620,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         (g.logMsg "The source is no longer on the battlefield. The reflexive ability doesn't trigger.").failMayThen
     else
       g.applyOnTriggerSource sourceId action
-  | .gainLife n =>
-    g.gainLife controller n
   | .putFromHandOnBottom =>
     if (g.player controller).hand.isEmpty then g
     else
@@ -1624,10 +1642,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       s!"{(g.player controller).name} may tap any number of untapped Humans they control"
   | .destroy what note =>
     g.applyDestroy controller targets lastKnownPower what note
-  | .gainLifeForEachDestroyedThisWay =>
-    let n := g.permanentsDestroyedThisWay
-    let g := { g with permanentsDestroyedThisWay := 0 }
-    if n == 0 then g else g.gainLife controller n
   | .recruit _ =>
     g.beginRecruit controller
   | .putCounters what who =>
@@ -1639,10 +1653,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       kind n tapped token who qty note
   | .attach what host =>
     g.applyAttach controller ab sourceId targets what host
-  | .gainLifeForEachOtherCreature =>
-    let n :=
-      ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
-    if n == 0 then g else g.gainLife controller n
   | .addMana types amount =>
     g.applyAddMana controller sourceId types amount
   | .becomePT p t =>

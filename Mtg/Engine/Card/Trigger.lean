@@ -658,13 +658,29 @@ inductive TriggerGrantWho where
   | youIfCast
 deriving Repr, Inhabited, BEq
 
+/-- Where `TriggerResolution.gainLife` reads how much life. The `n` argument
+is used when this is `.fixed`. -/
+inductive TriggerLifeAmount where
+  /-- The `n` argument. -/
+  | fixed
+  /-- The targeted card's power. Inside `sequence`, that power is read
+  when the sequence starts, before an earlier step moves the card. -/
+  | equalToTargetPower
+  /-- One life for each permanent an earlier step destroyed.
+  Indestructible permanents and shield counters do not count. -/
+  | forEachDestroyedThisWay
+  /-- One life for each other creature the controller controls.
+  The source is not included. -/
+  | forEachOtherCreature
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
 putting counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
 attach, amass, casting a spell, returning cards to hand, putting onto
-the battlefield, adding mana, choosing modes, destroying, fighting, and
-granting each cover multiple printed abilities.
+the battlefield, adding mana, choosing modes, destroying, fighting,
+granting, and gaining life each cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -869,7 +885,7 @@ You may put a land card from your hand onto the battlefield tapped is
   | dividedDamage
   /-- Apply each resolution in order. An illegal required target skips every
   step (CR 608.2b). Return a graveyard card, then gain life equal to its
-  power, is `.sequence [.returnToHand .graveyardCard, .gainLifeEqualToTargetPower]`.
+  power, is `.sequence [.returnToHand .graveyardCard, .gainLife 0 (amount := .equalToTargetPower)]`.
   Draw, then bottom a card if you control no legendary, is
   `.sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom]`.
   Remove a hope counter, draw if one was removed, then sacrifice and gain
@@ -885,10 +901,10 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.gainLife n, .searchLibrary .basicLandOnTop]`.
   Destroy opponents' artifacts and enchantments, then gain 1 life for each
   one actually destroyed, is
-  `.sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), .gainLifeForEachDestroyedThisWay]`.
+  `.sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), .gainLife 0 (amount := .forEachDestroyedThisWay)]`.
   Put a +1/+1 counter on each other creature you control, then gain 1 life
   for each other creature you control, is
-  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature]`.
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife 0 (amount := .forEachOtherCreature)]`.
   Deal `n` damage to the target, then destroy it if that damage marked a
   permanent of this subtype, is
   `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`.
@@ -927,14 +943,20 @@ You may put a land card from your hand onto the battlefield tapped is
   it to the source if it is Equipment, is
   `.sequence [.may (.put .artifactFromHand (note := .forAttach)), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
   | sequence (rs : List TriggerResolution)
-  /-- Gain life equal to the targeted card's power. Inside `sequence`, the
-  amount is that power when the sequence starts, before an earlier step
-  moves the card. -/
-  | gainLifeEqualToTargetPower
   /-- Affect the trigger's source if it is still on the battlefield. -/
   | onSource (action : PermanentAction)
-  /-- You gain `n` life (CR 118.2). -/
-  | gainLife (n : Nat)
+  /-- You gain life (CR 118.2), as `amount` says. `n` is the amount when
+  `amount` is `.fixed`.
+  You gain `n` life is `.gainLife n`.
+  Life equal to the targeted card's power is
+  `.gainLife 0 (amount := .equalToTargetPower)`.
+  Inside `sequence`, that power is read when the sequence starts, before an
+  earlier step moves the card.
+  1 life for each permanent destroyed by an earlier step is
+  `.gainLife 0 (amount := .forEachDestroyedThisWay)`.
+  1 life for each other creature you control is
+  `.gainLife 0 (amount := .forEachOtherCreature)`. -/
+  | gainLife (n : Nat) (amount : TriggerLifeAmount := .fixed)
   /-- Put a card from your hand on the bottom of your library.
   An empty hand skips the choice. -/
   | putFromHandOnBottom
@@ -992,8 +1014,6 @@ You may put a land card from your hand onto the battlefield tapped is
   The announced creature, noting its controller and power, is
   `.destroy .target (note := .forAmass)`. No target means no player amasses. -/
   | destroy (what : TriggerDestroyWhat) (note : TriggerDestroyNote := .none)
-  /-- Gain 1 life for each permanent destroyed by an earlier step. -/
-  | gainLifeForEachDestroyedThisWay
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
   /-- Amass `subtype` for `who`, as `amount` says. `n` is the count when
@@ -1052,8 +1072,6 @@ You may put a land card from your hand onto the battlefield tapped is
   The artifact put from hand, attached to the remembered creature, is
   `.attach .putArtifact .notedHost`. -/
   | attach (what : TriggerAttachWhat) (host : TriggerAttachTo)
-  /-- Gain 1 life for each other creature you control. -/
-  | gainLifeForEachOtherCreature
   /-- Add mana. `types` is the printed mana when `amount` is `.fixed`.
   Adding those types is `.addMana types`.
   {G} for each charge counter on the source is
@@ -1507,7 +1525,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .honeEachEquipment => { resolution := .honeEachEquipment }
   | .plusOneEachOtherGainLife =>
     { resolution := .sequence
-        [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature] }
+        [.putCounters (.ofKind .plusOnePlusOne) .eachOther,
+         .gainLife 0 (amount := .forEachOtherCreature)] }
   | .becomePT p t => { resolution := .becomePT p t }
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pump 0 0 .target .perPlains }
@@ -1546,7 +1565,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .returnElfGainLife =>
     { targeting := .of .elfInYourGraveyard
       resolution := .sequence
-        [.returnToHand .graveyardCard, .gainLifeEqualToTargetPower] }
+        [.returnToHand .graveyardCard, .gainLife 0 (amount := .equalToTargetPower)] }
   | .damageFromLastKnownPower =>
     { targeting := .of .oppCreature,
       resolution := .dealDamage 0 .permanent .lastKnownPower }
@@ -1567,7 +1586,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .destroyOppArtifactsEnchantmentsGainLife =>
     { resolution := .sequence
         [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
-         .gainLifeForEachDestroyedThisWay] }
+         .gainLife 0 (amount := .forEachDestroyedThisWay)] }
   | .damageEqualSubtypeToEachOpponent subtype =>
     { resolution := .dealDamage 0 .eachOpponent (.subtypeCount subtype) }
   | .damageEqualTreasures =>

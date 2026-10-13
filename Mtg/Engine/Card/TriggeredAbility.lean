@@ -823,7 +823,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | some (amount, maxTargets) =>
       s!"it deals {amount} damage divided as you choose among {dividedAmong maxTargets}"
     | none => "it deals damage divided as you choose"
-  | .sequence [.returnToHand .graveyardCard, .gainLifeEqualToTargetPower] =>
+  | .sequence [.returnToHand .graveyardCard, .gainLife _ .equalToTargetPower] =>
     s!"return {noun} to your hand. You gain life equal to that card's power"
   | .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom] =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
@@ -836,9 +836,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
   | .sequence [.gainLife n, .searchLibrary .basicLandOnTop] =>
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
-  | .sequence [.destroy .oppArtifactsEnchantments .countDestroyed, .gainLifeForEachDestroyedThisWay] =>
+  | .sequence [.destroy .oppArtifactsEnchantments .countDestroyed, .gainLife _ .forEachDestroyedThisWay] =>
     "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
-  | .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature] =>
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife _ .forEachOtherCreature] =>
     "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
   | .sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none)] =>
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
@@ -963,10 +963,16 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
   | .sequence _ =>
     "resolve each step"
-  | .gainLifeEqualToTargetPower =>
-    "you gain life equal to that card's power"
+  | .gainLife n amount =>
+    match amount with
+    | .fixed => s!"you gain {n} life"
+    | .equalToTargetPower =>
+      "you gain life equal to that card's power"
+    | .forEachDestroyedThisWay =>
+      "you gain 1 life for each permanent destroyed this way"
+    | .forEachOtherCreature =>
+      "you gain 1 life for each other creature you control"
   | .onSource action => PermanentAction.toNotation action "this creature"
-  | .gainLife n => s!"you gain {n} life"
   | .mayThen (.pay symbols) (.draw 1) =>
     match symbols.toList with
     | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
@@ -1035,8 +1041,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"destroy {noun}"
   | .destroy _ _ =>
     "destroy it"
-  | .gainLifeForEachDestroyedThisWay =>
-    "you gain 1 life for each permanent destroyed this way"
   | .recruit .recruit =>
     "recruit"
   | .recruit .you =>
@@ -1098,8 +1102,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "attach it to this creature"
     | _, _ =>
       "attach it"
-  | .gainLifeForEachOtherCreature =>
-    "you gain 1 life for each other creature you control"
   | .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none) =>
     s!"if a {subtype} is dealt damage this way, destroy it"
   | .addMana types amount =>

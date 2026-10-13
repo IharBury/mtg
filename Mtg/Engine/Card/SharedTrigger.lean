@@ -566,7 +566,7 @@ inductive SharedTrigger where
   /-- Put a hone counter on each Equipment you control. -/
   | honeEachEquipment
   /-- +1/+1 on each other creature you control, then gain 1 life for each.
-  Resolves as `.sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLifeForEachOtherCreature]`. -/
+  Resolves as `.sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife 0 (amount := .forEachOtherCreature)]`. -/
   | plusOneEachOtherGainLife
   /-- Set the source's base P/T. -/
   | becomePT (power toughness : Int)
@@ -615,7 +615,7 @@ inductive SharedTrigger where
   /-- Set another creature's base P/T to this creature's. -/
   | setOtherBasePT
   /-- Return a target Elf from the graveyard, then gain life equal to its power.
-  Resolves as `.sequence [.returnToHand .graveyardCard, .gainLifeEqualToTargetPower]`. -/
+  Resolves as `.sequence [.returnToHand .graveyardCard, .gainLife 0 (amount := .equalToTargetPower)]`. -/
   | returnElfGainLife
   /-- Deal damage equal to last-known power to a target. -/
   | damageFromLastKnownPower
@@ -638,7 +638,7 @@ inductive SharedTrigger where
   | tapHumansDraw
   /-- Destroy opponents' artifacts and enchantments; gain life for each.
   Resolves as
-  `.sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), .gainLifeForEachDestroyedThisWay]`. -/
+  `.sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), .gainLife 0 (amount := .forEachDestroyedThisWay)]`. -/
   | destroyOppArtifactsEnchantmentsGainLife
   /-- Damage each opponent equal to permanents of this subtype you control. -/
   | damageEqualSubtypeToEachOpponent (subtype : String)
