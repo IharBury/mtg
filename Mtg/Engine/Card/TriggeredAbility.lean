@@ -667,30 +667,26 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"creatures your opponents control get {signedStat power}/{signedStat toughness} until end of turn"
     | .target, .fixed =>
       s!"{noun} gets {signedStat power}/{signedStat toughness} until end of turn"
+    | .target, .double =>
+      s!"double {noun}'s power and toughness until end of turn"
     | _, _ =>
       "those permanents get +P/+T until end of turn"
-  | .pumpAndTrample p t =>
-    s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
   | .setOtherBasePT =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
   | .loseIndestructible =>
     s!"{noun} loses indestructible until end of turn"
   | .cantBeBlocked =>
     s!"{noun} can't be blocked this turn"
-  | .becomeArtifactIndestructible =>
-    s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
+  | .becomeArtifact =>
+    s!"until end of turn, {noun} becomes an artifact in addition to its other types"
   | .becomePrepared =>
     s!"{noun} becomes prepared"
   | .setBasePT p t =>
     s!"{noun} has base power and toughness {p}/{t} until end of turn"
-  | .tapAndStun =>
-    s!"tap {noun} and put a stun counter on it"
   | .putOnTopOfLibrary =>
     s!"{noun}'s owner puts it on top of their library"
   | .putOnBottomOfLibrary =>
     s!"{noun}'s owner puts it on the bottom of their library"
-  | .doublePowerAndToughness =>
-    s!"double {noun}'s power and toughness until end of turn"
   | .surveil n => s!"surveil {n}"
   | .empowerJace n => s!"empower Jace {n}"
   | .prepareSource .ifNotPrepared =>
@@ -738,6 +734,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"put {(.doubleStrike : CounterKind).countersPhrase n} on {noun}"
     | .ofKind .burden n, .permanent false =>
       s!"put {(.burden : CounterKind).countersPhrase n} on {noun}"
+    | .ofKind .stun n, .permanent false =>
+      s!"put {(.stun : CounterKind).countersPhrase n} on {noun}"
     | _, _ => "put counters"
   | .«if» (.landsAtLeast 6) (.sequence [.destroy .target,
       .createTokens .treasure 1 false .kind .targetController]) =>
@@ -992,6 +990,18 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
   | .sequence [.pump 3 0 .target, .grant (.keywords k) .target] =>
     s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
+  | .sequence [.pump p t .target, .grant (.keywords k) .target] =>
+    if k == Keyword.trample then
+      s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
+    else
+      "resolve each step"
+  | .sequence [.becomeArtifact, .grant (.keywords k) .target] =>
+    if k == Keyword.indestructible then
+      s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
+    else
+      "resolve each step"
+  | .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent] =>
+    s!"tap {noun} and put a stun counter on it"
   | .sequence [.destroy .target,
       .createTokens .treasure 1 false .kind .targetController] =>
     s!"destroy {noun}. They create a Treasure token"

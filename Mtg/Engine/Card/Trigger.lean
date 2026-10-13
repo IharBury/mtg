@@ -414,6 +414,10 @@ inductive TriggerPumpAmount where
   | equalSourceToughness
   /-- +X/+0, where X is the source's power. -/
   | equalSourcePower
+  /-- Add the permanent's current power and toughness, which doubles them.
+  `power` and `toughness` are unused. The announced permanent is
+  `.pump 0 0 .target .double`. -/
+  | double
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.amass` amasses for. -/
@@ -834,13 +838,15 @@ putting onto the battlefield, adding mana, choosing modes, destroying,
 fighting, granting, gaining life, losing life, milling, revealing from
 a hand, revealing from a library, searching a library, tapping, and
 untapping each cover multiple printed abilities.
-A permanent target uses its own constructor: `pump`, `pumpAndTrample`,
-`doublePowerAndToughness`, `putCounters`, `destroy`, `dealDamage`, `grant`,
-`tap`, `untap`, `tapAndStun`, `exile`, `loseIndestructible`, `cantBeBlocked`,
-`becomeArtifactIndestructible`, `becomePrepared`, `setBasePT`,
-`putOnTopOfLibrary`, and `putOnBottomOfLibrary`. Source pumps, enchanted
-creatures, and a follow-up while the source remains share `PermanentAction`
-with spells and activated abilities. -/
+A permanent target uses its own constructor: `pump`, `putCounters`,
+`destroy`, `dealDamage`, `grant`, `tap`, `untap`, `exile`,
+`loseIndestructible`, `cantBeBlocked`, `becomeArtifact`, `becomePrepared`,
+`setBasePT`, `putOnTopOfLibrary`, and `putOnBottomOfLibrary`. +P/+T and
+trample is a sequence of `pump` and `grant`. Becoming an artifact and
+gaining indestructible is a sequence of `becomeArtifact` and `grant`.
+Tap and a stun counter is a sequence of `tap` and `putCounters`. Source
+pumps, enchanted creatures, and a follow-up while the source remains share
+`PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
   /-- Until end of turn, permanents of `who` get the bonus from `amount`.
   `power` and `toughness` are that bonus when `amount` is `.fixed`.
@@ -861,12 +867,12 @@ inductive TriggerResolution where
   Other creatures of these subtypes +P/+T is
   `.pump p t (.othersOfSubtypes subtypes)`.
   Creatures opponents control +P/+T is `.pump p t .opponentsCreatures`.
-  The announced permanent gets +P/+T is `.pump p t .target`. -/
+  The announced permanent gets +P/+T is `.pump p t .target`.
+  Doubling that permanent's power and toughness is `.pump 0 0 .target .double`.
+  +P/+T and trample is
+  `.sequence [.pump p t .target, .grant (.keywords Keyword.trample) .target]`. -/
   | pump (power toughness : Int) (who : TriggerPumpWho)
       (amount : TriggerPumpAmount := .fixed)
-  /-- The announced permanent gets +P/+T and gains trample until end of turn.
-  Another creature you control is `.pumpAndTrample 2 0`. -/
-  | pumpAndTrample (power toughness : Int)
   /-- Set another creature's base P/T to this creature's. -/
   | setOtherBasePT
   /-- Deal damage. `n` is the amount when `amount` is `.fixed`.
@@ -999,7 +1005,8 @@ inductive TriggerResolution where
   An indestructible counter on the announced permanent is
   `.putCounters (.ofKind .indestructible) .permanent`.
   A double strike counter is `.putCounters (.ofKind .doubleStrike) .permanent`.
-  A burden counter is `.putCounters (.ofKind .burden) .permanent`. -/
+  A burden counter is `.putCounters (.ofKind .burden) .permanent`.
+  A stun counter is `.putCounters (.ofKind .stun) .permanent`. -/
   | putCounters (what : TriggerCounterWhat) (who : TriggerCounterWho)
   /-- Return cards to a hand. `what` says which cards, `whose` says whose
   hand, and `note` says what a later step can read.
@@ -1063,24 +1070,19 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- The announced permanent can't be blocked this turn. -/
   | cantBeBlocked
   /-- Until end of turn, the announced permanent becomes an artifact in
-  addition to its other types and gains indestructible. -/
-  | becomeArtifactIndestructible
+  addition to its other types. Gaining indestructible as well is
+  `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`. -/
+  | becomeArtifact
   /-- The announced permanent becomes prepared. A creature that is already
   prepared, or has no prepare spell, does not. -/
   | becomePrepared
   /-- Until end of turn, the announced permanent's base power and toughness
   become `power`/`toughness`. -/
   | setBasePT (power toughness : Int)
-  /-- Tap the announced permanent and put a stun counter on it.
-  An already tapped permanent still gets the stun counter. -/
-  | tapAndStun
   /-- The owner puts the announced permanent on top of their library. -/
   | putOnTopOfLibrary
   /-- The owner puts the announced permanent on the bottom of their library. -/
   | putOnBottomOfLibrary
-  /-- Until end of turn, add the announced permanent's power and toughness
-  to itself, which doubles them. -/
-  | doublePowerAndToughness
   /-- Deal previously divided damage to the announced targets. -/
   | dividedDamage
   /-- Apply each resolution in order. An illegal required target skips every
@@ -1137,6 +1139,12 @@ You may put a land card from your hand onto the battlefield tapped is
   `.sequence [.grant (.keywords k) .target, .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]`.
   The target gets +3/+0 and gains first strike until end of turn, is
   `.sequence [.pump 3 0 .target, .grant (.keywords Keyword.firstStrike) .target]`.
+  +P/+T and trample is
+  `.sequence [.pump p t .target, .grant (.keywords Keyword.trample) .target]`.
+  Becoming an artifact and gaining indestructible is
+  `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`.
+  Tap and a stun counter is
+  `.sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]`.
   Destroy the target, then its controller creates a Treasure, is
   `.sequence [.destroy .target, .createTokens .treasure 1 false (who := .targetController)]`.
   You may put an artifact from your hand onto the battlefield, then attach
@@ -1570,7 +1578,8 @@ def upToXModes : List TriggerResolution :=
 def ofPermanent : PermanentAction → TriggerResolution
   | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) .permanent
   | .pump p t => .pump p t .target
-  | .pumpAndTrample p t => .pumpAndTrample p t
+  | .pumpAndTrample p t =>
+    .sequence [.pump p t .target, .grant (.keywords Keyword.trample) .target]
   | .destroy => .destroy .target
   | .dealDamage n => .dealDamage n .target
   | .grantKeywords k => .grant (.keywords k) .target
@@ -1581,14 +1590,16 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) .permanent
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) .permanent
   | .burdenCounter => .putCounters (.ofKind .burden) .permanent
-  | .becomeArtifactIndestructible => .becomeArtifactIndestructible
+  | .becomeArtifactIndestructible =>
+    .sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]
   | .becomePrepared => .becomePrepared
   | .setBasePT p t => .setBasePT p t
-  | .tapAndStun => .tapAndStun
+  | .tapAndStun =>
+    .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]
   | .putOnTopOfLibrary => .putOnTopOfLibrary
   | .putOnBottomOfLibrary => .putOnBottomOfLibrary
   | .exile => .exile .target .forLater
-  | .doublePowerAndToughness => .doublePowerAndToughness
+  | .doublePowerAndToughness => .pump 0 0 .target .double
 
 end TriggerResolution
 
@@ -2467,15 +2478,18 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofPermanent .burdenCounter ==
   .putCounters (.ofKind .burden) .permanent
 #guard TriggeredAbility.TriggerResolution.ofPermanent .becomeArtifactIndestructible ==
-  .becomeArtifactIndestructible
+  .sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]
 #guard TriggeredAbility.TriggerResolution.ofPermanent .becomePrepared == .becomePrepared
 #guard TriggeredAbility.TriggerResolution.ofPermanent (.setBasePT 2 2) == .setBasePT 2 2
-#guard TriggeredAbility.TriggerResolution.ofPermanent .tapAndStun == .tapAndStun
+#guard TriggeredAbility.TriggerResolution.ofPermanent .tapAndStun ==
+  .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]
 #guard TriggeredAbility.TriggerResolution.ofPermanent .putOnTopOfLibrary == .putOnTopOfLibrary
 #guard TriggeredAbility.TriggerResolution.ofPermanent .putOnBottomOfLibrary ==
   .putOnBottomOfLibrary
 #guard TriggeredAbility.TriggerResolution.ofPermanent .exile == .exile .target .forLater
 #guard TriggeredAbility.TriggerResolution.ofPermanent .doublePowerAndToughness ==
-  .doublePowerAndToughness
+  .pump 0 0 .target .double
+#guard TriggeredAbility.TriggerResolution.ofPermanent (.pumpAndTrample 2 0) ==
+  .sequence [.pump 2 0 .target, .grant (.keywords Keyword.trample) .target]
 
 end Mtg.Engine

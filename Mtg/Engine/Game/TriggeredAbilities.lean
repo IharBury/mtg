@@ -488,6 +488,10 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.pumpPermanent o power toughness)
       "The target is no longer legal"
+  | .target, .double =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.pumpPermanent o (g.power o) (g.toughness o))
+      "The target is no longer legal"
   | _, _ => g
 
 /-- Resolve `TriggerResolution.dealDamage`. Each printed combination keeps
@@ -744,6 +748,14 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .ofKind .burden n, .permanent false =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.addBurdenCounter o n)
+      "The target is no longer legal"
+  | .ofKind .stun n, .permanent false =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      let k := g.countersYouPut o n
+      let g := g.mapObjectStatus o (fun s => { s with stun := s.stun + k })
+      let phrase :=
+        if n == 1 then "A stun counter is put" else s!"{k} stun counters are put"
+      g.logMsg s!"{phrase} on {o.name}")
       "The target is no longer legal"
   | _, _ => g
 
@@ -1828,10 +1840,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyDiscard controller sourceId targets n who what when
   | .sacrifice who what note =>
     g.applySacrifice controller ab sourceId targets who what note
-  | .pumpAndTrample power toughness =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.pumpAndGrantTrample o power toughness)
-      "The target is no longer legal"
   | .loseIndestructible =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.applyPermanentAction o .loseIndestructible)
@@ -1840,9 +1848,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.applyPermanentAction o .cantBeBlocked)
       "The target is no longer legal"
-  | .becomeArtifactIndestructible =>
+  | .becomeArtifact =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.applyPermanentAction o .becomeArtifactIndestructible)
+      let g := g.mapObjectStatus o (fun s => { s with additionalArtifactUntilEot := true })
+      g.logMsg s!"{o.name} becomes an artifact until end of turn")
       "The target is no longer legal"
   | .becomePrepared =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
@@ -1852,10 +1861,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.applyPermanentAction o (.setBasePT power toughness))
       "The target is no longer legal"
-  | .tapAndStun =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.applyPermanentAction o .tapAndStun)
-      "The target is no longer legal"
   | .putOnTopOfLibrary =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.applyPermanentAction o .putOnTopOfLibrary)
@@ -1863,10 +1868,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .putOnBottomOfLibrary =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.applyPermanentAction o .putOnBottomOfLibrary)
-      "The target is no longer legal"
-  | .doublePowerAndToughness =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.applyPermanentAction o .doublePowerAndToughness)
       "The target is no longer legal"
   | .dividedDamage =>
     Id.run do
