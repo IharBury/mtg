@@ -743,14 +743,33 @@ inductive TriggerRemoveWho where
   | enchanted
 deriving Repr, Inhabited, BEq
 
+/-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
+inductive TriggerRevealCount where
+  /-- The whole hand. -/
+  | hand
+  /-- One card, plus one for each creature card in the controller's
+  graveyard. A smaller hand is shown in full. -/
+  | onePlusCreatureCards
+deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.revealFromHand` does with the cards it showed. -/
+inductive TriggerRevealThen where
+  /-- You may exile a nonland card from that hand, or the chosen creature,
+  until the source leaves the battlefield. A source that has already left
+  still reveals the hand; nothing is exiled. -/
+  | exileUntilLeaves
+  /-- You choose one of the shown cards. That player discards it. -/
+  | discardChosen
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
 putting counters, removing counters, until-end-of-turn pumps, creating tokens,
 exile, sacrifice, attach, amass, casting a spell, returning cards to hand,
 putting onto the battlefield, adding mana, choosing modes, destroying,
-fighting, granting, gaining life, losing life, and milling each cover
-multiple printed abilities.
+fighting, granting, gaining life, losing life, milling, and revealing from
+a hand each cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -1274,10 +1293,18 @@ You may put a land card from your hand onto the battlefield tapped is
   That target is chosen when the reflexive ability is put on the stack.
   Nothing is queued when no creature received Equipment. -/
   | fight (who : TriggerFightWho := .source) (how : TriggerFightHow := .mutual)
-  /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
-  | revealHandExileUntilLeaves
-  /-- Target player reveals cards from hand; you choose one to discard. -/
-  | revealDiscardFromHand
+  /-- A player reveals cards from their hand (CR 701.16), as `count` says,
+  then `thenDo`.
+  The opponent reveals their hand. You may exile a nonland card from it, or
+  the chosen creature, until the source leaves, with
+  `.revealFromHand .hand .exileUntilLeaves`.
+  A source that has already left still reveals; nothing is exiled.
+  The announced player reveals one card plus one for each creature card in
+  your graveyard. You choose one of them and that player discards it, with
+  `.revealFromHand .onePlusCreatureCards .discardChosen`.
+  A smaller hand is revealed in full.
+  Any other combination does nothing. -/
+  | revealFromHand (count : TriggerRevealCount) (thenDo : TriggerRevealThen)
   /-- Surveil `n` (CR 701.25). -/
   | surveil (n : Nat)
   /-- Empower Jace `n` (Reality Fracture). -/
@@ -2022,7 +2049,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.queueReflexive (.damageAny 2)) }
   | .enter .revealHandExileUntilLeaves =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
-      resolution := .revealHandExileUntilLeaves }
+      resolution := .revealFromHand .hand .exileUntilLeaves }
   | .enter .plusOnesOrReturnArtEnch =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .or
@@ -2039,7 +2066,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence
         [.tapTargetIfPresent, .loseAbilitiesWhileSourceRemains] }
   | .enter .revealDiscardFromHand =>
-    { events := #[.entering], targeting := .of .player, resolution := .revealDiscardFromHand }
+    { events := #[.entering], targeting := .of .player,
+      resolution := .revealFromHand .onePlusCreatureCards .discardChosen }
   | .enter .createRedwing =>
     { events := #[.entering], resolution := .createTokens .treasure 1 false .redwing }
   | .step .enchantedControllerDraws =>

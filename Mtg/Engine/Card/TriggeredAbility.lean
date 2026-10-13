@@ -1251,14 +1251,18 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
   | .mayThen (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) =>
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
-  | .revealHandExileUntilLeaves =>
-    "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
+  | .revealFromHand count thenDo =>
+    match count, thenDo with
+    | .hand, .exileUntilLeaves =>
+      "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
+    | .onePlusCreatureCards, .discardChosen =>
+      s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
+    | _, _ =>
+      "reveal cards from their hand"
   | .or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard] =>
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
   | .mayThen (.onSource .tap) (.queueReflexive (.modeled 0)) =>
     "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
-  | .revealDiscardFromHand =>
-    s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
   | .markRecentTokensAttacking =>
     "those tokens enter tapped and attacking"
   | .«if» .equippedLegendaryYouControl .markRecentTokensAttacking =>
