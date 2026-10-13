@@ -602,7 +602,8 @@ inductive SharedTrigger where
   | gainControlOppUntilEot
   /-- Landfall from the graveyard: pay to return this to hand. -/
   | payReturnFromGy
-  /-- Target opponent loses `n` life. -/
+  /-- Target opponent loses `n` life.
+  Resolves as `.loseLife n (who := .targetOpponent)`. -/
   | targetOpponentLosesLife (n : Nat)
   /-- Draw X cards, where X is the mana spent to cast the triggering spell,
   then discard `n`. Resolves as
@@ -785,7 +786,8 @@ inductive SharedTrigger where
   /-- If you cast it, protection from everything. Resolves as
   `.grant .protectionEverything .youIfCast`. -/
   | protectionEverything
-  /-- Lose 1 life per burden counter. -/
+  /-- Lose 1 life per burden counter.
+  Resolves as `.loseLife 0 (amount := .perBurden)`. -/
   | loseLifePerBurden
   /-- Reveal until a Saga. -/
   | revealSaga
@@ -806,9 +808,11 @@ inductive SharedTrigger where
   | lootAndPlan
   /-- Create a Villain and a plan counter. -/
   | createVillainAndPlan
-  /-- Drain `n` and put a plan counter. -/
+  /-- Drain `n` and put a plan counter. Resolves as
+  `.sequence [.putCounters (.ofKind .plan) .source, .loseLife n (who := .eachOpponent), .gainLife n]`. -/
   | drainAndPlan (n : Nat)
-  /-- Draw, lose life, and put a plan counter. -/
+  /-- Draw, lose life, and put a plan counter. Resolves as
+  `.sequence [.putCounters (.ofKind .plan) .source, .draw 1, .loseLife 1]`. -/
   | drawLoseLifeAndPlan
   /-- Create a tapped Treasure and put a plan counter. -/
   | treasureTappedAndPlan

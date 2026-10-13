@@ -902,7 +902,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw a card, then discard a card and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace 1 false] =>
     "create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .eachOpponentLosesLife n, .gainLife m] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .loseLife n .eachOpponent, .gainLife m] =>
     s!"each opponent loses {n} life and you gain {m} life. Put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .draw 1, .loseLife 1] =>
     "you draw a card, lose 1 life, and put a plan counter on this enchantment"
@@ -1199,14 +1199,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .mayThen (.objectCost .anotherCreatureOrArtifact)
       (.sequence [.draw 1, .createTokens .treasure 1 false]) =>
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
-  | .targetOpponentLosesLife n =>
-    s!"{noun} loses {n} life"
   | .ringTempts =>
     "the Ring tempts you"
   | .mayThen (.discard (what := .hand)) (.draw n) =>
     s!"you may discard your hand. If you do, draw {cardPhrase n}"
-  | .loseLifePerBurden =>
-    "you lose 1 life for each burden counter on this"
   | .revealSaga =>
     "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
   | .chapter e => (Effect.ofChapter e).phrase
@@ -1283,9 +1279,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "exile and copy a card"
   | .«if» .opponentsMilled .reflexiveCopyMilled =>
     "when one or more cards are milled this way, exile and copy a card"
-  | .eachOpponentLosesLife n =>
-    s!"each opponent loses {n} life"
-  | .loseLife n => s!"you lose {n} life"
+  | .loseLife n who amount =>
+    match who, amount with
+    | .you, .fixed => s!"you lose {n} life"
+    | .targetOpponent, .fixed => s!"{noun} loses {n} life"
+    | .eachOpponent, .fixed => s!"each opponent loses {n} life"
+    | .you, .perBurden =>
+      "you lose 1 life for each burden counter on this"
+    | _, _ =>
+      "lose life"
   | .queueReflexiveIfSacrificed _ =>
     "when you do, the reflexive ability triggers"
   | .queuePlanDividedDamage n =>

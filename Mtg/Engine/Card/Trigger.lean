@@ -674,13 +674,33 @@ inductive TriggerLifeAmount where
   | forEachOtherCreature
 deriving Repr, Inhabited, BEq
 
+/-- Who loses life from `TriggerResolution.loseLife`. -/
+inductive TriggerLifeLossWho where
+  /-- The controller. -/
+  | you
+  /-- The announced opponent. An illegal target loses nothing. -/
+  | targetOpponent
+  /-- Each opponent of the controller. -/
+  | eachOpponent
+deriving Repr, Inhabited, BEq
+
+/-- Where `TriggerResolution.loseLife` reads how much life. The `n` argument
+is used when this is `.fixed`. -/
+inductive TriggerLifeLossAmount where
+  /-- The `n` argument. -/
+  | fixed
+  /-- One life for each burden counter on the source.
+  A source that can no longer be found loses nothing. -/
+  | perBurden
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
 putting counters, until-end-of-turn pumps, creating tokens, exile, sacrifice,
 attach, amass, casting a spell, returning cards to hand, putting onto
 the battlefield, adding mana, choosing modes, destroying, fighting,
-granting, and gaining life each cover multiple printed abilities.
+granting, gaining life, and losing life each cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -1165,12 +1185,8 @@ You may put a land card from your hand onto the battlefield tapped is
   | millThatManyLost
   /-- Create two nonlegendary token copies of the source. -/
   | copySelfNonlegendary
-  /-- Target opponent loses 1 life. -/
-  | targetOpponentLosesLife (n : Nat)
   /-- The Ring tempts you. -/
   | ringTempts
-  /-- Lose 1 life per burden counter. -/
-  | loseLifePerBurden
   /-- Reveal until a Saga and put it onto the battlefield. -/
   | revealSaga
   /-- Resolve a printed Saga chapter. -/
@@ -1228,10 +1244,18 @@ You may put a land card from your hand onto the battlefield tapped is
   | opponentsMillNote (n : Nat)
   /-- Queue the reflexive exile-and-copy of a milled spell. -/
   | reflexiveCopyMilled
-  /-- Each opponent loses `n` life. -/
-  | eachOpponentLosesLife (n : Nat)
-  /-- You lose `n` life. -/
-  | loseLife (n : Nat)
+  /-- A player loses life (CR 118.3a), as `who` and `amount` say. `n` is
+  the amount when `amount` is `.fixed`. Losing 0 life does nothing.
+  You lose `n` life is `.loseLife n`.
+  The announced opponent loses `n` life is
+  `.loseLife n (who := .targetOpponent)`.
+  Each opponent loses `n` life is `.loseLife n (who := .eachOpponent)`.
+  You lose 1 life for each burden counter on the source is
+  `.loseLife 0 (amount := .perBurden)`.
+  A missing source loses nothing.
+  Any other combination does nothing. -/
+  | loseLife (n : Nat) (who : TriggerLifeLossWho := .you)
+      (amount : TriggerLifeLossAmount := .fixed)
   /-- Queue reflexive ability `kind` if the Plan was sacrificed this way. -/
   | queueReflexiveIfSacrificed (kind : Nat)
   /-- Queue the divided-damage reflexive. `amount` is the printed number. -/
@@ -1293,7 +1317,7 @@ def allianceModes : List TriggerResolution :=
 gain 2 life. Draw a card. -/
 def gollumModes : List TriggerResolution :=
   [.onSource (.plusOne 1),
-   .sequence [.eachOpponentLosesLife 2, .gainLife 2],
+   .sequence [.loseLife 2 (who := .eachOpponent), .gainLife 2],
    .draw 1]
 
 /-- Draw a card, then discard a card. Each opponent loses 2 life.
@@ -1301,7 +1325,7 @@ Destroy the announced token. Each player sacrifices the announced creature,
 which is already gone when an earlier mode destroyed it. -/
 def upToXModes : List TriggerResolution :=
   [.sequence [.draw 1, .discard 1],
-   .eachOpponentLosesLife 2,
+   .loseLife 2 (who := .eachOpponent),
    .onPermanent .destroy,
    .sacrifice .eachPlayer .chosenCreature]
 
@@ -1554,7 +1578,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .mayThen
         (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner) }
   | .targetOpponentLosesLife n =>
-    { targeting := .of .opponent, resolution := .targetOpponentLosesLife n }
+    { targeting := .of .opponent, resolution := .loseLife n (who := .targetOpponent) }
   | .drawXDiscard n =>
     { resolution := .sequence
         [.draw 0 (amount := .equalToManaSpent), .discard n (when := .ifManaSpent)] }
@@ -1764,7 +1788,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .createTokens .treasure 0 false (qty := .lastKnown) }
   | .protectionEverything =>
     { resolution := .grant .protectionEverything .youIfCast }
-  | .loseLifePerBurden => { resolution := .loseLifePerBurden }
+  | .loseLifePerBurden => { resolution := .loseLife 0 (amount := .perBurden) }
   | .revealSaga => { resolution := .revealSaga }
   | .sacDamagersRingTempts =>
     { resolution := .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts] }
@@ -1784,7 +1808,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace 1 false] }
   | .drainAndPlan n =>
     { resolution := .sequence
-        [.putCounters (.ofKind .plan) .source, .eachOpponentLosesLife n, .gainLife n] }
+        [.putCounters (.ofKind .plan) .source, .loseLife n (who := .eachOpponent), .gainLife n] }
   | .drawLoseLifeAndPlan =>
     { resolution := .sequence
         [.putCounters (.ofKind .plan) .source, .draw 1, .loseLife 1] }
