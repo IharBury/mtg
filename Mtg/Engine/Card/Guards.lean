@@ -1559,7 +1559,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
   .sequence [.draw 1, .discard 1, .put .discardedLand (how := .tapped)]
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
-  .sequence [.millNote 4, .returnToHand (.milledSubtype "Elf")]
+  .sequence [.mill 4 (note := .milledCards), .returnToHand (.milledSubtype "Elf")]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tapEnchanted, .removeCountersFromEnchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==

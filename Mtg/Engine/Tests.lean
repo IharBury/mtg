@@ -35,6 +35,7 @@ import Mtg.Engine.Tests.TriggerFight
 import Mtg.Engine.Tests.Grant
 import Mtg.Engine.Tests.GainLife
 import Mtg.Engine.Tests.LoseLife
+import Mtg.Engine.Tests.Mill
 import Mtg.Engine.Tests.Modes
 
 /-!
@@ -86,5 +87,7 @@ keep working.
   permanent destroyed, and one life per other creature
 - `LoseLife`: a fixed amount for the controller, the announced opponent,
   or each opponent, and one life per burden counter on the source
+- `Mill`: the controller, the announced player, the player who lost life,
+  remembered cards, and each opponent
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/
