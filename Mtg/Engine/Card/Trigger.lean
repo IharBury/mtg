@@ -816,57 +816,6 @@ inductive TriggerLibraryWho where
   | damagedPlayer
 deriving Repr, Inhabited, BEq
 
-/-- A permanent-target action with no printed trigger constructor of its own.
-`TriggerResolution.ofPermanent` sends the rest of `PermanentAction` here. -/
-inductive TriggerTargetExtra where
-  /-- The permanent loses indestructible until end of turn. -/
-  | loseIndestructible
-  /-- The permanent can't be blocked this turn. -/
-  | cantBeBlocked
-  /-- Put an indestructible counter on the permanent. -/
-  | indestructibleCounter
-  /-- Put a double strike counter on the permanent. -/
-  | doubleStrikeCounter
-  /-- Put a burden counter on the permanent. -/
-  | burdenCounter
-  /-- Until end of turn, this becomes an artifact and gains indestructible. -/
-  | becomeArtifactIndestructible
-  /-- The permanent becomes prepared. -/
-  | becomePrepared
-  /-- Until end of turn, base power and toughness become P/T. -/
-  | setBasePT (power toughness : Int)
-  /-- Tap the permanent and put a stun counter on it. -/
-  | tapAndStun
-  /-- The owner puts this permanent on top of their library. -/
-  | putOnTopOfLibrary
-  /-- The owner puts this permanent on the bottom of their library. -/
-  | putOnBottomOfLibrary
-  /-- Exile the permanent. -/
-  | exile
-  /-- Double the permanent's power and toughness until end of turn. -/
-  | doublePowerAndToughness
-deriving Repr, Inhabited, BEq
-
-namespace TriggerTargetExtra
-
-/-- The shared permanent action this extra step performs. -/
-def toAction : TriggerTargetExtra → PermanentAction
-  | .loseIndestructible => .loseIndestructible
-  | .cantBeBlocked => .cantBeBlocked
-  | .indestructibleCounter => .indestructibleCounter
-  | .doubleStrikeCounter => .doubleStrikeCounter
-  | .burdenCounter => .burdenCounter
-  | .becomeArtifactIndestructible => .becomeArtifactIndestructible
-  | .becomePrepared => .becomePrepared
-  | .setBasePT p t => .setBasePT p t
-  | .tapAndStun => .tapAndStun
-  | .putOnTopOfLibrary => .putOnTopOfLibrary
-  | .putOnBottomOfLibrary => .putOnBottomOfLibrary
-  | .exile => .exile
-  | .doublePowerAndToughness => .doublePowerAndToughness
-
-end TriggerTargetExtra
-
 /-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
 inductive TriggerRevealCount where
   /-- The whole hand. -/
@@ -885,8 +834,11 @@ putting onto the battlefield, adding mana, choosing modes, destroying,
 fighting, granting, gaining life, losing life, milling, revealing from
 a hand, revealing from a library, searching a library, tapping, and
 untapping each cover multiple printed abilities.
-A permanent target uses `pump`, `putCounters`, `destroy`, `dealDamage`,
-`grant`, `tap`, `untap`, and `pumpAndTrample`. Source pumps, enchanted
+A permanent target uses its own constructor: `pump`, `pumpAndTrample`,
+`doublePowerAndToughness`, `putCounters`, `destroy`, `dealDamage`, `grant`,
+`tap`, `untap`, `tapAndStun`, `exile`, `loseIndestructible`, `cantBeBlocked`,
+`becomeArtifactIndestructible`, `becomePrepared`, `setBasePT`,
+`putOnTopOfLibrary`, and `putOnBottomOfLibrary`. Source pumps, enchanted
 creatures, and a follow-up while the source remains share `PermanentAction`
 with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -1043,7 +995,11 @@ inductive TriggerResolution where
   +1/+1 counters equal to the sacrificed creature's power are
   `.putCounters .plusOneSacrificedPower .source`.
   `n` +1/+1 counters on the announced permanent are
-  `.putCounters (.ofKind .plusOnePlusOne n) .permanent`. -/
+  `.putCounters (.ofKind .plusOnePlusOne n) .permanent`.
+  An indestructible counter on the announced permanent is
+  `.putCounters (.ofKind .indestructible) .permanent`.
+  A double strike counter is `.putCounters (.ofKind .doubleStrike) .permanent`.
+  A burden counter is `.putCounters (.ofKind .burden) .permanent`. -/
   | putCounters (what : TriggerCounterWhat) (who : TriggerCounterWho)
   /-- Return cards to a hand. `what` says which cards, `whose` says whose
   hand, and `note` says what a later step can read.
@@ -1102,9 +1058,29 @@ You may put a land card from your hand onto the battlefield tapped is
   You may sacrifice another creature with `.may (.sacrifice .you .another)`. -/
   | sacrifice (who : TriggerSacrificeWho) (what : TriggerSacrificeWhat)
       (note : TriggerSacrificeNote := .none)
-  /-- Affect a still-legal permanent target with an action that has no
-  printed trigger constructor. `ofPermanent` is the only builder. -/
-  | extra (how : TriggerTargetExtra)
+  /-- The announced permanent loses indestructible until end of turn. -/
+  | loseIndestructible
+  /-- The announced permanent can't be blocked this turn. -/
+  | cantBeBlocked
+  /-- Until end of turn, the announced permanent becomes an artifact in
+  addition to its other types and gains indestructible. -/
+  | becomeArtifactIndestructible
+  /-- The announced permanent becomes prepared. A creature that is already
+  prepared, or has no prepare spell, does not. -/
+  | becomePrepared
+  /-- Until end of turn, the announced permanent's base power and toughness
+  become `power`/`toughness`. -/
+  | setBasePT (power toughness : Int)
+  /-- Tap the announced permanent and put a stun counter on it.
+  An already tapped permanent still gets the stun counter. -/
+  | tapAndStun
+  /-- The owner puts the announced permanent on top of their library. -/
+  | putOnTopOfLibrary
+  /-- The owner puts the announced permanent on the bottom of their library. -/
+  | putOnBottomOfLibrary
+  /-- Until end of turn, add the announced permanent's power and toughness
+  to itself, which doubles them. -/
+  | doublePowerAndToughness
   /-- Deal previously divided damage to the announced targets. -/
   | dividedDamage
   /-- Apply each resolution in order. An illegal required target skips every
@@ -1205,7 +1181,8 @@ You may put a land card from your hand onto the battlefield tapped is
   Cards from the damaged player's library until an instant or sorcery,
   remembered for `.mayCast .impulse`, are
   `.exile .top .forLater .impulse` inside `revealLibrary`. Outside that
-  resolution, the exile does nothing. -/
+  resolution, the exile does nothing.
+  The announced permanent, with no return, is `.exile .target .forLater`. -/
   | exile (what : TriggerExileWhat) (how : TriggerExileHow)
       (note : TriggerExileNote := .none)
   /-- Put cards onto the battlefield. `what` says which cards, `how` says
@@ -1589,9 +1566,7 @@ def upToXModes : List TriggerResolution :=
    .destroy .target (note := .chosenToken),
    .sacrifice .eachPlayer .chosenCreature]
 
-/-- What `action` does to the announced permanent.
-Printed actions use `putCounters`, `pump`, `pumpAndTrample`, `destroy`,
-`dealDamage`, `grant`, `tap`, and `untap`. The rest use `extra`. -/
+/-- What `action` does to the announced permanent. -/
 def ofPermanent : PermanentAction → TriggerResolution
   | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) .permanent
   | .pump p t => .pump p t .target
@@ -1601,19 +1576,19 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .grantKeywords k => .grant (.keywords k) .target
   | .tap => .tap .target
   | .untap => .untap
-  | .loseIndestructible => .extra .loseIndestructible
-  | .cantBeBlocked => .extra .cantBeBlocked
-  | .indestructibleCounter => .extra .indestructibleCounter
-  | .doubleStrikeCounter => .extra .doubleStrikeCounter
-  | .burdenCounter => .extra .burdenCounter
-  | .becomeArtifactIndestructible => .extra .becomeArtifactIndestructible
-  | .becomePrepared => .extra .becomePrepared
-  | .setBasePT p t => .extra (.setBasePT p t)
-  | .tapAndStun => .extra .tapAndStun
-  | .putOnTopOfLibrary => .extra .putOnTopOfLibrary
-  | .putOnBottomOfLibrary => .extra .putOnBottomOfLibrary
-  | .exile => .extra .exile
-  | .doublePowerAndToughness => .extra .doublePowerAndToughness
+  | .loseIndestructible => .loseIndestructible
+  | .cantBeBlocked => .cantBeBlocked
+  | .indestructibleCounter => .putCounters (.ofKind .indestructible) .permanent
+  | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) .permanent
+  | .burdenCounter => .putCounters (.ofKind .burden) .permanent
+  | .becomeArtifactIndestructible => .becomeArtifactIndestructible
+  | .becomePrepared => .becomePrepared
+  | .setBasePT p t => .setBasePT p t
+  | .tapAndStun => .tapAndStun
+  | .putOnTopOfLibrary => .putOnTopOfLibrary
+  | .putOnBottomOfLibrary => .putOnBottomOfLibrary
+  | .exile => .exile .target .forLater
+  | .doublePowerAndToughness => .doublePowerAndToughness
 
 end TriggerResolution
 
@@ -2482,5 +2457,25 @@ end SharedTrigger
   #[TriggerEvent.entering, TriggerEvent.attacking]
 #guard (SharedTrigger.timing (.death .hellcatReturn)).resolution ==
   TriggeredAbility.TriggerResolution.death .hellcatReturn
+#guard TriggeredAbility.TriggerResolution.ofPermanent .loseIndestructible ==
+  .loseIndestructible
+#guard TriggeredAbility.TriggerResolution.ofPermanent .cantBeBlocked == .cantBeBlocked
+#guard TriggeredAbility.TriggerResolution.ofPermanent .indestructibleCounter ==
+  .putCounters (.ofKind .indestructible) .permanent
+#guard TriggeredAbility.TriggerResolution.ofPermanent .doubleStrikeCounter ==
+  .putCounters (.ofKind .doubleStrike) .permanent
+#guard TriggeredAbility.TriggerResolution.ofPermanent .burdenCounter ==
+  .putCounters (.ofKind .burden) .permanent
+#guard TriggeredAbility.TriggerResolution.ofPermanent .becomeArtifactIndestructible ==
+  .becomeArtifactIndestructible
+#guard TriggeredAbility.TriggerResolution.ofPermanent .becomePrepared == .becomePrepared
+#guard TriggeredAbility.TriggerResolution.ofPermanent (.setBasePT 2 2) == .setBasePT 2 2
+#guard TriggeredAbility.TriggerResolution.ofPermanent .tapAndStun == .tapAndStun
+#guard TriggeredAbility.TriggerResolution.ofPermanent .putOnTopOfLibrary == .putOnTopOfLibrary
+#guard TriggeredAbility.TriggerResolution.ofPermanent .putOnBottomOfLibrary ==
+  .putOnBottomOfLibrary
+#guard TriggeredAbility.TriggerResolution.ofPermanent .exile == .exile .target .forLater
+#guard TriggeredAbility.TriggerResolution.ofPermanent .doublePowerAndToughness ==
+  .doublePowerAndToughness
 
 end Mtg.Engine

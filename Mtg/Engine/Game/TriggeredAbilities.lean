@@ -729,6 +729,22 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.addPlusOnePlusOneTo o n)
       "The target is no longer legal"
+  | .ofKind .indestructible n, .permanent false =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.addIndestructibleCounter o n)
+      "The target is no longer legal"
+  | .ofKind .doubleStrike n, .permanent false =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      let g := g.mapObjectStatus o (fun s => { s with keywordCounters :=
+        { s.keywordCounters with doubleStrike := s.keywordCounters.doubleStrike + n } })
+      let phrase :=
+        if n == 1 then "a double strike counter" else s!"{n} double strike counters"
+      g.logMsg s!"{o.name} gets {phrase}")
+      "The target is no longer legal"
+  | .ofKind .burden n, .permanent false =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.addBurdenCounter o n)
+      "The target is no longer legal"
   | _, _ => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
@@ -865,6 +881,9 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           { g with playExiledThisWay := some newId }
         | none => g.logMsg "The target is no longer in the graveyard"
       | _ => g) sourceId (some "The target is no longer legal")
+  | .target, .forLater, .none =>
+    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+      (g.move o.id .exile none).1) sourceId (some "The target is no longer legal")
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.sacrifice`. Each printed combination keeps
@@ -1813,9 +1832,42 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.pumpAndGrantTrample o power toughness)
       "The target is no longer legal"
-  | .extra how =>
-    g.applyOnPermanent controller ab.targetKind targets how.toAction sourceId
-      (some "The target is no longer legal")
+  | .loseIndestructible =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.applyPermanentAction o .loseIndestructible)
+      "The target is no longer legal"
+  | .cantBeBlocked =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.applyPermanentAction o .cantBeBlocked)
+      "The target is no longer legal"
+  | .becomeArtifactIndestructible =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.applyPermanentAction o .becomeArtifactIndestructible)
+      "The target is no longer legal"
+  | .becomePrepared =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.applyPermanentAction o .becomePrepared)
+      "The target is no longer legal"
+  | .setBasePT power toughness =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.applyPermanentAction o (.setBasePT power toughness))
+      "The target is no longer legal"
+  | .tapAndStun =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.applyPermanentAction o .tapAndStun)
+      "The target is no longer legal"
+  | .putOnTopOfLibrary =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.applyPermanentAction o .putOnTopOfLibrary)
+      "The target is no longer legal"
+  | .putOnBottomOfLibrary =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.applyPermanentAction o .putOnBottomOfLibrary)
+      "The target is no longer legal"
+  | .doublePowerAndToughness =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.applyPermanentAction o .doublePowerAndToughness)
+      "The target is no longer legal"
   | .dividedDamage =>
     Id.run do
       let mut g := g

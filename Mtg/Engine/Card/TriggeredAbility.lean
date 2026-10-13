@@ -673,7 +673,24 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
   | .setOtherBasePT =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
-  | .extra how => PermanentAction.toNotation how.toAction noun
+  | .loseIndestructible =>
+    s!"{noun} loses indestructible until end of turn"
+  | .cantBeBlocked =>
+    s!"{noun} can't be blocked this turn"
+  | .becomeArtifactIndestructible =>
+    s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
+  | .becomePrepared =>
+    s!"{noun} becomes prepared"
+  | .setBasePT p t =>
+    s!"{noun} has base power and toughness {p}/{t} until end of turn"
+  | .tapAndStun =>
+    s!"tap {noun} and put a stun counter on it"
+  | .putOnTopOfLibrary =>
+    s!"{noun}'s owner puts it on top of their library"
+  | .putOnBottomOfLibrary =>
+    s!"{noun}'s owner puts it on the bottom of their library"
+  | .doublePowerAndToughness =>
+    s!"double {noun}'s power and toughness until end of turn"
   | .surveil n => s!"surveil {n}"
   | .empowerJace n => s!"empower Jace {n}"
   | .prepareSource .ifNotPrepared =>
@@ -715,6 +732,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
     | .ofKind .plusOnePlusOne n, .permanent false =>
       s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
+    | .ofKind .indestructible n, .permanent false =>
+      s!"put {(.indestructible : CounterKind).countersPhrase n} on {noun}"
+    | .ofKind .doubleStrike n, .permanent false =>
+      s!"put {(.doubleStrike : CounterKind).countersPhrase n} on {noun}"
+    | .ofKind .burden n, .permanent false =>
+      s!"put {(.burden : CounterKind).countersPhrase n} on {noun}"
     | _, _ => "put counters"
   | .«if» (.landsAtLeast 6) (.sequence [.destroy .target,
       .createTokens .treasure 1 false .kind .targetController]) =>
@@ -1018,6 +1041,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "exile up to three target lands you control"
     | .graveyardCard, .forLater, .playCard =>
       s!"exile {noun}"
+    | .target, .forLater, .none =>
+      if noun.isEmpty then "exile it" else s!"exile {noun}"
     | .top, .forLater, .impulse =>
       "exile cards from the top of their library until they exile an instant or sorcery card"
     | _, _, _ =>
