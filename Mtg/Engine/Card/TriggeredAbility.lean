@@ -888,7 +888,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
   | .sequence [.exile .landsYouControl .forLater .lands, .put .notedLands .tapped _] =>
     "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
-  | .sequence [.grimaExileUntil, .mayCast .impulse .unlimited .withoutPaying .none] =>
+  | .sequence [.revealLibrary .untilInstantOrSorcery .exileForImpulse .damagedPlayer,
+      .mayCast .impulse .unlimited .withoutPaying .none] =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
   | .sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw _ .opponentHasYou _)] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
@@ -1185,8 +1186,18 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "if you cast it, you gain protection from everything until your next turn"
     | _, _ =>
       "grant"
-  | .revealTopPutRandomCreature n =>
-    s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
+  | .revealLibrary how thenDo who =>
+    match how, thenDo, who with
+    | .top n, .randomCreature, .you =>
+      s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
+    | .untilCreature, .battlefieldOrHand, .you =>
+      s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
+    | .untilSaga, .battlefield, .you =>
+      "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
+    | .untilInstantOrSorcery, .exileForImpulse, .damagedPlayer =>
+      "that player exiles cards from the top of their library until they exile an instant or sorcery card"
+    | _, _, _ =>
+      "reveal cards from a library"
   | .«if» (.drewAtLeast 2) (.sequence [.onPermanent (.pump 3 0), .onPermanent (.grantKeywords k)]) =>
     s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
   | .mill n who amount note =>
@@ -1201,8 +1212,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"each opponent mills {n} cards"
     | _, _, _ =>
       "mill"
-  | .revealUntilCreature =>
-    s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
   | .mayThen (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source) =>
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
   | .mayThen (.pay symbols) (.returnToHand .source .owner) =>
@@ -1216,8 +1225,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "the Ring tempts you"
   | .mayThen (.discard (what := .hand)) (.draw n) =>
     s!"you may discard your hand. If you do, draw {cardPhrase n}"
-  | .revealSaga =>
-    "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
   | .chapter e => (Effect.ofChapter e).phrase
   | .investigate => "investigate"
   | .connive .source => "it connives"
@@ -1286,8 +1293,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
   | .«if» .equipmentAttached (.fight .equipmentHost .reflexive) =>
     "that creature deals damage equal to its power to up to one target creature"
-  | .grimaExileUntil =>
-    "that player exiles cards from the top of their library until they exile an instant or sorcery card"
   | .reflexiveCopyMilled =>
     "exile and copy a card"
   | .«if» .opponentsMilled .reflexiveCopyMilled =>

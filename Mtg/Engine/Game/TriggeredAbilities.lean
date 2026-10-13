@@ -1516,6 +1516,101 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
     if k == 0 then g else g.gainLife controller k
 
+/-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
+keeps the behavior of the constructor it replaced. -/
+partial def applyRevealLibrary (g : Game) (controller : PlayerId)
+    (how : TriggeredAbility.TriggerLibraryHow)
+    (thenDo : TriggeredAbility.TriggerLibraryThen)
+    (who : TriggeredAbility.TriggerLibraryWho) : Game :=
+  match how, thenDo, who with
+  | .top n, .randomCreature, .you =>
+    let ids := g.scryLookedIds controller n
+    let g := ids.foldl (fun g id =>
+      match g.findObject? id with
+      | some o => g.logMsg s!"{(g.player controller).name} reveals {o.name}"
+      | none => g) g
+    let creatures := ids.filter (fun id => (g.findObject? id).any (·.printed.isCreature))
+    if creatures.isEmpty then
+      (g.logMsg "No creature card was revealed").putRestOnBottomRandom controller ids
+    else if g.norandom && creatures.size > 1 then
+      { g with
+        pending := .resolveRandom (.chooseObject creatures)
+        afterRandom := .revealRandomCreatureThenBottom controller ids }
+        |>.logMsg
+          s!"{(g.player controller).name} puts a random creature from among them onto the battlefield"
+    else
+      let (g, chosen) := g.chooseRandomId creatures
+      match chosen with
+      | some id => g.resolveRandomCreatureReveal controller ids id
+      | none => g.putRestOnBottomRandom controller ids
+  | .untilCreature, .battlefieldOrHand, .you =>
+    Id.run do
+      let mut g := g
+      let mut found : Option ObjectId := none
+      let mut rest : Array ObjectId := #[]
+      while found.isNone && !(g.player controller).library.isEmpty do
+        let top := (g.player controller).library.back!
+        let o := g.object! top
+        g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
+        if o.printed.isCreature then
+          found := some top
+        else
+          let (g', newId) := g.move top .exile none
+          g := g'
+          rest := rest.push newId
+      match found with
+      | none =>
+        return g.putRestOnBottomRandom controller rest
+      | some cid =>
+        let o := g.object! cid
+        let lands := g.landsYouControl controller
+        let (g', newId) :=
+          if o.printed.manaValue <= lands then
+            g.putOntoBattlefield cid controller
+          else
+            g.move cid (.hand controller) none
+        g := g'
+        g :=
+          if o.printed.manaValue <= lands then
+            g.logMsg s!"{o.name} enters the battlefield"
+          else
+            g.logMsg s!"{o.name} is put into {(g.player controller).name}'s hand"
+        if o.printed.manaValue <= lands then
+          g := g.afterPermanentEnters (g.object! newId)
+        return g.putRestOnBottomRandom controller rest
+  | .untilSaga, .battlefield, .you =>
+    Id.run do
+      let mut g := g
+      let mut found : Option ObjectId := none
+      let mut rest : Array ObjectId := #[]
+      while found.isNone && !(g.player controller).library.isEmpty do
+        let top := (g.player controller).library.back!
+        let o := g.object! top
+        g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
+        if o.printed.saga.isSome then found := some top
+        else
+          let (g', newId) := g.move top .exile none
+          g := g'
+          rest := rest.push newId
+      match found with
+      | none =>
+        return g.putRestOnBottomRandom controller rest
+      | some sid =>
+        let name := (g.object! sid).name
+        let (g', newId) := g.putOntoBattlefield sid controller
+        g := g'.logMsg s!"{name} enters the battlefield"
+        g := g.afterPermanentEnters (g.object! newId)
+        return g.putRestOnBottomRandom controller rest
+  | .untilInstantOrSorcery, .exileForImpulse, .damagedPlayer =>
+    let victim := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    let (g, found, others) := g.exileUntilInstantOrSorcery victim
+    { g with
+      grimaImpulseReady := true
+      grimaImpulseVictim := some victim
+      grimaImpulseFound := found
+      grimaImpulseOthers := others }
+  | _, _, _ => g
+
 /-- Resolve `TriggerResolution.revealFromHand`. Each printed combination
 keeps the behavior of the constructor it replaced. -/
 def applyRevealFromHand (g : Game) (controller : PlayerId)
@@ -1947,26 +2042,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match src.attachedTo.bind g.findObject? with
       | none => g.logMsg "Nothing is enchanted"
       | some host => g.applyPermanentAction host .tap
-  | .revealTopPutRandomCreature n =>
-    let ids := g.scryLookedIds controller n
-    let g := ids.foldl (fun g id =>
-      match g.findObject? id with
-      | some o => g.logMsg s!"{(g.player controller).name} reveals {o.name}"
-      | none => g) g
-    let creatures := ids.filter (fun id => (g.findObject? id).any (·.printed.isCreature))
-    if creatures.isEmpty then
-      (g.logMsg "No creature card was revealed").putRestOnBottomRandom controller ids
-    else if g.norandom && creatures.size > 1 then
-      { g with
-        pending := .resolveRandom (.chooseObject creatures)
-        afterRandom := .revealRandomCreatureThenBottom controller ids }
-        |>.logMsg
-          s!"{(g.player controller).name} puts a random creature from among them onto the battlefield"
-    else
-      let (g, chosen) := g.chooseRandomId creatures
-      match chosen with
-      | some id => g.resolveRandomCreatureReveal controller ids id
-      | none => g.putRestOnBottomRandom controller ids
+  | .revealLibrary how thenDo who =>
+    g.applyRevealLibrary controller how thenDo who
   | .fight who how =>
     g.applyFight controller sourceId targets who how
   | .reflexiveCopyMilled =>
@@ -1983,41 +2060,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         mvAtMost := some mv })
       resolution := .fra .sarumanExileCopyMayCast
       phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
-  | .revealUntilCreature =>
-    Id.run do
-      let mut g := g
-      let mut found : Option ObjectId := none
-      let mut rest : Array ObjectId := #[]
-      while found.isNone && !(g.player controller).library.isEmpty do
-        let top := (g.player controller).library.back!
-        let o := g.object! top
-        g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
-        if o.printed.isCreature then
-          found := some top
-        else
-          let (g', newId) := g.move top .exile none
-          g := g'
-          rest := rest.push newId
-      match found with
-      | none =>
-        return g.putRestOnBottomRandom controller rest
-      | some cid =>
-        let o := g.object! cid
-        let lands := g.landsYouControl controller
-        let (g', newId) :=
-          if o.printed.manaValue <= lands then
-            g.putOntoBattlefield cid controller
-          else
-            g.move cid (.hand controller) none
-        g := g'
-        g :=
-          if o.printed.manaValue <= lands then
-            g.logMsg s!"{o.name} enters the battlefield"
-          else
-            g.logMsg s!"{o.name} is put into {(g.player controller).name}'s hand"
-        if o.printed.manaValue <= lands then
-          g := g.afterPermanentEnters (g.object! newId)
-        return g.putRestOnBottomRandom controller rest
   | .copySelfNonlegendary =>
     match sourceId.bind g.findObject? with
     | none => g
@@ -2042,14 +2084,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let disc := if n == 2 then "two" else toString n
       g.beginFraChoice controller (.mayDrawThenDiscard spent n)
         s!"{(g.player controller).name} may draw {spent} cards, then discard {disc}"
-  | .grimaExileUntil =>
-    let victim := g.lastCombatDamagePlayer.getD (g.opponent controller)
-    let (g, found, others) := g.exileUntilInstantOrSorcery victim
-    { g with
-      grimaImpulseReady := true
-      grimaImpulseVictim := some victim
-      grimaImpulseFound := found
-      grimaImpulseOthers := others }
   | .winTheGame =>
     -- Ruling 835: you win while the ability resolves, before the
     -- state-based action for drawing from an empty library.
@@ -2059,29 +2093,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
-  | .revealSaga =>
-    Id.run do
-      let mut g := g
-      let mut found : Option ObjectId := none
-      let mut rest : Array ObjectId := #[]
-      while found.isNone && !(g.player controller).library.isEmpty do
-        let top := (g.player controller).library.back!
-        let o := g.object! top
-        g := g.logMsg s!"{(g.player controller).name} reveals {o.name}"
-        if o.printed.saga.isSome then found := some top
-        else
-          let (g', newId) := g.move top .exile none
-          g := g'
-          rest := rest.push newId
-      match found with
-      | none =>
-        return g.putRestOnBottomRandom controller rest
-      | some sid =>
-        let name := (g.object! sid).name
-        let (g', newId) := g.putOntoBattlefield sid controller
-        g := g'.logMsg s!"{name} enters the battlefield"
-        g := g.afterPermanentEnters (g.object! newId)
-        return g.putRestOnBottomRandom controller rest
   | .chapter _ =>
     g.applyChapterEffect controller ab.effect sourceId targets
   | .investigate =>
