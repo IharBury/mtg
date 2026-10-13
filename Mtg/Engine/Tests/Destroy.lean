@@ -95,12 +95,12 @@ not count. A permanent exiled instead of dying still counts. -/
 /- The following life step spends that count, including when nothing left. -/
 #guard
   let g0 := addPermanent afterDraw (artifact "Opp Sword" ManaCost.empty "") opp opp
-  let g := step g0 (.sequence [oppArts, .gainLifeForEachDestroyedThisWay])
+  let g := step g0 (.sequence [oppArts, .gainLife 0 (amount := .forEachDestroyedThisWay)])
   (g.player caster).life == (afterDraw.player caster).life + 1 &&
     g.permanentsDestroyedThisWay == 0 && !onBoard g "Opp Sword"
 
 #guard
-  let g := step afterDraw (.sequence [oppArts, .gainLifeForEachDestroyedThisWay])
+  let g := step afterDraw (.sequence [oppArts, .gainLife 0 (amount := .forEachDestroyedThisWay)])
   (g.player caster).life == (afterDraw.player caster).life &&
     g.permanentsDestroyedThisWay == 0
 
@@ -257,7 +257,7 @@ controller still amasses when the creature is indestructible. -/
   onBoard g "Ogre" && !g.destroyedForAmassThisWay && g.amassAmountThisWay == 0
 
 #guard (SharedTrigger.timing .destroyOppArtifactsEnchantmentsGainLife).resolution ==
-  .sequence [oppArts, .gainLifeForEachDestroyedThisWay]
+  .sequence [oppArts, .gainLife 0 (amount := .forEachDestroyedThisWay)]
 
 #guard (SharedTrigger.timing (.dealDamageDestroyIfSubtype 1 "Dragon")).resolution ==
   .sequence [.dealDamage 1 .target .fixed .markedPermanent,
