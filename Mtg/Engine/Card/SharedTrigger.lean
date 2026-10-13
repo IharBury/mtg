@@ -618,7 +618,7 @@ inductive SharedTrigger where
   | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
   /-- Draw a card, then put a card from your hand on the bottom if you don't
   control a legendary creature.
-  Resolves as `.sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom]`. -/
+  Resolves as `.sequence [.draw 1, .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)]`. -/
   | drawThenBottomIfNoLegendary
   /-- Remove a hope counter from this. If you do, draw a card. Then if it has
   no hope counters, sacrifice it and you gain 4 life.

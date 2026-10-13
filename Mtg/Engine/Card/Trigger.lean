@@ -924,6 +924,23 @@ inductive TriggerRevealCount where
   | onePlusCreatureCards
 deriving Repr, Inhabited, BEq
 
+/-- Where `TriggerResolution.putOnLibrary` puts the card. -/
+inductive TriggerLibraryPlace where
+  /-- On top of the owner's library. -/
+  | top
+  /-- On the bottom of the owner's library. A card from hand uses the
+  controller's library. -/
+  | bottom
+deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.putOnLibrary` puts there. -/
+inductive TriggerLibraryWhat where
+  /-- The permanent `who` names. Its owner puts it on their library. -/
+  | permanent (who : TriggerAffected := .target)
+  /-- A card from the controller's hand. An empty hand skips the choice. -/
+  | cardFromHand
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
@@ -932,22 +949,25 @@ exile, sacrifice, attach, amass, casting a spell, returning cards to hand,
 putting onto the battlefield, adding mana, choosing modes, destroying,
 fighting, granting, gaining life, losing life, milling, revealing from
 a hand, revealing from a library, searching a library, tapping,
-untapping, and losing each cover multiple printed abilities.
+untapping, losing, and putting on a library each cover multiple printed
+abilities.
 A permanent target uses its own constructor: `pump`, `putCounters`,
 `destroy`, `dealDamage`, `grant`, `tap`, `untap`, `exile`, `lose`,
 `cantBeBlocked`, `becomeArtifact`, `becomePrepared`, `setBasePT`,
-`putOnTopOfLibrary`, and `putOnBottomOfLibrary`. Losing indestructible
-until end of turn, and losing all abilities while the source remains,
-are `lose`. What is lost, and who loses it, are arguments. +P/+T and
-trample is a sequence of `pump` and `grant`. Becoming an artifact and
-gaining indestructible is a sequence of `becomeArtifact` and `grant`.
-Tap and a stun counter is a sequence of `tap` and `putCounters`. The source,
-the enchanted creature, and a follow-up while the source remains use those
-same constructors. `ofSource`, `ofEnchanted`, and `ofTargetWhileSource` map
-a `PermanentAction` onto them. +P/+T on the source is `.pump p t .source`.
-Tapping the creature this Aura enchants is `.tap .enchantedWhileSource`.
-Granting keywords to the target while the source remains is
-`.grant (.keywords k) .targetWhileSource`. -/
+and `putOnLibrary`. Losing indestructible until end of turn, and losing
+all abilities while the source remains, are `lose`. What is lost, and who
+loses it, are arguments. Putting the announced permanent on top or on the
+bottom of its owner's library, and putting a card from your hand on the
+bottom, are `putOnLibrary`. Where the card goes, and which card, are
+arguments. +P/+T and trample is a sequence of `pump` and `grant`. Becoming
+an artifact and gaining indestructible is a sequence of `becomeArtifact`
+and `grant`. Tap and a stun counter is a sequence of `tap` and
+`putCounters`. The source, the enchanted creature, and a follow-up while
+the source remains use those same constructors. `ofSource`, `ofEnchanted`,
+and `ofTargetWhileSource` map a `PermanentAction` onto them. +P/+T on the
+source is `.pump p t .source`. Tapping the creature this Aura enchants is
+`.tap .enchantedWhileSource`. Granting keywords to the target while the
+source remains is `.grant (.keywords k) .targetWhileSource`. -/
 inductive TriggerResolution where
   /-- Until end of turn, permanents of `who` get the bonus from `amount`.
   `power` and `toughness` are that bonus when `amount` is `.fixed`.
@@ -1192,19 +1212,25 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Until end of turn, `who`'s base power and toughness become
   `power`/`toughness`. The announced permanent is `.setBasePT p t`. -/
   | setBasePT (power toughness : Int) (who : TriggerAffected := .target)
-  /-- The owner puts `who` on top of their library.
-  The announced permanent is `.putOnTopOfLibrary`. -/
-  | putOnTopOfLibrary (who : TriggerAffected := .target)
-  /-- The owner puts `who` on the bottom of their library.
-  The announced permanent is `.putOnBottomOfLibrary`. -/
-  | putOnBottomOfLibrary (who : TriggerAffected := .target)
+  /-- Put a card onto a library. `place` says top or bottom, and `what`
+  says which card.
+  The announced permanent on top of its owner's library is `.putOnLibrary .top`.
+  The announced permanent on the bottom is `.putOnLibrary .bottom`.
+  The source, the enchanted creature, and the target while the source
+  remains are `.permanent .source`, `.permanent .enchanted`, and
+  `.permanent .targetWhileSource`, with either place.
+  A card from your hand on the bottom of your library is
+  `.putOnLibrary .bottom .cardFromHand`. An empty hand skips the choice.
+  A card from your hand on top puts nothing. -/
+  | putOnLibrary (place : TriggerLibraryPlace := .top)
+      (what : TriggerLibraryWhat := .permanent)
   /-- Deal previously divided damage to the announced targets. -/
   | dividedDamage
   /-- Apply each resolution in order. An illegal required target skips every
   step (CR 608.2b). Return a graveyard card, then gain life equal to its
   power, is `.sequence [.returnToHand .graveyardCard, .gainLife 0 (amount := .equalToTargetPower)]`.
   Draw, then bottom a card if you control no legendary, is
-  `.sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom]`.
+  `.sequence [.draw 1, .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)]`.
   Remove a hope counter, draw if one was removed, then sacrifice and gain
   life if none remain, is
   `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]`.
@@ -1278,9 +1304,6 @@ You may put a land card from your hand onto the battlefield tapped is
   1 life for each other creature you control is
   `.gainLife 0 (amount := .forEachOtherCreature)`. -/
   | gainLife (n : Nat) (amount : TriggerLifeAmount := .fixed)
-  /-- Put a card from your hand on the bottom of your library.
-  An empty hand skips the choice. -/
-  | putFromHandOnBottom
   /-- Exile cards. `what` says which cards, `how` says for how long, and
   `note` says what a later step can read.
   The targeted permanent, linked for a leave trigger, is
@@ -1446,7 +1469,7 @@ You may put a land card from your hand onto the battlefield tapped is
   | noteResolveThisTurn (limit : Nat)
   /-- Resolve `thenDo` when `cond` holds.
   Putting a card on the bottom when you control no legendary creature is
-  `.«if» .noLegendaryCreature .putFromHandOnBottom`.
+  `.«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)`.
   Drawing when an earlier step removed a hope counter is
   `.«if» .removedHope (.draw 1)`.
   Doing `thenDo` on the nth resolution this turn is
@@ -1702,8 +1725,8 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .setBasePT p t => .setBasePT p t
   | .tapAndStun =>
     .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]
-  | .putOnTopOfLibrary => .putOnTopOfLibrary
-  | .putOnBottomOfLibrary => .putOnBottomOfLibrary
+  | .putOnTopOfLibrary => .putOnLibrary .top
+  | .putOnBottomOfLibrary => .putOnLibrary .bottom
   | .exile => .exile .target .forLater
   | .doublePowerAndToughness => .pump 0 0 .target .double
 
@@ -1729,8 +1752,8 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .setBasePT p t => .setBasePT p t who
   | .tapAndStun =>
     .sequence [.tap (tapWho who), .putCounters (.ofKind .stun) (counterWho who)]
-  | .putOnTopOfLibrary => .putOnTopOfLibrary who
-  | .putOnBottomOfLibrary => .putOnBottomOfLibrary who
+  | .putOnTopOfLibrary => .putOnLibrary .top (.permanent who)
+  | .putOnBottomOfLibrary => .putOnLibrary .bottom (.permanent who)
   | .exile => .exile (exileWhat who) .forLater
   | .doublePowerAndToughness => .pump 0 0 (pumpWho who) .double
 where
@@ -2063,7 +2086,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         else
           .mayThen (.pay #[.generic n]) (.draw 1) }
   | .drawThenBottomIfNoLegendary =>
-    { resolution := .sequence [.draw 1, .«if» .noLegendaryCreature .putFromHandOnBottom] }
+    { resolution := .sequence
+        [.draw 1, .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)] }
   | .removeHopeDrawSac =>
     { resolution := .sequence
         [.removeCounters .hope .source, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] }
@@ -2681,9 +2705,22 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofPermanent (.setBasePT 2 2) == .setBasePT 2 2
 #guard TriggeredAbility.TriggerResolution.ofPermanent .tapAndStun ==
   .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]
-#guard TriggeredAbility.TriggerResolution.ofPermanent .putOnTopOfLibrary == .putOnTopOfLibrary
+#guard TriggeredAbility.TriggerResolution.ofPermanent .putOnTopOfLibrary ==
+  .putOnLibrary .top
 #guard TriggeredAbility.TriggerResolution.ofPermanent .putOnBottomOfLibrary ==
-  .putOnBottomOfLibrary
+  .putOnLibrary .bottom
+#guard TriggeredAbility.TriggerResolution.ofSource .putOnTopOfLibrary ==
+  .putOnLibrary .top (.permanent .source)
+#guard TriggeredAbility.TriggerResolution.ofSource .putOnBottomOfLibrary ==
+  .putOnLibrary .bottom (.permanent .source)
+#guard TriggeredAbility.TriggerResolution.ofEnchanted .putOnTopOfLibrary ==
+  .putOnLibrary .top (.permanent .enchanted)
+#guard TriggeredAbility.TriggerResolution.ofEnchanted .putOnBottomOfLibrary ==
+  .putOnLibrary .bottom (.permanent .enchanted)
+#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnTopOfLibrary ==
+  .putOnLibrary .top (.permanent .targetWhileSource)
+#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnBottomOfLibrary ==
+  .putOnLibrary .bottom (.permanent .targetWhileSource)
 #guard TriggeredAbility.TriggerResolution.ofPermanent .exile == .exile .target .forLater
 #guard TriggeredAbility.TriggerResolution.ofPermanent .doublePowerAndToughness ==
   .pump 0 0 .target .double
