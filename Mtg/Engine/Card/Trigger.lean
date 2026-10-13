@@ -798,7 +798,8 @@ putting counters, removing counters, until-end-of-turn pumps, creating tokens,
 exile, sacrifice, attach, amass, casting a spell, returning cards to hand,
 putting onto the battlefield, adding mana, choosing modes, destroying,
 fighting, granting, gaining life, losing life, milling, revealing from
-a hand, and revealing from a library each cover multiple printed abilities.
+a hand, revealing from a library, and searching a library each cover
+multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -867,7 +868,10 @@ inductive TriggerResolution where
   /-- Search your library, as `how` says.
   A Forest onto the battlefield is `.searchLibrary`.
   A basic land into your hand is `.searchLibrary .basicLandToHand`.
-  You may put a basic land on top is `.searchLibrary .basicLandOnTop`. -/
+  You may put a basic land on top is `.searchLibrary .basicLandOnTop`.
+  A Dragon from your hand and/or library onto the battlefield is
+  `.searchLibrary .dragonFromHandOrLibrary`. A card from the library
+  shuffles. A card from the hand does not. Choosing not to find does not. -/
   | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
   /-- Discard cards. `n` is the count when `what` is `.cards`.
   One card from the controller is `.discard`.
@@ -1382,8 +1386,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | becomeBear
   /-- Tap the creature enchanted by the source. -/
   | tapEnchanted
-  /-- Search your hand and/or library for a Dragon and put it onto the battlefield. -/
-  | searchDragonFromHandOrLibrary
   /-- Queue the reflexive exile-and-copy of a milled spell. -/
   | reflexiveCopyMilled
   /-- A player loses life (CR 118.3a), as `who` and `amount` say. `n` is
@@ -1806,7 +1808,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .creatureYouControl,
       resolution := .putCounters .plusOneLastKnownMv .permanent }
   | .mountainQuestDragon =>
-    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary])] }
+    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchLibrary .dragonFromHandOrLibrary])] }
   | .treasuresPerChosenType =>
     { resolution := .createTokens .treasure 0 false (qty := .chosenCreatureType) }
   | .revealUntilCreature =>

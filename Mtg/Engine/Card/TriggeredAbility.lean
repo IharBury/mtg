@@ -769,6 +769,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     searchLibraryToHandPhrase "a basic land card"
   | .searchLibrary .basicLandOnTop =>
     "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
+  | .searchLibrary .dragonFromHandOrLibrary =>
+    "search your hand and/or library for a Dragon card and put it onto the battlefield"
   | .discard n who what when =>
     match who, what, when with
     | .you, .cards, .now | .you, .cards, .ifManaSpent =>
@@ -875,7 +877,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "tap enchanted creature and remove all counters from it"
   | .sequence [.putCounters (.ofKind .quest) .source,
       .«if» (.questAtLeast 6)
-        (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary])] =>
+        (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchLibrary .dragonFromHandOrLibrary])] =>
     "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
   | .sequence [.draw 1, .discard 1, .put .discardedLand .tapped _] =>
     "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
@@ -1298,9 +1300,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .«if» (.bearsAtLeast 3) (.draw 2) =>
     "if you control three or more Bears, draw two cards"
   | .tapEnchanted => "tap enchanted creature"
-  | .searchDragonFromHandOrLibrary =>
-    "search your hand and/or library for a Dragon card and put it onto the battlefield"
-  | .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchDragonFromHandOrLibrary]) =>
+  | .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchLibrary .dragonFromHandOrLibrary]) =>
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
   | .«if» .equipmentAttached (.fight .equipmentHost .reflexive) =>
     "that creature deals damage equal to its power to up to one target creature"

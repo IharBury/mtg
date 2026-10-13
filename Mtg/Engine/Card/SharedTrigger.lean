@@ -458,7 +458,7 @@ inductive OpponentDiscard where
   | target
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- What `SharedTrigger.searchLibrary` finds, and where that card goes. -/
+/-- What `TriggerResolution.searchLibrary` finds, and where that card goes. -/
 inductive TriggerLibrarySearch where
   /-- A Forest card onto the battlefield. -/
   | forestToBattlefield
@@ -467,6 +467,10 @@ inductive TriggerLibrarySearch where
   /-- You may search for a basic land card, reveal it, shuffle, and put it
   on top. Declining does not shuffle. -/
   | basicLandOnTop
+  /-- A Dragon card from your hand and/or library onto the battlefield.
+  A card from the library shuffles. A card from the hand does not.
+  Choosing not to find does not shuffle. -/
+  | dragonFromHandOrLibrary
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Which permanents `SharedTrigger.plusOneEachYouControl` puts a counter on. -/
@@ -549,7 +553,9 @@ inductive SharedTrigger where
   | pumpCause (power toughness : Int)
   /-- Search your library. A Forest onto the battlefield is `.searchLibrary`.
   A basic land into your hand is `.searchLibrary .basicLandToHand`.
-  You may put a basic land on top is `.searchLibrary .basicLandOnTop`. -/
+  You may put a basic land on top is `.searchLibrary .basicLandOnTop`.
+  A Dragon from your hand and/or library onto the battlefield is
+  `.searchLibrary .dragonFromHandOrLibrary`. -/
   | searchLibrary (how : TriggerLibrarySearch := .forestToBattlefield)
   /-- Each player sacrifices a creature of their choice. -/
   | eachPlayerSacrificesCreature
