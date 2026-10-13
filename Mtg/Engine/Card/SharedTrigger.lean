@@ -511,7 +511,8 @@ inductive SharedTrigger where
   | opponentSacrificesCreature
   /-- Affect a still-legal permanent target. -/
   | onPermanent (kind : EffectTargetKind) (action : PermanentAction)
-  /-- Affect the trigger's source if it is still on the battlefield. -/
+  /-- Affect the trigger's source if it is still on the battlefield.
+  Resolves as `TriggerResolution.ofSource`. -/
   | onSource (action : PermanentAction)
   /-- Exile the top card; you may play it until the end of your next turn. -/
   | exileTop
@@ -646,7 +647,7 @@ inductive SharedTrigger where
   | defenderSacsLeastPower
   /-- Return up to one other permanent you control to its owner's hand.
   If you do, put a +1/+1 counter on this creature.
-  Resolves as `.sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.onSource (.plusOne 1))]`. -/
+  Resolves as `.sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`. -/
   | returnOtherPlusOne
   /-- Look at the top `n` cards; you may reveal one of these types. -/
   | lookAtTopRevealTypes (n : Nat) (types : Array String)
@@ -874,10 +875,11 @@ inductive SharedTrigger where
   the life gained put into the graveyard this way goes to your hand. Resolves as
   `.sequence [.armSurveilReturnLifeGained, .surveil 1]`. -/
   | surveilReturnIfGainedLife
-  /-- Apply `action` to the enchanted creature. -/
+  /-- Apply `action` to the enchanted creature.
+  Resolves as `TriggerResolution.ofEnchanted`. -/
   | onEnchanted (action : PermanentAction)
-  /-- Attach to target, then apply `followup`. Resolves as
-  `.sequence [.attach .source .target, .onTargetWhileSource followup]`. -/
+  /-- Attach to target, then apply `followup`. Resolves as `.attach .source .target`
+  followed by `TriggerResolution.ofTargetWhileSource`. -/
   | attachThen (followup : PermanentAction)
   /-- Exile another creature; enchanted becomes a copy. -/
   | exileOtherCopyEnchanted
