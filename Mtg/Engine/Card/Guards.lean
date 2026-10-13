@@ -888,11 +888,11 @@ namespace CardDef
 #guard TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure ==
   .triggered .combatDamageToPlayer (Effect.ofTrigger .wolfPlusOneOrTreasure)
 #guard TriggeredAbility.resolution .onCombatDamageWolfPlusOneOrTreasure ==
-  .or [.onPermanent (.plusOne 1), .createTokens .treasure 1 false]
+  .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false]
 #guard (SharedTrigger.timing .tapOppOrUntapYours).resolution ==
-  .or [.onPermanent .tap, .onPermanent .untap]
+  .or [.tap .target, .untap]
 #guard TriggeredAbility.resolution .onLandYouControlEntersTapOrUntap ==
-  .or [.onPermanent .tap, .onPermanent .untap]
+  .or [.tap .target, .untap]
 #guard TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear ==
   .triggered .yourBeginCombat (Effect.ofTrigger .trampleCounterBecomeBear)
 #guard TriggeredAbility.onEnterMillThenSubtypeToHand 4 "Elf" ==
@@ -1278,7 +1278,7 @@ namespace CardDef
   .pump 0 0 .source .greatestPower
 #guard TriggeredAbility.resolution .onAttackSetOtherBasePT == .setOtherBasePT
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
-  .onPermanent (.pumpAndTrample 2 0)
+  .sequence [.pump 2 0 .target, .grant (.keywords Keyword.trample) .target]
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry 2
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil 2
 #guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
@@ -1303,13 +1303,13 @@ namespace CardDef
   "When this creature enters, choose one — • Tap target nonland permanent. • Untap target nonland permanent."
 #guard TriggeredAbility.targetKind .onEnterTapOrUntapNonland == .nonland
 #guard TriggeredAbility.resolution .onEnterTapOrUntapNonland ==
-  .or [.onPermanent .tap, .onPermanent .untap]
+  .or [.tap .target, .untap]
 #guard TriggeredAbility.toNotation .onEnterCreateFoodOrTreasure ==
   "When this creature enters, create a Food token or a Treasure token."
 #guard TriggeredAbility.resolution .onEnterCreateFoodOrTreasure ==
   .or [.createTokens .food 1 false, .createTokens .treasure 1 false]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterPlusOnesOrReturnArtEnch) ==
-  .or [.onPermanent (.plusOne 1), .returnToHand .graveyardCard]
+  .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard]
 #guard TriggeredAbility.toNotation (.onEnter Effect.enterPlusOnesOrReturnArtEnch) ==
   "When this permanent enters, choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand."
 #guard TriggeredAbility.toNotation .onEnterVillainIfGyElseMill ==
@@ -1325,14 +1325,15 @@ namespace CardDef
   "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
 #guard TriggeredAbility.resolution .onEnterPlusOneOrTwoIfAnotherHero ==
   .ifElse (.targetIsAnotherSubtype "Hero")
-    (.onPermanent (.plusOne 2)) (.onPermanent (.plusOne 1))
+    (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
+    (.putCounters (.ofKind .plusOnePlusOne) .permanent)
 #guard TriggeredAbility.targetKind .onEnterPlusOneOrTwoIfAnotherHero == .creature
 #guard TriggeredAbility.toNotation
     (.triggered .yourBeginCombat (Effect.ofTrigger .pumpOrCounterIfScried)) ==
   "At the beginning of combat on your turn, another target creature you control gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead."
 #guard (SharedTrigger.timing .pumpOrCounterIfScried).resolution ==
   .ifElse .scriedOrSurveilledThisTurn
-    (.onPermanent (.plusOne 1)) (.onPermanent (.pump 1 1))
+    (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump 1 1 .target)
 #guard TriggeredAbility.toNotation .onEnterMaySacArtifactOrDiscardDraw ==
   "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
 #guard TriggeredAbility.toNotation .onEnterExileOppTappedUntilLeaves ==
@@ -1364,7 +1365,7 @@ namespace CardDef
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
   .permanentCardInYourGraveyard
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
-  .sequence [.onPermanent .tap, .cantUntapWhileSource]
+  .sequence [.tap .target, .cantUntapWhileSource]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==
   .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7))
 #guard TriggeredAbility.resolution (.onEnterExileTop) == .exile .top .playUntilNextTurn
@@ -1451,7 +1452,7 @@ namespace CardDef
     (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) ==
   "Whenever another creature you control with power 2 or less enters, you may pay {1}. If you do, draw a card."
 #guard TriggeredAbility.resolution .onAttackWithTwoOrMoreGrantFlying ==
-  .onPermanent (.grantKeywords Keyword.flying)
+  .grant (.keywords Keyword.flying) .target
 #guard TriggeredAbility.toNotation (.onOpponentCastsAmassOrcs 1) ==
   "Whenever an opponent casts a spell, amass Orcs 1."
 #guard TriggeredAbility.toNotation .onDiesAmassGoblinsEqualPower ==
@@ -1495,7 +1496,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution (.onLandYouControlEntersGets 1 1) ==
   .onSource (.pump 1 1)
 #guard TriggeredAbility.resolution .onLandYouControlEntersPlusOnePlusOne ==
-  .onPermanent (.plusOne 1)
+  .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard TriggeredAbility.resolution .onAnotherElfYouControlEntersGets1 ==
   .onSource (.pump 1 1)
 #guard TriggeredAbility.resolution (.onEnterDealDividedDamage 3 3) == .dividedDamage
@@ -1593,16 +1594,16 @@ end CardDef
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
   .sequence [.armSurveilReturnLifeGained, .surveil 1]
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
-  .sequence [.onPermanent (.grantKeywords Keyword.hexproof),
-    .«if» .targetIsCreature (.onPermanent (.plusOne 1)),
+  .sequence [.grant (.keywords Keyword.hexproof) .target,
+    .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent),
     .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]
 #guard (SharedTrigger.timing .beginCombatIfDrawnTwoPump).resolution ==
   .«if» (.drewAtLeast 2) (.sequence [
-    .onPermanent (.pump 3 0),
-    .onPermanent (.grantKeywords Keyword.firstStrike)])
+    .pump 3 0 .target,
+    .grant (.keywords Keyword.firstStrike) .target])
 #guard (SharedTrigger.timing .destroyOppPermanentIfSixLands).resolution ==
   .«if» (.landsAtLeast 6) (.sequence [
-    .onPermanent .destroy,
+    .destroy .target,
     .createTokens .treasure 1 false (who := .targetController)])
 #guard TriggeredAbility.toNotation
     (.triggered .enter (Effect.ofTrigger .destroyOppPermanentIfSixLands)) ==

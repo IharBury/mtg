@@ -287,7 +287,9 @@ def oliphauntResolved : Game := passBoth oliphauntTargeted
 #guard (oliphauntResolved.effectiveKeywords
   (namedPermanent oliphauntResolved "Gray Ogre")).trample
 #guard oliphauntResolved.log.any (fun s =>
-  mentions s "gets +2/+0 and gains trample until end of turn")
+  mentions s "gets +2/+0 until end of turn")
+#guard oliphauntResolved.log.any (fun s =>
+  mentions s "gains trample until end of turn")
 
 -- Pump stacks with printed power; Oliphaunt itself is unchanged.
 #guard oliphauntResolved.power (namedPermanent oliphauntResolved "Oliphaunt") == 6
@@ -374,7 +376,9 @@ def oliphauntSourceGone : Game :=
 #guard oliphauntSourceGone.power (namedPermanent oliphauntSourceGone "Gray Ogre") == 4
 #guard oliphauntSourceGone.hasTrample (namedPermanent oliphauntSourceGone "Gray Ogre")
 #guard oliphauntSourceGone.log.any (fun s =>
-  mentions s "gets +2/+0 and gains trample until end of turn")
+  mentions s "gets +2/+0 until end of turn")
+#guard oliphauntSourceGone.log.any (fun s =>
+  mentions s "gains trample until end of turn")
 
 /-- If the targeted creature leaves before resolution, the trigger does nothing. -/
 def oliphauntTargetGone : Game :=
