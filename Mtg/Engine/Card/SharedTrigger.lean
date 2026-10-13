@@ -626,7 +626,7 @@ inductive SharedTrigger where
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
-  Resolves as `.sequence [.may .tapHumans, .draw 0 (amount := .forEachTappedHuman)]`. -/
+  Resolves as `.sequence [.may (.tap .humans), .draw 0 (amount := .forEachTappedHuman)]`. -/
   | tapHumansDraw
   /-- Destroy opponents' artifacts and enchantments; gain life for each.
   Resolves as
@@ -746,7 +746,7 @@ inductive SharedTrigger where
   `.grant .doubleStrike .equippedAttackers`. -/
   | equippedAttackersGainDoubleStrike
   /-- Tap enchanted creature and remove counters. Resolves as
-  `.sequence [.tapEnchanted, .removeCounters .all .enchanted]`. -/
+  `.sequence [.tap .enchanted, .removeCounters .all .enchanted]`. -/
   | tapEnchantedRemoveCounters
   /-- Reveal the top `n` and put a random creature in. -/
   | revealTopPutRandomCreature (n : Nat)

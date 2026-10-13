@@ -821,7 +821,7 @@ namespace CardDef
 #guard TriggeredAbility.onAttackTapHumansDraw ==
   .triggered .attack (Effect.ofTrigger .tapHumansDraw)
 #guard TriggeredAbility.resolution .onAttackTapHumansDraw ==
-  .sequence [.may .tapHumans, .draw 0 (amount := .forEachTappedHuman)]
+  .sequence [.may (.tap .humans), .draw 0 (amount := .forEachTappedHuman)]
 #guard TriggeredAbility.toNotation .onAttackTapHumansDraw ==
   "Whenever this creature attacks, you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way."
 #guard TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear" ==
@@ -1563,7 +1563,7 @@ end CardDef
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
   .sequence [.mill 4 (note := .milledCards), .returnToHand (.milledSubtype "Elf")]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
-  .sequence [.tapEnchanted, .removeCounters .all .enchanted]
+  .sequence [.tap .enchanted, .removeCounters .all .enchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
   .sequence [.putCounters (.ofKind .influence) .source, .scry 2,
     .may (.draw 1 (who := .opponentHasYou))]
@@ -1617,7 +1617,7 @@ end CardDef
   .sequence [.createTokens .treasure 1 false .sturdyShield (note := .remember),
     .attach .created .source]
 #guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
-  .sequence [.tapTargetIfPresent, .loseAbilitiesWhileSourceRemains]
+  .sequence [.tap .targetIfPresent, .loseAbilitiesWhileSourceRemains]
 #guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==
   "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."
 #guard TriggeredAbility.toNotation .onActivateCreatureAbilityDrawOnce ==

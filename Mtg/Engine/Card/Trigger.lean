@@ -773,6 +773,18 @@ inductive TriggerRemoveWho where
   | enchanted
 deriving Repr, Inhabited, BEq
 
+/-- Who `TriggerResolution.tap` taps. -/
+inductive TriggerTapWho where
+  /-- Any number of untapped Humans the controller controls.
+  Choosing none taps nothing. -/
+  | humans
+  /-- The creature the source enchants. Nothing enchanted taps nothing. -/
+  | enchanted
+  /-- The announced permanent, while it is still on the battlefield.
+  A missing target taps nothing. -/
+  | targetIfPresent
+deriving Repr, Inhabited, BEq
+
 /-- How far `TriggerResolution.revealLibrary` looks from the top of a library. -/
 inductive TriggerLibraryHow where
   /-- The top `n` cards. Looking at zero cards finds nothing. -/
@@ -810,8 +822,8 @@ putting counters, removing counters, until-end-of-turn pumps, creating tokens,
 exile, sacrifice, attach, amass, casting a spell, returning cards to hand,
 putting onto the battlefield, adding mana, choosing modes, destroying,
 fighting, granting, gaining life, losing life, milling, revealing from
-a hand, revealing from a library, and searching a library each cover
-multiple printed abilities.
+a hand, revealing from a library, searching a library, and tapping each
+cover multiple printed abilities.
 Permanent-target counters and pumps, and source pumps, share
 `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
@@ -987,7 +999,7 @@ A choice that already includes decline is that choice, so the player
 is not asked twice. You may draw X cards, where X is the mana spent to
 cast the triggering spell, then discard two, is
 `.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)])`.
-You may tap any number of untapped Humans is `.may .tapHumans`.
+You may tap any number of untapped Humans is `.may (.tap .humans)`.
 You may sacrifice another creature is `.may (.sacrifice .you .another)`.
 You may put an artifact from your hand onto the battlefield is
 `.may (.put .artifactFromHand (note := .forAttach))`.
@@ -1035,7 +1047,7 @@ You may put a land card from your hand onto the battlefield tapped is
   A step that asks a player to choose pauses the later steps until that
   choice finishes; they are still part of this resolution. Tap any number
   of Humans, then draw that many, is
-  `.sequence [.may .tapHumans, .draw 0 (amount := .forEachTappedHuman)]`.
+  `.sequence [.may (.tap .humans), .draw 0 (amount := .forEachTappedHuman)]`.
   Create one token, then attach the source to it, is
   `.sequence [.createTokens kind 1 false, .attach .source .created]`.
   Gain life, then you may search a basic land onto the top, is
@@ -1158,9 +1170,15 @@ You may put a land card from your hand onto the battlefield tapped is
   `.removeCounters .all .enchanted`. Nothing enchanted removes nothing.
   Any other combination removes nothing. -/
   | removeCounters (what : TriggerRemoveWhat) (who : TriggerRemoveWho)
-  /-- Tap any number of untapped Humans you control.
-  Choosing none taps nothing. Optional as `.may .tapHumans`. -/
-  | tapHumans
+  /-- Tap permanents, as `who` says.
+  Any number of untapped Humans you control is `.tap .humans`.
+  Choosing none taps nothing. Optional as `.may (.tap .humans)`.
+  The creature the source enchants is `.tap .enchanted`.
+  Nothing enchanted taps nothing. A missing source taps nothing.
+  The announced permanent, if it is still on the battlefield, is
+  `.tap .targetIfPresent`. A missing target taps nothing.
+  Wrapping one in `may` is that tap. -/
+  | tap (who : TriggerTapWho)
   /-- Destroy permanents. `what` says which, and `note` says what a later
   step can read.
   Opponents' artifacts and enchantments, counted for the next step, are
@@ -1404,8 +1422,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | additionalCombatPhase
   /-- The target becomes a Bear in addition to its other types. -/
   | becomeBear
-  /-- Tap the creature enchanted by the source. -/
-  | tapEnchanted
   /-- Queue the reflexive exile-and-copy of a milled spell. -/
   | reflexiveCopyMilled
   /-- A player loses life (CR 118.3a), as `who` and `amount` say. `n` is
@@ -1433,8 +1449,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | grantPlayNotedUntilNextTurn
   /-- The tapped creature can't untap while you control the source. -/
   | cantUntapWhileSource
-  /-- Tap the target if it is still on the battlefield. -/
-  | tapTargetIfPresent
   /-- The tapped creature loses all abilities while the source remains. -/
   | loseAbilitiesWhileSourceRemains
   /-- You win the game. -/
@@ -1772,7 +1786,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.removeCounters .hope .source, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] }
   | .tapHumansDraw =>
     { resolution := .sequence
-        [.may .tapHumans, .draw 0 (amount := .forEachTappedHuman)] }
+        [.may (.tap .humans), .draw 0 (amount := .forEachTappedHuman)] }
   | .destroyOppArtifactsEnchantmentsGainLife =>
     { resolution := .sequence
         [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
@@ -1917,7 +1931,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .equippedAttackersGainDoubleStrike =>
     { resolution := .grant .doubleStrike .equippedAttackers }
   | .tapEnchantedRemoveCounters =>
-    { resolution := .sequence [.tapEnchanted, .removeCounters .all .enchanted] }
+    { resolution := .sequence [.tap .enchanted, .removeCounters .all .enchanted] }
   | .revealTopPutRandomCreature n =>
     { resolution := .revealLibrary (.top n) (.put .randomCreature) }
   | .beginCombatIfDrawnTwoPump =>
@@ -2147,7 +2161,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .enter .tapLoseAbilitiesWhileSource =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
-        [.tapTargetIfPresent, .loseAbilitiesWhileSourceRemains] }
+        [.tap .targetIfPresent, .loseAbilitiesWhileSourceRemains] }
   | .enter .revealDiscardFromHand =>
     { events := #[.entering], targeting := .of .player,
       resolution := .revealFromHand .onePlusCreatureCards

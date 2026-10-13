@@ -40,6 +40,7 @@ import Mtg.Engine.Tests.RemoveCounters
 import Mtg.Engine.Tests.RevealFromHand
 import Mtg.Engine.Tests.RevealLibrary
 import Mtg.Engine.Tests.SearchLibrary
+import Mtg.Engine.Tests.Tap
 import Mtg.Engine.Tests.Modes
 
 /-!
@@ -101,5 +102,7 @@ keep working.
   creature, revealing until a Saga, and exiling until an instant or sorcery
 - `SearchLibrary`: a Forest onto the battlefield, a basic land into hand,
   a basic land you may put on top, and a Dragon from hand or library
+- `Tap`: any number of Humans, the enchanted creature, and the announced
+  permanent while it is still on the battlefield
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/

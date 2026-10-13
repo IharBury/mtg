@@ -1442,6 +1442,30 @@ def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     { g with opponentsMilledThisWay := milled }
   | _, _, _ => g
 
+/-- Resolve `TriggerResolution.tap`. Each printed combination keeps
+the behavior of the constructor it replaced. -/
+def applyTap (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (targets : Array Target) (who : TriggeredAbility.TriggerTapWho) : Game :=
+  match who with
+  | .humans =>
+    { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
+      s!"{(g.player controller).name} may tap any number of untapped Humans they control"
+  | .enchanted =>
+    match sourceId.bind g.findObject? with
+    | none => g
+    | some src =>
+      match src.attachedTo.bind g.findObject? with
+      | none => g.logMsg "Nothing is enchanted"
+      | some host => g.applyPermanentAction host .tap
+  | .targetIfPresent =>
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some tgt =>
+        if tgt.isOnBattlefield then g.applyPermanentAction tgt .tap else g
+      | none => g
+    | _ => g
+
 /-- Resolve `TriggerResolution.removeCounters`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyRemoveCounters (g : Game) (sourceId : Option ObjectId)
@@ -1869,9 +1893,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyPut controller ab sourceId targets what how note
   | .removeCounters what who =>
     g.applyRemoveCounters sourceId what who
-  | .tapHumans | .may .tapHumans =>
-    { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
-      s!"{(g.player controller).name} may tap any number of untapped Humans they control"
+  | .tap who | .may (.tap who) =>
+    g.applyTap controller sourceId targets who
   | .destroy what note =>
     g.applyDestroy controller targets lastKnownPower what note
   | .recruit _ =>
@@ -2046,13 +2069,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       n who amount note
   | .grant what who =>
     g.applyGrant controller sourceId what who
-  | .tapEnchanted =>
-    match sourceId.bind g.findObject? with
-    | none => g
-    | some src =>
-      match src.attachedTo.bind g.findObject? with
-      | none => g.logMsg "Nothing is enchanted"
-      | some host => g.applyPermanentAction host .tap
   | .revealLibrary how thenDo who =>
     g.applyRevealLibrary controller how thenDo who
   | .fight who how =>
@@ -2170,14 +2186,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       sourceId (some "The target is no longer legal")
   | .revealFromHand count thenDo =>
     g.applyRevealFromHand controller sourceId targets count thenDo
-  | .tapTargetIfPresent =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some tgt =>
-        if tgt.isOnBattlefield then g.applyPermanentAction tgt .tap else g
-      | none => g
-    | _ => g
   | .loseAbilitiesWhileSourceRemains =>
     match targets[0]? with
     | some (Target.permanent id) =>

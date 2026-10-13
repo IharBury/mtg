@@ -790,7 +790,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"you may discard a card. If you do, draw {cardPhrase n}"
   | .may action =>
     match action with
-    | .tapHumans =>
+    | .tap .humans =>
       "you may tap any number of untapped Humans you control"
     | .sacrifice .you .another _ =>
       "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
@@ -834,7 +834,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw 1),
       .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] =>
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
-  | .sequence [.may .tapHumans, .draw _ _ .forEachTappedHuman] =>
+  | .sequence [.may (.tap .humans), .draw _ _ .forEachTappedHuman] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
   | .sequence [.createTokens kind 1 false, .attach .source .created] =>
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
@@ -875,7 +875,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
   | .sequence [.mill n .you .fixed .milledCards, .returnToHand (.milledSubtype subtype)] =>
     s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
-  | .sequence [.tapEnchanted, .removeCounters .all .enchanted] =>
+  | .sequence [.tap .enchanted, .removeCounters .all .enchanted] =>
     "tap enchanted creature and remove all counters from it"
   | .sequence [.putCounters (.ofKind .quest) .source,
       .«if» (.questAtLeast 6)
@@ -949,7 +949,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
   | .sequence [.onPermanent .tap, .cantUntapWhileSource] =>
     s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
-  | .sequence [.tapTargetIfPresent, .loseAbilitiesWhileSourceRemains] =>
+  | .sequence [.tap .targetIfPresent, .loseAbilitiesWhileSourceRemains] =>
     "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"
   | .sequence [.onPermanent (.grantKeywords k),
       .«if» .targetIsCreature (.onPermanent (.plusOne 1)),
@@ -1054,7 +1054,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if a hope counter was removed this way, draw a card"
   | .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4]) =>
     "if this has no hope counters on it, sacrifice it and you gain 4 life"
-  | .tapHumans =>
+  | .tap .humans =>
     "tap any number of untapped Humans you control"
   | .destroy .oppArtifactsEnchantments .countDestroyed =>
     "destroy all artifacts and enchantments your opponents control"
@@ -1309,7 +1309,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "it becomes a Bear in addition to its other types"
   | .«if» (.bearsAtLeast 3) (.draw 2) =>
     "if you control three or more Bears, draw two cards"
-  | .tapEnchanted => "tap enchanted creature"
+  | .tap .enchanted => "tap enchanted creature"
   | .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchLibrary (.put .dragon .asPrinted .none)]) =>
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
   | .«if» .equipmentAttached (.fight .equipmentHost .reflexive) =>
@@ -1341,7 +1341,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     playThatCardUntilNextTurnPhrase
   | .cantUntapWhileSource =>
     "that creature can't become untapped for as long as you control this creature"
-  | .tapTargetIfPresent =>
+  | .tap .targetIfPresent =>
     "tap up to one target creature"
   | .loseAbilitiesWhileSourceRemains =>
     "it loses all abilities for as long as this remains on the battlefield"
