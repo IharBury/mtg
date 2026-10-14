@@ -336,6 +336,8 @@ inductive TriggerTokenQty where
   | lastKnown
   /-- One for each creature the controller controls of a chosen type. -/
   | chosenCreatureType
+  /-- One for each permanent of this subtype the controller controls. -/
+  | perSubtype (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
@@ -799,6 +801,8 @@ inductive TriggerGrantWho where
   /-- The announced permanent, while the source is still on the battlefield.
   A source that already left is silent. -/
   | targetWhileSource
+  /-- Each creature the controller controls. -/
+  | creaturesYouControl
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.gainLife` reads how much life. The `n` argument
@@ -1676,8 +1680,27 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- Gain control of the announced creatures for as long as the source
   remains. A source that has left changes nothing. -/
   | gainControlWhileSource
-  /-- Resolve a spell-shaped effect. Targeting stays on the ability. -/
-  | spell (r : SpellResolution)
+  /-- The first announced creature you control fights the other announced
+  creature. `upToOne` allows choosing no second creature. -/
+  | creatureFights (upToOne : Bool := true)
+  /-- You may put a creature card of `subtype` with mana value at most
+  `maxMv` from your hand onto the battlefield. If you don't, draw a card. -/
+  | mayPutFromHandOrDraw (maxMv : Nat) (subtype : String)
+  /-- You may draw a card for each permanent of type `ty` you control.
+  If you do, each opponent draws a card. -/
+  | mayDrawPerType (ty : CardType)
+  /-- The next red or green creature spell you cast this turn can be cast
+  without paying its mana cost. -/
+  | nextFreeRGCreature
+  /-- Spells of type `ty` cost `{n}` less this turn. -/
+  | typeSpellsCostLess (ty : CardType) (n : Nat)
+  /-- Spells with supertype `s` cost `{n}` less this turn. -/
+  | supertypeSpellsCostLess (s : Supertype) (n : Nat)
+  /-- Create Galactus, a legendary 16/16 black Elder Alien with flying
+  and trample. -/
+  | createGalactus
+  /-- This step does nothing. -/
+  | doesNothing
   /-- Investigate (create a Clue). -/
   | investigate
   /-- Connive (CR 701.48). The source is `.connive`. A target is
@@ -1913,6 +1936,41 @@ A source that already left is silent. -/
 def ofTargetWhileSource : PermanentAction → TriggerResolution :=
   ofAffected .targetWhileSource
 
+/-- A spell step as trigger steps. A shape this does not name does nothing. -/
+def ofSpell : SpellResolution → TriggerResolution
+  | .sequence rs => .sequence (rs.map ofSpell)
+  | .scry n => .scry n
+  | .draw n .you => .draw n
+  | .discard n => .discard n
+  | .loseLife n .you => .loseLife n
+  | .loseLife n .eachOpponent => .loseLife n (who := .eachOpponent)
+  | .gainLife n .you => .gainLife n
+  | .amass n subtype => .amass n subtype
+  | .recruit => .recruit
+  | .surveil n => .surveil n
+  | .onPermanent a => ofPermanent a
+  | .creaturesPump p t .youControl => .pump p t .creaturesYouControl
+  | .teamGain k => .grant (.keywords k) .creaturesYouControl
+  | .createTokens kind n .you .fixed => .createTokens kind n false
+  | .createTokens kind _ .you (.perSubtype subtype) =>
+    .createTokens kind 0 false (qty := .perSubtype subtype)
+  | .plusOneOnEachYouControl n .each =>
+    .putCounters (.ofKind .plusOnePlusOne n) .youControl
+  | .plusOneOnEachYouControl n .eachOther =>
+    .putCounters (.ofKind .plusOnePlusOne n) .eachOther
+  | .plusOneOnCreatureN n =>
+    .putCounters (.ofKind .plusOnePlusOne n) .permanent
+  | .destroyUpToOneNonland => .destroy .target
+  | .mutualFight .upToOne => .creatureFights true
+  | .mutualFight .both => .creatureFights false
+  | .createGalactus => .createGalactus
+  | .nextFreeRGCreature => .nextFreeRGCreature
+  | .mayDrawPerArtifactOppsDraw ty => .mayDrawPerType ty
+  | .mayPutHeroMvOrDraw n subtype => .mayPutFromHandOrDraw n subtype
+  | .spellsCostLessThisTurn (.cardType ty) n => .typeSpellsCostLess ty n
+  | .spellsCostLessThisTurn (.supertype s) n => .supertypeSpellsCostLess s n
+  | _ => .doesNothing
+
 end TriggerResolution
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -2014,7 +2072,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
       resolution := .dealDamage 0 .targetOpponent .greatestArtifactMv }
   | .spell s =>
     { targeting := s.targeting, allowsZeroTargets := s.allowsZeroTargets
-      resolution := .spell s.resolution }
+      resolution := TriggerResolution.ofSpell s.resolution }
 
 end TriggeredAbility
 

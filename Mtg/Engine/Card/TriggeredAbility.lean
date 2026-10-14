@@ -1258,6 +1258,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
         "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
       else
         "create that many Treasure tokens"
+    | .kind, .you, .perSubtype subtype, _ =>
+      s!"create a {TokenKind.oracleNoun kind} token for each {subtype} you control"
     | .kind, .you, .chosenCreatureType, _ =>
       "choose a creature type. Create a Treasure token for each creature you control of that type"
     | .zabu, _, _, _ =>
@@ -1379,6 +1381,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"enchanted creature gains {k.joinedAnd} until end of turn"
     | .keywords k, .targetWhileSource =>
       s!"that creature gains {k.joinedAnd} until end of turn"
+    | .keywords k, .creaturesYouControl =>
+      s!"creatures you control gain {k.joinedAnd} until end of turn"
     | .hexproofWhileSource, .target =>
       s!"{noun} gains hexproof for as long as this Saga remains on the battlefield"
     | .preventDamageWhileSource, _ =>
@@ -1439,8 +1443,24 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
   | .gainControlWhileSource =>
     s!"gain control of {noun} for as long as this Saga remains on the battlefield"
-  | .spell _ =>
-    "resolve that spell"
+  | .creatureFights true =>
+    "target creature you control fights up to one other target creature"
+  | .creatureFights false =>
+    "target creature you control fights another target creature"
+  | .mayPutFromHandOrDraw maxMv subtype =>
+    s!"you may put a {subtype} creature card with mana value {maxMv} or less from your hand onto the battlefield. If you don't, draw a card"
+  | .mayDrawPerType _ =>
+    "you may draw a card for each artifact you control. If you do, each opponent draws a card"
+  | .nextFreeRGCreature =>
+    "the next red or green creature spell you cast this turn can be cast without paying its mana cost"
+  | .typeSpellsCostLess _ n =>
+    s!"spells you cast this turn cost \{{n}} less to cast"
+  | .supertypeSpellsCostLess _ n =>
+    s!"spells you cast this turn cost \{{n}} less to cast"
+  | .createGalactus =>
+    "create Galactus, a legendary 16/16 black Elder Alien creature token with flying and trample"
+  | .doesNothing =>
+    "this effect does nothing"
   | .investigate => "investigate"
   | .connive .source => "it connives"
   | .connive (.target _) => s!"{noun} connives"

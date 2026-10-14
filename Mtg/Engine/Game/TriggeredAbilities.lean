@@ -897,6 +897,8 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     else
       let n := (lastKnownPower.getD 0).toNat
       g.createTreasureTokens controller n
+  | .kind, .you, .perSubtype subtype, _ =>
+    g.createKindTokens controller kind (g.countSubtype controller subtype) (tapped := tapped)
   | .kind, .you, .chosenCreatureType, _ =>
     let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
       o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
@@ -1329,8 +1331,10 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       clear.logMsg
         "No target was chosen. Its controller is undefined and no player amasses Goblins."
   | .target, .none =>
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
-      g.destroyPermanent o) sourceId (some "The target is no longer legal")
+    if targets.isEmpty && ab.allowsZeroTargets then g
+    else
+      g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+        g.destroyPermanent o) sourceId (some "The target is no longer legal")
   | .target, .chosenToken =>
     g.destroyChosenToken targets
   | .source, _ =>
@@ -1581,6 +1585,9 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .keywords k, .targetWhileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o (.grantKeywords k)
+  | .keywords k, .creaturesYouControl =>
+    g.forEachControlledCreature controller fun g o =>
+      g.grantUntilEotLogged o k
   | .hexproofWhileSource, .target =>
     g.grantHexproofWhileSource controller sourceId targets ab.targetKind
   | .preventDamageWhileSource, .target =>
@@ -2458,8 +2465,50 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.treasureThenDragon controller sourceId
   | .gainControlWhileSource =>
     g.gainControlWhileSource controller sourceId targets
-  | .spell r =>
-    g.applyEffect controller { ab.effect with resolution := Resolution.ofSpell r } targets
+  | .creatureFights upToOne =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent srcId), some (Target.permanent destId) =>
+      if upToOne then
+        match g.findObject? srcId, g.findObject? destId with
+        | some src, some dest =>
+          if src.id != dest.id && src.isOnBattlefield && dest.isOnBattlefield &&
+              src.isCreature && dest.isCreature && src.controlledBy controller then
+            g.fightCreatures src dest
+          else g.logMsg "The target is no longer legal"
+        | _, _ => g.logMsg "The target is no longer legal"
+      else
+        let srcOk := (g.legalCreatureYouControlTargets controller).contains
+          (Target.permanent srcId)
+        let destOk := (g.legalOppCreatureTargets controller).contains
+          (Target.permanent destId)
+        if srcOk && destOk then
+          g.fightCreatures (g.object! srcId) (g.object! destId)
+        else
+          let logIllegal (g : Game) (ok : Bool) (id : ObjectId) : Game :=
+            if ok then g else g.illegalAbilityTarget (Target.permanent id)
+          logIllegal (logIllegal g srcOk srcId) destOk destId
+    | some (Target.permanent srcId), none =>
+      if upToOne then
+        match g.findObject? srcId with
+        | some src => g.logMsg s!"{src.name} has nothing to fight"
+        | none => g.logMsg "The target is no longer legal"
+      else g.logMsg "The target is no longer legal"
+    | _, _ => g.logMsg "The target is no longer legal"
+  | .mayPutFromHandOrDraw maxMv subtype =>
+    g.mayPutHeroOrDraw controller maxMv subtype
+  | .mayDrawPerType ty =>
+    g.mayDrawPerArtifact controller ty
+  | .nextFreeRGCreature =>
+    { g with pendingFreeRGCreature := some controller }
+      |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
+  | .typeSpellsCostLess ty n =>
+    g.grantTypeCostLessThisTurn controller ty n
+  | .supertypeSpellsCostLess s n =>
+    g.grantSupertypeCostLessThisTurn controller s n
+  | .createGalactus =>
+    g.createNamedToken controller galactusToken
+  | .doesNothing =>
+    g.logMsg "The effect does nothing"
   | .investigate =>
     let (g, _) := g.createToken controller clueToken
     g.logMsg s!"{(g.player controller).name} investigates"

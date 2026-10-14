@@ -86,7 +86,38 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .dealDamage 2 (.eachNonSubtypeAndOpponents "Villain")
 #guard (timing .dealXDamageToTargetOpponentGreatestArtifactMv).resolution ==
   .dealDamage 0 .targetOpponent .greatestArtifactMv
-#guard (timing (.spell { resolution := .draw 1 })).resolution == .spell (.draw 1)
+#guard (timing (.spell { resolution := .draw 1 })).resolution == .draw 1
+#guard (timing (.spell { resolution := .scry 2 })).resolution == .scry 2
+#guard (timing (.spell { resolution := .createTokens .villain21menace 2 })).resolution ==
+  .createTokens .villain21menace 2 false
+#guard (timing (.spell { resolution := .createTokens .treasure 0 (qty := .perSubtype "Villain") })).resolution ==
+  .createTokens .treasure 0 false (qty := .perSubtype "Villain")
+#guard (timing (.spell { resolution := .mutualFight .upToOne })).resolution == .creatureFights true
+#guard (timing (.spell { resolution := .createGalactus })).resolution == .createGalactus
+#guard (timing (.spell { resolution := .nextFreeRGCreature })).resolution == .nextFreeRGCreature
+#guard (timing (.spell { resolution := .plusOneOnEachYouControl })).resolution ==
+  .putCounters (.ofKind .plusOnePlusOne) .youControl
+#guard (timing (.spell { resolution := .plusOneOnCreatureN 3 })).resolution ==
+  .putCounters (.ofKind .plusOnePlusOne 3) .permanent
+#guard (timing (.spell { resolution := .loseLife 2 .eachOpponent })).resolution ==
+  .loseLife 2 (who := .eachOpponent)
+#guard (timing (.spell { resolution := .destroyUpToOneNonland })).resolution == .destroy .target
+#guard (timing (.spell { resolution := .mayPutHeroMvOrDraw 3 })).resolution ==
+  .mayPutFromHandOrDraw 3 "Hero"
+#guard (timing (.spell { resolution := .mayDrawPerArtifactOppsDraw })).resolution ==
+  .mayDrawPerType .artifact
+#guard (timing (.spell { resolution := .spellsCostLessThisTurn (.cardType .artifact) 1 })).resolution ==
+  .typeSpellsCostLess .artifact 1
+#guard (timing (.spell {
+    resolution := .sequence [.creaturesPump 1 1, .teamGain Keyword.vigilance]
+  })).resolution ==
+  .sequence [.pump 1 1 .creaturesYouControl, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
+#guard (timing (.spell {
+    resolution := .sequence [
+      .onPermanent .doublePowerAndToughness,
+      .onPermanent (.grantKeywords Keyword.trample)]
+  })).resolution ==
+  .sequence [.pump 0 0 .target .double, .grant (.keywords Keyword.trample) .target]
 
 #guard (timing (.dealDamageToOppCreature 6)).targeting.kind == .oppCreature
 #guard (timing .plusOneUpToOne).allowsZeroTargets
