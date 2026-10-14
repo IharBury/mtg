@@ -237,9 +237,12 @@ def offerHydeChoice (g : Game) (controller : PlayerId) (sourceId : Option Object
 object until the controller's next turn and keeps the printed exception
 name. Choosing none copies nothing. A missing source copies nothing.
 `.noted` makes the enchanted creature a copy of the creature an earlier
-step noted, until the source leaves. Nothing noted copies nothing. -/
-def applyBecomeCopy (g : Game) (sourceId : Option ObjectId) (targets : Array Target)
-    (of : TriggeredAbility.TriggerCopyOf) : Game :=
+step noted, until the source leaves. Nothing noted copies nothing.
+`.cause` creates a token copy of the nontoken artifact that caused this.
+An announced permanent is used when one was chosen; otherwise the recorded
+cause. The source need not still be on the battlefield. -/
+def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (targets : Array Target) (of : TriggeredAbility.TriggerCopyOf) : Game :=
   match of with
   | .noted =>
     let copied := g.notedCopyObject
@@ -251,6 +254,16 @@ def applyBecomeCopy (g : Game) (sourceId : Option ObjectId) (targets : Array Tar
       | some host => g.becomeCopyOf host tgt (untilSourceLeaves := sourceId)
       | none => g
     | _, _ => g
+  | .cause =>
+    let fromTarget :=
+      match targets[0]? with
+      | some (Target.permanent id) => some id
+      | _ => none
+    let causeId :=
+      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    match fromTarget.orElse (fun _ => causeId) with
+    | none => g.logMsg "Ultron has nothing to copy"
+    | some id => g.copyEnteredArtifact controller id
   | of =>
     g.withSourceOnBattlefield sourceId (fun g src =>
     match of with
@@ -286,7 +299,7 @@ def applyBecomeCopy (g : Game) (sourceId : Option ObjectId) (targets : Array Tar
           else g.logMsg "That isn't a creature or a creature card in a graveyard"
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "Taskmaster doesn't become a copy"
-    | .noted => g) "The source is no longer in play"
+    | .noted | .cause => g) "The source is no longer in play"
 
 /-- Exile the announced nonland the controller still controls, other than the
 source, then return it under its owner's control. Choosing none does nothing.
@@ -475,9 +488,9 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     (lastKnownPower : Option Int := none) : Game :=
   match t.shared with
   | (.step .copyAbsorbingMan) =>
-    g.applyBecomeCopy sourceId targets .artifactEnchantmentOrLand
+    g.applyBecomeCopy controller sourceId targets .artifactEnchantmentOrLand
   | (.step .copyTaskmaster) =>
-    g.applyBecomeCopy sourceId targets .creatureOrGraveyardCard
+    g.applyBecomeCopy controller sourceId targets .creatureOrGraveyardCard
   | (.casting .mayPayHasteUnblockable) =>
     g.offerPayForReflexive controller sourceId #[.generic 1] 9
   | (.youAttacking .exileTopHeroPump) =>
