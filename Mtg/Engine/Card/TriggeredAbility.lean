@@ -1453,6 +1453,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
     | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer =>
       "that player exiles cards from the top of their library until they exile an instant or sorcery card"
+    | .untilNonland,
+      .may (.putCounters (.ofKind .plusOnePlusOne 1) .source)
+        (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
+      .announced =>
+      "that player exiles cards until a nonland card"
     | _, _, _ =>
       "reveal cards from a library"
   | .«if» (.drewAtLeast 2) (.sequence [.pump 3 0 .target, .grant (.keywords k) .target]) =>
@@ -1621,8 +1626,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may pay that cost"
   | .mayRetargetSpell =>
     "you may choose new targets for that spell"
-  | .exileUntilNonland =>
-    "that player exiles cards until a nonland card"
   | .mayDealCauseDamage =>
     "you may have this deal that much damage"
   | .mayCopyCause =>

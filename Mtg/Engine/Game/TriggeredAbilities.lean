@@ -2118,6 +2118,7 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
 keeps the behavior of the constructor it replaced. -/
 partial def applyRevealLibrary (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (targets : Array Target)
     (how : TriggeredAbility.TriggerLibraryHow)
     (thenDo : TriggeredAbility.TriggerResolution)
     (who : TriggeredAbility.TriggerLibraryWho) : Game :=
@@ -2211,6 +2212,29 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
       grimaImpulseVictim := some victim
       grimaImpulseFound := found
       grimaImpulseOthers := others }
+  | .untilNonland,
+    .may (.putCounters (.ofKind .plusOnePlusOne 1) .source)
+      (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
+    .announced =>
+    let pid :=
+      match targets[0]? with
+      | some (Target.player p) => some p
+      | _ =>
+        (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness)
+          |>.map (fun n => ⟨n.toNat⟩)
+    match pid with
+    | none => g.logMsg "Black Widow didn't deal combat damage to a player"
+    | some pid =>
+      let (g, nonland?) := g.exileLibraryUntilNonland pid
+      let onBf :=
+        match sourceId.bind g.findObject? with
+        | some o => o.isOnBattlefield
+        | none => false
+      if onBf then
+        { g with pending := .fraChoice controller (.widowMayCounter sourceId nonland?) }
+          |>.logMsg "You may put a +1/+1 counter on Black Widow"
+      else
+        g.grantWidowCast controller nonland?
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.revealFromHand`. Each printed combination
@@ -2731,7 +2755,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .grant what who =>
     g.applyGrant controller ab sourceId targets what who
   | .revealLibrary how thenDo who =>
-    g.applyRevealLibrary controller how thenDo who
+    g.applyRevealLibrary controller sourceId targets how thenDo who
   | .fight who how =>
     g.applyFight controller sourceId targets who how
   | .reflexiveCopyMilled =>
@@ -2886,26 +2910,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match g.resolvingCauseId.orElse (fun _ => fromStack) with
     | none => g
     | some spellId => g.offerSpellRetarget controller spellId 0
-  | .exileUntilNonland =>
-    let pid :=
-      match targets[0]? with
-      | some (Target.player p) => some p
-      | _ =>
-        (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness)
-          |>.map (fun n => ⟨n.toNat⟩)
-    match pid with
-    | none => g.logMsg "Black Widow didn't deal combat damage to a player"
-    | some pid =>
-      let (g, nonland?) := g.exileLibraryUntilNonland pid
-      let onBf :=
-        match sourceId.bind g.findObject? with
-        | some o => o.isOnBattlefield
-        | none => false
-      if onBf then
-        { g with pending := .fraChoice controller (.widowMayCounter sourceId nonland?) }
-          |>.logMsg "You may put a +1/+1 counter on Black Widow"
-      else
-        g.grantWidowCast controller nonland?
   | .mayDealCauseDamage =>
     if g.sheHulkDamageUsedThisTurn then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
