@@ -41,7 +41,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchFirstTapUntap) ==
   .untap .firstThisTurn
 #guard TriggeredAbility.resolution (onWatch Effect.watchSheHulkRedirectOnce) ==
-  .mayDealCauseDamage
+  .may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchSpeedballTargeted) ==
   .sequence [.pump 2 2 .source, .mayRetargetSpell]
 #guard TriggeredAbility.resolution (onWatch Effect.watchAnyPlayerSecondDraw) == .draw 1

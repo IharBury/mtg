@@ -1264,7 +1264,9 @@ inductive TriggerResolution where
   `.dealDamage n (.eachNonSubtypeAndOpponents subtype)`.
   Damage equal to the greatest mana value among artifacts you control, to
   the announced opponent, is
-  `.dealDamage 0 .targetOpponent .greatestArtifactMv`. -/
+  `.dealDamage 0 .targetOpponent .greatestArtifactMv`.
+  The trigger's last-known power to the announced player or permanent, offered
+  as a may, is `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`. -/
   | dealDamage (n : Nat) (who : TriggerDamageWho)
       (amount : TriggerDamageAmount := .fixed)
       (note : TriggerDamageNote := .none)
@@ -1580,7 +1582,12 @@ inductive TriggerResolution where
   You may pay {1} to put a +1/+1 counter on target creature is
   `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`.
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
-  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`. -/
+  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
+  You may have the source deal the damage that caused this to the announced
+  target is `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`.
+  The amount is the trigger's last-known power. Already used this turn does
+  nothing. An illegal target is reported. The source need not still be on
+  the battlefield. -/
   | may (action follow : TriggerResolution) (when : TriggerMayWhen := .ifYouDont)
   /-- You gain life (CR 118.2), as `amount` says. `n` is the amount when
   `amount` is `.fixed`.
@@ -2026,10 +2033,6 @@ inductive TriggerResolution where
   cast the exiled nonland until end of turn. No damaged player is reported.
   An empty library exiles nothing. -/
   | exileUntilNonland
-  /-- You may have the source deal the damage that caused this trigger to
-  the announced target. The amount is the trigger's last-known power.
-  Already used this turn does nothing. An illegal target is reported. -/
-  | mayDealCauseDamage
   /-- You may pay {2}. If you do, create a token that's a copy of the
   nontoken artifact that caused this trigger. An announced permanent is
   used when one was chosen; otherwise the recorded cause. A token, a
@@ -3066,7 +3069,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.creatureYouControlTapped], resolution := .untap .firstThisTurn }
   | .watch .sheHulkRedirectOnce =>
     { events := #[.creatureYouControlDealtDamage], targeting := .of .playerOrCreature,
-      resolution := .mayDealCauseDamage }
+      resolution := .may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo }
   | .watch .speedballTargeted =>
     { events := #[.spellTargetsSource],
       resolution := .sequence [.pump 2 2 .source, .mayRetargetSpell] }

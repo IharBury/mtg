@@ -2906,17 +2906,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           |>.logMsg "You may put a +1/+1 counter on Black Widow"
       else
         g.grantWidowCast controller nonland?
-  | .mayDealCauseDamage =>
-    if g.sheHulkDamageUsedThisTurn then
-      g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
-    else
-      let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
-      match targets.find? (legal.contains ·) with
-      | none => g.logMsg "The target is no longer legal"
-      | some t =>
-        let amt := lastKnownPower.getD 0
-        { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
-          |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
   | .mayCopyCause =>
     let fromTarget :=
       match targets[0]? with
@@ -2944,6 +2933,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .may (.draw 1 _ .fixed) (.sequence []) .ifYouDo =>
     g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
       fun g => g.draw controller 1
+  | .may (.dealDamage _ .target .lastKnownPower .none) (.sequence []) .ifYouDo =>
+    if g.sheHulkDamageUsedThisTurn then
+      g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
+    else
+      let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
+      match targets.find? (legal.contains ·) with
+      | none => g.logMsg "The target is no longer legal"
+      | some t =>
+        let amt := lastKnownPower.getD 0
+        { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
+          |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
   | .may optional conditional .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
     let g := { g with mayThenDrop := cond.length, mayThenConditional := some conditional }

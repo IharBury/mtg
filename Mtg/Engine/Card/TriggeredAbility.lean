@@ -938,6 +938,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "discard cards"
   | .may (.discard 1) (.draw n) .ifYouDo =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
+  | .may (.dealDamage _ .target .lastKnownPower .none) (.sequence []) .ifYouDo =>
+    "you may have this deal that much damage"
   | .may action _ =>
     match action with
     | .tap .humans =>
@@ -1623,8 +1625,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may choose new targets for that spell"
   | .exileUntilNonland =>
     "that player exiles cards until a nonland card"
-  | .mayDealCauseDamage =>
-    "you may have this deal that much damage"
   | .mayCopyCause =>
     "you may pay {2} to copy it"
   | .youAttacking .pay2LifeToughness =>
