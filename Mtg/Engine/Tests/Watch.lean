@@ -33,7 +33,10 @@ def onWatch (e : Effect) : TriggeredAbility :=
 /- The shared watch effects resolve as constructors that do not carry
 `WatchLeftover`. -/
 #guard TriggeredAbility.resolution (onWatch Effect.watchCombatDamageExileUntilNonland) ==
-  .exileUntilNonland
+  .revealLibrary .untilNonland
+    (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
+      (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
+    .announced
 #guard TriggeredAbility.resolution (onWatch Effect.watchAttacksAloneDrain) ==
   .sequence [.loseLife 1 (who := .targetOpponent), .gainLife 1]
 #guard TriggeredAbility.resolution (onWatch Effect.watchAttacksAloneFirstStrikeMenace) ==
