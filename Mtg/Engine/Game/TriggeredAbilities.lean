@@ -2874,7 +2874,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyBecomeCopy sourceId targets of
   | .offerReflexivePay symbols kind maxTimes =>
     g.offerPayForReflexive controller sourceId symbols kind maxTimes
-  | .mayRetargetSpell =>
+  | .retargetCause =>
     let targetingSource (e : StackEntry) : Bool :=
       e.targets.any (fun t =>
         match t, sourceId with
@@ -2944,6 +2944,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .may (.draw 1 _ .fixed) (.sequence []) .ifYouDo =>
     g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
       fun g => g.draw controller 1
+  | .may .retargetCause (.sequence []) .ifYouDo =>
+    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName (some .retargetCause)
+      sequencedCardPower
   | .may optional conditional .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
     let g := { g with mayThenDrop := cond.length, mayThenConditional := some conditional }

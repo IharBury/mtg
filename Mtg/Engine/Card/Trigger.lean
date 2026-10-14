@@ -1580,7 +1580,9 @@ inductive TriggerResolution where
   You may pay {1} to put a +1/+1 counter on target creature is
   `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`.
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
-  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`. -/
+  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
+  You may choose new targets for the spell that caused this is
+  `.may .retargetCause (.sequence []) .ifYouDo`. -/
   | may (action follow : TriggerResolution) (when : TriggerMayWhen := .ifYouDont)
   /-- You gain life (CR 118.2), as `amount` says. `n` is the amount when
   `amount` is `.fixed`.
@@ -2015,10 +2017,12 @@ inductive TriggerResolution where
   Paying {1} up to three times, then choosing that many modes, is
   `.offerReflexivePay #[.generic 1] 2 3`. -/
   | offerReflexivePay (symbols : Array ManaSymbol) (kind : Nat) (maxTimes : Nat := 1)
-  /-- You may change the targets of the spell that caused this trigger.
+  /-- Choose new targets for the spell that caused this trigger.
   The recorded cause is used when one was chosen. Otherwise the spell on
-  the stack that targets the source. A spell that has left changes nothing. -/
-  | mayRetargetSpell
+  the stack that targets the source. A spell that has left changes nothing.
+  You may do so with `.may .retargetCause (.sequence []) .ifYouDo`.
+  Declining a target leaves it unchanged and asks about the next one. -/
+  | retargetCause
   /-- The player who was dealt combat damage exiles cards from the top of
   their library until a nonland card. That seat is the trigger's
   last-known toughness when no player was announced. You may put a +1/+1
@@ -3069,7 +3073,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .mayDealCauseDamage }
   | .watch .speedballTargeted =>
     { events := #[.spellTargetsSource],
-      resolution := .sequence [.pump 2 2 .source, .mayRetargetSpell] }
+      resolution := .sequence [
+        .pump 2 2 .source, .may .retargetCause (.sequence []) .ifYouDo] }
   | .watch .anyPlayerSecondDraw =>
     { events := #[.anyPlayerDrawsSecond], resolution := .draw 1 }
   | .watch .youTargetDrawOnce =>
