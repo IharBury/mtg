@@ -145,7 +145,11 @@ inductive EnterOrAttackLeftover where
   | createSquirrel
 deriving Repr, Inhabited, BEq
 
-/-- Leftover triggers that watch another event (another permanent, combat, tap, damage). -/
+/-- Leftover triggers that watch another event (another permanent, combat, tap, damage).
+Each one resolves through `draw`, `putCounters`, `pump`, `grant`, `tap`,
+`dealDamage`, `loseLife`, `gainLife`, `untap`, `scry`, `if`, `may`, `connive`,
+`attach`, `chooseModes`, `queueReflexive`, or a step that does not carry
+`WatchLeftover`. -/
 inductive WatchLeftover where
   /-- Whenever Black Widow deals combat damage to a player, that player exiles cards from the to… -/
   | combatDamageExileUntilNonland
@@ -481,6 +485,10 @@ inductive ConniveSubject where
   | source
   /-- The announced target of this kind. -/
   | target (kind : EffectTargetKind)
+  /-- The Villain that caused this trigger. You may have it connive.
+  Already chosen this turn does nothing. A Villain that will not connive
+  is reported. -/
+  | enteringVillain
 deriving Repr, Inhabited, BEq
 
 /-- Who discards for `SharedTrigger.opponentDiscards`. -/
@@ -988,7 +996,50 @@ inductive SharedTrigger where
   `.putCounters .missingKeywordsFromTarget .source`.
   A 1/1 green Squirrel is `.createTokens .squirrel11green 1 false`. -/
   | enterOrAttack (e : EnterOrAttackLeftover)
-  /-- Leftover watch effect. -/
+  /-- Leftover watch effect.
+  Drawing a card is `.draw 1`. You may draw a card is
+  `.may (.draw 1) (.sequence []) .ifYouDo`.
+  A +1/+1 counter on the source is `.putCounters (.ofKind .plusOnePlusOne) .source`.
+  Two +1/+1 counters are `.putCounters (.ofKind .plusOnePlusOne 2) .source`.
+  A counter that is not put after the source has left, then 2 damage to
+  each opponent, is
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent, .dealDamage 2 .eachOpponent]`.
+  +1/+0 and lifelink until end of turn is
+  `.sequence [.pump 1 0 .source, .grant (.keywords Keyword.lifelink) .source]`.
+  First strike and menace on the creature attacking alone is
+  `.grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone`.
+  The opponent loses 1 life and you gain 1 life is
+  `.sequence [.loseLife 1 (who := .targetOpponent), .gainLife 1]`.
+  1 damage to the announced opponent is `.dealDamage 1 .targetOpponent`.
+  1 damage from the equipped creature to each opponent is
+  `.dealDamage 1 .eachOpponent .fixed .fromEquipped`.
+  Tapping the announced creature is `.tap .target`.
+  Untapping the creature that became tapped is `.untap .firstThisTurn`.
+  Untapping the equipped creature, then scrying 1, is
+  `.sequence [.untap .equipped, .scry 1]`.
+  A +1/+1 counter when the entering creature is greater is
+  `.«if» .causeGreaterPowerOrToughness (.putCounters (.ofKind .plusOnePlusOne) .source)`.
+  Putting a counter, untapping when attacking, and an Enrage combat is
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .«if» .sourceAttacking (.untap .source), .«if» .enrageGrantsCombat .additionalCombatPhase]`.
+  Putting a counter, then damage equal to those counters, is
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .queueReflexive (.countersOnSource 8)]`.
+  +2/+2, then you may retarget the spell, is
+  `.sequence [.pump 2 2 .source, .may .retargetCause (.sequence []) .ifYouDo]`.
+  You may have the entering Villain connive is `.connive .enteringVillain`.
+  Attaching the announced Equipment to the announced creature is
+  `.attach .announcedEquipment .announcedCreature`.
+  Attaching each announced Equipment to the enchanted creature is
+  `.attach .eachTargetEquipment .enchantedCreature`.
+  Choosing a Soldier or a team pump from the last-known mode is
+  `.chooseModes [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl] .fromLastKnown`.
+  Paying {1} up to three times is
+  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
+  Exiling until a nonland, then a counter or a cast, is
+  `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
+  You may deal the damage that caused this is
+  `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`.
+  You may pay {2} to copy the artifact that caused this is
+  `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`. -/
   | watch (e : WatchLeftover)
   /-- Leftover “whenever you attack” effect. -/
   | youAttacking (e : YouAttackLeftover)

@@ -144,7 +144,8 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let memory :=
       match how with
       | .oneUnusedThisTurn => src.status.allianceModesChosen
-      | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter => src.status.chosenModes
+      | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown =>
+        src.status.chosenModes
     let available := unusedModes memory (List.range modes.length).toArray
     match src.controller with
     | none => g.logMsg "The ability is removed from the stack with no effect"
@@ -154,7 +155,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .oneUnusedThisTurn =>
           g.logMsg
             "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
-        | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter =>
+        | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown =>
           g.logMsg
             "all three modes have been chosen. The ability is removed from the stack with no effect"
       else
@@ -172,7 +173,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               pending := .fraChoice p (.gollumMode src.id available)
               chooseModesRest := some rest }.logMsg
             s!"{(g.player p).name} chooses a mode that hasn't been chosen"
-        | .alreadyChosen | .plusOneOrRemoveCounter => g
+        | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown => g
 
 /-- Destroy `targets[0]` when it is a token still on the battlefield. -/
 def destroyChosenToken (g : Game) (targets : Array Target) : Game :=
@@ -247,6 +248,10 @@ def legalTriggerPermanent? (g : Game) (controller : PlayerId) (ab : TriggeredAbi
         | some o => (g, some o)
         | none => (g.logMsg "The target is no longer in play", none)
       | _ => (g.logMsg "The target is no longer legal", none)
+
+/-- Object id recorded as the cause of the ability now resolving. -/
+def resolvingCauseId (g : Game) : Option ObjectId :=
+  ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
 
 /-- Whether `cond` holds as this trigger resolves. One-shot notes that the
 action does not read are cleared here. -/
@@ -430,6 +435,37 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
     if x == 0 then (g.logMsg "Whiplash isn't equipped", false)
     else (g, true)
+  | .sourceAttacking =>
+    match sourceId.bind g.findObject? with
+    | some o => (g, o.isOnBattlefield && o.status.attacking)
+    | none => (g, false)
+  | .enrageGrantsCombat =>
+    if g.enrageGrantsAdditionalCombat > 0 then
+      ({ g with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat - 1 }, true)
+    else (g, false)
+  | .causeGreaterPowerOrToughness =>
+    match sourceId.bind g.findObject? with
+    | none => (g.logMsg "The source is no longer in play", false)
+    | some hulkling =>
+      if !hulkling.isOnBattlefield then
+        (g.logMsg s!"{hulkling.name} is no longer on the battlefield", false)
+      else
+        let entered :=
+          match targets[0]? with
+          | some (Target.permanent id) | some (Target.card id) => g.findObject? id
+          | _ => (g.resolvingCauseId).bind g.findObject?
+        match entered with
+        | none => (g, false)
+        | some other =>
+          if other.id == hulkling.id then (g, false)
+          else
+            let op :=
+              if other.isOnBattlefield then g.power other
+              else other.lastKnownPower.getD (g.power other)
+            let ot :=
+              if other.isOnBattlefield then g.toughness other
+              else other.lastKnownToughness.getD (g.toughness other)
+            (g, op > g.power hulkling || ot > g.toughness hulkling)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -455,6 +491,27 @@ def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String
 steps still in this sequence. -/
 def failMayThen (g : Game) : Game :=
   { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
+
+/-- Offer to pay {2} to copy the nontoken artifact that caused this trigger.
+An announced permanent is used when one was chosen; otherwise the recorded
+cause. A token, a nonartifact, or the source itself skips the copy. -/
+def offerCopyCause (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (targets : Array Target) : Game :=
+  let fromTarget :=
+    match targets[0]? with
+    | some (Target.permanent id) => some id
+    | _ => none
+  match fromTarget.orElse (fun _ => g.resolvingCauseId) with
+  | none => (g.logMsg "Ultron has nothing to copy").failMayThen
+  | some id =>
+    match g.findObject? (g.followMoved id) with
+    | some src =>
+      if src.printed.isToken || !src.printed.isArtifact || some src.id == sourceId then
+        (g.logMsg "That permanent isn't another nontoken artifact").failMayThen
+      else
+        { g with pending := .fraChoice controller (.ultronMayPay id) }
+          |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {src.name}"
+    | none => (g.logMsg "Ultron has nothing to copy").failMayThen
 
 /-- Apply `f` to the permanent `who` names.
 `.target` is the announced permanent, and an illegal target is reported.
@@ -636,9 +693,16 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     let amt := (lastKnownPower.getD 0).toNat
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
       g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?)
+  | .eachOpponent, .fixed, .fromEquipped =>
+    let src :=
+      match g.attachedHost? sourceId with
+      | some host => some host
+      | none => none
+    g.forEachOpponent controller (fun g pid =>
+      g.dealDamageToPlayer pid n (source := src))
   | .eachOpponent, .fixed, _ =>
     let src := sourceId.bind g.findObject?
-    if ab.opts.untargeted then
+    if ab.opts.untargeted || !ab.requiresTarget then
       g.forEachOpponent controller (fun g pid =>
         g.dealDamageToPlayer pid n (source := src))
     else
@@ -958,6 +1022,13 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.applyAffectedCounters controller ab sourceId targets kind n .enchanted
   | .ofKind kind n, .targetWhileSource =>
     g.applyAffectedCounters controller ab sourceId targets kind n .targetWhileSource
+  | .ofKind .plusOnePlusOne n, .sourceIfPresent =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then g.addPlusOnePlusOneTo o n
+      else g.logMsg s!"{o.name} is no longer on the battlefield. No counter is put."
+    | none =>
+      g.logMsg "The source is no longer on the battlefield. No counter is put."
   | .missingKeywordsFromTarget, .source =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with
@@ -1290,6 +1361,45 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match sourceId.bind g.findObject? with
       | some src => g.attachSourceTo tok src
       | none => g
+  | .announcedEquipment, .announcedCreature =>
+    match targets.toList with
+    | [Target.permanent eqId, Target.permanent crId] =>
+      match g.findObject? eqId, g.findObject? crId with
+      | some eq, some cr =>
+        if eq.isOnBattlefield && cr.isOnBattlefield && eq.printed.isEquipment &&
+            cr.isCreature then
+          g.attachSourceTo eq cr
+        else
+          g.logMsg "The Equipment won't move"
+      | _, _ => g.logMsg "The Equipment won't move"
+    | [Target.permanent id] =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && o.printed.isEquipment then
+          g.logMsg "The Equipment won't move"
+        else
+          g.logMsg "No Equipment was chosen"
+      | none => g.logMsg "The Equipment won't move"
+    | _ => g.logMsg "The Equipment won't move"
+  | .eachTargetEquipment, .enchantedCreature =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      match src.attachedTo.bind g.findObject? with
+      | none =>
+        g.logMsg "The enchanted creature has left. Equipment stays where it is."
+      | some host =>
+        targets.foldl (fun (g : Game) (t : Target) =>
+          match t with
+          | Target.permanent id =>
+            match g.findObject? id with
+            | some eq =>
+              if eq.isOnBattlefield && eq.printed.isEquipment then
+                g.attachSourceTo eq host
+              else g
+            | none => g
+          | _ => g) g
+    | none =>
+      g.logMsg "The enchanted creature has left. Equipment stays where it is."
   | _, _ => g
 
 /-- Resolve `TriggerResolution.mayCast`. Each printed combination keeps
@@ -1750,6 +1860,10 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .keywords k, .youControlSubtype subtype =>
     g.forEachControlledCreature controller fun g o =>
       if g.hasSubtype o subtype then g.grantUntilEotLogged o k else g
+  | .keywords k, .attackingAlone =>
+    match g.attackingAlone? controller with
+    | none => g.logMsg "No creature is attacking alone"
+    | some o => g.grantUntilEotLogged o k
   | .landfallCreateElf, .source =>
     g.gainLandfallCreateElf sourceId
   | .hexproofWhileSource, .target =>
@@ -1875,6 +1989,20 @@ def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .targetWhileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o .untap
+  | .equipped =>
+    match g.attachedHost? sourceId with
+    | some host =>
+      if host.isOnBattlefield then g.applyPermanentAction host .untap
+      else
+        { g with skipTriggerSequenceRest := true }.logMsg "The equipped creature has left"
+    | none =>
+      { g with skipTriggerSequenceRest := true }.logMsg "The equipped creature has left"
+  | .firstThisTurn =>
+    let id := g.resolvingCauseId.orElse (fun _ => g.lastBecameTapped)
+    match id.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
+    | none => g
 
 /-- Resolve `TriggerResolution.tap`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -2011,6 +2139,7 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
 keeps the behavior of the constructor it replaced. -/
 partial def applyRevealLibrary (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (targets : Array Target)
     (how : TriggeredAbility.TriggerLibraryHow)
     (thenDo : TriggeredAbility.TriggerResolution)
     (who : TriggeredAbility.TriggerLibraryWho) : Game :=
@@ -2104,6 +2233,29 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
       grimaImpulseVictim := some victim
       grimaImpulseFound := found
       grimaImpulseOthers := others }
+  | .untilNonland,
+    .may (.putCounters (.ofKind .plusOnePlusOne 1) .source)
+      (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
+    .announced =>
+    let pid :=
+      match targets[0]? with
+      | some (Target.player p) => some p
+      | _ =>
+        (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness)
+          |>.map (fun n => ⟨n.toNat⟩)
+    match pid with
+    | none => g.logMsg "Black Widow didn't deal combat damage to a player"
+    | some pid =>
+      let (g, nonland?) := g.exileLibraryUntilNonland pid
+      let onBf :=
+        match sourceId.bind g.findObject? with
+        | some o => o.isOnBattlefield
+        | none => false
+      if onBf then
+        { g with pending := .fraChoice controller (.widowMayCounter sourceId nonland?) }
+          |>.logMsg "You may put a +1/+1 counter on Black Widow"
+      else
+        g.grantWidowCast controller nonland?
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.revealFromHand`. Each printed combination
@@ -2594,6 +2746,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | .oneUnusedThisTurn | .oneUnused =>
       g.offerChooseModes controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName sequencedCardPower modes how
+    | .fromLastKnown =>
+      match modes[(lastKnownPower.getD 0).toNat]? with
+      | none => g
+      | some r =>
+        g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+          lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
   | .returnToHand what whose note =>
     g.applyReturnToHand controller ab sourceId targets what whose note
   | .may (.discard n (what := .hand)) _ =>
@@ -2618,7 +2776,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .grant what who =>
     g.applyGrant controller ab sourceId targets what who
   | .revealLibrary how thenDo who =>
-    g.applyRevealLibrary controller how thenDo who
+    g.applyRevealLibrary controller sourceId targets how thenDo who
   | .fight who how =>
     g.applyFight controller sourceId targets who how
   | .reflexiveCopyMilled =>
@@ -2684,6 +2842,18 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match targets[0]? with
       | some (Target.permanent id) => g.applyConnive controller (some id)
       | _ => g.applyConnive controller sourceId
+    | .enteringVillain =>
+      match sourceId.bind g.findObject? with
+      | none =>
+        g.logMsg "Baron Strucker is no longer on the battlefield. The ability has no effect."
+      | some src =>
+        if src.status.optionalOnceUsed then
+          g.logMsg
+            "The optional connive was already chosen this turn. This instance has no effect."
+        else
+          match g.villainConniveTarget? controller src.id targets lastKnownPower with
+          | none => g.logMsg "The Villain does not connive"
+          | some vid => g.beginMayHaveVillainConnive controller src.id vid
   | .queueReflexiveIfSacrificed kind =>
     let yes := g.planWasSacrificed
     let g := { g with planWasSacrificed := false }
@@ -2746,9 +2916,19 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         else g.logMsg s!"{o.name} is no longer on the battlefield"
       | none => g.logMsg "The source is no longer on the battlefield"
   | .becomeCopy of =>
-    g.applyBecomeCopy sourceId targets of
-  | .watch e =>
-    g.applyModeledTrigger controller (.onWatch (Effect.ofTrigger (.watch e))) sourceId targets sourceName lastKnownPower
+    g.applyBecomeCopy controller sourceId targets of
+  | .retargetCause =>
+    let targetingSource (e : StackEntry) : Bool :=
+      e.targets.any (fun t =>
+        match t, sourceId with
+        | Target.permanent id, some sid => id == sid
+        | _, _ => false)
+    let fromStack :=
+      g.stack.foldl (fun acc e =>
+        if targetingSource e then some e.objectId else acc) none
+    match g.resolvingCauseId.orElse (fun _ => fromStack) with
+    | none => g
+    | some spellId => g.offerSpellRetarget controller spellId 0
   | .youAttacking e =>
     g.applyModeledTrigger controller (.onYouAttacking (Effect.ofTrigger (.youAttacking e))) sourceId targets sourceName lastKnownPower
   | .casting e =>
@@ -2757,6 +2937,34 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower
   | .may (.draw 0 _ (.perControlled ty)) (.draw 1 .eachOpponent _) .ifYouDo =>
     g.mayDrawPerArtifact controller ty
+  | .may (.draw 1 _ .fixed) (.sequence []) .ifYouDo =>
+    g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
+      fun g => g.draw controller 1
+  | .may (.dealDamage _ .target .lastKnownPower .none) (.sequence []) .ifYouDo =>
+    if g.sheHulkDamageUsedThisTurn then
+      g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
+    else
+      let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
+      match targets.find? (legal.contains ·) with
+      | none => g.logMsg "The target is no longer legal"
+      | some t =>
+        let amt := lastKnownPower.getD 0
+        { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
+          |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
+  | .may .retargetCause (.sequence []) .ifYouDo =>
+    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName (some .retargetCause)
+      sequencedCardPower
+  | .may (.pay symbols) (.queueReflexive (.modeled kind times)) .ifYouDo =>
+    -- Paying more than once records that count for the reflexive ability.
+    if times > 1 then
+      g.offerPayForReflexive controller sourceId symbols kind times
+    else
+      let follow := TriggeredAbility.TriggerResolution.queueReflexive (.modeled kind times)
+      let g := { g with mayThenDrop := 1, mayThenConditional := some follow }
+      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName
+        (some (.sequence [.pay symbols, follow])) sequencedCardPower
   | .may optional conditional .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
     let g := { g with mayThenDrop := cond.length, mayThenConditional := some conditional }
@@ -2764,10 +2972,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       lastKnownPower lastKnownToughness sourceName
       (some (.sequence (optional :: cond))) sequencedCardPower
   | .pay symbols =>
-    match g.mayThenConditional with
-    | some (.queueReflexive (.modeled kind)) =>
-      g.offerPayForReflexive controller sourceId symbols kind
-    | _ =>
+    match g.mayThenConditional, symbols.toList with
+    | some (.queueReflexive (.modeled kind times)), _ =>
+      g.offerPayForReflexive controller sourceId symbols kind times
+    | some (.becomeCopy .cause), [.generic 2] =>
+      g.offerCopyCause controller sourceId targets
+    | _, _ =>
       match symbols.toList with
       | [.generic n] =>
         let plusOne :=
@@ -2842,7 +3052,16 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g.failMayThen
   | .queueReflexive followup =>
     match followup with
-    | .modeled kind => g.queueModeledReflexive controller sourceId kind 0
+    | .modeled kind _ => g.queueModeledReflexive controller sourceId kind 0
+    | .countersOnSource kind =>
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then
+          g.queueModeledReflexive controller sourceId kind o.status.plusOnePlusOne
+        else
+          g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
+      | none =>
+        g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
     | .damageAny n =>
       g.putReflexiveTrigger controller sourceId
         { targeting := .of .playerOrCreature, resolution := .fra (.damageAny n)
@@ -2868,7 +3087,7 @@ def resumeTriggerSequence (g : Game) : Game :=
 def rememberChosenMode (g : Game) (sourceId : ObjectId)
     (how : TriggeredAbility.TriggerModeHow) (mode : Nat) : Game :=
   match how, g.findObject? sourceId with
-  | .alreadyChosen, _ | .plusOneOrRemoveCounter, _ => g
+  | .alreadyChosen, _ | .plusOneOrRemoveCounter, _ | .fromLastKnown, _ => g
   | _, none => g.logMsg "The ability is removed from the stack with no effect"
   | .oneUnusedThisTurn, some src =>
     g.setObject { src with status :=

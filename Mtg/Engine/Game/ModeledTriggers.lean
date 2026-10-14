@@ -237,9 +237,12 @@ def offerHydeChoice (g : Game) (controller : PlayerId) (sourceId : Option Object
 object until the controller's next turn and keeps the printed exception
 name. Choosing none copies nothing. A missing source copies nothing.
 `.noted` makes the enchanted creature a copy of the creature an earlier
-step noted, until the source leaves. Nothing noted copies nothing. -/
-def applyBecomeCopy (g : Game) (sourceId : Option ObjectId) (targets : Array Target)
-    (of : TriggeredAbility.TriggerCopyOf) : Game :=
+step noted, until the source leaves. Nothing noted copies nothing.
+`.cause` creates a token copy of the nontoken artifact that caused this.
+An announced permanent is used when one was chosen; otherwise the recorded
+cause. The source need not still be on the battlefield. -/
+def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (targets : Array Target) (of : TriggeredAbility.TriggerCopyOf) : Game :=
   match of with
   | .noted =>
     let copied := g.notedCopyObject
@@ -251,6 +254,16 @@ def applyBecomeCopy (g : Game) (sourceId : Option ObjectId) (targets : Array Tar
       | some host => g.becomeCopyOf host tgt (untilSourceLeaves := sourceId)
       | none => g
     | _, _ => g
+  | .cause =>
+    let fromTarget :=
+      match targets[0]? with
+      | some (Target.permanent id) => some id
+      | _ => none
+    let causeId :=
+      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+    match fromTarget.orElse (fun _ => causeId) with
+    | none => g.logMsg "Ultron has nothing to copy"
+    | some id => g.copyEnteredArtifact controller id
   | of =>
     g.withSourceOnBattlefield sourceId (fun g src =>
     match of with
@@ -286,7 +299,7 @@ def applyBecomeCopy (g : Game) (sourceId : Option ObjectId) (targets : Array Tar
           else g.logMsg "That isn't a creature or a creature card in a graveyard"
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "Taskmaster doesn't become a copy"
-    | .noted => g) "The source is no longer in play"
+    | .noted | .cause => g) "The source is no longer in play"
 
 /-- Exile the announced nonland the controller still controls, other than the
 source, then return it under its owner's control. Choosing none does nothing.
@@ -475,99 +488,11 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     (lastKnownPower : Option Int := none) : Game :=
   match t.shared with
   | (.step .copyAbsorbingMan) =>
-    g.applyBecomeCopy sourceId targets .artifactEnchantmentOrLand
+    g.applyBecomeCopy controller sourceId targets .artifactEnchantmentOrLand
   | (.step .copyTaskmaster) =>
-    g.applyBecomeCopy sourceId targets .creatureOrGraveyardCard
-  | (.watch .sheHulkRedirectOnce) =>
-    if g.sheHulkDamageUsedThisTurn then
-      g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
-    else
-      let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
-      match targets.find? (legal.contains ·) with
-      | none => g.logMsg "The target is no longer legal"
-      | some t =>
-        let amt := lastKnownPower.getD 0
-        { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
-          |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
-  | (.watch .hawkeyeModes) =>
-    g.offerPayForReflexive controller sourceId #[.generic 1] 2 (maxTimes := 3)
-  | (.watch .hulklingCompare) =>
-    g.withSourceOnBattlefield sourceId (fun g hulkling =>
-      let entered :=
-        match targets[0]? with
-        | some (Target.permanent id) | some (Target.card id) => g.findObject? id
-        | _ =>
-          let causeId :=
-            ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
-          causeId.bind g.findObject?
-      match entered with
-      | none => g
-      | some other =>
-        if other.id == hulkling.id then g
-        else
-          let op := if other.isOnBattlefield then g.power other
-            else other.lastKnownPower.getD (g.power other)
-          let ot := if other.isOnBattlefield then g.toughness other
-            else other.lastKnownToughness.getD (g.toughness other)
-          if op > g.power hulkling || ot > g.toughness hulkling then
-            g.addPlusOnePlusOneTo hulkling 1
-          else g) "The source is no longer in play"
-  | (.watch .firstTapUntap) =>
-    let fromCause :=
-      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
-    let id := fromCause.orElse (fun _ => g.lastBecameTapped)
-    match id.bind g.findObject? with
-    | some o =>
-      if o.isOnBattlefield && o.status.tapped then
-        g.applyPermanentAction o .untap
-      else g
-    | none => g
-  | (.watch .hulk) =>
-    let g :=
-      g.withSourceOnBattlefield sourceId (fun g o =>
-        let g := g.addPlusOnePlusOneTo o 1
-        if o.status.attacking then
-          g.applyPermanentAction o .untap
-        else g) "The source is no longer in play"
-    if g.enrageGrantsAdditionalCombat > 0 then
-      { g with
-          enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat - 1
-          additionalCombatPhases := g.additionalCombatPhases + 1 }
-        |>.logMsg "There is an additional combat phase after this phase"
-    else g
-  | (.watch .redHulk) =>
-    match sourceId.bind g.findObject? with
-    | some o =>
-      if o.isOnBattlefield then
-        let g := g.addPlusOnePlusOneTo o 1
-        let o := g.object! o.id
-        g.queueModeledReflexive controller sourceId 8 o.status.plusOnePlusOne
-      else
-        g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
-    | none =>
-      g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
+    g.applyBecomeCopy controller sourceId targets .creatureOrGraveyardCard
   | (.casting .mayPayHasteUnblockable) =>
     g.offerPayForReflexive controller sourceId #[.generic 1] 9
-  | (.watch .speedballTargeted) =>
-    let g :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.pumpPermanent o 2 2
-        else g.logMsg "Speedball is no longer on the battlefield"
-      | none => g.logMsg "Speedball is no longer on the battlefield"
-    let fromCause :=
-      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
-    let targetingSource (e : StackEntry) : Bool :=
-      e.targets.any (fun t =>
-        match t, sourceId with
-        | Target.permanent id, some sid => id == sid
-        | _, _ => false)
-    let fromStack :=
-      g.stack.foldl (fun acc e =>
-        if targetingSource e then some e.objectId else acc) none
-    match fromCause.orElse (fun _ => fromStack) with
-    | none => g
-    | some spellId => g.offerSpellRetarget controller spellId 0
   | (.youAttacking .exileTopHeroPump) =>
     { g with pending := .fraChoice controller (.daredevilMayExile sourceId) }
       |>.logMsg "You may exile the top card of your library"
@@ -577,50 +502,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         |>.logMsg "You may pay 2 life"
     else
       g.logMsg "The Kingpin's cost wasn't paid"
-  | (.watch .villainPlusOneDamageOnce) =>
-    let src? := sourceId.bind (fun id => g.findObject? (g.followMoved id))
-    let g :=
-      match src? with
-      | some o =>
-        if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1
-        else g.logMsg "Crossbones is no longer on the battlefield. No counter is put."
-      | none => g.logMsg "Crossbones is no longer on the battlefield. No counter is put."
-    g.forEachOpponent controller (fun g pid =>
-      g.dealDamageToPlayer pid 2 (source := src?))
-  | (.watch .villainConniveOnce) =>
-    match sourceId.bind g.findObject? with
-    | none =>
-      g.logMsg "Baron Strucker is no longer on the battlefield. The ability has no effect."
-    | some src =>
-      if src.status.optionalOnceUsed then
-        g.logMsg
-          "The optional connive was already chosen this turn. This instance has no effect."
-      else
-        match g.villainConniveTarget? controller src.id targets lastKnownPower with
-        | none =>
-          g.logMsg "The Villain does not connive"
-        | some vid =>
-          g.beginMayHaveVillainConnive controller src.id vid
   | (.death .attackingReturnHand) =>
     g.returnCauseToOwnerHand targets
-  | (.watch .ultronCopy) =>
-    let fromTarget :=
-      match targets[0]? with
-      | some (Target.permanent id) => some id
-      | _ => none
-    let fromCause :=
-      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
-    match fromTarget.orElse (fun _ => fromCause) with
-    | none => g.logMsg "Ultron has nothing to copy"
-    | some id =>
-      match g.findObject? (g.followMoved id) with
-      | some src =>
-        if src.printed.isToken || !src.printed.isArtifact || some src.id == sourceId then
-          g.logMsg "That permanent isn't another nontoken artifact"
-        else
-          { g with pending := .fraChoice controller (.ultronMayPay id) }
-            |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {src.name}"
-      | none => g.logMsg "Ultron has nothing to copy"
   | (.death .villainReturnAsHero) =>
     g.returnCauseUnderOwner controller targets (some "Villain")
       [.additionalSubtype "Hero", .counter .finality]
@@ -680,45 +563,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     g.drawUpToHandSize controller 10
   | (.step .harnessedFlicker) =>
     g.resolveHarnessedFlicker controller sourceId targets
-  | (.watch .enchantedAttachEquipment) =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      match src.attachedTo.bind g.findObject? with
-      | none =>
-        g.logMsg "The enchanted creature has left. Equipment stays where it is."
-      | some host =>
-        targets.foldl (fun (g : Game) (t : Target) =>
-          match t with
-          | Target.permanent id =>
-            match g.findObject? id with
-            | some eq =>
-              if eq.isOnBattlefield && eq.printed.isEquipment then
-                g.attachSourceTo eq host
-              else g
-            | none => g
-          | _ => g) g
-    | none =>
-      g.logMsg "The enchanted creature has left. Equipment stays where it is."
-  | (.watch .villainAttachEquipment) =>
-    match targets.toList with
-    | [Target.permanent eqId, Target.permanent crId] =>
-      match g.findObject? eqId, g.findObject? crId with
-      | some eq, some cr =>
-        if eq.isOnBattlefield && cr.isOnBattlefield && eq.printed.isEquipment &&
-            cr.isCreature then
-          g.attachSourceTo eq cr
-        else
-          g.logMsg "The Equipment won't move"
-      | _, _ => g.logMsg "The Equipment won't move"
-    | [Target.permanent id] =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield && o.printed.isEquipment then
-          g.logMsg "The Equipment won't move"
-        else
-          g.logMsg "No Equipment was chosen"
-      | none => g.logMsg "The Equipment won't move"
-    | _ => g.logMsg "The Equipment won't move"
   | (.youAttacking .lookSixCast) =>
     g.beginMayCastFromLooked controller 6 (g.greatestPowerAmongAttacking controller)
   | (.step .enchantedControllerDraws) =>
@@ -728,89 +572,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       [.loseAllAbilities, .keywords Keyword.haste, .counter .plusOnePlusOne (asEnters := true)]
   | (.death .deathtouchOppSac) =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
-  | (.watch .combatDamageExileUntilNonland) =>
-    let pid :=
-      match targets[0]? with
-      | some (Target.player p) => some p
-      | _ =>
-        (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness)
-          |>.map (fun n => ⟨n.toNat⟩)
-    match pid with
-    | none => g.logMsg "Black Widow didn't deal combat damage to a player"
-    | some pid =>
-      let (g, nonland?) := g.exileLibraryUntilNonland pid
-      let onBf :=
-        match sourceId.bind g.findObject? with
-        | some o => o.isOnBattlefield
-        | none => false
-      if onBf then
-        { g with pending := .fraChoice controller (.widowMayCounter sourceId nonland?) }
-          |>.logMsg "You may put a +1/+1 counter on Black Widow"
-      else
-        g.grantWidowCast controller nonland?
-  | (.watch .attacksAloneDrain) =>
-    g.withLegalKindTarget controller .opponent targets (fun g tgt =>
-      match tgt with
-      | Target.player pid =>
-        let g := g.loseLife pid 1
-        g.gainLife controller 1
-      | _ => g) sourceId none
-  | (.watch .attacksAloneFirstStrikeMenace) =>
-    match g.attackingAlone? controller with
-    | none => g.logMsg "No creature is attacking alone"
-    | some o =>
-      let g := g.grantUntilEotLogged o Keyword.firstStrike
-      g.grantUntilEotLogged (g.object! o.id) Keyword.menace
-  | (.watch .anyPlayerSecondDraw) =>
-    g.draw controller 1
-  | (.watch .youTargetDrawOnce) =>
-    g.draw controller 1
-  | (.watch .villainOrArtifactDamage) =>
-    g.withLegalKindTarget controller .opponent targets (fun g tgt =>
-      match tgt with
-      | Target.player pid => g.dealDamageToPlayer pid 1
-      | _ => g) sourceId none
-  | (.watch .villainPlusOneLifelink) =>
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      let g := g.pumpPermanent o 1 0
-      g.grantUntilEotLogged (g.object! o.id) Keyword.lifelink)
-      "The source is no longer in play"
-  | (.watch .justiceBounce) =>
-    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-      "The source is no longer in play"
-  | (.watch .nontokenHeroModal) =>
-    let mode := (lastKnownPower.getD 0).toNat
-    if mode == 0 then
-      g.createKindTokens controller .soldier11white 1
-    else
-      g.pumpControlledCreatures controller 1 1
-  | (.watch .equippedAttacksAloneUntapScry) =>
-    match g.attachedHost? sourceId with
-    | some host =>
-      if host.isOnBattlefield then
-        let g := g.applyPermanentAction host .untap
-        g.beginScry controller 1
-      else g.logMsg "The equipped creature has left"
-    | none => g.logMsg "The equipped creature has left"
-  | (.watch .equippedAttacksTap) =>
-    g.withLegalKindPermanent controller .defendingPlayerCreature targets
-      (fun g o => g.applyPermanentAction o .tap) sourceId
-      (some "The target is no longer legal")
-  | (.watch .equippedTappedDamage) =>
-    match g.attachedHost? sourceId with
-    | some host =>
-      g.forEachOpponent controller (fun g pid =>
-        g.dealDamageToPlayer pid 1 (source := some host))
-    | none =>
-      g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid 1)
-  | (.watch .heroesDamagePlusTwo) =>
-    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
-      "The source is no longer in play"
-  | (.watch .merfolkAttackDraw) =>
-    g.draw controller 1
-  | (.watch .tokensEnterMayDraw) =>
-    g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
-      fun g => g.draw controller 1
   | (.casting .exileFlicker) =>
     let kind := EffectTargetKind.filtered {
       noun := "another target nonland, nontoken permanent"

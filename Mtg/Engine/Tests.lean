@@ -51,6 +51,7 @@ import Mtg.Engine.Tests.Step
 import Mtg.Engine.Tests.Death
 import Mtg.Engine.Tests.ThisAttack
 import Mtg.Engine.Tests.EnterOrAttack
+import Mtg.Engine.Tests.Watch
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -127,4 +128,5 @@ keep working.
 - `Death`: dies triggers that used to resolve as `death`
 - `ThisAttack`: attack triggers that used to resolve as `thisAttack`
 - `EnterOrAttack`: enters-or-attacks triggers that used to resolve as `enterOrAttack`
+- `Watch`: watch triggers that used to resolve as `watch`
 -/

@@ -6,6 +6,8 @@ import Mtg.Engine.Fixture
 The top cards of your library and a random creature from among them, cards
 until a creature, and cards until a Saga are reveals. Cards from the damaged
 player's library until an instant or sorcery are exiled for an impulse cast.
+Cards from the announced player's library until a nonland may put a +1/+1
+counter on the source, or let you cast that nonland until end of turn.
 How far the ability looks and whose library it uses are arguments. What
 happens to the cards is a `TriggerResolution`.
 -/
@@ -115,6 +117,29 @@ def untilSaga : TriggeredAbility.TriggerResolution :=
 
 def exileImpulse : TriggeredAbility.TriggerResolution :=
   .revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer
+
+def untilNonland : TriggeredAbility.TriggerResolution :=
+  .revealLibrary .untilNonland
+    (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
+      (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
+    .announced
+
+def spy : CardDef := {
+  name := "Widow Source"
+  types := #[.creature]
+  power := some 1
+  toughness := some 2
+}
+
+def stepAt (g : Game) (r : TriggeredAbility.TriggerResolution)
+    (sourceId : Option ObjectId := none) (targets : Array Target := #[]) : Game :=
+  g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId targets
+    (resolutionOverride := some r)
+
+def spyId (g : Game) : ObjectId :=
+  match g.battlefield.find? (·.name == "Widow Source") with
+  | some o => o.id
+  | none => panic! "missing Widow Source"
 
 /- The only revealed creature enters. Cards under the window stay above the
 card that goes on the bottom. The opponent's library stays put. -/
@@ -345,6 +370,44 @@ An empty library is remembered with nothing exiled. -/
     p == caster && v == opp && !g.grimaImpulseReady
   | _ => false
 
+/- The announced player exiles until a nonland. The source still in play
+asks for the counter. A missing source grants the cast. No player is
+reported, and an empty library exiles nothing. -/
+#guard
+  let g0 := onlyLibrary (addPermanent afterDraw spy caster caster) opp [plot, bolt]
+  let src := spyId g0
+  let g := stepAt g0 untilNonland (some src) #[Target.player opp]
+  match g.pending with
+  | .fraChoice _ (.widowMayCounter sid exiled) =>
+    sid == some src &&
+      (exiled.bind g.findObject?).any (·.name == "Reveal Bolt") &&
+      inExile g "Reveal Bolt" && libNames g opp == ["Reveal Plot"] &&
+      logContains g "exiles Reveal Bolt" &&
+      logContains g "You may put a +1/+1 counter"
+  | _ => false
+
+#guard
+  let g0 := onlyLibrary afterDraw opp [plot, bolt]
+  let g := stepAt g0 untilNonland none #[Target.player opp]
+  g.pending == .none && inExile g "Reveal Bolt" && libNames g opp == ["Reveal Plot"] &&
+    (g.objects.any (fun o =>
+      o.name == "Reveal Bolt" && o.zone == .exile && o.playPermission.isSome)) &&
+    logContains g "may cast Reveal Bolt until end of turn"
+
+#guard
+  let g0 := onlyLibrary afterDraw opp [bolt]
+  let g := step g0 untilNonland
+  libNames g opp == ["Reveal Bolt"] && g.pending == .none &&
+    logContains g "didn't deal combat damage"
+
+#guard
+  let g0 := onlyLibrary (addPermanent afterDraw spy caster caster) opp []
+  let g := stepAt g0 untilNonland (some (spyId g0)) #[Target.player opp]
+  match g.pending with
+  | .fraChoice _ (.widowMayCounter _ exiled) =>
+    exiled.isNone && libNames g opp == []
+  | _ => false
+
 /- A combination that is not printed does nothing. -/
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
@@ -361,7 +424,17 @@ An empty library is remembered with nothing exiled. -/
     .revealLibrary .untilSaga (.returnToHand .revealed),
     .revealLibrary .untilSaga (.put .revealed) .damagedPlayer,
     .revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse),
-    .revealLibrary .untilInstantOrSorcery (.put .revealed) .damagedPlayer]
+    .revealLibrary .untilInstantOrSorcery (.put .revealed) .damagedPlayer,
+    .revealLibrary .untilNonland (.put .revealed) .announced,
+    .revealLibrary .untilNonland (.exile .top .forLater .anyManaThisTurn) .announced,
+    .revealLibrary .untilNonland
+      (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
+        (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
+      .you,
+    .revealLibrary (.top 1)
+      (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
+        (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
+      .announced]
   crossed.all fun r =>
     let g := step g0 r
     libNames g caster == libNames g0 caster &&
@@ -377,6 +450,7 @@ what gives them the revealed cards. -/
     .put .revealed,
     .returnToHand .revealed,
     .exile .top .forLater .impulse,
+    .exile .top .forLater .anyManaThisTurn,
     .ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)]
   alone.all fun r =>
     let g := step g0 r
@@ -402,6 +476,8 @@ what gives them the revealed cards. -/
   "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
 #guard TriggeredAbility.resolutionPhrase { resolution := exileImpulse } ==
   "that player exiles cards from the top of their library until they exile an instant or sorcery card"
+#guard TriggeredAbility.resolutionPhrase { resolution := untilNonland } ==
+  "that player exiles cards until a nonland card"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .revealLibrary (.top 2) (.put .revealed) } ==
   "reveal cards from a library"

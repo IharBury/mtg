@@ -139,7 +139,7 @@ def redHulkReflexiveOk : Bool :=
   let g := addPermanent afterDraw redHulk ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let hulk := namedPermanent g "Red Hulk"
-  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchRedHulk) (some hulk.id)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchRedHulk) (some hulk.id)
   (namedPermanent g "Red Hulk").status.plusOnePlusOne == 1 &&
     g.hasModeledReflexiveOnStack &&
     (let bears := namedPermanent g "Grizzly Bears"
@@ -148,7 +148,7 @@ def redHulkReflexiveOk : Bool :=
     (let g := addPermanent afterDraw redHulk ⟨0⟩ ⟨0⟩
      let hulk := namedPermanent g "Red Hulk"
      let (g, _) := g.move hulk.id (.graveyard ⟨0⟩) none
-     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchRedHulk) (some hulk.id)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchRedHulk) (some hulk.id)
      !g.hasModeledReflexiveOnStack) &&
     (mshRuling 625).comment.contains "must survive the damage" &&
     (mshRuling 717).comment.contains "reflexive"
@@ -250,11 +250,11 @@ def speedballRetargetOk : Bool :=
   let g := g.setStackEntryTargets bolt.id #[Target.permanent speed.id]
   let (gGone, _) := g.move bolt.id (.graveyard ⟨1⟩) none
   let gGone :=
-    gGone.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSpeedballTargeted) (some speed.id)
+    gGone.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchSpeedballTargeted) (some speed.id)
   gGone.power (namedPermanent gGone "Speedball, New Warrior") == 4 &&
     gGone.toughness (namedPermanent gGone "Speedball, New Warrior") == 4 &&
     (let g :=
-       g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSpeedballTargeted) (some speed.id)
+       g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchSpeedballTargeted) (some speed.id)
      let bears := namedPermanent g "Grizzly Bears"
      let g := g.retargetStackSpell bolt.id #[Target.permanent bears.id]
      (match g.stackEntry? bolt.id with
@@ -732,7 +732,7 @@ def crossbonesVillainOnceOk : Bool :=
              (namedPermanent g "Baron Strucker, HYDRA Overlord")
            villainWait g == 1))) &&
     (let xb := namedPermanent g0 "Crossbones, Malicious Mercenary"
-     let g := g0.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainPlusOneDamageOnce)
+     let g := g0.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchVillainPlusOneDamageOnce)
        (some xb.id)
      (namedPermanent g "Crossbones, Malicious Mercenary").status.plusOnePlusOne == 1 &&
        (g.player ⟨1⟩).life == 18) &&
@@ -1019,16 +1019,16 @@ def hulklingRecheckOk : Bool :=
   let giant := namedPermanent g "Hill Giant"
   let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
   let gShrink := g.pumpPermanent giant (-2) (-2)
-  let gShrink := gShrink.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+  let gShrink := gShrink.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
     (some hulkling.id) #[Target.permanent giant.id]
   (namedPermanent gShrink "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0 &&
     (let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
      let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
      let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
      let giants := g.battlefield.filter (fun o => o.name == "Hill Giant")
-     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[Target.permanent giants[0]!.id]
-     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[Target.permanent giants[1]!.id]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
     (let g := mshEnter afterDraw hulklingBurgeoningBruiser
@@ -1038,7 +1038,7 @@ def hulklingRecheckOk : Bool :=
      let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
      let g := g.mapObjectStatus hulkling (fun s => { s with setBasePT := some (4, 3) })
      let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
-     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[Target.permanent bot.id]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
     (mshRuling 487).comment.contains "stat comparison will happen again" &&

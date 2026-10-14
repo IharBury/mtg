@@ -670,7 +670,7 @@ target creature from blocking. -/
 #guard
   let g := addPermanent (addPermanent afterDraw hawkeyeMasterMarksman me me) grizzlyBears opp opp
   let hawk := namedPermanent g "Hawkeye, Master Marksman"
-  let g := g.applyModeledTrigger me (.onWatch Effect.watchHawkeyeModes) (some hawk.id)
+  let g := g.applyTriggeredAbility me (.onWatch Effect.watchHawkeyeModes) (some hawk.id)
   let g := withMana g me .red 1
   let g := mustApply g me .accept
   let g := mustApply g me (.chooseMode 0)
