@@ -47,6 +47,7 @@ import Mtg.Engine.Tests.SetBasePT
 import Mtg.Engine.Tests.Untap
 import Mtg.Engine.Tests.Modes
 import Mtg.Engine.Tests.Chapter
+import Mtg.Engine.Tests.Step
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -119,4 +120,5 @@ keep working.
   the target while the source remains, and each attacking creature
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 - `Chapter`: printed Saga chapters resolved by the other trigger constructors
+- `Step`: upkeep, end-step, and first-main triggers that used to resolve as `step`
 -/

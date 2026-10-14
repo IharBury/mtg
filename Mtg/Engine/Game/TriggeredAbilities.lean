@@ -406,6 +406,12 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         else ({ g with putArtifactThisWay := none }, false)
       | none => ({ g with putArtifactThisWay := none }, false)
   | .revealedManaValueAtMostLands => (g, false)
+  | .sourceHarnessed =>
+    match sourceId.bind g.findObject? with
+    | none => (g, false)
+    | some src =>
+      if src.status.harnessed then (g, true)
+      else (g.logMsg "The Mind Stone is not harnessed", false)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -1023,6 +1029,8 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.beginLibrarySearch controller
       (fun c => isBasicLandCard c && c.hasSubtype subtype)
       s!"a basic {subtype} card" (.exileLinked sourceId) (count := max)
+  | .target, .returnImmediately, .none =>
+    g.flickerChosenNonland controller sourceId targets
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.sacrifice`. Each printed combination keeps
@@ -1405,10 +1413,14 @@ def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
 
 /-- Resolve `TriggerResolution.draw`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
-def applyTriggerDraw (g : Game) (controller : PlayerId) (n : Nat)
-    (who : TriggeredAbility.TriggerDrawWho)
+def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (n : Nat) (who : TriggeredAbility.TriggerDrawWho)
     (amount : TriggeredAbility.TriggerDrawAmount) : Game :=
   match who, amount with
+  | .enchantedController, _ =>
+    g.drawForEnchantedController sourceId
+  | .you, .upToHandSize k =>
+    g.drawUpToHandSize controller k
   | .opponentHasYou, _ =>
     match g.palantirChoiceReady with
     | none => g
@@ -2195,7 +2207,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .scry n =>
     g.beginScry controller n
   | .draw n who amount =>
-    g.applyTriggerDraw controller n who amount
+    g.applyTriggerDraw controller sourceId n who amount
   | .searchLibrary thenDo =>
     g.applySearchLibrary controller sourceId thenDo
   | .discard n who what when =>
@@ -2518,7 +2530,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .loseLife n who amount =>
     g.applyLoseLife controller ab sourceId targets n who amount
   | .may (.draw _ .opponentHasYou _) _ =>
-    g.applyTriggerDraw controller 1 .opponentHasYou .fixed
+    g.applyTriggerDraw controller sourceId 1 .opponentHasYou .fixed
   | .may (.sequence [.draw _ _ .equalToManaSpent, .discard n (when := .ifManaSpent)]) _ =>
     -- X is the mana spent to cast the triggering spell.
     let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
@@ -2623,8 +2635,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         if o.isOnBattlefield then g.becomePrepared o
         else g.logMsg s!"{o.name} is no longer on the battlefield"
       | none => g.logMsg "The source is no longer on the battlefield"
-  | .step e =>
-    g.applyModeledTrigger controller (.onStep (Effect.ofTrigger (.step e))) sourceId targets sourceName lastKnownPower
+  | .becomeCopy of =>
+    g.applyBecomeCopy sourceId targets of
+  | .plusOneOrRemoveCounterDraw =>
+    g.offerHydeChoice controller sourceId
   | .death e =>
     g.applyModeledTrigger controller (.onDeath (Effect.ofTrigger (.death e))) sourceId targets sourceName lastKnownPower
   | .thisAttack e =>

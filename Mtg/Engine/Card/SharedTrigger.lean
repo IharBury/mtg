@@ -907,7 +907,18 @@ inductive SharedTrigger where
   | maySacArtifactOrDiscardDraw
   /-- Leftover “when this enters” effect. -/
   | enter (e : EnterLeftover)
-  /-- Leftover step / upkeep / end-step / first-main effect. -/
+  /-- Leftover step / upkeep / end-step / first-main effect.
+  The enchanted creature's controller draws a card, as
+  `.draw 1 (who := .enchantedController)`.
+  Drawing until you have ten cards is `.draw 0 (amount := .upToHandSize 10)`.
+  Becoming a copy of an artifact, non-Aura enchantment, or land is
+  `.becomeCopy .artifactEnchantmentOrLand`.
+  Choosing a +1/+1 counter or removing a counter to draw is
+  `.plusOneOrRemoveCounterDraw`.
+  Becoming a copy of a creature or a graveyard creature card is
+  `.becomeCopy .creatureOrGraveyardCard`.
+  Exiling and returning another nonland while harnessed is
+  `.«if» .sourceHarnessed (.exile .target .returnImmediately)`. -/
   | step (e : StepLeftover)
   /-- Leftover dies effect. -/
   | death (e : DeathLeftover)
