@@ -2527,11 +2527,11 @@ def superAdaptoidKeywordCountersOk : Bool :=
   kind == .anotherCreature &&
     legal.contains (Target.permanent bears.id) &&
     !legal.contains (Target.permanent adaptoid.id) &&
-    (let gSelf := g.applyModeledTrigger ⟨0⟩ (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
+    (let gSelf := g.applyTriggeredAbility ⟨0⟩ (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
         (some adaptoid.id) #[Target.permanent adaptoid.id]
      (namedPermanent gSelf "Super-Adaptoid").status.keywordCounters.haste == 0 &&
        logContains gSelf "no longer legal") &&
-    (let gCopy := g.applyModeledTrigger ⟨0⟩ (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
+    (let gCopy := g.applyTriggeredAbility ⟨0⟩ (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
         (some adaptoid.id) #[Target.permanent bears.id]
      let o := namedPermanent gCopy "Super-Adaptoid"
      o.status.keywordCounters.haste == 1 &&
@@ -2548,7 +2548,7 @@ def superAdaptoidKeywordCountersOk : Bool :=
        !o.printed.keywords.haste &&
        gCopy.hasHaste o && gCopy.hasFlying o && gCopy.hasTrample o &&
        gCopy.hasLifelink o && gCopy.hasIndestructible o &&
-       (let gAgain := gCopy.applyModeledTrigger ⟨0⟩
+       (let gAgain := gCopy.applyTriggeredAbility ⟨0⟩
           (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
           (some o.id) #[Target.permanent bears.id]
         (namedPermanent gAgain "Super-Adaptoid").status.keywordCounters.haste == 1))

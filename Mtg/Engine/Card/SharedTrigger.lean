@@ -131,11 +131,17 @@ inductive ThisAttackLeftover where
   | attacksAlonePlus2Indestructible
 deriving Repr, Inhabited, BEq
 
-/-- Leftover “enters or attacks” triggers. -/
+/-- Leftover “enters or attacks” triggers.
+Each one resolves through `createTokens` or `putCounters`. -/
 inductive EnterOrAttackLeftover where
-  /-- Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creatur… -/
+  /-- Whenever Super-Adaptoid enters or attacks, choose another target creature.
+  If that creature has a keyword Super-Adaptoid lacks, put that counter on
+  Super-Adaptoid. Resolves as
+  `.putCounters .missingKeywordsFromTarget .source`. -/
   | copyKeywords
-  /-- Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a… -/
+  /-- Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or
+  attacks, create a 1/1 green Squirrel creature token. Resolves as
+  `.createTokens .squirrel11green 1 false`. -/
   | createSquirrel
 deriving Repr, Inhabited, BEq
 
@@ -977,7 +983,10 @@ inductive SharedTrigger where
   The source getting +2/+0 and indestructible until end of turn is
   `.sequence [.pump 2 0 .source, .grant (.keywords Keyword.indestructible) .source]`. -/
   | thisAttack (e : ThisAttackLeftover)
-  /-- Leftover “enters or attacks” effect. -/
+  /-- Leftover “enters or attacks” effect.
+  Copying the keyword counters the source lacks is
+  `.putCounters .missingKeywordsFromTarget .source`.
+  A 1/1 green Squirrel is `.createTokens .squirrel11green 1 false`. -/
   | enterOrAttack (e : EnterOrAttackLeftover)
   /-- Leftover watch effect. -/
   | watch (e : WatchLeftover)

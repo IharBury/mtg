@@ -36,22 +36,6 @@ def lastStackSpell? (g : Game) : Option GameObject :=
 def merfolk11blueToken : CardDef :=
   creatureToken "Merfolk" #["Merfolk"] 1 1 (some .blue)
 
-/-- Put one keyword counter on Super-Adaptoid when the other creature has that
-keyword and Super-Adaptoid does not. -/
-def copyKeywordCounter (g : Game) (adaptoid other : GameObject)
-    (has : GameObject → Bool) (apply : Status → Status) (name : String) : Game :=
-  if has other && !has adaptoid then
-    let n := g.countersYouPut adaptoid 1
-    let src := g.object! adaptoid.id
-    let status := Id.run do
-      let mut s := src.status
-      for _ in [0:n] do
-        s := apply s
-      return s
-    g.setObject { src with status := status }
-      |>.logMsg s!"{src.name} gets a {name} counter"
-  else g
-
 /-- Exile from `pid`'s library until a nonland is exiled. -/
 def exileLibraryUntilNonland (g : Game) (pid : PlayerId) : Game × Option ObjectId :=
   Id.run do
@@ -642,8 +626,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       [.additionalSubtype "Hero", .counter .finality]
   | (.casting .villainToken) =>
     g.createKindTokens controller .villain21menace 1
-  | (.enterOrAttack .createSquirrel) =>
-    g.createKindTokens controller .squirrel11green 1
   | (.resource .plusOneCreateInsectOnce) =>
     g.createKindTokens controller .insect11green 1
   | (.resource .plusOneOnHeroesCreateWall) =>
@@ -746,64 +728,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       [.loseAllAbilities, .keywords Keyword.haste, .counter .plusOnePlusOne (asEnters := true)]
   | (.death .deathtouchOppSac) =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
-  | (.enterOrAttack .copyKeywords) =>
-    g.withSourceOnBattlefield sourceId (fun g src =>
-      match targets[0]? with
-      | some (Target.permanent id) =>
-        match g.findObject? id with
-        | some other =>
-          if !other.isOnBattlefield || !other.isCreature || other.id == src.id then
-            g.logMsg "The target is no longer legal"
-          else
-            let g := g.copyKeywordCounter src other g.hasHaste
-              (fun s => { s with keywordCounters :=
-                { s.keywordCounters with haste := s.keywordCounters.haste + 1 } }) "haste"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasFlying
-              (fun s => { s with keywordCounters :=
-                { s.keywordCounters with flying := s.keywordCounters.flying + 1 } }) "flying"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other
-              (fun o => g.hasKeyword o (·.firstStrike))
-              (fun s => { s with keywordCounters :=
-                { s.keywordCounters with
-                  firstStrike := s.keywordCounters.firstStrike + 1 } }) "first strike"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasDoubleStrike
-              (fun s => { s with keywordCounters :=
-                { s.keywordCounters with
-                  doubleStrike := s.keywordCounters.doubleStrike + 1 } }) "double strike"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasDeathtouch
-              (fun s => { s with keywordCounters :=
-                { s.keywordCounters with
-                  deathtouch := s.keywordCounters.deathtouch + 1 } }) "deathtouch"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasIndestructible
-              (fun s => { s with
-                indestructibleCounters := s.indestructibleCounters + 1 }) "indestructible"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasLifelink
-              (fun s => { s with lifelinkCounters := s.lifelinkCounters + 1 }) "lifelink"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasMenace
-              (fun s => { s with keywordCounters :=
-                { s.keywordCounters with menace := s.keywordCounters.menace + 1 } }) "menace"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other (fun o => g.hasKeyword o (·.reach))
-              (fun s => { s with keywordCounters :=
-                { s.keywordCounters with reach := s.keywordCounters.reach + 1 } }) "reach"
-            let src := g.object! src.id
-            let g := g.copyKeywordCounter src other g.hasTrample
-              (fun s => { s with trampleCounters := s.trampleCounters + 1 }) "trample"
-            let src := g.object! src.id
-            g.copyKeywordCounter src other g.hasVigilance
-              (fun s => { s with keywordCounters :=
-                { s.keywordCounters with
-                  vigilance := s.keywordCounters.vigilance + 1 } }) "vigilance"
-        | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "The target is no longer legal")
-      "The source is no longer in play"
   | (.watch .combatDamageExileUntilNonland) =>
     let pid :=
       match targets[0]? with
