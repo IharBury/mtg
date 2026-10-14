@@ -1202,6 +1202,8 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.flickerChosenNonland controller sourceId targets
   | .target, .returnTapped, .none =>
     g.returnNontokenTapped targets
+  | .top, .playThisTurn, .ifHero =>
+    g.applyDaredevilExile controller sourceId
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.sacrifice`. Each printed combination keeps
@@ -1870,6 +1872,9 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.grantHexproofWhileSource controller sourceId targets ab.targetKind
   | .preventDamageWhileSource, .target =>
     g.preventDamageWhileSource controller sourceId targets ab.targetKind
+  | .assignCombatDamageEqualToughness, .creaturesYouControl =>
+    { g with assignCombatDamageEqualToughness := some controller }
+      |>.logMsg "Creatures you control assign combat damage equal to their toughness"
   | _, _ => g
 
 /-- Resolve `TriggerResolution.fight`. Each printed combination keeps
@@ -2256,6 +2261,8 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
           |>.logMsg "You may put a +1/+1 counter on Black Widow"
       else
         g.grantWidowCast controller nonland?
+  | .top n, .mayCast .looked .greatestAttackingPower .withoutPaying .none, .you =>
+    g.offerLookSixCast controller n
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.revealFromHand`. Each printed combination
@@ -2929,8 +2936,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match g.resolvingCauseId.orElse (fun _ => fromStack) with
     | none => g
     | some spellId => g.offerSpellRetarget controller spellId 0
-  | .youAttacking e =>
-    g.applyModeledTrigger controller (.onYouAttacking (Effect.ofTrigger (.youAttacking e))) sourceId targets sourceName lastKnownPower
+  | .may (.loseLife 2 .you .fixed)
+      (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
+    g.offerPay2LifeToughness controller
+  | .may (.exile .top .playThisTurn .ifHero) (.sequence []) _ =>
+    g.offerExileTopHeroPump controller sourceId
   | .casting e =>
     g.applyModeledTrigger controller (.onCasting (Effect.ofTrigger (.casting e))) sourceId targets sourceName lastKnownPower
   | .resource e =>

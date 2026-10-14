@@ -1041,7 +1041,15 @@ inductive SharedTrigger where
   You may pay {2} to copy the artifact that caused this is
   `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`. -/
   | watch (e : WatchLeftover)
-  /-- Leftover “whenever you attack” effect. -/
+  /-- Leftover “whenever you attack” effect.
+  Paying 2 life so creatures you control assign combat damage equal to their
+  toughness is
+  `.may (.loseLife 2) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
+  Exiling the top card, pumping +2/+1 when it is a Hero, and playing it this
+  turn is `.may (.exile .top .playThisTurn .ifHero) (.sequence [])`.
+  Looking at the top six and casting one with mana value at most the greatest
+  attacking power, without paying, is
+  `.revealLibrary (.top 6) (.mayCast .looked .greatestAttackingPower .withoutPaying)`. -/
   | youAttacking (e : YouAttackLeftover)
   /-- Leftover “whenever you cast …” effect. -/
   | casting (e : CastLeftover)

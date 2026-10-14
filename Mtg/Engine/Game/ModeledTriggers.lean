@@ -480,6 +480,27 @@ def resolveHarnessedFlicker (g : Game) (controller : PlayerId) (sourceId : Optio
       g.flickerChosenNonland controller sourceId targets
   | none => g
 
+/-- You may exile the top card of your library. A Hero card gives the source
++2/+1 until end of turn, and the card may be played this turn (Daredevil). -/
+def offerExileTopHeroPump (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) : Game :=
+  { g with pending := .fraChoice controller (.daredevilMayExile sourceId) }
+    |>.logMsg "You may exile the top card of your library"
+
+/-- You may pay 2 life. If you do, creatures you control assign combat damage
+equal to their toughness this turn (The Kingpin of Crime). -/
+def offerPay2LifeToughness (g : Game) (controller : PlayerId) : Game :=
+  if g.canPayLife controller 2 then
+    { g with pending := .fraChoice controller .kingpinMayPay2Life }
+      |>.logMsg "You may pay 2 life"
+  else
+    g.logMsg "The Kingpin's cost wasn't paid"
+
+/-- Look at the top `n` cards and you may cast one with mana value at most the
+greatest power among attacking creatures you control (Cosmic Cube). -/
+def offerLookSixCast (g : Game) (controller : PlayerId) (n : Nat := 6) : Game :=
+  g.beginMayCastFromLooked controller n (g.greatestPowerAmongAttacking controller)
+
 /-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
 Effects are applied from that structured payload — not from Oracle text. -/
 def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
@@ -494,14 +515,9 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.casting .mayPayHasteUnblockable) =>
     g.offerPayForReflexive controller sourceId #[.generic 1] 9
   | (.youAttacking .exileTopHeroPump) =>
-    { g with pending := .fraChoice controller (.daredevilMayExile sourceId) }
-      |>.logMsg "You may exile the top card of your library"
+    g.offerExileTopHeroPump controller sourceId
   | (.youAttacking .pay2LifeToughness) =>
-    if g.canPayLife controller 2 then
-      { g with pending := .fraChoice controller .kingpinMayPay2Life }
-        |>.logMsg "You may pay 2 life"
-    else
-      g.logMsg "The Kingpin's cost wasn't paid"
+    g.offerPay2LifeToughness controller
   | (.death .attackingReturnHand) =>
     g.returnCauseToOwnerHand targets
   | (.death .villainReturnAsHero) =>
@@ -564,7 +580,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.step .harnessedFlicker) =>
     g.resolveHarnessedFlicker controller sourceId targets
   | (.youAttacking .lookSixCast) =>
-    g.beginMayCastFromLooked controller 6 (g.greatestPowerAmongAttacking controller)
+    g.offerLookSixCast controller
   | (.step .enchantedControllerDraws) =>
     g.drawForEnchantedController sourceId
   | (.death .hellcatReturn) =>
