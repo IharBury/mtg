@@ -52,7 +52,7 @@ def hawk : CardDef :=
 def wasp : CardDef := creature "Wasp" ManaCost.empty #[] 1 1
 
 def humansDraw : TriggeredAbility.TriggerResolution :=
-  .sequence [.may (.tap .humans), .draw 0 (amount := .forEachTappedHuman)]
+  .sequence [.may (.tap .humans) (.sequence []), .draw 0 (amount := .forEachTappedHuman)]
 
 def enchantedRemove : TriggeredAbility.TriggerResolution :=
   .sequence [.tap .enchanted, .removeCounters .all .enchanted]
@@ -86,7 +86,7 @@ A choice that is not an untapped Human you control is refused. -/
   g.pending == .tapHumans caster && g.humansTappedThisWay == 0
 
 #guard
-  let g := step village (.may (.tap .humans))
+  let g := step village (.may (.tap .humans) (.sequence []))
   g.pending == .tapHumans caster && g.triggerSequenceRest.isNone
 
 #guard
@@ -160,7 +160,7 @@ has left is still tapped. An already tapped host stays tapped. -/
   let g0 := attach
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear"
-  let g := step g0 (.may (.tap .enchanted)) (some (pid g0 "Grasp"))
+  let g := step g0 (.may (.tap .enchanted) (.sequence [])) (some (pid g0 "Grasp"))
   (obj g "Bear").status.tapped && g.pending == g0.pending
 
 #guard
@@ -216,7 +216,7 @@ source to still be there. -/
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
-  let g := step g0 (.may (.tap .targetIfPresent)) (some (pid g0 "Wasp"))
+  let g := step g0 (.may (.tap .targetIfPresent) (.sequence [])) (some (pid g0 "Wasp"))
     #[Target.permanent (pid g0 "Hawk")]
   (obj g "Hawk").status.tapped && g.hasFlying (obj g "Hawk") &&
     g.pending == g0.pending
@@ -279,13 +279,13 @@ source to still be there. -/
 
 #guard TriggeredAbility.resolutionPhrase { resolution := .tap .humans } ==
   "tap any number of untapped Humans you control"
-#guard TriggeredAbility.resolutionPhrase { resolution := .may (.tap .humans) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution := .may (.tap .humans) (.sequence []) } ==
   "you may tap any number of untapped Humans you control"
 #guard TriggeredAbility.resolutionPhrase { resolution := .tap .enchanted } ==
   "tap enchanted creature"
 #guard TriggeredAbility.resolutionPhrase { resolution := .tap .targetIfPresent } ==
   "tap up to one target creature"
-#guard TriggeredAbility.resolutionPhrase { resolution := .may (.tap .enchanted) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution := .may (.tap .enchanted) (.sequence []) } ==
   "you may do it"
 #guard TriggeredAbility.resolutionPhrase { resolution := humansDraw } ==
   "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"

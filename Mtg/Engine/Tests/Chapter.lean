@@ -56,7 +56,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.addMana (.colored .red))).resolution == .addMana #[.colored .red]
 #guard (timing .searchBasicLandToHand).resolution ==
   .searchLibrary (.returnToHand .basicLand)
-#guard (timing .gainLandfallCreateElf).resolution == .gainLandfallCreateElf
+#guard (timing .gainLandfallCreateElf).resolution == .grant .landfallCreateElf .source
 #guard (timing (.elvesGetVigilance 1)).resolution ==
   .sequence [
     .pump 1 0 (.youControlSubtype "Elf"),
@@ -72,7 +72,9 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .grant .preventDamageWhileSource .target
 #guard (timing (.draw 2)).resolution == .draw 2
 #guard (timing (.searchBasicPlainsExileGainLife 2 2)).resolution ==
-  .sequence [.searchLibrary (.exileLinkedUpTo 2 "Plains"), .gainLife 2]
+  .sequence [
+    .searchLibrary (.exile (.basicUpTo "Plains" 2) .forLater .linked),
+    .gainLife 2]
 #guard (timing .returnLinkedExileToHand).resolution ==
   .returnToHand .linkedExile .owner
 #guard (timing .grantAttackPumpPerPlainsThisTurn).resolution == .attackPumpPerPlains
@@ -88,7 +90,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing .plusOneUpToOne).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard (timing (.gainControlOfUpToTwoCreaturesTotalMvAtMost 6)).resolution ==
-  .gainControlWhileSource
+  .gainControl .whileSourceRemains
 #guard (timing (.dealDamageToEachNonSubtypeAndOpponents 2 "Villain")).resolution ==
   .dealDamage 2 (.eachNonSubtypeAndOpponents "Villain")
 #guard (timing .dealXDamageToTargetOpponentGreatestArtifactMv).resolution ==
@@ -99,9 +101,12 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .createTokens .villain21menace 2 false
 #guard (timing (.spell { resolution := .createTokens .treasure 0 (qty := .perSubtype "Villain") })).resolution ==
   .createTokens .treasure 0 false (qty := .perSubtype "Villain")
-#guard (timing (.spell { resolution := .mutualFight .upToOne })).resolution == .creatureFights true
-#guard (timing (.spell { resolution := .createGalactus })).resolution == .createGalactus
-#guard (timing (.spell { resolution := .nextFreeRGCreature })).resolution == .nextFreeRGCreature
+#guard (timing (.spell { resolution := .mutualFight .upToOne })).resolution ==
+  .fight .announced .upToOneOther
+#guard (timing (.spell { resolution := .createGalactus })).resolution ==
+  .createTokens .treasure 1 false .galactus
+#guard (timing (.spell { resolution := .nextFreeRGCreature })).resolution ==
+  .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying
 #guard (timing (.spell { resolution := .plusOneOnEachYouControl })).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .youControl
 #guard (timing (.spell { resolution := .plusOneOnCreatureN 3 })).resolution ==
@@ -110,11 +115,11 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .loseLife 2 (who := .eachOpponent)
 #guard (timing (.spell { resolution := .destroyUpToOneNonland })).resolution == .destroy .target
 #guard (timing (.spell { resolution := .mayPutHeroMvOrDraw 3 })).resolution ==
-  .mayPutFromHandOrDraw 3 "Hero"
+  .may (.put (.creatureFromHand "Hero" 3)) (.draw 1)
 #guard (timing (.spell { resolution := .mayDrawPerArtifactOppsDraw })).resolution ==
-  .mayDrawPerType .artifact
+  .mayThen (.draw 0 (amount := .perControlled .artifact)) (.draw 1 (who := .eachOpponent))
 #guard (timing (.spell { resolution := .spellsCostLessThisTurn (.cardType .artifact) 1 })).resolution ==
-  .typeSpellsCostLess .artifact 1
+  .spellsCostLess (.cardType .artifact) 1
 #guard (timing (.spell {
     resolution := .sequence [.creaturesPump 1 1, .teamGain Keyword.vigilance]
   })).resolution ==

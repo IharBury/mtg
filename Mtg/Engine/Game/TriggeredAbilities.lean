@@ -929,6 +929,8 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
       | none => 0
     let (g, tok) := g.createToken controller alien11redHasteToken
     { g with notedCountThisWay := n, createdTokenThisWay := some tok.id }
+  | .galactus, _, _, _ =>
+    g.createNamedToken controller galactusToken
   | .sturdyShield, _, _, _ =>
     let (g, shield) := g.createToken controller sturdyShieldToken
     { g with createdTokenThisWay := some shield.id }
@@ -1017,6 +1019,10 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .targetWhileSource, .forLater, .none =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o .exile
+  | .basicUpTo subtype max, .forLater, .linked =>
+    g.beginLibrarySearch controller
+      (fun c => isBasicLandCard c && c.hasSubtype subtype)
+      s!"a basic {subtype} card" (.exileLinked sourceId) (count := max)
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.sacrifice`. Each printed combination keeps
@@ -1199,6 +1205,9 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
     g.beginMayCastInstantSorceryFromHand controller (wizards * 2)
   | .hand, .lastKnown, .withoutPaying, .none =>
     g.beginMayCastInstantSorceryFromHand controller (lastKnownPower.getD 0).toNat
+  | .nextRedOrGreenCreature, .unlimited, .withoutPaying, .none =>
+    { g with pendingFreeRGCreature := some controller }
+      |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
   | .impulse, .unlimited, .withoutPaying, .none =>
     if !g.grimaImpulseReady then g
     else
@@ -1405,6 +1414,11 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (n : Nat)
     | none => g
     | some (c, opp, sid) =>
       ({ g with palantirChoiceReady := none }).offerPalantirChoice c opp sid
+  | .you, .perControlled ty =>
+    let n := ((g.permanentsOf controller).filter (fun o => o.printed.hasType ty)).size
+    if n == 0 then g else g.draw controller n
+  | .eachOpponent, .fixed =>
+    g.forEachOpponent controller (fun g pid => g.draw pid n)
   | .you, .fixed =>
     g.draw controller n
   | .you, .forEachTappedHuman =>
@@ -1424,6 +1438,7 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (n : Nat)
       { g with skipTriggerSequenceRest := true }.logMsg
         "No mana was spent to cast that spell"
     else g.draw controller spent
+  | _, _ => g
 
 /-- Resolve `TriggerResolution.returnToHand`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -1615,6 +1630,8 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .keywords k, .youControlSubtype subtype =>
     g.forEachControlledCreature controller fun g o =>
       if g.hasSubtype o subtype then g.grantUntilEotLogged o k else g
+  | .landfallCreateElf, .source =>
+    g.gainLandfallCreateElf sourceId
   | .hexproofWhileSource, .target =>
     g.grantHexproofWhileSource controller sourceId targets ab.targetKind
   | .preventDamageWhileSource, .target =>
@@ -1638,6 +1655,35 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       | none => g.logMsg "The target is no longer legal"
     | _, none => g
     | _, _ => g.logMsg "The source is no longer in play"
+  | .announced, .upToOneOther =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent srcId), some (Target.permanent destId) =>
+      match g.findObject? srcId, g.findObject? destId with
+      | some src, some dest =>
+        if src.id != dest.id && src.isOnBattlefield && dest.isOnBattlefield &&
+            src.isCreature && dest.isCreature && src.controlledBy controller then
+          g.fightCreatures src dest
+        else g.logMsg "The target is no longer legal"
+      | _, _ => g.logMsg "The target is no longer legal"
+    | some (Target.permanent srcId), none =>
+      match g.findObject? srcId with
+      | some src => g.logMsg s!"{src.name} has nothing to fight"
+      | none => g.logMsg "The target is no longer legal"
+    | _, _ => g.logMsg "The target is no longer legal"
+  | .announced, .mutual =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent srcId), some (Target.permanent destId) =>
+      let srcOk := (g.legalCreatureYouControlTargets controller).contains
+        (Target.permanent srcId)
+      let destOk := (g.legalOppCreatureTargets controller).contains
+        (Target.permanent destId)
+      if srcOk && destOk then
+        g.fightCreatures (g.object! srcId) (g.object! destId)
+      else
+        let logIllegal (g : Game) (ok : Bool) (id : ObjectId) : Game :=
+          if ok then g else g.illegalAbilityTarget (Target.permanent id)
+        logIllegal (logIllegal g srcOk srcId) destOk destId
+    | _, _ => g.logMsg "The target is no longer legal"
   | .equipmentHost, .reflexive =>
     match g.equipmentAttachedHost with
     | none => g
@@ -1999,7 +2045,7 @@ def applySearchLibrary (g : Game) (controller : PlayerId)
   | .put .dragon .asPrinted .none =>
     g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
       .battlefieldFromHandOrLibrary (alsoHand := true)
-  | .exileLinkedUpTo max subtype =>
+  | .exile (.basicUpTo subtype max) .forLater .linked =>
     g.beginLibrarySearch controller
       (fun c => isBasicLandCard c && c.hasSubtype subtype)
       s!"a basic {subtype} card" (.exileLinked sourceId) (count := max)
@@ -2258,11 +2304,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyGainLife controller ab sourceId targets n amount sequencedCardPower
   | .exile what how note =>
     g.applyExile controller ab sourceId targets what how note
-  | .put what how note | .may (.put what how note) =>
+  | .may (.put (.creatureFromHand subtype maxMv) _ _) (.draw _ _ .fixed) =>
+    g.mayPutHeroOrDraw controller maxMv subtype
+  | .put what how note | .may (.put what how note) _ =>
     g.applyPut controller ab sourceId targets what how note
   | .removeCounters what who =>
     g.applyRemoveCounters sourceId what who
-  | .tap who | .may (.tap who) =>
+  | .tap who | .may (.tap who) _ =>
     g.applyTap controller ab sourceId targets who
   | .untap who =>
     g.applyUntap controller ab sourceId targets who
@@ -2302,11 +2350,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => false)
     g.beginFraChoice controller (.mayRevealToHand ids eligible false)
       s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
-  | .gainControlOppUntilEot =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let g := g.giveControlUntilEot o controller
-      let g := g.applyPermanentAction (g.object! o.id) .untap
-      g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.haste))
+  | .gainControl how =>
+    match how with
+    | .untilEndOfTurn =>
+      g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+        let g := g.giveControlUntilEot o controller
+        let g := g.applyPermanentAction (g.object! o.id) .untap
+        g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.haste))
+    | .whileSourceRemains =>
+      g.gainControlWhileSource controller sourceId targets
   | .honeEachEquipment =>
     let eqs :=
       g.battlefield.filter (fun o => o.controlledBy controller && o.printed.isEquipment)
@@ -2376,7 +2428,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               cardPower := sequencedCardPower
               alternatives := rs.toArray } }.logMsg
           (triggerOrLog (g.player controller).name rs)
-  | .may (.sacrifice .you .another _) =>
+  | .may (.sacrifice .you .another _) _ =>
     g.applySacrifice controller ab sourceId targets .you .another .none
   | .markRecentTokensAttacking =>
     let dest := some g.defendingPlayer
@@ -2412,7 +2464,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         lastKnownPower lastKnownToughness sourceName sequencedCardPower modes how
   | .returnToHand what whose note =>
     g.applyReturnToHand controller ab sourceId targets what whose note
-  | .may (.discard n (what := .hand)) =>
+  | .may (.discard n (what := .hand)) _ =>
     g.applyDiscard controller sourceId targets n .you .hand .now
   | .becomeBear =>
     match targets[0]? with
@@ -2465,9 +2517,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
   | .loseLife n who amount =>
     g.applyLoseLife controller ab sourceId targets n who amount
-  | .may (.draw _ .opponentHasYou _) =>
+  | .may (.draw _ .opponentHasYou _) _ =>
     g.applyTriggerDraw controller 1 .opponentHasYou .fixed
-  | .may (.sequence [.draw _ _ .equalToManaSpent, .discard n (when := .ifManaSpent)]) =>
+  | .may (.sequence [.draw _ _ .equalToManaSpent, .discard n (when := .ifManaSpent)]) _ =>
     -- X is the mana spent to cast the triggering spell.
     let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
     if spent == 0 then g.logMsg "No mana was spent to cast that spell"
@@ -2484,58 +2536,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
-  | .gainLandfallCreateElf =>
-    g.gainLandfallCreateElf sourceId
-  | .exileLinkedUpTo max subtype =>
-    g.applySearchLibrary controller sourceId (.exileLinkedUpTo max subtype)
   | .attackPumpPerPlains =>
     g.attackPumpPerPlains controller
-  | .gainControlWhileSource =>
-    g.gainControlWhileSource controller sourceId targets
-  | .creatureFights upToOne =>
-    match targets[0]?, targets[1]? with
-    | some (Target.permanent srcId), some (Target.permanent destId) =>
-      if upToOne then
-        match g.findObject? srcId, g.findObject? destId with
-        | some src, some dest =>
-          if src.id != dest.id && src.isOnBattlefield && dest.isOnBattlefield &&
-              src.isCreature && dest.isCreature && src.controlledBy controller then
-            g.fightCreatures src dest
-          else g.logMsg "The target is no longer legal"
-        | _, _ => g.logMsg "The target is no longer legal"
-      else
-        let srcOk := (g.legalCreatureYouControlTargets controller).contains
-          (Target.permanent srcId)
-        let destOk := (g.legalOppCreatureTargets controller).contains
-          (Target.permanent destId)
-        if srcOk && destOk then
-          g.fightCreatures (g.object! srcId) (g.object! destId)
-        else
-          let logIllegal (g : Game) (ok : Bool) (id : ObjectId) : Game :=
-            if ok then g else g.illegalAbilityTarget (Target.permanent id)
-          logIllegal (logIllegal g srcOk srcId) destOk destId
-    | some (Target.permanent srcId), none =>
-      if upToOne then
-        match g.findObject? srcId with
-        | some src => g.logMsg s!"{src.name} has nothing to fight"
-        | none => g.logMsg "The target is no longer legal"
-      else g.logMsg "The target is no longer legal"
-    | _, _ => g.logMsg "The target is no longer legal"
-  | .mayPutFromHandOrDraw maxMv subtype =>
-    g.mayPutHeroOrDraw controller maxMv subtype
-  | .mayDrawPerType ty =>
-    g.mayDrawPerArtifact controller ty
-  | .nextFreeRGCreature =>
-    { g with pendingFreeRGCreature := some controller }
-      |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
-  | .typeSpellsCostLess ty n =>
-    g.grantTypeCostLessThisTurn controller ty n
-  | .supertypeSpellsCostLess s n =>
-    g.grantSupertypeCostLessThisTurn controller s n
-  | .createGalactus =>
-    g.createNamedToken controller galactusToken
-  | .doesNothing =>
-    g.logMsg "The effect does nothing"
+  | .spellsCostLess which n =>
+    match which with
+    | .cardType ty => g.grantTypeCostLessThisTurn controller ty n
+    | .supertype s => g.grantSupertypeCostLessThisTurn controller s n
   | .investigate =>
     let (g, _) := g.createToken controller clueToken
     g.logMsg s!"{(g.player controller).name} investigates"
@@ -2633,6 +2639,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyModeledTrigger controller (.onCasting (Effect.ofTrigger (.casting e))) sourceId targets sourceName lastKnownPower
   | .resource e =>
     g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower
+  | .mayThen (.draw 0 _ (.perControlled ty)) (.draw 1 .eachOpponent _) =>
+    g.mayDrawPerArtifact controller ty
   | .mayThen optional conditional =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
     let g := { g with mayThenDrop := cond.length, mayThenConditional := some conditional }
@@ -2719,7 +2727,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.putReflexiveTrigger controller sourceId
         { targeting := .of .playerOrCreature, resolution := .fra (.damageAny n)
           phrase := s!"This deals {n} damage to any target" }
-  | .may _ =>
+  | .may _ _ =>
     g.logMsg s!"{(g.player controller).name}'s optional action doesn't resolve")
   | r =>
     g.applyUnifiedAbility controller { ab.effect with resolution := r }

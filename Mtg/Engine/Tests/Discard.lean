@@ -133,7 +133,7 @@ the source. Declining is the choice, not an immediate discard. -/
     | _ => false
 
 #guard
-  let g := step afterDraw (.may (.discard (what := .hand)))
+  let g := step afterDraw (.may (.discard (what := .hand)) (.sequence []))
   handSize g caster == handSize afterDraw caster &&
     match g.pending with
     | .fraChoice p (.mayDiscardHandBalin none) => p == caster
@@ -160,14 +160,14 @@ it leaves a discarded-land note from an earlier step alone. -/
 /- You may draw X, then discard two, only when mana was spent. -/
 #guard
   let g := step (withSpent 4)
-    (.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]))
+    (.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]) (.sequence []))
   match g.pending with
   | .fraChoice p (.mayDrawThenDiscard 4 2) => p == caster
   | _ => false
 
 #guard
   let g := step (withSpent 0)
-    (.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]))
+    (.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]) (.sequence []))
   g.pending == .none && logContains g "No mana was spent to cast that spell"
 
 /- A combination that is not printed discards nothing. -/
@@ -198,7 +198,7 @@ it leaves a discarded-land note from an earlier step alone. -/
   "target opponent discards 2 cards"
 #guard TriggeredAbility.resolutionPhrase { resolution := .discard (what := .hand) } ==
   "discard your hand"
-#guard TriggeredAbility.resolutionPhrase { resolution := .may (.discard (what := .hand)) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution := .may (.discard (what := .hand)) (.sequence []) } ==
   "you may discard your hand"
 #guard TriggeredAbility.resolutionPhrase { resolution := .discard 2 (when := .ifManaSpent) } ==
   "discard 2 cards"

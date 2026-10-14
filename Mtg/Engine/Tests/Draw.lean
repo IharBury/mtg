@@ -106,7 +106,7 @@ the rest of the sequence. -/
   | _ => false
 
 #guard
-  let g := drawStep afterDraw (.may (.draw 1 (who := .opponentHasYou)))
+  let g := drawStep afterDraw (.may (.draw 1 (who := .opponentHasYou)) (.sequence []))
   g.pending == .none && handSize g caster == handSize afterDraw caster
 
 /- You may draw X and discard two when mana was spent. -/

@@ -734,7 +734,7 @@ namespace CardDef
 #guard TriggeredAbility.onCastNoncreatureMayDrawXDiscard2 ==
   .triggered .youCastNoncreature (Effect.ofTrigger (.may (.drawXDiscard 2)))
 #guard (TriggeredAbility.onCastNoncreatureMayDrawXDiscard2).resolution ==
-  .may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)])
+  .may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]) (.sequence [])
 #guard TriggeredAbility.toNotation .onCastNoncreatureMayDrawXDiscard2 ==
   "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
 #guard TriggeredAbility.onEnterEachOpponentDiscards ==
@@ -821,7 +821,7 @@ namespace CardDef
 #guard TriggeredAbility.onAttackTapHumansDraw ==
   .triggered .attack (Effect.ofTrigger .tapHumansDraw)
 #guard TriggeredAbility.resolution .onAttackTapHumansDraw ==
-  .sequence [.may (.tap .humans), .draw 0 (amount := .forEachTappedHuman)]
+  .sequence [.may (.tap .humans) (.sequence []), .draw 0 (amount := .forEachTappedHuman)]
 #guard TriggeredAbility.toNotation .onAttackTapHumansDraw ==
   "Whenever this creature attacks, you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way."
 #guard TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear" ==
@@ -933,7 +933,7 @@ namespace CardDef
 #guard TriggeredAbility.onCombatMayPutArtifactAttachEquipment ==
   .triggered .yourBeginCombat (Effect.ofTrigger .mayPutArtifactAttachEquipment)
 #guard TriggeredAbility.resolution .onCombatMayPutArtifactAttachEquipment ==
-  .sequence [.may (.put .artifactFromHand (note := .forAttach)),
+  .sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []),
     .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]
 #guard TriggeredAbility.onCastCascade == .triggered .cascade (Effect.ofTrigger .cascade)
 #guard TriggeredAbility.onEnterBolgMaySacrifice ==
@@ -1555,7 +1555,7 @@ end CardDef
     .amass 0 (amount := .notedPower) (who := .notedController),
     .«if» .youControlledDestroyed (.draw 1)]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
-  .sequence [.may (.discard (what := .hand)), .draw 0 (amount := .discardedHandCount),
+  .sequence [.may (.discard (what := .hand)) (.sequence []), .draw 0 (amount := .discardedHandCount),
     .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
   .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear,
@@ -1568,7 +1568,7 @@ end CardDef
   .sequence [.tap .enchanted, .removeCounters .all .enchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
   .sequence [.putCounters (.ofKind .influence) .source, .scry 2,
-    .may (.draw 1 (who := .opponentHasYou))]
+    .may (.draw 1 (who := .opponentHasYou)) (.sequence [])]
 #guard TriggeredAbility.resolution .onCombatDamageToYouSacRingTempts ==
   .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts]
 #guard TriggeredAbility.resolution (.onCreatureYouControlEntersScryAndPlan 2) ==
@@ -1583,7 +1583,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onFourthPlanDividedDamage ==
   .sequence [.sacrifice .you .plan .forReflexive, .queuePlanDividedDamage 7]
 #guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
-  .sequence [.draw 1, .may (.put .landFromHand (how := .tapped))]
+  .sequence [.draw 1, .may (.put .landFromHand (how := .tapped)) (.sequence [])]
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
   .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==

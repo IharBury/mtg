@@ -327,7 +327,7 @@ do not. A missing source does not search. -/
     .searchLibrary (.put .dragon .tapped),
     .searchLibrary (.put .basicLandOnTop .tapped),
     .searchLibrary (.returnToHand .basicLand .owner),
-    .searchLibrary (.may (.put .basicLandOnTop))]
+    .searchLibrary (.may (.put .basicLandOnTop) (.sequence []))]
   crossed.all fun r =>
     let g := step g0 r
     (g.player caster).library == (g0.player caster).library &&
