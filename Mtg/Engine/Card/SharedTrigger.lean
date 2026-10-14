@@ -726,7 +726,7 @@ inductive SharedTrigger where
   `.sequence [.dealDamage 1 .target .fixed .markedPermanent, .amass 1 "Orc"]`. -/
   | deal1ThenAmassOrcs
   /-- Untap attackers and take an extra combat. `n` is Oracle total power.
-  Resolves as `.sequence [.untapAttackingCreatures, .additionalCombatPhase]`. -/
+  Resolves as `.sequence [.untap .attackingCreatures, .additionalCombatPhase]`. -/
   | untapAttackersExtraCombat (n : Int)
   /-- Delayed Eagles Bird Soldiers. -/
   | eaglesCreateBirds

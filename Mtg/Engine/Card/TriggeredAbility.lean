@@ -995,7 +995,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
   | .sequence [.dealDamage 1 .target .fixed .markedPermanent, .amass 1 "Orc" .fixed false _] =>
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
-  | .sequence [.untapAttackingCreatures, .additionalCombatPhase] =>
+  | .sequence [.untap .attackingCreatures, .additionalCombatPhase] =>
     "untap all attacking creatures. After this phase, there is an additional combat phase"
   | .sequence [.destroy .target .forAmass, .amass _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw 1)] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
@@ -1459,8 +1459,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "those tokens enter tapped and attacking"
   | .«if» .equippedLegendaryYouControl .markRecentTokensAttacking =>
     "those tokens are tapped and attacking if that creature is legendary"
-  | .untapAttackingCreatures =>
-    "untap all attacking creatures"
   | .additionalCombatPhase =>
     "after this phase, there is an additional combat phase"
   | .«if» .youControlledDestroyed (.draw 1) =>
@@ -1508,7 +1506,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .tap .target =>
     s!"tap {noun}"
   | .untap who =>
-    s!"untap {affectedNoun who noun}"
+    match who with
+    | .attackingCreatures => "untap all attacking creatures"
+    | .target => s!"untap {affectedNoun .target noun}"
+    | .source => s!"untap {affectedNoun .source noun}"
+    | .enchanted => s!"untap {affectedNoun .enchanted noun}"
+    | .targetWhileSource => s!"untap {affectedNoun .targetWhileSource noun}"
   | .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on it if it's a creature"
   | .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent) =>
