@@ -654,6 +654,14 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
             | none => false
           if marked then { g with permanentDealtDamageThisWay := some oid } else g
       | _ => g.logMsg "The target is no longer legal")
+  | .targetOpponent, .greatestArtifactMv, _ =>
+    let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
+    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
+      g.dealDamageToPlayer pid x)
+  | .eachNonSubtypeAndOpponents subtype, .fixed, _ =>
+    let g :=
+      g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
+    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
   | .targetOpponent, .fixed, _ =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.dealDamageToPlayer pid n)
@@ -817,9 +825,11 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some src => if src.isOnBattlefield then g.addPlusOnePlusOneTo src n else g
     | none => g
   | .ofKind .plusOnePlusOne n, .permanent false =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.addPlusOnePlusOneTo o n)
-      "The target is no longer legal"
+    if targets.isEmpty && ab.allowsZeroTargets then g
+    else
+      g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+        g.addPlusOnePlusOneTo o n)
+        "The target is no longer legal"
   | .ofKind .indestructible n, .permanent false =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       g.addIndestructibleCounter o n)
@@ -1241,6 +1251,10 @@ def applyDiscard (g : Game) (controller : PlayerId)
     g.beginDiscardCards #[controller] n
   | .each, .cards, .now =>
     g.beginDiscardCards (g.apnapOrder.filter (· != controller)) n
+  | .target, .chosenNonland, .now =>
+    g.withLegalKindPlayer controller .opponent targets
+      (fun g pid => g.discardNonlandFrom controller pid)
+      sourceId (some "The target is no longer legal")
   | .target, .cards, .now =>
     g.withLegalKindTarget controller .opponent targets (fun g tgt =>
       match tgt with
@@ -1431,6 +1445,8 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
       else g.logMsg s!"{o.name} is no longer in the graveyard"
     | none => g.logMsg "The ability's source is no longer in the graveyard"
+  | .linkedExile, .owner, .none =>
+    g.returnLinkedExileToHand sourceId
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.put`. Each printed combination keeps
@@ -1445,6 +1461,20 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match sourceId.bind g.findObject? with
     | some src => g.returnLinkedExile src
     | none => g
+  | .creatureMvAtMost _, _, _ =>
+    g.withLegalKindTarget controller ab.targetKind targets
+      (fun g t =>
+        match t with
+        | Target.card oid =>
+          match g.findObject? oid with
+          | none => g.logMsg "The target is no longer in the graveyard"
+          | some o =>
+            let name := o.name
+            let (g, newId) := g.putOntoBattlefield oid controller
+            g.logMsg s!"{name} returns to the battlefield"
+              |>.afterPermanentEnters (g.object! newId)
+        | _ => g.logMsg "The target is no longer legal")
+      sourceId (some "The target is no longer legal")
   | .nonlandMvAtMost _, _, _ =>
     g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
       match t with
@@ -1551,6 +1581,10 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .keywords k, .targetWhileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o (.grantKeywords k)
+  | .hexproofWhileSource, .target =>
+    g.grantHexproofWhileSource controller sourceId targets ab.targetKind
+  | .preventDamageWhileSource, .target =>
+    g.preventDamageWhileSource controller sourceId targets ab.targetKind
   | _, _ => g
 
 /-- Resolve `TriggerResolution.fight`. Each printed combination keeps
@@ -2412,8 +2446,20 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
-  | .chapter _ =>
-    g.applyChapterEffect controller ab.effect sourceId targets
+  | .gainLandfallCreateElf =>
+    g.gainLandfallCreateElf sourceId
+  | .elvesGetVigilance power =>
+    g.elvesGetVigilance controller power
+  | .searchBasicPlains max life =>
+    g.resolveSearchBasicPlainsExile controller sourceId max life
+  | .attackPumpPerPlains =>
+    g.attackPumpPerPlains controller
+  | .treasureThenDragon =>
+    g.treasureThenDragon controller sourceId
+  | .gainControlWhileSource =>
+    g.gainControlWhileSource controller sourceId targets
+  | .spell r =>
+    g.applyEffect controller { ab.effect with resolution := Resolution.ofSpell r } targets
   | .investigate =>
     let (g, _) := g.createToken controller clueToken
     g.logMsg s!"{(g.player controller).name} investigates"

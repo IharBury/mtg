@@ -866,6 +866,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"deals {n} damage to {noun}"
     | .target, _, _ =>
       s!"it deals {n} damage to {noun}"
+    | .targetOpponent, .greatestArtifactMv, _ =>
+      s!"this Saga deals X damage to {noun}, where X is the greatest mana value among artifacts you control"
+    | .eachNonSubtypeAndOpponents subtype, .fixed, _ =>
+      s!"this Saga deals {n} damage to each non-{subtype} creature and each opponent"
     | .targetOpponent, _, _ =>
       s!"this deals {n} damage to {noun}"
     | .permanent, _, _ =>
@@ -914,6 +918,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       else s!"each opponent discards {cardPhrase n}"
     | .target, .cards, .now =>
       s!"{noun} discards {cardPhrase n}"
+    | .target, .chosenNonland, .now =>
+      s!"{noun} reveals their hand. You choose a nonland card from it. That player discards that card"
     | _, _, _ =>
       "discard cards"
   | .mayThen (.discard 1) (.draw n) =>
@@ -1110,6 +1116,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"destroy {noun}. They create a Treasure token"
   | .sequence [.may (.put .artifactFromHand _ .forAttach), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
+  | .sequence [.loseLife n .targetOpponent .fixed, .gainLife m .fixed] =>
+    s!"target opponent loses {n} life and you gain {m} life"
   | .sequence _ =>
     "resolve each step"
   | .gainLife n amount =>
@@ -1189,6 +1197,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "put that card on top of your library"
     | .dragon, _, _ =>
       "put it onto the battlefield"
+    | .creatureMvAtMost mv, _, _ =>
+      s!"return target creature card with mana value {mv} or less from your graveyard to the battlefield"
     | _, _, _ =>
       "put it onto the battlefield"
   | .removeCounters what who =>
@@ -1337,6 +1347,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "put it into your hand"
     | .basicLand, .you, .none =>
       "put it into your hand"
+    | .linkedExile, .owner, .none =>
+      "put a card exiled with this Saga into its owner's hand"
     | _, _, _ =>
       "return it to a hand"
   | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false] =>
@@ -1367,6 +1379,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"enchanted creature gains {k.joinedAnd} until end of turn"
     | .keywords k, .targetWhileSource =>
       s!"that creature gains {k.joinedAnd} until end of turn"
+    | .hexproofWhileSource, .target =>
+      s!"{noun} gains hexproof for as long as this Saga remains on the battlefield"
+    | .preventDamageWhileSource, _ =>
+      "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield"
     | _, _ =>
       "grant"
   | .revealLibrary how thenDo who =>
@@ -1411,7 +1427,20 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "the Ring tempts you"
   | .mayThen (.discard (what := .hand)) (.draw n) =>
     s!"you may discard your hand. If you do, draw {cardPhrase n}"
-  | .chapter e => (Effect.ofChapter e).phrase
+  | .gainLandfallCreateElf =>
+    "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
+  | .elvesGetVigilance p =>
+    s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn"
+  | .searchBasicPlains max life =>
+    s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life"
+  | .attackPumpPerPlains =>
+    "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
+  | .treasureThenDragon =>
+    "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
+  | .gainControlWhileSource =>
+    s!"gain control of {noun} for as long as this Saga remains on the battlefield"
+  | .spell _ =>
+    "resolve that spell"
   | .investigate => "investigate"
   | .connive .source => "it connives"
   | .connive (.target _) => s!"{noun} connives"
@@ -1750,6 +1779,8 @@ def toNotation (ab : TriggeredAbility) : String :=
   | .triggered w e opts =>
     if !opts.printed.isEmpty then opts.printed else
     match w, e.asTrigger?, opts with
+    | .sagaChapter, some (.chapter _ _), _ =>
+      s!"When a lore counter is put on this Saga, {e.phrase}."
     | .enter, some .bolgMaySacrifice, _ =>
       leadInSentence ab "When Bolg enters"
     | .combatDamageToPlayer, some .createTreasuresEqualDamagedPlayerArtifacts, _ =>

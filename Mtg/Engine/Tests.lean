@@ -46,6 +46,7 @@ import Mtg.Engine.Tests.PutOnLibrary
 import Mtg.Engine.Tests.SetBasePT
 import Mtg.Engine.Tests.Untap
 import Mtg.Engine.Tests.Modes
+import Mtg.Engine.Tests.Chapter
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -117,4 +118,5 @@ keep working.
 - `Untap`: the announced permanent, the source, the enchanted creature,
   the target while the source remains, and each attacking creature
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
+- `Chapter`: printed Saga chapters resolved by the other trigger constructors
 -/

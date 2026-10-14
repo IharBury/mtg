@@ -789,7 +789,7 @@ inductive SharedTrigger where
   /-- Opponents sac damagers; the Ring tempts you. Resolves as
   `.sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts]`. -/
   | sacDamagersRingTempts
-  /-- A Saga chapter. -/
+  /-- A Saga chapter. Resolves as `TriggeredAbility.chapterTiming`. -/
   | chapter (n : Nat) (e : ChapterResolution)
   /-- Draw if you attacked with or a subtype entered. -/
   | drawIfAttackedOrEnteredSubtype (subtype : String)

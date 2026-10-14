@@ -156,6 +156,8 @@ inductive TriggerDamageWho where
   | target
   /-- The announced opponent. -/
   | targetOpponent
+  /-- Each creature that is not this subtype, and each opponent. -/
+  | eachNonSubtypeAndOpponents (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.dealDamage` reads the amount. The `n` argument
@@ -169,6 +171,8 @@ inductive TriggerDamageAmount where
   | subtypeCount (subtype : String)
   /-- How many cards an earlier step discarded from the controller's hand. -/
   | discardedHand
+  /-- The greatest mana value among artifacts the controller controls. -/
+  | greatestArtifactMv
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
@@ -584,6 +588,9 @@ inductive TriggerReturnWhat where
   /-- A basic land card `searchLibrary` found. Outside that resolution,
   `.returnToHand .basicLand` does nothing. -/
   | basicLand
+  /-- A card the source exiled, returned to its owner's hand.
+  A missing source, or nothing exiled, returns nothing. -/
+  | linkedExile
 deriving Repr, Inhabited, BEq
 
 /-- Whose hand `TriggerResolution.returnToHand` returns those cards to. -/
@@ -633,6 +640,8 @@ inductive TriggerPutWhat where
   /-- A Dragon card `searchLibrary` found in the hand and/or library.
   Outside that resolution, `.put .dragon` does nothing. -/
   | dragon
+  /-- The announced creature card. Its mana value is at most `mv`. -/
+  | creatureMvAtMost (mv : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- How `TriggerResolution.put` puts those cards onto the battlefield. -/
@@ -728,6 +737,8 @@ inductive TriggerDiscardWhat where
   /-- The controller's hand. The number discarded is noted for a later step.
   Declining leaves the note empty. -/
   | hand
+  /-- A nonland card from the announced player's revealed hand. -/
+  | chosenNonland
 deriving Repr, Inhabited, BEq
 
 /-- When `TriggerResolution.discard` discards those cards. -/
@@ -765,6 +776,11 @@ inductive TriggerGrantWhat where
   | protectionEverything
   /-- These keywords until end of turn. -/
   | keywords (k : Keywords)
+  /-- Hexproof for as long as the source remains on the battlefield. -/
+  | hexproofWhileSource
+  /-- Prevent all damage this permanent would deal for as long as the
+  source remains. Choosing none prevents nothing. -/
+  | preventDamageWhileSource
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.grant` grants that to. -/
@@ -1043,7 +1059,12 @@ inductive TriggerResolution where
   Damage to each opponent equal to the hand discarded by an earlier step is
   `.dealDamage 0 .eachOpponent .discardedHand`.
   `n` damage to the announced opponent is `.dealDamage n .targetOpponent`.
-  `n` damage to the announced target is `.dealDamage n .target`. -/
+  `n` damage to the announced target is `.dealDamage n .target`.
+  `n` damage to each creature that is not `subtype`, and to each opponent, is
+  `.dealDamage n (.eachNonSubtypeAndOpponents subtype)`.
+  Damage equal to the greatest mana value among artifacts you control, to
+  the announced opponent, is
+  `.dealDamage 0 .targetOpponent .greatestArtifactMv`. -/
   | dealDamage (n : Nat) (who : TriggerDamageWho)
       (amount : TriggerDamageAmount := .fixed)
       (note : TriggerDamageNote := .none)
@@ -1087,7 +1108,9 @@ inductive TriggerResolution where
   Optional as `.may (.discard (what := .hand))`. Declining leaves the note
   empty so the following draw and damage steps do nothing.
   `n` cards when mana was spent to cast the triggering spell is
-  `.discard n (when := .ifManaSpent)`. -/
+  `.discard n (when := .ifManaSpent)`.
+  The announced opponent reveals their hand and discards a nonland you
+  choose with `.discard 1 (who := .target) (what := .chosenNonland)`. -/
   | discard (n : Nat := 1) (who : TriggerDiscardWho := .you)
       (what : TriggerDiscardWhat := .cards)
       (when : TriggerDiscardWhen := .now)
@@ -1173,7 +1196,9 @@ inductive TriggerResolution where
   The card revealed until a creature, when it does not enter, is
   `.returnToHand .revealed`. Outside that resolution, it does nothing.
   A basic land found by searching is `.returnToHand .basicLand`.
-  Outside `searchLibrary`, it does nothing. -/
+  Outside `searchLibrary`, it does nothing.
+  A card the source exiled, to its owner's hand, is
+  `.returnToHand .linkedExile .owner`. -/
   | returnToHand (what : TriggerReturnWhat) (whose : TriggerReturnWhose := .you)
       (note : TriggerReturnNote := .none)
   /-- Put reflexive ability `followup` on the stack (“When you do”). -/
@@ -1392,8 +1417,10 @@ You may put a land card from your hand onto the battlefield tapped is
   `.put .randomCreature`. The card revealed until a Saga, or the cheap
   creature, is `.put .revealed`. Outside those resolutions, both do nothing.
   A Forest found by searching is `.put .forest`. A basic land put on top
-  after that search is `.put .basicLandOnTop`. A Dragon found in the hand
-  and/or library is `.put .dragon`. Outside `searchLibrary`, those do nothing. -/
+  after that search is `.put .basicLandOnTop`.   A Dragon found in the hand
+  and/or library is `.put .dragon`. Outside `searchLibrary`, those do nothing.
+  The announced creature card with mana value at most `n` is
+  `.put (.creatureMvAtMost n)`. -/
   | put (what : TriggerPutWhat) (how : TriggerPutHow := .asPrinted)
       (note : TriggerPutNote := .none)
   /-- Remove counters. `what` says which, and `who` says from whom.
@@ -1583,6 +1610,11 @@ You may put a land card from your hand onto the battlefield tapped is
   A source that was not cast does nothing.
   The announced permanent gains these keywords until end of turn with
   `.grant (.keywords k) .target`.
+  The announced permanent gains hexproof while the source remains with
+  `.grant .hexproofWhileSource .target`. A missing source grants nothing.
+  Damage the announced permanent would deal is prevented while the source
+  remains with `.grant .preventDamageWhileSource .target`. Choosing none
+  prevents nothing.
   Any other combination does nothing. -/
   | grant (what : TriggerGrantWhat) (who : TriggerGrantWho)
   /-- Look at cards from the top of a library, as `how` and `who` say, then
@@ -1627,8 +1659,25 @@ You may put a land card from your hand onto the battlefield tapped is
   | copySelfNonlegendary
   /-- The Ring tempts you. -/
   | ringTempts
-  /-- Resolve a printed Saga chapter. -/
-  | chapter (effect : ChapterResolution)
+  /-- This Saga gains landfall: create a 1/1 green Elf.
+  A source that has left the battlefield gains nothing. -/
+  | gainLandfallCreateElf
+  /-- Elves you control get +P/+0 and vigilance until end of turn. -/
+  | elvesGetVigilance (power : Int)
+  /-- Search for up to `max` basic Plains, exile them with the source,
+  shuffle, and gain `life`. -/
+  | searchBasicPlains (max life : Nat)
+  /-- Whenever you attack this turn, a creature you control gets +1/+1
+  for each Plains you control. -/
+  | attackPumpPerPlains
+  /-- Create a Treasure. Then if you control four or more, sacrifice the
+  source. If you do, create a 6/6 red Dragon with flying. -/
+  | treasureThenDragon
+  /-- Gain control of the announced creatures for as long as the source
+  remains. A source that has left changes nothing. -/
+  | gainControlWhileSource
+  /-- Resolve a spell-shaped effect. Targeting stays on the ability. -/
+  | spell (r : SpellResolution)
   /-- Investigate (create a Clue). -/
   | investigate
   /-- Connive (CR 701.48). The source is `.connive`. A target is
@@ -1902,6 +1951,70 @@ structure TriggerTiming where
   /-- “This or another {subtype} you control enters”. -/
   thisOrAnotherSubtype : Option String := none
 deriving Repr, Inhabited, BEq
+
+/-- Targeting and resolution for a printed Saga chapter (CR 714.3).
+The chapter is still stored as `ChapterResolution`. What resolves is one
+of these `TriggerResolution` constructors. -/
+def chapterTiming (e : ChapterResolution) : TriggerTiming :=
+  match e with
+  | .dealDamageToOppCreature n =>
+    { targeting := .of .oppCreature, resolution := .dealDamage n .target }
+  | .destroyOppArtifact =>
+    { targeting := .of .oppArtifact, resolution := .destroy .target }
+  | .addMana mana =>
+    { resolution := .addMana #[mana] }
+  | .searchBasicLandToHand =>
+    { resolution := .searchLibrary (.returnToHand .basicLand) }
+  | .gainLandfallCreateElf =>
+    { resolution := .gainLandfallCreateElf }
+  | .elvesGetVigilance p =>
+    { resolution := .elvesGetVigilance p }
+  | .opponentDiscardsNonland =>
+    { targeting := .of .opponent
+      resolution := .discard 1 (who := .target) (what := .chosenNonland) }
+  | .amass n =>
+    { resolution := .amass n }
+  | .opponentLosesYouGain n =>
+    { targeting := .of .opponent
+      resolution := .sequence [.loseLife n (who := .targetOpponent), .gainLife n] }
+  | .grantHexproofWhileRemains =>
+    { targeting := .of .creatureYouControl
+      resolution := .grant .hexproofWhileSource .target }
+  | .preventDamageWhileRemains =>
+    { targeting := .of .creature, allowsZeroTargets := true
+      resolution := .grant .preventDamageWhileSource .target }
+  | .draw n =>
+    { resolution := .draw n }
+  | .searchBasicPlainsExileGainLife max life =>
+    { resolution := .searchBasicPlains max life }
+  | .returnLinkedExileToHand =>
+    { resolution := .returnToHand .linkedExile .owner }
+  | .grantAttackPumpPerPlainsThisTurn =>
+    { resolution := .attackPumpPerPlains }
+  | .blinkUntilEndStep =>
+    { targeting := .of .creatureOrLandYouControl, allowsZeroTargets := true
+      resolution := .exile .target .nextEndStep }
+  | .treasureThenDragonIfFour =>
+    { resolution := .treasureThenDragon }
+  | .recruit =>
+    { resolution := .recruit }
+  | .returnCreatureFromGyMvAtMost n =>
+    { targeting := .of (.creatureCardInYourGraveyardMvAtMost n)
+      resolution := .put (.creatureMvAtMost n) }
+  | .plusOneUpToOne =>
+    { targeting := .of .creature, allowsZeroTargets := true
+      resolution := .putCounters (.ofKind .plusOnePlusOne) .permanent }
+  | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
+    { targeting := .of (.upToTwoCreaturesTotalMvAtMost n), allowsZeroTargets := true
+      resolution := .gainControlWhileSource }
+  | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
+    { resolution := .dealDamage n (.eachNonSubtypeAndOpponents subtype) }
+  | .dealXDamageToTargetOpponentGreatestArtifactMv =>
+    { targeting := .of .opponent
+      resolution := .dealDamage 0 .targetOpponent .greatestArtifactMv }
+  | .spell s =>
+    { targeting := s.targeting, allowsZeroTargets := s.allowsZeroTargets
+      resolution := .spell s.resolution }
 
 end TriggeredAbility
 
@@ -2343,7 +2456,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .sacDamagersRingTempts =>
     { resolution := .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts] }
   | .chapter _n e =>
-    { resolution := .chapter e }
+    TriggeredAbility.chapterTiming e
   | .drawIfAttackedOrEnteredSubtype subtype =>
     { resolution := .«if» (.attackedOrEntered subtype) (.draw 1) }
   | .othersOfSubtypeGetEqualSourceToughness subtype =>
