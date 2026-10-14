@@ -57,7 +57,10 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing .searchBasicLandToHand).resolution ==
   .searchLibrary (.returnToHand .basicLand)
 #guard (timing .gainLandfallCreateElf).resolution == .gainLandfallCreateElf
-#guard (timing (.elvesGetVigilance 1)).resolution == .elvesGetVigilance 1
+#guard (timing (.elvesGetVigilance 1)).resolution ==
+  .sequence [
+    .pump 1 0 (.youControlSubtype "Elf"),
+    .grant (.keywords Keyword.vigilance) (.youControlSubtype "Elf")]
 #guard (timing .opponentDiscardsNonland).resolution ==
   .discard 1 (who := .target) (what := .chosenNonland)
 #guard (timing (.amass 1)).resolution == .amass 1
@@ -69,12 +72,16 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .grant .preventDamageWhileSource .target
 #guard (timing (.draw 2)).resolution == .draw 2
 #guard (timing (.searchBasicPlainsExileGainLife 2 2)).resolution ==
-  .searchBasicPlains 2 2
+  .sequence [.searchLibrary (.exileLinkedUpTo 2 "Plains"), .gainLife 2]
 #guard (timing .returnLinkedExileToHand).resolution ==
   .returnToHand .linkedExile .owner
 #guard (timing .grantAttackPumpPerPlainsThisTurn).resolution == .attackPumpPerPlains
 #guard (timing .blinkUntilEndStep).resolution == .exile .target .nextEndStep
-#guard (timing .treasureThenDragonIfFour).resolution == .treasureThenDragon
+#guard (timing .treasureThenDragonIfFour).resolution ==
+  .sequence [
+    .createTokens .treasure 1 false,
+    .«if» (.controlsAtLeast "Treasure" 4) (.sacrifice .you (.source .isSacrificed) .noted),
+    .«if» .sourceWasSacrificed (.createTokens .dragon 1 false)]
 #guard (timing .recruit).resolution == .recruit
 #guard (timing (.returnCreatureFromGyMvAtMost 3)).resolution ==
   .put (.creatureMvAtMost 3)

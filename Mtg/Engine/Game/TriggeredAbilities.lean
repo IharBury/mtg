@@ -330,6 +330,10 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       if holds then (g, true)
       else ({ g with handDiscardedThisWay := none, notedSourceThisWay := none }, false)
   | .bearsAtLeast n => (g, g.countSubtype controller "Bear" ≥ n)
+  | .controlsAtLeast subtype n => (g, g.countSubtype controller subtype ≥ n)
+  | .sourceWasSacrificed =>
+    let yes := g.sourceWasSacrificed
+    ({ g with sourceWasSacrificed := false }, yes)
   | .questAtLeast n =>
     match sourceId.bind g.findObject? with
     | none => (g.logMsg "The triggered ability's source is no longer in play", false)
@@ -570,6 +574,9 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .targetWhileSource, .double =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o .doublePowerAndToughness
+  | .youControlSubtype subtype, .fixed =>
+    g.forEachControlledCreature controller fun g o =>
+      if g.hasSubtype o subtype then g.pumpPermanent o power toughness else g
   | _, _ => g
 
 /-- Resolve `TriggerResolution.dealDamage`. Each printed combination keeps
@@ -1037,6 +1044,23 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.sacrificeLeastPowerCreature defn chosen
   | .eachOpponent, .combatDamager, .none =>
     g.beginSacDamagers controller ((g.livingOpponents controller).map (·.id))
+  | .you, .source how, .noted =>
+    let g := { g with sourceWasSacrificed := false }
+    match how with
+    | .isSacrificed =>
+      g.withSourceOnBattlefield sourceId (fun g src =>
+        let g := g.sacrificeToGraveyard src s!"{src.name} is sacrificed"
+        { g with sourceWasSacrificed := true })
+    | .controllerSacrifices =>
+      g.withSourceOnBattlefield sourceId (fun g src =>
+        let g := g.sacrificeToGraveyard src
+          s!"{(g.player controller).name} sacrifices {src.name}"
+        { g with sourceWasSacrificed := true })
+    | .movedAsSacrificed =>
+      g.withTriggerSource sourceId fun g src =>
+        let name := src.name
+        let (g, _) := g.move src.id (.graveyard src.owner) none
+        { g with sourceWasSacrificed := true }.logMsg s!"{name} is sacrificed"
   | .you, .source how, .none =>
     match how with
     | .isSacrificed =>
@@ -1588,6 +1612,9 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .keywords k, .creaturesYouControl =>
     g.forEachControlledCreature controller fun g o =>
       g.grantUntilEotLogged o k
+  | .keywords k, .youControlSubtype subtype =>
+    g.forEachControlledCreature controller fun g o =>
+      if g.hasSubtype o subtype then g.grantUntilEotLogged o k else g
   | .hexproofWhileSource, .target =>
     g.grantHexproofWhileSource controller sourceId targets ab.targetKind
   | .preventDamageWhileSource, .target =>
@@ -1962,7 +1989,7 @@ def applyRevealFromHand (g : Game) (controller : PlayerId)
 /-- Resolve `TriggerResolution.searchLibrary`. Each printed follow-up keeps
 the behavior of the constructor it replaced. Any other resolution does nothing. -/
 def applySearchLibrary (g : Game) (controller : PlayerId)
-    (thenDo : TriggeredAbility.TriggerResolution) : Game :=
+    (sourceId : Option ObjectId) (thenDo : TriggeredAbility.TriggerResolution) : Game :=
   match thenDo with
   | .put .forest .asPrinted .none => g.resolveSearchForest controller
   | .returnToHand .basicLand .you .none => g.resolveSearchBasicLandToHand controller
@@ -1972,6 +1999,10 @@ def applySearchLibrary (g : Game) (controller : PlayerId)
   | .put .dragon .asPrinted .none =>
     g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
       .battlefieldFromHandOrLibrary (alsoHand := true)
+  | .exileLinkedUpTo max subtype =>
+    g.beginLibrarySearch controller
+      (fun c => isBasicLandCard c && c.hasSubtype subtype)
+      s!"a basic {subtype} card" (.exileLinked sourceId) (count := max)
   | _ => g
 
 /-- Resolve `TriggerResolution.lose`. Each printed combination keeps
@@ -2120,7 +2151,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .draw n who amount =>
     g.applyTriggerDraw controller n who amount
   | .searchLibrary thenDo =>
-    g.applySearchLibrary controller thenDo
+    g.applySearchLibrary controller sourceId thenDo
   | .discard n who what when =>
     g.applyDiscard controller sourceId targets n who what when
   | .sacrifice who what note =>
@@ -2455,14 +2486,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.temptWithTheRing controller
   | .gainLandfallCreateElf =>
     g.gainLandfallCreateElf sourceId
-  | .elvesGetVigilance power =>
-    g.elvesGetVigilance controller power
-  | .searchBasicPlains max life =>
-    g.resolveSearchBasicPlainsExile controller sourceId max life
+  | .exileLinkedUpTo max subtype =>
+    g.applySearchLibrary controller sourceId (.exileLinkedUpTo max subtype)
   | .attackPumpPerPlains =>
     g.attackPumpPerPlains controller
-  | .treasureThenDragon =>
-    g.treasureThenDragon controller sourceId
   | .gainControlWhileSource =>
     g.gainControlWhileSource controller sourceId targets
   | .creatureFights upToOne =>

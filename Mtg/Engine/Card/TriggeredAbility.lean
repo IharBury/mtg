@@ -740,6 +740,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
     | .targetWhileSource, .double =>
       "double that creature's power and toughness until end of turn"
+    | .youControlSubtype subtype, .fixed =>
+      s!"{subtype}s you control get {signedStat power}/{signedStat toughness} until end of turn"
     | _, _ =>
       "those permanents get +P/+T until end of turn"
   | .setBasePT _ _ .target .equalSource =>
@@ -1118,6 +1120,18 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
   | .sequence [.loseLife n .targetOpponent .fixed, .gainLife m .fixed] =>
     s!"target opponent loses {n} life and you gain {m} life"
+  | .sequence [.pump p 0 (.youControlSubtype "Elf"),
+      .grant (.keywords k) (.youControlSubtype "Elf")] =>
+    if k == Keyword.vigilance then
+      s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn"
+    else
+      "resolve each step"
+  | .sequence [.searchLibrary (.exileLinkedUpTo max "Plains"), .gainLife life .fixed] =>
+    s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life"
+  | .sequence [.createTokens .treasure 1 false,
+      .«if» (.controlsAtLeast "Treasure" 4) (.sacrifice .you (.source .isSacrificed) .noted),
+      .«if» .sourceWasSacrificed (.createTokens .dragon 1 false)] =>
+    "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
   | .sequence _ =>
     "resolve each step"
   | .gainLife n amount =>
@@ -1383,6 +1397,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"that creature gains {k.joinedAnd} until end of turn"
     | .keywords k, .creaturesYouControl =>
       s!"creatures you control gain {k.joinedAnd} until end of turn"
+    | .keywords k, .youControlSubtype subtype =>
+      s!"{subtype}s you control gain {k.joinedAnd} until end of turn"
     | .hexproofWhileSource, .target =>
       s!"{noun} gains hexproof for as long as this Saga remains on the battlefield"
     | .preventDamageWhileSource, _ =>
@@ -1433,14 +1449,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"you may discard your hand. If you do, draw {cardPhrase n}"
   | .gainLandfallCreateElf =>
     "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
-  | .elvesGetVigilance p =>
-    s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn"
-  | .searchBasicPlains max life =>
-    s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life"
+  | .exileLinkedUpTo max subtype =>
+    s!"search your library for up to {max} basic {subtype} cards, exile them, then shuffle"
   | .attackPumpPerPlains =>
     "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
-  | .treasureThenDragon =>
-    "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
   | .gainControlWhileSource =>
     s!"gain control of {noun} for as long as this Saga remains on the battlefield"
   | .creatureFights true =>

@@ -80,6 +80,10 @@ inductive TriggerIf where
   | enduringStoryNoted
   /-- You control at least `n` Bears. -/
   | bearsAtLeast (n : Nat)
+  /-- You control at least `n` permanents of this subtype. -/
+  | controlsAtLeast (subtype : String) (n : Nat)
+  /-- An earlier `.sacrifice .you .source .noted` sacrificed the source. -/
+  | sourceWasSacrificed
   /-- The source has at least `n` quest counters. -/
   | questAtLeast (n : Nat)
   /-- An earlier step attached Equipment to a creature that is still in play. -/
@@ -291,6 +295,8 @@ inductive TriggerPumpWho where
   | othersOfSubtype (subtype : String)
   /-- Each creature an opponent controls. -/
   | opponentsCreatures
+  /-- Each creature the controller controls of this subtype. -/
+  | youControlSubtype (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- Which token `TriggerResolution.createTokens` creates.
@@ -441,6 +447,9 @@ inductive TriggerSacrificeNote where
   /-- Whether the Plan was actually sacrificed. A following reflexive
   ability triggers only when it was. -/
   | forReflexive
+  /-- Whether the source was actually sacrificed. A following
+  `«if» .sourceWasSacrificed` sees it. -/
+  | noted
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.attach` attaches. -/
@@ -803,6 +812,8 @@ inductive TriggerGrantWho where
   | targetWhileSource
   /-- Each creature the controller controls. -/
   | creaturesYouControl
+  /-- Each creature the controller controls of this subtype. -/
+  | youControlSubtype (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.gainLife` reads how much life. The `n` argument
@@ -1666,17 +1677,12 @@ You may put a land card from your hand onto the battlefield tapped is
   /-- This Saga gains landfall: create a 1/1 green Elf.
   A source that has left the battlefield gains nothing. -/
   | gainLandfallCreateElf
-  /-- Elves you control get +P/+0 and vigilance until end of turn. -/
-  | elvesGetVigilance (power : Int)
-  /-- Search for up to `max` basic Plains, exile them with the source,
-  shuffle, and gain `life`. -/
-  | searchBasicPlains (max life : Nat)
+  /-- Search for up to `max` basic cards of `subtype` and exile them with
+  the source, then shuffle. This is the follow-up of `searchLibrary`. -/
+  | exileLinkedUpTo (max : Nat) (subtype : String)
   /-- Whenever you attack this turn, a creature you control gets +1/+1
   for each Plains you control. -/
   | attackPumpPerPlains
-  /-- Create a Treasure. Then if you control four or more, sacrifice the
-  source. If you do, create a 6/6 red Dragon with flying. -/
-  | treasureThenDragon
   /-- Gain control of the announced creatures for as long as the source
   remains. A source that has left changes nothing. -/
   | gainControlWhileSource
@@ -2026,7 +2032,9 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
   | .gainLandfallCreateElf =>
     { resolution := .gainLandfallCreateElf }
   | .elvesGetVigilance p =>
-    { resolution := .elvesGetVigilance p }
+    { resolution := .sequence [
+        .pump p 0 (.youControlSubtype "Elf"),
+        .grant (.keywords Keyword.vigilance) (.youControlSubtype "Elf")] }
   | .opponentDiscardsNonland =>
     { targeting := .of .opponent
       resolution := .discard 1 (who := .target) (what := .chosenNonland) }
@@ -2044,7 +2052,9 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
   | .draw n =>
     { resolution := .draw n }
   | .searchBasicPlainsExileGainLife max life =>
-    { resolution := .searchBasicPlains max life }
+    { resolution := .sequence [
+        .searchLibrary (.exileLinkedUpTo max "Plains"),
+        .gainLife life] }
   | .returnLinkedExileToHand =>
     { resolution := .returnToHand .linkedExile .owner }
   | .grantAttackPumpPerPlainsThisTurn =>
@@ -2053,7 +2063,11 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { targeting := .of .creatureOrLandYouControl, allowsZeroTargets := true
       resolution := .exile .target .nextEndStep }
   | .treasureThenDragonIfFour =>
-    { resolution := .treasureThenDragon }
+    { resolution := .sequence [
+        .createTokens .treasure 1 false,
+        .«if» (.controlsAtLeast "Treasure" 4)
+          (.sacrifice .you (.source .isSacrificed) .noted),
+        .«if» .sourceWasSacrificed (.createTokens .dragon 1 false)] }
   | .recruit =>
     { resolution := .recruit }
   | .returnCreatureFromGyMvAtMost n =>
