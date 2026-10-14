@@ -2872,8 +2872,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g.logMsg "The source is no longer on the battlefield"
   | .becomeCopy of =>
     g.applyBecomeCopy sourceId targets of
-  | .offerReflexivePay symbols kind maxTimes =>
-    g.offerPayForReflexive controller sourceId symbols kind maxTimes
   | .mayRetargetSpell =>
     let targetingSource (e : StackEntry) : Bool :=
       e.targets.any (fun t =>
@@ -2944,6 +2942,16 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .may (.draw 1 _ .fixed) (.sequence []) .ifYouDo =>
     g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
       fun g => g.draw controller 1
+  | .may (.pay symbols) (.queueReflexive (.modeled kind times)) .ifYouDo =>
+    -- Paying more than once records that count for the reflexive ability.
+    if times > 1 then
+      g.offerPayForReflexive controller sourceId symbols kind times
+    else
+      let follow := TriggeredAbility.TriggerResolution.queueReflexive (.modeled kind times)
+      let g := { g with mayThenDrop := 1, mayThenConditional := some follow }
+      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName
+        (some (.sequence [.pay symbols, follow])) sequencedCardPower
   | .may optional conditional .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
     let g := { g with mayThenDrop := cond.length, mayThenConditional := some conditional }
@@ -2952,8 +2960,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       (some (.sequence (optional :: cond))) sequencedCardPower
   | .pay symbols =>
     match g.mayThenConditional with
-    | some (.queueReflexive (.modeled kind)) =>
-      g.offerPayForReflexive controller sourceId symbols kind
+    | some (.queueReflexive (.modeled kind times)) =>
+      g.offerPayForReflexive controller sourceId symbols kind times
     | _ =>
       match symbols.toList with
       | [.generic n] =>
@@ -3029,7 +3037,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g.failMayThen
   | .queueReflexive followup =>
     match followup with
-    | .modeled kind => g.queueModeledReflexive controller sourceId kind 0
+    | .modeled kind _ => g.queueModeledReflexive controller sourceId kind 0
     | .countersOnSource kind =>
       match sourceId.bind g.findObject? with
       | some o =>

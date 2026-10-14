@@ -80,7 +80,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchTokensEnterMayDraw) ==
   .may (.draw 1) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchHawkeyeModes) ==
-  .offerReflexivePay #[.generic 1] 2 3
+  .may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchRedHulk) ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,

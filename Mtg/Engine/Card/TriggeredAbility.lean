@@ -938,6 +938,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "discard cards"
   | .may (.discard 1) (.draw n) .ifYouDo =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
+  | .may (.pay symbols) (.queueReflexive (.modeled _ times)) .ifYouDo =>
+    match symbols.toList with
+    | [.generic n] =>
+      if times > 1 then s!"you may pay \{{n}} up to {times} times"
+      else s!"you may pay \{{n}}"
+    | _ => "you may pay that cost"
   | .may action _ =>
     match action with
     | .tap .humans =>
@@ -1520,7 +1526,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "that creature deals damage equal to its power to up to one target creature"
     | _, _ =>
       "fight"
-  | .may (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo =>
+  | .may (.objectCost .anotherCreature) (.queueReflexive (.modeled 7 _)) .ifYouDo =>
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
   | .may (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo =>
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
@@ -1534,7 +1540,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "reveal cards from their hand"
   | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard] =>
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
-  | .may (.tap .source) (.queueReflexive (.modeled 0)) .ifYouDo =>
+  | .may (.tap .source) (.queueReflexive (.modeled 0 _)) .ifYouDo =>
     "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
   | .markRecentTokensAttacking =>
     "those tokens enter tapped and attacking"
@@ -1617,8 +1623,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
-  | .offerReflexivePay _ _ _ =>
-    "you may pay that cost"
   | .mayRetargetSpell =>
     "you may choose new targets for that spell"
   | .exileUntilNonland =>
