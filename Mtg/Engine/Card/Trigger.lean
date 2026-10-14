@@ -127,6 +127,17 @@ inductive TriggerIf where
   /-- Equipment is attached to the source, or its last-known power is
   positive when the source has left. None is reported. -/
   | attachedEquipment
+  /-- The source is on the battlefield and attacking. A missing source
+  does not hold. -/
+  | sourceAttacking
+  /-- An earlier Enrage trigger noted an additional combat phase.
+  Checking this consumes that note. -/
+  | enrageGrantsCombat
+  /-- The creature that caused this has greater power or toughness than
+  the source. An announced permanent is used when one was chosen;
+  otherwise the recorded cause. A missing source is reported. No cause
+  does not hold. The source itself does not hold. -/
+  | causeGreaterPowerOrToughness
 deriving Repr, Inhabited, BEq
 
 /-- Objects chosen for `TriggerResolution.objectCost`, the optional action of
@@ -152,6 +163,9 @@ inductive TriggerReflexive where
   | modeled (kind : Nat)
   /-- “This deals `n` damage to any target.” -/
   | damageAny (n : Nat)
+  /-- Reflexive ability `kind`, dealing damage equal to the +1/+1 counters
+  on the source. A source that has left queues nothing. -/
+  | countersOnSource (kind : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.dealDamage` damages. -/
@@ -201,6 +215,9 @@ inductive TriggerDamageNote where
   | markedPermanent
   /-- Excess over the permanent's remaining toughness, for a later amass. -/
   | excess
+  /-- The creature this Equipment is attached to deals the damage.
+  Nothing equipped still deals it, with no source. -/
+  | fromEquipped
 deriving Repr, Inhabited, BEq
 
 /-- Which permanent an effect uses when several recipients share one constructor.
@@ -266,6 +283,9 @@ inductive TriggerCounterWho where
   /-- The announced permanent, while the source is still on the battlefield.
   A source that already left is silent. -/
   | targetWhileSource
+  /-- The ability's source, if it is still on the battlefield.
+  A source that has left logs that no counter is put. Later steps still run. -/
+  | sourceIfPresent
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.putCounters` puts. `ofKind` uses its `n`. -/
@@ -501,6 +521,10 @@ inductive TriggerAttachWhat where
   | created
   /-- The artifact an earlier step put from hand. -/
   | putArtifact
+  /-- The announced Equipment. An illegal Equipment does not move. -/
+  | announcedEquipment
+  /-- Each announced Equipment. Choosing none attaches nothing. -/
+  | eachTargetEquipment
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.attach` attaches that object to. -/
@@ -517,6 +541,11 @@ inductive TriggerAttachTo where
   | source
   /-- The creature remembered with the artifact put from hand. -/
   | notedHost
+  /-- The announced creature. An illegal pair does not move the Equipment. -/
+  | announcedCreature
+  /-- The creature the source enchants. A missing creature leaves Equipment
+  where it is. -/
+  | enchantedCreature
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.pump` reads the bonus. `power` and `toughness`
@@ -789,6 +818,9 @@ inductive TriggerModeHow where
   Choosing that mode when none does draws nothing. The modes are
   `TriggerResolution.hydeModes`. This choice does not record a used mode. -/
   | plusOneOrRemoveCounter
+  /-- The mode index is this trigger's last-known power. None is mode 0.
+  An index past `modes` does nothing. This choice does not record a used mode. -/
+  | fromLastKnown
 deriving Repr, Inhabited, BEq
 
 /-- Which permanents `TriggerResolution.destroy` destroys. -/
@@ -914,6 +946,9 @@ inductive TriggerGrantWho where
   | creaturesYouControl
   /-- Each creature the controller controls of this subtype. -/
   | youControlSubtype (subtype : String)
+  /-- The one creature the controller has attacking alone.
+  None is reported. -/
+  | attackingAlone
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.gainLife` reads how much life. The `n` argument
@@ -1048,6 +1083,14 @@ inductive TriggerUntapWho where
   | targetWhileSource
   /-- Each attacking creature. -/
   | attackingCreatures
+  /-- The creature this Equipment is attached to, while it is on the
+  battlefield. A missing creature is reported, and later steps of the
+  sequence do not happen. -/
+  | equipped
+  /-- The creature that became tapped, while it is still tapped.
+  The recorded cause is used when one was chosen. Otherwise the creature
+  that became tapped most recently. An untapped creature is left alone. -/
+  | firstThisTurn
 deriving Repr, Inhabited, BEq
 
 /-- How far `TriggerResolution.revealLibrary` looks from the top of a library. -/
@@ -1967,8 +2010,31 @@ inductive TriggerResolution where
   The enchanted creature copying the creature an earlier step noted is
   `.becomeCopy .noted`. Nothing noted copies nothing. -/
   | becomeCopy (of : TriggerCopyOf)
-  /-- Resolve a leftover WatchLeftover. -/
-  | watch (e : WatchLeftover)
+  /-- Offer to pay `symbols` up to `maxTimes` times. Paying queues reflexive
+  ability `kind` once for each payment. Declining queues nothing.
+  Paying {1} up to three times, then choosing that many modes, is
+  `.offerReflexivePay #[.generic 1] 2 3`. -/
+  | offerReflexivePay (symbols : Array ManaSymbol) (kind : Nat) (maxTimes : Nat := 1)
+  /-- You may change the targets of the spell that caused this trigger.
+  The recorded cause is used when one was chosen. Otherwise the spell on
+  the stack that targets the source. A spell that has left changes nothing. -/
+  | mayRetargetSpell
+  /-- The player who was dealt combat damage exiles cards from the top of
+  their library until a nonland card. That seat is the trigger's
+  last-known toughness when no player was announced. You may put a +1/+1
+  counter on the source. If you don't, and the source has left, you may
+  cast the exiled nonland until end of turn. No damaged player is reported.
+  An empty library exiles nothing. -/
+  | exileUntilNonland
+  /-- You may have the source deal the damage that caused this trigger to
+  the announced target. The amount is the trigger's last-known power.
+  Already used this turn does nothing. An illegal target is reported. -/
+  | mayDealCauseDamage
+  /-- You may pay {2}. If you do, create a token that's a copy of the
+  nontoken artifact that caused this trigger. An announced permanent is
+  used when one was chosen; otherwise the recorded cause. A token, a
+  nonartifact, or the source itself is reported. -/
+  | mayCopyCause
   /-- Resolve a leftover YouAttackLeftover. -/
   | youAttacking (e : YouAttackLeftover)
   /-- Resolve a leftover CastLeftover. -/
@@ -2403,6 +2469,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     match who with
     | .source => { resolution := .connive who }
     | .target kind => { targeting := .of kind, resolution := .connive who }
+    | .enteringVillain => { resolution := .connive who }
   | .exileUntilLeaves kind =>
     { targeting := .of kind, resolution := .exile .target .untilSourceLeaves }
   | .damageEachOpponent n =>
@@ -2987,69 +3054,94 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering, .attacking],
       resolution := .createTokens .squirrel11green 1 false }
   | .watch .combatDamageExileUntilNonland =>
-    { events := #[.dealsCombatDamageToPlayer], resolution := .watch .combatDamageExileUntilNonland }
+    { events := #[.dealsCombatDamageToPlayer], resolution := .exileUntilNonland }
   | .watch .attacksAloneDrain =>
     { events := #[.creatureYouControlAttacksAlone], targeting := .of .opponent,
-      resolution := .watch .attacksAloneDrain }
+      resolution := .sequence [.loseLife 1 (who := .targetOpponent), .gainLife 1] }
   | .watch .attacksAloneFirstStrikeMenace =>
-    { events := #[.creatureYouControlAttacksAlone], resolution := .watch .attacksAloneFirstStrikeMenace }
+    { events := #[.creatureYouControlAttacksAlone],
+      resolution := .grant
+        (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone }
   | .watch .firstTapUntap =>
-    { events := #[.creatureYouControlTapped], resolution := .watch .firstTapUntap }
+    { events := #[.creatureYouControlTapped], resolution := .untap .firstThisTurn }
   | .watch .sheHulkRedirectOnce =>
     { events := #[.creatureYouControlDealtDamage], targeting := .of .playerOrCreature,
-      resolution := .watch .sheHulkRedirectOnce }
+      resolution := .mayDealCauseDamage }
   | .watch .speedballTargeted =>
-    { events := #[.spellTargetsSource], resolution := .watch .speedballTargeted }
+    { events := #[.spellTargetsSource],
+      resolution := .sequence [.pump 2 2 .source, .mayRetargetSpell] }
   | .watch .anyPlayerSecondDraw =>
-    { events := #[.anyPlayerDrawsSecond], resolution := .watch .anyPlayerSecondDraw }
+    { events := #[.anyPlayerDrawsSecond], resolution := .draw 1 }
   | .watch .youTargetDrawOnce =>
-    { events := #[.youTargetSomething], onceEachTurn := true, resolution := .watch .youTargetDrawOnce }
+    { events := #[.youTargetSomething], onceEachTurn := true, resolution := .draw 1 }
   | .watch .villainOrArtifactDamage =>
     { events := #[.anotherVillainOrArtifactEnters], targeting := .of .opponent,
-      resolution := .watch .villainOrArtifactDamage }
+      resolution := .dealDamage 1 .targetOpponent }
   | .watch .villainConniveOnce =>
     { events := #[.anotherVillainEnters], optionalOnceEachTurn := true,
-      resolution := .watch .villainConniveOnce }
+      resolution := .connive .enteringVillain }
   | .watch .villainPlusOneDamageOnce =>
     { events := #[.anotherVillainEnters], onceEachTurn := true,
-      resolution := .watch .villainPlusOneDamageOnce }
+      resolution := .sequence [
+        .putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent,
+        .dealDamage 2 .eachOpponent] }
   | .watch .villainAttachEquipment =>
     { events := #[.anotherVillainEnters]
       targeting := .of .upToOneEquipmentThenCreatureYouControl
-      resolution := .watch .villainAttachEquipment }
+      resolution := .attach .announcedEquipment .announcedCreature }
   | .watch .villainPlusOneLifelink =>
-    { events := #[.anotherVillainEnters], resolution := .watch .villainPlusOneLifelink }
+    { events := #[.anotherVillainEnters],
+      resolution := .sequence [
+        .pump 1 0 .source, .grant (.keywords Keyword.lifelink) .source] }
   | .watch .hulklingCompare =>
-    { events := #[.anotherCreatureYouControlEnters], resolution := .watch .hulklingCompare }
+    { events := #[.anotherCreatureYouControlEnters],
+      resolution := .«if» .causeGreaterPowerOrToughness
+        (.putCounters (.ofKind .plusOnePlusOne) .source) }
   | .watch .justiceBounce =>
-    { events := #[.anotherNonlandReturned], resolution := .watch .justiceBounce }
+    { events := #[.anotherNonlandReturned],
+      resolution := .putCounters (.ofKind .plusOnePlusOne) .source }
   | .watch .nontokenHeroModal =>
-    { events := #[.anotherNontokenHeroEnters], resolution := .watch .nontokenHeroModal }
+    { events := #[.anotherNontokenHeroEnters],
+      resolution := .chooseModes
+        [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl]
+        .fromLastKnown }
   | .watch .ultronCopy =>
-    { events := #[.anotherNontokenArtifactEnters], resolution := .watch .ultronCopy }
+    { events := #[.anotherNontokenArtifactEnters], resolution := .mayCopyCause }
   | .watch .enchantedAttachEquipment =>
     { events := #[.enchantedAttacksOrBlocks], targeting := .of .equipmentYouControl
-      allowsZeroTargets := true, maxTargets := 1000, resolution := .watch .enchantedAttachEquipment }
+      allowsZeroTargets := true, maxTargets := 1000,
+      resolution := .attach .eachTargetEquipment .enchantedCreature }
   | .watch .equippedAttacksAloneUntapScry =>
-    { events := #[.equippedAttacksAlone], resolution := .watch .equippedAttacksAloneUntapScry }
+    { events := #[.equippedAttacksAlone],
+      resolution := .sequence [.untap .equipped, .scry 1] }
   | .watch .equippedAttacksTap =>
     { events := #[.equippedAttacks], targeting := .of .defendingPlayerCreature,
-      resolution := .watch .equippedAttacksTap }
+      resolution := .tap .target }
   | .watch .equippedTappedDamage =>
-    { events := #[.equippedBecomesTapped], resolution := .watch .equippedTappedDamage }
+    { events := #[.equippedBecomesTapped],
+      resolution := .dealDamage 1 .eachOpponent .fixed .fromEquipped }
   | .watch .heroesDamagePlusTwo =>
-    { events := #[.heroesDealDamageToPlayer], resolution := .watch .heroesDamagePlusTwo }
+    { events := #[.heroesDealDamageToPlayer],
+      resolution := .putCounters (.ofKind .plusOnePlusOne 2) .source }
   | .watch .merfolkAttackDraw =>
-    { events := #[.merfolkAttackPlayer], resolution := .watch .merfolkAttackDraw }
+    { events := #[.merfolkAttackPlayer], resolution := .draw 1 }
   | .watch .tokensEnterMayDraw =>
-    { events := #[.tokenYouControlEnters], resolution := .watch .tokensEnterMayDraw }
+    { events := #[.tokenYouControlEnters],
+      resolution := .may (.draw 1) (.sequence []) .ifYouDo }
   | .watch .hawkeyeModes =>
     { events := #[.sourceBecomesTapped], allowsZeroTargets := true,
-      resolution := .watch .hawkeyeModes }
+      resolution := .offerReflexivePay #[.generic 1] 2 3 }
   | .watch .redHulk =>
-    { events := #[.sourceDealtDamage], resolution := .watch .redHulk }
+    { events := #[.sourceDealtDamage],
+      resolution := .sequence [
+        .putCounters (.ofKind .plusOnePlusOne) .source,
+        .queueReflexive (.countersOnSource 8)] }
   | .watch .hulk =>
-    { events := #[.sourceDealtDamage], resolution := .watch .hulk }
+    { events := #[.sourceDealtDamage],
+      resolution := .sequence [
+        .putCounters (.ofKind .plusOnePlusOne) .source,
+        .«if» .sourceAttacking (.untap .source),
+        .«if» .enrageGrantsCombat .additionalCombatPhase] }
   | .youAttacking .pay2LifeToughness =>
     { events := #[.youAttack], resolution := .youAttacking .pay2LifeToughness }
   | .youAttacking .exileTopHeroPump =>
@@ -3147,6 +3239,15 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.enterOrAttack .createSquirrel)).resolution ==
   .createTokens .squirrel11green 1 false
 #guard (SharedTrigger.timing (.watch .villainConniveOnce)).optionalOnceEachTurn
+#guard (SharedTrigger.timing (.watch .combatDamageExileUntilNonland)).resolution ==
+  .exileUntilNonland
+#guard (SharedTrigger.timing (.watch .hawkeyeModes)).resolution ==
+  .offerReflexivePay #[.generic 1] 2 3
+#guard (SharedTrigger.timing (.watch .hulk)).resolution ==
+  .sequence [
+    .putCounters (.ofKind .plusOnePlusOne) .source,
+    .«if» .sourceAttacking (.untap .source),
+    .«if» .enrageGrantsCombat .additionalCombatPhase]
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).events ==
   #[TriggerEvent.entering, TriggerEvent.attacking]
 #guard (SharedTrigger.timing (.death .hellcatReturn)).resolution ==

@@ -1491,6 +1491,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .investigate => "investigate"
   | .connive .source => "it connives"
   | .connive (.target _) => s!"{noun} connives"
+  | .connive .enteringVillain => "you may have it connive"
   | .«if» (.attackedOrEntered subtype) (.draw 1) =>
     let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
     s!"if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card"
@@ -1592,6 +1593,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .source => s!"untap {affectedNoun .source noun}"
     | .enchanted => s!"untap {affectedNoun .enchanted noun}"
     | .targetWhileSource => s!"untap {affectedNoun .targetWhileSource noun}"
+    | .equipped => "untap equipped creature"
+    | .firstThisTurn => "untap it"
   | .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on it if it's a creature"
   | .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent) =>
@@ -1614,60 +1617,16 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
-  | .watch .combatDamageExileUntilNonland =>
-    "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
-  | .watch .attacksAloneDrain =>
-    "Whenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life."
-  | .watch .attacksAloneFirstStrikeMenace =>
-    "Whenever a creature you control attacks alone, it gains first strike and menace until end of turn."
-  | .watch .firstTapUntap =>
-    "Whenever a creature you control becomes tapped during your turn, if it's the first time that creature has become tapped this turn, untap it."
-  | .watch .sheHulkRedirectOnce =>
-    "Whenever a creature you control is dealt damage, you may have The Sensational She-Hulk deal that much damage to any target. Do this only once each turn."
-  | .watch .speedballTargeted =>
-    "Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell."
-  | .watch .anyPlayerSecondDraw =>
-    "Whenever a player draws their second card each turn, you draw a card."
-  | .watch .youTargetDrawOnce =>
-    "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn."
-  | .watch .villainOrArtifactDamage =>
-    "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent."
-  | .watch .villainConniveOnce =>
-    "Whenever another Villain you control enters, you may have it connive. Do this only once each turn."
-  | .watch .villainPlusOneDamageOnce =>
-    "Whenever another Villain you control enters, put a +1/+1 counter on Crossbones. He deals 2 damage to each opponent. This ability triggers only once each turn."
-  | .watch .villainAttachEquipment =>
-    "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control."
-  | .watch .villainPlusOneLifelink =>
-    "Whenever another Villain you control enters, Yellowjacket gets +1/+0 and gains lifelink until end of turn."
-  | .watch .hulklingCompare =>
-    "Whenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling."
-  | .watch .justiceBounce =>
-    "Whenever another nonland permanent you control is returned to its owner's hand, put a +1/+1 counter on Justice."
-  | .watch .nontokenHeroModal =>
-    "Whenever another nontoken Hero you control enters, choose one — • Create a 1/1 white Soldier creature token. • Creatures you control get +1/+1 until end of turn."
-  | .watch .ultronCopy =>
-    "Whenever another nontoken artifact you control enters, you may pay {2}. If you do, create a token that's a copy of it. If the token isn't a creature, it becomes a 2/2 Robot Villain creature in addition to its other types."
-  | .watch .enchantedAttachEquipment =>
-    "Whenever enchanted creature attacks or blocks, attach any number of target Equipment you control to it."
-  | .watch .equippedAttacksAloneUntapScry =>
-    "Whenever equipped creature attacks alone, untap it and scry 1."
-  | .watch .equippedAttacksTap =>
-    "Whenever equipped creature attacks, tap target creature defending player controls."
-  | .watch .equippedTappedDamage =>
-    "Whenever equipped creature becomes tapped, it deals 1 damage to each opponent."
-  | .watch .heroesDamagePlusTwo =>
-    "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing."
-  | .watch .merfolkAttackDraw =>
-    "Whenever one or more Merfolk you control attack a player, draw a card."
-  | .watch .tokensEnterMayDraw =>
-    "Whenever one or more tokens you control enter, you may draw a card."
-  | .watch .hawkeyeModes =>
-    "Trick Arrows — Whenever Hawkeye becomes tapped, you may pay {1} up to three times. When you do, choose up to that many — • Net — Target creature can't block this turn. • Explosive — Hawkeye deals 2 damage to target player. • Boomerang — Discard a card, then draw a card."
-  | .watch .redHulk =>
-    "Enrage — Whenever Red Hulk is dealt damage, put a +1/+1 counter on him. When you do, he deals damage equal to the number of +1/+1 counters on him to any other target."
-  | .watch .hulk =>
-    "Enrage — Whenever The Incredible Hulk is dealt damage, put a +1/+1 counter on him. If he's attacking, untap him and there is an additional combat phase after this phase."
+  | .offerReflexivePay _ _ _ =>
+    "you may pay that cost"
+  | .mayRetargetSpell =>
+    "you may choose new targets for that spell"
+  | .exileUntilNonland =>
+    "that player exiles cards until a nonland card"
+  | .mayDealCauseDamage =>
+    "you may have this deal that much damage"
+  | .mayCopyCause =>
+    "you may pay {2} to copy it"
   | .youAttacking .pay2LifeToughness =>
     "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
   | .youAttacking .exileTopHeroPump =>
@@ -1835,6 +1794,64 @@ def thisAttackSentence : ThisAttackLeftover → String
   | .attacksAlonePlus2Indestructible =>
     "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
 
+/-- Printed sentence for a leftover watch trigger. Its resolution is a
+`TriggerResolution` that does not carry `WatchLeftover`. -/
+def watchSentence : WatchLeftover → String
+  | .combatDamageExileUntilNonland =>
+    "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
+  | .attacksAloneDrain =>
+    "Whenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life."
+  | .attacksAloneFirstStrikeMenace =>
+    "Whenever a creature you control attacks alone, it gains first strike and menace until end of turn."
+  | .firstTapUntap =>
+    "Whenever a creature you control becomes tapped during your turn, if it's the first time that creature has become tapped this turn, untap it."
+  | .sheHulkRedirectOnce =>
+    "Whenever a creature you control is dealt damage, you may have The Sensational She-Hulk deal that much damage to any target. Do this only once each turn."
+  | .speedballTargeted =>
+    "Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell."
+  | .anyPlayerSecondDraw =>
+    "Whenever a player draws their second card each turn, you draw a card."
+  | .youTargetDrawOnce =>
+    "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn."
+  | .villainOrArtifactDamage =>
+    "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent."
+  | .villainConniveOnce =>
+    "Whenever another Villain you control enters, you may have it connive. Do this only once each turn."
+  | .villainPlusOneDamageOnce =>
+    "Whenever another Villain you control enters, put a +1/+1 counter on Crossbones. He deals 2 damage to each opponent. This ability triggers only once each turn."
+  | .villainAttachEquipment =>
+    "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control."
+  | .villainPlusOneLifelink =>
+    "Whenever another Villain you control enters, Yellowjacket gets +1/+0 and gains lifelink until end of turn."
+  | .hulklingCompare =>
+    "Whenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling."
+  | .justiceBounce =>
+    "Whenever another nonland permanent you control is returned to its owner's hand, put a +1/+1 counter on Justice."
+  | .nontokenHeroModal =>
+    "Whenever another nontoken Hero you control enters, choose one — • Create a 1/1 white Soldier creature token. • Creatures you control get +1/+1 until end of turn."
+  | .ultronCopy =>
+    "Whenever another nontoken artifact you control enters, you may pay {2}. If you do, create a token that's a copy of it. If the token isn't a creature, it becomes a 2/2 Robot Villain creature in addition to its other types."
+  | .enchantedAttachEquipment =>
+    "Whenever enchanted creature attacks or blocks, attach any number of target Equipment you control to it."
+  | .equippedAttacksAloneUntapScry =>
+    "Whenever equipped creature attacks alone, untap it and scry 1."
+  | .equippedAttacksTap =>
+    "Whenever equipped creature attacks, tap target creature defending player controls."
+  | .equippedTappedDamage =>
+    "Whenever equipped creature becomes tapped, it deals 1 damage to each opponent."
+  | .heroesDamagePlusTwo =>
+    "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing."
+  | .merfolkAttackDraw =>
+    "Whenever one or more Merfolk you control attack a player, draw a card."
+  | .tokensEnterMayDraw =>
+    "Whenever one or more tokens you control enter, you may draw a card."
+  | .hawkeyeModes =>
+    "Trick Arrows — Whenever Hawkeye becomes tapped, you may pay {1} up to three times. When you do, choose up to that many — • Net — Target creature can't block this turn. • Explosive — Hawkeye deals 2 damage to target player. • Boomerang — Discard a card, then draw a card."
+  | .redHulk =>
+    "Enrage — Whenever Red Hulk is dealt damage, put a +1/+1 counter on him. When you do, he deals damage equal to the number of +1/+1 counters on him to any other target."
+  | .hulk =>
+    "Enrage — Whenever The Incredible Hulk is dealt damage, put a +1/+1 counter on him. If he's attacking, untap him and there is an additional combat phase after this phase."
+
 /-- Printed sentence for a leftover step trigger. Its resolution is a
 `TriggerResolution` that does not carry `StepLeftover`. -/
 def stepSentence : StepLeftover → String
@@ -1975,7 +1992,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     | _, some (.death e), _ => deathSentence e
     | _, some (.thisAttack e), _ => thisAttackSentence e
     | _, some (.enterOrAttack e), _ => enterOrAttackSentence e
-    | _, some (.watch e), _ => resolutionPhrase { resolution := .watch e }
+    | _, some (.watch e), _ => watchSentence e
     | _, some (.youAttacking e), _ =>
       resolutionPhrase { resolution := .youAttacking e }
     | _, some (.casting e), _ => resolutionPhrase { resolution := .casting e }

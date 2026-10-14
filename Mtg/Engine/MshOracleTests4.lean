@@ -120,7 +120,7 @@ def serumHostLeftOk : Bool :=
   let ogre := namedPermanent g "Gray Ogre"
   let g := g.attachSourceTo eq ogre
   let serum := namedPermanent g "Super-Soldier Serum"
-  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchEnchantedAttachEquipment)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchEnchantedAttachEquipment)
     (some serum.id) #[Target.permanent eq.id]
   (namedPermanent g "Vibranium Energy Daggers").attachedTo == some ogre.id &&
     logContains g "Equipment stays" &&
@@ -186,7 +186,7 @@ def ultronAfterEnterOk : Bool :=
   let before :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.event == TriggerEvent.creatureYouControlEnters)).size
-  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchUltronCopy)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchUltronCopy)
     (some (namedPermanent g "Ultron, Artificial Malevolence").id)
     #[Target.permanent stone.id]
   let g := mustApply g ⟨0⟩ .accept
@@ -292,7 +292,7 @@ def swordsmanIllegalOk : Bool :=
   let ogre := namedPermanent g "Gray Ogre"
   let g := g.attachSourceTo eq ogre
   let (g, _) := g.move ogre.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainAttachEquipment)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchVillainAttachEquipment)
     (some (namedPermanent g "Swordsman, Sharp Scoundrel").id)
     #[Target.permanent eq.id, Target.permanent ogre.id]
   (namedPermanent g "Vibranium Energy Daggers").attachedTo.isNone &&

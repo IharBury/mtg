@@ -865,12 +865,12 @@ def mockingbirdPlusOneThis : Game :=
 /-- Nontoken-Hero modal leftover: soldier mode vs team pump, from the
 constructor rather than matching “create a 1/1 white Soldier”. -/
 def nontokenHeroModalSoldier : Game :=
-  afterDraw.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchNontokenHeroModal) none
+  afterDraw.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchNontokenHeroModal) none
 
 def nontokenHeroModalPump : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchNontokenHeroModal) none #[]
-    "This creature" (some 1)
+  g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchNontokenHeroModal) none #[]
+    #[] (some 1)
 
 #guard (nontokenHeroModalSoldier.battlefield.filter (fun o =>
   o.printed.isToken && o.printed.hasSubtype "Soldier")).size == 1

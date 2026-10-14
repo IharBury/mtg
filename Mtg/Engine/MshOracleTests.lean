@@ -884,7 +884,7 @@ def equipWorthyOk : Bool :=
         let loki := namedPermanent g "Loki, God of Mischief"
         let serum := namedPermanent g "Super-Soldier Serum"
         let g := g.attachSourceTo serum loki
-        let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchEnchantedAttachEquipment)
+        let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchEnchantedAttachEquipment)
           (some (namedPermanent g "Super-Soldier Serum").id)
           #[Target.permanent hammer.id]
         (namedPermanent g "Mjölnir, Hammer of Thor").attachedTo == some loki.id)) &&
@@ -1303,7 +1303,7 @@ def onceEachTurnConniveWordingOk : Bool :=
   w1 == 1 &&
     !strucker.status.firedOnceEachTurn &&
     !strucker.status.optionalOnceUsed &&
-    (let gAsk := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
+    (let gAsk := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
        (some struckerId)
      match gAsk.pending with
      | .mayHaveVillainConnive ⟨0⟩ src vid =>
@@ -1317,7 +1317,7 @@ def onceEachTurnConniveWordingOk : Bool :=
              villainWait g2 == w1 + 1))
      | _ => false) &&
     (let hand0 := (g.player ⟨0⟩).hand.size
-     let gAsk := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
+     let gAsk := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
        (some struckerId) #[Target.permanent rg.id]
      match gAsk.pending with
      | .mayHaveVillainConnive ⟨0⟩ _ _ =>
@@ -1329,7 +1329,7 @@ def onceEachTurnConniveWordingOk : Bool :=
           let g3 := addPermanent gYes baronHelmutZemo ⟨0⟩ ⟨0⟩
           let g3 := g3.afterPermanentEnters (namedPermanent g3 "Baron Helmut Zemo")
           villainWait g3 == wYes) &&
-         (let gNo := gYes.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
+         (let gNo := gYes.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
             (some struckerId) #[Target.permanent rg.id]
           (gNo.player ⟨0⟩).hand.size == (gYes.player ⟨0⟩).hand.size &&
             gNo.log.any (fun s => mentions s "no effect"))
@@ -1696,7 +1696,7 @@ def hulklingGreaterStatOk : Bool :=
   let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
   let fires := g.waitingTriggers.any (fun t =>
     t.source.name == "Hulkling, Burgeoning Bruiser")
-  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
     (some hulkling.id) #[Target.permanent giant.id]
   (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1 &&
     fires &&
@@ -1830,7 +1830,7 @@ def capLivingLegendFirstTapUntapsOk : Bool :=
   bears.status.tapped && bears.status.becameTappedThisTurn &&
     g.waitingTriggers.any (fun t =>
       t.source.name == "Captain America, Living Legend") &&
-    (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
+    (let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
        none #[]
      !(namedPermanent g "Grizzly Bears").status.tapped) &&
     (mshRuling 457).comment.contains "became tapped earlier" &&
@@ -2080,18 +2080,18 @@ def sheHulkDamageOnceOk : Bool :=
   g.waitingTriggers.any (fun t =>
     t.source.name == "The Sensational She-Hulk") &&
     (let (g, _) := g.move she.id (.graveyard ⟨0⟩) none
-     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
        (some she.id) #[Target.permanent giant.id]
-       "The Sensational She-Hulk" (some 3)
+       #[] (some 3)
      match g.pending with
      | .fraChoice _ (.sheHulkMayDamage ..) =>
        let g := mustApply g ⟨0⟩ .accept
        let giant := namedPermanent g "Hill Giant"
        giant.status.damage == 3 &&
          g.sheHulkDamageUsedThisTurn &&
-         (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
+         (let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
             (some she.id) #[Target.permanent giant.id]
-            "The Sensational She-Hulk" (some 5)
+            #[] (some 5)
           (namedPermanent g "Hill Giant").status.damage == 3 &&
             logContains g "no effect")
      | _ => false) &&
@@ -2412,8 +2412,7 @@ def hawkeyeReflexivePayOk : Bool :=
   let g := addPermanent afterDraw hawkeyeMasterMarksman ⟨0⟩ ⟨0⟩
   let hawk := namedPermanent g "Hawkeye, Master Marksman"
   let nonePaid :=
-    g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHawkeyeModes) (some hawk.id)
-      #[] "Hawkeye" none
+    g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHawkeyeModes) (some hawk.id)
   !nonePaid.hasModeledReflexiveOnStack &&
     (let g := nonePaid.modifyPlayer ⟨0⟩ (fun pl =>
        { pl with manaPool := (pl.manaPool.add (.colored .red) 2) })
@@ -2441,9 +2440,9 @@ def sheHulkMayDeclineOk : Bool :=
   let g := g.markDamageOn bears 1 "Bears are dealt 1 damage"
   let queued := (g.waitingTriggers.filter (fun t =>
     t.source.name == "The Sensational She-Hulk")).size
-  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
     (some she.id) #[Target.permanent giant.id]
-    "The Sensational She-Hulk" (some 1)
+    #[] (some 1)
   match g.pending with
   | .fraChoice _ (.sheHulkMayDamage ..) =>
     let declined := mustApply g ⟨0⟩ .decline
@@ -2565,19 +2564,19 @@ def hulklingComparesCauseOk : Bool :=
   let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
   let giant := namedPermanent g "Hill Giant"
   let bot := namedPermanent g "Aerial Doombot"
-  let noCause := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+  let noCause := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
     (some hulkling.id) #[]
   (namedPermanent noCause "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0 &&
     (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
      let g := g.setObject { ab with fraCauseId := some bot.id }
      let g := { g with resolvingAbility := some ab.id }
-     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0) &&
     (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
      let g := g.setObject { ab with fraCauseId := some giant.id }
      let g := { g with resolvingAbility := some ab.id }
-     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
     (let giantId := giant.id
@@ -2588,7 +2587,7 @@ def hulklingComparesCauseOk : Bool :=
        (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
         let g := g.setObject { ab with fraCauseId := some giantId }
         let g := { g with resolvingAbility := some ab.id }
-        let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
+        let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
           (some hulkling.id) #[]
         (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0))
 
@@ -2618,7 +2617,7 @@ def capUntapsTriggeringCreatureOk : Bool :=
   let (g, ab) := g.allocStackAbility cap ⟨0⟩
   let g := g.setObject { ab with fraCauseId := some bears.id }
   let g := { g with resolvingAbility := some ab.id }
-  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
     (some cap.id) #[]
   before == afterEarly &&
     !(namedPermanent g "Grizzly Bears").status.tapped &&
@@ -2636,11 +2635,11 @@ def blackWidowChoiceOk : Bool :=
     let g := addToLibraryTop g mountain ⟨1⟩
     addToLibraryTop g lightningBolt ⟨1⟩
   let widow := namedPermanent setup "Black Widow, Super Spy"
-  let untouched := setup.applyModeledTrigger ⟨0⟩
+  let untouched := setup.applyTriggeredAbility ⟨0⟩
     (.onWatch Effect.watchCombatDamageExileUntilNonland) (some widow.id) #[]
   (untouched.player ⟨1⟩).library.size == 2 &&
     logContains untouched "didn't deal combat damage" &&
-    (let g := setup.applyModeledTrigger ⟨0⟩
+    (let g := setup.applyTriggeredAbility ⟨0⟩
         (.onWatch Effect.watchCombatDamageExileUntilNonland)
         (some widow.id) #[Target.player ⟨1⟩]
      match g.pending with
@@ -2657,7 +2656,7 @@ def blackWidowChoiceOk : Bool :=
      | _ => false) &&
     (let (g, ab) := setup.allocStackAbility widow ⟨0⟩ (lastKnownToughness := some 1)
      let g := { g with resolvingAbility := some ab.id }
-     let g := g.applyModeledTrigger ⟨0⟩
+     let g := g.applyTriggeredAbility ⟨0⟩
        (.onWatch Effect.watchCombatDamageExileUntilNonland) (some widow.id) #[]
      match g.pending with
      | .fraChoice _ (.widowMayCounter ..) => (g.player ⟨1⟩).library.size == 1
@@ -2672,7 +2671,7 @@ def crossbonesDamageAfterLeavingOk : Bool :=
   let xb := namedPermanent g "Crossbones, Malicious Mercenary"
   let (g, _) := g.move xb.id (.graveyard ⟨0⟩) none
   let life := (g.player ⟨1⟩).life
-  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainPlusOneDamageOnce)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchVillainPlusOneDamageOnce)
     (some xb.id) #[]
   (g.player ⟨1⟩).life == life - 2 &&
     logContains g "No counter is put"
@@ -2696,16 +2695,16 @@ def swordsmanAttachTargetsOk : Bool :=
     equip.contains (Target.permanent bow.id) &&
     !equip.contains (Target.permanent bears.id) &&
     creatures.contains (Target.permanent bears.id) &&
-    (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainAttachEquipment)
+    (let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchVillainAttachEquipment)
         (some sw.id) #[Target.permanent bow.id, Target.permanent bears.id]
      (namedPermanent g "Hawkeye's Bow").attachedTo == some bears.id) &&
-    (let gOnly := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainAttachEquipment)
+    (let gOnly := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchVillainAttachEquipment)
         (some sw.id) #[Target.permanent bears.id]
      logContains gOnly "No Equipment was chosen" &&
        (namedPermanent gOnly "Hawkeye's Bow").attachedTo.isNone) &&
     (let bowId := bow.id
      let (gGone, _) := g.move bowId (.graveyard ⟨0⟩) none
-     let gGone := gGone.applyModeledTrigger ⟨0⟩
+     let gGone := gGone.applyTriggeredAbility ⟨0⟩
        (.onWatch Effect.watchVillainAttachEquipment)
        (some sw.id) #[Target.permanent bowId, Target.permanent bears.id]
      logContains gGone "won't move" &&
@@ -2725,7 +2724,7 @@ def ultronMayPayCopyOk : Bool :=
   let (g, ab) := g.allocStackAbility ultron ⟨0⟩
   let g := g.setObject { ab with fraCauseId := some stone.id }
   let g := { g with resolvingAbility := some ab.id }
-  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchUltronCopy)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchUltronCopy)
     (some ultron.id) #[]
   let tokens (g : Game) :=
     (g.battlefield.filter (fun o => o.printed.isToken && o.name == "The Mind Stone")).size
@@ -2790,11 +2789,11 @@ def shieldTapsDefendingPlayerOk : Bool :=
     legal.contains (Target.permanent ogre.id) &&
     !legal.contains (Target.permanent giant.id) &&
     !legal.contains (Target.permanent bear.id) &&
-    (let gMiss := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchEquippedAttacksTap)
+    (let gMiss := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchEquippedAttacksTap)
         (some shield.id) #[Target.permanent giant.id]
      (namedPermanent gMiss "Hill Giant").status.tapped == false &&
        logContains gMiss "no longer legal") &&
-    (let gHit := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchEquippedAttacksTap)
+    (let gHit := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchEquippedAttacksTap)
         (some shield.id) #[Target.permanent ogre.id]
      (namedPermanent gHit "Gray Ogre").status.tapped)
 
@@ -2812,7 +2811,7 @@ def speedballMayRetargetOk : Bool :=
   let (g, bolt) := g.allocObject lightningBolt ⟨1⟩ .stack (some ⟨1⟩)
   let g := g.putStackEntry ⟨1⟩ bolt.id
   let g := g.setStackEntryTargets bolt.id #[Target.permanent speed.id]
-  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchSpeedballTargeted) (some speed.id)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchSpeedballTargeted) (some speed.id)
   let target0 (g : Game) : Option Target :=
     match g.stackEntry? bolt.id with
     | some e => e.targets[0]?

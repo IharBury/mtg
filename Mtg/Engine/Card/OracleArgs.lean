@@ -410,6 +410,7 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
     match who with
     | .source => return .connive who
     | .target k => return .connive (.target (← takeKind k))
+    | .enteringVillain => return .connive .enteringVillain
   | .exileUntilLeaves k => return .exileUntilLeaves (← takeKind k)
   | .damageEachOpponent n => return .damageEachOpponent (← takeNat n)
   | .attachTo k => return .attachTo (← takeKind k)
