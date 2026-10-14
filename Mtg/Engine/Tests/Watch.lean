@@ -33,7 +33,10 @@ def onWatch (e : Effect) : TriggeredAbility :=
 /- The shared watch effects resolve as constructors that do not carry
 `WatchLeftover`. -/
 #guard TriggeredAbility.resolution (onWatch Effect.watchCombatDamageExileUntilNonland) ==
-  .exileUntilNonland
+  .revealLibrary .untilNonland
+    (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
+      (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
+    .announced
 #guard TriggeredAbility.resolution (onWatch Effect.watchAttacksAloneDrain) ==
   .sequence [.loseLife 1 (who := .targetOpponent), .gainLife 1]
 #guard TriggeredAbility.resolution (onWatch Effect.watchAttacksAloneFirstStrikeMenace) ==
@@ -66,7 +69,8 @@ def onWatch (e : Effect) : TriggeredAbility :=
   .chooseModes
     [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl]
     .fromLastKnown
-#guard TriggeredAbility.resolution (onWatch Effect.watchUltronCopy) == .mayCopyCause
+#guard TriggeredAbility.resolution (onWatch Effect.watchUltronCopy) ==
+  .may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchEnchantedAttachEquipment) ==
   .attach .eachTargetEquipment .enchantedCreature
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedAttacksAloneUntapScry) ==
@@ -80,7 +84,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchTokensEnterMayDraw) ==
   .may (.draw 1) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchHawkeyeModes) ==
-  .offerReflexivePay #[.generic 1] 2 3
+  .may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchRedHulk) ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,

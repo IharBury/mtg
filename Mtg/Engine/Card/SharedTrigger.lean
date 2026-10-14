@@ -1032,11 +1032,14 @@ inductive SharedTrigger where
   `.attach .eachTargetEquipment .enchantedCreature`.
   Choosing a Soldier or a team pump from the last-known mode is
   `.chooseModes [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl] .fromLastKnown`.
-  Paying {1} up to three times is `.offerReflexivePay #[.generic 1] 2 3`.
-  Exiling until a nonland, then a counter or a cast, is `.exileUntilNonland`.
+  Paying {1} up to three times is
+  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
+  Exiling until a nonland, then a counter or a cast, is
+  `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
   You may deal the damage that caused this is
   `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`.
-  You may pay {2} to copy the artifact that caused this is `.mayCopyCause`. -/
+  You may pay {2} to copy the artifact that caused this is
+  `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`. -/
   | watch (e : WatchLeftover)
   /-- Leftover “whenever you attack” effect. -/
   | youAttacking (e : YouAttackLeftover)
