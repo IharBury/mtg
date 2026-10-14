@@ -1058,6 +1058,8 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.sacrificeLeastPowerCreature defn chosen
   | .eachOpponent, .combatDamager, .none =>
     g.beginSacDamagers controller ((g.livingOpponents controller).map (·.id))
+  | .eachOpponent, .chosenNontokenCreature, .none =>
+    g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
   | .you, .source how, .noted =>
     let g := { g with sourceWasSacrificed := false }
     match how with
@@ -1502,6 +1504,8 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => g.logMsg "The ability's source is no longer in the graveyard"
   | .linkedExile, .owner, .none =>
     g.returnLinkedExileToHand sourceId
+  | .cause, .owner, .none =>
+    g.returnCauseToOwnerHand targets
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.put`. Each printed combination keeps
@@ -1597,6 +1601,10 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     else
       { g with pending := .mayPutArtifactFromHand controller (sourceId.getD ⟨0⟩) }.logMsg
         s!"{(g.player controller).name} may put an artifact card from their hand onto the battlefield"
+  | .source, .underOwner, note =>
+    g.returnSourceUnderOwner controller sourceId note.enterMods
+  | .cause subtype, .underOwner, note =>
+    g.returnCauseUnderOwner controller targets subtype note.enterMods
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.grant`. Each printed combination keeps
@@ -2629,8 +2637,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g.logMsg "The source is no longer on the battlefield"
   | .becomeCopy of =>
     g.applyBecomeCopy sourceId targets of
-  | .death e =>
-    g.applyModeledTrigger controller (.onDeath (Effect.ofTrigger (.death e))) sourceId targets sourceName lastKnownPower
   | .thisAttack e =>
     g.applyModeledTrigger controller (.onThisAttack (Effect.ofTrigger (.thisAttack e))) sourceId targets sourceName lastKnownPower
   | .enterOrAttack e =>

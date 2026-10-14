@@ -966,6 +966,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "defending player sacrifices a creature with the least power among creatures they control"
     | .eachOpponent, .combatDamager =>
       "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn"
+    | .eachOpponent, .chosenNontokenCreature =>
+      "each opponent sacrifices a nontoken creature of their choice"
     | .you, .source .controllerSacrifices =>
       "sacrifice this creature"
     | .you, .another =>
@@ -1206,6 +1208,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
     | .source, .asArtifact, _ =>
       "if they were a creature, return them to the battlefield. They're an artifact"
+    | .source, .underOwner, .entering _ =>
+      "return this from its owner's graveyard to the battlefield under its owner's control"
+    | .cause _, .underOwner, _ =>
+      "return it to the battlefield under its owner's control"
     | .notedLands, .tapped, _ =>
       "return those lands to the battlefield tapped"
     | .discardedLand, .tapped, _ =>
@@ -1384,6 +1390,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "put it into your hand"
     | .linkedExile, .owner, .none =>
       "put a card exiled with this Saga into its owner's hand"
+    | .cause, .owner, .none =>
+      "return that card to its owner's hand"
     | _, _, _ =>
       "return it to a hand"
   | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false] =>
@@ -1600,14 +1608,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
-  | .death .hellcatReturn =>
-    "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
-  | .death .villainReturnAsHero =>
-    "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."
-  | .death .attackingReturnHand =>
-    "Whenever an attacking creature you control dies, return that card to its owner's hand."
-  | .death .deathtouchOppSac =>
-    "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
   | .thisAttack .mayPayPlusOne =>
     "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
   | .thisAttack .payReturnAttacking =>
@@ -1807,6 +1807,18 @@ def sequenceClause (e : Effect) : Option String :=
     some s!"exile up to one {noun}. Each opponent loses {n} life"
   | _ => none
 
+/-- Printed sentence for a leftover dies trigger. Its resolution is a
+`TriggerResolution` that does not carry `DeathLeftover`. -/
+def deathSentence : DeathLeftover → String
+  | .hellcatReturn =>
+    "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
+  | .villainReturnAsHero =>
+    "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."
+  | .attackingReturnHand =>
+    "Whenever an attacking creature you control dies, return that card to its owner's hand."
+  | .deathtouchOppSac =>
+    "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
+
 /-- Printed sentence for a leftover step trigger. Its resolution is a
 `TriggerResolution` that does not carry `StepLeftover`. -/
 def stepSentence : StepLeftover → String
@@ -1944,7 +1956,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     | .enter, some (.enter (.dealDamageUpToOne n)), _ =>
     s!"When this permanent enters, it deals {n} damage to up to one target creature."
     | _, some (.step e), _ => stepSentence e
-    | _, some (.death e), _ => resolutionPhrase { resolution := .death e }
+    | _, some (.death e), _ => deathSentence e
     | _, some (.thisAttack e), _ => resolutionPhrase { resolution := .thisAttack e }
     | _, some (.enterOrAttack e), _ =>
       resolutionPhrase { resolution := .enterOrAttack e }
