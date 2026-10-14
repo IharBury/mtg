@@ -1024,7 +1024,7 @@ inductive SharedTrigger where
   Putting a counter, then damage equal to those counters, is
   `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .queueReflexive (.countersOnSource 8)]`.
   +2/+2, then you may retarget the spell, is
-  `.sequence [.pump 2 2 .source, .mayRetargetSpell]`.
+  `.sequence [.pump 2 2 .source, .may .retargetCause (.sequence []) .ifYouDo]`.
   You may have the entering Villain connive is `.connive .enteringVillain`.
   Attaching the announced Equipment to the announced creature is
   `.attach .announcedEquipment .announcedCreature`.

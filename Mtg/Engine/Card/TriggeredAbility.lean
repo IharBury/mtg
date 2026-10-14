@@ -938,6 +938,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "discard cards"
   | .may (.discard 1) (.draw n) .ifYouDo =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
+  | .may .retargetCause (.sequence []) .ifYouDo =>
+    "you may choose new targets for that spell"
   | .may (.pay symbols) (.queueReflexive (.modeled _ times)) .ifYouDo =>
     match symbols.toList with
     | [.generic n] =>
@@ -1634,8 +1636,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create a token that's a copy of the artifact that caused this"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
-  | .mayRetargetSpell =>
-    "you may choose new targets for that spell"
+  | .retargetCause =>
+    "choose new targets for that spell"
   | .mayDealCauseDamage =>
     "you may have this deal that much damage"
   | .youAttacking .pay2LifeToughness =>
