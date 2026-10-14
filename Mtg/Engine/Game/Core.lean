@@ -206,6 +206,8 @@ structure Game where
   grimaImpulseOthers : Array ObjectId := #[]
   /-- `sacrifice .you .plan .forReflexive` sacrificed the Plan. -/
   planWasSacrificed : Bool := false
+  /-- `sacrifice .you .source .noted` sacrificed the source. -/
+  sourceWasSacrificed : Bool := false
   /-- Lands exiled by `exile .landsYouControl .forLater .lands`.
   `.put .notedLands (how := .tapped)` returns them. -/
   exiledIdsThisWay : Array ObjectId := #[]

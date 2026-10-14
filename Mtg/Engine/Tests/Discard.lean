@@ -75,13 +75,13 @@ An empty hand skips the choice. The discarded-land note is cleared. -/
 
 /- Inside `mayThen`, one card is optional and declining skips the draw. -/
 #guard
-  let g := step afterDraw (.mayThen (.discard 1) (.draw 2))
+  let g := step afterDraw (.may (.discard 1) (.draw 2) .ifYouDo)
   match g.pending with
   | .mayDiscardDraw p n => p == caster && n == 2
   | _ => false
 
 #guard
-  let g := step (emptyHand afterDraw caster) (.mayThen (.discard 1) (.draw 2))
+  let g := step (emptyHand afterDraw caster) (.may (.discard 1) (.draw 2) .ifYouDo)
   g.pending == .none && g.mayThenDrop == 0 &&
     logContains g "has no card to discard" &&
     handSize g caster == 0
@@ -133,7 +133,7 @@ the source. Declining is the choice, not an immediate discard. -/
     | _ => false
 
 #guard
-  let g := step afterDraw (.may (.discard (what := .hand)))
+  let g := step afterDraw (.may (.discard (what := .hand)) (.sequence []))
   handSize g caster == handSize afterDraw caster &&
     match g.pending with
     | .fraChoice p (.mayDiscardHandBalin none) => p == caster
@@ -141,7 +141,7 @@ the source. Declining is the choice, not an immediate discard. -/
 
 /- Discarding the hand to draw a fixed number is the `mayThen` choice. -/
 #guard
-  let g := step afterDraw (.mayThen (.discard (what := .hand)) (.draw 4))
+  let g := step afterDraw (.may (.discard (what := .hand)) (.draw 4) .ifYouDo)
   match g.pending with
   | .fraChoice p (.mayDiscardHandDrawFixed n) => p == caster && n == 4
   | _ => false
@@ -160,14 +160,14 @@ it leaves a discarded-land note from an earlier step alone. -/
 /- You may draw X, then discard two, only when mana was spent. -/
 #guard
   let g := step (withSpent 4)
-    (.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]))
+    (.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]) (.sequence []))
   match g.pending with
   | .fraChoice p (.mayDrawThenDiscard 4 2) => p == caster
   | _ => false
 
 #guard
   let g := step (withSpent 0)
-    (.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]))
+    (.may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]) (.sequence []))
   g.pending == .none && logContains g "No mana was spent to cast that spell"
 
 /- A combination that is not printed discards nothing. -/
@@ -198,15 +198,15 @@ it leaves a discarded-land note from an earlier step alone. -/
   "target opponent discards 2 cards"
 #guard TriggeredAbility.resolutionPhrase { resolution := .discard (what := .hand) } ==
   "discard your hand"
-#guard TriggeredAbility.resolutionPhrase { resolution := .may (.discard (what := .hand)) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution := .may (.discard (what := .hand)) (.sequence []) } ==
   "you may discard your hand"
 #guard TriggeredAbility.resolutionPhrase { resolution := .discard 2 (when := .ifManaSpent) } ==
   "discard 2 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .mayThen (.discard 1) (.draw 2) } ==
+    { resolution := .may (.discard 1) (.draw 2) .ifYouDo } ==
   "you may discard a card. If you do, draw 2 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .mayThen (.discard (what := .hand)) (.draw 4) } ==
+    { resolution := .may (.discard (what := .hand)) (.draw 4) .ifYouDo } ==
   "you may discard your hand. If you do, draw 4 cards"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .sequence [

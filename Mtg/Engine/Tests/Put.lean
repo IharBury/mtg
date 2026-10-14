@@ -202,7 +202,7 @@ do not. -/
   match idNamed g (g.player caster).hand "Test Isle" with
   | none => false
   | some id =>
-    let g := putStep g (.may (.put .landFromHand (how := .tapped)))
+    let g := putStep g (.may (.put .landFromHand (how := .tapped)) (.sequence []))
     let offered :=
       match g.pending with
       | .mayPutLandFromHand p => p == caster
@@ -233,7 +233,7 @@ attach; another artifact is not. An empty hand skips the choice. -/
     match idNamed g (g.player caster).hand "Test Sword" with
     | none => false
     | some id =>
-      let g := putStep g (.may (.put .artifactFromHand (note := .forAttach)))
+      let g := putStep g (.may (.put .artifactFromHand (note := .forAttach)) (.sequence []))
         (some host.id)
       let offered :=
         match g.pending with

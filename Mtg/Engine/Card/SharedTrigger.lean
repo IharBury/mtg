@@ -520,7 +520,7 @@ inductive SharedTrigger where
   | discard (n : Nat := 1)
   /-- You may do `can`. If you do, `thenDo`.
   You may discard a card. If you do, draw `n` is `.mayTo .discard (.draw n)`.
-  Resolves as `TriggerResolution.mayThen` of each step's resolution. -/
+  Resolves as `.may` of each step's resolution, `.ifYouDo`. -/
   | mayTo (can thenDo : SharedTrigger)
   /-- You may do `action`. Declining skips it.
   Resolves as `TriggerResolution.may` of `action`'s resolution.
@@ -628,7 +628,7 @@ inductive SharedTrigger where
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
-  Resolves as `.sequence [.may (.tap .humans), .draw 0 (amount := .forEachTappedHuman)]`. -/
+  Resolves as `.sequence [.may (.tap .humans) (.sequence []), .draw 0 (amount := .forEachTappedHuman)]`. -/
   | tapHumansDraw
   /-- Destroy opponents' artifacts and enchantments; gain life for each.
   Resolves as
@@ -703,7 +703,7 @@ inductive SharedTrigger where
   /-- Create an Alien and grow it from invasion counters. -/
   | createAlienPerInvasion
   /-- You may put an artifact from hand; attach if Equipment. Resolves as
-  `.sequence [.may (.put .artifactFromHand (note := .forAttach)), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
+  `.sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
   | mayPutArtifactAttachEquipment
   /-- Cascade. -/
   | cascade
@@ -712,7 +712,7 @@ inductive SharedTrigger where
   (Belladonna Took). Resolves as
   `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`. -/
   | belladonnaTokenReward
-  /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .you .another)`. -/
+  /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .you .another) (.sequence [])`. -/
   | bolgMaySacrifice
   /-- Bolg reflexive damage. Resolves as
   `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amass 0 (amount := .notedExcess)]`. -/
@@ -740,7 +740,7 @@ inductive SharedTrigger where
   `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
-  `.sequence [.may (.discard (what := .hand)), .draw 0 (amount := .discardedHandCount), .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]`. -/
+  `.sequence [.may (.discard (what := .hand)) (.sequence []), .draw 0 (amount := .discardedHandCount), .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
@@ -774,7 +774,7 @@ inductive SharedTrigger where
   `.sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer, .mayCast .impulse .unlimited .withoutPaying]`. -/
   | grimaImpulse
   /-- Palantír end-step. Resolves as
-  `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw 1 (who := .opponentHasYou))]`. -/
+  `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw 1 (who := .opponentHasYou)) (.sequence [])]`. -/
   | palantir
   /-- Create Treasures equal to last-known noncombat damage. -/
   | treasuresEqualLastKnown
@@ -789,7 +789,7 @@ inductive SharedTrigger where
   /-- Opponents sac damagers; the Ring tempts you. Resolves as
   `.sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts]`. -/
   | sacDamagersRingTempts
-  /-- A Saga chapter. -/
+  /-- A Saga chapter. Resolves as `TriggeredAbility.chapterTiming`. -/
   | chapter (n : Nat) (e : ChapterResolution)
   /-- Draw if you attacked with or a subtype entered. -/
   | drawIfAttackedOrEnteredSubtype (subtype : String)
@@ -896,7 +896,7 @@ inductive SharedTrigger where
   `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`. -/
   | villainIfGyElseMill
   /-- Draw, then you may put a land from hand tapped.
-  Resolves as `.sequence [.draw 1, .may (.put .landFromHand (how := .tapped))]`. -/
+  Resolves as `.sequence [.draw 1, .may (.put .landFromHand (how := .tapped)) (.sequence [])]`. -/
   | drawMayPutLandTapped
   /-- Draw; if you control another Hero, gain 2 life. -/
   | drawGainLifeIfAnotherHero

@@ -882,7 +882,8 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
     | .plusOne id => g.addPlusOneIfStillCreature id
   if grantPriority && g.pending == .none && !g.openingHandsPending && !g.over
       && !g.players.isEmpty then
-    g.receivePriority g.activePlayer
+    let g := g.resumeTriggerSequence
+    if g.pending != .none || g.over then g else g.receivePriority g.activePlayer
   else g
 
 /-- Apply a `--norandom` permutation or chosen object. -/
