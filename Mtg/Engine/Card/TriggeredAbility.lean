@@ -899,6 +899,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "draw X cards, where X is the amount of mana spent to cast that spell"
     | .you, .perControlled _ =>
       "draw a card for each permanent you control of that type"
+    | .you, .upToHandSize _ =>
+      "if you have fewer than that many cards in hand, draw cards equal to the difference"
+    | .enchantedController, _ =>
+      "that player draws a card"
     | .eachOpponent, .fixed =>
       s!"each opponent draws {cardPhrase n}"
     | .you, .fixed =>
@@ -1080,7 +1084,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match attachedFollowupPhrase followup with
     | some phrase => s!"attach it to {noun}. {capitalizeAscii phrase}"
     | none => "resolve each step"
-  | .sequence [.exile .target .untilSourceLeaves .copyAndHost, .enchantedCopiesNoted] =>
+  | .sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted] =>
     "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .sequence [.draw 1, .may (.put .landFromHand .tapped _) _] =>
     "draw a card, then you may put a land card from your hand onto the battlefield tapped"
@@ -1358,6 +1362,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
     else if modes == TriggerResolution.upToXModes && how == .alreadyChosen then
       "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
+    else if modes == TriggerResolution.hydeModes && how == .plusOneOrRemoveCounter then
+      "choose one — put a +1/+1 counter on this, or remove a counter from a creature you control and draw a card"
     else
       "choose a mode"
   | .returnToHand what whose note =>
@@ -1555,8 +1561,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "when you do, the reflexive ability triggers"
   | .queuePlanDividedDamage n =>
     s!"when you do, it deals {n} damage divided as you choose among one or two targets"
-  | .enchantedCopiesNoted =>
-    "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .«if» .anotherHero (.gainLife n) =>
     s!"if you control another Hero, you gain {n} life"
   | .grantPlayNotedUntilNextTurn =>
@@ -1588,18 +1592,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "Fblthp's owner shuffles him into their library"
   | .armSurveilReturnLifeGained =>
     "if you gained life this turn"
-  | .step .enchantedControllerDraws =>
-    "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
-  | .step .drawToTen =>
-    "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
-  | .step .copyAbsorbingMan =>
-    "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
-  | .step .hydeChoose =>
-    "At the beginning of your upkeep, choose one — • Put a +1/+1 counter on Mister Hyde. • Remove a counter from a creature you control. If you do, draw a card."
-  | .step .copyTaskmaster =>
-    "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature."
-  | .step .harnessedFlicker =>
-    "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
+  | .becomeCopy .artifactEnchantmentOrLand =>
+    "until your next turn, this becomes a copy of up to one target artifact, non-Aura enchantment, or land, except its name, and it's a legendary 4/4 Human Villain creature with vigilance"
+  | .becomeCopy .creatureOrGraveyardCard =>
+    "until your next turn, this becomes a copy of up to one target creature or creature card in a graveyard, except its name, and it's a legendary Human Mercenary Villain creature"
+  | .becomeCopy .noted =>
+    "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
+  | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
+    "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
   | .death .hellcatReturn =>
     "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
   | .death .villainReturnAsHero =>
@@ -1807,6 +1807,22 @@ def sequenceClause (e : Effect) : Option String :=
     some s!"exile up to one {noun}. Each opponent loses {n} life"
   | _ => none
 
+/-- Printed sentence for a leftover step trigger. Its resolution is a
+`TriggerResolution` that does not carry `StepLeftover`. -/
+def stepSentence : StepLeftover → String
+  | .enchantedControllerDraws =>
+    "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
+  | .drawToTen =>
+    "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
+  | .copyAbsorbingMan =>
+    "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
+  | .hydeChoose =>
+    "At the beginning of your upkeep, choose one — • Put a +1/+1 counter on Mister Hyde. • Remove a counter from a creature you control. If you do, draw a card."
+  | .copyTaskmaster =>
+    "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature."
+  | .harnessedFlicker =>
+    "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
+
 def toNotation (ab : TriggeredAbility) : String :=
   match ab with
   | .triggered w e opts =>
@@ -1927,7 +1943,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     s!"When this enchantment enters, target opponent discards {cards}."
     | .enter, some (.enter (.dealDamageUpToOne n)), _ =>
     s!"When this permanent enters, it deals {n} damage to up to one target creature."
-    | _, some (.step e), _ => resolutionPhrase { resolution := .step e }
+    | _, some (.step e), _ => stepSentence e
     | _, some (.death e), _ => resolutionPhrase { resolution := .death e }
     | _, some (.thisAttack e), _ => resolutionPhrase { resolution := .thisAttack e }
     | _, some (.enterOrAttack e), _ =>

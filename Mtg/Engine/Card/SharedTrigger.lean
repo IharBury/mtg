@@ -882,7 +882,8 @@ inductive SharedTrigger where
   /-- Attach to target, then apply `followup`. Resolves as `.attach .source .target`
   followed by `TriggerResolution.ofTargetWhileSource`. -/
   | attachThen (followup : PermanentAction)
-  /-- Exile another creature; enchanted becomes a copy. -/
+  /-- Exile another creature; enchanted becomes a copy. Resolves as
+  `.sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted]`. -/
   | exileOtherCopyEnchanted
   /-- Exile a creature you control until the next end step. -/
   | exileUntilNextEndStep
@@ -907,7 +908,18 @@ inductive SharedTrigger where
   | maySacArtifactOrDiscardDraw
   /-- Leftover “when this enters” effect. -/
   | enter (e : EnterLeftover)
-  /-- Leftover step / upkeep / end-step / first-main effect. -/
+  /-- Leftover step / upkeep / end-step / first-main effect.
+  The enchanted creature's controller draws a card, as
+  `.draw 1 (who := .enchantedController)`.
+  Drawing until you have ten cards is `.draw 0 (amount := .upToHandSize 10)`.
+  Becoming a copy of an artifact, non-Aura enchantment, or land is
+  `.becomeCopy .artifactEnchantmentOrLand`.
+  Choosing a +1/+1 counter or removing a counter to draw is
+  `.chooseModes TriggerResolution.hydeModes .plusOneOrRemoveCounter`.
+  Becoming a copy of a creature or a graveyard creature card is
+  `.becomeCopy .creatureOrGraveyardCard`.
+  Exiling and returning another nonland while harnessed is
+  `.«if» .sourceHarnessed (.exile .target .returnImmediately)`. -/
   | step (e : StepLeftover)
   /-- Leftover dies effect. -/
   | death (e : DeathLeftover)

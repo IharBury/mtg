@@ -222,15 +222,55 @@ def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId
         g.logMsg "You must remove a counter from a creature you control if you can"
       else g
 
-/-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
-Effects are applied from that structured payload — not from Oracle text. -/
-def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target := #[])
-    (sourceName : String := "This creature")
-    (lastKnownPower : Option Int := none) : Game :=
-  match t.shared with
-  | (.step .copyAbsorbingMan) =>
+/-- Draw one card for the controller of the creature the source enchants.
+Nothing enchanted draws nothing. -/
+def drawForEnchantedController (g : Game) (sourceId : Option ObjectId) : Game :=
+  match g.attachedHost? sourceId with
+  | some host =>
+    match host.controller with
+    | some pid => g.draw pid 1
+    | none => g.draw host.owner 1
+  | none =>
+    g.logMsg "The enchanted creature has left. No card is drawn."
+
+/-- Draw until `controller` has `n` cards in hand. A hand that already has
+`n` draws nothing. -/
+def drawUpToHandSize (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+  let cards := (g.player controller).hand.size
+  if cards < n then g.draw controller (n - cards)
+  else if n == 10 then
+    g.logMsg "You already have ten or more cards in hand"
+  else
+    g.logMsg s!"You already have {n} or more cards in hand"
+
+/-- Ask the controller to put a +1/+1 counter on the source, or to remove a
+counter from a creature they control and draw. -/
+def offerHydeChoice (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
+  { g with pending := .fraChoice controller (.hydeMode (sourceId.getD ⟨0⟩)) }
+    |>.logMsg s!"{(g.player controller).name} chooses one — 0 put a +1/+1 counter, 1 remove a counter and draw"
+
+/-- Something becomes a copy, as `of` says. The source copies an announced
+object until the controller's next turn and keeps the printed exception
+name. Choosing none copies nothing. A missing source copies nothing.
+`.noted` makes the enchanted creature a copy of the creature an earlier
+step noted, until the source leaves. Nothing noted copies nothing. -/
+def applyBecomeCopy (g : Game) (sourceId : Option ObjectId) (targets : Array Target)
+    (of : TriggeredAbility.TriggerCopyOf) : Game :=
+  match of with
+  | .noted =>
+    let copied := g.notedCopyObject
+    let hostId := g.notedHostId
+    let g := { g with notedCopyObject := none, notedHostId := none }
+    match copied, hostId with
+    | some tgt, some hid =>
+      match g.findObject? hid with
+      | some host => g.becomeCopyOf host tgt (untilSourceLeaves := sourceId)
+      | none => g
+    | _, _ => g
+  | of =>
     g.withSourceOnBattlefield sourceId (fun g src =>
+    match of with
+    | .artifactEnchantmentOrLand =>
       match targets[0]? with
       | some (Target.permanent id) =>
         match g.findObject? id with
@@ -245,9 +285,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
               (setPT := some (4, 4)) (addVigilance := true)
           else g.logMsg "That permanent isn't an artifact, non-Aura enchantment, or land"
         | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "Absorbing Man doesn't become a copy") "The source is no longer in play"
-  | (.step .copyTaskmaster) =>
-    g.withSourceOnBattlefield sourceId (fun g src =>
+      | _ => g.logMsg "Absorbing Man doesn't become a copy"
+    | .creatureOrGraveyardCard =>
       match targets[0]? with
       | some (Target.permanent id) | some (Target.card id) =>
         match g.findObject? id with
@@ -262,7 +301,59 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
               (replaceCreatureLine := true)
           else g.logMsg "That isn't a creature or a creature card in a graveyard"
         | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "Taskmaster doesn't become a copy") "The source is no longer in play"
+      | _ => g.logMsg "Taskmaster doesn't become a copy"
+    | .noted => g) "The source is no longer in play"
+
+/-- Exile the announced nonland the controller still controls, other than the
+source, then return it under its owner's control. Choosing none does nothing.
+An illegal target is reported. -/
+def flickerChosenNonland (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (targets : Array Target) : Game :=
+  match targets[0]? with
+  | some (Target.permanent id) =>
+    match g.findObject? id with
+    | some o =>
+      let other :=
+        match sourceId with
+        | some sid => o.id != sid
+        | none => true
+      if o.isOnBattlefield && o.controlledBy controller && !o.printed.isLand && other then
+        let owner := o.owner
+        let name := o.name
+        let (g, exId) := g.move o.id .exile none
+        let (g, retId) := g.move exId .battlefield (some owner)
+        let ret := g.object! retId
+        let g := g.setObject { ret with status :=
+          { ret.status with summoningSick := !ret.printed.keywords.haste } }
+        g.afterPermanentEnters (g.object! retId)
+          |>.logMsg s!"{name} is exiled, then returned"
+      else g.logMsg "The target is no longer legal"
+    | none => g.logMsg "The target is no longer legal"
+  | _ => g
+
+/-- Exile and return the announced permanent when the source is harnessed.
+A missing source does nothing. An unharnessed source is reported. -/
+def resolveHarnessedFlicker (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (targets : Array Target) : Game :=
+  match sourceId.bind g.findObject? with
+  | some src =>
+    if !src.status.harnessed then
+      g.logMsg "The Mind Stone is not harnessed"
+    else
+      g.flickerChosenNonland controller sourceId targets
+  | none => g
+
+/-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
+Effects are applied from that structured payload — not from Oracle text. -/
+def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target := #[])
+    (sourceName : String := "This creature")
+    (lastKnownPower : Option Int := none) : Game :=
+  match t.shared with
+  | (.step .copyAbsorbingMan) =>
+    g.applyBecomeCopy sourceId targets .artifactEnchantmentOrLand
+  | (.step .copyTaskmaster) =>
+    g.applyBecomeCopy sourceId targets .creatureOrGraveyardCard
   | (.watch .sheHulkRedirectOnce) =>
     if g.sheHulkDamageUsedThisTurn then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
@@ -501,11 +592,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       "The source is no longer in play"
   | (.step .hydeChoose) =>
     match lastKnownPower with
-    | none =>
-      { g with pending := .fraChoice controller (.hydeMode (sourceId.getD ⟨0⟩)) }
-        |>.logMsg s!"{(g.player controller).name} chooses one — 0 put a +1/+1 counter, 1 remove a counter and draw"
-    | some mode =>
-      g.applyHydeMode controller sourceId mode.toNat targets
+    | none => g.offerHydeChoice controller sourceId
+    | some mode => g.applyHydeMode controller sourceId mode.toNat targets
   | (.resource .drawIfAnotherHeroDamage) =>
     if (g.permanentsOf controller).any (fun o =>
         g.hasSubtype o "Hero" && some o.id != sourceId) then
@@ -516,34 +604,9 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     else
       g.logMsg "Human Torch's ability has no effect"
   | (.step .drawToTen) =>
-    let n := 10 - (g.player controller).hand.size
-    if n > 0 then g.draw controller n
-    else g.logMsg "You already have ten or more cards in hand"
+    g.drawUpToHandSize controller 10
   | (.step .harnessedFlicker) =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if !src.status.harnessed then
-        g.logMsg "The Mind Stone is not harnessed"
-      else
-        match targets[0]? with
-        | some (Target.permanent id) =>
-          match g.findObject? id with
-          | some o =>
-            if o.isOnBattlefield && o.controlledBy controller &&
-                !o.printed.isLand && o.id != src.id then
-              let owner := o.owner
-              let name := o.name
-              let (g, exId) := g.move o.id .exile none
-              let (g, retId) := g.move exId .battlefield (some owner)
-              let ret := g.object! retId
-              let g := g.setObject { ret with status :=
-                { ret.status with summoningSick := !ret.printed.keywords.haste } }
-              g.afterPermanentEnters (g.object! retId)
-                |>.logMsg s!"{name} is exiled, then returned"
-            else g.logMsg "The target is no longer legal"
-          | none => g.logMsg "The target is no longer legal"
-        | _ => g
-    | none => g
+    g.resolveHarnessedFlicker controller sourceId targets
   | (.watch .enchantedAttachEquipment) =>
     match sourceId.bind g.findObject? with
     | some src =>
@@ -591,13 +654,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.youAttacking .lookSixCast) =>
     g.beginMayCastFromLooked controller 6 (g.greatestPowerAmongAttacking controller)
   | (.step .enchantedControllerDraws) =>
-    match g.attachedHost? sourceId with
-    | some host =>
-      match host.controller with
-      | some pid => g.draw pid 1
-      | none => g.draw host.owner 1
-    | none =>
-      g.logMsg "The enchanted creature has left. No card is drawn."
+    g.drawForEnchantedController sourceId
   | (.death .hellcatReturn) =>
     match (sourceId.map g.followMoved).bind g.findObject? with
     | none => g.logMsg "Hellcat is no longer in the graveyard"

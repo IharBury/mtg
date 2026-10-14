@@ -114,6 +114,9 @@ inductive TriggerIf where
   most the lands the controller controls. Outside that resolution, the
   condition does not hold. -/
   | revealedManaValueAtMostLands
+  /-- The source is on the battlefield and harnessed.
+  A missing source does nothing. An unharnessed source is reported. -/
+  | sourceHarnessed
 deriving Repr, Inhabited, BEq
 
 /-- Objects chosen for `TriggerResolution.objectCost`, the optional action of
@@ -397,6 +400,10 @@ inductive TriggerExileHow where
   | playUntilNextTurn
   /-- Move it to exile. `note` tells the next step which cards moved. -/
   | forLater
+  /-- Exile it, then return it under its owner's control.
+  A land, the source, a permanent another player controls, or a missing
+  target is not exiled. Choosing none does nothing. -/
+  | returnImmediately
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.exile` can read. -/
@@ -573,6 +580,9 @@ inductive TriggerDrawWho where
   and that player loses life equal to the total mana value of those cards.
   An earlier step must have recorded the offer. -/
   | opponentHasYou
+  /-- The controller of the creature the source enchants.
+  Nothing enchanted draws nothing. -/
+  | enchantedController
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.draw` reads how many cards. The `n` argument
@@ -591,6 +601,9 @@ inductive TriggerDrawAmount where
   | equalToManaSpent
   /-- One card for each permanent of this type the controller controls. -/
   | perControlled (ty : CardType)
+  /-- Enough cards that the controller's hand has `n` cards.
+  A hand that already has `n` draws nothing. -/
+  | upToHandSize (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Which cards `TriggerResolution.returnToHand` returns. -/
@@ -709,6 +722,12 @@ inductive TriggerModeHow where
   | oneUnused
   /-- Modes already chosen resolve in printed order. -/
   | alreadyChosen
+  /-- The controller chooses one — a +1/+1 counter on the source, or remove
+  a counter from a creature you control and draw a card if you do.
+  You must remove a counter when a creature you control has one.
+  Choosing that mode when none does draws nothing. The modes are
+  `TriggerResolution.hydeModes`. This choice does not record a used mode. -/
+  | plusOneOrRemoveCounter
 deriving Repr, Inhabited, BEq
 
 /-- Which permanents `TriggerResolution.destroy` destroys. -/
@@ -1035,6 +1054,24 @@ inductive TriggerControlHow where
   | whileSourceRemains
 deriving Repr, Inhabited, BEq
 
+/-- What `TriggerResolution.becomeCopy` copies, and which exceptions apply.
+The source keeps its name when it copies an announced object until the
+controller's next turn. Choosing none copies nothing. A missing source
+copies nothing. The enchanted creature copies a noted creature until the
+source leaves. -/
+inductive TriggerCopyOf where
+  /-- Up to one target artifact, non-Aura enchantment, or land.
+  The source is also a legendary 4/4 Human Villain creature with vigilance. -/
+  | artifactEnchantmentOrLand
+  /-- Up to one target creature, or creature card in a graveyard.
+  The source is a legendary Human Mercenary Villain creature. -/
+  | creatureOrGraveyardCard
+  /-- The creature an earlier step exiled and noted.
+  The enchanted creature becomes that copy until the source leaves.
+  Nothing noted, or nothing enchanted, copies nothing. -/
+  | noted
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
@@ -1135,7 +1172,12 @@ inductive TriggerResolution where
   The targeted opponent may have you draw a card is
   `.draw 1 (who := .opponentHasYou)`.
   Optional as `.may (.draw 1 (who := .opponentHasYou)) (.sequence [])`. Declining that
-  offer mills and that player loses life; it does not skip. -/
+  offer mills and that player loses life; it does not skip.
+  The enchanted creature's controller draws a card is
+  `.draw 1 (who := .enchantedController)`. Nothing enchanted draws nothing.
+  Cards until the controller has ten in hand are
+  `.draw 0 (amount := .upToHandSize 10)`. A hand that already has ten
+  draws nothing. -/
   | draw (n : Nat) (who : TriggerDrawWho := .you)
       (amount : TriggerDrawAmount := .fixed)
   /-- Search a library, then resolve `thenDo` for the card that was found.
@@ -1451,7 +1493,13 @@ inductive TriggerResolution where
   remembered for `.mayCast .impulse`, are
   `.exile .top .forLater .impulse` inside `revealLibrary`. Outside that
   resolution, the exile does nothing.
-  The announced permanent, with no return, is `.exile .target .forLater`. -/
+  The announced permanent, with no return, is `.exile .target .forLater`.
+  The announced nonland the controller still controls, other than the
+  source, exiled and returned immediately, is
+  `.exile .target .returnImmediately`. Choosing none does nothing.
+  While the source is harnessed is
+  `.«if» .sourceHarnessed (.exile .target .returnImmediately)`.
+  An unharnessed source is reported and exiles nothing. -/
   | exile (what : TriggerExileWhat) (how : TriggerExileHow)
       (note : TriggerExileNote := .none)
   /-- Put cards onto the battlefield. `what` says which cards, `how` says
@@ -1613,7 +1661,11 @@ inductive TriggerResolution where
   Doing `thenDo` on the nth resolution this turn is
   `.«if» (.nthResolve n) thenDo`.
   Attaching the artifact put from hand when it is Equipment is
-  `.«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)`. -/
+  `.«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)`.
+  Exiling and returning the announced permanent while the source is
+  harnessed is
+  `.«if» .sourceHarnessed (.exile .target .returnImmediately)`.
+  An unharnessed source is reported. A missing source does nothing. -/
   | «if» (cond : TriggerIf) (thenDo : TriggerResolution)
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
@@ -1646,7 +1698,9 @@ inductive TriggerResolution where
   Alliance is `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`.
   Gollum is `.chooseModes TriggerResolution.gollumModes .oneUnused`.
   Chosen up to X, in printed order, is
-  `.chooseModes TriggerResolution.upToXModes .alreadyChosen`. -/
+  `.chooseModes TriggerResolution.upToXModes .alreadyChosen`.
+  A +1/+1 counter on the source, or removing a counter to draw, is
+  `.chooseModes TriggerResolution.hydeModes .plusOneOrRemoveCounter`. -/
   | chooseModes (modes : List TriggerResolution) (how : TriggerModeHow)
   /-- You may cast a spell. `origin` says where the card is, `maxMv` limits
   its mana value, `cost` says whether that cost is paid, and `note` says
@@ -1787,8 +1841,6 @@ inductive TriggerResolution where
   | queueReflexiveIfSacrificed (kind : Nat)
   /-- Queue the divided-damage reflexive. `amount` is the printed number. -/
   | queuePlanDividedDamage (amount : Nat)
-  /-- The enchanted creature becomes a copy of the creature exiled this way. -/
-  | enchantedCopiesNoted
   /-- You may play the exiled card until the end of your next turn. -/
   | grantPlayNotedUntilNextTurn
   /-- The tapped creature can't untap while you control the source. -/
@@ -1800,8 +1852,17 @@ inductive TriggerResolution where
   /-- The following surveil returns a card with mana value at most the life
   you gained this turn. -/
   | armSurveilReturnLifeGained
-  /-- Resolve a leftover StepLeftover. -/
-  | step (e : StepLeftover)
+  /-- The source becomes a copy of the announced object until your next turn,
+  as `of` says. It keeps its name.
+  An artifact, non-Aura enchantment, or land, also a legendary 4/4 Human
+  Villain creature with vigilance, is `.becomeCopy .artifactEnchantmentOrLand`.
+  A creature or a creature card in a graveyard, as a legendary Human
+  Mercenary Villain creature, is `.becomeCopy .creatureOrGraveyardCard`.
+  Choosing none copies nothing. An illegal object is reported.
+  A missing source copies nothing.
+  The enchanted creature copying the creature an earlier step noted is
+  `.becomeCopy .noted`. Nothing noted copies nothing. -/
+  | becomeCopy (of : TriggerCopyOf)
   /-- Resolve a leftover DeathLeftover. -/
   | death (e : DeathLeftover)
   /-- Resolve a leftover ThisAttackLeftover. -/
@@ -1848,6 +1909,12 @@ def upToXModes : List TriggerResolution :=
    .loseLife 2 (who := .eachOpponent),
    .destroy .target (note := .chosenToken),
    .sacrifice .eachPlayer .chosenCreature]
+
+/-- Put a +1/+1 counter on the source. Draw a card after removing a counter
+from a creature you control. `.plusOneOrRemoveCounter` asks for the choice
+and removes the counter; the draw is that mode's follow-up. -/
+def hydeModes : List TriggerResolution :=
+  [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1]
 
 /-- What `action` does to the announced permanent. -/
 def ofPermanent : PermanentAction → TriggerResolution
@@ -2654,7 +2721,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .exileOtherCopyEnchanted =>
     { targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
-        [.exile .target .untilSourceLeaves .copyAndHost, .enchantedCopiesNoted] }
+        [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted] }
   | .exileUntilNextEndStep =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .exile .target .nextEndStep }
@@ -2743,9 +2810,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .enter .createRedwing =>
     { events := #[.entering], resolution := .createTokens .treasure 1 false .redwing }
   | .step .enchantedControllerDraws =>
-    { events := #[.enchantedControllerUpkeep], resolution := .step .enchantedControllerDraws }
+    { events := #[.enchantedControllerUpkeep]
+      resolution := .draw 1 (who := .enchantedController) }
   | .step .drawToTen =>
-    { events := #[.yourEndStep], resolution := .step .drawToTen }
+    { events := #[.yourEndStep], resolution := .draw 0 (amount := .upToHandSize 10) }
   | .step .copyAbsorbingMan =>
     { events := #[.yourFirstMain]
       targeting := .of (.filtered {
@@ -2753,20 +2821,22 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         types := #[.artifact, .enchantment, .land]
         nonAura := true })
       allowsZeroTargets := true, maxTargets := 1
-      resolution := .step .copyAbsorbingMan }
+      resolution := .becomeCopy .artifactEnchantmentOrLand }
   | .step .hydeChoose =>
-    { events := #[.yourUpkeep], resolution := .step .hydeChoose }
+    { events := #[.yourUpkeep],
+      resolution := .chooseModes TriggeredAbility.TriggerResolution.hydeModes
+        .plusOneOrRemoveCounter }
   | .step .copyTaskmaster =>
     { events := #[.yourFirstMain], targeting := .of .creatureOrGyCreatureCard,
       allowsZeroTargets := true, maxTargets := 1
-      resolution := .step .copyTaskmaster }
+      resolution := .becomeCopy .creatureOrGraveyardCard }
   | .step .harnessedFlicker =>
     { events := #[.yourEndStep]
       targeting := .of (.filtered {
         noun := "up to one other target nonland permanent you control"
         nonland := true, controller := .you, another := true })
       allowsZeroTargets := true, maxTargets := 1
-      resolution := .step .harnessedFlicker }
+      resolution := .«if» .sourceHarnessed (.exile .target .returnImmediately) }
   | .death .hellcatReturn =>
     { events := #[.dying], resolution := .death .hellcatReturn }
   | .death .villainReturnAsHero =>
