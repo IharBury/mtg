@@ -2929,17 +2929,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match g.resolvingCauseId.orElse (fun _ => fromStack) with
     | none => g
     | some spellId => g.offerSpellRetarget controller spellId 0
-  | .mayDealCauseDamage =>
-    if g.sheHulkDamageUsedThisTurn then
-      g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
-    else
-      let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
-      match targets.find? (legal.contains ·) with
-      | none => g.logMsg "The target is no longer legal"
-      | some t =>
-        let amt := lastKnownPower.getD 0
-        { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
-          |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
   | .youAttacking e =>
     g.applyModeledTrigger controller (.onYouAttacking (Effect.ofTrigger (.youAttacking e))) sourceId targets sourceName lastKnownPower
   | .casting e =>
@@ -2951,6 +2940,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .may (.draw 1 _ .fixed) (.sequence []) .ifYouDo =>
     g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
       fun g => g.draw controller 1
+  | .may (.dealDamage _ .target .lastKnownPower .none) (.sequence []) .ifYouDo =>
+    if g.sheHulkDamageUsedThisTurn then
+      g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
+    else
+      let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
+      match targets.find? (legal.contains ·) with
+      | none => g.logMsg "The target is no longer legal"
+      | some t =>
+        let amt := lastKnownPower.getD 0
+        { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
+          |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
   | .may .retargetCause (.sequence []) .ifYouDo =>
     g.applyTriggeredAbility controller ab sourceId targets dividedDamage
       lastKnownPower lastKnownToughness sourceName (some .retargetCause)

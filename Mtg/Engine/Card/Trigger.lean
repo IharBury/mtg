@@ -1281,7 +1281,9 @@ inductive TriggerResolution where
   `.dealDamage n (.eachNonSubtypeAndOpponents subtype)`.
   Damage equal to the greatest mana value among artifacts you control, to
   the announced opponent, is
-  `.dealDamage 0 .targetOpponent .greatestArtifactMv`. -/
+  `.dealDamage 0 .targetOpponent .greatestArtifactMv`.
+  The trigger's last-known power to the announced player or permanent, offered
+  as a may, is `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`. -/
   | dealDamage (n : Nat) (who : TriggerDamageWho)
       (amount : TriggerDamageAmount := .fixed)
       (note : TriggerDamageNote := .none)
@@ -1598,6 +1600,11 @@ inductive TriggerResolution where
   `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`.
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
   `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
+  You may have the source deal the damage that caused this to the announced
+  target is `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`.
+  The amount is the trigger's last-known power. Already used this turn does
+  nothing. An illegal target is reported. The source need not still be on
+  the battlefield.
   You may choose new targets for the spell that caused this is
   `.may .retargetCause (.sequence []) .ifYouDo`.
   You may pay {1} up to three times, then choose that many modes, is
@@ -2054,10 +2061,6 @@ inductive TriggerResolution where
   You may do so with `.may .retargetCause (.sequence []) .ifYouDo`.
   Declining a target leaves it unchanged and asks about the next one. -/
   | retargetCause
-  /-- You may have the source deal the damage that caused this trigger to
-  the announced target. The amount is the trigger's last-known power.
-  Already used this turn does nothing. An illegal target is reported. -/
-  | mayDealCauseDamage
   /-- Resolve a leftover YouAttackLeftover. -/
   | youAttacking (e : YouAttackLeftover)
   /-- Resolve a leftover CastLeftover. -/
@@ -3093,7 +3096,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.creatureYouControlTapped], resolution := .untap .firstThisTurn }
   | .watch .sheHulkRedirectOnce =>
     { events := #[.creatureYouControlDealtDamage], targeting := .of .playerOrCreature,
-      resolution := .mayDealCauseDamage }
+      resolution := .may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo }
   | .watch .speedballTargeted =>
     { events := #[.spellTargetsSource],
       resolution := .sequence [

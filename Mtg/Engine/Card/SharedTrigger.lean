@@ -1036,7 +1036,8 @@ inductive SharedTrigger where
   `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
   Exiling until a nonland, then a counter or a cast, is
   `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
-  You may deal the damage that caused this is `.mayDealCauseDamage`.
+  You may deal the damage that caused this is
+  `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`.
   You may pay {2} to copy the artifact that caused this is
   `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`. -/
   | watch (e : WatchLeftover)
