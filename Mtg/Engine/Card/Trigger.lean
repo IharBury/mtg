@@ -451,6 +451,9 @@ inductive TriggerSacrificeWhat where
   | plan
   /-- Another creature the controller controls. -/
   | another
+  /-- A nontoken creature of that player's choice. A player with none
+  sacrifices nothing. -/
+  | chosenNontokenCreature
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.sacrifice` can read. -/
@@ -627,6 +630,11 @@ inductive TriggerReturnWhat where
   /-- A card the source exiled, returned to its owner's hand.
   A missing source, or nothing exiled, returns nothing. -/
   | linkedExile
+  /-- The card that caused this trigger, if it is still in its owner's
+  graveyard. An announced card or permanent is used when one was chosen.
+  Otherwise the recorded cause, or the last attacking creature that died.
+  A token ceases to exist. A card that has left is reported. -/
+  | cause
 deriving Repr, Inhabited, BEq
 
 /-- Whose hand `TriggerResolution.returnToHand` returns those cards to. -/
@@ -680,6 +688,24 @@ inductive TriggerPutWhat where
   | creatureMvAtMost (mv : Nat)
   /-- A creature card of `subtype` with mana value at most `maxMv` from hand. -/
   | creatureFromHand (subtype : String) (maxMv : Nat)
+  /-- The object that caused this trigger, if it is still in its owner's
+  graveyard. `subtype`, when set, requires that subtype. An announced card
+  or permanent is used when one was chosen; otherwise the recorded cause.
+  A missing cause, or the wrong subtype, puts nothing. -/
+  | cause (subtype : Option String := none)
+deriving Repr, Inhabited, BEq
+
+/-- How a card `TriggerResolution.put` changes as it enters. -/
+inductive TriggerEnterWith where
+  /-- The permanent loses every ability and keyword. -/
+  | loseAllAbilities
+  /-- The permanent gains these keywords. -/
+  | keywords (k : Keywords)
+  /-- The permanent gains `subtype` in addition to its other types. -/
+  | additionalSubtype (subtype : String)
+  /-- Put `n` counters of `kind` on it. `asEnters` reports that it enters
+  with them. A finality counter is put by the ability's controller. -/
+  | counter (kind : CounterKind) (n : Nat := 1) (asEnters : Bool := false)
 deriving Repr, Inhabited, BEq
 
 /-- How `TriggerResolution.put` puts those cards onto the battlefield. -/
@@ -690,15 +716,29 @@ inductive TriggerPutHow where
   | tapped
   /-- As an artifact. It is not a creature. -/
   | asArtifact
+  /-- Under the card's owner's control. -/
+  | underOwner
 deriving Repr, Inhabited, BEq
 
-/-- What a later step of `TriggerResolution.put` can read. -/
+/-- What a later step of `TriggerResolution.put` can read, or how the
+card enters. -/
 inductive TriggerPutNote where
   /-- Nothing beyond putting the cards. -/
   | none
   /-- The artifact put from hand, and the creature it may attach to. -/
   | forAttach
+  /-- Apply these changes before the permanent's enters abilities. -/
+  | entering (mods : List TriggerEnterWith)
 deriving Repr, Inhabited, BEq
+
+namespace TriggerPutNote
+
+/-- Modifications carried by `entering`. Any other note changes nothing. -/
+def enterMods : TriggerPutNote → List TriggerEnterWith
+  | .entering mods => mods
+  | _ => []
+
+end TriggerPutNote
 
 /-- How `TriggerResolution.addMana` chooses the mana it adds. `types` is
 the printed mana when this is `.fixed`. -/
@@ -1268,7 +1308,9 @@ inductive TriggerResolution where
   A basic land found by searching is `.returnToHand .basicLand`.
   Outside `searchLibrary`, it does nothing.
   A card the source exiled, to its owner's hand, is
-  `.returnToHand .linkedExile .owner`. -/
+  `.returnToHand .linkedExile .owner`.
+  The card that caused this trigger, to its owner's hand, is
+  `.returnToHand .cause .owner`. A token ceases to exist. -/
   | returnToHand (what : TriggerReturnWhat) (whose : TriggerReturnWhose := .you)
       (note : TriggerReturnNote := .none)
   /-- Put reflexive ability `followup` on the stack (“When you do”). -/
@@ -1291,7 +1333,9 @@ inductive TriggerResolution where
   The Plan, if it is still on the battlefield, is `.sacrifice .you .plan`.
   The Plan, noting whether the sacrifice happened, is
   `.sacrifice .you .plan .forReflexive`.
-  You may sacrifice another creature with `.may (.sacrifice .you .another) (.sequence [])`. -/
+  You may sacrifice another creature with `.may (.sacrifice .you .another) (.sequence [])`.
+  Each opponent sacrifices a nontoken creature of their choice with
+  `.sacrifice .eachOpponent .chosenNontokenCreature`. -/
   | sacrifice (who : TriggerSacrificeWho) (what : TriggerSacrificeWhat)
       (note : TriggerSacrificeNote := .none)
   /-- A permanent loses `what`, as `who` says.
@@ -1526,7 +1570,15 @@ inductive TriggerResolution where
   after that search is `.put .basicLandOnTop`.   A Dragon found in the hand
   and/or library is `.put .dragon`. Outside `searchLibrary`, those do nothing.
   The announced creature card with mana value at most `n` is
-  `.put (.creatureMvAtMost n)`. -/
+  `.put (.creatureMvAtMost n)`.
+  The source from its owner's graveyard, under its owner's control,
+  losing all abilities, gaining haste, and entering with a +1/+1 counter, is
+  `.put .source .underOwner (.entering [.loseAllAbilities, .keywords Keyword.haste, .counter .plusOnePlusOne (asEnters := true)])`.
+  A source that has left the graveyard is reported.
+  The Villain that caused this, under its owner's control, as a Hero with
+  a finality counter, is
+  `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
+  A missing cause puts nothing. -/
   | put (what : TriggerPutWhat) (how : TriggerPutHow := .asPrinted)
       (note : TriggerPutNote := .none)
   /-- Remove counters. `what` says which, and `who` says from whom.
@@ -1863,8 +1915,6 @@ inductive TriggerResolution where
   The enchanted creature copying the creature an earlier step noted is
   `.becomeCopy .noted`. Nothing noted copies nothing. -/
   | becomeCopy (of : TriggerCopyOf)
-  /-- Resolve a leftover DeathLeftover. -/
-  | death (e : DeathLeftover)
   /-- Resolve a leftover ThisAttackLeftover. -/
   | thisAttack (e : ThisAttackLeftover)
   /-- Resolve a leftover EnterOrAttackLeftover. -/
@@ -2838,13 +2888,20 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       allowsZeroTargets := true, maxTargets := 1
       resolution := .«if» .sourceHarnessed (.exile .target .returnImmediately) }
   | .death .hellcatReturn =>
-    { events := #[.dying], resolution := .death .hellcatReturn }
+    { events := #[.dying]
+      resolution := .put .source .underOwner (.entering [
+        .loseAllAbilities, .keywords Keyword.haste,
+        .counter .plusOnePlusOne (asEnters := true)]) }
   | .death .villainReturnAsHero =>
-    { events := #[.villainYouControlDies], resolution := .death .villainReturnAsHero }
+    { events := #[.villainYouControlDies]
+      resolution := .put (.cause (some "Villain")) .underOwner (.entering [
+        .additionalSubtype "Hero", .counter .finality]) }
   | .death .attackingReturnHand =>
-    { events := #[.attackingCreatureYouControlDies], resolution := .death .attackingReturnHand }
+    { events := #[.attackingCreatureYouControlDies]
+      resolution := .returnToHand .cause .owner }
   | .death .deathtouchOppSac =>
-    { events := #[.creatureYouControlDies], resolution := .death .deathtouchOppSac }
+    { events := #[.creatureYouControlDies]
+      resolution := .sacrifice .eachOpponent .chosenNontokenCreature }
   | .thisAttack .mayPayPlusOne =>
     { events := #[.attacking], resolution := .thisAttack .mayPayPlusOne }
   | .thisAttack .payReturnAttacking =>
@@ -3013,7 +3070,16 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).events ==
   #[TriggerEvent.entering, TriggerEvent.attacking]
 #guard (SharedTrigger.timing (.death .hellcatReturn)).resolution ==
-  TriggeredAbility.TriggerResolution.death .hellcatReturn
+  .put .source .underOwner (.entering [
+    .loseAllAbilities, .keywords Keyword.haste,
+    .counter .plusOnePlusOne (asEnters := true)])
+#guard (SharedTrigger.timing (.death .villainReturnAsHero)).resolution ==
+  .put (.cause (some "Villain")) .underOwner (.entering [
+    .additionalSubtype "Hero", .counter .finality])
+#guard (SharedTrigger.timing (.death .attackingReturnHand)).resolution ==
+  .returnToHand .cause .owner
+#guard (SharedTrigger.timing (.death .deathtouchOppSac)).resolution ==
+  .sacrifice .eachOpponent .chosenNontokenCreature
 #guard TriggeredAbility.TriggerResolution.ofPermanent .loseIndestructible ==
   .lose .indestructible
 #guard TriggeredAbility.TriggerResolution.ofSource .loseIndestructible ==

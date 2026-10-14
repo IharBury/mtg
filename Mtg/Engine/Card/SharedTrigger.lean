@@ -74,15 +74,24 @@ inductive StepLeftover where
   | harnessedFlicker
 deriving Repr, Inhabited, BEq
 
-/-- Leftover dies triggers that do not already match a more specific constructor. -/
+/-- Leftover dies triggers that do not already match a more specific constructor.
+Each one resolves through `put`, `returnToHand`, or `sacrifice`. -/
 inductive DeathLeftover where
-  /-- When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 co… -/
+  /-- When Hellcat dies, return her under her owner's control with a +1/+1
+  counter. She loses all abilities and gains haste. Resolves as
+  `.put .source .underOwner (.entering [.loseAllAbilities, .keywords Keyword.haste, .counter .plusOnePlusOne (asEnters := true)])`. -/
   | hellcatReturn
-  /-- Whenever a Villain you control dies, return it to the battlefield under its owner's contro… -/
+  /-- Whenever a Villain you control dies, return it under its owner's control
+  with a finality counter. It is a Hero in addition to its other types.
+  Resolves as
+  `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`. -/
   | villainReturnAsHero
-  /-- Whenever an attacking creature you control dies, return that card to its owner's hand. -/
+  /-- Whenever an attacking creature you control dies, return that card to its
+  owner's hand. Resolves as `.returnToHand .cause .owner`. -/
   | attackingReturnHand
-  /-- Whenever another creature you control with deathtouch dies, each opponent sacrifices a non… -/
+  /-- Whenever another creature you control with deathtouch dies, each opponent
+  sacrifices a nontoken creature of their choice. Resolves as
+  `.sacrifice .eachOpponent .chosenNontokenCreature`. -/
   | deathtouchOppSac
 deriving Repr, Inhabited, BEq
 
@@ -921,7 +930,17 @@ inductive SharedTrigger where
   Exiling and returning another nonland while harnessed is
   `.«if» .sourceHarnessed (.exile .target .returnImmediately)`. -/
   | step (e : StepLeftover)
-  /-- Leftover dies effect. -/
+  /-- Leftover dies effect.
+  Hellcat returns under her owner's control, losing all abilities, gaining
+  haste, and entering with a +1/+1 counter, as
+  `.put .source .underOwner (.entering [.loseAllAbilities, .keywords Keyword.haste, .counter .plusOnePlusOne (asEnters := true)])`.
+  A Villain returns under its owner's control as a Hero with a finality
+  counter, as
+  `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
+  The attacking creature that died returns to its owner's hand, as
+  `.returnToHand .cause .owner`.
+  Each opponent sacrifices a nontoken creature, as
+  `.sacrifice .eachOpponent .chosenNontokenCreature`. -/
   | death (e : DeathLeftover)
   /-- Leftover “whenever this attacks” effect. -/
   | thisAttack (e : ThisAttackLeftover)

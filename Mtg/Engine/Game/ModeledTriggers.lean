@@ -331,6 +331,121 @@ def flickerChosenNonland (g : Game) (controller : PlayerId) (sourceId : Option O
     | none => g.logMsg "The target is no longer legal"
   | _ => g
 
+/-- True when `mods` strips abilities and grants haste, as Hellcat returns. -/
+def losesAbilitiesAndHaste (mods : List TriggeredAbility.TriggerEnterWith) : Bool :=
+  mods.any (· == .loseAllAbilities) &&
+    mods.any (fun m =>
+      match m with
+      | .keywords k => k.haste
+      | _ => false)
+
+/-- Apply one enters-with change to the permanent `id`. -/
+def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
+    (mod : TriggeredAbility.TriggerEnterWith) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    match mod with
+    | .loseAllAbilities =>
+      g.setObject { o with printed := { o.printed with
+        keywords := Keywords.none
+        triggeredAbilities := #[]
+        activatedAbilities := #[]
+        staticAbilities := #[] } }
+    | .keywords k =>
+      let o := g.object! id
+      g.setObject { o with printed := { o.printed with
+        keywords := Keywords.merge o.printed.keywords k } }
+    | .additionalSubtype subtype =>
+      let o := g.object! id
+      if o.printed.subtypes.any (· == subtype) then g
+      else
+        g.setObject { o with printed := { o.printed with
+          subtypes := o.printed.subtypes.push subtype } }
+    | .counter kind n asEnters =>
+      let o := g.object! id
+      match kind, asEnters with
+      | .plusOnePlusOne, true =>
+        g.addPlusOnePlusOneTo o n (entersWith := true)
+      | .plusOnePlusOne, false =>
+        g.addPlusOnePlusOneTo o n (byPlayer := some controller)
+      | .finality, _ =>
+        g.addFinalityTo o n (byPlayer := some controller)
+      | kind, asEnters =>
+        g.addCounters o kind n (entersWith := asEnters) (byPlayer := some controller)
+
+/-- Put `o` onto the battlefield under its owner's control, then apply
+`mods` before its enters abilities. -/
+def enterFromOwnerGraveyard (g : Game) (controller : PlayerId) (o : GameObject)
+    (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
+  let (g, newId) := g.putOntoBattlefield o.id o.owner
+  let g := mods.foldl (fun g m => g.applyEnterMod controller newId m) g
+  let g := g.afterPermanentEnters (g.object! newId)
+  if losesAbilitiesAndHaste mods then
+    g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
+  else g
+
+/-- Return the source from its owner's graveyard under its owner's control.
+Hellcat's return reports her by name when she has already left. -/
+def returnSourceUnderOwner (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
+  let hellcat := losesAbilitiesAndHaste mods
+  let missing :=
+    if hellcat then "Hellcat is no longer in the graveyard"
+    else "The ability's source is no longer in the graveyard"
+  match (sourceId.map g.followMoved).bind g.findObject? with
+  | none => g.logMsg missing
+  | some o =>
+    if o.zone != .graveyard o.owner then g.logMsg missing
+    else g.enterFromOwnerGraveyard controller o mods
+
+/-- The announced card or permanent, or the recorded cause. -/
+def announcedOrCauseId? (g : Game) (targets : Array Target) : Option ObjectId :=
+  match targets[0]? with
+  | some (Target.card id) | some (Target.permanent id) => some id
+  | _ =>
+    ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+
+/-- Return the cause from its owner's graveyard under its owner's control.
+`subtype`, when set, requires that subtype. A missing cause puts nothing. -/
+def returnCauseUnderOwner (g : Game) (controller : PlayerId) (targets : Array Target)
+    (subtype : Option String) (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
+  match (g.announcedOrCauseId? targets).bind g.findObject? with
+  | some o =>
+    let ok :=
+      match subtype with
+      | none => true
+      | some s => g.hasSubtype o s
+    if o.zone == .graveyard o.owner && ok then
+      g.enterFromOwnerGraveyard controller o mods
+    else g
+  | none => g
+
+/-- The announced card, the recorded cause, or the last attacking creature
+that died. -/
+def diedCardId? (g : Game) (targets : Array Target) : Option ObjectId :=
+  let fromTarget :=
+    match targets[0]? with
+    | some (Target.card id) | some (Target.permanent id) => some id
+    | _ => none
+  let fromCause :=
+    ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
+  let fromAttacker := g.lastDiedAttacker.map g.followMoved
+  (fromTarget.orElse (fun _ => fromCause)).orElse (fun _ => fromAttacker)
+
+/-- Return the card that caused this trigger to its owner's hand.
+A token ceases to exist. A card that has left is reported. -/
+def returnCauseToOwnerHand (g : Game) (targets : Array Target) : Game :=
+  match (g.diedCardId? targets).bind g.findObject? with
+  | none => g.logMsg "The attacking creature is no longer in the graveyard"
+  | some o =>
+    if o.printed.isToken then
+      g.logMsg s!"{o.name} ceases to exist"
+    else if o.zone != .graveyard o.owner then
+      g.logMsg "The attacking creature is no longer in the graveyard"
+    else
+      g.returnToHand o.id o.owner
+
 /-- Exile and return the announced permanent when the source is harnessed.
 A missing source does nothing. An unharnessed source is reported. -/
 def resolveHarnessedFlicker (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
@@ -496,18 +611,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         | some vid =>
           g.beginMayHaveVillainConnive controller src.id vid
   | (.death .attackingReturnHand) =>
-    let fromCause :=
-      ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
-    let id := fromCause.orElse (fun _ => g.lastDiedAttacker.map g.followMoved)
-    match id.bind g.findObject? with
-    | none => g.logMsg "The attacking creature is no longer in the graveyard"
-    | some o =>
-      if o.printed.isToken then
-        g.logMsg s!"{o.name} ceases to exist"
-      else if o.zone != .graveyard o.owner then
-        g.logMsg "The attacking creature is no longer in the graveyard"
-      else
-        g.returnToHand o.id o.owner
+    g.returnCauseToOwnerHand targets
   | (.watch .ultronCopy) =>
     let fromTarget :=
       match targets[0]? with
@@ -527,28 +631,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
             |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {src.name}"
       | none => g.logMsg "Ultron has nothing to copy"
   | (.death .villainReturnAsHero) =>
-    let causeId := (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)
-    let it := match targets[0]? with
-      | some t => some t
-      | none => causeId.map (fun id => Target.card (g.followMoved id))
-    match it with
-    | some (Target.card id) | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .graveyard o.owner && g.hasSubtype o "Villain" then
-          let owner := o.owner
-          let (g, newId) := g.putOntoBattlefield id owner
-          let o := g.object! newId
-          let subtypes :=
-            if o.printed.subtypes.any (· == "Hero") then o.printed.subtypes
-            else o.printed.subtypes.push "Hero"
-          let g := g.setObject { o with
-            printed := { o.printed with subtypes } }
-          let g := g.addFinalityTo (g.object! newId) 1 (byPlayer := some controller)
-          g.afterPermanentEnters (g.object! newId)
-        else g
-      | none => g
-    | _ => g
+    g.returnCauseUnderOwner controller targets (some "Villain")
+      [.additionalSubtype "Hero", .counter .finality]
   | (.casting .villainToken) =>
     g.createKindTokens controller .villain21menace 1
   | (.enterOrAttack .createSquirrel) =>
@@ -656,25 +740,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.step .enchantedControllerDraws) =>
     g.drawForEnchantedController sourceId
   | (.death .hellcatReturn) =>
-    match (sourceId.map g.followMoved).bind g.findObject? with
-    | none => g.logMsg "Hellcat is no longer in the graveyard"
-    | some o =>
-      if o.zone != .graveyard o.owner then
-        g.logMsg "Hellcat is no longer in the graveyard"
-      else
-        let owner := o.owner
-        let (g, newId) := g.putOntoBattlefield o.id owner
-        let o := g.object! newId
-        let g := g.setObject { o with
-          printed := { o.printed with
-            keywords := Keyword.haste
-            triggeredAbilities := #[]
-            activatedAbilities := #[]
-            staticAbilities := #[] } }
-        let o := g.object! newId
-        let g := g.addPlusOnePlusOneTo o 1 (entersWith := true)
-        g.afterPermanentEnters (g.object! newId)
-          |>.logMsg s!"{o.name} returns, loses all abilities, and gains haste"
+    g.returnSourceUnderOwner controller sourceId
+      [.loseAllAbilities, .keywords Keyword.haste, .counter .plusOnePlusOne (asEnters := true)]
   | (.death .deathtouchOppSac) =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
   | (.thisAttack .mayPayPlusOne) =>
