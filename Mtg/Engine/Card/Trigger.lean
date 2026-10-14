@@ -1170,7 +1170,8 @@ deriving Repr, Inhabited, BEq
 The source keeps its name when it copies an announced object until the
 controller's next turn. Choosing none copies nothing. A missing source
 copies nothing. The enchanted creature copies a noted creature until the
-source leaves. -/
+source leaves. The controller creates a token copy of the artifact that
+caused the trigger. -/
 inductive TriggerCopyOf where
   /-- Up to one target artifact, non-Aura enchantment, or land.
   The source is also a legendary 4/4 Human Villain creature with vigilance. -/
@@ -1182,6 +1183,11 @@ inductive TriggerCopyOf where
   The enchanted creature becomes that copy until the source leaves.
   Nothing noted, or nothing enchanted, copies nothing. -/
   | noted
+  /-- The nontoken artifact that caused this trigger.
+  An announced permanent is used when one was chosen; otherwise the
+  recorded cause. The controller creates a token copy. A noncreature
+  token becomes a 2/2 Robot Villain after it enters. -/
+  | cause
 deriving Repr, Inhabited, BEq
 
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
@@ -1580,7 +1586,9 @@ inductive TriggerResolution where
   You may pay {1} to put a +1/+1 counter on target creature is
   `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`.
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
-  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`. -/
+  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
+  You may pay {2} to copy the nontoken artifact that caused this is
+  `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`. -/
   | may (action follow : TriggerResolution) (when : TriggerMayWhen := .ifYouDont)
   /-- You gain life (CR 118.2), as `amount` says. `n` is the amount when
   `amount` is `.fixed`.
@@ -2008,7 +2016,12 @@ inductive TriggerResolution where
   Choosing none copies nothing. An illegal object is reported.
   A missing source copies nothing.
   The enchanted creature copying the creature an earlier step noted is
-  `.becomeCopy .noted`. Nothing noted copies nothing. -/
+  `.becomeCopy .noted`. Nothing noted copies nothing.
+  A token copy of the nontoken artifact that caused this is
+  `.becomeCopy .cause`. An announced permanent is used when one was chosen;
+  otherwise the recorded cause. The source need not still be on the
+  battlefield. A noncreature token becomes a 2/2 Robot Villain after it
+  enters. -/
   | becomeCopy (of : TriggerCopyOf)
   /-- Offer to pay `symbols` up to `maxTimes` times. Paying queues reflexive
   ability `kind` once for each payment. Declining queues nothing.
@@ -2030,11 +2043,6 @@ inductive TriggerResolution where
   the announced target. The amount is the trigger's last-known power.
   Already used this turn does nothing. An illegal target is reported. -/
   | mayDealCauseDamage
-  /-- You may pay {2}. If you do, create a token that's a copy of the
-  nontoken artifact that caused this trigger. An announced permanent is
-  used when one was chosen; otherwise the recorded cause. A token, a
-  nonartifact, or the source itself is reported. -/
-  | mayCopyCause
   /-- Resolve a leftover YouAttackLeftover. -/
   | youAttacking (e : YouAttackLeftover)
   /-- Resolve a leftover CastLeftover. -/
@@ -3106,7 +3114,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl]
         .fromLastKnown }
   | .watch .ultronCopy =>
-    { events := #[.anotherNontokenArtifactEnters], resolution := .mayCopyCause }
+    { events := #[.anotherNontokenArtifactEnters],
+      resolution := .may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo }
   | .watch .enchantedAttachEquipment =>
     { events := #[.enchantedAttacksOrBlocks], targeting := .of .equipmentYouControl
       allowsZeroTargets := true, maxTargets := 1000,

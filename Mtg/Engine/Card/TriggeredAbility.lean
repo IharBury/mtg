@@ -938,6 +938,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "discard cards"
   | .may (.discard 1) (.draw n) .ifYouDo =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
+  | .may (.pay symbols) (.becomeCopy .cause) .ifYouDo =>
+    match symbols.toList with
+    | [.generic 2] => "you may pay {2} to copy it"
+    | _ => "you may pay to copy it"
   | .may action _ =>
     match action with
     | .tap .humans =>
@@ -1615,6 +1619,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "until your next turn, this becomes a copy of up to one target creature or creature card in a graveyard, except its name, and it's a legendary Human Mercenary Villain creature"
   | .becomeCopy .noted =>
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
+  | .becomeCopy .cause =>
+    "create a token that's a copy of the artifact that caused this"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
   | .offerReflexivePay _ _ _ =>
@@ -1625,8 +1631,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "that player exiles cards until a nonland card"
   | .mayDealCauseDamage =>
     "you may have this deal that much damage"
-  | .mayCopyCause =>
-    "you may pay {2} to copy it"
   | .youAttacking .pay2LifeToughness =>
     "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
   | .youAttacking .exileTopHeroPump =>
