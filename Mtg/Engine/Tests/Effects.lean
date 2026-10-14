@@ -1065,7 +1065,7 @@ def burnChapterI : Game :=
   (namedPermanent burnChapterI "Burn, Burn, Tree and Fern").status.lore == 1 &&
     !burnChapterI.battlefield.any (fun o => o.name == "Gray Ogre") &&
     (namedGraveyardCard burnChapterI ⟨1⟩ "Gray Ogre").zone == .graveyard ⟨1⟩ &&
-    burnChapterI.log.any (fun s => mentions s "is dealt 6 damage") &&
+    burnChapterI.log.any (fun s => mentions s "deals 6 damage to Gray Ogre") &&
     burnChapterI.log.any (fun s => mentions s "gets a lore counter") &&
     burnChapterI.log.any (fun s => mentions s "saga chapter")
 
