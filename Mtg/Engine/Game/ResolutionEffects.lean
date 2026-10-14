@@ -485,6 +485,17 @@ def sourcePowerAtResolution (g : Game) (sourceId : Option ObjectId)
     else lastKnownPower.getD (g.power o)
   | none => lastKnownPower.getD (0 : Int)
 
+/-- How many Equipment are attached to the source.
+A source still on the battlefield uses those attachments.
+A source that has left uses `lastKnownPower` as that count. -/
+def attachedEquipmentAtResolution (g : Game) (sourceId : Option ObjectId)
+    (lastKnownPower : Option Int := none) : Nat :=
+  match sourceId.bind g.findObject? with
+  | some o =>
+    if o.isOnBattlefield then g.attachedEquipmentCount o
+    else (lastKnownPower.getD (0 : Int)).toNat
+  | none => (lastKnownPower.getD (0 : Int)).toNat
+
 /-- `sourcePowerAtResolution` as a `Nat`. -/
 def sourcePowerNatAtResolution (g : Game) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none) : Nat :=

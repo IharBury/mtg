@@ -95,21 +95,39 @@ inductive DeathLeftover where
   | deathtouchOppSac
 deriving Repr, Inhabited, BEq
 
-/-- Leftover “whenever this attacks” (or attacks-alone) triggers. -/
+/-- Leftover “whenever this attacks” (or attacks-alone) triggers.
+Each one resolves through `may`, `if`, `exile`, `loseLife`, `gainLife`,
+`pump`, or `grant`. -/
 inductive ThisAttackLeftover where
-  /-- Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target crea… -/
+  /-- Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1
+  counter on target creature. Resolves as
+  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`. -/
   | mayPayPlusOne
-  /-- Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card… -/
+  /-- Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return
+  target creature card from your graveyard tapped and attacking with a
+  finality counter. Resolves as
+  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`. -/
   | payReturnAttacking
-  /-- Whenever Iron Man attacks, if an artifact entered the battlefield under your control this … -/
+  /-- Whenever Iron Man attacks, if an artifact entered under your control
+  this turn, draw a card. Resolves as
+  `.«if» .artifactEnteredThisTurn (.draw 1)`. -/
   | ifArtifactEnteredDraw
-  /-- Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, th… -/
+  /-- Whenever The Mighty Thor attacks, exile up to one target nontoken
+  artifact or creature, then return it tapped. Resolves as
+  `.exile .target .returnTapped`. -/
   | blinkNontoken
-  /-- Whenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X lif… -/
+  /-- Whenever Whiplash attacks, if he's equipped, each opponent loses X
+  life and you gain X life, where X is the number of Equipment attached
+  to him. Resolves as
+  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife 0 (amount := .attachedEquipment)])`. -/
   | equippedDrain
-  /-- Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater. -/
+  /-- Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her
+  power is 4 or greater. Resolves as
+  `.«if» (.sourcePowerAtLeast 4) (.draw 1)`. -/
   | drawIfPower4
-  /-- Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructibl… -/
+  /-- Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0
+  and gains indestructible until end of turn. Resolves as
+  `.sequence [.pump 2 0 .source, .grant (.keywords Keyword.indestructible) .source]`. -/
   | attacksAlonePlus2Indestructible
 deriving Repr, Inhabited, BEq
 
@@ -942,7 +960,22 @@ inductive SharedTrigger where
   Each opponent sacrifices a nontoken creature, as
   `.sacrifice .eachOpponent .chosenNontokenCreature`. -/
   | death (e : DeathLeftover)
-  /-- Leftover “whenever this attacks” effect. -/
+  /-- Leftover “whenever this attacks” effect.
+  Paying {1} to put a +1/+1 counter on target creature is
+  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`.
+  Paying {3}{B} to return a graveyard creature tapped and attacking is
+  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
+  Drawing when an artifact entered under your control this turn is
+  `.«if» .artifactEnteredThisTurn (.draw 1)`.
+  Exiling a nontoken artifact or creature and returning it tapped is
+  `.exile .target .returnTapped`.
+  Each opponent losing X life and you gaining X life, X the Equipment
+  attached to the source, is
+  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife 0 (amount := .attachedEquipment)])`.
+  Drawing when the source's power is 4 or greater is
+  `.«if» (.sourcePowerAtLeast 4) (.draw 1)`.
+  The source getting +2/+0 and indestructible until end of turn is
+  `.sequence [.pump 2 0 .source, .grant (.keywords Keyword.indestructible) .source]`. -/
   | thisAttack (e : ThisAttackLeftover)
   /-- Leftover “enters or attacks” effect. -/
   | enterOrAttack (e : EnterOrAttackLeftover)

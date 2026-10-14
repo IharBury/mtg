@@ -412,6 +412,24 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some src =>
       if src.status.harnessed then (g, true)
       else (g.logMsg "The Mind Stone is not harnessed", false)
+  | .artifactEnteredThisTurn =>
+    if (g.player controller).artifactEnteredThisTurn then (g, true)
+    else
+      (g.logMsg
+        "No artifact entered under your control this turn. Iron Man's ability doesn't trigger.",
+        false)
+  | .sourcePowerAtLeast n =>
+    let pw := g.sourcePowerAtResolution sourceId lastKnownPower
+    if pw ≥ Int.ofNat n then (g, true)
+    else
+      let g :=
+        if n == 4 then g.logMsg "Viv Vision's power is not 4 or greater"
+        else g.logMsg s!"Its power is not {n} or greater"
+      (g, false)
+  | .attachedEquipment =>
+    let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
+    if x == 0 then (g.logMsg "Whiplash isn't equipped", false)
+    else (g, true)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -1031,6 +1049,8 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       s!"a basic {subtype} card" (.exileLinked sourceId) (count := max)
   | .target, .returnImmediately, .none =>
     g.flickerChosenNonland controller sourceId targets
+  | .target, .returnTapped, .none =>
+    g.returnNontokenTapped targets
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.sacrifice`. Each printed combination keeps
@@ -1855,7 +1875,8 @@ the behavior of the constructor it replaced. -/
 def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target) (n : Nat)
     (who : TriggeredAbility.TriggerLifeLossWho)
-    (amount : TriggeredAbility.TriggerLifeLossAmount) : Game :=
+    (amount : TriggeredAbility.TriggerLifeLossAmount)
+    (lastKnownPower : Option Int := none) : Game :=
   match who, amount with
   | .you, .fixed =>
     g.loseLife controller n
@@ -1868,6 +1889,10 @@ def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match sourceId.bind g.findObject? with
     | none => g
     | some src => g.loseLife controller src.status.burden
+  | .eachOpponent, .attachedEquipment =>
+    let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
+    if x == 0 then g
+    else g.forEachOpponent controller (fun g pid => g.loseLife pid x)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.gainLife`. Each printed combination keeps
@@ -1875,10 +1900,14 @@ the behavior of the constructor it replaced. -/
 def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target) (n : Nat)
     (amount : TriggeredAbility.TriggerLifeAmount)
-    (sequencedCardPower : Option Nat) : Game :=
+    (sequencedCardPower : Option Nat)
+    (lastKnownPower : Option Int := none) : Game :=
   match amount with
   | .fixed =>
     g.gainLife controller n
+  | .attachedEquipment =>
+    let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
+    if x == 0 then g else g.gainLife controller x
   | .equalToTargetPower =>
     match sequencedCardPower with
     | some k => g.gainLife controller k
@@ -2322,6 +2351,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             steps := combined } }
   | .gainLife n amount =>
     g.applyGainLife controller ab sourceId targets n amount sequencedCardPower
+      lastKnownPower
   | .exile what how note =>
     g.applyExile controller ab sourceId targets what how note
   | .may (.put (.creatureFromHand subtype maxMv) _ _) (.draw _ _ .fixed) =>
@@ -2538,7 +2568,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let (g, _) := g.createToken controller face
         g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
   | .loseLife n who amount =>
-    g.applyLoseLife controller ab sourceId targets n who amount
+    g.applyLoseLife controller ab sourceId targets n who amount lastKnownPower
   | .may (.draw _ .opponentHasYou _) _ =>
     g.applyTriggerDraw controller sourceId 1 .opponentHasYou .fixed
   | .may (.sequence [.draw _ _ .equalToManaSpent, .discard n (when := .ifManaSpent)]) _ =>
@@ -2637,8 +2667,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g.logMsg "The source is no longer on the battlefield"
   | .becomeCopy of =>
     g.applyBecomeCopy sourceId targets of
-  | .thisAttack e =>
-    g.applyModeledTrigger controller (.onThisAttack (Effect.ofTrigger (.thisAttack e))) sourceId targets sourceName lastKnownPower
   | .enterOrAttack e =>
     g.applyModeledTrigger controller (.onEnterOrAttack (Effect.ofTrigger (.enterOrAttack e))) sourceId targets sourceName lastKnownPower
   | .watch e =>
@@ -2658,29 +2686,33 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       lastKnownPower lastKnownToughness sourceName
       (some (.sequence (optional :: cond))) sequencedCardPower
   | .pay symbols =>
-    match symbols.toList with
-    | [.generic n] =>
-      let plusOne :=
-        match g.mayThenConditional with
-        | some (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw 1]) => true
-        | _ => false
-      let g := { g with pending := .mayPayGeneric controller n }
-      g.logMsg <|
-        if plusOne then
-          s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
-        else
-          s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
+    match g.mayThenConditional with
+    | some (.queueReflexive (.modeled kind)) =>
+      g.offerPayForReflexive controller sourceId symbols kind
     | _ =>
-      match sourceId.bind g.findObject? with
-      | none =>
-        (g.logMsg "The ability's source is no longer in the graveyard").failMayThen
-      | some src =>
-        if src.zone != .graveyard src.owner then
-          (g.logMsg s!"{src.name} is no longer in the graveyard").failMayThen
-        else
-          let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
-          g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
-            s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
+      match symbols.toList with
+      | [.generic n] =>
+        let plusOne :=
+          match g.mayThenConditional with
+          | some (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw 1]) => true
+          | _ => false
+        let g := { g with pending := .mayPayGeneric controller n }
+        g.logMsg <|
+          if plusOne then
+            s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
+          else
+            s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
+      | _ =>
+        match sourceId.bind g.findObject? with
+        | none =>
+          (g.logMsg "The ability's source is no longer in the graveyard").failMayThen
+        | some src =>
+          if src.zone != .graveyard src.owner then
+            (g.logMsg s!"{src.name} is no longer in the graveyard").failMayThen
+          else
+            let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
+            g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
+              s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
   | .objectCost how =>
     match how with
     | .anotherCreature =>
@@ -2816,15 +2848,8 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     let mut g := g
     for id in attackerIds do
       let o := g.object! id
-      let skipIronMan :=
-        o.printed.triggeredAbilities.any (fun t =>
-          match t.shared with
-          | .thisAttack .ifArtifactEnteredDraw =>
-            !(g.player p).artifactEnteredThisTurn
-          | _ => false)
-      if !skipIronMan then
-        g := g.putMatchingSourceTriggers p o .attacking
-          (some (g.snapshotPower o)) (some (g.snapshotToughness o))
+      g := g.putMatchingSourceTriggers p o .attacking
+        (some (g.snapshotPower o)) (some (g.snapshotToughness o))
       -- Reality Fracture: each attacking creature, and one attacking a player
       -- alone (no other creature attacks that player; ruling 861).
       g := g.putFraEventTriggers p .creatureYouControlAttacks (cause := some o)

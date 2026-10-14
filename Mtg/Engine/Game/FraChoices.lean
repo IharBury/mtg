@@ -601,9 +601,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw s!"{(g.player p).name} cannot pay {total}; add mana first"
     let g ← g.payCost p total
     let g := g.logMsg s!"{(g.player p).name} pays {total}"
-    return (g.applyFra p default (.queueMshReflexive kind times) #[] sourceId).finishFraChoice
+    if g.mayThenDrop > 0 then
+      return g.acceptMayThen
+    else
+      return (g.applyFra p default (.queueMshReflexive kind times) #[] sourceId).finishFraChoice
   | .mayPayManaForReflexive .., .decline =>
-    return (g.logMsg "The cost isn't paid. The reflexive ability doesn't trigger.").finishFraChoice
+    let g := g.logMsg "The cost isn't paid. The reflexive ability doesn't trigger."
+    if g.mayThenDrop > 0 then return g.declineMayThen
+    else return g.finishFraChoice
   | .mayPayManaForReflexive .., _ => throw "Pay (accept, or a number of times), or decline"
   | .mayTapSourceThen next sourceId, .accept =>
     match g.findObject? sourceId with

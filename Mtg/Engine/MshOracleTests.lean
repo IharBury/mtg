@@ -2191,8 +2191,8 @@ def vivVisionLastKnownPowerOk : Bool :=
   let pw := g.power viv
   let hand0 := (g.player ⟨0⟩).hand.size
   let (g, _) := g.move viv.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackDrawIfPower4) (some viv.id)
-    #[] "Viv Vision" (some pw)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackDrawIfPower4) (some viv.id)
+    #[] #[] (some pw)
   pw >= 4 &&
     (g.player ⟨0⟩).hand.size == hand0 + 1 &&
     (mshRuling 500).comment.contains "last existed on the battlefield" &&
@@ -2370,8 +2370,8 @@ def whiplashLastKnownEquipmentOk : Bool :=
   let you0 := (g.player ⟨0⟩).life
   let (g, _) := g.move (namedPermanent g "Whiplash, Vengeful Engineer").id
     (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackEquippedDrain) (some whip.id)
-    #[] "Whiplash" (some (Int.ofNat n))
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackEquippedDrain) (some whip.id)
+    #[] #[] (some (Int.ofNat n))
   n == 2 &&
     (g.player ⟨1⟩).life + n == life0 &&
     (g.player ⟨0⟩).life == you0 + n &&
@@ -2489,21 +2489,21 @@ def mightyThorBlinkOk : Bool :=
     legal.contains (Target.permanent thor.id) &&
     !legal.contains (Target.permanent land.id) &&
     !(gTok.legalTargetsForKind ⟨0⟩ kind (some thor.id)).contains (Target.permanent tok.id) &&
-    (let g0 := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
+    (let g0 := g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
         (some thor.id) #[]
      (namedPermanent g0 "Grizzly Bears").id == bears.id &&
        !(namedPermanent g0 "Grizzly Bears").status.tapped) &&
-    (let gBad := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
+    (let gBad := g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
         (some thor.id) #[Target.permanent land.id]
      logContains gBad "no longer legal" &&
        (namedPermanent gBad "Mountain").id == land.id) &&
-    (let gBlink := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
+    (let gBlink := g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
         (some thor.id) #[Target.permanent bears.id]
      let returned := namedPermanent gBlink "Grizzly Bears"
      returned.id != bears.id && returned.status.tapped &&
        returned.controller == some ⟨1⟩ && returned.owner == ⟨1⟩ &&
        returned.isOnBattlefield) &&
-    (let gArt := g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
+    (let gArt := g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
         (some thor.id) #[Target.permanent stone.id]
      let returned := namedPermanent gArt "The Mind Stone"
      returned.status.tapped && returned.owner == ⟨0⟩ && returned.isOnBattlefield)

@@ -331,6 +331,31 @@ def flickerChosenNonland (g : Game) (controller : PlayerId) (sourceId : Option O
     | none => g.logMsg "The target is no longer legal"
   | _ => g
 
+/-- Exile the announced nontoken artifact or creature, then return it
+tapped under its owner's control. Choosing none does nothing.
+A token, a permanent that is neither an artifact nor a creature, or a
+missing target is not exiled. -/
+def returnNontokenTapped (g : Game) (targets : Array Target) : Game :=
+  match targets[0]? with
+  | some (Target.permanent id) =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield && !o.printed.isToken &&
+          (o.printed.isArtifact || o.isCreature) then
+        let owner := o.owner
+        let name := o.name
+        let (g, newId) := g.move o.id .exile none
+        let (g, retId) := g.move newId .battlefield (some owner)
+        let ret := g.object! retId
+        let g := g.setObject { ret with status := { ret.status with
+          tapped := true
+          summoningSick := !ret.printed.keywords.haste } }
+        g.afterPermanentEnters (g.object! retId)
+          |>.logMsg s!"{name} is exiled, then returned tapped"
+      else g.logMsg "The target is no longer legal"
+    | none => g.logMsg "The target is no longer legal"
+  | _ => g
+
 /-- True when `mods` strips abilities and grants haste, as Hellcat returns. -/
 def losesAbilitiesAndHaste (mods : List TriggeredAbility.TriggerEnterWith) : Bool :=
   mods.any (· == .loseAllAbilities) &&
@@ -482,22 +507,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
           |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
   | (.watch .hawkeyeModes) =>
     g.offerPayForReflexive controller sourceId #[.generic 1] 2 (maxTimes := 3)
-  | (.thisAttack .equippedDrain) =>
-    let x :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.attachedEquipmentCount o
-        else (lastKnownPower.getD (0 : Int)).toNat
-      | none => (lastKnownPower.getD (0 : Int)).toNat
-    if x == 0 then
-      g.logMsg "Whiplash isn't equipped"
-    else
-      let g := g.forEachOpponent controller (fun g pid => g.loseLife pid x)
-      g.gainLife controller x
-  | (.thisAttack .drawIfPower4) =>
-    let pw := g.sourcePowerAtResolution sourceId lastKnownPower
-    if pw >= 4 then g.draw controller 1
-    else g.logMsg "Viv Vision's power is not 4 or greater"
   | (.watch .hulklingCompare) =>
     g.withSourceOnBattlefield sourceId (fun g hulkling =>
       let entered :=
@@ -553,8 +562,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
     | none =>
       g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
-  | (.thisAttack .payReturnAttacking) =>
-    g.offerPayForReflexive controller sourceId #[.generic 3, .colored .black] 6
   | (.casting .mayPayHasteUnblockable) =>
     g.offerPayForReflexive controller sourceId #[.generic 1] 9
   | (.watch .speedballTargeted) =>
@@ -730,11 +737,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
           g.logMsg "No Equipment was chosen"
       | none => g.logMsg "The Equipment won't move"
     | _ => g.logMsg "The Equipment won't move"
-  | (.thisAttack .ifArtifactEnteredDraw) =>
-    if (g.player controller).artifactEnteredThisTurn then
-      g.draw controller 1
-    else
-      g.logMsg "No artifact entered under your control this turn. Iron Man's ability doesn't trigger."
   | (.youAttacking .lookSixCast) =>
     g.beginMayCastFromLooked controller 6 (g.greatestPowerAmongAttacking controller)
   | (.step .enchantedControllerDraws) =>
@@ -744,34 +746,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       [.loseAllAbilities, .keywords Keyword.haste, .counter .plusOnePlusOne (asEnters := true)]
   | (.death .deathtouchOppSac) =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
-  | (.thisAttack .mayPayPlusOne) =>
-    g.offerPayForReflexive controller sourceId #[.generic 1] 12
-  | (.thisAttack .blinkNontoken) =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield && !o.printed.isToken &&
-            (o.printed.isArtifact || o.isCreature) then
-          let owner := o.owner
-          let name := o.name
-          let (g, newId) := g.move o.id .exile none
-          let (g, retId) := g.move newId .battlefield (some owner)
-          let ret := g.object! retId
-          let g := g.setObject { ret with
-            status := { ret.status with
-              tapped := true
-              summoningSick := !ret.printed.keywords.haste } }
-          g.afterPermanentEnters (g.object! retId)
-            |>.logMsg s!"{name} is exiled, then returned tapped"
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
-    | _ => g
-  | (.thisAttack .attacksAlonePlus2Indestructible) =>
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      let g := g.pumpPermanent o 2 0
-      g.grantUntilEotLogged (g.object! o.id) Keyword.indestructible)
-      "The source is no longer in play"
   | (.enterOrAttack .copyKeywords) =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with

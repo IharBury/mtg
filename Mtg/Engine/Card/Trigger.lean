@@ -117,6 +117,16 @@ inductive TriggerIf where
   /-- The source is on the battlefield and harnessed.
   A missing source does nothing. An unharnessed source is reported. -/
   | sourceHarnessed
+  /-- An artifact entered the battlefield under your control this turn.
+  None did is reported. -/
+  | artifactEnteredThisTurn
+  /-- The source's power as this ability resolves is at least `n`.
+  A source that has left uses its last-known power.
+  Power below 4 is reported as Viv Vision's. -/
+  | sourcePowerAtLeast (n : Nat)
+  /-- Equipment is attached to the source, or its last-known power is
+  positive when the source has left. None is reported. -/
+  | attachedEquipment
 deriving Repr, Inhabited, BEq
 
 /-- Objects chosen for `TriggerResolution.objectCost`, the optional action of
@@ -136,8 +146,9 @@ deriving Repr, Inhabited, BEq
 /-- A reflexive triggered ability queued by `TriggerResolution.queueReflexive`
 after the optional action of `.may _ _ .ifYouDo` (“When you do”). -/
 inductive TriggerReflexive where
-  /-- An MSH modeled reflexive. `0` grants indestructible. `7` destroys an
-  opposing nonland. -/
+  /-- An MSH modeled reflexive. `0` grants indestructible. `6` returns a
+  graveyard creature tapped and attacking. `7` destroys an opposing
+  nonland. `12` puts a +1/+1 counter on target creature. -/
   | modeled (kind : Nat)
   /-- “This deals `n` damage to any target.” -/
   | damageAny (n : Nat)
@@ -404,6 +415,11 @@ inductive TriggerExileHow where
   A land, the source, a permanent another player controls, or a missing
   target is not exiled. Choosing none does nothing. -/
   | returnImmediately
+  /-- Exile the announced nontoken artifact or creature, then return it
+  tapped under its owner's control. Choosing none does nothing.
+  A token, a permanent that is neither an artifact nor a creature, or a
+  missing target is not exiled. -/
+  | returnTapped
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.exile` can read. -/
@@ -909,6 +925,10 @@ inductive TriggerLifeAmount where
   /-- One life for each other creature the controller controls.
   The source is not included. -/
   | forEachOtherCreature
+  /-- One life for each Equipment attached to the source.
+  A source that has left uses its last-known power as that count.
+  Zero gains nothing. -/
+  | attachedEquipment
 deriving Repr, Inhabited, BEq
 
 /-- Who loses life from `TriggerResolution.loseLife`. -/
@@ -929,6 +949,10 @@ inductive TriggerLifeLossAmount where
   /-- One life for each burden counter on the source.
   A source that can no longer be found loses nothing. -/
   | perBurden
+  /-- One life for each Equipment attached to the source.
+  A source that has left uses its last-known power as that count.
+  Zero loses nothing. -/
+  | attachedEquipment
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.mill` mills. -/
@@ -1501,7 +1525,11 @@ inductive TriggerResolution where
   You may sacrifice an artifact or discard a nonland to deal 2 damage is
   `.may (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo`.
   You may tap this to grant indestructible is
-  `.may (.tap .source) (.queueReflexive (.modeled 0)) .ifYouDo`. -/
+  `.may (.tap .source) (.queueReflexive (.modeled 0)) .ifYouDo`.
+  You may pay {1} to put a +1/+1 counter on target creature is
+  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`.
+  You may pay {3}{B} to return a graveyard creature tapped and attacking is
+  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`. -/
   | may (action follow : TriggerResolution) (when : TriggerMayWhen := .ifYouDont)
   /-- You gain life (CR 118.2), as `amount` says. `n` is the amount when
   `amount` is `.fixed`.
@@ -1513,7 +1541,10 @@ inductive TriggerResolution where
   1 life for each permanent destroyed by an earlier step is
   `.gainLife 0 (amount := .forEachDestroyedThisWay)`.
   1 life for each other creature you control is
-  `.gainLife 0 (amount := .forEachOtherCreature)`. -/
+  `.gainLife 0 (amount := .forEachOtherCreature)`.
+  Life equal to the Equipment attached to the source is
+  `.gainLife 0 (amount := .attachedEquipment)`. A source that has left
+  uses its last-known power. Zero gains nothing. -/
   | gainLife (n : Nat) (amount : TriggerLifeAmount := .fixed)
   /-- Exile cards. `what` says which cards, `how` says for how long, and
   `note` says what a later step can read.
@@ -1543,7 +1574,9 @@ inductive TriggerResolution where
   `.exile .target .returnImmediately`. Choosing none does nothing.
   While the source is harnessed is
   `.«if» .sourceHarnessed (.exile .target .returnImmediately)`.
-  An unharnessed source is reported and exiles nothing. -/
+  An unharnessed source is reported and exiles nothing.
+  The announced nontoken artifact or creature, returned tapped, is
+  `.exile .target .returnTapped`. Choosing none does nothing. -/
   | exile (what : TriggerExileWhat) (how : TriggerExileHow)
       (note : TriggerExileNote := .none)
   /-- Put cards onto the battlefield. `what` says which cards, `how` says
@@ -1717,7 +1750,15 @@ inductive TriggerResolution where
   Exiling and returning the announced permanent while the source is
   harnessed is
   `.«if» .sourceHarnessed (.exile .target .returnImmediately)`.
-  An unharnessed source is reported. A missing source does nothing. -/
+  An unharnessed source is reported. A missing source does nothing.
+  Drawing when an artifact entered under your control this turn is
+  `.«if» .artifactEnteredThisTurn (.draw 1)`. None did is reported.
+  Drawing when the source's power is at least 4 is
+  `.«if» (.sourcePowerAtLeast 4) (.draw 1)`. A source that has left uses
+  its last-known power. Power below 4 is reported.
+  Draining for the Equipment attached to the source is
+  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife 0 (amount := .attachedEquipment)])`.
+  No Equipment is reported. -/
   | «if» (cond : TriggerIf) (thenDo : TriggerResolution)
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
@@ -1886,6 +1927,9 @@ inductive TriggerResolution where
   You lose 1 life for each burden counter on the source is
   `.loseLife 0 (amount := .perBurden)`.
   A missing source loses nothing.
+  Each opponent loses life equal to the Equipment attached to the source with
+  `.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment)`.
+  A source that has left uses its last-known power. Zero loses nothing.
   Any other combination does nothing. -/
   | loseLife (n : Nat) (who : TriggerLifeLossWho := .you)
       (amount : TriggerLifeLossAmount := .fixed)
@@ -1915,8 +1959,6 @@ inductive TriggerResolution where
   The enchanted creature copying the creature an earlier step noted is
   `.becomeCopy .noted`. Nothing noted copies nothing. -/
   | becomeCopy (of : TriggerCopyOf)
-  /-- Resolve a leftover ThisAttackLeftover. -/
-  | thisAttack (e : ThisAttackLeftover)
   /-- Resolve a leftover EnterOrAttackLeftover. -/
   | enterOrAttack (e : EnterOrAttackLeftover)
   /-- Resolve a leftover WatchLeftover. -/
@@ -2903,24 +2945,35 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.creatureYouControlDies]
       resolution := .sacrifice .eachOpponent .chosenNontokenCreature }
   | .thisAttack .mayPayPlusOne =>
-    { events := #[.attacking], resolution := .thisAttack .mayPayPlusOne }
+    { events := #[.attacking]
+      resolution := .may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo }
   | .thisAttack .payReturnAttacking =>
-    { events := #[.attacking], resolution := .thisAttack .payReturnAttacking }
+    { events := #[.attacking]
+      resolution := .may (.pay #[.generic 3, .colored .black])
+        (.queueReflexive (.modeled 6)) .ifYouDo }
   | .thisAttack .ifArtifactEnteredDraw =>
-    { events := #[.attacking], resolution := .thisAttack .ifArtifactEnteredDraw }
+    { events := #[.attacking]
+      resolution := .«if» .artifactEnteredThisTurn (.draw 1) }
   | .thisAttack .blinkNontoken =>
     { events := #[.attacking]
       targeting := .of (.filtered {
         noun := "up to one target nontoken artifact or creature"
         types := #[.artifact, .creature], nontoken := true })
       allowsZeroTargets := true, maxTargets := 1
-      resolution := .thisAttack .blinkNontoken }
+      resolution := .exile .target .returnTapped }
   | .thisAttack .equippedDrain =>
-    { events := #[.attacking], resolution := .thisAttack .equippedDrain }
+    { events := #[.attacking]
+      resolution := .«if» .attachedEquipment (.sequence [
+        .loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment),
+        .gainLife 0 (amount := .attachedEquipment)]) }
   | .thisAttack .drawIfPower4 =>
-    { events := #[.attacking], resolution := .thisAttack .drawIfPower4 }
+    { events := #[.attacking]
+      resolution := .«if» (.sourcePowerAtLeast 4) (.draw 1) }
   | .thisAttack .attacksAlonePlus2Indestructible =>
-    { events := #[.attacking], resolution := .thisAttack .attacksAlonePlus2Indestructible }
+    { events := #[.attacking]
+      resolution := .sequence [
+        .pump 2 0 .source,
+        .grant (.keywords Keyword.indestructible) .source] }
   | .enterOrAttack .copyKeywords =>
     { events := #[.entering, .attacking], targeting := .of .anotherCreature,
       resolution := .enterOrAttack .copyKeywords }
@@ -3064,6 +3117,22 @@ end SharedTrigger
   .playerOrCreature
 #guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).allowsZeroTargets &&
   (SharedTrigger.timing (.thisAttack .blinkNontoken)).maxTargets == 1
+#guard (SharedTrigger.timing (.thisAttack .mayPayPlusOne)).resolution ==
+  .may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo
+#guard (SharedTrigger.timing (.thisAttack .payReturnAttacking)).resolution ==
+  .may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo
+#guard (SharedTrigger.timing (.thisAttack .ifArtifactEnteredDraw)).resolution ==
+  .«if» .artifactEnteredThisTurn (.draw 1)
+#guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).resolution ==
+  .exile .target .returnTapped
+#guard (SharedTrigger.timing (.thisAttack .equippedDrain)).resolution ==
+  .«if» .attachedEquipment (.sequence [
+    .loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment),
+    .gainLife 0 (amount := .attachedEquipment)])
+#guard (SharedTrigger.timing (.thisAttack .drawIfPower4)).resolution ==
+  .«if» (.sourcePowerAtLeast 4) (.draw 1)
+#guard (SharedTrigger.timing (.thisAttack .attacksAlonePlus2Indestructible)).resolution ==
+  .sequence [.pump 2 0 .source, .grant (.keywords Keyword.indestructible) .source]
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.kind ==
   .anotherCreature
 #guard (SharedTrigger.timing (.watch .villainConniveOnce)).optionalOnceEachTurn

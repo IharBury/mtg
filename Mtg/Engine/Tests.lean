@@ -49,6 +49,7 @@ import Mtg.Engine.Tests.Modes
 import Mtg.Engine.Tests.Chapter
 import Mtg.Engine.Tests.Step
 import Mtg.Engine.Tests.Death
+import Mtg.Engine.Tests.ThisAttack
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -123,4 +124,5 @@ keep working.
 - `Chapter`: printed Saga chapters resolved by the other trigger constructors
 - `Step`: upkeep, end-step, and first-main triggers that used to resolve as `step`
 - `Death`: dies triggers that used to resolve as `death`
+- `ThisAttack`: attack triggers that used to resolve as `thisAttack`
 -/
