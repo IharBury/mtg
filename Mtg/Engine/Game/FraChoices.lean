@@ -809,14 +809,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.grantWidowCast p exiled).finishFraChoice
   | .widowMayCounter .., _ =>
     throw "Put a +1/+1 counter on Black Widow (accept), or decline"
-  | .ultronMayPay artifactId, .accept =>
+  | .ultronMayPay _, .accept =>
     let cost := ManaCost.ofGeneric 2
     if !(g.player p).manaPool.canPay cost then
       throw s!"{(g.player p).name} cannot pay {2}; add mana first, or decline"
     let g ← g.payCost p cost
-    return (g.copyEnteredArtifact p artifactId).finishFraChoice
+    return g.acceptMayThen
   | .ultronMayPay _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} doesn't pay {2}").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} doesn't pay {2}").declineMayThen
   | .ultronMayPay _, _ => throw "Pay {2} (accept), or decline"
   | .visionMode sourceId available, .mode m =>
     if !available.contains m then throw "That mode was already chosen this turn"

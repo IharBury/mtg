@@ -69,7 +69,8 @@ def onWatch (e : Effect) : TriggeredAbility :=
   .chooseModes
     [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl]
     .fromLastKnown
-#guard TriggeredAbility.resolution (onWatch Effect.watchUltronCopy) == .mayCopyCause
+#guard TriggeredAbility.resolution (onWatch Effect.watchUltronCopy) ==
+  .may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchEnchantedAttachEquipment) ==
   .attach .eachTargetEquipment .enchantedCreature
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedAttacksAloneUntapScry) ==

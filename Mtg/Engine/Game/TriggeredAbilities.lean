@@ -492,6 +492,27 @@ steps still in this sequence. -/
 def failMayThen (g : Game) : Game :=
   { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
 
+/-- Offer to pay {2} to copy the nontoken artifact that caused this trigger.
+An announced permanent is used when one was chosen; otherwise the recorded
+cause. A token, a nonartifact, or the source itself skips the copy. -/
+def offerCopyCause (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (targets : Array Target) : Game :=
+  let fromTarget :=
+    match targets[0]? with
+    | some (Target.permanent id) => some id
+    | _ => none
+  match fromTarget.orElse (fun _ => g.resolvingCauseId) with
+  | none => (g.logMsg "Ultron has nothing to copy").failMayThen
+  | some id =>
+    match g.findObject? (g.followMoved id) with
+    | some src =>
+      if src.printed.isToken || !src.printed.isArtifact || some src.id == sourceId then
+        (g.logMsg "That permanent isn't another nontoken artifact").failMayThen
+      else
+        { g with pending := .fraChoice controller (.ultronMayPay id) }
+          |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {src.name}"
+    | none => (g.logMsg "Ultron has nothing to copy").failMayThen
+
 /-- Apply `f` to the permanent `who` names.
 `.target` is the announced permanent, and an illegal target is reported.
 `.source` requires the source still on the battlefield.
@@ -2895,7 +2916,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         else g.logMsg s!"{o.name} is no longer on the battlefield"
       | none => g.logMsg "The source is no longer on the battlefield"
   | .becomeCopy of =>
-    g.applyBecomeCopy sourceId targets of
+    g.applyBecomeCopy controller sourceId targets of
   | .offerReflexivePay symbols kind maxTimes =>
     g.offerPayForReflexive controller sourceId symbols kind maxTimes
   | .mayRetargetSpell =>
@@ -2921,22 +2942,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let amt := lastKnownPower.getD 0
         { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
           |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
-  | .mayCopyCause =>
-    let fromTarget :=
-      match targets[0]? with
-      | some (Target.permanent id) => some id
-      | _ => none
-    match fromTarget.orElse (fun _ => g.resolvingCauseId) with
-    | none => g.logMsg "Ultron has nothing to copy"
-    | some id =>
-      match g.findObject? (g.followMoved id) with
-      | some src =>
-        if src.printed.isToken || !src.printed.isArtifact || some src.id == sourceId then
-          g.logMsg "That permanent isn't another nontoken artifact"
-        else
-          { g with pending := .fraChoice controller (.ultronMayPay id) }
-            |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {src.name}"
-      | none => g.logMsg "Ultron has nothing to copy"
   | .youAttacking e =>
     g.applyModeledTrigger controller (.onYouAttacking (Effect.ofTrigger (.youAttacking e))) sourceId targets sourceName lastKnownPower
   | .casting e =>
@@ -2955,10 +2960,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       lastKnownPower lastKnownToughness sourceName
       (some (.sequence (optional :: cond))) sequencedCardPower
   | .pay symbols =>
-    match g.mayThenConditional with
-    | some (.queueReflexive (.modeled kind)) =>
+    match g.mayThenConditional, symbols.toList with
+    | some (.queueReflexive (.modeled kind)), _ =>
       g.offerPayForReflexive controller sourceId symbols kind
-    | _ =>
+    | some (.becomeCopy .cause), [.generic 2] =>
+      g.offerCopyCause controller sourceId targets
+    | _, _ =>
       match symbols.toList with
       | [.generic n] =>
         let plusOne :=
