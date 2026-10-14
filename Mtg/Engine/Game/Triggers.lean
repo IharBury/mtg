@@ -194,6 +194,8 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | .beginCombatIfDrawnTwoPump => (g.player controller).cardsDrawnThisTurn ≥ 2
     | .thisAttack .equippedDrain =>
       source.any (fun s => g.battlefield.any (fun e => e.attachedTo == some s.id && e.printed.isEquipment))
+    | .thisAttack .ifArtifactEnteredDraw =>
+      (g.player controller).artifactEnteredThisTurn
     | .resource .drawIfAnotherHeroDamage =>
       (g.permanentsOf controller).any (fun o => g.hasSubtype o "Hero" && some o.id != source.map (·.id))
     | .step .drawToTen => (g.player controller).hand.size < 10

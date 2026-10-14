@@ -95,7 +95,7 @@ def grimReaperReflexiveOk : Bool :=
   let g := addToGraveyard g grizzlyBears ⟨0⟩
   let grim := namedPermanent g "Grim Reaper, Lethal Legionnaire"
   let unpaid :=
-    g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackPayReturnAttacking) (some grim.id)
+    g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackPayReturnAttacking) (some grim.id)
   !unpaid.hasModeledReflexiveOnStack &&
     (let g := unpaid.modifyPlayer ⟨0⟩ (fun pl =>
        { pl with manaPool := (pl.manaPool.add (.colored .black) 4) })

@@ -844,11 +844,11 @@ def enchantedControllerDrawsForHost : Game :=
 #guard (enchantedControllerDrawsForHost.player ⟨0⟩).hand.size ==
   (afterDraw.player ⟨0⟩).hand.size
 
-/-- Luke Cage's leftover attack trigger pumps and grants indestructible. -/
+/-- Luke Cage's attack trigger pumps and grants indestructible. -/
 def lukeCageAttacksAlone : Game :=
   let g := addPermanent afterDraw lukeCagePowerMan ⟨0⟩ ⟨0⟩
   let src := namedPermanent g "Luke Cage, Power Man"
-  g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible)
+  g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible)
     (some src.id)
 
 #guard (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man").status.pump == (2, 0)

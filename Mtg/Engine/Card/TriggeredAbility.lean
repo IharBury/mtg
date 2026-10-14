@@ -1158,6 +1158,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you gain 1 life for each permanent destroyed this way"
     | .forEachOtherCreature =>
       "you gain 1 life for each other creature you control"
+    | .attachedEquipment =>
+      "you gain X life, where X is the number of Equipment attached to it"
   | .may (.pay symbols) (.draw 1) .ifYouDo =>
     match symbols.toList with
     | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
@@ -1563,6 +1565,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .eachOpponent, .fixed => s!"each opponent loses {n} life"
     | .you, .perBurden =>
       "you lose 1 life for each burden counter on this"
+    | .eachOpponent, .attachedEquipment =>
+      "each opponent loses X life, where X is the number of Equipment attached to it"
     | _, _ =>
       "lose life"
   | .queueReflexiveIfSacrificed _ =>
@@ -1608,20 +1612,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
-  | .thisAttack .mayPayPlusOne =>
-    "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
-  | .thisAttack .payReturnAttacking =>
-    "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
-  | .thisAttack .ifArtifactEnteredDraw =>
-    "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card."
-  | .thisAttack .blinkNontoken =>
-    "Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, then return that card to the battlefield tapped under its owner's control."
-  | .thisAttack .equippedDrain =>
-    "Whenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X life, where X is the number of Equipment attached to him."
-  | .thisAttack .drawIfPower4 =>
-    "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater."
-  | .thisAttack .attacksAlonePlus2Indestructible =>
-    "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
   | .enterOrAttack .copyKeywords =>
     "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."
   | .enterOrAttack .createSquirrel =>
@@ -1819,6 +1809,25 @@ def deathSentence : DeathLeftover → String
   | .deathtouchOppSac =>
     "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
 
+/-- Printed sentence for a leftover “whenever this attacks” trigger.
+Its resolution is a `TriggerResolution` that does not carry
+`ThisAttackLeftover`. -/
+def thisAttackSentence : ThisAttackLeftover → String
+  | .mayPayPlusOne =>
+    "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
+  | .payReturnAttacking =>
+    "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
+  | .ifArtifactEnteredDraw =>
+    "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card."
+  | .blinkNontoken =>
+    "Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, then return that card to the battlefield tapped under its owner's control."
+  | .equippedDrain =>
+    "Whenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X life, where X is the number of Equipment attached to him."
+  | .drawIfPower4 =>
+    "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater."
+  | .attacksAlonePlus2Indestructible =>
+    "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
+
 /-- Printed sentence for a leftover step trigger. Its resolution is a
 `TriggerResolution` that does not carry `StepLeftover`. -/
 def stepSentence : StepLeftover → String
@@ -1957,7 +1966,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     s!"When this permanent enters, it deals {n} damage to up to one target creature."
     | _, some (.step e), _ => stepSentence e
     | _, some (.death e), _ => deathSentence e
-    | _, some (.thisAttack e), _ => resolutionPhrase { resolution := .thisAttack e }
+    | _, some (.thisAttack e), _ => thisAttackSentence e
     | _, some (.enterOrAttack e), _ =>
       resolutionPhrase { resolution := .enterOrAttack e }
     | _, some (.watch e), _ => resolutionPhrase { resolution := .watch e }
