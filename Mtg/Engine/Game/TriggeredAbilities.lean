@@ -492,6 +492,27 @@ steps still in this sequence. -/
 def failMayThen (g : Game) : Game :=
   { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
 
+/-- Offer to pay {2} to copy the nontoken artifact that caused this trigger.
+An announced permanent is used when one was chosen; otherwise the recorded
+cause. A token, a nonartifact, or the source itself skips the copy. -/
+def offerCopyCause (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (targets : Array Target) : Game :=
+  let fromTarget :=
+    match targets[0]? with
+    | some (Target.permanent id) => some id
+    | _ => none
+  match fromTarget.orElse (fun _ => g.resolvingCauseId) with
+  | none => (g.logMsg "Ultron has nothing to copy").failMayThen
+  | some id =>
+    match g.findObject? (g.followMoved id) with
+    | some src =>
+      if src.printed.isToken || !src.printed.isArtifact || some src.id == sourceId then
+        (g.logMsg "That permanent isn't another nontoken artifact").failMayThen
+      else
+        { g with pending := .fraChoice controller (.ultronMayPay id) }
+          |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {src.name}"
+    | none => (g.logMsg "Ultron has nothing to copy").failMayThen
+
 /-- Apply `f` to the permanent `who` names.
 `.target` is the announced permanent, and an illegal target is reported.
 `.source` requires the source still on the battlefield.
@@ -2118,6 +2139,7 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
 keeps the behavior of the constructor it replaced. -/
 partial def applyRevealLibrary (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (targets : Array Target)
     (how : TriggeredAbility.TriggerLibraryHow)
     (thenDo : TriggeredAbility.TriggerResolution)
     (who : TriggeredAbility.TriggerLibraryWho) : Game :=
@@ -2211,6 +2233,29 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
       grimaImpulseVictim := some victim
       grimaImpulseFound := found
       grimaImpulseOthers := others }
+  | .untilNonland,
+    .may (.putCounters (.ofKind .plusOnePlusOne 1) .source)
+      (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
+    .announced =>
+    let pid :=
+      match targets[0]? with
+      | some (Target.player p) => some p
+      | _ =>
+        (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness)
+          |>.map (fun n => ⟨n.toNat⟩)
+    match pid with
+    | none => g.logMsg "Black Widow didn't deal combat damage to a player"
+    | some pid =>
+      let (g, nonland?) := g.exileLibraryUntilNonland pid
+      let onBf :=
+        match sourceId.bind g.findObject? with
+        | some o => o.isOnBattlefield
+        | none => false
+      if onBf then
+        { g with pending := .fraChoice controller (.widowMayCounter sourceId nonland?) }
+          |>.logMsg "You may put a +1/+1 counter on Black Widow"
+      else
+        g.grantWidowCast controller nonland?
   | _, _, _ => g
 
 /-- Resolve `TriggerResolution.revealFromHand`. Each printed combination
@@ -2731,7 +2776,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .grant what who =>
     g.applyGrant controller ab sourceId targets what who
   | .revealLibrary how thenDo who =>
-    g.applyRevealLibrary controller how thenDo who
+    g.applyRevealLibrary controller sourceId targets how thenDo who
   | .fight who how =>
     g.applyFight controller sourceId targets who how
   | .reflexiveCopyMilled =>
@@ -2871,7 +2916,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         else g.logMsg s!"{o.name} is no longer on the battlefield"
       | none => g.logMsg "The source is no longer on the battlefield"
   | .becomeCopy of =>
-    g.applyBecomeCopy sourceId targets of
+    g.applyBecomeCopy controller sourceId targets of
   | .mayRetargetSpell =>
     let targetingSource (e : StackEntry) : Bool :=
       e.targets.any (fun t =>
@@ -2884,26 +2929,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match g.resolvingCauseId.orElse (fun _ => fromStack) with
     | none => g
     | some spellId => g.offerSpellRetarget controller spellId 0
-  | .exileUntilNonland =>
-    let pid :=
-      match targets[0]? with
-      | some (Target.player p) => some p
-      | _ =>
-        (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness)
-          |>.map (fun n => ⟨n.toNat⟩)
-    match pid with
-    | none => g.logMsg "Black Widow didn't deal combat damage to a player"
-    | some pid =>
-      let (g, nonland?) := g.exileLibraryUntilNonland pid
-      let onBf :=
-        match sourceId.bind g.findObject? with
-        | some o => o.isOnBattlefield
-        | none => false
-      if onBf then
-        { g with pending := .fraChoice controller (.widowMayCounter sourceId nonland?) }
-          |>.logMsg "You may put a +1/+1 counter on Black Widow"
-      else
-        g.grantWidowCast controller nonland?
   | .mayDealCauseDamage =>
     if g.sheHulkDamageUsedThisTurn then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
@@ -2915,22 +2940,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let amt := lastKnownPower.getD 0
         { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
           |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
-  | .mayCopyCause =>
-    let fromTarget :=
-      match targets[0]? with
-      | some (Target.permanent id) => some id
-      | _ => none
-    match fromTarget.orElse (fun _ => g.resolvingCauseId) with
-    | none => g.logMsg "Ultron has nothing to copy"
-    | some id =>
-      match g.findObject? (g.followMoved id) with
-      | some src =>
-        if src.printed.isToken || !src.printed.isArtifact || some src.id == sourceId then
-          g.logMsg "That permanent isn't another nontoken artifact"
-        else
-          { g with pending := .fraChoice controller (.ultronMayPay id) }
-            |>.logMsg s!"{(g.player controller).name} may pay {2} to copy {src.name}"
-      | none => g.logMsg "Ultron has nothing to copy"
   | .youAttacking e =>
     g.applyModeledTrigger controller (.onYouAttacking (Effect.ofTrigger (.youAttacking e))) sourceId targets sourceName lastKnownPower
   | .casting e =>
@@ -2959,10 +2968,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       lastKnownPower lastKnownToughness sourceName
       (some (.sequence (optional :: cond))) sequencedCardPower
   | .pay symbols =>
-    match g.mayThenConditional with
-    | some (.queueReflexive (.modeled kind times)) =>
+    match g.mayThenConditional, symbols.toList with
+    | some (.queueReflexive (.modeled kind times)), _ =>
       g.offerPayForReflexive controller sourceId symbols kind times
-    | _ =>
+    | some (.becomeCopy .cause), [.generic 2] =>
+      g.offerCopyCause controller sourceId targets
+    | _, _ =>
       match symbols.toList with
       | [.generic n] =>
         let plusOne :=

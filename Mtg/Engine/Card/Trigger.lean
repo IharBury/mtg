@@ -462,6 +462,10 @@ inductive TriggerExileNote where
   /-- The instant or sorcery, so `.mayCast .impulse` can offer it.
   Outside `revealLibrary .untilInstantOrSorcery`, this note does nothing. -/
   | impulse
+  /-- The nonland `revealLibrary .untilNonland` exiled. Declining the
+  +1/+1 counter lets you cast it until end of turn, and mana of any type
+  can be spent. Outside that resolution, this note does nothing. -/
+  | anyManaThisTurn
   /-- Link the exiled cards to the source. Used by a library search. -/
   | linked
 deriving Repr, Inhabited, BEq
@@ -1105,6 +1109,8 @@ inductive TriggerLibraryHow where
   | untilSaga
   /-- Cards until an instant or sorcery card. An empty library finds nothing. -/
   | untilInstantOrSorcery
+  /-- Cards until a nonland card. An empty library finds nothing. -/
+  | untilNonland
 deriving Repr, Inhabited, BEq
 
 /-- Whose library `TriggerResolution.revealLibrary` looks at. -/
@@ -1114,6 +1120,9 @@ inductive TriggerLibraryWho where
   /-- The player who was dealt combat damage. That seat is
   `lastCombatDamagePlayer`. A missing seat is the controller's opponent. -/
   | damagedPlayer
+  /-- The announced player. When none was announced, the resolving ability's
+  last-known toughness is that player's index. -/
+  | announced
 deriving Repr, Inhabited, BEq
 
 /-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
@@ -1172,7 +1181,8 @@ deriving Repr, Inhabited, BEq
 The source keeps its name when it copies an announced object until the
 controller's next turn. Choosing none copies nothing. A missing source
 copies nothing. The enchanted creature copies a noted creature until the
-source leaves. -/
+source leaves. The controller creates a token copy of the artifact that
+caused the trigger. -/
 inductive TriggerCopyOf where
   /-- Up to one target artifact, non-Aura enchantment, or land.
   The source is also a legendary 4/4 Human Villain creature with vigilance. -/
@@ -1184,6 +1194,11 @@ inductive TriggerCopyOf where
   The enchanted creature becomes that copy until the source leaves.
   Nothing noted, or nothing enchanted, copies nothing. -/
   | noted
+  /-- The nontoken artifact that caused this trigger.
+  An announced permanent is used when one was chosen; otherwise the
+  recorded cause. The controller creates a token copy. A noncreature
+  token becomes a 2/2 Robot Villain after it enters. -/
+  | cause
 deriving Repr, Inhabited, BEq
 
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
@@ -1584,7 +1599,9 @@ inductive TriggerResolution where
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
   `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
   You may pay {1} up to three times, then choose that many modes, is
-  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`. -/
+  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
+  You may pay {2} to copy the nontoken artifact that caused this is
+  `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`. -/
   | may (action follow : TriggerResolution) (when : TriggerMayWhen := .ifYouDont)
   /-- You gain life (CR 118.2), as `amount` says. `n` is the amount when
   `amount` is `.fixed`.
@@ -1623,6 +1640,10 @@ inductive TriggerResolution where
   remembered for `.mayCast .impulse`, are
   `.exile .top .forLater .impulse` inside `revealLibrary`. Outside that
   resolution, the exile does nothing.
+  The nonland from `revealLibrary .untilNonland`, cast with mana of any
+  type until end of turn when the counter is declined, is
+  `.exile .top .forLater .anyManaThisTurn` inside that resolution.
+  Outside it, the exile does nothing.
   The announced permanent, with no return, is `.exile .target .forLater`.
   The announced nonland the controller still controls, other than the
   source, exiled and returned immediately, is
@@ -1899,6 +1920,12 @@ inductive TriggerResolution where
   `.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`.
   A missing damaged player is the controller's opponent. An empty library
   still remembers the impulse, with nothing exiled.
+  Cards from the announced player's library until a nonland. You may put
+  a +1/+1 counter on the source. If you don't, you may cast that nonland
+  until end of turn and spend mana of any type. That is
+  `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
+  A missing player is reported. An empty library exiles nothing. A source
+  that has left grants the cast without asking for the counter.
   Any other combination does nothing. -/
   | revealLibrary (how : TriggerLibraryHow) (thenDo : TriggerResolution)
       (who : TriggerLibraryWho := .you)
@@ -2012,28 +2039,21 @@ inductive TriggerResolution where
   Choosing none copies nothing. An illegal object is reported.
   A missing source copies nothing.
   The enchanted creature copying the creature an earlier step noted is
-  `.becomeCopy .noted`. Nothing noted copies nothing. -/
+  `.becomeCopy .noted`. Nothing noted copies nothing.
+  A token copy of the nontoken artifact that caused this is
+  `.becomeCopy .cause`. An announced permanent is used when one was chosen;
+  otherwise the recorded cause. The source need not still be on the
+  battlefield. A noncreature token becomes a 2/2 Robot Villain after it
+  enters. -/
   | becomeCopy (of : TriggerCopyOf)
   /-- You may change the targets of the spell that caused this trigger.
   The recorded cause is used when one was chosen. Otherwise the spell on
   the stack that targets the source. A spell that has left changes nothing. -/
   | mayRetargetSpell
-  /-- The player who was dealt combat damage exiles cards from the top of
-  their library until a nonland card. That seat is the trigger's
-  last-known toughness when no player was announced. You may put a +1/+1
-  counter on the source. If you don't, and the source has left, you may
-  cast the exiled nonland until end of turn. No damaged player is reported.
-  An empty library exiles nothing. -/
-  | exileUntilNonland
   /-- You may have the source deal the damage that caused this trigger to
   the announced target. The amount is the trigger's last-known power.
   Already used this turn does nothing. An illegal target is reported. -/
   | mayDealCauseDamage
-  /-- You may pay {2}. If you do, create a token that's a copy of the
-  nontoken artifact that caused this trigger. An announced permanent is
-  used when one was chosen; otherwise the recorded cause. A token, a
-  nonartifact, or the source itself is reported. -/
-  | mayCopyCause
   /-- Resolve a leftover YouAttackLeftover. -/
   | youAttacking (e : YouAttackLeftover)
   /-- Resolve a leftover CastLeftover. -/
@@ -3053,7 +3073,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering, .attacking],
       resolution := .createTokens .squirrel11green 1 false }
   | .watch .combatDamageExileUntilNonland =>
-    { events := #[.dealsCombatDamageToPlayer], resolution := .exileUntilNonland }
+    { events := #[.dealsCombatDamageToPlayer],
+      resolution := .revealLibrary .untilNonland
+        (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
+          (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
+        .announced }
   | .watch .attacksAloneDrain =>
     { events := #[.creatureYouControlAttacksAlone], targeting := .of .opponent,
       resolution := .sequence [.loseLife 1 (who := .targetOpponent), .gainLife 1] }
@@ -3105,7 +3129,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl]
         .fromLastKnown }
   | .watch .ultronCopy =>
-    { events := #[.anotherNontokenArtifactEnters], resolution := .mayCopyCause }
+    { events := #[.anotherNontokenArtifactEnters],
+      resolution := .may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo }
   | .watch .enchantedAttachEquipment =>
     { events := #[.enchantedAttacksOrBlocks], targeting := .of .equipmentYouControl
       allowsZeroTargets := true, maxTargets := 1000,
@@ -3239,7 +3264,10 @@ end SharedTrigger
   .createTokens .squirrel11green 1 false
 #guard (SharedTrigger.timing (.watch .villainConniveOnce)).optionalOnceEachTurn
 #guard (SharedTrigger.timing (.watch .combatDamageExileUntilNonland)).resolution ==
-  .exileUntilNonland
+  .revealLibrary .untilNonland
+    (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
+      (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
+    .announced
 #guard (SharedTrigger.timing (.watch .hawkeyeModes)).resolution ==
   .may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo
 #guard (SharedTrigger.timing (.watch .hulk)).resolution ==

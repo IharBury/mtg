@@ -944,6 +944,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       if times > 1 then s!"you may pay \{{n}} up to {times} times"
       else s!"you may pay \{{n}}"
     | _ => "you may pay that cost"
+  | .may (.pay symbols) (.becomeCopy .cause) .ifYouDo =>
+    match symbols.toList with
+    | [.generic 2] => "you may pay {2} to copy it"
+    | _ => "you may pay to copy it"
   | .may action _ =>
     match action with
     | .tap .humans =>
@@ -1459,6 +1463,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
     | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer =>
       "that player exiles cards from the top of their library until they exile an instant or sorcery card"
+    | .untilNonland,
+      .may (.putCounters (.ofKind .plusOnePlusOne 1) .source)
+        (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
+      .announced =>
+      "that player exiles cards until a nonland card"
     | _, _, _ =>
       "reveal cards from a library"
   | .«if» (.drewAtLeast 2) (.sequence [.pump 3 0 .target, .grant (.keywords k) .target]) =>
@@ -1621,16 +1630,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "until your next turn, this becomes a copy of up to one target creature or creature card in a graveyard, except its name, and it's a legendary Human Mercenary Villain creature"
   | .becomeCopy .noted =>
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
+  | .becomeCopy .cause =>
+    "create a token that's a copy of the artifact that caused this"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
   | .mayRetargetSpell =>
     "you may choose new targets for that spell"
-  | .exileUntilNonland =>
-    "that player exiles cards until a nonland card"
   | .mayDealCauseDamage =>
     "you may have this deal that much damage"
-  | .mayCopyCause =>
-    "you may pay {2} to copy it"
   | .youAttacking .pay2LifeToughness =>
     "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
   | .youAttacking .exileTopHeroPump =>
