@@ -842,7 +842,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if you don't control a planeswalker, sacrifice this creature"
   | .«if» (.otherForestsAtLeast 5) (.pump 3 3 .target) =>
     s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
-  | .mayThen (.pay symbols) (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw 1]) =>
+  | .may (.pay symbols) (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw 1]) .ifYouDo =>
     match symbols.toList with
     | [.generic n] =>
       s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
@@ -930,7 +930,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"{noun} reveals their hand. You choose a nonland card from it. That player discards that card"
     | _, _, _ =>
       "discard cards"
-  | .mayThen (.discard 1) (.draw n) =>
+  | .may (.discard 1) (.draw n) .ifYouDo =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
   | .may action _ =>
     match action with
@@ -1152,7 +1152,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you gain 1 life for each permanent destroyed this way"
     | .forEachOtherCreature =>
       "you gain 1 life for each other creature you control"
-  | .mayThen (.pay symbols) (.draw 1) =>
+  | .may (.pay symbols) (.draw 1) .ifYouDo =>
     match symbols.toList with
     | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
     | _ => "you may pay. If you do, draw a card"
@@ -1451,24 +1451,24 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"each opponent mills {n} cards"
     | _, _, _ =>
       "mill"
-  | .mayThen (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source) =>
+  | .may (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo =>
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
-  | .mayThen (.pay symbols) (.returnToHand .source .owner) =>
+  | .may (.pay symbols) (.returnToHand .source .owner) .ifYouDo =>
     s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
   | .copySelfNonlegendary =>
     "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
-  | .mayThen (.objectCost .anotherCreatureOrArtifact)
-      (.sequence [.draw 1, .createTokens .treasure 1 false]) =>
+  | .may (.objectCost .anotherCreatureOrArtifact)
+      (.sequence [.draw 1, .createTokens .treasure 1 false]) .ifYouDo =>
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
   | .ringTempts =>
     "the Ring tempts you"
-  | .mayThen (.discard (what := .hand)) (.draw n) =>
+  | .may (.discard (what := .hand)) (.draw n) .ifYouDo =>
     s!"you may discard your hand. If you do, draw {cardPhrase n}"
   | .attackPumpPerPlains =>
     "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
   | .spellsCostLess _ n =>
     s!"spells you cast this turn cost \{{n}} less to cast"
-  | .mayThen (.draw 0 _ (.perControlled _)) (.draw 1 .eachOpponent _) =>
+  | .may (.draw 0 _ (.perControlled _)) (.draw 1 .eachOpponent _) .ifYouDo =>
     "you may draw a card for each artifact you control. If you do, each opponent draws a card"
   | .investigate => "investigate"
   | .connive .source => "it connives"
@@ -1485,7 +1485,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
-  | .mayThen (.objectCost .artifactOrDiscard) (.draw 1) =>
+  | .may (.objectCost .artifactOrDiscard) (.draw 1) .ifYouDo =>
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
   | .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost) =>
     "if it's an Equipment, attach it to this creature"
@@ -1501,9 +1501,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "that creature deals damage equal to its power to up to one target creature"
     | _, _ =>
       "fight"
-  | .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) =>
+  | .may (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo =>
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
-  | .mayThen (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) =>
+  | .may (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo =>
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
   | .revealFromHand count thenDo =>
     match count, thenDo with
@@ -1515,7 +1515,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "reveal cards from their hand"
   | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard] =>
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
-  | .mayThen (.tap .source) (.queueReflexive (.modeled 0)) =>
+  | .may (.tap .source) (.queueReflexive (.modeled 0)) .ifYouDo =>
     "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
   | .markRecentTokensAttacking =>
     "those tokens enter tapped and attacking"
@@ -1732,7 +1732,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
   | .resource .plusOneOnHeroesCreateWall =>
     "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
-  | .mayThen _ _ =>
+  | .may _ _ .ifYouDo =>
     "you may do it. If you do, do that"
   | .pay symbols =>
     s!"pay {String.join (symbols.toList.map ManaSymbol.toNotation)}"

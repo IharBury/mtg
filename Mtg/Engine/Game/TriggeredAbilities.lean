@@ -2639,9 +2639,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyModeledTrigger controller (.onCasting (Effect.ofTrigger (.casting e))) sourceId targets sourceName lastKnownPower
   | .resource e =>
     g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower
-  | .mayThen (.draw 0 _ (.perControlled ty)) (.draw 1 .eachOpponent _) =>
+  | .may (.draw 0 _ (.perControlled ty)) (.draw 1 .eachOpponent _) .ifYouDo =>
     g.mayDrawPerArtifact controller ty
-  | .mayThen optional conditional =>
+  | .may optional conditional .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
     let g := { g with mayThenDrop := cond.length, mayThenConditional := some conditional }
     g.applyTriggeredAbility controller ab sourceId targets dividedDamage

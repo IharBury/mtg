@@ -117,7 +117,7 @@ inductive TriggerIf where
 deriving Repr, Inhabited, BEq
 
 /-- Objects chosen for `TriggerResolution.objectCost`, the optional action of
-`TriggerResolution.mayThen`. -/
+`.may _ _ .ifYouDo`. -/
 inductive TriggerObjectCost where
   /-- Sacrifice another creature. Its power is noted for
   `TriggerResolution.putCounters .plusOneSacrificedPower`. -/
@@ -131,7 +131,7 @@ inductive TriggerObjectCost where
 deriving Repr, Inhabited, BEq
 
 /-- A reflexive triggered ability queued by `TriggerResolution.queueReflexive`
-after the optional action of `mayThen` (“When you do”). -/
+after the optional action of `.may _ _ .ifYouDo` (“When you do”). -/
 inductive TriggerReflexive where
   /-- An MSH modeled reflexive. `0` grants indestructible. `7` destroys an
   opposing nonland. -/
@@ -935,7 +935,7 @@ inductive TriggerTapWho where
   An illegal target is reported. -/
   | target
   /-- The ability's source, if it is still on the battlefield.
-  Inside `mayThen`, tapping is optional. -/
+  Inside `.may _ _ .ifYouDo`, tapping is optional. -/
   | source
   /-- The creature this Aura enchants. The Aura must still be on the battlefield.
   Nothing enchanted does nothing. A missing Aura is reported. -/
@@ -1017,6 +1017,14 @@ inductive TriggerBasePTAmount where
   /-- This creature's power and toughness as the ability resolves.
   A source that has left uses its last-known power and toughness. -/
   | equalSource
+deriving Repr, Inhabited, BEq
+
+/-- Which outcome of `TriggerResolution.may` resolves `follow`. -/
+inductive TriggerMayWhen where
+  /-- The player performed `action`. Declining skips `follow`. -/
+  | ifYouDo
+  /-- The player declined `action`. Performing `action` skips `follow`. -/
+  | ifYouDont
 deriving Repr, Inhabited, BEq
 
 /-- How long `TriggerResolution.gainControl` lasts. -/
@@ -1143,7 +1151,7 @@ inductive TriggerResolution where
   | searchLibrary (thenDo : TriggerResolution)
   /-- Discard cards. `n` is the count when `what` is `.cards`.
   One card from the controller is `.discard`.
-  Inside `mayThen`, one card is optional: declining skips the conditional.
+  Inside `.may _ _ .ifYouDo`, one card is optional: declining skips the follow-up.
   Each opponent discards one is `.discard (who := .each)`.
   The announced opponent discards `n` is `.discard n (who := .target)`.
   The controller's hand, noting how many cards were discarded, is
@@ -1157,34 +1165,11 @@ inductive TriggerResolution where
   | discard (n : Nat := 1) (who : TriggerDiscardWho := .you)
       (what : TriggerDiscardWhat := .cards)
       (when : TriggerDiscardWhen := .now)
-  /-- You may resolve `optional`. If you do, resolve `conditional`.
-  Declining, or being unable to perform `optional`, skips `conditional`.
-  You may discard a card to draw `n` is `.mayThen (.discard 1) (.draw n)`.
-  `SharedTrigger.mayTo a b` resolves as `.mayThen` of each step's resolution.
-  You may pay `{n}` to draw is `.mayThen (.pay #[.generic n]) (.draw 1)`.
-  Paying `{n}` to put a +1/+1 counter on the source and draw is
-  `.mayThen (.pay #[.generic n]) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1])`.
-  You may sacrifice another creature for +1/+1 counters equal to its power is
-  `.mayThen (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source)`.
-  You may pay `{1}{G}{U}` to return this from the graveyard is
-  `.mayThen (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner)`.
-  You may sacrifice another creature or artifact to draw and create a Treasure is
-  `.mayThen (.objectCost .anotherCreatureOrArtifact) (.sequence [.draw 1, .createTokens .treasure 1 false])`.
-  You may discard your hand to draw `n` is `.mayThen (.discard (what := .hand)) (.draw n)`.
-  You may sacrifice an artifact or discard a card to draw is
-  `.mayThen (.objectCost .artifactOrDiscard) (.draw 1)`.
-  You may sacrifice another creature to destroy an opposing nonland is
-  `.mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7))`.
-  You may sacrifice an artifact or discard a nonland to deal 2 damage is
-  `.mayThen (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2))`.
-  You may tap this to grant indestructible is
-  `.mayThen (.tap .source) (.queueReflexive (.modeled 0))`. -/
-  | mayThen (optional conditional : TriggerResolution)
-  /-- Pay `symbols`. Inside `mayThen`, declining skips the conditional.
+  /-- Pay `symbols`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
   `{n}` is `.pay #[.generic n]`. `{1}{G}{U}` is
   `.pay #[.generic 1, .colored .green, .colored .blue]`. -/
   | pay (symbols : Array ManaSymbol)
-  /-- Choose objects for `how`. Inside `mayThen`, declining skips the conditional.
+  /-- Choose objects for `how`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
   Sacrificing another creature notes its power. -/
   | objectCost (how : TriggerObjectCost)
   /-- Put counters.
@@ -1385,7 +1370,11 @@ inductive TriggerResolution where
   it to the source if it is Equipment, is
   `.sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
   | sequence (rs : List TriggerResolution)
-  /-- The controller may resolve `action`. Declining skips it.
+  /-- The controller may resolve `action`. `when` says which outcome resolves
+  `follow`. `.ifYouDont` is the default: declining resolves `follow`, and
+  performing `action` skips it. `.ifYouDo` resolves `follow` only when
+  `action` is performed. Declining, or being unable to perform `action`,
+  skips that follow-up.
   A choice that already includes decline is that choice, so the player
   is not asked twice. You may draw X cards, where X is the mana spent to
   cast the triggering spell, then discard two, is
@@ -1400,12 +1389,34 @@ inductive TriggerResolution where
   that player loses life; it does not skip.
   You may put a land card from your hand onto the battlefield tapped is
   `.may (.put .landFromHand (how := .tapped)) (.sequence [])`.
-  `SharedTrigger.may a` resolves as `.may` of `a`'s resolution.
+  `SharedTrigger.may a` resolves as `.may` of `a`'s resolution and an empty sequence.
   Declining, or being unable to put a creature of `subtype` with mana value
-  at most `maxMv` from your hand, resolves `otherwise`. That draw is
+  at most `maxMv` from your hand, draws a card with
   `.may (.put (.creatureFromHand subtype maxMv)) (.draw 1)`.
-  Declining with no other effect is `.may action (.sequence [])`. -/
-  | may (action : TriggerResolution) (otherwise : TriggerResolution)
+  Declining with no other effect is `.may action (.sequence [])`.
+  You may discard a card to draw `n` is `.may (.discard 1) (.draw n) .ifYouDo`.
+  `SharedTrigger.mayTo a b` resolves as `.may` of each step's resolution, `.ifYouDo`.
+  You may pay `{n}` to draw is `.may (.pay #[.generic n]) (.draw 1) .ifYouDo`.
+  Paying `{n}` to put a +1/+1 counter on the source and draw is
+  `.may (.pay #[.generic n]) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1]) .ifYouDo`.
+  You may sacrifice another creature for +1/+1 counters equal to its power is
+  `.may (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo`.
+  You may pay `{1}{G}{U}` to return this from the graveyard is
+  `.may (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner) .ifYouDo`.
+  You may sacrifice another creature or artifact to draw and create a Treasure is
+  `.may (.objectCost .anotherCreatureOrArtifact) (.sequence [.draw 1, .createTokens .treasure 1 false]) .ifYouDo`.
+  You may discard your hand to draw `n` is `.may (.discard (what := .hand)) (.draw n) .ifYouDo`.
+  You may draw for each permanent of a type, and each opponent draws if you do, is
+  `.may (.draw 0 (amount := .perControlled ty)) (.draw 1 (who := .eachOpponent)) .ifYouDo`.
+  You may sacrifice an artifact or discard a card to draw is
+  `.may (.objectCost .artifactOrDiscard) (.draw 1) .ifYouDo`.
+  You may sacrifice another creature to destroy an opposing nonland is
+  `.may (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo`.
+  You may sacrifice an artifact or discard a nonland to deal 2 damage is
+  `.may (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo`.
+  You may tap this to grant indestructible is
+  `.may (.tap .source) (.queueReflexive (.modeled 0)) .ifYouDo`. -/
+  | may (action follow : TriggerResolution) (when : TriggerMayWhen := .ifYouDont)
   /-- You gain life (CR 118.2), as `amount` says. `n` is the amount when
   `amount` is `.fixed`.
   You gain `n` life is `.gainLife n`.
@@ -1982,7 +1993,7 @@ def ofSpell : SpellResolution → TriggerResolution
   | .nextFreeRGCreature =>
     .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying
   | .mayDrawPerArtifactOppsDraw ty =>
-    .mayThen (.draw 0 (amount := .perControlled ty)) (.draw 1 (who := .eachOpponent))
+    .may (.draw 0 (amount := .perControlled ty)) (.draw 1 (who := .eachOpponent)) .ifYouDo
   | .mayPutHeroMvOrDraw n subtype =>
     .may (.put (.creatureFromHand subtype n)) (.draw 1)
   | .spellsCostLessThisTurn which n => .spellsCostLess which n
@@ -2255,7 +2266,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         match left.dividedDamage with
         | some d => some d
         | none => right.dividedDamage
-      resolution := .mayThen left.resolution right.resolution }
+      resolution := .may left.resolution right.resolution .ifYouDo }
   | .may action =>
     let inner := timing action
     { inner with resolution := .may inner.resolution (.sequence []) }
@@ -2289,7 +2300,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pump 0 0 .target .perPlains }
   | .mayDiscardHandDraw n =>
-    { resolution := .mayThen (.discard (what := .hand)) (.draw n) }
+    { resolution := .may (.discard (what := .hand)) (.draw n) .ifYouDo }
   | .pumpByLookedAt => { resolution := .pump 0 0 .source .perLookedAt }
   | .pumpGreatestPower => { resolution := .pump 0 0 .source .greatestPower }
   | .pumpForEachOtherCreature => { resolution := .pump 0 0 .source .perOtherCreature }
@@ -2309,8 +2320,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .gainControlOppUntilEot =>
     { targeting := .of .oppCreature, resolution := .gainControl .untilEndOfTurn }
   | .payReturnFromGy =>
-    { resolution := .mayThen
-        (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner) }
+    { resolution := .may
+        (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner) .ifYouDo }
   | .targetOpponentLosesLife n =>
     { targeting := .of .opponent, resolution := .loseLife n (who := .targetOpponent) }
   | .drawXDiscard n =>
@@ -2330,10 +2341,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .mayPayGenericDraw n plusOne =>
     { resolution :=
         if plusOne then
-          .mayThen (.pay #[.generic n])
-            (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1])
+          .may (.pay #[.generic n])
+            (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1]) .ifYouDo
         else
-          .mayThen (.pay #[.generic n]) (.draw 1) }
+          .may (.pay #[.generic n]) (.draw 1) .ifYouDo }
   | .drawThenBottomIfNoLegendary =>
     { resolution := .sequence
         [.draw 1, .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)] }
@@ -2409,8 +2420,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .revealLibrary .untilCreature
         (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)) }
   | .attackSacPlusOneEqualPower =>
-    { resolution := .mayThen (.objectCost .anotherCreature)
-        (.putCounters .plusOneSacrificedPower .source) }
+    { resolution := .may (.objectCost .anotherCreature)
+        (.putCounters .plusOneSacrificedPower .source) .ifYouDo }
   | .lootLandEntersTapped =>
     { resolution := .sequence
         [.draw 1, .discard 1, .put .discardedLand (how := .tapped)] }
@@ -2419,8 +2430,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .drawPerFatGraveyard =>
     { resolution := .draw 0 (amount := .perFatGraveyard) }
   | .maySacDrawTreasure =>
-    { resolution := .mayThen (.objectCost .anotherCreatureOrArtifact)
-        (.sequence [.draw 1, .createTokens .treasure 1 false]) }
+    { resolution := .may (.objectCost .anotherCreatureOrArtifact)
+        (.sequence [.draw 1, .createTokens .treasure 1 false]) .ifYouDo }
   | .castInstantSorceryFromHand =>
     { resolution := .mayCast .hand .twiceLegendaryWizards .withoutPaying }
   | .castInstantSorceryMvAtMost =>
@@ -2667,7 +2678,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
         (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
   | .maySacArtifactOrDiscardDraw =>
-    { resolution := .mayThen (.objectCost .artifactOrDiscard) (.draw 1) }
+    { resolution := .may (.objectCost .artifactOrDiscard) (.draw 1) .ifYouDo }
   | .enter (.destroy kind) =>
     { events := #[.entering], targeting := .of kind, resolution := .destroy .target }
   | .enter (.dealDamageUpToOne n) =>
@@ -2701,11 +2712,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence [.tap .target, .cantUntapWhileSource] }
   | .enter .maySacAnotherThenDestroyOppNonland =>
     { events := #[.entering],
-      resolution := .mayThen (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) }
+      resolution := .may (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo }
   | .enter .maySacOrDiscardNonlandThenDamage =>
     { events := #[.entering],
-      resolution := .mayThen (.objectCost .artifactOrDiscardNonland)
-        (.queueReflexive (.damageAny 2)) }
+      resolution := .may (.objectCost .artifactOrDiscardNonland)
+        (.queueReflexive (.damageAny 2)) .ifYouDo }
   | .enter .revealHandExileUntilLeaves =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
       resolution := .revealFromHand .hand (.exile .target .untilSourceLeaves) }
@@ -2720,7 +2731,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .alreadyChosen }
   | .enter .mayTapThenGrantIndestructible =>
     { events := #[.entering],
-      resolution := .mayThen (.tap .source) (.queueReflexive (.modeled 0)) }
+      resolution := .may (.tap .source) (.queueReflexive (.modeled 0)) .ifYouDo }
   | .enter .tapLoseAbilitiesWhileSource =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence

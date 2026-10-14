@@ -117,7 +117,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.spell { resolution := .mayPutHeroMvOrDraw 3 })).resolution ==
   .may (.put (.creatureFromHand "Hero" 3)) (.draw 1)
 #guard (timing (.spell { resolution := .mayDrawPerArtifactOppsDraw })).resolution ==
-  .mayThen (.draw 0 (amount := .perControlled .artifact)) (.draw 1 (who := .eachOpponent))
+  .may (.draw 0 (amount := .perControlled .artifact)) (.draw 1 (who := .eachOpponent)) .ifYouDo
 #guard (timing (.spell { resolution := .spellsCostLessThisTurn (.cardType .artifact) 1 })).resolution ==
   .spellsCostLess (.cardType .artifact) 1
 #guard (timing (.spell {
