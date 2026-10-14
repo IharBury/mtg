@@ -47,7 +47,10 @@ def onBoard (g : Game) (name : String) : Bool :=
 #guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepCopyTaskmaster) ==
   .becomeCopy .creatureOrGraveyardCard
 #guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepHydeChoose) ==
-  .plusOneOrRemoveCounterDraw
+  .chooseModes TriggeredAbility.TriggerResolution.hydeModes .plusOneOrRemoveCounter
+#guard TriggeredAbility.resolution
+    (TriggeredAbility.onEnter (Effect.ofTrigger .exileOtherCopyEnchanted)) ==
+  .sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted]
 #guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepHarnessedFlicker) ==
   .«if» .sourceHarnessed (.exile .target .returnImmediately)
 
@@ -129,6 +132,32 @@ def copyNothing : Game :=
 
 #guard !(named copyNothing "Absorbing Man").printed.isLand &&
   logContains copyNothing "doesn't become a copy"
+
+/- The enchanted creature becomes a copy of the creature an earlier step
+noted. Nothing noted leaves the creature unchanged. -/
+def notedCopy : Game :=
+  let g := addPermanent (addPermanent afterDraw grizzlyBears me me) hillGiant opp opp
+  let host := named g "Grizzly Bears"
+  let giant := named g "Hill Giant"
+  let g := { g with notedCopyObject := some giant, notedHostId := some host.id }
+  g.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
+    (resolutionOverride := some (.becomeCopy .noted))
+
+#guard
+  match notedCopy.battlefield.find? (fun o => o.copyRestore.isSome) with
+  | some o =>
+    o.printed.name == "Hill Giant" &&
+      (o.copyRestore.getD o.printed).name == "Grizzly Bears" &&
+      notedCopy.notedCopyObject.isNone
+  | none => false
+
+def notedMissing : Game :=
+  let g := addPermanent afterDraw grizzlyBears me me
+  g.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
+    (resolutionOverride := some (.becomeCopy .noted))
+
+#guard (named notedMissing "Grizzly Bears").name == "Grizzly Bears" &&
+  (named notedMissing "Grizzly Bears").copyRestore.isNone
 
 /- Taskmaster copies a creature card in a graveyard and replaces his type line. -/
 def copiedGraveyard : Game :=

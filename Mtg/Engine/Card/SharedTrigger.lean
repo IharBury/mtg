@@ -882,7 +882,8 @@ inductive SharedTrigger where
   /-- Attach to target, then apply `followup`. Resolves as `.attach .source .target`
   followed by `TriggerResolution.ofTargetWhileSource`. -/
   | attachThen (followup : PermanentAction)
-  /-- Exile another creature; enchanted becomes a copy. -/
+  /-- Exile another creature; enchanted becomes a copy. Resolves as
+  `.sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted]`. -/
   | exileOtherCopyEnchanted
   /-- Exile a creature you control until the next end step. -/
   | exileUntilNextEndStep
@@ -914,7 +915,7 @@ inductive SharedTrigger where
   Becoming a copy of an artifact, non-Aura enchantment, or land is
   `.becomeCopy .artifactEnchantmentOrLand`.
   Choosing a +1/+1 counter or removing a counter to draw is
-  `.plusOneOrRemoveCounterDraw`.
+  `.chooseModes TriggerResolution.hydeModes .plusOneOrRemoveCounter`.
   Becoming a copy of a creature or a graveyard creature card is
   `.becomeCopy .creatureOrGraveyardCard`.
   Exiling and returning another nonland while harnessed is

@@ -144,7 +144,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let memory :=
       match how with
       | .oneUnusedThisTurn => src.status.allianceModesChosen
-      | .oneUnused | .alreadyChosen => src.status.chosenModes
+      | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter => src.status.chosenModes
     let available := unusedModes memory (List.range modes.length).toArray
     match src.controller with
     | none => g.logMsg "The ability is removed from the stack with no effect"
@@ -154,7 +154,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .oneUnusedThisTurn =>
           g.logMsg
             "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
-        | .oneUnused | .alreadyChosen =>
+        | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter =>
           g.logMsg
             "all three modes have been chosen. The ability is removed from the stack with no effect"
       else
@@ -172,7 +172,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               pending := .fraChoice p (.gollumMode src.id available)
               chooseModesRest := some rest }.logMsg
             s!"{(g.player p).name} chooses a mode that hasn't been chosen"
-        | .alreadyChosen => g
+        | .alreadyChosen | .plusOneOrRemoveCounter => g
 
 /-- Destroy `targets[0]` when it is a token still on the battlefield. -/
 def destroyChosenToken (g : Game) (targets : Array Target) : Game :=
@@ -2458,6 +2458,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       "Attacking creatures untap. After this phase, there is an additional combat phase"
   | .chooseModes modes how =>
     match how with
+    | .plusOneOrRemoveCounter =>
+      g.offerHydeChoice controller sourceId
     | .alreadyChosen =>
       let chosen :=
         match sourceId.bind g.findObject? with
@@ -2572,16 +2574,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let yes := g.planWasSacrificed
     let g := { g with planWasSacrificed := false }
     if yes then g.queueModeledReflexive controller sourceId 10 else g
-  | .enchantedCopiesNoted =>
-    let copied := g.notedCopyObject
-    let hostId := g.notedHostId
-    let g := { g with notedCopyObject := none, notedHostId := none }
-    match copied, hostId with
-    | some tgt, some hid =>
-      match g.findObject? hid with
-      | some host => g.becomeCopyOf host tgt (untilSourceLeaves := sourceId)
-      | none => g
-    | _, _ => g
   | .grantPlayNotedUntilNextTurn =>
     match g.playExiledThisWay with
     | none => g
@@ -2637,8 +2629,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g.logMsg "The source is no longer on the battlefield"
   | .becomeCopy of =>
     g.applyBecomeCopy sourceId targets of
-  | .plusOneOrRemoveCounterDraw =>
-    g.offerHydeChoice controller sourceId
   | .death e =>
     g.applyModeledTrigger controller (.onDeath (Effect.ofTrigger (.death e))) sourceId targets sourceName lastKnownPower
   | .thisAttack e =>
@@ -2762,7 +2752,7 @@ def resumeTriggerSequence (g : Game) : Game :=
 def rememberChosenMode (g : Game) (sourceId : ObjectId)
     (how : TriggeredAbility.TriggerModeHow) (mode : Nat) : Game :=
   match how, g.findObject? sourceId with
-  | .alreadyChosen, _ => g
+  | .alreadyChosen, _ | .plusOneOrRemoveCounter, _ => g
   | _, none => g.logMsg "The ability is removed from the stack with no effect"
   | .oneUnusedThisTurn, some src =>
     g.setObject { src with status :=

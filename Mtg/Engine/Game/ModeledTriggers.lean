@@ -249,12 +249,26 @@ def offerHydeChoice (g : Game) (controller : PlayerId) (sourceId : Option Object
   { g with pending := .fraChoice controller (.hydeMode (sourceId.getD ⟨0⟩)) }
     |>.logMsg s!"{(g.player controller).name} chooses one — 0 put a +1/+1 counter, 1 remove a counter and draw"
 
-/-- The source becomes a copy of the announced object until the controller's
-next turn, as `of` says. It keeps the printed exception name. Choosing none
-copies nothing. A missing source copies nothing. -/
+/-- Something becomes a copy, as `of` says. The source copies an announced
+object until the controller's next turn and keeps the printed exception
+name. Choosing none copies nothing. A missing source copies nothing.
+`.noted` makes the enchanted creature a copy of the creature an earlier
+step noted, until the source leaves. Nothing noted copies nothing. -/
 def applyBecomeCopy (g : Game) (sourceId : Option ObjectId) (targets : Array Target)
     (of : TriggeredAbility.TriggerCopyOf) : Game :=
-  g.withSourceOnBattlefield sourceId (fun g src =>
+  match of with
+  | .noted =>
+    let copied := g.notedCopyObject
+    let hostId := g.notedHostId
+    let g := { g with notedCopyObject := none, notedHostId := none }
+    match copied, hostId with
+    | some tgt, some hid =>
+      match g.findObject? hid with
+      | some host => g.becomeCopyOf host tgt (untilSourceLeaves := sourceId)
+      | none => g
+    | _, _ => g
+  | of =>
+    g.withSourceOnBattlefield sourceId (fun g src =>
     match of with
     | .artifactEnchantmentOrLand =>
       match targets[0]? with
@@ -287,7 +301,8 @@ def applyBecomeCopy (g : Game) (sourceId : Option ObjectId) (targets : Array Tar
               (replaceCreatureLine := true)
           else g.logMsg "That isn't a creature or a creature card in a graveyard"
         | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "Taskmaster doesn't become a copy") "The source is no longer in play"
+      | _ => g.logMsg "Taskmaster doesn't become a copy"
+    | .noted => g) "The source is no longer in play"
 
 /-- Exile the announced nonland the controller still controls, other than the
 source, then return it under its owner's control. Choosing none does nothing.

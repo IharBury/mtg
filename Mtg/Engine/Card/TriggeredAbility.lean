@@ -1084,7 +1084,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match attachedFollowupPhrase followup with
     | some phrase => s!"attach it to {noun}. {capitalizeAscii phrase}"
     | none => "resolve each step"
-  | .sequence [.exile .target .untilSourceLeaves .copyAndHost, .enchantedCopiesNoted] =>
+  | .sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted] =>
     "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .sequence [.draw 1, .may (.put .landFromHand .tapped _) _] =>
     "draw a card, then you may put a land card from your hand onto the battlefield tapped"
@@ -1362,6 +1362,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
     else if modes == TriggerResolution.upToXModes && how == .alreadyChosen then
       "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
+    else if modes == TriggerResolution.hydeModes && how == .plusOneOrRemoveCounter then
+      "choose one — put a +1/+1 counter on this, or remove a counter from a creature you control and draw a card"
     else
       "choose a mode"
   | .returnToHand what whose note =>
@@ -1559,8 +1561,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "when you do, the reflexive ability triggers"
   | .queuePlanDividedDamage n =>
     s!"when you do, it deals {n} damage divided as you choose among one or two targets"
-  | .enchantedCopiesNoted =>
-    "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .«if» .anotherHero (.gainLife n) =>
     s!"if you control another Hero, you gain {n} life"
   | .grantPlayNotedUntilNextTurn =>
@@ -1596,8 +1596,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "until your next turn, this becomes a copy of up to one target artifact, non-Aura enchantment, or land, except its name, and it's a legendary 4/4 Human Villain creature with vigilance"
   | .becomeCopy .creatureOrGraveyardCard =>
     "until your next turn, this becomes a copy of up to one target creature or creature card in a graveyard, except its name, and it's a legendary Human Mercenary Villain creature"
-  | .plusOneOrRemoveCounterDraw =>
-    "choose one — put a +1/+1 counter on this, or remove a counter from a creature you control and draw a card"
+  | .becomeCopy .noted =>
+    "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
   | .death .hellcatReturn =>

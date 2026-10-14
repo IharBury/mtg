@@ -722,6 +722,12 @@ inductive TriggerModeHow where
   | oneUnused
   /-- Modes already chosen resolve in printed order. -/
   | alreadyChosen
+  /-- The controller chooses one — a +1/+1 counter on the source, or remove
+  a counter from a creature you control and draw a card if you do.
+  You must remove a counter when a creature you control has one.
+  Choosing that mode when none does draws nothing. The modes are
+  `TriggerResolution.hydeModes`. This choice does not record a used mode. -/
+  | plusOneOrRemoveCounter
 deriving Repr, Inhabited, BEq
 
 /-- Which permanents `TriggerResolution.destroy` destroys. -/
@@ -1049,8 +1055,10 @@ inductive TriggerControlHow where
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.becomeCopy` copies, and which exceptions apply.
-The copy lasts until the controller's next turn. The source keeps its name.
-Choosing none copies nothing. A missing source copies nothing. -/
+The source keeps its name when it copies an announced object until the
+controller's next turn. Choosing none copies nothing. A missing source
+copies nothing. The enchanted creature copies a noted creature until the
+source leaves. -/
 inductive TriggerCopyOf where
   /-- Up to one target artifact, non-Aura enchantment, or land.
   The source is also a legendary 4/4 Human Villain creature with vigilance. -/
@@ -1058,6 +1066,10 @@ inductive TriggerCopyOf where
   /-- Up to one target creature, or creature card in a graveyard.
   The source is a legendary Human Mercenary Villain creature. -/
   | creatureOrGraveyardCard
+  /-- The creature an earlier step exiled and noted.
+  The enchanted creature becomes that copy until the source leaves.
+  Nothing noted, or nothing enchanted, copies nothing. -/
+  | noted
 deriving Repr, Inhabited, BEq
 
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
@@ -1686,7 +1698,9 @@ inductive TriggerResolution where
   Alliance is `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`.
   Gollum is `.chooseModes TriggerResolution.gollumModes .oneUnused`.
   Chosen up to X, in printed order, is
-  `.chooseModes TriggerResolution.upToXModes .alreadyChosen`. -/
+  `.chooseModes TriggerResolution.upToXModes .alreadyChosen`.
+  A +1/+1 counter on the source, or removing a counter to draw, is
+  `.chooseModes TriggerResolution.hydeModes .plusOneOrRemoveCounter`. -/
   | chooseModes (modes : List TriggerResolution) (how : TriggerModeHow)
   /-- You may cast a spell. `origin` says where the card is, `maxMv` limits
   its mana value, `cost` says whether that cost is paid, and `note` says
@@ -1827,8 +1841,6 @@ inductive TriggerResolution where
   | queueReflexiveIfSacrificed (kind : Nat)
   /-- Queue the divided-damage reflexive. `amount` is the printed number. -/
   | queuePlanDividedDamage (amount : Nat)
-  /-- The enchanted creature becomes a copy of the creature exiled this way. -/
-  | enchantedCopiesNoted
   /-- You may play the exiled card until the end of your next turn. -/
   | grantPlayNotedUntilNextTurn
   /-- The tapped creature can't untap while you control the source. -/
@@ -1847,14 +1859,10 @@ inductive TriggerResolution where
   A creature or a creature card in a graveyard, as a legendary Human
   Mercenary Villain creature, is `.becomeCopy .creatureOrGraveyardCard`.
   Choosing none copies nothing. An illegal object is reported.
-  A missing source copies nothing. -/
+  A missing source copies nothing.
+  The enchanted creature copying the creature an earlier step noted is
+  `.becomeCopy .noted`. Nothing noted copies nothing. -/
   | becomeCopy (of : TriggerCopyOf)
-  /-- Choose one — put a +1/+1 counter on the source, or remove a counter
-  from a creature you control and draw a card if you do.
-  You must remove a counter when a creature you control has one.
-  Choosing that mode when none does draws nothing. A missing source puts
-  no counter. -/
-  | plusOneOrRemoveCounterDraw
   /-- Resolve a leftover DeathLeftover. -/
   | death (e : DeathLeftover)
   /-- Resolve a leftover ThisAttackLeftover. -/
@@ -1901,6 +1909,12 @@ def upToXModes : List TriggerResolution :=
    .loseLife 2 (who := .eachOpponent),
    .destroy .target (note := .chosenToken),
    .sacrifice .eachPlayer .chosenCreature]
+
+/-- Put a +1/+1 counter on the source. Draw a card after removing a counter
+from a creature you control. `.plusOneOrRemoveCounter` asks for the choice
+and removes the counter; the draw is that mode's follow-up. -/
+def hydeModes : List TriggerResolution :=
+  [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1]
 
 /-- What `action` does to the announced permanent. -/
 def ofPermanent : PermanentAction → TriggerResolution
@@ -2707,7 +2721,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .exileOtherCopyEnchanted =>
     { targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
-        [.exile .target .untilSourceLeaves .copyAndHost, .enchantedCopiesNoted] }
+        [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted] }
   | .exileUntilNextEndStep =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .exile .target .nextEndStep }
@@ -2809,7 +2823,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       allowsZeroTargets := true, maxTargets := 1
       resolution := .becomeCopy .artifactEnchantmentOrLand }
   | .step .hydeChoose =>
-    { events := #[.yourUpkeep], resolution := .plusOneOrRemoveCounterDraw }
+    { events := #[.yourUpkeep],
+      resolution := .chooseModes TriggeredAbility.TriggerResolution.hydeModes
+        .plusOneOrRemoveCounter }
   | .step .copyTaskmaster =>
     { events := #[.yourFirstMain], targeting := .of .creatureOrGyCreatureCard,
       allowsZeroTargets := true, maxTargets := 1

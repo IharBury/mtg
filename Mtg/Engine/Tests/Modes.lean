@@ -67,6 +67,11 @@ def upToXModes : TriggeredAbility.TriggerResolution :=
     { resolution := upToXModes } ==
   "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
 
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .chooseModes TriggeredAbility.TriggerResolution.hydeModes
+        .plusOneOrRemoveCounter } ==
+  "choose one — put a +1/+1 counter on this, or remove a counter from a creature you control and draw a card"
+
 /- Alliance offers the modes still unused this turn. All three chosen
 removes the ability. A missing source does the same. -/
 #guard
