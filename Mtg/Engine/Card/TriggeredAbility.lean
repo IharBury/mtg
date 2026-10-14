@@ -940,6 +940,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"you may discard a card. If you do, draw {cardPhrase n}"
   | .may (.dealDamage _ .target .lastKnownPower .none) (.sequence []) .ifYouDo =>
     "you may have this deal that much damage"
+  | .may .retargetCause (.sequence []) .ifYouDo =>
+    "you may choose new targets for that spell"
   | .may (.pay symbols) (.queueReflexive (.modeled _ times)) .ifYouDo =>
     match symbols.toList with
     | [.generic n] =>
@@ -1636,8 +1638,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create a token that's a copy of the artifact that caused this"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
-  | .mayRetargetSpell =>
-    "you may choose new targets for that spell"
+  | .retargetCause =>
+    "choose new targets for that spell"
   | .youAttacking .pay2LifeToughness =>
     "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
   | .youAttacking .exileTopHeroPump =>

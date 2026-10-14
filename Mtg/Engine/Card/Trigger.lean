@@ -1605,6 +1605,8 @@ inductive TriggerResolution where
   The amount is the trigger's last-known power. Already used this turn does
   nothing. An illegal target is reported. The source need not still be on
   the battlefield.
+  You may choose new targets for the spell that caused this is
+  `.may .retargetCause (.sequence []) .ifYouDo`.
   You may pay {1} up to three times, then choose that many modes, is
   `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
   You may pay {2} to copy the nontoken artifact that caused this is
@@ -2053,10 +2055,12 @@ inductive TriggerResolution where
   battlefield. A noncreature token becomes a 2/2 Robot Villain after it
   enters. -/
   | becomeCopy (of : TriggerCopyOf)
-  /-- You may change the targets of the spell that caused this trigger.
+  /-- Choose new targets for the spell that caused this trigger.
   The recorded cause is used when one was chosen. Otherwise the spell on
-  the stack that targets the source. A spell that has left changes nothing. -/
-  | mayRetargetSpell
+  the stack that targets the source. A spell that has left changes nothing.
+  You may do so with `.may .retargetCause (.sequence []) .ifYouDo`.
+  Declining a target leaves it unchanged and asks about the next one. -/
+  | retargetCause
   /-- Resolve a leftover YouAttackLeftover. -/
   | youAttacking (e : YouAttackLeftover)
   /-- Resolve a leftover CastLeftover. -/
@@ -3095,7 +3099,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo }
   | .watch .speedballTargeted =>
     { events := #[.spellTargetsSource],
-      resolution := .sequence [.pump 2 2 .source, .mayRetargetSpell] }
+      resolution := .sequence [
+        .pump 2 2 .source, .may .retargetCause (.sequence []) .ifYouDo] }
   | .watch .anyPlayerSecondDraw =>
     { events := #[.anyPlayerDrawsSecond], resolution := .draw 1 }
   | .watch .youTargetDrawOnce =>

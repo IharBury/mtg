@@ -2917,7 +2917,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g.logMsg "The source is no longer on the battlefield"
   | .becomeCopy of =>
     g.applyBecomeCopy controller sourceId targets of
-  | .mayRetargetSpell =>
+  | .retargetCause =>
     let targetingSource (e : StackEntry) : Bool :=
       e.targets.any (fun t =>
         match t, sourceId with
@@ -2951,6 +2951,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let amt := lastKnownPower.getD 0
         { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
           |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
+  | .may .retargetCause (.sequence []) .ifYouDo =>
+    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName (some .retargetCause)
+      sequencedCardPower
   | .may (.pay symbols) (.queueReflexive (.modeled kind times)) .ifYouDo =>
     -- Paying more than once records that count for the reflexive ability.
     if times > 1 then
