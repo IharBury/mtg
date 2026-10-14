@@ -157,10 +157,12 @@ deriving Repr, Inhabited, BEq
 /-- A reflexive triggered ability queued by `TriggerResolution.queueReflexive`
 after the optional action of `.may _ _ .ifYouDo` (“When you do”). -/
 inductive TriggerReflexive where
-  /-- An MSH modeled reflexive. `0` grants indestructible. `6` returns a
-  graveyard creature tapped and attacking. `7` destroys an opposing
-  nonland. `12` puts a +1/+1 counter on target creature. -/
-  | modeled (kind : Nat)
+  /-- An MSH modeled reflexive. `0` grants indestructible. `2` chooses up to
+  `times` Trick Arrows modes. `6` returns a graveyard creature tapped and
+  attacking. `7` destroys an opposing nonland. `12` puts a +1/+1 counter
+  on target creature. `times` is how many times the cost may be paid.
+  One payment is `.modeled kind`. Paying up to three times is `.modeled 2 3`. -/
+  | modeled (kind : Nat) (times : Nat := 1)
   /-- “This deals `n` damage to any target.” -/
   | damageAny (n : Nat)
   /-- Reflexive ability `kind`, dealing damage equal to the +1/+1 counters
@@ -1596,6 +1598,8 @@ inductive TriggerResolution where
   `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`.
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
   `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
+  You may pay {1} up to three times, then choose that many modes, is
+  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
   You may pay {2} to copy the nontoken artifact that caused this is
   `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`. -/
   | may (action follow : TriggerResolution) (when : TriggerMayWhen := .ifYouDont)
@@ -2042,11 +2046,6 @@ inductive TriggerResolution where
   battlefield. A noncreature token becomes a 2/2 Robot Villain after it
   enters. -/
   | becomeCopy (of : TriggerCopyOf)
-  /-- Offer to pay `symbols` up to `maxTimes` times. Paying queues reflexive
-  ability `kind` once for each payment. Declining queues nothing.
-  Paying {1} up to three times, then choosing that many modes, is
-  `.offerReflexivePay #[.generic 1] 2 3`. -/
-  | offerReflexivePay (symbols : Array ManaSymbol) (kind : Nat) (maxTimes : Nat := 1)
   /-- You may change the targets of the spell that caused this trigger.
   The recorded cause is used when one was chosen. Otherwise the spell on
   the stack that targets the source. A spell that has left changes nothing. -/
@@ -3155,7 +3154,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.draw 1) (.sequence []) .ifYouDo }
   | .watch .hawkeyeModes =>
     { events := #[.sourceBecomesTapped], allowsZeroTargets := true,
-      resolution := .offerReflexivePay #[.generic 1] 2 3 }
+      resolution := .may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo }
   | .watch .redHulk =>
     { events := #[.sourceDealtDamage],
       resolution := .sequence [
@@ -3270,7 +3269,7 @@ end SharedTrigger
       (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
     .announced
 #guard (SharedTrigger.timing (.watch .hawkeyeModes)).resolution ==
-  .offerReflexivePay #[.generic 1] 2 3
+  .may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo
 #guard (SharedTrigger.timing (.watch .hulk)).resolution ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,

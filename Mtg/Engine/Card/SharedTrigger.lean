@@ -1032,7 +1032,8 @@ inductive SharedTrigger where
   `.attach .eachTargetEquipment .enchantedCreature`.
   Choosing a Soldier or a team pump from the last-known mode is
   `.chooseModes [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl] .fromLastKnown`.
-  Paying {1} up to three times is `.offerReflexivePay #[.generic 1] 2 3`.
+  Paying {1} up to three times is
+  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
   Exiling until a nonland, then a counter or a cast, is
   `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
   You may deal the damage that caused this is `.mayDealCauseDamage`.
