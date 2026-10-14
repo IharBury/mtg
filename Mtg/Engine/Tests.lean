@@ -52,6 +52,7 @@ import Mtg.Engine.Tests.Death
 import Mtg.Engine.Tests.ThisAttack
 import Mtg.Engine.Tests.EnterOrAttack
 import Mtg.Engine.Tests.Watch
+import Mtg.Engine.Tests.YouAttack
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -129,4 +130,5 @@ keep working.
 - `ThisAttack`: attack triggers that used to resolve as `thisAttack`
 - `EnterOrAttack`: enters-or-attacks triggers that used to resolve as `enterOrAttack`
 - `Watch`: watch triggers that used to resolve as `watch`
+- `YouAttack`: “whenever you attack” triggers that used to resolve as `youAttacking`
 -/

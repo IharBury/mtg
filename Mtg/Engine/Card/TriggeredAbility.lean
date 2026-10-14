@@ -952,6 +952,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match symbols.toList with
     | [.generic 2] => "you may pay {2} to copy it"
     | _ => "you may pay to copy it"
+  | .may (.loseLife 2 .you .fixed)
+      (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
+    "you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
+  | .may (.exile .top .playThisTurn .ifHero) (.sequence []) _ =>
+    "you may exile the top card of your library. If that card is a Hero card, this gets +2/+1 until end of turn. You may play that card this turn"
   | .may action _ =>
     match action with
     | .tap .humans =>
@@ -1198,6 +1203,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
         s!"exile {noun} until this leaves the battlefield"
     | .top, .playUntilNextTurn, .none =>
       s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
+    | .top, .playThisTurn, .ifHero =>
+      "exile the top card of your library. If it is a Hero card, this gets +2/+1 until end of turn. You may play that card this turn"
     | .eachTarget, .untilSourceLeaves, .none =>
       "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
     | .target, .nextEndStep, .none =>
@@ -1426,6 +1433,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may cast that card without paying its mana cost"
     | .nextRedOrGreenCreature, .unlimited, .withoutPaying, .none =>
       "the next red or green creature spell you cast this turn can be cast without paying its mana cost"
+    | .looked, .greatestAttackingPower, .withoutPaying, .none =>
+      "you may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost"
     | _, _, _, _ =>
       "you may cast a spell"
   | .grant what who =>
@@ -1452,6 +1461,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield"
     | .landfallCreateElf, .source =>
       "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
+    | .assignCombatDamageEqualToughness, .creaturesYouControl =>
+      "until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
     | _, _ =>
       "grant"
   | .revealLibrary how thenDo who =>
@@ -1472,6 +1483,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
         (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
       .announced =>
       "that player exiles cards until a nonland card"
+    | .top n, .mayCast .looked .greatestAttackingPower .withoutPaying .none, .you =>
+      s!"look at the top {n} cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}"
     | _, _, _ =>
       "reveal cards from a library"
   | .«if» (.drewAtLeast 2) (.sequence [.pump 3 0 .target, .grant (.keywords k) .target]) =>
@@ -1640,12 +1653,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
   | .retargetCause =>
     "choose new targets for that spell"
-  | .youAttacking .pay2LifeToughness =>
-    "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
-  | .youAttacking .exileTopHeroPump =>
-    "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
-  | .youAttacking .lookSixCast =>
-    s!"Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}."
   | .casting .villainToken =>
     "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."
   | .casting .merfolkFromBlue =>
@@ -1806,6 +1813,17 @@ def thisAttackSentence : ThisAttackLeftover → String
     "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater."
   | .attacksAlonePlus2Indestructible =>
     "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
+
+/-- Printed sentence for a leftover “whenever you attack” trigger.
+Its resolution is a `TriggerResolution` that does not carry
+`YouAttackLeftover`. -/
+def youAttackingSentence : YouAttackLeftover → String
+  | .pay2LifeToughness =>
+    "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
+  | .exileTopHeroPump =>
+    "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
+  | .lookSixCast =>
+    s!"Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}."
 
 /-- Printed sentence for a leftover watch trigger. Its resolution is a
 `TriggerResolution` that does not carry `WatchLeftover`. -/
@@ -2006,8 +2024,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     | _, some (.thisAttack e), _ => thisAttackSentence e
     | _, some (.enterOrAttack e), _ => enterOrAttackSentence e
     | _, some (.watch e), _ => watchSentence e
-    | _, some (.youAttacking e), _ =>
-      resolutionPhrase { resolution := .youAttacking e }
+    | _, some (.youAttacking e), _ => youAttackingSentence e
     | _, some (.casting e), _ => resolutionPhrase { resolution := .casting e }
     | _, some (.resource e), _ => resolutionPhrase { resolution := .resource e }
 

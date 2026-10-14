@@ -436,6 +436,9 @@ inductive TriggerExileHow where
   | nextEndStep
   /-- You may play it until the end of your next turn. -/
   | playUntilNextTurn
+  /-- You may play it this turn. With note `.ifHero`, a Hero card also gives
+  the source +2/+1 until end of turn. -/
+  | playThisTurn
   /-- Move it to exile. `note` tells the next step which cards moved. -/
   | forLater
   /-- Exile it, then return it under its owner's control.
@@ -468,6 +471,10 @@ inductive TriggerExileNote where
   | anyManaThisTurn
   /-- Link the exiled cards to the source. Used by a library search. -/
   | linked
+  /-- The top card, when it is a Hero, gives the source +2/+1 until end of
+  turn. Used with `.exile .top .playThisTurn`. A missing source still exiles
+  the card and does not pump. An empty library exiles nothing. -/
+  | ifHero
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.sacrifice` asks to sacrifice. -/
@@ -598,6 +605,9 @@ inductive TriggerCastFrom where
   | impulse
   /-- The next red or green creature spell the controller casts this turn. -/
   | nextRedOrGreenCreature
+  /-- A spell among the cards `revealLibrary (.top n)` just looked at.
+  Outside that resolution, this origin does nothing. -/
+  | looked
 deriving Repr, Inhabited, BEq
 
 /-- The mana-value limit of `TriggerResolution.mayCast`.
@@ -609,6 +619,9 @@ inductive TriggerCastMv where
   | twiceLegendaryWizards
   /-- At most the last-known power. Combat damage uses that amount. -/
   | lastKnown
+  /-- At most the greatest power among attacking creatures the controller
+  controls. No attacker is a limit of zero. -/
+  | greatestAttackingPower
 deriving Repr, Inhabited, BEq
 
 /-- Whether `TriggerResolution.mayCast` pays the mana cost. -/
@@ -930,6 +943,10 @@ inductive TriggerGrantWhat where
   | preventDamageWhileSource
   /-- Landfall: create a 1/1 green Elf whenever a land you control enters. -/
   | landfallCreateElf
+  /-- Until end of turn, creatures with toughness greater than their power
+  assign combat damage equal to their toughness rather than their power.
+  Power is unchanged. -/
+  | assignCombatDamageEqualToughness
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.grant` grants that to. -/
@@ -1635,6 +1652,10 @@ inductive TriggerResolution where
   `.exile .target .untilSourceLeaves`.
   The top card, playable until the end of your next turn, is
   `.exile .top .playUntilNextTurn`.
+  The top card, playable this turn, and +2/+1 on the source when it is a
+  Hero, is `.exile .top .playThisTurn .ifHero`. You may do so with
+  `.may (.exile .top .playThisTurn .ifHero) (.sequence [])`.
+  A missing source still exiles the card. An empty library exiles nothing.
   Each announced permanent until the source leaves is
   `.exile .eachTarget .untilSourceLeaves`.
   The targeted permanent until the next end step is
@@ -1892,7 +1913,12 @@ inductive TriggerResolution where
   An instant or sorcery from your hand with mana value at most that damage,
   without paying, is `.mayCast .hand .lastKnown .withoutPaying`.
   The instant or sorcery exiled by the previous step, without paying, is
-  `.mayCast .impulse .unlimited .withoutPaying`. -/
+  `.mayCast .impulse .unlimited .withoutPaying`.
+  A spell from the cards `revealLibrary (.top n)` just looked at, with mana
+  value at most the greatest power among attacking creatures you control,
+  without paying, is
+  `.mayCast .looked .greatestAttackingPower .withoutPaying` inside that
+  resolution. Outside it, the cast does nothing. -/
   | mayCast (origin : TriggerCastFrom) (maxMv : TriggerCastMv)
       (cost : TriggerCastCost) (note : TriggerCastNote := .none)
   /-- Grant an ability. `what` says which, and `who` says to whom.
@@ -1908,6 +1934,12 @@ inductive TriggerResolution where
   Damage the announced permanent would deal is prevented while the source
   remains with `.grant .preventDamageWhileSource .target`. Choosing none
   prevents nothing.
+  Until end of turn, creatures you control with toughness greater than their
+  power assign combat damage equal to their toughness with
+  `.grant .assignCombatDamageEqualToughness .creaturesYouControl`.
+  You may pay 2 life to do so with
+  `.may (.loseLife 2) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
+  Unable to pay is reported. Declining pays nothing. Power is unchanged.
   Any other combination does nothing. -/
   | grant (what : TriggerGrantWhat) (who : TriggerGrantWho)
   /-- Look at cards from the top of a library, as `how` and `who` say, then
@@ -1935,6 +1967,11 @@ inductive TriggerResolution where
   `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
   A missing player is reported. An empty library exiles nothing. A source
   that has left grants the cast without asking for the counter.
+  The top `n` cards. You may cast a spell from among them with mana value at
+  most the greatest power among attacking creatures you control, without
+  paying its mana cost. The rest go on the bottom in a random order. That is
+  `.revealLibrary (.top n) (.mayCast .looked .greatestAttackingPower .withoutPaying)`.
+  An empty library is reported. No attacker limits the mana value to zero.
   Any other combination does nothing. -/
   | revealLibrary (how : TriggerLibraryHow) (thenDo : TriggerResolution)
       (who : TriggerLibraryWho := .you)
@@ -2061,8 +2098,6 @@ inductive TriggerResolution where
   You may do so with `.may .retargetCause (.sequence []) .ifYouDo`.
   Declining a target leaves it unchanged and asks about the next one. -/
   | retargetCause
-  /-- Resolve a leftover YouAttackLeftover. -/
-  | youAttacking (e : YouAttackLeftover)
   /-- Resolve a leftover CastLeftover. -/
   | casting (e : CastLeftover)
   /-- Resolve a leftover ResourceLeftover. -/
@@ -3175,11 +3210,16 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .«if» .sourceAttacking (.untap .source),
         .«if» .enrageGrantsCombat .additionalCombatPhase] }
   | .youAttacking .pay2LifeToughness =>
-    { events := #[.youAttack], resolution := .youAttacking .pay2LifeToughness }
+    { events := #[.youAttack],
+      resolution := .may (.loseLife 2)
+        (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo }
   | .youAttacking .exileTopHeroPump =>
-    { events := #[.youAttack], resolution := .youAttacking .exileTopHeroPump }
+    { events := #[.youAttack],
+      resolution := .may (.exile .top .playThisTurn .ifHero) (.sequence []) }
   | .youAttacking .lookSixCast =>
-    { events := #[.youAttack], resolution := .youAttacking .lookSixCast }
+    { events := #[.youAttack],
+      resolution := .revealLibrary (.top 6)
+        (.mayCast .looked .greatestAttackingPower .withoutPaying) }
   | .casting .villainToken =>
     { events := #[.youCastVillain], resolution := .casting .villainToken }
   | .casting .merfolkFromBlue =>
