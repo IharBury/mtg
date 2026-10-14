@@ -282,6 +282,11 @@ inductive TriggerCounterWhat where
   | plusOneNoted
   /-- Each kind of counter the source last had, in the same numbers. -/
   | sourceCounters
+  /-- One counter on the source for each of haste, flying, first strike,
+  double strike, deathtouch, indestructible, lifelink, menace, reach,
+  trample, and vigilance that the announced creature has and the source
+  does not. An illegal target or a missing source puts nothing. -/
+  | missingKeywordsFromTarget
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn. -/
@@ -1314,7 +1319,10 @@ inductive TriggerResolution where
   `.putCounters (.ofKind .indestructible) .permanent`.
   A double strike counter is `.putCounters (.ofKind .doubleStrike) .permanent`.
   A burden counter is `.putCounters (.ofKind .burden) .permanent`.
-  A stun counter is `.putCounters (.ofKind .stun) .permanent`. -/
+  A stun counter is `.putCounters (.ofKind .stun) .permanent`.
+  The keyword counters the announced creature has that the source does not are
+  `.putCounters .missingKeywordsFromTarget .source`. An illegal target or a
+  missing source puts nothing. -/
   | putCounters (what : TriggerCounterWhat) (who : TriggerCounterWho)
   /-- Return cards to a hand. `what` says which cards, `whose` says whose
   hand, and `note` says what a later step can read.
@@ -1959,8 +1967,6 @@ inductive TriggerResolution where
   The enchanted creature copying the creature an earlier step noted is
   `.becomeCopy .noted`. Nothing noted copies nothing. -/
   | becomeCopy (of : TriggerCopyOf)
-  /-- Resolve a leftover EnterOrAttackLeftover. -/
-  | enterOrAttack (e : EnterOrAttackLeftover)
   /-- Resolve a leftover WatchLeftover. -/
   | watch (e : WatchLeftover)
   /-- Resolve a leftover YouAttackLeftover. -/
@@ -2976,9 +2982,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .grant (.keywords Keyword.indestructible) .source] }
   | .enterOrAttack .copyKeywords =>
     { events := #[.entering, .attacking], targeting := .of .anotherCreature,
-      resolution := .enterOrAttack .copyKeywords }
+      resolution := .putCounters .missingKeywordsFromTarget .source }
   | .enterOrAttack .createSquirrel =>
-    { events := #[.entering, .attacking], resolution := .enterOrAttack .createSquirrel }
+    { events := #[.entering, .attacking],
+      resolution := .createTokens .squirrel11green 1 false }
   | .watch .combatDamageExileUntilNonland =>
     { events := #[.dealsCombatDamageToPlayer], resolution := .watch .combatDamageExileUntilNonland }
   | .watch .attacksAloneDrain =>
@@ -3135,6 +3142,10 @@ end SharedTrigger
   .sequence [.pump 2 0 .source, .grant (.keywords Keyword.indestructible) .source]
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.kind ==
   .anotherCreature
+#guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).resolution ==
+  .putCounters .missingKeywordsFromTarget .source
+#guard (SharedTrigger.timing (.enterOrAttack .createSquirrel)).resolution ==
+  .createTokens .squirrel11green 1 false
 #guard (SharedTrigger.timing (.watch .villainConniveOnce)).optionalOnceEachTurn
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).events ==
   #[TriggerEvent.entering, TriggerEvent.attacking]

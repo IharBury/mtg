@@ -710,6 +710,73 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
       g.applyPermanentAction o (.dealDamage n)
   | _, _, _ => g
 
+/-- Put one keyword counter on `src` when `other` has that keyword and `src`
+does not. -/
+def copyKeywordCounter (g : Game) (src other : GameObject)
+    (has : GameObject → Bool) (apply : Status → Status) (name : String) : Game :=
+  if has other && !has src then
+    let n := g.countersYouPut src 1
+    let src := g.object! src.id
+    let status := Id.run do
+      let mut s := src.status
+      for _ in [0:n] do
+        s := apply s
+      return s
+    g.setObject { src with status := status }
+      |>.logMsg s!"{src.name} gets a {name} counter"
+  else g
+
+/-- Put a counter on `src` for each keyword `other` has that `src` does not.
+Haste, flying, first strike, double strike, deathtouch, indestructible,
+lifelink, menace, reach, trample, and vigilance. -/
+def copyMissingKeywordCounters (g : Game) (src other : GameObject) : Game :=
+  let g := g.copyKeywordCounter src other g.hasHaste
+    (fun s => { s with keywordCounters :=
+      { s.keywordCounters with haste := s.keywordCounters.haste + 1 } }) "haste"
+  let src := g.object! src.id
+  let g := g.copyKeywordCounter src other g.hasFlying
+    (fun s => { s with keywordCounters :=
+      { s.keywordCounters with flying := s.keywordCounters.flying + 1 } }) "flying"
+  let src := g.object! src.id
+  let g := g.copyKeywordCounter src other
+    (fun o => g.hasKeyword o (·.firstStrike))
+    (fun s => { s with keywordCounters :=
+      { s.keywordCounters with
+        firstStrike := s.keywordCounters.firstStrike + 1 } }) "first strike"
+  let src := g.object! src.id
+  let g := g.copyKeywordCounter src other g.hasDoubleStrike
+    (fun s => { s with keywordCounters :=
+      { s.keywordCounters with
+        doubleStrike := s.keywordCounters.doubleStrike + 1 } }) "double strike"
+  let src := g.object! src.id
+  let g := g.copyKeywordCounter src other g.hasDeathtouch
+    (fun s => { s with keywordCounters :=
+      { s.keywordCounters with
+        deathtouch := s.keywordCounters.deathtouch + 1 } }) "deathtouch"
+  let src := g.object! src.id
+  let g := g.copyKeywordCounter src other g.hasIndestructible
+    (fun s => { s with
+      indestructibleCounters := s.indestructibleCounters + 1 }) "indestructible"
+  let src := g.object! src.id
+  let g := g.copyKeywordCounter src other g.hasLifelink
+    (fun s => { s with lifelinkCounters := s.lifelinkCounters + 1 }) "lifelink"
+  let src := g.object! src.id
+  let g := g.copyKeywordCounter src other g.hasMenace
+    (fun s => { s with keywordCounters :=
+      { s.keywordCounters with menace := s.keywordCounters.menace + 1 } }) "menace"
+  let src := g.object! src.id
+  let g := g.copyKeywordCounter src other (fun o => g.hasKeyword o (·.reach))
+    (fun s => { s with keywordCounters :=
+      { s.keywordCounters with reach := s.keywordCounters.reach + 1 } }) "reach"
+  let src := g.object! src.id
+  let g := g.copyKeywordCounter src other g.hasTrample
+    (fun s => { s with trampleCounters := s.trampleCounters + 1 }) "trample"
+  let src := g.object! src.id
+  g.copyKeywordCounter src other g.hasVigilance
+    (fun s => { s with keywordCounters :=
+      { s.keywordCounters with
+        vigilance := s.keywordCounters.vigilance + 1 } }) "vigilance"
+
 /-- Resolve `TriggerResolution.putCounters`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -891,6 +958,19 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.applyAffectedCounters controller ab sourceId targets kind n .enchanted
   | .ofKind kind n, .targetWhileSource =>
     g.applyAffectedCounters controller ab sourceId targets kind n .targetWhileSource
+  | .missingKeywordsFromTarget, .source =>
+    g.withSourceOnBattlefield sourceId (fun g src =>
+      match targets[0]? with
+      | some (Target.permanent id) =>
+        match g.findObject? id with
+        | some other =>
+          if !other.isOnBattlefield || !other.isCreature || other.id == src.id then
+            g.logMsg "The target is no longer legal"
+          else
+            g.copyMissingKeywordCounters src other
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer legal")
+      "The source is no longer in play"
   | _, _ => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
@@ -2667,8 +2747,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g.logMsg "The source is no longer on the battlefield"
   | .becomeCopy of =>
     g.applyBecomeCopy sourceId targets of
-  | .enterOrAttack e =>
-    g.applyModeledTrigger controller (.onEnterOrAttack (Effect.ofTrigger (.enterOrAttack e))) sourceId targets sourceName lastKnownPower
   | .watch e =>
     g.applyModeledTrigger controller (.onWatch (Effect.ofTrigger (.watch e))) sourceId targets sourceName lastKnownPower
   | .youAttacking e =>

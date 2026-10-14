@@ -831,6 +831,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       counterOn "enchanted creature" kind n
     | .ofKind kind n, .targetWhileSource =>
       counterOn "that creature" kind n
+    | .missingKeywordsFromTarget, .source =>
+      "if that creature has haste and this doesn't, put a haste counter on this. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance"
     | _, _ => "put counters"
   | .«if» (.landsAtLeast 6) (.sequence [.destroy .target,
       .createTokens .treasure 1 false .kind .targetController]) =>
@@ -1612,10 +1614,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
-  | .enterOrAttack .copyKeywords =>
-    "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."
-  | .enterOrAttack .createSquirrel =>
-    "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token."
   | .watch .combatDamageExileUntilNonland =>
     "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
   | .watch .attacksAloneDrain =>
@@ -1809,6 +1807,15 @@ def deathSentence : DeathLeftover → String
   | .deathtouchOppSac =>
     "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
 
+/-- Printed sentence for a leftover “enters or attacks” trigger.
+Its resolution is a `TriggerResolution` that does not carry
+`EnterOrAttackLeftover`. -/
+def enterOrAttackSentence : EnterOrAttackLeftover → String
+  | .copyKeywords =>
+    "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."
+  | .createSquirrel =>
+    "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token."
+
 /-- Printed sentence for a leftover “whenever this attacks” trigger.
 Its resolution is a `TriggerResolution` that does not carry
 `ThisAttackLeftover`. -/
@@ -1967,8 +1974,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     | _, some (.step e), _ => stepSentence e
     | _, some (.death e), _ => deathSentence e
     | _, some (.thisAttack e), _ => thisAttackSentence e
-    | _, some (.enterOrAttack e), _ =>
-      resolutionPhrase { resolution := .enterOrAttack e }
+    | _, some (.enterOrAttack e), _ => enterOrAttackSentence e
     | _, some (.watch e), _ => resolutionPhrase { resolution := .watch e }
     | _, some (.youAttacking e), _ =>
       resolutionPhrase { resolution := .youAttacking e }

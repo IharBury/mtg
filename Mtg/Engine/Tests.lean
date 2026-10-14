@@ -50,6 +50,7 @@ import Mtg.Engine.Tests.Chapter
 import Mtg.Engine.Tests.Step
 import Mtg.Engine.Tests.Death
 import Mtg.Engine.Tests.ThisAttack
+import Mtg.Engine.Tests.EnterOrAttack
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -125,4 +126,5 @@ keep working.
 - `Step`: upkeep, end-step, and first-main triggers that used to resolve as `step`
 - `Death`: dies triggers that used to resolve as `death`
 - `ThisAttack`: attack triggers that used to resolve as `thisAttack`
+- `EnterOrAttack`: enters-or-attacks triggers that used to resolve as `enterOrAttack`
 -/
