@@ -894,6 +894,23 @@ inductive TriggerTapWho where
   | targetWhileSource
 deriving Repr, Inhabited, BEq
 
+/-- Who `TriggerResolution.untap` untaps. -/
+inductive TriggerUntapWho where
+  /-- The announced permanent, while it is still a legal target.
+  An illegal target is reported. -/
+  | target
+  /-- The ability's source, if it is still on the battlefield. -/
+  | source
+  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
+  Nothing enchanted does nothing. -/
+  | enchanted
+  /-- The announced permanent, while the source is still on the battlefield.
+  A source that already left is silent. -/
+  | targetWhileSource
+  /-- Each attacking creature. -/
+  | attackingCreatures
+deriving Repr, Inhabited, BEq
+
 /-- How far `TriggerResolution.revealLibrary` looks from the top of a library. -/
 inductive TriggerLibraryHow where
   /-- The top `n` cards. Looking at zero cards finds nothing. -/
@@ -972,8 +989,10 @@ equal to this creature's, are `setBasePT`. What the new base is, and who
 receives it, are arguments. Putting the announced permanent on top or on
 the bottom of its owner's library, and putting a card from your hand on
 the bottom, are `putOnLibrary`. Where the card goes, and which card, are
-arguments. +P/+T and trample is a sequence of `pump` and `grant`. Becoming
-an artifact and gaining indestructible is a sequence of `becomeArtifact`
+arguments. Untapping the announced permanent, and untapping each attacking
+creature, are `untap`. Who is untapped is an argument. +P/+T and trample is
+a sequence of `pump` and `grant`. Becoming an artifact and gaining
+indestructible is a sequence of `becomeArtifact`
 and `grant`. Tap and a stun counter is a sequence of `tap` and
 `putCounters`. The source, the enchanted creature, and a follow-up while
 the source remains use those same constructors. `ofSource`, `ofEnchanted`,
@@ -1396,10 +1415,18 @@ You may put a land card from your hand onto the battlefield tapped is
   `.tap .target`. An illegal target is reported.
   Wrapping one in `may` is that tap. -/
   | tap (who : TriggerTapWho)
-  /-- Untap `who`. The announced permanent, while it is still a legal target,
-  is `.untap`. An illegal target is reported. A stun counter is removed
-  instead of untapping (CR 122.1d). Tap or untap is `.or [.tap .target, .untap]`. -/
-  | untap (who : TriggerAffected := .target)
+  /-- Untap permanents, as `who` says.
+  The announced permanent, while it is still a legal target, is `.untap`.
+  An illegal target is reported. A stun counter is removed instead of
+  untapping (CR 122.1d).
+  The source is `.untap .source`. A missing source untaps nothing.
+  The enchanted creature is `.untap .enchanted`. Nothing enchanted untaps
+  nothing.
+  The announced permanent while the source remains is
+  `.untap .targetWhileSource`. A source that already left is silent.
+  Each attacking creature is `.untap .attackingCreatures`.
+  Tap or untap is `.or [.tap .target, .untap]`. -/
+  | untap (who : TriggerUntapWho := .target)
   /-- Destroy permanents. `what` says which, and `note` says what a later
   step can read.
   Opponents' artifacts and enchantments, counted for the next step, are
@@ -1640,8 +1667,6 @@ You may put a land card from your hand onto the battlefield tapped is
   | prepareSource (when : PrepareWhen := .ifNotPrepared)
   /-- Mark tokens from the previous step attacking. -/
   | markRecentTokensAttacking
-  /-- Untap each attacking creature. -/
-  | untapAttackingCreatures
   /-- There is an additional combat phase after this one. -/
   | additionalCombatPhase
   /-- The target becomes a Bear in addition to its other types. -/
@@ -1763,7 +1788,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .dealDamage n => .dealDamage n (damageWho who)
   | .grantKeywords k => .grant (.keywords k) (grantWho who)
   | .tap => .tap (tapWho who)
-  | .untap => .untap who
+  | .untap => .untap (untapWho who)
   | .loseIndestructible => .lose .indestructible (loseWho who)
   | .cantBeBlocked => .cantBeBlocked who
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
@@ -1799,6 +1824,11 @@ where
     | .target => .target
     | .source => .source
     | .enchanted => .enchantedWhileSource
+    | .targetWhileSource => .targetWhileSource
+  untapWho : TriggerAffected → TriggerUntapWho
+    | .target => .target
+    | .source => .source
+    | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
   destroyWhat : TriggerAffected → TriggerDestroyWhat
     | .target => .target
@@ -2239,7 +2269,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence
         [.dealDamage 1 .target .fixed .markedPermanent, .amass 1 "Orc"] }
   | .untapAttackersExtraCombat _n =>
-    { resolution := .sequence [.untapAttackingCreatures, .additionalCombatPhase] }
+    { resolution := .sequence [.untap .attackingCreatures, .additionalCombatPhase] }
   | .eaglesCreateBirds =>
     { resolution := .createTokens .birdSoldier 0 false (qty := .lastKnown) }
   | .allianceMode =>

@@ -44,6 +44,7 @@ import Mtg.Engine.Tests.Tap
 import Mtg.Engine.Tests.Lose
 import Mtg.Engine.Tests.PutOnLibrary
 import Mtg.Engine.Tests.SetBasePT
+import Mtg.Engine.Tests.Untap
 import Mtg.Engine.Tests.Modes
 
 /-!
@@ -113,5 +114,7 @@ keep working.
   owner's library, and a card from hand on the bottom
 - `SetBasePT`: a fixed base power and toughness, and another creature's
   base power and toughness equal to this creature's
+- `Untap`: the announced permanent, the source, the enchanted creature,
+  the target while the source remains, and each attacking creature
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 -/

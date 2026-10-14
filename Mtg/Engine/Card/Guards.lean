@@ -1549,7 +1549,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
   .sequence [.dealDamage 1 .target .fixed .markedPermanent, .amass 1 "Orc"]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
-  .sequence [.untapAttackingCreatures, .additionalCombatPhase]
+  .sequence [.untap .attackingCreatures, .additionalCombatPhase]
 #guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
   .sequence [.destroy .target (note := .forAmass),
     .amass 0 (amount := .notedPower) (who := .notedController),

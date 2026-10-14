@@ -1615,6 +1615,33 @@ def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     { g with opponentsMilledThisWay := milled }
   | _, _, _ => g
 
+/-- Resolve `TriggerResolution.untap`. Each printed combination keeps
+the behavior of the constructor it replaced. A stun counter is removed
+instead of untapping (CR 122.1d). -/
+def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (who : TriggeredAbility.TriggerUntapWho) : Game :=
+  match who with
+  | .attackingCreatures =>
+    Id.run do
+      let mut g := g
+      for o in g.battlefield do
+        if o.status.attacking then
+          g := g.applyPermanentAction o .untap
+      return g
+  | .target =>
+    g.withAffected controller ab sourceId targets .target fun g o =>
+      g.applyPermanentAction o .untap
+  | .source =>
+    g.withAffected controller ab sourceId targets .source fun g o =>
+      g.applyPermanentAction o .untap
+  | .enchanted =>
+    g.withAffected controller ab sourceId targets .enchanted fun g o =>
+      g.applyPermanentAction o .untap
+  | .targetWhileSource =>
+    g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
+      g.applyPermanentAction o .untap
+
 /-- Resolve `TriggerResolution.tap`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -2166,8 +2193,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .tap who | .may (.tap who) =>
     g.applyTap controller ab sourceId targets who
   | .untap who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .untap
+    g.applyUntap controller ab sourceId targets who
   | .destroy what note =>
     g.applyDestroy controller ab sourceId targets lastKnownPower what note
   | .recruit _ =>
@@ -2291,13 +2317,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => g) g
     g.logMsg
       s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
-  | .untapAttackingCreatures =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.status.attacking then
-          g := g.applyPermanentAction o .untap
-      return g
   | .additionalCombatPhase =>
     { g with additionalCombatPhases := g.additionalCombatPhases + 1 }.logMsg
       "Attacking creatures untap. After this phase, there is an additional combat phase"
