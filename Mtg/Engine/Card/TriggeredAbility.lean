@@ -1103,13 +1103,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.sacrifice .you .plan, .draw (.fixed 1), .putCounters (.ofKind .plusOnePlusOne) .youControl] =>
     "sacrifice it, draw a card, and put a +1/+1 counter on each creature you control"
   | .sequence [.sacrifice .you .plan .forReflexive,
-      .«if» .planWasSacrificed (.queueReflexive (.modeled 11))] =>
+      .«if» .planWasSacrificed (.queueReflexive (.modeled .returnInstants))] =>
     "sacrifice it. When you do, return up to two target instant and/or sorcery cards from your graveyard to your hand"
   | .sequence [.sacrifice .you .plan .forReflexive,
-      .«if» .planWasSacrificed (.queueReflexive (.modeled 4))] =>
+      .«if» .planWasSacrificed (.queueReflexive (.modeled .controlOpponent))] =>
     "sacrifice it. When you do, you control target opponent during their next turn"
   | .sequence [.sacrifice .you .plan .forReflexive,
-      .«if» .planWasSacrificed (.queueReflexive (.modeled 5))] =>
+      .«if» .planWasSacrificed (.queueReflexive (.modeled .exileTopFive))] =>
     "sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs"
   | .sequence [.sacrifice .you .plan, .createTokens .robotVillain22 n false] =>
     s!"sacrifice it and create {englishNumber n} 2/2 colorless Robot Villain artifact creature tokens"
@@ -1117,7 +1117,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       .«if» .planWasSacrificed (.queueReflexive (.dividedDamage n))] =>
     s!"sacrifice it. When you do, it deals {n} damage divided as you choose among one or two targets"
   | .sequence [.sacrifice .you .plan .forReflexive,
-      .«if» .planWasSacrificed (.queueReflexive (.modeled 3))] =>
+      .«if» .planWasSacrificed (.queueReflexive (.modeled .indestructibleCounter))] =>
     "sacrifice it. When you do, put an indestructible counter on target creature you control"
   | .sequence [.attach .source .target, followup] =>
     match attachedFollowupPhrase followup with
@@ -1584,7 +1584,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "that creature deals damage equal to its power to up to one target creature"
     | _, _ =>
       "fight"
-  | .may (.pay .anotherCreature) (.queueReflexive (.modeled 7 _)) .ifYouDo =>
+  | .may (.pay .anotherCreature) (.queueReflexive (.modeled .destroyOppNonland _)) .ifYouDo =>
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
   | .may (.pay .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo =>
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
@@ -1598,7 +1598,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "reveal cards from their hand"
   | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard] =>
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
-  | .may (.tap .source) (.queueReflexive (.modeled 0 _)) .ifYouDo =>
+  | .may (.tap .source) (.queueReflexive (.modeled .grantIndestructible _)) .ifYouDo =>
     "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
   | .markRecentTokensAttacking =>
     "those tokens enter tapped and attacking"

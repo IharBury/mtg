@@ -35,9 +35,9 @@ def hand (g : Game) : Nat :=
 /- The shared attack effects resolve as constructors that do not carry
 `ThisAttackLeftover`. The printed sentence stays the Oracle line. -/
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackMayPayPlusOne) ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 12)) .ifYouDo
+  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .plusOne)) .ifYouDo
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackPayReturnAttacking) ==
-  .may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled 6)) .ifYouDo
+  .may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled .returnAttacking)) .ifYouDo
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackIfArtifactEnteredDraw) ==
   .«if» .artifactEnteredThisTurn (.draw (.fixed 1))
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackBlinkNontoken) ==

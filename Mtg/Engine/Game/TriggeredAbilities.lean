@@ -2987,7 +2987,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .may (.pay (.mana symbols)) (.queueReflexive (.modeled kind times)) .ifYouDo =>
     -- Paying more than once records that count for the reflexive ability.
     if times > 1 then
-      g.offerPayForReflexive controller sourceId symbols kind times
+      g.offerPayForReflexive controller sourceId symbols kind.toNat times
     else
       let follow := TriggeredAbility.TriggerResolution.queueReflexive (.modeled kind times)
       let g := { g with mayThenDrop := 1, mayThenConditional := some follow }
@@ -3007,7 +3007,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | .mana symbols =>
       match g.mayThenConditional, symbols.toList with
       | some (.queueReflexive (.modeled kind times)), _ =>
-        g.offerPayForReflexive controller sourceId symbols kind times
+        g.offerPayForReflexive controller sourceId symbols kind.toNat times
       | some (.becomeCopy .cause), [.generic 2] =>
         g.offerCopyCause controller sourceId targets
       | _, _ =>
@@ -3083,12 +3083,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g.failMayThen
   | .queueReflexive followup =>
     match followup with
-    | .modeled kind _ => g.queueModeledReflexive controller sourceId kind 0
+    | .modeled kind _ => g.queueModeledReflexive controller sourceId kind.toNat 0
     | .countersOnSource kind =>
       match sourceId.bind g.findObject? with
       | some o =>
         if o.isOnBattlefield then
-          g.queueModeledReflexive controller sourceId kind o.status.plusOnePlusOne
+          g.queueModeledReflexive controller sourceId kind.toNat o.status.plusOnePlusOne
         else
           g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
       | none =>

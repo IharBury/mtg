@@ -84,11 +84,11 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchTokensEnterMayDraw) ==
   .may (.draw (.fixed 1)) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchHawkeyeModes) ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 2 3)) .ifYouDo
+  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .trickArrows 3)) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchRedHulk) ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,
-    .queueReflexive (.countersOnSource 8)]
+    .queueReflexive (.countersOnSource .countersDamage)]
 #guard TriggeredAbility.resolution (onWatch Effect.watchHulk) ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,

@@ -96,7 +96,7 @@ def sacOrDiscard : TriggeredAbility.TriggerResolution :=
   .may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo
 
 def sacDestroy : TriggeredAbility.TriggerResolution :=
-  .may (.pay .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo
+  .may (.pay .anotherCreature) (.queueReflexive (.modeled .destroyOppNonland)) .ifYouDo
 
 def sacDamage : TriggeredAbility.TriggerResolution :=
   .may (.pay .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo

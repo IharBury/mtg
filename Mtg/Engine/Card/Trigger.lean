@@ -163,21 +163,82 @@ inductive CostSelector where
   | artifactOrDiscardNonland
 deriving Repr, Inhabited, BEq
 
+/-- Which reflexive `TriggerReflexive.modeled` and
+`TriggerReflexive.countersOnSource` queue. -/
+inductive TriggerReflexiveKind where
+  /-- Another target nonattacking creature you control gains indestructible
+  until end of turn.
+  `.modeled .grantIndestructible`. -/
+  | grantIndestructible
+  /-- Choose up to `times` Trick Arrows modes.
+  Paying up to three times is `.modeled .trickArrows 3`. -/
+  | trickArrows
+  /-- Put an indestructible counter on target creature you control.
+  `.modeled .indestructibleCounter`. -/
+  | indestructibleCounter
+  /-- You control target opponent during their next turn.
+  `.modeled .controlOpponent`. -/
+  | controlOpponent
+  /-- Target opponent exiles the top five cards of their library. You may
+  cast up to two spells from among the exiled cards without paying their
+  mana costs.
+  `.modeled .exileTopFive`. -/
+  | exileTopFive
+  /-- Return target creature card from your graveyard to the battlefield
+  tapped and attacking with a finality counter on it.
+  `.modeled .returnAttacking`. -/
+  | returnAttacking
+  /-- Destroy target nonland permanent an opponent controls.
+  `.modeled .destroyOppNonland`. -/
+  | destroyOppNonland
+  /-- Deal damage equal to the +1/+1 counters on the source to any other
+  target.
+  `.countersOnSource .countersDamage`. -/
+  | countersDamage
+  /-- Target creature with haste can't be blocked this turn except by
+  creatures with haste.
+  `.modeled .hasteUnblockable`. -/
+  | hasteUnblockable
+  /-- Return up to two target instant and/or sorcery cards from your
+  graveyard to your hand.
+  `.modeled .returnInstants`. -/
+  | returnInstants
+  /-- Put a +1/+1 counter on target creature.
+  `.modeled .plusOne`. -/
+  | plusOne
+deriving Repr, Inhabited, BEq
+
+namespace TriggerReflexiveKind
+
+/-- The index `FraResolution.mshReflexive` matches. -/
+def toNat : TriggerReflexiveKind → Nat
+  | .grantIndestructible => 0
+  | .trickArrows => 2
+  | .indestructibleCounter => 3
+  | .controlOpponent => 4
+  | .exileTopFive => 5
+  | .returnAttacking => 6
+  | .destroyOppNonland => 7
+  | .countersDamage => 8
+  | .hasteUnblockable => 9
+  | .returnInstants => 11
+  | .plusOne => 12
+
+end TriggerReflexiveKind
+
 /-- A later ability queued by `TriggerResolution.queueReflexive`. -/
 inductive TriggerReflexive where
-/-- An MSH modeled reflexive. `0` grants indestructible. `2` chooses up to
-`times` Trick Arrows modes. `6` returns a graveyard creature tapped and
-attacking. `7` destroys an opposing nonland. `9` makes a target creature
-with haste unable to be blocked this turn except by creatures with haste.
-`12` puts a +1/+1 counter on target creature. `times` is how many times the
-cost may be paid.
-One payment is `.modeled kind`. Paying up to three times is `.modeled 2 3`. -/
-  | modeled (kind : Nat) (times : Nat := 1)
+  /-- An MSH modeled reflexive of `kind`. `times` is how many times the cost
+  may be paid.
+  One payment is `.modeled kind`. Paying up to three times is
+  `.modeled .trickArrows 3`. -/
+  | modeled (kind : TriggerReflexiveKind) (times : Nat := 1)
   /-- “This deals `n` damage to any target.” -/
   | damageAny (n : Nat)
-  /-- Reflexive ability `kind`, dealing damage equal to the +1/+1 counters
-  on the source. A source that has left queues nothing. -/
-  | countersOnSource (kind : Nat)
+  /-- `kind`, dealing damage equal to the +1/+1 counters on the source.
+  A source that has left queues nothing.
+  `.countersOnSource .countersDamage`. -/
+  | countersOnSource (kind : TriggerReflexiveKind)
   /-- Exile target enchantment, instant, or sorcery card with mana value at
   most the causing spell's from an opponent's graveyard. Copy it. You may
   cast the copy without paying its mana cost.
@@ -1688,18 +1749,18 @@ inductive TriggerResolution where
   You may sacrifice an artifact or discard a card to draw is
   `.may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo`.
   You may sacrifice another creature to destroy an opposing nonland is
-  `.may (.pay .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo`.
+  `.may (.pay .anotherCreature) (.queueReflexive (.modeled .destroyOppNonland)) .ifYouDo`.
   You may sacrifice an artifact or discard a nonland to deal 2 damage is
   `.may (.pay .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo`.
   You may tap this to grant indestructible is
-  `.may (.tap .source) (.queueReflexive (.modeled 0)) .ifYouDo`.
+  `.may (.tap .source) (.queueReflexive (.modeled .grantIndestructible)) .ifYouDo`.
   You may pay {1} to put a +1/+1 counter on target creature is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 12)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .plusOne)) .ifYouDo`.
   You may pay {1} so a target creature with haste can't be blocked this turn
   except by creatures with haste is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 9)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .hasteUnblockable)) .ifYouDo`.
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
-  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled 6)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled .returnAttacking)) .ifYouDo`.
   You may have the source deal the damage that caused this to the announced
   target is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`.
   The amount is the trigger's last-known power. Already used this turn does
@@ -1708,7 +1769,7 @@ inductive TriggerResolution where
   You may choose new targets for the spell that caused this is
   `.may .retargetCause (.sequence []) .ifYouDo`.
   You may pay {1} up to three times, then choose that many modes, is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .trickArrows 3)) .ifYouDo`.
   You may pay {2} to copy the nontoken artifact that caused this is
   `.may (.pay (.mana #[.generic 2])) (.becomeCopy .cause) .ifYouDo`.
   You may exile the discarded card and play it until the end of your next
@@ -2982,15 +3043,15 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .planFinishReturnInstants =>
     { resolution := .sequence
         [.sacrifice .you .plan .forReflexive,
-         .«if» .planWasSacrificed (.queueReflexive (.modeled 11))] }
+         .«if» .planWasSacrificed (.queueReflexive (.modeled .returnInstants))] }
   | .planFinishControlOpponent =>
     { resolution := .sequence
         [.sacrifice .you .plan .forReflexive,
-         .«if» .planWasSacrificed (.queueReflexive (.modeled 4))] }
+         .«if» .planWasSacrificed (.queueReflexive (.modeled .controlOpponent))] }
   | .planFinishExileTopCast =>
     { resolution := .sequence
         [.sacrifice .you .plan .forReflexive,
-         .«if» .planWasSacrificed (.queueReflexive (.modeled 5))] }
+         .«if» .planWasSacrificed (.queueReflexive (.modeled .exileTopFive))] }
   | .planFinishCreateRobots n =>
     { resolution := .sequence
         [.sacrifice .you .plan, .createTokens .robotVillain22 n false] }
@@ -3001,7 +3062,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .planFinishIndestructibleOnTarget =>
     { resolution := .sequence
         [.sacrifice .you .plan .forReflexive,
-         .«if» .planWasSacrificed (.queueReflexive (.modeled 3))] }
+         .«if» .planWasSacrificed (.queueReflexive (.modeled .indestructibleCounter))] }
   | .surveil n => { resolution := .surveil n }
   | .empowerJace n => { resolution := .empowerJace n }
   | .prepareSource .ifNotPrepared =>
@@ -3118,7 +3179,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence [.tap .target, .cant .untapWhileYouControl] }
   | .enter .maySacAnotherThenDestroyOppNonland =>
     { events := #[.entering],
-      resolution := .may (.pay .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo }
+      resolution := .may (.pay .anotherCreature) (.queueReflexive (.modeled .destroyOppNonland)) .ifYouDo }
   | .enter .maySacOrDiscardNonlandThenDamage =>
     { events := #[.entering],
       resolution := .may (.pay .artifactOrDiscardNonland)
@@ -3137,7 +3198,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .alreadyChosen }
   | .enter .mayTapThenGrantIndestructible =>
     { events := #[.entering],
-      resolution := .may (.tap .source) (.queueReflexive (.modeled 0)) .ifYouDo }
+      resolution := .may (.tap .source) (.queueReflexive (.modeled .grantIndestructible)) .ifYouDo }
   | .enter .tapLoseAbilitiesWhileSource =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
@@ -3193,11 +3254,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sacrifice .eachOpponent .chosenNontokenCreature }
   | .thisAttack .mayPayPlusOne =>
     { events := #[.attacking]
-      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 12)) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .plusOne)) .ifYouDo }
   | .thisAttack .payReturnAttacking =>
     { events := #[.attacking]
       resolution := .may (.pay (.mana #[.generic 3, .colored .black]))
-        (.queueReflexive (.modeled 6)) .ifYouDo }
+        (.queueReflexive (.modeled .returnAttacking)) .ifYouDo }
   | .thisAttack .ifArtifactEnteredDraw =>
     { events := #[.attacking]
       resolution := .«if» .artifactEnteredThisTurn (.draw (.fixed 1)) }
@@ -3311,12 +3372,12 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.draw (.fixed 1)) (.sequence []) .ifYouDo }
   | .watch .hawkeyeModes =>
     { events := #[.sourceBecomesTapped], allowsZeroTargets := true,
-      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 2 3)) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .trickArrows 3)) .ifYouDo }
   | .watch .redHulk =>
     { events := #[.sourceDealtDamage],
       resolution := .sequence [
         .putCounters (.ofKind .plusOnePlusOne) .source,
-        .queueReflexive (.countersOnSource 8)] }
+        .queueReflexive (.countersOnSource .countersDamage)] }
   | .watch .hulk =>
     { events := #[.sourceDealtDamage],
       resolution := .sequence [
@@ -3342,7 +3403,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols) }
   | .casting .mayPayHasteUnblockable =>
     { events := #[.youCastNoncreature],
-      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 9)) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .hasteUnblockable)) .ifYouDo }
   | .casting .plusOneEachOther =>
     { events := #[.youCastNoncreature],
       resolution := .putCounters (.ofKind .plusOnePlusOne) .eachOther }
@@ -3421,9 +3482,9 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).allowsZeroTargets &&
   (SharedTrigger.timing (.thisAttack .blinkNontoken)).maxTargets == 1
 #guard (SharedTrigger.timing (.thisAttack .mayPayPlusOne)).resolution ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 12)) .ifYouDo
+  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .plusOne)) .ifYouDo
 #guard (SharedTrigger.timing (.thisAttack .payReturnAttacking)).resolution ==
-  .may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled 6)) .ifYouDo
+  .may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled .returnAttacking)) .ifYouDo
 #guard (SharedTrigger.timing (.thisAttack .ifArtifactEnteredDraw)).resolution ==
   .«if» .artifactEnteredThisTurn (.draw (.fixed 1))
 #guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).resolution ==
@@ -3449,7 +3510,7 @@ end SharedTrigger
       (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
     .announced
 #guard (SharedTrigger.timing (.watch .hawkeyeModes)).resolution ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 2 3)) .ifYouDo
+  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .trickArrows 3)) .ifYouDo
 #guard (SharedTrigger.timing (.watch .hulk)).resolution ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,
