@@ -270,7 +270,7 @@ creature you already control skips the bottom step. -/
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnBottomOfLibrary ==
   .putOnLibrary .bottom (.permanent .targetWhileSource)
 #guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
-  .sequence [.draw 1, .«if» .noLegendaryCreature fromHand]
+  .sequence [.draw (.fixed 1), .«if» .noLegendaryCreature fromHand]
 
 #guard TriggeredAbility.resolutionPhrase
     { targeting := .of .creature, resolution := onTop } ==

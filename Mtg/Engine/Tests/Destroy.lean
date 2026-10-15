@@ -60,7 +60,7 @@ def amassSeq : TriggeredAbility.TriggerResolution :=
   .sequence [
     notedDestroy,
     .amass 0 (amount := .notedPower) (who := .notedController),
-    .«if» .youControlledDestroyed (.draw 1)]
+    .«if» .youControlledDestroyed (.draw (.fixed 1))]
 
 /- Opponents' artifacts and enchantments are destroyed and counted.
 Yours stay. Indestructible permanents and shield counters stay and do

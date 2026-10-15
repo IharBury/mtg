@@ -39,7 +39,7 @@ def hand (g : Game) : Nat :=
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackPayReturnAttacking) ==
   .may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackIfArtifactEnteredDraw) ==
-  .«if» .artifactEnteredThisTurn (.draw 1)
+  .«if» .artifactEnteredThisTurn (.draw (.fixed 1))
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackBlinkNontoken) ==
   .exile .target .returnTapped
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackEquippedDrain) ==
@@ -47,7 +47,7 @@ def hand (g : Game) : Nat :=
     .loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment),
     .gainLife 0 (amount := .attachedEquipment)])
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackDrawIfPower4) ==
-  .«if» (.sourcePowerAtLeast 4) (.draw 1)
+  .«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))
 #guard TriggeredAbility.resolution
     (TriggeredAbility.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible) ==
   .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]

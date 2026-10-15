@@ -99,7 +99,7 @@ source, and a source that has left, remove nothing. -/
 #guard
   let g0 := withHope (addPermanent afterDraw dawn caster caster) "Dawn" 1
   let before := handSize g0
-  let g := step g0 (.sequence [hopeFromSource, .«if» .removedHope (.draw 1)])
+  let g := step g0 (.sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1))])
     (some (pid g0 "Dawn"))
   (obj g "Dawn").status.hope == 0 && !g.removedHopeThisWay &&
     handSize g == before + 1
@@ -114,7 +114,7 @@ source, and a source that has left, remove nothing. -/
 #guard
   let g0 := addPermanent afterDraw dawn caster caster
   let before := handSize g0
-  let g := step g0 (.sequence [hopeFromSource, .«if» .removedHope (.draw 1)])
+  let g := step g0 (.sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1))])
     (some (pid g0 "Dawn"))
   handSize g == before && !g.removedHopeThisWay &&
     !(logContains g "loses a hope counter")
@@ -159,7 +159,7 @@ Removing them does not count as removing a hope counter. -/
     "Grasp" "Bear"
   let before := handSize g0
   let g := step g0
-    (.sequence [allFromEnchanted, .«if» .removedHope (.draw 1)])
+    (.sequence [allFromEnchanted, .«if» .removedHope (.draw (.fixed 1))])
     (some (pid g0 "Grasp"))
   handSize g == before && !g.removedHopeThisWay &&
     logContains g "counters are removed from Bear"
@@ -230,7 +230,7 @@ Removing them does not count as removing a hope counter. -/
     logContains g "Nothing is enchanted"
 
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
-  .sequence [hopeFromSource, .«if» .removedHope (.draw 1),
+  .sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1)),
     .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tap .enchanted, allFromEnchanted]
@@ -256,7 +256,7 @@ Removing them does not count as removing a hope counter. -/
   "When this Aura enters, tap enchanted creature and remove all counters from it."
 
 #guard (SharedTrigger.timing .removeHopeDrawSac).resolution ==
-  .sequence [hopeFromSource, .«if» .removedHope (.draw 1),
+  .sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1)),
     .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]
 #guard (SharedTrigger.timing .tapEnchantedRemoveCounters).resolution ==
   .sequence [.tap .enchanted, allFromEnchanted]

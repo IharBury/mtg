@@ -70,7 +70,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .grant .hexproofWhileSource .target
 #guard (timing .preventDamageWhileRemains).resolution ==
   .grant .preventDamageWhileSource .target
-#guard (timing (.draw 2)).resolution == .draw 2
+#guard (timing (.draw 2)).resolution == .draw (.fixed 2)
 #guard (timing (.searchBasicPlainsExileGainLife 2 2)).resolution ==
   .sequence [
     .searchLibrary (.exile (.basicUpTo "Plains" 2) .forLater .linked),
@@ -96,7 +96,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .dealDamage (.fixed 2) (.eachNonSubtypeAndOpponents "Villain")
 #guard (timing .dealXDamageToTargetOpponentGreatestArtifactMv).resolution ==
   .dealDamage .greatestArtifactMv .targetOpponent
-#guard (timing (.spell { resolution := .draw 1 })).resolution == .draw 1
+#guard (timing (.spell { resolution := .draw 1 })).resolution == .draw (.fixed 1)
 #guard (timing (.spell { resolution := .scry 2 })).resolution == .scry (.fixed 2)
 #guard (timing (.spell { resolution := .createTokens .villain21menace 2 })).resolution ==
   .createTokens .villain21menace 2 false
@@ -116,9 +116,9 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .loseLife 2 (who := .eachOpponent)
 #guard (timing (.spell { resolution := .destroyUpToOneNonland })).resolution == .destroy .target
 #guard (timing (.spell { resolution := .mayPutHeroMvOrDraw 3 })).resolution ==
-  .may (.put (.creatureFromHand "Hero" 3)) (.draw 1)
+  .may (.put (.creatureFromHand "Hero" 3)) (.draw (.fixed 1))
 #guard (timing (.spell { resolution := .mayDrawPerArtifactOppsDraw })).resolution ==
-  .may (.draw 0 (amount := .perControlled .artifact)) (.draw 1 (who := .eachOpponent)) .ifYouDo
+  .may (.draw (.perControlled .artifact)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo
 #guard (timing (.spell { resolution := .spellsCostLessThisTurn (.cardType .artifact) 1 })).resolution ==
   .spellsCostLess (.cardType .artifact) 1
 #guard (timing (.spell {

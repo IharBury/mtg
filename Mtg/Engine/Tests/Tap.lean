@@ -52,7 +52,7 @@ def hawk : CardDef :=
 def wasp : CardDef := creature "Wasp" ManaCost.empty #[] 1 1
 
 def humansDraw : TriggeredAbility.TriggerResolution :=
-  .sequence [.may (.tap .humans) (.sequence []), .draw 0 (amount := .forEachTappedHuman)]
+  .sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman]
 
 def enchantedRemove : TriggeredAbility.TriggerResolution :=
   .sequence [.tap .enchanted, .removeCounters .all .enchanted]
