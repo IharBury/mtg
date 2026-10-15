@@ -295,6 +295,10 @@ inductive TriggerCounterWho where
   /-- The ability's source, if it is still on the battlefield.
   A source that has left logs that no counter is put. Later steps still run. -/
   | sourceIfPresent
+  /-- Each announced permanent, up to the trigger's last-known count.
+  None, or zero, puts counters on nothing. An illegal permanent is
+  reported and skipped. Announced permanents past that count are ignored. -/
+  | eachUpToLastKnown
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.putCounters` puts. `ofKind` uses its `n`. -/
@@ -437,6 +441,13 @@ inductive TriggerExileWhat where
   | targetWhileSource
   /-- Up to `max` basic cards of this subtype from the controller's library. -/
   | basicUpTo (subtype : String) (max : Nat)
+  /-- The card recorded as this trigger's last-known power.
+  You may exile it from your graveyard and play it until the end of your
+  next turn with
+  `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
+  A card that has left the graveyard is reported. No recorded card is
+  reported. Declining exiles nothing. -/
+  | discarded
 deriving Repr, Inhabited, BEq
 
 /-- How long `TriggerResolution.exile` lasts. -/
@@ -1434,7 +1445,12 @@ inductive TriggerResolution where
   A stun counter is `.putCounters (.ofKind .stun) .permanent`.
   The keyword counters the announced creature has that the source does not are
   `.putCounters .missingKeywordsFromTarget .source`. An illegal target or a
-  missing source puts nothing. -/
+  missing source puts nothing.
+  One +1/+1 counter on each announced creature you control, up to the life
+  gained (the trigger's last-known power), is
+  `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`.
+  None, or zero life, puts counters on nothing. An illegal permanent is
+  reported and skipped. Extra announced permanents are ignored. -/
   | putCounters (what : TriggerCounterWhat) (who : TriggerCounterWho)
   /-- Return cards to a hand. `what` says which cards, `whose` says whose
   hand, and `note` says what a later step can read.
@@ -1663,7 +1679,13 @@ inductive TriggerResolution where
   You may pay {1} up to three times, then choose that many modes, is
   `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
   You may pay {2} to copy the nontoken artifact that caused this is
-  `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`. -/
+  `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`.
+  You may exile the discarded card and play it until the end of your next
+  turn with
+  `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
+  You may create a 0/4 Wall creature token with defender with
+  `.may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo`.
+  Declining creates nothing. -/
   | may (action follow : TriggerResolution) (when : TriggerMayWhen := .ifYouDont)
   /-- You gain life (CR 118.2), as `amount` says. `n` is the amount when
   `amount` is `.fixed`.
@@ -1718,7 +1740,12 @@ inductive TriggerResolution where
   `.«if» .sourceHarnessed (.exile .target .returnImmediately)`.
   An unharnessed source is reported and exiles nothing.
   The announced nontoken artifact or creature, returned tapped, is
-  `.exile .target .returnTapped`. Choosing none does nothing. -/
+  `.exile .target .returnTapped`. Choosing none does nothing.
+  You may exile the card recorded as this trigger's last-known power and
+  play it until the end of your next turn with
+  `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
+  A card that has left your graveyard is reported. No recorded card is
+  reported. Declining exiles nothing. -/
   | exile (what : TriggerExileWhat) (how : TriggerExileHow)
       (note : TriggerExileNote := .none)
   /-- Put cards onto the battlefield. `what` says which cards, `how` says
@@ -2153,8 +2180,6 @@ inductive TriggerResolution where
   `.sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause]`.
   A missing source still copies the spell. -/
   | copyCause
-  /-- Resolve a leftover ResourceLeftover. -/
-  | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
 
 namespace TriggerResolution
@@ -3331,28 +3356,34 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         types := #[.creature, .land] }),
       resolution := .tap .target }
   | .resource .discardExilePlay =>
-    { events := #[.youDiscard], resolution := .resource .discardExilePlay }
+    { events := #[.youDiscard],
+      resolution := .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo }
   | .resource .drawIfAnotherHeroDamage =>
     { events := #[.youDraw], targeting := .of .opponent,
-      resolution := .resource .drawIfAnotherHeroDamage }
+      resolution := .«if» .anotherHero (.dealDamage 1 .targetOpponent) }
   | .resource .secondDrawBecome66 =>
-    { events := #[.youDrawSecondCard], resolution := .resource .secondDrawBecome66 }
+    { events := #[.youDrawSecondCard],
+      resolution := .sequence [
+        .setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source] }
   | .resource .secondDrawPlusOneTarget =>
     { events := #[.youDrawSecondCard], targeting := .of .creature,
-      resolution := .resource .secondDrawPlusOneTarget }
+      resolution := .putCounters (.ofKind .plusOnePlusOne) .permanent }
   | .resource .secondDrawDrain =>
-    { events := #[.youDrawSecondCard], resolution := .resource .secondDrawDrain }
+    { events := #[.youDrawSecondCard],
+      resolution := .sequence [.loseLife 1 (who := .eachOpponent), .gainLife 1] }
   | .resource .gainLifePlusOnes =>
     { events := #[.youGainLife], targeting := .of .creatureYouControl,
-      allowsZeroTargets := true, resolution := .resource .gainLifePlusOnes }
+      allowsZeroTargets := true,
+      resolution := .putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown }
   | .resource .plusOneCreateInsectOnce =>
     { events := #[.youPutPlusOne], onceEachTurn := true,
-      resolution := .resource .plusOneCreateInsectOnce }
+      resolution := .createTokens .insect11green 1 false }
   | .resource .plusOneOnThisOnce =>
     { events := #[.youPutPlusOne], onceEachTurn := true,
-      resolution := .resource .plusOneOnThisOnce }
+      resolution := .putCounters (.ofKind .plusOnePlusOne) .source }
   | .resource .plusOneOnHeroesCreateWall =>
-    { events := #[.youPutPlusOne], resolution := .resource .plusOneOnHeroesCreateWall }
+    { events := #[.youPutPlusOne],
+      resolution := .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo }
 
 end SharedTrigger
 
@@ -3463,5 +3494,23 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource
     (.grantKeywords Keyword.indestructible) ==
   .grant (.keywords Keyword.indestructible) .targetWhileSource
+#guard (SharedTrigger.timing (.resource .discardExilePlay)).resolution ==
+  .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
+#guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).resolution ==
+  .«if» .anotherHero (.dealDamage 1 .targetOpponent)
+#guard (SharedTrigger.timing (.resource .secondDrawBecome66)).resolution ==
+  .sequence [.setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source]
+#guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).resolution ==
+  .putCounters (.ofKind .plusOnePlusOne) .permanent
+#guard (SharedTrigger.timing (.resource .secondDrawDrain)).resolution ==
+  .sequence [.loseLife 1 (who := .eachOpponent), .gainLife 1]
+#guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).resolution ==
+  .putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown
+#guard (SharedTrigger.timing (.resource .plusOneCreateInsectOnce)).resolution ==
+  .createTokens .insect11green 1 false
+#guard (SharedTrigger.timing (.resource .plusOneOnThisOnce)).resolution ==
+  .putCounters (.ofKind .plusOnePlusOne) .source
+#guard (SharedTrigger.timing (.resource .plusOneOnHeroesCreateWall)).resolution ==
+  .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo
 
 end Mtg.Engine

@@ -620,6 +620,46 @@ def copyCastTriggerSpell (g : Game) (controller : PlayerId) : Game :=
         s!"{(g.player controller).name} may choose new targets for the copy"
   | none => g
 
+/-- You may exile the discarded card, recorded as `lastKnownPower`, and play
+it until the end of your next turn. -/
+def offerMayExileDiscarded (g : Game) (controller : PlayerId)
+    (lastKnownPower : Option Int) : Game :=
+  let id? :=
+    match lastKnownPower with
+    | some n =>
+      if n ≥ 0 then some (g.followMoved ⟨n.toNat⟩) else none
+    | none => none
+  match id?.bind g.findObject? with
+  | some o =>
+    if o.zone == .graveyard controller then
+      { g with pending := .fraChoice controller (.moonstoneMayExile o.id) }
+        |>.logMsg s!"You may exile {o.name} from your graveyard"
+    else
+      g.logMsg "The discarded card is no longer in your graveyard"
+  | none => g.logMsg "No discarded card is in the graveyard"
+
+/-- You may create a 0/4 Wall creature token with defender. -/
+def offerMayCreateWall (g : Game) (controller : PlayerId) : Game :=
+  { g with pending := .fraChoice controller (.mayCreateTokens .wall04defender 1) }
+    |>.logMsg
+      s!"{(g.player controller).name} may create a 0/4 Wall creature token with defender"
+
+/-- Put a +1/+1 counter on each announced creature you control, up to the
+life gained in that event (the trigger's last-known power). -/
+def putPlusOnesUpToLastKnown (g : Game) (controller : PlayerId)
+    (targets : Array Target) (lastKnownPower : Option Int) : Game :=
+  let n := (lastKnownPower.getD 0).toNat
+  (targets.extract 0 n).foldl (fun (g : Game) t =>
+    match t with
+    | Target.permanent id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && o.isCreature && o.controlledBy controller then
+          g.addPlusOnePlusOneTo o 1
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+    | _ => g.logMsg "The target is no longer legal") g
+
 /-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
 Effects are applied from that structured payload — not from Oracle text. -/
 def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
@@ -647,8 +687,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.resource .plusOneCreateInsectOnce) =>
     g.createKindTokens controller .insect11green 1
   | (.resource .plusOneOnHeroesCreateWall) =>
-    { g with pending := .fraChoice controller (.mayCreateTokens .wall04defender 1) }.logMsg
-      s!"{(g.player controller).name} may create a 0/4 Wall creature token with defender"
+    g.offerMayCreateWall controller
   | (.resource .secondDrawBecome66) =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.mapObjectStatus o (fun s =>
@@ -729,19 +768,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       (fun g o => g.applyPermanentAction o .tap) sourceId
       (some "The target is no longer legal")
   | (.resource .discardExilePlay) =>
-    let id? :=
-      match lastKnownPower with
-      | some n =>
-        if n ≥ 0 then some (g.followMoved ⟨n.toNat⟩) else none
-      | none => none
-    match id?.bind g.findObject? with
-    | some o =>
-      if o.zone == .graveyard controller then
-        { g with pending := .fraChoice controller (.moonstoneMayExile o.id) }
-          |>.logMsg s!"You may exile {o.name} from your graveyard"
-      else
-        g.logMsg "The discarded card is no longer in your graveyard"
-    | none => g.logMsg "No discarded card is in the graveyard"
+    g.offerMayExileDiscarded controller lastKnownPower
   | (.resource .secondDrawPlusOneTarget) =>
     g.withLegalKindPermanent controller .creature targets
       (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
@@ -750,17 +777,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     let g := g.forEachOpponent controller (fun g pid => g.loseLife pid 1)
     g.gainLife controller 1
   | (.resource .gainLifePlusOnes) =>
-    let n := (lastKnownPower.getD 0).toNat
-    (targets.extract 0 n).foldl (fun (g : Game) t =>
-      match t with
-      | Target.permanent id =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield && o.isCreature && o.controlledBy controller then
-            g.addPlusOnePlusOneTo o 1
-          else g.logMsg "The target is no longer legal"
-        | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "The target is no longer legal") g
+    g.putPlusOnesUpToLastKnown controller targets lastKnownPower
   | (.resource .plusOneOnThisOnce) =>
     g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
       "The source is no longer in play"

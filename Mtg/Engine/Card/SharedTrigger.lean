@@ -249,7 +249,8 @@ inductive CastLeftover where
   | tapCreatureOrLand
 deriving Repr, Inhabited, BEq
 
-/-- Leftover draw, discard, life, and +1/+1-counter triggers. -/
+/-- Printed draw, discard, life, and +1/+1-counter triggers.
+Each one resolves as the constructors named on `SharedTrigger.resource`. -/
 inductive ResourceLeftover where
   /-- Whenever you discard a card, you may exile that card from your graveyard. If you do, until… -/
   | discardExilePlay
@@ -1079,7 +1080,26 @@ inductive SharedTrigger where
   `.sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause]`.
   Tapping the announced creature or land is `.tap .target`. -/
   | casting (e : CastLeftover)
-  /-- Leftover draw / discard / life / +1/+1-counter effect. -/
+  /-- Leftover draw, discard, life, and +1/+1-counter effect.
+  `ResourceLeftover` stays the printed sentence.
+  You may exile the discarded card and play it until the end of your next
+  turn with
+  `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
+  If you control another Hero, 1 damage to the announced opponent is
+  `.«if» .anotherHero (.dealDamage 1 .targetOpponent)`.
+  Base power and toughness 6/6 and trample until end of turn is
+  `.sequence [.setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source]`.
+  A +1/+1 counter on the announced creature is
+  `.putCounters (.ofKind .plusOnePlusOne) .permanent`.
+  Each opponent loses 1 life and you gain 1 life is
+  `.sequence [.loseLife 1 (who := .eachOpponent), .gainLife 1]`.
+  A +1/+1 counter on each announced creature you control, up to the life
+  gained, is `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`.
+  A 1/1 green Insect is `.createTokens .insect11green 1 false`.
+  A +1/+1 counter on the source is
+  `.putCounters (.ofKind .plusOnePlusOne) .source`.
+  You may create a 0/4 Wall with defender is
+  `.may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo`. -/
   | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
 

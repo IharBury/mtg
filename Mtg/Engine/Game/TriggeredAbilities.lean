@@ -1040,6 +1040,8 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       else g.logMsg s!"{o.name} is no longer on the battlefield. No counter is put."
     | none =>
       g.logMsg "The source is no longer on the battlefield. No counter is put."
+  | .ofKind .plusOnePlusOne _, .eachUpToLastKnown =>
+    g.putPlusOnesUpToLastKnown controller targets lastKnownPower
   | .missingKeywordsFromTarget, .source =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with
@@ -2695,6 +2697,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => sourceName
       g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
     else g
+  | .«if» .anotherHero (.dealDamage 1 .targetOpponent) =>
+    let (g, holds) :=
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower .anotherHero
+    if holds then
+      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName
+        (some (.dealDamage 1 .targetOpponent)) sequencedCardPower
+    else
+      g.logMsg "Human Torch's ability has no effect"
   | .«if» cond thenDo =>
     let (g, holds) :=
       g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
@@ -2964,8 +2975,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.offerExileTopHeroPump controller sourceId
   | .copyCause =>
     g.copyCastTriggerSpell controller
-  | .resource e =>
-    g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower
+  | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
+    g.offerMayExileDiscarded controller lastKnownPower
   | .may (.draw 0 _ (.perControlled ty)) (.draw 1 .eachOpponent _) .ifYouDo =>
     g.mayDrawPerArtifact controller ty
   | .may (.draw 1 _ .fixed) (.sequence []) .ifYouDo =>
@@ -2996,6 +3007,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
         (some (.sequence [.pay symbols, follow])) sequencedCardPower
+  | .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo =>
+    g.offerMayCreateWall controller
   | .may optional conditional .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
     let g := { g with mayThenDrop := cond.length, mayThenConditional := some conditional }

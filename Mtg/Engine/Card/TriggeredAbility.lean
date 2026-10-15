@@ -831,6 +831,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       counterOn "enchanted creature" kind n
     | .ofKind kind n, .targetWhileSource =>
       counterOn "that creature" kind n
+    | .ofKind .plusOnePlusOne _, .eachUpToLastKnown =>
+      "put a +1/+1 counter on each of up to that many target creatures you control"
     | .missingKeywordsFromTarget, .source =>
       "if that creature has haste and this doesn't, put a haste counter on this. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance"
     | _, _ => "put counters"
@@ -1673,24 +1675,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "choose new targets for that spell"
   | .copyCause =>
     "copy that spell. You may choose new targets for the copy"
-  | .resource .discardExilePlay =>
-    "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."
-  | .resource .drawIfAnotherHeroDamage =>
-    "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent."
-  | .resource .secondDrawBecome66 =>
-    "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample."
-  | .resource .secondDrawPlusOneTarget =>
-    "Whenever you draw your second card each turn, put a +1/+1 counter on target creature."
-  | .resource .secondDrawDrain =>
-    "Whenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life."
-  | .resource .gainLifePlusOnes =>
-    "Whenever you gain life, choose up to that many target creatures you control. Put a +1/+1 counter on each of them."
-  | .resource .plusOneCreateInsectOnce =>
-    "Whenever you put a +1/+1 counter on a creature, create a 1/1 green Insect creature token. This ability triggers only once each turn."
-  | .resource .plusOneOnThisOnce =>
-    "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
-  | .resource .plusOneOnHeroesCreateWall =>
-    "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
+  | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
+    "you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card"
+  | .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo =>
+    "you may create a 0/4 colorless Wall creature token with defender"
   | .may _ _ .ifYouDo =>
     "you may do it. If you do, do that"
   | .pay symbols =>
@@ -1816,6 +1804,29 @@ def youAttackingSentence : YouAttackLeftover → String
     "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
   | .lookSixCast =>
     s!"Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}."
+
+/-- Printed sentence for a leftover draw, discard, life, or +1/+1-counter
+trigger. Its resolution is a `TriggerResolution` that does not carry
+`ResourceLeftover`. -/
+def resourceSentence : ResourceLeftover → String
+  | .discardExilePlay =>
+    "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."
+  | .drawIfAnotherHeroDamage =>
+    "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent."
+  | .secondDrawBecome66 =>
+    "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample."
+  | .secondDrawPlusOneTarget =>
+    "Whenever you draw your second card each turn, put a +1/+1 counter on target creature."
+  | .secondDrawDrain =>
+    "Whenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life."
+  | .gainLifePlusOnes =>
+    "Whenever you gain life, choose up to that many target creatures you control. Put a +1/+1 counter on each of them."
+  | .plusOneCreateInsectOnce =>
+    "Whenever you put a +1/+1 counter on a creature, create a 1/1 green Insect creature token. This ability triggers only once each turn."
+  | .plusOneOnThisOnce =>
+    "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
+  | .plusOneOnHeroesCreateWall =>
+    "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
 
 /-- Printed sentence for a leftover “whenever you cast …” trigger.
 Its resolution is a `TriggerResolution` that does not carry `CastLeftover`. -/
@@ -2050,7 +2061,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     | _, some (.watch e), _ => watchSentence e
     | _, some (.youAttacking e), _ => youAttackingSentence e
     | _, some (.casting e), _ => castingSentence e
-    | _, some (.resource e), _ => resolutionPhrase { resolution := .resource e }
+    | _, some (.resource e), _ => resourceSentence e
 
     | _, _, _ =>
     let t := ab.timing

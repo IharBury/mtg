@@ -54,6 +54,7 @@ import Mtg.Engine.Tests.EnterOrAttack
 import Mtg.Engine.Tests.Watch
 import Mtg.Engine.Tests.YouAttack
 import Mtg.Engine.Tests.Casting
+import Mtg.Engine.Tests.Resource
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -133,4 +134,5 @@ keep working.
 - `Watch`: watch triggers that used to resolve as `watch`
 - `YouAttack`: “whenever you attack” triggers that used to resolve as `youAttacking`
 - `Casting`: “whenever you cast …” triggers that used to resolve as `casting`
+- `Resource`: draw, discard, life, and +1/+1-counter triggers that used to resolve as `resource`
 -/
