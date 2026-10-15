@@ -1,0 +1,309 @@
+import Mtg.Engine.Catalog
+import Mtg.Engine.Fixture
+
+/-!
+# `TriggerResolution.pay`
+
+Paying mana, and paying by sacrificing or discarding, are `pay`. What is
+paid is an argument. Declining inside `.may _ _ .ifYouDo` skips the follow-up.
+-/
+
+namespace Mtg.Engine.PayTests
+
+open Mtg.Engine
+open Mtg.Engine.Catalog
+open Mtg.Engine.Tests
+
+def caster : PlayerId := ⟨0⟩
+def opp : PlayerId := ⟨1⟩
+
+def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+    (sourceId : Option ObjectId := none) : Game :=
+  g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId #[]
+    (resolutionOverride := some r)
+
+def phrase (r : TriggeredAbility.TriggerResolution) : String :=
+  TriggeredAbility.resolutionPhrase { resolution := r }
+
+def bear : CardDef := creature "Bear" ManaCost.empty #[] 2 2
+def ox : CardDef := creature "Ox" ManaCost.empty #[] 3 3
+def relic : CardDef := artifact "Relic" ManaCost.empty ""
+def oppRelic : CardDef := artifact "Opp Relic" ManaCost.empty ""
+
+def pid (g : Game) (name : String) : ObjectId :=
+  match g.battlefield.find? (·.name == name) with
+  | some o => o.id
+  | none => panic! s!"missing {name}"
+
+def counters (g : Game) (name : String) : Nat :=
+  match g.battlefield.find? (·.name == name) with
+  | some o => o.status.plusOnePlusOne
+  | none => panic! s!"missing {name}"
+
+def handSize (g : Game) (p : PlayerId) : Nat :=
+  (g.player p).hand.size
+
+def onBoard (g : Game) (name : String) : Bool :=
+  g.battlefield.any (·.name == name)
+
+def buried (g : Game) (name : String) : Bool :=
+  g.objects.any (fun o =>
+    o.name == name &&
+      match o.zone with
+      | .graveyard _ => true
+      | _ => false)
+
+def inHand (g : Game) (p : PlayerId) (name : String) : Bool :=
+  (g.player p).hand.any (fun id => (g.findObject? id).any (·.name == name))
+
+def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
+  insertObject g card p (.graveyard p) none {} (fun id pl =>
+    { pl with graveyard := pl.graveyard.push id })
+
+def namedIn (g : Game) (ids : Array ObjectId) (name : String) : ObjectId :=
+  match ids.find? (fun id => (g.findObject? id).any (·.name == name)) with
+  | some id => id
+  | none => panic! s!"missing {name}"
+
+def withMana (g : Game) : Game :=
+  g.modifyPlayer caster (fun pl =>
+    let pool := (pl.manaPool.add (.colored .green) 2).add (.colored .blue) 1
+    { pl with manaPool := pool.add (.colorless) 1 })
+
+def emptyHand (g : Game) : Game :=
+  g.modifyPlayer caster (fun pl => { pl with hand := #[] })
+
+def payDraw : TriggeredAbility.TriggerResolution :=
+  .may (.pay (.mana #[.generic 1])) (.draw (.fixed 1)) .ifYouDo
+
+def payPlusOne : TriggeredAbility.TriggerResolution :=
+  .may (.pay (.mana #[.generic 2]))
+    (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)])
+    .ifYouDo
+
+def payReturn : TriggeredAbility.TriggerResolution :=
+  .may (.pay (.mana #[.generic 1, .colored .green, .colored .blue]))
+    (.returnToHand .source .owner) .ifYouDo
+
+def sacPower : TriggeredAbility.TriggerResolution :=
+  .may (.pay .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo
+
+def sacTreasure : TriggeredAbility.TriggerResolution :=
+  .may (.pay .anotherCreatureOrArtifact)
+    (.sequence [.draw (.fixed 1), .createTokens .treasure 1 false]) .ifYouDo
+
+def sacOrDiscard : TriggeredAbility.TriggerResolution :=
+  .may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo
+
+def sacDestroy : TriggeredAbility.TriggerResolution :=
+  .may (.pay .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo
+
+def sacDamage : TriggeredAbility.TriggerResolution :=
+  .may (.pay .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo
+
+/- Printed phrases stay the sentences those payments used. -/
+#guard phrase payDraw == "you may pay {1}. If you do, draw a card"
+#guard phrase payPlusOne ==
+  "you may pay {2}. If you do, put a +1/+1 counter on this creature and draw a card"
+#guard phrase payReturn ==
+  "you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand"
+#guard phrase sacPower ==
+  "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
+#guard phrase sacTreasure ==
+  "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
+#guard phrase sacOrDiscard ==
+  "you may sacrifice an artifact or discard a card. If you do, draw a card"
+#guard phrase sacDestroy ==
+  "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
+#guard phrase sacDamage ==
+  "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
+#guard phrase (.pay (.mana #[.generic 1])) == "pay {1}"
+#guard phrase (.pay .anotherCreature) == "pay that cost"
+
+/- `{1}` offers a generic payment. Declining skips the draw. Paying draws. -/
+#guard
+  let g := step (withMana afterDraw) payDraw
+  match g.pending with
+  | .mayPayGeneric p 1 => p == caster && logContains g "may pay {1}"
+  | _ => false
+
+#guard
+  let g0 := step (withMana afterDraw) payDraw
+  let before := handSize g0 caster
+  let g := mustApply g0 caster .decline
+  handSize g caster == before && g.pending == .none && logContains g "declines to pay"
+
+#guard
+  let g0 := step (withMana afterDraw) payDraw
+  let before := handSize g0 caster
+  let g := mustApply g0 caster .payGeneric
+  handSize g caster == before + 1 && g.pending == .none
+
+/- `{2}` puts a +1/+1 counter on the source and draws. -/
+#guard
+  let g0 := addPermanent (withMana afterDraw) bear caster caster
+  let g := step g0 payPlusOne (some (pid g0 "Bear"))
+  match g.pending with
+  | .mayPayGeneric p 2 => p == caster && logContains g "put a +1/+1 counter"
+  | _ => false
+
+#guard
+  let g0 := addPermanent (withMana afterDraw) bear caster caster
+  let before := handSize g0 caster
+  let g := mustApply (step g0 payPlusOne (some (pid g0 "Bear"))) caster .payGeneric
+  counters g "Bear" == 1 && handSize g caster == before + 1
+
+/- `{1}{G}{U}` returns the source from its owner's graveyard. A source still
+on the battlefield is reported. -/
+#guard
+  let g0 := putInGraveyard (withMana afterDraw) bear caster
+  let id := namedIn g0 (g0.player caster).graveyard "Bear"
+  let g := step g0 payReturn (some id)
+  match g.pending with
+  | .fraChoice p (.mayPaySymbolsThen _ _ sid) => p == caster && sid == id
+  | _ => false
+
+#guard
+  let g0 := putInGraveyard (withMana afterDraw) bear caster
+  let id := namedIn g0 (g0.player caster).graveyard "Bear"
+  let g := mustApply (step g0 payReturn (some id)) caster .accept
+  inHand g caster "Bear" && !buried g "Bear"
+
+#guard
+  let g0 := addPermanent (withMana afterDraw) bear caster caster
+  let g := step g0 payReturn (some (pid g0 "Bear"))
+  g.pending == .none && onBoard g "Bear" &&
+    logContains g "Bear is no longer in the graveyard"
+
+/- Sacrificing another creature notes its power as +1/+1 counters.
+No other creature skips the counters. Declining sacrifices nothing. -/
+#guard
+  let g0 := addPermanent afterDraw bear caster caster
+  let g := step g0 sacPower (some (pid g0 "Bear"))
+  g.pending == .none && counters g "Bear" == 0 &&
+    logContains g "No other creature to sacrifice"
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) ox caster caster
+  let g := step g0 sacPower (some (pid g0 "Bear"))
+  match g.pending with
+  | .fraChoice p (.maySacrificeAnotherCreatureForPower sid) =>
+    p == caster && sid == pid g0 "Bear"
+  | _ => false
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) ox caster caster
+  let g := mustApply (step g0 sacPower (some (pid g0 "Bear"))) caster .decline
+  counters g "Bear" == 0 && onBoard g "Ox"
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) ox caster caster
+  let g := mustApply (step g0 sacPower (some (pid g0 "Bear"))) caster
+    (.choosePermanents #[pid g0 "Ox"])
+  counters g "Bear" == 3 && buried g "Ox" && !onBoard g "Ox"
+
+/- Sacrificing another creature or artifact draws and creates a Treasure.
+Nothing else to sacrifice skips both. -/
+#guard
+  let g0 := addPermanent afterDraw bear caster caster
+  let g := step g0 sacTreasure (some (pid g0 "Bear"))
+  g.pending == .none && logContains g "Nothing to sacrifice" &&
+    !onBoard g "Treasure"
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) relic caster caster
+  let g := step g0 sacTreasure (some (pid g0 "Bear"))
+  match g.pending with
+  | .fraChoice p (.maySacrificeAnotherForDrawTreasure sid) =>
+    p == caster && sid == pid g0 "Bear"
+  | _ => false
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) relic caster caster
+  let before := handSize g0 caster
+  let g := mustApply (step g0 sacTreasure (some (pid g0 "Bear"))) caster
+    (.choosePermanents #[pid g0 "Relic"])
+  handSize g caster == before + 1 && buried g "Relic" && onBoard g "Treasure"
+
+/- Sacrificing an artifact, or discarding a card, draws. Declining draws
+nothing. -/
+#guard
+  let g := step afterDraw sacOrDiscard
+  match g.pending with
+  | .maySacArtifactOrDiscard p 1 => p == caster
+  | _ => false
+
+#guard
+  let g0 := step afterDraw sacOrDiscard
+  let before := handSize g0 caster
+  let g := mustApply g0 caster .decline
+  handSize g caster == before && g.pending == .none &&
+    logContains g "declines to sacrifice an artifact or discard a card"
+
+#guard
+  let g0 := addPermanent afterDraw relic caster caster
+  let before := handSize g0 caster
+  let g := mustApply (step g0 sacOrDiscard (some (pid g0 "Relic"))) caster
+    (.sacrifice (pid g0 "Relic"))
+  handSize g caster == before + 1 && buried g "Relic"
+
+#guard
+  let g0 := step afterDraw sacOrDiscard
+  let id := (g0.player caster).hand.back!
+  let before := handSize g0 caster
+  let gy := (g0.player caster).graveyard.size
+  let g := mustApply g0 caster (.discard id)
+  handSize g caster == before && (g.player caster).graveyard.size == gy + 1
+
+/- Sacrificing another creature queues the destroy reflexive. No other
+creature queues nothing. -/
+#guard
+  let g0 := addPermanent afterDraw bear caster caster
+  let g := step g0 sacDestroy (some (pid g0 "Bear"))
+  g.pending == .none && g.stack.isEmpty &&
+    logContains g "no other creature to sacrifice"
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) ox caster caster
+  let g0 := addPermanent g0 oppRelic opp opp
+  let g := step g0 sacDestroy (some (pid g0 "Bear"))
+  match g.pending with
+  | .fraChoice p (.mayPayPickThen (.sacrificeAnotherSubtype "Creature") _ sid) =>
+    p == caster && sid == pid g0 "Bear"
+  | _ => false
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) ox caster caster
+  let g0 := addPermanent g0 oppRelic opp opp
+  let g := mustApply (step g0 sacDestroy (some (pid g0 "Bear"))) caster .decline
+  g.stack.isEmpty && onBoard g "Ox" && onBoard g "Opp Relic"
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) ox caster caster
+  let g0 := addPermanent g0 oppRelic opp opp
+  let g := mustApply (step g0 sacDestroy (some (pid g0 "Bear"))) caster
+    (.choosePermanents #[pid g0 "Ox"])
+  buried g "Ox" && logContains g "reflexive ability is put on the stack"
+
+/- Sacrificing an artifact or discarding a nonland queues the damage
+reflexive. Nothing to pay queues nothing. -/
+#guard
+  let g0 := emptyHand (addPermanent afterDraw bear caster caster)
+  let g := step g0 sacDamage (some (pid g0 "Bear"))
+  g.pending == .none && g.stack.isEmpty
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) relic caster caster
+  let g := step g0 sacDamage (some (pid g0 "Bear"))
+  match g.pending with
+  | .fraChoice p (.mayPayPickThen .sacrificeArtifactOrDiscardNonland _ sid) =>
+    p == caster && sid == pid g0 "Bear"
+  | _ => false
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) relic caster caster
+  let g := mustApply (step g0 sacDamage (some (pid g0 "Bear"))) caster
+    (.choosePermanents #[pid g0 "Relic"])
+  buried g "Relic" && logContains g "reflexive ability is put on the stack"
+
+end Mtg.Engine.PayTests

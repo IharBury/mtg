@@ -57,6 +57,7 @@ import Mtg.Engine.Tests.YouAttack
 import Mtg.Engine.Tests.Casting
 import Mtg.Engine.Tests.Resource
 import Mtg.Engine.Tests.Reflexive
+import Mtg.Engine.Tests.Pay
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -140,4 +141,5 @@ keep working.
 - `Casting`: “whenever you cast …” triggers that used to resolve as `casting`
 - `Resource`: draw, discard, life, and +1/+1-counter triggers that used to resolve as `resource`
 - `Reflexive`: a reflexive queued now, after the Plan is sacrificed, after a mill, and an attack pump armed for this turn
+- `Pay`: mana, and a sacrificed or discarded object, paid as one `pay`
 -/

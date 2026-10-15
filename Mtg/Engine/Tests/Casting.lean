@@ -57,7 +57,7 @@ def casting (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (casting Effect.castingMerfolkFromBlue) ==
   .createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols)
 #guard TriggeredAbility.resolution (casting Effect.castingMayPayHasteUnblockable) ==
-  .may (.pay #[.generic 1]) (.queueReflexive (.modeled 9)) .ifYouDo
+  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 9)) .ifYouDo
 #guard TriggeredAbility.resolution (casting Effect.castingPlusOneEachOther) ==
   .putCounters (.ofKind .plusOnePlusOne) .eachOther
 #guard TriggeredAbility.resolution (casting Effect.castingExileFlicker) ==

@@ -101,12 +101,12 @@ Each one resolves through `may`, `if`, `exile`, `loseLife`, `gainLife`,
 inductive ThisAttackLeftover where
   /-- Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1
   counter on target creature. Resolves as
-  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`. -/
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 12)) .ifYouDo`. -/
   | mayPayPlusOne
   /-- Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return
   target creature card from your graveyard tapped and attacking with a
   finality counter. Resolves as
-  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`. -/
+  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled 6)) .ifYouDo`. -/
   | payReturnAttacking
   /-- Whenever Iron Man attacks, if an artifact entered under your control
   this turn, draw a card. Resolves as
@@ -977,9 +977,9 @@ inductive SharedTrigger where
   | death (e : DeathLeftover)
   /-- Leftover “whenever this attacks” effect.
   Paying {1} to put a +1/+1 counter on target creature is
-  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 12)) .ifYouDo`.
   Paying {3}{B} to return a graveyard creature tapped and attacking is
-  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled 6)) .ifYouDo`.
   Drawing when an artifact entered under your control this turn is
   `.«if» .artifactEnteredThisTurn (.draw (.fixed 1))`.
   Exiling a nontoken artifact or creature and returning it tapped is
@@ -1034,13 +1034,13 @@ inductive SharedTrigger where
   Choosing a Soldier or a team pump from the last-known mode is
   `.chooseModes [.createTokens .soldier11white 1 false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown`.
   Paying {1} up to three times is
-  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
   Exiling until a nonland, then a counter or a cast, is
   `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
   You may deal the damage that caused this is
   `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`.
   You may pay {2} to copy the artifact that caused this is
-  `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`. -/
+  `.may (.pay (.mana #[.generic 2])) (.becomeCopy .cause) .ifYouDo`. -/
   | watch (e : WatchLeftover)
   /-- Leftover “whenever you attack” effect.
   Paying 2 life so creatures you control assign combat damage equal to their
@@ -1058,7 +1058,7 @@ inductive SharedTrigger where
   `.createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols)`.
   Paying {1} so a creature with haste can't be blocked except by creatures
   with haste is
-  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 9)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 9)) .ifYouDo`.
   A +1/+1 counter on each other creature you control is
   `.putCounters (.ofKind .plusOnePlusOne) .eachOther`.
   Exiling another nonland nontoken until the next end step is

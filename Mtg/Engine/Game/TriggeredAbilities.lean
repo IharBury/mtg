@@ -2984,7 +2984,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyTriggeredAbility controller ab sourceId targets dividedDamage
       lastKnownPower lastKnownToughness sourceName (some .retargetCause)
       sequencedCardPower
-  | .may (.pay symbols) (.queueReflexive (.modeled kind times)) .ifYouDo =>
+  | .may (.pay (.mana symbols)) (.queueReflexive (.modeled kind times)) .ifYouDo =>
     -- Paying more than once records that count for the reflexive ability.
     if times > 1 then
       g.offerPayForReflexive controller sourceId symbols kind times
@@ -2993,7 +2993,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := { g with mayThenDrop := 1, mayThenConditional := some follow }
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
-        (some (.sequence [.pay symbols, follow])) sequencedCardPower
+        (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
   | .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo =>
     g.offerMayCreateWall controller
   | .may optional conditional .ifYouDo =>
@@ -3002,38 +3002,38 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyTriggeredAbility controller ab sourceId targets dividedDamage
       lastKnownPower lastKnownToughness sourceName
       (some (.sequence (optional :: cond))) sequencedCardPower
-  | .pay symbols =>
-    match g.mayThenConditional, symbols.toList with
-    | some (.queueReflexive (.modeled kind times)), _ =>
-      g.offerPayForReflexive controller sourceId symbols kind times
-    | some (.becomeCopy .cause), [.generic 2] =>
-      g.offerCopyCause controller sourceId targets
-    | _, _ =>
-      match symbols.toList with
-      | [.generic n] =>
-        let plusOne :=
-          match g.mayThenConditional with
-          | some (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)]) => true
-          | _ => false
-        let g := { g with pending := .mayPayGeneric controller n }
-        g.logMsg <|
-          if plusOne then
-            s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
-          else
-            s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
-      | _ =>
-        match sourceId.bind g.findObject? with
-        | none =>
-          (g.logMsg "The ability's source is no longer in the graveyard").failMayThen
-        | some src =>
-          if src.zone != .graveyard src.owner then
-            (g.logMsg s!"{src.name} is no longer in the graveyard").failMayThen
-          else
-            let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
-            g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
-              s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
-  | .objectCost how =>
-    match how with
+  | .pay what =>
+    match what with
+    | .mana symbols =>
+      match g.mayThenConditional, symbols.toList with
+      | some (.queueReflexive (.modeled kind times)), _ =>
+        g.offerPayForReflexive controller sourceId symbols kind times
+      | some (.becomeCopy .cause), [.generic 2] =>
+        g.offerCopyCause controller sourceId targets
+      | _, _ =>
+        match symbols.toList with
+        | [.generic n] =>
+          let plusOne :=
+            match g.mayThenConditional with
+            | some (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)]) => true
+            | _ => false
+          let g := { g with pending := .mayPayGeneric controller n }
+          g.logMsg <|
+            if plusOne then
+              s!"{(g.player controller).name} may pay \{{n}} to put a +1/+1 counter on it and draw a card"
+            else
+              s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
+        | _ =>
+          match sourceId.bind g.findObject? with
+          | none =>
+            (g.logMsg "The ability's source is no longer in the graveyard").failMayThen
+          | some src =>
+            if src.zone != .graveyard src.owner then
+              (g.logMsg s!"{src.name} is no longer in the graveyard").failMayThen
+            else
+              let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
+              g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
+                s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
     | .anotherCreature =>
       let reflexive :=
         match g.mayThenConditional with
