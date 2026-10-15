@@ -477,6 +477,10 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               if other.isOnBattlefield then g.toughness other
               else other.lastKnownToughness.getD (g.toughness other)
             (g, op > g.power hulkling || ot > g.toughness hulkling)
+  | .manaSpent =>
+    let spent :=
+      ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+    (g, spent > 0)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -1502,10 +1506,9 @@ the behavior of the constructor it replaced. -/
 def applyDiscard (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target) (n : Nat)
     (who : TriggeredAbility.TriggerDiscardWho)
-    (what : TriggeredAbility.TriggerDiscardWhat)
-    (when : TriggeredAbility.TriggerDiscardWhen) : Game :=
-  match who, what, when with
-  | .you, .cards, .now =>
+    (what : TriggeredAbility.TriggerDiscardWhat) : Game :=
+  match who, what with
+  | .you, .cards =>
     if g.mayThenDrop > 0 && n == 1 then
       let drawN :=
         match g.mayThenConditional with
@@ -1516,20 +1519,18 @@ def applyDiscard (g : Game) (controller : PlayerId)
     else
       let g := { g with discardedCardThisWay := none }
       g.beginDiscardCards #[controller] n
-  | .you, .cards, .ifManaSpent =>
-    g.beginDiscardCards #[controller] n
-  | .each, .cards, .now =>
+  | .each, .cards =>
     g.beginDiscardCards (g.apnapOrder.filter (· != controller)) n
-  | .target, .chosenNonland, .now =>
+  | .target, .chosenNonland =>
     g.withLegalKindPlayer controller .opponent targets
       (fun g pid => g.discardNonlandFrom controller pid)
       sourceId (some "The target is no longer legal")
-  | .target, .cards, .now =>
+  | .target, .cards =>
     g.withLegalKindTarget controller .opponent targets (fun g tgt =>
       match tgt with
       | Target.player pid => g.beginDiscardCards #[pid] n
       | _ => g) sourceId none
-  | .you, .hand, .now =>
+  | .you, .hand =>
     if g.mayThenDrop > 0 then
       let drawN :=
         match g.mayThenConditional with
@@ -1541,7 +1542,7 @@ def applyDiscard (g : Game) (controller : PlayerId)
       { g with handDiscardedThisWay := none, notedSourceThisWay := sourceId }
         |>.beginFraChoice controller (.mayDiscardHandBalin sourceId)
           s!"{(g.player controller).name} may discard their hand"
-  | _, _, _ => g
+  | _, _ => g
 
 /-- Resolve `TriggerResolution.destroy`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -2321,7 +2322,7 @@ def applyRevealFromHand (g : Game) (controller : PlayerId)
           | none => g
         | _ => g)
         "Cloak and Dagger have left the battlefield. Nothing is exiled."
-  | .onePlusCreatureCards, .discard 1 .target .cards .now =>
+  | .onePlusCreatureCards, .discard 1 .target .cards =>
     match targets[0]? with
     | some (Target.player pid) =>
       let n :=
@@ -2525,8 +2526,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyTriggerDraw controller sourceId amount who
   | .searchLibrary thenDo =>
     g.applySearchLibrary controller sourceId thenDo
-  | .discard n who what when =>
-    g.applyDiscard controller sourceId targets n who what when
+  | .discard n who what =>
+    g.applyDiscard controller sourceId targets n who what
   | .sacrifice who what note =>
     g.applySacrifice controller ab sourceId targets who what note
   | .lose what who =>
@@ -2811,7 +2812,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .returnToHand what whose note =>
     g.applyReturnToHand controller ab sourceId targets what whose note
   | .may (.discard n (what := .hand)) _ =>
-    g.applyDiscard controller sourceId targets n .you .hand .now
+    g.applyDiscard controller sourceId targets n .you .hand
   | .becomeBear =>
     match targets[0]? with
     | some (Target.permanent oid) =>
@@ -2851,7 +2852,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyLoseLife controller ab sourceId targets n who amount lastKnownPower
   | .may (.draw _ .opponentHasYou) _ =>
     g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
-  | .may (.sequence [.draw .equalToManaSpent _, .discard n (when := .ifManaSpent)]) _ =>
+  | .may (.sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard n)]) _ =>
     -- X is the mana spent to cast the triggering spell.
     let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
     if spent == 0 then g.logMsg "No mana was spent to cast that spell"

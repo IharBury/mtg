@@ -3,9 +3,9 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.discard`
 
-The controller's cards, each opponent, the announced opponent, the
-controller's hand, and a discard after mana was spent. Who discards,
-what is discarded, and when are arguments.
+The controller's cards, each opponent, the announced opponent, and the
+controller's hand. Who discards and what is discarded are arguments.
+Discarding when mana was spent is `TriggerResolution.if`.
 -/
 
 namespace Mtg.Engine.DiscardTests
@@ -146,45 +146,64 @@ the source. Declining is the choice, not an immediate discard. -/
   | .fraChoice p (.mayDiscardHandDrawFixed n) => p == caster && n == 4
   | _ => false
 
-/- Mana spent selects this discard. The step still asks for `n` cards, and
-it leaves a discarded-land note from an earlier step alone. -/
+/- Discarding when mana was spent is `if`. The step asks for `n` cards.
+Spending none discards nothing and leaves an earlier note alone. -/
 #guard
   let marked := ((afterDraw.player caster).hand[0]?).getD ⟨0⟩
-  let g := step { afterDraw with discardedCardThisWay := some (caster, marked) }
-    (.discard 2 (when := .ifManaSpent))
-  g.pendingDiscardsLeft == 2 && g.discardedCardThisWay == some (caster, marked) &&
+  let g0 := { withSpent 3 with discardedCardThisWay := some (caster, marked) }
+  let g := step g0 (.«if» .manaSpent (.discard 2))
+  g.pendingDiscardsLeft == 2 && g.discardedCardThisWay.isNone &&
     match g.pending with
     | .chooseDiscardCard p _ => p == caster
     | _ => false
 
+#guard
+  let marked := ((afterDraw.player caster).hand[0]?).getD ⟨0⟩
+  let g0 := { withSpent 0 with discardedCardThisWay := some (caster, marked) }
+  let g := step g0 (.«if» .manaSpent (.discard 2))
+  g.pending == g0.pending && handSize g caster == handSize g0 caster &&
+    g.discardedCardThisWay == some (caster, marked) &&
+    !(logContains g "must discard")
+
 /- You may draw X, then discard two, only when mana was spent. -/
 #guard
   let g := step (withSpent 4)
-    (.may (.sequence [.draw .equalToManaSpent, .discard 2 (when := .ifManaSpent)]) (.sequence []))
+    (.may (.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard 2)]) (.sequence []))
   match g.pending with
   | .fraChoice p (.mayDrawThenDiscard 4 2) => p == caster
   | _ => false
 
 #guard
   let g := step (withSpent 0)
-    (.may (.sequence [.draw .equalToManaSpent, .discard 2 (when := .ifManaSpent)]) (.sequence []))
+    (.may (.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard 2)]) (.sequence []))
   g.pending == .none && logContains g "No mana was spent to cast that spell"
+
+/- The same gate runs after drawing X. Spending none skips the discard. -/
+#guard
+  let g0 := withSpent 4
+  let before := handSize g0 caster
+  let g := step g0 (.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard 2)])
+  handSize g caster == before + 4 && g.pendingDiscardsLeft == 2 &&
+    match g.pending with
+    | .chooseDiscardCard p _ => p == caster
+    | _ => false
+
+#guard
+  let g0 := withSpent 0
+  let g := step g0 (.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard 2)])
+  g.pending == .none && handSize g caster == handSize g0 caster &&
+    logContains g "No mana was spent to cast that spell"
 
 /- A combination that is not printed discards nothing. -/
 #guard
   let marked := ((afterDraw.player caster).hand[0]?).getD ⟨0⟩
   let g0 := { afterDraw with discardedCardThisWay := some (caster, marked) }
-  let g := step g0 (.discard 2 (who := .each) (when := .ifManaSpent))
+  let g := step g0 (.discard 2 (who := .each) (what := .hand))
     (targets := #[Target.player opp])
   g.pending == g0.pending && handSize g caster == handSize g0 caster &&
     handSize g opp == handSize g0 opp &&
     g.discardedCardThisWay == some (caster, marked) &&
     !(logContains g "must discard") && !(logContains g "may discard")
-
-#guard
-  let g := step afterDraw (.discard (what := .hand) (when := .ifManaSpent))
-  g.pending == afterDraw.pending && g.handDiscardedThisWay.isNone &&
-    handSize g caster == handSize afterDraw caster
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.resolutionPhrase { resolution := .discard } == "discard a card"
@@ -200,7 +219,7 @@ it leaves a discarded-land note from an earlier step alone. -/
   "discard your hand"
 #guard TriggeredAbility.resolutionPhrase { resolution := .may (.discard (what := .hand)) (.sequence []) } ==
   "you may discard your hand"
-#guard TriggeredAbility.resolutionPhrase { resolution := .discard 2 (when := .ifManaSpent) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution := .«if» .manaSpent (.discard 2) } ==
   "discard 2 cards"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .may (.discard 1) (.draw (.fixed 2)) .ifYouDo } ==
@@ -210,7 +229,7 @@ it leaves a discarded-land note from an earlier step alone. -/
   "you may discard your hand. If you do, draw 4 cards"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .sequence [
-        .draw .equalToManaSpent, .discard 2 (when := .ifManaSpent)] } ==
+        .draw .equalToManaSpent, .«if» .manaSpent (.discard 2)] } ==
   "draw X cards, where X is the amount of mana spent to cast that spell, then discard two cards"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .discard (who := .each) (what := .hand) } == "discard cards"

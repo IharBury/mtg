@@ -930,20 +930,20 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "search your hand and/or library for a Dragon card and put it onto the battlefield"
   | .searchLibrary _ =>
     "search your library"
-  | .discard n who what when =>
-    match who, what, when with
-    | .you, .cards, .now | .you, .cards, .ifManaSpent =>
+  | .discard n who what =>
+    match who, what with
+    | .you, .cards =>
       s!"discard {cardPhrase n}"
-    | .you, .hand, .now =>
+    | .you, .hand =>
       "discard your hand"
-    | .each, .cards, .now =>
+    | .each, .cards =>
       if n == 1 then "each opponent discards a card"
       else s!"each opponent discards {cardPhrase n}"
-    | .target, .cards, .now =>
+    | .target, .cards =>
       s!"{noun} discards {cardPhrase n}"
-    | .target, .chosenNonland, .now =>
+    | .target, .chosenNonland =>
       s!"{noun} reveals their hand. You choose a nonland card from it. That player discards that card"
-    | _, _, _ =>
+    | _, _ =>
       "discard cards"
   | .may (.discard 1) (.draw (.fixed n)) .ifYouDo =>
     s!"you may discard a card. If you do, draw {cardPhrase n.toNat}"
@@ -974,7 +974,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
     | .put .artifactFromHand _ .forAttach =>
       "you may put an artifact card from your hand onto the battlefield"
-    | .discard _ _ .hand _ =>
+    | .discard _ _ .hand =>
       "you may discard your hand"
     | .draw _ .opponentHasYou =>
       "target opponent may have you draw a card"
@@ -982,7 +982,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may put a land card from your hand onto the battlefield tapped"
     | .put (.creatureFromHand subtype maxMv) _ _ =>
       s!"you may put a {subtype} creature card with mana value {maxMv} or less from your hand onto the battlefield. If you don't, draw a card"
-    | .sequence [.draw .equalToManaSpent _, .discard n (when := .ifManaSpent)] =>
+    | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard n)] =>
       let disc := if n == 2 then "two cards" else cardPhrase n
       s!"you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard {disc}"
     | _ => "you may do it"
@@ -1070,7 +1070,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
   | .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached (.fight .equipmentHost .reflexive)] =>
     "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
-  | .sequence [.draw .equalToManaSpent _, .discard n (when := .ifManaSpent)] =>
+  | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard n)] =>
     let disc := if n == 2 then "two cards" else cardPhrase n
     s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
   | .sequence [.exile .landsYouControl .forLater .lands, .put .notedLands .tapped _] =>
@@ -1592,7 +1592,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match count, thenDo with
     | .hand, .exile .target .untilSourceLeaves .none =>
       "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
-    | .onePlusCreatureCards, .discard 1 .target .cards .now =>
+    | .onePlusCreatureCards, .discard 1 .target .cards =>
       s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
     | _, _ =>
       "reveal cards from their hand"
@@ -1699,6 +1699,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "pay that cost"
   | .queueReflexive _ =>
     "when you do, that ability triggers"
+  | .«if» .manaSpent (.discard n) =>
+    s!"discard {cardPhrase n}"
   | .«if» _ _ =>
     "if that is true"
   | .ifElse _ _ _ =>
