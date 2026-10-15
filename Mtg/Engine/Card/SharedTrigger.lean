@@ -127,7 +127,7 @@ inductive ThisAttackLeftover where
   | drawIfPower4
   /-- Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0
   and gains indestructible until end of turn. Resolves as
-  `.sequence [.pump 2 0 .source, .grant (.keywords Keyword.indestructible) .source]`. -/
+  `.sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]`. -/
   | attacksAlonePlus2Indestructible
 deriving Repr, Inhabited, BEq
 
@@ -700,7 +700,7 @@ inductive SharedTrigger where
   | putNonlandMvAtMostFromGy (mv : Nat)
   /-- Other matching creatures get +P/+T; opposing creatures get +oppP/+oppT.
   Resolves as
-  `.sequence [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures]`. -/
+  `.sequence [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes), .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures]`. -/
   | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
   /-- +1/+1 on a Wolf or create a Treasure.
   Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false]`. -/
@@ -796,7 +796,7 @@ inductive SharedTrigger where
   | revealTopPutRandomCreature (n : Nat)
   /-- If you drew two or more, another creature you control gets +3/+0 and
   gains first strike. Resolves as
-  `.«if» (.drewAtLeast 2) (.sequence [.pump 3 0 .target, .grant (.keywords Keyword.firstStrike) .target])`. -/
+  `.«if» (.drewAtLeast 2) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords Keyword.firstStrike) .target])`. -/
   | beginCombatIfDrawnTwoPump
   /-- Hone per opposing creatures and attach. -/
   | honePerOppAttach
@@ -893,7 +893,7 @@ inductive SharedTrigger where
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
   +1/+1 counter instead if you've scried or surveilled this turn. Resolves as
-  `.ifElse .scriedOrSurveilledThisTurn (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump 1 1 .target)`. -/
+  `.ifElse .scriedOrSurveilledThisTurn (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`. -/
   | pumpOrCounterIfScried
   /-- If you don't control a planeswalker, sacrifice the source. -/
   | sacrificeSourceIfNoPlaneswalker
@@ -990,7 +990,7 @@ inductive SharedTrigger where
   Drawing when the source's power is 4 or greater is
   `.«if» (.sourcePowerAtLeast 4) (.draw 1)`.
   The source getting +2/+0 and indestructible until end of turn is
-  `.sequence [.pump 2 0 .source, .grant (.keywords Keyword.indestructible) .source]`. -/
+  `.sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]`. -/
   | thisAttack (e : ThisAttackLeftover)
   /-- Leftover “enters or attacks” effect.
   Copying the keyword counters the source lacks is
@@ -1006,7 +1006,7 @@ inductive SharedTrigger where
   each opponent, is
   `.sequence [.putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent, .dealDamage 2 .eachOpponent]`.
   +1/+0 and lifelink until end of turn is
-  `.sequence [.pump 1 0 .source, .grant (.keywords Keyword.lifelink) .source]`.
+  `.sequence [.pump (.fixed 1) (.fixed 0) .source, .grant (.keywords Keyword.lifelink) .source]`.
   First strike and menace on the creature attacking alone is
   `.grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone`.
   The opponent loses 1 life and you gain 1 life is
@@ -1025,14 +1025,14 @@ inductive SharedTrigger where
   Putting a counter, then damage equal to those counters, is
   `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .queueReflexive (.countersOnSource 8)]`.
   +2/+2, then you may retarget the spell, is
-  `.sequence [.pump 2 2 .source, .may .retargetCause (.sequence []) .ifYouDo]`.
+  `.sequence [.pump (.fixed 2) (.fixed 2) .source, .may .retargetCause (.sequence []) .ifYouDo]`.
   You may have the entering Villain connive is `.connive .enteringVillain`.
   Attaching the announced Equipment to the announced creature is
   `.attach .announcedEquipment .announcedCreature`.
   Attaching each announced Equipment to the enchanted creature is
   `.attach .eachTargetEquipment .enchantedCreature`.
   Choosing a Soldier or a team pump from the last-known mode is
-  `.chooseModes [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl] .fromLastKnown`.
+  `.chooseModes [.createTokens .soldier11white 1 false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown`.
   Paying {1} up to three times is
   `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
   Exiling until a nonland, then a counter or a cast, is

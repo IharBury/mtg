@@ -881,7 +881,8 @@ namespace CardDef
   .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)))
 #guard TriggeredAbility.resolution
     (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
-  .sequence [.pump 2 2 (.othersOfSubtypes #["Goblin", "Orc"]), .pump (-1) (-1) .opponentsCreatures]
+  .sequence [.pump (.fixed 2) (.fixed 2) (.othersOfSubtypes #["Goblin", "Orc"]),
+    .pump (.fixed (-1)) (.fixed (-1)) .opponentsCreatures]
 #guard TriggeredAbility.toNotation
     (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
   "At the beginning of each combat, other Goblins and Orcs you control get +2/+2 until end of turn. Creatures your opponents control get -1/-1 until end of turn."
@@ -1273,13 +1274,13 @@ namespace CardDef
 #guard (TriggeredAbility.dividedDamage? (.onAttackWithElvesScry 1)).isNone
 #guard (TriggeredAbility.dividedDamage? .onScryPumpSelfForEachLookedAt).isNone
 #guard TriggeredAbility.resolution .onAttackPumpByGreatestPower ==
-  .pump 0 0 .source .greatestPower
+  .pump .greatestPower (.fixed 0) .source
 #guard (default : TriggeredAbility.TriggerResolution) ==
-  .pump 0 0 .source .greatestPower
+  .pump .greatestPower .greatestPower .source
 #guard TriggeredAbility.resolution .onAttackSetOtherBasePT ==
   .setBasePT 0 0 (amount := .equalSource)
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
-  .sequence [.pump 2 0 .target, .grant (.keywords Keyword.trample) .target]
+  .sequence [.pump (.fixed 2) (.fixed 0) .target, .grant (.keywords Keyword.trample) .target]
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry 2
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil 2
 #guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
@@ -1334,7 +1335,7 @@ namespace CardDef
   "At the beginning of combat on your turn, another target creature you control gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead."
 #guard (SharedTrigger.timing .pumpOrCounterIfScried).resolution ==
   .ifElse .scriedOrSurveilledThisTurn
-    (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump 1 1 .target)
+    (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)
 #guard TriggeredAbility.toNotation .onEnterMaySacArtifactOrDiscardDraw ==
   "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
 #guard TriggeredAbility.toNotation .onEnterExileOppTappedUntilLeaves ==
@@ -1495,11 +1496,11 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onEnterTargetOpponentSacrificesCreature ==
   .sacrifice .targetOpponent .chosenCreature
 #guard TriggeredAbility.resolution (.onLandYouControlEntersGets 1 1) ==
-  .pump 1 1 .source
+  .pump (.fixed 1) (.fixed 1) .source
 #guard TriggeredAbility.resolution .onLandYouControlEntersPlusOnePlusOne ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard TriggeredAbility.resolution .onAnotherElfYouControlEntersGets1 ==
-  .pump 1 1 .source
+  .pump (.fixed 1) (.fixed 1) .source
 #guard TriggeredAbility.resolution (.onEnterDealDividedDamage 3 3) == .dividedDamage
 #guard TriggeredAbility.resolution (.onEnterOrAttackDealDividedDamage 3 3) ==
   .dividedDamage
@@ -1602,7 +1603,7 @@ end CardDef
     .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]
 #guard (SharedTrigger.timing .beginCombatIfDrawnTwoPump).resolution ==
   .«if» (.drewAtLeast 2) (.sequence [
-    .pump 3 0 .target,
+    .pump (.fixed 3) (.fixed 0) .target,
     .grant (.keywords Keyword.firstStrike) .target])
 #guard (SharedTrigger.timing .destroyOppPermanentIfSixLands).resolution ==
   .«if» (.landsAtLeast 6) (.sequence [

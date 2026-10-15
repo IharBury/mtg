@@ -46,7 +46,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchSheHulkRedirectOnce) ==
   .may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchSpeedballTargeted) ==
-  .sequence [.pump 2 2 .source, .may .retargetCause (.sequence []) .ifYouDo]
+  .sequence [.pump (.fixed 2) (.fixed 2) .source, .may .retargetCause (.sequence []) .ifYouDo]
 #guard TriggeredAbility.resolution (onWatch Effect.watchAnyPlayerSecondDraw) == .draw 1
 #guard TriggeredAbility.resolution (onWatch Effect.watchYouTargetDrawOnce) == .draw 1
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainOrArtifactDamage) ==
@@ -60,14 +60,14 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainAttachEquipment) ==
   .attach .announcedEquipment .announcedCreature
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainPlusOneLifelink) ==
-  .sequence [.pump 1 0 .source, .grant (.keywords Keyword.lifelink) .source]
+  .sequence [.pump (.fixed 1) (.fixed 0) .source, .grant (.keywords Keyword.lifelink) .source]
 #guard TriggeredAbility.resolution (onWatch Effect.watchHulklingCompare) ==
   .«if» .causeGreaterPowerOrToughness (.putCounters (.ofKind .plusOnePlusOne) .source)
 #guard TriggeredAbility.resolution (onWatch Effect.watchJusticeBounce) ==
   .putCounters (.ofKind .plusOnePlusOne) .source
 #guard TriggeredAbility.resolution (onWatch Effect.watchNontokenHeroModal) ==
   .chooseModes
-    [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl]
+    [.createTokens .soldier11white 1 false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl]
     .fromLastKnown
 #guard TriggeredAbility.resolution (onWatch Effect.watchUltronCopy) ==
   .may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo
