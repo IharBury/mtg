@@ -1366,7 +1366,7 @@ namespace CardDef
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
   .permanentCardInYourGraveyard
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
-  .sequence [.tap .target, .cantUntapWhileSource]
+  .sequence [.tap .target, .cant .untapWhileYouControl]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==
   .may (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo
 #guard TriggeredAbility.resolution (.onEnterExileTop) == .exile .top .playUntilNextTurn

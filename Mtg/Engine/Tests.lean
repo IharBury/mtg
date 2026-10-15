@@ -42,6 +42,7 @@ import Mtg.Engine.Tests.RevealLibrary
 import Mtg.Engine.Tests.SearchLibrary
 import Mtg.Engine.Tests.Tap
 import Mtg.Engine.Tests.Lose
+import Mtg.Engine.Tests.Cant
 import Mtg.Engine.Tests.PutOnLibrary
 import Mtg.Engine.Tests.SetBasePT
 import Mtg.Engine.Tests.Untap
@@ -120,6 +121,8 @@ keep working.
   permanent while it is still on the battlefield
 - `Lose`: indestructible until end of turn, and all abilities while the
   source remains
+- `Cant`: can't be blocked this turn, and can't untap while you control
+  the source
 - `PutOnLibrary`: the announced permanent on top or on the bottom of its
   owner's library, and a card from hand on the bottom
 - `SetBasePT`: a fixed base power and toughness, and another creature's

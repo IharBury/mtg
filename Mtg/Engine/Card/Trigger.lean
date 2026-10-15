@@ -1276,6 +1276,14 @@ inductive TriggerCopyOf where
   | cause
 deriving Repr, Inhabited, BEq
 
+/-- What `TriggerResolution.cant` prevents. -/
+inductive TriggerCantWhat where
+  /-- Can't be blocked this turn. -/
+  | beBlocked
+  /-- Can't become untapped for as long as you control the source. -/
+  | untapWhileYouControl
+deriving Repr, Inhabited, BEq
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
@@ -1288,16 +1296,18 @@ untapping, losing, and putting on a library each cover multiple printed
 abilities.
 A permanent target uses its own constructor: `pump`, `putCounters`,
 `destroy`, `dealDamage`, `grant`, `tap`, `untap`, `exile`, `lose`,
-`cantBeBlocked`, `becomeArtifact`, `becomePrepared`, `setBasePT`,
+`cant`, `becomeArtifact`, `becomePrepared`, `setBasePT`,
 and `putOnLibrary`. Losing indestructible until end of turn, and losing
 all abilities while the source remains, are `lose`. What is lost, and who
-loses it, are arguments. Setting a permanent's base power and toughness
-to fixed values, and setting another creature's base power and toughness
-equal to this creature's, are `setBasePT`. What the new base is, and who
-receives it, are arguments. Putting the announced permanent on top or on
-the bottom of its owner's library, and putting a card from your hand on
-the bottom, are `putOnLibrary`. Where the card goes, and which card, are
-arguments. Untapping the announced permanent, and untapping each attacking
+loses it, are arguments. A permanent that can't be blocked this turn, and
+a permanent that can't untap while you control the source, are `cant`.
+What it can't do, and who can't, are arguments. Setting a permanent's base
+power and toughness to fixed values, and setting another creature's base
+power and toughness equal to this creature's, are `setBasePT`. What the new
+base is, and who receives it, are arguments. Putting the announced permanent
+on top or on the bottom of its owner's library, and putting a card from your
+hand on the bottom, are `putOnLibrary`. Where the card goes, and which card,
+are arguments. Untapping the announced permanent, and untapping each attacking
 creature, are `untap`. Who is untapped is an argument. +P/+T and trample is
 a sequence of `pump` and `grant`. Becoming an artifact and gaining
 indestructible is a sequence of `becomeArtifact`
@@ -1542,9 +1552,17 @@ inductive TriggerResolution where
   A source that has left leaves that permanent able.
   Any other combination loses nothing. -/
   | lose (what : TriggerLoseWhat) (who : TriggerLoseWho := .target)
-  /-- `who` can't be blocked this turn.
-  The announced permanent is `.cantBeBlocked`. -/
-  | cantBeBlocked (who : TriggerAffected := .target)
+  /-- `who` can't do `what`.
+  The announced permanent can't be blocked this turn is `.cant .beBlocked`.
+  The source is `.cant .beBlocked .source`.
+  The enchanted creature is `.cant .beBlocked .enchanted`.
+  The target, while the source remains, is
+  `.cant .beBlocked .targetWhileSource`.
+  The announced permanent can't become untapped for as long as you control
+  the source is `.cant .untapWhileYouControl`. An opponent's creature is
+  the only recipient. A creature you control is left alone. A missing
+  source still records a stand-in. Any other combination does nothing. -/
+  | cant (what : TriggerCantWhat) (who : TriggerAffected := .target)
   /-- Until end of turn, `who` becomes an artifact in addition to its other
   types. Gaining indestructible as well is
   `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`.
@@ -2166,8 +2184,6 @@ inductive TriggerResolution where
       (amount : TriggerLifeLossAmount := .fixed)
   /-- You may play the exiled card until the end of your next turn. -/
   | grantPlayNotedUntilNextTurn
-  /-- The tapped creature can't untap while you control the source. -/
-  | cantUntapWhileSource
   /-- You win the game. -/
   | winTheGame
   /-- Shuffle the source into its owner's library. -/
@@ -2262,7 +2278,7 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .tap => .tap .target
   | .untap => .untap
   | .loseIndestructible => .lose .indestructible
-  | .cantBeBlocked => .cantBeBlocked
+  | .cantBeBlocked => .cant .beBlocked
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) .permanent
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) .permanent
   | .burdenCounter => .putCounters (.ofKind .burden) .permanent
@@ -2289,7 +2305,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .tap => .tap (tapWho who)
   | .untap => .untap (untapWho who)
   | .loseIndestructible => .lose .indestructible (loseWho who)
-  | .cantBeBlocked => .cantBeBlocked who
+  | .cantBeBlocked => .cant .beBlocked who
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
   | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
@@ -3116,7 +3132,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .returnToHand .graveyardPermanent }
   | .enter .tapOppCantUntapWhileControl =>
     { events := #[.entering], targeting := .of .oppCreature,
-      resolution := .sequence [.tap .target, .cantUntapWhileSource] }
+      resolution := .sequence [.tap .target, .cant .untapWhileYouControl] }
   | .enter .maySacAnotherThenDestroyOppNonland =>
     { events := #[.entering],
       resolution := .may (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo }
@@ -3476,7 +3492,8 @@ end SharedTrigger
   .lose .indestructible .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .loseIndestructible ==
   .lose .indestructible .targetWhileSource
-#guard TriggeredAbility.TriggerResolution.ofPermanent .cantBeBlocked == .cantBeBlocked
+#guard TriggeredAbility.TriggerResolution.ofPermanent .cantBeBlocked ==
+  .cant .beBlocked
 #guard TriggeredAbility.TriggerResolution.ofPermanent .indestructibleCounter ==
   .putCounters (.ofKind .indestructible) .permanent
 #guard TriggeredAbility.TriggerResolution.ofPermanent .doubleStrikeCounter ==
