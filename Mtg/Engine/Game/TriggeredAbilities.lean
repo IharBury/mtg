@@ -144,6 +144,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let memory :=
       match how with
       | .oneUnusedThisTurn => src.status.allianceModesChosen
+      | .vision => src.status.modesChosenThisTurn
       | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown =>
         src.status.chosenModes
     let available := unusedModes memory (List.range modes.length).toArray
@@ -155,6 +156,8 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .oneUnusedThisTurn =>
           g.logMsg
             "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
+        | .vision =>
+          g.logMsg "The Vision's ability is removed from the stack with no effect"
         | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown =>
           g.logMsg
             "all three modes have been chosen. The ability is removed from the stack with no effect"
@@ -173,6 +176,11 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               pending := .fraChoice p (.gollumMode src.id available)
               chooseModesRest := some rest }.logMsg
             s!"{(g.player p).name} chooses a mode that hasn't been chosen"
+        | .vision =>
+          { g with
+              pending := .fraChoice p (.visionMode src.id available)
+              chooseModesRest := some rest }.logMsg
+            "Choose one that hasn't been chosen this turn"
         | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown => g
 
 /-- Destroy `targets[0]` when it is a token still on the battlefield. -/
@@ -763,6 +771,9 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
   | .target, .fixed, .none =>
     g.applyDamageToKindTarget controller ab.targetKind targets n sourceId
       (some "The target is no longer legal")
+  | .target, .spellManaValue, _ =>
+    let n := g.castSpellManaValue controller lastKnownPower
+    g.applyDamageToKindTarget controller ab.targetKind targets n sourceId none
   | .source, .fixed, _ =>
     g.withAffected controller ab sourceId targets .source fun g o =>
       g.applyPermanentAction o (.dealDamage n)
@@ -1109,6 +1120,8 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
   | .sturdyShield, _, _, _ =>
     let (g, shield) := g.createToken controller sturdyShieldToken
     { g with createdTokenThisWay := some shield.id }
+  | .merfolk, _, _, _ =>
+    g.createMerfolkForBlueSymbols controller lastKnownPower
   | .kind, .targetController, _, _ =>
     -- Destroy may already have moved the permanent. The controller who
     -- creates the Treasure is the one it had on the battlefield.
@@ -1875,6 +1888,12 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .assignCombatDamageEqualToughness, .creaturesYouControl =>
     { g with assignCombatDamageEqualToughness := some controller }
       |>.logMsg "Creatures you control assign combat damage equal to their toughness"
+  | .basePowerEqualHand, .source =>
+    g.grantHandSizePower sourceId
+  | .ironFistTap, .source =>
+    g.grantIronFistTap sourceId
+  | .keywords k, .spellTargets =>
+    g.grantKeywordsToSpellCreatureTargets k
   | _, _ => g
 
 /-- Resolve `TriggerResolution.fight`. Each printed combination keeps
@@ -2753,6 +2772,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | .oneUnusedThisTurn | .oneUnused =>
       g.offerChooseModes controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName sequencedCardPower modes how
+    | .vision =>
+      g.offerVisionModes controller ab sourceId targets lastKnownPower sourceName
     | .fromLastKnown =>
       match modes[(lastKnownPower.getD 0).toNat]? with
       | none => g
@@ -2941,8 +2962,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.offerPay2LifeToughness controller
   | .may (.exile .top .playThisTurn .ifHero) (.sequence []) _ =>
     g.offerExileTopHeroPump controller sourceId
-  | .casting e =>
-    g.applyModeledTrigger controller (.onCasting (Effect.ofTrigger (.casting e))) sourceId targets sourceName lastKnownPower
+  | .copyCause =>
+    g.copyCastTriggerSpell controller
   | .resource e =>
     g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower
   | .may (.draw 0 _ (.perControlled ty)) (.draw 1 .eachOpponent _) .ifYouDo =>
@@ -3102,6 +3123,11 @@ def rememberChosenMode (g : Game) (sourceId : ObjectId)
   | .oneUnusedThisTurn, some src =>
     g.setObject { src with status :=
       { src.status with allianceModesChosen := src.status.allianceModesChosen.push mode } }
+  | .vision, some src =>
+    if src.isOnBattlefield then
+      g.setObject { src with status :=
+        { src.status with modesChosenThisTurn := src.status.modesChosenThisTurn.push mode } }
+    else g
   | .oneUnused, some src =>
     g.setObject { src with status :=
       { src.status with chosenModes := src.status.chosenModes.push mode } }
@@ -3115,20 +3141,47 @@ def applyListedMode (g : Game) (rest : ChooseModesRest)
       rest.dividedDamage rest.lastKnownPower rest.lastKnownToughness rest.sourceName
       (some r) rest.cardPower
 
+/-- Apply one stored Vision mode. A source that has left still draws, and
+does not gain a keyword or record the choice. -/
+def resolveVisionChoice (g : Game) (rest : ChooseModesRest) (mode : Nat) : Game :=
+  let controller := rest.controller
+  match rest.sourceId.bind (fun id => g.findObject? (g.followMoved id)) with
+  | none =>
+    match rest.modes[mode]? with
+    | some (.draw _) => g.draw controller 1
+    | _ => g.logMsg "The Vision is no longer in play"
+  | some src =>
+    if src.status.modesChosenThisTurn.contains mode ||
+        src.status.modesChosenThisTurn.size >= 3 then
+      g.logMsg "The Vision's ability is removed from the stack with no effect"
+    else if !src.isOnBattlefield then
+      match rest.modes[mode]? with
+      | some (.draw _) => g.draw controller 1
+      | _ => g.logMsg "The Vision is no longer in play"
+    else
+      let g := g.mapObjectStatus src (fun s =>
+        { s with modesChosenThisTurn := s.modesChosenThisTurn.push mode })
+      match rest.modes[mode]? with
+      | none => g
+      | some r => g.applyListedMode rest r
+
 /-- Apply mode `idx` from `chooseModesRest` when the offer stored one.
-Otherwise `fallback` is the direct Alliance or Gollum resolution. -/
+Otherwise `fallback` is the direct Alliance, Gollum, or Vision resolution. -/
 def answerChooseMode (g : Game) (sourceId : ObjectId) (idx : Nat)
     (fallback : Game → Game) : Game :=
   match g.chooseModesRest with
   | none => fallback g
   | some rest =>
     let g := { g with chooseModesRest := none }
-    let g := g.rememberChosenMode sourceId rest.how idx
-    if (g.findObject? sourceId).isNone then g
-    else
-      match rest.modes[idx]? with
-      | none => g
-      | some r => g.applyListedMode rest r
+    match rest.how with
+    | .vision => g.resolveVisionChoice rest idx
+    | _ =>
+      let g := g.rememberChosenMode sourceId rest.how idx
+      if (g.findObject? sourceId).isNone then g
+      else
+        match rest.modes[idx]? with
+        | none => g
+        | some r => g.applyListedMode rest r
 
 /-- Apply alternative `idx` of a pending `TriggerResolution.or`. -/
 def chooseTriggerOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := do

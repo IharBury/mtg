@@ -501,6 +501,125 @@ greatest power among attacking creatures you control (Cosmic Cube). -/
 def offerLookSixCast (g : Game) (controller : PlayerId) (n : Nat := 6) : Game :=
   g.beginMayCastFromLooked controller n (g.greatestPowerAmongAttacking controller)
 
+/-- Mana value of the spell that caused this cast trigger, including X.
+A spell that has left uses the last-known power, then the newest spell on
+the stack, then a mana value recorded this turn. -/
+def castSpellManaValue (g : Game) (controller : PlayerId)
+    (lastKnownPower : Option Int) : Nat :=
+  match g.castTriggerSpell? with
+  | some spell => spell.printed.manaValue + spell.chosenX.getD 0
+  | none =>
+    match lastKnownPower with
+    | some p => p.toNat
+    | none =>
+      match g.lastStackSpell? with
+      | some o => o.printed.manaValue + o.chosenX.getD 0
+      | none =>
+        match (g.player controller).castManaValuesThisTurn.back? with
+        | some mv => mv
+        | none => 0
+
+/-- Blue mana symbols in the spell that caused this cast trigger. -/
+def blueSymbolsInCastSpell (g : Game) (lastKnownPower : Option Int) : Nat :=
+  match g.castTriggerSpell? with
+  | some spell => spell.printed.manaCost.symbolsIncludingColor .blue
+  | none =>
+    match lastKnownPower with
+    | some p => p.toNat
+    | none =>
+      match g.lastStackSpell? with
+      | some o => o.printed.manaCost.symbolsIncludingColor .blue
+      | none => 0
+
+/-- Create one 1/1 blue Merfolk for each blue mana symbol in the causing spell. -/
+def createMerfolkForBlueSymbols (g : Game) (controller : PlayerId)
+    (lastKnownPower : Option Int) : Game :=
+  let n := g.blueSymbolsInCastSpell lastKnownPower
+  if n == 0 then
+    g.logMsg "No blue mana symbols. No Merfolk are created."
+  else
+    Id.run do
+      let mut g := g
+      for _ in [0:n] do
+        let (g', _) := g.createToken controller merfolk11blueToken
+        g := g'
+      return g
+
+/-- Ask for one Vision mode that has not been chosen this turn. The chosen
+resolution is `TriggerResolution.visionModes`. -/
+def offerVisionModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target := #[])
+    (lastKnownPower : Option Int := none) (sourceName : String := "This creature") : Game :=
+  match sourceId.bind (fun id => g.findObject? (g.followMoved id)) with
+  | some src =>
+    let available :=
+      #[0, 1, 2].filter (fun m => !src.status.modesChosenThisTurn.contains m)
+    if available.isEmpty then
+      g.logMsg "The Vision's ability is removed from the stack with no effect"
+    else
+      { g with
+          pending := .fraChoice controller (.visionMode src.id available)
+          chooseModesRest := some {
+            controller
+            ability := ab
+            sourceId
+            targets
+            lastKnownPower
+            sourceName
+            modes := TriggeredAbility.TriggerResolution.visionModes
+            how := .vision } }
+        |>.logMsg "Choose one that hasn't been chosen this turn"
+  | none =>
+    g.logMsg "The Vision is no longer in play"
+
+/-- The source gains Iron Fist's tap ability until end of turn. -/
+def grantIronFistTap (g : Game) (sourceId : Option ObjectId) : Game :=
+  g.withSourceOnBattlefield sourceId (fun g o =>
+    g.mapObjectStatus o (fun s =>
+      { s with ironFistTapGrants := s.ironFistTapGrants + 1 })
+      |>.logMsg s!"{o.name} gains a tap ability until end of turn")
+    "The source is no longer in play"
+
+/-- Until end of turn, the source's base power is the cards in hand. -/
+def grantHandSizePower (g : Game) (sourceId : Option ObjectId) : Game :=
+  g.withSourceOnBattlefield sourceId (fun g o =>
+    g.mapObjectStatus o (fun s => { s with cardsInHandPowerUntilEot := true })
+      |>.logMsg s!"{o.name}'s base power is the number of cards in your hand until end of turn")
+    "The source is no longer in play"
+
+/-- Grant `k` until end of turn to each creature the causing spell targets. -/
+def grantKeywordsToSpellCreatureTargets (g : Game) (k : Keywords) : Game :=
+  let ids :=
+    match g.castTriggerSpell? with
+    | none => #[]
+    | some spell =>
+      match g.stack.find? (fun (e : StackEntry) => e.objectId == spell.id) with
+      | none => (#[] : Array ObjectId)
+      | some e =>
+        e.targets.filterMap (fun t =>
+          match t with
+          | Target.permanent id => some id
+          | _ => none)
+  ids.foldl (fun (g : Game) id =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield && o.isCreature then
+        g.grantUntilEotLogged o k
+      else g
+    | none => g) g
+
+/-- Copy the spell that caused this trigger and ask for new targets. -/
+def copyCastTriggerSpell (g : Game) (controller : PlayerId) : Game :=
+  match g.castTriggerSpell? with
+  | some spell =>
+    if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
+    else
+      let g := g.copyStackSpell spell controller
+      let copyId := (g.stack.back?.map (·.objectId)).getD spell.id
+      { g with pending := .fraChoice controller (.newTargetsForCopies #[copyId]) }.logMsg
+        s!"{(g.player controller).name} may choose new targets for the copy"
+  | none => g
+
 /-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
 Effects are applied from that structured payload — not from Oracle text. -/
 def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
@@ -539,29 +658,11 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         |>.logMsg s!"{o.name}'s base power and toughness become 6/6")
       "The source is no longer in play"
   | (.casting .visionModes) =>
-    match sourceId.bind (fun id => g.findObject? (g.followMoved id)) with
-    | some src =>
-      let available :=
-        #[0, 1, 2].filter (fun m => !src.status.modesChosenThisTurn.contains m)
-      if available.isEmpty then
-        g.logMsg "The Vision's ability is removed from the stack with no effect"
-      else
-        { g with pending := .fraChoice controller (.visionMode src.id available) }
-          |>.logMsg "Choose one that hasn't been chosen this turn"
-    | none =>
-      g.logMsg "The Vision is no longer in play"
+    g.offerVisionModes controller t sourceId targets lastKnownPower sourceName
   | (.casting .ironFistTap) =>
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      g.mapObjectStatus o (fun s =>
-        { s with ironFistTapGrants := s.ironFistTapGrants + 1 })
-        |>.logMsg s!"{o.name} gains a tap ability until end of turn")
-      "The source is no longer in play"
+    g.grantIronFistTap sourceId
   | (.casting .drawPowerEqualHand) =>
-    let g := g.draw controller 1
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      g.mapObjectStatus o (fun s => { s with cardsInHandPowerUntilEot := true })
-        |>.logMsg s!"{o.name}'s base power is the number of cards in your hand until end of turn")
-      "The source is no longer in play"
+    (g.draw controller 1).grantHandSizePower sourceId
   | (.step .hydeChoose) =>
     match lastKnownPower with
     | none => g.offerHydeChoice controller sourceId
@@ -599,40 +700,10 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         |>.logMsg s!"{name} is exiled until the beginning of the next end step")
       sourceId (some "The target is no longer legal")
   | (.casting .damageEqualMv) =>
-    let n :=
-      match g.castTriggerSpell? with
-      | some spell => spell.printed.manaValue + spell.chosenX.getD 0
-      | none =>
-        match lastKnownPower with
-        | some p => p.toNat
-        | none =>
-          match g.lastStackSpell? with
-          | some o => o.printed.manaValue + o.chosenX.getD 0
-          | none =>
-            match (g.player controller).castManaValuesThisTurn.back? with
-            | some mv => mv
-            | none => 0
+    let n := g.castSpellManaValue controller lastKnownPower
     g.applyDamageToKindTarget controller .playerOrCreature targets n sourceId none
   | (.casting .merfolkFromBlue) =>
-    let n :=
-      match g.castTriggerSpell? with
-      | some spell => spell.printed.manaCost.symbolsIncludingColor .blue
-      | none =>
-        match lastKnownPower with
-        | some p => p.toNat
-        | none =>
-          match g.lastStackSpell? with
-          | some o => o.printed.manaCost.symbolsIncludingColor .blue
-          | none => 0
-    if n == 0 then
-      g.logMsg "No blue mana symbols. No Merfolk are created."
-    else
-      Id.run do
-        let mut g := g
-        for _ in [0:n] do
-          let (g', _) := g.createToken controller merfolk11blueToken
-          g := g'
-        return g
+    g.createMerfolkForBlueSymbols controller lastKnownPower
   | (.casting .plusOneEachOther) =>
     g.forEachControlledCreature controller (fun g o =>
       if some o.id != sourceId then g.addPlusOnePlusOneTo o 1 else g)
@@ -645,36 +716,11 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         "The source is no longer in play"
     g.beginScry controller 1
   | (.casting .targetsGainFlying) =>
-    let ids :=
-      match g.castTriggerSpell? with
-      | none => #[]
-      | some spell =>
-        match g.stack.find? (fun (e : StackEntry) => e.objectId == spell.id) with
-        | none => (#[] : Array ObjectId)
-        | some e =>
-          e.targets.filterMap (fun t =>
-            match t with
-            | Target.permanent id => some id
-            | _ => none)
-    ids.foldl (fun (g : Game) id =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield && o.isCreature then
-          g.grantUntilEotLogged o Keyword.flying
-        else g
-      | none => g) g
+    g.grantKeywordsToSpellCreatureTargets Keyword.flying
   | (.casting .copyIfArtifactOrLand) =>
     let g := g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
       "The source is no longer in play"
-    match g.castTriggerSpell? with
-    | some spell =>
-      if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
-      else
-        let g := g.copyStackSpell spell controller
-        let copyId := (g.stack.back?.map (·.objectId)).getD spell.id
-        { g with pending := .fraChoice controller (.newTargetsForCopies #[copyId]) }.logMsg
-          s!"{(g.player controller).name} may choose new targets for the copy"
-    | none => g
+    g.copyCastTriggerSpell controller
   | (.casting .tapCreatureOrLand) =>
     let kind := EffectTargetKind.filtered {
       noun := "target creature or land",
